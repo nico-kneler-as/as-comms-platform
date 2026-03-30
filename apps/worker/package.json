@@ -1,0 +1,23 @@
+{
+  "name": "@as-comms/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config ../../vitest.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@as-comms/contracts": "workspace:*",
+    "@as-comms/db": "workspace:*",
+    "@as-comms/domain": "workspace:*",
+    "graphile-worker": "^0.16.6",
+    "zod": "^3.24.2"
+  }
+}
