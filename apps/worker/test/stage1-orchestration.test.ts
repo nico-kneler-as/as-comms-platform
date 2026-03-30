@@ -1,0 +1,647 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  cutoverCheckpointBatchPayloadSchema,
+  gmailHistoricalCaptureBatchPayloadSchema,
+  mailchimpHistoricalCaptureBatchPayloadSchema,
+  parityCheckBatchPayloadSchema,
+  projectionRebuildBatchPayloadSchema,
+  replayBatchPayloadSchema,
+  salesforceHistoricalCaptureBatchPayloadSchema
+} from "@as-comms/contracts";
+
+import {
+  Stage1NonRetryableJobError,
+  Stage1RetryableJobError
+} from "../src/orchestration/index.js";
+import {
+  buildCapturedBatch,
+  createEmptyCapturePorts,
+  createTestWorkerContext,
+  type TestWorkerContext
+} from "./helpers.js";
+
+const contactId = "contact:salesforce:003-stage1";
+const salesforceContactId = "003-stage1";
+
+async function seedContact(context: TestWorkerContext): Promise<void> {
+  await context.normalization.upsertNormalizedContactGraph({
+    contact: {
+      id: contactId,
+      salesforceContactId,
+      displayName: "Stage One Volunteer",
+      primaryEmail: "volunteer@example.org",
+      primaryPhone: "+15555550123",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    },
+    identities: [
+      {
+        id: `identity:${contactId}:salesforce`,
+        contactId,
+        kind: "salesforce_contact_id",
+        normalizedValue: salesforceContactId,
+        isPrimary: true,
+        source: "salesforce",
+        verifiedAt: "2026-01-01T00:00:00.000Z"
+      },
+      {
+        id: `identity:${contactId}:email`,
+        contactId,
+        kind: "email",
+        normalizedValue: "volunteer@example.org",
+        isPrimary: true,
+        source: "salesforce",
+        verifiedAt: "2026-01-01T00:00:00.000Z"
+      }
+    ],
+    memberships: [
+      {
+        id: `membership:${contactId}:project-stage1`,
+        contactId,
+        projectId: "project-stage1",
+        expeditionId: "expedition-stage1",
+        role: "volunteer",
+        status: "active",
+        source: "salesforce"
+      }
+    ]
+  });
+}
+
+function buildGmailMessageRecord() {
+  return {
+    recordType: "message" as const,
+    recordId: "gmail-message-1",
+    direction: "outbound" as const,
+    occurredAt: "2026-01-01T00:00:00.000Z",
+    receivedAt: "2026-01-01T00:01:00.000Z",
+    payloadRef: "payloads/gmail/gmail-message-1.json",
+    checksum: "checksum-1",
+    snippet: "Following up by email",
+    threadId: "thread-1",
+    rfc822MessageId: "<message-1@example.org>",
+    normalizedParticipantEmails: ["volunteer@example.org"],
+    salesforceContactId,
+    volunteerIdPlainValues: [],
+    normalizedPhones: ["+15555550123"],
+    supportingRecords: [
+      {
+        provider: "salesforce" as const,
+        providerRecordType: "task_communication",
+        providerRecordId: "task-1"
+      }
+    ],
+    crossProviderCollapseKey: "collapse:email:1"
+  };
+}
+
+describe("Stage 1 worker orchestration service", () => {
+  it("replays Gmail batches through the same idempotent normalization path", async () => {
+    const gmailRecord = buildGmailMessageRecord();
+    const capture = createEmptyCapturePorts();
+    capture.gmail.captureHistoricalBatch = (payload) =>
+      Promise.resolve(
+        buildCapturedBatch(
+          payload.recordIds.length === 0 ||
+            payload.recordIds.includes(gmailRecord.recordId)
+            ? [gmailRecord]
+            : [],
+          {
+            nextCursor: "gmail:cursor:1",
+            checkpoint: "gmail:checkpoint:1"
+          }
+        )
+      );
+
+    const context = await createTestWorkerContext({ capture });
+
+    try {
+      await seedContact(context);
+
+      const first = await context.orchestration.runGmailHistoricalCaptureBatch(
+        gmailHistoricalCaptureBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:gmail:historical:1",
+          correlationId: "corr:gmail:historical:1",
+          traceId: "trace:gmail:historical:1",
+          batchId: "batch:gmail:historical:1",
+          syncStateId: "sync:gmail:historical:1",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "gmail",
+          mode: "historical",
+          jobType: "historical_backfill",
+          cursor: null,
+          checkpoint: null,
+          windowStart: "2026-01-01T00:00:00.000Z",
+          windowEnd: "2026-01-02T00:00:00.000Z",
+          recordIds: [gmailRecord.recordId],
+          maxRecords: 10
+        })
+      );
+
+      const replay = await context.orchestration.runReplayBatch(
+        replayBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:replay:1",
+          correlationId: "corr:replay:1",
+          traceId: "trace:replay:1",
+          batchId: "batch:replay:1",
+          syncStateId: "sync:replay:1",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "gmail",
+          mode: "historical",
+          jobType: "dead_letter_reprocess",
+          cursor: null,
+          checkpoint: null,
+          windowStart: null,
+          windowEnd: null,
+          items: [
+            {
+              providerRecordType: "message",
+              providerRecordId: gmailRecord.recordId
+            }
+          ]
+        })
+      );
+
+      expect(first.outcome).toBe("succeeded");
+      if (first.outcome !== "succeeded") {
+        throw new Error("Expected Gmail historical batch to succeed.");
+      }
+
+      expect(first.summary.normalized).toBe(1);
+      expect(first.summary.duplicate).toBe(0);
+      expect(first.nextCursor).toBe("gmail:cursor:1");
+      expect(first.checkpoint).toBe("gmail:checkpoint:1");
+
+      expect(replay.outcome).toBe("succeeded");
+      if (replay.outcome !== "succeeded") {
+        throw new Error("Expected replay batch to succeed.");
+      }
+
+      expect(replay.summary.normalized).toBe(0);
+      expect(replay.summary.duplicate).toBe(1);
+      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(1);
+      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(1);
+      await expect(context.repositories.inboxProjection.countAll()).resolves.toBe(1);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("rebuilds timeline and inbox projections deterministically from canonical data", async () => {
+    const gmailRecord = buildGmailMessageRecord();
+    const capture = createEmptyCapturePorts();
+    capture.gmail.captureHistoricalBatch = () =>
+      Promise.resolve(
+        buildCapturedBatch([gmailRecord], {
+          nextCursor: "gmail:cursor:rebuild",
+          checkpoint: "gmail:checkpoint:rebuild"
+        })
+      );
+
+    const context = await createTestWorkerContext({ capture });
+
+    try {
+      await seedContact(context);
+
+      const ingested = await context.orchestration.runGmailHistoricalCaptureBatch(
+        gmailHistoricalCaptureBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:gmail:rebuild-source",
+          correlationId: "corr:gmail:rebuild-source",
+          traceId: null,
+          batchId: "batch:gmail:rebuild-source",
+          syncStateId: "sync:gmail:rebuild-source",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "gmail",
+          mode: "historical",
+          jobType: "historical_backfill",
+          cursor: null,
+          checkpoint: null,
+          windowStart: "2026-01-01T00:00:00.000Z",
+          windowEnd: "2026-01-02T00:00:00.000Z",
+          recordIds: [gmailRecord.recordId],
+          maxRecords: 10
+        })
+      );
+
+      expect(ingested.outcome).toBe("succeeded");
+      if (ingested.outcome !== "succeeded") {
+        throw new Error("Expected source ingest to succeed before rebuild.");
+      }
+
+      await context.client.exec(
+        `delete from contact_timeline_projection where contact_id = '${contactId}'`
+      );
+      await context.client.exec(
+        `delete from contact_inbox_projection where contact_id = '${contactId}'`
+      );
+
+      const rebuilt = await context.orchestration.runProjectionRebuildBatch(
+        projectionRebuildBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:projection:rebuild:1",
+          correlationId: "corr:projection:rebuild:1",
+          traceId: null,
+          batchId: "batch:projection:rebuild:1",
+          syncStateId: "sync:projection:rebuild:1",
+          attempt: 1,
+          maxAttempts: 3,
+          jobType: "projection_rebuild",
+          projection: "all",
+          contactIds: [contactId],
+          includeReviewOverlayRefresh: true
+        })
+      );
+
+      expect(rebuilt.outcome).toBe("succeeded");
+      if (rebuilt.outcome !== "succeeded") {
+        throw new Error("Expected projection rebuild to succeed.");
+      }
+
+      expect(rebuilt.rebuiltTimelineRows).toBe(1);
+      expect(rebuilt.rebuiltInboxRows).toBe(1);
+      expect(rebuilt.missingProjectionSeeds).toEqual([]);
+      expect(rebuilt.discrepancies).toEqual([]);
+      expect(rebuilt.syncState.scope).toBe("orchestration");
+      expect(rebuilt.syncState.provider).toBeNull();
+
+      const rebuiltAgain = await context.orchestration.runProjectionRebuildBatch(
+        projectionRebuildBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:projection:rebuild:2",
+          correlationId: "corr:projection:rebuild:2",
+          traceId: null,
+          batchId: "batch:projection:rebuild:2",
+          syncStateId: "sync:projection:rebuild:2",
+          attempt: 1,
+          maxAttempts: 3,
+          jobType: "projection_rebuild",
+          projection: "all",
+          contactIds: [contactId],
+          includeReviewOverlayRefresh: true
+        })
+      );
+
+      expect(rebuiltAgain.outcome).toBe("succeeded");
+      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(1);
+      const inbox = await context.repositories.inboxProjection.findByContactId(contactId);
+      expect(inbox?.snippet).toBe("Following up by email");
+      expect(inbox?.bucket).toBe("Opened");
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("persists live-ingest freshness metrics for cutover readiness checks", async () => {
+    const gmailRecord = buildGmailMessageRecord();
+    const capture = createEmptyCapturePorts();
+    capture.gmail.captureLiveBatch = () =>
+      Promise.resolve(
+        buildCapturedBatch([
+          {
+            ...gmailRecord,
+            recordId: "gmail-live-message-1",
+            occurredAt: "2026-01-02T00:00:00.000Z",
+            receivedAt: "2026-01-02T00:01:00.000Z"
+          }
+        ])
+      );
+
+    const context = await createTestWorkerContext({ capture });
+
+    try {
+      await seedContact(context);
+
+      const result = await context.orchestration.runGmailLiveCaptureBatch({
+        version: 1,
+        jobId: "job:gmail:live:1",
+        correlationId: "corr:gmail:live:1",
+        traceId: null,
+        batchId: "batch:gmail:live:1",
+        syncStateId: "sync:gmail:live:1",
+        attempt: 1,
+        maxAttempts: 3,
+        provider: "gmail",
+        mode: "live",
+        jobType: "live_ingest",
+        cursor: null,
+        checkpoint: null,
+        windowStart: "2026-01-02T00:00:00.000Z",
+        windowEnd: "2026-01-02T00:02:00.000Z",
+        recordIds: ["gmail-live-message-1"],
+        maxRecords: 10
+      });
+
+      expect(result.outcome).toBe("succeeded");
+      if (result.outcome !== "succeeded") {
+        throw new Error("Expected Gmail live batch to succeed.");
+      }
+
+      expect(result.syncState.scope).toBe("provider");
+      expect(result.syncState.provider).toBe("gmail");
+      expect(result.syncState.freshnessP95Seconds).toBe(60);
+      expect(result.syncState.freshnessP99Seconds).toBe(60);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("produces parity snapshots and explicit cutover blockers without auto-resolving them", async () => {
+    const gmailRecord = buildGmailMessageRecord();
+    const capture = createEmptyCapturePorts();
+    capture.gmail.captureHistoricalBatch = () =>
+      Promise.resolve(
+        buildCapturedBatch([gmailRecord], {
+          nextCursor: "gmail:cursor:parity",
+          checkpoint: "gmail:checkpoint:parity"
+        })
+      );
+
+    const context = await createTestWorkerContext({ capture });
+
+    try {
+      await seedContact(context);
+
+      const ingested = await context.orchestration.runGmailHistoricalCaptureBatch(
+        gmailHistoricalCaptureBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:gmail:parity-source",
+          correlationId: "corr:gmail:parity-source",
+          traceId: null,
+          batchId: "batch:gmail:parity-source",
+          syncStateId: "sync:gmail:parity-source",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "gmail",
+          mode: "historical",
+          jobType: "historical_backfill",
+          cursor: null,
+          checkpoint: null,
+          windowStart: "2026-01-01T00:00:00.000Z",
+          windowEnd: "2026-01-02T00:00:00.000Z",
+          recordIds: [gmailRecord.recordId],
+          maxRecords: 10
+        })
+      );
+
+      expect(ingested.outcome).toBe("succeeded");
+      await context.persistence.saveSyncState({
+        id: "sync:gmail:live:1",
+        scope: "provider",
+        provider: "gmail",
+        jobType: "live_ingest",
+        cursor: "cursor:gmail:live:1",
+        windowStart: "2026-01-02T00:00:00.000Z",
+        windowEnd: "2026-01-02T01:00:00.000Z",
+        status: "succeeded",
+        parityPercent: 100,
+        freshnessP95Seconds: 60,
+        freshnessP99Seconds: 120,
+        lastSuccessfulAt: "2026-01-02T01:00:00.000Z",
+        deadLetterCount: 0
+      });
+
+      const parity = await context.orchestration.runParityCheckBatch(
+        parityCheckBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:parity:1",
+          correlationId: "corr:parity:1",
+          traceId: null,
+          batchId: "batch:parity:1",
+          syncStateId: "sync:parity:1",
+          attempt: 1,
+          maxAttempts: 3,
+          jobType: "parity_snapshot",
+          checkpointId: "checkpoint:parity:1",
+          providers: ["gmail"],
+          sampleContactIds: [contactId],
+          sampleSize: 10,
+          queueParityThresholdPercent: 100,
+          timelineParityThresholdPercent: 100,
+          evaluatedAt: "2026-01-02T02:00:00.000Z"
+        })
+      );
+
+      expect(parity.outcome).toBe("succeeded");
+      if (parity.outcome !== "succeeded") {
+        throw new Error("Expected parity check to succeed.");
+      }
+
+      expect(parity.metrics.canonicalEventCount).toBe(1);
+      expect(parity.metrics.timelineProjectionCount).toBe(1);
+      expect(parity.metrics.inboxProjectionCount).toBe(1);
+      expect(parity.metrics.queueRowParityPercent).toBe(100);
+      expect(parity.metrics.timelineEventParityPercent).toBe(100);
+      expect(parity.discrepancies).toEqual([]);
+      expect(parity.syncState.scope).toBe("orchestration");
+      expect(parity.syncState.provider).toBeNull();
+
+      const cutover = await context.orchestration.runCutoverCheckpointBatch(
+        cutoverCheckpointBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:cutover:1",
+          correlationId: "corr:cutover:1",
+          traceId: null,
+          batchId: "batch:cutover:1",
+          syncStateId: "sync:cutover:1",
+          attempt: 1,
+          maxAttempts: 3,
+          jobType: "final_delta_sync",
+          checkpointId: "checkpoint:cutover:1",
+          providers: ["gmail"],
+          evaluatedAt: "2026-01-02T02:30:00.000Z",
+          requireHistoricalBackfillComplete: true,
+          requireLiveIngestCoverage: true
+        })
+      );
+
+      expect(cutover.outcome).toBe("succeeded");
+      if (cutover.outcome !== "succeeded") {
+        throw new Error("Expected cutover checkpoint to succeed.");
+      }
+
+      expect(cutover.ready).toBe(true);
+      expect(cutover.syncState.scope).toBe("orchestration");
+      expect(cutover.syncState.provider).toBeNull();
+      expect(cutover.syncSnapshots).toHaveLength(1);
+      expect(cutover.syncSnapshots[0]?.historicalBackfill?.status).toBe("succeeded");
+      expect(cutover.syncSnapshots[0]?.liveIngest?.status).toBe("succeeded");
+      expect(cutover.syncSnapshots[0]?.liveIngest?.freshnessP95Seconds).toBe(60);
+      expect(cutover.syncSnapshots[0]?.liveIngest?.freshnessP99Seconds).toBe(120);
+      expect(cutover.discrepancies).toEqual([]);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("surfaces deferred, retryable, non-retryable, and dead-letter outcomes explicitly", async () => {
+    const deferredCapture = createEmptyCapturePorts();
+    deferredCapture.mailchimp.captureHistoricalBatch = () =>
+      Promise.resolve(
+        buildCapturedBatch([
+          {
+            recordType: "audience_mutation" as const,
+            recordId: "audience-1"
+          }
+        ])
+      );
+    const deferredContext = await createTestWorkerContext({
+      capture: deferredCapture
+    });
+
+    try {
+      const deferred = await deferredContext.orchestration.runMailchimpHistoricalCaptureBatch(
+        mailchimpHistoricalCaptureBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:mailchimp:deferred:1",
+          correlationId: "corr:mailchimp:deferred:1",
+          traceId: null,
+          batchId: "batch:mailchimp:deferred:1",
+          syncStateId: "sync:mailchimp:deferred:1",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "mailchimp",
+          mode: "historical",
+          jobType: "historical_backfill",
+          cursor: null,
+          checkpoint: null,
+          windowStart: "2026-01-01T00:00:00.000Z",
+          windowEnd: "2026-01-02T00:00:00.000Z",
+          recordIds: [],
+          maxRecords: 10
+        })
+      );
+
+      expect(deferred.outcome).toBe("succeeded");
+      if (deferred.outcome !== "succeeded") {
+        throw new Error("Expected deferred Mailchimp batch to succeed.");
+      }
+
+      expect(deferred.summary.deferred).toBe(1);
+      expect(deferred.ingestResults[0]?.outcome).toBe("deferred");
+    } finally {
+      await deferredContext.dispose();
+    }
+
+    const retryableCapture = createEmptyCapturePorts();
+    retryableCapture.gmail.captureHistoricalBatch = () => {
+      throw new Stage1RetryableJobError("Temporary Gmail capture failure.");
+    };
+    const retryableContext = await createTestWorkerContext({
+      capture: retryableCapture
+    });
+
+    try {
+      const retryable = await retryableContext.orchestration.runGmailHistoricalCaptureBatch(
+        gmailHistoricalCaptureBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:gmail:retryable:1",
+          correlationId: "corr:gmail:retryable:1",
+          traceId: null,
+          batchId: "batch:gmail:retryable:1",
+          syncStateId: "sync:gmail:retryable:1",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "gmail",
+          mode: "historical",
+          jobType: "historical_backfill",
+          cursor: null,
+          checkpoint: null,
+          windowStart: null,
+          windowEnd: null,
+          recordIds: [],
+          maxRecords: 10
+        })
+      );
+
+      expect(retryable.outcome).toBe("failed");
+      if (retryable.outcome !== "failed") {
+        throw new Error("Expected retryable capture to fail.");
+      }
+
+      expect(retryable.failure.disposition).toBe("retryable");
+      expect(retryable.syncState.status).toBe("failed");
+
+      const deadLetter = await retryableContext.orchestration.runGmailHistoricalCaptureBatch(
+        gmailHistoricalCaptureBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:gmail:dead-letter:1",
+          correlationId: "corr:gmail:dead-letter:1",
+          traceId: null,
+          batchId: "batch:gmail:dead-letter:1",
+          syncStateId: "sync:gmail:dead-letter:1",
+          attempt: 3,
+          maxAttempts: 3,
+          provider: "gmail",
+          mode: "historical",
+          jobType: "historical_backfill",
+          cursor: null,
+          checkpoint: null,
+          windowStart: null,
+          windowEnd: null,
+          recordIds: [],
+          maxRecords: 10
+        })
+      );
+
+      expect(deadLetter.outcome).toBe("failed");
+      if (deadLetter.outcome !== "failed") {
+        throw new Error("Expected exhausted retry capture to fail.");
+      }
+
+      expect(deadLetter.failure.disposition).toBe("dead_letter");
+      expect(deadLetter.syncState.status).toBe("quarantined");
+      expect(deadLetter.syncState.deadLetterCount).toBe(1);
+    } finally {
+      await retryableContext.dispose();
+    }
+
+    const nonRetryableCapture = createEmptyCapturePorts();
+    nonRetryableCapture.salesforce.captureHistoricalBatch = () => {
+      throw new Stage1NonRetryableJobError("Unsupported Salesforce batch shape.");
+    };
+    const nonRetryableContext = await createTestWorkerContext({
+      capture: nonRetryableCapture
+    });
+
+    try {
+      const nonRetryable = await nonRetryableContext.orchestration.runSalesforceHistoricalCaptureBatch(
+        salesforceHistoricalCaptureBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:salesforce:non-retryable:1",
+          correlationId: "corr:salesforce:non-retryable:1",
+          traceId: null,
+          batchId: "batch:salesforce:non-retryable:1",
+          syncStateId: "sync:salesforce:non-retryable:1",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "salesforce",
+          mode: "historical",
+          jobType: "historical_backfill",
+          cursor: null,
+          checkpoint: null,
+          windowStart: null,
+          windowEnd: null,
+          recordIds: [],
+          maxRecords: 10
+        })
+      );
+
+      expect(nonRetryable.outcome).toBe("failed");
+      if (nonRetryable.outcome !== "failed") {
+        throw new Error("Expected non-retryable capture to fail.");
+      }
+
+      expect(nonRetryable.failure.disposition).toBe("non_retryable");
+      expect(nonRetryable.syncState.status).toBe("failed");
+    } finally {
+      await nonRetryableContext.dispose();
+    }
+  });
+});

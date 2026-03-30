@@ -1,8 +1,9 @@
-import { drizzle } from "drizzle-orm/postgres-js";
+import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { z } from "zod";
 
-import { stage0Schema } from "./schema/index.js";
+import type { DatabaseSchema } from "./schema/index.js";
+import { databaseSchema } from "./schema/index.js";
 
 export const databaseConfigSchema = z.object({
   connectionString: z.string().min(1)
@@ -10,8 +11,9 @@ export const databaseConfigSchema = z.object({
 export type DatabaseConfig = z.infer<typeof databaseConfigSchema>;
 
 export type PostgresClient = ReturnType<typeof postgres>;
+export type DatabaseClient = PostgresJsDatabase<DatabaseSchema>;
 export interface DatabaseConnection {
-  readonly db: ReturnType<typeof drizzle>;
+  readonly db: DatabaseClient;
   readonly sql: PostgresClient;
 }
 
@@ -23,7 +25,7 @@ export function createDatabaseConnection(rawConfig: DatabaseConfig): DatabaseCon
   });
 
   return {
-    db: drizzle(sql, { schema: stage0Schema }),
+    db: drizzle(sql, { schema: databaseSchema }),
     sql
   };
 }

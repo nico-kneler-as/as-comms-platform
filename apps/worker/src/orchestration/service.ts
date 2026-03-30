@@ -1,0 +1,1540 @@
+import { ZodError } from "zod";
+
+import {
+  cutoverCheckpointBatchPayloadSchema,
+  gmailHistoricalCaptureBatchPayloadSchema,
+  gmailLiveCaptureBatchPayloadSchema,
+  identityResolutionReasonCodeValues,
+  inboxDrivingEventTypeValues,
+  mailchimpHistoricalCaptureBatchPayloadSchema,
+  mailchimpTransitionCaptureBatchPayloadSchema,
+  parityCheckBatchPayloadSchema,
+  projectionRebuildBatchPayloadSchema,
+  replayBatchPayloadSchema,
+  routingReviewReasonCodeValues,
+  salesforceHistoricalCaptureBatchPayloadSchema,
+  salesforceLiveCaptureBatchPayloadSchema,
+  simpleTextingHistoricalCaptureBatchPayloadSchema,
+  simpleTextingLiveCaptureBatchPayloadSchema,
+  type CanonicalEventRecord,
+  type CutoverCheckpointBatchPayload,
+  type ParityCheckBatchPayload,
+  type ProjectionRebuildBatchPayload,
+  type Provider,
+  type ReplayBatchPayload,
+  type SyncJobType
+} from "@as-comms/contracts";
+import {
+  ProviderCaptureError,
+  mapGmailRecord,
+  mapMailchimpRecord,
+  mapSalesforceRecord,
+  mapSimpleTextingRecord
+} from "@as-comms/integrations";
+import type {
+  GmailRecord,
+  MailchimpRecord,
+  ProviderMappingResult,
+  SalesforceRecord,
+  SimpleTextingRecord
+} from "@as-comms/integrations";
+import type {
+  Stage1NormalizationService,
+  Stage1PersistenceService
+} from "@as-comms/domain";
+
+import type { Stage1IngestService } from "../ingest/service.js";
+import type { Stage1IngestResult } from "../ingest/types.js";
+import {
+  Stage1NonRetryableJobError,
+  Stage1RetryableJobError
+} from "./errors.js";
+import { createStage1SyncStateService } from "./sync-state.js";
+import type {
+  Stage1CaptureJobOutcome,
+  Stage1CutoverCheckpointJobOutcome,
+  Stage1CutoverSyncSnapshot,
+  Stage1IngestBatchSummary,
+  Stage1JobFailure,
+  Stage1OperationalDiscrepancy,
+  Stage1ParityCheckJobOutcome,
+  Stage1ParityMetricByProvider,
+  Stage1ParityMetrics,
+  Stage1ProjectionRebuildJobOutcome,
+  Stage1ProjectionSeed,
+  Stage1ProviderCapturePorts,
+  Stage1SampledParityContact,
+  Stage1WorkerOrchestrationService
+} from "./types.js";
+
+const projectionSeedPolicyCode = "stage1.projection.seed";
+const paritySnapshotPolicyCode = "stage1.parity.snapshot";
+const cutoverCheckpointPolicyCode = "stage1.cutover.checkpoint";
+const inboxDrivingEventTypes = new Set<string>(inboxDrivingEventTypeValues);
+const gmailAndSimpleTextingP95ThresholdSeconds = 120;
+const gmailAndSimpleTextingP99ThresholdSeconds = 300;
+const salesforceLifecycleP95ThresholdSeconds = 600;
+
+type CapturedProviderRecord =
+  | GmailRecord
+  | SalesforceRecord
+  | SimpleTextingRecord
+  | MailchimpRecord;
+
+interface Stage1FreshnessMetrics {
+  readonly p95Seconds: number | null;
+  readonly p99Seconds: number | null;
+}
+
+function compareEventOrder(
+  left: CanonicalEventRecord,
+  right: CanonicalEventRecord
+): number {
+  if (left.occurredAt < right.occurredAt) {
+    return -1;
+  }
+
+  if (left.occurredAt > right.occurredAt) {
+    return 1;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function isInboxDrivingEvent(
+  eventType: CanonicalEventRecord["eventType"]
+): boolean {
+  return inboxDrivingEventTypes.has(eventType);
+}
+
+function buildDefaultProjectionSeed(
+  eventType: CanonicalEventRecord["eventType"]
+): Stage1ProjectionSeed {
+  switch (eventType) {
+    case "communication.email.inbound":
+      return {
+        summary: "Inbound email received",
+        snippet: "",
+        source: "fallback"
+      };
+    case "communication.email.outbound":
+      return {
+        summary: "Outbound email sent",
+        snippet: "",
+        source: "fallback"
+      };
+    case "communication.sms.inbound":
+      return {
+        summary: "Inbound SMS received",
+        snippet: "",
+        source: "fallback"
+      };
+    case "communication.sms.outbound":
+      return {
+        summary: "Outbound SMS sent",
+        snippet: "",
+        source: "fallback"
+      };
+    case "communication.sms.opt_in":
+      return {
+        summary: "SMS opt-in received",
+        snippet: "",
+        source: "fallback"
+      };
+    case "communication.sms.opt_out":
+      return {
+        summary: "SMS opt-out received",
+        snippet: "",
+        source: "fallback"
+      };
+    case "lifecycle.signed_up":
+      return {
+        summary: "Volunteer signed up",
+        snippet: "",
+        source: "fallback"
+      };
+    case "lifecycle.received_training":
+      return {
+        summary: "Volunteer received training",
+        snippet: "",
+        source: "fallback"
+      };
+    case "lifecycle.completed_training":
+      return {
+        summary: "Volunteer completed training",
+        snippet: "",
+        source: "fallback"
+      };
+    case "lifecycle.submitted_first_data":
+      return {
+        summary: "Volunteer submitted first data",
+        snippet: "",
+        source: "fallback"
+      };
+    case "campaign.email.sent":
+      return {
+        summary: "Campaign email sent",
+        snippet: "",
+        source: "fallback"
+      };
+    case "campaign.email.opened":
+      return {
+        summary: "Campaign email opened",
+        snippet: "",
+        source: "fallback"
+      };
+    case "campaign.email.clicked":
+      return {
+        summary: "Campaign email clicked",
+        snippet: "",
+        source: "fallback"
+      };
+    case "campaign.email.unsubscribed":
+      return {
+        summary: "Campaign email unsubscribed",
+        snippet: "",
+        source: "fallback"
+      };
+  }
+}
+
+function summarizeIngestResults(
+  results: readonly Stage1IngestResult[]
+): Stage1IngestBatchSummary {
+  return {
+    processed: results.length,
+    normalized: results.filter((result) => result.outcome === "normalized").length,
+    duplicate: results.filter((result) => result.outcome === "duplicate").length,
+    reviewOpened: results.filter((result) => result.outcome === "review_opened")
+      .length,
+    quarantined: results.filter((result) => result.outcome === "quarantined")
+      .length,
+    deferred: results.filter((result) => result.outcome === "deferred").length,
+    deadLetterCountIncrement: results.filter(
+      (result) => result.outcome === "quarantined"
+    ).length
+  };
+}
+
+function calculateParityPercent(numerator: number, denominator: number): number {
+  if (denominator === 0) {
+    return 100;
+  }
+
+  return Number(((numerator / denominator) * 100).toFixed(2));
+}
+
+function formatPercent(value: number): string {
+  return value.toFixed(2);
+}
+
+function calculatePercentileSeconds(
+  values: readonly number[],
+  percentile: number
+): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil(sorted.length * percentile) - 1)
+  );
+  const value = sorted[index];
+
+  if (value === undefined) {
+    throw new Error("Expected percentile value to exist.");
+  }
+
+  return value;
+}
+
+function toFreshnessSeconds(
+  occurredAt: string,
+  receivedAt: string
+): number | null {
+  const occurredAtMs = Date.parse(occurredAt);
+  const receivedAtMs = Date.parse(receivedAt);
+
+  if (Number.isNaN(occurredAtMs) || Number.isNaN(receivedAtMs)) {
+    return null;
+  }
+
+  return Math.max(0, Math.round((receivedAtMs - occurredAtMs) / 1000));
+}
+
+function hasTimedTimestamps(
+  record: CapturedProviderRecord
+): record is Extract<
+  CapturedProviderRecord,
+  {
+    readonly occurredAt: string;
+    readonly receivedAt: string;
+  }
+> {
+  return "occurredAt" in record && "receivedAt" in record;
+}
+
+function extractFreshnessSample(
+  provider: Provider,
+  jobType: SyncJobType,
+  record: CapturedProviderRecord
+): number | null {
+  if (jobType !== "live_ingest") {
+    return null;
+  }
+
+  switch (provider) {
+    case "gmail":
+      return record.recordType === "message" && hasTimedTimestamps(record)
+        ? toFreshnessSeconds(record.occurredAt, record.receivedAt)
+        : null;
+    case "salesforce":
+      return (
+        record.recordType === "lifecycle_milestone" && hasTimedTimestamps(record)
+      )
+        ? toFreshnessSeconds(record.occurredAt, record.receivedAt)
+        : null;
+    case "simpletexting":
+      return record.recordType === "message" && hasTimedTimestamps(record)
+        ? toFreshnessSeconds(record.occurredAt, record.receivedAt)
+        : null;
+    case "mailchimp":
+      return null;
+  }
+}
+
+function calculateFreshnessMetrics(
+  provider: Provider,
+  jobType: SyncJobType,
+  records: readonly CapturedProviderRecord[]
+): Stage1FreshnessMetrics {
+  const samples = records
+    .map((record) => extractFreshnessSample(provider, jobType, record))
+    .filter((value): value is number => value !== null);
+
+  return {
+    p95Seconds: calculatePercentileSeconds(samples, 0.95),
+    p99Seconds: calculatePercentileSeconds(samples, 0.99)
+  };
+}
+
+function buildJobFailure(
+  error: unknown,
+  attempt: number,
+  maxAttempts: number
+): Stage1JobFailure {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (error instanceof Stage1NonRetryableJobError || error instanceof ZodError) {
+    return {
+      disposition: "non_retryable",
+      retryable: false,
+      message
+    };
+  }
+
+  if (error instanceof ProviderCaptureError) {
+    return {
+      disposition: error.retryable
+        ? attempt >= maxAttempts
+          ? "dead_letter"
+          : "retryable"
+        : "non_retryable",
+      retryable: error.retryable && attempt < maxAttempts,
+      message
+    };
+  }
+
+  if (attempt >= maxAttempts) {
+    return {
+      disposition: "dead_letter",
+      retryable: false,
+      message
+    };
+  }
+
+  return {
+    disposition:
+      error instanceof Stage1RetryableJobError ? "retryable" : "retryable",
+    retryable: true,
+    message
+  };
+}
+
+async function recordProjectionSeedOnce(
+  persistence: Stage1PersistenceService,
+  input: {
+    readonly canonicalEventId: string;
+    readonly summary: string;
+    readonly snippet: string;
+    readonly occurredAt: string;
+  }
+): Promise<void> {
+  const existingRecords = await persistence.repositories.auditEvidence.listByEntity({
+    entityType: "canonical_event",
+    entityId: input.canonicalEventId
+  });
+
+  const alreadyRecorded = existingRecords.some(
+    (record) => record.policyCode === projectionSeedPolicyCode
+  );
+
+  if (alreadyRecorded) {
+    return;
+  }
+
+  await persistence.recordAuditEvidence({
+    id: `audit:canonical_event:${input.canonicalEventId}:projection-seed`,
+    actorType: "worker",
+    actorId: "stage1-orchestration",
+    action: "record_projection_seed",
+    entityType: "canonical_event",
+    entityId: input.canonicalEventId,
+    occurredAt: input.occurredAt,
+    result: "recorded",
+    policyCode: projectionSeedPolicyCode,
+    metadataJson: {
+      summary: input.summary,
+      snippet: input.snippet
+    }
+  });
+}
+
+async function loadProjectionSeed(
+  persistence: Stage1PersistenceService,
+  event: CanonicalEventRecord
+): Promise<Stage1ProjectionSeed> {
+  const existingRecords = await persistence.repositories.auditEvidence.listByEntity({
+    entityType: "canonical_event",
+    entityId: event.id
+  });
+  const projectionSeedRecord = existingRecords.find(
+    (record) => record.policyCode === projectionSeedPolicyCode
+  );
+
+  if (projectionSeedRecord !== undefined) {
+    const summaryValue = projectionSeedRecord.metadataJson.summary;
+    const snippetValue = projectionSeedRecord.metadataJson.snippet;
+
+    if (typeof summaryValue === "string" && typeof snippetValue === "string") {
+      return {
+        summary: summaryValue,
+        snippet: snippetValue,
+        source: "audit"
+      };
+    }
+  }
+
+  return buildDefaultProjectionSeed(event.eventType);
+}
+
+function getMappedResultForRecord(
+  provider: Provider,
+  record: GmailRecord | SalesforceRecord | SimpleTextingRecord | MailchimpRecord
+): ProviderMappingResult {
+  switch (provider) {
+    case "gmail":
+      return mapGmailRecord(record as GmailRecord);
+    case "salesforce":
+      return mapSalesforceRecord(record as SalesforceRecord);
+    case "simpletexting":
+      return mapSimpleTextingRecord(record as SimpleTextingRecord);
+    case "mailchimp":
+      return mapMailchimpRecord(record as MailchimpRecord);
+  }
+}
+
+async function captureRecordsForReplay(
+  capture: Stage1ProviderCapturePorts,
+  payload: ReplayBatchPayload
+): Promise<{
+  readonly records: readonly (
+    | GmailRecord
+    | SalesforceRecord
+    | SimpleTextingRecord
+    | MailchimpRecord
+  )[];
+  readonly nextCursor: string | null;
+  readonly checkpoint: string | null;
+}> {
+  switch (payload.provider) {
+    case "gmail":
+      return payload.mode === "historical"
+        ? capture.gmail.captureHistoricalBatch(
+            gmailHistoricalCaptureBatchPayloadSchema.parse({
+              ...payload,
+              provider: "gmail",
+              mode: "historical",
+              jobType: "historical_backfill",
+              cursor: null,
+              checkpoint: null,
+              windowStart: null,
+              windowEnd: null,
+              recordIds: payload.items.map((item) => item.providerRecordId),
+              maxRecords: payload.items.length
+            })
+          )
+        : capture.gmail.captureLiveBatch(
+            gmailLiveCaptureBatchPayloadSchema.parse({
+              ...payload,
+              provider: "gmail",
+              mode: "live",
+              jobType: "live_ingest",
+              cursor: null,
+              checkpoint: null,
+              windowStart: null,
+              windowEnd: null,
+              recordIds: payload.items.map((item) => item.providerRecordId),
+              maxRecords: payload.items.length
+            })
+          );
+    case "salesforce":
+      return payload.mode === "historical"
+        ? capture.salesforce.captureHistoricalBatch(
+            salesforceHistoricalCaptureBatchPayloadSchema.parse({
+              ...payload,
+              provider: "salesforce",
+              mode: "historical",
+              jobType: "historical_backfill",
+              cursor: null,
+              checkpoint: null,
+              windowStart: null,
+              windowEnd: null,
+              recordIds: payload.items.map((item) => item.providerRecordId),
+              maxRecords: payload.items.length
+            })
+          )
+        : capture.salesforce.captureLiveBatch(
+            salesforceLiveCaptureBatchPayloadSchema.parse({
+              ...payload,
+              provider: "salesforce",
+              mode: "live",
+              jobType: "live_ingest",
+              cursor: null,
+              checkpoint: null,
+              windowStart: null,
+              windowEnd: null,
+              recordIds: payload.items.map((item) => item.providerRecordId),
+              maxRecords: payload.items.length
+            })
+          );
+    case "simpletexting":
+      return payload.mode === "historical"
+        ? capture.simpleTexting.captureHistoricalBatch(
+            simpleTextingHistoricalCaptureBatchPayloadSchema.parse({
+              ...payload,
+              provider: "simpletexting",
+              mode: "historical",
+              jobType: "historical_backfill",
+              cursor: null,
+              checkpoint: null,
+              windowStart: null,
+              windowEnd: null,
+              recordIds: payload.items.map((item) => item.providerRecordId),
+              maxRecords: payload.items.length
+            })
+          )
+        : capture.simpleTexting.captureLiveBatch(
+            simpleTextingLiveCaptureBatchPayloadSchema.parse({
+              ...payload,
+              provider: "simpletexting",
+              mode: "live",
+              jobType: "live_ingest",
+              cursor: null,
+              checkpoint: null,
+              windowStart: null,
+              windowEnd: null,
+              recordIds: payload.items.map((item) => item.providerRecordId),
+              maxRecords: payload.items.length
+            })
+          );
+    case "mailchimp":
+      return payload.mode === "historical"
+        ? capture.mailchimp.captureHistoricalBatch(
+            mailchimpHistoricalCaptureBatchPayloadSchema.parse({
+              ...payload,
+              provider: "mailchimp",
+              mode: "historical",
+              jobType: "historical_backfill",
+              cursor: null,
+              checkpoint: null,
+              windowStart: null,
+              windowEnd: null,
+              recordIds: payload.items.map((item) => item.providerRecordId),
+              maxRecords: payload.items.length
+            })
+          )
+        : capture.mailchimp.captureTransitionBatch(
+            mailchimpTransitionCaptureBatchPayloadSchema.parse({
+              ...payload,
+              provider: "mailchimp",
+              mode: "transition_live",
+              jobType: "live_ingest",
+              cursor: null,
+              checkpoint: null,
+              windowStart: null,
+              windowEnd: null,
+              recordIds: payload.items.map((item) => item.providerRecordId),
+              maxRecords: payload.items.length
+            })
+          );
+  }
+}
+
+export function createStage1WorkerOrchestrationService(input: {
+  readonly capture: Stage1ProviderCapturePorts;
+  readonly ingest: Stage1IngestService;
+  readonly normalization: Pick<
+    Stage1NormalizationService,
+    "applyInboxProjection" | "applyTimelineProjection" | "refreshInboxReviewOverlay"
+  >;
+  readonly persistence: Stage1PersistenceService;
+}): Stage1WorkerOrchestrationService {
+  const syncState = createStage1SyncStateService(input.persistence);
+
+  async function runCapturedBatch<TPayload, TRecord>(params: {
+    readonly payload: TPayload;
+    readonly parse: (payload: TPayload) => {
+      readonly syncStateId: string;
+      readonly provider: Provider;
+      readonly jobType: SyncJobType;
+      readonly cursor: string | null;
+      readonly checkpoint: string | null;
+      readonly windowStart: string | null;
+      readonly windowEnd: string | null;
+      readonly attempt: number;
+      readonly maxAttempts: number;
+    };
+    readonly capture: (
+      payload: TPayload
+    ) => Promise<{
+      readonly records: readonly TRecord[];
+      readonly nextCursor: string | null;
+      readonly checkpoint: string | null;
+    }>;
+    readonly ingestRecord: (record: TRecord) => Promise<Stage1IngestResult>;
+    readonly mapRecord: (record: TRecord) => ProviderMappingResult;
+  }): Promise<Stage1CaptureJobOutcome> {
+    const payload = params.parse(params.payload);
+    await syncState.startWindow({
+      syncStateId: payload.syncStateId,
+      scope: "provider",
+      provider: payload.provider,
+      jobType: payload.jobType,
+      cursor: payload.cursor,
+      checkpoint: payload.checkpoint,
+      windowStart: payload.windowStart,
+      windowEnd: payload.windowEnd
+    });
+
+    try {
+      const captured = await params.capture(params.payload);
+      const ingestResults: Stage1IngestResult[] = [];
+
+      for (const record of captured.records) {
+        const ingestResult = await params.ingestRecord(record);
+        ingestResults.push(ingestResult);
+
+        if (
+          ingestResult.outcome !== "deferred" &&
+          ingestResult.outcome !== "quarantined" &&
+          ingestResult.canonicalEventId !== null
+        ) {
+          const mapped = params.mapRecord(record);
+
+          if (mapped.outcome === "command" && mapped.command.kind === "canonical_event") {
+            await recordProjectionSeedOnce(input.persistence, {
+              canonicalEventId: mapped.command.input.canonicalEvent.id,
+              summary: mapped.command.input.canonicalEvent.summary,
+              snippet: mapped.command.input.canonicalEvent.snippet,
+              occurredAt: mapped.command.input.sourceEvidence.receivedAt
+            });
+          }
+        }
+      }
+
+      const summary = summarizeIngestResults(ingestResults);
+      const freshnessMetrics = calculateFreshnessMetrics(
+        payload.provider,
+        payload.jobType,
+        captured.records as readonly CapturedProviderRecord[]
+      );
+      await syncState.recordBatchProgress({
+        syncStateId: payload.syncStateId,
+        scope: "provider",
+        provider: payload.provider,
+        jobType: payload.jobType,
+        cursor: captured.nextCursor,
+        checkpoint: captured.checkpoint,
+        windowStart: payload.windowStart,
+        windowEnd: payload.windowEnd,
+        deadLetterCountIncrement: summary.deadLetterCountIncrement
+      });
+      const completedSyncState = await syncState.completeWindow({
+        syncStateId: payload.syncStateId,
+        scope: "provider",
+        provider: payload.provider,
+        jobType: payload.jobType,
+        cursor: captured.nextCursor,
+        checkpoint: captured.checkpoint,
+        windowStart: payload.windowStart,
+        windowEnd: payload.windowEnd,
+        parityPercent: null,
+        freshnessP95Seconds: freshnessMetrics.p95Seconds,
+        freshnessP99Seconds: freshnessMetrics.p99Seconds,
+        completedAt: payload.windowEnd ?? new Date().toISOString()
+      });
+
+      return {
+        outcome: "succeeded",
+        jobType: payload.jobType,
+        syncState: completedSyncState,
+        summary,
+        ingestResults,
+        nextCursor: captured.nextCursor,
+        checkpoint: captured.checkpoint
+      };
+    } catch (error) {
+      const failure = buildJobFailure(error, payload.attempt, payload.maxAttempts);
+      const failedSyncState = await syncState.failWindow({
+        syncStateId: payload.syncStateId,
+        scope: "provider",
+        provider: payload.provider,
+        jobType: payload.jobType,
+        cursor: payload.cursor,
+        checkpoint: payload.checkpoint,
+        windowStart: payload.windowStart,
+        windowEnd: payload.windowEnd,
+        deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
+        deadLettered: failure.disposition === "dead_letter"
+      });
+
+      return {
+        outcome: "failed",
+        jobType: payload.jobType,
+        syncState: failedSyncState,
+        summary: {
+          processed: 0,
+          normalized: 0,
+          duplicate: 0,
+          reviewOpened: 0,
+          quarantined: 0,
+          deferred: 0,
+          deadLetterCountIncrement:
+            failure.disposition === "dead_letter" ? 1 : 0
+        },
+        ingestResults: [],
+        nextCursor: payload.cursor,
+        checkpoint: payload.checkpoint,
+        failure
+      };
+    }
+  }
+
+  async function runProjectionRebuildBatch(
+    rawPayload: ProjectionRebuildBatchPayload
+  ): Promise<Stage1ProjectionRebuildJobOutcome> {
+    const payload = projectionRebuildBatchPayloadSchema.parse(rawPayload);
+    await syncState.startWindow({
+      syncStateId: payload.syncStateId,
+      scope: "orchestration",
+      provider: null,
+      jobType: payload.jobType,
+      cursor: null,
+      checkpoint: payload.batchId,
+      windowStart: null,
+      windowEnd: null
+    });
+
+    try {
+      const contacts =
+        payload.contactIds.length > 0
+          ? payload.contactIds
+          : (await input.persistence.repositories.contacts.listAll()).map(
+              (contact) => contact.id
+            );
+      const rebuiltContactIds = [...contacts].sort((left, right) =>
+        left.localeCompare(right)
+      );
+      const missingProjectionSeeds = new Set<string>();
+      const discrepancies: Stage1OperationalDiscrepancy[] = [];
+      let rebuiltTimelineRows = 0;
+      let rebuiltInboxRows = 0;
+
+      for (const contactId of rebuiltContactIds) {
+        const canonicalEvents = [...(
+          await input.persistence.repositories.canonicalEvents.listByContactId(
+            contactId
+          )
+        )].sort(compareEventOrder);
+
+        for (const event of canonicalEvents) {
+          const projectionSeed = await loadProjectionSeed(input.persistence, event);
+
+          if (projectionSeed.source === "fallback") {
+            missingProjectionSeeds.add(event.id);
+          }
+
+          if (payload.projection === "timeline" || payload.projection === "all") {
+            await input.normalization.applyTimelineProjection({
+              canonicalEvent: event,
+              summary: projectionSeed.summary
+            });
+            rebuiltTimelineRows += 1;
+          }
+
+          if (
+            (payload.projection === "inbox" || payload.projection === "all") &&
+            isInboxDrivingEvent(event.eventType)
+          ) {
+            await input.normalization.applyInboxProjection({
+              canonicalEvent: event,
+              snippet: projectionSeed.snippet
+            });
+            rebuiltInboxRows += 1;
+          }
+        }
+
+        if (
+          payload.includeReviewOverlayRefresh &&
+          (payload.projection === "inbox" || payload.projection === "all")
+        ) {
+          await input.normalization.refreshInboxReviewOverlay({
+            contactId
+          });
+        }
+      }
+
+      if (missingProjectionSeeds.size > 0) {
+        discrepancies.push({
+          code: "projection_seed_missing",
+          severity: "warning",
+          message:
+            "One or more canonical events were rebuilt with fallback summary or snippet values because no durable projection seed audit record was present.",
+          entityIds: Array.from(missingProjectionSeeds).sort((left, right) =>
+            left.localeCompare(right)
+          )
+        });
+      }
+
+      const completedSyncState = await syncState.completeWindow({
+        syncStateId: payload.syncStateId,
+        scope: "orchestration",
+        provider: null,
+        jobType: payload.jobType,
+        cursor: null,
+        checkpoint: payload.batchId,
+        windowStart: null,
+        windowEnd: null,
+        parityPercent: null,
+        freshnessP95Seconds: null,
+        freshnessP99Seconds: null,
+        completedAt: new Date().toISOString()
+      });
+
+      return {
+        outcome: "succeeded",
+        jobType: payload.jobType,
+        syncState: completedSyncState,
+        projection: payload.projection,
+        rebuiltContactIds,
+        rebuiltTimelineRows,
+        rebuiltInboxRows,
+        missingProjectionSeeds: Array.from(missingProjectionSeeds).sort(
+          (left, right) => left.localeCompare(right)
+        ),
+        discrepancies,
+        failure: null
+      };
+    } catch (error) {
+      const failure = buildJobFailure(error, payload.attempt, payload.maxAttempts);
+      const failedSyncState = await syncState.failWindow({
+        syncStateId: payload.syncStateId,
+        scope: "orchestration",
+        provider: null,
+        jobType: payload.jobType,
+        cursor: null,
+        checkpoint: payload.batchId,
+        windowStart: null,
+        windowEnd: null,
+        deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
+        deadLettered: failure.disposition === "dead_letter"
+      });
+
+      return {
+        outcome: "failed",
+        jobType: payload.jobType,
+        syncState: failedSyncState,
+        projection: payload.projection,
+        rebuiltContactIds: [],
+        rebuiltTimelineRows: 0,
+        rebuiltInboxRows: 0,
+        missingProjectionSeeds: [],
+        discrepancies: [],
+        failure
+      };
+    }
+  }
+
+  async function runParityCheckBatch(
+    rawPayload: ParityCheckBatchPayload
+  ): Promise<Stage1ParityCheckJobOutcome> {
+    const payload = parityCheckBatchPayloadSchema.parse(rawPayload);
+    await syncState.startWindow({
+      syncStateId: payload.syncStateId,
+      scope: "orchestration",
+      provider: null,
+      jobType: payload.jobType,
+      cursor: null,
+      checkpoint: payload.checkpointId,
+      windowStart: null,
+      windowEnd: payload.evaluatedAt
+    });
+
+    try {
+      const byProvider: Stage1ParityMetricByProvider[] = [];
+
+      for (const provider of payload.providers) {
+        byProvider.push({
+          provider,
+          sourceEvidenceCount:
+            await input.persistence.repositories.sourceEvidence.countByProvider(
+              provider
+            ),
+          canonicalEventCount:
+            await input.persistence.repositories.canonicalEvents.countByPrimaryProvider(
+              provider
+            )
+        });
+      }
+
+      const canonicalEventCount =
+        await input.persistence.repositories.canonicalEvents.countAll();
+      const timelineProjectionCount =
+        await input.persistence.repositories.timelineProjection.countAll();
+      const inboxProjectionCount =
+        await input.persistence.repositories.inboxProjection.countAll();
+      const inboxContactCount =
+        await input.persistence.repositories.canonicalEvents.countDistinctInboxContacts();
+      const openIdentityCasesByReason = await Promise.all(
+        identityResolutionReasonCodeValues.map((reasonCode) =>
+          input.persistence.repositories.identityResolutionQueue.listOpenByReasonCode(
+            reasonCode
+          )
+        )
+      );
+      const openRoutingCasesByReason = await Promise.all(
+        routingReviewReasonCodeValues.map((reasonCode) =>
+          input.persistence.repositories.routingReviewQueue.listOpenByReasonCode(
+            reasonCode
+          )
+        )
+      );
+      const openIdentityCaseCount = openIdentityCasesByReason.flat().length;
+      const openIdentityConflictCount = openIdentityCasesByReason[
+        identityResolutionReasonCodeValues.indexOf("identity_conflict")
+      ]?.length ?? 0;
+      const openRoutingCaseCount = openRoutingCasesByReason.flat().length;
+      const queueRowParityPercent = calculateParityPercent(
+        inboxProjectionCount,
+        inboxContactCount
+      );
+      const timelineEventParityPercent = calculateParityPercent(
+        timelineProjectionCount,
+        canonicalEventCount
+      );
+      const metrics: Stage1ParityMetrics = {
+        byProvider,
+        canonicalEventCount,
+        timelineProjectionCount,
+        inboxProjectionCount,
+        inboxContactCount,
+        queueRowParityPercent,
+        timelineEventParityPercent,
+        openIdentityConflictCount,
+        openIdentityCaseCount,
+        openRoutingCaseCount
+      };
+      const discrepancies: Stage1OperationalDiscrepancy[] = [];
+
+      if (queueRowParityPercent < payload.queueParityThresholdPercent) {
+        discrepancies.push({
+          code: "queue_row_parity_below_threshold",
+          severity: "blocking",
+          message: `Inbox row parity ${formatPercent(queueRowParityPercent)}% is below the configured threshold of ${formatPercent(payload.queueParityThresholdPercent)}%.`,
+          entityIds: []
+        });
+      }
+
+      if (timelineEventParityPercent < payload.timelineParityThresholdPercent) {
+        discrepancies.push({
+          code: "timeline_event_parity_below_threshold",
+          severity: "blocking",
+          message: `Timeline parity ${formatPercent(timelineEventParityPercent)}% is below the configured threshold of ${formatPercent(payload.timelineParityThresholdPercent)}%.`,
+          entityIds: []
+        });
+      }
+
+      if (openIdentityConflictCount > 0) {
+        discrepancies.push({
+          code: "identity_conflict_backlog",
+          severity: "blocking",
+          message:
+            "One or more open identity_conflict cases remain in the manual review queue.",
+          entityIds: []
+        });
+      }
+
+      const allContacts = await input.persistence.repositories.contacts.listAll();
+      const sampledContactIds =
+        payload.sampleContactIds.length > 0
+          ? [...payload.sampleContactIds]
+          : allContacts.slice(0, payload.sampleSize).map((contact) => contact.id);
+      const sampledContacts: Stage1SampledParityContact[] = [];
+      const sampledTimelineMismatchIds: string[] = [];
+      const sampledInboxMismatchIds: string[] = [];
+
+      for (const contactId of sampledContactIds) {
+        const canonicalEvents = await input.persistence.repositories.canonicalEvents.listByContactId(
+          contactId
+        );
+        const timelineRows = await input.persistence.repositories.timelineProjection.listByContactId(
+          contactId
+        );
+        const inboxRow = await input.persistence.repositories.inboxProjection.findByContactId(
+          contactId
+        );
+        const inboxDrivingEventCount = canonicalEvents.filter((event) =>
+          isInboxDrivingEvent(event.eventType)
+        ).length;
+
+        sampledContacts.push({
+          contactId,
+          canonicalEventCount: canonicalEvents.length,
+          timelineRowCount: timelineRows.length,
+          hasInboxRow: inboxRow !== null,
+          inboxDrivingEventCount
+        });
+
+        if (timelineRows.length !== canonicalEvents.length) {
+          sampledTimelineMismatchIds.push(contactId);
+        }
+
+        if (
+          (inboxDrivingEventCount > 0 && inboxRow === null) ||
+          (inboxDrivingEventCount === 0 && inboxRow !== null)
+        ) {
+          sampledInboxMismatchIds.push(contactId);
+        }
+      }
+
+      if (sampledTimelineMismatchIds.length > 0) {
+        discrepancies.push({
+          code: "sampled_timeline_projection_mismatch",
+          severity: "warning",
+          message:
+            "At least one sampled contact has a timeline projection row count that does not match canonical event count.",
+          entityIds: sampledTimelineMismatchIds
+        });
+      }
+
+      if (sampledInboxMismatchIds.length > 0) {
+        discrepancies.push({
+          code: "sampled_inbox_projection_mismatch",
+          severity: "warning",
+          message:
+            "At least one sampled contact has an inbox projection mismatch against inbox-driving canonical events.",
+          entityIds: sampledInboxMismatchIds
+        });
+      }
+
+      const auditEvidence = await input.persistence.recordAuditEvidence({
+        id: `audit:parity:${payload.checkpointId}`,
+        actorType: "worker",
+        actorId: "stage1-orchestration",
+        action: "record_parity_snapshot",
+        entityType: "parity_checkpoint",
+        entityId: payload.checkpointId,
+        occurredAt: payload.evaluatedAt,
+        result: "recorded",
+        policyCode: paritySnapshotPolicyCode,
+        metadataJson: {
+          queueRowParityPercent,
+          timelineEventParityPercent,
+          canonicalEventCount,
+          timelineProjectionCount,
+          inboxProjectionCount
+        }
+      });
+      const completedSyncState = await syncState.completeWindow({
+        syncStateId: payload.syncStateId,
+        scope: "orchestration",
+        provider: null,
+        jobType: payload.jobType,
+        cursor: null,
+        checkpoint: payload.checkpointId,
+        windowStart: null,
+        windowEnd: payload.evaluatedAt,
+        parityPercent: Math.min(queueRowParityPercent, timelineEventParityPercent),
+        freshnessP95Seconds: null,
+        freshnessP99Seconds: null,
+        completedAt: payload.evaluatedAt
+      });
+
+      return {
+        outcome: "succeeded",
+        jobType: payload.jobType,
+        syncState: completedSyncState,
+        checkpointId: payload.checkpointId,
+        metrics,
+        sampledContacts,
+        discrepancies,
+        auditEvidenceId: auditEvidence.id,
+        failure: null
+      };
+    } catch (error) {
+      const failure = buildJobFailure(error, payload.attempt, payload.maxAttempts);
+      const failedSyncState = await syncState.failWindow({
+        syncStateId: payload.syncStateId,
+        scope: "orchestration",
+        provider: null,
+        jobType: payload.jobType,
+        cursor: null,
+        checkpoint: payload.checkpointId,
+        windowStart: null,
+        windowEnd: payload.evaluatedAt,
+        deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
+        deadLettered: failure.disposition === "dead_letter"
+      });
+
+      return {
+        outcome: "failed",
+        jobType: payload.jobType,
+        syncState: failedSyncState,
+        checkpointId: payload.checkpointId,
+        metrics: {
+          byProvider: [],
+          canonicalEventCount: 0,
+          timelineProjectionCount: 0,
+          inboxProjectionCount: 0,
+          inboxContactCount: 0,
+          queueRowParityPercent: 0,
+          timelineEventParityPercent: 0,
+          openIdentityConflictCount: 0,
+          openIdentityCaseCount: 0,
+          openRoutingCaseCount: 0
+        },
+        sampledContacts: [],
+        discrepancies: [],
+        auditEvidenceId: null,
+        failure
+      };
+    }
+  }
+
+  async function runCutoverCheckpointBatch(
+    rawPayload: CutoverCheckpointBatchPayload
+  ): Promise<Stage1CutoverCheckpointJobOutcome> {
+    const payload = cutoverCheckpointBatchPayloadSchema.parse(rawPayload);
+    await syncState.startWindow({
+      syncStateId: payload.syncStateId,
+      scope: "orchestration",
+      provider: null,
+      jobType: payload.jobType,
+      cursor: null,
+      checkpoint: payload.checkpointId,
+      windowStart: null,
+      windowEnd: payload.evaluatedAt
+    });
+
+    try {
+      const parity = await runParityCheckBatch(
+        parityCheckBatchPayloadSchema.parse({
+          version: payload.version,
+          jobId: `${payload.jobId}:parity`,
+          correlationId: payload.correlationId,
+          traceId: payload.traceId,
+          batchId: `${payload.batchId}:parity`,
+          syncStateId: `${payload.syncStateId}:parity`,
+          attempt: payload.attempt,
+          maxAttempts: payload.maxAttempts,
+          jobType: "parity_snapshot",
+          checkpointId: payload.checkpointId,
+          providers: payload.providers,
+          sampleContactIds: [],
+          sampleSize: 25,
+          queueParityThresholdPercent: 99.5,
+          timelineParityThresholdPercent: 99,
+          evaluatedAt: payload.evaluatedAt
+        })
+      );
+      const syncSnapshots: Stage1CutoverSyncSnapshot[] = [];
+      const discrepancies = [...parity.discrepancies];
+
+      for (const provider of payload.providers) {
+        const historicalBackfill =
+          await input.persistence.repositories.syncState.findLatest({
+            scope: "provider",
+            provider,
+            jobType: "historical_backfill"
+          });
+        const liveIngest = await input.persistence.repositories.syncState.findLatest(
+          {
+            scope: "provider",
+            provider,
+            jobType: "live_ingest"
+          }
+        );
+
+        syncSnapshots.push({
+          provider,
+          historicalBackfill,
+          liveIngest
+        });
+
+        if (
+          payload.requireHistoricalBackfillComplete &&
+          historicalBackfill?.status !== "succeeded"
+        ) {
+          discrepancies.push({
+            code: "historical_backfill_incomplete",
+            severity: "blocking",
+            message: `Provider ${provider} does not yet have a succeeded historical backfill checkpoint.`,
+            entityIds: historicalBackfill === null ? [] : [historicalBackfill.id]
+          });
+        }
+
+        if (payload.requireLiveIngestCoverage && liveIngest === null) {
+          discrepancies.push({
+            code: "live_ingest_missing",
+            severity: "blocking",
+            message: `Provider ${provider} has no live ingest sync state yet.`,
+            entityIds: []
+          });
+        } else if (
+          payload.requireLiveIngestCoverage &&
+          liveIngest?.status !== "succeeded"
+        ) {
+          discrepancies.push({
+            code: "live_ingest_incomplete",
+            severity: "blocking",
+            message: `Provider ${provider} does not yet have a succeeded live ingest checkpoint.`,
+            entityIds: liveIngest === null ? [] : [liveIngest.id]
+          });
+        }
+
+        if (liveIngest === null) {
+          continue;
+        }
+
+        if (
+          provider === "gmail" ||
+          provider === "simpletexting"
+        ) {
+          if (liveIngest.freshnessP95Seconds === null) {
+            discrepancies.push({
+              code: "comms_freshness_p95_unavailable",
+              severity: "blocking",
+              message: `Provider ${provider} has no live comms freshness p95 metric recorded yet.`,
+              entityIds: [liveIngest.id]
+            });
+          } else if (
+            liveIngest.freshnessP95Seconds >
+            gmailAndSimpleTextingP95ThresholdSeconds
+          ) {
+            discrepancies.push({
+              code: "comms_freshness_p95_above_threshold",
+              severity: "blocking",
+              message: `Provider ${provider} has live comms freshness p95 ${String(liveIngest.freshnessP95Seconds)}s above the ${String(gmailAndSimpleTextingP95ThresholdSeconds)}s cutover threshold.`,
+              entityIds: [liveIngest.id]
+            });
+          }
+
+          if (liveIngest.freshnessP99Seconds === null) {
+            discrepancies.push({
+              code: "comms_freshness_p99_unavailable",
+              severity: "blocking",
+              message: `Provider ${provider} has no live comms freshness p99 metric recorded yet.`,
+              entityIds: [liveIngest.id]
+            });
+          } else if (
+            liveIngest.freshnessP99Seconds >
+            gmailAndSimpleTextingP99ThresholdSeconds
+          ) {
+            discrepancies.push({
+              code: "comms_freshness_p99_above_threshold",
+              severity: "blocking",
+              message: `Provider ${provider} has live comms freshness p99 ${String(liveIngest.freshnessP99Seconds)}s above the ${String(gmailAndSimpleTextingP99ThresholdSeconds)}s cutover threshold.`,
+              entityIds: [liveIngest.id]
+            });
+          }
+        }
+
+        if (provider === "salesforce") {
+          if (liveIngest.freshnessP95Seconds === null) {
+            discrepancies.push({
+              code: "lifecycle_freshness_p95_unavailable",
+              severity: "blocking",
+              message:
+                "Salesforce has no lifecycle freshness p95 metric recorded yet.",
+              entityIds: [liveIngest.id]
+            });
+          } else if (
+            liveIngest.freshnessP95Seconds >
+            salesforceLifecycleP95ThresholdSeconds
+          ) {
+            discrepancies.push({
+              code: "lifecycle_freshness_p95_above_threshold",
+              severity: "blocking",
+              message: `Salesforce lifecycle freshness p95 ${String(liveIngest.freshnessP95Seconds)}s is above the ${String(salesforceLifecycleP95ThresholdSeconds)}s cutover threshold.`,
+              entityIds: [liveIngest.id]
+            });
+          }
+        }
+      }
+
+      const auditEvidence = await input.persistence.recordAuditEvidence({
+        id: `audit:cutover:${payload.checkpointId}`,
+        actorType: "worker",
+        actorId: "stage1-orchestration",
+        action: "record_cutover_checkpoint",
+        entityType: "cutover_checkpoint",
+        entityId: payload.checkpointId,
+        occurredAt: payload.evaluatedAt,
+        result: "recorded",
+        policyCode: cutoverCheckpointPolicyCode,
+        metadataJson: {
+          providerCount: payload.providers.length,
+          discrepancyCount: discrepancies.length,
+          parityCheckpointId: parity.checkpointId
+        }
+      });
+      const ready = discrepancies.every(
+        (discrepancy) => discrepancy.severity !== "blocking"
+      );
+      const completedSyncState = await syncState.completeWindow({
+        syncStateId: payload.syncStateId,
+        scope: "orchestration",
+        provider: null,
+        jobType: payload.jobType,
+        cursor: null,
+        checkpoint: payload.checkpointId,
+        windowStart: null,
+        windowEnd: payload.evaluatedAt,
+        parityPercent: parity.metrics.timelineEventParityPercent,
+        freshnessP95Seconds: null,
+        freshnessP99Seconds: null,
+        completedAt: payload.evaluatedAt
+      });
+
+      return {
+        outcome: "succeeded",
+        jobType: payload.jobType,
+        syncState: completedSyncState,
+        checkpointId: payload.checkpointId,
+        ready,
+        parity,
+        syncSnapshots,
+        discrepancies,
+        auditEvidenceId: auditEvidence.id,
+        failure: null
+      };
+    } catch (error) {
+      const failure = buildJobFailure(error, payload.attempt, payload.maxAttempts);
+      const failedSyncState = await syncState.failWindow({
+        syncStateId: payload.syncStateId,
+        scope: "orchestration",
+        provider: null,
+        jobType: payload.jobType,
+        cursor: null,
+        checkpoint: payload.checkpointId,
+        windowStart: null,
+        windowEnd: payload.evaluatedAt,
+        deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
+        deadLettered: failure.disposition === "dead_letter"
+      });
+
+      return {
+        outcome: "failed",
+        jobType: payload.jobType,
+        syncState: failedSyncState,
+        checkpointId: payload.checkpointId,
+        ready: false,
+        parity: {
+          outcome: "failed",
+          jobType: "parity_snapshot",
+          syncState: failedSyncState,
+          checkpointId: payload.checkpointId,
+          metrics: {
+            byProvider: [],
+            canonicalEventCount: 0,
+            timelineProjectionCount: 0,
+            inboxProjectionCount: 0,
+            inboxContactCount: 0,
+            queueRowParityPercent: 0,
+            timelineEventParityPercent: 0,
+            openIdentityConflictCount: 0,
+            openIdentityCaseCount: 0,
+            openRoutingCaseCount: 0
+          },
+          sampledContacts: [],
+          discrepancies: [],
+          auditEvidenceId: null,
+          failure
+        },
+        syncSnapshots: [],
+        discrepancies: [],
+        auditEvidenceId: null,
+        failure
+      };
+    }
+  }
+
+  return {
+    runGmailHistoricalCaptureBatch: (payload) => {
+      return runCapturedBatch({
+        payload,
+        parse: (rawPayload) =>
+          gmailHistoricalCaptureBatchPayloadSchema.parse(rawPayload),
+        capture: (batchPayload) =>
+          input.capture.gmail.captureHistoricalBatch(batchPayload),
+        ingestRecord: (record) => input.ingest.ingestGmailHistoricalRecord(record),
+        mapRecord: mapGmailRecord
+      });
+    },
+
+    runGmailLiveCaptureBatch: (payload) => {
+      return runCapturedBatch({
+        payload,
+        parse: (rawPayload) => gmailLiveCaptureBatchPayloadSchema.parse(rawPayload),
+        capture: (batchPayload) => input.capture.gmail.captureLiveBatch(batchPayload),
+        ingestRecord: (record) => input.ingest.ingestGmailLiveRecord(record),
+        mapRecord: mapGmailRecord
+      });
+    },
+
+    runSalesforceHistoricalCaptureBatch: (payload) => {
+      return runCapturedBatch({
+        payload,
+        parse: (rawPayload) =>
+          salesforceHistoricalCaptureBatchPayloadSchema.parse(rawPayload),
+        capture: (batchPayload) =>
+          input.capture.salesforce.captureHistoricalBatch(batchPayload),
+        ingestRecord: (record) =>
+          input.ingest.ingestSalesforceHistoricalRecord(record),
+        mapRecord: mapSalesforceRecord
+      });
+    },
+
+    runSalesforceLiveCaptureBatch: (payload) => {
+      return runCapturedBatch({
+        payload,
+        parse: (rawPayload) =>
+          salesforceLiveCaptureBatchPayloadSchema.parse(rawPayload),
+        capture: (batchPayload) =>
+          input.capture.salesforce.captureLiveBatch(batchPayload),
+        ingestRecord: (record) => input.ingest.ingestSalesforceLiveRecord(record),
+        mapRecord: mapSalesforceRecord
+      });
+    },
+
+    runSimpleTextingHistoricalCaptureBatch: (payload) => {
+      return runCapturedBatch({
+        payload,
+        parse: (rawPayload) =>
+          simpleTextingHistoricalCaptureBatchPayloadSchema.parse(rawPayload),
+        capture: (batchPayload) =>
+          input.capture.simpleTexting.captureHistoricalBatch(batchPayload),
+        ingestRecord: (record) =>
+          input.ingest.ingestSimpleTextingHistoricalRecord(record),
+        mapRecord: mapSimpleTextingRecord
+      });
+    },
+
+    runSimpleTextingLiveCaptureBatch: (payload) => {
+      return runCapturedBatch({
+        payload,
+        parse: (rawPayload) =>
+          simpleTextingLiveCaptureBatchPayloadSchema.parse(rawPayload),
+        capture: (batchPayload) =>
+          input.capture.simpleTexting.captureLiveBatch(batchPayload),
+        ingestRecord: (record) =>
+          input.ingest.ingestSimpleTextingLiveRecord(record),
+        mapRecord: mapSimpleTextingRecord
+      });
+    },
+
+    runMailchimpHistoricalCaptureBatch: (payload) => {
+      return runCapturedBatch({
+        payload,
+        parse: (rawPayload) =>
+          mailchimpHistoricalCaptureBatchPayloadSchema.parse(rawPayload),
+        capture: (batchPayload) =>
+          input.capture.mailchimp.captureHistoricalBatch(batchPayload),
+        ingestRecord: (record) => input.ingest.ingestMailchimpHistoricalRecord(record),
+        mapRecord: mapMailchimpRecord
+      });
+    },
+
+    runMailchimpTransitionCaptureBatch: (payload) => {
+      return runCapturedBatch({
+        payload,
+        parse: (rawPayload) =>
+          mailchimpTransitionCaptureBatchPayloadSchema.parse(rawPayload),
+        capture: (batchPayload) =>
+          input.capture.mailchimp.captureTransitionBatch(batchPayload),
+        ingestRecord: (record) => input.ingest.ingestMailchimpTransitionRecord(record),
+        mapRecord: mapMailchimpRecord
+      });
+    },
+
+    runReplayBatch: (rawPayload) => {
+      const payload = replayBatchPayloadSchema.parse(rawPayload);
+
+      return runCapturedBatch({
+        payload,
+        parse: (parsedPayload) => replayBatchPayloadSchema.parse(parsedPayload),
+        capture: (parsedPayload) => captureRecordsForReplay(input.capture, parsedPayload),
+        ingestRecord: (record) => {
+          switch (payload.provider) {
+            case "gmail":
+              return payload.mode === "historical"
+                ? input.ingest.ingestGmailHistoricalRecord(record as GmailRecord)
+                : input.ingest.ingestGmailLiveRecord(record as GmailRecord);
+            case "salesforce":
+              return payload.mode === "historical"
+                ? input.ingest.ingestSalesforceHistoricalRecord(
+                    record as SalesforceRecord
+                  )
+                : input.ingest.ingestSalesforceLiveRecord(
+                    record as SalesforceRecord
+                  );
+            case "simpletexting":
+              return payload.mode === "historical"
+                ? input.ingest.ingestSimpleTextingHistoricalRecord(
+                    record as SimpleTextingRecord
+                  )
+                : input.ingest.ingestSimpleTextingLiveRecord(
+                    record as SimpleTextingRecord
+                  );
+            case "mailchimp":
+              return payload.mode === "historical"
+                ? input.ingest.ingestMailchimpHistoricalRecord(
+                    record as MailchimpRecord
+                  )
+                : input.ingest.ingestMailchimpTransitionRecord(
+                    record as MailchimpRecord
+                  );
+          }
+        },
+        mapRecord: (record) => getMappedResultForRecord(payload.provider, record)
+      });
+    },
+
+    runProjectionRebuildBatch,
+    runParityCheckBatch,
+    runCutoverCheckpointBatch
+  };
+}

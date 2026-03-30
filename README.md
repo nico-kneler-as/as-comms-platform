@@ -1,6 +1,6 @@
 # AS Comms Platform
 
-Stage 0 scaffolds the engineering foundation for a fresh rebuild of the AS Comms Platform. It intentionally stops at repo shape, package boundaries, CI, verification, and minimal operational surfaces.
+Stage 0 scaffolds the engineering foundation for a fresh rebuild of the AS Comms Platform. Stage 1 now adds the canonical data foundation, provider-close ingest path, worker orchestration, and operational cutover support without starting later product stages.
 
 ## Locked Stage 0 stack
 
@@ -29,7 +29,7 @@ packages/ui
 
 ## First-time setup
 
-This sandbox could not download packages from the npm registry, so the repository is wired for `pnpm` but still needs a first networked install to create `pnpm-lock.yaml` and `node_modules`.
+Install dependencies, then run the baseline verification suite.
 
 ```bash
 corepack enable
@@ -61,22 +61,25 @@ pnpm security
 pnpm verify
 ```
 
-## What exists in Stage 0
+## Stage 1 worker runtime
+
+The worker now boots the Stage 1 task list end to end through the single normalization path. See [docs/stage-1-runtime.md](./docs/stage-1-runtime.md) for the required env vars, capture-port contract, executable task names, and intentional deferrals.
+
+## What exists now
 
 - `apps/web` contains a minimal App Router shell plus `/health`, `/api/health`, and `/api/readiness`.
-- `apps/worker` contains a safe Graphile Worker boot path with a no-op job only.
-- `packages/contracts` contains Stage 0 health/readiness and no-op job contracts only.
-- `packages/db` contains Drizzle connection wiring and no business schema.
-- `packages/domain` contains a boundary-safe readiness evaluator only.
-- `packages/integrations` contains provider placeholders only.
+- `apps/worker` contains the Stage 0 no-op task plus Stage 1 capture, replay, rebuild, parity, and cutover-support task wiring.
+- `packages/contracts` contains Stage 0 readiness contracts and the Stage 1 data, normalization, and worker job contracts.
+- `packages/db` contains Drizzle schema, migrations, row mappers, and repository implementations for the Stage 1 durable model.
+- `packages/domain` contains the provider-agnostic normalization and persistence application layer.
+- `packages/integrations` contains provider-close mapping and capture-port modules for first-scope Stage 1 Gmail, Salesforce, SimpleTexting, and Mailchimp ingest.
 - `packages/ui` contains reusable web UI primitives only.
 
-## What Stage 0 does not do
+## What is still intentionally deferred
 
-- No business tables or business migrations
-- No Inbox, timeline, campaigns, or notes behavior
-- No provider ingest, webhook, replay, or cutover logic
-- No auth flow or role-management UX
+- No Inbox UI, settings/admin/auth, campaigns UI, or notes UX
+- No product-app webhook endpoints
+- No later-stage workflow engine, AI state, or Stage 2+ behavior
 - No web-to-DB or web-to-provider direct imports
 
-See [docs/build-web-apps-scope.md](./docs/build-web-apps-scope.md), [docs/stage-0-summary.md](./docs/stage-0-summary.md), and [docs/stage-0-open-questions.md](./docs/stage-0-open-questions.md) for the Stage 0 boundaries and intentional deferrals.
+See [docs/build-web-apps-scope.md](./docs/build-web-apps-scope.md), [docs/stage-0-summary.md](./docs/stage-0-summary.md), [docs/stage-0-open-questions.md](./docs/stage-0-open-questions.md), and [docs/stage-1-runtime.md](./docs/stage-1-runtime.md) for the current boundaries and operational notes.
