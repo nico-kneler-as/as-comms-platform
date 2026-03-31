@@ -6,6 +6,7 @@ import {
   parityCheckBatchPayloadSchema,
   projectionRebuildBatchPayloadSchema,
   replayBatchPayloadSchema,
+  stage1LaunchScopeProviderValues,
   stage1WorkerJobNames
 } from "../src/index.js";
 
@@ -126,5 +127,37 @@ describe("Stage 1 worker job contracts", () => {
     expect(rebuild.projection).toBe("all");
     expect(parity.providers).toEqual(["gmail", "salesforce"]);
     expect(cutover.jobType).toBe("final_delta_sync");
+  });
+
+  it("defaults parity and cutover providers to the narrowed Gmail + Salesforce launch scope", () => {
+    const parity = parityCheckBatchPayloadSchema.parse({
+      version: 1,
+      jobId: "job-parity-default",
+      correlationId: "corr-parity-default",
+      traceId: null,
+      batchId: "batch-parity-default",
+      syncStateId: "sync-parity-default",
+      attempt: 1,
+      maxAttempts: 3,
+      jobType: "parity_snapshot",
+      checkpointId: "checkpoint-default",
+      evaluatedAt: "2026-01-01T01:00:00.000Z"
+    });
+    const cutover = cutoverCheckpointBatchPayloadSchema.parse({
+      version: 1,
+      jobId: "job-cutover-default",
+      correlationId: "corr-cutover-default",
+      traceId: null,
+      batchId: "batch-cutover-default",
+      syncStateId: "sync-cutover-default",
+      attempt: 1,
+      maxAttempts: 3,
+      jobType: "final_delta_sync",
+      checkpointId: "cutover-default",
+      evaluatedAt: "2026-01-01T01:00:00.000Z"
+    });
+
+    expect(parity.providers).toEqual([...stage1LaunchScopeProviderValues]);
+    expect(cutover.providers).toEqual([...stage1LaunchScopeProviderValues]);
   });
 });

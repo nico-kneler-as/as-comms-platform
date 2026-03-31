@@ -7,6 +7,8 @@
 
 ## Summary
 
+- narrowed launch-scope completion is Gmail + Salesforce only
+- SimpleTexting and Mailchimp remain valid Stage 1 architecture paths, but they are deferred for initial launch acceptance
 - Historical backfill and live ingest must map into the same normalization path.
 - Keep provider scope narrow and explicit.
 - If a source record cannot be mapped safely in Stage 1, defer it or send it to review; do not widen the matrix by guesswork.
@@ -18,6 +20,10 @@
 - one-to-one inbound email messages
 - one-to-one outbound email messages
 - provider-close message evidence needed for replay-safe dedupe and provenance
+- mailbox context needed to explain:
+  - which historical project inbox mailbox a record came from
+  - whether a live record was captured from `volunteers@...`
+  - which project inbox alias the live Gmail record represented when different from the captured mailbox
 
 ### Deferred
 
@@ -48,6 +54,8 @@
 
 ### Historical backfill vs live ingest
 
+- historical backfill must cover the full project inbox mailbox set needed to reconstruct volunteer history
+- live Gmail sync is narrowed to `volunteers@...`, which sends and receives on behalf of the project inbox aliases
 - both historical fetches and live deltas use the same normalization and dedupe rules
 - thread IDs are evidence only; they must not turn the model into a thread-first Inbox
 
@@ -62,17 +70,17 @@
 ### Required first pass
 
 - `Contact` records needed for canonical contact identity
-- expedition or project membership context needed for routing
+- `Expedition_Members__c` records needed for membership and lifecycle context
 - the locked lifecycle milestones:
   - `signed_up`
   - `received_training`
   - `completed_training`
   - `submitted_first_data`
-- task-based outbound communication metadata where it is the best available communication evidence
+- `Task`-based outbound communication metadata as the only first-scope Salesforce communication source
 
 ### Deferred
 
-- broader object families outside contact, membership, and locked lifecycle scope
+- broader object families outside `Contact`, `Expedition_Members__c`, `Task`, and locked lifecycle scope
 - owner or tag-oriented CRM concepts
 - additional lifecycle milestones not named in canon
 - CRM-only communication metadata that cannot be mapped safely to a canonical event
@@ -91,8 +99,8 @@
 - `lifecycle.received_training`
 - `lifecycle.completed_training`
 - `lifecycle.submitted_first_data`
-- `communication.email.outbound` only when Salesforce is the best or only evidence
-- `communication.sms.outbound` only when Salesforce is the best or only evidence
+- `communication.email.outbound` from `Task` auto-message evidence only
+- `communication.sms.outbound` from `Task` auto-message evidence only
 
 ### Important ambiguity or conflict cases
 
@@ -105,6 +113,12 @@
 
 - historical extracts and live deltas must reuse the same normalization path
 - lifecycle milestones should remain canonical lifecycle events whether they arrive from history or delta updates
+- lifecycle events must only come from:
+  - `Expedition_Members__c.CreatedDate`
+  - `Expedition_Members__c.Date_Training_Sent__c`
+  - `Expedition_Members__c.Date_Training_Completed__c`
+  - `Expedition_Members__c.Date_First_Sample_Collected__c`
+- live `Contact` and `Expedition_Members__c` freshness should stay CDC-compatible where available, while `Task` remains delta-poll friendly
 
 ### Tie-break and identity-anchor notes
 
@@ -113,6 +127,10 @@
 - SimpleTexting wins as the primary source for the same outbound SMS when transport evidence exists there
 
 ## SimpleTexting
+
+Launch-scope note:
+
+- deferred for initial Gmail + Salesforce launch completion
 
 ### Required first pass
 
@@ -160,6 +178,10 @@
 - if the phone number resolves uniquely to a Salesforce-anchored contact, attach it there; otherwise open identity review
 
 ## Mailchimp
+
+Launch-scope note:
+
+- deferred for initial Gmail + Salesforce launch completion
 
 ### Required first pass
 

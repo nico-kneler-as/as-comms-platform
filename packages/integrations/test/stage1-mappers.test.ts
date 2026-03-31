@@ -18,6 +18,8 @@ describe("Stage 1 provider-close mappers", () => {
       payloadRef: "payloads/gmail/gmail-message-1.json",
       checksum: "checksum-1",
       snippet: "Following up by email",
+      capturedMailbox: "volunteers@example.org",
+      projectInboxAlias: "project-antarctica@example.org",
       normalizedParticipantEmails: ["volunteer@example.org"],
       salesforceContactId: "003-stage1",
       volunteerIdPlainValues: [],
@@ -51,6 +53,7 @@ describe("Stage 1 provider-close mappers", () => {
               "source-evidence:salesforce:task_communication:task-1"
           }
         ]);
+        expect(result.command.input.identity.salesforceContactId).toBe("003-stage1");
       }
     }
   });
@@ -88,45 +91,93 @@ describe("Stage 1 provider-close mappers", () => {
         expect(result.command.input.identities.map((identity) => identity.kind)).toEqual(
           ["salesforce_contact_id", "volunteer_id_plain", "email", "phone"]
         );
+        expect(result.command.input.identities[0]).toMatchObject({
+          kind: "salesforce_contact_id",
+          isPrimary: true
+        });
+        expect(result.command.input.identities[1]).toMatchObject({
+          kind: "volunteer_id_plain",
+          isPrimary: false
+        });
         expect(result.command.input.memberships).toHaveLength(1);
       }
     }
   });
 
-  it("maps Salesforce lifecycle and task communication records into canonical events", () => {
-    const lifecycleResult = mapSalesforceRecord({
-      recordType: "lifecycle_milestone",
-      recordId: "lifecycle-1",
-      salesforceContactId: "003-stage1",
-      milestone: "completed_training",
-      occurredAt: "2026-01-01T00:00:00.000Z",
-      receivedAt: "2026-01-01T00:01:00.000Z",
-      payloadRef: "payloads/salesforce/lifecycle-1.json",
-      checksum: "checksum-lifecycle-1",
-      normalizedEmails: ["volunteer@example.org"],
-      normalizedPhones: [],
-      volunteerIdPlainValues: [],
-      routing: {
-        required: true,
-        projectId: "project_1",
-        expeditionId: null
+  it("maps the four locked Expedition_Members lifecycle source fields into canonical lifecycle events", () => {
+    const lifecycleCases = [
+      {
+        recordId: "lifecycle-created",
+        milestone: "signed_up" as const,
+        sourceField: "Expedition_Members__c.CreatedDate" as const,
+        expectedEventType: "lifecycle.signed_up" as const
+      },
+      {
+        recordId: "lifecycle-training-sent",
+        milestone: "received_training" as const,
+        sourceField: "Expedition_Members__c.Date_Training_Sent__c" as const,
+        expectedEventType: "lifecycle.received_training" as const
+      },
+      {
+        recordId: "lifecycle-training-complete",
+        milestone: "completed_training" as const,
+        sourceField: "Expedition_Members__c.Date_Training_Completed__c" as const,
+        expectedEventType: "lifecycle.completed_training" as const
+      },
+      {
+        recordId: "lifecycle-first-sample",
+        milestone: "submitted_first_data" as const,
+        sourceField:
+          "Expedition_Members__c.Date_First_Sample_Collected__c" as const,
+        expectedEventType: "lifecycle.submitted_first_data" as const
       }
-    });
+    ];
 
-    expect(lifecycleResult.outcome).toBe("command");
-    if (lifecycleResult.outcome === "command") {
-      expect(lifecycleResult.command.kind).toBe("canonical_event");
-      if (lifecycleResult.command.kind === "canonical_event") {
-        expect(lifecycleResult.command.input.canonicalEvent.eventType).toBe(
-          "lifecycle.completed_training"
-        );
-        expect(lifecycleResult.command.input.routing).toEqual({
+    for (const lifecycleCase of lifecycleCases) {
+      const lifecycleResult = mapSalesforceRecord({
+        recordType: "lifecycle_milestone",
+        recordId: lifecycleCase.recordId,
+        salesforceContactId: "003-stage1",
+        milestone: lifecycleCase.milestone,
+        sourceField: lifecycleCase.sourceField,
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        receivedAt: "2026-01-01T00:01:00.000Z",
+        payloadRef: `payloads/salesforce/${lifecycleCase.recordId}.json`,
+        checksum: `checksum-${lifecycleCase.recordId}`,
+        normalizedEmails: ["volunteer@example.org"],
+        normalizedPhones: [],
+        volunteerIdPlainValues: ["VOL-123"],
+        routing: {
           required: true,
           projectId: "project_1",
-          expeditionId: null
-        });
+          expeditionId: "expedition_1"
+        }
+      });
+
+      expect(lifecycleResult.outcome).toBe("command");
+      if (lifecycleResult.outcome === "command") {
+        expect(lifecycleResult.command.kind).toBe("canonical_event");
+        if (lifecycleResult.command.kind === "canonical_event") {
+          expect(lifecycleResult.command.input.canonicalEvent.eventType).toBe(
+            lifecycleCase.expectedEventType
+          );
+          expect(lifecycleResult.command.input.identity.salesforceContactId).toBe(
+            "003-stage1"
+          );
+          expect(lifecycleResult.command.input.identity.volunteerIdPlainValues).toEqual([
+            "VOL-123"
+          ]);
+          expect(lifecycleResult.command.input.routing).toEqual({
+            required: true,
+            projectId: "project_1",
+            expeditionId: "expedition_1"
+          });
+        }
       }
     }
+  });
+
+  it("maps Salesforce task communication records into auto-message canonical events", () => {
 
     const taskResult = mapSalesforceRecord({
       recordType: "task_communication",
@@ -162,6 +213,9 @@ describe("Stage 1 provider-close mappers", () => {
       if (taskResult.command.kind === "canonical_event") {
         expect(taskResult.command.input.canonicalEvent.eventType).toBe(
           "communication.email.outbound"
+        );
+        expect(taskResult.command.input.canonicalEvent.summary).toBe(
+          "Outbound email sent"
         );
         expect(taskResult.command.input.canonicalEvent.idempotencyKey).toBe(
           "canonical-event:collapse:communication.email.outbound:email-thread-1"

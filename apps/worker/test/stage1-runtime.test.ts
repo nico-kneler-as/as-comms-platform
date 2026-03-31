@@ -5,6 +5,7 @@ import {
   gmailHistoricalCaptureBatchPayloadSchema
 } from "@as-comms/contracts";
 
+import { readWorkerConfig } from "../src/runtime.js";
 import { createTaskList } from "../src/tasks.js";
 import {
   buildCapturedBatch,
@@ -15,6 +16,22 @@ import {
 
 const contactId = "contact:salesforce:003-stage1";
 const salesforceContactId = "003-stage1";
+const launchScopeEnv = {
+  WORKER_BOOT_MODE: "run",
+  DATABASE_URL: "postgres://stage1:test@localhost:5432/as_comms_stage1",
+  GMAIL_CAPTURE_BASE_URL: "https://capture.example.test/gmail",
+  GMAIL_CAPTURE_TOKEN: "gmail-token",
+  GMAIL_HISTORICAL_MAILBOXES:
+    "project-antarctica@example.org,project-oceans@example.org",
+  GMAIL_LIVE_ACCOUNT: "volunteers@example.org",
+  GMAIL_PROJECT_INBOX_ALIASES:
+    "project-antarctica@example.org,project-oceans@example.org",
+  SALESFORCE_CAPTURE_BASE_URL: "https://capture.example.test/salesforce",
+  SALESFORCE_CAPTURE_TOKEN: "salesforce-token",
+  SALESFORCE_CONTACT_CAPTURE_MODE: "cdc_compatible",
+  SALESFORCE_MEMBERSHIP_CAPTURE_MODE: "cdc_compatible",
+  SALESFORCE_TASK_POLL_INTERVAL_SECONDS: "300"
+} as const;
 
 async function seedContact(context: TestWorkerContext): Promise<void> {
   await context.normalization.upsertNormalizedContactGraph({
@@ -52,6 +69,51 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
 }
 
 describe("Stage 1 worker runtime task registration", () => {
+  it("accepts narrowed launch-scope env with only Gmail and Salesforce capture ports", () => {
+    const config = readWorkerConfig(launchScopeEnv);
+
+    expect(config).not.toBeNull();
+    expect(config?.capture.gmail.baseUrl).toBe("https://capture.example.test/gmail");
+    expect(config?.capture.salesforce.baseUrl).toBe(
+      "https://capture.example.test/salesforce"
+    );
+    expect(config?.launchScope.gmail.liveAccount).toBe("volunteers@example.org");
+    expect(config?.launchScope.gmail.historicalMailboxes).toEqual([
+      "project-antarctica@example.org",
+      "project-oceans@example.org"
+    ]);
+    expect(config?.launchScope.salesforce.contactCaptureMode).toBe(
+      "cdc_compatible"
+    );
+    expect(config?.capture.simpleTexting).toBeUndefined();
+    expect(config?.capture.mailchimp).toBeUndefined();
+  });
+
+  it("fails closed when required Gmail or Salesforce launch-scope env is missing", () => {
+    expect(() =>
+      readWorkerConfig({
+        ...launchScopeEnv,
+        GMAIL_CAPTURE_TOKEN: undefined
+      })
+    ).toThrow();
+
+    expect(() =>
+      readWorkerConfig({
+        ...launchScopeEnv,
+        SALESFORCE_CONTACT_CAPTURE_MODE: undefined
+      })
+    ).toThrow();
+  });
+
+  it("fails closed when the Gmail live account is not volunteers@...", () => {
+    expect(() =>
+      readWorkerConfig({
+        ...launchScopeEnv,
+        GMAIL_LIVE_ACCOUNT: "project-antarctica@example.org"
+      })
+    ).toThrow("Gmail live account must be a volunteers@... address.");
+  });
+
   it("registers Stage 1 task names and executes them through the existing orchestration path", async () => {
     const gmailRecord = {
       recordType: "message" as const,

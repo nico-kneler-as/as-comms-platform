@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { providerSchema, providerValues } from "./stage1-taxonomy.js";
-import type { SyncJobType } from "./stage1-taxonomy.js";
+import { providerSchema } from "./stage1-taxonomy.js";
+import type { Provider, SyncJobType } from "./stage1-taxonomy.js";
 
 const idSchema = z.string().min(1);
 const timestampSchema = z.string().datetime();
@@ -23,6 +23,11 @@ export type Stage1OrchestrationMode = z.infer<
   typeof stage1OrchestrationModeSchema
 >;
 
+export const stage1LaunchScopeProviderValues = [
+  "gmail",
+  "salesforce"
+] as const;
+
 const captureBatchPayloadBaseSchema = z.object({
   version: stage1JobVersionSchema,
   jobId: idSchema,
@@ -41,7 +46,7 @@ const captureBatchPayloadBaseSchema = z.object({
 });
 
 function defineCapturePayloadSchema(input: {
-  readonly provider: (typeof providerValues)[number];
+  readonly provider: Provider;
   readonly mode: Stage1OrchestrationMode;
   readonly jobType: SyncJobType;
 }) {
@@ -233,7 +238,10 @@ export const parityCheckBatchPayloadSchema = z.object({
   maxAttempts: z.number().int().positive().default(3),
   jobType: z.literal("parity_snapshot"),
   checkpointId: idSchema,
-  providers: z.array(providerSchema).min(1).default([...providerValues]),
+  providers: z
+    .array(providerSchema)
+    .min(1)
+    .default([...stage1LaunchScopeProviderValues]),
   sampleContactIds: z.array(idSchema).default([]),
   sampleSize: z.number().int().positive().max(500).default(25),
   queueParityThresholdPercent: z.number().min(0).max(100).default(99.5),
@@ -255,7 +263,10 @@ export const cutoverCheckpointBatchPayloadSchema = z.object({
   maxAttempts: z.number().int().positive().default(3),
   jobType: z.literal("final_delta_sync"),
   checkpointId: idSchema,
-  providers: z.array(providerSchema).min(1).default([...providerValues]),
+  providers: z
+    .array(providerSchema)
+    .min(1)
+    .default([...stage1LaunchScopeProviderValues]),
   evaluatedAt: timestampSchema,
   requireHistoricalBackfillComplete: z.boolean().default(true),
   requireLiveIngestCoverage: z.boolean().default(true)

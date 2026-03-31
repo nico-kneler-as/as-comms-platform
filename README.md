@@ -1,6 +1,6 @@
 # AS Comms Platform
 
-Stage 0 scaffolds the engineering foundation for a fresh rebuild of the AS Comms Platform. Stage 1 now adds the canonical data foundation, provider-close ingest path, worker orchestration, and operational cutover support without starting later product stages.
+Stage 0 scaffolds the engineering foundation for a fresh rebuild of the AS Comms Platform. Stage 1 now adds the canonical data foundation, provider-close ingest path, worker orchestration, and operational cutover support without starting later product stages. The narrowed launch-scope backend target is Gmail + Salesforce only.
 
 ## Locked Stage 0 stack
 
@@ -51,6 +51,9 @@ pnpm security
 pnpm dev
 pnpm dev:web
 WORKER_BOOT_MODE=run DATABASE_URL=postgres://... pnpm dev:worker
+pnpm ops:worker:check-config
+pnpm ops:worker:enqueue -- gmail-historical --window-start 2026-01-01T00:00:00.000Z --window-end 2026-01-02T00:00:00.000Z
+pnpm ops:worker:inspect -- contact --salesforce-contact-id 003-stage1
 pnpm lint
 pnpm typecheck
 pnpm build
@@ -63,7 +66,17 @@ pnpm verify
 
 ## Stage 1 worker runtime
 
-The worker now boots the Stage 1 task list end to end through the single normalization path. See [docs/stage-1-runtime.md](./docs/stage-1-runtime.md) for the required env vars, capture-port contract, executable task names, and intentional deferrals.
+The worker now boots the Stage 1 task list end to end through the single normalization path. For launch-scope acceptance, Gmail + Salesforce are the required providers; SimpleTexting and Mailchimp remain deferred. See [docs/stage-1-runtime.md](./docs/stage-1-runtime.md) for runtime details and [docs/stage-1-acceptance.md](./docs/stage-1-acceptance.md) for the narrowed completion criteria.
+
+## Stage 1 validation
+
+Use the worker-side ops commands for controlled validation:
+
+- `pnpm ops:worker:check-config`
+- `pnpm ops:worker:enqueue -- ...`
+- `pnpm ops:worker:inspect -- ...`
+
+See [docs/stage-1-validation-runbook.md](./docs/stage-1-validation-runbook.md) for the operator flow and evidence checklist.
 
 ## What exists now
 
@@ -72,7 +85,7 @@ The worker now boots the Stage 1 task list end to end through the single normali
 - `packages/contracts` contains Stage 0 readiness contracts and the Stage 1 data, normalization, and worker job contracts.
 - `packages/db` contains Drizzle schema, migrations, row mappers, and repository implementations for the Stage 1 durable model.
 - `packages/domain` contains the provider-agnostic normalization and persistence application layer.
-- `packages/integrations` contains provider-close mapping and capture-port modules for first-scope Stage 1 Gmail, Salesforce, SimpleTexting, and Mailchimp ingest.
+- `packages/integrations` contains provider-close mapping and capture-port modules for Stage 1 Gmail and Salesforce launch-scope ingest, while preserving deferred SimpleTexting and Mailchimp paths in the generic architecture.
 - `packages/ui` contains reusable web UI primitives only.
 
 ## What is still intentionally deferred
@@ -82,4 +95,4 @@ The worker now boots the Stage 1 task list end to end through the single normali
 - No later-stage workflow engine, AI state, or Stage 2+ behavior
 - No web-to-DB or web-to-provider direct imports
 
-See [docs/build-web-apps-scope.md](./docs/build-web-apps-scope.md), [docs/stage-0-summary.md](./docs/stage-0-summary.md), [docs/stage-0-open-questions.md](./docs/stage-0-open-questions.md), and [docs/stage-1-runtime.md](./docs/stage-1-runtime.md) for the current boundaries and operational notes.
+See [docs/build-web-apps-scope.md](./docs/build-web-apps-scope.md), [docs/stage-0-summary.md](./docs/stage-0-summary.md), [docs/stage-0-open-questions.md](./docs/stage-0-open-questions.md), [docs/stage-1-runtime.md](./docs/stage-1-runtime.md), [docs/stage-1-acceptance.md](./docs/stage-1-acceptance.md), and [docs/stage-1-validation-runbook.md](./docs/stage-1-validation-runbook.md) for the current boundaries and operational notes.

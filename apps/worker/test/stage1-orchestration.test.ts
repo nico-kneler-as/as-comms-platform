@@ -7,7 +7,8 @@ import {
   parityCheckBatchPayloadSchema,
   projectionRebuildBatchPayloadSchema,
   replayBatchPayloadSchema,
-  salesforceHistoricalCaptureBatchPayloadSchema
+  salesforceHistoricalCaptureBatchPayloadSchema,
+  type GmailHistoricalCaptureBatchPayload
 } from "@as-comms/contracts";
 
 import {
@@ -100,19 +101,23 @@ describe("Stage 1 worker orchestration service", () => {
   it("replays Gmail batches through the same idempotent normalization path", async () => {
     const gmailRecord = buildGmailMessageRecord();
     const capture = createEmptyCapturePorts();
-    capture.gmail.captureHistoricalBatch = (payload) =>
-      Promise.resolve(
-        buildCapturedBatch(
-          payload.recordIds.length === 0 ||
-            payload.recordIds.includes(gmailRecord.recordId)
-            ? [gmailRecord]
-            : [],
-          {
-            nextCursor: "gmail:cursor:1",
-            checkpoint: "gmail:checkpoint:1"
-          }
-        )
+    capture.gmail.captureHistoricalBatch = (
+      payload: GmailHistoricalCaptureBatchPayload
+    ) => {
+      const parsedPayload = gmailHistoricalCaptureBatchPayloadSchema.parse(payload);
+      const shouldIncludeRecord =
+        parsedPayload.recordIds.length === 0 ||
+        parsedPayload.recordIds.some(
+          (recordId) => recordId === gmailRecord.recordId
+        );
+
+      return Promise.resolve(
+        buildCapturedBatch(shouldIncludeRecord ? [gmailRecord] : [], {
+          nextCursor: "gmail:cursor:1",
+          checkpoint: "gmail:checkpoint:1"
+        })
       );
+    };
 
     const context = await createTestWorkerContext({ capture });
 

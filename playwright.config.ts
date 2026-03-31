@@ -15,9 +15,7 @@ export default defineConfig({
     trace: "on-first-retry"
   },
   webServer: {
-    command: process.env.CI
-      ? `pnpm --dir apps/web exec next start --hostname 127.0.0.1 --port ${port}`
-      : `pnpm --dir apps/web exec next dev --hostname 127.0.0.1 --port ${port}`,
+    command: `pnpm --dir apps/web exec next build && pnpm --dir apps/web exec next start --hostname 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120000

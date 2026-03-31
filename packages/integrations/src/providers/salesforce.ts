@@ -36,6 +36,12 @@ const salesforceLifecycleMilestoneSchema = z.enum([
   "completed_training",
   "submitted_first_data"
 ]);
+const salesforceLifecycleSourceFieldSchema = z.enum([
+  "Expedition_Members__c.CreatedDate",
+  "Expedition_Members__c.Date_Training_Sent__c",
+  "Expedition_Members__c.Date_Training_Completed__c",
+  "Expedition_Members__c.Date_First_Sample_Collected__c"
+]);
 
 const salesforceRoutingContextSchema = z.object({
   required: z.boolean().default(false),
@@ -73,6 +79,7 @@ export const salesforceLifecycleRecordSchema = z.object({
   recordId: z.string().min(1),
   salesforceContactId: z.string().min(1),
   milestone: salesforceLifecycleMilestoneSchema,
+  sourceField: salesforceLifecycleSourceFieldSchema,
   occurredAt: timestampSchema,
   receivedAt: timestampSchema,
   payloadRef: z.string().min(1),
@@ -85,6 +92,28 @@ export const salesforceLifecycleRecordSchema = z.object({
     projectId: null,
     expeditionId: null
   })
+}).superRefine((record, ctx) => {
+  const expectedSourceField = (() => {
+    switch (record.milestone) {
+      case "signed_up":
+        return "Expedition_Members__c.CreatedDate";
+      case "received_training":
+        return "Expedition_Members__c.Date_Training_Sent__c";
+      case "completed_training":
+        return "Expedition_Members__c.Date_Training_Completed__c";
+      case "submitted_first_data":
+        return "Expedition_Members__c.Date_First_Sample_Collected__c";
+    }
+  })();
+
+  if (record.sourceField !== expectedSourceField) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sourceField"],
+      message:
+        "Salesforce lifecycle sourceField must match the locked Expedition_Members__c milestone mapping."
+    });
+  }
 });
 export type SalesforceLifecycleRecord = z.infer<
   typeof salesforceLifecycleRecordSchema

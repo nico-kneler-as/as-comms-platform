@@ -9,6 +9,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
+    "ops:check-config": "tsx src/ops/cli.ts check-config",
+    "ops:enqueue": "tsx src/ops/cli.ts enqueue",
+    "ops:inspect": "tsx src/ops/cli.ts inspect",
     "lint": "eslint src test --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:unit": "vitest run --config ../../vitest.config.ts --passWithNoTests"

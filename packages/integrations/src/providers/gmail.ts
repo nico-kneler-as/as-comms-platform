@@ -36,6 +36,8 @@ export const gmailMessageRecordSchema = z.object({
   snippet: z.string().default(""),
   threadId: nullableStringSchema.default(null),
   rfc822MessageId: nullableStringSchema.default(null),
+  capturedMailbox: nullableStringSchema.default(null),
+  projectInboxAlias: nullableStringSchema.default(null),
   normalizedParticipantEmails: stringArraySchema.min(1),
   salesforceContactId: nullableStringSchema.default(null),
   volunteerIdPlainValues: stringArraySchema.default([]),
