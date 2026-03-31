@@ -1,0 +1,20 @@
+{
+  "name": "@as-comms/gmail-capture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "node ../../scripts/clean-dist.mjs dist && tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "lint": "eslint src test --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config ../../vitest.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@as-comms/integrations": "workspace:*",
+    "zod": "^3.24.2"
+  }
+}

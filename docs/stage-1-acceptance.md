@@ -55,6 +55,10 @@ Launch-scope acceptance is backed by these test areas:
   proves historical Gmail + Salesforce records land in one volunteer timeline and that live Gmail + live Salesforce still converge through the same worker path
 - [packages/integrations/test/stage1-mappers.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/packages/integrations/test/stage1-mappers.test.ts)
   proves Salesforce `Task` becomes auto-message canonical communication events and the four locked expedition-member date fields map to the canonical lifecycle events
+- [packages/integrations/test/stage1-gmail-capture-service.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/packages/integrations/test/stage1-gmail-capture-service.test.ts)
+  proves Gmail capture-service auth, payload validation, launch-scope mailbox behavior, and provider-close response shape
+- [packages/integrations/test/stage1-salesforce-capture-service.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/packages/integrations/test/stage1-salesforce-capture-service.test.ts)
+  proves Salesforce capture-service auth, payload validation, launch-scope object coverage, and provider-close response shape
 - [packages/db/test/stage1-normalization.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/packages/db/test/stage1-normalization.test.ts)
   proves ambiguous matches open review, Gmail-vs-Salesforce tie-break handling stays explicit, and projection semantics remain replay-safe
 - [apps/worker/test/stage1-orchestration.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/apps/worker/test/stage1-orchestration.test.ts)
@@ -72,6 +76,7 @@ Repo completion is not the same as live-provider validation. Real sandbox or pro
 - capture-service configuration for the Gmail historical mailbox set
 - capture-service configuration for the `volunteers@...` live Gmail account plus project inbox aliases
 - Salesforce capture-service decisions for CDC-compatible `Contact` and `Expedition_Members__c` freshness, plus delta polling for `Task`
+- deployment of the separate Gmail and Salesforce capture services documented in [docs/stage-1-capture-services.md](./stage-1-capture-services.md)
 - operator execution of the validation runbook in [docs/stage-1-validation-runbook.md](./stage-1-validation-runbook.md)
 
 ## Human validation workflow

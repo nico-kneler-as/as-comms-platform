@@ -7,7 +7,9 @@ const packageDirs = [
   "packages/domain",
   "packages/integrations",
   "packages/ui",
-  "apps/worker"
+  "apps/worker",
+  "apps/gmail-capture",
+  "apps/salesforce-capture"
 ];
 
 /**

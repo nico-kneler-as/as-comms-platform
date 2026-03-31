@@ -2,6 +2,8 @@
 
 This note is operational only. It describes the minimum worker/runtime wiring that is executable at the end of Stage 1.
 
+The worker consumes provider-close HTTP batches only. Real Gmail and Salesforce provider access now lives in separate capture services documented in [docs/stage-1-capture-services.md](./stage-1-capture-services.md).
+
 ## Launch-scope focus
 
 - Stage 1 launch-scope acceptance is **Gmail + Salesforce only**.
@@ -52,6 +54,14 @@ Provider capture ports:
 
 If worker boot is enabled and Gmail or Salesforce capture env is missing, the runtime fails closed at startup.
 If SimpleTexting or Mailchimp env is omitted, their task names stay registered but fail closed with an explicit non-retryable deferred-for-launch-scope error if called.
+
+Launch-scope deployment expects these separate services:
+
+- `worker`
+- `gmail-capture`
+- `salesforce-capture`
+
+See [docs/stage-1-capture-services.md](./stage-1-capture-services.md) for the capture-service env contracts, bearer-token setup, and Railway build/start commands.
 
 Use the config preflight command before a sandbox run:
 
@@ -104,6 +114,11 @@ Each provider capture port is an env-gated HTTP client at the integrations bound
 ```
 
 `records` must already be in the provider-close record shapes used by the Stage 1 mapping layer. The domain layer never receives raw provider SDK payloads.
+
+For launch scope, the actual provider-facing implementations now exist in:
+
+- `apps/gmail-capture`
+- `apps/salesforce-capture`
 
 Paths used by the runtime:
 

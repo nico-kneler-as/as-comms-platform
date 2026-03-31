@@ -70,5 +70,6 @@ Read these in order for any non-trivial task:
 - If bootstrapping the new repo: [`02-bundles/bootstrap-bundle.md`](./02-bundles/bootstrap-bundle.md)
 - If starting Stage 1 data implementation after reading the bundle: [`04-implementation-specs/README.md`](./04-implementation-specs/README.md)
 - If validating narrowed Stage 1 Gmail + Salesforce launch scope: [`stage-1-acceptance.md`](./stage-1-acceptance.md)
+- If deploying or wiring the Stage 1 Gmail/Salesforce capture services: [`stage-1-capture-services.md`](./stage-1-capture-services.md)
 - If running sandbox or non-production Stage 1 validation: [`stage-1-validation-runbook.md`](./stage-1-validation-runbook.md)
 - If implementing product behavior: open the matching file under [`02-bundles`](./02-bundles)

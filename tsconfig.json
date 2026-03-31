@@ -6,6 +6,8 @@
     { "path": "./packages/domain" },
     { "path": "./packages/integrations" },
     { "path": "./packages/ui" },
-    { "path": "./apps/worker" }
+    { "path": "./apps/worker" },
+    { "path": "./apps/gmail-capture" },
+    { "path": "./apps/salesforce-capture" }
   ]
 }

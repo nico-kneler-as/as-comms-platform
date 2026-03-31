@@ -51,6 +51,8 @@ pnpm security
 pnpm dev
 pnpm dev:web
 WORKER_BOOT_MODE=run DATABASE_URL=postgres://... pnpm dev:worker
+pnpm dev:gmail-capture
+pnpm dev:salesforce-capture
 pnpm ops:worker:check-config
 pnpm ops:worker:enqueue -- gmail-historical --window-start 2026-01-01T00:00:00.000Z --window-end 2026-01-02T00:00:00.000Z
 pnpm ops:worker:inspect -- contact --salesforce-contact-id 003-stage1
@@ -66,7 +68,7 @@ pnpm verify
 
 ## Stage 1 worker runtime
 
-The worker now boots the Stage 1 task list end to end through the single normalization path. For launch-scope acceptance, Gmail + Salesforce are the required providers; SimpleTexting and Mailchimp remain deferred. See [docs/stage-1-runtime.md](./docs/stage-1-runtime.md) for runtime details and [docs/stage-1-acceptance.md](./docs/stage-1-acceptance.md) for the narrowed completion criteria.
+The worker now boots the Stage 1 task list end to end through the single normalization path. For launch-scope acceptance, Gmail + Salesforce are the required providers; SimpleTexting and Mailchimp remain deferred. See [docs/stage-1-runtime.md](./docs/stage-1-runtime.md) for worker/runtime details, [docs/stage-1-capture-services.md](./docs/stage-1-capture-services.md) for the external Gmail and Salesforce capture services, and [docs/stage-1-acceptance.md](./docs/stage-1-acceptance.md) for the narrowed completion criteria.
 
 ## Stage 1 validation
 
@@ -76,7 +78,7 @@ Use the worker-side ops commands for controlled validation:
 - `pnpm ops:worker:enqueue -- ...`
 - `pnpm ops:worker:inspect -- ...`
 
-See [docs/stage-1-validation-runbook.md](./docs/stage-1-validation-runbook.md) for the operator flow and evidence checklist.
+See [docs/stage-1-validation-runbook.md](./docs/stage-1-validation-runbook.md) for the operator flow and evidence checklist. Start the new Gmail and Salesforce capture services first; the worker still consumes only provider-close HTTP batches.
 
 ## What exists now
 
@@ -95,4 +97,4 @@ See [docs/stage-1-validation-runbook.md](./docs/stage-1-validation-runbook.md) f
 - No later-stage workflow engine, AI state, or Stage 2+ behavior
 - No web-to-DB or web-to-provider direct imports
 
-See [docs/build-web-apps-scope.md](./docs/build-web-apps-scope.md), [docs/stage-0-summary.md](./docs/stage-0-summary.md), [docs/stage-0-open-questions.md](./docs/stage-0-open-questions.md), [docs/stage-1-runtime.md](./docs/stage-1-runtime.md), [docs/stage-1-acceptance.md](./docs/stage-1-acceptance.md), and [docs/stage-1-validation-runbook.md](./docs/stage-1-validation-runbook.md) for the current boundaries and operational notes.
+See [docs/build-web-apps-scope.md](./docs/build-web-apps-scope.md), [docs/stage-0-summary.md](./docs/stage-0-summary.md), [docs/stage-0-open-questions.md](./docs/stage-0-open-questions.md), [docs/stage-1-runtime.md](./docs/stage-1-runtime.md), [docs/stage-1-capture-services.md](./docs/stage-1-capture-services.md), [docs/stage-1-acceptance.md](./docs/stage-1-acceptance.md), and [docs/stage-1-validation-runbook.md](./docs/stage-1-validation-runbook.md) for the current boundaries and operational notes.

@@ -15,8 +15,9 @@ It is intentionally worker- and DB-oriented. There is no UI dependency in this w
 - use non-production or tightly controlled provider data
 - do not commit secrets or `.env` files
 - point the worker at a validation database
-- configure Gmail and Salesforce capture services only
+- configure and boot Gmail and Salesforce capture services only
 - leave SimpleTexting and Mailchimp unset unless you are intentionally testing deferred providers outside launch scope
+- review [docs/stage-1-capture-services.md](./stage-1-capture-services.md) before the first live validation run
 
 ## Required env summary
 
@@ -33,6 +34,23 @@ Minimum launch-scope env:
 - `SALESFORCE_CAPTURE_TOKEN`
 - `SALESFORCE_CONTACT_CAPTURE_MODE`
 - `SALESFORCE_MEMBERSHIP_CAPTURE_MODE`
+
+Capture-service env is separate from worker env. Use [docs/stage-1-capture-services.md](./stage-1-capture-services.md) for the Gmail and Salesforce service-side variables.
+
+## 0. Start the capture services
+
+Run the launch-scope services in separate shells or Railway services:
+
+```bash
+pnpm dev:gmail-capture
+pnpm dev:salesforce-capture
+```
+
+Expected result:
+
+- both services boot without env errors
+- `GET /health` returns `200`
+- the worker bearer tokens match the capture-service bearer tokens
 
 Recommended optional knobs:
 
@@ -55,6 +73,7 @@ Expected result:
 - Gmail live account is the `volunteers@...` address
 - project inbox aliases are present
 - Salesforce capture modes are explicit
+- Gmail and Salesforce capture base URLs point at the separate capture services
 - deferred providers show as not configured unless you intentionally enabled them
 
 If this fails, fix env first. Do not start the worker.
@@ -257,6 +276,7 @@ Mark Stage 1 ready for controlled validation only when all of these are true:
 
 These are not missing code if they are still outstanding:
 
+- deployment of the separate Gmail and Salesforce capture services
 - capture-service access to sandbox Gmail and Salesforce data
 - selection of the Gmail historical mailbox set
 - real alias configuration for the live `volunteers@...` account
