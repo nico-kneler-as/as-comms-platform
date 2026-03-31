@@ -14,7 +14,7 @@
     "ops:worker:check-config": "pnpm --filter @as-comms/worker ops:check-config",
     "ops:worker:enqueue": "pnpm --filter @as-comms/worker ops:enqueue",
     "ops:worker:inspect": "pnpm --filter @as-comms/worker ops:inspect",
-    "build": "turbo build",
+    "build": "turbo build && node scripts/verify-runtime-exports.mjs",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test:unit": "turbo test:unit",

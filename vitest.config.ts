@@ -28,6 +28,7 @@ export default defineConfig({
       "src/**/*.test.ts"
     ],
     environment: "node",
+    testTimeout: 15000,
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],

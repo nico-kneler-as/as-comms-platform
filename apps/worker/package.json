@@ -7,7 +7,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/clean-dist.mjs dist && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "ops:check-config": "tsx src/ops/cli.ts check-config",
     "ops:enqueue": "tsx src/ops/cli.ts enqueue",
