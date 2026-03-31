@@ -9,6 +9,8 @@ export * from "./capture-services/shared.js";
 export * from "./capture-services/gmail.js";
 export * from "./capture-services/salesforce.js";
 export * from "./providers/gmail.js";
+export * from "./providers/gmail-mbox.js";
+export * from "./providers/gmail-record-builder.js";
 export * from "./providers/mailchimp.js";
 export * from "./providers/salesforce.js";
 export * from "./providers/simpletexting.js";

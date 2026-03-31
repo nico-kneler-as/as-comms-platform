@@ -8,14 +8,19 @@ import {
 import { z } from "zod";
 
 const emailSchema = z.string().email();
+const volunteersEmailSchema = emailSchema.refine(
+  (value) => value.toLowerCase().startsWith("volunteers@"),
+  {
+    message: "GMAIL_LIVE_ACCOUNT must be a volunteers@... address."
+  }
+);
 
 export const gmailCaptureRuntimeConfigSchema = z.object({
   host: z.string().min(1).default("0.0.0.0"),
   port: z.number().int().positive().default(3001),
   service: z.object({
     bearerToken: z.string().min(1),
-    historicalMailboxes: z.array(emailSchema).min(1),
-    liveAccount: emailSchema,
+    liveAccount: volunteersEmailSchema,
     projectInboxAliases: z.array(emailSchema).min(1),
     serviceAccountClientEmail: emailSchema,
     serviceAccountPrivateKey: z.string().min(1),
@@ -75,10 +80,6 @@ export function readGmailCaptureRuntimeConfig(
     port: parseOptionalPositiveIntEnv(env.PORT, 3001, "PORT"),
     service: {
       bearerToken: parseRequiredStringEnv(env.GMAIL_CAPTURE_TOKEN, "GMAIL_CAPTURE_TOKEN"),
-      historicalMailboxes: parseEmailCsvEnv(
-        env.GMAIL_HISTORICAL_MAILBOXES,
-        "GMAIL_HISTORICAL_MAILBOXES"
-      ),
       liveAccount: parseRequiredStringEnv(
         env.GMAIL_LIVE_ACCOUNT,
         "GMAIL_LIVE_ACCOUNT"

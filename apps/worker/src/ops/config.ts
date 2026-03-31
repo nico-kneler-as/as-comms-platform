@@ -12,7 +12,7 @@ export class Stage1WorkerConfigError extends Error {
 const salesforceCaptureModeSchema = z.enum(["delta_polling", "cdc_compatible"]);
 
 export const stage1LaunchScopeGmailConfigSchema = z.object({
-  historicalMailboxes: z.array(emailSchema).min(1),
+  historicalBackfillMode: z.literal("mbox_import").default("mbox_import"),
   liveAccount: emailSchema.refine((value) => value.toLowerCase().startsWith("volunteers@"), {
     message: "Gmail live account must be a volunteers@... address."
   }),
@@ -121,38 +121,50 @@ export function readStage1LaunchScopeConfig(
   env: NodeJS.ProcessEnv
 ): Stage1LaunchScopeConfig {
   return stage1LaunchScopeConfigSchema.parse({
-    gmail: {
-      historicalMailboxes: parseEmailCsvEnv(env, "GMAIL_HISTORICAL_MAILBOXES"),
-      liveAccount: parseRequiredStringEnv(env, "GMAIL_LIVE_ACCOUNT"),
-      projectInboxAliases: parseEmailCsvEnv(env, "GMAIL_PROJECT_INBOX_ALIASES"),
-      livePollIntervalSeconds: parsePositiveIntegerEnv(
-        env,
-        "GMAIL_LIVE_POLL_INTERVAL_SECONDS",
-        60
-      )
-    },
-    salesforce: {
-      contactCaptureMode: parseSalesforceCaptureModeEnv(
-        env,
-        "SALESFORCE_CONTACT_CAPTURE_MODE"
-      ),
-      membershipCaptureMode: parseSalesforceCaptureModeEnv(
-        env,
-        "SALESFORCE_MEMBERSHIP_CAPTURE_MODE"
-      ),
-      taskPollIntervalSeconds: parsePositiveIntegerEnv(
-        env,
-        "SALESFORCE_TASK_POLL_INTERVAL_SECONDS",
-        300
-      )
-    }
+    gmail: readStage1LaunchScopeGmailConfig(env),
+    salesforce: readStage1LaunchScopeSalesforceConfig(env)
+  });
+}
+
+export function readStage1LaunchScopeGmailConfig(
+  env: NodeJS.ProcessEnv
+): Stage1LaunchScopeGmailConfig {
+  return stage1LaunchScopeGmailConfigSchema.parse({
+    historicalBackfillMode: "mbox_import",
+    liveAccount: parseRequiredStringEnv(env, "GMAIL_LIVE_ACCOUNT"),
+    projectInboxAliases: parseEmailCsvEnv(env, "GMAIL_PROJECT_INBOX_ALIASES"),
+    livePollIntervalSeconds: parsePositiveIntegerEnv(
+      env,
+      "GMAIL_LIVE_POLL_INTERVAL_SECONDS",
+      60
+    )
+  });
+}
+
+export function readStage1LaunchScopeSalesforceConfig(
+  env: NodeJS.ProcessEnv
+): Stage1LaunchScopeSalesforceConfig {
+  return stage1LaunchScopeSalesforceConfigSchema.parse({
+    contactCaptureMode: parseSalesforceCaptureModeEnv(
+      env,
+      "SALESFORCE_CONTACT_CAPTURE_MODE"
+    ),
+    membershipCaptureMode: parseSalesforceCaptureModeEnv(
+      env,
+      "SALESFORCE_MEMBERSHIP_CAPTURE_MODE"
+    ),
+    taskPollIntervalSeconds: parsePositiveIntegerEnv(
+      env,
+      "SALESFORCE_TASK_POLL_INTERVAL_SECONDS",
+      300
+    )
   });
 }
 
 export interface Stage1SafeRuntimeConfigSummary {
   readonly concurrency: number;
   readonly gmail: {
-    readonly historicalMailboxes: readonly string[];
+    readonly historicalBackfillMode: Stage1LaunchScopeGmailConfig["historicalBackfillMode"];
     readonly liveAccount: string;
     readonly projectInboxAliases: readonly string[];
     readonly livePollIntervalSeconds: number;

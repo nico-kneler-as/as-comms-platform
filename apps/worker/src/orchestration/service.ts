@@ -49,6 +49,7 @@ import {
   Stage1NonRetryableJobError,
   Stage1RetryableJobError
 } from "./errors.js";
+import { projectionSeedPolicyCode, recordProjectionSeedOnce } from "./projection-seed.js";
 import { createStage1SyncStateService } from "./sync-state.js";
 import type {
   Stage1CaptureJobOutcome,
@@ -67,7 +68,6 @@ import type {
   Stage1WorkerOrchestrationService
 } from "./types.js";
 
-const projectionSeedPolicyCode = "stage1.projection.seed";
 const paritySnapshotPolicyCode = "stage1.parity.snapshot";
 const cutoverCheckpointPolicyCode = "stage1.cutover.checkpoint";
 const inboxDrivingEventTypes = new Set<string>(inboxDrivingEventTypeValues);
@@ -361,45 +361,6 @@ function buildJobFailure(
     retryable: true,
     message
   };
-}
-
-async function recordProjectionSeedOnce(
-  persistence: Stage1PersistenceService,
-  input: {
-    readonly canonicalEventId: string;
-    readonly summary: string;
-    readonly snippet: string;
-    readonly occurredAt: string;
-  }
-): Promise<void> {
-  const existingRecords = await persistence.repositories.auditEvidence.listByEntity({
-    entityType: "canonical_event",
-    entityId: input.canonicalEventId
-  });
-
-  const alreadyRecorded = existingRecords.some(
-    (record) => record.policyCode === projectionSeedPolicyCode
-  );
-
-  if (alreadyRecorded) {
-    return;
-  }
-
-  await persistence.recordAuditEvidence({
-    id: `audit:canonical_event:${input.canonicalEventId}:projection-seed`,
-    actorType: "worker",
-    actorId: "stage1-orchestration",
-    action: "record_projection_seed",
-    entityType: "canonical_event",
-    entityId: input.canonicalEventId,
-    occurredAt: input.occurredAt,
-    result: "recorded",
-    policyCode: projectionSeedPolicyCode,
-    metadataJson: {
-      summary: input.summary,
-      snippet: input.snippet
-    }
-  });
 }
 
 async function loadProjectionSeed(

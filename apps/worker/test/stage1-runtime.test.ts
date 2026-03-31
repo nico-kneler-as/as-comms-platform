@@ -21,9 +21,7 @@ const launchScopeEnv = {
   DATABASE_URL: "postgres://stage1:test@localhost:5432/as_comms_stage1",
   GMAIL_CAPTURE_BASE_URL: "https://capture.example.test/gmail",
   GMAIL_CAPTURE_TOKEN: "gmail-token",
-  GMAIL_HISTORICAL_MAILBOXES:
-    "project-antarctica@example.org,project-oceans@example.org",
-  GMAIL_LIVE_ACCOUNT: "volunteers@example.org",
+  GMAIL_LIVE_ACCOUNT: "volunteers@adventurescientists.org",
   GMAIL_PROJECT_INBOX_ALIASES:
     "project-antarctica@example.org,project-oceans@example.org",
   SALESFORCE_CAPTURE_BASE_URL: "https://capture.example.test/salesforce",
@@ -77,11 +75,10 @@ describe("Stage 1 worker runtime task registration", () => {
     expect(config?.capture.salesforce.baseUrl).toBe(
       "https://capture.example.test/salesforce"
     );
-    expect(config?.launchScope.gmail.liveAccount).toBe("volunteers@example.org");
-    expect(config?.launchScope.gmail.historicalMailboxes).toEqual([
-      "project-antarctica@example.org",
-      "project-oceans@example.org"
-    ]);
+    expect(config?.launchScope.gmail.liveAccount).toBe(
+      "volunteers@adventurescientists.org"
+    );
+    expect(config?.launchScope.gmail.historicalBackfillMode).toBe("mbox_import");
     expect(config?.launchScope.salesforce.contactCaptureMode).toBe(
       "cdc_compatible"
     );

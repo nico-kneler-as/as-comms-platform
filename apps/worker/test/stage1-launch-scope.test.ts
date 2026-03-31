@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  gmailHistoricalCaptureBatchPayloadSchema,
   gmailLiveCaptureBatchPayloadSchema,
   salesforceHistoricalCaptureBatchPayloadSchema,
   salesforceLiveCaptureBatchPayloadSchema
@@ -12,10 +11,20 @@ import {
   createEmptyCapturePorts,
   createTestWorkerContext
 } from "./helpers.js";
+import { createStage1GmailMboxImportService } from "../src/ops/gmail-mbox.js";
 
 const contactId = "contact:salesforce:003-stage1";
 const salesforceContactId = "003-stage1";
 const volunteerEmail = "volunteer@example.org";
+const historicalGmailMbox = `From MAILER-DAEMON Fri Jan 04 00:00:00 2026
+Date: Sun, 04 Jan 2026 00:00:00 +0000
+From: Volunteer <volunteer@example.org>
+To: Project Antarctica <project-antarctica@example.org>
+Subject: Historical volunteer reply
+Message-ID: <historical-1@example.org>
+
+Reply from the volunteer
+`;
 
 describe("Stage 1 narrowed Gmail + Salesforce launch scope", () => {
   it("lands historical Gmail and Salesforce records in one volunteer timeline", async () => {
@@ -88,35 +97,15 @@ describe("Stage 1 narrowed Gmail + Salesforce launch scope", () => {
           }
         ])
       );
-    capture.gmail.captureHistoricalBatch = () =>
-      Promise.resolve(
-        buildCapturedBatch([
-          {
-            recordType: "message" as const,
-            recordId: "gmail-historical-inbound-1",
-            direction: "inbound" as const,
-            occurredAt: "2026-01-04T00:00:00.000Z",
-            receivedAt: "2026-01-04T00:01:00.000Z",
-            payloadRef: "capture://gmail/gmail-historical-inbound-1.json",
-            checksum: "checksum-gmail-historical-inbound-1",
-            snippet: "Reply from the volunteer",
-            threadId: "thread-historical-1",
-            rfc822MessageId: "<historical-1@example.org>",
-            capturedMailbox: "project-antarctica@example.org",
-            projectInboxAlias: "project-antarctica@example.org",
-            normalizedParticipantEmails: [volunteerEmail],
-            salesforceContactId,
-            volunteerIdPlainValues: [],
-            normalizedPhones: [],
-            supportingRecords: [],
-            crossProviderCollapseKey: null
-          }
-        ])
-      );
-
     const context = await createTestWorkerContext({ capture });
 
     try {
+      const gmailMboxImporter = createStage1GmailMboxImportService({
+        ingest: context.ingest,
+        persistence: context.persistence,
+        syncState: context.syncState,
+        now: () => new Date("2026-01-04T00:01:00.000Z")
+      });
       const salesforceResult =
         await context.orchestration.runSalesforceHistoricalCaptureBatch(
           salesforceHistoricalCaptureBatchPayloadSchema.parse({
@@ -139,27 +128,17 @@ describe("Stage 1 narrowed Gmail + Salesforce launch scope", () => {
             maxRecords: 100
           })
         );
-      const gmailResult = await context.orchestration.runGmailHistoricalCaptureBatch(
-        gmailHistoricalCaptureBatchPayloadSchema.parse({
-          version: 1,
-          jobId: "job:gmail:historical:acceptance",
-          correlationId: "corr:gmail:historical:acceptance",
-          traceId: null,
-          batchId: "batch:gmail:historical:acceptance",
-          syncStateId: "sync:gmail:historical:acceptance",
-          attempt: 1,
-          maxAttempts: 3,
-          provider: "gmail",
-          mode: "historical",
-          jobType: "historical_backfill",
-          cursor: null,
-          checkpoint: null,
-          windowStart: "2026-01-01T00:00:00.000Z",
-          windowEnd: "2026-01-05T00:00:00.000Z",
-          recordIds: [],
-          maxRecords: 100
-        })
-      );
+      const gmailResult = await gmailMboxImporter.importMbox({
+        mboxText: historicalGmailMbox,
+        mboxPath: "/tmp/project-antarctica.mbox",
+        capturedMailbox: "project-antarctica@example.org",
+        liveAccount: "volunteers@adventurescientists.org",
+        projectInboxAliases: ["project-antarctica@example.org"],
+        syncStateId: "sync:gmail:historical:acceptance",
+        correlationId: "corr:gmail:historical:acceptance",
+        traceId: null,
+        receivedAt: "2026-01-04T00:01:00.000Z"
+      });
 
       expect(salesforceResult.outcome).toBe("succeeded");
       expect(gmailResult.outcome).toBe("succeeded");

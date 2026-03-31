@@ -2,7 +2,7 @@
 
 This note is operational only. It describes the minimum worker/runtime wiring that is executable at the end of Stage 1.
 
-The worker consumes provider-close HTTP batches only. Real Gmail and Salesforce provider access now lives in separate capture services documented in [docs/stage-1-capture-services.md](./stage-1-capture-services.md).
+The worker consumes provider-close HTTP batches for live Gmail and Salesforce capture. Historical Gmail backfill now enters through the worker `.mbox` import path documented alongside the capture-service notes in [docs/stage-1-capture-services.md](./stage-1-capture-services.md).
 
 ## Launch-scope focus
 
@@ -20,10 +20,8 @@ Worker boot:
 
 Launch-scope runtime config:
 
-- `GMAIL_HISTORICAL_MAILBOXES`
-  - required
-  - comma-separated mailbox set for historical Gmail backfill
-  - should include every selected project inbox needed to reconstruct volunteer history
+- historical Gmail backfill mode is fixed as `.mbox` import in this repo
+- there is no launch-scope worker env for historical Gmail mailbox impersonation
 - `GMAIL_LIVE_ACCOUNT`
   - required
   - must be a `volunteers@...` address
@@ -73,9 +71,11 @@ This prints a secret-safe summary of the validated launch-scope config and wheth
 
 ## Gmail operational model
 
-- historical backfill must cover the project inbox mailbox set needed to reconstruct volunteer history
+- historical backfill comes from exported `.mbox` files for the selected project inboxes needed to reconstruct volunteer history
 - live Gmail sync is narrowed to `volunteers@...`, which sends and receives on behalf of the project inbox aliases
-- capture services, not the domain layer, are responsible for expanding the historical mailbox set and for preserving the live `volunteers@...` plus alias context in provider-close records
+- the Gmail capture service is responsible only for the live `volunteers@...` API path
+- the worker `.mbox` import path is responsible for historical Gmail backfill
+- both historical `.mbox` imports and live Gmail API messages must converge into the same provider-close Gmail record shape before they reach normalization
 - provider-close Gmail records may carry:
   - `capturedMailbox` for the mailbox/account the capture service read from
   - `projectInboxAlias` for the project inbox alias represented by that message when different from the captured mailbox
@@ -119,10 +119,12 @@ For launch scope, the actual provider-facing implementations now exist in:
 
 - `apps/gmail-capture`
 - `apps/salesforce-capture`
+- `apps/worker` `.mbox` import command for historical Gmail only
 
 Paths used by the runtime:
 
-- Gmail: `POST /historical`, `POST /live`
+- Gmail live: `POST /live`
+- Gmail historical: worker `.mbox` import path
 - Salesforce: `POST /historical`, `POST /live`
 - SimpleTexting: `POST /historical`, `POST /live` when that provider is re-enabled later
 - Mailchimp: `POST /historical`, `POST /transition` when that provider is re-enabled later
@@ -156,7 +158,6 @@ These task names all execute through the same path:
 
 For narrowed launch-scope acceptance, the operationally required end-to-end tasks are:
 
-- `stage1.gmail.capture.historical`
 - `stage1.gmail.capture.live`
 - `stage1.salesforce.capture.historical`
 - `stage1.salesforce.capture.live`
@@ -168,7 +169,7 @@ For narrowed launch-scope acceptance, the operationally required end-to-end task
 Operator-facing enqueue and inspection commands:
 
 ```bash
-pnpm ops:worker:enqueue -- gmail-historical --window-start 2026-01-01T00:00:00.000Z --window-end 2026-01-02T00:00:00.000Z --max-records 25
+pnpm ops:worker:import-gmail-mbox -- --mbox-path /absolute/path/project-antarctica.mbox --captured-mailbox project-antarctica@example.org
 pnpm ops:worker:enqueue -- gmail-live --window-start 2026-01-02T00:00:00.000Z --window-end 2026-01-02T00:05:00.000Z
 pnpm ops:worker:enqueue -- salesforce-historical --window-start 2026-01-01T00:00:00.000Z --window-end 2026-01-02T00:00:00.000Z --max-records 25
 pnpm ops:worker:enqueue -- salesforce-live --window-start 2026-01-02T00:00:00.000Z --window-end 2026-01-02T00:05:00.000Z

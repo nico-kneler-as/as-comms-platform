@@ -15,6 +15,7 @@
     "dev:salesforce-capture": "pnpm --filter @as-comms/salesforce-capture dev",
     "ops:worker:check-config": "pnpm --filter @as-comms/worker ops:check-config",
     "ops:worker:enqueue": "pnpm --filter @as-comms/worker ops:enqueue",
+    "ops:worker:import-gmail-mbox": "pnpm --filter @as-comms/worker ops:import-gmail-mbox",
     "ops:worker:inspect": "pnpm --filter @as-comms/worker ops:inspect",
     "build": "turbo build && node scripts/verify-runtime-exports.mjs",
     "lint": "turbo lint",

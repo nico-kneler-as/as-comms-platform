@@ -15,7 +15,7 @@ It is intentionally worker- and DB-oriented. There is no UI dependency in this w
 - use non-production or tightly controlled provider data
 - do not commit secrets or `.env` files
 - point the worker at a validation database
-- configure and boot Gmail and Salesforce capture services only
+- configure and boot the Gmail live capture service and the Salesforce capture service only
 - leave SimpleTexting and Mailchimp unset unless you are intentionally testing deferred providers outside launch scope
 - review [docs/stage-1-capture-services.md](./stage-1-capture-services.md) before the first live validation run
 
@@ -27,7 +27,6 @@ Minimum launch-scope env:
 - `DATABASE_URL` or `WORKER_DATABASE_URL`
 - `GMAIL_CAPTURE_BASE_URL`
 - `GMAIL_CAPTURE_TOKEN`
-- `GMAIL_HISTORICAL_MAILBOXES`
 - `GMAIL_LIVE_ACCOUNT`
 - `GMAIL_PROJECT_INBOX_ALIASES`
 - `SALESFORCE_CAPTURE_BASE_URL`
@@ -36,6 +35,12 @@ Minimum launch-scope env:
 - `SALESFORCE_MEMBERSHIP_CAPTURE_MODE`
 
 Capture-service env is separate from worker env. Use [docs/stage-1-capture-services.md](./stage-1-capture-services.md) for the Gmail and Salesforce service-side variables.
+
+Historical Gmail `.mbox` backfill inputs are provided at command time, not through worker env:
+
+- `--mbox-path`
+- `--captured-mailbox`
+- optional `--project-inbox-alias`
 
 ## 0. Start the capture services
 
@@ -69,7 +74,7 @@ pnpm ops:worker:check-config
 Expected result:
 
 - the command prints a JSON summary
-- Gmail historical mailbox set is present
+- Gmail historical backfill mode is `mbox_import`
 - Gmail live account is the `volunteers@...` address
 - project inbox aliases are present
 - Salesforce capture modes are explicit
@@ -95,16 +100,16 @@ Expected result:
 
 ### Gmail historical backfill
 
-Run a small Gmail historical batch against the configured mailbox set:
+Run a small Gmail historical import from an exported `.mbox` file:
 
 ```bash
-pnpm ops:worker:enqueue -- gmail-historical \
-  --window-start 2026-01-01T00:00:00.000Z \
-  --window-end 2026-01-02T00:00:00.000Z \
-  --max-records 25
+pnpm ops:worker:import-gmail-mbox -- \
+  --mbox-path /absolute/path/project-antarctica.mbox \
+  --captured-mailbox project-antarctica@example.org \
+  --limit 25
 ```
 
-Use `--record-ids` if your capture service supports targeting specific known message IDs for validation.
+Use `--project-inbox-alias` when the historical mailbox context should resolve to a specific project alias that is not obvious from the message headers.
 
 ### Salesforce historical capture
 
@@ -150,7 +155,7 @@ Operational checks:
 
 - live capture is sourcing the `volunteers@...` account
 - provider-close records preserve alias context where the project inbox alias differs from the captured mailbox
-- new inbound or outbound Gmail activity lands in canonical history through the same normalization path as history
+- new inbound or outbound Gmail activity lands in canonical history through the same normalization path as historical `.mbox` imports
 
 Inspect sync freshness:
 
@@ -258,6 +263,7 @@ What to verify:
 
 - source evidence exists once per idempotent record
 - source evidence aligns with canonical events and projections
+- repeated `.mbox` imports do not create duplicate canonical events
 - ambiguous email or phone matches open review rather than creating silent links
 
 ## Launch-scope acceptance checklist

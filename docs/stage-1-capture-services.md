@@ -6,7 +6,7 @@
 
 ## Purpose
 
-The Stage 1 worker never talks to Gmail or Salesforce SDKs directly. It only consumes provider-close HTTP batches from separate capture services.
+The Stage 1 worker never talks to Gmail or Salesforce SDKs directly. It consumes provider-close HTTP batches from separate capture services for live Gmail and Salesforce capture, and it uses a worker-side `.mbox` import path for historical Gmail backfill.
 
 For narrowed launch scope, the required services are:
 
@@ -17,12 +17,12 @@ SimpleTexting and Mailchimp remain deferred for launch completion.
 
 ## Shared contract
 
-Each capture service exposes bearer-token-protected HTTP endpoints:
+Each capture service exposes bearer-token-protected HTTP endpoints where that provider/mode is served through HTTP:
 
-- `POST /historical`
 - `POST /live`
+- `POST /historical`
 
-The worker sends the existing Stage 1 provider job payloads and expects this response shape:
+The worker sends the existing Stage 1 provider job payloads and expects this response shape whenever it is talking to a capture service:
 
 ```json
 {
@@ -47,15 +47,16 @@ If either token pair does not match, the capture service returns `401 unauthoriz
 
 Launch-scope behavior:
 
-- historical mailbox-set backfill across `GMAIL_HISTORICAL_MAILBOXES`
 - live polling only on `GMAIL_LIVE_ACCOUNT`
 - alias context preserved through `GMAIL_PROJECT_INBOX_ALIASES`
 - output records match the existing Stage 1 Gmail provider-close record shape
+- launch-scope historical backfill does **not** use the Gmail capture service
+- `POST /historical` is retained only to fail closed with an explicit “use the worker .mbox import path” error
+- historical Gmail backfill now comes from exported `.mbox` files passed through the worker ops import command
 
 Required env:
 
 - `GMAIL_CAPTURE_TOKEN`
-- `GMAIL_HISTORICAL_MAILBOXES`
 - `GMAIL_LIVE_ACCOUNT`
 - `GMAIL_PROJECT_INBOX_ALIASES`
 - `GMAIL_GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL`
@@ -74,10 +75,22 @@ Optional env:
 
 Operational notes:
 
-- `GMAIL_HISTORICAL_MAILBOXES` is the selected project mailbox set needed to reconstruct volunteer history
 - `GMAIL_LIVE_ACCOUNT` must be the `volunteers@...` mailbox used for launch-scope live sync
 - `GMAIL_PROJECT_INBOX_ALIASES` is the comma-separated alias/project-inbox set represented by the live account
 - the service preserves both `capturedMailbox` and `projectInboxAlias` where needed
+- launch-scope completion no longer requires Gmail API access or service-account impersonation for historical project inboxes
+- historical Gmail `.mbox` import requires:
+  - an exported `.mbox` file
+  - a `capturedMailbox` value representing the historical mailbox context
+  - the worker Gmail env needed to interpret `volunteers@...` and alias context
+
+Example historical Gmail import:
+
+```bash
+pnpm ops:worker:import-gmail-mbox -- \
+  --mbox-path /absolute/path/project-antarctica.mbox \
+  --captured-mailbox project-antarctica@example.org
+```
 
 ## Salesforce capture service
 
@@ -178,7 +191,8 @@ You are ready to run controlled Stage 1 validation when:
 - both `/health` endpoints return `200`
 - `pnpm ops:worker:check-config` succeeds
 - the worker points at the capture service base URLs
-- historical and live enqueue commands succeed for Gmail and Salesforce
+- Gmail historical `.mbox` import succeeds
+- Gmail live and Salesforce historical/live enqueue commands succeed
 
 ## Intentionally deferred
 

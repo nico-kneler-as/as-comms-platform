@@ -10,7 +10,7 @@ Stage 1 is complete for launch scope when the backend is operationally ready for
 
 That means:
 
-- historical Gmail backfill and live Gmail polling both feed the same normalization path
+- historical Gmail `.mbox` backfill and live Gmail polling both feed the same normalization path
 - historical Salesforce extracts and live Salesforce updates both feed the same normalization path
 - Gmail and Salesforce events can land in one volunteer timeline anchored by `Contact.Id`
 - `Contact.Volunteer_ID_Plain__c` is preserved as the canonical volunteer ID value without replacing `Contact.Id` as the primary anchor
@@ -33,9 +33,9 @@ Deferred for launch completion, while keeping the generic architecture intact:
 
 Gmail:
 
-- historical backfill covers the project inbox mailbox set needed to reconstruct volunteer history
+- historical backfill comes from exported `.mbox` files for the selected project inboxes needed to reconstruct volunteer history
 - live sync is narrowed to `volunteers@...`, which sends and receives as the project inbox aliases
-- both historical and live Gmail records continue through the same normalization path
+- both historical `.mbox` records and live Gmail API records continue through the same normalization path
 
 Salesforce:
 
@@ -52,11 +52,15 @@ Salesforce:
 Launch-scope acceptance is backed by these test areas:
 
 - [apps/worker/test/stage1-launch-scope.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/apps/worker/test/stage1-launch-scope.test.ts)
-  proves historical Gmail + Salesforce records land in one volunteer timeline and that live Gmail + live Salesforce still converge through the same worker path
+  proves historical Gmail `.mbox` + Salesforce records land in one volunteer timeline and that live Gmail + live Salesforce still converge through the same worker path
+- [apps/worker/test/stage1-gmail-mbox-import.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/apps/worker/test/stage1-gmail-mbox-import.test.ts)
+  proves the historical Gmail `.mbox` import path is replay-safe and records a succeeded Gmail historical sync state
+- [packages/integrations/test/stage1-gmail-mbox.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/packages/integrations/test/stage1-gmail-mbox.test.ts)
+  proves exported `.mbox` messages produce the expected Gmail provider-close record shape and converge with live Gmail records at the mapping contract
 - [packages/integrations/test/stage1-mappers.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/packages/integrations/test/stage1-mappers.test.ts)
   proves Salesforce `Task` becomes auto-message canonical communication events and the four locked expedition-member date fields map to the canonical lifecycle events
 - [packages/integrations/test/stage1-gmail-capture-service.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/packages/integrations/test/stage1-gmail-capture-service.test.ts)
-  proves Gmail capture-service auth, payload validation, launch-scope mailbox behavior, and provider-close response shape
+  proves Gmail capture-service auth, payload validation, live `volunteers@...` mailbox behavior, and explicit rejection of historical Gmail API backfill in launch scope
 - [packages/integrations/test/stage1-salesforce-capture-service.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/packages/integrations/test/stage1-salesforce-capture-service.test.ts)
   proves Salesforce capture-service auth, payload validation, launch-scope object coverage, and provider-close response shape
 - [packages/db/test/stage1-normalization.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/packages/db/test/stage1-normalization.test.ts)
@@ -71,9 +75,9 @@ Launch-scope acceptance is backed by these test areas:
 Repo completion is not the same as live-provider validation. Real sandbox or production-like validation still needs:
 
 - database access for the worker runtime
-- Gmail capture-port configuration
+- Gmail capture-port configuration for live `volunteers@...` sync
 - Salesforce capture-port configuration
-- capture-service configuration for the Gmail historical mailbox set
+- exported `.mbox` files for the historical Gmail inboxes selected for launch-scope validation
 - capture-service configuration for the `volunteers@...` live Gmail account plus project inbox aliases
 - Salesforce capture-service decisions for CDC-compatible `Contact` and `Expedition_Members__c` freshness, plus delta polling for `Task`
 - deployment of the separate Gmail and Salesforce capture services documented in [docs/stage-1-capture-services.md](./stage-1-capture-services.md)
@@ -85,7 +89,7 @@ Use this order:
 
 1. run `pnpm ops:worker:check-config`
 2. boot the worker with launch-scope Gmail + Salesforce env
-3. enqueue small historical Gmail and Salesforce batches
+3. run a small historical Gmail `.mbox` import plus a small Salesforce historical batch
 4. inspect a known volunteer by Salesforce Contact ID
 5. enqueue small live Gmail and Salesforce batches
 6. inspect sync state, replay, rebuild, parity, and cutover evidence

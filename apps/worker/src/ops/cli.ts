@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import process from "node:process";
 
 import {
@@ -5,15 +6,22 @@ import {
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection
 } from "@as-comms/db";
+import {
+  createStage1NormalizationService,
+  createStage1PersistenceService
+} from "@as-comms/domain";
 
 import {
   buildSafeRuntimeConfigSummary,
   readWorkerConfig
 } from "../runtime.js";
+import { createStage1IngestService } from "../ingest/index.js";
+import { createStage1SyncStateService } from "../orchestration/index.js";
 import {
   buildStage1EnqueueRequest,
   enqueueStage1Job
 } from "./enqueue.js";
+import { createStage1GmailMboxImportService } from "./gmail-mbox.js";
 import {
   inspectAuditEvidence,
   inspectLatestSyncState,
@@ -21,10 +29,13 @@ import {
   inspectStage1Contact
 } from "./inspect.js";
 import {
+  buildOperationId,
   parseCliFlags,
+  readOptionalIntegerFlag,
   readOptionalStringFlag,
   readRequiredFlag
 } from "./helpers.js";
+import { readStage1LaunchScopeGmailConfig } from "./config.js";
 
 function readConnectionString(env: NodeJS.ProcessEnv): string {
   const connectionString = env.WORKER_DATABASE_URL ?? env.DATABASE_URL;
@@ -77,6 +88,53 @@ async function runEnqueue(args: readonly string[]): Promise<void> {
   });
 
   console.info(JSON.stringify(result, null, 2));
+}
+
+async function runImportGmailMbox(args: readonly string[]): Promise<void> {
+  const flags = parseCliFlags(args);
+  const connection = createDatabaseConnection({
+    connectionString: readConnectionString(process.env)
+  });
+
+  try {
+    const gmailConfig = readStage1LaunchScopeGmailConfig(process.env);
+    const repositories = createStage1RepositoryBundleFromConnection(connection);
+    const persistence = createStage1PersistenceService(repositories);
+    const normalization = createStage1NormalizationService(persistence);
+    const ingest = createStage1IngestService(normalization);
+    const syncState = createStage1SyncStateService(persistence);
+    const importer = createStage1GmailMboxImportService({
+      ingest,
+      persistence,
+      syncState
+    });
+    const mboxPath = readRequiredFlag(flags, "mbox-path");
+    const mboxText = await readFile(mboxPath, "utf8");
+    const result = await importer.importMbox({
+      mboxText,
+      mboxPath,
+      capturedMailbox: readRequiredFlag(flags, "captured-mailbox"),
+      projectInboxAliasOverride: readOptionalStringFlag(
+        flags,
+        "project-inbox-alias"
+      ),
+      liveAccount: gmailConfig.liveAccount,
+      projectInboxAliases: [...gmailConfig.projectInboxAliases],
+      syncStateId:
+        readOptionalStringFlag(flags, "sync-state-id") ??
+        buildOperationId("stage1:gmail:mbox:sync-state"),
+      correlationId:
+        readOptionalStringFlag(flags, "correlation-id") ??
+        buildOperationId("stage1:gmail:mbox:correlation"),
+      traceId: readOptionalStringFlag(flags, "trace-id"),
+      receivedAt: readOptionalStringFlag(flags, "received-at"),
+      limit: readOptionalIntegerFlag(flags, "limit", 0) || null
+    });
+
+    console.info(JSON.stringify(result, null, 2));
+  } finally {
+    await closeDatabaseConnection(connection);
+  }
 }
 
 async function runInspect(args: readonly string[]): Promise<void> {
@@ -178,12 +236,15 @@ async function main(): Promise<void> {
     case "enqueue":
       await runEnqueue(rest);
       return;
+    case "import-gmail-mbox":
+      await runImportGmailMbox(rest);
+      return;
     case "inspect":
       await runInspect(rest);
       return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, inspect."
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect."
       );
   }
 }

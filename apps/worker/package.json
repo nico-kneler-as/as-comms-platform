@@ -11,6 +11,7 @@
     "start": "node dist/index.js",
     "ops:check-config": "tsx src/ops/cli.ts check-config",
     "ops:enqueue": "tsx src/ops/cli.ts enqueue",
+    "ops:import-gmail-mbox": "tsx src/ops/cli.ts import-gmail-mbox",
     "ops:inspect": "tsx src/ops/cli.ts inspect",
     "lint": "eslint src test --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",

@@ -7,7 +7,7 @@ async function main() {
   }
 
   console.info(
-    "Stage 1 worker runtime is active. Gmail + Salesforce launch-scope capture, replay, rebuild, parity, and cutover-support tasks now execute through the single normalization path."
+    "Stage 1 worker runtime is active. Gmail live capture, Salesforce capture, replay, rebuild, parity, and cutover-support tasks now execute through the single normalization path, while historical Gmail backfill enters through the worker .mbox import command."
   );
   await runner.promise;
 }

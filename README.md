@@ -54,7 +54,7 @@ WORKER_BOOT_MODE=run DATABASE_URL=postgres://... pnpm dev:worker
 pnpm dev:gmail-capture
 pnpm dev:salesforce-capture
 pnpm ops:worker:check-config
-pnpm ops:worker:enqueue -- gmail-historical --window-start 2026-01-01T00:00:00.000Z --window-end 2026-01-02T00:00:00.000Z
+pnpm ops:worker:import-gmail-mbox -- --mbox-path /absolute/path/project-antarctica.mbox --captured-mailbox project-antarctica@example.org
 pnpm ops:worker:inspect -- contact --salesforce-contact-id 003-stage1
 pnpm lint
 pnpm typecheck
@@ -75,10 +75,11 @@ The worker now boots the Stage 1 task list end to end through the single normali
 Use the worker-side ops commands for controlled validation:
 
 - `pnpm ops:worker:check-config`
+- `pnpm ops:worker:import-gmail-mbox -- --mbox-path ... --captured-mailbox ...`
 - `pnpm ops:worker:enqueue -- ...`
 - `pnpm ops:worker:inspect -- ...`
 
-See [docs/stage-1-validation-runbook.md](./docs/stage-1-validation-runbook.md) for the operator flow and evidence checklist. Start the new Gmail and Salesforce capture services first; the worker still consumes only provider-close HTTP batches.
+See [docs/stage-1-validation-runbook.md](./docs/stage-1-validation-runbook.md) for the operator flow and evidence checklist. Start the Gmail live capture service and the Salesforce capture service first; historical Gmail backfill now runs through the worker `.mbox` import path while still feeding the same downstream normalization flow.
 
 ## What exists now
 

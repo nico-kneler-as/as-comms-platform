@@ -11,11 +11,14 @@ import {
   type GmailLiveCaptureBatchPayload
 } from "@as-comms/contracts";
 import {
-  gmailMessageRecordSchema,
   type GmailMessageRecord,
   gmailRecordSchema,
   type GmailRecord
 } from "../providers/gmail.js";
+import {
+  buildGmailMessageRecord,
+  type GmailProviderCloseMessageInput
+} from "../providers/gmail-record-builder.js";
 import { z } from "zod";
 
 import type {
@@ -28,7 +31,6 @@ import {
   hasBearerToken,
   isTimestampWithinWindow,
   jsonResponse,
-  normalizeEmail,
   paginateCapturedRecords,
   parseIsoWindow,
   parseJsonRequestBody,
@@ -40,12 +42,10 @@ const gmailCaptureServiceResponseSchema = createCapturedBatchResponseSchema(
   gmailRecordSchema
 );
 
-const timestampSchema = z.string().datetime();
 const emailSchema = z.string().email();
 
 const gmailCaptureServiceConfigSchema = z.object({
   bearerToken: z.string().min(1),
-  historicalMailboxes: z.array(emailSchema).min(1),
   liveAccount: emailSchema,
   projectInboxAliases: z.array(emailSchema).min(1),
   serviceAccountClientEmail: emailSchema,
@@ -354,103 +354,19 @@ function buildGmailListQuery(input: {
   return `after:${String(afterEpochSeconds)} before:${String(beforeEpochSeconds)} -in:chats`;
 }
 
-function parseHeaderEmailList(value: string | undefined): string[] {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    return [];
-  }
-
-  return uniqueValues(
-    Array.from(
-      value.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu),
-      (match) => normalizeEmail(match[0])
-    )
-  );
-}
-
-function resolveProjectInboxAlias(input: {
-  readonly capturedMailbox: string;
-  readonly fromEmails: readonly string[];
-  readonly toEmails: readonly string[];
-  readonly ccEmails: readonly string[];
-  readonly bccEmails: readonly string[];
-  readonly projectInboxAliases: readonly string[];
-}): string | null {
-  const aliasSet = new Set(
-    input.projectInboxAliases.map((alias) => alias.toLowerCase())
-  );
-  const candidateAddresses = [
-    ...input.fromEmails,
-    ...input.toEmails,
-    ...input.ccEmails,
-    ...input.bccEmails
-  ];
-
-  for (const address of candidateAddresses) {
-    if (aliasSet.has(address.toLowerCase())) {
-      return address;
-    }
-  }
-
-  return aliasSet.has(input.capturedMailbox.toLowerCase())
-    ? input.capturedMailbox
-    : null;
-}
-
-function mapGmailMessageToRecord(input: {
+function mapLiveGmailMessageToRecord(input: {
   readonly message: GmailMessageMetadata;
   readonly capturedMailbox: string;
-  readonly historicalMailboxes: readonly string[];
   readonly liveAccount: string;
   readonly projectInboxAliases: readonly string[];
   readonly receivedAt: string;
 }): GmailRecord {
-  const fromEmails = parseHeaderEmailList(input.message.headers.From);
-  const toEmails = parseHeaderEmailList(input.message.headers.To);
-  const ccEmails = parseHeaderEmailList(input.message.headers.Cc);
-  const bccEmails = parseHeaderEmailList(input.message.headers.Bcc);
-  const internalAddresses = new Set(
-    uniqueValues([
-      ...input.historicalMailboxes,
-      input.liveAccount,
-      ...input.projectInboxAliases
-    ]).map((value) => value.toLowerCase())
-  );
-  const projectInboxAlias = resolveProjectInboxAlias({
-    capturedMailbox: input.capturedMailbox,
-    fromEmails,
-    toEmails,
-    ccEmails,
-    bccEmails,
-    projectInboxAliases: input.projectInboxAliases
-  });
-  const externalParticipantEmails = uniqueValues(
-    [...fromEmails, ...toEmails, ...ccEmails, ...bccEmails].filter(
-      (email) => !internalAddresses.has(email.toLowerCase())
-    )
-  );
-
-  if (externalParticipantEmails.length === 0) {
-    return {
-      recordType: "internal_only_message",
-      recordId: input.message.id
-    };
-  }
-
-  const direction = fromEmails.some((email) => internalAddresses.has(email.toLowerCase()))
-    ? "outbound"
-    : "inbound";
-  const rfc822MessageId = input.message.headers["Message-ID"]?.trim() ?? null;
-  const occurredAt =
-    toSafeIsoTimestamp(input.message.headers.Date) ??
-    toSafeIsoTimestamp(Number.parseInt(input.message.internalDate, 10)) ??
-    input.receivedAt;
-
-  return gmailMessageRecordSchema.parse({
-    recordType: "message",
+  const builderInput: GmailProviderCloseMessageInput = {
     recordId: input.message.id,
-    direction,
-    occurredAt,
-    receivedAt: input.receivedAt,
+    threadId: input.message.threadId,
+    snippet: input.message.snippet,
+    internalDate: input.message.internalDate,
+    headers: input.message.headers,
     payloadRef: `gmail://${encodeURIComponent(input.capturedMailbox)}/messages/${encodeURIComponent(input.message.id)}`,
     checksum: sha256Json({
       id: input.message.id,
@@ -459,19 +375,16 @@ function mapGmailMessageToRecord(input: {
       snippet: input.message.snippet,
       headers: input.message.headers
     }),
-    snippet: input.message.snippet,
-    threadId: input.message.threadId,
-    rfc822MessageId,
     capturedMailbox: input.capturedMailbox,
-    projectInboxAlias,
-    normalizedParticipantEmails: externalParticipantEmails,
-    salesforceContactId: null,
-    volunteerIdPlainValues: [],
-    normalizedPhones: [],
-    supportingRecords: [],
-    crossProviderCollapseKey:
-      rfc822MessageId === null ? null : `rfc822:${rfc822MessageId.toLowerCase()}`
-  });
+    receivedAt: input.receivedAt,
+    internalAddresses: uniqueValues([
+      input.liveAccount,
+      ...input.projectInboxAliases
+    ]),
+    projectInboxAliases: input.projectInboxAliases
+  };
+
+  return gmailRecordSchema.parse(buildGmailMessageRecord(builderInput));
 }
 
 function buildGmailCursorMarker(record: GmailRecord): CursorMarker {
@@ -532,7 +445,6 @@ export function createGmailCaptureService(
     input?.apiClient ?? createGmailMailboxApiClient(parsedConfig, { now });
 
   async function collectHistoricalOrLiveRecords(input: {
-    readonly mode: "historical" | "live";
     readonly recordIds: readonly string[];
     readonly maxRecords: number;
     readonly cursor: string | null;
@@ -546,10 +458,7 @@ export function createGmailCaptureService(
       windowEnd: input.windowEnd
     });
     const receivedAt = now().toISOString();
-    const mailboxSet =
-      input.mode === "historical"
-        ? parsedConfig.historicalMailboxes
-        : [parsedConfig.liveAccount];
+    const mailboxSet = [parsedConfig.liveAccount];
     const records: GmailRecord[] = [];
     const latestOccurredAt: string[] = [];
 
@@ -572,10 +481,9 @@ export function createGmailCaptureService(
           continue;
         }
 
-        const mappedRecord = mapGmailMessageToRecord({
+        const mappedRecord = mapLiveGmailMessageToRecord({
           message,
           capturedMailbox: mailbox,
-          historicalMailboxes: parsedConfig.historicalMailboxes,
           liveAccount: parsedConfig.liveAccount,
           projectInboxAliases: parsedConfig.projectInboxAliases,
           receivedAt
@@ -616,24 +524,16 @@ export function createGmailCaptureService(
 
   return {
     captureHistoricalBatch(payload) {
-      const parsedPayload = gmailHistoricalCaptureBatchPayloadSchema.parse(payload);
-
-      return collectHistoricalOrLiveRecords({
-        mode: "historical",
-        recordIds: parsedPayload.recordIds,
-        maxRecords: parsedPayload.maxRecords,
-        cursor: parsedPayload.cursor,
-        checkpoint: parsedPayload.checkpoint,
-        windowStart: parsedPayload.windowStart,
-        windowEnd: parsedPayload.windowEnd
-      });
+      gmailHistoricalCaptureBatchPayloadSchema.parse(payload);
+      throw new CaptureServiceBadRequestError(
+        "Launch-scope Gmail historical backfill now uses the worker .mbox import path, not the Gmail capture service."
+      );
     },
 
     captureLiveBatch(payload) {
       const parsedPayload = gmailLiveCaptureBatchPayloadSchema.parse(payload);
 
       return collectHistoricalOrLiveRecords({
-        mode: "live",
         recordIds: parsedPayload.recordIds,
         maxRecords: parsedPayload.maxRecords,
         cursor: parsedPayload.cursor,
@@ -695,22 +595,4 @@ export function createGmailCaptureService(
       }
     }
   };
-}
-
-function toSafeIsoTimestamp(value: string | number | undefined): string | null {
-  if (value === undefined) {
-    return null;
-  }
-
-  try {
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-      return null;
-    }
-
-    return timestampSchema.parse(date.toISOString());
-  } catch {
-    return null;
-  }
 }

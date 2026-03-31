@@ -7,9 +7,7 @@ describe("Gmail capture runtime config", () => {
     const config = readGmailCaptureRuntimeConfig({
       PORT: "3011",
       GMAIL_CAPTURE_TOKEN: "gmail-token",
-      GMAIL_HISTORICAL_MAILBOXES:
-        "project-antarctica@example.org,project-oceans@example.org",
-      GMAIL_LIVE_ACCOUNT: "volunteers@example.org",
+      GMAIL_LIVE_ACCOUNT: "volunteers@adventurescientists.org",
       GMAIL_PROJECT_INBOX_ALIASES:
         "project-antarctica@example.org,project-oceans@example.org",
       GMAIL_GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL:
@@ -19,11 +17,7 @@ describe("Gmail capture runtime config", () => {
     });
 
     expect(config.port).toBe(3011);
-    expect(config.service.liveAccount).toBe("volunteers@example.org");
-    expect(config.service.historicalMailboxes).toEqual([
-      "project-antarctica@example.org",
-      "project-oceans@example.org"
-    ]);
+    expect(config.service.liveAccount).toBe("volunteers@adventurescientists.org");
   });
 
   it("fails closed when required Gmail capture env is missing", () => {
@@ -31,7 +25,6 @@ describe("Gmail capture runtime config", () => {
       readGmailCaptureRuntimeConfig({
         PORT: "3011",
         GMAIL_CAPTURE_TOKEN: "gmail-token",
-        GMAIL_HISTORICAL_MAILBOXES: "project-antarctica@example.org",
         GMAIL_PROJECT_INBOX_ALIASES: "project-antarctica@example.org",
         GMAIL_GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL:
           "capture-service@example.iam.gserviceaccount.com",
@@ -39,5 +32,20 @@ describe("Gmail capture runtime config", () => {
           "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----"
       })
     ).toThrow("GMAIL_LIVE_ACCOUNT is required.");
+  });
+
+  it("fails closed when the live Gmail account is not volunteers@...", () => {
+    expect(() =>
+      readGmailCaptureRuntimeConfig({
+        PORT: "3011",
+        GMAIL_CAPTURE_TOKEN: "gmail-token",
+        GMAIL_LIVE_ACCOUNT: "project-antarctica@example.org",
+        GMAIL_PROJECT_INBOX_ALIASES: "project-antarctica@example.org",
+        GMAIL_GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL:
+          "capture-service@example.iam.gserviceaccount.com",
+        GMAIL_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:
+          "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----"
+      })
+    ).toThrow("GMAIL_LIVE_ACCOUNT must be a volunteers@... address.");
   });
 });

@@ -144,7 +144,7 @@ export function buildSafeRuntimeConfigSummary(
   return {
     concurrency: config.concurrency,
     gmail: {
-      historicalMailboxes: config.launchScope.gmail.historicalMailboxes,
+      historicalBackfillMode: config.launchScope.gmail.historicalBackfillMode,
       liveAccount: config.launchScope.gmail.liveAccount,
       projectInboxAliases: config.launchScope.gmail.projectInboxAliases,
       livePollIntervalSeconds: config.launchScope.gmail.livePollIntervalSeconds,
@@ -224,7 +224,7 @@ export async function startWorker(
 
   if (!config) {
     console.info(
-      "Stage 1 worker runtime is idle. Set WORKER_BOOT_MODE=run, provide a database URL, and configure Gmail + Salesforce capture ports to start the narrowed launch-scope worker."
+      "Stage 1 worker runtime is idle. Set WORKER_BOOT_MODE=run, provide a database URL, configure the Gmail live and Salesforce capture ports, and use the worker .mbox import command for historical Gmail backfill."
     );
     return null;
   }
