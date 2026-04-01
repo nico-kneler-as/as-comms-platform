@@ -14,10 +14,9 @@ export const salesforceCaptureRuntimeConfigSchema = z.object({
     bearerToken: z.string().min(1),
     loginUrl: z.string().url(),
     clientId: z.string().min(1),
-    clientSecret: z.string().min(1),
     username: z.string().min(1),
-    password: z.string().min(1),
-    securityToken: z.string().min(1),
+    jwtPrivateKey: z.string().min(1),
+    jwtExpirationSeconds: z.number().int().positive().default(180),
     apiVersion: z.string().min(1).default("61.0"),
     contactCaptureMode: z.enum(["delta_polling", "cdc_compatible"]),
     membershipCaptureMode: z.enum(["delta_polling", "cdc_compatible"]),
@@ -120,21 +119,18 @@ export function readSalesforceCaptureRuntimeConfig(
         env.SALESFORCE_CLIENT_ID,
         "SALESFORCE_CLIENT_ID"
       ),
-      clientSecret: parseRequiredStringEnv(
-        env.SALESFORCE_CLIENT_SECRET,
-        "SALESFORCE_CLIENT_SECRET"
-      ),
       username: parseRequiredStringEnv(
         env.SALESFORCE_USERNAME,
         "SALESFORCE_USERNAME"
       ),
-      password: parseRequiredStringEnv(
-        env.SALESFORCE_PASSWORD,
-        "SALESFORCE_PASSWORD"
+      jwtPrivateKey: parseRequiredStringEnv(
+        env.SALESFORCE_JWT_PRIVATE_KEY,
+        "SALESFORCE_JWT_PRIVATE_KEY"
       ),
-      securityToken: parseRequiredStringEnv(
-        env.SALESFORCE_SECURITY_TOKEN,
-        "SALESFORCE_SECURITY_TOKEN"
+      jwtExpirationSeconds: parseOptionalPositiveIntEnv(
+        env.SALESFORCE_JWT_EXPIRATION_SECONDS,
+        180,
+        "SALESFORCE_JWT_EXPIRATION_SECONDS"
       ),
       apiVersion: parseOptionalStringEnv(env.SALESFORCE_API_VERSION, "61.0"),
       contactCaptureMode: parseRequiredStringEnv(

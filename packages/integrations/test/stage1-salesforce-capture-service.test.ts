@@ -1,12 +1,58 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  createSalesforceApiClient,
   createSalesforceCapturePort,
   createSalesforceCaptureService,
   type CaptureServiceHttpRequest,
   type SalesforceApiClient,
   type SalesforceCaptureService
 } from "../src/index.js";
+
+const testJwtPrivateKey = `-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDZiGf3MNY60bp4
+CO6yPUNMCQn6hJ8nwy6wdP9S0ydG2Yk5jkElTUN+92jE/6YhbI6/N4Qq1nQu3mmf
+79hWzhIGg8nmET4zEesXk3pM0fJ0PmvxJ1lYj8bt6YYe2jgtPwoL81bm4kGfhMlO
+zyuiPEyfx1VnHzjfwArRrzVcv0MuvB7+yE7x5Mm0Br5z0fM6lkL+HghwuZl7z/aq
+jG9G5yEeDSYjTQri/UH6SEdb3EkIspFaHZWK2Oal6nzP0zvtH0BY4vDlL7eQn0h2
+eWQf2b3JSLc2Qsnl7jM/QKkpbZh/KD72x2f8JwvaP3nVvLod4j1d0wjSDV4olpry
+t03r94c7AgMBAAECggEABc9h+PFd1k9vB+3d1WvABd0SycSNm7jtOZ8FCm0s95fb
+o+ZezLOlc8N5sUmnLhxnZNVhoN+rvCLmQm7uVNHb7s+F8Jj0WwMt8p0kbH2wW3o2
+L15LNYhG0rf9o2fNT1AFp+JIkE+P6rMFQvK2UjIdjGQ7F0F3fG7fr+3Qw7qgN2uu
+S7hL4U3VskJVNjm9I7Vv3T6gA8EMwEtfiCwlDV+eq3T9ZLMAglMR6IY2QqjTuY2V
+LP0JQ18cYyJGm1wbJ9Hly6FW54bIMaIJ+V4NXj+HA0SxMUDfW1VnY6wNgomq7zQz
+R6KyrVsfE81GHw/0bKSVV2Sg5tL2n1X2UywoGTeAwQKBgQDyyDHK4Jx5jo+uK4xV
+BpjFQonbkWfnY5ow5zA0dGLwB1x80vKR5pE6DOsK2BUp2lN0M0jEnA9f1yxHyNwY
+HErG5oD+YtWQHn2tpO8B7vbB2el5LO7e8d3KY0pn7B5zqSgqNyoPR6jAKr5a9o5s
+u5B9mBdlRtnzv77V4th8nYwBhQKBgQDlOq1A2p7Vn/Xs6mWTfrPK9lHoU5m+NLCc
+SQPRQGA2Wtr6L4Hq4sWBd/8+HTRkY/1JHk9mOVoz3v4uCaE0M3PjFzSiWNuS+1mX
+HOX0zu2fp2wjoUCUcCsQ4qyQqLuIQRu2A2MZd0pi/8n0pwzx36HOY6eNBl5z99LI
+TQqdn3zEFwKBgQDBfDUt7eUhGbv1yyjMjTAyrip8iFi5xNx/NNBz21se3GfwlI88
+I1x6BsF3wS0AU5mB82EhktI3UBJ0K2lJdnVy40kG9ye0HVfQx+iVG9GZxYhRAh8+
+I1PgHdfSDV+vJ3zx6GjYhTtVE4q8t5NvLta9Y/QaPzYDZExQx0hr3PNo7QKBgQCt
+9is8VIf9PqAJAGYGU5+8JY4yQXw+FVf8lAQa0P7BXJf38If2Y9ef5mJ2kdlF3Bj8
+YrNWf7UNBw+7x4g0+yB8qKs9WQ8j3HTYOCl6B0a7rP1e5wAeFDQis7GeD/NLkP6x
+5q6+7PtR+FctKoBfHq2LJt7FDVSmNPmBrZi5PoE5tQKBgAqJxX3iX1/2nnmQpNkH
+gSDc4Jm9W0fH9FhPj6m8wV6kIxvOBObWnW1wunL7YQ1DLwdhFNnX+4ZaFQLiXPKC
+mz8ZbGCj2DhKD1mBnWkQdbLHF+Q5/AR9gNiVHLClEeN9wE85KqaLSMycEkUS0t89
+WlsbLfFo7L5Fv1zFpM+8zDyg
+-----END PRIVATE KEY-----`;
+
+function createSalesforceServiceConfig() {
+  return {
+    bearerToken: "salesforce-token",
+    loginUrl: "https://test.salesforce.com",
+    clientId: "client-id",
+    username: "worker@example.org",
+    jwtPrivateKey: testJwtPrivateKey,
+    contactCaptureMode: "cdc_compatible" as const,
+    membershipCaptureMode: "cdc_compatible" as const
+  };
+}
+
+function getRequestBodyAsString(body: unknown): string {
+  return typeof body === "string" ? body : "";
+}
 
 function toResponse(input: {
   readonly status: number;
@@ -116,17 +162,7 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
 describe("Salesforce capture service", () => {
   it("enforces bearer auth at the HTTP boundary", async () => {
     const service = createSalesforceCaptureService(
-      {
-        bearerToken: "salesforce-token",
-        loginUrl: "https://test.salesforce.com",
-        clientId: "client-id",
-        clientSecret: "client-secret",
-        username: "worker@example.org",
-        password: "password",
-        securityToken: "security-token",
-        contactCaptureMode: "cdc_compatible",
-        membershipCaptureMode: "cdc_compatible"
-      },
+      createSalesforceServiceConfig(),
       {
         apiClient: createFakeSalesforceApiClient()
       }
@@ -150,17 +186,7 @@ describe("Salesforce capture service", () => {
   it("rejects invalid payloads before querying Salesforce", async () => {
     let queryCount = 0;
     const service = createSalesforceCaptureService(
-      {
-        bearerToken: "salesforce-token",
-        loginUrl: "https://test.salesforce.com",
-        clientId: "client-id",
-        clientSecret: "client-secret",
-        username: "worker@example.org",
-        password: "password",
-        securityToken: "security-token",
-        contactCaptureMode: "cdc_compatible",
-        membershipCaptureMode: "cdc_compatible"
-      },
+      createSalesforceServiceConfig(),
       {
         apiClient: {
           queryAll: () => {
@@ -207,17 +233,7 @@ describe("Salesforce capture service", () => {
 
   it("returns launch-scope Salesforce Contact, Expedition_Members__c, and Task records in the worker-facing provider-close shape", async () => {
     const service = createSalesforceCaptureService(
-      {
-        bearerToken: "salesforce-token",
-        loginUrl: "https://test.salesforce.com",
-        clientId: "client-id",
-        clientSecret: "client-secret",
-        username: "worker@example.org",
-        password: "password",
-        securityToken: "security-token",
-        contactCaptureMode: "cdc_compatible",
-        membershipCaptureMode: "cdc_compatible"
-      },
+      createSalesforceServiceConfig(),
       {
         apiClient: createFakeSalesforceApiClient(),
         now: () => new Date("2026-01-05T00:05:00.000Z")
@@ -294,15 +310,8 @@ describe("Salesforce capture service", () => {
   it("keeps live Salesforce capture CDC-compatible at the contract level while using the same provider-close batch shape", async () => {
     const service = createSalesforceCaptureService(
       {
-        bearerToken: "salesforce-token",
-        loginUrl: "https://test.salesforce.com",
-        clientId: "client-id",
-        clientSecret: "client-secret",
-        username: "worker@example.org",
-        password: "password",
-        securityToken: "security-token",
-        contactCaptureMode: "cdc_compatible",
-        membershipCaptureMode: "cdc_compatible"
+        ...createSalesforceServiceConfig(),
+        timeoutMs: 1_000
       },
       {
         apiClient: createFakeSalesforceApiClient(),
@@ -341,6 +350,113 @@ describe("Salesforce capture service", () => {
           salesforceContactId: "003-stage1"
         })
       ])
+    );
+  });
+
+  it("uses the JWT bearer grant for Salesforce token exchange without password credentials", async () => {
+    const fixedNow = new Date("2026-04-01T12:00:00.000Z");
+    const fetchImplementation = vi.fn<typeof fetch>((input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
+
+      if (url === "https://login.example.test/services/oauth2/token") {
+        return Promise.resolve(
+          new Response(
+          JSON.stringify({
+            access_token: "token-123",
+            instance_url: "https://instance.example.test"
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+        );
+      }
+
+      return Promise.resolve(
+        new Response(
+        JSON.stringify({
+          records: [],
+          done: true
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+        )
+      );
+    });
+
+    const client = createSalesforceApiClient(
+      {
+        ...createSalesforceServiceConfig(),
+        loginUrl: "https://login.example.test/custom/path",
+        jwtExpirationSeconds: 180
+      },
+      {
+        fetchImplementation,
+        now: () => fixedNow
+      }
+    );
+
+    await client.queryAll("SELECT Id FROM Contact");
+
+    const tokenCall = fetchImplementation.mock.calls[0];
+    const tokenBody = getRequestBodyAsString(tokenCall?.[1]?.body);
+    const params = new URLSearchParams(tokenBody);
+    const assertion = params.get("assertion");
+
+    expect(params.get("grant_type")).toBe(
+      "urn:ietf:params:oauth:grant-type:jwt-bearer"
+    );
+    expect(assertion).toEqual(expect.any(String));
+    expect(params.has("client_secret")).toBe(false);
+    expect(params.has("password")).toBe(false);
+    expect(params.has("username")).toBe(false);
+
+    const assertionPayload = JSON.parse(
+      Buffer.from(assertion?.split(".")[1] ?? "", "base64url").toString("utf8")
+    ) as Record<string, unknown>;
+    const expectedExp = Math.floor(fixedNow.getTime() / 1000) + 180;
+
+    expect(assertionPayload).toMatchObject({
+      iss: "client-id",
+      sub: "worker@example.org",
+      aud: "https://login.example.test",
+      exp: expectedExp
+    });
+  });
+
+  it("includes the Salesforce response body in token exchange errors when available", async () => {
+    const client = createSalesforceApiClient(createSalesforceServiceConfig(), {
+      fetchImplementation: () =>
+        Promise.resolve(
+          new Response(
+          JSON.stringify({
+            error: "invalid_grant",
+            error_description: "user hasn't approved this consumer"
+          }),
+          {
+            status: 400,
+            headers: {
+              "content-type": "application/json"
+            }
+          }
+        )
+        )
+    });
+
+    await expect(client.queryAll("SELECT Id FROM Contact")).rejects.toThrow(
+      "invalid_grant"
     );
   });
 });

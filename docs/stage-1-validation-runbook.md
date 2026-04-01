@@ -35,6 +35,7 @@ Minimum launch-scope env:
 - `SALESFORCE_MEMBERSHIP_CAPTURE_MODE`
 
 Capture-service env is separate from worker env. Use [docs/stage-1-capture-services.md](./stage-1-capture-services.md) for the Gmail and Salesforce service-side variables.
+For launch scope, the Salesforce service-side auth variables are now `SALESFORCE_LOGIN_URL`, `SALESFORCE_CLIENT_ID`, `SALESFORCE_USERNAME`, and `SALESFORCE_JWT_PRIVATE_KEY`.
 
 Historical Gmail `.mbox` backfill inputs are provided at command time, not through worker env:
 

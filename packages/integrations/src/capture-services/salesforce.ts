@@ -1,3 +1,5 @@
+import { createSign } from "node:crypto";
+
 import {
   createCapturedBatchResponseSchema,
   type CapturedBatchResponse
@@ -50,10 +52,9 @@ const salesforceCaptureServiceConfigSchema = z.object({
   bearerToken: z.string().min(1),
   loginUrl: z.string().url(),
   clientId: z.string().min(1),
-  clientSecret: z.string().min(1),
   username: z.string().min(1),
-  password: z.string().min(1),
-  securityToken: z.string().min(1),
+  jwtPrivateKey: z.string().min(1),
+  jwtExpirationSeconds: z.number().int().positive().default(180),
   apiVersion: z.string().min(1).default("61.0"),
   contactCaptureMode: salesforceCaptureModeSchema,
   membershipCaptureMode: salesforceCaptureModeSchema,
@@ -101,6 +102,58 @@ const salesforceQueryResponseSchema = z.object({
   nextRecordsUrl: z.string().min(1).optional(),
   done: z.boolean()
 });
+
+function base64UrlEncode(value: string): string {
+  return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function normalizePrivateKey(privateKey: string): string {
+  return privateKey.replace(/\\n/gu, "\n");
+}
+
+function createSalesforceJwtAssertion(input: {
+  readonly clientId: string;
+  readonly username: string;
+  readonly loginUrl: string;
+  readonly jwtPrivateKey: string;
+  readonly nowEpochSeconds: number;
+  readonly jwtExpirationSeconds: number;
+}): string {
+  const header = {
+    alg: "RS256",
+    typ: "JWT"
+  };
+  const payload = {
+    iss: input.clientId,
+    sub: input.username,
+    aud: new URL(input.loginUrl).origin,
+    exp: input.nowEpochSeconds + input.jwtExpirationSeconds
+  };
+  const signingInput = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(
+    JSON.stringify(payload)
+  )}`;
+  const signer = createSign("RSA-SHA256");
+
+  signer.update(signingInput);
+  signer.end();
+
+  const signature = signer.sign(normalizePrivateKey(input.jwtPrivateKey));
+
+  return `${signingInput}.${signature.toString("base64url")}`;
+}
+
+function formatUpstreamErrorSuffix(responseText: string): string {
+  const trimmed = responseText.trim();
+
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  const summarized =
+    trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed;
+
+  return ` Response body: ${summarized}`;
+}
 
 const lifecycleSources = [
   {
@@ -227,6 +280,7 @@ export function createSalesforceApiClient(
 
   async function getAccessToken(): Promise<SalesforceAccessTokenCacheEntry> {
     const currentTime = now().getTime();
+    const nowEpochSeconds = Math.floor(currentTime / 1000);
 
     if (
       accessTokenCache !== null &&
@@ -236,6 +290,14 @@ export function createSalesforceApiClient(
     }
 
     const tokenUrl = new URL("/services/oauth2/token", parsedConfig.loginUrl).toString();
+    const assertion = createSalesforceJwtAssertion({
+      clientId: parsedConfig.clientId,
+      username: parsedConfig.username,
+      loginUrl: parsedConfig.loginUrl,
+      jwtPrivateKey: parsedConfig.jwtPrivateKey,
+      nowEpochSeconds,
+      jwtExpirationSeconds: parsedConfig.jwtExpirationSeconds
+    });
     const response = await fetchImplementation(tokenUrl, {
       method: "POST",
       headers: {
@@ -243,18 +305,18 @@ export function createSalesforceApiClient(
         "content-type": "application/x-www-form-urlencoded"
       },
       body: new URLSearchParams({
-        grant_type: "password",
-        client_id: parsedConfig.clientId,
-        client_secret: parsedConfig.clientSecret,
-        username: parsedConfig.username,
-        password: `${parsedConfig.password}${parsedConfig.securityToken}`
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion
       }).toString(),
       signal: AbortSignal.timeout(parsedConfig.timeoutMs)
     });
 
     if (!response.ok) {
+      const responseText = await response.text();
       throw new Error(
-        `Salesforce token exchange failed with status ${String(response.status)}.`
+        `Salesforce token exchange failed with status ${String(response.status)}.${formatUpstreamErrorSuffix(
+          responseText
+        )}`
       );
     }
 

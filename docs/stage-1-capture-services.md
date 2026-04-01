@@ -110,15 +110,15 @@ Required env:
 - `SALESFORCE_CAPTURE_TOKEN`
 - `SALESFORCE_LOGIN_URL`
 - `SALESFORCE_CLIENT_ID`
-- `SALESFORCE_CLIENT_SECRET`
 - `SALESFORCE_USERNAME`
-- `SALESFORCE_PASSWORD`
-- `SALESFORCE_SECURITY_TOKEN`
+- `SALESFORCE_JWT_PRIVATE_KEY`
 - `SALESFORCE_CONTACT_CAPTURE_MODE`
 - `SALESFORCE_MEMBERSHIP_CAPTURE_MODE`
 
 Optional env:
 
+- `SALESFORCE_JWT_EXPIRATION_SECONDS`
+  - defaults to `180`
 - `SALESFORCE_API_VERSION`
   - defaults to `61.0`
 - `SALESFORCE_EXPEDITION_MEMBER_OBJECT`
@@ -158,6 +158,7 @@ Operational notes:
 
 - `Contact.Id` remains the primary identity anchor in downstream normalization
 - `Volunteer_ID_Plain__c` is passed through as the canonical volunteer ID value, not the primary join key
+- authentication uses Salesforce OAuth 2.0 JWT bearer flow with `SALESFORCE_CLIENT_ID` as `iss`, `SALESFORCE_USERNAME` as `sub`, and the origin of `SALESFORCE_LOGIN_URL` as `aud`
 - `SALESFORCE_CONTACT_CAPTURE_MODE` and `SALESFORCE_MEMBERSHIP_CAPTURE_MODE` may be `delta_polling` or `cdc_compatible`
 - in this repo, `cdc_compatible` means the capture service contract stays compatible with a CDC-fed upstream source, but the worker still receives the same provider-close live batch shape
 

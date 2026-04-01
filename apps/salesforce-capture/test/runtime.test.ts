@@ -9,10 +9,10 @@ describe("Salesforce capture runtime config", () => {
       SALESFORCE_CAPTURE_TOKEN: "salesforce-token",
       SALESFORCE_LOGIN_URL: "https://test.salesforce.com",
       SALESFORCE_CLIENT_ID: "client-id",
-      SALESFORCE_CLIENT_SECRET: "client-secret",
       SALESFORCE_USERNAME: "worker@example.org",
-      SALESFORCE_PASSWORD: "password",
-      SALESFORCE_SECURITY_TOKEN: "security-token",
+      SALESFORCE_JWT_PRIVATE_KEY:
+        "-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----",
+      SALESFORCE_JWT_EXPIRATION_SECONDS: "240",
       SALESFORCE_CONTACT_CAPTURE_MODE: "cdc_compatible",
       SALESFORCE_MEMBERSHIP_CAPTURE_MODE: "delta_polling"
     });
@@ -20,6 +20,7 @@ describe("Salesforce capture runtime config", () => {
     expect(config.port).toBe(3012);
     expect(config.service.membershipObjectName).toBe("Expedition_Members__c");
     expect(config.service.taskChannelField).toBe("TaskSubtype");
+    expect(config.service.jwtExpirationSeconds).toBe(240);
   });
 
   it("fails closed when required Salesforce capture env is missing", () => {
@@ -28,10 +29,9 @@ describe("Salesforce capture runtime config", () => {
         PORT: "3012",
         SALESFORCE_CAPTURE_TOKEN: "salesforce-token",
         SALESFORCE_LOGIN_URL: "https://test.salesforce.com",
-        SALESFORCE_CLIENT_SECRET: "client-secret",
         SALESFORCE_USERNAME: "worker@example.org",
-        SALESFORCE_PASSWORD: "password",
-        SALESFORCE_SECURITY_TOKEN: "security-token",
+        SALESFORCE_JWT_PRIVATE_KEY:
+          "-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----",
         SALESFORCE_CONTACT_CAPTURE_MODE: "cdc_compatible",
         SALESFORCE_MEMBERSHIP_CAPTURE_MODE: "delta_polling"
       })

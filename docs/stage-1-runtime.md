@@ -60,6 +60,7 @@ Launch-scope deployment expects these separate services:
 - `salesforce-capture`
 
 See [docs/stage-1-capture-services.md](./stage-1-capture-services.md) for the capture-service env contracts, bearer-token setup, and Railway build/start commands.
+For launch scope, the Salesforce capture service now authenticates upstream with OAuth 2.0 JWT bearer flow instead of the older username-password token exchange.
 
 Use the config preflight command before a sandbox run:
 
