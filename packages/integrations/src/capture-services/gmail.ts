@@ -70,6 +70,17 @@ interface GmailMessageMetadata {
   readonly headers: Record<string, string>;
 }
 
+const liveGmailChecksumHeaderNames = new Set([
+  "Date",
+  "From",
+  "To",
+  "Cc",
+  "Bcc",
+  "Message-ID",
+  "Delivered-To",
+  "Reply-To"
+]);
+
 export interface GmailMailboxApiClient {
   listMessageIds(input: {
     readonly mailbox: string;
@@ -79,6 +90,26 @@ export interface GmailMailboxApiClient {
     readonly mailbox: string;
     readonly messageId: string;
   }): Promise<GmailMessageMetadata | null>;
+}
+
+function selectLiveGmailChecksumHeaders(
+  headers: Readonly<Record<string, string>>
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).filter(([name]) =>
+      liveGmailChecksumHeaderNames.has(name)
+    )
+  );
+}
+
+function buildLiveGmailChecksum(message: GmailMessageMetadata): string {
+  return sha256Json({
+    id: message.id,
+    threadId: message.threadId,
+    internalDate: message.internalDate,
+    snippet: message.snippet,
+    headers: selectLiveGmailChecksumHeaders(message.headers)
+  });
 }
 
 interface GmailAccessTokenCacheEntry {
@@ -256,6 +287,7 @@ export function createGmailMailboxApiClient(
         "To",
         "Cc",
         "Bcc",
+        "Subject",
         "Message-ID",
         "Delivered-To",
         "Reply-To"
@@ -319,16 +351,12 @@ function mapLiveGmailMessageToRecord(input: {
     recordId: input.message.id,
     threadId: input.message.threadId,
     snippet: input.message.snippet,
+    snippetClean: input.message.snippet,
+    bodyTextPreview: input.message.snippet,
     internalDate: input.message.internalDate,
     headers: input.message.headers,
     payloadRef: `gmail://${encodeURIComponent(input.capturedMailbox)}/messages/${encodeURIComponent(input.message.id)}`,
-    checksum: sha256Json({
-      id: input.message.id,
-      threadId: input.message.threadId,
-      internalDate: input.message.internalDate,
-      snippet: input.message.snippet,
-      headers: input.message.headers
-    }),
+    checksum: buildLiveGmailChecksum(input.message),
     capturedMailbox: input.capturedMailbox,
     receivedAt: input.receivedAt,
     internalAddresses: uniqueValues([

@@ -31,6 +31,9 @@ describe("Stage 1 Gmail .mbox import", () => {
       expect.objectContaining({
         recordType: "message",
         direction: "inbound",
+        subject: "Historical volunteer reply",
+        snippetClean: "Hello from an exported mailbox.",
+        bodyTextPreview: "Hello from an exported mailbox.",
         capturedMailbox: "project-antarctica@example.org",
         projectInboxAlias: "project-antarctica@example.org",
         normalizedParticipantEmails: ["volunteer@example.org"],
@@ -102,6 +105,105 @@ describe("Stage 1 Gmail .mbox import", () => {
           historicalResult.command.input.identity.normalizedEmails
         );
       }
+    }
+  });
+
+  it("imports blank-subject mbox messages without throwing and normalizes subject to null", () => {
+    const records = importGmailMboxRecords({
+      mboxText: `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
+Date: Fri, 03 Jan 2026 00:00:00 +0000
+From: Volunteer <volunteer@example.org>
+To: Project Antarctica <project-antarctica@example.org>
+Message-ID: <gmail-mbox-blank-subject@example.org>
+
+Hello from an exported mailbox.
+`,
+      mboxPath: "/tmp/project-antarctica-blank-subject.mbox",
+      capturedMailbox: "project-antarctica@example.org",
+      liveAccount: "volunteers@adventurescientists.org",
+      projectInboxAliases: ["project-antarctica@example.org"],
+      receivedAt: "2026-01-03T00:05:00.000Z"
+    });
+
+    expect(records).toEqual([
+      expect.objectContaining({
+        recordType: "message",
+        subject: null
+      })
+    ]);
+  });
+
+  it("normalizes missing or blank subjects to null while preserving non-empty subjects", () => {
+    const cases = [
+      {
+        name: "missing subject",
+        headers: {
+          Date: "Fri, 03 Jan 2026 00:00:00 +0000",
+          From: "Project Antarctica <project-antarctica@example.org>",
+          To: "Volunteer <volunteer@example.org>",
+          "Message-ID": "<gmail-live-missing@example.org>"
+        },
+        expectedSubject: null
+      },
+      {
+        name: "empty subject",
+        headers: {
+          Date: "Fri, 03 Jan 2026 00:00:00 +0000",
+          From: "Project Antarctica <project-antarctica@example.org>",
+          To: "Volunteer <volunteer@example.org>",
+          Subject: "",
+          "Message-ID": "<gmail-live-empty@example.org>"
+        },
+        expectedSubject: null
+      },
+      {
+        name: "whitespace-only subject",
+        headers: {
+          Date: "Fri, 03 Jan 2026 00:00:00 +0000",
+          From: "Project Antarctica <project-antarctica@example.org>",
+          To: "Volunteer <volunteer@example.org>",
+          Subject: "   ",
+          "Message-ID": "<gmail-live-whitespace@example.org>"
+        },
+        expectedSubject: null
+      },
+      {
+        name: "normal subject",
+        headers: {
+          Date: "Fri, 03 Jan 2026 00:00:00 +0000",
+          From: "Project Antarctica <project-antarctica@example.org>",
+          To: "Volunteer <volunteer@example.org>",
+          Subject: "Status update",
+          "Message-ID": "<gmail-live-normal@example.org>"
+        },
+        expectedSubject: "Status update"
+      }
+    ] as const;
+
+    for (const testCase of cases) {
+      const record = buildGmailMessageRecord({
+        recordId: testCase.name,
+        threadId: "thread-live-subject",
+        snippet: "Follow-up from the project inbox",
+        internalDate: "2026-01-03T00:00:00.000Z",
+        headers: testCase.headers,
+        payloadRef: `gmail://volunteers@adventurescientists.org/messages/${encodeURIComponent(
+          testCase.name
+        )}`,
+        checksum: `checksum:${testCase.name}`,
+        capturedMailbox: "volunteers@adventurescientists.org",
+        receivedAt: "2026-01-03T00:05:00.000Z",
+        internalAddresses: [
+          "volunteers@adventurescientists.org",
+          "project-antarctica@example.org"
+        ],
+        projectInboxAliases: ["project-antarctica@example.org"]
+      });
+
+      expect(record).toMatchObject({
+        recordType: "message",
+        subject: testCase.expectedSubject
+      });
     }
   });
 });

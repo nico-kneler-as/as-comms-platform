@@ -9,6 +9,8 @@ export interface GmailProviderCloseMessageInput {
   readonly recordId: string;
   readonly threadId: string | null;
   readonly snippet: string;
+  readonly snippetClean?: string;
+  readonly bodyTextPreview?: string | null;
   readonly internalDate: string | null;
   readonly headers: Readonly<Record<string, string>>;
   readonly payloadRef: string;
@@ -153,10 +155,19 @@ export function buildGmailMessageRecord(
     ? "outbound"
     : "inbound";
   const rfc822MessageId = input.headers["Message-ID"]?.trim() ?? null;
+  const trimmedSubject = input.headers.Subject?.trim();
+  const subject =
+    trimmedSubject === undefined || trimmedSubject.length === 0
+      ? null
+      : trimmedSubject;
   const occurredAt =
     toSafeIsoTimestamp(input.headers.Date) ??
     toSafeIsoTimestamp(input.internalDate ?? undefined) ??
     input.receivedAt;
+  const snippetClean = input.snippetClean?.trim() ?? input.snippet.trim();
+  const bodyTextPreview =
+    input.bodyTextPreview?.trim() ??
+    (snippetClean.length > 0 ? snippetClean : input.snippet.trim());
 
   return gmailMessageRecordSchema.parse({
     recordType: "message",
@@ -167,6 +178,9 @@ export function buildGmailMessageRecord(
     payloadRef: input.payloadRef,
     checksum: input.checksum,
     snippet: input.snippet,
+    subject,
+    snippetClean,
+    bodyTextPreview,
     threadId: input.threadId,
     rfc822MessageId,
     capturedMailbox: input.capturedMailbox,
