@@ -22,8 +22,9 @@ export const gmailCaptureRuntimeConfigSchema = z.object({
     bearerToken: z.string().min(1),
     liveAccount: volunteersEmailSchema,
     projectInboxAliases: z.array(emailSchema).min(1),
-    serviceAccountClientEmail: emailSchema,
-    serviceAccountPrivateKey: z.string().min(1),
+    oauthClientId: z.string().min(1),
+    oauthClientSecret: z.string().min(1),
+    oauthRefreshToken: z.string().min(1),
     tokenUri: z.string().url().default("https://oauth2.googleapis.com/token"),
     timeoutMs: z.number().int().positive().default(15_000)
   })
@@ -88,13 +89,17 @@ export function readGmailCaptureRuntimeConfig(
         env.GMAIL_PROJECT_INBOX_ALIASES,
         "GMAIL_PROJECT_INBOX_ALIASES"
       ),
-      serviceAccountClientEmail: parseRequiredStringEnv(
-        env.GMAIL_GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL,
-        "GMAIL_GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL"
+      oauthClientId: parseRequiredStringEnv(
+        env.GMAIL_GOOGLE_OAUTH_CLIENT_ID,
+        "GMAIL_GOOGLE_OAUTH_CLIENT_ID"
       ),
-      serviceAccountPrivateKey: parseRequiredStringEnv(
-        env.GMAIL_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
-        "GMAIL_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY"
+      oauthClientSecret: parseRequiredStringEnv(
+        env.GMAIL_GOOGLE_OAUTH_CLIENT_SECRET,
+        "GMAIL_GOOGLE_OAUTH_CLIENT_SECRET"
+      ),
+      oauthRefreshToken: parseRequiredStringEnv(
+        env.GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN,
+        "GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN"
       ),
       tokenUri:
         env.GMAIL_GOOGLE_TOKEN_URI?.trim().length

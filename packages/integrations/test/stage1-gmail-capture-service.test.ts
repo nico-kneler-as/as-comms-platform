@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createGmailCaptureService
+  createGmailCaptureService,
+  createGmailMailboxApiClient
 } from "../src/index.js";
 
 describe("Gmail capture service", () => {
@@ -11,8 +12,9 @@ describe("Gmail capture service", () => {
         bearerToken: "gmail-token",
         liveAccount: "volunteers@example.org",
         projectInboxAliases: ["project-antarctica@example.org"],
-        serviceAccountClientEmail: "capture-service@example.iam.gserviceaccount.com",
-        serviceAccountPrivateKey: "test-private-key"
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
       },
       {
         apiClient: {
@@ -44,8 +46,9 @@ describe("Gmail capture service", () => {
         bearerToken: "gmail-token",
         liveAccount: "volunteers@example.org",
         projectInboxAliases: ["project-antarctica@example.org"],
-        serviceAccountClientEmail: "capture-service@example.iam.gserviceaccount.com",
-        serviceAccountPrivateKey: "test-private-key"
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
       },
       {
         apiClient: {
@@ -102,8 +105,9 @@ describe("Gmail capture service", () => {
           "project-antarctica@example.org",
           "project-oceans@example.org"
         ],
-        serviceAccountClientEmail: "capture-service@example.iam.gserviceaccount.com",
-        serviceAccountPrivateKey: "test-private-key"
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
       },
       {
         apiClient: {
@@ -162,8 +166,9 @@ describe("Gmail capture service", () => {
           "project-antarctica@example.org",
           "project-oceans@example.org"
         ],
-        serviceAccountClientEmail: "capture-service@example.iam.gserviceaccount.com",
-        serviceAccountPrivateKey: "test-private-key"
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
       },
       {
         apiClient: {
@@ -217,5 +222,93 @@ describe("Gmail capture service", () => {
       capturedMailbox: "volunteers@example.org",
       projectInboxAlias: "project-oceans@example.org"
     });
+  });
+
+  it("uses OAuth refresh-token exchange before polling the live mailbox", async () => {
+    const requests: Array<{
+      readonly url: string;
+      readonly method: string;
+      readonly headers: Headers;
+      readonly bodyText: string;
+    }> = [];
+    const client = createGmailMailboxApiClient(
+      {
+        bearerToken: "gmail-token",
+        liveAccount: "volunteers@example.org",
+        projectInboxAliases: ["project-antarctica@example.org"],
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
+      },
+      {
+        fetchImplementation: async (input, init) => {
+          const url = String(input);
+          const method = init?.method ?? "GET";
+          const headers = new Headers(init?.headers);
+          const bodyText =
+            typeof init?.body === "string" ? init.body : "";
+
+          requests.push({
+            url,
+            method,
+            headers,
+            bodyText
+          });
+
+          if (url === "https://oauth2.googleapis.com/token") {
+            return new Response(
+              JSON.stringify({
+                access_token: "gmail-access-token",
+                expires_in: 3600
+              }),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json"
+                }
+              }
+            );
+          }
+
+          return new Response(
+            JSON.stringify({
+              messages: []
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json"
+              }
+            }
+          );
+        }
+      }
+    );
+
+    await client.listMessageIds({
+      mailbox: "volunteers@example.org",
+      query: "after:1 before:2 -in:chats"
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.url).toBe("https://oauth2.googleapis.com/token");
+    expect(requests[0]?.method).toBe("POST");
+    expect(requests[0]?.headers.get("content-type")).toBe(
+      "application/x-www-form-urlencoded"
+    );
+    expect(requests[0]?.bodyText).toBe(
+      new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: "gmail-oauth-client-id",
+        client_secret: "gmail-oauth-client-secret",
+        refresh_token: "gmail-oauth-refresh-token"
+      }).toString()
+    );
+    expect(requests[1]?.headers.get("authorization")).toBe(
+      "Bearer gmail-access-token"
+    );
+    expect(requests[1]?.url).toContain(
+      "/gmail/v1/users/volunteers%40example.org/messages"
+    );
   });
 });

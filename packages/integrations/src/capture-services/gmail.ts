@@ -1,5 +1,3 @@
-import { createSign } from "node:crypto";
-
 import {
   createCapturedBatchResponseSchema,
   type CapturedBatchResponse
@@ -48,8 +46,9 @@ const gmailCaptureServiceConfigSchema = z.object({
   bearerToken: z.string().min(1),
   liveAccount: emailSchema,
   projectInboxAliases: z.array(emailSchema).min(1),
-  serviceAccountClientEmail: emailSchema,
-  serviceAccountPrivateKey: z.string().min(1),
+  oauthClientId: z.string().min(1),
+  oauthClientSecret: z.string().min(1),
+  oauthRefreshToken: z.string().min(1),
   tokenUri: z
     .string()
     .url()
@@ -120,46 +119,6 @@ const gmailMessageMetadataResponseSchema = z.object({
   })
 });
 
-function base64UrlEncode(value: string): string {
-  return Buffer.from(value, "utf8").toString("base64url");
-}
-
-function normalizePrivateKey(privateKey: string): string {
-  return privateKey.replace(/\\n/gu, "\n");
-}
-
-function createServiceAccountJwt(input: {
-  readonly serviceAccountClientEmail: string;
-  readonly serviceAccountPrivateKey: string;
-  readonly subject: string;
-  readonly tokenUri: string;
-  readonly nowEpochSeconds: number;
-}): string {
-  const header = {
-    alg: "RS256",
-    typ: "JWT"
-  };
-  const payload = {
-    iss: input.serviceAccountClientEmail,
-    scope: "https://www.googleapis.com/auth/gmail.readonly",
-    aud: input.tokenUri,
-    exp: input.nowEpochSeconds + 3600,
-    iat: input.nowEpochSeconds,
-    sub: input.subject
-  };
-  const signingInput = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(
-    JSON.stringify(payload)
-  )}`;
-  const signer = createSign("RSA-SHA256");
-
-  signer.update(signingInput);
-  signer.end();
-
-  const signature = signer.sign(normalizePrivateKey(input.serviceAccountPrivateKey));
-
-  return `${signingInput}.${signature.toString("base64url")}`;
-}
-
 export function createGmailMailboxApiClient(
   config: GmailCaptureServiceConfig,
   input?: {
@@ -188,13 +147,6 @@ export function createGmailMailboxApiClient(
       return cachedToken.accessToken;
     }
 
-    const assertion = createServiceAccountJwt({
-      serviceAccountClientEmail: parsedConfig.serviceAccountClientEmail,
-      serviceAccountPrivateKey: parsedConfig.serviceAccountPrivateKey,
-      subject: mailbox,
-      tokenUri: parsedConfig.tokenUri,
-      nowEpochSeconds
-    });
     const response = await fetchImplementation(parsedConfig.tokenUri, {
       method: "POST",
       headers: {
@@ -202,8 +154,10 @@ export function createGmailMailboxApiClient(
         "content-type": "application/x-www-form-urlencoded"
       },
       body: new URLSearchParams({
-        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        assertion
+        grant_type: "refresh_token",
+        client_id: parsedConfig.oauthClientId,
+        client_secret: parsedConfig.oauthClientSecret,
+        refresh_token: parsedConfig.oauthRefreshToken
       }).toString(),
       signal: AbortSignal.timeout(parsedConfig.timeoutMs)
     });
