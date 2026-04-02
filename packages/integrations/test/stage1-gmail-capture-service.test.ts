@@ -4,6 +4,7 @@ import {
   createGmailCaptureService,
   createGmailMailboxApiClient
 } from "../src/index.js";
+import { sha256Json } from "../src/capture-services/shared.js";
 
 describe("Gmail capture service", () => {
   it("enforces bearer auth at the HTTP boundary", async () => {
@@ -187,6 +188,7 @@ describe("Gmail capture service", () => {
                 From:
                   "Project Oceans <project-oceans@example.org>",
                 To: "Volunteer <volunteer@example.org>",
+                Subject: "Checking in",
                 "Message-ID": "<gmail-live-1@example.org>"
               }
             })
@@ -219,9 +221,84 @@ describe("Gmail capture service", () => {
     expect(result.records[0]).toMatchObject({
       recordType: "message",
       direction: "outbound",
+      subject: "Checking in",
+      bodyTextPreview: "Outbound follow-up from volunteers",
       capturedMailbox: "volunteers@example.org",
       projectInboxAlias: "project-oceans@example.org"
     });
+  });
+
+  it("keeps live Gmail checksum material backward-compatible when Subject is fetched", async () => {
+    const service = createGmailCaptureService(
+      {
+        bearerToken: "gmail-token",
+        liveAccount: "volunteers@example.org",
+        projectInboxAliases: ["project-oceans@example.org"],
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
+      },
+      {
+        apiClient: {
+          listMessageIds: () => Promise.resolve(["gmail-live-1"]),
+          getMessage: ({ messageId }) =>
+            Promise.resolve({
+              id: messageId,
+              threadId: "thread-live-1",
+              snippet: "Outbound follow-up from volunteers",
+              internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
+              headers: {
+                Date: "Mon, 05 Jan 2026 00:00:00 +0000",
+                From: "Project Oceans <project-oceans@example.org>",
+                To: "Volunteer <volunteer@example.org>",
+                Subject: "Checking in",
+                "Message-ID": "<gmail-live-1@example.org>"
+              }
+            })
+        },
+        now: () => new Date("2026-01-05T00:01:00.000Z")
+      }
+    );
+
+    const result = await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:gmail:live:compat",
+      correlationId: "corr:gmail:live:compat",
+      traceId: null,
+      batchId: "batch:gmail:live:compat",
+      syncStateId: "sync:gmail:live:compat",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "gmail",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: "2026-01-05T00:00:00.000Z",
+      windowEnd: "2026-01-05T00:05:00.000Z",
+      recordIds: [],
+      maxRecords: 25
+    });
+
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]).toMatchObject({
+      recordType: "message",
+      subject: "Checking in"
+    });
+    expect(result.records[0]?.checksum).toBe(
+      sha256Json({
+        id: "gmail-live-1",
+        threadId: "thread-live-1",
+        internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
+        snippet: "Outbound follow-up from volunteers",
+        headers: {
+          Date: "Mon, 05 Jan 2026 00:00:00 +0000",
+          From: "Project Oceans <project-oceans@example.org>",
+          To: "Volunteer <volunteer@example.org>",
+          "Message-ID": "<gmail-live-1@example.org>"
+        }
+      })
+    );
   });
 
   it("uses OAuth refresh-token exchange before polling the live mailbox", async () => {

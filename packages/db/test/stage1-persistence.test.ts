@@ -1,6 +1,12 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import { createTestStage1Context } from "./helpers.js";
+
+function sha256Json(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
 
 describe("Stage 1 persistence service", () => {
   it("deduplicates source evidence and keeps conflicting replays explicit", async () => {
@@ -64,6 +70,73 @@ describe("Stage 1 persistence service", () => {
         providerRecordId: "gmail-message-1"
       })
     ).resolves.toEqual([firstResult.record]);
+  });
+
+  it("keeps live Gmail re-polls duplicate-safe when Subject is newly fetched", async () => {
+    const { persistence } = await createTestStage1Context();
+    const legacyChecksumPayload = {
+      id: "gmail-live-1",
+      threadId: "thread-live-1",
+      internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
+      snippet: "Outbound follow-up from volunteers",
+      headers: {
+        Date: "Mon, 05 Jan 2026 00:00:00 +0000",
+        From: "Project Oceans <project-oceans@example.org>",
+        To: "Volunteer <volunteer@example.org>",
+        "Message-ID": "<gmail-live-1@example.org>"
+      }
+    };
+    const replayChecksumPayload = {
+      ...legacyChecksumPayload,
+      headers: {
+        ...legacyChecksumPayload.headers,
+        Subject: "Checking in"
+      }
+    };
+    const legacyChecksum = sha256Json(legacyChecksumPayload);
+    const replayCompatibilityChecksum = sha256Json({
+      ...replayChecksumPayload,
+      headers: Object.fromEntries(
+        Object.entries(replayChecksumPayload.headers).filter(
+          ([name]) => name !== "Subject"
+        )
+      )
+    });
+
+    expect(replayCompatibilityChecksum).toBe(legacyChecksum);
+
+    const firstResult = await persistence.recordSourceEvidence({
+      id: "sev_live_1",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-live-1",
+      receivedAt: "2026-01-05T00:01:00.000Z",
+      occurredAt: "2026-01-05T00:00:00.000Z",
+      payloadRef: "gmail://volunteers@example.org/messages/gmail-live-1",
+      idempotencyKey: "gmail:message:gmail-live-1",
+      checksum: legacyChecksum
+    });
+
+    if (firstResult.outcome === "conflict") {
+      throw new Error("Expected the first live Gmail source evidence write to insert.");
+    }
+
+    const replayResult = await persistence.recordSourceEvidence({
+      id: "sev_live_2",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-live-1",
+      receivedAt: "2026-01-05T00:02:00.000Z",
+      occurredAt: "2026-01-05T00:00:00.000Z",
+      payloadRef: "gmail://volunteers@example.org/messages/gmail-live-1",
+      idempotencyKey: "gmail:message:gmail-live-1",
+      checksum: replayCompatibilityChecksum
+    });
+
+    expect(replayResult).toEqual({
+      outcome: "duplicate",
+      record: firstResult.record
+    });
   });
 
   it("deduplicates canonical events by idempotency key and blocks mismatched replays", async () => {
