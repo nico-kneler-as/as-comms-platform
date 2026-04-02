@@ -4,9 +4,13 @@ import {
   contactIdentitySchema,
   contactMembershipSchema,
   contactSchema,
+  expeditionDimensionSchema,
+  gmailMessageDetailSchema,
   identityResolutionSchema,
   inboxProjectionSchema,
+  projectDimensionSchema,
   routingReviewSchema,
+  salesforceEventContextSchema,
   sourceEvidenceSchema,
   syncStateSchema,
   timelineProjectionSchema,
@@ -15,9 +19,13 @@ import {
   type ContactIdentityRecord,
   type ContactMembershipRecord,
   type ContactRecord,
+  type ExpeditionDimensionRecord,
+  type GmailMessageDetailRecord,
   type IdentityResolutionCase,
   type InboxProjectionRow,
+  type ProjectDimensionRecord,
   type RoutingReviewCase,
+  type SalesforceEventContextRecord,
   type SourceEvidenceRecord,
   type SyncStateRecord,
   type TimelineProjectionRow
@@ -76,6 +84,18 @@ export interface Stage1PersistenceService {
   upsertContactMembership(
     record: ContactMembershipRecord
   ): Promise<ContactMembershipRecord>;
+  upsertProjectDimension(
+    record: ProjectDimensionRecord
+  ): Promise<ProjectDimensionRecord>;
+  upsertExpeditionDimension(
+    record: ExpeditionDimensionRecord
+  ): Promise<ExpeditionDimensionRecord>;
+  upsertGmailMessageDetail(
+    record: GmailMessageDetailRecord
+  ): Promise<GmailMessageDetailRecord>;
+  upsertSalesforceEventContext(
+    record: SalesforceEventContextRecord
+  ): Promise<SalesforceEventContextRecord>;
   saveIdentityResolutionCase(
     record: IdentityResolutionCase
   ): Promise<IdentityResolutionCase>;
@@ -284,6 +304,30 @@ export function createStage1PersistenceService(
     upsertContactMembership(record) {
       return repositories.contactMemberships.upsert(
         contactMembershipSchema.parse(record)
+      );
+    },
+
+    upsertProjectDimension(record) {
+      return repositories.projectDimensions.upsert(
+        projectDimensionSchema.parse(record)
+      );
+    },
+
+    upsertExpeditionDimension(record) {
+      return repositories.expeditionDimensions.upsert(
+        expeditionDimensionSchema.parse(record)
+      );
+    },
+
+    upsertGmailMessageDetail(record) {
+      return repositories.gmailMessageDetails.upsert(
+        gmailMessageDetailSchema.parse(record)
+      );
+    },
+
+    upsertSalesforceEventContext(record) {
+      return repositories.salesforceEventContext.upsert(
+        salesforceEventContextSchema.parse(record)
       );
     },
 

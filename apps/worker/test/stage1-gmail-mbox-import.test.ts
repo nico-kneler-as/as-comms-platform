@@ -106,6 +106,30 @@ describe("Stage 1 Gmail .mbox importer", () => {
       });
 
       await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(1);
+      const canonicalEvents =
+        await context.repositories.canonicalEvents.listByContactId(contactId);
+      expect(canonicalEvents).toHaveLength(1);
+      const sourceEvidenceId = canonicalEvents[0]?.sourceEvidenceId;
+
+      if (sourceEvidenceId === undefined) {
+        throw new Error("Expected a canonical event with source evidence.");
+      }
+
+      await expect(
+        context.repositories.gmailMessageDetails.listBySourceEvidenceIds([
+          sourceEvidenceId
+        ])
+      ).resolves.toEqual([
+        expect.objectContaining({
+          sourceEvidenceId,
+          subject: "Historical volunteer reply",
+          snippetClean: "Reply from the volunteer",
+          bodyTextPreview: "Reply from the volunteer",
+          capturedMailbox: "project-antarctica@example.org",
+          projectInboxAlias: "project-antarctica@example.org",
+          direction: "inbound"
+        })
+      ]);
       await expect(
         context.repositories.syncState.findById("sync:gmail:mbox:first")
       ).resolves.toMatchObject({

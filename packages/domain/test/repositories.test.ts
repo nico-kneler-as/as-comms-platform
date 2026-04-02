@@ -51,6 +51,22 @@ describe("defineStage1RepositoryBundle", () => {
         listByContactId: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record)
       },
+      projectDimensions: {
+        listByIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
+      expeditionDimensions: {
+        listByIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
+      gmailMessageDetails: {
+        listBySourceEvidenceIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
+      salesforceEventContext: {
+        listBySourceEvidenceIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
       identityResolutionQueue: {
         findById: () => Promise.resolve(null),
         listOpenByReasonCode: () => Promise.resolve([]),

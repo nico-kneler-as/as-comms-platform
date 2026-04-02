@@ -4,9 +4,13 @@ import {
   contactIdentitySchema,
   contactMembershipSchema,
   contactSchema,
+  expeditionDimensionSchema,
+  gmailMessageDetailSchema,
   identityResolutionSchema,
   inboxProjectionSchema,
+  projectDimensionSchema,
   routingReviewSchema,
+  salesforceEventContextSchema,
   sourceEvidenceSchema,
   syncStateSchema,
   timelineProjectionSchema,
@@ -15,9 +19,13 @@ import {
   type ContactIdentityRecord,
   type ContactMembershipRecord,
   type ContactRecord,
+  type ExpeditionDimensionRecord,
+  type GmailMessageDetailRecord,
   type IdentityResolutionCase,
   type InboxProjectionRow,
+  type ProjectDimensionRecord,
   type RoutingReviewCase,
+  type SalesforceEventContextRecord,
   type SourceEvidenceRecord,
   type SyncStateRecord,
   type TimelineProjectionRow
@@ -31,8 +39,12 @@ import type {
   contactMemberships,
   contactTimelineProjection,
   contacts,
+  expeditionDimensions,
+  gmailMessageDetails,
   identityResolutionQueue,
+  projectDimensions,
   routingReviewQueue,
+  salesforceEventContext,
   sourceEvidenceLog,
   syncState
 } from "./schema/index.js";
@@ -42,6 +54,10 @@ type CanonicalEventRow = typeof canonicalEventLedger.$inferSelect;
 type ContactRow = typeof contacts.$inferSelect;
 type ContactIdentityRow = typeof contactIdentities.$inferSelect;
 type ContactMembershipRow = typeof contactMemberships.$inferSelect;
+type ProjectDimensionRow = typeof projectDimensions.$inferSelect;
+type ExpeditionDimensionRow = typeof expeditionDimensions.$inferSelect;
+type GmailMessageDetailRow = typeof gmailMessageDetails.$inferSelect;
+type SalesforceEventContextRow = typeof salesforceEventContext.$inferSelect;
 type IdentityResolutionRow = typeof identityResolutionQueue.$inferSelect;
 type RoutingReviewRow = typeof routingReviewQueue.$inferSelect;
 type InboxProjectionRowDb = typeof contactInboxProjection.$inferSelect;
@@ -206,6 +222,112 @@ export function mapContactMembershipToInsert(
     role: parsed.role,
     status: parsed.status,
     source: parsed.source
+  };
+}
+
+export function mapProjectDimensionRow(
+  row: ProjectDimensionRow
+): ProjectDimensionRecord {
+  return projectDimensionSchema.parse({
+    projectId: row.projectId,
+    projectName: row.projectName,
+    source: row.source
+  });
+}
+
+export function mapProjectDimensionToInsert(
+  record: ProjectDimensionRecord
+): typeof projectDimensions.$inferInsert {
+  const parsed = projectDimensionSchema.parse(record);
+
+  return {
+    projectId: parsed.projectId,
+    projectName: parsed.projectName,
+    source: parsed.source
+  };
+}
+
+export function mapExpeditionDimensionRow(
+  row: ExpeditionDimensionRow
+): ExpeditionDimensionRecord {
+  return expeditionDimensionSchema.parse({
+    expeditionId: row.expeditionId,
+    projectId: row.projectId,
+    expeditionName: row.expeditionName,
+    source: row.source
+  });
+}
+
+export function mapExpeditionDimensionToInsert(
+  record: ExpeditionDimensionRecord
+): typeof expeditionDimensions.$inferInsert {
+  const parsed = expeditionDimensionSchema.parse(record);
+
+  return {
+    expeditionId: parsed.expeditionId,
+    projectId: parsed.projectId,
+    expeditionName: parsed.expeditionName,
+    source: parsed.source
+  };
+}
+
+export function mapGmailMessageDetailRow(
+  row: GmailMessageDetailRow
+): GmailMessageDetailRecord {
+  return gmailMessageDetailSchema.parse({
+    sourceEvidenceId: row.sourceEvidenceId,
+    providerRecordId: row.providerRecordId,
+    gmailThreadId: row.gmailThreadId,
+    rfc822MessageId: row.rfc822MessageId,
+    direction: row.direction,
+    subject: row.subject,
+    snippetClean: row.snippetClean,
+    bodyTextPreview: row.bodyTextPreview,
+    capturedMailbox: row.capturedMailbox,
+    projectInboxAlias: row.projectInboxAlias
+  });
+}
+
+export function mapGmailMessageDetailToInsert(
+  record: GmailMessageDetailRecord
+): typeof gmailMessageDetails.$inferInsert {
+  const parsed = gmailMessageDetailSchema.parse(record);
+
+  return {
+    sourceEvidenceId: parsed.sourceEvidenceId,
+    providerRecordId: parsed.providerRecordId,
+    gmailThreadId: parsed.gmailThreadId,
+    rfc822MessageId: parsed.rfc822MessageId,
+    direction: parsed.direction,
+    subject: parsed.subject,
+    snippetClean: parsed.snippetClean,
+    bodyTextPreview: parsed.bodyTextPreview,
+    capturedMailbox: parsed.capturedMailbox,
+    projectInboxAlias: parsed.projectInboxAlias
+  };
+}
+
+export function mapSalesforceEventContextRow(
+  row: SalesforceEventContextRow
+): SalesforceEventContextRecord {
+  return salesforceEventContextSchema.parse({
+    sourceEvidenceId: row.sourceEvidenceId,
+    salesforceContactId: row.salesforceContactId,
+    projectId: row.projectId,
+    expeditionId: row.expeditionId
+  });
+}
+
+export function mapSalesforceEventContextToInsert(
+  record: SalesforceEventContextRecord
+): typeof salesforceEventContext.$inferInsert {
+  const parsed = salesforceEventContextSchema.parse(record);
+
+  return {
+    sourceEvidenceId: parsed.sourceEvidenceId,
+    salesforceContactId: parsed.salesforceContactId,
+    projectId: parsed.projectId,
+    expeditionId: parsed.expeditionId
   };
 }
 

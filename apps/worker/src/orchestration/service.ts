@@ -609,7 +609,7 @@ export function createStage1WorkerOrchestrationService(input: {
             await recordProjectionSeedOnce(input.persistence, {
               canonicalEventId: mapped.command.input.canonicalEvent.id,
               summary: mapped.command.input.canonicalEvent.summary,
-              snippet: mapped.command.input.canonicalEvent.snippet,
+              snippet: mapped.command.input.canonicalEvent.snippet ?? "",
               occurredAt: mapped.command.input.sourceEvidence.receivedAt
             });
           }

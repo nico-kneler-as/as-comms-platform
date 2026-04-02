@@ -8,8 +8,12 @@ import {
   contactMemberships,
   contactTimelineProjection,
   contacts,
+  expeditionDimensions,
+  gmailMessageDetails,
   identityResolutionQueue,
+  projectDimensions,
   routingReviewQueue,
+  salesforceEventContext,
   sourceEvidenceLog,
   syncState
 } from "./tables.js";
@@ -19,6 +23,10 @@ export const databaseSchema = {
   contacts,
   contactIdentities,
   contactMemberships,
+  projectDimensions,
+  expeditionDimensions,
+  gmailMessageDetails,
+  salesforceEventContext,
   canonicalEventLedger,
   identityResolutionQueue,
   routingReviewQueue,

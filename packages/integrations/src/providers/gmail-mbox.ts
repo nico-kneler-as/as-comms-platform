@@ -112,15 +112,18 @@ function parseHeaders(headerSection: string): Readonly<Record<string, string>> {
   return Object.fromEntries(headers.entries());
 }
 
-function buildSnippet(bodyText: string, subject: string | undefined): string {
-  const normalized = normalizeLineEndings(bodyText)
+function buildCleanBodyPreview(bodyText: string): string {
+  return normalizeLineEndings(bodyText)
     .replace(/=\n/gu, "")
     .replace(/<[^>]+>/gu, " ")
     .replace(/\s+/gu, " ")
-    .trim();
+    .trim()
+    .slice(0, 2_000);
+}
 
-  if (normalized.length > 0) {
-    return normalized.slice(0, 280);
+function buildSnippet(cleanBodyPreview: string, subject: string | undefined): string {
+  if (cleanBodyPreview.length > 0) {
+    return cleanBodyPreview.slice(0, 280);
   }
 
   return subject?.trim() ?? "";
@@ -169,10 +172,14 @@ export function importGmailMboxRecords(input: GmailMboxImportInput): GmailRecord
     const checksum = sha256Text(normalizeLineEndings(message.rawMessage));
     const internalDate =
       toSafeIsoTimestamp(message.headers.Date) ?? parsedInput.receivedAt;
+    const bodyTextPreview = buildCleanBodyPreview(message.bodyText);
+    const snippetClean = buildSnippet(bodyTextPreview, message.headers.Subject);
     const recordInput: GmailProviderCloseMessageInput = {
       recordId,
       threadId: buildThreadId(message.headers),
-      snippet: buildSnippet(message.bodyText, message.headers.Subject),
+      snippet: snippetClean,
+      snippetClean,
+      bodyTextPreview,
       internalDate,
       headers: message.headers,
       payloadRef,

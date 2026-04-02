@@ -3,6 +3,8 @@ import {
   contactIdentitySchema,
   contactMembershipSchema,
   contactSchema,
+  expeditionDimensionSchema,
+  gmailMessageDetailSchema,
   identityAmbiguityInputSchema,
   identityResolutionReasonCodeValues,
   inboxDrivingEventTypeValues,
@@ -11,9 +13,11 @@ import {
   normalizedCanonicalEventIntakeSchema,
   normalizedContactGraphUpsertInputSchema,
   normalizedSourceEvidenceIntakeSchema,
+  projectDimensionSchema,
   resolveCanonicalChannel,
   routingAmbiguityInputSchema,
   routingReviewReasonCodeValues,
+  salesforceEventContextSchema,
   syncStateUpdateInputSchema,
   timelineProjectionApplyInputSchema,
   type AuditEvidenceRecord,
@@ -22,6 +26,8 @@ import {
   type ContactIdentityRecord,
   type ContactMembershipRecord,
   type ContactRecord,
+  type ExpeditionDimensionRecord,
+  type GmailMessageDetailRecord,
   type IdentityAmbiguityInput,
   type IdentityResolutionCase,
   type InboxDrivingEventType,
@@ -31,11 +37,13 @@ import {
   type NormalizedCanonicalEventIntake,
   type NormalizedContactGraphUpsertInput,
   type NormalizedIdentityEvidence,
+  type ProjectDimensionRecord,
   type NormalizedSourceEvidenceIntake,
   type ProvenanceWinnerReason,
   type QuarantineReasonCode,
   type RoutingAmbiguityInput,
   type RoutingReviewCase,
+  type SalesforceEventContextRecord,
   type SourceEvidenceRecord,
   type SyncStateRecord,
   type SyncStateUpdateInput,
@@ -184,6 +192,19 @@ function uniqueById<T extends { readonly id: string }>(
   return Array.from(deduped.values()).sort((left, right) =>
     left.id.localeCompare(right.id)
   );
+}
+
+function uniqueByKey<T>(
+  values: readonly T[],
+  getKey: (value: T) => string
+): T[] {
+  const deduped = new Map<string, T>();
+
+  for (const value of values) {
+    deduped.set(getKey(value), value);
+  }
+
+  return Array.from(deduped.values());
 }
 
 function requireValue<T>(value: T | undefined, message: string): T {
@@ -336,7 +357,7 @@ function decideDuplicateCollapse(
   input: NormalizedCanonicalEventIntake
 ): DuplicateCollapseDecision {
   const supportingProviders = new Set(
-    input.supportingSources.map((entry) => entry.provider)
+    (input.supportingSources ?? []).map((entry) => entry.provider)
   );
   const primaryProvider = input.sourceEvidence.provider;
   const { eventType } = input.canonicalEvent;
@@ -831,6 +852,60 @@ async function recordQuarantineAuditOnce(
   });
 }
 
+async function upsertProjectAndExpeditionDimensions(
+  persistence: Stage1PersistenceService,
+  input: {
+    readonly projectDimensions: readonly ProjectDimensionRecord[];
+    readonly expeditionDimensions: readonly ExpeditionDimensionRecord[];
+  }
+): Promise<void> {
+  for (const projectDimension of uniqueByKey(
+    input.projectDimensions,
+    (record) => record.projectId
+  )) {
+    await persistence.upsertProjectDimension(
+      projectDimensionSchema.parse(projectDimension)
+    );
+  }
+
+  for (const expeditionDimension of uniqueByKey(
+    input.expeditionDimensions,
+    (record) => record.expeditionId
+  )) {
+    await persistence.upsertExpeditionDimension(
+      expeditionDimensionSchema.parse(expeditionDimension)
+    );
+  }
+}
+
+async function upsertProviderPresentationDetails(
+  persistence: Stage1PersistenceService,
+  input: Pick<
+    NormalizedCanonicalEventIntake,
+    | "gmailMessageDetail"
+    | "salesforceEventContext"
+    | "projectDimensions"
+    | "expeditionDimensions"
+  >
+): Promise<void> {
+  await upsertProjectAndExpeditionDimensions(persistence, {
+    projectDimensions: input.projectDimensions ?? [],
+    expeditionDimensions: input.expeditionDimensions ?? []
+  });
+
+  if (input.gmailMessageDetail !== undefined) {
+    await persistence.upsertGmailMessageDetail(
+      gmailMessageDetailSchema.parse(input.gmailMessageDetail)
+    );
+  }
+
+  if (input.salesforceEventContext !== undefined) {
+    await persistence.upsertSalesforceEventContext(
+      salesforceEventContextSchema.parse(input.salesforceEventContext)
+    );
+  }
+}
+
 export function createStage1NormalizationService(
   persistence: Stage1PersistenceService
 ): Stage1NormalizationService {
@@ -915,6 +990,11 @@ export function createStage1NormalizationService(
           })
         );
       }
+
+      await upsertProjectAndExpeditionDimensions(persistence, {
+        projectDimensions: parsed.projectDimensions,
+        expeditionDimensions: parsed.expeditionDimensions
+      });
 
       return {
         contact,
@@ -1099,6 +1179,13 @@ export function createStage1NormalizationService(
           auditEvidence: sourceEvidenceResult.auditEvidence
         };
       }
+
+      await upsertProviderPresentationDetails(persistence, {
+        gmailMessageDetail: parsed.gmailMessageDetail,
+        salesforceEventContext: parsed.salesforceEventContext,
+        projectDimensions: parsed.projectDimensions,
+        expeditionDimensions: parsed.expeditionDimensions
+      });
 
       const duplicateCollapseDecision = decideDuplicateCollapse(parsed);
 

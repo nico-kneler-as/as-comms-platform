@@ -34,6 +34,9 @@ export const gmailMessageRecordSchema = z.object({
   payloadRef: z.string().min(1),
   checksum: z.string().min(1),
   snippet: z.string().default(""),
+  subject: nullableStringSchema.default(null),
+  snippetClean: z.string().default(""),
+  bodyTextPreview: z.string().default(""),
   threadId: nullableStringSchema.default(null),
   rfc822MessageId: nullableStringSchema.default(null),
   capturedMailbox: nullableStringSchema.default(null),
@@ -89,6 +92,12 @@ function mapGmailMessageRecord(
   const providerRecordType = record.recordType;
   const providerRecordId = record.recordId;
   const crossProviderCollapseKey = record.crossProviderCollapseKey;
+  const cleanSnippet =
+    record.snippetClean.trim().length > 0 ? record.snippetClean : record.snippet;
+  const bodyTextPreview =
+    record.bodyTextPreview.trim().length > 0
+      ? record.bodyTextPreview
+      : cleanSnippet;
 
   return {
     sourceEvidence: {
@@ -124,7 +133,7 @@ function mapGmailMessageRecord(
         crossProviderCollapseKey
       }),
       summary: buildGmailSummary(eventType),
-      snippet: record.snippet
+      snippet: cleanSnippet
     },
     identity: {
       salesforceContactId: record.salesforceContactId,
@@ -132,7 +141,23 @@ function mapGmailMessageRecord(
       normalizedEmails: uniqueStrings(record.normalizedParticipantEmails),
       normalizedPhones: uniqueStrings(record.normalizedPhones)
     },
-    supportingSources: buildSupportingSourceReferences(record.supportingRecords)
+    supportingSources: buildSupportingSourceReferences(record.supportingRecords),
+    gmailMessageDetail: {
+      sourceEvidenceId: buildSourceEvidenceId(
+        "gmail",
+        providerRecordType,
+        providerRecordId
+      ),
+      providerRecordId,
+      gmailThreadId: record.threadId,
+      rfc822MessageId: record.rfc822MessageId,
+      direction: record.direction,
+      subject: record.subject,
+      snippetClean: cleanSnippet,
+      bodyTextPreview,
+      capturedMailbox: record.capturedMailbox,
+      projectInboxAlias: record.projectInboxAlias
+    }
   };
 }
 

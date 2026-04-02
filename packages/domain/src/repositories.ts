@@ -5,12 +5,16 @@ import type {
   ContactIdentityRecord,
   ContactMembershipRecord,
   ContactRecord,
+  ExpeditionDimensionRecord,
+  GmailMessageDetailRecord,
   IdentityResolutionCase,
   IdentityResolutionReasonCode,
   InboxProjectionRow,
+  ProjectDimensionRecord,
   Provider,
   RoutingReviewCase,
   RoutingReviewReasonCode,
+  SalesforceEventContextRecord,
   SourceEvidenceRecord,
   SyncScope,
   SyncJobType,
@@ -63,6 +67,34 @@ export interface ContactMembershipRepository {
     contactId: string
   ): Promise<readonly ContactMembershipRecord[]>;
   upsert(record: ContactMembershipRecord): Promise<ContactMembershipRecord>;
+}
+
+export interface ProjectDimensionRepository {
+  listByIds(projectIds: readonly string[]): Promise<readonly ProjectDimensionRecord[]>;
+  upsert(record: ProjectDimensionRecord): Promise<ProjectDimensionRecord>;
+}
+
+export interface ExpeditionDimensionRepository {
+  listByIds(
+    expeditionIds: readonly string[]
+  ): Promise<readonly ExpeditionDimensionRecord[]>;
+  upsert(record: ExpeditionDimensionRecord): Promise<ExpeditionDimensionRecord>;
+}
+
+export interface GmailMessageDetailRepository {
+  listBySourceEvidenceIds(
+    sourceEvidenceIds: readonly string[]
+  ): Promise<readonly GmailMessageDetailRecord[]>;
+  upsert(record: GmailMessageDetailRecord): Promise<GmailMessageDetailRecord>;
+}
+
+export interface SalesforceEventContextRepository {
+  listBySourceEvidenceIds(
+    sourceEvidenceIds: readonly string[]
+  ): Promise<readonly SalesforceEventContextRecord[]>;
+  upsert(
+    record: SalesforceEventContextRecord
+  ): Promise<SalesforceEventContextRecord>;
 }
 
 export interface IdentityResolutionRepository {
@@ -118,6 +150,10 @@ export interface Stage1RepositoryBundle {
   readonly contacts: ContactRepository;
   readonly contactIdentities: ContactIdentityRepository;
   readonly contactMemberships: ContactMembershipRepository;
+  readonly projectDimensions: ProjectDimensionRepository;
+  readonly expeditionDimensions: ExpeditionDimensionRepository;
+  readonly gmailMessageDetails: GmailMessageDetailRepository;
+  readonly salesforceEventContext: SalesforceEventContextRepository;
   readonly identityResolutionQueue: IdentityResolutionRepository;
   readonly routingReviewQueue: RoutingReviewRepository;
   readonly inboxProjection: InboxProjectionRepository;

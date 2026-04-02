@@ -27,8 +27,12 @@ describe("Stage 1 DB schema", () => {
       "contactMemberships",
       "contactTimelineProjection",
       "contacts",
+      "expeditionDimensions",
+      "gmailMessageDetails",
       "identityResolutionQueue",
+      "projectDimensions",
       "routingReviewQueue",
+      "salesforceEventContext",
       "sourceEvidenceLog",
       "syncState"
     ]);
