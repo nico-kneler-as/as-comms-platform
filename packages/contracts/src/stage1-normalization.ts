@@ -5,7 +5,11 @@ import {
   contactIdentitySchema,
   contactMembershipSchema,
   contactSchema,
+  expeditionDimensionSchema,
+  gmailMessageDetailSchema,
   inboxProjectionSchema,
+  projectDimensionSchema,
+  salesforceEventContextSchema,
   sourceEvidenceSchema,
   syncStateSchema
 } from "./stage1-records.js";
@@ -51,7 +55,9 @@ export type NormalizedIdentityEvidence = z.infer<
 export const normalizedRoutingContextSchema = z.object({
   required: z.boolean().default(false),
   projectId: nullableStringSchema.default(null),
-  expeditionId: nullableStringSchema.default(null)
+  expeditionId: nullableStringSchema.default(null),
+  projectName: nullableStringSchema.default(null),
+  expeditionName: nullableStringSchema.default(null)
 });
 export type NormalizedRoutingContext = z.infer<
   typeof normalizedRoutingContextSchema
@@ -67,9 +73,11 @@ export type NormalizedSourceEvidenceIntake = z.infer<
 export const normalizedContactGraphUpsertInputSchema = z.object({
   contact: contactSchema,
   identities: z.array(contactIdentitySchema).default([]),
-  memberships: z.array(contactMembershipSchema).default([])
+  memberships: z.array(contactMembershipSchema).default([]),
+  projectDimensions: z.array(projectDimensionSchema).default([]),
+  expeditionDimensions: z.array(expeditionDimensionSchema).default([])
 });
-export type NormalizedContactGraphUpsertInput = z.infer<
+export type NormalizedContactGraphUpsertInput = z.input<
   typeof normalizedContactGraphUpsertInputSchema
 >;
 
@@ -99,7 +107,11 @@ export const normalizedCanonicalEventIntakeSchema = z
     canonicalEvent: normalizedCanonicalEventPayloadSchema,
     identity: normalizedIdentityEvidenceSchema,
     routing: normalizedRoutingContextSchema.optional(),
-    supportingSources: z.array(supportingSourceReferenceSchema).default([])
+    supportingSources: z.array(supportingSourceReferenceSchema).default([]),
+    gmailMessageDetail: gmailMessageDetailSchema.optional(),
+    salesforceEventContext: salesforceEventContextSchema.optional(),
+    projectDimensions: z.array(projectDimensionSchema).default([]),
+    expeditionDimensions: z.array(expeditionDimensionSchema).default([])
   })
   .superRefine((value, context) => {
     const supportingIds = value.supportingSources.map(
@@ -119,8 +131,51 @@ export const normalizedCanonicalEventIntakeSchema = z
         message: "supporting source evidence references must be unique"
       });
     }
+
+    if (
+      value.gmailMessageDetail !== undefined &&
+      value.gmailMessageDetail.sourceEvidenceId !== value.sourceEvidence.id
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "gmailMessageDetail.sourceEvidenceId must match sourceEvidence.id"
+      });
+    }
+
+    if (
+      value.gmailMessageDetail !== undefined &&
+      value.sourceEvidence.provider !== "gmail"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "gmailMessageDetail is only valid for Gmail source evidence"
+      });
+    }
+
+    if (
+      value.salesforceEventContext !== undefined &&
+      value.salesforceEventContext.sourceEvidenceId !== value.sourceEvidence.id
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "salesforceEventContext.sourceEvidenceId must match sourceEvidence.id"
+      });
+    }
+
+    if (
+      value.salesforceEventContext !== undefined &&
+      value.sourceEvidence.provider !== "salesforce"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "salesforceEventContext is only valid for Salesforce source evidence"
+      });
+    }
   });
-export type NormalizedCanonicalEventIntake = z.infer<
+export type NormalizedCanonicalEventIntake = z.input<
   typeof normalizedCanonicalEventIntakeSchema
 >;
 

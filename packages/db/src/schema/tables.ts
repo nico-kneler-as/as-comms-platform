@@ -158,6 +158,72 @@ export const contactMemberships = pgTable(
   ]
 );
 
+export const projectDimensions = pgTable("project_dimensions", {
+  projectId: text("project_id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  source: recordSourceEnum("source").notNull(),
+  createdAt: createdAtColumn,
+  updatedAt: updatedAtColumn
+});
+
+export const expeditionDimensions = pgTable(
+  "expedition_dimensions",
+  {
+    expeditionId: text("expedition_id").primaryKey(),
+    projectId: text("project_id"),
+    expeditionName: text("expedition_name").notNull(),
+    source: recordSourceEnum("source").notNull(),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [index("expedition_dimensions_project_idx").on(table.projectId)]
+);
+
+export const gmailMessageDetails = pgTable(
+  "gmail_message_details",
+  {
+    sourceEvidenceId: text("source_evidence_id")
+      .primaryKey()
+      .references(() => sourceEvidenceLog.id, { onDelete: "cascade" }),
+    providerRecordId: text("provider_record_id").notNull(),
+    gmailThreadId: text("gmail_thread_id"),
+    rfc822MessageId: text("rfc822_message_id"),
+    direction: text("direction").notNull(),
+    subject: text("subject"),
+    snippetClean: text("snippet_clean").notNull().default(""),
+    bodyTextPreview: text("body_text_preview").notNull().default(""),
+    capturedMailbox: text("captured_mailbox"),
+    projectInboxAlias: text("project_inbox_alias"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [
+    index("gmail_message_details_record_idx").on(table.providerRecordId),
+    index("gmail_message_details_thread_idx").on(table.gmailThreadId)
+  ]
+);
+
+export const salesforceEventContext = pgTable(
+  "salesforce_event_context",
+  {
+    sourceEvidenceId: text("source_evidence_id")
+      .primaryKey()
+      .references(() => sourceEvidenceLog.id, { onDelete: "cascade" }),
+    salesforceContactId: text("salesforce_contact_id"),
+    projectId: text("project_id"),
+    expeditionId: text("expedition_id"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [
+    index("salesforce_event_context_contact_idx").on(table.salesforceContactId),
+    index("salesforce_event_context_context_idx").on(
+      table.projectId,
+      table.expeditionId
+    )
+  ]
+);
+
 export const canonicalEventLedger = pgTable(
   "canonical_event_ledger",
   {

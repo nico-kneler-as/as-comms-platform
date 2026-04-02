@@ -25,12 +25,20 @@ import {
   mapContactMembershipToInsert,
   mapContactRow,
   mapContactToInsert,
+  mapExpeditionDimensionRow,
+  mapExpeditionDimensionToInsert,
+  mapGmailMessageDetailRow,
+  mapGmailMessageDetailToInsert,
   mapIdentityResolutionRow,
   mapIdentityResolutionToInsert,
   mapInboxProjectionRow,
   mapInboxProjectionToInsert,
+  mapProjectDimensionRow,
+  mapProjectDimensionToInsert,
   mapRoutingReviewRow,
   mapRoutingReviewToInsert,
+  mapSalesforceEventContextRow,
+  mapSalesforceEventContextToInsert,
   mapSourceEvidenceRow,
   mapSourceEvidenceToInsert,
   mapSyncStateRow,
@@ -47,8 +55,12 @@ import {
   contactMemberships,
   contactTimelineProjection,
   contacts,
+  expeditionDimensions,
+  gmailMessageDetails,
   identityResolutionQueue,
+  projectDimensions,
   routingReviewQueue,
+  salesforceEventContext,
   sourceEvidenceLog,
   syncState
 } from "./schema/index.js";
@@ -398,6 +410,165 @@ function createStage1RepositoriesInternal(
 
         return mapContactMembershipRow(
           requireRow(row, "Expected contact membership row to be returned.")
+        );
+      }
+    },
+
+    projectDimensions: {
+      async listByIds(projectIds) {
+        if (projectIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(projectDimensions)
+          .where(inArray(projectDimensions.projectId, [...projectIds]))
+          .orderBy(asc(projectDimensions.projectId));
+
+        return rows.map(mapProjectDimensionRow);
+      },
+
+      async upsert(record) {
+        const values = mapProjectDimensionToInsert(record);
+        const [row] = await db
+          .insert(projectDimensions)
+          .values(values)
+          .onConflictDoUpdate({
+            target: projectDimensions.projectId,
+            set: {
+              projectName: values.projectName,
+              source: values.source,
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        return mapProjectDimensionRow(
+          requireRow(row, "Expected project dimension row to be returned.")
+        );
+      }
+    },
+
+    expeditionDimensions: {
+      async listByIds(expeditionIds) {
+        if (expeditionIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(expeditionDimensions)
+          .where(inArray(expeditionDimensions.expeditionId, [...expeditionIds]))
+          .orderBy(asc(expeditionDimensions.expeditionId));
+
+        return rows.map(mapExpeditionDimensionRow);
+      },
+
+      async upsert(record) {
+        const values = mapExpeditionDimensionToInsert(record);
+        const [row] = await db
+          .insert(expeditionDimensions)
+          .values(values)
+          .onConflictDoUpdate({
+            target: expeditionDimensions.expeditionId,
+            set: {
+              projectId: values.projectId,
+              expeditionName: values.expeditionName,
+              source: values.source,
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        return mapExpeditionDimensionRow(
+          requireRow(row, "Expected expedition dimension row to be returned.")
+        );
+      }
+    },
+
+    gmailMessageDetails: {
+      async listBySourceEvidenceIds(sourceEvidenceIds) {
+        if (sourceEvidenceIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(gmailMessageDetails)
+          .where(
+            inArray(gmailMessageDetails.sourceEvidenceId, [...sourceEvidenceIds])
+          )
+          .orderBy(asc(gmailMessageDetails.sourceEvidenceId));
+
+        return rows.map(mapGmailMessageDetailRow);
+      },
+
+      async upsert(record) {
+        const values = mapGmailMessageDetailToInsert(record);
+        const [row] = await db
+          .insert(gmailMessageDetails)
+          .values(values)
+          .onConflictDoUpdate({
+            target: gmailMessageDetails.sourceEvidenceId,
+            set: {
+              providerRecordId: values.providerRecordId,
+              gmailThreadId: values.gmailThreadId,
+              rfc822MessageId: values.rfc822MessageId,
+              direction: values.direction,
+              subject: values.subject,
+              snippetClean: values.snippetClean,
+              bodyTextPreview: values.bodyTextPreview,
+              capturedMailbox: values.capturedMailbox,
+              projectInboxAlias: values.projectInboxAlias,
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        return mapGmailMessageDetailRow(
+          requireRow(row, "Expected Gmail message detail row to be returned.")
+        );
+      }
+    },
+
+    salesforceEventContext: {
+      async listBySourceEvidenceIds(sourceEvidenceIds) {
+        if (sourceEvidenceIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(salesforceEventContext)
+          .where(
+            inArray(salesforceEventContext.sourceEvidenceId, [
+              ...sourceEvidenceIds
+            ])
+          )
+          .orderBy(asc(salesforceEventContext.sourceEvidenceId));
+
+        return rows.map(mapSalesforceEventContextRow);
+      },
+
+      async upsert(record) {
+        const values = mapSalesforceEventContextToInsert(record);
+        const [row] = await db
+          .insert(salesforceEventContext)
+          .values(values)
+          .onConflictDoUpdate({
+            target: salesforceEventContext.sourceEvidenceId,
+            set: {
+              salesforceContactId: values.salesforceContactId,
+              projectId: values.projectId,
+              expeditionId: values.expeditionId,
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        return mapSalesforceEventContextRow(
+          requireRow(row, "Expected Salesforce event context row to be returned.")
         );
       }
     },

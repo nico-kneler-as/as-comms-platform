@@ -66,6 +66,21 @@ async function seedInspectableContact(context: TestWorkerContext): Promise<void>
         status: "active",
         source: "salesforce"
       }
+    ],
+    projectDimensions: [
+      {
+        projectId: "project-stage1",
+        projectName: "Project Stage 1",
+        source: "salesforce"
+      }
+    ],
+    expeditionDimensions: [
+      {
+        expeditionId: "expedition-stage1",
+        projectId: "project-stage1",
+        expeditionName: "Expedition Stage 1",
+        source: "salesforce"
+      }
     ]
   });
 
@@ -95,7 +110,19 @@ async function seedInspectableContact(context: TestWorkerContext): Promise<void>
       normalizedEmails: ["volunteer@example.org"],
       normalizedPhones: []
     },
-    supportingSources: []
+    supportingSources: [],
+    gmailMessageDetail: {
+      sourceEvidenceId: "source-evidence:gmail:message:gmail-message-ops-1",
+      providerRecordId: "gmail-message-ops-1",
+      gmailThreadId: "thread-ops-1",
+      rfc822MessageId: "<gmail-message-ops-1@example.org>",
+      direction: "inbound",
+      subject: "Validation reply subject",
+      snippetClean: "Validation reply",
+      bodyTextPreview: "Validation reply body preview",
+      capturedMailbox: "project-stage1@example.org",
+      projectInboxAlias: "project-stage1@example.org"
+    }
   });
 
   await context.persistence.saveSyncState({
@@ -167,6 +194,25 @@ describe("Stage 1 ops helpers", () => {
       expect(contactInspection.inboxProjection).toMatchObject({
         bucket: "New"
       });
+      expect(contactInspection.readableMemberships).toEqual([
+        expect.objectContaining({
+          projectId: "project-stage1",
+          projectName: "Project Stage 1",
+          expeditionId: "expedition-stage1",
+          expeditionName: "Expedition Stage 1"
+        })
+      ]);
+      expect(contactInspection.story).toEqual([
+        expect.objectContaining({
+          provider: "gmail",
+          eventType: "communication.email.inbound",
+          subject: "Validation reply subject",
+          preview: "Validation reply body preview",
+          direction: "inbound",
+          capturedMailbox: "project-stage1@example.org",
+          projectInboxAlias: "project-stage1@example.org"
+        })
+      ]);
       expect(sourceEvidence).toHaveLength(1);
       expect(sourceEvidence[0]).toMatchObject({
         provider: "gmail",

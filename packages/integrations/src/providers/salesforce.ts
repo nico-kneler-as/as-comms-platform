@@ -46,12 +46,16 @@ const salesforceLifecycleSourceFieldSchema = z.enum([
 const salesforceRoutingContextSchema = z.object({
   required: z.boolean().default(false),
   projectId: nullableStringSchema.default(null),
-  expeditionId: nullableStringSchema.default(null)
+  expeditionId: nullableStringSchema.default(null),
+  projectName: nullableStringSchema.default(null),
+  expeditionName: nullableStringSchema.default(null)
 });
 
 const salesforceMembershipSchema = z.object({
   projectId: nullableStringSchema.default(null),
+  projectName: nullableStringSchema.default(null),
   expeditionId: nullableStringSchema.default(null),
+  expeditionName: nullableStringSchema.default(null),
   role: nullableStringSchema.default(null),
   status: nullableStringSchema.default(null)
 });
@@ -222,6 +226,45 @@ function mapSalesforceContactSnapshot(
     ...record.normalizedPhones
   ]);
   const volunteerIdPlainValues = uniqueStrings(record.volunteerIdPlainValues);
+  const projectDimensionsById = new Map<
+    string,
+    {
+      readonly projectId: string;
+      readonly projectName: string;
+      readonly source: "salesforce";
+    }
+  >();
+  const expeditionDimensionsById = new Map<
+    string,
+    {
+      readonly expeditionId: string;
+      readonly projectId: string | null;
+      readonly expeditionName: string;
+      readonly source: "salesforce";
+    }
+  >();
+
+  for (const membership of record.memberships) {
+    if (membership.projectId !== null && membership.projectName !== null) {
+      projectDimensionsById.set(membership.projectId, {
+        projectId: membership.projectId,
+        projectName: membership.projectName,
+        source: "salesforce"
+      });
+    }
+
+    if (
+      membership.expeditionId !== null &&
+      membership.expeditionName !== null
+    ) {
+      expeditionDimensionsById.set(membership.expeditionId, {
+        expeditionId: membership.expeditionId,
+        projectId: membership.projectId,
+        expeditionName: membership.expeditionName,
+        source: "salesforce"
+      });
+    }
+  }
 
   return {
     contact: {
@@ -300,7 +343,9 @@ function mapSalesforceContactSnapshot(
       role: membership.role,
       status: membership.status,
       source: "salesforce"
-    }))
+    })),
+    projectDimensions: Array.from(projectDimensionsById.values()),
+    expeditionDimensions: Array.from(expeditionDimensionsById.values())
   };
 }
 
@@ -358,7 +403,39 @@ function mapSalesforceLifecycleRecord(
       normalizedPhones: uniqueStrings(record.normalizedPhones)
     },
     routing: record.routing,
-    supportingSources: []
+    supportingSources: [],
+    salesforceEventContext: {
+      sourceEvidenceId: buildSourceEvidenceId(
+        "salesforce",
+        providerRecordType,
+        providerRecordId
+      ),
+      salesforceContactId: record.salesforceContactId,
+      projectId: record.routing.projectId,
+      expeditionId: record.routing.expeditionId
+    },
+    projectDimensions:
+      record.routing.projectId !== null && record.routing.projectName !== null
+        ? [
+            {
+              projectId: record.routing.projectId,
+              projectName: record.routing.projectName,
+              source: "salesforce" as const
+            }
+          ]
+        : [],
+    expeditionDimensions:
+      record.routing.expeditionId !== null &&
+      record.routing.expeditionName !== null
+        ? [
+            {
+              expeditionId: record.routing.expeditionId,
+              projectId: record.routing.projectId,
+              expeditionName: record.routing.expeditionName,
+              source: "salesforce" as const
+            }
+          ]
+        : []
   };
 }
 
@@ -430,7 +507,39 @@ function mapSalesforceTaskCommunicationRecord(
       normalizedPhones: uniqueStrings(record.normalizedPhones)
     },
     routing: record.routing,
-    supportingSources: buildSupportingSourceReferences(record.supportingRecords)
+    supportingSources: buildSupportingSourceReferences(record.supportingRecords),
+    salesforceEventContext: {
+      sourceEvidenceId: buildSourceEvidenceId(
+        "salesforce",
+        providerRecordType,
+        providerRecordId
+      ),
+      salesforceContactId: record.salesforceContactId,
+      projectId: record.routing.projectId,
+      expeditionId: record.routing.expeditionId
+    },
+    projectDimensions:
+      record.routing.projectId !== null && record.routing.projectName !== null
+        ? [
+            {
+              projectId: record.routing.projectId,
+              projectName: record.routing.projectName,
+              source: "salesforce" as const
+            }
+          ]
+        : [],
+    expeditionDimensions:
+      record.routing.expeditionId !== null &&
+      record.routing.expeditionName !== null
+        ? [
+            {
+              expeditionId: record.routing.expeditionId,
+              projectId: record.routing.projectId,
+              expeditionName: record.routing.expeditionName,
+              source: "salesforce" as const
+            }
+          ]
+        : []
   };
 }
 

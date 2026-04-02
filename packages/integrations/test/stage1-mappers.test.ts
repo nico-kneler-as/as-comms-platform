@@ -18,6 +18,9 @@ describe("Stage 1 provider-close mappers", () => {
       payloadRef: "payloads/gmail/gmail-message-1.json",
       checksum: "checksum-1",
       snippet: "Following up by email",
+      subject: "Checking in",
+      snippetClean: "Following up by email",
+      bodyTextPreview: "Following up by email with more context.",
       capturedMailbox: "volunteers@example.org",
       projectInboxAlias: "project-antarctica@example.org",
       normalizedParticipantEmails: ["volunteer@example.org"],
@@ -54,6 +57,11 @@ describe("Stage 1 provider-close mappers", () => {
           }
         ]);
         expect(result.command.input.identity.salesforceContactId).toBe("003-stage1");
+        expect(result.command.input.gmailMessageDetail).toMatchObject({
+          subject: "Checking in",
+          snippetClean: "Following up by email",
+          bodyTextPreview: "Following up by email with more context."
+        });
       }
     }
   });
@@ -74,32 +82,54 @@ describe("Stage 1 provider-close mappers", () => {
       memberships: [
         {
           projectId: "project_1",
+          projectName: "Project Antarctica",
           expeditionId: "expedition_1",
+          expeditionName: "Expedition Antarctica",
           role: "volunteer",
           status: "active"
         }
       ]
     });
 
-    expect(result.outcome).toBe("command");
-    if (result.outcome === "command") {
-      expect(result.command.kind).toBe("contact_graph");
-      if (result.command.kind === "contact_graph") {
-        expect(result.command.input.contact.id).toBe(
-          "contact:salesforce:003-stage1"
-        );
-        expect(result.command.input.identities.map((identity) => identity.kind)).toEqual(
-          ["salesforce_contact_id", "volunteer_id_plain", "email", "phone"]
-        );
-        expect(result.command.input.identities[0]).toMatchObject({
-          kind: "salesforce_contact_id",
-          isPrimary: true
-        });
-        expect(result.command.input.identities[1]).toMatchObject({
-          kind: "volunteer_id_plain",
-          isPrimary: false
-        });
-        expect(result.command.input.memberships).toHaveLength(1);
+      expect(result.outcome).toBe("command");
+      if (result.outcome === "command") {
+        expect(result.command.kind).toBe("contact_graph");
+        if (result.command.kind === "contact_graph") {
+          const identities = result.command.input.identities ?? [];
+
+          expect(result.command.input.contact.id).toBe(
+            "contact:salesforce:003-stage1"
+          );
+          expect(identities.map((identity) => identity.kind)).toEqual([
+            "salesforce_contact_id",
+            "volunteer_id_plain",
+            "email",
+            "phone"
+          ]);
+          expect(identities[0]).toMatchObject({
+            kind: "salesforce_contact_id",
+            isPrimary: true
+          });
+          expect(identities[1]).toMatchObject({
+            kind: "volunteer_id_plain",
+            isPrimary: false
+          });
+          expect(result.command.input.memberships).toHaveLength(1);
+          expect(result.command.input.projectDimensions).toEqual([
+            {
+            projectId: "project_1",
+            projectName: "Project Antarctica",
+            source: "salesforce"
+          }
+        ]);
+        expect(result.command.input.expeditionDimensions).toEqual([
+          {
+            expeditionId: "expedition_1",
+            projectId: "project_1",
+            expeditionName: "Expedition Antarctica",
+            source: "salesforce"
+          }
+        ]);
       }
     }
   });
@@ -150,7 +180,9 @@ describe("Stage 1 provider-close mappers", () => {
         routing: {
           required: true,
           projectId: "project_1",
-          expeditionId: "expedition_1"
+          expeditionId: "expedition_1",
+          projectName: "Project Antarctica",
+          expeditionName: "Expedition Antarctica"
         }
       });
 
@@ -170,8 +202,31 @@ describe("Stage 1 provider-close mappers", () => {
           expect(lifecycleResult.command.input.routing).toEqual({
             required: true,
             projectId: "project_1",
+            expeditionId: "expedition_1",
+            projectName: "Project Antarctica",
+            expeditionName: "Expedition Antarctica"
+          });
+          expect(lifecycleResult.command.input.salesforceEventContext).toEqual({
+            sourceEvidenceId: `source-evidence:salesforce:lifecycle_milestone:${lifecycleCase.recordId}`,
+            salesforceContactId: "003-stage1",
+            projectId: "project_1",
             expeditionId: "expedition_1"
           });
+          expect(lifecycleResult.command.input.projectDimensions).toEqual([
+            {
+              projectId: "project_1",
+              projectName: "Project Antarctica",
+              source: "salesforce"
+            }
+          ]);
+          expect(lifecycleResult.command.input.expeditionDimensions).toEqual([
+            {
+              expeditionId: "expedition_1",
+              projectId: "project_1",
+              expeditionName: "Expedition Antarctica",
+              source: "salesforce"
+            }
+          ]);
         }
       }
     }
@@ -203,7 +258,9 @@ describe("Stage 1 provider-close mappers", () => {
       routing: {
         required: false,
         projectId: null,
-        expeditionId: null
+        expeditionId: null,
+        projectName: null,
+        expeditionName: null
       }
     });
 

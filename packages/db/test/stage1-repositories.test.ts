@@ -81,6 +81,51 @@ describe("Stage 1 DB repositories", () => {
     await expect(
       repositories.contactMemberships.listByContactId(contact.id)
     ).resolves.toEqual([membership]);
+
+    const projectDimension = await repositories.projectDimensions.upsert({
+      projectId: "project_1",
+      projectName: "Project Antarctica",
+      source: "salesforce"
+    });
+    const expeditionDimension = await repositories.expeditionDimensions.upsert({
+      expeditionId: "expedition_1",
+      projectId: "project_1",
+      expeditionName: "Expedition Antarctica",
+      source: "salesforce"
+    });
+    const gmailDetail = await repositories.gmailMessageDetails.upsert({
+      sourceEvidenceId: sourceEvidence.id,
+      providerRecordId: sourceEvidence.providerRecordId,
+      gmailThreadId: "thread_1",
+      rfc822MessageId: "<gmail-message-1@example.org>",
+      direction: "inbound",
+      subject: "Hello there",
+      snippetClean: "Hello there",
+      bodyTextPreview: "Hello there from the volunteer mailbox.",
+      capturedMailbox: "volunteers@example.org",
+      projectInboxAlias: "project-antarctica@example.org"
+    });
+    const salesforceContext = await repositories.salesforceEventContext.upsert({
+      sourceEvidenceId: sourceEvidence.id,
+      salesforceContactId: contact.salesforceContactId,
+      projectId: "project_1",
+      expeditionId: "expedition_1"
+    });
+
+    await expect(
+      repositories.projectDimensions.listByIds(["project_1"])
+    ).resolves.toEqual([projectDimension]);
+    await expect(
+      repositories.expeditionDimensions.listByIds(["expedition_1"])
+    ).resolves.toEqual([expeditionDimension]);
+    await expect(
+      repositories.gmailMessageDetails.listBySourceEvidenceIds([sourceEvidence.id])
+    ).resolves.toEqual([gmailDetail]);
+    await expect(
+      repositories.salesforceEventContext.listBySourceEvidenceIds([
+        sourceEvidence.id
+      ])
+    ).resolves.toEqual([salesforceContext]);
   });
 
   it("persists canonical events, review queues, and projections", async () => {

@@ -106,52 +106,76 @@ function createFetchFromService(
 }
 
 function createFakeSalesforceApiClient(): SalesforceApiClient {
+  const contactRow = {
+    Id: "003-stage1",
+    Name: "Stage One Volunteer",
+    Email: "volunteer@example.org",
+    Phone: "+15555550123",
+    Volunteer_ID_Plain__c: "VOL-123",
+    CreatedDate: "2026-01-01T00:00:00.000Z",
+    LastModifiedDate: "2026-01-05T00:00:00.000Z"
+  };
+  const membershipRow = {
+    Id: "a01-membership-1",
+    Contact__c: "003-stage1",
+    Project__c: "project-antarctica",
+    Expedition__c: "expedition-antarctica",
+    Role__c: "volunteer",
+    Status__c: "active",
+    CreatedDate: "2026-01-02T00:00:00.000Z",
+    LastModifiedDate: "2026-01-05T00:01:00.000Z",
+    Date_Training_Sent__c: "2026-01-03T00:00:00.000Z",
+    Date_Training_Completed__c: "2026-01-04T00:00:00.000Z",
+    Date_First_Sample_Collected__c: "2026-01-05T00:00:00.000Z"
+  };
+  const taskRow = {
+    Id: "00T-task-1",
+    WhoId: "003-stage1",
+    TaskSubtype: "Email",
+    Subject: "Outbound follow-up",
+    Description: "Logged outbound follow-up from Task",
+    CreatedDate: "2026-01-05T00:02:00.000Z",
+    LastModifiedDate: "2026-01-05T00:03:00.000Z"
+  };
+
   return {
     queryAll(soql) {
       if (soql.includes(" FROM Contact ")) {
-        return Promise.resolve([
-          {
-            Id: "003-stage1",
-            Name: "Stage One Volunteer",
-            Email: "volunteer@example.org",
-            Phone: "+15555550123",
-            Volunteer_ID_Plain__c: "VOL-123",
-            CreatedDate: "2026-01-01T00:00:00.000Z",
-            LastModifiedDate: "2026-01-05T00:00:00.000Z"
-          }
-        ]);
+        if (soql.includes(" WHERE Id IN ")) {
+          return Promise.resolve(
+            soql.includes("'003-stage1'") ? [contactRow] : []
+          );
+        }
+
+        return Promise.resolve([contactRow]);
       }
 
       if (soql.includes(" FROM Expedition_Members__c ")) {
-        return Promise.resolve([
-          {
-            Id: "a01-membership-1",
-            Contact__c: "003-stage1",
-            Project__c: "project-antarctica",
-            Expedition__c: "expedition-antarctica",
-            Role__c: "volunteer",
-            Status__c: "active",
-            CreatedDate: "2026-01-02T00:00:00.000Z",
-            LastModifiedDate: "2026-01-05T00:01:00.000Z",
-            Date_Training_Sent__c: "2026-01-03T00:00:00.000Z",
-            Date_Training_Completed__c: "2026-01-04T00:00:00.000Z",
-            Date_First_Sample_Collected__c: "2026-01-05T00:00:00.000Z"
-          }
-        ]);
+        if (soql.includes(" WHERE Id IN ")) {
+          return Promise.resolve(
+            soql.includes("'a01-membership-1'") ? [membershipRow] : []
+          );
+        }
+
+        if (soql.includes(" WHERE Contact__c IN ")) {
+          return Promise.resolve(
+            soql.includes("'003-stage1'") ? [membershipRow] : []
+          );
+        }
+
+        return Promise.resolve([membershipRow]);
       }
 
       if (soql.includes(" FROM Task ")) {
-        return Promise.resolve([
-          {
-            Id: "00T-task-1",
-            WhoId: "003-stage1",
-            TaskSubtype: "Email",
-            Subject: "Outbound follow-up",
-            Description: "Logged outbound follow-up from Task",
-            CreatedDate: "2026-01-05T00:02:00.000Z",
-            LastModifiedDate: "2026-01-05T00:03:00.000Z"
-          }
-        ]);
+        if (soql.includes(" WHERE Id IN ")) {
+          return Promise.resolve(soql.includes("'00T-task-1'") ? [taskRow] : []);
+        }
+
+        if (soql.includes(" WHERE WhoId IN ")) {
+          return Promise.resolve(soql.includes("'003-stage1'") ? [taskRow] : []);
+        }
+
+        return Promise.resolve([taskRow]);
       }
 
       return Promise.resolve([]);
@@ -305,6 +329,62 @@ describe("Salesforce capture service", () => {
       ])
     );
     expect(result.checkpoint).toBe("2026-01-05T00:03:00.000Z");
+  });
+
+  it("expands task communications for membership-scoped historical backfills", async () => {
+    const queries: string[] = [];
+    const baseApiClient = createFakeSalesforceApiClient();
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: {
+          queryAll: (soql) => {
+            queries.push(soql);
+            return baseApiClient.queryAll(soql);
+          }
+        },
+        now: () => new Date("2026-01-05T00:05:00.000Z")
+      }
+    );
+
+    const result = await service.captureHistoricalBatch({
+      version: 1,
+      jobId: "job:salesforce:historical:membership-scope",
+      correlationId: "corr:salesforce:historical:membership-scope",
+      traceId: null,
+      batchId: "batch:salesforce:historical:membership-scope",
+      syncStateId: "sync:salesforce:historical:membership-scope",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "historical",
+      jobType: "historical_backfill",
+      cursor: null,
+      checkpoint: null,
+      windowStart: null,
+      windowEnd: null,
+      recordIds: ["a01-membership-1"],
+      maxRecords: 25
+    });
+
+    expect(result.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "contact_snapshot",
+          salesforceContactId: "003-stage1"
+        }),
+        expect.objectContaining({
+          recordType: "task_communication",
+          recordId: "00T-task-1",
+          salesforceContactId: "003-stage1"
+        })
+      ])
+    );
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("FROM Task WHERE WhoId IN ('003-stage1')")
+      ])
+    );
   });
 
   it("keeps live Salesforce capture CDC-compatible at the contract level while using the same provider-close batch shape", async () => {

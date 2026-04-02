@@ -27,6 +27,7 @@ const optionalTimestampSchema = timestampSchema.nullable();
 const optionalIdSchema = idSchema.nullable();
 const stringArraySchema = z.array(z.string().min(1));
 const metadataJsonSchema = z.record(z.string(), z.unknown());
+const nullableStringSchema = z.string().min(1).nullable();
 
 // Stage 1 intentionally keeps provenance serialization compact and explicit.
 export const canonicalEventProvenanceSchema = z.object({
@@ -115,6 +116,50 @@ export const contactMembershipSchema = z.object({
   source: recordSourceSchema
 });
 export type ContactMembershipRecord = z.infer<typeof contactMembershipSchema>;
+
+export const projectDimensionSchema = z.object({
+  projectId: idSchema,
+  projectName: z.string().min(1),
+  source: recordSourceSchema
+});
+export type ProjectDimensionRecord = z.infer<typeof projectDimensionSchema>;
+
+export const expeditionDimensionSchema = z.object({
+  expeditionId: idSchema,
+  projectId: nullableStringSchema,
+  expeditionName: z.string().min(1),
+  source: recordSourceSchema
+});
+export type ExpeditionDimensionRecord = z.infer<
+  typeof expeditionDimensionSchema
+>;
+
+export const gmailMessageDirectionSchema = z.enum(["inbound", "outbound"]);
+export type GmailMessageDirection = z.infer<typeof gmailMessageDirectionSchema>;
+
+export const gmailMessageDetailSchema = z.object({
+  sourceEvidenceId: idSchema,
+  providerRecordId: z.string().min(1),
+  gmailThreadId: nullableStringSchema,
+  rfc822MessageId: nullableStringSchema,
+  direction: gmailMessageDirectionSchema,
+  subject: nullableStringSchema,
+  snippetClean: z.string(),
+  bodyTextPreview: z.string(),
+  capturedMailbox: nullableStringSchema,
+  projectInboxAlias: nullableStringSchema
+});
+export type GmailMessageDetailRecord = z.infer<typeof gmailMessageDetailSchema>;
+
+export const salesforceEventContextSchema = z.object({
+  sourceEvidenceId: idSchema,
+  salesforceContactId: nullableStringSchema,
+  projectId: nullableStringSchema,
+  expeditionId: nullableStringSchema
+});
+export type SalesforceEventContextRecord = z.infer<
+  typeof salesforceEventContextSchema
+>;
 
 export const identityResolutionSchema = z
   .object({

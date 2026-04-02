@@ -16,8 +16,8 @@ function buildContactGraphResult(
 ): NormalizedContactGraphResult {
   return {
     contact: input.contact,
-    identities: input.identities,
-    memberships: input.memberships
+    identities: input.identities ?? [],
+    memberships: input.memberships ?? []
   };
 }
 
@@ -45,12 +45,14 @@ function buildAppliedCanonicalEventResult(
       provenance: {
         primaryProvider: input.sourceEvidence.provider,
         primarySourceEvidenceId: input.sourceEvidence.id,
-        supportingSourceEvidenceIds: input.supportingSources.map(
+        supportingSourceEvidenceIds: (input.supportingSources ?? []).map(
           (source) => source.sourceEvidenceId
         ),
         winnerReason:
           input.sourceEvidence.provider === "gmail" &&
-          input.supportingSources.some((source) => source.provider === "salesforce")
+          (input.supportingSources ?? []).some(
+            (source) => source.provider === "salesforce"
+          )
             ? "gmail_wins_duplicate_collapse"
             : "single_source"
       },
@@ -335,7 +337,9 @@ describe("Stage 1 worker ingest service", () => {
       routing: {
         required: false,
         projectId: null,
-        expeditionId: null
+        expeditionId: null,
+        projectName: null,
+        expeditionName: null
       }
     });
 

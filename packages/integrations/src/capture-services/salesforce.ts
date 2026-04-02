@@ -61,7 +61,9 @@ const salesforceCaptureServiceConfigSchema = z.object({
   membershipObjectName: z.string().min(1).default("Expedition_Members__c"),
   membershipContactField: z.string().min(1).default("Contact__c"),
   membershipProjectField: z.string().min(1).default("Project__c"),
+  membershipProjectNameField: z.string().min(1).default("Project__r.Name"),
   membershipExpeditionField: z.string().min(1).default("Expedition__c"),
+  membershipExpeditionNameField: z.string().min(1).default("Expedition__r.Name"),
   membershipRoleField: z.string().min(1).default("Role__c"),
   membershipStatusField: z.string().min(1).default("Status__c"),
   taskContactField: z.string().min(1).default("WhoId"),
@@ -205,8 +207,56 @@ function buildInClause(values: readonly string[]): string {
   return `(${values.map((value) => quoteSoqlString(value)).join(", ")})`;
 }
 
+function getPathValue(row: SalesforceRow, fieldName: string): unknown {
+  const directValue = row[fieldName];
+
+  if (directValue !== undefined || !fieldName.includes(".")) {
+    return directValue;
+  }
+
+  const path = fieldName.split(".");
+  let currentValue: unknown = row;
+
+  for (const segment of path) {
+    if (
+      typeof currentValue !== "object" ||
+      currentValue === null ||
+      !(segment in currentValue)
+    ) {
+      return undefined;
+    }
+
+    currentValue = (currentValue as Record<string, unknown>)[segment];
+  }
+
+  return currentValue;
+}
+
+function dedupeRowsById(rows: readonly SalesforceRow[]): SalesforceRow[] {
+  const seenIds = new Set<string>();
+  const dedupedRows: SalesforceRow[] = [];
+
+  for (const row of rows) {
+    const rowId = getStringField(row, "Id");
+
+    if (rowId === null) {
+      dedupedRows.push(row);
+      continue;
+    }
+
+    if (seenIds.has(rowId)) {
+      continue;
+    }
+
+    seenIds.add(rowId);
+    dedupedRows.push(row);
+  }
+
+  return dedupedRows;
+}
+
 function getStringField(row: SalesforceRow, fieldName: string): string | null {
-  const value = row[fieldName];
+  const value = getPathValue(row, fieldName);
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
@@ -394,7 +444,9 @@ function buildMembershipFields(
     "Date_First_Sample_Collected__c",
     config.membershipContactField,
     config.membershipProjectField,
+    config.membershipProjectNameField,
     config.membershipExpeditionField,
+    config.membershipExpeditionNameField,
     config.membershipRoleField,
     config.membershipStatusField
   ]);
@@ -501,9 +553,17 @@ function buildContactSnapshotRecordWithConfig(input: {
     updatedAt,
     memberships: input.memberships.map((membership) => ({
       projectId: getStringField(membership, input.config.membershipProjectField),
+      projectName: getStringField(
+        membership,
+        input.config.membershipProjectNameField
+      ),
       expeditionId: getStringField(
         membership,
         input.config.membershipExpeditionField
+      ),
+      expeditionName: getStringField(
+        membership,
+        input.config.membershipExpeditionNameField
       ),
       role: getStringField(membership, input.config.membershipRoleField),
       status: getStringField(membership, input.config.membershipStatusField)
@@ -544,9 +604,17 @@ function buildLifecycleRecords(input: {
     getStringField(input.contact ?? {}, "Volunteer_ID_Plain__c")
   ]);
   const projectId = getStringField(input.membership, input.config.membershipProjectField);
+  const projectName = getStringField(
+    input.membership,
+    input.config.membershipProjectNameField
+  );
   const expeditionId = getStringField(
     input.membership,
     input.config.membershipExpeditionField
+  );
+  const expeditionName = getStringField(
+    input.membership,
+    input.config.membershipExpeditionNameField
   );
   const records: SalesforceRecord[] = [];
 
@@ -592,7 +660,9 @@ function buildLifecycleRecords(input: {
         routing: {
           required: true,
           projectId,
-          expeditionId
+          expeditionId,
+          projectName,
+          expeditionName
         }
       })
     );
@@ -753,6 +823,27 @@ export function createSalesforceCaptureService(
     );
   }
 
+  async function queryRowsByFieldValues(input: {
+    readonly objectName: string;
+    readonly fields: readonly string[];
+    readonly fieldName: string;
+    readonly values: readonly string[];
+    readonly extraWhere?: string;
+  }): Promise<readonly SalesforceRow[]> {
+    if (input.values.length === 0) {
+      return [];
+    }
+
+    const whereClauses = [
+      `${input.fieldName} IN ${buildInClause(input.values)}`,
+      ...(input.extraWhere === undefined ? [] : [input.extraWhere])
+    ];
+
+    return apiClient.queryAll(
+      `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE ${whereClauses.join(" AND ")}`
+    );
+  }
+
   async function captureSalesforceBatch(input: {
     readonly mode: "historical" | "live";
     readonly recordIds: readonly string[];
@@ -774,7 +865,7 @@ export function createSalesforceCaptureService(
     const taskFields = buildTaskFields(parsedConfig);
     const contactFields = buildContactFields();
 
-    const [membershipRows, taskRows] = await Promise.all([
+    const [membershipRows, directTaskRows] = await Promise.all([
       input.recordIds.length > 0
         ? queryRowsByIds({
             objectName: parsedConfig.membershipObjectName,
@@ -806,6 +897,32 @@ export function createSalesforceCaptureService(
             )}`
           )
     ]);
+
+    const membershipContactIds = uniqueValues(
+      membershipRows.map((row) =>
+        getStringField(row, parsedConfig.membershipContactField)
+      )
+    );
+    const taskRows =
+      input.recordIds.length > 0 && membershipContactIds.length > 0
+        ? dedupeRowsById([
+            ...directTaskRows,
+            ...(await queryRowsByFieldValues({
+              objectName: "Task",
+              fields: taskFields,
+              fieldName: parsedConfig.taskContactField,
+              values: membershipContactIds,
+              extraWhere: buildTaskWindowWhere(
+                {
+                  mode: input.mode,
+                  windowStart: window.windowStart,
+                  windowEnd: window.windowEnd
+                },
+                parsedConfig
+              )
+            }))
+          ])
+        : [...directTaskRows];
 
     const touchedContactIds = uniqueValues([
       ...membershipRows.map((row) =>
