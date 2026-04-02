@@ -10,10 +10,9 @@ describe("Gmail capture runtime config", () => {
       GMAIL_LIVE_ACCOUNT: "volunteers@adventurescientists.org",
       GMAIL_PROJECT_INBOX_ALIASES:
         "project-antarctica@example.org,project-oceans@example.org",
-      GMAIL_GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL:
-        "capture-service@example.iam.gserviceaccount.com",
-      GMAIL_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:
-        "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----"
+      GMAIL_GOOGLE_OAUTH_CLIENT_ID: "gmail-oauth-client-id",
+      GMAIL_GOOGLE_OAUTH_CLIENT_SECRET: "gmail-oauth-client-secret",
+      GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN: "gmail-oauth-refresh-token"
     });
 
     expect(config.port).toBe(3011);
@@ -26,10 +25,9 @@ describe("Gmail capture runtime config", () => {
         PORT: "3011",
         GMAIL_CAPTURE_TOKEN: "gmail-token",
         GMAIL_PROJECT_INBOX_ALIASES: "project-antarctica@example.org",
-        GMAIL_GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL:
-          "capture-service@example.iam.gserviceaccount.com",
-        GMAIL_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:
-          "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----"
+        GMAIL_GOOGLE_OAUTH_CLIENT_ID: "gmail-oauth-client-id",
+        GMAIL_GOOGLE_OAUTH_CLIENT_SECRET: "gmail-oauth-client-secret",
+        GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN: "gmail-oauth-refresh-token"
       })
     ).toThrow("GMAIL_LIVE_ACCOUNT is required.");
   });
@@ -41,10 +39,9 @@ describe("Gmail capture runtime config", () => {
         GMAIL_CAPTURE_TOKEN: "gmail-token",
         GMAIL_LIVE_ACCOUNT: "project-antarctica@example.org",
         GMAIL_PROJECT_INBOX_ALIASES: "project-antarctica@example.org",
-        GMAIL_GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL:
-          "capture-service@example.iam.gserviceaccount.com",
-        GMAIL_GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:
-          "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----"
+        GMAIL_GOOGLE_OAUTH_CLIENT_ID: "gmail-oauth-client-id",
+        GMAIL_GOOGLE_OAUTH_CLIENT_SECRET: "gmail-oauth-client-secret",
+        GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN: "gmail-oauth-refresh-token"
       })
     ).toThrow("GMAIL_LIVE_ACCOUNT must be a volunteers@... address.");
   });
