@@ -420,6 +420,9 @@ async function captureRecordsForReplay(
   readonly nextCursor: string | null;
   readonly checkpoint: string | null;
 }> {
+  const replayMaxRecords =
+    payload.provider === "salesforce" ? 1000 : payload.items.length;
+
   switch (payload.provider) {
     case "gmail":
       return payload.mode === "historical"
@@ -434,7 +437,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           )
         : capture.gmail.captureLiveBatch(
@@ -448,7 +451,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           );
     case "salesforce":
@@ -464,7 +467,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           )
         : capture.salesforce.captureLiveBatch(
@@ -478,7 +481,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           );
     case "simpletexting":
@@ -494,7 +497,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           )
         : capture.simpleTexting.captureLiveBatch(
@@ -508,7 +511,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           );
     case "mailchimp":
@@ -524,7 +527,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           )
         : capture.mailchimp.captureTransitionBatch(
@@ -538,7 +541,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           );
   }

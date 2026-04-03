@@ -64,7 +64,7 @@ const salesforceCaptureServiceConfigSchema = z.object({
   membershipProjectNameField: z.string().min(1).default("Project__r.Name"),
   membershipExpeditionField: z.string().min(1).default("Expedition__c"),
   membershipExpeditionNameField: z.string().min(1).default("Expedition__r.Name"),
-  membershipRoleField: z.string().min(1).default("Role__c"),
+  membershipRoleField: z.string().min(1).nullable().default(null),
   membershipStatusField: z.string().min(1).default("Status__c"),
   taskContactField: z.string().min(1).default("WhoId"),
   taskChannelField: z.string().min(1).default("TaskSubtype"),
@@ -447,7 +447,9 @@ function buildMembershipFields(
     config.membershipProjectNameField,
     config.membershipExpeditionField,
     config.membershipExpeditionNameField,
-    config.membershipRoleField,
+    ...(config.membershipRoleField === null
+      ? []
+      : [config.membershipRoleField]),
     config.membershipStatusField
   ]);
 }
@@ -565,7 +567,10 @@ function buildContactSnapshotRecordWithConfig(input: {
         membership,
         input.config.membershipExpeditionNameField
       ),
-      role: getStringField(membership, input.config.membershipRoleField),
+      role:
+        input.config.membershipRoleField === null
+          ? null
+          : getStringField(membership, input.config.membershipRoleField),
       status: getStringField(membership, input.config.membershipStatusField)
     }))
   });

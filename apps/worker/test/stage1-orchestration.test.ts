@@ -8,6 +8,7 @@ import {
   projectionRebuildBatchPayloadSchema,
   replayBatchPayloadSchema,
   salesforceHistoricalCaptureBatchPayloadSchema,
+  salesforceLiveCaptureBatchPayloadSchema,
   type GmailHistoricalCaptureBatchPayload
 } from "@as-comms/contracts";
 
@@ -192,6 +193,167 @@ describe("Stage 1 worker orchestration service", () => {
       await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(1);
       await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(1);
       await expect(context.repositories.inboxProjection.countAll()).resolves.toBe(1);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("replays Salesforce fan-out batches without truncating additive read-model writes", async () => {
+    let observedMaxRecords: number | null = null;
+    const capture = createEmptyCapturePorts();
+    capture.salesforce.captureLiveBatch = (payload) => {
+      const parsedPayload = salesforceLiveCaptureBatchPayloadSchema.parse(payload);
+      observedMaxRecords = parsedPayload.maxRecords;
+
+      const replayedRecords = [
+        {
+          recordType: "task_communication" as const,
+          recordId: "task-stage1-older",
+          channel: "email" as const,
+          salesforceContactId,
+          occurredAt: "2025-12-31T23:59:00.000Z",
+          receivedAt: "2026-01-01T00:00:00.000Z",
+          payloadRef: "salesforce://Task/task-stage1-older",
+          checksum: "checksum-task-stage1-older",
+          snippet: "Older logged email",
+          normalizedEmails: ["volunteer@example.org"],
+          normalizedPhones: ["+15555550123"],
+          volunteerIdPlainValues: [],
+          supportingRecords: [],
+          crossProviderCollapseKey: null,
+          routing: {
+            required: false,
+            projectId: null,
+            expeditionId: null
+          }
+        },
+        {
+          recordType: "lifecycle_milestone" as const,
+          recordId: "membership-stage1:Expedition_Members__c.CreatedDate",
+          salesforceContactId,
+          milestone: "signed_up" as const,
+          sourceField: "Expedition_Members__c.CreatedDate" as const,
+          occurredAt: "2026-01-02T00:00:00.000Z",
+          receivedAt: "2026-01-02T00:01:00.000Z",
+          payloadRef:
+            "salesforce://Expedition_Members__c/membership-stage1#CreatedDate",
+          checksum: "checksum-membership-stage1-created",
+          normalizedEmails: ["volunteer@example.org"],
+          normalizedPhones: ["+15555550123"],
+          volunteerIdPlainValues: [],
+          routing: {
+            required: true,
+            projectId: "project-stage1",
+            expeditionId: "expedition-stage1",
+            projectName: "Project Stage 1",
+            expeditionName: "Expedition Stage 1"
+          }
+        },
+        {
+          recordType: "contact_snapshot" as const,
+          recordId: salesforceContactId,
+          salesforceContactId,
+          displayName: "Stage One Volunteer",
+          primaryEmail: "volunteer@example.org",
+          primaryPhone: "+15555550123",
+          normalizedEmails: ["volunteer@example.org"],
+          normalizedPhones: ["+15555550123"],
+          volunteerIdPlainValues: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+          memberships: [
+            {
+              projectId: "project-stage1",
+              projectName: "Project Stage 1",
+              expeditionId: "expedition-stage1",
+              expeditionName: "Expedition Stage 1",
+              role: "volunteer",
+              status: "active"
+            }
+          ]
+        }
+      ];
+
+      return Promise.resolve(
+        buildCapturedBatch(replayedRecords.slice(0, parsedPayload.maxRecords), {
+          nextCursor:
+            parsedPayload.maxRecords < replayedRecords.length
+              ? "salesforce:cursor:more"
+              : null,
+          checkpoint: "salesforce:checkpoint:replay"
+        })
+      );
+    };
+
+    const context = await createTestWorkerContext({ capture });
+
+    try {
+      await seedContact(context);
+
+      const replay = await context.orchestration.runReplayBatch(
+        replayBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:replay:salesforce:1",
+          correlationId: "corr:replay:salesforce:1",
+          traceId: "trace:replay:salesforce:1",
+          batchId: "batch:replay:salesforce:1",
+          syncStateId: "sync:replay:salesforce:1",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "salesforce",
+          mode: "live",
+          jobType: "dead_letter_reprocess",
+          cursor: null,
+          checkpoint: null,
+          windowStart: null,
+          windowEnd: null,
+          items: [
+            {
+              providerRecordType: "lifecycle_milestone",
+              providerRecordId: "membership-stage1"
+            }
+          ]
+        })
+      );
+
+      expect(observedMaxRecords).toBe(1000);
+      expect(replay.outcome).toBe("succeeded");
+      if (replay.outcome !== "succeeded") {
+        throw new Error("Expected Salesforce replay batch to succeed.");
+      }
+
+      await expect(
+        context.repositories.projectDimensions.listByIds(["project-stage1"])
+      ).resolves.toEqual([
+        {
+          projectId: "project-stage1",
+          projectName: "Project Stage 1",
+          source: "salesforce"
+        }
+      ]);
+      await expect(
+        context.repositories.expeditionDimensions.listByIds(["expedition-stage1"])
+      ).resolves.toEqual([
+        {
+          expeditionId: "expedition-stage1",
+          projectId: "project-stage1",
+          expeditionName: "Expedition Stage 1",
+          source: "salesforce"
+        }
+      ]);
+      await expect(
+        context.repositories.salesforceEventContext.listBySourceEvidenceIds([
+          "source-evidence:salesforce:lifecycle_milestone:membership-stage1%3AExpedition_Members__c.CreatedDate"
+        ])
+      ).resolves.toEqual([
+        {
+          sourceEvidenceId:
+            "source-evidence:salesforce:lifecycle_milestone:membership-stage1%3AExpedition_Members__c.CreatedDate",
+          salesforceContactId,
+          projectId: "project-stage1",
+          expeditionId: "expedition-stage1"
+        }
+      ]);
     } finally {
       await context.dispose();
     }

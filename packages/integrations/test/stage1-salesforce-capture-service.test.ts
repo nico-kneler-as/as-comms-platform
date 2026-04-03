@@ -387,6 +387,72 @@ describe("Salesforce capture service", () => {
     );
   });
 
+  it("supports membership-scoped replays when the org does not expose a role field", async () => {
+    const queries: string[] = [];
+    const baseApiClient = createFakeSalesforceApiClient();
+    const service = createSalesforceCaptureService(
+      {
+        ...createSalesforceServiceConfig(),
+        membershipRoleField: null
+      },
+      {
+        apiClient: {
+          queryAll: (soql) => {
+            queries.push(soql);
+            return baseApiClient.queryAll(soql);
+          }
+        },
+        now: () => new Date("2026-01-05T00:05:00.000Z")
+      }
+    );
+
+    const result = await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:salesforce:live:no-role-field",
+      correlationId: "corr:salesforce:live:no-role-field",
+      traceId: null,
+      batchId: "batch:salesforce:live:no-role-field",
+      syncStateId: "sync:salesforce:live:no-role-field",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: null,
+      windowEnd: null,
+      recordIds: ["a01-membership-1"],
+      maxRecords: 25
+    });
+
+    expect(queries.some((query) => query.includes("Role__c"))).toBe(false);
+    expect(result.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "contact_snapshot",
+          salesforceContactId: "003-stage1",
+          memberships: [
+            expect.objectContaining({
+              projectId: "project-antarctica",
+              expeditionId: "expedition-antarctica",
+              role: null,
+              status: "active"
+            })
+          ]
+        }),
+        expect.objectContaining({
+          recordType: "lifecycle_milestone",
+          salesforceContactId: "003-stage1",
+          routing: expect.objectContaining({
+            projectId: "project-antarctica",
+            expeditionId: "expedition-antarctica"
+          })
+        })
+      ])
+    );
+  });
+
   it("keeps live Salesforce capture CDC-compatible at the contract level while using the same provider-close batch shape", async () => {
     const service = createSalesforceCaptureService(
       {
