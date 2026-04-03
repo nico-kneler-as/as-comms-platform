@@ -453,6 +453,137 @@ describe("Salesforce capture service", () => {
     );
   });
 
+  it("maps expedition-linked auto email tasks to task_communication with routing context", async () => {
+    const contactRow = {
+      Id: "003-auto",
+      Name: "Auto Email Volunteer",
+      Email: "auto@example.org",
+      Phone: "+15555550124",
+      Volunteer_ID_Plain__c: "VOL-124",
+      CreatedDate: "2026-01-01T00:00:00.000Z",
+      LastModifiedDate: "2026-01-05T00:00:00.000Z"
+    };
+    const membershipRow = {
+      Id: "a01-membership-auto",
+      Contact__c: "003-auto",
+      Project__c: "project-auto",
+      Project__r: { Name: "Project Auto" },
+      Expedition__c: "expedition-auto",
+      Expedition__r: { Name: "Expedition Auto" },
+      Status__c: "trip_planning",
+      CreatedDate: "2026-01-02T00:00:00.000Z",
+      LastModifiedDate: "2026-01-05T00:01:00.000Z"
+    };
+    const autoEmailTaskRow = {
+      Id: "00T-auto-email",
+      WhoId: "003-auto",
+      WhatId: "a01-membership-auto",
+      TaskSubtype: "Task",
+      Subject: "→ Email: Start your training",
+      Description: "Auto-sent training reminder",
+      CreatedDate: "2026-01-05T00:02:00.000Z",
+      LastModifiedDate: "2026-01-05T00:03:00.000Z"
+    };
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: {
+          queryAll: (soql) => {
+            if (soql.includes(" FROM Contact ")) {
+              if (soql.includes(" WHERE Id IN ")) {
+                return Promise.resolve(
+                  soql.includes("'003-auto'") ? [contactRow] : []
+                );
+              }
+
+              return Promise.resolve([contactRow]);
+            }
+
+            if (soql.includes(" FROM Expedition_Members__c ")) {
+              if (soql.includes(" WHERE Id IN ")) {
+                return Promise.resolve(
+                  soql.includes("'a01-membership-auto'") ? [membershipRow] : []
+                );
+              }
+
+              if (soql.includes(" WHERE Contact__c IN ")) {
+                return Promise.resolve(
+                  soql.includes("'003-auto'") ? [membershipRow] : []
+                );
+              }
+
+              return Promise.resolve([membershipRow]);
+            }
+
+            if (soql.includes(" FROM Task ")) {
+              if (soql.includes(" WHERE Id IN ")) {
+                return Promise.resolve(
+                  soql.includes("'a01-membership-auto'") ? [] : []
+                );
+              }
+
+              if (soql.includes(" WHERE WhoId IN ")) {
+                return Promise.resolve(
+                  soql.includes("'003-auto'") ? [autoEmailTaskRow] : []
+                );
+              }
+
+              return Promise.resolve([autoEmailTaskRow]);
+            }
+
+            return Promise.resolve([]);
+          }
+        },
+        now: () => new Date("2026-01-05T00:05:00.000Z")
+      }
+    );
+
+    const result = await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:salesforce:live:auto-email",
+      correlationId: "corr:salesforce:live:auto-email",
+      traceId: null,
+      batchId: "batch:salesforce:live:auto-email",
+      syncStateId: "sync:salesforce:live:auto-email",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: null,
+      windowEnd: null,
+      recordIds: ["a01-membership-auto"],
+      maxRecords: 25
+    });
+
+    expect(result.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "task_communication",
+          recordId: "00T-auto-email",
+          channel: "email",
+          salesforceContactId: "003-auto",
+          routing: {
+            required: true,
+            projectId: "project-auto",
+            expeditionId: "expedition-auto",
+            projectName: "Project Auto",
+            expeditionName: "Expedition Auto"
+          }
+        })
+      ])
+    );
+    expect(
+      result.records.filter(
+        (record) =>
+          record.recordType === "task_unmapped_channel" &&
+          record.recordId === "00T-auto-email"
+      )
+    ).toEqual([]);
+  });
+
   it("keeps live Salesforce capture CDC-compatible at the contract level while using the same provider-close batch shape", async () => {
     const service = createSalesforceCaptureService(
       {

@@ -407,6 +407,37 @@ function getMappedResultForRecord(
   }
 }
 
+function prioritizeCapturedRecordsForIngest<TRecord>(
+  records: readonly TRecord[],
+  mapRecord: (record: TRecord) => ProviderMappingResult
+): Array<{
+  readonly record: TRecord;
+  readonly mapped: ProviderMappingResult;
+}> {
+  const contactGraphRecords: Array<{
+    readonly record: TRecord;
+    readonly mapped: ProviderMappingResult;
+  }> = [];
+  const remainingRecords: Array<{
+    readonly record: TRecord;
+    readonly mapped: ProviderMappingResult;
+  }> = [];
+
+  for (const record of records) {
+    const mapped = mapRecord(record);
+    const entry = { record, mapped };
+
+    if (mapped.outcome === "command" && mapped.command.kind === "contact_graph") {
+      contactGraphRecords.push(entry);
+      continue;
+    }
+
+    remainingRecords.push(entry);
+  }
+
+  return [...contactGraphRecords, ...remainingRecords];
+}
+
 async function captureRecordsForReplay(
   capture: Stage1ProviderCapturePorts,
   payload: ReplayBatchPayload
@@ -596,8 +627,12 @@ export function createStage1WorkerOrchestrationService(input: {
     try {
       const captured = await params.capture(params.payload);
       const ingestResults: Stage1IngestResult[] = [];
+      const prioritizedRecords = prioritizeCapturedRecordsForIngest(
+        captured.records,
+        params.mapRecord
+      );
 
-      for (const record of captured.records) {
+      for (const { record, mapped } of prioritizedRecords) {
         const ingestResult = await params.ingestRecord(record);
         ingestResults.push(ingestResult);
 
@@ -606,8 +641,6 @@ export function createStage1WorkerOrchestrationService(input: {
           ingestResult.outcome !== "quarantined" &&
           ingestResult.canonicalEventId !== null
         ) {
-          const mapped = params.mapRecord(record);
-
           if (mapped.outcome === "command" && mapped.command.kind === "canonical_event") {
             await recordProjectionSeedOnce(input.persistence, {
               canonicalEventId: mapped.command.input.canonicalEvent.id,

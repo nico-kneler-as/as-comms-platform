@@ -463,6 +463,7 @@ function buildTaskFields(
     "LastModifiedDate",
     "Subject",
     "Description",
+    "WhatId",
     config.taskContactField,
     config.taskChannelField,
     config.taskOccurredAtField,
@@ -678,6 +679,7 @@ function buildLifecycleRecords(input: {
 
 function resolveTaskChannel(input: {
   readonly row: SalesforceRow;
+  readonly relatedMembership: SalesforceRow | null;
   readonly config: ResolvedSalesforceCaptureServiceConfig;
 }): "email" | "sms" | null {
   const rawChannelValue = getStringField(input.row, input.config.taskChannelField);
@@ -702,12 +704,24 @@ function resolveTaskChannel(input: {
     return "sms";
   }
 
+  const subject = getStringField(input.row, "Subject")?.toLowerCase() ?? null;
+
+  if (
+    normalizedChannelValue === "task" &&
+    input.relatedMembership !== null &&
+    subject !== null &&
+    subject.includes("email:")
+  ) {
+    return "email";
+  }
+
   return null;
 }
 
 function buildTaskRecord(input: {
   readonly task: SalesforceRow;
   readonly contact: SalesforceRow | null;
+  readonly relatedMembership: SalesforceRow | null;
   readonly config: ResolvedSalesforceCaptureServiceConfig;
   readonly receivedAt: string;
 }): SalesforceRecord {
@@ -722,6 +736,7 @@ function buildTaskRecord(input: {
 
   const channel = resolveTaskChannel({
     row: input.task,
+    relatedMembership: input.relatedMembership,
     config: input.config
   });
 
@@ -746,6 +761,35 @@ function buildTaskRecord(input: {
   const salesforceContactId =
     getStringField(input.task, input.config.taskContactField) ??
     getStringField(input.contact ?? {}, "Id");
+  const projectId =
+    input.relatedMembership === null
+      ? null
+      : getStringField(
+          input.relatedMembership,
+          input.config.membershipProjectField
+        );
+  const projectName =
+    input.relatedMembership === null
+      ? null
+      : getStringField(
+          input.relatedMembership,
+          input.config.membershipProjectNameField
+        );
+  const expeditionId =
+    input.relatedMembership === null
+      ? null
+      : getStringField(
+          input.relatedMembership,
+          input.config.membershipExpeditionField
+        );
+  const expeditionName =
+    input.relatedMembership === null
+      ? null
+      : getStringField(
+          input.relatedMembership,
+          input.config.membershipExpeditionNameField
+        );
+  const hasMembershipRoutingContext = projectId !== null || expeditionId !== null;
 
   return salesforceTaskCommunicationRecordSchema.parse({
     recordType: "task_communication",
@@ -778,9 +822,11 @@ function buildTaskRecord(input: {
         ? null
         : getStringField(input.task, input.config.taskCrossProviderKeyField),
     routing: {
-      required: false,
-      projectId: null,
-      expeditionId: null
+      required: hasMembershipRoutingContext,
+      projectId,
+      expeditionId,
+      projectName,
+      expeditionName
     }
   });
 }
@@ -989,12 +1035,19 @@ export function createSalesforceCaptureService(
             )}`
           );
     const membershipsByContactId = new Map<string, SalesforceRow[]>();
+    const membershipsById = new Map<string, SalesforceRow>();
 
     for (const membership of allMembershipsForContacts) {
+      const membershipId = getStringField(membership, "Id");
       const contactId = getStringField(
         membership,
         parsedConfig.membershipContactField
       );
+
+      if (membershipId !== null) {
+        membershipsById.set(membershipId, membership);
+      }
+
       if (contactId === null) {
         continue;
       }
@@ -1041,10 +1094,13 @@ export function createSalesforceCaptureService(
     for (const task of taskRows) {
       const contactId = getStringField(task, parsedConfig.taskContactField);
       const contact = contactId === null ? null : (contactsById.get(contactId) ?? null);
+      const relatedMembership =
+        membershipsById.get(getStringField(task, "WhatId") ?? "") ?? null;
 
       const taskRecord = buildTaskRecord({
         task,
         contact,
+        relatedMembership,
         config: parsedConfig,
         receivedAt
       });

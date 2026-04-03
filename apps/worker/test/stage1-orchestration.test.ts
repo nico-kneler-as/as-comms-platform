@@ -359,6 +359,153 @@ describe("Stage 1 worker orchestration service", () => {
     }
   });
 
+  it("ingests Salesforce contact snapshots before canonical replay records for unseen contacts", async () => {
+    const freshSalesforceContactId = "003-stage1-fresh";
+    const freshContactId = `contact:salesforce:${freshSalesforceContactId}`;
+    const capture = createEmptyCapturePorts();
+    capture.salesforce.captureLiveBatch = (payload) => {
+      salesforceLiveCaptureBatchPayloadSchema.parse(payload);
+
+      return Promise.resolve(
+        buildCapturedBatch([
+          {
+            recordType: "lifecycle_milestone" as const,
+            recordId: "membership-stage1-fresh:Expedition_Members__c.CreatedDate",
+            salesforceContactId: freshSalesforceContactId,
+            milestone: "signed_up" as const,
+            sourceField: "Expedition_Members__c.CreatedDate" as const,
+            occurredAt: "2026-01-02T00:00:00.000Z",
+            receivedAt: "2026-01-02T00:01:00.000Z",
+            payloadRef:
+              "salesforce://Expedition_Members__c/membership-stage1-fresh#CreatedDate",
+            checksum: "checksum-membership-stage1-fresh-created",
+            normalizedEmails: ["fresh@example.org"],
+            normalizedPhones: ["+15555550124"],
+            volunteerIdPlainValues: [],
+            routing: {
+              required: true,
+              projectId: "project-stage1-fresh",
+              expeditionId: "expedition-stage1-fresh",
+              projectName: "Project Stage 1 Fresh",
+              expeditionName: "Expedition Stage 1 Fresh"
+            }
+          },
+          {
+            recordType: "task_communication" as const,
+            recordId: "task-stage1-fresh",
+            channel: "email" as const,
+            salesforceContactId: freshSalesforceContactId,
+            occurredAt: "2026-01-03T00:00:00.000Z",
+            receivedAt: "2026-01-03T00:01:00.000Z",
+            payloadRef: "salesforce://Task/task-stage1-fresh",
+            checksum: "checksum-task-stage1-fresh",
+            snippet: "Fresh outbound email",
+            normalizedEmails: ["fresh@example.org"],
+            normalizedPhones: ["+15555550124"],
+            volunteerIdPlainValues: [],
+            supportingRecords: [],
+            crossProviderCollapseKey: null,
+            routing: {
+              required: true,
+              projectId: "project-stage1-fresh",
+              expeditionId: "expedition-stage1-fresh",
+              projectName: "Project Stage 1 Fresh",
+              expeditionName: "Expedition Stage 1 Fresh"
+            }
+          },
+          {
+            recordType: "contact_snapshot" as const,
+            recordId: freshSalesforceContactId,
+            salesforceContactId: freshSalesforceContactId,
+            displayName: "Fresh Salesforce Volunteer",
+            primaryEmail: "fresh@example.org",
+            primaryPhone: "+15555550124",
+            normalizedEmails: ["fresh@example.org"],
+            normalizedPhones: ["+15555550124"],
+            volunteerIdPlainValues: [],
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-03T00:02:00.000Z",
+            memberships: [
+              {
+                projectId: "project-stage1-fresh",
+                projectName: "Project Stage 1 Fresh",
+                expeditionId: "expedition-stage1-fresh",
+                expeditionName: "Expedition Stage 1 Fresh",
+                role: null,
+                status: "active"
+              }
+            ]
+          }
+        ])
+      );
+    };
+
+    const context = await createTestWorkerContext({ capture });
+
+    try {
+      const replay = await context.orchestration.runReplayBatch(
+        replayBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:replay:salesforce:fresh",
+          correlationId: "corr:replay:salesforce:fresh",
+          traceId: "trace:replay:salesforce:fresh",
+          batchId: "batch:replay:salesforce:fresh",
+          syncStateId: "sync:replay:salesforce:fresh",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "salesforce",
+          mode: "live",
+          jobType: "dead_letter_reprocess",
+          cursor: null,
+          checkpoint: null,
+          windowStart: null,
+          windowEnd: null,
+          items: [
+            {
+              providerRecordType: "lifecycle_milestone",
+              providerRecordId: "membership-stage1-fresh"
+            }
+          ]
+        })
+      );
+
+      expect(replay.outcome).toBe("succeeded");
+      if (replay.outcome !== "succeeded") {
+        throw new Error("Expected Salesforce replay batch to succeed.");
+      }
+
+      await expect(
+        context.repositories.contacts.findBySalesforceContactId(
+          freshSalesforceContactId
+        )
+      ).resolves.toMatchObject({
+        id: freshContactId,
+        displayName: "Fresh Salesforce Volunteer"
+      });
+      await expect(
+        context.repositories.canonicalEvents.listByContactId(freshContactId)
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            eventType: "lifecycle.signed_up",
+            contactId: freshContactId
+          }),
+          expect.objectContaining({
+            eventType: "communication.email.outbound",
+            contactId: freshContactId
+          })
+        ])
+      );
+      await expect(
+        context.repositories.identityResolutionQueue.listOpenByReasonCode(
+          "identity_missing_anchor"
+        )
+      ).resolves.toEqual([]);
+    } finally {
+      await context.dispose();
+    }
+  });
+
   it("rebuilds timeline and inbox projections deterministically from canonical data", async () => {
     const gmailRecord = buildGmailMessageRecord();
     const capture = createEmptyCapturePorts();
