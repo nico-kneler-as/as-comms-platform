@@ -252,7 +252,6 @@ function getPathValue(row: SalesforceRow, fieldName: string): unknown {
 
   return currentValue;
 }
-
 function dedupeRowsById(rows: readonly SalesforceRow[]): SalesforceRow[] {
   const seenIds = new Set<string>();
   const dedupedRows: SalesforceRow[] = [];

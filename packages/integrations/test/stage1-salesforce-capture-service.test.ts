@@ -706,6 +706,62 @@ describe("Salesforce capture service", () => {
     ).toEqual([]);
   });
 
+  it("expands task communications for membership-scoped historical backfills", async () => {
+    const queries: string[] = [];
+    const baseApiClient = createFakeSalesforceApiClient();
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: {
+          queryAll: (soql) => {
+            queries.push(soql);
+            return baseApiClient.queryAll(soql);
+          }
+        },
+        now: () => new Date("2026-01-05T00:05:00.000Z")
+      }
+    );
+
+    const result = await service.captureHistoricalBatch({
+      version: 1,
+      jobId: "job:salesforce:historical:membership-scope",
+      correlationId: "corr:salesforce:historical:membership-scope",
+      traceId: null,
+      batchId: "batch:salesforce:historical:membership-scope",
+      syncStateId: "sync:salesforce:historical:membership-scope",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "historical",
+      jobType: "historical_backfill",
+      cursor: null,
+      checkpoint: null,
+      windowStart: null,
+      windowEnd: null,
+      recordIds: ["a01-membership-1"],
+      maxRecords: 25
+    });
+
+    expect(result.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "contact_snapshot",
+          salesforceContactId: "003-stage1"
+        }),
+        expect.objectContaining({
+          recordType: "task_communication",
+          recordId: "00T-task-1",
+          salesforceContactId: "003-stage1"
+        })
+      ])
+    );
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("FROM Task WHERE WhoId IN ('003-stage1')")
+      ])
+    );
+  });
+
   it("keeps live Salesforce capture CDC-compatible at the contract level while using the same provider-close batch shape", async () => {
     const service = createSalesforceCaptureService(
       {
