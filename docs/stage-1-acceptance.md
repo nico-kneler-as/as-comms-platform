@@ -1,14 +1,27 @@
 # Stage 1 Acceptance
 
-**Role:** concise launch-scope acceptance note for Stage 1 backend completion  
+**Role:** concise launch-scope acceptance and current-state note for completed Stage 1 backend work
 **Audience:** implementers, reviewers, and operators validating the narrowed Stage 1 target  
-**When to read:** when deciding whether Stage 1 is complete for the initial operational backend launch
+**When to read:** when checking what Stage 1 and Stage 1B completed, what evidence backed that call, and what still remains outside launch scope
 
-## What Stage 1 complete means now
+## Current state
+
+Stage 1 launch-scope backend work is complete for **Gmail + Salesforce**, and the Stage `1B` trust pass is complete.
+
+That recorded state includes these outcomes:
+
+- launch-scope historical backfill completed for Gmail and Salesforce
+- Gmail + Salesforce historical and live paths converged through the same normalization path
+- parity and cutover checkpoints were green for the validated launch-scope pass
+- representative Salesforce-anchored contact proofs were used to confirm merged history, projection explainability, and review overlays
+- replay, rebuild, parity, cutover-support, and audit evidence hardening are part of the trusted Stage 1 backend surface
+- later deferred-provider validation can proceed without reopening the launch-scope Gmail + Salesforce baseline
+
+## What Stage 1 complete means for launch scope
 
 Stage 1 is complete for launch scope when the backend is operationally ready for **Gmail + Salesforce only** under the single normalization path.
 
-That means:
+Acceptance is anchored to these truths:
 
 - historical Gmail `.mbox` backfill and live Gmail polling both feed the same normalization path
 - historical Salesforce extracts and live Salesforce updates both feed the same normalization path
@@ -28,6 +41,12 @@ Deferred for launch completion, while keeping the generic architecture intact:
 
 - SimpleTexting
 - Mailchimp
+
+## What remains after Stage 1B
+
+- Stage 1 remains backend-first; later user-facing stages still include Settings/Admin, Inbox, AI, and Campaigns under the locked stage order in [docs/01-core/delivery-core.md](./01-core/delivery-core.md) and [docs/01-core/product-core.md](./01-core/product-core.md)
+- deferred-provider backend validation now moves to Stage `1C`, with the final four-provider confidence pass in Stage `1D`
+- residual launch-scope notes should be treated as non-blocking cleanup unless they reopen locked mappings, invalidate representative-contact proofs, or break replay, parity, cutover, or audit trust
 
 ## Locked launch-scope mappings
 
@@ -70,9 +89,9 @@ Launch-scope acceptance is backed by these test areas:
 - [apps/worker/test/stage1-ops.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/apps/worker/test/stage1-ops.test.ts)
   proves the launch-scope validation helpers can build enqueue payloads with Gmail + Salesforce defaults and inspect stored validation evidence
 
-## Runtime and env still needed for real validation
+## Historical validation inputs
 
-Repo completion is not the same as live-provider validation. Real sandbox or production-like validation still needs:
+The completed launch-scope validation depended on these runtime and operator inputs. Keep them available when re-running the pass or debugging regressions:
 
 - database access for the worker runtime
 - Gmail capture-port configuration for live `volunteers@...` sync
@@ -83,9 +102,9 @@ Repo completion is not the same as live-provider validation. Real sandbox or pro
 - deployment of the separate Gmail and Salesforce capture services documented in [docs/stage-1-capture-services.md](./stage-1-capture-services.md)
 - operator execution of the validation runbook in [docs/stage-1-validation-runbook.md](./stage-1-validation-runbook.md)
 
-## Human validation workflow
+## Re-running the launch-scope validation workflow
 
-Use this order:
+Use this order when re-running the historical validation pass or investigating a regression:
 
 1. run `pnpm ops:worker:check-config`
 2. boot the worker with launch-scope Gmail + Salesforce env
@@ -96,7 +115,7 @@ Use this order:
 
 The detailed operator steps and evidence checklist live in [docs/stage-1-validation-runbook.md](./stage-1-validation-runbook.md).
 
-## Intentionally deferred
+## Still intentionally deferred after Stage 1B
 
 - SimpleTexting launch activation
 - Mailchimp launch activation

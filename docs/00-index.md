@@ -44,6 +44,8 @@ Read these in order for any non-trivial task:
 7. [`01-core/delivery-core.md`](./01-core/delivery-core.md)
 8. [`01-core/decision-core.md`](./01-core/decision-core.md)
 
+Open [`01-core/decision-log.md`](./01-core/decision-log.md) when a task may reopen a locked choice, depends on stage-scoped decision history, or needs supersession context.
+
 ## Task Bundle Table
 
 | Task | Start here | Typical total reading set |
@@ -73,4 +75,5 @@ Read these in order for any non-trivial task:
 - If deploying or wiring the Stage 1 Gmail/Salesforce capture services: [`stage-1-capture-services.md`](./stage-1-capture-services.md)
 - If running sandbox or non-production Stage 1 validation: [`stage-1-validation-runbook.md`](./stage-1-validation-runbook.md)
 - If planning backend follow-on validation after Stage 1 completion: [`stage-1-post-validation-roadmap.md`](./stage-1-post-validation-roadmap.md)
+- If reconciling locked choices or adding new decision records: [`01-core/decision-log.md`](./01-core/decision-log.md)
 - If implementing product behavior: open the matching file under [`02-bundles`](./02-bundles)

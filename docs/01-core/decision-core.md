@@ -5,13 +5,13 @@
 **When to read:** before changing product behavior, architecture, stack, repo shape, or workflow  
 **Authority:** authoritative for currently locked decisions needed during implementation  
 **Decides:** what may not change without a canon update  
-**Does not decide:** deep historical supersession detail or donor evidence rationale
+**Does not decide:** deep historical supersession detail or the full recorded delivery history
 
 ## Summary
 
 - This file is the compact decision surface for agents.
 - If implementation needs to break one of these, update the canon before coding.
-- Use `restart-prd/decision-log.md` only when deep legacy comparison is needed.
+- Use [decision-log.md](./decision-log.md) when you need decision history, stage-scoped context, or supersession detail.
 
 ## Locked Decisions
 
@@ -51,5 +51,6 @@ Before changing any locked decision:
 
 ## Read Next
 
+- decision history and supersession context: [`decision-log.md`](./decision-log.md)
 - repo and frontend constraints: [`engineering-core.md`](./engineering-core.md)
 - legacy conflict lookup: [`../03-reference/reference-legacy-conflicts.md`](../03-reference/reference-legacy-conflicts.md)

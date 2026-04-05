@@ -2,13 +2,13 @@
 
 **Role:** forward-looking backend validation roadmap after Stage 1 launch-scope acceptance  
 **Audience:** implementers and operators planning the next backend-only validation passes  
-**When to read:** after Stage 1 acceptance is met and before reopening Stage 1 backend validation work  
+**When to read:** after the completed Stage 1 and Stage 1B passes, when planning the next backend-only validation work
 **Authority:** execution-order note under the current canon; it does not replace [docs/stage-1-acceptance.md](./stage-1-acceptance.md) or [docs/stage-1-validation-runbook.md](./stage-1-validation-runbook.md)
 
 ## Purpose
 
 - keep Stage 1 launch-scope acceptance and runbook as the historical record for the narrowed Gmail + Salesforce pass
-- define the next backend-only validation milestones without widening Stage 1 into a larger retrospective scope
+- record Stage `1B` as completed and define only the remaining backend-only validation milestones
 - keep follow-on validation aligned with the fixed stage order in [docs/01-core/delivery-core.md](./01-core/delivery-core.md)
 
 These `1B`, `1C`, and `1D` labels are follow-on validation milestones inside Stage 1 delivery closure. They are not new product stages and they do not replace the locked stage order in the delivery canon.
@@ -17,54 +17,69 @@ These `1B`, `1C`, and `1D` labels are follow-on validation milestones inside Sta
 
 For roadmap purposes, treat Stage 1 backend validation as complete because the narrowed launch-scope goals are now met:
 
+- launch-scope Gmail + Salesforce backfills were completed
 - Gmail and Salesforce historical and live paths have been validated under the single normalization path
 - Gmail live passed end to end, including persisted source evidence and alias-preserving live capture on `volunteers@adventurescientists.org`
 - Salesforce live passed in Railway production with a succeeded provider-scoped `live_ingest` sync-state result
-- replay, rebuild, parity, and cutover-support paths remain part of the validated backend surface
+- representative contact proofs validated the merged cross-provider story
+- replay, rebuild, parity, cutover-support, and audit hardening remain part of the validated backend surface
 
 See [docs/stage-1-acceptance.md](./stage-1-acceptance.md), [docs/stage-1-runtime.md](./stage-1-runtime.md), and [docs/stage-1-validation-runbook.md](./stage-1-validation-runbook.md) for the launch-scope definitions and historical validation sequence.
 
 ## Recommended Execution Order
 
-1. complete Stage `1B` first to tighten trust in the current Gmail + Salesforce story and projection surface
+1. Stage `1B` is complete and now serves as the historical trust baseline for Gmail + Salesforce
 2. complete Stage `1C` next to validate deferred Stage 1 providers without widening into frontend or product-stage work
 3. complete Stage `1D` last as the final backend confidence pass across all four providers before broader product work resumes
 
 ## Stage 1B
 
-### Purpose
+### Status
+
+Completed.
+
+### Recorded purpose
 
 Prove that one Salesforce-anchored contact can be explained cleanly across Gmail + Salesforce canonical history, projections, and review overlays before adding more providers.
 
-### Scope
+### Scope covered
 
 - one-contact merged story across Gmail + Salesforce
 - timeline projection explainability and deterministic ordering
 - Inbox `New` and `Opened` semantics
 - unresolved and review-overlay visibility
 - replay and rebuild trust for the inspected contact set
+- parity, cutover-support, and audit-trail trust for the launch-scope surface
 
-### Non-goals
+### Non-goals that remained out of scope
 
 - no new provider activation
 - no frontend or operator-UX work
 - no Gmail alias redesign or Salesforce mapping expansion
 - no speculative changes to Inbox semantics beyond the current canon
 
-### Exit Criteria
+### Exit criteria that were met
 
 - at least one representative Salesforce-anchored contact is inspected end to end
 - Gmail and Salesforce canonical events can be traced back to source evidence and forward to timeline and Inbox projections
 - `New` and `Opened` behavior matches [docs/01-core/decision-core.md](./01-core/decision-core.md) and [docs/04-implementation-specs/stage-1-projection-rules.md](./04-implementation-specs/stage-1-projection-rules.md)
 - unresolved identity or routing state is visible as an explicit overlay, not hidden in projection output
 - replay and projection rebuild reproduce the same visible result without duplicate canonical events or unexplained drift
+- parity and cutover checkpoints stay understandable and green for the launch-scope Gmail + Salesforce pass
 
-### Evidence That Counts As Success
+### Evidence recorded for completion
 
 - `ops:inspect -- contact` output for the representative contact set
 - `ops:inspect -- source-evidence` spot checks for Gmail and Salesforce records that appear in the merged story
 - replay and projection-rebuild results for the same contact set
 - short written evidence showing why the visible timeline and Inbox rows are explainable from canonical state
+- parity and cutover checkpoint audit evidence for the validated launch-scope window
+
+### What Stage 1B completion changes
+
+- later deferred-provider backend work in Stage `1C` is now unblocked
+- Stage `1B` should be treated as historical completion evidence, not as an open roadmap item
+- residual launch-scope cleanup is non-blocking unless it reopens locked mappings, representative-contact explainability, or replay/parity/cutover trust
 
 ## Stage 1C
 
@@ -96,6 +111,8 @@ Validate the deferred Stage 1 backend paths for SimpleTexting and Mailchimp with
   - ambiguous email or phone matches open review instead of silently linking
 - provider-scoped sync state is succeeded, empty-but-explicit, or otherwise clearly non-failed for the validated job windows
 - source evidence, canonical events, and projections stay replay-safe for representative provider records
+
+Stage `1C` is the next remaining backend validation milestone after completed Stage `1B`.
 
 ### Evidence That Counts As Success
 
@@ -143,6 +160,8 @@ Run one final cross-provider backend confidence pass in the same style as Stage 
 - source-evidence spot checks from all four providers
 - replay, rebuild, parity, and cutover-support audit evidence for the final validated sample set
 - sync-state summaries showing the expected provider windows completed without hidden failures
+
+Stage `1D` remains dependent on Stage `1C` bringing the deferred providers into the same trusted surface.
 
 ## Stop Conditions
 

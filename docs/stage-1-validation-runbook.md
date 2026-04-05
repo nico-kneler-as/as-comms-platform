@@ -1,12 +1,12 @@
 # Stage 1 Validation Runbook
 
-**Role:** operator runbook for controlled Stage 1 Gmail + Salesforce validation  
+**Role:** operator runbook for the recorded Stage 1 Gmail + Salesforce validation flow
 **Audience:** engineers or operators validating the narrowed launch-scope backend against sandbox or non-production inputs  
-**When to read:** before the first real-runtime validation run
+**When to read:** before re-running the launch-scope validation pass or auditing the historical operator sequence
 
 ## Purpose
 
-This runbook validates the Gmail + Salesforce Stage 1 backend without starting later product stages.
+This runbook records the Gmail + Salesforce Stage 1 backend validation flow that closed launch scope. Reuse it for reruns, regression checks, or fresh environment validation without starting later product stages.
 
 It is intentionally worker- and DB-oriented. There is no UI dependency in this workflow.
 
@@ -17,7 +17,7 @@ It is intentionally worker- and DB-oriented. There is no UI dependency in this w
 - point the worker at a validation database
 - configure and boot the Gmail live capture service and the Salesforce capture service only
 - leave SimpleTexting and Mailchimp unset unless you are intentionally testing deferred providers outside launch scope
-- review [docs/stage-1-capture-services.md](./stage-1-capture-services.md) before the first live validation run
+- review [docs/stage-1-capture-services.md](./stage-1-capture-services.md) before any fresh live-validation rerun
 
 ## Required env summary
 
