@@ -227,7 +227,6 @@ function chunkValues<TValue>(
 
   return chunks;
 }
-
 function getPathValue(row: SalesforceRow, fieldName: string): unknown {
   const directValue = row[fieldName];
 

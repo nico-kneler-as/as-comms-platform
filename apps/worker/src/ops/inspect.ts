@@ -19,7 +19,6 @@ import {
   extractLatestSyncFailure,
   type Stage1SyncFailureAuditRecord
 } from "../orchestration/sync-failure-audit.js";
-
 export interface Stage1ReadableMembership extends ContactMembershipRecord {
   readonly projectName: string | null;
   readonly expeditionName: string | null;
@@ -79,7 +78,6 @@ export interface Stage1ContactInspection {
 export interface Stage1SyncStateInspection extends SyncStateRecord {
   readonly latestFailure: Stage1SyncFailureAuditRecord | null;
 }
-
 function buildReadableMemberships(input: {
   readonly memberships: readonly ContactMembershipRecord[];
   readonly projectDimensions: readonly ProjectDimensionRecord[];
