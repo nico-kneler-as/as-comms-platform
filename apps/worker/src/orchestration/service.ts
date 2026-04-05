@@ -1,4 +1,6 @@
-import { ZodError } from "zod";
+import { readFile } from "node:fs/promises";
+
+import { z, ZodError } from "zod";
 
 import {
   cutoverCheckpointBatchPayloadSchema,
@@ -26,6 +28,7 @@ import {
 } from "@as-comms/contracts";
 import {
   ProviderCaptureError,
+  importGmailMboxRecords,
   mapGmailRecord,
   mapMailchimpRecord,
   mapSalesforceRecord,
@@ -50,6 +53,7 @@ import {
   Stage1RetryableJobError
 } from "./errors.js";
 import { projectionSeedPolicyCode, recordProjectionSeedOnce } from "./projection-seed.js";
+import { recordSyncFailureAudit } from "./sync-failure-audit.js";
 import { createStage1SyncStateService } from "./sync-state.js";
 import type {
   Stage1CaptureJobOutcome,
@@ -84,6 +88,34 @@ type CapturedProviderRecord =
 interface Stage1FreshnessMetrics {
   readonly p95Seconds: number | null;
   readonly p99Seconds: number | null;
+}
+
+interface Stage1GmailHistoricalReplayConfig {
+  readonly liveAccount: string;
+  readonly projectInboxAliases: readonly string[];
+}
+
+interface ParsedGmailHistoricalPayloadRef {
+  readonly mboxPath: string;
+  readonly messageNumber: number;
+}
+
+function buildHistoricalReplayProjectInboxAliases(input: {
+  readonly configuredAliases: readonly string[];
+  readonly recordedProjectInboxAlias: string | null;
+}): string[] {
+  const aliases = new Set(
+    input.configuredAliases.map((alias) => alias.trim()).filter((alias) => alias.length > 0)
+  );
+
+  if (
+    input.recordedProjectInboxAlias !== null &&
+    input.recordedProjectInboxAlias.trim().length > 0
+  ) {
+    aliases.add(input.recordedProjectInboxAlias.trim());
+  }
+
+  return [...aliases];
 }
 
 function compareEventOrder(
@@ -407,8 +439,41 @@ function getMappedResultForRecord(
   }
 }
 
+function prioritizeCapturedRecordsForIngest<TRecord>(
+  records: readonly TRecord[],
+  mapRecord: (record: TRecord) => ProviderMappingResult
+): Array<{
+  readonly record: TRecord;
+  readonly mapped: ProviderMappingResult;
+}> {
+  const contactGraphRecords: Array<{
+    readonly record: TRecord;
+    readonly mapped: ProviderMappingResult;
+  }> = [];
+  const remainingRecords: Array<{
+    readonly record: TRecord;
+    readonly mapped: ProviderMappingResult;
+  }> = [];
+
+  for (const record of records) {
+    const mapped = mapRecord(record);
+    const entry = { record, mapped };
+
+    if (mapped.outcome === "command" && mapped.command.kind === "contact_graph") {
+      contactGraphRecords.push(entry);
+      continue;
+    }
+
+    remainingRecords.push(entry);
+  }
+
+  return [...contactGraphRecords, ...remainingRecords];
+}
+
 async function captureRecordsForReplay(
   capture: Stage1ProviderCapturePorts,
+  persistence: Stage1PersistenceService,
+  gmailHistoricalReplay: Stage1GmailHistoricalReplayConfig,
   payload: ReplayBatchPayload
 ): Promise<{
   readonly records: readonly (
@@ -420,10 +485,15 @@ async function captureRecordsForReplay(
   readonly nextCursor: string | null;
   readonly checkpoint: string | null;
 }> {
+  const replayMaxRecords =
+    payload.provider === "salesforce" ? 1000 : payload.items.length;
+
   switch (payload.provider) {
     case "gmail":
       return payload.mode === "historical"
-        ? capture.gmail.captureHistoricalBatch(
+        ? captureHistoricalGmailRecordsForReplay(
+            persistence,
+            gmailHistoricalReplay,
             gmailHistoricalCaptureBatchPayloadSchema.parse({
               ...payload,
               provider: "gmail",
@@ -434,7 +504,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           )
         : capture.gmail.captureLiveBatch(
@@ -448,7 +518,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           );
     case "salesforce":
@@ -464,7 +534,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           )
         : capture.salesforce.captureLiveBatch(
@@ -478,7 +548,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           );
     case "simpletexting":
@@ -494,7 +564,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           )
         : capture.simpleTexting.captureLiveBatch(
@@ -508,7 +578,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           );
     case "mailchimp":
@@ -524,7 +594,7 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           )
         : capture.mailchimp.captureTransitionBatch(
@@ -538,10 +608,181 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: payload.items.length
+              maxRecords: replayMaxRecords
             })
           );
   }
+}
+
+function parseGmailHistoricalPayloadRef(
+  payloadRef: string
+): ParsedGmailHistoricalPayloadRef {
+  if (!payloadRef.startsWith("mbox://")) {
+    throw new Stage1NonRetryableJobError(
+      `Expected Gmail historical replay payloadRef to use the mbox:// scheme, received ${payloadRef}.`
+    );
+  }
+
+  const hashIndex = payloadRef.indexOf("#");
+  const encodedPath = payloadRef.slice(
+    "mbox://".length,
+    hashIndex === -1 ? undefined : hashIndex
+  );
+
+  if (encodedPath.trim().length === 0) {
+    throw new Stage1NonRetryableJobError(
+      `Expected Gmail historical replay payloadRef to include an mbox path, received ${payloadRef}.`
+    );
+  }
+
+  let mboxPath: string;
+
+  try {
+    mboxPath = decodeURIComponent(encodedPath);
+  } catch {
+    throw new Stage1NonRetryableJobError(
+      `Expected Gmail historical replay payloadRef to contain a valid encoded mbox path, received ${payloadRef}.`
+    );
+  }
+
+  const searchParams = new URLSearchParams(
+    hashIndex === -1 ? "" : payloadRef.slice(hashIndex + 1)
+  );
+  const messageValue = searchParams.get("message");
+  const messageNumber =
+    messageValue === null ? Number.NaN : Number.parseInt(messageValue, 10);
+
+  if (!Number.isInteger(messageNumber) || messageNumber < 1) {
+    throw new Stage1NonRetryableJobError(
+      `Expected Gmail historical replay payloadRef to include a positive message number, received ${payloadRef}.`
+    );
+  }
+
+  return {
+    mboxPath,
+    messageNumber
+  };
+}
+
+async function captureHistoricalGmailRecordsForReplay(
+  persistence: Stage1PersistenceService,
+  gmailHistoricalReplay: Stage1GmailHistoricalReplayConfig,
+  payload: z.infer<typeof gmailHistoricalCaptureBatchPayloadSchema>
+): Promise<{
+  readonly records: readonly GmailRecord[];
+  readonly nextCursor: string | null;
+  readonly checkpoint: string | null;
+}> {
+  const sourceEvidenceRecords = await Promise.all(
+    payload.recordIds.map(async (recordId: string) => {
+      const matches = await persistence.repositories.sourceEvidence.listByProviderRecord({
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: recordId
+      });
+
+      return matches.at(-1) ?? null;
+    })
+  );
+  const gmailDetails = await persistence.repositories.gmailMessageDetails.listBySourceEvidenceIds(
+    sourceEvidenceRecords
+      .filter(
+        (
+          record: (typeof sourceEvidenceRecords)[number]
+        ): record is NonNullable<(typeof sourceEvidenceRecords)[number]> =>
+          record !== null
+      )
+      .map(
+        (record: NonNullable<(typeof sourceEvidenceRecords)[number]>) => record.id
+      )
+  );
+  const gmailDetailBySourceEvidenceId = new Map(
+    gmailDetails.map((detail) => [detail.sourceEvidenceId, detail])
+  );
+  const mboxTextByPath = new Map<string, string>();
+  const importedRecordsByCacheKey = new Map<string, readonly GmailRecord[]>();
+  const records: GmailRecord[] = [];
+
+  for (const [index, recordId] of payload.recordIds.entries()) {
+    const sourceEvidence = sourceEvidenceRecords[index];
+
+    if (sourceEvidence === null || sourceEvidence === undefined) {
+      continue;
+    }
+
+    const gmailDetail = gmailDetailBySourceEvidenceId.get(sourceEvidence.id);
+
+    if (gmailDetail === undefined) {
+      throw new Stage1NonRetryableJobError(
+        `Expected gmail_message_details to exist for historical replay source evidence ${sourceEvidence.id}.`
+      );
+    }
+
+    const parsedPayloadRef = parseGmailHistoricalPayloadRef(sourceEvidence.payloadRef);
+    let mboxText = mboxTextByPath.get(parsedPayloadRef.mboxPath);
+
+    if (mboxText === undefined) {
+      try {
+        mboxText = await readFile(parsedPayloadRef.mboxPath, "utf8");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        throw new Stage1NonRetryableJobError(
+          `Unable to read Gmail historical replay payload file ${parsedPayloadRef.mboxPath}: ${message}`
+        );
+      }
+
+      mboxTextByPath.set(parsedPayloadRef.mboxPath, mboxText);
+    }
+
+    const capturedMailbox =
+      gmailDetail.capturedMailbox ?? gmailHistoricalReplay.liveAccount;
+    const replayProjectInboxAliases = buildHistoricalReplayProjectInboxAliases({
+      configuredAliases: gmailHistoricalReplay.projectInboxAliases,
+      recordedProjectInboxAlias: gmailDetail.projectInboxAlias
+    });
+    const importedRecordCacheKey = JSON.stringify({
+      mboxPath: parsedPayloadRef.mboxPath,
+      capturedMailbox,
+      projectInboxAliases: replayProjectInboxAliases,
+      projectInboxAliasOverride: gmailDetail.projectInboxAlias,
+      receivedAt: sourceEvidence.receivedAt
+    });
+    let importedRecords = importedRecordsByCacheKey.get(importedRecordCacheKey);
+
+    if (importedRecords === undefined) {
+      importedRecords = importGmailMboxRecords({
+        mboxText,
+        mboxPath: parsedPayloadRef.mboxPath,
+        capturedMailbox,
+        liveAccount: gmailHistoricalReplay.liveAccount,
+        projectInboxAliases: replayProjectInboxAliases,
+        projectInboxAliasOverride: gmailDetail.projectInboxAlias,
+        receivedAt: sourceEvidence.receivedAt
+      });
+      importedRecordsByCacheKey.set(importedRecordCacheKey, importedRecords);
+    }
+
+    const replayedRecord = importedRecords[parsedPayloadRef.messageNumber - 1];
+
+    if (
+      replayedRecord === undefined ||
+      replayedRecord.recordType !== "message" ||
+      replayedRecord.recordId !== recordId
+    ) {
+      throw new Stage1NonRetryableJobError(
+        `Unable to reconstruct Gmail historical replay record message:${recordId} from ${parsedPayloadRef.mboxPath}#message=${String(parsedPayloadRef.messageNumber)}.`
+      );
+    }
+
+    records.push(replayedRecord);
+  }
+
+  return {
+    records,
+    nextCursor: null,
+    checkpoint: payload.recordIds.at(-1) ?? null
+  };
 }
 
 export function createStage1WorkerOrchestrationService(input: {
@@ -552,6 +793,7 @@ export function createStage1WorkerOrchestrationService(input: {
     "applyInboxProjection" | "applyTimelineProjection" | "refreshInboxReviewOverlay"
   >;
   readonly persistence: Stage1PersistenceService;
+  readonly gmailHistoricalReplay: Stage1GmailHistoricalReplayConfig;
 }): Stage1WorkerOrchestrationService {
   const syncState = createStage1SyncStateService(input.persistence);
 
@@ -593,8 +835,12 @@ export function createStage1WorkerOrchestrationService(input: {
     try {
       const captured = await params.capture(params.payload);
       const ingestResults: Stage1IngestResult[] = [];
+      const prioritizedRecords = prioritizeCapturedRecordsForIngest(
+        captured.records,
+        params.mapRecord
+      );
 
-      for (const record of captured.records) {
+      for (const { record, mapped } of prioritizedRecords) {
         const ingestResult = await params.ingestRecord(record);
         ingestResults.push(ingestResult);
 
@@ -603,8 +849,6 @@ export function createStage1WorkerOrchestrationService(input: {
           ingestResult.outcome !== "quarantined" &&
           ingestResult.canonicalEventId !== null
         ) {
-          const mapped = params.mapRecord(record);
-
           if (mapped.outcome === "command" && mapped.command.kind === "canonical_event") {
             await recordProjectionSeedOnce(input.persistence, {
               canonicalEventId: mapped.command.input.canonicalEvent.id,
@@ -670,6 +914,18 @@ export function createStage1WorkerOrchestrationService(input: {
         windowEnd: payload.windowEnd,
         deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
         deadLettered: failure.disposition === "dead_letter"
+      });
+      await recordSyncFailureAudit(input.persistence, {
+        syncStateId: payload.syncStateId,
+        scope: "provider",
+        provider: payload.provider,
+        jobType: payload.jobType,
+        checkpoint: payload.checkpoint,
+        windowStart: payload.windowStart,
+        windowEnd: payload.windowEnd,
+        failure,
+        occurredAt: new Date().toISOString(),
+        actorId: "stage1-orchestration"
       });
 
       return {
@@ -822,6 +1078,18 @@ export function createStage1WorkerOrchestrationService(input: {
         windowEnd: null,
         deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
         deadLettered: failure.disposition === "dead_letter"
+      });
+      await recordSyncFailureAudit(input.persistence, {
+        syncStateId: payload.syncStateId,
+        scope: "orchestration",
+        provider: null,
+        jobType: payload.jobType,
+        checkpoint: payload.batchId,
+        windowStart: null,
+        windowEnd: null,
+        failure,
+        occurredAt: new Date().toISOString(),
+        actorId: "stage1-orchestration"
       });
 
       return {
@@ -1068,6 +1336,18 @@ export function createStage1WorkerOrchestrationService(input: {
         windowEnd: payload.evaluatedAt,
         deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
         deadLettered: failure.disposition === "dead_letter"
+      });
+      await recordSyncFailureAudit(input.persistence, {
+        syncStateId: payload.syncStateId,
+        scope: "orchestration",
+        provider: null,
+        jobType: payload.jobType,
+        checkpoint: payload.checkpointId,
+        windowStart: null,
+        windowEnd: payload.evaluatedAt,
+        failure,
+        occurredAt: payload.evaluatedAt,
+        actorId: "stage1-orchestration"
       });
 
       return {
@@ -1316,6 +1596,18 @@ export function createStage1WorkerOrchestrationService(input: {
         deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
         deadLettered: failure.disposition === "dead_letter"
       });
+      await recordSyncFailureAudit(input.persistence, {
+        syncStateId: payload.syncStateId,
+        scope: "orchestration",
+        provider: null,
+        jobType: payload.jobType,
+        checkpoint: payload.checkpointId,
+        windowStart: null,
+        windowEnd: payload.evaluatedAt,
+        failure,
+        occurredAt: payload.evaluatedAt,
+        actorId: "stage1-orchestration"
+      });
 
       return {
         outcome: "failed",
@@ -1457,7 +1749,13 @@ export function createStage1WorkerOrchestrationService(input: {
       return runCapturedBatch({
         payload,
         parse: (parsedPayload) => replayBatchPayloadSchema.parse(parsedPayload),
-        capture: (parsedPayload) => captureRecordsForReplay(input.capture, parsedPayload),
+        capture: (parsedPayload) =>
+          captureRecordsForReplay(
+            input.capture,
+            input.persistence,
+            input.gmailHistoricalReplay,
+            parsedPayload
+          ),
         ingestRecord: (record) => {
           switch (payload.provider) {
             case "gmail":

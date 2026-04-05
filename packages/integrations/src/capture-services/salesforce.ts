@@ -64,7 +64,7 @@ const salesforceCaptureServiceConfigSchema = z.object({
   membershipProjectNameField: z.string().min(1).default("Project__r.Name"),
   membershipExpeditionField: z.string().min(1).default("Expedition__c"),
   membershipExpeditionNameField: z.string().min(1).default("Expedition__r.Name"),
-  membershipRoleField: z.string().min(1).default("Role__c"),
+  membershipRoleField: z.string().min(1).nullable().default(null),
   membershipStatusField: z.string().min(1).default("Status__c"),
   taskContactField: z.string().min(1).default("WhoId"),
   taskChannelField: z.string().min(1).default("TaskSubtype"),
@@ -203,10 +203,30 @@ function quoteSoqlString(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
 }
 
+function formatSoqlDateTime(value: string): string {
+  return value;
+}
+
+function formatSoqlDate(value: string): string {
+  return value.slice(0, 10);
+}
+
 function buildInClause(values: readonly string[]): string {
   return `(${values.map((value) => quoteSoqlString(value)).join(", ")})`;
 }
 
+function chunkValues<TValue>(
+  values: readonly TValue[],
+  chunkSize: number
+): TValue[][] {
+  const chunks: TValue[][] = [];
+
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(values.slice(index, index + chunkSize));
+  }
+
+  return chunks;
+}
 function getPathValue(row: SalesforceRow, fieldName: string): unknown {
   const directValue = row[fieldName];
 
@@ -446,7 +466,9 @@ function buildMembershipFields(
     config.membershipProjectNameField,
     config.membershipExpeditionField,
     config.membershipExpeditionNameField,
-    config.membershipRoleField,
+    ...(config.membershipRoleField === null
+      ? []
+      : [config.membershipRoleField]),
     config.membershipStatusField
   ]);
 }
@@ -460,6 +482,7 @@ function buildTaskFields(
     "LastModifiedDate",
     "Subject",
     "Description",
+    "WhatId",
     config.taskContactField,
     config.taskChannelField,
     config.taskOccurredAtField,
@@ -477,7 +500,7 @@ function buildContactWindowWhere(window: {
     return "Id != null";
   }
 
-  return `LastModifiedDate >= ${quoteSoqlString(window.windowStart)} AND LastModifiedDate < ${quoteSoqlString(window.windowEnd)}`;
+  return `LastModifiedDate >= ${formatSoqlDateTime(window.windowStart)} AND LastModifiedDate < ${formatSoqlDateTime(window.windowEnd)}`;
 }
 
 function buildTaskWindowWhere(window: {
@@ -485,16 +508,19 @@ function buildTaskWindowWhere(window: {
   readonly windowStart: string | null;
   readonly windowEnd: string | null;
 }, config: ResolvedSalesforceCaptureServiceConfig): string {
-  const contactField = config.taskContactField;
+  const contactWhere =
+    config.taskContactField === "WhoId"
+      ? "Who.Type = 'Contact'"
+      : `${config.taskContactField} != null`;
 
   if (window.windowStart === null || window.windowEnd === null) {
-    return `${contactField} != null`;
+    return contactWhere;
   }
 
   const timestampField =
     window.mode === "historical" ? config.taskOccurredAtField : "LastModifiedDate";
 
-  return `${contactField} != null AND ${contactField} LIKE '003%' AND ${timestampField} >= ${quoteSoqlString(window.windowStart)} AND ${timestampField} < ${quoteSoqlString(window.windowEnd)}`;
+  return `${contactWhere} AND ${timestampField} >= ${formatSoqlDateTime(window.windowStart)} AND ${timestampField} < ${formatSoqlDateTime(window.windowEnd)}`;
 }
 
 function buildMembershipWindowWhere(input: {
@@ -510,10 +536,24 @@ function buildMembershipWindowWhere(input: {
   }
 
   if (input.mode === "live") {
-    return `${contactField} != null AND LastModifiedDate >= ${quoteSoqlString(input.windowStart)} AND LastModifiedDate < ${quoteSoqlString(input.windowEnd)}`;
+    return `${contactField} != null AND LastModifiedDate >= ${formatSoqlDateTime(input.windowStart)} AND LastModifiedDate < ${formatSoqlDateTime(input.windowEnd)}`;
   }
 
-  return `${contactField} != null AND (CreatedDate != null OR Date_Training_Sent__c != null OR Date_Training_Completed__c != null OR Date_First_Sample_Collected__c != null)`;
+  const windowStart = input.windowStart;
+  const windowEnd = input.windowEnd;
+  const historicalFieldWindows = [
+    "CreatedDate",
+    ...lifecycleSources
+      .filter((source) => source.rawFieldName !== "CreatedDate")
+      .map((source) => source.rawFieldName)
+  ].map((fieldName) => {
+    const formatter =
+      fieldName === "CreatedDate" ? formatSoqlDateTime : formatSoqlDate;
+
+    return `(${fieldName} >= ${formatter(windowStart)} AND ${fieldName} < ${formatter(windowEnd)})`;
+  });
+
+  return `${contactField} != null AND (${historicalFieldWindows.join(" OR ")})`;
 }
 
 function buildContactSnapshotRecordWithConfig(input: {
@@ -564,7 +604,10 @@ function buildContactSnapshotRecordWithConfig(input: {
         membership,
         input.config.membershipExpeditionNameField
       ),
-      role: getStringField(membership, input.config.membershipRoleField),
+      role:
+        input.config.membershipRoleField === null
+          ? null
+          : getStringField(membership, input.config.membershipRoleField),
       status: getStringField(membership, input.config.membershipStatusField)
     }))
   });
@@ -575,6 +618,7 @@ function buildLifecycleRecords(input: {
   readonly contact: SalesforceRow | null;
   readonly config: ResolvedSalesforceCaptureServiceConfig;
   readonly receivedAt: string;
+  readonly mode: "historical" | "live";
   readonly windowStart: string | null;
   readonly windowEnd: string | null;
 }): SalesforceRecord[] {
@@ -627,6 +671,7 @@ function buildLifecycleRecords(input: {
     }
 
     if (
+      input.mode === "historical" &&
       input.windowStart !== null &&
       input.windowEnd !== null &&
       !isTimestampWithinWindow(occurredAt, {
@@ -672,6 +717,7 @@ function buildLifecycleRecords(input: {
 
 function resolveTaskChannel(input: {
   readonly row: SalesforceRow;
+  readonly relatedMembership: SalesforceRow | null;
   readonly config: ResolvedSalesforceCaptureServiceConfig;
 }): "email" | "sms" | null {
   const rawChannelValue = getStringField(input.row, input.config.taskChannelField);
@@ -696,12 +742,24 @@ function resolveTaskChannel(input: {
     return "sms";
   }
 
+  const subject = getStringField(input.row, "Subject")?.toLowerCase() ?? null;
+
+  if (
+    normalizedChannelValue === "task" &&
+    input.relatedMembership !== null &&
+    subject !== null &&
+    subject.includes("email:")
+  ) {
+    return "email";
+  }
+
   return null;
 }
 
 function buildTaskRecord(input: {
   readonly task: SalesforceRow;
   readonly contact: SalesforceRow | null;
+  readonly relatedMembership: SalesforceRow | null;
   readonly config: ResolvedSalesforceCaptureServiceConfig;
   readonly receivedAt: string;
 }): SalesforceRecord {
@@ -716,6 +774,7 @@ function buildTaskRecord(input: {
 
   const channel = resolveTaskChannel({
     row: input.task,
+    relatedMembership: input.relatedMembership,
     config: input.config
   });
 
@@ -740,6 +799,35 @@ function buildTaskRecord(input: {
   const salesforceContactId =
     getStringField(input.task, input.config.taskContactField) ??
     getStringField(input.contact ?? {}, "Id");
+  const projectId =
+    input.relatedMembership === null
+      ? null
+      : getStringField(
+          input.relatedMembership,
+          input.config.membershipProjectField
+        );
+  const projectName =
+    input.relatedMembership === null
+      ? null
+      : getStringField(
+          input.relatedMembership,
+          input.config.membershipProjectNameField
+        );
+  const expeditionId =
+    input.relatedMembership === null
+      ? null
+      : getStringField(
+          input.relatedMembership,
+          input.config.membershipExpeditionField
+        );
+  const expeditionName =
+    input.relatedMembership === null
+      ? null
+      : getStringField(
+          input.relatedMembership,
+          input.config.membershipExpeditionNameField
+        );
+  const hasMembershipRoutingContext = projectId !== null || expeditionId !== null;
 
   return salesforceTaskCommunicationRecordSchema.parse({
     recordType: "task_communication",
@@ -772,9 +860,11 @@ function buildTaskRecord(input: {
         ? null
         : getStringField(input.task, input.config.taskCrossProviderKeyField),
     routing: {
-      required: false,
-      projectId: null,
-      expeditionId: null
+      required: hasMembershipRoutingContext,
+      projectId,
+      expeditionId,
+      projectName,
+      expeditionName
     }
   });
 }
@@ -817,9 +907,17 @@ export function createSalesforceCaptureService(
       return [];
     }
 
-    return apiClient.queryAll(
-      `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE Id IN ${buildInClause(input.recordIds)}`
-    );
+    const rows: SalesforceRow[] = [];
+
+    for (const recordIds of chunkValues(input.recordIds, 200)) {
+      rows.push(
+        ...(await apiClient.queryAll(
+          `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE Id IN ${buildInClause(recordIds)}`
+        ))
+      );
+    }
+
+    return rows;
   }
 
   async function queryRowsByFieldValues(input: {
@@ -833,14 +931,22 @@ export function createSalesforceCaptureService(
       return [];
     }
 
-    const whereClauses = [
-      `${input.fieldName} IN ${buildInClause(input.values)}`,
-      ...(input.extraWhere === undefined ? [] : [input.extraWhere])
-    ];
+    const rows: SalesforceRow[] = [];
 
-    return apiClient.queryAll(
-      `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE ${whereClauses.join(" AND ")}`
-    );
+    for (const values of chunkValues(input.values, 200)) {
+      const whereClauses = [
+        `${input.fieldName} IN ${buildInClause(values)}`,
+        ...(input.extraWhere === undefined ? [] : [input.extraWhere])
+      ];
+
+      rows.push(
+        ...(await apiClient.queryAll(
+          `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE ${whereClauses.join(" AND ")}`
+        ))
+      );
+    }
+
+    return rows;
   }
 
   async function captureSalesforceBatch(input: {
@@ -960,11 +1066,11 @@ export function createSalesforceCaptureService(
     );
 
     if (missingTouchedContactIds.length > 0) {
-      const additionalContacts = await apiClient.queryAll(
-        `SELECT ${contactFields.join(", ")} FROM Contact WHERE Id IN ${buildInClause(
-          missingTouchedContactIds
-        )}`
-      );
+      const additionalContacts = await queryRowsByIds({
+        objectName: "Contact",
+        fields: contactFields,
+        recordIds: missingTouchedContactIds
+      });
 
       for (const contact of additionalContacts) {
         const contactId = getStringField(contact, "Id");
@@ -977,18 +1083,26 @@ export function createSalesforceCaptureService(
     const allMembershipsForContacts =
       touchedContactIds.length === 0
         ? membershipRows
-        : await apiClient.queryAll(
-            `SELECT ${membershipFields.join(", ")} FROM ${parsedConfig.membershipObjectName} WHERE ${parsedConfig.membershipContactField} IN ${buildInClause(
-              touchedContactIds
-            )}`
-          );
+        : await queryRowsByFieldValues({
+            objectName: parsedConfig.membershipObjectName,
+            fields: membershipFields,
+            fieldName: parsedConfig.membershipContactField,
+            values: touchedContactIds
+          });
     const membershipsByContactId = new Map<string, SalesforceRow[]>();
+    const membershipsById = new Map<string, SalesforceRow>();
 
     for (const membership of allMembershipsForContacts) {
+      const membershipId = getStringField(membership, "Id");
       const contactId = getStringField(
         membership,
         parsedConfig.membershipContactField
       );
+
+      if (membershipId !== null) {
+        membershipsById.set(membershipId, membership);
+      }
+
       if (contactId === null) {
         continue;
       }
@@ -1021,6 +1135,7 @@ export function createSalesforceCaptureService(
           contact,
           config: parsedConfig,
           receivedAt,
+          mode: input.mode,
           windowStart: window.windowStart,
           windowEnd: window.windowEnd
         })
@@ -1035,10 +1150,13 @@ export function createSalesforceCaptureService(
     for (const task of taskRows) {
       const contactId = getStringField(task, parsedConfig.taskContactField);
       const contact = contactId === null ? null : (contactsById.get(contactId) ?? null);
+      const relatedMembership =
+        membershipsById.get(getStringField(task, "WhatId") ?? "") ?? null;
 
       const taskRecord = buildTaskRecord({
         task,
         contact,
+        relatedMembership,
         config: parsedConfig,
         receivedAt
       });

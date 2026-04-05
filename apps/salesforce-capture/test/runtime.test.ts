@@ -19,6 +19,7 @@ describe("Salesforce capture runtime config", () => {
 
     expect(config.port).toBe(3012);
     expect(config.service.membershipObjectName).toBe("Expedition_Members__c");
+    expect(config.service.membershipRoleField).toBeNull();
     expect(config.service.taskChannelField).toBe("TaskSubtype");
     expect(config.service.jwtExpirationSeconds).toBe(240);
   });

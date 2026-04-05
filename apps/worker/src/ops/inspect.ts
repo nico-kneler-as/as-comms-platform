@@ -10,10 +10,15 @@ import type {
   ProjectDimensionRecord,
   RoutingReviewCase,
   SalesforceEventContextRecord,
-  SourceEvidenceRecord
+  SourceEvidenceRecord,
+  SyncStateRecord
 } from "@as-comms/contracts";
 import type { Stage1RepositoryBundle } from "@as-comms/domain";
 
+import {
+  extractLatestSyncFailure,
+  type Stage1SyncFailureAuditRecord
+} from "../orchestration/sync-failure-audit.js";
 export interface Stage1ReadableMembership extends ContactMembershipRecord {
   readonly projectName: string | null;
   readonly expeditionName: string | null;
@@ -70,6 +75,9 @@ export interface Stage1ContactInspection {
   readonly openRoutingCases: readonly RoutingReviewCase[];
 }
 
+export interface Stage1SyncStateInspection extends SyncStateRecord {
+  readonly latestFailure: Stage1SyncFailureAuditRecord | null;
+}
 function buildReadableMemberships(input: {
   readonly memberships: readonly ContactMembershipRecord[];
   readonly projectDimensions: readonly ProjectDimensionRecord[];
@@ -396,12 +404,25 @@ export async function inspectLatestSyncState(
           | "final_delta_sync"
           | "dead_letter_reprocess";
       }
-) {
-  if ("syncStateId" in input) {
-    return repositories.syncState.findById(input.syncStateId);
+): Promise<Stage1SyncStateInspection | null> {
+  const syncState =
+    "syncStateId" in input
+      ? await repositories.syncState.findById(input.syncStateId)
+      : await repositories.syncState.findLatest(input);
+
+  if (syncState === null) {
+    return null;
   }
 
-  return repositories.syncState.findLatest(input);
+  const auditRecords = await repositories.auditEvidence.listByEntity({
+    entityType: "sync_state",
+    entityId: syncState.id
+  });
+
+  return {
+    ...syncState,
+    latestFailure: extractLatestSyncFailure(syncState, auditRecords)
+  };
 }
 
 export async function inspectSourceEvidenceForProviderRecord(

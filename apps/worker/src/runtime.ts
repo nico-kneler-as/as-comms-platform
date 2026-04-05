@@ -204,7 +204,11 @@ export function createStage1WorkerRuntimeServices(
     capture,
     ingest,
     normalization,
-    persistence
+    persistence,
+    gmailHistoricalReplay: {
+      liveAccount: config.launchScope.gmail.liveAccount,
+      projectInboxAliases: [...config.launchScope.gmail.projectInboxAliases]
+    }
   });
 
   return {
