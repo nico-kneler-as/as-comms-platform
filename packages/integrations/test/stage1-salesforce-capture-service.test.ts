@@ -183,6 +183,10 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
   };
 }
 
+function extractQuotedIds(soql: string): string[] {
+  return Array.from(soql.matchAll(/'([^']+)'/g), (match) => match[1] ?? "");
+}
+
 describe("Salesforce capture service", () => {
   it("enforces bearer auth at the HTTP boundary", async () => {
     const service = createSalesforceCaptureService(
@@ -256,10 +260,17 @@ describe("Salesforce capture service", () => {
   });
 
   it("returns launch-scope Salesforce Contact, Expedition_Members__c, and Task records in the worker-facing provider-close shape", async () => {
+    const queries: string[] = [];
+    const baseApiClient = createFakeSalesforceApiClient();
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: createFakeSalesforceApiClient(),
+        apiClient: {
+          queryAll: (soql) => {
+            queries.push(soql);
+            return baseApiClient.queryAll(soql);
+          }
+        },
         now: () => new Date("2026-01-05T00:05:00.000Z")
       }
     );
@@ -329,6 +340,28 @@ describe("Salesforce capture service", () => {
       ])
     );
     expect(result.checkpoint).toBe("2026-01-05T00:03:00.000Z");
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "FROM Expedition_Members__c WHERE Contact__c != null AND ((CreatedDate >= 2026-01-01T00:00:00.000Z AND CreatedDate < 2026-01-06T00:00:00.000Z)"
+        ),
+        expect.stringContaining(
+          "Date_Training_Sent__c >= 2026-01-01 AND Date_Training_Sent__c < 2026-01-06"
+        ),
+        expect.stringContaining(
+          "Date_Training_Completed__c >= 2026-01-01 AND Date_Training_Completed__c < 2026-01-06"
+        ),
+        expect.stringContaining(
+          "Date_First_Sample_Collected__c >= 2026-01-01 AND Date_First_Sample_Collected__c < 2026-01-06"
+        ),
+        expect.stringContaining(
+          "FROM Task WHERE Who.Type = 'Contact' AND CreatedDate >= 2026-01-01T00:00:00.000Z AND CreatedDate < 2026-01-06T00:00:00.000Z"
+        )
+      ])
+    );
+    expect(
+      queries.some((query) => query.includes("WhoId LIKE '003%'"))
+    ).toBe(false);
   });
 
   it("expands task communications for membership-scoped historical backfills", async () => {
@@ -383,6 +416,95 @@ describe("Salesforce capture service", () => {
     expect(queries).toEqual(
       expect.arrayContaining([
         expect.stringContaining("FROM Task WHERE WhoId IN ('003-stage1')")
+      ])
+    );
+  });
+
+  it("uses contact-safe task filters for live window capture batches", async () => {
+    const queries: string[] = [];
+    const baseApiClient = createFakeSalesforceApiClient();
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: {
+          queryAll: (soql) => {
+            queries.push(soql);
+            return baseApiClient.queryAll(soql);
+          }
+        },
+        now: () => new Date("2026-01-05T00:05:00.000Z")
+      }
+    );
+
+    await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:salesforce:live:window-scope",
+      correlationId: "corr:salesforce:live:window-scope",
+      traceId: null,
+      batchId: "batch:salesforce:live:window-scope",
+      syncStateId: "sync:salesforce:live:window-scope",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: "2026-01-01T00:00:00.000Z",
+      windowEnd: "2026-01-06T00:00:00.000Z",
+      recordIds: [],
+      maxRecords: 25
+    });
+
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "FROM Task WHERE Who.Type = 'Contact' AND LastModifiedDate >= 2026-01-01T00:00:00.000Z AND LastModifiedDate < 2026-01-06T00:00:00.000Z"
+        )
+      ])
+    );
+    expect(
+      queries.some((query) => query.includes("WhoId LIKE '003%'"))
+    ).toBe(false);
+  });
+
+  it("keeps date-only lifecycle milestones on live captures keyed by LastModifiedDate", async () => {
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: createFakeSalesforceApiClient(),
+        now: () => new Date("2026-01-05T00:05:00.000Z")
+      }
+    );
+
+    const result = await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:salesforce:live:lifecycle-window",
+      correlationId: "corr:salesforce:live:lifecycle-window",
+      traceId: null,
+      batchId: "batch:salesforce:live:lifecycle-window",
+      syncStateId: "sync:salesforce:live:lifecycle-window",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: "2026-01-05T00:00:00.000Z",
+      windowEnd: "2026-01-06T00:00:00.000Z",
+      recordIds: [],
+      maxRecords: 25
+    });
+
+    expect(result.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "lifecycle_milestone",
+          recordId: "a01-membership-1:Expedition_Members__c.Date_Training_Sent__c",
+          milestone: "received_training",
+          occurredAt: "2026-01-03T00:00:00.000Z"
+        })
       ])
     );
   });
@@ -628,6 +750,117 @@ describe("Salesforce capture service", () => {
         })
       ])
     );
+  });
+
+  it("chunks large contact and membership fan-out queries during historical backfills", async () => {
+    const touchedContactCount = 450;
+    const contactChunkSizes: number[] = [];
+    const membershipChunkSizes: number[] = [];
+    const touchedContactIds = Array.from({ length: touchedContactCount }, (_, index) =>
+      `003-stage1-${String(index).padStart(4, "0")}`
+    );
+    const contactRows = touchedContactIds.map((contactId, index) => ({
+      Id: contactId,
+      Name: `Volunteer ${String(index).padStart(4, "0")}`,
+      Email: `volunteer-${String(index).padStart(4, "0")}@example.org`,
+      Phone: `+1555000${String(index).padStart(4, "0")}`,
+      Volunteer_ID_Plain__c: `VOL-${String(index).padStart(4, "0")}`,
+      CreatedDate: "2026-01-01T00:00:00.000Z",
+      LastModifiedDate: "2026-01-15T12:00:00.000Z"
+    }));
+    const membershipRows = touchedContactIds.map((contactId, index) => ({
+      Id: `a01-membership-${String(index).padStart(4, "0")}`,
+      Contact__c: contactId,
+      Project__c: `project-${String(index).padStart(4, "0")}`,
+      Project__r: {
+        Name: `Project ${String(index).padStart(4, "0")}`
+      },
+      Expedition__c: `expedition-${String(index).padStart(4, "0")}`,
+      Expedition__r: {
+        Name: `Expedition ${String(index).padStart(4, "0")}`
+      },
+      Status__c: "active",
+      CreatedDate: "2026-01-10T00:00:00.000Z",
+      LastModifiedDate: "2026-01-15T12:00:00.000Z",
+      Date_Training_Sent__c: null,
+      Date_Training_Completed__c: null,
+      Date_First_Sample_Collected__c: null
+    }));
+
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: {
+          queryAll: (soql) => {
+            if (
+              soql.includes("FROM Expedition_Members__c WHERE Contact__c != null AND ((")
+            ) {
+              return Promise.resolve(membershipRows);
+            }
+
+            if (soql.includes("FROM Task ")) {
+              return Promise.resolve([]);
+            }
+
+            if (
+              soql.includes("FROM Contact WHERE LastModifiedDate >=") &&
+              !soql.includes(" WHERE Id IN ")
+            ) {
+              return Promise.resolve([]);
+            }
+
+            if (soql.includes("FROM Contact WHERE Id IN ")) {
+              const ids = extractQuotedIds(soql);
+              contactChunkSizes.push(ids.length);
+              return Promise.resolve(
+                contactRows.filter((row) => ids.includes(row.Id))
+              );
+            }
+
+            if (soql.includes("FROM Expedition_Members__c WHERE Contact__c IN ")) {
+              const ids = extractQuotedIds(soql);
+              membershipChunkSizes.push(ids.length);
+              return Promise.resolve(
+                membershipRows.filter((row) => ids.includes(row.Contact__c))
+              );
+            }
+
+            return Promise.resolve([]);
+          }
+        },
+        now: () => new Date("2026-01-20T00:00:00.000Z")
+      }
+    );
+
+    const result = await service.captureHistoricalBatch({
+      version: 1,
+      jobId: "job:salesforce:historical:chunked-fanout",
+      correlationId: "corr:salesforce:historical:chunked-fanout",
+      traceId: null,
+      batchId: "batch:salesforce:historical:chunked-fanout",
+      syncStateId: "sync:salesforce:historical:chunked-fanout",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "historical",
+      jobType: "historical_backfill",
+      cursor: null,
+      checkpoint: null,
+      windowStart: "2026-01-01T00:00:00.000Z",
+      windowEnd: "2026-02-01T00:00:00.000Z",
+      recordIds: [],
+      maxRecords: 25
+    });
+
+    expect(contactChunkSizes).toEqual([200, 200, 50]);
+    expect(membershipChunkSizes).toEqual([200, 200, 50]);
+    expect(result.records).toHaveLength(25);
+    expect(result.records[0]).toMatchObject({
+      recordType: "lifecycle_milestone",
+      sourceField: "Expedition_Members__c.CreatedDate",
+      salesforceContactId: "003-stage1-0000"
+    });
+    expect(result.nextCursor).not.toBeNull();
   });
 
   it("uses the JWT bearer grant for Salesforce token exchange without password credentials", async () => {

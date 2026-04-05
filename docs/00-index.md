@@ -72,4 +72,5 @@ Read these in order for any non-trivial task:
 - If validating narrowed Stage 1 Gmail + Salesforce launch scope: [`stage-1-acceptance.md`](./stage-1-acceptance.md)
 - If deploying or wiring the Stage 1 Gmail/Salesforce capture services: [`stage-1-capture-services.md`](./stage-1-capture-services.md)
 - If running sandbox or non-production Stage 1 validation: [`stage-1-validation-runbook.md`](./stage-1-validation-runbook.md)
+- If planning backend follow-on validation after Stage 1 completion: [`stage-1-post-validation-roadmap.md`](./stage-1-post-validation-roadmap.md)
 - If implementing product behavior: open the matching file under [`02-bundles`](./02-bundles)

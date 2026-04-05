@@ -47,10 +47,44 @@ export interface Stage1EnqueueRequest<TPayload = unknown> {
   readonly payload: TPayload;
 }
 
+function readCaptureWindow(
+  flags: CliFlags,
+  input: {
+    readonly provider: "gmail" | "salesforce";
+    readonly mode: "historical" | "live";
+  }
+): {
+  readonly windowStart: string | null;
+  readonly windowEnd: string | null;
+  readonly recordIds: readonly string[];
+} {
+  const windowStart = readOptionalStringFlag(flags, "window-start");
+  const windowEnd = readOptionalStringFlag(flags, "window-end");
+  const recordIds = readOptionalStringArrayFlag(flags, "record-ids");
+
+  if (recordIds.length === 0 && (windowStart === null || windowEnd === null)) {
+    throw new Error(
+      `Flags --window-start and --window-end are required for ${input.provider} ${input.mode} capture jobs when --record-ids is not provided.`
+    );
+  }
+
+  return {
+    windowStart,
+    windowEnd,
+    recordIds
+  };
+}
+
 function buildCapturePayloadBase(
   flags: CliFlags,
-  prefix: string
+  prefix: string,
+  input: {
+    readonly provider: "gmail" | "salesforce";
+    readonly mode: "historical" | "live";
+  }
 ) {
+  const captureWindow = readCaptureWindow(flags, input);
+
   return {
     version: stage1JobVersion,
     jobId: readOptionalStringFlag(flags, "job-id") ?? buildOperationId(`${prefix}:job`),
@@ -67,9 +101,9 @@ function buildCapturePayloadBase(
     maxAttempts: readOptionalIntegerFlag(flags, "max-attempts", 3),
     cursor: readOptionalStringFlag(flags, "cursor"),
     checkpoint: readOptionalStringFlag(flags, "checkpoint"),
-    windowStart: readOptionalStringFlag(flags, "window-start"),
-    windowEnd: readOptionalStringFlag(flags, "window-end"),
-    recordIds: readOptionalStringArrayFlag(flags, "record-ids"),
+    windowStart: captureWindow.windowStart,
+    windowEnd: captureWindow.windowEnd,
+    recordIds: captureWindow.recordIds,
     maxRecords: readOptionalIntegerFlag(flags, "max-records", 25)
   };
 }
@@ -90,7 +124,11 @@ function buildReplayItems(
   }
 
   return values.map((value) => {
-    const [providerRecordType, providerRecordId] = value.split(":");
+    const separatorIndex = value.indexOf(":");
+    const providerRecordType =
+      separatorIndex < 0 ? undefined : value.slice(0, separatorIndex);
+    const providerRecordId =
+      separatorIndex < 0 ? undefined : value.slice(separatorIndex + 1);
 
     if (
       providerRecordType === undefined ||
@@ -120,7 +158,10 @@ export function buildStage1EnqueueRequest(
       return {
         jobName: gmailHistoricalCaptureBatchJobName,
         payload: gmailHistoricalCaptureBatchPayloadSchema.parse({
-          ...buildCapturePayloadBase(flags, "stage1:gmail:historical"),
+          ...buildCapturePayloadBase(flags, "stage1:gmail:historical", {
+            provider: "gmail",
+            mode: "historical"
+          }),
           provider: "gmail",
           mode: "historical",
           jobType: "historical_backfill"
@@ -130,7 +171,10 @@ export function buildStage1EnqueueRequest(
       return {
         jobName: gmailLiveCaptureBatchJobName,
         payload: gmailLiveCaptureBatchPayloadSchema.parse({
-          ...buildCapturePayloadBase(flags, "stage1:gmail:live"),
+          ...buildCapturePayloadBase(flags, "stage1:gmail:live", {
+            provider: "gmail",
+            mode: "live"
+          }),
           provider: "gmail",
           mode: "live",
           jobType: "live_ingest"
@@ -140,7 +184,10 @@ export function buildStage1EnqueueRequest(
       return {
         jobName: salesforceHistoricalCaptureBatchJobName,
         payload: salesforceHistoricalCaptureBatchPayloadSchema.parse({
-          ...buildCapturePayloadBase(flags, "stage1:salesforce:historical"),
+          ...buildCapturePayloadBase(flags, "stage1:salesforce:historical", {
+            provider: "salesforce",
+            mode: "historical"
+          }),
           provider: "salesforce",
           mode: "historical",
           jobType: "historical_backfill"
@@ -150,7 +197,10 @@ export function buildStage1EnqueueRequest(
       return {
         jobName: salesforceLiveCaptureBatchJobName,
         payload: salesforceLiveCaptureBatchPayloadSchema.parse({
-          ...buildCapturePayloadBase(flags, "stage1:salesforce:live"),
+          ...buildCapturePayloadBase(flags, "stage1:salesforce:live", {
+            provider: "salesforce",
+            mode: "live"
+          }),
           provider: "salesforce",
           mode: "live",
           jobType: "live_ingest"
@@ -314,7 +364,11 @@ export async function enqueueStage1Job(input: {
         connectionString: input.connectionString
       },
       input.request.jobName,
-      input.request.payload
+      input.request.payload,
+      {
+        // Keep orchestration-owned retry semantics in the payload layer.
+        maxAttempts: 1
+      }
     )
   );
 

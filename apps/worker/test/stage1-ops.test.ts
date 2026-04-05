@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   gmailLiveCaptureBatchPayloadSchema,
+  replayBatchPayloadSchema,
   parityCheckBatchPayloadSchema
 } from "@as-comms/contracts";
 
@@ -162,6 +163,30 @@ describe("Stage 1 ops helpers", () => {
     expect(gmailLivePayload.maxRecords).toBe(25);
   });
 
+  it("requires a capture window when historical or live capture jobs do not target explicit record ids", () => {
+    expect(() => buildStage1EnqueueRequest("salesforce-historical", {})).toThrow(
+      "Flags --window-start and --window-end are required for salesforce historical capture jobs when --record-ids is not provided."
+    );
+  });
+
+  it("preserves colon-delimited Gmail historical provider record ids in replay jobs", () => {
+    const replayRequest = buildStage1EnqueueRequest("replay", {
+      provider: "gmail",
+      mode: "historical",
+      items:
+        "message:mbox:1b9adc42d2f5975a27842ddebcda2131f5351b875b9c19de90fb264bba369487"
+    });
+    const replayPayload = replayBatchPayloadSchema.parse(replayRequest.payload);
+
+    expect(replayPayload.items).toEqual([
+      {
+        providerRecordType: "message",
+        providerRecordId:
+          "mbox:1b9adc42d2f5975a27842ddebcda2131f5351b875b9c19de90fb264bba369487"
+      }
+    ]);
+  });
+
   it("inspects contact, source-evidence, and sync-state outcomes for launch-scope validation", async () => {
     const context = await createTestWorkerContext();
 
@@ -223,7 +248,63 @@ describe("Stage 1 ops helpers", () => {
         provider: "gmail",
         status: "succeeded",
         freshnessP95Seconds: 60,
-        freshnessP99Seconds: 120
+        freshnessP99Seconds: 120,
+        latestFailure: null
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("surfaces the latest durable sync failure when inspecting failed sync states", async () => {
+    const context = await createTestWorkerContext();
+
+    try {
+      await context.persistence.saveSyncState({
+        id: "sync:salesforce:historical:ops-failed",
+        scope: "provider",
+        provider: "salesforce",
+        jobType: "historical_backfill",
+        status: "failed",
+        cursor: "salesforce:cursor:failed",
+        windowStart: "2026-01-02T00:00:00.000Z",
+        windowEnd: "2026-01-02T00:10:00.000Z",
+        parityPercent: null,
+        lastSuccessfulAt: null,
+        deadLetterCount: 0,
+        freshnessP95Seconds: null,
+        freshnessP99Seconds: null
+      });
+      await context.persistence.recordAuditEvidence({
+        id: "audit:sync_state:sync:salesforce:historical:ops-failed:failure:1",
+        actorType: "worker",
+        actorId: "stage1-orchestration",
+        action: "record_sync_failure",
+        entityType: "sync_state",
+        entityId: "sync:salesforce:historical:ops-failed",
+        occurredAt: "2026-01-02T00:10:30.000Z",
+        result: "recorded",
+        policyCode: "stage1.sync.failure",
+        metadataJson: {
+          message: "Unsupported Salesforce batch shape.",
+          disposition: "non_retryable",
+          retryable: false
+        }
+      });
+
+      const syncState = await inspectLatestSyncState(context.repositories, {
+        syncStateId: "sync:salesforce:historical:ops-failed"
+      });
+
+      expect(syncState).toMatchObject({
+        id: "sync:salesforce:historical:ops-failed",
+        provider: "salesforce",
+        status: "failed",
+        latestFailure: {
+          message: "Unsupported Salesforce batch shape.",
+          disposition: "non_retryable",
+          retryable: false
+        }
       });
     } finally {
       await context.dispose();

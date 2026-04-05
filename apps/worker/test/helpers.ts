@@ -112,6 +112,10 @@ export function createEmptyCapturePorts(): Stage1ProviderCapturePorts {
 
 export async function createTestWorkerContext(input?: {
   readonly capture?: Stage1ProviderCapturePorts;
+  readonly gmailHistoricalReplay?: {
+    readonly liveAccount?: string;
+    readonly projectInboxAliases?: readonly string[];
+  };
 }): Promise<TestWorkerContext> {
   const baseContext = await createTestStage1Context();
   const { normalization, persistence } = baseContext;
@@ -121,7 +125,17 @@ export async function createTestWorkerContext(input?: {
     capture,
     ingest,
     normalization,
-    persistence
+    persistence,
+    gmailHistoricalReplay: {
+      liveAccount:
+        input?.gmailHistoricalReplay?.liveAccount ??
+        "volunteers@adventurescientists.org",
+      projectInboxAliases: [
+        ...(input?.gmailHistoricalReplay?.projectInboxAliases ?? [
+          "orcas@adventurescientists.org"
+        ])
+      ]
+    }
   });
 
   return {

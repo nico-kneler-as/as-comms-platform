@@ -203,8 +203,29 @@ function quoteSoqlString(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
 }
 
+function formatSoqlDateTime(value: string): string {
+  return value;
+}
+
+function formatSoqlDate(value: string): string {
+  return value.slice(0, 10);
+}
+
 function buildInClause(values: readonly string[]): string {
   return `(${values.map((value) => quoteSoqlString(value)).join(", ")})`;
+}
+
+function chunkValues<TValue>(
+  values: readonly TValue[],
+  chunkSize: number
+): TValue[][] {
+  const chunks: TValue[][] = [];
+
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(values.slice(index, index + chunkSize));
+  }
+
+  return chunks;
 }
 
 function getPathValue(row: SalesforceRow, fieldName: string): unknown {
@@ -481,7 +502,7 @@ function buildContactWindowWhere(window: {
     return "Id != null";
   }
 
-  return `LastModifiedDate >= ${quoteSoqlString(window.windowStart)} AND LastModifiedDate < ${quoteSoqlString(window.windowEnd)}`;
+  return `LastModifiedDate >= ${formatSoqlDateTime(window.windowStart)} AND LastModifiedDate < ${formatSoqlDateTime(window.windowEnd)}`;
 }
 
 function buildTaskWindowWhere(window: {
@@ -489,16 +510,19 @@ function buildTaskWindowWhere(window: {
   readonly windowStart: string | null;
   readonly windowEnd: string | null;
 }, config: ResolvedSalesforceCaptureServiceConfig): string {
-  const contactField = config.taskContactField;
+  const contactWhere =
+    config.taskContactField === "WhoId"
+      ? "Who.Type = 'Contact'"
+      : `${config.taskContactField} != null`;
 
   if (window.windowStart === null || window.windowEnd === null) {
-    return `${contactField} != null`;
+    return contactWhere;
   }
 
   const timestampField =
     window.mode === "historical" ? config.taskOccurredAtField : "LastModifiedDate";
 
-  return `${contactField} != null AND ${contactField} LIKE '003%' AND ${timestampField} >= ${quoteSoqlString(window.windowStart)} AND ${timestampField} < ${quoteSoqlString(window.windowEnd)}`;
+  return `${contactWhere} AND ${timestampField} >= ${formatSoqlDateTime(window.windowStart)} AND ${timestampField} < ${formatSoqlDateTime(window.windowEnd)}`;
 }
 
 function buildMembershipWindowWhere(input: {
@@ -514,10 +538,24 @@ function buildMembershipWindowWhere(input: {
   }
 
   if (input.mode === "live") {
-    return `${contactField} != null AND LastModifiedDate >= ${quoteSoqlString(input.windowStart)} AND LastModifiedDate < ${quoteSoqlString(input.windowEnd)}`;
+    return `${contactField} != null AND LastModifiedDate >= ${formatSoqlDateTime(input.windowStart)} AND LastModifiedDate < ${formatSoqlDateTime(input.windowEnd)}`;
   }
 
-  return `${contactField} != null AND (CreatedDate != null OR Date_Training_Sent__c != null OR Date_Training_Completed__c != null OR Date_First_Sample_Collected__c != null)`;
+  const windowStart = input.windowStart;
+  const windowEnd = input.windowEnd;
+  const historicalFieldWindows = [
+    "CreatedDate",
+    ...lifecycleSources
+      .filter((source) => source.rawFieldName !== "CreatedDate")
+      .map((source) => source.rawFieldName)
+  ].map((fieldName) => {
+    const formatter =
+      fieldName === "CreatedDate" ? formatSoqlDateTime : formatSoqlDate;
+
+    return `(${fieldName} >= ${formatter(windowStart)} AND ${fieldName} < ${formatter(windowEnd)})`;
+  });
+
+  return `${contactField} != null AND (${historicalFieldWindows.join(" OR ")})`;
 }
 
 function buildContactSnapshotRecordWithConfig(input: {
@@ -582,6 +620,7 @@ function buildLifecycleRecords(input: {
   readonly contact: SalesforceRow | null;
   readonly config: ResolvedSalesforceCaptureServiceConfig;
   readonly receivedAt: string;
+  readonly mode: "historical" | "live";
   readonly windowStart: string | null;
   readonly windowEnd: string | null;
 }): SalesforceRecord[] {
@@ -634,6 +673,7 @@ function buildLifecycleRecords(input: {
     }
 
     if (
+      input.mode === "historical" &&
       input.windowStart !== null &&
       input.windowEnd !== null &&
       !isTimestampWithinWindow(occurredAt, {
@@ -869,9 +909,17 @@ export function createSalesforceCaptureService(
       return [];
     }
 
-    return apiClient.queryAll(
-      `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE Id IN ${buildInClause(input.recordIds)}`
-    );
+    const rows: SalesforceRow[] = [];
+
+    for (const recordIds of chunkValues(input.recordIds, 200)) {
+      rows.push(
+        ...(await apiClient.queryAll(
+          `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE Id IN ${buildInClause(recordIds)}`
+        ))
+      );
+    }
+
+    return rows;
   }
 
   async function queryRowsByFieldValues(input: {
@@ -885,14 +933,22 @@ export function createSalesforceCaptureService(
       return [];
     }
 
-    const whereClauses = [
-      `${input.fieldName} IN ${buildInClause(input.values)}`,
-      ...(input.extraWhere === undefined ? [] : [input.extraWhere])
-    ];
+    const rows: SalesforceRow[] = [];
 
-    return apiClient.queryAll(
-      `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE ${whereClauses.join(" AND ")}`
-    );
+    for (const values of chunkValues(input.values, 200)) {
+      const whereClauses = [
+        `${input.fieldName} IN ${buildInClause(values)}`,
+        ...(input.extraWhere === undefined ? [] : [input.extraWhere])
+      ];
+
+      rows.push(
+        ...(await apiClient.queryAll(
+          `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE ${whereClauses.join(" AND ")}`
+        ))
+      );
+    }
+
+    return rows;
   }
 
   async function captureSalesforceBatch(input: {
@@ -1012,11 +1068,11 @@ export function createSalesforceCaptureService(
     );
 
     if (missingTouchedContactIds.length > 0) {
-      const additionalContacts = await apiClient.queryAll(
-        `SELECT ${contactFields.join(", ")} FROM Contact WHERE Id IN ${buildInClause(
-          missingTouchedContactIds
-        )}`
-      );
+      const additionalContacts = await queryRowsByIds({
+        objectName: "Contact",
+        fields: contactFields,
+        recordIds: missingTouchedContactIds
+      });
 
       for (const contact of additionalContacts) {
         const contactId = getStringField(contact, "Id");
@@ -1029,11 +1085,12 @@ export function createSalesforceCaptureService(
     const allMembershipsForContacts =
       touchedContactIds.length === 0
         ? membershipRows
-        : await apiClient.queryAll(
-            `SELECT ${membershipFields.join(", ")} FROM ${parsedConfig.membershipObjectName} WHERE ${parsedConfig.membershipContactField} IN ${buildInClause(
-              touchedContactIds
-            )}`
-          );
+        : await queryRowsByFieldValues({
+            objectName: parsedConfig.membershipObjectName,
+            fields: membershipFields,
+            fieldName: parsedConfig.membershipContactField,
+            values: touchedContactIds
+          });
     const membershipsByContactId = new Map<string, SalesforceRow[]>();
     const membershipsById = new Map<string, SalesforceRow>();
 
@@ -1080,6 +1137,7 @@ export function createSalesforceCaptureService(
           contact,
           config: parsedConfig,
           receivedAt,
+          mode: input.mode,
           windowStart: window.windowStart,
           windowEnd: window.windowEnd
         })

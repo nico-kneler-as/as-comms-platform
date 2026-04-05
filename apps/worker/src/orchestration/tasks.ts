@@ -29,12 +29,50 @@ import {
 
 import type { Stage1WorkerOrchestrationService } from "./types.js";
 
+function isFailedStage1TaskOutcome(
+  value: unknown
+): value is {
+  readonly outcome: "failed";
+  readonly syncState: {
+    readonly id: string;
+    readonly status: string;
+  };
+  readonly failure?: {
+    readonly message: string;
+  } | null;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "outcome" in value &&
+    value.outcome === "failed" &&
+    "syncState" in value &&
+    typeof value.syncState === "object" &&
+    value.syncState !== null &&
+    "id" in value.syncState &&
+    typeof value.syncState.id === "string" &&
+    "status" in value.syncState &&
+    typeof value.syncState.status === "string"
+  );
+}
+
 function createStage1Task<TPayload>(
   parse: (payload: unknown) => TPayload,
   run: (payload: TPayload) => Promise<unknown>
 ): Task {
   return async (rawPayload: unknown) => {
-    await run(parse(rawPayload));
+    const outcome = await run(parse(rawPayload));
+
+    if (isFailedStage1TaskOutcome(outcome)) {
+      const message =
+        outcome.failure?.message ??
+        `Stage 1 job failed for sync state ${outcome.syncState.id}.`;
+      const error = new Error(
+        `${message} (syncStateId=${outcome.syncState.id}, status=${outcome.syncState.status})`
+      );
+      error.name = "Stage1TaskOutcomeError";
+      throw error;
+    }
   };
 }
 
