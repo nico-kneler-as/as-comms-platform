@@ -1,4 +1,4 @@
-import { ClaudeInboxEmptyState } from "../_components/claude-inbox-empty-state.js";
+import { ClaudeInboxEmptyState } from "../_components/claude-inbox-empty-state";
 
 export default function ClaudeInboxListPage() {
   return <ClaudeInboxEmptyState />;

@@ -7,8 +7,8 @@
  * substitute real projection reads — the view-model shapes stay stable.
  */
 
-import { CLAUDE_INBOX_FILTERS } from "./filters.js";
-import { getMockContactById, getMockContacts } from "./mock-data.js";
+import { CLAUDE_INBOX_FILTERS } from "./filters";
+import { getMockContactById, getMockContacts } from "./mock-data";
 import type {
   ClaudeContactSummaryViewModel,
   ClaudeContextChipViewModel,
@@ -18,7 +18,7 @@ import type {
   ClaudeInboxListItemViewModel,
   ClaudeInboxListViewModel,
   ClaudeRecentActivityViewModel
-} from "./view-models.js";
+} from "./view-models";
 
 const LIST_SORT = (
   a: ClaudeInboxListItemViewModel,

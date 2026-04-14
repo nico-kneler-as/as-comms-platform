@@ -1,4 +1,4 @@
-import type { ClaudeInboxFilterId } from "./view-models.js";
+import type { ClaudeInboxFilterId } from "./view-models";
 
 interface FilterDefinition {
   readonly id: ClaudeInboxFilterId;

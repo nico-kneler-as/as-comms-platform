@@ -3,13 +3,13 @@ import type { ComponentType, SVGProps } from "react";
 import type {
   ClaudeTimelineEntryKind,
   ClaudeTimelineEntryViewModel
-} from "../_lib/view-models.js";
+} from "../_lib/view-models";
 import {
   MailIcon,
   NoteIcon,
   PhoneIcon,
   SparkleIcon
-} from "./claude-icons.js";
+} from "./claude-icons";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 

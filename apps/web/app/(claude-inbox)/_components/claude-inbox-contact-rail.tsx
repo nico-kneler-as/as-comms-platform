@@ -1,13 +1,13 @@
-import type { ClaudeContactSummaryViewModel } from "../_lib/view-models.js";
-import { ClaudeInboxAvatar } from "./claude-inbox-avatar.js";
-import { ClaudeStageBadge } from "./claude-inbox-badge.js";
-import { ClaudeInboxChip } from "./claude-inbox-chip.js";
+import type { ClaudeContactSummaryViewModel } from "../_lib/view-models";
+import { ClaudeInboxAvatar } from "./claude-inbox-avatar";
+import { ClaudeStageBadge } from "./claude-inbox-badge";
+import { ClaudeInboxChip } from "./claude-inbox-chip";
 import {
   CalendarIcon,
   MailIcon,
   MapPinIcon,
   PhoneIcon
-} from "./claude-icons.js";
+} from "./claude-icons";
 
 interface RailProps {
   readonly contact: ClaudeContactSummaryViewModel;

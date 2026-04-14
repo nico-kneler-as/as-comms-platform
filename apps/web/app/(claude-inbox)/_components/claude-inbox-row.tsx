@@ -1,9 +1,9 @@
 import Link from "next/link";
 
-import type { ClaudeInboxListItemViewModel } from "../_lib/view-models.js";
-import { ClaudeInboxAvatar } from "./claude-inbox-avatar.js";
-import { ClaudeStageBadge } from "./claude-inbox-badge.js";
-import { AlertIcon, MailIcon, PhoneIcon, StarIcon } from "./claude-icons.js";
+import type { ClaudeInboxListItemViewModel } from "../_lib/view-models";
+import { ClaudeInboxAvatar } from "./claude-inbox-avatar";
+import { ClaudeStageBadge } from "./claude-inbox-badge";
+import { AlertIcon, MailIcon, PhoneIcon, StarIcon } from "./claude-icons";
 
 interface RowProps {
   readonly item: ClaudeInboxListItemViewModel;

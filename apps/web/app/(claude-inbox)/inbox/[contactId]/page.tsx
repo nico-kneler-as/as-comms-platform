@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { ClaudeInboxDetail } from "../../_components/claude-inbox-detail.js";
-import { getClaudeInboxDetail } from "../../_lib/selectors.js";
+import { ClaudeInboxDetail } from "../../_components/claude-inbox-detail";
+import { getClaudeInboxDetail } from "../../_lib/selectors";
 
 interface PageProps {
   readonly params: Promise<{ readonly contactId: string }>;

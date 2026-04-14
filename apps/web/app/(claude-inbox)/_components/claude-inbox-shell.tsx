@@ -1,46 +1,38 @@
 import type { ReactNode } from "react";
 
 import type {
+  ClaudeInboxFilterId,
   ClaudeInboxFilterViewModel,
   ClaudeInboxListItemViewModel
-} from "../_lib/view-models.js";
-import { ClaudeInboxIconRail } from "./claude-inbox-icon-rail.js";
-import { ClaudeInboxList } from "./claude-inbox-list.js";
-import { ClaudeInboxListHeader } from "./claude-inbox-list-header.js";
-import { ClaudeInboxSidebar } from "./claude-inbox-sidebar.js";
+} from "../_lib/view-models";
+import { ClaudeInboxIconRail } from "./claude-inbox-icon-rail";
+import { ClaudeInboxList } from "./claude-inbox-list";
 
 interface ShellProps {
   readonly filters: readonly ClaudeInboxFilterViewModel[];
-  readonly activeFilterId: string;
   readonly items: readonly ClaudeInboxListItemViewModel[];
-  readonly listTitle: string;
+  readonly initialFilterId: ClaudeInboxFilterId;
   readonly listSubtitle: string;
   readonly children: ReactNode;
 }
 
 export function ClaudeInboxShell({
   filters,
-  activeFilterId,
   items,
-  listTitle,
+  initialFilterId,
   listSubtitle,
   children
 }: ShellProps) {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100 text-slate-900 antialiased">
       <ClaudeInboxIconRail />
-      <ClaudeInboxSidebar filters={filters} activeFilterId={activeFilterId} />
 
-      <section className="flex w-[22rem] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white">
-        <ClaudeInboxListHeader
-          title={listTitle}
-          subtitle={listSubtitle}
-          totalCount={items.length}
-        />
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <ClaudeInboxList items={items} />
-        </div>
-      </section>
+      <ClaudeInboxList
+        items={items}
+        filters={filters}
+        initialFilterId={initialFilterId}
+        subtitle={listSubtitle}
+      />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {children}

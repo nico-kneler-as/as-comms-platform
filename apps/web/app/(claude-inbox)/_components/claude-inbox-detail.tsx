@@ -1,9 +1,9 @@
-import type { ClaudeInboxDetailViewModel } from "../_lib/view-models.js";
-import { ClaudeBucketBadge } from "./claude-inbox-badge.js";
-import { ClaudeInboxComposer } from "./claude-inbox-composer.js";
-import { ClaudeInboxContactRail } from "./claude-inbox-contact-rail.js";
-import { ClaudeInboxTimeline } from "./claude-inbox-timeline.js";
-import { AlertIcon, StarIcon } from "./claude-icons.js";
+import type { ClaudeInboxDetailViewModel } from "../_lib/view-models";
+import { ClaudeBucketBadge } from "./claude-inbox-badge";
+import { ClaudeInboxComposer } from "./claude-inbox-composer";
+import { ClaudeInboxContactRail } from "./claude-inbox-contact-rail";
+import { ClaudeInboxTimeline } from "./claude-inbox-timeline";
+import { AlertIcon, StarIcon } from "./claude-icons";
 
 interface DetailProps {
   readonly detail: ClaudeInboxDetailViewModel;

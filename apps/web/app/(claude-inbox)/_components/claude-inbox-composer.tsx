@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { MailIcon, NoteIcon, PhoneIcon, SendIcon, SparkleIcon } from "./claude-icons.js";
+import { MailIcon, NoteIcon, PhoneIcon, SendIcon, SparkleIcon } from "./claude-icons";
 
 type ComposerMode = "email" | "sms" | "note";
 

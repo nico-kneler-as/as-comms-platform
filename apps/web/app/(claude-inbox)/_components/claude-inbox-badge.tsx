@@ -1,4 +1,4 @@
-import type { ClaudeInboxBucket, ClaudeVolunteerStage } from "../_lib/view-models.js";
+import type { ClaudeInboxBucket, ClaudeVolunteerStage } from "../_lib/view-models";
 
 const BUCKET_CLASSES: Record<ClaudeInboxBucket, string> = {
   new: "bg-sky-600 text-white",

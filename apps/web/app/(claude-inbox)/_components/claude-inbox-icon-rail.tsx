@@ -5,7 +5,7 @@ import {
   SettingsIcon,
   SparkleIcon,
   UsersIcon
-} from "./claude-icons.js";
+} from "./claude-icons";
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 

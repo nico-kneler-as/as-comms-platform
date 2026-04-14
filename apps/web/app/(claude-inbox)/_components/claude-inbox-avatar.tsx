@@ -1,4 +1,4 @@
-import type { ClaudeAvatarTone } from "../_lib/view-models.js";
+import type { ClaudeAvatarTone } from "../_lib/view-models";
 
 const TONE_CLASSES: Record<ClaudeAvatarTone, string> = {
   indigo: "bg-indigo-100 text-indigo-800 ring-indigo-200",

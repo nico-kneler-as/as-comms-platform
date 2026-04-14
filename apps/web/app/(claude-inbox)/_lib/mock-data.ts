@@ -18,7 +18,7 @@ import type {
   ClaudeTimelineEntryKind,
   ClaudeTimelineEntryViewModel,
   ClaudeVolunteerStage
-} from "./view-models.js";
+} from "./view-models";
 
 interface MockContactRecord {
   readonly contactId: string;

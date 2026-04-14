@@ -1,4 +1,4 @@
-import { InboxIcon } from "./claude-icons.js";
+import { InboxIcon } from "./claude-icons";
 
 export function ClaudeInboxEmptyState() {
   return (
