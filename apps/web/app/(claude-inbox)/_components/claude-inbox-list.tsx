@@ -121,10 +121,10 @@ export function ClaudeInboxList({
             }`}
           >
             <FilterIcon className="h-3.5 w-3.5" />
-            Filters
-            {activeFilterId !== "all" && activeFilter ? (
-              <span className="inline-flex items-center rounded-full bg-slate-900 px-1.5 py-px text-[10px] font-semibold text-white">
-                {activeFilter.label}
+            Filter
+            {activeFilterId !== "all" ? (
+              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[10px] font-semibold text-white tabular-nums">
+                1
               </span>
             ) : null}
           </button>

@@ -8,10 +8,13 @@
  */
 
 import { CLAUDE_INBOX_FILTERS } from "./filters";
-import { getMockContactById, getMockContacts } from "./mock-data";
+import {
+  getMockContactById,
+  getMockContacts,
+  type MockMilestone
+} from "./mock-data";
 import type {
   ClaudeContactSummaryViewModel,
-  ClaudeContextChipViewModel,
   ClaudeInboxDetailViewModel,
   ClaudeInboxFilterId,
   ClaudeInboxFilterViewModel,
@@ -94,55 +97,27 @@ export function getClaudeInboxDetail(
   const record = getMockContactById(contactId);
   if (!record) return null;
 
-  const contextChips: ClaudeContextChipViewModel[] = [];
-  contextChips.push({
-    id: "stage",
-    label: stageLabel(record.volunteerStage),
-    tone: record.volunteerStage === "active" ? "success" : "info"
-  });
-  if (record.salesforceLinked) {
-    contextChips.push({
-      id: "salesforce",
-      label: "Salesforce linked",
-      tone: "neutral"
-    });
-  } else {
-    contextChips.push({
-      id: "salesforce-missing",
-      label: "Not in Salesforce",
-      tone: "warn"
-    });
-  }
-  if (record.hasUnresolved) {
-    contextChips.push({
-      id: "unresolved",
-      label: "Needs review",
-      tone: "warn"
-    });
-  }
-
-  const recentActivity: ClaudeRecentActivityViewModel[] = record.timeline
-    .slice(0, 3)
-    .map((entry) => ({
-      id: `${entry.id}_recent`,
-      label: recentActivityLabel(entry.kind),
-      occurredAtLabel: entry.occurredAtLabel
+  const recentActivity: ClaudeRecentActivityViewModel[] = record.milestones
+    .slice()
+    .sort((a, b) => a.daysAgo - b.daysAgo)
+    .slice(0, 5)
+    .map((milestone) => ({
+      id: milestone.id,
+      label: milestoneLabel(milestone),
+      occurredAtLabel: relativeLabel(milestone.daysAgo)
     }));
 
   const contact: ClaudeContactSummaryViewModel = {
     contactId: record.contactId,
     displayName: record.displayName,
-    initials: record.initials,
-    avatarTone: record.avatarTone,
-    volunteerStage: record.volunteerStage,
+    volunteerId: record.volunteerId,
     primaryEmail: record.primaryEmail,
     primaryPhone: record.primaryPhone,
-    location: record.location,
+    cityState: record.cityState,
     joinedAtLabel: record.joinedAtLabel,
-    salesforceLinked: record.salesforceLinked,
     hasUnresolved: record.hasUnresolved,
-    projects: record.projects,
-    contextChips,
+    activeProjects: record.activeProjects,
+    pastProjects: record.pastProjects,
     recentActivity
   };
 
@@ -155,40 +130,28 @@ export function getClaudeInboxDetail(
   };
 }
 
-function stageLabel(stage: ClaudeContactSummaryViewModel["volunteerStage"]): string {
-  switch (stage) {
-    case "active":
-      return "Active volunteer";
-    case "alumni":
-      return "Alumni";
-    case "applicant":
-      return "Applicant";
-    case "prospect":
-      return "Prospect";
-    case "lead":
-      return "Lead";
-    case "non-volunteer":
-      return "Non-volunteer";
+function milestoneLabel(milestone: MockMilestone): string {
+  const name = milestone.projectName;
+  switch (milestone.kind) {
+    case "signed-up":
+      return `Signed up to ${name}`;
+    case "training-received":
+      return `Received training for ${name}`;
+    case "training-completed":
+      return `Completed training for ${name}`;
+    case "trip-plan-submitted":
+      return `Submitted trip plan for ${name}`;
+    case "first-record-submitted":
+      return `Submitted first record for ${name}`;
   }
 }
 
-function recentActivityLabel(
-  kind: ClaudeInboxDetailViewModel["timeline"][number]["kind"]
-): string {
-  switch (kind) {
-    case "inbound-email":
-      return "Inbound email";
-    case "outbound-email":
-      return "Reply sent";
-    case "inbound-sms":
-      return "Inbound SMS";
-    case "outbound-sms":
-      return "SMS sent";
-    case "internal-note":
-      return "Internal note";
-    case "campaign-event":
-      return "Campaign touch";
-    case "system-event":
-      return "System event";
-  }
+function relativeLabel(daysAgo: number): string {
+  if (daysAgo === 0) return "today";
+  if (daysAgo === 1) return "yesterday";
+  if (daysAgo < 7) return `${daysAgo.toString()} days ago`;
+  if (daysAgo < 14) return "last week";
+  if (daysAgo < 60) return `${Math.floor(daysAgo / 7).toString()} weeks ago`;
+  if (daysAgo < 365) return `${Math.floor(daysAgo / 30).toString()} months ago`;
+  return `${Math.floor(daysAgo / 365).toString()} years ago`;
 }

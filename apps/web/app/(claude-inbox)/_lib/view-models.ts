@@ -11,7 +11,8 @@
  *   - primary buckets are "new" and "opened" (INBX-02)
  *   - "starred" is a flag, not a bucket (INBX-03)
  *   - "unresolved" is an overlay on top of the queue model (INBX-04)
- *   - campaign events may appear in the timeline but do not mutate buckets
+ *   - campaign and automated sends are surfaced in the timeline as collapsed
+ *     entries so 1:1 history stays readable (INBX-05)
  */
 
 export type ClaudeInboxBucket = "new" | "opened";
@@ -61,17 +62,27 @@ export interface ClaudeInboxListItemViewModel {
   readonly lastActivityLabel: string;
 }
 
+/**
+ * Canonical project participation status, per product brief.
+ * `lead` → `applied` → `in-training` → `trip-planning` → `in-field` →
+ * `successful`. Statuses are per-(volunteer, project) membership and do not
+ * flow through the inbox bucket model.
+ */
+export type ClaudeProjectStatus =
+  | "lead"
+  | "applied"
+  | "in-training"
+  | "trip-planning"
+  | "in-field"
+  | "successful";
+
 export interface ClaudeProjectMembershipViewModel {
+  readonly membershipId: string;
   readonly projectId: string;
   readonly projectName: string;
-  readonly role: string;
-  readonly status: string;
-}
-
-export interface ClaudeContextChipViewModel {
-  readonly id: string;
-  readonly label: string;
-  readonly tone: "neutral" | "info" | "warn" | "success";
+  readonly year: number;
+  readonly status: ClaudeProjectStatus;
+  readonly crmUrl: string;
 }
 
 export interface ClaudeRecentActivityViewModel {
@@ -83,27 +94,31 @@ export interface ClaudeRecentActivityViewModel {
 export interface ClaudeContactSummaryViewModel {
   readonly contactId: string;
   readonly displayName: string;
-  readonly initials: string;
-  readonly avatarTone: ClaudeAvatarTone;
-  readonly volunteerStage: ClaudeVolunteerStage;
+  readonly volunteerId: string;
   readonly primaryEmail: string | null;
   readonly primaryPhone: string | null;
-  readonly location: string | null;
+  readonly cityState: string | null;
   readonly joinedAtLabel: string;
-  readonly salesforceLinked: boolean;
   readonly hasUnresolved: boolean;
-  readonly projects: readonly ClaudeProjectMembershipViewModel[];
-  readonly contextChips: readonly ClaudeContextChipViewModel[];
+  readonly activeProjects: readonly ClaudeProjectMembershipViewModel[];
+  readonly pastProjects: readonly ClaudeProjectMembershipViewModel[];
   readonly recentActivity: readonly ClaudeRecentActivityViewModel[];
 }
 
+/**
+ * Timeline entry kinds. 1:1 kinds render as full chat bubbles; campaign and
+ * automated kinds render as collapsed single-line entries that expand on
+ * click; internal notes and system events are visually distinct.
+ */
 export type ClaudeTimelineEntryKind =
   | "inbound-email"
   | "outbound-email"
+  | "outbound-auto-email"
+  | "outbound-campaign-email"
   | "inbound-sms"
   | "outbound-sms"
+  | "outbound-campaign-sms"
   | "internal-note"
-  | "campaign-event"
   | "system-event";
 
 export interface ClaudeTimelineEntryViewModel {

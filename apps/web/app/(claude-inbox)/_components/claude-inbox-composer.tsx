@@ -24,6 +24,7 @@ export function ClaudeInboxComposer({
 }: ComposerProps) {
   const [mode, setMode] = useState<ComposerMode>("email");
   const [draft, setDraft] = useState("");
+  const [subject, setSubject] = useState("");
 
   const placeholder = placeholderForMode(mode, contactDisplayName);
 
@@ -69,10 +70,35 @@ export function ClaudeInboxComposer({
 
       <div className={mode === "note" ? "bg-amber-50/50" : ""}>
         {mode === "email" ? (
-          <div className="border-b border-slate-100 px-5 py-2 text-xs text-slate-500">
-            <span className="font-medium text-slate-700">To:</span>{" "}
-            <span>{contactDisplayName}</span>
-          </div>
+          <>
+            <div className="border-b border-slate-100 px-5 py-2 text-xs text-slate-500">
+              <span className="font-medium text-slate-700">To:</span>{" "}
+              <span>{contactDisplayName}</span>
+            </div>
+            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-2 text-xs">
+              <label
+                htmlFor="claude-inbox-subject"
+                className="font-medium text-slate-700"
+              >
+                Subject:
+              </label>
+              <input
+                id="claude-inbox-subject"
+                type="text"
+                value={subject}
+                onChange={(event) => {
+                  // tsconfig omits the DOM lib so the ambient element stub
+                  // exposes no `value` field; narrow through unknown.
+                  const target = event.currentTarget as unknown as {
+                    readonly value: string;
+                  };
+                  setSubject(target.value);
+                }}
+                placeholder="Add a subject"
+                className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+              />
+            </div>
+          </>
         ) : null}
         <textarea
           value={draft}

@@ -4,7 +4,10 @@ import { useState } from "react";
 
 import type { ClaudeInboxDetailViewModel } from "../_lib/view-models";
 import { ClaudeInboxComposer } from "./claude-inbox-composer";
-import { ClaudeInboxContactRail } from "./claude-inbox-contact-rail";
+import {
+  ClaudeInboxContactRail,
+  ProjectStatusBadge
+} from "./claude-inbox-contact-rail";
 import { ClaudeInboxTimeline } from "./claude-inbox-timeline";
 import { ChevronRightIcon, UsersIcon } from "./claude-icons";
 
@@ -22,7 +25,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
   const { contact, timeline, smsEligible } = detail;
   const [railOpen, setRailOpen] = useState(false);
 
-  const activeProject = contact.projects[0] ?? null;
+  const activeProject = contact.activeProjects[0] ?? null;
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -37,12 +40,9 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
               {activeProject ? (
                 <div className="flex items-center gap-2 text-xs">
                   <span className="truncate font-medium text-slate-700">
-                    {activeProject.projectName}
+                    {activeProject.projectName} {activeProject.year.toString()}
                   </span>
-                  <span className="text-slate-300">·</span>
-                  <span className="truncate text-slate-500">
-                    {activeProject.status}
-                  </span>
+                  <ProjectStatusBadge status={activeProject.status} />
                 </div>
               ) : (
                 <span className="text-xs text-slate-400">No active project</span>
