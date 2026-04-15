@@ -1,3 +1,6 @@
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
+
 import type { ClaudeAvatarTone } from "../_lib/view-models";
 
 const TONE_CLASSES: Record<ClaudeAvatarTone, string> = {
@@ -29,11 +32,10 @@ export function ClaudeInboxAvatar({
   size = "md"
 }: ClaudeInboxAvatarProps) {
   return (
-    <div
-      className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold ring-1 ${TONE_CLASSES[tone]} ${SIZE_CLASSES[size]}`}
-      aria-hidden="true"
-    >
-      {initials}
-    </div>
+    <Avatar className={cn("ring-1", SIZE_CLASSES[size])} aria-hidden="true">
+      <AvatarFallback className={cn("font-semibold", TONE_CLASSES[tone])}>
+        {initials}
+      </AvatarFallback>
+    </Avatar>
   );
 }

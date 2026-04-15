@@ -1,7 +1,14 @@
 "use client";
 
-import type { ComponentType, SVGProps } from "react";
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from "@/components/ui/tooltip";
 
 import {
   AdventureScientistsLogo,
@@ -11,12 +18,10 @@ import {
   SettingsIcon
 } from "./claude-icons";
 
-type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
-
 interface RailItem {
   readonly id: string;
   readonly label: string;
-  readonly Icon: IconComponent;
+  readonly Icon: LucideIcon;
   readonly active?: boolean;
 }
 
@@ -40,54 +45,53 @@ const OPERATOR = {
 
 export function ClaudeInboxIconRail() {
   return (
-    <nav
-      className="flex w-14 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4"
-      aria-label="Primary"
-    >
-      <div
-        className="mb-4 flex h-9 w-9 items-center justify-center text-slate-900"
-        aria-label="Adventure Scientists"
+    <TooltipProvider delayDuration={200}>
+      <nav
+        className="flex w-14 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4"
+        aria-label="Primary"
       >
-        <AdventureScientistsLogo className="h-8 w-8" />
-      </div>
+        <div
+          className="mb-4 flex h-9 w-9 items-center justify-center text-slate-900"
+          aria-label="Adventure Scientists"
+        >
+          <AdventureScientistsLogo className="h-8 w-8" />
+        </div>
 
-      <div className="flex flex-1 flex-col items-center gap-1">
-        {ITEMS.map((item) => {
-          const Icon = item.Icon;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              aria-label={item.label}
-              aria-current={item.active ? "page" : undefined}
-              className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
-                item.active
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-              }`}
-            >
-              <Icon className="h-5 w-5" />
-              <span className="pointer-events-none absolute left-12 z-30 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+        <div className="flex flex-1 flex-col items-center gap-1">
+          {ITEMS.map((item) => {
+            const Icon = item.Icon;
+            return (
+              <Tooltip key={item.id}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={item.label}
+                    aria-current={item.active ? "page" : undefined}
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
+                      item.active
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white">
+                  {item.label}
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
 
-      <OperatorMenu />
-    </nav>
+        <OperatorMenu />
+      </nav>
+    </TooltipProvider>
   );
 }
 
 function OperatorMenu() {
   const [open, setOpen] = useState(false);
-  // The menu is absolutely positioned ~12px to the right of the 36px avatar
-  // button, so the cursor briefly traverses empty space on its way from the
-  // avatar to "Log out". A naive `onMouseLeave={close}` fires during that
-  // transit and the menu disappears before the user can click. Debouncing
-  // the close with a short timer lets the cursor cross the gap without
-  // flicker; any re-entry (avatar OR menu) clears the pending close.
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancelClose = () => {
@@ -135,11 +139,6 @@ function OperatorMenu() {
         {OPERATOR.initials}
       </button>
 
-      {/*
-        Hover popover: transitions opacity/translate together so the
-        reveal is perceptible without feeling theatrical. Pointer-events
-        are disabled while hidden so the avatar still catches clicks.
-      */}
       <div
         role="menu"
         aria-label="Account"

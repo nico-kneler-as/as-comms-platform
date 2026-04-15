@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 import type { ClaudeInboxDetailViewModel } from "../_lib/view-models";
 import {
@@ -27,12 +36,6 @@ interface DetailProps {
 
 type ReminderUnit = "hours" | "days" | "weeks";
 
-/**
- * Client island: owns the right-rail disclosure state (`railOpen`) and the
- * inline "Set a Reminder" popover state. Follow-up and reminder state live
- * in {@link useClaudeInboxClient} so the list column can react immediately
- * — the local state here is only the transient popover UI.
- */
 export function ClaudeInboxDetail({ detail }: DetailProps) {
   const { contact, timeline, smsEligible } = detail;
   const { followUp, toggleFollowUp, reminders, setReminder, clearReminder } =
@@ -86,56 +89,47 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               aria-pressed={isFollowUp}
               onClick={() => {
                 toggleFollowUp(contact.contactId);
               }}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
-                isFollowUp
-                  ? "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
+              className={cn(
+                "gap-1.5",
+                isFollowUp &&
+                  "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800"
+              )}
             >
               <CornerUpLeftIcon className="h-3.5 w-3.5" />
               Needs Follow Up
-            </button>
+            </Button>
 
-            <div className="relative">
-              {existingReminder ? (
-                <button
-                  type="button"
-                  aria-haspopup="dialog"
-                  aria-expanded={reminderOpen}
-                  onClick={() => {
-                    setReminderOpen((open) => !open);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-xs font-medium text-sky-800 shadow-sm transition-colors duration-150 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
-                >
-                  <ClockIcon className="h-3.5 w-3.5" />
-                  Reminder · {formatShortReminder(existingReminder)}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  aria-label="Set a reminder"
-                  aria-haspopup="dialog"
-                  aria-expanded={reminderOpen}
-                  onClick={() => {
-                    setReminderOpen((open) => !open);
-                  }}
-                  className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
-                    reminderOpen
-                      ? "border-slate-300 bg-slate-100 text-slate-900"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  <ClockIcon className="h-4 w-4" />
-                </button>
-              )}
-              {reminderOpen ? (
-                <ReminderPopover
+            <Popover open={reminderOpen} onOpenChange={setReminderOpen}>
+              <PopoverTrigger asChild>
+                {existingReminder ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-800"
+                  >
+                    <ClockIcon className="h-3.5 w-3.5" />
+                    Reminder · {formatShortReminder(existingReminder)}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-label="Set a reminder"
+                  >
+                    <ClockIcon className="h-4 w-4" />
+                  </Button>
+                )}
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72">
+                <ReminderPopoverBody
                   existing={existingReminder}
                   value={reminderValue}
                   unit={reminderUnit}
@@ -147,11 +141,13 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
                   onSet={handleSetReminder}
                   onClear={handleClearReminder}
                 />
-              ) : null}
-            </div>
+              </PopoverContent>
+            </Popover>
 
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
               aria-label={
                 railOpen
                   ? "Collapse volunteer details"
@@ -162,18 +158,13 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
               onClick={() => {
                 setRailOpen((open) => !open);
               }}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
-                railOpen
-                  ? "border-slate-300 bg-slate-100 text-slate-900 hover:bg-slate-200"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
             >
               {railOpen ? (
                 <PanelRightCloseIcon className="h-4 w-4" />
               ) : (
                 <PanelRightOpenIcon className="h-4 w-4" />
               )}
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -195,7 +186,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
   );
 }
 
-interface ReminderPopoverProps {
+interface ReminderPopoverBodyProps {
   readonly existing: Reminder | null;
   readonly value: string;
   readonly unit: ReminderUnit;
@@ -208,7 +199,7 @@ interface ReminderPopoverProps {
 
 const REMINDER_UNITS: readonly ReminderUnit[] = ["hours", "days", "weeks"];
 
-function ReminderPopover({
+function ReminderPopoverBody({
   existing,
   value,
   unit,
@@ -217,153 +208,99 @@ function ReminderPopover({
   onClose,
   onSet,
   onClear
-}: ReminderPopoverProps) {
+}: ReminderPopoverBodyProps) {
   const numeric = Number(value);
   const canSet = value.length > 0 && Number.isFinite(numeric) && numeric > 0;
   const preview = canSet ? previewForDelta(numeric, unit) : null;
 
-  // Keyboard dismissal: bind an Escape listener while the popover is mounted
-  // so keyboard users have parity with the click-outside backdrop. The
-  // project tsconfig omits the DOM lib, so we narrow `globalThis` through
-  // unknown to reach `addEventListener` the same way the composer narrows
-  // input events.
-  useEffect(() => {
-    type KeyListener = (event: { readonly key: string }) => void;
-    const target = globalThis as unknown as {
-      readonly addEventListener: (
-        type: "keydown",
-        listener: KeyListener
-      ) => void;
-      readonly removeEventListener: (
-        type: "keydown",
-        listener: KeyListener
-      ) => void;
-    };
-    const handleKeyDown: KeyListener = (event) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    target.addEventListener("keydown", handleKeyDown);
-    return () => {
-      target.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onClose]);
+  if (existing) {
+    return (
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Reminder set
+          </p>
+          <p className="mt-1 text-sm font-medium text-slate-900">
+            {formatLongReminder(existing)}
+          </p>
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            In {formatShortReminder(existing)}
+          </p>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 text-slate-400 hover:text-slate-700"
+          aria-label="Cancel reminder"
+          onClick={onClear}
+        >
+          <XIcon className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <>
-      {/*
-        Invisible full-screen backdrop so clicks outside dismiss the popover.
-        Using a <button> keeps the dismiss semantics accessible without
-        pulling in DOM event listener types.
-      */}
-      <button
-        type="button"
-        aria-label="Dismiss reminder"
-        tabIndex={-1}
-        onClick={onClose}
-        className="fixed inset-0 z-20 cursor-default bg-transparent"
-      />
-      <div
-        role="dialog"
-        aria-label="Set a reminder"
-        className="absolute right-0 top-full z-30 mt-2 w-72 origin-top-right overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-lg ring-1 ring-black/5 transition duration-150 ease-out"
-      >
-        {existing ? (
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                Reminder set
-              </p>
-              <p className="mt-1 text-sm font-medium text-slate-900">
-                {formatLongReminder(existing)}
-              </p>
-              <p className="mt-0.5 text-[11px] text-slate-500">
-                In {formatShortReminder(existing)}
-              </p>
-            </div>
-            <button
-              type="button"
-              aria-label="Cancel reminder"
-              onClick={onClear}
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-700"
-            >
-              <XIcon className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : (
-          <>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-              Remind me in
-            </p>
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={2}
-                value={value}
-                onChange={(event) => {
-                  // tsconfig omits the DOM lib so we narrow through unknown
-                  // to reach `.value`. We also strip non-digits defensively.
-                  const target = event.currentTarget as unknown as {
-                    readonly value: string;
-                  };
-                  const digits = target.value.replace(/\D/g, "").slice(0, 2);
-                  onChangeValue(digits);
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        Remind me in
+      </p>
+      <div className="mt-2 flex items-center gap-2">
+        <Input
+          type="text"
+          inputMode="numeric"
+          maxLength={2}
+          value={value}
+          onChange={(event) => {
+            const target = event.currentTarget as unknown as {
+              readonly value: string;
+            };
+            const digits = target.value.replace(/\D/g, "").slice(0, 2);
+            onChangeValue(digits);
+          }}
+          placeholder="0"
+          className="w-14 text-center text-sm font-medium tabular-nums"
+        />
+        <div className="flex flex-1 items-center gap-1 rounded-lg bg-slate-100 p-0.5 text-[11px] font-medium">
+          {REMINDER_UNITS.map((option) => {
+            const isActive = option === unit;
+            return (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => {
+                  onChangeUnit(option);
                 }}
-                placeholder="0"
-                className="w-14 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-medium text-slate-900 tabular-nums placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
-              />
-              <div className="flex flex-1 items-center gap-1 rounded-lg bg-slate-100 p-0.5 text-[11px] font-medium">
-                {REMINDER_UNITS.map((option) => {
-                  const isActive = option === unit;
-                  return (
-                    <button
-                      key={option}
-                      type="button"
-                      aria-pressed={isActive}
-                      onClick={() => {
-                        onChangeUnit(option);
-                      }}
-                      className={`flex-1 rounded-md px-1.5 py-1 capitalize transition-colors duration-150 ${
-                        isActive
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-500 hover:text-slate-900"
-                      }`}
-                    >
-                      {option}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <p
-              className={`mt-2 min-h-4 text-[11px] ${
-                preview ? "text-slate-500" : "text-transparent"
-              }`}
-              aria-live="polite"
-            >
-              {preview ?? "—"}
-            </p>
-            <div className="mt-3 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
+                className={cn(
+                  "flex-1 rounded-md px-1.5 py-1 capitalize transition-colors duration-150",
+                  isActive
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-900"
+                )}
               >
-                Cancel
+                {option}
               </button>
-              <button
-                type="button"
-                disabled={!canSet}
-                onClick={onSet}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:bg-slate-300 motion-reduce:transition-none"
-              >
-                Set reminder
-              </button>
-            </div>
-          </>
+            );
+          })}
+        </div>
+      </div>
+      <p
+        className={cn(
+          "mt-2 min-h-4 text-[11px]",
+          preview ? "text-slate-500" : "text-transparent"
         )}
+        aria-live="polite"
+      >
+        {preview ?? "—"}
+      </p>
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button size="sm" disabled={!canSet} onClick={onSet}>
+          Set reminder
+        </Button>
       </div>
     </>
   );
@@ -404,12 +341,6 @@ function formatLongReminder(reminder: Reminder): string {
   return formatAbsolute(new Date(reminder.firesAt));
 }
 
-/**
- * Human-friendly absolute timestamp used in both the preview-while-typing
- * label and the saved-reminder display. We intentionally format via plain
- * Date methods (no Intl) because the project tsconfig omits the DOM lib
- * and Intl namespace typings; this stays portable inside the prototype.
- */
 function formatAbsolute(target: Date): string {
   const now = new Date();
   const startOfToday = new Date(

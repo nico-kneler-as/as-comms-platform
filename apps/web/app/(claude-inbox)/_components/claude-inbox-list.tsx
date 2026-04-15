@@ -1,7 +1,7 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { usePathname } from "next/navigation";
-import type { ComponentType, SVGProps } from "react";
 import { useMemo, useState } from "react";
 
 import type {
@@ -25,9 +25,7 @@ interface ListColumnProps {
   readonly initialFilterId?: ClaudeInboxFilterId;
 }
 
-type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
-
-const FILTER_ICONS: Record<ClaudeInboxFilterId, IconComponent> = {
+const FILTER_ICONS: Record<ClaudeInboxFilterId, LucideIcon> = {
   all: InboxIcon,
   unread: MailIcon,
   "follow-up": CornerUpLeftIcon

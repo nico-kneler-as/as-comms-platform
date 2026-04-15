@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
 import { MailIcon, NoteIcon, PhoneIcon, SendIcon, SparkleIcon } from "./claude-icons";
 
 type ComposerMode = "email" | "sms" | "note";
@@ -11,13 +14,6 @@ interface ComposerProps {
   readonly smsEligible: boolean;
 }
 
-/**
- * Client island: owns only local draft state and the current compose mode.
- * It never holds canonical inbox state. In Phase 3 the Send / Draft actions
- * will invoke Server Actions that return the safe UiResult envelope and
- * revalidate tags like `inbox:contact:{contactId}` and
- * `timeline:contact:{contactId}`.
- */
 export function ClaudeInboxComposer({
   contactDisplayName,
   smsEligible
@@ -59,13 +55,10 @@ export function ClaudeInboxComposer({
             label="Internal note"
           />
         </div>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
-        >
+        <Button variant="outline" size="sm" className="gap-1.5">
           <SparkleIcon className="h-3.5 w-3.5 text-violet-600" />
           Draft with AI
-        </button>
+        </Button>
       </div>
 
       <div className={mode === "note" ? "bg-amber-50/50" : ""}>
@@ -87,8 +80,6 @@ export function ClaudeInboxComposer({
                 type="text"
                 value={subject}
                 onChange={(event) => {
-                  // tsconfig omits the DOM lib so the ambient element stub
-                  // exposes no `value` field; narrow through unknown.
                   const target = event.currentTarget as unknown as {
                     readonly value: string;
                   };
@@ -103,9 +94,6 @@ export function ClaudeInboxComposer({
         <textarea
           value={draft}
           onChange={(event) => {
-            // Project tsconfig omits the DOM lib, so the ambient
-            // HTMLTextAreaElement stub exposes no `value` field. We narrow
-            // through `unknown` rather than pulling in DOM types.
             const target = event.currentTarget as unknown as {
               readonly value: string;
             };
@@ -118,9 +106,10 @@ export function ClaudeInboxComposer({
       </div>
 
       <div
-        className={`flex items-center border-t border-slate-100 px-5 py-3 ${
+        className={cn(
+          "flex items-center border-t border-slate-100 px-5 py-3",
           mode === "note" ? "justify-between" : "justify-end"
-        }`}
+        )}
       >
         {mode === "note" ? (
           <p className="text-[11px] text-slate-500">
@@ -128,19 +117,13 @@ export function ClaudeInboxComposer({
           </p>
         ) : null}
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
-          >
+          <Button variant="ghost" size="sm">
             Save draft
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
-          >
+          </Button>
+          <Button size="sm" className="gap-1.5">
             <SendIcon className="h-3.5 w-3.5" />
             {mode === "note" ? "Save note" : "Send"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -170,13 +153,14 @@ function ModeTab({
       onClick={onClick}
       disabled={disabled}
       title={disabled ? disabledHint : undefined}
-      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 transition ${
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 transition",
         active
           ? "bg-white text-slate-900 shadow-sm"
           : disabled
             ? "text-slate-300"
             : "text-slate-500 hover:text-slate-900"
-      }`}
+      )}
     >
       {icon}
       {label}
