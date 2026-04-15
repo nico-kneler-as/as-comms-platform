@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { ClaudeInboxDetailViewModel } from "../_lib/view-models";
 import {
@@ -71,10 +71,10 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
               {contact.displayName}
             </h1>
             <div className="hidden h-5 w-px bg-slate-200 sm:block" />
-            <div className="hidden min-w-0 sm:block">
+            <div className="hidden min-w-0 flex-1 sm:block">
               {activeProject ? (
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="truncate font-medium text-slate-700">
+                <div className="flex min-w-0 items-center gap-2 text-xs">
+                  <span className="min-w-0 truncate font-medium text-slate-700">
                     {activeProject.projectName} {activeProject.year.toString()}
                   </span>
                   <ProjectStatusBadge status={activeProject.status} />
@@ -92,9 +92,9 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
               onClick={() => {
                 toggleFollowUp(contact.contactId);
               }}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm transition-colors duration-150 ${
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
                 isFollowUp
-                  ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                  ? "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100"
                   : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               }`}
             >
@@ -103,26 +103,37 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
             </button>
 
             <div className="relative">
-              <button
-                type="button"
-                aria-haspopup="dialog"
-                aria-expanded={reminderOpen}
-                onClick={() => {
-                  setReminderOpen((open) => !open);
-                }}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm transition-colors duration-150 ${
-                  existingReminder
-                    ? "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
-                    : reminderOpen
+              {existingReminder ? (
+                <button
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-expanded={reminderOpen}
+                  onClick={() => {
+                    setReminderOpen((open) => !open);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-xs font-medium text-sky-800 shadow-sm transition-colors duration-150 hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
+                >
+                  <ClockIcon className="h-3.5 w-3.5" />
+                  Reminder · {formatShortReminder(existingReminder)}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="Set a reminder"
+                  aria-haspopup="dialog"
+                  aria-expanded={reminderOpen}
+                  onClick={() => {
+                    setReminderOpen((open) => !open);
+                  }}
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
+                    reminderOpen
                       ? "border-slate-300 bg-slate-100 text-slate-900"
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <ClockIcon className="h-3.5 w-3.5" />
-                {existingReminder
-                  ? `Reminder · ${formatShortReminder(existingReminder)}`
-                  : "Set a Reminder"}
-              </button>
+                  }`}
+                >
+                  <ClockIcon className="h-4 w-4" />
+                </button>
+              )}
               {reminderOpen ? (
                 <ReminderPopover
                   existing={existingReminder}
@@ -139,34 +150,30 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
               ) : null}
             </div>
 
-            {railOpen ? (
-              <button
-                type="button"
-                aria-label="Collapse volunteer details"
-                aria-expanded={true}
-                aria-controls="claude-inbox-contact-rail"
-                onClick={() => {
-                  setRailOpen(false);
-                }}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 text-slate-900 shadow-sm transition-colors duration-150 hover:bg-slate-200"
-              >
+            <button
+              type="button"
+              aria-label={
+                railOpen
+                  ? "Collapse volunteer details"
+                  : "Expand volunteer details"
+              }
+              aria-expanded={railOpen}
+              aria-controls="claude-inbox-contact-rail"
+              onClick={() => {
+                setRailOpen((open) => !open);
+              }}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
+                railOpen
+                  ? "border-slate-300 bg-slate-100 text-slate-900 hover:bg-slate-200"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {railOpen ? (
                 <PanelRightCloseIcon className="h-4 w-4" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                aria-label="Expand volunteer details"
-                aria-expanded={false}
-                aria-controls="claude-inbox-contact-rail"
-                onClick={() => {
-                  setRailOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50"
-              >
-                <PanelRightOpenIcon className="h-3.5 w-3.5" />
-                Volunteer Details
-              </button>
-            )}
+              ) : (
+                <PanelRightOpenIcon className="h-4 w-4" />
+              )}
+            </button>
           </div>
         </header>
 
@@ -214,6 +221,34 @@ function ReminderPopover({
   const numeric = Number(value);
   const canSet = value.length > 0 && Number.isFinite(numeric) && numeric > 0;
   const preview = canSet ? previewForDelta(numeric, unit) : null;
+
+  // Keyboard dismissal: bind an Escape listener while the popover is mounted
+  // so keyboard users have parity with the click-outside backdrop. The
+  // project tsconfig omits the DOM lib, so we narrow `globalThis` through
+  // unknown to reach `addEventListener` the same way the composer narrows
+  // input events.
+  useEffect(() => {
+    type KeyListener = (event: { readonly key: string }) => void;
+    const target = globalThis as unknown as {
+      readonly addEventListener: (
+        type: "keydown",
+        listener: KeyListener
+      ) => void;
+      readonly removeEventListener: (
+        type: "keydown",
+        listener: KeyListener
+      ) => void;
+    };
+    const handleKeyDown: KeyListener = (event) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    target.addEventListener("keydown", handleKeyDown);
+    return () => {
+      target.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
 
   return (
     <>
@@ -314,7 +349,7 @@ function ReminderPopover({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100"
+                className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
               >
                 Cancel
               </button>
@@ -322,7 +357,7 @@ function ReminderPopover({
                 type="button"
                 disabled={!canSet}
                 onClick={onSet}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:bg-slate-300 motion-reduce:transition-none"
               >
                 Set reminder
               </button>

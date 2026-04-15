@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType, SVGProps } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   AdventureScientistsLogo,
@@ -60,14 +60,14 @@ export function ClaudeInboxIconRail() {
               type="button"
               aria-label={item.label}
               aria-current={item.active ? "page" : undefined}
-              className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors duration-150 ${
+              className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
                 item.active
                   ? "bg-slate-900 text-white"
                   : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
               <Icon className="h-5 w-5" />
-              <span className="pointer-events-none absolute left-12 z-30 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity duration-150 group-hover:opacity-100">
+              <span className="pointer-events-none absolute left-12 z-30 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow-sm transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
                 {item.label}
               </span>
             </button>
@@ -82,16 +82,43 @@ export function ClaudeInboxIconRail() {
 
 function OperatorMenu() {
   const [open, setOpen] = useState(false);
+  // The menu is absolutely positioned ~12px to the right of the 36px avatar
+  // button, so the cursor briefly traverses empty space on its way from the
+  // avatar to "Log out". A naive `onMouseLeave={close}` fires during that
+  // transit and the menu disappears before the user can click. Debouncing
+  // the close with a short timer lets the cursor cross the gap without
+  // flicker; any re-entry (avatar OR menu) clears the pending close.
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = () => {
+    if (closeTimerRef.current !== null) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => {
+      setOpen(false);
+      closeTimerRef.current = null;
+    }, 150);
+  };
+
+  useEffect(() => {
+    return () => {
+      cancelClose();
+    };
+  }, []);
 
   return (
     <div
       className="relative mt-2"
       onMouseEnter={() => {
+        cancelClose();
         setOpen(true);
       }}
-      onMouseLeave={() => {
-        setOpen(false);
-      }}
+      onMouseLeave={scheduleClose}
     >
       <button
         type="button"

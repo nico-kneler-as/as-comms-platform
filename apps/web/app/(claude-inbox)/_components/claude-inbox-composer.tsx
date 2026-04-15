@@ -61,7 +61,7 @@ export function ClaudeInboxComposer({
         </div>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
         >
           <SparkleIcon className="h-3.5 w-3.5 text-violet-600" />
           Draft with AI
@@ -117,22 +117,26 @@ export function ClaudeInboxComposer({
         />
       </div>
 
-      <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
-        <p className="text-[11px] text-slate-500">
-          {mode === "note"
-            ? "Internal notes are visible only to operators."
-            : ""}
-        </p>
+      <div
+        className={`flex items-center border-t border-slate-100 px-5 py-3 ${
+          mode === "note" ? "justify-between" : "justify-end"
+        }`}
+      >
+        {mode === "note" ? (
+          <p className="text-[11px] text-slate-500">
+            Internal notes are visible only to operators.
+          </p>
+        ) : null}
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+            className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
           >
             Save draft
           </button>
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none"
           >
             <SendIcon className="h-3.5 w-3.5" />
             {mode === "note" ? "Save note" : "Send"}

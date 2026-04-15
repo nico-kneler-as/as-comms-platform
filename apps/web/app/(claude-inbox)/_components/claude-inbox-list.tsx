@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import type { ComponentType, SVGProps } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import type {
   ClaudeInboxFilterId,
@@ -34,6 +34,16 @@ const FILTER_ICONS: Record<ClaudeInboxFilterId, IconComponent> = {
 };
 
 /**
+ * Internal active-filter state. The disclosure panel lets the operator pick
+ * one of the base filters OR one of the project buckets derived from the
+ * current `items` list. The two are mutually exclusive so there's only ever
+ * one active selection.
+ */
+type ActiveFilter =
+  | { readonly kind: "base"; readonly id: ClaudeInboxFilterId }
+  | { readonly kind: "project"; readonly label: string };
+
+/**
  * Client island: owns local view state for the Inbox column — active filter
  * selection and the inline filter-panel open/close. The underlying `items`
  * flow from the server-side selector; follow-up flags come from the shared
@@ -49,8 +59,10 @@ export function ClaudeInboxList({
   const activeContactId = extractContactId(pathname);
   const { followUp } = useClaudeInboxClient();
 
-  const [activeFilterId, setActiveFilterId] =
-    useState<ClaudeInboxFilterId>(initialFilterId);
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>({
+    kind: "base",
+    id: initialFilterId
+  });
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Follow-up is client state, so we recompute its count here instead of
@@ -62,12 +74,32 @@ export function ClaudeInboxList({
     filter.id === "follow-up" ? { ...filter, count: followUpCount } : filter
   );
 
+  // Derive the project buckets from the current items list. Each distinct
+  // `projectLabel` becomes a filter option; null labels are excluded.
+  const projectBuckets = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      if (item.projectLabel) {
+        counts.set(item.projectLabel, (counts.get(item.projectLabel) ?? 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [items]);
+
   const filteredItems = items.filter((item) =>
-    matchesFilter(item, activeFilterId, followUp)
+    matchesActiveFilter(item, activeFilter, followUp)
   );
-  const activeFilter =
-    filtersWithLiveCounts.find((filter) => filter.id === activeFilterId) ?? null;
-  const columnTitle = activeFilter?.label ?? "Inbox";
+
+  const columnTitle =
+    activeFilter.kind === "base"
+      ? (filtersWithLiveCounts.find((filter) => filter.id === activeFilter.id)
+          ?.label ?? "Inbox")
+      : activeFilter.label;
+
+  const isFilterActive =
+    activeFilter.kind === "project" || activeFilter.id !== "all";
 
   return (
     <section className="relative flex w-[22rem] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white">
@@ -84,14 +116,14 @@ export function ClaudeInboxList({
             onClick={() => {
               setFiltersOpen((open) => !open);
             }}
-            className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors duration-150 ${
+            className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
               filtersOpen
                 ? "border-slate-300 bg-slate-100 text-slate-900"
                 : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
             <FilterIcon className="h-4 w-4" />
-            {activeFilterId !== "all" ? (
+            {isFilterActive ? (
               <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[10px] font-semibold text-white tabular-nums ring-2 ring-white">
                 1
               </span>
@@ -112,36 +144,39 @@ export function ClaudeInboxList({
 
         {/*
           Inline disclosure panel: rendered as a sibling below the search row
-          but still inside the sticky header, so it sits between the top div
-          and the scrollable list rows. We animate `grid-template-rows` from
-          0fr → 1fr, a shadcn/Radix-style collapse trick that works with pure
-          Tailwind and keeps the panel's intrinsic height.
+          but still inside the sticky header. We animate `grid-template-rows`
+          from 0fr → 1fr, a shadcn/Radix-style collapse trick that works with
+          pure Tailwind and keeps the panel's intrinsic height. The panel
+          holds the base filters on top and a PROJECTS section underneath,
+          derived from the active project labels in the current list.
         */}
         <div
           id="claude-inbox-filters-panel"
           aria-hidden={!filtersOpen}
-          className={`grid overflow-hidden border-slate-200 transition-all duration-200 ease-out ${
+          className={`grid overflow-hidden border-slate-200 transition-all duration-200 ease-out motion-reduce:transition-none ${
             filtersOpen
               ? "grid-rows-[1fr] border-t opacity-100"
               : "grid-rows-[0fr] border-t-0 opacity-0"
           }`}
         >
           <div className="min-h-0">
-            <div className="px-5 py-4">
+            <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
               <ul className="space-y-0.5">
                 {filtersWithLiveCounts.map((filter) => {
                   const Icon = FILTER_ICONS[filter.id];
-                  const isActive = filter.id === activeFilterId;
+                  const isActive =
+                    activeFilter.kind === "base" &&
+                    activeFilter.id === filter.id;
                   return (
                     <li key={filter.id}>
                       <button
                         type="button"
                         aria-pressed={isActive}
                         onClick={() => {
-                          setActiveFilterId(filter.id);
+                          setActiveFilter({ kind: "base", id: filter.id });
                           setFiltersOpen(false);
                         }}
-                        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
+                        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
                           isActive
                             ? "bg-slate-900 font-semibold text-white"
                             : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -151,7 +186,7 @@ export function ClaudeInboxList({
                         <span className="flex-1 truncate">{filter.label}</span>
                         <span
                           className={`text-xs tabular-nums ${
-                            isActive ? "text-white" : "text-slate-400"
+                            isActive ? "text-white" : "text-slate-500"
                           }`}
                         >
                           {filter.count}
@@ -161,6 +196,56 @@ export function ClaudeInboxList({
                   );
                 })}
               </ul>
+
+              {projectBuckets.length > 0 ? (
+                <>
+                  <div
+                    role="separator"
+                    className="my-3 border-t border-slate-100"
+                  />
+                  <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Projects
+                  </p>
+                  <ul className="space-y-0.5">
+                    {projectBuckets.map((bucket) => {
+                      const isActive =
+                        activeFilter.kind === "project" &&
+                        activeFilter.label === bucket.label;
+                      return (
+                        <li key={bucket.label}>
+                          <button
+                            type="button"
+                            aria-pressed={isActive}
+                            onClick={() => {
+                              setActiveFilter({
+                                kind: "project",
+                                label: bucket.label
+                              });
+                              setFiltersOpen(false);
+                            }}
+                            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
+                              isActive
+                                ? "bg-slate-900 font-semibold text-white"
+                                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                            }`}
+                          >
+                            <span className="flex-1 truncate">
+                              {bucket.label}
+                            </span>
+                            <span
+                              className={`text-xs tabular-nums ${
+                                isActive ? "text-white" : "text-slate-500"
+                              }`}
+                            >
+                              {bucket.count}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
@@ -196,12 +281,15 @@ function extractContactId(pathname: string | null): string | null {
   return match ? (match[1] ?? null) : null;
 }
 
-function matchesFilter(
+function matchesActiveFilter(
   item: ClaudeInboxListItemViewModel,
-  filterId: ClaudeInboxFilterId,
+  activeFilter: ActiveFilter,
   followUp: ReadonlySet<string>
 ): boolean {
-  switch (filterId) {
+  if (activeFilter.kind === "project") {
+    return item.projectLabel === activeFilter.label;
+  }
+  switch (activeFilter.id) {
     case "all":
       return true;
     case "unread":

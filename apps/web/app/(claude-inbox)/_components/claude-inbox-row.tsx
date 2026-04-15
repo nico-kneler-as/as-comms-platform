@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { ClaudeInboxListItemViewModel } from "../_lib/view-models";
 import { ClaudeInboxAvatar } from "./claude-inbox-avatar";
 import { useClaudeInboxClient } from "./claude-inbox-client-provider";
-import { CornerUpLeftIcon, MailIcon, PhoneIcon } from "./claude-icons";
+import { MailIcon, PhoneIcon } from "./claude-icons";
 
 interface RowProps {
   readonly item: ClaudeInboxListItemViewModel;
@@ -15,9 +15,10 @@ interface RowProps {
 /**
  * List row for a contact. Stripped of starred / unresolved / stage badges
  * — those are no longer part of the inbox surface. The left accent bar is
- * sky when the row is unread and amber when the operator has flagged the
- * contact for follow-up; the follow-up case also surfaces a reply arrow
- * next to the channel icon so the state reads at a glance during a scan.
+ * sky when the row is unread and rose when the operator has flagged the
+ * contact for follow-up. The channel icon (mail/phone) is always preserved
+ * in the leading slot so operators keep their at-a-glance channel cue even
+ * on the rows most likely to need triaging.
  */
 export function ClaudeInboxRow({ item, isActive }: RowProps) {
   const { followUp } = useClaudeInboxClient();
@@ -26,7 +27,7 @@ export function ClaudeInboxRow({ item, isActive }: RowProps) {
   const ChannelIcon = item.latestChannel === "email" ? MailIcon : PhoneIcon;
 
   const accentClass = isFollowUp
-    ? "bg-amber-500"
+    ? "bg-rose-500"
     : isUnread
       ? "bg-sky-500"
       : null;
@@ -36,7 +37,7 @@ export function ClaudeInboxRow({ item, isActive }: RowProps) {
       <Link
         href={`/inbox/${item.contactId}`}
         aria-current={isActive ? "page" : undefined}
-        className={`relative flex gap-3 border-b border-slate-100 px-5 py-3.5 transition-colors duration-150 ${
+        className={`relative flex gap-3 border-b border-slate-100 px-5 py-3.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
           isActive
             ? "bg-sky-50/60 ring-1 ring-inset ring-sky-200"
             : "hover:bg-slate-50/80"
@@ -66,7 +67,7 @@ export function ClaudeInboxRow({ item, isActive }: RowProps) {
             </p>
             <span
               className={`shrink-0 text-[11px] tabular-nums ${
-                isUnread ? "font-semibold text-sky-700" : "text-slate-400"
+                isUnread ? "font-semibold text-sky-700" : "text-slate-500"
               }`}
             >
               {item.lastActivityLabel}
@@ -74,18 +75,14 @@ export function ClaudeInboxRow({ item, isActive }: RowProps) {
           </div>
 
           <div className="mt-0.5 flex items-center gap-1.5">
-            {isFollowUp ? (
-              <CornerUpLeftIcon
-                className="h-3 w-3 shrink-0 text-amber-600"
-                aria-label="Needs follow up"
-              />
-            ) : (
-              <ChannelIcon
-                className={`h-3 w-3 shrink-0 ${
-                  isUnread ? "text-sky-600" : "text-slate-400"
-                }`}
-              />
-            )}
+            <ChannelIcon
+              className={`h-3 w-3 shrink-0 ${
+                isUnread ? "text-sky-600" : "text-slate-400"
+              }`}
+              aria-label={
+                item.latestChannel === "email" ? "Email" : "SMS"
+              }
+            />
             <p
               className={`truncate text-[13px] ${
                 isUnread ? "font-medium text-slate-800" : "text-slate-600"
