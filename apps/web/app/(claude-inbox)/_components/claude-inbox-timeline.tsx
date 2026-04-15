@@ -67,19 +67,41 @@ export function ClaudeInboxTimeline({
   };
 
   return (
-    <ol className="flex flex-col gap-3">
-      {entries.map((entry) => (
-        <ClaudeTimelineEntry
-          key={entry.id}
-          entry={entry}
-          volunteerFirstName={volunteerFirstName}
-          isExpanded={expanded.has(entry.id)}
-          onToggle={() => {
-            toggle(entry.id);
-          }}
-        />
-      ))}
+    <ol className="flex flex-col gap-1">
+      {entries.map((entry, index) => {
+        const prev = index > 0 ? entries[index - 1] : null;
+        const showAttribution = !prev || !isSameRun(prev, entry);
+
+        return (
+          <ClaudeTimelineEntry
+            key={entry.id}
+            entry={entry}
+            volunteerFirstName={volunteerFirstName}
+            isExpanded={expanded.has(entry.id)}
+            showAttribution={showAttribution}
+            onToggle={() => {
+              toggle(entry.id);
+            }}
+          />
+        );
+      })}
     </ol>
+  );
+}
+
+/**
+ * Two entries belong to the same "run" when they share the same actor,
+ * channel, and directional role — so consecutive messages from the same
+ * sender collapse their attribution line.
+ */
+function isSameRun(
+  a: ClaudeTimelineEntryViewModel,
+  b: ClaudeTimelineEntryViewModel
+): boolean {
+  return (
+    roleForKind(a.kind) === roleForKind(b.kind) &&
+    a.actorLabel === b.actorLabel &&
+    a.channel === b.channel
   );
 }
 
@@ -87,6 +109,7 @@ interface EntryProps {
   readonly entry: ClaudeTimelineEntryViewModel;
   readonly volunteerFirstName: string;
   readonly isExpanded: boolean;
+  readonly showAttribution: boolean;
   readonly onToggle: () => void;
 }
 
@@ -94,6 +117,7 @@ function ClaudeTimelineEntry({
   entry,
   volunteerFirstName,
   isExpanded,
+  showAttribution,
   onToggle
 }: EntryProps) {
   const role = roleForKind(entry.kind);
@@ -101,7 +125,13 @@ function ClaudeTimelineEntry({
   switch (role) {
     case "inbound":
     case "outbound":
-      return <ConversationBubble entry={entry} role={role} />;
+      return (
+        <ConversationBubble
+          entry={entry}
+          role={role}
+          showAttribution={showAttribution}
+        />
+      );
     case "automated":
     case "campaign":
       return (
@@ -109,11 +139,12 @@ function ClaudeTimelineEntry({
           entry={entry}
           role={role}
           isExpanded={isExpanded}
+          showAttribution={showAttribution}
           onToggle={onToggle}
         />
       );
     case "note":
-      return <InternalNoteCard entry={entry} />;
+      return <InternalNoteCard entry={entry} showAttribution={showAttribution} />;
     case "system":
       return (
         <SystemMarker entry={entry} volunteerFirstName={volunteerFirstName} />
@@ -126,17 +157,18 @@ function ClaudeTimelineEntry({
 interface ConversationBubbleProps {
   readonly entry: ClaudeTimelineEntryViewModel;
   readonly role: "inbound" | "outbound";
+  readonly showAttribution: boolean;
 }
 
-function ConversationBubble({ entry, role }: ConversationBubbleProps) {
+function ConversationBubble({
+  entry,
+  role,
+  showAttribution
+}: ConversationBubbleProps) {
   const isOutbound = role === "outbound";
   const isEmail = entry.channel === "email";
   const ChannelIcon = isEmail ? MailIcon : PhoneIcon;
 
-  // Both sides keep a mostly white background so the left/right alignment
-  // is the primary direction cue. Outbound bubbles pick up a subtle sky
-  // tint; inbound stays white so a quick scan still separates the two
-  // sides.
   const alignment = isOutbound ? "items-end" : "items-start";
   const bubble = isOutbound
     ? "bg-sky-50 border-sky-200"
@@ -145,35 +177,41 @@ function ConversationBubble({ entry, role }: ConversationBubbleProps) {
       : "bg-white border-slate-200";
 
   return (
-    <li className={`flex w-full flex-col ${alignment}`}>
-      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-slate-500">
-        <ChannelIcon className="h-3 w-3" />
-        <span>{isEmail ? "Email" : "SMS"}</span>
-        <span className="text-slate-300">·</span>
-        <span className="font-medium">{entry.actorLabel}</span>
-      </div>
+    <li
+      className={`flex w-full flex-col ${alignment} ${showAttribution ? "mt-2" : ""}`}
+    >
+      {showAttribution ? (
+        <div className="mb-1 flex items-center gap-1.5 text-[11px] text-slate-500">
+          <ChannelIcon className="h-3 w-3" />
+          <span>{isEmail ? "Email" : "SMS"}</span>
+          <span className="text-slate-300">·</span>
+          <span className="font-medium">{entry.actorLabel}</span>
+        </div>
+      ) : null}
       <div
-        className={`max-w-[85%] rounded-2xl border px-4 py-3 shadow-sm ${bubble} ${
+        className={`max-w-[72%] rounded-2xl border px-4 py-2.5 shadow-sm ${bubble} ${
           isOutbound ? "rounded-br-md" : "rounded-bl-md"
         }`}
       >
         {isEmail && entry.subject ? (
-          <p className="mb-1 text-[13px] font-semibold leading-snug text-slate-900">
+          <p className="mb-0.5 text-[13px] font-semibold leading-snug text-slate-900">
             {entry.subject}
           </p>
         ) : null}
-        <p className="whitespace-pre-wrap text-[13px] leading-6 text-slate-700">
+        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700">
           {entry.body}
         </p>
-      </div>
-      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
-        <span>{entry.occurredAtLabel}</span>
-        {entry.isUnread && !isOutbound ? (
-          <span
-            className="inline-flex h-1.5 w-1.5 rounded-full bg-sky-500"
-            aria-label="Unread"
-          />
-        ) : null}
+        <div className="mt-1 flex items-center justify-end gap-1.5">
+          <span className="text-[10px] text-slate-400">
+            {entry.occurredAtLabel}
+          </span>
+          {entry.isUnread && !isOutbound ? (
+            <span
+              className="inline-flex h-1.5 w-1.5 rounded-full bg-sky-500"
+              aria-label="Unread"
+            />
+          ) : null}
+        </div>
       </div>
     </li>
   );
@@ -185,6 +223,7 @@ interface CollapsibleOutboundBubbleProps {
   readonly entry: ClaudeTimelineEntryViewModel;
   readonly role: "automated" | "campaign";
   readonly isExpanded: boolean;
+  readonly showAttribution: boolean;
   readonly onToggle: () => void;
 }
 
@@ -200,6 +239,7 @@ function CollapsibleOutboundBubble({
   entry,
   role,
   isExpanded,
+  showAttribution,
   onToggle
 }: CollapsibleOutboundBubbleProps) {
   const isEmail = entry.channel === "email";
@@ -211,25 +251,23 @@ function CollapsibleOutboundBubble({
         ? "Campaign email"
         : "Campaign SMS";
 
-  // `subject` holds either the email subject or the campaign title, per
-  // fixture contract. For the rare case where a fixture omits it, fall
-  // back to a neutral placeholder so the bubble still has something to
-  // click on — we never want to leak the body into the collapsed state.
   const headline = entry.subject ?? "(no subject)";
 
   return (
-    <li className="flex w-full flex-col items-end">
-      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-slate-500">
-        <ChannelIcon className="h-3 w-3" />
-        <span>{captionLabel}</span>
-        <span className="text-slate-300">·</span>
-        <span className="font-medium">{entry.actorLabel}</span>
-      </div>
+    <li className={`flex w-full flex-col items-end ${showAttribution ? "mt-2" : ""}`}>
+      {showAttribution ? (
+        <div className="mb-1 flex items-center gap-1.5 text-[11px] text-slate-500">
+          <ChannelIcon className="h-3 w-3" />
+          <span>{captionLabel}</span>
+          <span className="text-slate-300">·</span>
+          <span className="font-medium">{entry.actorLabel}</span>
+        </div>
+      ) : null}
       <button
         type="button"
         aria-expanded={isExpanded}
         onClick={onToggle}
-        className="group max-w-[85%] rounded-2xl rounded-br-md border border-sky-200 bg-sky-50 px-4 py-3 text-left shadow-sm transition-colors duration-150 hover:bg-sky-100/70"
+        className="group max-w-[72%] rounded-2xl rounded-br-md border border-sky-200 bg-sky-50 px-4 py-2.5 text-left shadow-sm transition-colors duration-150 hover:bg-sky-100/70"
       >
         <div className="flex items-start gap-2">
           <p className="flex-1 text-[13px] font-semibold leading-snug text-slate-900">
@@ -242,14 +280,16 @@ function CollapsibleOutboundBubble({
           />
         </div>
         {isExpanded ? (
-          <p className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-slate-700">
+          <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700">
             {entry.body}
           </p>
         ) : null}
+        <div className="mt-1 flex justify-end">
+          <span className="text-[10px] text-slate-400">
+            {entry.occurredAtLabel}
+          </span>
+        </div>
       </button>
-      <div className="mt-1 text-[11px] text-slate-500">
-        {entry.occurredAtLabel}
-      </div>
     </li>
   );
 }
@@ -257,25 +297,31 @@ function CollapsibleOutboundBubble({
 // ---------- Internal note ----------
 
 function InternalNoteCard({
-  entry
+  entry,
+  showAttribution
 }: {
   readonly entry: ClaudeTimelineEntryViewModel;
+  readonly showAttribution: boolean;
 }) {
   return (
-    <li className="flex w-full flex-col items-end">
-      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-amber-700">
-        <NoteIcon className="h-3 w-3" />
-        <span>Internal note</span>
-        <span className="text-amber-300">·</span>
-        <span className="font-medium">{entry.actorLabel}</span>
-      </div>
-      <div className="max-w-[85%] rounded-2xl rounded-br-md border border-amber-200 bg-amber-50/70 px-4 py-3 shadow-sm">
-        <p className="whitespace-pre-wrap text-[13px] leading-6 text-amber-900">
+    <li className={`flex w-full flex-col items-end ${showAttribution ? "mt-2" : ""}`}>
+      {showAttribution ? (
+        <div className="mb-1 flex items-center gap-1.5 text-[11px] text-amber-700">
+          <NoteIcon className="h-3 w-3" />
+          <span>Internal note</span>
+          <span className="text-amber-300">·</span>
+          <span className="font-medium">{entry.actorLabel}</span>
+        </div>
+      ) : null}
+      <div className="max-w-[72%] rounded-2xl rounded-br-md border border-amber-200 bg-amber-50/70 px-4 py-2.5 shadow-sm">
+        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-amber-900">
           {entry.body}
         </p>
-      </div>
-      <div className="mt-1 text-[11px] text-amber-700">
-        {entry.occurredAtLabel}
+        <div className="mt-1 flex justify-end">
+          <span className="text-[10px] text-amber-500">
+            {entry.occurredAtLabel}
+          </span>
+        </div>
       </div>
     </li>
   );

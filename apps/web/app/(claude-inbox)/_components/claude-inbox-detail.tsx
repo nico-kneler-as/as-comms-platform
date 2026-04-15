@@ -177,7 +177,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto bg-slate-50/40 px-6 py-6">
+        <div className="flex-1 overflow-y-auto bg-slate-50/40 px-6 py-4">
           <ClaudeInboxTimeline
             entries={timeline}
             volunteerFirstName={firstName}
