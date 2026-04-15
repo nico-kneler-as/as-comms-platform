@@ -9,6 +9,8 @@ import type {
   ClaudeInboxFilterViewModel,
   ClaudeInboxListItemViewModel
 } from "../_lib/view-models";
+import { Separator } from "@/components/ui/separator";
+
 import { useClaudeInboxClient } from "./claude-inbox-client-provider";
 import {
   CornerUpLeftIcon,
@@ -197,10 +199,7 @@ export function ClaudeInboxList({
 
               {projectBuckets.length > 0 ? (
                 <>
-                  <div
-                    role="separator"
-                    className="my-3 border-t border-slate-100"
-                  />
+                  <Separator className="my-3 bg-slate-100" />
                   <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                     Projects
                   </p>

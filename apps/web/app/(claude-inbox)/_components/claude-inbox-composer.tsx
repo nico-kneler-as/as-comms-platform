@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
 import { MailIcon, NoteIcon, PhoneIcon, SendIcon, SparkleIcon } from "./claude-icons";
@@ -27,34 +28,39 @@ export function ClaudeInboxComposer({
   return (
     <div className="border-t border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-2.5">
-        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5 text-xs font-medium">
-          <ModeTab
-            active={mode === "email"}
-            onClick={() => {
-              setMode("email");
-            }}
-            icon={<MailIcon className="h-3.5 w-3.5" />}
-            label="Email"
-          />
-          <ModeTab
-            active={mode === "sms"}
-            onClick={() => {
-              setMode("sms");
-            }}
-            icon={<PhoneIcon className="h-3.5 w-3.5" />}
-            label="SMS"
+        <ToggleGroup
+          type="single"
+          value={mode}
+          onValueChange={(value) => {
+            if (value) setMode(value as ComposerMode);
+          }}
+          size="sm"
+          className="gap-1 rounded-lg bg-slate-100 p-0.5"
+        >
+          <ToggleGroupItem
+            value="email"
+            className="gap-1.5 rounded-md px-2.5 text-xs data-[state=on]:bg-white data-[state=on]:text-slate-900 data-[state=on]:shadow-sm [&_svg]:size-3.5"
+          >
+            <MailIcon className="h-3.5 w-3.5" />
+            Email
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="sms"
             disabled={!smsEligible}
-            {...(smsEligible ? {} : { disabledHint: "No verified phone" })}
-          />
-          <ModeTab
-            active={mode === "note"}
-            onClick={() => {
-              setMode("note");
-            }}
-            icon={<NoteIcon className="h-3.5 w-3.5" />}
-            label="Internal note"
-          />
-        </div>
+            title={smsEligible ? undefined : "No verified phone"}
+            className="gap-1.5 rounded-md px-2.5 text-xs data-[state=on]:bg-white data-[state=on]:text-slate-900 data-[state=on]:shadow-sm [&_svg]:size-3.5"
+          >
+            <PhoneIcon className="h-3.5 w-3.5" />
+            SMS
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            value="note"
+            className="gap-1.5 rounded-md px-2.5 text-xs data-[state=on]:bg-white data-[state=on]:text-slate-900 data-[state=on]:shadow-sm [&_svg]:size-3.5"
+          >
+            <NoteIcon className="h-3.5 w-3.5" />
+            Internal note
+          </ToggleGroupItem>
+        </ToggleGroup>
         <Button variant="outline" size="sm" className="gap-1.5">
           <SparkleIcon className="h-3.5 w-3.5 text-violet-600" />
           Draft with AI
@@ -127,44 +133,6 @@ export function ClaudeInboxComposer({
         </div>
       </div>
     </div>
-  );
-}
-
-interface ModeTabProps {
-  readonly active: boolean;
-  readonly onClick: () => void;
-  readonly icon: React.ReactNode;
-  readonly label: string;
-  readonly disabled?: boolean;
-  readonly disabledHint?: string;
-}
-
-function ModeTab({
-  active,
-  onClick,
-  icon,
-  label,
-  disabled,
-  disabledHint
-}: ModeTabProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={disabled ? disabledHint : undefined}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 transition",
-        active
-          ? "bg-white text-slate-900 shadow-sm"
-          : disabled
-            ? "text-slate-300"
-            : "text-slate-500 hover:text-slate-900"
-      )}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
 

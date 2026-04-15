@@ -1,8 +1,15 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -91,84 +98,39 @@ export function ClaudeInboxIconRail() {
 }
 
 function OperatorMenu() {
-  const [open, setOpen] = useState(false);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const cancelClose = () => {
-    if (closeTimerRef.current !== null) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-  };
-
-  const scheduleClose = () => {
-    cancelClose();
-    closeTimerRef.current = setTimeout(() => {
-      setOpen(false);
-      closeTimerRef.current = null;
-    }, 150);
-  };
-
-  useEffect(() => {
-    return () => {
-      cancelClose();
-    };
-  }, []);
-
   return (
-    <div
-      className="relative mt-2"
-      onMouseEnter={() => {
-        cancelClose();
-        setOpen(true);
-      }}
-      onMouseLeave={scheduleClose}
-    >
-      <button
-        type="button"
-        aria-label={`${OPERATOR.displayName} · account menu`}
-        aria-expanded={open}
-        onFocus={() => {
-          setOpen(true);
-        }}
-        onBlur={() => {
-          setOpen(false);
-        }}
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-slate-800"
-      >
-        {OPERATOR.initials}
-      </button>
-
-      <div
-        role="menu"
-        aria-label="Account"
-        className={`absolute bottom-0 left-12 z-30 w-56 origin-bottom-left overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg ring-1 ring-black/5 transition duration-150 ease-out ${
-          open
-            ? "translate-y-0 opacity-100"
-            : "pointer-events-none -translate-y-1 opacity-0"
-        }`}
-      >
-        <div className="flex items-center gap-3 border-b border-slate-100 px-3 py-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
-            {OPERATOR.initials}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-slate-900">
-              {OPERATOR.displayName}
-            </p>
-            <p className="truncate text-[11px] text-slate-500">
-              {OPERATOR.email}
-            </p>
-          </div>
-        </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-50 hover:text-slate-900"
+          aria-label={`${OPERATOR.displayName} · account menu`}
+          className="mt-2 flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
         >
+          {OPERATOR.initials}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="right" align="end" className="w-56">
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
+              {OPERATOR.initials}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">
+                {OPERATOR.displayName}
+              </p>
+              <p className="truncate text-[11px] text-slate-500">
+                {OPERATOR.email}
+              </p>
+            </div>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="gap-2 text-xs font-medium">
           <LogOutIcon className="h-3.5 w-3.5" />
           Log out
-        </button>
-      </div>
-    </div>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
