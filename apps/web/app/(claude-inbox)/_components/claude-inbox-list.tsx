@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import type { ComponentType, SVGProps } from "react";
 import { useState } from "react";
 
 import type {
@@ -8,8 +9,14 @@ import type {
   ClaudeInboxFilterViewModel,
   ClaudeInboxListItemViewModel
 } from "../_lib/view-models";
-import { FilterIcon, SearchIcon } from "./claude-icons";
-import { ClaudeInboxFiltersPopover } from "./claude-inbox-filters-popover";
+import {
+  AlertIcon,
+  FilterIcon,
+  InboxIcon,
+  SearchIcon,
+  StarIcon,
+  UsersIcon
+} from "./claude-icons";
 import { ClaudeInboxRow } from "./claude-inbox-row";
 
 interface ListColumnProps {
@@ -19,11 +26,38 @@ interface ListColumnProps {
   readonly subtitle: string;
 }
 
+type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
+
+const FILTER_ICONS: Record<ClaudeInboxFilterId, IconComponent> = {
+  new: InboxIcon,
+  opened: InboxIcon,
+  starred: StarIcon,
+  unresolved: AlertIcon,
+  all: UsersIcon
+};
+
+interface ProjectOption {
+  readonly id: string;
+  readonly name: string;
+  readonly count: number;
+}
+
+const PROJECTS: readonly ProjectOption[] = [
+  { id: "wolverine", name: "Wolverine Watch 2025", count: 2 },
+  { id: "pika", name: "Alpine Pika Survey", count: 1 },
+  { id: "kelp", name: "Coastal Kelp Monitoring", count: 1 },
+  { id: "otter", name: "River Otter Distribution", count: 1 }
+];
+
 /**
  * Client island: owns local view state for the Inbox column — active filter
- * selection and filter-popover open/close. The underlying `items` and filter
- * counts originate server-side from the canonical projection selectors, so
- * no canonical state lives on the client.
+ * selection and the inline filter-panel open/close. The underlying `items`
+ * and filter counts originate server-side from the canonical projection
+ * selectors, so no canonical state lives on the client.
+ *
+ * The filters disclosure renders between the sticky search header and the
+ * scrollable row list (not as a floating popover), so it pushes the rows
+ * down rather than overlaying them.
  */
 export function ClaudeInboxList({
   items,
@@ -73,42 +107,103 @@ export function ClaudeInboxList({
             />
           </label>
 
-          <div className="relative">
-            <button
-              type="button"
-              aria-haspopup="dialog"
-              aria-expanded={filtersOpen}
-              onClick={() => {
-                setFiltersOpen((open) => !open);
-              }}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm transition ${
-                filtersOpen
-                  ? "border-slate-300 bg-slate-100 text-slate-900"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <FilterIcon className="h-3.5 w-3.5" />
-              Filters
-              {activeFilterId !== "all" && activeFilter ? (
-                <span className="inline-flex items-center rounded-full bg-slate-900 px-1.5 py-px text-[10px] font-semibold text-white">
-                  {activeFilter.label}
-                </span>
-              ) : null}
-            </button>
-
-            {filtersOpen ? (
-              <ClaudeInboxFiltersPopover
-                filters={filters}
-                activeFilterId={activeFilterId}
-                onSelect={(id) => {
-                  setActiveFilterId(id);
-                  setFiltersOpen(false);
-                }}
-                onClose={() => {
-                  setFiltersOpen(false);
-                }}
-              />
+          <button
+            type="button"
+            aria-expanded={filtersOpen}
+            aria-controls="claude-inbox-filters-panel"
+            onClick={() => {
+              setFiltersOpen((open) => !open);
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm transition ${
+              filtersOpen
+                ? "border-slate-300 bg-slate-100 text-slate-900"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <FilterIcon className="h-3.5 w-3.5" />
+            Filters
+            {activeFilterId !== "all" && activeFilter ? (
+              <span className="inline-flex items-center rounded-full bg-slate-900 px-1.5 py-px text-[10px] font-semibold text-white">
+                {activeFilter.label}
+              </span>
             ) : null}
+          </button>
+        </div>
+
+        {/*
+          Inline disclosure panel: rendered as a sibling below the search row
+          but still inside the sticky header, so it sits between the top div
+          and the scrollable list rows. We animate `grid-template-rows` from
+          0fr → 1fr, a shadcn/Radix-style collapse trick that works with pure
+          Tailwind and keeps the panel's intrinsic height.
+        */}
+        <div
+          id="claude-inbox-filters-panel"
+          aria-hidden={!filtersOpen}
+          className={`grid overflow-hidden border-slate-200 transition-all duration-200 ease-out ${
+            filtersOpen
+              ? "grid-rows-[1fr] border-t opacity-100"
+              : "grid-rows-[0fr] border-t-0 opacity-0"
+          }`}
+        >
+          <div className="min-h-0">
+            <div className="px-5 py-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Inbox
+              </p>
+              <ul className="mt-2 space-y-0.5">
+                {filters.map((filter) => {
+                  const Icon = FILTER_ICONS[filter.id];
+                  const isActive = filter.id === activeFilterId;
+                  return (
+                    <li key={filter.id}>
+                      <button
+                        type="button"
+                        aria-pressed={isActive}
+                        onClick={() => {
+                          setActiveFilterId(filter.id);
+                          setFiltersOpen(false);
+                        }}
+                        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition ${
+                          isActive
+                            ? "bg-slate-900 font-semibold text-white"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                        }`}
+                      >
+                        <Icon className="h-4 w-4 shrink-0" />
+                        <span className="flex-1 truncate">{filter.label}</span>
+                        <span
+                          className={`text-xs tabular-nums ${
+                            isActive ? "text-white" : "text-slate-400"
+                          }`}
+                        >
+                          {filter.count}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <p className="mt-4 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Projects
+              </p>
+              <ul className="mt-2 space-y-0.5">
+                {PROJECTS.map((project) => (
+                  <li key={project.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                    >
+                      <span className="truncate">{project.name}</span>
+                      <span className="text-xs text-slate-400 tabular-nums">
+                        {project.count}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </div>

@@ -116,6 +116,14 @@ export function ArrowLeftIcon(props: IconProps) {
   return <Base {...props} path="M19 12H5M12 5l-7 7 7 7" />;
 }
 
+export function ChevronLeftIcon(props: IconProps) {
+  return <Base {...props} path="M15 6l-6 6 6 6" />;
+}
+
+export function ChevronRightIcon(props: IconProps) {
+  return <Base {...props} path="M9 6l6 6-6 6" />;
+}
+
 export function MapPinIcon(props: IconProps) {
   return (
     <Base

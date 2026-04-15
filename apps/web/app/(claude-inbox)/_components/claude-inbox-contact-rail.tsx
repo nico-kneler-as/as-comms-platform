@@ -16,7 +16,8 @@ interface RailProps {
 export function ClaudeInboxContactRail({ contact }: RailProps) {
   return (
     <aside
-      className="hidden w-80 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-slate-50/40 xl:flex"
+      id="claude-inbox-contact-rail"
+      className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-slate-50/40"
       aria-label="Contact context"
     >
       <div className="flex flex-col items-center gap-3 border-b border-slate-200 bg-white px-6 py-6 text-center">
