@@ -28,7 +28,7 @@ export default function ClaudeInboxLayout({
     <ClaudeInboxShell
       filters={list.filters}
       items={list.items}
-      initialFilterId="new"
+      initialFilterId="all"
     >
       {children}
     </ClaudeInboxShell>

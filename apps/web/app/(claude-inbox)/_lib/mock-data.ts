@@ -6,6 +6,11 @@
  * receives the raw fixture map — the client only sees the minimized view
  * models returned by the selectors.
  *
+ * Active projects match the canonical product list (Beech and Butternut,
+ * PNW Biodiversity, Monitoring Coral Reefs, Tracking Whitebark Pine,
+ * Searching for Killer Whales). Past projects are deliberately fake — the
+ * prototype only needs them to look plausible next to each volunteer.
+ *
  * Phase 2 will swap these factories for real repository reads against the
  * canonical inbox/timeline projections without changing view-model shapes.
  */
@@ -91,29 +96,34 @@ const CONTACTS: readonly MockContactRecord[] = [
     cityState: "Boulder, CO",
     joinedAtLabel: "Joined Mar 2024",
     activeProjects: [
-      membership("wolverine-watch", "Wolverine Watch", 2025, "in-training")
+      membership(
+        "whitebark-pine",
+        "Tracking Whitebark Pine",
+        2026,
+        "in-training"
+      )
     ],
     pastProjects: [
-      membership("alpine-pika", "Alpine Pika Survey", 2024, "successful"),
-      membership("raptor-migration", "Raptor Migration", 2023, "successful")
+      membership("alpine-wildflower", "Alpine Wildflower Phenology", 2024, "successful"),
+      membership("front-range-owl", "Front Range Owl Survey", 2023, "successful")
     ],
     milestones: [
       {
         id: "ms_maya_1",
         kind: "signed-up",
-        projectName: "Wolverine Watch",
+        projectName: "Tracking Whitebark Pine",
         daysAgo: 18
       },
       {
         id: "ms_maya_2",
         kind: "training-received",
-        projectName: "Wolverine Watch",
+        projectName: "Tracking Whitebark Pine",
         daysAgo: 6
       },
       {
         id: "ms_maya_3",
         kind: "first-record-submitted",
-        projectName: "Alpine Pika Survey",
+        projectName: "Alpine Wildflower Phenology",
         daysAgo: 210
       }
     ],
@@ -121,45 +131,45 @@ const CONTACTS: readonly MockContactRecord[] = [
     isStarred: true,
     hasUnresolved: false,
     unreadCount: 2,
-    latestSubject: "Re: Wolverine Watch — training confirmation",
+    latestSubject: "Re: Whitebark Pine — training confirmation",
     snippet:
       "Hi team — just confirming I can make the April 22 training. Is there a kit list I should…",
     latestChannel: "email",
-    projectLabel: "Wolverine Watch 2025",
+    projectLabel: "Tracking Whitebark Pine 2026",
     lastActivityAt: "2026-04-14T14:22:00Z",
     lastActivityLabel: "9:22 AM",
     timeline: buildTimeline("c_maya_patel", [
       {
         kind: "outbound-campaign-email",
         actor: "Campaigns",
-        subject: "Spring 2026 Field Season Kickoff",
+        subject: "Spring 2026 field season kickoff",
         body:
-          "Spring field work is starting soon! This season we're launching Wolverine Watch 2025 alongside the returning Alpine Pika Survey. If you've volunteered with us before and want to get back in the field this year, reply to this email and we'll get you set up for our April training weekend.",
+          "Spring field work is starting soon! This season we're launching Tracking Whitebark Pine across the northern Rockies. If you've volunteered with us before and want to get back in the field this year, reply to this email and we'll get you set up for our April training weekend.",
         daysAgo: 42,
         isUnread: false
       },
       {
         kind: "inbound-email",
         actor: "Maya Patel",
-        subject: "Re: Spring 2026 Field Season Kickoff",
+        subject: "Re: Spring 2026 field season kickoff",
         body:
-          "Hi team — I'd love to help out this year. Alpine Pika was one of the best things I did in 2024 and I saw you're launching a wolverine project. Happy to do either, or both if you need coverage.",
+          "Hi team — I'd love to help out this year. Alpine Wildflower Phenology was one of the best things I did in 2024 and the whitebark work looks like a good fit. Happy to take on a transect this season.",
         daysAgo: 40,
         isUnread: false
       },
       {
         kind: "outbound-email",
         actor: "Jordan (you)",
-        subject: "Re: Spring 2026 Field Season Kickoff",
+        subject: "Re: Spring 2026 field season kickoff",
         body:
-          "Maya — so glad you're back for another season. Wolverine Watch would be a great fit for you given your Alpine Pika experience. The April 22 training in Boulder is the next step. Can I put you down for that?",
+          "Maya — so glad you're back for another season. Tracking Whitebark Pine would be a great fit for you given your phenology experience. The April 22 training in Boulder is the next step. Can I put you down for that?",
         daysAgo: 39,
         isUnread: false
       },
       {
         kind: "inbound-email",
         actor: "Maya Patel",
-        subject: "Re: Spring 2026 Field Season Kickoff",
+        subject: "Re: Spring 2026 field season kickoff",
         body: "Yes please! Put me down for April 22.",
         daysAgo: 38,
         isUnread: false
@@ -167,39 +177,39 @@ const CONTACTS: readonly MockContactRecord[] = [
       {
         kind: "outbound-auto-email",
         actor: "System",
-        subject: "You're signed up: Wolverine Watch 2025 training",
+        subject: "You're signed up: Tracking Whitebark Pine training",
         body:
-          "This is a confirmation that Maya Patel has been added to the Wolverine Watch 2025 training roster for April 22. Training location, parking, and a recommended kit list will be sent one week before the session. If you need to cancel or reschedule, reply to this email or call (303) 555-0100.",
+          "This is a confirmation that Maya Patel has been added to the Tracking Whitebark Pine training roster for April 22. Training location, parking, and a recommended kit list will be sent one week before the session. If you need to cancel or reschedule, reply to this email or call (303) 555-0100.",
         daysAgo: 38,
         isUnread: false
       },
       {
         kind: "system-event",
         actor: "System",
-        body: "Signed up for Wolverine Watch 2025",
+        body: "Signed up for Tracking Whitebark Pine 2026",
         daysAgo: 38,
         isUnread: false
       },
       {
         kind: "outbound-auto-email",
         actor: "System",
-        subject: "Reminder: your Wolverine Watch training is in 1 week",
+        subject: "Reminder: your whitebark pine training is in 1 week",
         body:
-          "Just a reminder that the Wolverine Watch 2025 volunteer training is next Wednesday, April 22 at 9am at the Boulder field office. Please bring the kit listed below and plan for an all-day session. Carpools from Denver and Fort Collins are being coordinated in the volunteer Slack.",
+          "Just a reminder that the Tracking Whitebark Pine volunteer training is next Wednesday, April 22 at 9am at the Boulder field office. Please bring the kit listed below and plan for an all-day session. Carpools from Denver and Fort Collins are being coordinated in the volunteer Slack.",
         daysAgo: 8,
         isUnread: false
       },
       {
         kind: "system-event",
         actor: "System",
-        body: "Received training materials for Wolverine Watch 2025",
+        body: "Received training materials for Tracking Whitebark Pine 2026",
         daysAgo: 6,
         isUnread: false
       },
       {
         kind: "outbound-email",
         actor: "Jordan (you)",
-        subject: "Wolverine Watch — training confirmation",
+        subject: "Whitebark Pine — training confirmation",
         body:
           "Hi Maya, attaching the April 22 agenda and the recommended kit list. Let us know if you need a carpool from Boulder — Elena in Santa Fe is coordinating a pickup on I-70.",
         daysAgo: 4,
@@ -208,7 +218,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       {
         kind: "inbound-email",
         actor: "Maya Patel",
-        subject: "Re: Wolverine Watch — training confirmation",
+        subject: "Re: Whitebark Pine — training confirmation",
         body:
           "Hi team — just confirming I can make the April 22 training. Is there a kit list I should review beforehand? Also, is there a carpool from Boulder? I can drive but I'd rather not if someone's already heading out.",
         daysAgo: 0,
@@ -233,17 +243,22 @@ const CONTACTS: readonly MockContactRecord[] = [
     volunteerStage: "applicant",
     primaryEmail: "d.rivers@example.com",
     primaryPhone: null,
-    cityState: "Bozeman, MT",
+    cityState: "Bellingham, WA",
     joinedAtLabel: "Joined Apr 2026",
     activeProjects: [
-      membership("alpine-pika", "Alpine Pika Survey", 2026, "applied")
+      membership(
+        "killer-whales",
+        "Searching for Killer Whales",
+        2026,
+        "applied"
+      )
     ],
     pastProjects: [],
     milestones: [
       {
         id: "ms_daniel_1",
         kind: "signed-up",
-        projectName: "Alpine Pika Survey",
+        projectName: "Searching for Killer Whales",
         daysAgo: 7
       }
     ],
@@ -251,36 +266,36 @@ const CONTACTS: readonly MockContactRecord[] = [
     isStarred: false,
     hasUnresolved: false,
     unreadCount: 1,
-    latestSubject: "Alpine Pika Survey application",
+    latestSubject: "Killer Whales application",
     snippet:
       "Hi — I submitted the application last week and wanted to check if there's anything else you need from me.",
     latestChannel: "email",
-    projectLabel: "Alpine Pika Survey",
+    projectLabel: "Searching for Killer Whales",
     lastActivityAt: "2026-04-14T12:05:00Z",
     lastActivityLabel: "7:05 AM",
     timeline: buildTimeline("c_daniel_rivers", [
       {
         kind: "outbound-campaign-email",
         actor: "Campaigns",
-        subject: "Volunteers needed — Alpine Pika Survey 2026",
+        subject: "Volunteers needed — Searching for Killer Whales 2026",
         body:
-          "We're recruiting field volunteers for the 2026 Alpine Pika Survey in the northern Rockies. No prior experience required; we provide training in mid-May before the first field window opens. If you're interested, click through to apply.",
+          "We're recruiting shore-based observers for the 2026 Salish Sea season of Searching for Killer Whales. No prior experience required; we provide training in mid-May before the first field window opens. If you're interested, click through to apply.",
         daysAgo: 14,
         isUnread: false
       },
       {
         kind: "inbound-email",
         actor: "Daniel Rivers",
-        subject: "Alpine Pika Survey — interested",
+        subject: "Killer Whales project — interested",
         body:
-          "Hi, I saw your email about the pika survey and I'm very interested. I've done birding transects with MT Audubon so I'm comfortable with data sheets and GPS, but this would be my first project with Adventure Scientists. Where do I start?",
+          "Hi, I saw your email about the orca project and I'm very interested. I've done seabird transects with the Puget Sound Seabird Survey so I'm comfortable with data sheets and binoculars, but this would be my first project with Adventure Scientists. Where do I start?",
         daysAgo: 12,
         isUnread: false
       },
       {
         kind: "outbound-email",
         actor: "Jordan (you)",
-        subject: "Re: Alpine Pika Survey — interested",
+        subject: "Re: Killer Whales project — interested",
         body:
           "Hi Daniel, welcome! The next step is filling out the full application (takes about 15 minutes) — link below. Once that's in we'll confirm fit and schedule you for training.",
         daysAgo: 12,
@@ -289,23 +304,23 @@ const CONTACTS: readonly MockContactRecord[] = [
       {
         kind: "system-event",
         actor: "System",
-        body: "Signed up for Alpine Pika Survey",
+        body: "Signed up for Searching for Killer Whales 2026",
         daysAgo: 7,
         isUnread: false
       },
       {
         kind: "outbound-auto-email",
         actor: "System",
-        subject: "Application received: Alpine Pika Survey",
+        subject: "Application received: Searching for Killer Whales",
         body:
-          "Thanks for applying to the Alpine Pika Survey. A project coordinator will review your application within 5 business days and reach out with next steps. You'll hear from us by April 19.",
+          "Thanks for applying to Searching for Killer Whales. A project coordinator will review your application within 5 business days and reach out with next steps. You'll hear from us by April 19.",
         daysAgo: 7,
         isUnread: false
       },
       {
         kind: "inbound-email",
         actor: "Daniel Rivers",
-        subject: "Alpine Pika Survey application",
+        subject: "Killer Whales application",
         body:
           "Hi — I submitted the application last week and wanted to check if there's anything else you need from me. Happy to provide references if that helps.",
         daysAgo: 0,
@@ -325,36 +340,36 @@ const CONTACTS: readonly MockContactRecord[] = [
     cityState: "San Francisco, CA",
     joinedAtLabel: "Joined Aug 2023",
     activeProjects: [
-      membership("coastal-kelp", "Coastal Kelp Monitoring", 2026, "in-field")
+      membership("coral-reefs", "Monitoring Coral Reefs", 2026, "in-field")
     ],
     pastProjects: [
-      membership("coastal-kelp", "Coastal Kelp Monitoring", 2025, "successful"),
-      membership("coastal-kelp", "Coastal Kelp Monitoring", 2024, "successful"),
+      membership("tide-pool-watch", "Tide Pool Watch", 2025, "successful"),
+      membership("tide-pool-watch", "Tide Pool Watch", 2024, "successful"),
       membership("bay-estuary", "Bay Estuary Baseline", 2023, "successful")
     ],
     milestones: [
       {
         id: "ms_priya_1",
         kind: "signed-up",
-        projectName: "Coastal Kelp Monitoring",
+        projectName: "Monitoring Coral Reefs",
         daysAgo: 90
       },
       {
         id: "ms_priya_2",
         kind: "training-completed",
-        projectName: "Coastal Kelp Monitoring",
+        projectName: "Monitoring Coral Reefs",
         daysAgo: 60
       },
       {
         id: "ms_priya_3",
         kind: "trip-plan-submitted",
-        projectName: "Coastal Kelp Monitoring",
+        projectName: "Monitoring Coral Reefs",
         daysAgo: 12
       },
       {
         id: "ms_priya_4",
         kind: "first-record-submitted",
-        projectName: "Coastal Kelp Monitoring",
+        projectName: "Monitoring Coral Reefs",
         daysAgo: 4
       }
     ],
@@ -364,18 +379,18 @@ const CONTACTS: readonly MockContactRecord[] = [
     unreadCount: 1,
     latestSubject: "Site access permit — urgent",
     snippet:
-      "Got word the Duxbury Reef permit isn't in the system. Can someone confirm by Wednesday?",
+      "Got word the Molokini permit isn't in the system. Can someone confirm by Wednesday?",
     latestChannel: "email",
-    projectLabel: "Coastal Kelp Monitoring",
+    projectLabel: "Monitoring Coral Reefs",
     lastActivityAt: "2026-04-14T09:48:00Z",
     lastActivityLabel: "4:48 AM",
     timeline: buildTimeline("c_priya_chen", [
       {
         kind: "outbound-auto-email",
         actor: "System",
-        subject: "Trip plan approved: Duxbury Reef, Apr 15–17",
+        subject: "Trip plan approved: Molokini Crater, Apr 15–17",
         body:
-          "Your trip plan for Duxbury Reef has been approved. Please remember to check in at the start and end of each field day via the volunteer app. Tides and access notes are attached.",
+          "Your trip plan for Molokini Crater has been approved. Please remember to check in at the start and end of each field day via the volunteer app. Tides and access notes are attached.",
         daysAgo: 12,
         isUnread: false
       },
@@ -384,32 +399,32 @@ const CONTACTS: readonly MockContactRecord[] = [
         actor: "Campaigns",
         subject: "April field readiness SMS",
         body:
-          "Coastal Kelp volunteers: reminder that your April field window opens Monday. Check the project app for your assigned quadrats and reply STOP to opt out of project texts.",
+          "Monitoring Coral Reefs volunteers: reminder that your April field window opens Monday. Check the project app for your assigned transects and reply STOP to opt out of project texts.",
         daysAgo: 6,
         isUnread: false
       },
       {
         kind: "outbound-email",
         actor: "Jordan (you)",
-        subject: "Welcome back for the 2026 kelp season",
+        subject: "Welcome back for the 2026 reef season",
         body:
-          "Priya — so glad to have you back on Coastal Kelp for a third year. You're locked in as field lead for Duxbury Reef. Let me know if anything on the gear list is missing from last year's kit.",
+          "Priya — so glad to have you back on Monitoring Coral Reefs as field lead. You're set for the Molokini transects. Let me know if anything on the gear list is missing from last year's kit.",
         daysAgo: 5,
         isUnread: false
       },
       {
         kind: "inbound-email",
         actor: "Priya Chen",
-        subject: "Re: Welcome back for the 2026 kelp season",
+        subject: "Re: Welcome back for the 2026 reef season",
         body:
-          "Thanks Jordan! Kit is in good shape. I submitted the first quadrat record this morning — looks healthy out there compared to last year. Will send the rest by Friday.",
+          "Thanks Jordan! Kit is in good shape. I submitted the first transect record this morning — looks healthy out there compared to last year. Will send the rest by Friday.",
         daysAgo: 4,
         isUnread: false
       },
       {
         kind: "system-event",
         actor: "System",
-        body: "Submitted first record for Coastal Kelp Monitoring",
+        body: "Submitted first record for Monitoring Coral Reefs",
         daysAgo: 4,
         isUnread: false
       },
@@ -418,7 +433,7 @@ const CONTACTS: readonly MockContactRecord[] = [
         actor: "Priya Chen",
         subject: null,
         body:
-          "Heads up — ranger just told me Duxbury permit isn't showing in their system. We good?",
+          "Heads up — ranger just told me Molokini permit isn't showing in their system. We good?",
         daysAgo: 1,
         isUnread: false
       },
@@ -436,7 +451,7 @@ const CONTACTS: readonly MockContactRecord[] = [
         actor: "Priya Chen",
         subject: "Site access permit — urgent",
         body:
-          "Hi — got word from the ranger that the Duxbury Reef permit isn't in the system yet. Can someone on the AS side confirm by Wednesday? We're holding gear in Oakland and I'd hate to reschedule the crew.",
+          "Hi — got word from the ranger that the Molokini Crater permit isn't in the system yet. Can someone on the AS side confirm by Wednesday? We're holding gear in Maui and I'd hate to reschedule the crew.",
         daysAgo: 0,
         isUnread: true
       },
@@ -444,7 +459,7 @@ const CONTACTS: readonly MockContactRecord[] = [
         kind: "internal-note",
         actor: "Jordan",
         body:
-          "Routing: permit was approved in March but never synced to GGNRA system. Looping in Mel from ops.",
+          "Routing: permit was approved in March but never synced to DLNR system. Looping in Mel from ops.",
         daysAgo: 0,
         isUnread: false
       },
@@ -452,7 +467,7 @@ const CONTACTS: readonly MockContactRecord[] = [
         kind: "system-event",
         actor: "System",
         body:
-          "Routing review opened: permit ownership unclear between Coastal Kelp and Bay Estuary projects.",
+          "Routing review opened: permit ownership unclear between Coral Reefs and Bay Estuary projects.",
         daysAgo: 0,
         isUnread: false
       }
@@ -470,37 +485,37 @@ const CONTACTS: readonly MockContactRecord[] = [
     cityState: "Missoula, MT",
     joinedAtLabel: "Joined Jun 2022",
     activeProjects: [
-      membership("river-otter", "River Otter Distribution", 2026, "in-field")
+      membership("beech-butternut", "Beech and Butternut", 2026, "in-field")
     ],
     pastProjects: [
-      membership("river-otter", "River Otter Distribution", 2025, "successful"),
-      membership("river-otter", "River Otter Distribution", 2024, "successful"),
-      membership("bull-trout", "Bull Trout eDNA", 2023, "successful"),
-      membership("bull-trout", "Bull Trout eDNA", 2022, "successful")
+      membership("cutthroat-watch", "Cutthroat Trout Watch", 2025, "successful"),
+      membership("cutthroat-watch", "Cutthroat Trout Watch", 2024, "successful"),
+      membership("bitterroot-bloom", "Bitterroot Bloom Survey", 2023, "successful"),
+      membership("bitterroot-bloom", "Bitterroot Bloom Survey", 2022, "successful")
     ],
     milestones: [
       {
         id: "ms_sam_1",
         kind: "signed-up",
-        projectName: "River Otter Distribution",
+        projectName: "Beech and Butternut",
         daysAgo: 95
       },
       {
         id: "ms_sam_2",
         kind: "training-completed",
-        projectName: "River Otter Distribution",
+        projectName: "Beech and Butternut",
         daysAgo: 70
       },
       {
         id: "ms_sam_3",
         kind: "trip-plan-submitted",
-        projectName: "River Otter Distribution",
+        projectName: "Beech and Butternut",
         daysAgo: 28
       },
       {
         id: "ms_sam_4",
         kind: "first-record-submitted",
-        projectName: "River Otter Distribution",
+        projectName: "Beech and Butternut",
         daysAgo: 10
       }
     ],
@@ -512,39 +527,39 @@ const CONTACTS: readonly MockContactRecord[] = [
     snippet:
       "Thanks — the sync worked after I switched networks. Closing this one out unless you need more.",
     latestChannel: "email",
-    projectLabel: "River Otter Distribution",
+    projectLabel: "Beech and Butternut",
     lastActivityAt: "2026-04-13T19:30:00Z",
     lastActivityLabel: "Yesterday",
     timeline: buildTimeline("c_sam_whitehorse", [
       {
         kind: "outbound-email",
         actor: "Jordan (you)",
-        subject: "2026 River Otter field window is open",
+        subject: "2026 Beech and Butternut field window is open",
         body:
-          "Sam — the April field window for River Otter is officially open. Your assigned transects are the same as last year (Blackfoot upper + middle). Let us know if anything has changed on your end.",
+          "Sam — the April field window for Beech and Butternut is officially open. Your assigned stands are the same as last year. Let us know if anything has changed on your end.",
         daysAgo: 14,
         isUnread: false
       },
       {
         kind: "inbound-email",
         actor: "Sam Whitehorse",
-        subject: "Re: 2026 River Otter field window is open",
+        subject: "Re: 2026 Beech and Butternut field window is open",
         body:
-          "Perfect, same transects work. Already got the kit out of storage. Will file the trip plan this week.",
+          "Perfect, same stands work. Already got the kit out of storage. Will file the trip plan this week.",
         daysAgo: 13,
         isUnread: false
       },
       {
         kind: "system-event",
         actor: "System",
-        body: "Submitted trip plan for River Otter Distribution",
+        body: "Submitted trip plan for Beech and Butternut",
         daysAgo: 12,
         isUnread: false
       },
       {
         kind: "outbound-auto-email",
         actor: "System",
-        subject: "Trip plan approved: Blackfoot River, Apr 4–6",
+        subject: "Trip plan approved: Beech and Butternut, Apr 4–6",
         body:
           "Your trip plan has been reviewed and approved. Remember to carry the emergency contact card and check in at start and end of each field day.",
         daysAgo: 11,
@@ -553,7 +568,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       {
         kind: "system-event",
         actor: "System",
-        body: "Submitted first record for River Otter Distribution",
+        body: "Submitted first record for Beech and Butternut",
         daysAgo: 10,
         isUnread: false
       },
@@ -645,21 +660,21 @@ const CONTACTS: readonly MockContactRecord[] = [
     joinedAtLabel: "Joined Mar 2021",
     activeProjects: [],
     pastProjects: [
-      membership("raptor-migration", "Raptor Migration", 2023, "successful"),
-      membership("raptor-migration", "Raptor Migration", 2022, "successful"),
-      membership("raptor-migration", "Raptor Migration", 2021, "successful")
+      membership("front-range-owl", "Front Range Owl Survey", 2023, "successful"),
+      membership("front-range-owl", "Front Range Owl Survey", 2022, "successful"),
+      membership("front-range-owl", "Front Range Owl Survey", 2021, "successful")
     ],
     milestones: [
       {
         id: "ms_ben_1",
         kind: "first-record-submitted",
-        projectName: "Raptor Migration",
+        projectName: "Front Range Owl Survey",
         daysAgo: 900
       },
       {
         id: "ms_ben_2",
         kind: "trip-plan-submitted",
-        projectName: "Raptor Migration",
+        projectName: "Front Range Owl Survey",
         daysAgo: 920
       }
     ],
@@ -669,9 +684,9 @@ const CONTACTS: readonly MockContactRecord[] = [
     unreadCount: 0,
     latestSubject: "Photo permissions for annual report",
     snippet:
-      "Of course — use any of the 2023 Raptor photos. Credit line is fine, no logo needed.",
+      "Of course — use any of the 2023 owl photos. Credit line is fine, no logo needed.",
     latestChannel: "email",
-    projectLabel: "Raptor Migration 2023",
+    projectLabel: "Front Range Owl Survey 2023",
     lastActivityAt: "2026-04-12T16:10:00Z",
     lastActivityLabel: "2 days ago",
     timeline: buildTimeline("c_ben_okafor", [
@@ -689,7 +704,7 @@ const CONTACTS: readonly MockContactRecord[] = [
         actor: "Jordan (you)",
         subject: "Photo permissions for annual report",
         body:
-          "Hi Ben — can we use a few of your 2023 raptor photos in the annual report? Full credit, of course. The drafts we want to feature are the four silhouettes from Lookout Mountain and the spread at Dinosaur Ridge.",
+          "Hi Ben — can we use a few of your 2023 owl photos in the annual report? Full credit, of course. The drafts we want to feature are the four silhouettes from Lookout Mountain and the spread at Dinosaur Ridge.",
         daysAgo: 3,
         isUnread: false
       },
@@ -698,7 +713,7 @@ const CONTACTS: readonly MockContactRecord[] = [
         actor: "Ben Okafor",
         subject: "Re: Photo permissions for annual report",
         body:
-          "Of course — use any of the 2023 Raptor photos. Credit line is fine, no logo needed. Glad they'll get another life.",
+          "Of course — use any of the 2023 owl photos. Credit line is fine, no logo needed. Glad they'll get another life.",
         daysAgo: 2,
         isUnread: false
       }
@@ -716,28 +731,28 @@ const CONTACTS: readonly MockContactRecord[] = [
     cityState: "Santa Fe, NM",
     joinedAtLabel: "Joined Feb 2025",
     activeProjects: [
-      membership("wolverine-watch", "Wolverine Watch", 2025, "trip-planning")
+      membership("pnw-biodiversity", "PNW Biodiversity", 2026, "trip-planning")
     ],
     pastProjects: [
-      membership("wolverine-watch", "Wolverine Watch", 2024, "successful")
+      membership("pnw-biodiversity", "PNW Biodiversity", 2025, "successful")
     ],
     milestones: [
       {
         id: "ms_elena_1",
         kind: "signed-up",
-        projectName: "Wolverine Watch",
+        projectName: "PNW Biodiversity",
         daysAgo: 45
       },
       {
         id: "ms_elena_2",
         kind: "training-completed",
-        projectName: "Wolverine Watch",
+        projectName: "PNW Biodiversity",
         daysAgo: 20
       },
       {
         id: "ms_elena_3",
         kind: "trip-plan-submitted",
-        projectName: "Wolverine Watch",
+        projectName: "PNW Biodiversity",
         daysAgo: 5
       }
     ],
@@ -749,23 +764,23 @@ const CONTACTS: readonly MockContactRecord[] = [
     snippet:
       "I can pick up two from Boulder on the 22nd — just need names by Friday.",
     latestChannel: "sms",
-    projectLabel: "Wolverine Watch 2025",
+    projectLabel: "PNW Biodiversity 2026",
     lastActivityAt: "2026-04-12T11:02:00Z",
     lastActivityLabel: "2 days ago",
     timeline: buildTimeline("c_elena_marquez", [
       {
         kind: "outbound-campaign-email",
         actor: "Campaigns",
-        subject: "Wolverine Watch 2025 kickoff",
+        subject: "PNW Biodiversity 2026 kickoff",
         body:
-          "Returning Wolverine Watch volunteers: this year's project expands into the Wind River range. If you're on the 2024 roster, you're already approved for 2025 — just reply to confirm your availability.",
+          "Returning PNW Biodiversity volunteers: this year's project expands into the Olympic Peninsula. If you're on the 2025 roster, you're already approved for 2026 — just reply to confirm your availability.",
         daysAgo: 50,
         isUnread: false
       },
       {
         kind: "inbound-email",
         actor: "Elena Marquez",
-        subject: "Re: Wolverine Watch 2025 kickoff",
+        subject: "Re: PNW Biodiversity 2026 kickoff",
         body:
           "I'm in for another year. Can I take a regional coordinator role for the Santa Fe / Colorado routes? I know it's a larger commitment but I've got the flexibility this year.",
         daysAgo: 48,
@@ -774,7 +789,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       {
         kind: "outbound-email",
         actor: "Jordan (you)",
-        subject: "Re: Wolverine Watch 2025 kickoff",
+        subject: "Re: PNW Biodiversity 2026 kickoff",
         body:
           "Yes — thrilled to have you as regional coord. I'll loop you into the coordinator Slack and put you on the training review list.",
         daysAgo: 47,
@@ -783,21 +798,21 @@ const CONTACTS: readonly MockContactRecord[] = [
       {
         kind: "system-event",
         actor: "System",
-        body: "Signed up for Wolverine Watch 2025",
+        body: "Signed up for PNW Biodiversity 2026",
         daysAgo: 45,
         isUnread: false
       },
       {
         kind: "system-event",
         actor: "System",
-        body: "Completed training for Wolverine Watch 2025",
+        body: "Completed training for PNW Biodiversity 2026",
         daysAgo: 20,
         isUnread: false
       },
       {
         kind: "system-event",
         actor: "System",
-        body: "Submitted trip plan for Wolverine Watch 2025",
+        body: "Submitted trip plan for PNW Biodiversity 2026",
         daysAgo: 5,
         isUnread: false
       },
@@ -839,7 +854,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     unreadCount: 1,
     latestSubject: "Inbound SMS",
     snippet:
-      "hey is this the wolverine signup line? my wife saw the flyer in laramie",
+      "hey is this the whitebark pine signup line? my wife saw the flyer in laramie",
     latestChannel: "sms",
     projectLabel: null,
     lastActivityAt: "2026-04-13T22:45:00Z",
@@ -850,7 +865,7 @@ const CONTACTS: readonly MockContactRecord[] = [
         actor: "+1 720 555 0199",
         subject: null,
         body:
-          "hey is this the wolverine signup line? my wife saw the flyer in laramie",
+          "hey is this the whitebark pine signup line? my wife saw the flyer in laramie",
         daysAgo: 1,
         isUnread: true
       },

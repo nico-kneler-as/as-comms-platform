@@ -28,10 +28,16 @@ export function ClaudeInboxContactRail({ contact }: RailProps) {
   return (
     <aside
       id="claude-inbox-contact-rail"
-      className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-slate-50/40"
+      className="flex min-h-0 w-80 shrink-0 flex-col border-l border-slate-200 bg-slate-50/40"
       aria-label="Volunteer details"
     >
-      <header className="flex h-[65px] flex-col justify-center border-b border-slate-200 bg-white px-5">
+      {/*
+        The header is pinned so the volunteer's name and ID remain visible
+        while the sections below scroll — contact info, every active and
+        past project, and the recent-activity feed can grow well past the
+        viewport for long-tenured volunteers.
+      */}
+      <header className="flex h-[65px] shrink-0 flex-col justify-center border-b border-slate-200 bg-white px-5">
         <h2 className="truncate text-sm font-semibold text-slate-900">
           {contact.displayName}
         </h2>
@@ -40,6 +46,7 @@ export function ClaudeInboxContactRail({ contact }: RailProps) {
         </p>
       </header>
 
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <section className="border-b border-slate-200 px-5 py-4">
         <h3 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
           Contact
@@ -102,6 +109,7 @@ export function ClaudeInboxContactRail({ contact }: RailProps) {
           </ul>
         </section>
       ) : null}
+      </div>
     </aside>
   );
 }

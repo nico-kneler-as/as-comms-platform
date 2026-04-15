@@ -121,7 +121,7 @@ export function ClaudeInboxComposer({
         <p className="text-[11px] text-slate-500">
           {mode === "note"
             ? "Internal notes are visible only to operators."
-            : "Sending keeps this person Opened."}
+            : ""}
         </p>
         <div className="flex items-center gap-2">
           <button

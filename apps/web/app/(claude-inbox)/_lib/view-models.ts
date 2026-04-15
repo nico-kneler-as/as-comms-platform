@@ -17,12 +17,7 @@
 
 export type ClaudeInboxBucket = "new" | "opened";
 
-export type ClaudeInboxFilterId =
-  | "new"
-  | "opened"
-  | "starred"
-  | "unresolved"
-  | "all";
+export type ClaudeInboxFilterId = "all" | "unread" | "follow-up";
 
 export type ClaudeInboxChannel = "email" | "sms";
 
@@ -152,10 +147,7 @@ export interface ClaudeInboxListViewModel {
   readonly items: readonly ClaudeInboxListItemViewModel[];
   readonly filters: readonly ClaudeInboxFilterViewModel[];
   readonly totals: {
-    readonly new: number;
-    readonly opened: number;
-    readonly starred: number;
-    readonly unresolved: number;
     readonly all: number;
+    readonly unread: number;
   };
 }

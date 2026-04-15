@@ -29,7 +29,7 @@ const LIST_SORT = (
 ): number => (a.lastActivityAt < b.lastActivityAt ? 1 : -1);
 
 export function getClaudeInboxList(
-  filterId: ClaudeInboxFilterId = "new"
+  filterId: ClaudeInboxFilterId = "all"
 ): ClaudeInboxListViewModel {
   const contacts = getMockContacts();
 
@@ -52,41 +52,37 @@ export function getClaudeInboxList(
   }));
 
   const totals = {
-    new: items.filter((i) => i.bucket === "new").length,
-    opened: items.filter((i) => i.bucket === "opened").length,
-    starred: items.filter((i) => i.isStarred).length,
-    unresolved: items.filter((i) => i.hasUnresolved).length,
-    all: items.length
+    all: items.length,
+    unread: items.filter((i) => i.unreadCount > 0).length
   };
 
   const filters: ClaudeInboxFilterViewModel[] = CLAUDE_INBOX_FILTERS.map((f) => ({
     id: f.id,
     label: f.label,
     hint: f.hint,
-    count: totals[f.id]
+    count: f.id === "follow-up" ? 0 : totals[f.id]
   }));
 
   const filtered = items
-    .filter((item) => matchesFilter(item, filterId))
+    .filter((item) => matchesServerFilter(item, filterId))
     .sort(LIST_SORT);
 
   return { items: filtered, filters, totals };
 }
 
-function matchesFilter(
+function matchesServerFilter(
   item: ClaudeInboxListItemViewModel,
   filterId: ClaudeInboxFilterId
 ): boolean {
   switch (filterId) {
-    case "new":
-      return item.bucket === "new";
-    case "opened":
-      return item.bucket === "opened";
-    case "starred":
-      return item.isStarred;
-    case "unresolved":
-      return item.hasUnresolved;
     case "all":
+      return true;
+    case "unread":
+      return item.unreadCount > 0;
+    case "follow-up":
+      // Follow-up is client-owned state; server returns everything and the
+      // client narrows it. Keeping this branch exhaustive satisfies the
+      // discriminated-union check.
       return true;
   }
 }

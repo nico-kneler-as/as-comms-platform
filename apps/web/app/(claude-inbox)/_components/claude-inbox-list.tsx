@@ -9,13 +9,13 @@ import type {
   ClaudeInboxFilterViewModel,
   ClaudeInboxListItemViewModel
 } from "../_lib/view-models";
+import { useClaudeInboxClient } from "./claude-inbox-client-provider";
 import {
-  AlertIcon,
+  CornerUpLeftIcon,
   FilterIcon,
   InboxIcon,
-  SearchIcon,
-  StarIcon,
-  UsersIcon
+  MailIcon,
+  SearchIcon
 } from "./claude-icons";
 import { ClaudeInboxRow } from "./claude-inbox-row";
 
@@ -28,53 +28,45 @@ interface ListColumnProps {
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
 
 const FILTER_ICONS: Record<ClaudeInboxFilterId, IconComponent> = {
-  new: InboxIcon,
-  opened: InboxIcon,
-  starred: StarIcon,
-  unresolved: AlertIcon,
-  all: UsersIcon
+  all: InboxIcon,
+  unread: MailIcon,
+  "follow-up": CornerUpLeftIcon
 };
-
-interface ProjectOption {
-  readonly id: string;
-  readonly name: string;
-  readonly count: number;
-}
-
-const PROJECTS: readonly ProjectOption[] = [
-  { id: "wolverine", name: "Wolverine Watch 2025", count: 2 },
-  { id: "pika", name: "Alpine Pika Survey", count: 1 },
-  { id: "kelp", name: "Coastal Kelp Monitoring", count: 1 },
-  { id: "otter", name: "River Otter Distribution", count: 1 }
-];
 
 /**
  * Client island: owns local view state for the Inbox column — active filter
  * selection and the inline filter-panel open/close. The underlying `items`
- * and filter counts originate server-side from the canonical projection
- * selectors, so no canonical state lives on the client.
- *
- * The filters disclosure renders between the sticky search header and the
- * scrollable row list (not as a floating popover), so it pushes the rows
- * down rather than overlaying them.
+ * flow from the server-side selector; follow-up flags come from the shared
+ * client context so the list updates the moment the operator toggles the
+ * button over in the detail view.
  */
 export function ClaudeInboxList({
   items,
   filters,
-  initialFilterId = "new"
+  initialFilterId = "all"
 }: ListColumnProps) {
   const pathname = usePathname();
   const activeContactId = extractContactId(pathname);
+  const { followUp } = useClaudeInboxClient();
 
   const [activeFilterId, setActiveFilterId] =
     useState<ClaudeInboxFilterId>(initialFilterId);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // Follow-up is client state, so we recompute its count here instead of
+  // trusting the server placeholder.
+  const followUpCount = items.filter((item) =>
+    followUp.has(item.contactId)
+  ).length;
+  const filtersWithLiveCounts = filters.map((filter) =>
+    filter.id === "follow-up" ? { ...filter, count: followUpCount } : filter
+  );
+
   const filteredItems = items.filter((item) =>
-    matchesFilter(item, activeFilterId)
+    matchesFilter(item, activeFilterId, followUp)
   );
   const activeFilter =
-    filters.find((filter) => filter.id === activeFilterId) ?? null;
+    filtersWithLiveCounts.find((filter) => filter.id === activeFilterId) ?? null;
   const columnTitle = activeFilter?.label ?? "Inbox";
 
   return (
@@ -92,7 +84,7 @@ export function ClaudeInboxList({
             onClick={() => {
               setFiltersOpen((open) => !open);
             }}
-            className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition ${
+            className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors duration-150 ${
               filtersOpen
                 ? "border-slate-300 bg-slate-100 text-slate-900"
                 : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -108,7 +100,7 @@ export function ClaudeInboxList({
         </div>
 
         <div className="px-5 pb-4 pt-3">
-          <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300">
+          <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm transition-colors duration-150 focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300">
             <SearchIcon className="h-4 w-4 text-slate-400" />
             <input
               type="search"
@@ -136,11 +128,8 @@ export function ClaudeInboxList({
         >
           <div className="min-h-0">
             <div className="px-5 py-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Inbox
-              </p>
-              <ul className="mt-2 space-y-0.5">
-                {filters.map((filter) => {
+              <ul className="space-y-0.5">
+                {filtersWithLiveCounts.map((filter) => {
                   const Icon = FILTER_ICONS[filter.id];
                   const isActive = filter.id === activeFilterId;
                   return (
@@ -152,7 +141,7 @@ export function ClaudeInboxList({
                           setActiveFilterId(filter.id);
                           setFiltersOpen(false);
                         }}
-                        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition ${
+                        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
                           isActive
                             ? "bg-slate-900 font-semibold text-white"
                             : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -171,25 +160,6 @@ export function ClaudeInboxList({
                     </li>
                   );
                 })}
-              </ul>
-
-              <p className="mt-4 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Projects
-              </p>
-              <ul className="mt-2 space-y-0.5">
-                {PROJECTS.map((project) => (
-                  <li key={project.id}>
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-                    >
-                      <span className="truncate">{project.name}</span>
-                      <span className="text-xs text-slate-400 tabular-nums">
-                        {project.count}
-                      </span>
-                    </button>
-                  </li>
-                ))}
               </ul>
             </div>
           </div>
@@ -228,18 +198,15 @@ function extractContactId(pathname: string | null): string | null {
 
 function matchesFilter(
   item: ClaudeInboxListItemViewModel,
-  filterId: ClaudeInboxFilterId
+  filterId: ClaudeInboxFilterId,
+  followUp: ReadonlySet<string>
 ): boolean {
   switch (filterId) {
-    case "new":
-      return item.bucket === "new";
-    case "opened":
-      return item.bucket === "opened";
-    case "starred":
-      return item.isStarred;
-    case "unresolved":
-      return item.hasUnresolved;
     case "all":
       return true;
+    case "unread":
+      return item.unreadCount > 0;
+    case "follow-up":
+      return followUp.has(item.contactId);
   }
 }
