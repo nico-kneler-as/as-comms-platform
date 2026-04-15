@@ -137,6 +137,15 @@ export function CalendarIcon(props: IconProps) {
   return <Base {...props} path="M4 7h16v13H4zM4 10h16M8 3v4M16 3v4" />;
 }
 
+export function ClockIcon(props: IconProps) {
+  return (
+    <Base
+      {...props}
+      path="M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3 2"
+    />
+  );
+}
+
 export function PanelRightOpenIcon(props: IconProps) {
   return (
     <Base

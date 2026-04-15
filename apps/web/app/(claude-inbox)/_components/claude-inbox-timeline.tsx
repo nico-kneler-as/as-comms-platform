@@ -16,6 +16,7 @@ import {
 
 interface TimelineProps {
   readonly entries: readonly ClaudeTimelineEntryViewModel[];
+  readonly volunteerFirstName: string;
 }
 
 /**
@@ -37,7 +38,10 @@ interface TimelineProps {
  * Owning expansion state in this client island keeps it local — nothing
  * about which auto/campaign entries are expanded is canonical state.
  */
-export function ClaudeInboxTimeline({ entries }: TimelineProps) {
+export function ClaudeInboxTimeline({
+  entries,
+  volunteerFirstName
+}: TimelineProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
     () => new Set<string>()
   );
@@ -68,6 +72,7 @@ export function ClaudeInboxTimeline({ entries }: TimelineProps) {
         <ClaudeTimelineEntry
           key={entry.id}
           entry={entry}
+          volunteerFirstName={volunteerFirstName}
           isExpanded={expanded.has(entry.id)}
           onToggle={() => {
             toggle(entry.id);
@@ -80,11 +85,17 @@ export function ClaudeInboxTimeline({ entries }: TimelineProps) {
 
 interface EntryProps {
   readonly entry: ClaudeTimelineEntryViewModel;
+  readonly volunteerFirstName: string;
   readonly isExpanded: boolean;
   readonly onToggle: () => void;
 }
 
-function ClaudeTimelineEntry({ entry, isExpanded, onToggle }: EntryProps) {
+function ClaudeTimelineEntry({
+  entry,
+  volunteerFirstName,
+  isExpanded,
+  onToggle
+}: EntryProps) {
   const role = roleForKind(entry.kind);
 
   switch (role) {
@@ -104,7 +115,9 @@ function ClaudeTimelineEntry({ entry, isExpanded, onToggle }: EntryProps) {
         />
       );
     case "system":
-      return <SystemMarker entry={entry} />;
+      return (
+        <SystemMarker entry={entry} volunteerFirstName={volunteerFirstName} />
+      );
   }
 }
 
@@ -173,18 +186,20 @@ function InternalNoteCard({
   readonly entry: ClaudeTimelineEntryViewModel;
 }) {
   return (
-    <li className="flex w-full justify-center">
-      <div className="w-full max-w-xl rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
-        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
-          <NoteIcon className="h-3.5 w-3.5" />
-          <span>Internal note · {entry.actorLabel}</span>
-          <span className="ml-auto font-normal normal-case text-amber-700">
-            {entry.occurredAtLabel}
-          </span>
-        </div>
-        <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-6 text-amber-900">
+    <li className="flex w-full flex-col items-end">
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-amber-700">
+        <NoteIcon className="h-3 w-3" />
+        <span>Internal note</span>
+        <span className="text-amber-300">·</span>
+        <span className="font-medium">{entry.actorLabel}</span>
+      </div>
+      <div className="max-w-[85%] rounded-2xl rounded-br-md border border-amber-200 bg-amber-50/70 px-4 py-3 shadow-sm">
+        <p className="whitespace-pre-wrap text-[13px] leading-6 text-amber-900">
           {entry.body}
         </p>
+      </div>
+      <div className="mt-1 text-[11px] text-amber-700">
+        {entry.occurredAtLabel}
       </div>
     </li>
   );
@@ -257,20 +272,35 @@ function CollapsedBulkEntry({
 // ---------- System marker ----------
 
 function SystemMarker({
-  entry
+  entry,
+  volunteerFirstName
 }: {
   readonly entry: ClaudeTimelineEntryViewModel;
+  readonly volunteerFirstName: string;
 }) {
   return (
-    <li className="flex w-full items-center justify-center">
+    <li className="flex w-full items-center justify-start">
       <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-500">
         <SparkleIcon className="h-3 w-3 text-slate-400" />
-        <span>{entry.body}</span>
+        <span>{personalizeSystemBody(entry.body, volunteerFirstName)}</span>
         <span className="text-slate-300">·</span>
         <span>{entry.occurredAtLabel}</span>
       </div>
     </li>
   );
+}
+
+/**
+ * System event bodies are stored as "Signed up for Wolverine Watch 2025".
+ * At render time we prefix the volunteer's first name and lowercase the
+ * leading verb so the result reads as a natural sentence:
+ * "Maya signed up for Wolverine Watch 2025".
+ */
+function personalizeSystemBody(body: string, firstName: string): string {
+  if (body.length === 0) return firstName;
+  const head = body.charAt(0).toLowerCase();
+  const tail = body.slice(1);
+  return `${firstName} ${head}${tail}`;
 }
 
 // ---------- Kind → role mapping ----------
