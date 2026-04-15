@@ -120,20 +120,19 @@ function ConversationBubble({ entry, direction }: ConversationBubbleProps) {
   const isEmail = entry.channel === "email";
   const ChannelIcon = isEmail ? MailIcon : PhoneIcon;
 
+  // Keep both sides white so alignment (left/right) is the clear direction
+  // signal; outbound picks up a subtle sky tint so a quick scan still
+  // distinguishes the two sides without the heavy contrast of a dark bubble.
   const alignment = isOutbound ? "items-end" : "items-start";
   const bubble = isOutbound
-    ? "bg-slate-900 text-white"
+    ? "bg-sky-50 border-sky-200"
     : entry.isUnread
-      ? "bg-white text-slate-900 ring-1 ring-sky-200 border-sky-200"
-      : "bg-white text-slate-900 border-slate-200";
-
-  const metaTextColor = isOutbound ? "text-slate-400" : "text-slate-500";
-  const subjectTextColor = isOutbound ? "text-slate-100" : "text-slate-900";
-  const bodyTextColor = isOutbound ? "text-slate-100/95" : "text-slate-700";
+      ? "bg-white border-sky-200 ring-1 ring-sky-100"
+      : "bg-white border-slate-200";
 
   return (
     <li className={`flex w-full flex-col ${alignment}`}>
-      <div className={`mb-1 flex items-center gap-1.5 text-[11px] ${metaTextColor}`}>
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-slate-500">
         <ChannelIcon className="h-3 w-3" />
         <span>{isEmail ? "Email" : "SMS"}</span>
         <span className="text-slate-300">·</span>
@@ -141,25 +140,19 @@ function ConversationBubble({ entry, direction }: ConversationBubbleProps) {
       </div>
       <div
         className={`max-w-[85%] rounded-2xl border px-4 py-3 shadow-sm ${bubble} ${
-          isOutbound ? "border-slate-900 rounded-br-md" : "rounded-bl-md"
+          isOutbound ? "rounded-br-md" : "rounded-bl-md"
         }`}
       >
         {isEmail && entry.subject ? (
-          <p
-            className={`mb-1 text-[13px] font-semibold leading-snug ${subjectTextColor}`}
-          >
+          <p className="mb-1 text-[13px] font-semibold leading-snug text-slate-900">
             {entry.subject}
           </p>
         ) : null}
-        <p
-          className={`whitespace-pre-wrap text-[13px] leading-6 ${bodyTextColor}`}
-        >
+        <p className="whitespace-pre-wrap text-[13px] leading-6 text-slate-700">
           {entry.body}
         </p>
       </div>
-      <div
-        className={`mt-1 flex items-center gap-1.5 text-[11px] ${metaTextColor}`}
-      >
+      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
         <span>{entry.occurredAtLabel}</span>
         {entry.isUnread && !isOutbound ? (
           <span
@@ -227,15 +220,15 @@ function CollapsedBulkEntry({
     : "bg-slate-100 text-slate-600 ring-slate-200";
 
   return (
-    <li className="w-full">
+    <li className="flex w-full flex-col items-end">
       <button
         type="button"
         aria-expanded={isExpanded}
         onClick={onToggle}
-        className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-left transition hover:bg-slate-100/70"
+        className="flex w-[85%] items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2 text-left transition hover:bg-slate-100/70"
       >
         <span
-          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset ${tagClass}`}
+          className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset ${tagClass}`}
         >
           <ChannelIcon className="h-3 w-3" />
           {badgeLabel}
@@ -253,7 +246,7 @@ function CollapsedBulkEntry({
         />
       </button>
       {isExpanded ? (
-        <div className="mt-1 ml-3 border-l border-slate-200 pl-4 pr-2 py-2 text-[13px] leading-6 text-slate-600">
+        <div className="mt-1 w-[85%] border-l-2 border-slate-200 py-2 pl-4 pr-2 text-[13px] leading-6 text-slate-600">
           <p className="whitespace-pre-wrap">{entry.body}</p>
         </div>
       ) : null}

@@ -9,7 +9,7 @@ import {
   ProjectStatusBadge
 } from "./claude-inbox-contact-rail";
 import { ClaudeInboxTimeline } from "./claude-inbox-timeline";
-import { ChevronRightIcon, UsersIcon } from "./claude-icons";
+import { PanelRightCloseIcon, PanelRightOpenIcon } from "./claude-icons";
 
 interface DetailProps {
   readonly detail: ClaudeInboxDetailViewModel;
@@ -30,7 +30,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
   return (
     <div className="flex min-h-0 flex-1">
       <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
-        <header className="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-4">
+        <header className="flex h-[65px] items-center justify-between gap-4 border-b border-slate-200 px-6">
           <div className="flex min-w-0 items-center gap-4">
             <h1 className="truncate text-lg font-semibold text-slate-900">
               {contact.displayName}
@@ -57,27 +57,34 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
             >
               Set as Pending
             </button>
-            <button
-              type="button"
-              aria-expanded={railOpen}
-              aria-controls="claude-inbox-contact-rail"
-              onClick={() => {
-                setRailOpen((open) => !open);
-              }}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm transition ${
-                railOpen
-                  ? "border-slate-300 bg-slate-100 text-slate-900"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              <UsersIcon className="h-3.5 w-3.5" />
-              Volunteer Details
-              <ChevronRightIcon
-                className={`h-3.5 w-3.5 transition-transform ${
-                  railOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
+            {railOpen ? (
+              <button
+                type="button"
+                aria-label="Collapse volunteer details"
+                aria-expanded={true}
+                aria-controls="claude-inbox-contact-rail"
+                onClick={() => {
+                  setRailOpen(false);
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 text-slate-900 shadow-sm transition hover:bg-slate-200"
+              >
+                <PanelRightCloseIcon className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label="Expand volunteer details"
+                aria-expanded={false}
+                aria-controls="claude-inbox-contact-rail"
+                onClick={() => {
+                  setRailOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                <PanelRightOpenIcon className="h-3.5 w-3.5" />
+                Volunteer Details
+              </button>
+            )}
           </div>
         </header>
 

@@ -31,8 +31,8 @@ export function ClaudeInboxContactRail({ contact }: RailProps) {
       className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-slate-50/40"
       aria-label="Volunteer details"
     >
-      <header className="border-b border-slate-200 bg-white px-5 py-4">
-        <h2 className="text-sm font-semibold text-slate-900">
+      <header className="flex h-[65px] flex-col justify-center border-b border-slate-200 bg-white px-5">
+        <h2 className="truncate text-sm font-semibold text-slate-900">
           {contact.displayName}
         </h2>
         <p className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">

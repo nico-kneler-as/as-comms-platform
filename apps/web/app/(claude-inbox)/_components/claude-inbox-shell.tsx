@@ -12,7 +12,6 @@ interface ShellProps {
   readonly filters: readonly ClaudeInboxFilterViewModel[];
   readonly items: readonly ClaudeInboxListItemViewModel[];
   readonly initialFilterId: ClaudeInboxFilterId;
-  readonly listSubtitle: string;
   readonly children: ReactNode;
 }
 
@@ -20,7 +19,6 @@ export function ClaudeInboxShell({
   filters,
   items,
   initialFilterId,
-  listSubtitle,
   children
 }: ShellProps) {
   return (
@@ -31,7 +29,6 @@ export function ClaudeInboxShell({
         items={items}
         filters={filters}
         initialFilterId={initialFilterId}
-        subtitle={listSubtitle}
       />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">

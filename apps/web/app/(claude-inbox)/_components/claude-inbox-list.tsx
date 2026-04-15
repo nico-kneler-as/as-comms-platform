@@ -23,7 +23,6 @@ interface ListColumnProps {
   readonly items: readonly ClaudeInboxListItemViewModel[];
   readonly filters: readonly ClaudeInboxFilterViewModel[];
   readonly initialFilterId?: ClaudeInboxFilterId;
-  readonly subtitle: string;
 }
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>;
@@ -62,8 +61,7 @@ const PROJECTS: readonly ProjectOption[] = [
 export function ClaudeInboxList({
   items,
   filters,
-  initialFilterId = "new",
-  subtitle
+  initialFilterId = "new"
 }: ListColumnProps) {
   const pathname = usePathname();
   const activeContactId = extractContactId(pathname);
@@ -81,24 +79,36 @@ export function ClaudeInboxList({
 
   return (
     <section className="relative flex w-[22rem] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white">
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="flex items-baseline justify-between gap-3 px-5 pb-2 pt-5">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Inbox · Claude prototype
-            </p>
-            <h1 className="mt-0.5 text-lg font-semibold text-slate-900">
-              {columnTitle}
-            </h1>
-            <p className="text-xs text-slate-500">{subtitle}</p>
-          </div>
-          <span className="shrink-0 text-xs font-medium text-slate-500 tabular-nums">
-            {filteredItems.length} people
-          </span>
+      <div className="sticky top-0 z-10 bg-white/95 backdrop-blur">
+        <div className="flex h-[65px] items-center gap-2 border-b border-slate-200 px-5">
+          <h1 className="min-w-0 flex-1 truncate text-lg font-semibold text-slate-900">
+            {columnTitle}
+          </h1>
+          <button
+            type="button"
+            aria-label="Filter"
+            aria-expanded={filtersOpen}
+            aria-controls="claude-inbox-filters-panel"
+            onClick={() => {
+              setFiltersOpen((open) => !open);
+            }}
+            className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition ${
+              filtersOpen
+                ? "border-slate-300 bg-slate-100 text-slate-900"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <FilterIcon className="h-4 w-4" />
+            {activeFilterId !== "all" ? (
+              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[10px] font-semibold text-white tabular-nums ring-2 ring-white">
+                1
+              </span>
+            ) : null}
+          </button>
         </div>
 
-        <div className="flex items-center gap-2 px-5 pb-4 pt-2">
-          <label className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300">
+        <div className="px-5 pb-4 pt-3">
+          <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300">
             <SearchIcon className="h-4 w-4 text-slate-400" />
             <input
               type="search"
@@ -106,28 +116,6 @@ export function ClaudeInboxList({
               className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
             />
           </label>
-
-          <button
-            type="button"
-            aria-expanded={filtersOpen}
-            aria-controls="claude-inbox-filters-panel"
-            onClick={() => {
-              setFiltersOpen((open) => !open);
-            }}
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-sm transition ${
-              filtersOpen
-                ? "border-slate-300 bg-slate-100 text-slate-900"
-                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <FilterIcon className="h-3.5 w-3.5" />
-            Filter
-            {activeFilterId !== "all" ? (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-slate-900 px-1 text-[10px] font-semibold text-white tabular-nums">
-                1
-              </span>
-            ) : null}
-          </button>
         </div>
 
         {/*

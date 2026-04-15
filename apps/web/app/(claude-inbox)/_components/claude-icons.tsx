@@ -136,3 +136,21 @@ export function MapPinIcon(props: IconProps) {
 export function CalendarIcon(props: IconProps) {
   return <Base {...props} path="M4 7h16v13H4zM4 10h16M8 3v4M16 3v4" />;
 }
+
+export function PanelRightOpenIcon(props: IconProps) {
+  return (
+    <Base
+      {...props}
+      path="M4 5h16v14H4zM15 5v14M11 10l-2 2 2 2"
+    />
+  );
+}
+
+export function PanelRightCloseIcon(props: IconProps) {
+  return (
+    <Base
+      {...props}
+      path="M4 5h16v14H4zM15 5v14M9 10l2 2-2 2"
+    />
+  );
+}

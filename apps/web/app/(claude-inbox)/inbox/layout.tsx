@@ -29,7 +29,6 @@ export default function ClaudeInboxLayout({
       filters={list.filters}
       items={list.items}
       initialFilterId="new"
-      listSubtitle="People waiting on you"
     >
       {children}
     </ClaudeInboxShell>
