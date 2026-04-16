@@ -231,17 +231,20 @@ function mapManualNoteDetailToInsertLocal(record: ManualNoteDetailRecord) {
   };
 }
 
-const salesforceCommunicationDetailsTable = salesforceCommunicationDetails as {
-  readonly sourceEvidenceId: Parameters<typeof inArray>[0];
-};
-const simpleTextingMessageDetailsTable = simpleTextingMessageDetails as {
-  readonly sourceEvidenceId: Parameters<typeof inArray>[0];
-};
-const mailchimpCampaignActivityDetailsTable = mailchimpCampaignActivityDetails as {
-  readonly sourceEvidenceId: Parameters<typeof inArray>[0];
-};
-const manualNoteDetailsTable = manualNoteDetails as {
-  readonly sourceEvidenceId: Parameters<typeof inArray>[0];
+const salesforceCommunicationDetailsTable =
+  salesforceCommunicationDetails as typeof salesforceCommunicationDetails & {
+    readonly sourceEvidenceId: typeof salesforceCommunicationDetails.sourceEvidenceId;
+  };
+const simpleTextingMessageDetailsTable =
+  simpleTextingMessageDetails as typeof simpleTextingMessageDetails & {
+    readonly sourceEvidenceId: typeof simpleTextingMessageDetails.sourceEvidenceId;
+  };
+const mailchimpCampaignActivityDetailsTable =
+  mailchimpCampaignActivityDetails as typeof mailchimpCampaignActivityDetails & {
+    readonly sourceEvidenceId: typeof mailchimpCampaignActivityDetails.sourceEvidenceId;
+  };
+const manualNoteDetailsTable = manualNoteDetails as typeof manualNoteDetails & {
+  readonly sourceEvidenceId: typeof manualNoteDetails.sourceEvidenceId;
 };
 
 function requireRow<T>(row: T | undefined, message: string): T {
