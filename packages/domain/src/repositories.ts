@@ -40,6 +40,7 @@ export interface CanonicalEventRepository {
   countAll(): Promise<number>;
   countByPrimaryProvider(provider: Provider): Promise<number>;
   countDistinctInboxContacts(): Promise<number>;
+  listByIds(ids: readonly string[]): Promise<readonly CanonicalEventRecord[]>;
   listByContactId(contactId: string): Promise<readonly CanonicalEventRecord[]>;
   upsert(record: CanonicalEventRecord): Promise<CanonicalEventRecord>;
 }
@@ -50,6 +51,7 @@ export interface ContactRepository {
     salesforceContactId: string
   ): Promise<ContactRecord | null>;
   listAll(): Promise<readonly ContactRecord[]>;
+  listByIds(ids: readonly string[]): Promise<readonly ContactRecord[]>;
   upsert(record: ContactRecord): Promise<ContactRecord>;
 }
 
@@ -65,6 +67,9 @@ export interface ContactIdentityRepository {
 export interface ContactMembershipRepository {
   listByContactId(
     contactId: string
+  ): Promise<readonly ContactMembershipRecord[]>;
+  listByContactIds(
+    contactIds: readonly string[]
   ): Promise<readonly ContactMembershipRecord[]>;
   upsert(record: ContactMembershipRecord): Promise<ContactMembershipRecord>;
 }
@@ -99,6 +104,7 @@ export interface SalesforceEventContextRepository {
 
 export interface IdentityResolutionRepository {
   findById(id: string): Promise<IdentityResolutionCase | null>;
+  listOpenByContactId(contactId: string): Promise<readonly IdentityResolutionCase[]>;
   listOpenByReasonCode(
     reasonCode: IdentityResolutionReasonCode
   ): Promise<readonly IdentityResolutionCase[]>;
@@ -107,6 +113,7 @@ export interface IdentityResolutionRepository {
 
 export interface RoutingReviewRepository {
   findById(id: string): Promise<RoutingReviewCase | null>;
+  listOpenByContactId(contactId: string): Promise<readonly RoutingReviewCase[]>;
   listOpenByReasonCode(
     reasonCode: RoutingReviewReasonCode
   ): Promise<readonly RoutingReviewCase[]>;
@@ -116,6 +123,7 @@ export interface RoutingReviewRepository {
 export interface InboxProjectionRepository {
   countAll(): Promise<number>;
   findByContactId(contactId: string): Promise<InboxProjectionRow | null>;
+  listAllOrderedByRecency(): Promise<readonly InboxProjectionRow[]>;
   upsert(record: InboxProjectionRow): Promise<InboxProjectionRow>;
 }
 
