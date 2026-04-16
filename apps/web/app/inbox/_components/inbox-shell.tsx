@@ -19,10 +19,11 @@ interface ShellProps {
 /**
  * Server shell: renders the persistent chrome once for every `/inbox` route.
  * The {@link InboxClientProvider} is the client boundary that holds
- * ephemeral UI state shared across the list column and the detail workspace
- * — specifically which contacts are flagged "Needs Follow Up" and which
- * have a reminder pending — so those two islands can stay in sync without
- * hoisting a store into the canonical data layer.
+ * ephemeral UI state shared across the list column and the detail workspace:
+ * reminders, search state, loading indicators, and composer draft status.
+ *
+ * Canonical inbox row state remains server-owned and flows through the
+ * server selectors for both the list shell and the selected-contact detail.
  */
 export function InboxShell({
   filters,

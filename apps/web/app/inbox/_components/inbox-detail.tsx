@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -10,8 +11,11 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
+import {
+  clearInboxNeedsFollowUpAction,
+  markInboxNeedsFollowUpAction
+} from "../actions";
 import type { InboxDetailViewModel } from "../_lib/view-models";
-import { resolveNeedsFollowUp } from "../_lib/follow-up-state";
 import {
   useInboxClient,
   type Reminder
@@ -44,14 +48,8 @@ type ReminderUnit = "hours" | "days" | "weeks";
 export function InboxDetail({ detail }: DetailProps) {
   const { contact, timeline, smsEligible } = detail;
   const timelineRef = useRef<HTMLDivElement>(null);
-  const {
-    followUp,
-    toggleFollowUp,
-    reminders,
-    setReminder,
-    clearReminder,
-    isTimelineLoading
-  } = useInboxClient();
+  const { reminders, setReminder, clearReminder, isTimelineLoading } =
+    useInboxClient();
 
   const [railOpen, setRailOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
@@ -61,11 +59,7 @@ export function InboxDetail({ detail }: DetailProps) {
   const activeProject = contact.activeProjects[0] ?? null;
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
 
-  const isFollowUp = resolveNeedsFollowUp(
-    contact.contactId,
-    detail.needsFollowUp,
-    followUp
-  );
+  const isFollowUp = detail.needsFollowUp;
   const existingReminder = reminders.get(contact.contactId) ?? null;
 
   const handleSetReminder = () => {
@@ -127,22 +121,10 @@ export function InboxDetail({ detail }: DetailProps) {
 
           <div className="flex shrink-0 items-center gap-2">
             {/* Needs Follow Up toggle — off / on */}
-            <Button
-              variant="outline"
-              size="sm"
-              aria-pressed={isFollowUp}
-              onClick={() => {
-                toggleFollowUp(contact.contactId, detail.needsFollowUp);
-              }}
-              className={cn(
-                "gap-1.5",
-                isFollowUp &&
-                  "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800"
-              )}
-            >
-              <CornerUpLeftIcon className="h-3.5 w-3.5" />
-              Needs Follow-Up
-            </Button>
+            <FollowUpToggleForm
+              contactId={contact.contactId}
+              needsFollowUp={isFollowUp}
+            />
 
             {/* Reminder popover */}
             <Popover open={reminderOpen} onOpenChange={setReminderOpen}>
@@ -258,6 +240,56 @@ export function InboxDetail({ detail }: DetailProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function FollowUpToggleForm({
+  contactId,
+  needsFollowUp
+}: {
+  readonly contactId: string;
+  readonly needsFollowUp: boolean;
+}) {
+  const action = async (formData: FormData) => {
+    if (needsFollowUp) {
+      await clearInboxNeedsFollowUpAction(formData);
+      return;
+    }
+
+    await markInboxNeedsFollowUpAction(formData);
+  };
+
+  return (
+    <form action={action}>
+      <input type="hidden" name="contactId" value={contactId} />
+      <FollowUpToggleButton needsFollowUp={needsFollowUp} />
+    </form>
+  );
+}
+
+function FollowUpToggleButton({
+  needsFollowUp
+}: {
+  readonly needsFollowUp: boolean;
+}) {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button
+      type="submit"
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      aria-pressed={needsFollowUp}
+      className={cn(
+        "gap-1.5",
+        needsFollowUp &&
+          "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800"
+      )}
+    >
+      <CornerUpLeftIcon className="h-3.5 w-3.5" />
+      Needs Follow-Up
+    </Button>
   );
 }
 

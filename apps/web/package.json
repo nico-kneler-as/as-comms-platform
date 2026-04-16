@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@as-comms/contracts": "workspace:*",
+    "@as-comms/db": "workspace:*",
     "@as-comms/domain": "workspace:*",
     "@as-comms/ui": "workspace:*",
     "@radix-ui/react-avatar": "^1.1.11",

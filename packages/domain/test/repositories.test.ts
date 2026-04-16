@@ -33,6 +33,7 @@ describe("defineStage1RepositoryBundle", () => {
         countAll: () => Promise.resolve(0),
         countByPrimaryProvider: () => Promise.resolve(0),
         countDistinctInboxContacts: () => Promise.resolve(0),
+        listByIds: () => Promise.resolve([]),
         listByContactId: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record)
       },
@@ -40,6 +41,7 @@ describe("defineStage1RepositoryBundle", () => {
         findById: () => Promise.resolve(contact),
         findBySalesforceContactId: () => Promise.resolve(contact),
         listAll: () => Promise.resolve([contact]),
+        listByIds: () => Promise.resolve([contact]),
         upsert: (record) => Promise.resolve(record)
       },
       contactIdentities: {
@@ -49,6 +51,7 @@ describe("defineStage1RepositoryBundle", () => {
       },
       contactMemberships: {
         listByContactId: () => Promise.resolve([]),
+        listByContactIds: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record)
       },
       projectDimensions: {
@@ -67,19 +70,39 @@ describe("defineStage1RepositoryBundle", () => {
         listBySourceEvidenceIds: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record)
       },
+      salesforceCommunicationDetails: {
+        listBySourceEvidenceIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
+      simpleTextingMessageDetails: {
+        listBySourceEvidenceIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
+      mailchimpCampaignActivityDetails: {
+        listBySourceEvidenceIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
+      manualNoteDetails: {
+        listBySourceEvidenceIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
       identityResolutionQueue: {
         findById: () => Promise.resolve(null),
+        listOpenByContactId: () => Promise.resolve([]),
         listOpenByReasonCode: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record)
       },
       routingReviewQueue: {
         findById: () => Promise.resolve(null),
+        listOpenByContactId: () => Promise.resolve([]),
         listOpenByReasonCode: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record)
       },
       inboxProjection: {
         countAll: () => Promise.resolve(0),
         findByContactId: () => Promise.resolve(null),
+        listAllOrderedByRecency: () => Promise.resolve([]),
+        setNeedsFollowUp: () => Promise.resolve(null),
         upsert: (record) => Promise.resolve(record)
       },
       timelineProjection: {

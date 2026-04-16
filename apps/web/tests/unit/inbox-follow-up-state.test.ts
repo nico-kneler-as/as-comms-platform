@@ -1,50 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import {
-  resolveNeedsFollowUp,
-  toggleNeedsFollowUp
-} from "../../app/inbox/_lib/follow-up-state";
+vi.mock("next/cache", () => ({
+  unstable_cache: (loader: () => unknown) => loader,
+  revalidateTag: vi.fn()
+}));
 
-describe("follow-up state helpers", () => {
-  it("allows a seeded follow-up row to be cleared and restored", () => {
-    const contactId = "contact_seeded";
-    const seededNeedsFollowUp = true;
+import { markInboxNeedsFollowUpAction } from "../../app/inbox/actions";
 
-    const cleared = toggleNeedsFollowUp(
-      contactId,
-      seededNeedsFollowUp,
-      new Map<string, boolean>()
-    );
+describe("follow-up action validation", () => {
+  it("returns a validation error when contactId is missing", async () => {
+    const formData = new FormData();
 
-    expect(
-      resolveNeedsFollowUp(contactId, seededNeedsFollowUp, cleared)
-    ).toBe(false);
-
-    const restored = toggleNeedsFollowUp(
-      contactId,
-      seededNeedsFollowUp,
-      cleared
-    );
-
-    expect(
-      resolveNeedsFollowUp(contactId, seededNeedsFollowUp, restored)
-    ).toBe(true);
-    expect(restored.size).toBe(0);
-  });
-
-  it("allows an unflagged row to be flagged without changing seeded state", () => {
-    const contactId = "contact_unseeded";
-    const seededNeedsFollowUp = false;
-
-    const flagged = toggleNeedsFollowUp(
-      contactId,
-      seededNeedsFollowUp,
-      new Map<string, boolean>()
-    );
-
-    expect(
-      resolveNeedsFollowUp(contactId, seededNeedsFollowUp, flagged)
-    ).toBe(true);
-    expect(flagged.get(contactId)).toBe(true);
+    await expect(markInboxNeedsFollowUpAction(formData)).resolves.toEqual({
+      ok: false,
+      code: "validation_error"
+    });
   });
 });
