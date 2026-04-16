@@ -6,7 +6,9 @@ import {
   desc,
   eq,
   inArray,
-  isNull
+  isNull,
+  or,
+  sql
 } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
@@ -33,12 +35,20 @@ import {
   mapIdentityResolutionToInsert,
   mapInboxProjectionRow,
   mapInboxProjectionToInsert,
+  mapMailchimpCampaignActivityDetailRow,
+  mapMailchimpCampaignActivityDetailToInsert,
+  mapManualNoteDetailRow,
+  mapManualNoteDetailToInsert,
   mapProjectDimensionRow,
   mapProjectDimensionToInsert,
   mapRoutingReviewRow,
   mapRoutingReviewToInsert,
+  mapSalesforceCommunicationDetailRow,
+  mapSalesforceCommunicationDetailToInsert,
   mapSalesforceEventContextRow,
   mapSalesforceEventContextToInsert,
+  mapSimpleTextingMessageDetailRow,
+  mapSimpleTextingMessageDetailToInsert,
   mapSourceEvidenceRow,
   mapSourceEvidenceToInsert,
   mapSyncStateRow,
@@ -58,9 +68,13 @@ import {
   expeditionDimensions,
   gmailMessageDetails,
   identityResolutionQueue,
+  mailchimpCampaignActivityDetails,
+  manualNoteDetails,
   projectDimensions,
   routingReviewQueue,
+  salesforceCommunicationDetails,
   salesforceEventContext,
+  simpleTextingMessageDetails,
   sourceEvidenceLog,
   syncState
 } from "./schema/index.js";
@@ -234,6 +248,20 @@ function createStage1RepositoriesInternal(
         return row?.value ?? 0;
       },
 
+      async listByIds(ids) {
+        if (ids.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(canonicalEventLedger)
+          .where(inArray(canonicalEventLedger.id, [...ids]))
+          .orderBy(asc(canonicalEventLedger.id));
+
+        return rows.map(mapCanonicalEventRow);
+      },
+
       async listByContactId(contactId) {
         const rows = await db
           .select()
@@ -297,6 +325,20 @@ function createStage1RepositoriesInternal(
 
       async listAll() {
         const rows = await db.select().from(contacts).orderBy(asc(contacts.id));
+
+        return rows.map(mapContactRow);
+      },
+
+      async listByIds(ids) {
+        if (ids.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(contacts)
+          .where(inArray(contacts.id, [...ids]))
+          .orderBy(asc(contacts.id));
 
         return rows.map(mapContactRow);
       },
@@ -385,6 +427,24 @@ function createStage1RepositoriesInternal(
           .from(contactMemberships)
           .where(eq(contactMemberships.contactId, contactId))
           .orderBy(asc(contactMemberships.projectId), asc(contactMemberships.id));
+
+        return rows.map(mapContactMembershipRow);
+      },
+
+      async listByContactIds(contactIds) {
+        if (contactIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(contactMemberships)
+          .where(inArray(contactMemberships.contactId, [...contactIds]))
+          .orderBy(
+            asc(contactMemberships.contactId),
+            asc(contactMemberships.projectId),
+            asc(contactMemberships.id)
+          );
 
         return rows.map(mapContactMembershipRow);
       },
@@ -573,6 +633,188 @@ function createStage1RepositoriesInternal(
       }
     },
 
+    salesforceCommunicationDetails: {
+      async listBySourceEvidenceIds(sourceEvidenceIds) {
+        if (sourceEvidenceIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(salesforceCommunicationDetails)
+          .where(
+            inArray(salesforceCommunicationDetails.sourceEvidenceId, [
+              ...sourceEvidenceIds
+            ])
+          )
+          .orderBy(asc(salesforceCommunicationDetails.sourceEvidenceId));
+
+        return rows.map(mapSalesforceCommunicationDetailRow);
+      },
+
+      async upsert(record) {
+        const values = mapSalesforceCommunicationDetailToInsert(record);
+        const [row] = await db
+          .insert(salesforceCommunicationDetails)
+          .values(values)
+          .onConflictDoUpdate({
+            target: salesforceCommunicationDetails.sourceEvidenceId,
+            set: {
+              providerRecordId: values.providerRecordId,
+              channel: values.channel,
+              messageKind: values.messageKind,
+              subject: values.subject,
+              snippet: values.snippet,
+              sourceLabel: values.sourceLabel,
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        return mapSalesforceCommunicationDetailRow(
+          requireRow(
+            row,
+            "Expected Salesforce communication detail row to be returned."
+          )
+        );
+      }
+    },
+
+    simpleTextingMessageDetails: {
+      async listBySourceEvidenceIds(sourceEvidenceIds) {
+        if (sourceEvidenceIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(simpleTextingMessageDetails)
+          .where(
+            inArray(simpleTextingMessageDetails.sourceEvidenceId, [
+              ...sourceEvidenceIds
+            ])
+          )
+          .orderBy(asc(simpleTextingMessageDetails.sourceEvidenceId));
+
+        return rows.map(mapSimpleTextingMessageDetailRow);
+      },
+
+      async upsert(record) {
+        const values = mapSimpleTextingMessageDetailToInsert(record);
+        const [row] = await db
+          .insert(simpleTextingMessageDetails)
+          .values(values)
+          .onConflictDoUpdate({
+            target: simpleTextingMessageDetails.sourceEvidenceId,
+            set: {
+              providerRecordId: values.providerRecordId,
+              direction: values.direction,
+              messageKind: values.messageKind,
+              messageTextPreview: values.messageTextPreview,
+              normalizedPhone: values.normalizedPhone,
+              campaignId: values.campaignId,
+              campaignName: values.campaignName,
+              providerThreadId: values.providerThreadId,
+              threadKey: values.threadKey,
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        return mapSimpleTextingMessageDetailRow(
+          requireRow(
+            row,
+            "Expected SimpleTexting message detail row to be returned."
+          )
+        );
+      }
+    },
+
+    mailchimpCampaignActivityDetails: {
+      async listBySourceEvidenceIds(sourceEvidenceIds) {
+        if (sourceEvidenceIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(mailchimpCampaignActivityDetails)
+          .where(
+            inArray(mailchimpCampaignActivityDetails.sourceEvidenceId, [
+              ...sourceEvidenceIds
+            ])
+          )
+          .orderBy(asc(mailchimpCampaignActivityDetails.sourceEvidenceId));
+
+        return rows.map(mapMailchimpCampaignActivityDetailRow);
+      },
+
+      async upsert(record) {
+        const values = mapMailchimpCampaignActivityDetailToInsert(record);
+        const [row] = await db
+          .insert(mailchimpCampaignActivityDetails)
+          .values(values)
+          .onConflictDoUpdate({
+            target: mailchimpCampaignActivityDetails.sourceEvidenceId,
+            set: {
+              providerRecordId: values.providerRecordId,
+              activityType: values.activityType,
+              campaignId: values.campaignId,
+              audienceId: values.audienceId,
+              memberId: values.memberId,
+              campaignName: values.campaignName,
+              snippet: values.snippet,
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        return mapMailchimpCampaignActivityDetailRow(
+          requireRow(
+            row,
+            "Expected Mailchimp campaign activity detail row to be returned."
+          )
+        );
+      }
+    },
+
+    manualNoteDetails: {
+      async listBySourceEvidenceIds(sourceEvidenceIds) {
+        if (sourceEvidenceIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(manualNoteDetails)
+          .where(inArray(manualNoteDetails.sourceEvidenceId, [...sourceEvidenceIds]))
+          .orderBy(asc(manualNoteDetails.sourceEvidenceId));
+
+        return rows.map(mapManualNoteDetailRow);
+      },
+
+      async upsert(record) {
+        const values = mapManualNoteDetailToInsert(record);
+        const [row] = await db
+          .insert(manualNoteDetails)
+          .values(values)
+          .onConflictDoUpdate({
+            target: manualNoteDetails.sourceEvidenceId,
+            set: {
+              providerRecordId: values.providerRecordId,
+              body: values.body,
+              authorDisplayName: values.authorDisplayName,
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        return mapManualNoteDetailRow(
+          requireRow(row, "Expected manual note detail row to be returned.")
+        );
+      }
+    },
+
     identityResolutionQueue: {
       async findById(id) {
         const [row] = await db
@@ -595,6 +837,24 @@ function createStage1RepositoriesInternal(
             )
           )
           .orderBy(asc(identityResolutionQueue.openedAt));
+
+        return rows.map(mapIdentityResolutionRow);
+      },
+
+      async listOpenByContactId(contactId) {
+        const rows = await db
+          .select()
+          .from(identityResolutionQueue)
+          .where(
+            and(
+              eq(identityResolutionQueue.status, "open"),
+              or(
+                eq(identityResolutionQueue.anchoredContactId, contactId),
+                sql`${contactId} = any(${identityResolutionQueue.candidateContactIds})`
+              )
+            )
+          )
+          .orderBy(desc(identityResolutionQueue.openedAt), asc(identityResolutionQueue.id));
 
         return rows.map(mapIdentityResolutionRow);
       },
@@ -653,6 +913,21 @@ function createStage1RepositoriesInternal(
         return rows.map(mapRoutingReviewRow);
       },
 
+      async listOpenByContactId(contactId) {
+        const rows = await db
+          .select()
+          .from(routingReviewQueue)
+          .where(
+            and(
+              eq(routingReviewQueue.contactId, contactId),
+              eq(routingReviewQueue.status, "open")
+            )
+          )
+          .orderBy(desc(routingReviewQueue.openedAt), asc(routingReviewQueue.id));
+
+        return rows.map(mapRoutingReviewRow);
+      },
+
       async upsert(record) {
         const values = mapRoutingReviewToInsert(record);
         const [row] = await db
@@ -697,6 +972,34 @@ function createStage1RepositoriesInternal(
           .from(contactInboxProjection)
           .where(eq(contactInboxProjection.contactId, contactId))
           .limit(1);
+
+        return row === undefined ? null : mapInboxProjectionRow(row);
+      },
+
+      async listAllOrderedByRecency() {
+        const rows = await db
+          .select()
+          .from(contactInboxProjection)
+          .orderBy(
+            desc(
+              sql`coalesce(${contactInboxProjection.lastInboundAt}, ${contactInboxProjection.lastActivityAt})`
+            ),
+            desc(contactInboxProjection.lastActivityAt),
+            asc(contactInboxProjection.contactId)
+          );
+
+        return rows.map(mapInboxProjectionRow);
+      },
+
+      async setNeedsFollowUp(input) {
+        const [row] = await db
+          .update(contactInboxProjection)
+          .set({
+            isStarred: input.needsFollowUp,
+            updatedAt: new Date()
+          })
+          .where(eq(contactInboxProjection.contactId, input.contactId))
+          .returning();
 
         return row === undefined ? null : mapInboxProjectionRow(row);
       },

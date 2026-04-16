@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@as-comms/contracts": "workspace:*",
+    "@as-comms/db": "workspace:*",
     "@as-comms/domain": "workspace:*",
     "@as-comms/ui": "workspace:*",
     "@radix-ui/react-avatar": "^1.1.11",
@@ -27,6 +28,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "drizzle-orm": "^0.41.0",
     "lucide-react": "^1.8.0",
     "next": "^15.2.2",
     "react": "^19.0.0",

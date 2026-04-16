@@ -38,7 +38,7 @@ export function InboxRow({ item, isActive }: RowProps) {
   return (
     <li>
       <Link
-        href={`/inbox/${item.contactId}`}
+        href={`/inbox/${encodeURIComponent(item.contactId)}`}
         aria-current={isActive ? "page" : undefined}
         className={`relative flex gap-3 border-b border-slate-100 ${SPACING.listItem} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
           isActive

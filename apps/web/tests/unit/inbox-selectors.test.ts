@@ -50,8 +50,8 @@ describe("compareInboxRecency", () => {
 });
 
 describe("getInboxList", () => {
-  it("uses bucket=new for unread filtering", () => {
-    const unreadContacts = getInboxList("unread").items.map(
+  it("uses bucket=new for unread filtering", async () => {
+    const unreadContacts = (await getInboxList("unread")).items.map(
       (item) => item.displayName
     );
 
@@ -64,8 +64,8 @@ describe("getInboxList", () => {
     ]);
   });
 
-  it("uses needsFollowUp for follow-up filtering", () => {
-    const followUpContacts = getInboxList("follow-up").items.map(
+  it("uses needsFollowUp for follow-up filtering", async () => {
+    const followUpContacts = (await getInboxList("follow-up")).items.map(
       (item) => item.displayName
     );
 
@@ -76,8 +76,8 @@ describe("getInboxList", () => {
     ]);
   });
 
-  it("uses hasUnresolved for unresolved filtering", () => {
-    const unresolvedContacts = getInboxList("unresolved").items.map(
+  it("uses hasUnresolved for unresolved filtering", async () => {
+    const unresolvedContacts = (await getInboxList("unresolved")).items.map(
       (item) => item.displayName
     );
 

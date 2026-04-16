@@ -9,7 +9,7 @@ interface PageProps {
 
 export default async function InboxContactPage({ params }: PageProps) {
   const { contactId } = await params;
-  const detail = getInboxDetail(contactId);
+  const detail = await getInboxDetail(decodeURIComponent(contactId));
   if (!detail) {
     notFound();
   }
