@@ -8,7 +8,6 @@ import type {
   InboxFilterViewModel,
   InboxListItemViewModel
 } from "../_lib/view-models";
-import { resolveNeedsFollowUp } from "../_lib/follow-up-state";
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { useInboxClient } from "./inbox-client-provider";
@@ -35,13 +34,7 @@ export function InboxList({
 }: ListColumnProps) {
   const pathname = usePathname();
   const activeContactId = extractContactId(pathname);
-  const {
-    followUp,
-    search,
-    setSearchQuery,
-    clearSearch,
-    isQueueLoading
-  } = useInboxClient();
+  const { search, setSearchQuery, clearSearch, isQueueLoading } = useInboxClient();
 
   const [activeFilter, setActiveFilter] = useState<InboxFilterId>(initialFilterId);
   const filterLabels = useMemo(
@@ -50,14 +43,14 @@ export function InboxList({
     [filters]
   );
 
-  // Compute filter counts from base projection state + local overrides.
+  // Compute filter counts from the server-backed projection state.
   const filterCounts = useMemo(() => {
     let unread = 0;
     let followUpCount = 0;
     let unresolved = 0;
     for (const item of items) {
       if (item.bucket === "new") unread++;
-      if (resolveNeedsFollowUp(item.contactId, item.needsFollowUp, followUp)) {
+      if (item.needsFollowUp) {
         followUpCount++;
       }
       if (item.hasUnresolved) unresolved++;
@@ -68,13 +61,11 @@ export function InboxList({
       "follow-up": followUpCount,
       unresolved
     };
-  }, [items, followUp]);
+  }, [items]);
 
   // Apply filters: active filter -> search
   const filteredItems = useMemo(() => {
-    let result = items.filter((item) =>
-      matchesActiveFilter(item, activeFilter, followUp)
-    );
+    let result = items.filter((item) => matchesActiveFilter(item, activeFilter));
 
     // Search filter
     if (search.isActive && search.resultContactIds.length > 0) {
@@ -83,7 +74,7 @@ export function InboxList({
     }
 
     return result;
-  }, [items, activeFilter, followUp, search]);
+  }, [items, activeFilter, search]);
 
   // For local search simulation: filter by query string matching
   const searchFilteredItems = useMemo(() => {
@@ -203,14 +194,7 @@ export function InboxList({
             {displayItems.map((item) => (
               <InboxRow
                 key={item.contactId}
-                item={{
-                  ...item,
-                  needsFollowUp: resolveNeedsFollowUp(
-                    item.contactId,
-                    item.needsFollowUp,
-                    followUp
-                  )
-                }}
+                item={item}
                 isActive={item.contactId === activeContactId}
               />
             ))}
@@ -248,13 +232,18 @@ function SearchEmptyState({ query }: { readonly query: string }) {
 function extractContactId(pathname: string | null): string | null {
   if (!pathname) return null;
   const match = /^\/inbox\/([^/]+)/.exec(pathname);
-  return match ? (match[1] ?? null) : null;
+  if (!match) return null;
+
+  try {
+    return decodeURIComponent(match[1] ?? "");
+  } catch {
+    return match[1] ?? null;
+  }
 }
 
 function matchesActiveFilter(
   item: InboxListItemViewModel,
-  activeFilter: InboxFilterId,
-  followUp: ReadonlyMap<string, boolean>
+  activeFilter: InboxFilterId
 ): boolean {
   switch (activeFilter) {
     case "all":
@@ -262,7 +251,7 @@ function matchesActiveFilter(
     case "unread":
       return item.bucket === "new";
     case "follow-up":
-      return resolveNeedsFollowUp(item.contactId, item.needsFollowUp, followUp);
+      return item.needsFollowUp;
     case "unresolved":
       return item.hasUnresolved;
   }

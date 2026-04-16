@@ -6,7 +6,9 @@ import {
   desc,
   eq,
   inArray,
-  isNull
+  isNull,
+  or,
+  sql
 } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
@@ -234,6 +236,20 @@ function createStage1RepositoriesInternal(
         return row?.value ?? 0;
       },
 
+      async listByIds(ids) {
+        if (ids.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(canonicalEventLedger)
+          .where(inArray(canonicalEventLedger.id, [...ids]))
+          .orderBy(asc(canonicalEventLedger.id));
+
+        return rows.map(mapCanonicalEventRow);
+      },
+
       async listByContactId(contactId) {
         const rows = await db
           .select()
@@ -297,6 +313,20 @@ function createStage1RepositoriesInternal(
 
       async listAll() {
         const rows = await db.select().from(contacts).orderBy(asc(contacts.id));
+
+        return rows.map(mapContactRow);
+      },
+
+      async listByIds(ids) {
+        if (ids.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(contacts)
+          .where(inArray(contacts.id, [...ids]))
+          .orderBy(asc(contacts.id));
 
         return rows.map(mapContactRow);
       },
@@ -385,6 +415,24 @@ function createStage1RepositoriesInternal(
           .from(contactMemberships)
           .where(eq(contactMemberships.contactId, contactId))
           .orderBy(asc(contactMemberships.projectId), asc(contactMemberships.id));
+
+        return rows.map(mapContactMembershipRow);
+      },
+
+      async listByContactIds(contactIds) {
+        if (contactIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(contactMemberships)
+          .where(inArray(contactMemberships.contactId, [...contactIds]))
+          .orderBy(
+            asc(contactMemberships.contactId),
+            asc(contactMemberships.projectId),
+            asc(contactMemberships.id)
+          );
 
         return rows.map(mapContactMembershipRow);
       },
@@ -599,6 +647,24 @@ function createStage1RepositoriesInternal(
         return rows.map(mapIdentityResolutionRow);
       },
 
+      async listOpenByContactId(contactId) {
+        const rows = await db
+          .select()
+          .from(identityResolutionQueue)
+          .where(
+            and(
+              eq(identityResolutionQueue.status, "open"),
+              or(
+                eq(identityResolutionQueue.anchoredContactId, contactId),
+                sql`${contactId} = any(${identityResolutionQueue.candidateContactIds})`
+              )
+            )
+          )
+          .orderBy(desc(identityResolutionQueue.openedAt), asc(identityResolutionQueue.id));
+
+        return rows.map(mapIdentityResolutionRow);
+      },
+
       async upsert(record) {
         const values = mapIdentityResolutionToInsert(record);
         const [row] = await db
@@ -653,6 +719,21 @@ function createStage1RepositoriesInternal(
         return rows.map(mapRoutingReviewRow);
       },
 
+      async listOpenByContactId(contactId) {
+        const rows = await db
+          .select()
+          .from(routingReviewQueue)
+          .where(
+            and(
+              eq(routingReviewQueue.contactId, contactId),
+              eq(routingReviewQueue.status, "open")
+            )
+          )
+          .orderBy(desc(routingReviewQueue.openedAt), asc(routingReviewQueue.id));
+
+        return rows.map(mapRoutingReviewRow);
+      },
+
       async upsert(record) {
         const values = mapRoutingReviewToInsert(record);
         const [row] = await db
@@ -699,6 +780,21 @@ function createStage1RepositoriesInternal(
           .limit(1);
 
         return row === undefined ? null : mapInboxProjectionRow(row);
+      },
+
+      async listAllOrderedByRecency() {
+        const rows = await db
+          .select()
+          .from(contactInboxProjection)
+          .orderBy(
+            desc(
+              sql`coalesce(${contactInboxProjection.lastInboundAt}, ${contactInboxProjection.lastActivityAt})`
+            ),
+            desc(contactInboxProjection.lastActivityAt),
+            asc(contactInboxProjection.contactId)
+          );
+
+        return rows.map(mapInboxProjectionRow);
       },
 
       async upsert(record) {

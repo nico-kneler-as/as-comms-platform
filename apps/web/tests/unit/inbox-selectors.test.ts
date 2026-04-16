@@ -1,10 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("next/cache", () => ({
+  unstable_cache: (loader: () => unknown) => loader,
+  revalidateTag: vi.fn()
+}));
 
 import {
   compareInboxRecency,
+  getInboxDetail,
   getInboxList
 } from "../../app/inbox/_lib/selectors";
 import type { InboxListItemViewModel } from "../../app/inbox/_lib/view-models";
+import {
+  createInboxTestRuntime,
+  seedInboxContact,
+  seedInboxEmailEvent,
+  seedInboxProjection,
+  seedInboxSmsEvent,
+  type InboxTestRuntime
+} from "./inbox-stage1-helpers";
 
 function buildItem(
   overrides: Partial<InboxListItemViewModel>
@@ -32,6 +46,119 @@ function buildItem(
   };
 }
 
+async function seedInboxFixture(runtime: InboxTestRuntime): Promise<void> {
+  await seedInboxContact(runtime.context, {
+    contactId: "contact:lisa-zhang",
+    salesforceContactId: "003-lisa",
+    displayName: "Lisa Zhang",
+    primaryEmail: "lisa@example.org",
+    primaryPhone: null,
+    projectId: "project:killer-whales",
+    projectName: "Searching for Killer Whales",
+    membershipId: "membership:lisa",
+    membershipStatus: "successful"
+  });
+  const lisaLatest = await seedInboxEmailEvent(runtime.context, {
+    id: "lisa-outbound-1",
+    contactId: "contact:lisa-zhang",
+    occurredAt: "2026-04-14T15:00:00.000Z",
+    direction: "outbound",
+    subject: "Safety protocols",
+    snippet: "Sending the final safety protocol packet for review."
+  });
+  await seedInboxProjection(runtime.context, {
+    contactId: "contact:lisa-zhang",
+    bucket: "Opened",
+    needsFollowUp: false,
+    hasUnresolved: false,
+    lastInboundAt: null,
+    lastOutboundAt: "2026-04-14T15:00:00.000Z",
+    lastActivityAt: "2026-04-14T15:00:00.000Z",
+    snippet: "Sending the final safety protocol packet for review.",
+    lastCanonicalEventId: lisaLatest.canonicalEventId,
+    lastEventType: "communication.email.outbound"
+  });
+
+  await seedInboxContact(runtime.context, {
+    contactId: "contact:sarah-martinez",
+    salesforceContactId: "003-sarah",
+    displayName: "Sarah Martinez",
+    primaryEmail: "sarah@example.org",
+    primaryPhone: "+15550000001",
+    projectId: "project:amazon-basin",
+    projectName: "Amazon Basin Research",
+    membershipId: "membership:sarah",
+    membershipStatus: "in_training"
+  });
+  await seedInboxEmailEvent(runtime.context, {
+    id: "sarah-outbound-1",
+    contactId: "contact:sarah-martinez",
+    occurredAt: "2026-04-13T12:00:00.000Z",
+    direction: "outbound",
+    subject: "Amazon Basin equipment list",
+    snippet: "Sharing the equipment list for the next field session."
+  });
+  const sarahLatest = await seedInboxEmailEvent(runtime.context, {
+    id: "sarah-inbound-1",
+    contactId: "contact:sarah-martinez",
+    occurredAt: "2026-04-14T13:00:00.000Z",
+    direction: "inbound",
+    subject: "Re: Amazon Basin equipment list",
+    snippet: "Following up on the field study logistics for the Amazon basin project."
+  });
+  await seedInboxProjection(runtime.context, {
+    contactId: "contact:sarah-martinez",
+    bucket: "New",
+    needsFollowUp: true,
+    hasUnresolved: false,
+    lastInboundAt: "2026-04-14T13:00:00.000Z",
+    lastOutboundAt: "2026-04-13T12:00:00.000Z",
+    lastActivityAt: "2026-04-14T13:00:00.000Z",
+    snippet:
+      "Following up on the field study logistics for the Amazon basin project.",
+    lastCanonicalEventId: sarahLatest.canonicalEventId,
+    lastEventType: "communication.email.inbound"
+  });
+
+  await seedInboxContact(runtime.context, {
+    contactId: "contact:alex-thompson",
+    salesforceContactId: "003-alex",
+    displayName: "Alex Thompson",
+    primaryEmail: null,
+    primaryPhone: "+15550000002",
+    projectId: "project:whitebark-pine",
+    projectName: "Tracking Whitebark Pine",
+    membershipId: "membership:alex",
+    membershipStatus: "trip_planning"
+  });
+  await seedInboxSmsEvent(runtime.context, {
+    id: "alex-outbound-1",
+    contactId: "contact:alex-thompson",
+    occurredAt: "2026-04-12T18:00:00.000Z",
+    direction: "outbound",
+    summary: "We can shift the mountain research dates if weather stays rough."
+  });
+  const alexLatest = await seedInboxSmsEvent(runtime.context, {
+    id: "alex-inbound-1",
+    contactId: "contact:alex-thompson",
+    occurredAt: "2026-04-12T19:00:00.000Z",
+    direction: "inbound",
+    summary: "Had to postpone due to weather. Proposing new dates."
+  });
+  await seedInboxProjection(runtime.context, {
+    contactId: "contact:alex-thompson",
+    bucket: "Opened",
+    needsFollowUp: false,
+    hasUnresolved: true,
+    lastInboundAt: "2026-04-12T19:00:00.000Z",
+    lastOutboundAt: "2026-04-12T18:00:00.000Z",
+    lastActivityAt: "2026-04-12T19:00:00.000Z",
+    snippet: "Had to postpone due to weather. Proposing new dates.",
+    lastCanonicalEventId: alexLatest.canonicalEventId,
+    lastEventType: "communication.sms.inbound"
+  });
+}
+
 describe("compareInboxRecency", () => {
   it("falls back to lastActivityAt when lastInboundAt is missing", () => {
     const outboundOnly = buildItem({
@@ -49,42 +176,81 @@ describe("compareInboxRecency", () => {
   });
 });
 
-describe("getInboxList", () => {
-  it("uses bucket=new for unread filtering", () => {
-    const unreadContacts = getInboxList("unread").items.map(
-      (item) => item.displayName
-    );
+describe("real inbox selectors", () => {
+  let runtime: InboxTestRuntime | null = null;
 
-    expect(unreadContacts).toEqual([
-      "Maya Patel",
-      "Daniel Rivers",
-      "Priya Chen",
-      "Anita Ross",
-      "+1 720 555 0199"
+  beforeEach(async () => {
+    runtime = await createInboxTestRuntime();
+    await seedInboxFixture(runtime);
+  });
+
+  afterEach(async () => {
+    await runtime?.dispose();
+    runtime = null;
+  });
+
+  it("reads one row per contact from real projections with inbound-first sorting and activity fallback", async () => {
+    const list = await getInboxList();
+
+    expect(list.items.map((item) => item.contactId)).toEqual([
+      "contact:lisa-zhang",
+      "contact:sarah-martinez",
+      "contact:alex-thompson"
+    ]);
+    expect(list.items[0]).toMatchObject({
+      contactId: "contact:lisa-zhang",
+      latestSubject: "Safety protocols",
+      bucket: "opened"
+    });
+    expect(list.items[1]).toMatchObject({
+      contactId: "contact:sarah-martinez",
+      latestSubject: "Re: Amazon Basin equipment list",
+      needsFollowUp: true,
+      bucket: "new"
+    });
+  });
+
+  it("uses bucket, needsFollowUp, and hasUnresolved for the secondary filters", async () => {
+    const unread = await getInboxList("unread");
+    const followUp = await getInboxList("follow-up");
+    const unresolved = await getInboxList("unresolved");
+
+    expect(unread.items.map((item) => item.contactId)).toEqual([
+      "contact:sarah-martinez"
+    ]);
+    expect(followUp.items.map((item) => item.contactId)).toEqual([
+      "contact:sarah-martinez"
+    ]);
+    expect(unresolved.items.map((item) => item.contactId)).toEqual([
+      "contact:alex-thompson"
     ]);
   });
 
-  it("uses needsFollowUp for follow-up filtering", () => {
-    const followUpContacts = getInboxList("follow-up").items.map(
-      (item) => item.displayName
-    );
+  it("assembles selected-contact detail from real contact, membership, timeline, and projection data", async () => {
+    const detail = await getInboxDetail("contact:sarah-martinez");
 
-    expect(followUpContacts).toEqual([
-      "Maya Patel",
-      "Sam Whitehorse",
-      "Elena Marquez"
+    expect(detail).not.toBeNull();
+    expect(detail).toMatchObject({
+      bucket: "new",
+      needsFollowUp: true,
+      smsEligible: true
+    });
+    expect(detail?.contact).toMatchObject({
+      contactId: "contact:sarah-martinez",
+      displayName: "Sarah Martinez",
+      volunteerId: "003-sarah"
+    });
+    expect(detail?.contact.activeProjects[0]).toMatchObject({
+      projectName: "Amazon Basin Research",
+      status: "in-training"
+    });
+    expect(detail?.timeline.map((entry) => entry.kind)).toEqual([
+      "outbound-email",
+      "inbound-email"
     ]);
-  });
-
-  it("uses hasUnresolved for unresolved filtering", () => {
-    const unresolvedContacts = getInboxList("unresolved").items.map(
-      (item) => item.displayName
-    );
-
-    expect(unresolvedContacts).toEqual([
-      "Priya Chen",
-      "Anita Ross",
-      "+1 720 555 0199"
-    ]);
+    expect(detail?.timeline.at(-1)).toMatchObject({
+      subject: "Re: Amazon Basin equipment list",
+      isUnread: true
+    });
   });
 });

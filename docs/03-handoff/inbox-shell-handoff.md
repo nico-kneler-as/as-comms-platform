@@ -1,167 +1,64 @@
-# Inbox Shell — Codex Data Contracts
+# Inbox Shell — Real Wiring Handoff
 
-This document describes the data contracts the inbox frontend shell expects.
-The shell is fully implemented with mock data and can be wired to real
-projection reads by swapping the two selector functions in
-`apps/web/app/inbox/_lib/selectors.ts`.
+This handoff reflects the current mainline Inbox shell under
+`apps/web/app/inbox/`. The shell architecture is unchanged: the persistent list
+chrome still lives in `layout.tsx`, `/inbox` still renders the empty-state page
+inside that shell, and `/inbox/[contactId]` still renders the selected-contact
+detail page.
 
----
+## What Is Real Now
 
-## View Model Interfaces
+- `apps/web/app/inbox/_lib/selectors.ts`
+  - `getInboxList(filterId?)` now reads real Stage 1 data from
+    `contact_inbox_projection`, `contacts`, `contact_memberships`,
+    `project_dimensions`, `canonical_event_ledger`, `gmail_message_details`,
+    and `contact_timeline_projection`.
+  - `getInboxDetail(contactId)` now reads real Stage 1 data from
+    `contacts`, `contact_inbox_projection`, `contact_memberships`,
+    `project_dimensions`, `canonical_event_ledger`,
+    `gmail_message_details`, and `contact_timeline_projection`.
+- `apps/web/app/inbox/actions.ts`
+  - `markInboxNeedsFollowUpAction` and `clearInboxNeedsFollowUpAction` now
+    persist through the server by updating the inbox projection row for the
+    selected contact.
+- `apps/web/src/server/stage1-runtime.ts`
+  - Small server-only runtime for `DATABASE_URL`, Stage 1 repositories, and
+    test overrides.
+- `apps/web/src/server/inbox/follow-up.ts`
+  - Narrow server helper that updates only `needsFollowUp` and leaves bucket,
+    unresolved state, timestamps, snippet, and last-event fields untouched.
 
-All types are defined in `apps/web/app/inbox/_lib/view-models.ts`.
+## Preserved Contract
 
-### InboxListItemViewModel (one row per person)
+- One row per person, not one row per thread.
+- Single mixed contact list.
+- Default ordering remains `lastInboundAt desc`, with `lastActivityAt desc`
+  fallback when `lastInboundAt` is missing.
+- Unread remains bucket-driven.
+- `needsFollowUp` remains a separate explicit flag.
+- `hasUnresolved` remains an overlay.
+- Follow-up toggling does not reorder rows.
+- Route structure remains `/inbox` and `/inbox/[contactId]`.
 
-```typescript
-interface InboxListItemViewModel {
-  contactId: string;
-  displayName: string;
-  initials: string;
-  avatarTone: InboxAvatarTone;
-  latestSubject: string;
-  snippet: string;
-  latestChannel: InboxChannel;        // "email" | "sms"
-  projectLabel: string | null;
-  volunteerStage: InboxVolunteerStage;
+## Current Bridging Logic
 
-  // Row states (all separate, not collapsed)
-  bucket: InboxBucket;                // "new" | "opened"
-  needsFollowUp: boolean;             // explicit operator flag
-  hasUnresolved: boolean;              // review overlay
-  unreadCount: number;
+- `unreadCount` is still a selector-derived `1/0` badge keyed from bucket state,
+  because the current projection model does not store a per-contact unread
+  message count.
+- Membership `year` is still selector-derived from the current UTC year,
+  because the canonical membership season/year is not persisted on the current
+  Stage 1 read model.
+- `crmUrl` in the contact rail is still synthesized from `projectId`, because a
+  canonical persisted CRM URL is not available on the membership dimension yet.
+- Timeline bodies and subjects are exact for Gmail-backed email events. When a
+  richer provider-specific communication detail is not available, the selector
+  falls back to timeline summaries so the shell contract stays stable.
 
-  // Sort / display
-  lastInboundAt: string | null;       // ISO 8601 — primary sort field when present
-  lastActivityAt: string;             // ISO 8601
-  lastEventType: InboxDrivingEventType;
-  lastActivityLabel: string;          // relative time label
-}
-```
+## Revalidation
 
-### InboxDetailViewModel (selected contact workspace)
+- `inbox`
+- `inbox:contact:{contactId}`
+- `timeline:contact:{contactId}`
 
-```typescript
-interface InboxDetailViewModel {
-  contact: InboxContactSummaryViewModel;
-  timeline: readonly InboxTimelineEntryViewModel[];
-  bucket: InboxBucket;
-  needsFollowUp: boolean;
-  smsEligible: boolean;
-}
-```
-
-### InboxTimelineEntryViewModel
-
-```typescript
-interface InboxTimelineEntryViewModel {
-  id: string;
-  kind: InboxTimelineEntryKind;       // 9 variants (see view-models.ts)
-  occurredAt: string;
-  occurredAtLabel: string;
-  actorLabel: string;
-  subject: string | null;
-  body: string;
-  channel: InboxChannel | null;
-  isUnread: boolean;
-}
-```
-
-### InboxContactSummaryViewModel
-
-```typescript
-interface InboxContactSummaryViewModel {
-  contactId: string;
-  displayName: string;
-  volunteerId: string;
-  primaryEmail: string | null;
-  primaryPhone: string | null;
-  cityState: string | null;
-  joinedAtLabel: string;
-  hasUnresolved: boolean;
-  activeProjects: readonly InboxProjectMembershipViewModel[];
-  pastProjects: readonly InboxProjectMembershipViewModel[];
-  recentActivity: readonly InboxRecentActivityViewModel[];
-}
-```
-
----
-
-## Selector Swap Points
-
-Both selectors live in `apps/web/app/inbox/_lib/selectors.ts`. They currently
-import from `mock-data.ts`. To wire to real data, replace the mock reads with
-projection repository calls. The view-model shapes stay stable.
-
-### getInboxList(filterId?)
-
-```typescript
-function getInboxList(filterId?: InboxFilterId): InboxListViewModel
-```
-
-- Returns the full contact list sorted by `lastInboundAt` descending, falling back to `lastActivityAt`
-- Computes base filter counts from projection state: all, unread (`bucket = "new"`), follow-up (`needsFollowUp = true`), unresolved (`hasUnresolved = true`)
-- Client-side follow-up overrides may adjust the visible follow-up filter without changing bucket semantics
-- **Swap target:** Replace `getMockContacts()` with a projection query that
-  reads from `contactInboxProjection` and joins to get display fields
-
-### getInboxDetail(contactId)
-
-```typescript
-function getInboxDetail(contactId: string): InboxDetailViewModel | null
-```
-
-- Returns the full contact detail including timeline, project context, and
-  recent activity milestones
-- **Swap target:** Replace `getMockContactById()` with projection reads from
-  `contactTimelineProjection` + `contacts` + `contactMemberships`
-
----
-
-## Sort Contract
-
-- Default list order: `lastInboundAt` descending (most recent inbound first), falling back to `lastActivityAt` when `lastInboundAt` is missing
-- Toggling follow-up does NOT change row ordering
-- `lastInboundAt` tracks the most recent inbound email or SMS from the contact
-- `lastActivityAt` is the fallback sort field when a row has no inbound history
-
----
-
-## Cache Tag Expectations (FP-05)
-
-| Tag | Invalidation scope |
-|-----|--------------------|
-| `inbox` | Top-level inbox list shell |
-| `inbox:contact:{contactId}` | Row-level contact inbox refresh |
-| `timeline:contact:{contactId}` | Per-contact timeline refresh |
-
-Server actions should call `revalidateTag()` for the narrowest affected tags
-before returning. Webhook/worker-triggered changes should hit a protected
-internal revalidation endpoint that calls `revalidateTag()`.
-
----
-
-## Server Action Stubs Needed
-
-| Action | Description |
-|--------|-------------|
-| `sendReply` | Send email or SMS reply to a contact |
-| `saveNote` | Save an internal note to the contact timeline |
-| `toggleFollowUp` | Set or clear `needsFollowUp` on the inbox projection |
-| `markAsRead` | Transition bucket from "new" to "opened" |
-
-All actions should return the safe error envelope:
-```typescript
-type UiSuccess<T> = { ok: true; data: T; requestId: string };
-type UiError = { ok: false; code: string; message: string; requestId: string };
-```
-
----
-
-## Polling / Freshness Contract (FP-06)
-
-- Inbox-like views should poll a lightweight freshness endpoint while visible
-- Default interval: 30-60 seconds
-- Pause when tab is hidden (use `document.visibilityState`)
-- Polling is a resilience fallback, not the primary consistency mechanism
-- Primary consistency comes from `revalidateTag` after mutations
+The follow-up actions revalidate those tags after a successful update so the
+mainline shell refreshes from server state instead of client-side overrides.

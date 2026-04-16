@@ -17,12 +17,12 @@ export const metadata = {
  * The client applies the active filter locally against those view models, so
  * the sidebar collapse has no effect on where canonical state lives.
  */
-export default function InboxLayout({
+export default async function InboxLayout({
   children
 }: {
   readonly children: ReactNode;
 }) {
-  const list = getInboxList("all");
+  const list = await getInboxList("all");
 
   return (
     <InboxShell

@@ -9,19 +9,12 @@ import {
   type ReactNode
 } from "react";
 
-import {
-  toggleNeedsFollowUp,
-  type FollowUpOverrides
-} from "../_lib/follow-up-state";
-
 /**
  * Prototype-local client state shared across the Inbox list column and
- * Detail workspace. In a real build these would round-trip through server
- * actions; for the prototype we keep them in React context so toggling a
- * button in one panel immediately reflects in the other.
+ * Detail workspace. These are intentionally ephemeral UI concerns only.
  *
  * Extended to cover every interactive state the UI needs:
- *   - follow-up flags and reminders (original)
+ *   - reminders
  *   - search query + results
  *   - composer status (idle → saving → saved / error → sending → sent / failed)
  *   - AI draft lifecycle (idle → generating → inserted → edited / discarded)
@@ -95,13 +88,8 @@ const INITIAL_SEARCH: SearchState = {
 // ---------- Context shape ----------
 
 interface InboxClientState {
-  // Follow-up & reminders
-  readonly followUp: FollowUpOverrides;
+  // Reminders
   readonly reminders: ReadonlyMap<string, Reminder>;
-  readonly toggleFollowUp: (
-    contactId: string,
-    seededNeedsFollowUp: boolean
-  ) => void;
   readonly setReminder: (contactId: string, reminder: Reminder) => void;
   readonly clearReminder: (contactId: string) => void;
 
@@ -144,22 +132,10 @@ export function InboxClientProvider({
 }: {
   readonly children: ReactNode;
 }) {
-  // Follow-up & reminders
-  const [followUp, setFollowUp] = useState<FollowUpOverrides>(
-    () => new Map<string, boolean>()
-  );
+  // Reminders
   const [reminders, setReminders] = useState<ReadonlyMap<string, Reminder>>(
     () => new Map<string, Reminder>()
   );
-
-  const toggleFollowUp = useCallback((
-    contactId: string,
-    seededNeedsFollowUp: boolean
-  ) => {
-    setFollowUp((prev) =>
-      toggleNeedsFollowUp(contactId, seededNeedsFollowUp, prev)
-    );
-  }, []);
 
   const setReminder = useCallback((contactId: string, reminder: Reminder) => {
     setReminders((prev) => {
@@ -276,9 +252,7 @@ export function InboxClientProvider({
 
   const value = useMemo<InboxClientState>(
     () => ({
-      followUp,
       reminders,
-      toggleFollowUp,
       setReminder,
       clearReminder,
       search,
@@ -304,9 +278,7 @@ export function InboxClientProvider({
       resetAiDraft
     }),
     [
-      followUp,
       reminders,
-      toggleFollowUp,
       setReminder,
       clearReminder,
       search,
