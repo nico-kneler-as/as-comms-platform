@@ -5,16 +5,26 @@ import type {
   CanonicalEventRecord,
   ContactRecord,
   InboxProjectionRow,
-  SalesforceCommunicationDetailRecord,
+  TimelineItem,
   SourceEvidenceRecord,
   TimelineProjectionRow
 } from "@as-comms/contracts";
 
 import {
-  createStage1TimelinePresentationService,
-  defineStage1RepositoryBundle,
-  type Stage1RepositoryBundle
-} from "../src/index.js";
+  type Stage1RepositoryBundle,
+  defineStage1RepositoryBundle
+} from "../src/repositories.js";
+import { createStage1TimelinePresentationService } from "../src/timeline.js";
+
+interface SalesforceCommunicationDetailRecord {
+  readonly sourceEvidenceId: string;
+  readonly providerRecordId: string;
+  readonly channel: "email" | "sms";
+  readonly messageKind: "one_to_one" | "auto" | "campaign";
+  readonly subject: string | null;
+  readonly snippet: string;
+  readonly sourceLabel: string;
+}
 
 function createRepositoryBundle(input: {
   readonly canonicalEvents: readonly CanonicalEventRecord[];
@@ -111,11 +121,13 @@ function createRepositoryBundle(input: {
     salesforceCommunicationDetails: {
       listBySourceEvidenceIds: (sourceEvidenceIds) =>
         Promise.resolve(
-          sourceEvidenceIds.flatMap((sourceEvidenceId) => {
+          sourceEvidenceIds.flatMap(
+            (sourceEvidenceId): readonly SalesforceCommunicationDetailRecord[] => {
             const detail =
               salesforceCommunicationDetailsBySourceEvidenceId.get(sourceEvidenceId);
             return detail === undefined ? [] : [detail];
-          })
+            }
+          )
         ),
       upsert: (record) => Promise.resolve(record)
     },
@@ -222,7 +234,7 @@ function buildSalesforceOutboundEmailEvent(input: {
         threadRef: null,
         direction: "outbound",
         notes: null
-      },
+      } as CanonicalEventRecord["provenance"],
       reviewState: "clear"
     },
     detail: {
@@ -300,9 +312,11 @@ describe("Stage 1 timeline presenter", () => {
         explicitAuto.timelineRow
       ]
     });
-    const presenter = createStage1TimelinePresentationService(repositories);
+    const presenter =
+      createStage1TimelinePresentationService(repositories);
 
-    const items = await presenter.listTimelineItemsByContactId("contact_1");
+    const items: readonly TimelineItem[] =
+      await presenter.listTimelineItemsByContactId("contact_1");
 
     expect(
       items.map((item) => ({
