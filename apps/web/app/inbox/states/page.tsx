@@ -55,9 +55,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import type { ComposerStatus, AiDraftStatus } from "../_components/inbox-client-provider";
+import type { ComposerStatus } from "../_components/inbox-client-provider";
 import { useInboxClient } from "../_components/inbox-client-provider";
-import { InboxAppLoading, QueueLoadingSkeleton, QueueRowSkeleton, TimelineSkeleton } from "../_components/inbox-loading";
+import { InboxAppLoading, QueueLoadingSkeleton, TimelineSkeleton } from "../_components/inbox-loading";
 import { InboxEmptyState } from "../_components/inbox-empty-state";
 import {
   AlertCircleIcon,
@@ -342,7 +342,10 @@ function QueueLoadingPreview() {
 }
 
 function EmptyQueuePreview({ variant }: { readonly variant: "all" | "new" | "opened" }) {
-  const messages: Record<string, { title: string; description: string }> = {
+  const messages: Record<
+    "all" | "new" | "opened",
+    { title: string; description: string }
+  > = {
     all: {
       title: "All caught up",
       description: "No conversations in your inbox right now."
@@ -356,7 +359,7 @@ function EmptyQueuePreview({ variant }: { readonly variant: "all" | "new" | "ope
       description: "Conversations you've viewed and are working on will appear here."
     }
   };
-  const msg = messages[variant]!;
+  const msg = messages[variant];
 
   return (
     <div className="w-[22rem] px-5 py-16 text-center">
@@ -487,11 +490,9 @@ function FollowUpPreview({ isOn }: { readonly isOn: boolean }) {
 }
 
 function ComposerStatusPreview({
-  status,
-  label
+  status
 }: {
   readonly status: ComposerStatus;
-  readonly label: string;
 }) {
   const StatusMap: Record<
     ComposerStatus,
@@ -618,10 +619,8 @@ function ValidationErrorPreview() {
 }
 
 function AiStatePreview({
-  status,
   children
 }: {
-  readonly status: string;
   readonly children: React.ReactNode;
 }) {
   return (
@@ -777,7 +776,7 @@ export default function InboxStatesPage() {
         </div>
 
         <Section id="composer-idle" number={13} title="Composer — Idle">
-          <ComposerStatusPreview status="idle" label="Idle" />
+          <ComposerStatusPreview status="idle" />
         </Section>
 
         <Section
@@ -785,7 +784,7 @@ export default function InboxStatesPage() {
           number={14}
           title="Composer — Saving Draft"
         >
-          <ComposerStatusPreview status="saving-draft" label="Saving" />
+          <ComposerStatusPreview status="saving-draft" />
         </Section>
 
         <Section
@@ -793,7 +792,7 @@ export default function InboxStatesPage() {
           number={15}
           title="Composer — Draft Saved"
         >
-          <ComposerStatusPreview status="draft-saved" label="Saved" />
+          <ComposerStatusPreview status="draft-saved" />
         </Section>
 
         <Section
@@ -802,10 +801,7 @@ export default function InboxStatesPage() {
           title="Composer — Validation Error"
         >
           <ValidationErrorPreview />
-          <ComposerStatusPreview
-            status="validation-error"
-            label="Validation Error"
-          />
+          <ComposerStatusPreview status="validation-error" />
         </Section>
 
         <Section
@@ -813,7 +809,7 @@ export default function InboxStatesPage() {
           number={17}
           title="Composer — Sending"
         >
-          <ComposerStatusPreview status="sending" label="Sending" />
+          <ComposerStatusPreview status="sending" />
         </Section>
 
         <Section
@@ -821,7 +817,7 @@ export default function InboxStatesPage() {
           number={18}
           title="Composer — Sent Success"
         >
-          <ComposerStatusPreview status="sent-success" label="Sent" />
+          <ComposerStatusPreview status="sent-success" />
         </Section>
 
         <Section
@@ -829,7 +825,7 @@ export default function InboxStatesPage() {
           number={19}
           title="Composer — Send Failure"
         >
-          <ComposerStatusPreview status="send-failure" label="Failure" />
+          <ComposerStatusPreview status="send-failure" />
         </Section>
 
         {/* ===== AI DRAFTING ===== */}
@@ -853,7 +849,7 @@ export default function InboxStatesPage() {
           number={21}
           title="AI — Generating"
         >
-          <AiStatePreview status="generating">
+          <AiStatePreview>
             <div className="flex items-center gap-3 px-5 py-4">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100">
                 <BotIcon className="h-4 w-4 text-violet-600" />
@@ -877,7 +873,7 @@ export default function InboxStatesPage() {
           number={22}
           title="AI Draft — Inserted into Composer"
         >
-          <AiStatePreview status="inserted">
+          <AiStatePreview>
             <div className="px-5 py-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100">
@@ -933,7 +929,7 @@ export default function InboxStatesPage() {
           number={23}
           title="AI — Reprompt Action"
         >
-          <AiStatePreview status="reprompting">
+          <AiStatePreview>
             <div className="flex items-center gap-3 px-5 py-4">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100">
                 <BotIcon className="h-4 w-4 text-violet-600" />

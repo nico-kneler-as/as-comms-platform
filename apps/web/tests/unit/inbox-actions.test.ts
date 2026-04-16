@@ -109,7 +109,7 @@ describe("server-backed follow-up actions", () => {
     formData.set("contactId", "contact:michael-chen");
 
     const result = await markInboxNeedsFollowUpAction(formData);
-    const projection = await runtime?.context.repositories.inboxProjection.findByContactId(
+    const projection = await runtime.context.repositories.inboxProjection.findByContactId(
       "contact:michael-chen"
     );
     const after = await getInboxList();
@@ -160,7 +160,7 @@ describe("server-backed follow-up actions", () => {
     revalidateTag.mockReset();
 
     const result = await clearInboxNeedsFollowUpAction(formData);
-    const projection = await runtime?.context.repositories.inboxProjection.findByContactId(
+    const projection = await runtime.context.repositories.inboxProjection.findByContactId(
       "contact:michael-chen"
     );
     const followUpList = await getInboxList("follow-up");
@@ -180,11 +180,15 @@ describe("server-backed follow-up actions", () => {
   });
 
   it("does not clobber fresher projection state when follow-up is toggled", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
     const staleProjection =
-      await runtime?.context.repositories.inboxProjection.findByContactId(
+      await runtime.context.repositories.inboxProjection.findByContactId(
         "contact:michael-chen"
       );
-    const fresherEvent = await seedInboxEmailEvent(runtime!.context, {
+    const fresherEvent = await seedInboxEmailEvent(runtime.context, {
       id: "michael-inbound-2",
       contactId: "contact:michael-chen",
       occurredAt: "2026-04-14T14:30:00.000Z",
@@ -193,7 +197,7 @@ describe("server-backed follow-up actions", () => {
       snippet: "Fresh inbound message that arrived after the stale snapshot."
     });
 
-    await runtime?.context.repositories.inboxProjection.upsert({
+    await runtime.context.repositories.inboxProjection.upsert({
       contactId: "contact:michael-chen",
       bucket: "New",
       needsFollowUp: false,
@@ -207,10 +211,10 @@ describe("server-backed follow-up actions", () => {
     });
 
     const findByContactIdSpy = vi
-      .spyOn(runtime!.context.repositories.inboxProjection, "findByContactId")
+      .spyOn(runtime.context.repositories.inboxProjection, "findByContactId")
       .mockResolvedValue(staleProjection ?? null);
     const upsertSpy = vi.spyOn(
-      runtime!.context.repositories.inboxProjection,
+      runtime.context.repositories.inboxProjection,
       "upsert"
     );
     const formData = new FormData();
@@ -221,7 +225,7 @@ describe("server-backed follow-up actions", () => {
     expect(upsertSpy).not.toHaveBeenCalled();
     findByContactIdSpy.mockRestore();
     upsertSpy.mockRestore();
-    const projection = await runtime?.context.repositories.inboxProjection.findByContactId(
+    const projection = await runtime.context.repositories.inboxProjection.findByContactId(
       "contact:michael-chen"
     );
 

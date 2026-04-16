@@ -17,7 +17,7 @@ import {
   PopoverTrigger
 } from "@/components/ui/popover";
 import { SectionLabel } from "@/components/ui/section-label";
-import { RADIUS, TEXT, TONE, TRANSITION } from "@/app/_lib/design-tokens";
+import { RADIUS, TONE, TRANSITION } from "@/app/_lib/design-tokens";
 import {
   Tooltip,
   TooltipContent,
@@ -81,7 +81,7 @@ export function InboxComposer({
   const [mode, setMode] = useState<ComposerMode>("email");
   const [draft, setDraft] = useState("");
   const [subject, setSubject] = useState("");
-  const [fromAlias, setFromAlias] = useState<string>(EMAIL_ALIASES[0]!.id);
+  const [fromAlias, setFromAlias] = useState(EMAIL_ALIASES[0].id);
   const [aiPrompt, setAiPrompt] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
