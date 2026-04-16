@@ -15,6 +15,8 @@ import {
   useClaudeInboxClient,
   type Reminder
 } from "./claude-inbox-client-provider";
+import { SectionLabel } from "@/components/ui/section-label";
+import { LAYOUT, TEXT, TONE, TRANSITION, SPACING } from "@/app/_lib/design-tokens";
 import { ClaudeInboxComposer } from "./claude-inbox-composer";
 import {
   ClaudeInboxContactRail,
@@ -78,9 +80,9 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
     <div className="flex min-h-0 flex-1">
       <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
         {/* Detail header */}
-        <header className="flex h-[65px] items-center justify-between gap-4 border-b border-slate-200 px-6">
+        <header className={`flex ${LAYOUT.headerHeight} items-center justify-between gap-4 border-b border-slate-200 px-6`}>
           <div className="flex min-w-0 items-center gap-4">
-            <h1 className="truncate text-lg font-semibold text-slate-900">
+            <h1 className={`truncate ${TEXT.headingLg}`}>
               {contact.displayName}
             </h1>
             <div className="hidden h-5 w-px bg-slate-200 sm:block" />
@@ -183,7 +185,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
         {/* Timeline area */}
         <div
           ref={timelineRef}
-          className="min-h-0 flex-1 overflow-y-auto bg-slate-50/40 px-6 py-6"
+          className={`min-h-0 flex-1 overflow-y-auto ${TONE.slate.subtle} ${SPACING.container}`}
         >
           {isTimelineLoading ? (
             <TimelineSkeleton />
@@ -218,13 +220,13 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
       {/* Animated contact rail — width transitions from 0 → 20rem */}
       <div
         className={cn(
-          "overflow-hidden border-l transition-all duration-200 ease-out motion-reduce:transition-none",
+          `overflow-hidden border-l ${TRANSITION.layout} ${TRANSITION.reduceMotion}`,
           railOpen
-            ? "w-80 border-slate-200 opacity-100"
+            ? `${LAYOUT.railWidth} border-slate-200 opacity-100`
             : "w-0 border-transparent opacity-0"
         )}
       >
-        <div className="w-80">
+        <div className={LAYOUT.railWidth}>
           <ClaudeInboxContactRail
             contact={contact}
             onClose={() => {
@@ -243,13 +245,13 @@ function UnresolvedBanner() {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="border-b border-amber-200 bg-amber-50/80">
+    <div className={`border-b border-amber-200 ${TONE.amber.subtle}`}>
       <button
         type="button"
         onClick={() => {
           setExpanded((e) => !e);
         }}
-        className="flex w-full items-center gap-2 px-6 py-2.5 text-left transition-colors hover:bg-amber-100/60"
+        className={`flex w-full items-center gap-2 px-6 py-2.5 text-left ${TRANSITION.fast} hover:bg-amber-100/60`}
         aria-expanded={expanded}
       >
         <AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-600" />
@@ -307,9 +309,9 @@ function ReminderPopoverBody({
     return (
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <SectionLabel as="p">
             Reminder set
-          </p>
+          </SectionLabel>
           <p className="mt-1 text-sm font-medium text-slate-900">
             {formatLongReminder(existing)}
           </p>
@@ -332,9 +334,9 @@ function ReminderPopoverBody({
 
   return (
     <>
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+      <SectionLabel as="p">
         Remind me in
-      </p>
+      </SectionLabel>
       <div className="mt-2 flex items-center gap-2">
         {/* Number stepper */}
         <div className="flex h-9 w-16 items-center overflow-hidden rounded-md border border-slate-200 shadow-sm">

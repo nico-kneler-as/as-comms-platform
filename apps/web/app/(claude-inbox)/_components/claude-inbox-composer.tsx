@@ -16,6 +16,8 @@ import {
   PopoverContent,
   PopoverTrigger
 } from "@/components/ui/popover";
+import { SectionLabel } from "@/components/ui/section-label";
+import { RADIUS, TEXT, TONE, TRANSITION } from "@/app/_lib/design-tokens";
 import {
   Tooltip,
   TooltipContent,
@@ -209,7 +211,7 @@ export function ClaudeInboxComposer({
           onClick={() => {
             setIsOpen(true);
           }}
-          className="flex w-full items-center gap-2.5 px-5 py-3 text-left text-sm text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
+          className={`flex w-full items-center gap-2.5 px-5 py-3 text-left text-sm text-slate-400 ${TRANSITION.fast} hover:bg-slate-50 hover:text-slate-600`}
         >
           <MailIcon className="h-4 w-4 shrink-0" />
           <span className="flex-1 truncate">
@@ -271,7 +273,7 @@ export function ClaudeInboxComposer({
             onClick={() => {
               setIsOpen(false);
             }}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            className={`inline-flex h-7 w-7 items-center justify-center ${RADIUS.sm} text-slate-400 ${TRANSITION.fast} hover:bg-slate-100 hover:text-slate-600`}
           >
             <ChevronDownIcon className="h-4 w-4" />
           </button>
@@ -687,7 +689,7 @@ function AiToolbar({
   };
 
   return (
-    <div className="flex items-center gap-2 border-t border-violet-100 bg-violet-50/40 px-5 py-1.5">
+    <div className={`flex items-center gap-2 border-t border-violet-100 ${TONE.violet.subtle} px-5 py-1.5`}>
       <SparkleIcon className="h-3 w-3 shrink-0 text-violet-500" />
       <span className="text-[11px] font-medium text-violet-700">
         {isEdited ? "AI draft · edited" : "AI draft"}
@@ -952,9 +954,9 @@ function FormattingToolbar({ mode }: { readonly mode: ComposerMode }) {
               }}
             >
               <div className="space-y-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <SectionLabel as="p">
                   Insert link
-                </p>
+                </SectionLabel>
                 <input
                   type="text"
                   value={linkUrl}
@@ -1047,9 +1049,9 @@ function FormattingToolbar({ mode }: { readonly mode: ComposerMode }) {
               </PopoverTrigger>
               <PopoverContent align="start" className="w-64">
                 <div className="space-y-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <SectionLabel as="p">
                     Embed image
-                  </p>
+                  </SectionLabel>
                   <button
                     type="button"
                     onClick={handleImagePick}
@@ -1131,7 +1133,7 @@ function ToolbarButton({
           disabled={disabled}
           onClick={onClick}
           className={cn(
-            "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+            `inline-flex h-7 w-7 items-center justify-center ${RADIUS.sm} ${TRANSITION.fast}`,
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400",
             "disabled:pointer-events-none disabled:opacity-40",
             active

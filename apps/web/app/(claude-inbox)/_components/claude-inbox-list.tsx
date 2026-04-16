@@ -10,8 +10,11 @@ import type {
   ClaudeInboxListItemViewModel
 } from "../_lib/view-models";
 import { Separator } from "@/components/ui/separator";
+import { SectionLabel } from "@/components/ui/section-label";
+import { EmptyState } from "@/components/ui/empty-state";
 
 import { useClaudeInboxClient } from "./claude-inbox-client-provider";
+import { FOCUS_RING, LAYOUT, RADIUS, SHADOW, TEXT, TRANSITION } from "@/app/_lib/design-tokens";
 import {
   CornerUpLeftIcon,
   FilterIcon,
@@ -120,11 +123,11 @@ export function ClaudeInboxList({
     activeFilter.kind === "project" || activeFilter.id !== "all";
 
   return (
-    <section className="relative flex w-[22rem] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white">
+    <section className={`relative flex ${LAYOUT.listWidth} shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white`}>
       <div className="sticky top-0 z-10 bg-white/95 backdrop-blur">
         {/* Header */}
-        <div className="flex h-[65px] items-center gap-2 border-b border-slate-200 px-5">
-          <h1 className="min-w-0 flex-1 truncate text-lg font-semibold text-slate-900">
+        <div className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-5`}>
+          <h1 className={`min-w-0 flex-1 truncate ${TEXT.headingLg}`}>
             {columnTitle}
           </h1>
           <button
@@ -135,7 +138,7 @@ export function ClaudeInboxList({
             onClick={() => {
               setFiltersOpen((open) => !open);
             }}
-            className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border shadow-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
+            className={`relative inline-flex h-8 w-8 items-center justify-center ${RADIUS.md} border ${SHADOW.sm} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
               filtersOpen
                 ? "border-slate-300 bg-slate-100 text-slate-900"
                 : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -152,7 +155,7 @@ export function ClaudeInboxList({
 
         {/* Search bar */}
         <div className="px-5 pb-4 pt-3">
-          <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm transition-colors duration-150 focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300">
+          <label className={`flex items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm} ${TRANSITION.fast} focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300`}>
             <SearchIcon className="h-4 w-4 text-slate-400" />
             <input
               type="text"
@@ -204,7 +207,7 @@ export function ClaudeInboxList({
         <div
           id="claude-inbox-filters-panel"
           aria-hidden={!filtersOpen}
-          className={`grid overflow-hidden border-slate-200 transition-all duration-200 ease-out motion-reduce:transition-none ${
+          className={`grid overflow-hidden border-slate-200 ${TRANSITION.layout} ${TRANSITION.reduceMotion} ${
             filtersOpen
               ? "grid-rows-[1fr] border-t opacity-100"
               : "grid-rows-[0fr] border-t-0 opacity-0"
@@ -227,7 +230,7 @@ export function ClaudeInboxList({
                           setActiveFilter({ kind: "base", id: filter.id });
                           setFiltersOpen(false);
                         }}
-                        className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
+                        className={`flex w-full items-center gap-2.5 ${RADIUS.md} px-2.5 py-1.5 text-left text-sm ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
                           isActive
                             ? "bg-slate-900 font-semibold text-white"
                             : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -251,9 +254,9 @@ export function ClaudeInboxList({
               {projectBuckets.length > 0 ? (
                 <>
                   <Separator className="my-3 bg-slate-100" />
-                  <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  <SectionLabel as="p" className="mb-1 px-2.5">
                     Projects
-                  </p>
+                  </SectionLabel>
                   <ul className="space-y-0.5">
                     {projectBuckets.map((bucket) => {
                       const isActive =
@@ -271,7 +274,7 @@ export function ClaudeInboxList({
                               });
                               setFiltersOpen(false);
                             }}
-                            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
+                            className={`flex w-full items-center gap-2.5 ${RADIUS.md} px-2.5 py-1.5 text-left text-sm ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
                               isActive
                                 ? "bg-slate-900 font-semibold text-white"
                                 : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -327,29 +330,21 @@ export function ClaudeInboxList({
 
 function QueueEmptyState() {
   return (
-    <div className="px-5 py-16 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
-        <InboxIcon className="h-6 w-6 text-slate-400" />
-      </div>
-      <p className="mt-4 text-sm font-medium text-slate-700">All caught up</p>
-      <p className="mt-1 text-xs text-slate-500">
-        No conversations match the current filter.
-      </p>
-    </div>
+    <EmptyState
+      icon={<InboxIcon className="h-6 w-6" />}
+      title="All caught up"
+      description="No conversations match the current filter."
+    />
   );
 }
 
 function SearchEmptyState({ query }: { readonly query: string }) {
   return (
-    <div className="px-5 py-16 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
-        <SearchXIcon className="h-6 w-6 text-slate-400" />
-      </div>
-      <p className="mt-4 text-sm font-medium text-slate-700">No results</p>
-      <p className="mt-1 text-xs text-slate-500">
-        Nothing matches &ldquo;{query}&rdquo;. Try a different search.
-      </p>
-    </div>
+    <EmptyState
+      icon={<SearchXIcon className="h-6 w-6" />}
+      title="No results"
+      description={<>Nothing matches &ldquo;{query}&rdquo;. Try a different search.</>}
+    />
   );
 }
 

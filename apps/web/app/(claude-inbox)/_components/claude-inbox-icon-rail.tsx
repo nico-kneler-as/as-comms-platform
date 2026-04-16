@@ -24,6 +24,7 @@ import {
   MegaphoneIcon,
   SettingsIcon
 } from "./claude-icons";
+import { FOCUS_RING, LAYOUT, RADIUS, SHADOW, TRANSITION } from "@/app/_lib/design-tokens";
 
 interface RailItem {
   readonly id: string;
@@ -54,7 +55,7 @@ export function ClaudeInboxIconRail() {
   return (
     <TooltipProvider delayDuration={200}>
       <nav
-        className="flex w-14 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4"
+        className={`flex ${LAYOUT.iconRailWidth} shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4`}
         aria-label="Primary"
       >
         <div
@@ -74,7 +75,7 @@ export function ClaudeInboxIconRail() {
                     type="button"
                     aria-label={item.label}
                     aria-current={item.active ? "page" : undefined}
-                    className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
+                    className={`flex h-10 w-10 items-center justify-center ${RADIUS.lg} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
                       item.active
                         ? "bg-slate-900 text-white"
                         : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
@@ -104,7 +105,7 @@ function OperatorMenu() {
         <button
           type="button"
           aria-label={`${OPERATOR.displayName} · account menu`}
-          className="mt-2 flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+          className={`mt-2 flex h-9 w-9 items-center justify-center ${RADIUS.full} bg-slate-900 text-[11px] font-semibold text-white ${SHADOW.sm} ${TRANSITION.fast} hover:bg-slate-800 ${FOCUS_RING}`}
         >
           {OPERATOR.initials}
         </button>
