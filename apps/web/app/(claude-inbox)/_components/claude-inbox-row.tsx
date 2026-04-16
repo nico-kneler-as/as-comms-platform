@@ -6,6 +6,7 @@ import type { ClaudeInboxListItemViewModel } from "../_lib/view-models";
 import { ClaudeInboxAvatar } from "./claude-inbox-avatar";
 import { useClaudeInboxClient } from "./claude-inbox-client-provider";
 import { MailIcon, PhoneIcon } from "./claude-icons";
+import { FOCUS_RING, SPACING, TEXT, TRANSITION } from "@/app/_lib/design-tokens";
 
 interface RowProps {
   readonly item: ClaudeInboxListItemViewModel;
@@ -37,7 +38,7 @@ export function ClaudeInboxRow({ item, isActive }: RowProps) {
       <Link
         href={`/inbox/${item.contactId}`}
         aria-current={isActive ? "page" : undefined}
-        className={`relative flex gap-3 border-b border-slate-100 px-5 py-3.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 motion-reduce:transition-none ${
+        className={`relative flex gap-3 border-b border-slate-100 ${SPACING.listItem} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
           isActive
             ? "bg-sky-50/60 ring-1 ring-inset ring-sky-200"
             : "hover:bg-slate-50/80"
@@ -92,7 +93,7 @@ export function ClaudeInboxRow({ item, isActive }: RowProps) {
             </p>
           </div>
 
-          <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">
+          <p className={`mt-0.5 line-clamp-1 ${TEXT.caption}`}>
             {item.snippet}
           </p>
 

@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { LAYOUT, SPACING, TONE } from "@/app/_lib/design-tokens";
 
 /**
  * Full-screen app loading skeleton. Mirrors the 3-column layout
@@ -9,7 +10,7 @@ export function ClaudeInboxAppLoading() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100 antialiased">
       {/* Icon rail skeleton */}
-      <div className="flex w-14 shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4">
+      <div className={`flex ${LAYOUT.iconRailWidth} shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4`}>
         <Skeleton className="h-9 w-9 rounded-xl" />
         <div className="mt-4 flex flex-1 flex-col items-center gap-1">
           <Skeleton className="h-10 w-10 rounded-xl" />
@@ -20,9 +21,9 @@ export function ClaudeInboxAppLoading() {
       </div>
 
       {/* List column skeleton */}
-      <div className="flex w-[22rem] shrink-0 flex-col border-r border-slate-200 bg-white">
+      <div className={`flex ${LAYOUT.listWidth} shrink-0 flex-col border-r border-slate-200 bg-white`}>
         <div className="border-b border-slate-200 px-5">
-          <div className="flex h-[65px] items-center gap-2">
+          <div className={`flex ${LAYOUT.headerHeight} items-center gap-2`}>
             <Skeleton className="h-5 w-24" />
             <div className="flex-1" />
             <Skeleton className="h-8 w-8 rounded-lg" />
@@ -40,7 +41,7 @@ export function ClaudeInboxAppLoading() {
 
       {/* Detail workspace skeleton */}
       <div className="flex min-w-0 flex-1 flex-col bg-white">
-        <div className="flex h-[65px] items-center gap-4 border-b border-slate-200 px-6">
+        <div className={`flex ${LAYOUT.headerHeight} items-center gap-4 border-b border-slate-200 px-6`}>
           <Skeleton className="h-5 w-36" />
           <Skeleton className="hidden h-4 w-px sm:block" />
           <Skeleton className="hidden h-4 w-48 sm:block" />
@@ -49,7 +50,7 @@ export function ClaudeInboxAppLoading() {
           <Skeleton className="h-8 w-8 rounded-md" />
           <Skeleton className="h-8 w-8 rounded-md" />
         </div>
-        <div className="flex-1 bg-slate-50/40 px-6 py-6">
+        <div className={`flex-1 ${TONE.slate.subtle} ${SPACING.container}`}>
           <TimelineSkeleton />
         </div>
         <div className="border-t border-slate-200 px-5 py-4">
@@ -66,7 +67,7 @@ export function ClaudeInboxAppLoading() {
  */
 export function QueueRowSkeleton() {
   return (
-    <div className="flex gap-3 border-b border-slate-100 px-5 py-3.5">
+    <div className={`flex gap-3 border-b border-slate-100 ${SPACING.listItem}`}>
       <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex items-center justify-between gap-2">

@@ -4,6 +4,15 @@ import type {
   ClaudeProjectStatus
 } from "../_lib/view-models";
 import { Button } from "@/components/ui/button";
+import { SectionLabel } from "@/components/ui/section-label";
+import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  LAYOUT,
+  PROJECT_STATUS_BADGE,
+  TEXT,
+  TONE,
+  SPACING,
+} from "@/app/_lib/design-tokens";
 
 import {
   CalendarIcon,
@@ -31,15 +40,15 @@ export function ClaudeInboxContactRail({ contact, onClose }: RailProps) {
   return (
     <aside
       id="claude-inbox-contact-rail"
-      className="flex min-h-0 w-80 shrink-0 flex-col bg-slate-50/40"
+      className={`flex min-h-0 ${LAYOUT.railWidth} shrink-0 flex-col ${TONE.slate.subtle}`}
       aria-label="Volunteer details"
     >
-      <header className="flex h-[65px] shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-5">
+      <header className={`flex ${LAYOUT.headerHeight} shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-5`}>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-slate-900">
+          <h2 className={`truncate ${TEXT.headingSm}`}>
             {contact.displayName}
           </h2>
-          <p className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+          <p className={`mt-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-500`}>
             Volunteer ID · {contact.volunteerId}
           </p>
         </div>
@@ -57,10 +66,10 @@ export function ClaudeInboxContactRail({ contact, onClose }: RailProps) {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-      <section className="border-b border-slate-200 px-5 py-4">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <section className={`border-b border-slate-200 ${SPACING.section}`}>
+        <SectionLabel>
           Contact
-        </h3>
+        </SectionLabel>
         <dl className="mt-2 space-y-1.5 text-[13px]">
           {contact.primaryEmail ? (
             <ContactLine icon={<MailIcon className="h-3.5 w-3.5" />}>
@@ -95,10 +104,10 @@ export function ClaudeInboxContactRail({ contact, onClose }: RailProps) {
       />
 
       {contact.recentActivity.length > 0 ? (
-        <section className="px-5 py-4">
-          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        <section className={SPACING.section}>
+          <SectionLabel>
             Recent activity
-          </h3>
+          </SectionLabel>
           <ul className="mt-3 space-y-0">
             {contact.recentActivity.map((entry, index) => (
               <li
@@ -137,8 +146,8 @@ interface ProjectsSectionProps {
 
 function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) {
   return (
-    <section className="border-b border-slate-200 px-5 py-4">
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+    <section className={`border-b border-slate-200 ${SPACING.section}`}>
+      <h3 className={TEXT.label}>
         {title}
       </h3>
       {projects.length === 0 ? (
@@ -175,15 +184,6 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
   );
 }
 
-const PROJECT_STATUS_STYLE: Record<ClaudeProjectStatus, string> = {
-  lead: "bg-slate-100 text-slate-600",
-  applied: "bg-sky-50 text-sky-700",
-  "in-training": "bg-indigo-50 text-indigo-700",
-  "trip-planning": "bg-amber-50 text-amber-700",
-  "in-field": "bg-emerald-50 text-emerald-700",
-  successful: "bg-violet-50 text-violet-700"
-};
-
 const PROJECT_STATUS_LABEL: Record<ClaudeProjectStatus, string> = {
   lead: "Lead",
   applied: "Applied",
@@ -199,11 +199,11 @@ export function ProjectStatusBadge({
   readonly status: ClaudeProjectStatus;
 }) {
   return (
-    <span
-      className={`inline-flex items-center rounded px-1.5 py-px text-[10px] font-medium ${PROJECT_STATUS_STYLE[status]}`}
-    >
-      {PROJECT_STATUS_LABEL[status]}
-    </span>
+    <StatusBadge
+      variant="subtle"
+      colorClasses={PROJECT_STATUS_BADGE[status]}
+      label={PROJECT_STATUS_LABEL[status]}
+    />
   );
 }
 

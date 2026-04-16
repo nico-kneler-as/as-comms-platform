@@ -12,6 +12,8 @@ import {
   NoteIcon,
   PhoneIcon
 } from "./claude-icons";
+import { DividerLabel } from "@/components/ui/divider-label";
+import { RADIUS, SHADOW, TEXT, TONE, TRANSITION } from "@/app/_lib/design-tokens";
 
 interface TimelineProps {
   readonly entries: readonly ClaudeTimelineEntryViewModel[];
@@ -119,17 +121,17 @@ function InboundBubble({
 
   return (
     <li className="flex w-full flex-col items-start">
-      <div className="max-w-lg rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className={`max-w-2xl ${RADIUS.bubble} rounded-bl-sm border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}>
         {isEmail && entry.subject ? (
           <p className="mb-1.5 text-[13px] font-semibold leading-snug text-slate-900">
             {entry.subject}
           </p>
         ) : null}
-        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700">
+        <p className={`whitespace-pre-wrap ${TEXT.bodySm}`}>
           {entry.body}
         </p>
       </div>
-      <div className="mt-1.5 flex items-center gap-1.5 px-1 text-[11px] text-slate-400">
+      <div className={`mt-1.5 flex items-center gap-1.5 px-1 ${TEXT.micro}`}>
         <ChannelIcon className="h-3 w-3" />
         <span className="font-medium text-slate-500">
           {entry.actorLabel}
@@ -159,7 +161,7 @@ function OutboundBubble({
 
   return (
     <li className="flex w-full flex-col items-end">
-      <div className="max-w-lg rounded-2xl rounded-br-sm bg-slate-800 px-4 py-3 shadow-sm">
+      <div className={`max-w-2xl ${RADIUS.bubble} rounded-br-sm bg-slate-800 px-4 py-3 ${SHADOW.sm}`}>
         {isEmail && entry.subject ? (
           <p className="mb-1.5 text-[13px] font-semibold leading-snug text-slate-100">
             {entry.subject}
@@ -169,7 +171,7 @@ function OutboundBubble({
           {entry.body}
         </p>
       </div>
-      <div className="mt-1.5 flex items-center gap-1.5 px-1 text-[11px] text-slate-400">
+      <div className={`mt-1.5 flex items-center gap-1.5 px-1 ${TEXT.micro}`}>
         <span>{entry.occurredAtLabel}</span>
         <span>·</span>
         <ChannelIcon className="h-3 w-3" />
@@ -204,14 +206,14 @@ function AutomatedRow({
 
   return (
     <li className="flex w-full flex-col items-end">
-      <span className="mb-1 px-1 text-[11px] text-slate-400">
+      <span className={`mb-1 px-1 ${TEXT.micro}`}>
         {label}
       </span>
       <button
         type="button"
         aria-expanded={isExpanded}
         onClick={onToggle}
-        className="group flex w-full max-w-lg items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-2.5 text-left transition-colors hover:bg-slate-50"
+        className={`group flex w-full max-w-2xl items-center gap-3 ${RADIUS.md} border border-dashed border-slate-300 bg-white px-4 py-2.5 text-left ${TRANSITION.fast} hover:bg-slate-50`}
       >
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-medium leading-snug text-slate-700">
@@ -247,7 +249,7 @@ function NoteEntry({
 }) {
   return (
     <li className="flex w-full flex-col items-end">
-      <div className="max-w-lg rounded-lg border-l-2 border-amber-400 bg-amber-50/60 px-4 py-2.5">
+      <div className={`max-w-2xl ${RADIUS.md} border-l-2 border-amber-400 ${TONE.amber.subtle} px-4 py-2.5`}>
         <div className="mb-1 flex items-center gap-1.5 text-[11px] text-amber-700">
           <NoteIcon className="h-3 w-3" />
           <span className="font-medium">Note</span>
@@ -274,12 +276,10 @@ function SystemDivider({
   readonly volunteerFirstName: string;
 }) {
   return (
-    <li className="flex w-full items-center gap-3 py-1">
-      <div className="h-px flex-1 bg-slate-200" />
-      <span className="shrink-0 text-[11px] text-slate-400">
+    <li>
+      <DividerLabel>
         {personalizeSystemBody(entry.body, volunteerFirstName)}
-      </span>
-      <div className="h-px flex-1 bg-slate-200" />
+      </DividerLabel>
     </li>
   );
 }
