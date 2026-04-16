@@ -4,10 +4,15 @@ import {
   type DatabaseConnection
 } from "@as-comms/db";
 import type { Stage1RepositoryBundle } from "@as-comms/domain";
+import {
+  createStage1TimelinePresentationService,
+  type Stage1TimelinePresentationService
+} from "../../../../packages/domain/src/timeline";
 
 export interface Stage1WebRuntime {
   readonly connection: Pick<DatabaseConnection, "db" | "sql"> | null;
   readonly repositories: Stage1RepositoryBundle;
+  readonly timelinePresentation: Stage1TimelinePresentationService;
 }
 
 let runtimeOverride: Stage1WebRuntime | null = null;
@@ -23,10 +28,12 @@ function createRuntime(): Stage1WebRuntime {
   const connection = createDatabaseConnection({
     connectionString
   });
+  const repositories = createStage1RepositoryBundleFromConnection(connection);
 
   return {
     connection,
-    repositories: createStage1RepositoryBundleFromConnection(connection)
+    repositories,
+    timelinePresentation: createStage1TimelinePresentationService(repositories)
   };
 }
 

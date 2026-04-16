@@ -24,6 +24,9 @@
 
 - The list and detail selectors now run against real Stage 1 repository reads
   and use `unstable_cache` with inbox/timeline tags.
+- Detail timeline rendering now preserves the existing inbox timeline kinds by
+  adapting typed Stage 1 timeline families instead of flattening non-1:1
+  events into generic system rows.
 - Follow-up persistence writes back to the existing inbox projection field
   mapped from the persistence boundary field `is_starred`.
 - The physical DB naming is unchanged.
@@ -31,8 +34,9 @@
 ## Known Follow-Ups
 
 - Large real inbox payloads can still trigger `unstable_cache` size warnings.
-- Identity review detail still relies on selector-side contact matching where a
-  case is anchored by contact ID or references the contact in candidate IDs.
+- Unresolved review detail is still banner-only in the shell; this pass does
+  not yet surface routing or identity case summaries in the selected-contact
+  panel.
 - The current data model still does not provide:
   - a canonical persisted CRM URL for project memberships
   - a dedicated unread-count field for the list badge

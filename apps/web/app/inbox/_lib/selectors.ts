@@ -7,6 +7,7 @@ import type {
   GmailMessageDetailRecord,
   InboxDrivingEventType,
   InboxProjectionRow,
+  TimelineItem,
   TimelineProjectionRow
 } from "@as-comms/contracts";
 
@@ -47,9 +48,7 @@ interface InboxDetailCacheData {
   readonly contact: ContactRecord;
   readonly inboxProjection: InboxProjectionRow;
   readonly memberships: readonly ContactMembershipRecord[];
-  readonly timelineRows: readonly TimelineProjectionRow[];
-  readonly canonicalEvents: readonly CanonicalEventRecord[];
-  readonly gmailDetails: readonly GmailMessageDetailRecord[];
+  readonly timelineItems: readonly TimelineItem[];
   readonly projectNameById: Readonly<Record<string, string>>;
 }
 
@@ -333,34 +332,172 @@ function defaultLatestSubject(
 }
 
 function mapTimelineKind(
-  row: TimelineProjectionRow
+  item: TimelineItem
 ): InboxTimelineEntryKind {
-  switch (row.eventType) {
-    case "communication.email.inbound":
-      return "inbound-email";
-    case "communication.email.outbound":
-      return "outbound-email";
-    case "communication.sms.inbound":
-      return "inbound-sms";
-    case "communication.sms.outbound":
-      return "outbound-sms";
-    default:
+  switch (item.family) {
+    case "one_to_one_email":
+      return item.direction === "inbound" ? "inbound-email" : "outbound-email";
+    case "one_to_one_sms":
+      return item.direction === "inbound" ? "inbound-sms" : "outbound-sms";
+    case "auto_email":
+      return "outbound-auto-email";
+    case "campaign_email":
+      return "outbound-campaign-email";
+    case "campaign_sms":
+      return "outbound-campaign-sms";
+    case "internal_note":
+      return "internal-note";
+    case "salesforce_event":
       return "system-event";
   }
 }
 
+function recentActivityLabel(item: TimelineItem): string {
+  switch (item.family) {
+    case "one_to_one_email":
+    case "auto_email":
+      return item.subject ?? item.summary;
+    case "one_to_one_sms":
+    case "campaign_sms":
+      return item.messageTextPreview || item.summary;
+    case "campaign_email":
+      return item.campaignName ?? item.summary;
+    case "internal_note":
+      return item.body;
+    case "salesforce_event":
+      return item.summary;
+  }
+}
+
 function buildRecentActivity(
-  timelineRows: readonly TimelineProjectionRow[],
+  timelineItems: readonly TimelineItem[],
   referenceNowIso: string
 ): readonly InboxRecentActivityViewModel[] {
-  return [...timelineRows]
+  return [...timelineItems]
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
     .slice(0, 5)
-    .map((row) => ({
-      id: row.id,
-      label: row.summary,
-      occurredAtLabel: formatRelativeTimestamp(row.occurredAt, referenceNowIso)
+    .map((item) => ({
+      id: item.id,
+      label: recentActivityLabel(item),
+      occurredAtLabel: formatRelativeTimestamp(item.occurredAt, referenceNowIso)
     }));
+}
+
+function timelineChannel(item: TimelineItem): InboxChannel | null {
+  switch (item.family) {
+    case "one_to_one_email":
+    case "auto_email":
+    case "campaign_email":
+      return "email";
+    case "one_to_one_sms":
+    case "campaign_sms":
+      return "sms";
+    case "internal_note":
+    case "salesforce_event":
+      return null;
+  }
+}
+
+function timelineActorLabel(
+  item: TimelineItem,
+  contactDisplayName: string
+): string {
+  switch (item.family) {
+    case "one_to_one_email":
+    case "one_to_one_sms":
+      return item.direction === "inbound" ? contactDisplayName : "You";
+    case "auto_email":
+      return item.sourceLabel;
+    case "campaign_email":
+    case "campaign_sms":
+      return "Campaigns";
+    case "internal_note":
+      return item.authorDisplayName ?? "Internal note";
+    case "salesforce_event":
+      return "System";
+  }
+}
+
+function timelineSubject(item: TimelineItem): string | null {
+  switch (item.family) {
+    case "one_to_one_email":
+    case "auto_email":
+      return item.subject;
+    case "campaign_email":
+    case "campaign_sms":
+      return item.campaignName ?? item.summary;
+    case "one_to_one_sms":
+    case "internal_note":
+    case "salesforce_event":
+      return null;
+  }
+}
+
+function timelineBody(item: TimelineItem): string {
+  switch (item.family) {
+    case "one_to_one_email":
+      return item.bodyPreview ?? item.snippet;
+    case "one_to_one_sms":
+      return item.messageTextPreview;
+    case "auto_email":
+      return item.snippet;
+    case "campaign_email":
+      return item.snippet;
+    case "campaign_sms":
+      return item.messageTextPreview;
+    case "internal_note":
+      return item.body;
+    case "salesforce_event":
+      return item.summary;
+  }
+}
+
+function isUnreadTimelineItem(
+  item: TimelineItem,
+  inboxProjection: InboxProjectionRow
+): boolean {
+  if (inboxProjection.bucket !== "New") {
+    return false;
+  }
+
+  switch (item.family) {
+    case "one_to_one_email":
+    case "one_to_one_sms":
+      return (
+        item.direction === "inbound" &&
+        item.canonicalEventId === inboxProjection.lastCanonicalEventId
+      );
+    case "auto_email":
+    case "campaign_email":
+    case "campaign_sms":
+    case "internal_note":
+    case "salesforce_event":
+      return false;
+  }
+}
+
+function buildTimelineEntry(
+  input: {
+    readonly contactDisplayName: string;
+    readonly inboxProjection: InboxProjectionRow;
+    readonly item: TimelineItem;
+    readonly referenceNowIso: string;
+  }
+): InboxTimelineEntryViewModel {
+  return {
+    id: input.item.id,
+    kind: mapTimelineKind(input.item),
+    occurredAt: input.item.occurredAt,
+    occurredAtLabel: formatRelativeTimestamp(
+      input.item.occurredAt,
+      input.referenceNowIso
+    ),
+    actorLabel: timelineActorLabel(input.item, input.contactDisplayName),
+    subject: timelineSubject(input.item),
+    body: timelineBody(input.item),
+    channel: timelineChannel(input.item),
+    isUnread: isUnreadTimelineItem(input.item, input.inboxProjection)
+  };
 }
 
 function groupMembershipsByContactId(
@@ -495,30 +632,22 @@ async function readInboxDetailCacheData(
   contactId: string
 ): Promise<InboxDetailCacheData | null> {
   const runtime = await getStage1WebRuntime();
-  const [contact, inboxProjection, memberships, timelineRows, canonicalEvents] =
-    await Promise.all([
-      runtime.repositories.contacts.findById(contactId),
-      runtime.repositories.inboxProjection.findByContactId(contactId),
-      runtime.repositories.contactMemberships.listByContactId(contactId),
-      runtime.repositories.timelineProjection.listByContactId(contactId),
-      runtime.repositories.canonicalEvents.listByContactId(contactId)
-    ]);
+  const [contact, inboxProjection, memberships, timelineItems] = await Promise.all([
+    runtime.repositories.contacts.findById(contactId),
+    runtime.repositories.inboxProjection.findByContactId(contactId),
+    runtime.repositories.contactMemberships.listByContactId(contactId),
+    runtime.timelinePresentation.listTimelineItemsByContactId(contactId)
+  ]);
 
   if (contact === null || inboxProjection === null) {
     return null;
   }
 
-  const gmailDetails = await runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
-    uniqueStrings(canonicalEvents.map((event) => event.sourceEvidenceId))
-  );
-
   return {
     contact,
     inboxProjection,
     memberships,
-    timelineRows,
-    canonicalEvents,
-    gmailDetails,
+    timelineItems,
     projectNameById: await loadProjectNameById(memberships)
   };
 }
@@ -584,7 +713,7 @@ function buildContactSummary(
     readonly contact: ContactRecord;
     readonly inboxProjection: InboxProjectionRow;
     readonly memberships: readonly ContactMembershipRecord[];
-    readonly timelineRows: readonly TimelineProjectionRow[];
+    readonly timelineItems: readonly TimelineItem[];
     readonly projectNameById: Readonly<Record<string, string>>;
     readonly referenceNowIso: string;
   }
@@ -612,50 +741,9 @@ function buildContactSummary(
       isPastProject(membership.status)
     ),
     recentActivity: buildRecentActivity(
-      input.timelineRows,
+      input.timelineItems,
       input.referenceNowIso
     )
-  };
-}
-
-function buildTimelineEntry(
-  input: {
-    readonly contactDisplayName: string;
-    readonly inboxProjection: InboxProjectionRow;
-    readonly row: TimelineProjectionRow;
-    readonly canonicalEvent: CanonicalEventRecord | null;
-    readonly gmailDetail: GmailMessageDetailRecord | null;
-    readonly referenceNowIso: string;
-  }
-): InboxTimelineEntryViewModel {
-  const kind = mapTimelineKind(input.row);
-  const subject =
-    input.row.channel === "email"
-      ? input.gmailDetail?.subject ?? input.row.summary
-      : null;
-  const body =
-    input.gmailDetail?.bodyTextPreview ??
-    input.gmailDetail?.snippetClean ??
-    input.row.summary;
-  const isInbound =
-    kind === "inbound-email" || kind === "inbound-sms";
-
-  return {
-    id: input.row.id,
-    kind,
-    occurredAt: input.row.occurredAt,
-    occurredAtLabel: formatRelativeTimestamp(
-      input.row.occurredAt,
-      input.referenceNowIso
-    ),
-    actorLabel: isInbound ? input.contactDisplayName : "You",
-    subject,
-    body,
-    channel: input.row.channel === "sms" ? "sms" : "email",
-    isUnread:
-      input.inboxProjection.bucket === "New" &&
-      isInbound &&
-      input.canonicalEvent?.id === input.inboxProjection.lastCanonicalEventId
   };
 }
 
@@ -718,37 +806,24 @@ export async function getInboxDetail(
   }
 
   const referenceNowIso = new Date().toISOString();
-  const canonicalEventById = new Map(
-    cachedData.canonicalEvents.map((event) => [event.id, event])
-  );
-  const gmailDetailBySourceEvidenceId = new Map(
-    cachedData.gmailDetails.map((detail) => [detail.sourceEvidenceId, detail])
-  );
 
   return {
     contact: buildContactSummary({
       contact: cachedData.contact,
       inboxProjection: cachedData.inboxProjection,
       memberships: cachedData.memberships,
-      timelineRows: cachedData.timelineRows,
+      timelineItems: cachedData.timelineItems,
       projectNameById: cachedData.projectNameById,
       referenceNowIso
     }),
-    timeline: cachedData.timelineRows.map((row) => {
-      const canonicalEvent = canonicalEventById.get(row.canonicalEventId) ?? null;
-
-      return buildTimelineEntry({
+    timeline: cachedData.timelineItems.map((item) =>
+      buildTimelineEntry({
         contactDisplayName: cachedData.contact.displayName,
         inboxProjection: cachedData.inboxProjection,
-        row,
-        canonicalEvent,
-        gmailDetail:
-          canonicalEvent === null
-            ? null
-            : gmailDetailBySourceEvidenceId.get(canonicalEvent.sourceEvidenceId) ?? null,
+        item,
         referenceNowIso
-      });
-    }),
+      })
+    ),
     bucket: mapBucket(cachedData.inboxProjection.bucket),
     needsFollowUp: cachedData.inboxProjection.needsFollowUp,
     smsEligible: cachedData.contact.primaryPhone !== null
