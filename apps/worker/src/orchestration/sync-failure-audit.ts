@@ -37,7 +37,7 @@ export async function recordSyncFailureAudit(
   }
 ): Promise<AuditEvidenceRecord> {
   return persistence.recordAuditEvidence({
-    id: `audit:sync_state:${input.syncStateId}:failure:${Date.parse(input.occurredAt)}:${randomUUID()}`,
+    id: `audit:sync_state:${input.syncStateId}:failure:${String(Date.parse(input.occurredAt))}:${randomUUID()}`,
     actorType: "worker",
     actorId: input.actorId,
     action: "record_sync_failure",

@@ -2,12 +2,63 @@ import {
   timelineItemListSchema,
   type CampaignEmailTimelineItem,
   type CanonicalEventRecord,
+  type GmailMessageDetailRecord,
+  type SalesforceEventContextRecord,
   type SourceEvidenceRecord,
   type TimelineItem,
   type TimelineProjectionRow
 } from "@as-comms/contracts";
 
 import type { Stage1RepositoryBundle } from "./repositories.js";
+
+type TimelineProvenance = CanonicalEventRecord["provenance"] & {
+  readonly messageKind?: "auto" | "campaign" | "one_to_one" | null;
+  readonly campaignRef?: {
+    readonly providerMessageName: string | null;
+    readonly providerCampaignId: string | null;
+  } | null;
+  readonly threadRef?: {
+    readonly providerThreadId: string | null;
+    readonly crossProviderCollapseKey: string | null;
+  } | null;
+  readonly direction?: "inbound" | "outbound" | null;
+};
+
+type SalesforceEventContextDetail = SalesforceEventContextRecord & {
+  readonly sourceField?: string | null;
+};
+
+interface SalesforceCommunicationDetail {
+  readonly sourceEvidenceId: string;
+  readonly subject: string | null;
+  readonly snippet: string;
+  readonly sourceLabel: string;
+}
+
+interface SimpleTextingMessageDetail {
+  readonly sourceEvidenceId: string;
+  readonly direction: "inbound" | "outbound";
+  readonly messageTextPreview: string;
+  readonly campaignName: string | null;
+  readonly campaignId: string | null;
+  readonly normalizedPhone: string | null;
+  readonly threadKey: string | null;
+}
+
+interface MailchimpCampaignActivityDetail {
+  readonly sourceEvidenceId: string;
+  readonly activityType: CampaignEmailTimelineItem["activityType"];
+  readonly campaignName: string | null;
+  readonly campaignId: string | null;
+  readonly audienceId: string | null;
+  readonly snippet: string;
+}
+
+interface ManualNoteDetail {
+  readonly sourceEvidenceId: string;
+  readonly body: string;
+  readonly authorDisplayName: string | null;
+}
 
 function getLifecycleMilestone(
   eventType: CanonicalEventRecord["eventType"]
@@ -27,50 +78,53 @@ function getLifecycleMilestone(
 }
 
 function resolveFamily(event: CanonicalEventRecord): TimelineItem["family"] {
-  if (event.eventType.startsWith("lifecycle.")) {
+  const eventType = event.eventType as string;
+  const provenance = event.provenance as TimelineProvenance;
+
+  if (eventType.startsWith("lifecycle.")) {
     return "salesforce_event";
   }
 
-  if (event.eventType === "note.internal.created") {
+  if (eventType === "note.internal.created") {
     return "internal_note";
   }
 
-  if (event.eventType.startsWith("campaign.email.")) {
+  if (eventType.startsWith("campaign.email.")) {
     return "campaign_email";
   }
 
   if (
-    event.eventType === "communication.email.outbound" &&
-    event.provenance.messageKind === "auto"
+    eventType === "communication.email.outbound" &&
+    provenance.messageKind === "auto"
   ) {
     return "auto_email";
   }
 
   if (
-    event.eventType === "communication.sms.outbound" &&
-    event.provenance.messageKind === "campaign"
+    eventType === "communication.sms.outbound" &&
+    provenance.messageKind === "campaign"
   ) {
     return "campaign_sms";
   }
 
   if (
-    (event.eventType === "communication.email.inbound" ||
-      event.eventType === "communication.email.outbound") &&
-    (event.provenance.messageKind === "one_to_one" ||
-      (event.provenance.messageKind === null &&
-        (event.provenance.primaryProvider === "gmail" ||
-          event.provenance.primaryProvider === "salesforce")))
+    (eventType === "communication.email.inbound" ||
+      eventType === "communication.email.outbound") &&
+    (provenance.messageKind === "one_to_one" ||
+      (provenance.messageKind === null &&
+        (provenance.primaryProvider === "gmail" ||
+          provenance.primaryProvider === "salesforce")))
   ) {
     return "one_to_one_email";
   }
 
   if (
-    (event.eventType === "communication.sms.inbound" ||
-      event.eventType === "communication.sms.outbound") &&
-    (event.provenance.messageKind === "one_to_one" ||
-      (event.provenance.messageKind === null &&
-        (event.provenance.primaryProvider === "simpletexting" ||
-          event.provenance.primaryProvider === "salesforce")))
+    (eventType === "communication.sms.inbound" ||
+      eventType === "communication.sms.outbound") &&
+    (provenance.messageKind === "one_to_one" ||
+      (provenance.messageKind === null &&
+        (provenance.primaryProvider === "simpletexting" ||
+          provenance.primaryProvider === "salesforce")))
   ) {
     return "one_to_one_sms";
   }
@@ -129,7 +183,7 @@ export function createStage1TimelinePresentationService(
         simpleTextingMessageDetails,
         mailchimpCampaignActivityDetails,
         manualNoteDetails
-      ] = await Promise.all([
+      ] = (await Promise.all([
         repositories.gmailMessageDetails.listBySourceEvidenceIds(sourceEvidenceIds),
         repositories.salesforceEventContext.listBySourceEvidenceIds(sourceEvidenceIds),
         repositories.salesforceCommunicationDetails.listBySourceEvidenceIds(
@@ -142,7 +196,14 @@ export function createStage1TimelinePresentationService(
           sourceEvidenceIds
         ),
         repositories.manualNoteDetails.listBySourceEvidenceIds(sourceEvidenceIds)
-      ]);
+      ])) as [
+        readonly GmailMessageDetailRecord[],
+        readonly SalesforceEventContextDetail[],
+        readonly SalesforceCommunicationDetail[],
+        readonly SimpleTextingMessageDetail[],
+        readonly MailchimpCampaignActivityDetail[],
+        readonly ManualNoteDetail[]
+      ];
 
       const salesforceContextBySourceEvidenceId = new Map(
         salesforceContexts.map((detail) => [detail.sourceEvidenceId, detail])
@@ -218,6 +279,7 @@ export function createStage1TimelinePresentationService(
 
         const family = resolveFamily(event);
         const base = commonFields(row);
+        const provenance = event.provenance as TimelineProvenance;
         const salesforceContext = salesforceContextBySourceEvidenceId.get(evidence.id);
         const gmailDetail = gmailDetailBySourceEvidenceId.get(evidence.id);
         const salesforceCommunicationDetail =
@@ -279,11 +341,11 @@ export function createStage1TimelinePresentationService(
               messageTextPreview: simpleTextingDetail?.messageTextPreview ?? "",
               campaignName:
                 simpleTextingDetail?.campaignName ??
-                event.provenance.campaignRef?.providerMessageName ??
+                provenance.campaignRef?.providerMessageName ??
                 null,
               campaignId:
                 simpleTextingDetail?.campaignId ??
-                event.provenance.campaignRef?.providerCampaignId ??
+                provenance.campaignRef?.providerCampaignId ??
                 null
             });
             break;
@@ -292,7 +354,7 @@ export function createStage1TimelinePresentationService(
               ...base,
               family,
               direction:
-                gmailDetail?.direction ?? event.provenance.direction ?? "outbound",
+                gmailDetail?.direction ?? provenance.direction ?? "outbound",
               subject:
                 gmailDetail?.subject ?? salesforceCommunicationDetail?.subject ?? null,
               snippet:
@@ -302,7 +364,7 @@ export function createStage1TimelinePresentationService(
                 gmailDetail?.projectInboxAlias ?? gmailDetail?.capturedMailbox ?? null,
               threadId:
                 gmailDetail?.gmailThreadId ??
-                event.provenance.threadRef?.providerThreadId ??
+                provenance.threadRef?.providerThreadId ??
                 null
             });
             break;
@@ -312,7 +374,7 @@ export function createStage1TimelinePresentationService(
               family,
               direction:
                 simpleTextingDetail?.direction ??
-                event.provenance.direction ??
+                provenance.direction ??
                 "outbound",
               messageTextPreview:
                 simpleTextingDetail?.messageTextPreview ??
@@ -321,7 +383,7 @@ export function createStage1TimelinePresentationService(
               phone: simpleTextingDetail?.normalizedPhone ?? null,
               threadKey:
                 simpleTextingDetail?.threadKey ??
-                event.provenance.threadRef?.crossProviderCollapseKey ??
+                provenance.threadRef?.crossProviderCollapseKey ??
                 null
             });
             break;

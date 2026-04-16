@@ -331,7 +331,7 @@ async function writeArtifactCampaignWithRecipientCount(input: {
   });
 
   const sentTo = Array.from({ length: input.recipientCount }, (_, index) => ({
-    email_id: `member-${index + 1}`,
+    email_id: `member-${String(index + 1)}`,
     email_address: "volunteer@example.org",
     merge_fields: {
       PLATFORMID: "VOL-123"
@@ -340,7 +340,7 @@ async function writeArtifactCampaignWithRecipientCount(input: {
     campaign_id: input.campaignId,
     list_id: "audience-resume"
   }));
-  const writes: ReadonlyArray<readonly [string, unknown]> = [
+  const writes: readonly (readonly [string, unknown])[] = [
     [
       "summary.json",
       {

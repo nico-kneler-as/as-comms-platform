@@ -565,7 +565,12 @@ describe("Salesforce capture service", () => {
         }),
         expect.objectContaining({
           recordType: "lifecycle_milestone",
-          salesforceContactId: "003-stage1"
+          salesforceContactId: "003-stage1",
+          routing:
+            expect.objectContaining({
+              projectId: "project-antarctica",
+              expeditionId: "expedition-antarctica"
+            }) as unknown
         })
       ])
     );
