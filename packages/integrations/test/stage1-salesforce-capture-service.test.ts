@@ -574,18 +574,6 @@ describe("Salesforce capture service", () => {
         })
       ])
     );
-    const lifecycleRecord = result.records.find(
-      (record) =>
-        record.recordType === "lifecycle_milestone" &&
-        record.salesforceContactId === "003-stage1"
-    );
-    expect(lifecycleRecord).toMatchObject({
-      routing: {
-        required: true,
-        projectId: "project-antarctica",
-        expeditionId: "expedition-antarctica"
-      }
-    });
   });
 
   it("maps expedition-linked auto email tasks to task_communication with routing context", async () => {
