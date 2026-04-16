@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { z, ZodError } from "zod";
+import { ZodError, type z } from "zod";
 
 import {
   cutoverCheckpointBatchPayloadSchema,
@@ -442,18 +442,18 @@ function getMappedResultForRecord(
 function prioritizeCapturedRecordsForIngest<TRecord>(
   records: readonly TRecord[],
   mapRecord: (record: TRecord) => ProviderMappingResult
-): Array<{
+): {
   readonly record: TRecord;
   readonly mapped: ProviderMappingResult;
-}> {
-  const contactGraphRecords: Array<{
+}[] {
+  const contactGraphRecords: {
     readonly record: TRecord;
     readonly mapped: ProviderMappingResult;
-  }> = [];
-  const remainingRecords: Array<{
+  }[] = [];
+  const remainingRecords: {
     readonly record: TRecord;
     readonly mapped: ProviderMappingResult;
-  }> = [];
+  }[] = [];
 
   for (const record of records) {
     const mapped = mapRecord(record);
@@ -766,8 +766,7 @@ async function captureHistoricalGmailRecordsForReplay(
     const replayedRecord = importedRecords[parsedPayloadRef.messageNumber - 1];
 
     if (
-      replayedRecord === undefined ||
-      replayedRecord.recordType !== "message" ||
+      replayedRecord?.recordType !== "message" ||
       replayedRecord.recordId !== recordId
     ) {
       throw new Stage1NonRetryableJobError(

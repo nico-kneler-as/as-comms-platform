@@ -52,9 +52,10 @@ describe("Stage 1 task list", () => {
         )
       ).rejects.toMatchObject({
         name: "Stage1TaskOutcomeError",
-        message: expect.stringContaining(
-          "Unsupported Salesforce batch shape. (syncStateId=sync:salesforce:task-wrapper:1, status=failed)"
-        )
+        message:
+          expect.stringContaining(
+            "Unsupported Salesforce batch shape. (syncStateId=sync:salesforce:task-wrapper:1, status=failed)"
+          ) as unknown
       });
     } finally {
       await context.dispose();
