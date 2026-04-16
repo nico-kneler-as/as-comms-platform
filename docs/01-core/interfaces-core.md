@@ -31,7 +31,7 @@
 | contact memberships | `ContactMembershipRecord` | `contactMembershipSchema` | `contactMemberships` | `id`, `contactId`, `projectId`, `expeditionId`, `role`, `status`, `source` |
 | identity resolution queue | `IdentityResolutionCase` | `identityResolutionSchema` | `identityResolutionQueue` | `id`, `sourceEvidenceId`, `candidateContactIds`, `reasonCode`, `status`, `openedAt`, `resolvedAt` |
 | routing review queue | `RoutingReviewCase` | `routingReviewSchema` | `routingReviewQueue` | `id`, `contactId`, `sourceEvidenceId`, `reasonCode`, `status`, `openedAt`, `resolvedAt` |
-| contact inbox projection | `InboxProjectionRow` | `inboxProjectionSchema` | `contactInboxProjection` | `contactId`, `bucket`, `isStarred`, `hasUnresolved`, `lastInboundAt`, `lastOutboundAt`, `lastActivityAt`, `snippet` |
+| contact inbox projection | `InboxProjectionRow` | `inboxProjectionSchema` | `contactInboxProjection` | `contactId`, `bucket`, `needsFollowUp`, `hasUnresolved`, `lastInboundAt`, `lastOutboundAt`, `lastActivityAt`, `snippet`, `lastEventType` |
 | contact timeline projection | `TimelineProjectionRow` | `timelineProjectionSchema` | `contactTimelineProjection` | `id`, `contactId`, `canonicalEventId`, `occurredAt`, `sortKey`, `eventType`, `summary`, `channel` |
 | sync/parity/backfill state | `SyncStateRecord` | `syncStateSchema` | `syncState` | `id`, `provider`, `jobType`, `cursor`, `windowStart`, `windowEnd`, `status`, `parityPercent`, `lastSuccessfulAt`, `deadLetterCount` |
 | audit/policy evidence | `AuditEvidenceRecord` | `auditEvidenceSchema` | `auditPolicyEvidence` | `id`, `actorType`, `actorId`, `action`, `entityType`, `entityId`, `occurredAt`, `result`, `policyCode`, `metadataJson` |
@@ -62,7 +62,7 @@
 | compact starting schemas with the required fields above | inventing new product concepts or queue semantics |
 | splitting provider-close raw payload storage from normalized payload schemas | using raw provider payloads as cross-package contracts |
 | additional nullable fields added later when justified by canon | deleting required fields that encode identity, provenance, or replay behavior |
-| implementation-specific table naming adjustments if semantics stay the same | changing the meaning of `New`, `Opened`, `Starred`, unresolved, or manual review here |
+| implementation-specific table naming adjustments if semantics stay the same | changing the meaning of bucket-derived unread, `needsFollowUp`, unresolved, or manual review here |
 
 ## Read Next
 

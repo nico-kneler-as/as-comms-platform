@@ -8,6 +8,7 @@ import type {
   InboxFilterViewModel,
   InboxListItemViewModel
 } from "../_lib/view-models";
+import { resolveNeedsFollowUp } from "../_lib/follow-up-state";
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { useInboxClient } from "./inbox-client-provider";
@@ -27,13 +28,6 @@ interface ListColumnProps {
   readonly initialFilterId?: InboxFilterId;
 }
 
-const FILTER_LABELS: Record<InboxFilterId, string> = {
-  all: "All",
-  unread: "Unread",
-  "follow-up": "Follow-up",
-  unresolved: "Unresolved"
-};
-
 export function InboxList({
   items,
   filters,
@@ -50,15 +44,22 @@ export function InboxList({
   } = useInboxClient();
 
   const [activeFilter, setActiveFilter] = useState<InboxFilterId>(initialFilterId);
+  const filterLabels = useMemo(
+    () =>
+      new Map(filters.map((filter) => [filter.id, filter.label] as const)),
+    [filters]
+  );
 
-  // Compute filter counts from items + followUp set
+  // Compute filter counts from base projection state + local overrides.
   const filterCounts = useMemo(() => {
     let unread = 0;
     let followUpCount = 0;
     let unresolved = 0;
     for (const item of items) {
       if (item.bucket === "new") unread++;
-      if (followUp.has(item.contactId)) followUpCount++;
+      if (resolveNeedsFollowUp(item.contactId, item.needsFollowUp, followUp)) {
+        followUpCount++;
+      }
       if (item.hasUnresolved) unresolved++;
     }
     return {
@@ -149,14 +150,16 @@ export function InboxList({
                 key={id}
                 type="button"
                 aria-pressed={isActive}
-                onClick={() => setActiveFilter(id)}
+                onClick={() => {
+                  setActiveFilter(id);
+                }}
                 className={`rounded-full px-2.5 py-1 text-xs font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
                   isActive
                     ? "bg-slate-900 text-white"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
-                {FILTER_LABELS[id]}{" "}
+                {filterLabels.get(id) ?? id}{" "}
                 <span className={isActive ? "text-slate-300" : "text-slate-400"}>
                   {filterCounts[id]}
                 </span>
@@ -200,7 +203,14 @@ export function InboxList({
             {displayItems.map((item) => (
               <InboxRow
                 key={item.contactId}
-                item={item}
+                item={{
+                  ...item,
+                  needsFollowUp: resolveNeedsFollowUp(
+                    item.contactId,
+                    item.needsFollowUp,
+                    followUp
+                  )
+                }}
                 isActive={item.contactId === activeContactId}
               />
             ))}
@@ -244,7 +254,7 @@ function extractContactId(pathname: string | null): string | null {
 function matchesActiveFilter(
   item: InboxListItemViewModel,
   activeFilter: InboxFilterId,
-  followUp: ReadonlySet<string>
+  followUp: ReadonlyMap<string, boolean>
 ): boolean {
   switch (activeFilter) {
     case "all":
@@ -252,7 +262,7 @@ function matchesActiveFilter(
     case "unread":
       return item.bucket === "new";
     case "follow-up":
-      return followUp.has(item.contactId);
+      return resolveNeedsFollowUp(item.contactId, item.needsFollowUp, followUp);
     case "unresolved":
       return item.hasUnresolved;
   }

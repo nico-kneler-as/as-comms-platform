@@ -10,10 +10,10 @@ Status of every functional area in the inbox shell as of this build.
 |------|--------------|-------------------|
 | **Contact list data** | `_lib/mock-data.ts` | 8 hardcoded contacts with realistic timelines |
 | **Contact detail data** | `_lib/mock-data.ts` | Full timeline, project memberships, milestones |
-| **List selectors** | `_lib/selectors.ts` | Maps mock records to view models, sorts by `lastInboundAt` |
+| **List selectors** | `_lib/selectors.ts` | Maps mock records to view models, sorts by `lastInboundAt` with `lastActivityAt` fallback |
 | **Composer send** | `inbox-composer.tsx` | `setTimeout` simulating 1.2s send with 80% success rate |
 | **AI drafting** | `inbox-composer.tsx` | `setTimeout` inserting a canned draft after 2s |
-| **Follow-up toggle** | `inbox-client-provider.tsx` | Client-side `Set<string>` — no persistence |
+| **Follow-up toggle** | `inbox-client-provider.tsx` | Client-side follow-up override map layered on top of projection-backed `needsFollowUp` |
 | **Reminders** | `inbox-client-provider.tsx` | Client-side `Map<string, Reminder>` — no persistence |
 | **Search** | `inbox-list.tsx` | Client-side string match on name, subject, snippet, project |
 
@@ -51,9 +51,10 @@ Status of every functional area in the inbox shell as of this build.
 
 - One row per person, not one row per thread
 - Queue state is projection-driven, not UI-owned
-- Single recency-sorted list (lastInboundAt desc)
+- Single recency-sorted list (`lastInboundAt desc`, `lastActivityAt desc` fallback)
 - Unread / Needs Follow-Up / Unresolved Review are row-level states, not list partitions
 - `bucket` and `needsFollowUp` are separate fields (never collapsed)
+- Unread filter uses bucket state, follow-up filter uses `needsFollowUp`, unresolved filter uses `hasUnresolved`
 - Toggling follow-up does not change row ordering
 - Unresolved review overlays on top of queue state
 - Internal notes included in timeline and composer

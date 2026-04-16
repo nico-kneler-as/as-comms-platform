@@ -27,10 +27,23 @@ import type {
  * Default list sort: last inbound message first.
  * Toggling follow-up does NOT change row ordering.
  */
-const LIST_SORT = (
+export const compareInboxRecency = (
   a: InboxListItemViewModel,
   b: InboxListItemViewModel
-): number => (a.lastInboundAt < b.lastInboundAt ? 1 : -1);
+): number => {
+  const aSortAt = a.lastInboundAt ?? a.lastActivityAt;
+  const bSortAt = b.lastInboundAt ?? b.lastActivityAt;
+
+  if (aSortAt !== bSortAt) {
+    return aSortAt < bSortAt ? 1 : -1;
+  }
+
+  if (a.lastActivityAt !== b.lastActivityAt) {
+    return a.lastActivityAt < b.lastActivityAt ? 1 : -1;
+  }
+
+  return a.contactId.localeCompare(b.contactId);
+};
 
 export function getInboxList(
   filterId: InboxFilterId = "all"
@@ -53,12 +66,14 @@ export function getInboxList(
     unreadCount: c.unreadCount,
     lastInboundAt: c.lastInboundAt,
     lastActivityAt: c.lastActivityAt,
+    lastEventType: c.lastEventType,
     lastActivityLabel: c.lastActivityLabel
   }));
 
   const totals = {
     all: items.length,
     unread: items.filter((i) => i.bucket === "new").length,
+    followUp: items.filter((i) => i.needsFollowUp).length,
     unresolved: items.filter((i) => i.hasUnresolved).length
   };
 
@@ -67,16 +82,16 @@ export function getInboxList(
     label: f.label,
     hint: f.hint,
     count:
-      f.id === "follow-up"
-        ? 0 // follow-up count is client-side; server returns 0
-        : f.id === "unresolved"
-          ? totals.unresolved
+      f.id === "unresolved"
+        ? totals.unresolved
+        : f.id === "follow-up"
+          ? totals.followUp
           : totals[f.id]
   }));
 
   const filtered = items
     .filter((item) => matchesServerFilter(item, filterId))
-    .sort(LIST_SORT);
+    .sort(compareInboxRecency);
 
   return { items: filtered, filters, totals };
 }
@@ -91,10 +106,7 @@ function matchesServerFilter(
     case "unread":
       return item.bucket === "new";
     case "follow-up":
-      // Follow-up is client-owned state; server returns everything and the
-      // client narrows it. Keeping this branch exhaustive satisfies the
-      // discriminated-union check.
-      return true;
+      return item.needsFollowUp;
     case "unresolved":
       return item.hasUnresolved;
   }

@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { InboxDetailViewModel } from "../_lib/view-models";
+import { resolveNeedsFollowUp } from "../_lib/follow-up-state";
 import {
   useInboxClient,
   type Reminder
@@ -60,7 +61,11 @@ export function InboxDetail({ detail }: DetailProps) {
   const activeProject = contact.activeProjects[0] ?? null;
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
 
-  const isFollowUp = followUp.has(contact.contactId) || detail.needsFollowUp;
+  const isFollowUp = resolveNeedsFollowUp(
+    contact.contactId,
+    detail.needsFollowUp,
+    followUp
+  );
   const existingReminder = reminders.get(contact.contactId) ?? null;
 
   const handleSetReminder = () => {
@@ -127,7 +132,7 @@ export function InboxDetail({ detail }: DetailProps) {
               size="sm"
               aria-pressed={isFollowUp}
               onClick={() => {
-                toggleFollowUp(contact.contactId);
+                toggleFollowUp(contact.contactId, detail.needsFollowUp);
               }}
               className={cn(
                 "gap-1.5",
@@ -136,7 +141,7 @@ export function InboxDetail({ detail }: DetailProps) {
               )}
             >
               <CornerUpLeftIcon className="h-3.5 w-3.5" />
-              Needs Follow Up
+              Needs Follow-Up
             </Button>
 
             {/* Reminder popover */}

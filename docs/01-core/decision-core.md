@@ -28,7 +28,7 @@
 | `D-009` | AI never sends automatically. | Human review is mandatory. |
 | `D-010` | Internal notes are in the first restart Inbox release. | Lightweight collaboration is core. |
 | `D-011` | Owners and tags are out of the first restart Inbox release. | Avoids unnecessary first-release complexity. |
-| `D-012` | Inbox uses `New` and `Opened`, with `Starred` as a separate follow-up flag and unresolved layered on top. | Simpler Gmail-familiar operator model. |
+| `D-012` | Inbox is one mixed contact list sorted by recency; unread comes from bucket state, `needsFollowUp` stays separate, and unresolved remains an overlay. | Keeps the operator model simple without collapsing row states together. |
 | `D-013` | Gmail remains the one-to-one email transport after cutover. | Locked operational topology. |
 | `D-014` | Email Campaigns ship before SMS Campaigns. | Trust milestone order is fixed. |
 | `D-015` | Campaign content and review state stay product-owned. | Provider is delivery, not authoring truth. |

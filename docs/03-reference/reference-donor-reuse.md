@@ -21,7 +21,7 @@
 ## Always Check First
 
 - does this donor logic fit the locked repo contract?
-- does it preserve the current Inbox `New / Opened / Starred` model?
+- does it preserve the current mixed-list Inbox model with bucket-derived unread, explicit `needsFollowUp`, and unresolved overlay?
 - does it preserve the one-normalization-path rule?
 - does it reintroduce approval-heavy, UI-owned, or benchmark-era assumptions?
 

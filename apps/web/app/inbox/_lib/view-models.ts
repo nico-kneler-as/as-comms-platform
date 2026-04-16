@@ -1,3 +1,5 @@
+import type { InboxDrivingEventType } from "@as-comms/contracts";
+
 /**
  * Inbox — UI-facing view models.
  *
@@ -8,12 +10,12 @@
  *
  * Locked rules reflected here:
  *   - one row per person, not per thread (P-02 / INBX-01)
- *   - primary buckets are "new" and "opened" (INBX-02)
+ *   - "new" and "opened" remain row-state bucket values, not primary tabs
  *   - "needsFollowUp" is a separate operator flag, not derived from bucket
  *   - "unresolved" is an overlay on top of the queue model (INBX-04)
  *   - campaign and automated sends are surfaced in the timeline as collapsed
  *     entries so 1:1 history stays readable (INBX-05)
- *   - default list order: lastInboundAt desc
+ *   - default list order: lastInboundAt desc, fallback lastActivityAt desc
  *   - toggling follow-up does NOT change row ordering
  */
 
@@ -59,8 +61,9 @@ export interface InboxListItemViewModel {
   readonly unreadCount: number;
 
   // ── Sort / display ──
-  readonly lastInboundAt: string;
+  readonly lastInboundAt: string | null;
   readonly lastActivityAt: string;
+  readonly lastEventType: InboxDrivingEventType;
   readonly lastActivityLabel: string;
 }
 

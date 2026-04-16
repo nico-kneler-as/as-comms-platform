@@ -1116,7 +1116,7 @@ export function createStage1NormalizationService(
       return persistence.saveInboxProjection({
         contactId: parsed.canonicalEvent.contactId,
         bucket: lastInboundAt === null ? "Opened" : "New",
-        isStarred: existing?.isStarred ?? false,
+        needsFollowUp: existing?.needsFollowUp ?? false,
         hasUnresolved,
         lastInboundAt,
         lastOutboundAt,

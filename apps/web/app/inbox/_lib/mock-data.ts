@@ -15,6 +15,8 @@
  * canonical inbox/timeline projections without changing view-model shapes.
  */
 
+import type { InboxDrivingEventType } from "@as-comms/contracts";
+
 import type {
   InboxAvatarTone,
   InboxBucket,
@@ -62,8 +64,9 @@ interface MockContactRecord {
   readonly snippet: string;
   readonly latestChannel: InboxChannel;
   readonly projectLabel: string | null;
-  readonly lastInboundAt: string;
+  readonly lastInboundAt: string | null;
   readonly lastActivityAt: string;
+  readonly lastEventType: InboxDrivingEventType;
   readonly lastActivityLabel: string;
   readonly timeline: readonly InboxTimelineEntryViewModel[];
 }
@@ -139,6 +142,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     projectLabel: "Tracking Whitebark Pine 2026",
     lastInboundAt: iso(0),
     lastActivityAt: "2026-04-14T14:22:00Z",
+    lastEventType: "communication.email.inbound",
     lastActivityLabel: "9:22 AM",
     timeline: buildTimeline("c_maya_patel", [
       {
@@ -275,6 +279,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     projectLabel: "Searching for Killer Whales",
     lastInboundAt: iso(0),
     lastActivityAt: "2026-04-14T12:05:00Z",
+    lastEventType: "communication.email.inbound",
     lastActivityLabel: "7:05 AM",
     timeline: buildTimeline("c_daniel_rivers", [
       {
@@ -387,6 +392,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     projectLabel: "Monitoring Coral Reefs",
     lastInboundAt: iso(0),
     lastActivityAt: "2026-04-14T09:48:00Z",
+    lastEventType: "communication.email.inbound",
     lastActivityLabel: "4:48 AM",
     timeline: buildTimeline("c_priya_chen", [
       {
@@ -534,6 +540,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     projectLabel: "Beech and Butternut",
     lastInboundAt: iso(2),
     lastActivityAt: "2026-04-13T19:30:00Z",
+    lastEventType: "communication.email.outbound",
     lastActivityLabel: "Yesterday",
     timeline: buildTimeline("c_sam_whitehorse", [
       {
@@ -640,6 +647,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     projectLabel: null,
     lastInboundAt: iso(1),
     lastActivityAt: "2026-04-14T02:14:00Z",
+    lastEventType: "communication.email.inbound",
     lastActivityLabel: "Yesterday",
     timeline: buildTimeline("c_anita_ross", [
       {
@@ -695,6 +703,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     projectLabel: "Front Range Owl Survey 2023",
     lastInboundAt: iso(2),
     lastActivityAt: "2026-04-12T16:10:00Z",
+    lastEventType: "communication.email.inbound",
     lastActivityLabel: "2 days ago",
     timeline: buildTimeline("c_ben_okafor", [
       {
@@ -774,6 +783,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     projectLabel: "PNW Biodiversity 2026",
     lastInboundAt: iso(2),
     lastActivityAt: "2026-04-12T11:02:00Z",
+    lastEventType: "communication.sms.outbound",
     lastActivityLabel: "2 days ago",
     timeline: buildTimeline("c_elena_marquez", [
       {
@@ -867,6 +877,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     projectLabel: null,
     lastInboundAt: iso(1),
     lastActivityAt: "2026-04-13T22:45:00Z",
+    lastEventType: "communication.sms.inbound",
     lastActivityLabel: "Yesterday",
     timeline: buildTimeline("c_unknown_5551", [
       {

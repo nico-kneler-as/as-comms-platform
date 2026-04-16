@@ -12,7 +12,7 @@
 | manual Notion sync/review/confirm workflow | background sync/cache with no approval gate |
 | donor repo as implementation baseline | fresh rebuild in a new repo |
 | benchmark-era UI decisions as product truth | only re-locked decisions in the current canon matter |
-| older Inbox `New / Open / Closed` or close/reopen workflows | `New` + `Opened` primary queue model, `Starred` follow-up flag, no first-release close/reopen dependency |
+| older Inbox `New / Open / Closed` or queue-tab-first workflows | one mixed contact list, bucket-derived unread, explicit `needsFollowUp`, unresolved overlay, no first-release close/reopen dependency |
 | flexible framework/stack choice during implementation | locked Next.js / React / TS / Postgres / worker stack and repo shape |
 
 ## When You Hit A Conflict

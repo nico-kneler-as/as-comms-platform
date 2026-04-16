@@ -24,9 +24,11 @@ Build the one-to-one operator workspace on top of canonical projections.
 ## Locked
 
 - one row per person, not one row per thread
-- primary queue buckets are `New` and `Opened`
-- `Starred` is a follow-up flag, not a queue bucket replacement
-- unresolved review layers on top of the queue model
+- one mixed contact list sorted by most recent inbound message
+- `New` and `Opened` remain projection-driven bucket states, but they are row states and filters rather than the primary Inbox partition
+- unread comes from bucket state
+- `needsFollowUp` is an explicit operator-controlled follow-up flag, not a bucket synonym
+- unresolved review layers on top of the row state model
 - internal notes are included
 - owners and tags are not in the first Inbox release
 - send behavior defaults to send and remain opened
@@ -45,23 +47,26 @@ Build the one-to-one operator workspace on top of canonical projections.
 
 | Allowed | Not allowed |
 | --- | --- |
-| projection-driven queue buckets | UI-owned queue state |
-| Gmail-familiar `New` / `Opened` / `Starred` semantics | resurrecting `Closed` / reopen lifecycle logic in first release |
+| projection-driven bucket state plus explicit follow-up flags | UI-owned queue state |
+| one mixed contact list with secondary row-state filters | resurrecting queue-tab-first or `Closed` / reopen lifecycle logic in first release |
 | unresolved overlays and review queues | treating unresolved as its own queue bucket |
 | timeline + notes in one workspace | thread-first Inbox behavior |
 
 ## Acceptance
 
 - queue bucket changes are projection-driven
+- default Inbox ordering is `lastInboundAt desc`, with `lastActivityAt desc` fallback when `lastInboundAt` is missing
+- unread filter keys off bucket state, follow-up filter keys off `needsFollowUp`, and unresolved filter keys off `hasUnresolved`
 - timeline remains correct for volunteers and non-volunteer contacts
 - unresolved/manual-link flows refresh context without duplicate history
-- opening, replying, new inbound resets, and star/unstar behavior stay consistent
+- opening, replying, new inbound resets, and follow-up toggles stay consistent without collapsing bucket and follow-up semantics
 - campaign events do not mutate Inbox bucket state
 
 ## Common Failure Modes
 
 - modeling Inbox around transport threads instead of people
-- making `Starred` a substitute for queue state
+- treating Needs Follow-Up as a substitute for queue state
+- reintroducing queue tabs as the primary Inbox model
 - leaking raw provider models into the workspace
 - reintroducing close / reopen complexity because donor code had it
 

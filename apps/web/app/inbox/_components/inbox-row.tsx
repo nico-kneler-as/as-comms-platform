@@ -19,7 +19,7 @@ interface RowProps {
  * (rose) and review/unresolved (amber) state at a glance.
  */
 export function InboxRow({ item, isActive }: RowProps) {
-  const isUnread = item.unreadCount > 0;
+  const isUnread = item.bucket === "new";
   const ChannelIcon = item.latestChannel === "email" ? MailIcon : PhoneIcon;
 
   const accentClass =
@@ -30,7 +30,7 @@ export function InboxRow({ item, isActive }: RowProps) {
         : null;
 
   const showBadges =
-    item.projectLabel ||
+    Boolean(item.projectLabel) ||
     item.needsFollowUp ||
     item.hasUnresolved ||
     item.unreadCount > 0;

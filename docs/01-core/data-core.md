@@ -53,10 +53,13 @@
 ## Projection Rules
 
 - Inbox is one row per person, not one row per thread.
+- Inbox is one mixed contact list sorted by most recent inbound message.
 - Timeline is one chronological history per person.
-- Primary Inbox queue buckets are `New` and `Opened`.
-- `Starred` is a separate follow-up flag, not a replacement for the queue buckets.
-- Unresolved review is layered on top of the queue model, not its own bucket.
+- `New` and `Opened` remain projection-driven bucket states, but they are row states and filters rather than the primary Inbox partition.
+- Unread is derived from bucket state.
+- `needsFollowUp` is a separate explicit follow-up flag, not a replacement for bucket state.
+- Unresolved review is layered on top of the row state model, not its own bucket.
+- Default Inbox ordering is `lastInboundAt desc`, falling back to `lastActivityAt desc` when `lastInboundAt` is missing.
 - Campaign events appear in the timeline but do not drive Inbox bucket changes.
 
 ## Manual Resolution Model

@@ -9,6 +9,11 @@ import {
   type ReactNode
 } from "react";
 
+import {
+  toggleNeedsFollowUp,
+  type FollowUpOverrides
+} from "../_lib/follow-up-state";
+
 /**
  * Prototype-local client state shared across the Inbox list column and
  * Detail workspace. In a real build these would round-trip through server
@@ -91,9 +96,12 @@ const INITIAL_SEARCH: SearchState = {
 
 interface InboxClientState {
   // Follow-up & reminders
-  readonly followUp: ReadonlySet<string>;
+  readonly followUp: FollowUpOverrides;
   readonly reminders: ReadonlyMap<string, Reminder>;
-  readonly toggleFollowUp: (contactId: string) => void;
+  readonly toggleFollowUp: (
+    contactId: string,
+    seededNeedsFollowUp: boolean
+  ) => void;
   readonly setReminder: (contactId: string, reminder: Reminder) => void;
   readonly clearReminder: (contactId: string) => void;
 
@@ -137,23 +145,20 @@ export function InboxClientProvider({
   readonly children: ReactNode;
 }) {
   // Follow-up & reminders
-  const [followUp, setFollowUp] = useState<ReadonlySet<string>>(
-    () => new Set<string>()
+  const [followUp, setFollowUp] = useState<FollowUpOverrides>(
+    () => new Map<string, boolean>()
   );
   const [reminders, setReminders] = useState<ReadonlyMap<string, Reminder>>(
     () => new Map<string, Reminder>()
   );
 
-  const toggleFollowUp = useCallback((contactId: string) => {
-    setFollowUp((prev) => {
-      const next = new Set(prev);
-      if (next.has(contactId)) {
-        next.delete(contactId);
-      } else {
-        next.add(contactId);
-      }
-      return next;
-    });
+  const toggleFollowUp = useCallback((
+    contactId: string,
+    seededNeedsFollowUp: boolean
+  ) => {
+    setFollowUp((prev) =>
+      toggleNeedsFollowUp(contactId, seededNeedsFollowUp, prev)
+    );
   }, []);
 
   const setReminder = useCallback((contactId: string, reminder: Reminder) => {
@@ -174,7 +179,7 @@ export function InboxClientProvider({
   }, []);
 
   // Search
-  const [search, setSearch] = useState<SearchState>(INITIAL_SEARCH);
+  const [search, setSearch] = useState(INITIAL_SEARCH);
 
   const setSearchQuery = useCallback((query: string) => {
     setSearch((prev) => ({
@@ -206,7 +211,7 @@ export function InboxClientProvider({
   >([]);
 
   // AI draft lifecycle
-  const [aiDraft, setAiDraft] = useState<AiDraftState>(INITIAL_AI_DRAFT);
+  const [aiDraft, setAiDraft] = useState(INITIAL_AI_DRAFT);
 
   const startAiGeneration = useCallback((prompt: string) => {
     setAiDraft({
