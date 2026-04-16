@@ -1,5 +1,4 @@
 import { unstable_cache } from "next/cache";
-import { inArray } from "drizzle-orm";
 
 import type {
   CanonicalEventRecord,
@@ -9,8 +8,8 @@ import type {
   InboxDrivingEventType,
   InboxProjectionRow,
   TimelineItem,
+  TimelineProjectionRow
 } from "@as-comms/contracts";
-import { contactTimelineProjection } from "@as-comms/db";
 
 import { getStage1WebRuntime } from "../../../src/server/stage1-runtime";
 
@@ -33,10 +32,16 @@ import type {
   InboxVolunteerStage
 } from "./view-models";
 
-type InboxListCacheItem = Omit<InboxListItemViewModel, "lastActivityLabel">;
+interface InboxListCacheRow {
+  readonly contact: ContactRecord;
+  readonly inboxProjection: InboxProjectionRow;
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly latestSubject: string | null;
+}
 
 interface InboxListCacheData {
-  readonly items: readonly InboxListCacheItem[];
+  readonly rows: readonly InboxListCacheRow[];
+  readonly projectNameById: Readonly<Record<string, string>>;
 }
 
 interface InboxDetailCacheData {
@@ -326,20 +331,6 @@ function defaultLatestSubject(
   return mapChannel(eventType) === "sms" ? "SMS conversation" : "Email conversation";
 }
 
-function toSnippetPreview(snippet: string): string {
-  const withoutHtml = snippet
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<[^>]+>/g, " ");
-  const normalized = withoutHtml.replace(/\s+/g, " ").trim();
-
-  if (normalized.length <= 180) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, 177).trimEnd()}...`;
-}
-
 function mapTimelineKind(
   item: TimelineItem
 ): InboxTimelineEntryKind {
@@ -561,15 +552,11 @@ async function loadLatestSubjectByCanonicalEventId(
   const runtime = await getStage1WebRuntime();
   const [canonicalEvents, timelineRows] = await Promise.all([
     runtime.repositories.canonicalEvents.listByIds(eventIds),
-    runtime.connection === null
-      ? Promise.resolve([])
-      : runtime.connection.db
-          .select({
-            canonicalEventId: contactTimelineProjection.canonicalEventId,
-            summary: contactTimelineProjection.summary
-          })
-          .from(contactTimelineProjection)
-          .where(inArray(contactTimelineProjection.canonicalEventId, eventIds))
+    Promise.all(
+      eventIds.map((eventId) =>
+        runtime.repositories.timelineProjection.findByCanonicalEventId(eventId)
+      )
+    )
   ]);
   const sourceEvidenceIds = uniqueStrings(
     canonicalEvents.map((event) => event.sourceEvidenceId)
@@ -581,7 +568,9 @@ async function loadLatestSubjectByCanonicalEventId(
     canonicalEvents.map((event) => [event.id, event])
   );
   const timelineByCanonicalEventId = new Map(
-    timelineRows.map((row) => [row.canonicalEventId, row.summary])
+    timelineRows
+      .filter((row): row is TimelineProjectionRow => row !== null)
+      .map((row) => [row.canonicalEventId, row])
   );
   const gmailDetailBySourceEvidenceId = new Map(
     gmailDetails.map((detail) => [detail.sourceEvidenceId, detail])
@@ -598,7 +587,7 @@ async function loadLatestSubjectByCanonicalEventId(
       return [
         eventId,
         gmailDetailBySourceEvidenceId.get(event.sourceEvidenceId)?.subject ??
-          timelineByCanonicalEventId.get(eventId) ??
+          timelineByCanonicalEventId.get(eventId)?.summary ??
           null
       ] as const;
     })
@@ -617,48 +606,25 @@ async function readInboxListCacheData(): Promise<InboxListCacheData> {
   const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
   const membershipsByContactId = groupMembershipsByContactId(memberships);
 
-  const projectNameById = await loadProjectNameById(memberships);
-
   return {
-    items: projections.flatMap((inboxProjection) => {
+    rows: projections.flatMap((inboxProjection) => {
       const contact = contactById.get(inboxProjection.contactId);
 
       if (contact === undefined) {
         return [];
       }
 
-      const sortedMemberships = sortMemberships(
-        membershipsByContactId.get(inboxProjection.contactId) ?? []
-      );
-      const primaryMembership = sortedMemberships[0] ?? null;
-
       return [
         {
-          contactId: contact.id,
-          displayName: contact.displayName,
-          initials: toInitials(contact.displayName),
-          avatarTone: avatarToneForContact(contact.id),
-          latestSubject: defaultLatestSubject(
-            inboxProjection.lastEventType,
+          contact,
+          inboxProjection,
+          memberships: membershipsByContactId.get(inboxProjection.contactId) ?? [],
+          latestSubject:
             latestSubjectByCanonicalEventId[inboxProjection.lastCanonicalEventId] ?? null
-          ),
-          snippet: toSnippetPreview(inboxProjection.snippet),
-          latestChannel: mapChannel(inboxProjection.lastEventType),
-          projectLabel:
-            primaryMembership === null
-              ? null
-              : resolveProjectName(primaryMembership, projectNameById),
-          volunteerStage: mapVolunteerStage(sortedMemberships),
-          bucket: mapBucket(inboxProjection.bucket),
-          needsFollowUp: inboxProjection.needsFollowUp,
-          hasUnresolved: inboxProjection.hasUnresolved,
-          unreadCount: inboxProjection.bucket === "New" ? 1 : 0,
-          lastInboundAt: inboxProjection.lastInboundAt,
-          lastActivityAt: inboxProjection.lastActivityAt,
-          lastEventType: inboxProjection.lastEventType
-        } satisfies InboxListCacheItem
+        } satisfies InboxListCacheRow
       ];
-    })
+    }),
+    projectNameById: await loadProjectNameById(memberships)
   };
 }
 
@@ -705,13 +671,38 @@ function loadInboxDetailCacheData(contactId: string) {
 }
 
 function toListItemViewModel(
-  item: InboxListCacheItem,
+  row: InboxListCacheRow,
+  projectNameById: Readonly<Record<string, string>>,
   referenceNowIso: string
 ): InboxListItemViewModel {
+  const sortedMemberships = sortMemberships(row.memberships);
+  const primaryMembership = sortedMemberships[0] ?? null;
+
   return {
-    ...item,
+    contactId: row.contact.id,
+    displayName: row.contact.displayName,
+    initials: toInitials(row.contact.displayName),
+    avatarTone: avatarToneForContact(row.contact.id),
+    latestSubject: defaultLatestSubject(
+      row.inboxProjection.lastEventType,
+      row.latestSubject
+    ),
+    snippet: row.inboxProjection.snippet,
+    latestChannel: mapChannel(row.inboxProjection.lastEventType),
+    projectLabel:
+      primaryMembership === null
+        ? null
+        : resolveProjectName(primaryMembership, projectNameById),
+    volunteerStage: mapVolunteerStage(sortedMemberships),
+    bucket: mapBucket(row.inboxProjection.bucket),
+    needsFollowUp: row.inboxProjection.needsFollowUp,
+    hasUnresolved: row.inboxProjection.hasUnresolved,
+    unreadCount: row.inboxProjection.bucket === "New" ? 1 : 0,
+    lastInboundAt: row.inboxProjection.lastInboundAt,
+    lastActivityAt: row.inboxProjection.lastActivityAt,
+    lastEventType: row.inboxProjection.lastEventType,
     lastActivityLabel: formatRelativeTimestamp(
-      item.lastActivityAt,
+      row.inboxProjection.lastActivityAt,
       referenceNowIso
     )
   };
@@ -777,8 +768,8 @@ export async function getInboxList(
 ): Promise<InboxListViewModel> {
   const cachedData = await loadInboxListCacheData();
   const referenceNowIso = new Date().toISOString();
-  const items = cachedData.items.map((item) =>
-    toListItemViewModel(item, referenceNowIso)
+  const items = cachedData.rows.map((row) =>
+    toListItemViewModel(row, cachedData.projectNameById, referenceNowIso)
   );
   const totals = {
     all: items.length,

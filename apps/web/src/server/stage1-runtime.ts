@@ -1,12 +1,9 @@
 import {
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
-  contactInboxProjection,
-  mapInboxProjectionRow,
   type DatabaseConnection
 } from "@as-comms/db";
 import type { Stage1RepositoryBundle } from "@as-comms/domain";
-import { asc, desc, eq, sql } from "drizzle-orm";
 import {
   createStage1TimelinePresentationService,
   type Stage1TimelinePresentationService
@@ -31,39 +28,7 @@ function createRuntime(): Stage1WebRuntime {
   const connection = createDatabaseConnection({
     connectionString
   });
-  const baseRepositories = createStage1RepositoryBundleFromConnection(connection);
-  const repositories: Stage1RepositoryBundle = {
-    ...baseRepositories,
-    inboxProjection: {
-      ...baseRepositories.inboxProjection,
-      async listAllOrderedByRecency() {
-        const rows = await connection.db
-          .select()
-          .from(contactInboxProjection)
-          .orderBy(
-            desc(
-              sql`coalesce(${contactInboxProjection.lastInboundAt}, ${contactInboxProjection.lastActivityAt})`
-            ),
-            desc(contactInboxProjection.lastActivityAt),
-            asc(contactInboxProjection.contactId)
-          );
-
-        return rows.map(mapInboxProjectionRow);
-      },
-      async setNeedsFollowUp(input) {
-        const [row] = await connection.db
-          .update(contactInboxProjection)
-          .set({
-            isStarred: input.needsFollowUp,
-            updatedAt: new Date()
-          })
-          .where(eq(contactInboxProjection.contactId, input.contactId))
-          .returning();
-
-        return row === undefined ? null : mapInboxProjectionRow(row);
-      }
-    }
-  };
+  const repositories = createStage1RepositoryBundleFromConnection(connection);
 
   return {
     connection,
