@@ -109,7 +109,8 @@ describe("Stage 1 DB repositories", () => {
       sourceEvidenceId: sourceEvidence.id,
       salesforceContactId: contact.salesforceContactId,
       projectId: "project_1",
-      expeditionId: "expedition_1"
+      expeditionId: "expedition_1",
+      sourceField: null
     });
 
     await expect(
@@ -165,7 +166,13 @@ describe("Stage 1 DB repositories", () => {
         primaryProvider: "gmail",
         primarySourceEvidenceId: "sev_1",
         supportingSourceEvidenceIds: [],
-        winnerReason: "single_source"
+        winnerReason: "single_source",
+        sourceRecordType: null,
+        sourceRecordId: null,
+        messageKind: null,
+        campaignRef: null,
+        threadRef: null,
+        direction: null
       },
       reviewState: "clear"
     });
