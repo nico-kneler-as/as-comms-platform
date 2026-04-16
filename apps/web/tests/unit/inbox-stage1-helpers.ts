@@ -315,6 +315,89 @@ export async function seedInboxAutoEmailEvent(
   };
 }
 
+export async function seedInboxSalesforceOutboundEmailEvent(
+  context: TestStage1Context,
+  input: {
+    readonly id: string;
+    readonly contactId: string;
+    readonly occurredAt: string;
+    readonly subject: string;
+    readonly snippet: string;
+    readonly messageKind: "one_to_one" | null;
+    readonly sourceRecordType?: string;
+    readonly sourceLabel?: string;
+  }
+): Promise<{ readonly canonicalEventId: string }> {
+  const sourceEvidenceId = `source:${input.id}`;
+  const canonicalEventId = `event:${input.id}`;
+  const sourceRecordType = input.sourceRecordType ?? "task_communication";
+
+  await context.repositories.sourceEvidence.append({
+    id: sourceEvidenceId,
+    provider: "salesforce",
+    providerRecordType: sourceRecordType,
+    providerRecordId: input.id,
+    receivedAt: input.occurredAt,
+    occurredAt: input.occurredAt,
+    payloadRef: `payloads/salesforce/${input.id}.json`,
+    idempotencyKey: `salesforce:${input.id}`,
+    checksum: `checksum:${input.id}`
+  });
+
+  await context.repositories.canonicalEvents.upsert({
+    id: canonicalEventId,
+    contactId: input.contactId,
+    eventType: "communication.email.outbound",
+    channel: "email",
+    occurredAt: input.occurredAt,
+    sourceEvidenceId,
+    idempotencyKey: `canonical:${input.id}`,
+    provenance: {
+      primaryProvider: "salesforce",
+      primarySourceEvidenceId: sourceEvidenceId,
+      supportingSourceEvidenceIds: [],
+      winnerReason: "single_source",
+      sourceRecordType,
+      sourceRecordId: input.id,
+      messageKind: input.messageKind,
+      campaignRef: null,
+      threadRef: null,
+      direction: "outbound",
+      notes: null
+    },
+    reviewState: "clear"
+  });
+
+  await context.repositories.salesforceCommunicationDetails.upsert({
+    sourceEvidenceId,
+    providerRecordId: input.id,
+    channel: "email",
+    // The detail row stores a concrete message kind even when canonical
+    // provenance remains null for the logged-email regression case.
+    messageKind: input.messageKind ?? "one_to_one",
+    subject: input.subject,
+    snippet: input.snippet,
+    sourceLabel: input.sourceLabel ?? "Salesforce Logged Email"
+  });
+
+  await context.repositories.timelineProjection.upsert({
+    id: `timeline:${input.id}`,
+    contactId: input.contactId,
+    canonicalEventId,
+    occurredAt: input.occurredAt,
+    sortKey: `${input.occurredAt}::${canonicalEventId}`,
+    eventType: "communication.email.outbound",
+    summary: input.subject,
+    channel: "email",
+    primaryProvider: "salesforce",
+    reviewState: "clear"
+  });
+
+  return {
+    canonicalEventId
+  };
+}
+
 export async function seedInboxCampaignEmailEvent(
   context: TestStage1Context,
   input: {

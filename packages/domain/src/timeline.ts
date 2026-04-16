@@ -41,9 +41,7 @@ function resolveFamily(event: CanonicalEventRecord): TimelineItem["family"] {
 
   if (
     event.eventType === "communication.email.outbound" &&
-    (event.provenance.messageKind === "auto" ||
-      (event.provenance.messageKind === null &&
-        event.provenance.primaryProvider === "salesforce"))
+    event.provenance.messageKind === "auto"
   ) {
     return "auto_email";
   }
