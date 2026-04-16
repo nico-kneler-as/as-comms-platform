@@ -21,6 +21,7 @@ import {
   seedInboxInternalNoteEvent,
   seedInboxLifecycleEvent,
   seedInboxProjection,
+  seedInboxSalesforceOutboundEmailEvent,
   seedInboxSmsEvent,
   type InboxTestRuntime
 } from "./inbox-stage1-helpers";
@@ -329,5 +330,55 @@ describe("real inbox selectors", () => {
       actorLabel: "Jordan",
       body: "Prefers SMS check-ins before training."
     });
+  });
+
+  it("keeps Salesforce outbound email in the 1:1 contract unless canon explicitly marks it auto", async () => {
+    await seedInboxSalesforceOutboundEmailEvent(runtime!.context, {
+      id: "sarah-salesforce-null-1",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-10T06:00:00.000Z",
+      subject: "Logged Salesforce follow-up",
+      snippet: "Logged Salesforce follow-up body.",
+      messageKind: null
+    });
+    await seedInboxSalesforceOutboundEmailEvent(runtime!.context, {
+      id: "sarah-salesforce-one-to-one-1",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-10T07:00:00.000Z",
+      subject: "Explicit Salesforce one-to-one",
+      snippet: "Explicit Salesforce one-to-one body.",
+      messageKind: "one_to_one"
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+    const nullClassifiedEntry = detail?.timeline.find(
+      (entry) => entry.subject === "Logged Salesforce follow-up"
+    );
+    const explicitOneToOneEntry = detail?.timeline.find(
+      (entry) => entry.subject === "Explicit Salesforce one-to-one"
+    );
+
+    expect(nullClassifiedEntry).toMatchObject({
+      kind: "outbound-email",
+      actorLabel: "You",
+      channel: "email",
+      body: "Logged Salesforce follow-up body."
+    });
+    expect(explicitOneToOneEntry).toMatchObject({
+      kind: "outbound-email",
+      actorLabel: "You",
+      channel: "email",
+      body: "Explicit Salesforce one-to-one body."
+    });
+    expect(
+      detail?.timeline
+        .filter((entry) => entry.kind === "outbound-auto-email")
+        .map((entry) => entry.subject)
+    ).not.toEqual(
+      expect.arrayContaining([
+        "Logged Salesforce follow-up",
+        "Explicit Salesforce one-to-one"
+      ])
+    );
   });
 });
