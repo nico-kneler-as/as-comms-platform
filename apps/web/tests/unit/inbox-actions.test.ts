@@ -178,4 +178,68 @@ describe("server-backed follow-up actions", () => {
     expect(followUpList.items).toHaveLength(0);
     expect(revalidateTag).toHaveBeenCalledTimes(3);
   });
+
+  it("does not clobber fresher projection state when follow-up is toggled", async () => {
+    const staleProjection =
+      await runtime?.context.repositories.inboxProjection.findByContactId(
+        "contact:michael-chen"
+      );
+    const fresherEvent = await seedInboxEmailEvent(runtime!.context, {
+      id: "michael-inbound-2",
+      contactId: "contact:michael-chen",
+      occurredAt: "2026-04-14T14:30:00.000Z",
+      direction: "inbound",
+      subject: "Latest logistics update",
+      snippet: "Fresh inbound message that arrived after the stale snapshot."
+    });
+
+    await runtime?.context.repositories.inboxProjection.upsert({
+      contactId: "contact:michael-chen",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: true,
+      lastInboundAt: "2026-04-14T14:30:00.000Z",
+      lastOutboundAt: "2026-04-14T12:00:00.000Z",
+      lastActivityAt: "2026-04-14T14:30:00.000Z",
+      snippet: "Fresh inbound message that arrived after the stale snapshot.",
+      lastCanonicalEventId: fresherEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound"
+    });
+
+    const findByContactIdSpy = vi
+      .spyOn(runtime!.context.repositories.inboxProjection, "findByContactId")
+      .mockResolvedValue(staleProjection ?? null);
+    const upsertSpy = vi.spyOn(
+      runtime!.context.repositories.inboxProjection,
+      "upsert"
+    );
+    const formData = new FormData();
+    formData.set("contactId", "contact:michael-chen");
+
+    const result = await markInboxNeedsFollowUpAction(formData);
+    expect(findByContactIdSpy).not.toHaveBeenCalled();
+    expect(upsertSpy).not.toHaveBeenCalled();
+    findByContactIdSpy.mockRestore();
+    upsertSpy.mockRestore();
+    const projection = await runtime?.context.repositories.inboxProjection.findByContactId(
+      "contact:michael-chen"
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      contactId: "contact:michael-chen",
+      needsFollowUp: true
+    });
+    expect(projection).toMatchObject({
+      contactId: "contact:michael-chen",
+      bucket: "New",
+      needsFollowUp: true,
+      hasUnresolved: true,
+      lastInboundAt: "2026-04-14T14:30:00.000Z",
+      lastActivityAt: "2026-04-14T14:30:00.000Z",
+      snippet: "Fresh inbound message that arrived after the stale snapshot.",
+      lastCanonicalEventId: fresherEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound"
+    });
+  });
 });

@@ -70,6 +70,22 @@ describe("defineStage1RepositoryBundle", () => {
         listBySourceEvidenceIds: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record)
       },
+      salesforceCommunicationDetails: {
+        listBySourceEvidenceIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
+      simpleTextingMessageDetails: {
+        listBySourceEvidenceIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
+      mailchimpCampaignActivityDetails: {
+        listBySourceEvidenceIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
+      manualNoteDetails: {
+        listBySourceEvidenceIds: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record)
+      },
       identityResolutionQueue: {
         findById: () => Promise.resolve(null),
         listOpenByContactId: () => Promise.resolve([]),
@@ -86,6 +102,7 @@ describe("defineStage1RepositoryBundle", () => {
         countAll: () => Promise.resolve(0),
         findByContactId: () => Promise.resolve(null),
         listAllOrderedByRecency: () => Promise.resolve([]),
+        setNeedsFollowUp: () => Promise.resolve(null),
         upsert: (record) => Promise.resolve(record)
       },
       timelineProjection: {

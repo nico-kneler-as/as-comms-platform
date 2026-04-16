@@ -15,8 +15,8 @@ detail page.
     and `contact_timeline_projection`.
   - `getInboxDetail(contactId)` now reads real Stage 1 data from
     `contacts`, `contact_inbox_projection`, `contact_memberships`,
-    `project_dimensions`, `canonical_event_ledger`,
-    `gmail_message_details`, and `contact_timeline_projection`.
+    `project_dimensions`, and the typed Stage 1 timeline presentation service
+    backed by canonical events plus provider-specific detail tables.
 - `apps/web/app/inbox/actions.ts`
   - `markInboxNeedsFollowUpAction` and `clearInboxNeedsFollowUpAction` now
     persist through the server by updating the inbox projection row for the
@@ -53,6 +53,9 @@ detail page.
 - Timeline bodies and subjects are exact for Gmail-backed email events. When a
   richer provider-specific communication detail is not available, the selector
   falls back to timeline summaries so the shell contract stays stable.
+- Unresolved review detail is not yet hydrated into dedicated detail-panel
+  context; the shell currently uses the persisted `hasUnresolved` overlay and
+  banner only.
 
 ## Revalidation
 

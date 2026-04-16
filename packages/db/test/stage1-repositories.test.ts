@@ -117,6 +117,46 @@ describe("Stage 1 DB repositories", () => {
       projectId: "project_1",
       expeditionId: "expedition_1"
     });
+    const salesforceCommunicationDetail =
+      await repositories.salesforceCommunicationDetails.upsert({
+        sourceEvidenceId: sourceEvidence.id,
+        providerRecordId: sourceEvidence.providerRecordId,
+        channel: "email",
+        messageKind: "auto",
+        subject: "Automation complete",
+        snippet: "Your workflow completed successfully.",
+        sourceLabel: "Salesforce Flow"
+      });
+    const simpleTextingMessageDetail =
+      await repositories.simpleTextingMessageDetails.upsert({
+        sourceEvidenceId: sourceEvidence.id,
+        providerRecordId: sourceEvidence.providerRecordId,
+        direction: "outbound",
+        messageKind: "campaign",
+        messageTextPreview: "Campaign kickoff reminder",
+        normalizedPhone: "+15555550123",
+        campaignId: "campaign_sms_1",
+        campaignName: "Volunteer Reminders",
+        providerThreadId: "thread_1",
+        threadKey: "thread-key-1"
+      });
+    const mailchimpCampaignActivityDetail =
+      await repositories.mailchimpCampaignActivityDetails.upsert({
+        sourceEvidenceId: sourceEvidence.id,
+        providerRecordId: sourceEvidence.providerRecordId,
+        activityType: "sent",
+        campaignId: "campaign_email_1",
+        audienceId: "audience_1",
+        memberId: "member_1",
+        campaignName: "Spring Launch",
+        snippet: "Campaign launch message"
+      });
+    const manualNoteDetail = await repositories.manualNoteDetails.upsert({
+      sourceEvidenceId: sourceEvidence.id,
+      providerRecordId: sourceEvidence.providerRecordId,
+      body: "Follow up after the kickoff call.",
+      authorDisplayName: "Stage One Operator"
+    });
 
     await expect(
       repositories.projectDimensions.listByIds(["project_1"])
@@ -132,6 +172,24 @@ describe("Stage 1 DB repositories", () => {
         sourceEvidence.id
       ])
     ).resolves.toEqual([salesforceContext]);
+    await expect(
+      repositories.salesforceCommunicationDetails.listBySourceEvidenceIds([
+        sourceEvidence.id
+      ])
+    ).resolves.toEqual([salesforceCommunicationDetail]);
+    await expect(
+      repositories.simpleTextingMessageDetails.listBySourceEvidenceIds([
+        sourceEvidence.id
+      ])
+    ).resolves.toEqual([simpleTextingMessageDetail]);
+    await expect(
+      repositories.mailchimpCampaignActivityDetails.listBySourceEvidenceIds([
+        sourceEvidence.id
+      ])
+    ).resolves.toEqual([mailchimpCampaignActivityDetail]);
+    await expect(
+      repositories.manualNoteDetails.listBySourceEvidenceIds([sourceEvidence.id])
+    ).resolves.toEqual([manualNoteDetail]);
   });
 
   it("persists canonical events, review queues, and projections", async () => {
@@ -322,6 +380,21 @@ describe("Stage 1 DB repositories", () => {
     await expect(
       repositories.inboxProjection.listAllOrderedByRecency()
     ).resolves.toEqual([secondInboxProjection, inboxProjection]);
+    await expect(
+      repositories.inboxProjection.setNeedsFollowUp({
+        contactId: "contact_1",
+        needsFollowUp: true
+      })
+    ).resolves.toEqual({
+      ...inboxProjection,
+      needsFollowUp: true
+    });
+    await expect(
+      repositories.inboxProjection.findByContactId("contact_1")
+    ).resolves.toEqual({
+      ...inboxProjection,
+      needsFollowUp: true
+    });
     await expect(
       repositories.timelineProjection.findByCanonicalEventId(canonicalEvent.id)
     ).resolves.toEqual(timelineProjection);

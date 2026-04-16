@@ -10,11 +10,15 @@ import type {
   IdentityResolutionCase,
   IdentityResolutionReasonCode,
   InboxProjectionRow,
+  MailchimpCampaignActivityDetailRecord,
+  ManualNoteDetailRecord,
   ProjectDimensionRecord,
   Provider,
   RoutingReviewCase,
   RoutingReviewReasonCode,
+  SalesforceCommunicationDetailRecord,
   SalesforceEventContextRecord,
+  SimpleTextingMessageDetailRecord,
   SourceEvidenceRecord,
   SyncScope,
   SyncJobType,
@@ -102,6 +106,40 @@ export interface SalesforceEventContextRepository {
   ): Promise<SalesforceEventContextRecord>;
 }
 
+export interface SalesforceCommunicationDetailRepository {
+  listBySourceEvidenceIds(
+    sourceEvidenceIds: readonly string[]
+  ): Promise<readonly SalesforceCommunicationDetailRecord[]>;
+  upsert(
+    record: SalesforceCommunicationDetailRecord
+  ): Promise<SalesforceCommunicationDetailRecord>;
+}
+
+export interface SimpleTextingMessageDetailRepository {
+  listBySourceEvidenceIds(
+    sourceEvidenceIds: readonly string[]
+  ): Promise<readonly SimpleTextingMessageDetailRecord[]>;
+  upsert(
+    record: SimpleTextingMessageDetailRecord
+  ): Promise<SimpleTextingMessageDetailRecord>;
+}
+
+export interface MailchimpCampaignActivityDetailRepository {
+  listBySourceEvidenceIds(
+    sourceEvidenceIds: readonly string[]
+  ): Promise<readonly MailchimpCampaignActivityDetailRecord[]>;
+  upsert(
+    record: MailchimpCampaignActivityDetailRecord
+  ): Promise<MailchimpCampaignActivityDetailRecord>;
+}
+
+export interface ManualNoteDetailRepository {
+  listBySourceEvidenceIds(
+    sourceEvidenceIds: readonly string[]
+  ): Promise<readonly ManualNoteDetailRecord[]>;
+  upsert(record: ManualNoteDetailRecord): Promise<ManualNoteDetailRecord>;
+}
+
 export interface IdentityResolutionRepository {
   findById(id: string): Promise<IdentityResolutionCase | null>;
   listOpenByContactId(contactId: string): Promise<readonly IdentityResolutionCase[]>;
@@ -124,6 +162,10 @@ export interface InboxProjectionRepository {
   countAll(): Promise<number>;
   findByContactId(contactId: string): Promise<InboxProjectionRow | null>;
   listAllOrderedByRecency(): Promise<readonly InboxProjectionRow[]>;
+  setNeedsFollowUp(input: {
+    readonly contactId: string;
+    readonly needsFollowUp: boolean;
+  }): Promise<InboxProjectionRow | null>;
   upsert(record: InboxProjectionRow): Promise<InboxProjectionRow>;
 }
 
@@ -162,6 +204,10 @@ export interface Stage1RepositoryBundle {
   readonly expeditionDimensions: ExpeditionDimensionRepository;
   readonly gmailMessageDetails: GmailMessageDetailRepository;
   readonly salesforceEventContext: SalesforceEventContextRepository;
+  readonly salesforceCommunicationDetails: SalesforceCommunicationDetailRepository;
+  readonly simpleTextingMessageDetails: SimpleTextingMessageDetailRepository;
+  readonly mailchimpCampaignActivityDetails: MailchimpCampaignActivityDetailRepository;
+  readonly manualNoteDetails: ManualNoteDetailRepository;
   readonly identityResolutionQueue: IdentityResolutionRepository;
   readonly routingReviewQueue: RoutingReviewRepository;
   readonly inboxProjection: InboxProjectionRepository;

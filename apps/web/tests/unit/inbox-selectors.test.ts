@@ -13,8 +13,13 @@ import {
 import type { InboxListItemViewModel } from "../../app/inbox/_lib/view-models";
 import {
   createInboxTestRuntime,
+  seedInboxAutoEmailEvent,
+  seedInboxCampaignEmailEvent,
+  seedInboxCampaignSmsEvent,
   seedInboxContact,
   seedInboxEmailEvent,
+  seedInboxInternalNoteEvent,
+  seedInboxLifecycleEvent,
   seedInboxProjection,
   seedInboxSmsEvent,
   type InboxTestRuntime
@@ -251,6 +256,78 @@ describe("real inbox selectors", () => {
     expect(detail?.timeline.at(-1)).toMatchObject({
       subject: "Re: Amazon Basin equipment list",
       isUnread: true
+    });
+  });
+
+  it("preserves Stage 1 timeline families instead of flattening them into generic system events", async () => {
+    await seedInboxCampaignEmailEvent(runtime!.context, {
+      id: "sarah-campaign-email-1",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-10T09:00:00.000Z",
+      activityType: "sent",
+      campaignName: "Spring Kickoff",
+      snippet: "Welcome to the new field season."
+    });
+    await seedInboxAutoEmailEvent(runtime!.context, {
+      id: "sarah-auto-email-1",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-11T09:00:00.000Z",
+      subject: "Training confirmation",
+      snippet: "You are confirmed for training."
+    });
+    await seedInboxCampaignSmsEvent(runtime!.context, {
+      id: "sarah-campaign-sms-1",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T09:00:00.000Z",
+      campaignName: "Field Reminder",
+      messageTextPreview: "Field reminder text"
+    });
+    await seedInboxInternalNoteEvent(runtime!.context, {
+      id: "sarah-note-1",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T12:00:00.000Z",
+      body: "Prefers SMS check-ins before training.",
+      authorDisplayName: "Jordan"
+    });
+    await seedInboxLifecycleEvent(runtime!.context, {
+      id: "sarah-lifecycle-1",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-09T09:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training materials"
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail).not.toBeNull();
+    expect(detail?.timeline.map((entry) => entry.kind)).toEqual([
+      "system-event",
+      "outbound-campaign-email",
+      "outbound-auto-email",
+      "outbound-campaign-sms",
+      "internal-note",
+      "outbound-email",
+      "inbound-email"
+    ]);
+    expect(detail?.timeline[1]).toMatchObject({
+      kind: "outbound-campaign-email",
+      subject: "Spring Kickoff",
+      body: "Welcome to the new field season."
+    });
+    expect(detail?.timeline[2]).toMatchObject({
+      kind: "outbound-auto-email",
+      subject: "Training confirmation",
+      body: "You are confirmed for training."
+    });
+    expect(detail?.timeline[3]).toMatchObject({
+      kind: "outbound-campaign-sms",
+      subject: "Field Reminder",
+      body: "Field reminder text"
+    });
+    expect(detail?.timeline[4]).toMatchObject({
+      kind: "internal-note",
+      actorLabel: "Jordan",
+      body: "Prefers SMS check-ins before training."
     });
   });
 });

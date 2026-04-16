@@ -16,21 +16,17 @@ export async function setInboxNeedsFollowUp(input: {
   readonly needsFollowUp: boolean;
 }): Promise<InboxNeedsFollowUpUpdateResult | InboxNeedsFollowUpUpdateNotFound> {
   const runtime = await getStage1WebRuntime();
-  const existing = await runtime.repositories.inboxProjection.findByContactId(
-    input.contactId
-  );
+  const updated = await runtime.repositories.inboxProjection.setNeedsFollowUp({
+    contactId: input.contactId,
+    needsFollowUp: input.needsFollowUp
+  });
 
-  if (existing === null) {
+  if (updated === null) {
     return {
       ok: false,
       code: "inbox_contact_not_found"
     };
   }
-
-  await runtime.repositories.inboxProjection.upsert({
-    ...existing,
-    needsFollowUp: input.needsFollowUp
-  });
 
   return {
     ok: true,
