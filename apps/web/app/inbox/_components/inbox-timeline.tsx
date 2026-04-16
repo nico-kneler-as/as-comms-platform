@@ -3,24 +3,24 @@
 import { useState } from "react";
 
 import type {
-  ClaudeTimelineEntryKind,
-  ClaudeTimelineEntryViewModel
+  InboxTimelineEntryKind,
+  InboxTimelineEntryViewModel
 } from "../_lib/view-models";
 import {
   ChevronRightIcon,
   MailIcon,
   NoteIcon,
   PhoneIcon
-} from "./claude-icons";
+} from "./icons";
 import { DividerLabel } from "@/components/ui/divider-label";
 import { RADIUS, SHADOW, TEXT, TONE, TRANSITION } from "@/app/_lib/design-tokens";
 
 interface TimelineProps {
-  readonly entries: readonly ClaudeTimelineEntryViewModel[];
+  readonly entries: readonly InboxTimelineEntryViewModel[];
   readonly volunteerFirstName: string;
 }
 
-export function ClaudeInboxTimeline({
+export function InboxTimeline({
   entries,
   volunteerFirstName
 }: TimelineProps) {
@@ -68,7 +68,7 @@ export function ClaudeInboxTimeline({
 // ---------- Entry router ----------
 
 interface EntryProps {
-  readonly entry: ClaudeTimelineEntryViewModel;
+  readonly entry: InboxTimelineEntryViewModel;
   readonly volunteerFirstName: string;
   readonly isExpanded: boolean;
   readonly onToggle: () => void;
@@ -114,7 +114,7 @@ function TimelineEntry({
 function InboundBubble({
   entry
 }: {
-  readonly entry: ClaudeTimelineEntryViewModel;
+  readonly entry: InboxTimelineEntryViewModel;
 }) {
   const isEmail = entry.channel === "email";
   const ChannelIcon = isEmail ? MailIcon : PhoneIcon;
@@ -154,7 +154,7 @@ function InboundBubble({
 function OutboundBubble({
   entry
 }: {
-  readonly entry: ClaudeTimelineEntryViewModel;
+  readonly entry: InboxTimelineEntryViewModel;
 }) {
   const isEmail = entry.channel === "email";
   const ChannelIcon = isEmail ? MailIcon : PhoneIcon;
@@ -188,7 +188,7 @@ function AutomatedRow({
   isExpanded,
   onToggle
 }: {
-  readonly entry: ClaudeTimelineEntryViewModel;
+  readonly entry: InboxTimelineEntryViewModel;
   readonly role: "automated" | "campaign";
   readonly isExpanded: boolean;
   readonly onToggle: () => void;
@@ -245,7 +245,7 @@ function AutomatedRow({
 function NoteEntry({
   entry
 }: {
-  readonly entry: ClaudeTimelineEntryViewModel;
+  readonly entry: InboxTimelineEntryViewModel;
 }) {
   return (
     <li className="flex w-full flex-col items-end">
@@ -272,7 +272,7 @@ function SystemDivider({
   entry,
   volunteerFirstName
 }: {
-  readonly entry: ClaudeTimelineEntryViewModel;
+  readonly entry: InboxTimelineEntryViewModel;
   readonly volunteerFirstName: string;
 }) {
   return (
@@ -301,7 +301,7 @@ type EntryRole =
   | "note"
   | "system";
 
-function roleForKind(kind: ClaudeTimelineEntryKind): EntryRole {
+function roleForKind(kind: InboxTimelineEntryKind): EntryRole {
   switch (kind) {
     case "inbound-email":
     case "inbound-sms":

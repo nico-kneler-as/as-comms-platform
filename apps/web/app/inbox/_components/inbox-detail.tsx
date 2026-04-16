@@ -10,20 +10,20 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-import type { ClaudeInboxDetailViewModel } from "../_lib/view-models";
+import type { InboxDetailViewModel } from "../_lib/view-models";
 import {
-  useClaudeInboxClient,
+  useInboxClient,
   type Reminder
-} from "./claude-inbox-client-provider";
+} from "./inbox-client-provider";
 import { SectionLabel } from "@/components/ui/section-label";
 import { LAYOUT, TEXT, TONE, TRANSITION, SPACING } from "@/app/_lib/design-tokens";
-import { ClaudeInboxComposer } from "./claude-inbox-composer";
+import { InboxComposer } from "./inbox-composer";
 import {
-  ClaudeInboxContactRail,
-  ProjectStatusBadge
-} from "./claude-inbox-contact-rail";
-import { TimelineSkeleton } from "./claude-inbox-loading";
-import { ClaudeInboxTimeline } from "./claude-inbox-timeline";
+  InboxContactRail,
+  InboxProjectStatusBadge
+} from "./inbox-contact-rail";
+import { TimelineSkeleton } from "./inbox-loading";
+import { InboxTimeline } from "./inbox-timeline";
 import {
   AlertTriangleIcon,
   ChevronDownIcon,
@@ -32,15 +32,15 @@ import {
   CornerUpLeftIcon,
   PanelRightOpenIcon,
   XIcon
-} from "./claude-icons";
+} from "./icons";
 
 interface DetailProps {
-  readonly detail: ClaudeInboxDetailViewModel;
+  readonly detail: InboxDetailViewModel;
 }
 
 type ReminderUnit = "hours" | "days" | "weeks";
 
-export function ClaudeInboxDetail({ detail }: DetailProps) {
+export function InboxDetail({ detail }: DetailProps) {
   const { contact, timeline, smsEligible } = detail;
   const timelineRef = useRef<HTMLDivElement>(null);
   const {
@@ -50,7 +50,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
     setReminder,
     clearReminder,
     isTimelineLoading
-  } = useClaudeInboxClient();
+  } = useInboxClient();
 
   const [railOpen, setRailOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
@@ -60,7 +60,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
   const activeProject = contact.activeProjects[0] ?? null;
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
 
-  const isFollowUp = followUp.has(contact.contactId);
+  const isFollowUp = followUp.has(contact.contactId) || detail.needsFollowUp;
   const existingReminder = reminders.get(contact.contactId) ?? null;
 
   const handleSetReminder = () => {
@@ -93,11 +93,28 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
                     {activeProject.projectName}{" "}
                     {activeProject.year.toString()}
                   </span>
-                  <ProjectStatusBadge status={activeProject.status} />
+                  <InboxProjectStatusBadge status={activeProject.status} />
                 </div>
               ) : (
                 <span className="text-xs text-slate-400">
                   No active project
+                </span>
+              )}
+            </div>
+            <div className="hidden items-center gap-1.5 sm:flex">
+              {detail.bucket === "new" && (
+                <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800">
+                  Unread
+                </span>
+              )}
+              {isFollowUp && (
+                <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-800">
+                  Needs Follow-Up
+                </span>
+              )}
+              {contact.hasUnresolved && (
+                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                  Unresolved
                 </span>
               )}
             </div>
@@ -168,7 +185,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
                 className="h-8 w-8"
                 aria-label="Expand volunteer details"
                 aria-expanded={false}
-                aria-controls="claude-inbox-contact-rail"
+                aria-controls="inbox-contact-rail"
                 onClick={() => {
                   setRailOpen(true);
                 }}
@@ -190,7 +207,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
           {isTimelineLoading ? (
             <TimelineSkeleton />
           ) : (
-            <ClaudeInboxTimeline
+            <InboxTimeline
               entries={timeline}
               volunteerFirstName={firstName}
             />
@@ -198,7 +215,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
         </div>
 
         <div className="shrink-0">
-          <ClaudeInboxComposer
+          <InboxComposer
             contactDisplayName={contact.displayName}
             smsEligible={smsEligible}
             onOpenChange={(open) => {
@@ -227,7 +244,7 @@ export function ClaudeInboxDetail({ detail }: DetailProps) {
         )}
       >
         <div className={LAYOUT.railWidth}>
-          <ClaudeInboxContactRail
+          <InboxContactRail
             contact={contact}
             onClose={() => {
               setRailOpen(false);

@@ -23,7 +23,7 @@ import {
   LogOutIcon,
   MegaphoneIcon,
   SettingsIcon
-} from "./claude-icons";
+} from "./icons";
 import { FOCUS_RING, LAYOUT, RADIUS, SHADOW, TRANSITION } from "@/app/_lib/design-tokens";
 
 interface RailItem {
@@ -51,7 +51,7 @@ const OPERATOR = {
   email: "jordan@adventurescientists.org"
 };
 
-export function ClaudeInboxIconRail() {
+export function InboxIconRail() {
   return (
     <TooltipProvider delayDuration={200}>
       <nav
