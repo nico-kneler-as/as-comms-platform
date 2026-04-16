@@ -1,7 +1,7 @@
 import type {
-  ClaudeContactSummaryViewModel,
-  ClaudeProjectMembershipViewModel,
-  ClaudeProjectStatus
+  InboxContactSummaryViewModel,
+  InboxProjectMembershipViewModel,
+  InboxProjectStatus
 } from "../_lib/view-models";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -21,10 +21,10 @@ import {
   MapPinIcon,
   PanelRightCloseIcon,
   PhoneIcon
-} from "./claude-icons";
+} from "./icons";
 
 interface RailProps {
-  readonly contact: ClaudeContactSummaryViewModel;
+  readonly contact: InboxContactSummaryViewModel;
   readonly onClose?: () => void;
 }
 
@@ -36,10 +36,10 @@ interface RailProps {
  * participations, and milestone activity. Visibility is controlled by the
  * parent detail component via conditional render.
  */
-export function ClaudeInboxContactRail({ contact, onClose }: RailProps) {
+export function InboxContactRail({ contact, onClose }: RailProps) {
   return (
     <aside
-      id="claude-inbox-contact-rail"
+      id="inbox-contact-rail"
       className={`flex min-h-0 ${LAYOUT.railWidth} shrink-0 flex-col ${TONE.slate.subtle}`}
       aria-label="Volunteer details"
     >
@@ -140,7 +140,7 @@ export function ClaudeInboxContactRail({ contact, onClose }: RailProps) {
 
 interface ProjectsSectionProps {
   readonly title: string;
-  readonly projects: readonly ClaudeProjectMembershipViewModel[];
+  readonly projects: readonly InboxProjectMembershipViewModel[];
   readonly emptyLabel: string;
 }
 
@@ -171,7 +171,7 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
                       {project.year.toString()}
                     </span>
                     <span className="text-slate-300">·</span>
-                    <ProjectStatusBadge status={project.status} />
+                    <InboxProjectStatusBadge status={project.status} />
                   </p>
                 </div>
                 <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-slate-500" />
@@ -184,7 +184,7 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
   );
 }
 
-const PROJECT_STATUS_LABEL: Record<ClaudeProjectStatus, string> = {
+const PROJECT_STATUS_LABEL: Record<InboxProjectStatus, string> = {
   lead: "Lead",
   applied: "Applied",
   "in-training": "In Training",
@@ -193,10 +193,10 @@ const PROJECT_STATUS_LABEL: Record<ClaudeProjectStatus, string> = {
   successful: "Successful"
 };
 
-export function ProjectStatusBadge({
+export function InboxProjectStatusBadge({
   status
 }: {
-  readonly status: ClaudeProjectStatus;
+  readonly status: InboxProjectStatus;
 }) {
   return (
     <StatusBadge

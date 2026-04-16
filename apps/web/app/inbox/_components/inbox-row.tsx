@@ -2,36 +2,38 @@
 
 import Link from "next/link";
 
-import type { ClaudeInboxListItemViewModel } from "../_lib/view-models";
-import { ClaudeInboxAvatar } from "./claude-inbox-avatar";
-import { useClaudeInboxClient } from "./claude-inbox-client-provider";
-import { MailIcon, PhoneIcon } from "./claude-icons";
+import type { InboxListItemViewModel } from "../_lib/view-models";
+import { InboxAvatar } from "./inbox-avatar";
+import { MailIcon, PhoneIcon } from "./icons";
 import { FOCUS_RING, SPACING, TEXT, TRANSITION } from "@/app/_lib/design-tokens";
 
 interface RowProps {
-  readonly item: ClaudeInboxListItemViewModel;
+  readonly item: InboxListItemViewModel;
   readonly isActive: boolean;
 }
 
 /**
- * List row for a contact. Stripped of starred / unresolved / stage badges
- * — those are no longer part of the inbox surface. The left accent bar is
- * sky when the row is unread and rose when the operator has flagged the
- * contact for follow-up. The channel icon (mail/phone) is always preserved
- * in the leading slot so operators keep their at-a-glance channel cue even
- * on the rows most likely to need triaging.
+ * List row for a contact. The left accent bar is sky when the row has
+ * bucket === "new" and rose when needsFollowUp is set. If both apply,
+ * sky wins. Stacking badges after the project label show follow-up
+ * (rose) and review/unresolved (amber) state at a glance.
  */
-export function ClaudeInboxRow({ item, isActive }: RowProps) {
-  const { followUp } = useClaudeInboxClient();
-  const isFollowUp = followUp.has(item.contactId);
+export function InboxRow({ item, isActive }: RowProps) {
   const isUnread = item.unreadCount > 0;
   const ChannelIcon = item.latestChannel === "email" ? MailIcon : PhoneIcon;
 
-  const accentClass = isFollowUp
-    ? "bg-rose-500"
-    : isUnread
+  const accentClass =
+    item.bucket === "new"
       ? "bg-sky-500"
-      : null;
+      : item.needsFollowUp
+        ? "bg-rose-500"
+        : null;
+
+  const showBadges =
+    item.projectLabel ||
+    item.needsFollowUp ||
+    item.hasUnresolved ||
+    item.unreadCount > 0;
 
   return (
     <li>
@@ -51,7 +53,7 @@ export function ClaudeInboxRow({ item, isActive }: RowProps) {
           />
         ) : null}
 
-        <ClaudeInboxAvatar
+        <InboxAvatar
           initials={item.initials}
           tone={item.avatarTone}
           size="md"
@@ -97,11 +99,21 @@ export function ClaudeInboxRow({ item, isActive }: RowProps) {
             {item.snippet}
           </p>
 
-          {item.projectLabel || item.unreadCount > 0 ? (
+          {showBadges ? (
             <div className="mt-1.5 flex items-center gap-1.5">
               {item.projectLabel ? (
                 <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
                   {item.projectLabel}
+                </span>
+              ) : null}
+              {item.needsFollowUp ? (
+                <span className="inline-flex items-center rounded-md bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-700">
+                  Follow-up
+                </span>
+              ) : null}
+              {item.hasUnresolved ? (
+                <span className="inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                  Review
                 </span>
               ) : null}
               {item.unreadCount > 0 ? (

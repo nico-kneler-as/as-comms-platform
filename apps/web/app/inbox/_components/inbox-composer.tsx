@@ -7,10 +7,10 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
 import {
-  useClaudeInboxClient,
+  useInboxClient,
   type AiDraftStatus,
   type ComposerStatus
-} from "./claude-inbox-client-provider";
+} from "./inbox-client-provider";
 import {
   Popover,
   PopoverContent,
@@ -51,7 +51,7 @@ import {
   WifiOffIcon,
   XCircleIcon,
   XIcon
-} from "./claude-icons";
+} from "./icons";
 
 type ComposerMode = "email" | "sms" | "note";
 
@@ -67,7 +67,7 @@ const EMAIL_ALIASES = [
   { id: "noreply", label: "No Reply", email: "noreply@adventurescientists.org" }
 ] as const;
 
-export function ClaudeInboxComposer({
+export function InboxComposer({
   contactDisplayName,
   smsEligible,
   onOpenChange
@@ -97,7 +97,7 @@ export function ClaudeInboxComposer({
     discardAiDraft,
     repromptAi,
     resetAiDraft
-  } = useClaudeInboxClient();
+  } = useInboxClient();
 
   const placeholder = placeholderForMode(mode, contactDisplayName);
   const firstName =
@@ -339,13 +339,13 @@ export function ClaudeInboxComposer({
             </div>
             <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-2 text-xs">
               <label
-                htmlFor="claude-inbox-subject"
+                htmlFor="inbox-subject"
                 className="w-12 shrink-0 font-medium text-slate-700"
               >
                 Subject:
               </label>
               <input
-                id="claude-inbox-subject"
+                id="inbox-subject"
                 type="text"
                 value={subject}
                 onChange={(event) => {

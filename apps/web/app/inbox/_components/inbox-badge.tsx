@@ -1,14 +1,14 @@
 import { StatusBadge } from "@/components/ui/status-badge";
 
-import type { ClaudeInboxBucket, ClaudeVolunteerStage } from "../_lib/view-models";
+import type { InboxBucket, InboxVolunteerStage } from "../_lib/view-models";
 import { BUCKET_BADGE, STAGE_BADGE } from "@/app/_lib/design-tokens";
 
-const BUCKET_LABEL: Record<ClaudeInboxBucket, string> = {
+const BUCKET_LABEL: Record<InboxBucket, string> = {
   new: "New",
   opened: "Opened"
 };
 
-export function ClaudeBucketBadge({ bucket }: { readonly bucket: ClaudeInboxBucket }) {
+export function BucketBadge({ bucket }: { readonly bucket: InboxBucket }) {
   return (
     <StatusBadge
       variant="filled"
@@ -18,7 +18,7 @@ export function ClaudeBucketBadge({ bucket }: { readonly bucket: ClaudeInboxBuck
   );
 }
 
-const STAGE_LABEL: Record<ClaudeVolunteerStage, string> = {
+const STAGE_LABEL: Record<InboxVolunteerStage, string> = {
   active: "Active",
   alumni: "Alumni",
   applicant: "Applicant",
@@ -27,7 +27,7 @@ const STAGE_LABEL: Record<ClaudeVolunteerStage, string> = {
   "non-volunteer": "Non-volunteer"
 };
 
-export function ClaudeStageBadge({ stage }: { readonly stage: ClaudeVolunteerStage }) {
+export function StageBadge({ stage }: { readonly stage: InboxVolunteerStage }) {
   return (
     <StatusBadge
       variant="soft"

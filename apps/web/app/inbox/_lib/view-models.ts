@@ -1,5 +1,5 @@
 /**
- * Claude Inbox prototype — UI-facing view models.
+ * Inbox — UI-facing view models.
  *
  * These types shape the minimum payload the client UI needs. They deliberately
  * mirror the canonical Inbox / Timeline projection concepts from
@@ -9,19 +9,21 @@
  * Locked rules reflected here:
  *   - one row per person, not per thread (P-02 / INBX-01)
  *   - primary buckets are "new" and "opened" (INBX-02)
- *   - "starred" is a flag, not a bucket (INBX-03)
+ *   - "needsFollowUp" is a separate operator flag, not derived from bucket
  *   - "unresolved" is an overlay on top of the queue model (INBX-04)
  *   - campaign and automated sends are surfaced in the timeline as collapsed
  *     entries so 1:1 history stays readable (INBX-05)
+ *   - default list order: lastInboundAt desc
+ *   - toggling follow-up does NOT change row ordering
  */
 
-export type ClaudeInboxBucket = "new" | "opened";
+export type InboxBucket = "new" | "opened";
 
-export type ClaudeInboxFilterId = "all" | "unread" | "follow-up";
+export type InboxFilterId = "all" | "unread" | "follow-up" | "unresolved";
 
-export type ClaudeInboxChannel = "email" | "sms";
+export type InboxChannel = "email" | "sms";
 
-export type ClaudeVolunteerStage =
+export type InboxVolunteerStage =
   | "lead"
   | "prospect"
   | "applicant"
@@ -29,7 +31,7 @@ export type ClaudeVolunteerStage =
   | "alumni"
   | "non-volunteer";
 
-export type ClaudeAvatarTone =
+export type InboxAvatarTone =
   | "indigo"
   | "emerald"
   | "amber"
@@ -39,20 +41,25 @@ export type ClaudeAvatarTone =
   | "teal"
   | "slate";
 
-export interface ClaudeInboxListItemViewModel {
+export interface InboxListItemViewModel {
   readonly contactId: string;
   readonly displayName: string;
   readonly initials: string;
-  readonly avatarTone: ClaudeAvatarTone;
+  readonly avatarTone: InboxAvatarTone;
   readonly latestSubject: string;
   readonly snippet: string;
-  readonly latestChannel: ClaudeInboxChannel;
+  readonly latestChannel: InboxChannel;
   readonly projectLabel: string | null;
-  readonly volunteerStage: ClaudeVolunteerStage;
-  readonly bucket: ClaudeInboxBucket;
-  readonly isStarred: boolean;
+  readonly volunteerStage: InboxVolunteerStage;
+
+  // ── Row states (all separate, not collapsed) ──
+  readonly bucket: InboxBucket;
+  readonly needsFollowUp: boolean;
   readonly hasUnresolved: boolean;
   readonly unreadCount: number;
+
+  // ── Sort / display ──
+  readonly lastInboundAt: string;
   readonly lastActivityAt: string;
   readonly lastActivityLabel: string;
 }
@@ -63,7 +70,7 @@ export interface ClaudeInboxListItemViewModel {
  * `successful`. Statuses are per-(volunteer, project) membership and do not
  * flow through the inbox bucket model.
  */
-export type ClaudeProjectStatus =
+export type InboxProjectStatus =
   | "lead"
   | "applied"
   | "in-training"
@@ -71,22 +78,22 @@ export type ClaudeProjectStatus =
   | "in-field"
   | "successful";
 
-export interface ClaudeProjectMembershipViewModel {
+export interface InboxProjectMembershipViewModel {
   readonly membershipId: string;
   readonly projectId: string;
   readonly projectName: string;
   readonly year: number;
-  readonly status: ClaudeProjectStatus;
+  readonly status: InboxProjectStatus;
   readonly crmUrl: string;
 }
 
-export interface ClaudeRecentActivityViewModel {
+export interface InboxRecentActivityViewModel {
   readonly id: string;
   readonly label: string;
   readonly occurredAtLabel: string;
 }
 
-export interface ClaudeContactSummaryViewModel {
+export interface InboxContactSummaryViewModel {
   readonly contactId: string;
   readonly displayName: string;
   readonly volunteerId: string;
@@ -95,9 +102,9 @@ export interface ClaudeContactSummaryViewModel {
   readonly cityState: string | null;
   readonly joinedAtLabel: string;
   readonly hasUnresolved: boolean;
-  readonly activeProjects: readonly ClaudeProjectMembershipViewModel[];
-  readonly pastProjects: readonly ClaudeProjectMembershipViewModel[];
-  readonly recentActivity: readonly ClaudeRecentActivityViewModel[];
+  readonly activeProjects: readonly InboxProjectMembershipViewModel[];
+  readonly pastProjects: readonly InboxProjectMembershipViewModel[];
+  readonly recentActivity: readonly InboxRecentActivityViewModel[];
 }
 
 /**
@@ -105,7 +112,7 @@ export interface ClaudeContactSummaryViewModel {
  * automated kinds render as collapsed single-line entries that expand on
  * click; internal notes and system events are visually distinct.
  */
-export type ClaudeTimelineEntryKind =
+export type InboxTimelineEntryKind =
   | "inbound-email"
   | "outbound-email"
   | "outbound-auto-email"
@@ -116,36 +123,36 @@ export type ClaudeTimelineEntryKind =
   | "internal-note"
   | "system-event";
 
-export interface ClaudeTimelineEntryViewModel {
+export interface InboxTimelineEntryViewModel {
   readonly id: string;
-  readonly kind: ClaudeTimelineEntryKind;
+  readonly kind: InboxTimelineEntryKind;
   readonly occurredAt: string;
   readonly occurredAtLabel: string;
   readonly actorLabel: string;
   readonly subject: string | null;
   readonly body: string;
-  readonly channel: ClaudeInboxChannel | null;
+  readonly channel: InboxChannel | null;
   readonly isUnread: boolean;
 }
 
-export interface ClaudeInboxDetailViewModel {
-  readonly contact: ClaudeContactSummaryViewModel;
-  readonly timeline: readonly ClaudeTimelineEntryViewModel[];
-  readonly bucket: ClaudeInboxBucket;
-  readonly isStarred: boolean;
+export interface InboxDetailViewModel {
+  readonly contact: InboxContactSummaryViewModel;
+  readonly timeline: readonly InboxTimelineEntryViewModel[];
+  readonly bucket: InboxBucket;
+  readonly needsFollowUp: boolean;
   readonly smsEligible: boolean;
 }
 
-export interface ClaudeInboxFilterViewModel {
-  readonly id: ClaudeInboxFilterId;
+export interface InboxFilterViewModel {
+  readonly id: InboxFilterId;
   readonly label: string;
   readonly count: number;
   readonly hint: string | null;
 }
 
-export interface ClaudeInboxListViewModel {
-  readonly items: readonly ClaudeInboxListItemViewModel[];
-  readonly filters: readonly ClaudeInboxFilterViewModel[];
+export interface InboxListViewModel {
+  readonly items: readonly InboxListItemViewModel[];
+  readonly filters: readonly InboxFilterViewModel[];
   readonly totals: {
     readonly all: number;
     readonly unread: number;

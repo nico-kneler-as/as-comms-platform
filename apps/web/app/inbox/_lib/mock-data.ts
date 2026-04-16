@@ -1,7 +1,7 @@
 /**
- * Claude Inbox prototype — server-only mock fixtures.
+ * Inbox — server-only mock fixtures.
  *
- * This module is the single source of truth for the prototype's rendered
+ * This module is the single source of truth for the shell's rendered
  * content. It is imported only by Server Components so that the client never
  * receives the raw fixture map — the client only sees the minimized view
  * models returned by the selectors.
@@ -9,21 +9,21 @@
  * Active projects match the canonical product list (Beech and Butternut,
  * PNW Biodiversity, Monitoring Coral Reefs, Tracking Whitebark Pine,
  * Searching for Killer Whales). Past projects are deliberately fake — the
- * prototype only needs them to look plausible next to each volunteer.
+ * shell only needs them to look plausible next to each volunteer.
  *
- * Phase 2 will swap these factories for real repository reads against the
+ * Next step: swap these factories for real repository reads against the
  * canonical inbox/timeline projections without changing view-model shapes.
  */
 
 import type {
-  ClaudeAvatarTone,
-  ClaudeInboxBucket,
-  ClaudeInboxChannel,
-  ClaudeProjectMembershipViewModel,
-  ClaudeProjectStatus,
-  ClaudeTimelineEntryKind,
-  ClaudeTimelineEntryViewModel,
-  ClaudeVolunteerStage
+  InboxAvatarTone,
+  InboxBucket,
+  InboxChannel,
+  InboxProjectMembershipViewModel,
+  InboxProjectStatus,
+  InboxTimelineEntryKind,
+  InboxTimelineEntryViewModel,
+  InboxVolunteerStage
 } from "./view-models";
 
 export type VolunteerMilestoneKind =
@@ -45,34 +45,35 @@ interface MockContactRecord {
   readonly volunteerId: string;
   readonly displayName: string;
   readonly initials: string;
-  readonly avatarTone: ClaudeAvatarTone;
-  readonly volunteerStage: ClaudeVolunteerStage;
+  readonly avatarTone: InboxAvatarTone;
+  readonly volunteerStage: InboxVolunteerStage;
   readonly primaryEmail: string | null;
   readonly primaryPhone: string | null;
   readonly cityState: string | null;
   readonly joinedAtLabel: string;
-  readonly activeProjects: readonly ClaudeProjectMembershipViewModel[];
-  readonly pastProjects: readonly ClaudeProjectMembershipViewModel[];
+  readonly activeProjects: readonly InboxProjectMembershipViewModel[];
+  readonly pastProjects: readonly InboxProjectMembershipViewModel[];
   readonly milestones: readonly MockMilestone[];
-  readonly bucket: ClaudeInboxBucket;
-  readonly isStarred: boolean;
+  readonly bucket: InboxBucket;
+  readonly needsFollowUp: boolean;
   readonly hasUnresolved: boolean;
   readonly unreadCount: number;
   readonly latestSubject: string;
   readonly snippet: string;
-  readonly latestChannel: ClaudeInboxChannel;
+  readonly latestChannel: InboxChannel;
   readonly projectLabel: string | null;
+  readonly lastInboundAt: string;
   readonly lastActivityAt: string;
   readonly lastActivityLabel: string;
-  readonly timeline: readonly ClaudeTimelineEntryViewModel[];
+  readonly timeline: readonly InboxTimelineEntryViewModel[];
 }
 
 function membership(
   projectId: string,
   projectName: string,
   year: number,
-  status: ClaudeProjectStatus
-): ClaudeProjectMembershipViewModel {
+  status: InboxProjectStatus
+): InboxProjectMembershipViewModel {
   return {
     membershipId: `m_${projectId}_${year.toString()}`,
     projectId,
@@ -128,7 +129,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       }
     ],
     bucket: "new",
-    isStarred: true,
+    needsFollowUp: true,
     hasUnresolved: false,
     unreadCount: 2,
     latestSubject: "Re: Whitebark Pine — training confirmation",
@@ -136,6 +137,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       "Hi team — just confirming I can make the April 22 training. Is there a kit list I should…",
     latestChannel: "email",
     projectLabel: "Tracking Whitebark Pine 2026",
+    lastInboundAt: iso(0),
     lastActivityAt: "2026-04-14T14:22:00Z",
     lastActivityLabel: "9:22 AM",
     timeline: buildTimeline("c_maya_patel", [
@@ -263,7 +265,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       }
     ],
     bucket: "new",
-    isStarred: false,
+    needsFollowUp: false,
     hasUnresolved: false,
     unreadCount: 1,
     latestSubject: "Killer Whales application",
@@ -271,6 +273,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       "Hi — I submitted the application last week and wanted to check if there's anything else you need from me.",
     latestChannel: "email",
     projectLabel: "Searching for Killer Whales",
+    lastInboundAt: iso(0),
     lastActivityAt: "2026-04-14T12:05:00Z",
     lastActivityLabel: "7:05 AM",
     timeline: buildTimeline("c_daniel_rivers", [
@@ -374,7 +377,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       }
     ],
     bucket: "new",
-    isStarred: false,
+    needsFollowUp: false,
     hasUnresolved: true,
     unreadCount: 1,
     latestSubject: "Site access permit — urgent",
@@ -382,6 +385,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       "Got word the Molokini permit isn't in the system. Can someone confirm by Wednesday?",
     latestChannel: "email",
     projectLabel: "Monitoring Coral Reefs",
+    lastInboundAt: iso(0),
     lastActivityAt: "2026-04-14T09:48:00Z",
     lastActivityLabel: "4:48 AM",
     timeline: buildTimeline("c_priya_chen", [
@@ -520,7 +524,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       }
     ],
     bucket: "opened",
-    isStarred: true,
+    needsFollowUp: true,
     hasUnresolved: false,
     unreadCount: 0,
     latestSubject: "Data upload questions",
@@ -528,6 +532,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       "Thanks — the sync worked after I switched networks. Closing this one out unless you need more.",
     latestChannel: "email",
     projectLabel: "Beech and Butternut",
+    lastInboundAt: iso(2),
     lastActivityAt: "2026-04-13T19:30:00Z",
     lastActivityLabel: "Yesterday",
     timeline: buildTimeline("c_sam_whitehorse", [
@@ -625,7 +630,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     pastProjects: [],
     milestones: [],
     bucket: "new",
-    isStarred: false,
+    needsFollowUp: false,
     hasUnresolved: true,
     unreadCount: 1,
     latestSubject: "Question from Middlebury bio dept",
@@ -633,6 +638,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       "I teach field ecology at Middlebury and would love to connect volunteers to our capstone…",
     latestChannel: "email",
     projectLabel: null,
+    lastInboundAt: iso(1),
     lastActivityAt: "2026-04-14T02:14:00Z",
     lastActivityLabel: "Yesterday",
     timeline: buildTimeline("c_anita_ross", [
@@ -679,7 +685,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       }
     ],
     bucket: "opened",
-    isStarred: false,
+    needsFollowUp: false,
     hasUnresolved: false,
     unreadCount: 0,
     latestSubject: "Photo permissions for annual report",
@@ -687,6 +693,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       "Of course — use any of the 2023 owl photos. Credit line is fine, no logo needed.",
     latestChannel: "email",
     projectLabel: "Front Range Owl Survey 2023",
+    lastInboundAt: iso(2),
     lastActivityAt: "2026-04-12T16:10:00Z",
     lastActivityLabel: "2 days ago",
     timeline: buildTimeline("c_ben_okafor", [
@@ -757,7 +764,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       }
     ],
     bucket: "opened",
-    isStarred: true,
+    needsFollowUp: true,
     hasUnresolved: false,
     unreadCount: 0,
     latestSubject: "Carpool list for April training",
@@ -765,6 +772,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       "I can pick up two from Boulder on the 22nd — just need names by Friday.",
     latestChannel: "sms",
     projectLabel: "PNW Biodiversity 2026",
+    lastInboundAt: iso(2),
     lastActivityAt: "2026-04-12T11:02:00Z",
     lastActivityLabel: "2 days ago",
     timeline: buildTimeline("c_elena_marquez", [
@@ -849,7 +857,7 @@ const CONTACTS: readonly MockContactRecord[] = [
     pastProjects: [],
     milestones: [],
     bucket: "new",
-    isStarred: false,
+    needsFollowUp: false,
     hasUnresolved: true,
     unreadCount: 1,
     latestSubject: "Inbound SMS",
@@ -857,6 +865,7 @@ const CONTACTS: readonly MockContactRecord[] = [
       "hey is this the whitebark pine signup line? my wife saw the flyer in laramie",
     latestChannel: "sms",
     projectLabel: null,
+    lastInboundAt: iso(1),
     lastActivityAt: "2026-04-13T22:45:00Z",
     lastActivityLabel: "Yesterday",
     timeline: buildTimeline("c_unknown_5551", [
@@ -882,7 +891,7 @@ const CONTACTS: readonly MockContactRecord[] = [
 ];
 
 interface MockTimelineSeed {
-  readonly kind: ClaudeTimelineEntryKind;
+  readonly kind: InboxTimelineEntryKind;
   readonly actor: string;
   readonly subject?: string | null;
   readonly body: string;
@@ -893,7 +902,7 @@ interface MockTimelineSeed {
 function buildTimeline(
   contactId: string,
   seeds: readonly MockTimelineSeed[]
-): readonly ClaudeTimelineEntryViewModel[] {
+): readonly InboxTimelineEntryViewModel[] {
   return seeds.map((seed, index) => {
     const occurredAt = iso(seed.daysAgo);
     return {
@@ -910,7 +919,7 @@ function buildTimeline(
   });
 }
 
-function channelForKind(kind: ClaudeTimelineEntryKind): ClaudeInboxChannel | null {
+function channelForKind(kind: InboxTimelineEntryKind): InboxChannel | null {
   switch (kind) {
     case "inbound-email":
     case "outbound-email":

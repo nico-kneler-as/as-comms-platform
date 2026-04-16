@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 
-import { ClaudeInboxShell } from "../_components/claude-inbox-shell";
-import { getClaudeInboxList } from "../_lib/selectors";
+import { InboxShell } from "./_components/inbox-shell";
+import { getInboxList } from "./_lib/selectors";
 
 export const metadata = {
-  title: "Inbox · Claude prototype"
+  title: "Inbox"
 };
 
 /**
@@ -17,20 +17,20 @@ export const metadata = {
  * The client applies the active filter locally against those view models, so
  * the sidebar collapse has no effect on where canonical state lives.
  */
-export default function ClaudeInboxLayout({
+export default function InboxLayout({
   children
 }: {
   readonly children: ReactNode;
 }) {
-  const list = getClaudeInboxList("all");
+  const list = getInboxList("all");
 
   return (
-    <ClaudeInboxShell
+    <InboxShell
       filters={list.filters}
       items={list.items}
       initialFilterId="all"
     >
       {children}
-    </ClaudeInboxShell>
+    </InboxShell>
   );
 }

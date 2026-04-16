@@ -1,39 +1,43 @@
 /**
- * Claude Inbox prototype — server-side selectors.
+ * Inbox — server-side selectors.
  *
  * These functions are the only place the mock records touch the view-model
  * contract. The Server Components consume these and pass the narrow view
- * models to client islands. In Phase 2 this module is the natural place to
- * substitute real projection reads — the view-model shapes stay stable.
+ * models to client islands. This module is the natural place to substitute
+ * real projection reads — the view-model shapes stay stable.
  */
 
-import { CLAUDE_INBOX_FILTERS } from "./filters";
+import { INBOX_FILTERS } from "./filters";
 import {
   getMockContactById,
   getMockContacts,
   type MockMilestone
 } from "./mock-data";
 import type {
-  ClaudeContactSummaryViewModel,
-  ClaudeInboxDetailViewModel,
-  ClaudeInboxFilterId,
-  ClaudeInboxFilterViewModel,
-  ClaudeInboxListItemViewModel,
-  ClaudeInboxListViewModel,
-  ClaudeRecentActivityViewModel
+  InboxContactSummaryViewModel,
+  InboxDetailViewModel,
+  InboxFilterId,
+  InboxFilterViewModel,
+  InboxListItemViewModel,
+  InboxListViewModel,
+  InboxRecentActivityViewModel
 } from "./view-models";
 
+/**
+ * Default list sort: last inbound message first.
+ * Toggling follow-up does NOT change row ordering.
+ */
 const LIST_SORT = (
-  a: ClaudeInboxListItemViewModel,
-  b: ClaudeInboxListItemViewModel
-): number => (a.lastActivityAt < b.lastActivityAt ? 1 : -1);
+  a: InboxListItemViewModel,
+  b: InboxListItemViewModel
+): number => (a.lastInboundAt < b.lastInboundAt ? 1 : -1);
 
-export function getClaudeInboxList(
-  filterId: ClaudeInboxFilterId = "all"
-): ClaudeInboxListViewModel {
+export function getInboxList(
+  filterId: InboxFilterId = "all"
+): InboxListViewModel {
   const contacts = getMockContacts();
 
-  const items: ClaudeInboxListItemViewModel[] = contacts.map((c) => ({
+  const items: InboxListItemViewModel[] = contacts.map((c) => ({
     contactId: c.contactId,
     displayName: c.displayName,
     initials: c.initials,
@@ -44,23 +48,30 @@ export function getClaudeInboxList(
     projectLabel: c.projectLabel,
     volunteerStage: c.volunteerStage,
     bucket: c.bucket,
-    isStarred: c.isStarred,
+    needsFollowUp: c.needsFollowUp,
     hasUnresolved: c.hasUnresolved,
     unreadCount: c.unreadCount,
+    lastInboundAt: c.lastInboundAt,
     lastActivityAt: c.lastActivityAt,
     lastActivityLabel: c.lastActivityLabel
   }));
 
   const totals = {
     all: items.length,
-    unread: items.filter((i) => i.unreadCount > 0).length
+    unread: items.filter((i) => i.bucket === "new").length,
+    unresolved: items.filter((i) => i.hasUnresolved).length
   };
 
-  const filters: ClaudeInboxFilterViewModel[] = CLAUDE_INBOX_FILTERS.map((f) => ({
+  const filters: InboxFilterViewModel[] = INBOX_FILTERS.map((f) => ({
     id: f.id,
     label: f.label,
     hint: f.hint,
-    count: f.id === "follow-up" ? 0 : totals[f.id]
+    count:
+      f.id === "follow-up"
+        ? 0 // follow-up count is client-side; server returns 0
+        : f.id === "unresolved"
+          ? totals.unresolved
+          : totals[f.id]
   }));
 
   const filtered = items
@@ -71,29 +82,31 @@ export function getClaudeInboxList(
 }
 
 function matchesServerFilter(
-  item: ClaudeInboxListItemViewModel,
-  filterId: ClaudeInboxFilterId
+  item: InboxListItemViewModel,
+  filterId: InboxFilterId
 ): boolean {
   switch (filterId) {
     case "all":
       return true;
     case "unread":
-      return item.unreadCount > 0;
+      return item.bucket === "new";
     case "follow-up":
       // Follow-up is client-owned state; server returns everything and the
       // client narrows it. Keeping this branch exhaustive satisfies the
       // discriminated-union check.
       return true;
+    case "unresolved":
+      return item.hasUnresolved;
   }
 }
 
-export function getClaudeInboxDetail(
+export function getInboxDetail(
   contactId: string
-): ClaudeInboxDetailViewModel | null {
+): InboxDetailViewModel | null {
   const record = getMockContactById(contactId);
   if (!record) return null;
 
-  const recentActivity: ClaudeRecentActivityViewModel[] = record.milestones
+  const recentActivity: InboxRecentActivityViewModel[] = record.milestones
     .slice()
     .sort((a, b) => a.daysAgo - b.daysAgo)
     .slice(0, 5)
@@ -103,7 +116,7 @@ export function getClaudeInboxDetail(
       occurredAtLabel: relativeLabel(milestone.daysAgo)
     }));
 
-  const contact: ClaudeContactSummaryViewModel = {
+  const contact: InboxContactSummaryViewModel = {
     contactId: record.contactId,
     displayName: record.displayName,
     volunteerId: record.volunteerId,
@@ -121,7 +134,7 @@ export function getClaudeInboxDetail(
     contact,
     timeline: record.timeline,
     bucket: record.bucket,
-    isStarred: record.isStarred,
+    needsFollowUp: record.needsFollowUp,
     smsEligible: record.primaryPhone !== null
   };
 }

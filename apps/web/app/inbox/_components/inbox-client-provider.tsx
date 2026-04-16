@@ -9,8 +9,6 @@ import {
   type ReactNode
 } from "react";
 
-import type { ClaudeInboxBucket } from "../_lib/view-models";
-
 /**
  * Prototype-local client state shared across the Inbox list column and
  * Detail workspace. In a real build these would round-trip through server
@@ -20,7 +18,6 @@ import type { ClaudeInboxBucket } from "../_lib/view-models";
  * Extended to cover every interactive state the UI needs:
  *   - follow-up flags and reminders (original)
  *   - search query + results
- *   - active bucket tab (new / opened)
  *   - composer status (idle → saving → saved / error → sending → sent / failed)
  *   - AI draft lifecycle (idle → generating → inserted → edited / discarded)
  *   - queue & timeline loading flags
@@ -92,17 +89,13 @@ const INITIAL_SEARCH: SearchState = {
 
 // ---------- Context shape ----------
 
-interface ClaudeInboxClientState {
+interface InboxClientState {
   // Follow-up & reminders
   readonly followUp: ReadonlySet<string>;
   readonly reminders: ReadonlyMap<string, Reminder>;
   readonly toggleFollowUp: (contactId: string) => void;
   readonly setReminder: (contactId: string, reminder: Reminder) => void;
   readonly clearReminder: (contactId: string) => void;
-
-  // Bucket tabs
-  readonly activeBucket: ClaudeInboxBucket | "all";
-  readonly setActiveBucket: (bucket: ClaudeInboxBucket | "all") => void;
 
   // Search
   readonly search: SearchState;
@@ -134,11 +127,11 @@ interface ClaudeInboxClientState {
   readonly resetAiDraft: () => void;
 }
 
-const ClaudeInboxClientContext = createContext<ClaudeInboxClientState | null>(
+const InboxClientContext = createContext<InboxClientState | null>(
   null
 );
 
-export function ClaudeInboxClientProvider({
+export function InboxClientProvider({
   children
 }: {
   readonly children: ReactNode;
@@ -179,11 +172,6 @@ export function ClaudeInboxClientProvider({
       return next;
     });
   }, []);
-
-  // Bucket tabs
-  const [activeBucket, setActiveBucket] = useState<ClaudeInboxBucket | "all">(
-    "all"
-  );
 
   // Search
   const [search, setSearch] = useState<SearchState>(INITIAL_SEARCH);
@@ -281,15 +269,13 @@ export function ClaudeInboxClientProvider({
     setAiDraft(INITIAL_AI_DRAFT);
   }, []);
 
-  const value = useMemo<ClaudeInboxClientState>(
+  const value = useMemo<InboxClientState>(
     () => ({
       followUp,
       reminders,
       toggleFollowUp,
       setReminder,
       clearReminder,
-      activeBucket,
-      setActiveBucket,
       search,
       setSearchQuery,
       setSearchResults,
@@ -318,7 +304,6 @@ export function ClaudeInboxClientProvider({
       toggleFollowUp,
       setReminder,
       clearReminder,
-      activeBucket,
       search,
       setSearchQuery,
       setSearchResults,
@@ -340,17 +325,17 @@ export function ClaudeInboxClientProvider({
   );
 
   return (
-    <ClaudeInboxClientContext.Provider value={value}>
+    <InboxClientContext.Provider value={value}>
       {children}
-    </ClaudeInboxClientContext.Provider>
+    </InboxClientContext.Provider>
   );
 }
 
-export function useClaudeInboxClient(): ClaudeInboxClientState {
-  const value = useContext(ClaudeInboxClientContext);
+export function useInboxClient(): InboxClientState {
+  const value = useContext(InboxClientContext);
   if (!value) {
     throw new Error(
-      "useClaudeInboxClient must be used inside ClaudeInboxClientProvider"
+      "useInboxClient must be used inside InboxClientProvider"
     );
   }
   return value;

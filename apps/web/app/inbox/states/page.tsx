@@ -55,10 +55,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-import type { ComposerStatus, AiDraftStatus } from "../../_components/claude-inbox-client-provider";
-import { useClaudeInboxClient } from "../../_components/claude-inbox-client-provider";
-import { ClaudeInboxAppLoading, QueueLoadingSkeleton, QueueRowSkeleton, TimelineSkeleton } from "../../_components/claude-inbox-loading";
-import { ClaudeInboxEmptyState } from "../../_components/claude-inbox-empty-state";
+import type { ComposerStatus, AiDraftStatus } from "../_components/inbox-client-provider";
+import { useInboxClient } from "../_components/inbox-client-provider";
+import { InboxAppLoading, QueueLoadingSkeleton, QueueRowSkeleton, TimelineSkeleton } from "../_components/inbox-loading";
+import { InboxEmptyState } from "../_components/inbox-empty-state";
 import {
   AlertCircleIcon,
   AlertTriangleIcon,
@@ -77,7 +77,7 @@ import {
   WifiOffIcon,
   XCircleIcon,
   XIcon
-} from "../../_components/claude-icons";
+} from "../_components/icons";
 
 // ---------- Section wrapper ----------
 
@@ -129,10 +129,8 @@ function LiveControls() {
     resetAiDraft,
     search,
     setSearchQuery,
-    clearSearch,
-    activeBucket,
-    setActiveBucket
-  } = useClaudeInboxClient();
+    clearSearch
+  } = useInboxClient();
 
   const composerStates: ComposerStatus[] = [
     "idle",
@@ -215,25 +213,7 @@ function LiveControls() {
           </div>
         </div>
 
-        {/* Bucket tabs */}
-        <div>
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Bucket
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {(["all", "new", "opened"] as const).map((b) => (
-              <ToggleChip
-                key={b}
-                active={activeBucket === b}
-                onClick={() => {
-                  setActiveBucket(b);
-                }}
-              >
-                {b}
-              </ToggleChip>
-            ))}
-          </div>
-        </div>
+        {/* Bucket tabs removed — inbox is a single mixed list */}
 
         {/* Composer status */}
         <div>
@@ -348,7 +328,7 @@ function ToggleChip({
 function AppLoadingPreview() {
   return (
     <div className="h-80 overflow-hidden">
-      <ClaudeInboxAppLoading />
+      <InboxAppLoading />
     </div>
   );
 }
@@ -437,7 +417,7 @@ function SearchWithResultsPreview() {
 function NoContactSelectedPreview() {
   return (
     <div className="h-64">
-      <ClaudeInboxEmptyState />
+      <InboxEmptyState />
     </div>
   );
 }

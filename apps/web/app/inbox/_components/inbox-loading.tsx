@@ -6,7 +6,7 @@ import { LAYOUT, SPACING, TONE } from "@/app/_lib/design-tokens";
  * (icon rail + list column + detail workspace) with pulsing placeholders
  * so the user sees a recognizable structure while data loads.
  */
-export function ClaudeInboxAppLoading() {
+export function InboxAppLoading() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100 antialiased">
       {/* Icon rail skeleton */}

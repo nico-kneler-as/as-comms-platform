@@ -1,7 +1,7 @@
 import { EmptyState } from "@/components/ui/empty-state";
-import { InboxIcon } from "./claude-icons";
+import { InboxIcon } from "./icons";
 
-export function ClaudeInboxEmptyState() {
+export function InboxEmptyState() {
   return (
     <EmptyState
       size="lg"
