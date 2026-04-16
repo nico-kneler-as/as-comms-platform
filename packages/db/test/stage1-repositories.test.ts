@@ -2,6 +2,47 @@ import { describe, expect, it } from "vitest";
 
 import { createTestStage1Context } from "./helpers.js";
 
+interface SalesforceCommunicationDetailRecord {
+  readonly sourceEvidenceId: string;
+  readonly providerRecordId: string;
+  readonly channel: "email" | "sms";
+  readonly messageKind: "one_to_one" | "auto" | "campaign";
+  readonly subject: string | null;
+  readonly snippet: string;
+  readonly sourceLabel: string;
+}
+
+interface SimpleTextingMessageDetailRecord {
+  readonly sourceEvidenceId: string;
+  readonly providerRecordId: string;
+  readonly direction: "inbound" | "outbound";
+  readonly messageKind: "one_to_one" | "campaign";
+  readonly messageTextPreview: string;
+  readonly normalizedPhone: string | null;
+  readonly campaignId: string | null;
+  readonly campaignName: string | null;
+  readonly providerThreadId: string | null;
+  readonly threadKey: string | null;
+}
+
+interface MailchimpCampaignActivityDetailRecord {
+  readonly sourceEvidenceId: string;
+  readonly providerRecordId: string;
+  readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
+  readonly campaignId: string | null;
+  readonly audienceId: string | null;
+  readonly memberId: string;
+  readonly campaignName: string | null;
+  readonly snippet: string;
+}
+
+interface ManualNoteDetailRecord {
+  readonly sourceEvidenceId: string;
+  readonly providerRecordId: string;
+  readonly body: string;
+  readonly authorDisplayName: string | null;
+}
+
 describe("Stage 1 DB repositories", () => {
   it("persists and maps source evidence, contacts, identities, and memberships", async () => {
     const { repositories } = await createTestStage1Context();
@@ -118,7 +159,7 @@ describe("Stage 1 DB repositories", () => {
       expeditionId: "expedition_1"
     });
     const salesforceCommunicationDetail =
-      await repositories.salesforceCommunicationDetails.upsert({
+      (await repositories.salesforceCommunicationDetails.upsert({
         sourceEvidenceId: sourceEvidence.id,
         providerRecordId: sourceEvidence.providerRecordId,
         channel: "email",
@@ -126,9 +167,9 @@ describe("Stage 1 DB repositories", () => {
         subject: "Automation complete",
         snippet: "Your workflow completed successfully.",
         sourceLabel: "Salesforce Flow"
-      });
+      })) as SalesforceCommunicationDetailRecord;
     const simpleTextingMessageDetail =
-      await repositories.simpleTextingMessageDetails.upsert({
+      (await repositories.simpleTextingMessageDetails.upsert({
         sourceEvidenceId: sourceEvidence.id,
         providerRecordId: sourceEvidence.providerRecordId,
         direction: "outbound",
@@ -139,9 +180,9 @@ describe("Stage 1 DB repositories", () => {
         campaignName: "Volunteer Reminders",
         providerThreadId: "thread_1",
         threadKey: "thread-key-1"
-      });
+      })) as SimpleTextingMessageDetailRecord;
     const mailchimpCampaignActivityDetail =
-      await repositories.mailchimpCampaignActivityDetails.upsert({
+      (await repositories.mailchimpCampaignActivityDetails.upsert({
         sourceEvidenceId: sourceEvidence.id,
         providerRecordId: sourceEvidence.providerRecordId,
         activityType: "sent",
@@ -150,13 +191,13 @@ describe("Stage 1 DB repositories", () => {
         memberId: "member_1",
         campaignName: "Spring Launch",
         snippet: "Campaign launch message"
-      });
-    const manualNoteDetail = await repositories.manualNoteDetails.upsert({
+      })) as MailchimpCampaignActivityDetailRecord;
+    const manualNoteDetail = (await repositories.manualNoteDetails.upsert({
       sourceEvidenceId: sourceEvidence.id,
       providerRecordId: sourceEvidence.providerRecordId,
       body: "Follow up after the kickoff call.",
       authorDisplayName: "Stage One Operator"
-    });
+    })) as ManualNoteDetailRecord;
 
     await expect(
       repositories.projectDimensions.listByIds(["project_1"])

@@ -747,8 +747,7 @@ function resolveTaskChannel(input: {
   if (
     normalizedChannelValue === "task" &&
     input.relatedMembership !== null &&
-    subject !== null &&
-    subject.includes("email:")
+    subject?.includes("email:") === true
   ) {
     return "email";
   }

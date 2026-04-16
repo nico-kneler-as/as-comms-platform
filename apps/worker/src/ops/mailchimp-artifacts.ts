@@ -15,9 +15,6 @@ import type { Stage1IngestService } from "../ingest/index.js";
 import type { Stage1IngestResult } from "../ingest/types.js";
 import {
   buildMailchimpUnmatchedReport,
-  hasKnownMailchimpIdentity,
-  type MailchimpKnownIdentityIndex,
-  type MailchimpUnmatchedRecipientRow,
   writeMailchimpUnmatchedReport
 } from "./mailchimp-unmatched.js";
 import {
@@ -70,6 +67,25 @@ export interface Stage1MailchimpArtifactImportResult {
   readonly unmatchedReportCsvPath?: string;
 }
 
+interface MailchimpKnownIdentityIndex {
+  readonly knownEmails: ReadonlySet<string>;
+  readonly knownVolunteerIds: ReadonlySet<string>;
+}
+
+interface MailchimpUnmatchedRecipientRow {
+  readonly campaignId: string;
+  readonly campaignName: string | null;
+  readonly audienceId: string | null;
+  readonly memberId: string;
+  readonly email: string | null;
+  readonly platformId: string | null;
+  readonly activityTypes: readonly string[];
+}
+
+type ImportedMailchimpCampaignActivityRecord = MailchimpCampaignActivityRecord & {
+  readonly campaignName: string | null;
+};
+
 interface Stage1MailchimpArtifactImportDependencies {
   readonly ingest: Pick<Stage1IngestService, "ingestMailchimpHistoricalRecord">;
   readonly persistence: Stage1PersistenceService;
@@ -79,6 +95,30 @@ interface Stage1MailchimpArtifactImportDependencies {
 }
 
 const MAILCHIMP_RECORD_PROGRESS_INTERVAL = 25;
+const emptyMailchimpKnownIdentityIndex: MailchimpKnownIdentityIndex = {
+  knownEmails: new Set<string>(),
+  knownVolunteerIds: new Set<string>()
+};
+const importMailchimpCampaignArtifactRecords =
+  importMailchimpCampaignArtifactRecordsFromPath as (input: {
+    readonly campaignPath: string;
+    readonly receivedAt: string;
+  }) => Promise<ImportedMailchimpCampaignActivityRecord[]>;
+const buildTypedMailchimpUnmatchedReport =
+  buildMailchimpUnmatchedReport as (input: {
+    readonly generatedAt: string;
+    readonly recipients: readonly MailchimpUnmatchedRecipientRow[];
+    readonly knownIdentityIndex: MailchimpKnownIdentityIndex;
+  }) => unknown;
+const writeTypedMailchimpUnmatchedReport =
+  writeMailchimpUnmatchedReport as (input: {
+    readonly outputRoot: string;
+    readonly reportId: string;
+    readonly report: unknown;
+  }) => Promise<{
+    readonly jsonPath: string;
+    readonly csvPath: string;
+  }>;
 
 function summarizeIngestResults(
   results: readonly Stage1IngestResult[],
@@ -159,7 +199,7 @@ function buildMailchimpRecordCursor(
   campaignId: string,
   nextRecordIndex: number
 ): string {
-  return `${campaignId}:record:${nextRecordIndex}`;
+  return `${campaignId}:record:${String(nextRecordIndex)}`;
 }
 
 function parseMailchimpRecordCursor(
@@ -345,6 +385,7 @@ function createMailchimpIdentityPresenceResolver(
 ) {
   const emailCache = new Map<string, Promise<boolean>>();
   const volunteerIdCache = new Map<string, Promise<boolean>>();
+  const knownIdentityIndex = dependencies.mailchimpIdentityIndex;
 
   const hasKnownEmail = (normalizedEmail: string): Promise<boolean> => {
     const cached = emailCache.get(normalizedEmail);
@@ -354,10 +395,8 @@ function createMailchimpIdentityPresenceResolver(
     }
 
     const lookup =
-      dependencies.mailchimpIdentityIndex !== undefined
-        ? Promise.resolve(
-            dependencies.mailchimpIdentityIndex.knownEmails.has(normalizedEmail)
-          )
+      knownIdentityIndex !== undefined
+        ? Promise.resolve(knownIdentityIndex.knownEmails.has(normalizedEmail))
         : dependencies.persistence.repositories.contactIdentities
             .listByNormalizedValue({
               kind: "email",
@@ -377,12 +416,8 @@ function createMailchimpIdentityPresenceResolver(
     }
 
     const lookup =
-      dependencies.mailchimpIdentityIndex !== undefined
-        ? Promise.resolve(
-            dependencies.mailchimpIdentityIndex.knownVolunteerIds.has(
-              volunteerId
-            )
-          )
+      knownIdentityIndex !== undefined
+        ? Promise.resolve(knownIdentityIndex.knownVolunteerIds.has(volunteerId))
         : dependencies.persistence.repositories.contactIdentities
             .listByNormalizedValue({
               kind: "volunteer_id_plain",
@@ -492,7 +527,7 @@ export function createStage1MailchimpArtifactImportService(
             continue;
           }
 
-          const records = await importMailchimpCampaignArtifactRecordsFromPath({
+          const records = await importMailchimpCampaignArtifactRecords({
             campaignPath,
             receivedAt
           });
@@ -635,17 +670,14 @@ export function createStage1MailchimpArtifactImportService(
             platformId: recipient.platformId,
             activityTypes: Array.from(recipient.activityTypes).sort()
           }));
-          const report = buildMailchimpUnmatchedReport({
+          const report = buildTypedMailchimpUnmatchedReport({
             generatedAt: now().toISOString(),
             recipients: unmatchedRecipients,
             knownIdentityIndex:
-              dependencies.mailchimpIdentityIndex ?? {
-                knownEmails: new Set<string>(),
-                knownVolunteerIds: new Set<string>()
-              }
+              dependencies.mailchimpIdentityIndex ?? emptyMailchimpKnownIdentityIndex
           });
 
-          unmatchedReportPaths = await writeMailchimpUnmatchedReport({
+          unmatchedReportPaths = await writeTypedMailchimpUnmatchedReport({
             outputRoot:
               parsedInput.unmatchedReportOutputRoot ??
               resolve(parsedInput.artifactPath, "..", "unmatched-reports"),

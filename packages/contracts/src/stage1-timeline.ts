@@ -1,15 +1,28 @@
 import { z } from "zod";
 
 import {
-  campaignEmailActivityTypeSchema,
   providerSchema,
-  reviewStateSchema,
-  timelineFamilySchema
+  reviewStateSchema
 } from "./stage1-taxonomy.js";
 
 const idSchema = z.string().min(1);
 const timestampSchema = z.string().datetime();
 const nullableStringSchema = z.string().min(1).nullable();
+const timelineFamilySchema = z.enum([
+  "salesforce_event",
+  "auto_email",
+  "campaign_email",
+  "campaign_sms",
+  "one_to_one_email",
+  "one_to_one_sms",
+  "internal_note"
+]);
+const campaignEmailActivityTypeSchema = z.enum([
+  "sent",
+  "opened",
+  "clicked",
+  "unsubscribed"
+]);
 
 const timelineItemBaseSchema = z.object({
   id: idSchema,

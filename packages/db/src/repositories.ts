@@ -35,20 +35,12 @@ import {
   mapIdentityResolutionToInsert,
   mapInboxProjectionRow,
   mapInboxProjectionToInsert,
-  mapMailchimpCampaignActivityDetailRow,
-  mapMailchimpCampaignActivityDetailToInsert,
-  mapManualNoteDetailRow,
-  mapManualNoteDetailToInsert,
   mapProjectDimensionRow,
   mapProjectDimensionToInsert,
   mapRoutingReviewRow,
   mapRoutingReviewToInsert,
-  mapSalesforceCommunicationDetailRow,
-  mapSalesforceCommunicationDetailToInsert,
   mapSalesforceEventContextRow,
   mapSalesforceEventContextToInsert,
-  mapSimpleTextingMessageDetailRow,
-  mapSimpleTextingMessageDetailToInsert,
   mapSourceEvidenceRow,
   mapSourceEvidenceToInsert,
   mapSyncStateRow,
@@ -80,6 +72,177 @@ import {
 } from "./schema/index.js";
 
 export type Stage1Database = PgDatabase<PgQueryResultHKT, DatabaseSchema>;
+
+interface SalesforceCommunicationDetailRecord {
+  readonly sourceEvidenceId: string;
+  readonly providerRecordId: string;
+  readonly channel: "email" | "sms";
+  readonly messageKind: "one_to_one" | "auto" | "campaign";
+  readonly subject: string | null;
+  readonly snippet: string;
+  readonly sourceLabel: string;
+}
+
+interface SimpleTextingMessageDetailRecord {
+  readonly sourceEvidenceId: string;
+  readonly providerRecordId: string;
+  readonly direction: "inbound" | "outbound";
+  readonly messageKind: "one_to_one" | "campaign";
+  readonly messageTextPreview: string;
+  readonly normalizedPhone: string | null;
+  readonly campaignId: string | null;
+  readonly campaignName: string | null;
+  readonly providerThreadId: string | null;
+  readonly threadKey: string | null;
+}
+
+interface MailchimpCampaignActivityDetailRecord {
+  readonly sourceEvidenceId: string;
+  readonly providerRecordId: string;
+  readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
+  readonly campaignId: string | null;
+  readonly audienceId: string | null;
+  readonly memberId: string;
+  readonly campaignName: string | null;
+  readonly snippet: string;
+}
+
+interface ManualNoteDetailRecord {
+  readonly sourceEvidenceId: string;
+  readonly providerRecordId: string;
+  readonly body: string;
+  readonly authorDisplayName: string | null;
+}
+
+type SalesforceCommunicationDetailRow = SalesforceCommunicationDetailRecord;
+type SimpleTextingMessageDetailRow = SimpleTextingMessageDetailRecord;
+type MailchimpCampaignActivityDetailRow = MailchimpCampaignActivityDetailRecord;
+type ManualNoteDetailRow = ManualNoteDetailRecord;
+
+function mapSalesforceCommunicationDetailRowLocal(
+  row: SalesforceCommunicationDetailRow
+): SalesforceCommunicationDetailRecord {
+  return {
+    sourceEvidenceId: row.sourceEvidenceId,
+    providerRecordId: row.providerRecordId,
+    channel: row.channel,
+    messageKind: row.messageKind,
+    subject: row.subject,
+    snippet: row.snippet,
+    sourceLabel: row.sourceLabel
+  };
+}
+
+function mapSalesforceCommunicationDetailToInsertLocal(
+  record: SalesforceCommunicationDetailRecord
+) {
+  return {
+    sourceEvidenceId: record.sourceEvidenceId,
+    providerRecordId: record.providerRecordId,
+    channel: record.channel,
+    messageKind: record.messageKind,
+    subject: record.subject,
+    snippet: record.snippet,
+    sourceLabel: record.sourceLabel
+  };
+}
+
+function mapSimpleTextingMessageDetailRowLocal(
+  row: SimpleTextingMessageDetailRow
+): SimpleTextingMessageDetailRecord {
+  return {
+    sourceEvidenceId: row.sourceEvidenceId,
+    providerRecordId: row.providerRecordId,
+    direction: row.direction,
+    messageKind: row.messageKind,
+    messageTextPreview: row.messageTextPreview,
+    normalizedPhone: row.normalizedPhone,
+    campaignId: row.campaignId,
+    campaignName: row.campaignName,
+    providerThreadId: row.providerThreadId,
+    threadKey: row.threadKey
+  };
+}
+
+function mapSimpleTextingMessageDetailToInsertLocal(
+  record: SimpleTextingMessageDetailRecord
+) {
+  return {
+    sourceEvidenceId: record.sourceEvidenceId,
+    providerRecordId: record.providerRecordId,
+    direction: record.direction,
+    messageKind: record.messageKind,
+    messageTextPreview: record.messageTextPreview,
+    normalizedPhone: record.normalizedPhone,
+    campaignId: record.campaignId,
+    campaignName: record.campaignName,
+    providerThreadId: record.providerThreadId,
+    threadKey: record.threadKey
+  };
+}
+
+function mapMailchimpCampaignActivityDetailRowLocal(
+  row: MailchimpCampaignActivityDetailRow
+): MailchimpCampaignActivityDetailRecord {
+  return {
+    sourceEvidenceId: row.sourceEvidenceId,
+    providerRecordId: row.providerRecordId,
+    activityType: row.activityType,
+    campaignId: row.campaignId,
+    audienceId: row.audienceId,
+    memberId: row.memberId,
+    campaignName: row.campaignName,
+    snippet: row.snippet
+  };
+}
+
+function mapMailchimpCampaignActivityDetailToInsertLocal(
+  record: MailchimpCampaignActivityDetailRecord
+) {
+  return {
+    sourceEvidenceId: record.sourceEvidenceId,
+    providerRecordId: record.providerRecordId,
+    activityType: record.activityType,
+    campaignId: record.campaignId,
+    audienceId: record.audienceId,
+    memberId: record.memberId,
+    campaignName: record.campaignName,
+    snippet: record.snippet
+  };
+}
+
+function mapManualNoteDetailRowLocal(
+  row: ManualNoteDetailRow
+): ManualNoteDetailRecord {
+  return {
+    sourceEvidenceId: row.sourceEvidenceId,
+    providerRecordId: row.providerRecordId,
+    body: row.body,
+    authorDisplayName: row.authorDisplayName
+  };
+}
+
+function mapManualNoteDetailToInsertLocal(record: ManualNoteDetailRecord) {
+  return {
+    sourceEvidenceId: record.sourceEvidenceId,
+    providerRecordId: record.providerRecordId,
+    body: record.body,
+    authorDisplayName: record.authorDisplayName
+  };
+}
+
+const salesforceCommunicationDetailsTable = salesforceCommunicationDetails as {
+  readonly sourceEvidenceId: Parameters<typeof inArray>[0];
+};
+const simpleTextingMessageDetailsTable = simpleTextingMessageDetails as {
+  readonly sourceEvidenceId: Parameters<typeof inArray>[0];
+};
+const mailchimpCampaignActivityDetailsTable = mailchimpCampaignActivityDetails as {
+  readonly sourceEvidenceId: Parameters<typeof inArray>[0];
+};
+const manualNoteDetailsTable = manualNoteDetails as {
+  readonly sourceEvidenceId: Parameters<typeof inArray>[0];
+};
 
 function requireRow<T>(row: T | undefined, message: string): T {
   if (row === undefined) {
@@ -639,26 +802,28 @@ function createStage1RepositoriesInternal(
           return [];
         }
 
-        const rows = await db
+        const sourceEvidenceIdColumn =
+          salesforceCommunicationDetailsTable.sourceEvidenceId;
+        const rows = (await db
           .select()
           .from(salesforceCommunicationDetails)
-          .where(
-            inArray(salesforceCommunicationDetails.sourceEvidenceId, [
-              ...sourceEvidenceIds
-            ])
-          )
-          .orderBy(asc(salesforceCommunicationDetails.sourceEvidenceId));
+          .where(inArray(sourceEvidenceIdColumn, [...sourceEvidenceIds]))
+          .orderBy(asc(sourceEvidenceIdColumn))) as SalesforceCommunicationDetailRow[];
 
-        return rows.map(mapSalesforceCommunicationDetailRow);
+        return rows.map(mapSalesforceCommunicationDetailRowLocal);
       },
 
       async upsert(record) {
-        const values = mapSalesforceCommunicationDetailToInsert(record);
-        const [row] = await db
+        const sourceEvidenceIdColumn =
+          salesforceCommunicationDetailsTable.sourceEvidenceId;
+        const values = mapSalesforceCommunicationDetailToInsertLocal(
+          record as SalesforceCommunicationDetailRecord
+        );
+        const [row] = (await db
           .insert(salesforceCommunicationDetails)
           .values(values)
           .onConflictDoUpdate({
-            target: salesforceCommunicationDetails.sourceEvidenceId,
+            target: sourceEvidenceIdColumn,
             set: {
               providerRecordId: values.providerRecordId,
               channel: values.channel,
@@ -669,9 +834,9 @@ function createStage1RepositoriesInternal(
               updatedAt: new Date()
             }
           })
-          .returning();
+          .returning()) as SalesforceCommunicationDetailRow[];
 
-        return mapSalesforceCommunicationDetailRow(
+        return mapSalesforceCommunicationDetailRowLocal(
           requireRow(
             row,
             "Expected Salesforce communication detail row to be returned."
@@ -686,26 +851,26 @@ function createStage1RepositoriesInternal(
           return [];
         }
 
-        const rows = await db
+        const sourceEvidenceIdColumn = simpleTextingMessageDetailsTable.sourceEvidenceId;
+        const rows = (await db
           .select()
           .from(simpleTextingMessageDetails)
-          .where(
-            inArray(simpleTextingMessageDetails.sourceEvidenceId, [
-              ...sourceEvidenceIds
-            ])
-          )
-          .orderBy(asc(simpleTextingMessageDetails.sourceEvidenceId));
+          .where(inArray(sourceEvidenceIdColumn, [...sourceEvidenceIds]))
+          .orderBy(asc(sourceEvidenceIdColumn))) as SimpleTextingMessageDetailRow[];
 
-        return rows.map(mapSimpleTextingMessageDetailRow);
+        return rows.map(mapSimpleTextingMessageDetailRowLocal);
       },
 
       async upsert(record) {
-        const values = mapSimpleTextingMessageDetailToInsert(record);
-        const [row] = await db
+        const sourceEvidenceIdColumn = simpleTextingMessageDetailsTable.sourceEvidenceId;
+        const values = mapSimpleTextingMessageDetailToInsertLocal(
+          record as SimpleTextingMessageDetailRecord
+        );
+        const [row] = (await db
           .insert(simpleTextingMessageDetails)
           .values(values)
           .onConflictDoUpdate({
-            target: simpleTextingMessageDetails.sourceEvidenceId,
+            target: sourceEvidenceIdColumn,
             set: {
               providerRecordId: values.providerRecordId,
               direction: values.direction,
@@ -719,9 +884,9 @@ function createStage1RepositoriesInternal(
               updatedAt: new Date()
             }
           })
-          .returning();
+          .returning()) as SimpleTextingMessageDetailRow[];
 
-        return mapSimpleTextingMessageDetailRow(
+        return mapSimpleTextingMessageDetailRowLocal(
           requireRow(
             row,
             "Expected SimpleTexting message detail row to be returned."
@@ -736,26 +901,28 @@ function createStage1RepositoriesInternal(
           return [];
         }
 
-        const rows = await db
+        const sourceEvidenceIdColumn =
+          mailchimpCampaignActivityDetailsTable.sourceEvidenceId;
+        const rows = (await db
           .select()
           .from(mailchimpCampaignActivityDetails)
-          .where(
-            inArray(mailchimpCampaignActivityDetails.sourceEvidenceId, [
-              ...sourceEvidenceIds
-            ])
-          )
-          .orderBy(asc(mailchimpCampaignActivityDetails.sourceEvidenceId));
+          .where(inArray(sourceEvidenceIdColumn, [...sourceEvidenceIds]))
+          .orderBy(asc(sourceEvidenceIdColumn))) as MailchimpCampaignActivityDetailRow[];
 
-        return rows.map(mapMailchimpCampaignActivityDetailRow);
+        return rows.map(mapMailchimpCampaignActivityDetailRowLocal);
       },
 
       async upsert(record) {
-        const values = mapMailchimpCampaignActivityDetailToInsert(record);
-        const [row] = await db
+        const sourceEvidenceIdColumn =
+          mailchimpCampaignActivityDetailsTable.sourceEvidenceId;
+        const values = mapMailchimpCampaignActivityDetailToInsertLocal(
+          record as MailchimpCampaignActivityDetailRecord
+        );
+        const [row] = (await db
           .insert(mailchimpCampaignActivityDetails)
           .values(values)
           .onConflictDoUpdate({
-            target: mailchimpCampaignActivityDetails.sourceEvidenceId,
+            target: sourceEvidenceIdColumn,
             set: {
               providerRecordId: values.providerRecordId,
               activityType: values.activityType,
@@ -767,9 +934,9 @@ function createStage1RepositoriesInternal(
               updatedAt: new Date()
             }
           })
-          .returning();
+          .returning()) as MailchimpCampaignActivityDetailRow[];
 
-        return mapMailchimpCampaignActivityDetailRow(
+        return mapMailchimpCampaignActivityDetailRowLocal(
           requireRow(
             row,
             "Expected Mailchimp campaign activity detail row to be returned."
@@ -784,22 +951,24 @@ function createStage1RepositoriesInternal(
           return [];
         }
 
-        const rows = await db
+        const sourceEvidenceIdColumn = manualNoteDetailsTable.sourceEvidenceId;
+        const rows = (await db
           .select()
           .from(manualNoteDetails)
-          .where(inArray(manualNoteDetails.sourceEvidenceId, [...sourceEvidenceIds]))
-          .orderBy(asc(manualNoteDetails.sourceEvidenceId));
+          .where(inArray(sourceEvidenceIdColumn, [...sourceEvidenceIds]))
+          .orderBy(asc(sourceEvidenceIdColumn))) as ManualNoteDetailRow[];
 
-        return rows.map(mapManualNoteDetailRow);
+        return rows.map(mapManualNoteDetailRowLocal);
       },
 
       async upsert(record) {
-        const values = mapManualNoteDetailToInsert(record);
-        const [row] = await db
+        const sourceEvidenceIdColumn = manualNoteDetailsTable.sourceEvidenceId;
+        const values = mapManualNoteDetailToInsertLocal(record as ManualNoteDetailRecord);
+        const [row] = (await db
           .insert(manualNoteDetails)
           .values(values)
           .onConflictDoUpdate({
-            target: manualNoteDetails.sourceEvidenceId,
+            target: sourceEvidenceIdColumn,
             set: {
               providerRecordId: values.providerRecordId,
               body: values.body,
@@ -807,9 +976,9 @@ function createStage1RepositoriesInternal(
               updatedAt: new Date()
             }
           })
-          .returning();
+          .returning()) as ManualNoteDetailRow[];
 
-        return mapManualNoteDetailRow(
+        return mapManualNoteDetailRowLocal(
           requireRow(row, "Expected manual note detail row to be returned.")
         );
       }
