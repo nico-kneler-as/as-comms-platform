@@ -32,8 +32,9 @@ interface InboxListItemViewModel {
   unreadCount: number;
 
   // Sort / display
-  lastInboundAt: string;              // ISO 8601 — default sort field
+  lastInboundAt: string | null;       // ISO 8601 — primary sort field when present
   lastActivityAt: string;             // ISO 8601
+  lastEventType: InboxDrivingEventType;
   lastActivityLabel: string;          // relative time label
 }
 ```
@@ -98,9 +99,9 @@ projection repository calls. The view-model shapes stay stable.
 function getInboxList(filterId?: InboxFilterId): InboxListViewModel
 ```
 
-- Returns the full contact list sorted by `lastInboundAt` descending
-- Computes filter counts: all, unread (bucket = "new"), unresolved
-- Follow-up count is 0 server-side (client-owned state for now)
+- Returns the full contact list sorted by `lastInboundAt` descending, falling back to `lastActivityAt`
+- Computes base filter counts from projection state: all, unread (`bucket = "new"`), follow-up (`needsFollowUp = true`), unresolved (`hasUnresolved = true`)
+- Client-side follow-up overrides may adjust the visible follow-up filter without changing bucket semantics
 - **Swap target:** Replace `getMockContacts()` with a projection query that
   reads from `contactInboxProjection` and joins to get display fields
 
@@ -119,10 +120,10 @@ function getInboxDetail(contactId: string): InboxDetailViewModel | null
 
 ## Sort Contract
 
-- Default list order: `lastInboundAt` descending (most recent inbound first)
+- Default list order: `lastInboundAt` descending (most recent inbound first), falling back to `lastActivityAt` when `lastInboundAt` is missing
 - Toggling follow-up does NOT change row ordering
 - `lastInboundAt` tracks the most recent inbound email or SMS from the contact
-- `lastActivityAt` is kept for display but not used for sort
+- `lastActivityAt` is the fallback sort field when a row has no inbound history
 
 ---
 

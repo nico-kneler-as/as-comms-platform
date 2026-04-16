@@ -198,7 +198,7 @@ describe("Stage 1 DB repositories", () => {
     const inboxProjection = await repositories.inboxProjection.upsert({
       contactId: "contact_1",
       bucket: "New",
-      isStarred: false,
+      needsFollowUp: false,
       hasUnresolved: true,
       lastInboundAt: "2026-01-01T00:00:00.000Z",
       lastOutboundAt: null,

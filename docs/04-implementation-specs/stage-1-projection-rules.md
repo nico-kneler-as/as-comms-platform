@@ -59,12 +59,14 @@ Each timeline row should preserve enough information to explain:
 - `lastOutboundAt` tracks the newest outbound one-to-one event
 - `lastActivityAt` is the newest of `lastInboundAt` and `lastOutboundAt`
 - `snippet` comes from the newest one-to-one communication event that refreshed the row
+- default Inbox list order is `lastInboundAt desc`, falling back to `lastActivityAt desc` when `lastInboundAt` is missing
 
 ### Bucket semantics
 
 #### `New`
 
 - means the row has inbound one-to-one activity that has not been cleared by a later explicit open action
+- the UI projects this row state as unread
 - first inbound one-to-one contact activity initializes the row to `New`
 - new inbound on an existing `Opened` row resets the row to `New`
 
@@ -74,12 +76,12 @@ Each timeline row should preserve enough information to explain:
 - first outbound-only one-to-one history initializes the row to `Opened`
 - outbound events alone must not clear `New` automatically; that later operator action belongs to Inbox-stage behavior, not provider-driven projection rules
 
-#### `Starred`
+#### `Needs Follow-Up`
 
-- `Starred` is a separate follow-up flag
+- `needsFollowUp` is a separate explicit follow-up flag
 - it must not replace or mutate the bucket meaning
-- provider data must not infer `Starred`
-- until explicit Inbox-stage actions exist, Stage 1 should treat `isStarred` as explicit projection state, not an event-derived inference
+- provider data must not infer follow-up state
+- until explicit Inbox-stage actions exist, Stage 1 should treat `needsFollowUp` as explicit projection state, not an event-derived inference
 
 ### Unresolved overlays
 
@@ -93,14 +95,14 @@ Each timeline row should preserve enough information to explain:
 - `campaign.email.*` events appear in timeline history only
 - they must not set or reset `New`
 - they must not set or clear `Opened`
-- they must not imply `Starred`
+- they must not imply `needsFollowUp`
 
 ## Rebuild And Replay Expectations
 
 - both timeline and Inbox projections must rebuild from canonical truth
 - rebuild must be deterministic for the same canonical inputs
 - replay of source evidence must not duplicate projection rows
-- later product-layer state changes, such as explicit open or star actions, should remain separate projection inputs when those stages arrive; Stage 1 should not fake them from provider traffic
+- later product-layer state changes, such as explicit open or follow-up actions, should remain separate projection inputs when those stages arrive; Stage 1 should not fake them from provider traffic
 
 ## Explainability Requirement
 

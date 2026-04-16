@@ -11,9 +11,9 @@ interface FilterDefinition {
  * contacts sorted by last inbound message. These filters narrow the list
  * to contacts matching a specific row state.
  *
- * Follow-up is client-side ephemeral state owned by
- * {@link InboxClientProvider}; the server-side list doesn't know who
- * is flagged, so its count starts at 0 and the client recomputes it.
+ * The base follow-up state comes from the projection-backed
+ * `needsFollowUp` field. The client may layer temporary overrides on top
+ * while the shell is still mock-wired.
  */
 export const INBOX_FILTERS: readonly FilterDefinition[] = [
   { id: "all", label: "All", hint: null },

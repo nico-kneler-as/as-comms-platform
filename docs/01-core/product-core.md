@@ -47,11 +47,14 @@
 | ID | Locked truth |
 | --- | --- |
 | `INBX-01` | Inbox shows one row per person, not one row per thread. |
-| `INBX-02` | Primary queue buckets are `New` and `Opened`. |
-| `INBX-03` | `Starred` is a follow-up flag surfaced separately, not a replacement for queue buckets. |
-| `INBX-04` | Unresolved review layers on top; it is not its own bucket. |
-| `INBX-05` | New inbound on an `Opened` conversation resets it to `New`. |
-| `INBX-06` | First restart Inbox does not depend on close / reopen lifecycle actions. |
+| `INBX-02` | Inbox is a single mixed contact list sorted by most recent inbound message, not primarily partitioned into queue tabs. |
+| `INBX-03` | `New` and `Opened` remain projection-driven bucket states, but they are row states and filter inputs rather than the primary Inbox partition. |
+| `INBX-04` | Unread is derived from bucket state. |
+| `INBX-05` | `needsFollowUp` is an explicit operator-controlled follow-up flag that stays separate from bucket state. |
+| `INBX-06` | Unresolved review layers on top; it is not its own bucket. |
+| `INBX-07` | New inbound on an `Opened` conversation resets it to `New`. |
+| `INBX-08` | Toggling follow-up does not change list ordering by itself. |
+| `INBX-09` | First restart Inbox does not depend on close / reopen lifecycle actions. |
 
 ## Locked Scope Highlights
 

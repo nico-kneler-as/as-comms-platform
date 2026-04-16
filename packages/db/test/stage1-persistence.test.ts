@@ -298,7 +298,7 @@ describe("Stage 1 persistence service", () => {
     const inbox = await persistence.saveInboxProjection({
       contactId: "contact_1",
       bucket: "Opened",
-      isStarred: false,
+      needsFollowUp: false,
       hasUnresolved: false,
       lastInboundAt: null,
       lastOutboundAt: "2026-01-01T00:00:00.000Z",

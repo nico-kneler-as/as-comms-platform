@@ -405,7 +405,7 @@ export function mapInboxProjectionRow(
   return inboxProjectionSchema.parse({
     contactId: row.contactId,
     bucket: row.bucket,
-    isStarred: row.isStarred,
+    needsFollowUp: row.isStarred,
     hasUnresolved: row.hasUnresolved,
     lastInboundAt: fromDate(row.lastInboundAt),
     lastOutboundAt: fromDate(row.lastOutboundAt),
@@ -424,7 +424,7 @@ export function mapInboxProjectionToInsert(
   return {
     contactId: parsed.contactId,
     bucket: parsed.bucket,
-    isStarred: parsed.isStarred,
+    isStarred: parsed.needsFollowUp,
     hasUnresolved: parsed.hasUnresolved,
     lastInboundAt:
       parsed.lastInboundAt === null ? null : toDate(parsed.lastInboundAt),

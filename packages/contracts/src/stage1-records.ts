@@ -210,7 +210,7 @@ export const inboxProjectionSchema = z
   .object({
     contactId: idSchema,
     bucket: inboxBucketSchema,
-    isStarred: z.boolean(),
+    needsFollowUp: z.boolean(),
     hasUnresolved: z.boolean(),
     lastInboundAt: optionalTimestampSchema,
     lastOutboundAt: optionalTimestampSchema,
