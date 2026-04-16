@@ -280,12 +280,17 @@ describe("Gmail capture service", () => {
       maxRecords: 25
     });
 
+    const [firstRecord] = result.records;
+
     expect(result.records).toHaveLength(1);
-    expect(result.records[0]).toMatchObject({
+    expect(firstRecord).toMatchObject({
       recordType: "message",
       subject: "Checking in"
     });
-    expect(result.records[0]?.checksum).toBe(
+    if (!firstRecord || !("checksum" in firstRecord)) {
+      throw new Error("Expected a Gmail message record");
+    }
+    expect(firstRecord.checksum).toBe(
       sha256Json({
         id: "gmail-live-1",
         threadId: "thread-live-1",
