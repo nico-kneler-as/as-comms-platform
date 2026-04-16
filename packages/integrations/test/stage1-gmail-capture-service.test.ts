@@ -302,12 +302,12 @@ describe("Gmail capture service", () => {
   });
 
   it("uses OAuth refresh-token exchange before polling the live mailbox", async () => {
-    const requests: Array<{
+    const requests: {
       readonly url: string;
       readonly method: string;
       readonly headers: Headers;
       readonly bodyText: string;
-    }> = [];
+    }[] = [];
     const client = createGmailMailboxApiClient(
       {
         bearerToken: "gmail-token",
@@ -318,8 +318,13 @@ describe("Gmail capture service", () => {
         oauthRefreshToken: "gmail-oauth-refresh-token"
       },
       {
-        fetchImplementation: async (input, init) => {
-          const url = String(input);
+        fetchImplementation: (input, init) => {
+          const url =
+            typeof input === "string"
+              ? input
+              : input instanceof URL
+                ? input.toString()
+                : input.url;
           const method = init?.method ?? "GET";
           const headers = new Headers(init?.headers);
           const bodyText =
@@ -333,7 +338,8 @@ describe("Gmail capture service", () => {
           });
 
           if (url === "https://oauth2.googleapis.com/token") {
-            return new Response(
+            return Promise.resolve(
+              new Response(
               JSON.stringify({
                 access_token: "gmail-access-token",
                 expires_in: 3600
@@ -344,19 +350,22 @@ describe("Gmail capture service", () => {
                   "content-type": "application/json"
                 }
               }
+              )
             );
           }
 
-          return new Response(
-            JSON.stringify({
-              messages: []
-            }),
-            {
-              status: 200,
-              headers: {
-                "content-type": "application/json"
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                messages: []
+              }),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json"
+                }
               }
-            }
+            )
           );
         }
       }
