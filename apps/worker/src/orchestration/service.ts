@@ -24,7 +24,7 @@ import {
   type ProjectionRebuildBatchPayload,
   type Provider,
   type ReplayBatchPayload,
-  type SyncJobType
+  type SyncJobType,
 } from "@as-comms/contracts";
 import {
   ProviderCaptureError,
@@ -32,27 +32,30 @@ import {
   mapGmailRecord,
   mapMailchimpRecord,
   mapSalesforceRecord,
-  mapSimpleTextingRecord
+  mapSimpleTextingRecord,
 } from "@as-comms/integrations";
 import type {
   GmailRecord,
   MailchimpRecord,
   ProviderMappingResult,
   SalesforceRecord,
-  SimpleTextingRecord
+  SimpleTextingRecord,
 } from "@as-comms/integrations";
 import type {
   Stage1NormalizationService,
-  Stage1PersistenceService
+  Stage1PersistenceService,
 } from "@as-comms/domain";
 
 import type { Stage1IngestService } from "../ingest/service.js";
 import type { Stage1IngestResult } from "../ingest/types.js";
 import {
   Stage1NonRetryableJobError,
-  Stage1RetryableJobError
+  Stage1RetryableJobError,
 } from "./errors.js";
-import { projectionSeedPolicyCode, recordProjectionSeedOnce } from "./projection-seed.js";
+import {
+  projectionSeedPolicyCode,
+  recordProjectionSeedOnce,
+} from "./projection-seed.js";
 import { recordSyncFailureAudit } from "./sync-failure-audit.js";
 import { createStage1SyncStateService } from "./sync-state.js";
 import type {
@@ -69,7 +72,7 @@ import type {
   Stage1ProjectionSeed,
   Stage1ProviderCapturePorts,
   Stage1SampledParityContact,
-  Stage1WorkerOrchestrationService
+  Stage1WorkerOrchestrationService,
 } from "./types.js";
 
 const paritySnapshotPolicyCode = "stage1.parity.snapshot";
@@ -84,6 +87,10 @@ type CapturedProviderRecord =
   | SalesforceRecord
   | SimpleTextingRecord
   | MailchimpRecord;
+type Stage1WorkerProvider = Provider | "manual";
+type Stage1ProjectionEventType =
+  | CanonicalEventRecord["eventType"]
+  | "note.internal.created";
 
 interface Stage1FreshnessMetrics {
   readonly p95Seconds: number | null;
@@ -105,7 +112,9 @@ function buildHistoricalReplayProjectInboxAliases(input: {
   readonly recordedProjectInboxAlias: string | null;
 }): string[] {
   const aliases = new Set(
-    input.configuredAliases.map((alias) => alias.trim()).filter((alias) => alias.length > 0)
+    input.configuredAliases
+      .map((alias) => alias.trim())
+      .filter((alias) => alias.length > 0),
   );
 
   if (
@@ -120,7 +129,7 @@ function buildHistoricalReplayProjectInboxAliases(input: {
 
 function compareEventOrder(
   left: CanonicalEventRecord,
-  right: CanonicalEventRecord
+  right: CanonicalEventRecord,
 ): number {
   if (left.occurredAt < right.occurredAt) {
     return -1;
@@ -134,121 +143,132 @@ function compareEventOrder(
 }
 
 function isInboxDrivingEvent(
-  eventType: CanonicalEventRecord["eventType"]
+  eventType: CanonicalEventRecord["eventType"],
 ): boolean {
   return inboxDrivingEventTypes.has(eventType);
 }
 
 function buildDefaultProjectionSeed(
-  eventType: CanonicalEventRecord["eventType"]
+  eventType: Stage1ProjectionEventType,
 ): Stage1ProjectionSeed {
   switch (eventType) {
     case "communication.email.inbound":
       return {
         summary: "Inbound email received",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "communication.email.outbound":
       return {
         summary: "Outbound email sent",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "communication.sms.inbound":
       return {
         summary: "Inbound SMS received",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "communication.sms.outbound":
       return {
         summary: "Outbound SMS sent",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "communication.sms.opt_in":
       return {
         summary: "SMS opt-in received",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "communication.sms.opt_out":
       return {
         summary: "SMS opt-out received",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "lifecycle.signed_up":
       return {
         summary: "Volunteer signed up",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "lifecycle.received_training":
       return {
         summary: "Volunteer received training",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "lifecycle.completed_training":
       return {
         summary: "Volunteer completed training",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "lifecycle.submitted_first_data":
       return {
         summary: "Volunteer submitted first data",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "campaign.email.sent":
       return {
         summary: "Campaign email sent",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "campaign.email.opened":
       return {
         summary: "Campaign email opened",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "campaign.email.clicked":
       return {
         summary: "Campaign email clicked",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
       };
     case "campaign.email.unsubscribed":
       return {
         summary: "Campaign email unsubscribed",
         snippet: "",
-        source: "fallback"
+        source: "fallback",
+      };
+    case "note.internal.created":
+      return {
+        summary: "Internal note added",
+        snippet: "",
+        source: "fallback",
       };
   }
 }
 
 function summarizeIngestResults(
-  results: readonly Stage1IngestResult[]
+  results: readonly Stage1IngestResult[],
 ): Stage1IngestBatchSummary {
   return {
     processed: results.length,
-    normalized: results.filter((result) => result.outcome === "normalized").length,
-    duplicate: results.filter((result) => result.outcome === "duplicate").length,
+    normalized: results.filter((result) => result.outcome === "normalized")
+      .length,
+    duplicate: results.filter((result) => result.outcome === "duplicate")
+      .length,
     reviewOpened: results.filter((result) => result.outcome === "review_opened")
       .length,
     quarantined: results.filter((result) => result.outcome === "quarantined")
       .length,
     deferred: results.filter((result) => result.outcome === "deferred").length,
     deadLetterCountIncrement: results.filter(
-      (result) => result.outcome === "quarantined"
-    ).length
+      (result) => result.outcome === "quarantined",
+    ).length,
   };
 }
 
-function calculateParityPercent(numerator: number, denominator: number): number {
+function calculateParityPercent(
+  numerator: number,
+  denominator: number,
+): number {
   if (denominator === 0) {
     return 100;
   }
@@ -262,7 +282,7 @@ function formatPercent(value: number): string {
 
 function calculatePercentileSeconds(
   values: readonly number[],
-  percentile: number
+  percentile: number,
 ): number | null {
   if (values.length === 0) {
     return null;
@@ -271,7 +291,7 @@ function calculatePercentileSeconds(
   const sorted = [...values].sort((left, right) => left - right);
   const index = Math.min(
     sorted.length - 1,
-    Math.max(0, Math.ceil(sorted.length * percentile) - 1)
+    Math.max(0, Math.ceil(sorted.length * percentile) - 1),
   );
   const value = sorted[index];
 
@@ -284,7 +304,7 @@ function calculatePercentileSeconds(
 
 function toFreshnessSeconds(
   occurredAt: string,
-  receivedAt: string
+  receivedAt: string,
 ): number | null {
   const occurredAtMs = Date.parse(occurredAt);
   const receivedAtMs = Date.parse(receivedAt);
@@ -296,9 +316,7 @@ function toFreshnessSeconds(
   return Math.max(0, Math.round((receivedAtMs - occurredAtMs) / 1000));
 }
 
-function hasTimedTimestamps(
-  record: CapturedProviderRecord
-): record is Extract<
+function hasTimedTimestamps(record: CapturedProviderRecord): record is Extract<
   CapturedProviderRecord,
   {
     readonly occurredAt: string;
@@ -309,9 +327,9 @@ function hasTimedTimestamps(
 }
 
 function extractFreshnessSample(
-  provider: Provider,
+  provider: Stage1WorkerProvider,
   jobType: SyncJobType,
-  record: CapturedProviderRecord
+  record: CapturedProviderRecord,
 ): number | null {
   if (jobType !== "live_ingest") {
     return null;
@@ -323,9 +341,8 @@ function extractFreshnessSample(
         ? toFreshnessSeconds(record.occurredAt, record.receivedAt)
         : null;
     case "salesforce":
-      return (
-        record.recordType === "lifecycle_milestone" && hasTimedTimestamps(record)
-      )
+      return record.recordType === "lifecycle_milestone" &&
+        hasTimedTimestamps(record)
         ? toFreshnessSeconds(record.occurredAt, record.receivedAt)
         : null;
     case "simpletexting":
@@ -333,6 +350,7 @@ function extractFreshnessSample(
         ? toFreshnessSeconds(record.occurredAt, record.receivedAt)
         : null;
     case "mailchimp":
+    case "manual":
       return null;
   }
 }
@@ -340,7 +358,7 @@ function extractFreshnessSample(
 function calculateFreshnessMetrics(
   provider: Provider,
   jobType: SyncJobType,
-  records: readonly CapturedProviderRecord[]
+  records: readonly CapturedProviderRecord[],
 ): Stage1FreshnessMetrics {
   const samples = records
     .map((record) => extractFreshnessSample(provider, jobType, record))
@@ -348,22 +366,25 @@ function calculateFreshnessMetrics(
 
   return {
     p95Seconds: calculatePercentileSeconds(samples, 0.95),
-    p99Seconds: calculatePercentileSeconds(samples, 0.99)
+    p99Seconds: calculatePercentileSeconds(samples, 0.99),
   };
 }
 
 function buildJobFailure(
   error: unknown,
   attempt: number,
-  maxAttempts: number
+  maxAttempts: number,
 ): Stage1JobFailure {
   const message = error instanceof Error ? error.message : String(error);
 
-  if (error instanceof Stage1NonRetryableJobError || error instanceof ZodError) {
+  if (
+    error instanceof Stage1NonRetryableJobError ||
+    error instanceof ZodError
+  ) {
     return {
       disposition: "non_retryable",
       retryable: false,
-      message
+      message,
     };
   }
 
@@ -375,7 +396,7 @@ function buildJobFailure(
           : "retryable"
         : "non_retryable",
       retryable: error.retryable && attempt < maxAttempts,
-      message
+      message,
     };
   }
 
@@ -383,7 +404,7 @@ function buildJobFailure(
     return {
       disposition: "dead_letter",
       retryable: false,
-      message
+      message,
     };
   }
 
@@ -391,20 +412,21 @@ function buildJobFailure(
     disposition:
       error instanceof Stage1RetryableJobError ? "retryable" : "retryable",
     retryable: true,
-    message
+    message,
   };
 }
 
 async function loadProjectionSeed(
   persistence: Stage1PersistenceService,
-  event: CanonicalEventRecord
+  event: CanonicalEventRecord,
 ): Promise<Stage1ProjectionSeed> {
-  const existingRecords = await persistence.repositories.auditEvidence.listByEntity({
-    entityType: "canonical_event",
-    entityId: event.id
-  });
+  const existingRecords =
+    await persistence.repositories.auditEvidence.listByEntity({
+      entityType: "canonical_event",
+      entityId: event.id,
+    });
   const projectionSeedRecord = existingRecords.find(
-    (record) => record.policyCode === projectionSeedPolicyCode
+    (record) => record.policyCode === projectionSeedPolicyCode,
   );
 
   if (projectionSeedRecord !== undefined) {
@@ -415,7 +437,7 @@ async function loadProjectionSeed(
       return {
         summary: summaryValue,
         snippet: snippetValue,
-        source: "audit"
+        source: "audit",
       };
     }
   }
@@ -424,8 +446,12 @@ async function loadProjectionSeed(
 }
 
 function getMappedResultForRecord(
-  provider: Provider,
-  record: GmailRecord | SalesforceRecord | SimpleTextingRecord | MailchimpRecord
+  provider: Stage1WorkerProvider,
+  record:
+    | GmailRecord
+    | SalesforceRecord
+    | SimpleTextingRecord
+    | MailchimpRecord,
 ): ProviderMappingResult {
   switch (provider) {
     case "gmail":
@@ -436,12 +462,16 @@ function getMappedResultForRecord(
       return mapSimpleTextingRecord(record as SimpleTextingRecord);
     case "mailchimp":
       return mapMailchimpRecord(record as MailchimpRecord);
+    case "manual":
+      throw new Stage1NonRetryableJobError(
+        "Manual note provider records are not mapped through worker orchestration.",
+      );
   }
 }
 
 function prioritizeCapturedRecordsForIngest<TRecord>(
   records: readonly TRecord[],
-  mapRecord: (record: TRecord) => ProviderMappingResult
+  mapRecord: (record: TRecord) => ProviderMappingResult,
 ): {
   readonly record: TRecord;
   readonly mapped: ProviderMappingResult;
@@ -459,7 +489,10 @@ function prioritizeCapturedRecordsForIngest<TRecord>(
     const mapped = mapRecord(record);
     const entry = { record, mapped };
 
-    if (mapped.outcome === "command" && mapped.command.kind === "contact_graph") {
+    if (
+      mapped.outcome === "command" &&
+      mapped.command.kind === "contact_graph"
+    ) {
       contactGraphRecords.push(entry);
       continue;
     }
@@ -474,7 +507,7 @@ async function captureRecordsForReplay(
   capture: Stage1ProviderCapturePorts,
   persistence: Stage1PersistenceService,
   gmailHistoricalReplay: Stage1GmailHistoricalReplayConfig,
-  payload: ReplayBatchPayload
+  payload: ReplayBatchPayload,
 ): Promise<{
   readonly records: readonly (
     | GmailRecord
@@ -487,8 +520,9 @@ async function captureRecordsForReplay(
 }> {
   const replayMaxRecords =
     payload.provider === "salesforce" ? 1000 : payload.items.length;
+  const replayProvider = payload.provider as Stage1WorkerProvider;
 
-  switch (payload.provider) {
+  switch (replayProvider) {
     case "gmail":
       return payload.mode === "historical"
         ? captureHistoricalGmailRecordsForReplay(
@@ -504,8 +538,8 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: replayMaxRecords
-            })
+              maxRecords: replayMaxRecords,
+            }),
           )
         : capture.gmail.captureLiveBatch(
             gmailLiveCaptureBatchPayloadSchema.parse({
@@ -518,8 +552,8 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: replayMaxRecords
-            })
+              maxRecords: replayMaxRecords,
+            }),
           );
     case "salesforce":
       return payload.mode === "historical"
@@ -534,8 +568,8 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: replayMaxRecords
-            })
+              maxRecords: replayMaxRecords,
+            }),
           )
         : capture.salesforce.captureLiveBatch(
             salesforceLiveCaptureBatchPayloadSchema.parse({
@@ -548,8 +582,8 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: replayMaxRecords
-            })
+              maxRecords: replayMaxRecords,
+            }),
           );
     case "simpletexting":
       return payload.mode === "historical"
@@ -564,8 +598,8 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: replayMaxRecords
-            })
+              maxRecords: replayMaxRecords,
+            }),
           )
         : capture.simpleTexting.captureLiveBatch(
             simpleTextingLiveCaptureBatchPayloadSchema.parse({
@@ -578,8 +612,8 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: replayMaxRecords
-            })
+              maxRecords: replayMaxRecords,
+            }),
           );
     case "mailchimp":
       return payload.mode === "historical"
@@ -594,8 +628,8 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: replayMaxRecords
-            })
+              maxRecords: replayMaxRecords,
+            }),
           )
         : capture.mailchimp.captureTransitionBatch(
             mailchimpTransitionCaptureBatchPayloadSchema.parse({
@@ -608,30 +642,34 @@ async function captureRecordsForReplay(
               windowStart: null,
               windowEnd: null,
               recordIds: payload.items.map((item) => item.providerRecordId),
-              maxRecords: replayMaxRecords
-            })
+              maxRecords: replayMaxRecords,
+            }),
           );
+    case "manual":
+      throw new Stage1NonRetryableJobError(
+        "Manual note provider is not supported for replay capture batches.",
+      );
   }
 }
 
 function parseGmailHistoricalPayloadRef(
-  payloadRef: string
+  payloadRef: string,
 ): ParsedGmailHistoricalPayloadRef {
   if (!payloadRef.startsWith("mbox://")) {
     throw new Stage1NonRetryableJobError(
-      `Expected Gmail historical replay payloadRef to use the mbox:// scheme, received ${payloadRef}.`
+      `Expected Gmail historical replay payloadRef to use the mbox:// scheme, received ${payloadRef}.`,
     );
   }
 
   const hashIndex = payloadRef.indexOf("#");
   const encodedPath = payloadRef.slice(
     "mbox://".length,
-    hashIndex === -1 ? undefined : hashIndex
+    hashIndex === -1 ? undefined : hashIndex,
   );
 
   if (encodedPath.trim().length === 0) {
     throw new Stage1NonRetryableJobError(
-      `Expected Gmail historical replay payloadRef to include an mbox path, received ${payloadRef}.`
+      `Expected Gmail historical replay payloadRef to include an mbox path, received ${payloadRef}.`,
     );
   }
 
@@ -641,12 +679,12 @@ function parseGmailHistoricalPayloadRef(
     mboxPath = decodeURIComponent(encodedPath);
   } catch {
     throw new Stage1NonRetryableJobError(
-      `Expected Gmail historical replay payloadRef to contain a valid encoded mbox path, received ${payloadRef}.`
+      `Expected Gmail historical replay payloadRef to contain a valid encoded mbox path, received ${payloadRef}.`,
     );
   }
 
   const searchParams = new URLSearchParams(
-    hashIndex === -1 ? "" : payloadRef.slice(hashIndex + 1)
+    hashIndex === -1 ? "" : payloadRef.slice(hashIndex + 1),
   );
   const messageValue = searchParams.get("message");
   const messageNumber =
@@ -654,20 +692,20 @@ function parseGmailHistoricalPayloadRef(
 
   if (!Number.isInteger(messageNumber) || messageNumber < 1) {
     throw new Stage1NonRetryableJobError(
-      `Expected Gmail historical replay payloadRef to include a positive message number, received ${payloadRef}.`
+      `Expected Gmail historical replay payloadRef to include a positive message number, received ${payloadRef}.`,
     );
   }
 
   return {
     mboxPath,
-    messageNumber
+    messageNumber,
   };
 }
 
 async function captureHistoricalGmailRecordsForReplay(
   persistence: Stage1PersistenceService,
   gmailHistoricalReplay: Stage1GmailHistoricalReplayConfig,
-  payload: z.infer<typeof gmailHistoricalCaptureBatchPayloadSchema>
+  payload: z.infer<typeof gmailHistoricalCaptureBatchPayloadSchema>,
 ): Promise<{
   readonly records: readonly GmailRecord[];
   readonly nextCursor: string | null;
@@ -675,29 +713,32 @@ async function captureHistoricalGmailRecordsForReplay(
 }> {
   const sourceEvidenceRecords = await Promise.all(
     payload.recordIds.map(async (recordId: string) => {
-      const matches = await persistence.repositories.sourceEvidence.listByProviderRecord({
-        provider: "gmail",
-        providerRecordType: "message",
-        providerRecordId: recordId
-      });
+      const matches =
+        await persistence.repositories.sourceEvidence.listByProviderRecord({
+          provider: "gmail",
+          providerRecordType: "message",
+          providerRecordId: recordId,
+        });
 
       return matches.at(-1) ?? null;
-    })
+    }),
   );
-  const gmailDetails = await persistence.repositories.gmailMessageDetails.listBySourceEvidenceIds(
-    sourceEvidenceRecords
-      .filter(
-        (
-          record: (typeof sourceEvidenceRecords)[number]
-        ): record is NonNullable<(typeof sourceEvidenceRecords)[number]> =>
-          record !== null
-      )
-      .map(
-        (record: NonNullable<(typeof sourceEvidenceRecords)[number]>) => record.id
-      )
-  );
+  const gmailDetails =
+    await persistence.repositories.gmailMessageDetails.listBySourceEvidenceIds(
+      sourceEvidenceRecords
+        .filter(
+          (
+            record: (typeof sourceEvidenceRecords)[number],
+          ): record is NonNullable<(typeof sourceEvidenceRecords)[number]> =>
+            record !== null,
+        )
+        .map(
+          (record: NonNullable<(typeof sourceEvidenceRecords)[number]>) =>
+            record.id,
+        ),
+    );
   const gmailDetailBySourceEvidenceId = new Map(
-    gmailDetails.map((detail) => [detail.sourceEvidenceId, detail])
+    gmailDetails.map((detail) => [detail.sourceEvidenceId, detail]),
   );
   const mboxTextByPath = new Map<string, string>();
   const importedRecordsByCacheKey = new Map<string, readonly GmailRecord[]>();
@@ -714,11 +755,13 @@ async function captureHistoricalGmailRecordsForReplay(
 
     if (gmailDetail === undefined) {
       throw new Stage1NonRetryableJobError(
-        `Expected gmail_message_details to exist for historical replay source evidence ${sourceEvidence.id}.`
+        `Expected gmail_message_details to exist for historical replay source evidence ${sourceEvidence.id}.`,
       );
     }
 
-    const parsedPayloadRef = parseGmailHistoricalPayloadRef(sourceEvidence.payloadRef);
+    const parsedPayloadRef = parseGmailHistoricalPayloadRef(
+      sourceEvidence.payloadRef,
+    );
     let mboxText = mboxTextByPath.get(parsedPayloadRef.mboxPath);
 
     if (mboxText === undefined) {
@@ -728,7 +771,7 @@ async function captureHistoricalGmailRecordsForReplay(
         const message = error instanceof Error ? error.message : String(error);
 
         throw new Stage1NonRetryableJobError(
-          `Unable to read Gmail historical replay payload file ${parsedPayloadRef.mboxPath}: ${message}`
+          `Unable to read Gmail historical replay payload file ${parsedPayloadRef.mboxPath}: ${message}`,
         );
       }
 
@@ -739,14 +782,14 @@ async function captureHistoricalGmailRecordsForReplay(
       gmailDetail.capturedMailbox ?? gmailHistoricalReplay.liveAccount;
     const replayProjectInboxAliases = buildHistoricalReplayProjectInboxAliases({
       configuredAliases: gmailHistoricalReplay.projectInboxAliases,
-      recordedProjectInboxAlias: gmailDetail.projectInboxAlias
+      recordedProjectInboxAlias: gmailDetail.projectInboxAlias,
     });
     const importedRecordCacheKey = JSON.stringify({
       mboxPath: parsedPayloadRef.mboxPath,
       capturedMailbox,
       projectInboxAliases: replayProjectInboxAliases,
       projectInboxAliasOverride: gmailDetail.projectInboxAlias,
-      receivedAt: sourceEvidence.receivedAt
+      receivedAt: sourceEvidence.receivedAt,
     });
     let importedRecords = importedRecordsByCacheKey.get(importedRecordCacheKey);
 
@@ -758,7 +801,7 @@ async function captureHistoricalGmailRecordsForReplay(
         liveAccount: gmailHistoricalReplay.liveAccount,
         projectInboxAliases: replayProjectInboxAliases,
         projectInboxAliasOverride: gmailDetail.projectInboxAlias,
-        receivedAt: sourceEvidence.receivedAt
+        receivedAt: sourceEvidence.receivedAt,
       });
       importedRecordsByCacheKey.set(importedRecordCacheKey, importedRecords);
     }
@@ -770,7 +813,7 @@ async function captureHistoricalGmailRecordsForReplay(
       replayedRecord.recordId !== recordId
     ) {
       throw new Stage1NonRetryableJobError(
-        `Unable to reconstruct Gmail historical replay record message:${recordId} from ${parsedPayloadRef.mboxPath}#message=${String(parsedPayloadRef.messageNumber)}.`
+        `Unable to reconstruct Gmail historical replay record message:${recordId} from ${parsedPayloadRef.mboxPath}#message=${String(parsedPayloadRef.messageNumber)}.`,
       );
     }
 
@@ -780,7 +823,7 @@ async function captureHistoricalGmailRecordsForReplay(
   return {
     records,
     nextCursor: null,
-    checkpoint: payload.recordIds.at(-1) ?? null
+    checkpoint: payload.recordIds.at(-1) ?? null,
   };
 }
 
@@ -789,7 +832,9 @@ export function createStage1WorkerOrchestrationService(input: {
   readonly ingest: Stage1IngestService;
   readonly normalization: Pick<
     Stage1NormalizationService,
-    "applyInboxProjection" | "applyTimelineProjection" | "refreshInboxReviewOverlay"
+    | "applyInboxProjection"
+    | "applyTimelineProjection"
+    | "refreshInboxReviewOverlay"
   >;
   readonly persistence: Stage1PersistenceService;
   readonly gmailHistoricalReplay: Stage1GmailHistoricalReplayConfig;
@@ -809,9 +854,7 @@ export function createStage1WorkerOrchestrationService(input: {
       readonly attempt: number;
       readonly maxAttempts: number;
     };
-    readonly capture: (
-      payload: TPayload
-    ) => Promise<{
+    readonly capture: (payload: TPayload) => Promise<{
       readonly records: readonly TRecord[];
       readonly nextCursor: string | null;
       readonly checkpoint: string | null;
@@ -828,7 +871,7 @@ export function createStage1WorkerOrchestrationService(input: {
       cursor: payload.cursor,
       checkpoint: payload.checkpoint,
       windowStart: payload.windowStart,
-      windowEnd: payload.windowEnd
+      windowEnd: payload.windowEnd,
     });
 
     try {
@@ -836,7 +879,7 @@ export function createStage1WorkerOrchestrationService(input: {
       const ingestResults: Stage1IngestResult[] = [];
       const prioritizedRecords = prioritizeCapturedRecordsForIngest(
         captured.records,
-        params.mapRecord
+        params.mapRecord,
       );
 
       for (const { record, mapped } of prioritizedRecords) {
@@ -848,12 +891,15 @@ export function createStage1WorkerOrchestrationService(input: {
           ingestResult.outcome !== "quarantined" &&
           ingestResult.canonicalEventId !== null
         ) {
-          if (mapped.outcome === "command" && mapped.command.kind === "canonical_event") {
+          if (
+            mapped.outcome === "command" &&
+            mapped.command.kind === "canonical_event"
+          ) {
             await recordProjectionSeedOnce(input.persistence, {
               canonicalEventId: mapped.command.input.canonicalEvent.id,
               summary: mapped.command.input.canonicalEvent.summary,
               snippet: mapped.command.input.canonicalEvent.snippet ?? "",
-              occurredAt: mapped.command.input.sourceEvidence.receivedAt
+              occurredAt: mapped.command.input.sourceEvidence.receivedAt,
             });
           }
         }
@@ -863,7 +909,7 @@ export function createStage1WorkerOrchestrationService(input: {
       const freshnessMetrics = calculateFreshnessMetrics(
         payload.provider,
         payload.jobType,
-        captured.records as readonly CapturedProviderRecord[]
+        captured.records as readonly CapturedProviderRecord[],
       );
       await syncState.recordBatchProgress({
         syncStateId: payload.syncStateId,
@@ -874,7 +920,7 @@ export function createStage1WorkerOrchestrationService(input: {
         checkpoint: captured.checkpoint,
         windowStart: payload.windowStart,
         windowEnd: payload.windowEnd,
-        deadLetterCountIncrement: summary.deadLetterCountIncrement
+        deadLetterCountIncrement: summary.deadLetterCountIncrement,
       });
       const completedSyncState = await syncState.completeWindow({
         syncStateId: payload.syncStateId,
@@ -888,7 +934,7 @@ export function createStage1WorkerOrchestrationService(input: {
         parityPercent: null,
         freshnessP95Seconds: freshnessMetrics.p95Seconds,
         freshnessP99Seconds: freshnessMetrics.p99Seconds,
-        completedAt: payload.windowEnd ?? new Date().toISOString()
+        completedAt: payload.windowEnd ?? new Date().toISOString(),
       });
 
       return {
@@ -898,10 +944,14 @@ export function createStage1WorkerOrchestrationService(input: {
         summary,
         ingestResults,
         nextCursor: captured.nextCursor,
-        checkpoint: captured.checkpoint
+        checkpoint: captured.checkpoint,
       };
     } catch (error) {
-      const failure = buildJobFailure(error, payload.attempt, payload.maxAttempts);
+      const failure = buildJobFailure(
+        error,
+        payload.attempt,
+        payload.maxAttempts,
+      );
       const failedSyncState = await syncState.failWindow({
         syncStateId: payload.syncStateId,
         scope: "provider",
@@ -912,7 +962,7 @@ export function createStage1WorkerOrchestrationService(input: {
         windowStart: payload.windowStart,
         windowEnd: payload.windowEnd,
         deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
-        deadLettered: failure.disposition === "dead_letter"
+        deadLettered: failure.disposition === "dead_letter",
       });
       await recordSyncFailureAudit(input.persistence, {
         syncStateId: payload.syncStateId,
@@ -924,7 +974,7 @@ export function createStage1WorkerOrchestrationService(input: {
         windowEnd: payload.windowEnd,
         failure,
         occurredAt: new Date().toISOString(),
-        actorId: "stage1-orchestration"
+        actorId: "stage1-orchestration",
       });
 
       return {
@@ -939,18 +989,18 @@ export function createStage1WorkerOrchestrationService(input: {
           quarantined: 0,
           deferred: 0,
           deadLetterCountIncrement:
-            failure.disposition === "dead_letter" ? 1 : 0
+            failure.disposition === "dead_letter" ? 1 : 0,
         },
         ingestResults: [],
         nextCursor: payload.cursor,
         checkpoint: payload.checkpoint,
-        failure
+        failure,
       };
     }
   }
 
   async function runProjectionRebuildBatch(
-    rawPayload: ProjectionRebuildBatchPayload
+    rawPayload: ProjectionRebuildBatchPayload,
   ): Promise<Stage1ProjectionRebuildJobOutcome> {
     const payload = projectionRebuildBatchPayloadSchema.parse(rawPayload);
     await syncState.startWindow({
@@ -961,7 +1011,7 @@ export function createStage1WorkerOrchestrationService(input: {
       cursor: null,
       checkpoint: payload.batchId,
       windowStart: null,
-      windowEnd: null
+      windowEnd: null,
     });
 
     try {
@@ -969,10 +1019,10 @@ export function createStage1WorkerOrchestrationService(input: {
         payload.contactIds.length > 0
           ? payload.contactIds
           : (await input.persistence.repositories.contacts.listAll()).map(
-              (contact) => contact.id
+              (contact) => contact.id,
             );
       const rebuiltContactIds = [...contacts].sort((left, right) =>
-        left.localeCompare(right)
+        left.localeCompare(right),
       );
       const missingProjectionSeeds = new Set<string>();
       const discrepancies: Stage1OperationalDiscrepancy[] = [];
@@ -980,23 +1030,29 @@ export function createStage1WorkerOrchestrationService(input: {
       let rebuiltInboxRows = 0;
 
       for (const contactId of rebuiltContactIds) {
-        const canonicalEvents = [...(
-          await input.persistence.repositories.canonicalEvents.listByContactId(
-            contactId
-          )
-        )].sort(compareEventOrder);
+        const canonicalEvents = [
+          ...(await input.persistence.repositories.canonicalEvents.listByContactId(
+            contactId,
+          )),
+        ].sort(compareEventOrder);
 
         for (const event of canonicalEvents) {
-          const projectionSeed = await loadProjectionSeed(input.persistence, event);
+          const projectionSeed = await loadProjectionSeed(
+            input.persistence,
+            event,
+          );
 
           if (projectionSeed.source === "fallback") {
             missingProjectionSeeds.add(event.id);
           }
 
-          if (payload.projection === "timeline" || payload.projection === "all") {
+          if (
+            payload.projection === "timeline" ||
+            payload.projection === "all"
+          ) {
             await input.normalization.applyTimelineProjection({
               canonicalEvent: event,
-              summary: projectionSeed.summary
+              summary: projectionSeed.summary,
             });
             rebuiltTimelineRows += 1;
           }
@@ -1007,7 +1063,7 @@ export function createStage1WorkerOrchestrationService(input: {
           ) {
             await input.normalization.applyInboxProjection({
               canonicalEvent: event,
-              snippet: projectionSeed.snippet
+              snippet: projectionSeed.snippet,
             });
             rebuiltInboxRows += 1;
           }
@@ -1018,7 +1074,7 @@ export function createStage1WorkerOrchestrationService(input: {
           (payload.projection === "inbox" || payload.projection === "all")
         ) {
           await input.normalization.refreshInboxReviewOverlay({
-            contactId
+            contactId,
           });
         }
       }
@@ -1030,8 +1086,8 @@ export function createStage1WorkerOrchestrationService(input: {
           message:
             "One or more canonical events were rebuilt with fallback summary or snippet values because no durable projection seed audit record was present.",
           entityIds: Array.from(missingProjectionSeeds).sort((left, right) =>
-            left.localeCompare(right)
-          )
+            left.localeCompare(right),
+          ),
         });
       }
 
@@ -1047,7 +1103,7 @@ export function createStage1WorkerOrchestrationService(input: {
         parityPercent: null,
         freshnessP95Seconds: null,
         freshnessP99Seconds: null,
-        completedAt: new Date().toISOString()
+        completedAt: new Date().toISOString(),
       });
 
       return {
@@ -1059,13 +1115,17 @@ export function createStage1WorkerOrchestrationService(input: {
         rebuiltTimelineRows,
         rebuiltInboxRows,
         missingProjectionSeeds: Array.from(missingProjectionSeeds).sort(
-          (left, right) => left.localeCompare(right)
+          (left, right) => left.localeCompare(right),
         ),
         discrepancies,
-        failure: null
+        failure: null,
       };
     } catch (error) {
-      const failure = buildJobFailure(error, payload.attempt, payload.maxAttempts);
+      const failure = buildJobFailure(
+        error,
+        payload.attempt,
+        payload.maxAttempts,
+      );
       const failedSyncState = await syncState.failWindow({
         syncStateId: payload.syncStateId,
         scope: "orchestration",
@@ -1076,7 +1136,7 @@ export function createStage1WorkerOrchestrationService(input: {
         windowStart: null,
         windowEnd: null,
         deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
-        deadLettered: failure.disposition === "dead_letter"
+        deadLettered: failure.disposition === "dead_letter",
       });
       await recordSyncFailureAudit(input.persistence, {
         syncStateId: payload.syncStateId,
@@ -1088,7 +1148,7 @@ export function createStage1WorkerOrchestrationService(input: {
         windowEnd: null,
         failure,
         occurredAt: new Date().toISOString(),
-        actorId: "stage1-orchestration"
+        actorId: "stage1-orchestration",
       });
 
       return {
@@ -1101,13 +1161,13 @@ export function createStage1WorkerOrchestrationService(input: {
         rebuiltInboxRows: 0,
         missingProjectionSeeds: [],
         discrepancies: [],
-        failure
+        failure,
       };
     }
   }
 
   async function runParityCheckBatch(
-    rawPayload: ParityCheckBatchPayload
+    rawPayload: ParityCheckBatchPayload,
   ): Promise<Stage1ParityCheckJobOutcome> {
     const payload = parityCheckBatchPayloadSchema.parse(rawPayload);
     await syncState.startWindow({
@@ -1118,7 +1178,7 @@ export function createStage1WorkerOrchestrationService(input: {
       cursor: null,
       checkpoint: payload.checkpointId,
       windowStart: null,
-      windowEnd: payload.evaluatedAt
+      windowEnd: payload.evaluatedAt,
     });
 
     try {
@@ -1129,12 +1189,12 @@ export function createStage1WorkerOrchestrationService(input: {
           provider,
           sourceEvidenceCount:
             await input.persistence.repositories.sourceEvidence.countByProvider(
-              provider
+              provider,
             ),
           canonicalEventCount:
             await input.persistence.repositories.canonicalEvents.countByPrimaryProvider(
-              provider
-            )
+              provider,
+            ),
         });
       }
 
@@ -1149,29 +1209,30 @@ export function createStage1WorkerOrchestrationService(input: {
       const openIdentityCasesByReason = await Promise.all(
         identityResolutionReasonCodeValues.map((reasonCode) =>
           input.persistence.repositories.identityResolutionQueue.listOpenByReasonCode(
-            reasonCode
-          )
-        )
+            reasonCode,
+          ),
+        ),
       );
       const openRoutingCasesByReason = await Promise.all(
         routingReviewReasonCodeValues.map((reasonCode) =>
           input.persistence.repositories.routingReviewQueue.listOpenByReasonCode(
-            reasonCode
-          )
-        )
+            reasonCode,
+          ),
+        ),
       );
       const openIdentityCaseCount = openIdentityCasesByReason.flat().length;
-      const openIdentityConflictCount = openIdentityCasesByReason[
-        identityResolutionReasonCodeValues.indexOf("identity_conflict")
-      ]?.length ?? 0;
+      const openIdentityConflictCount =
+        openIdentityCasesByReason[
+          identityResolutionReasonCodeValues.indexOf("identity_conflict")
+        ]?.length ?? 0;
       const openRoutingCaseCount = openRoutingCasesByReason.flat().length;
       const queueRowParityPercent = calculateParityPercent(
         inboxProjectionCount,
-        inboxContactCount
+        inboxContactCount,
       );
       const timelineEventParityPercent = calculateParityPercent(
         timelineProjectionCount,
-        canonicalEventCount
+        canonicalEventCount,
       );
       const metrics: Stage1ParityMetrics = {
         byProvider,
@@ -1183,7 +1244,7 @@ export function createStage1WorkerOrchestrationService(input: {
         timelineEventParityPercent,
         openIdentityConflictCount,
         openIdentityCaseCount,
-        openRoutingCaseCount
+        openRoutingCaseCount,
       };
       const discrepancies: Stage1OperationalDiscrepancy[] = [];
 
@@ -1192,7 +1253,7 @@ export function createStage1WorkerOrchestrationService(input: {
           code: "queue_row_parity_below_threshold",
           severity: "blocking",
           message: `Inbox row parity ${formatPercent(queueRowParityPercent)}% is below the configured threshold of ${formatPercent(payload.queueParityThresholdPercent)}%.`,
-          entityIds: []
+          entityIds: [],
         });
       }
 
@@ -1201,7 +1262,7 @@ export function createStage1WorkerOrchestrationService(input: {
           code: "timeline_event_parity_below_threshold",
           severity: "blocking",
           message: `Timeline parity ${formatPercent(timelineEventParityPercent)}% is below the configured threshold of ${formatPercent(payload.timelineParityThresholdPercent)}%.`,
-          entityIds: []
+          entityIds: [],
         });
       }
 
@@ -1211,31 +1272,37 @@ export function createStage1WorkerOrchestrationService(input: {
           severity: "blocking",
           message:
             "One or more open identity_conflict cases remain in the manual review queue.",
-          entityIds: []
+          entityIds: [],
         });
       }
 
-      const allContacts = await input.persistence.repositories.contacts.listAll();
+      const allContacts =
+        await input.persistence.repositories.contacts.listAll();
       const sampledContactIds =
         payload.sampleContactIds.length > 0
           ? [...payload.sampleContactIds]
-          : allContacts.slice(0, payload.sampleSize).map((contact) => contact.id);
+          : allContacts
+              .slice(0, payload.sampleSize)
+              .map((contact) => contact.id);
       const sampledContacts: Stage1SampledParityContact[] = [];
       const sampledTimelineMismatchIds: string[] = [];
       const sampledInboxMismatchIds: string[] = [];
 
       for (const contactId of sampledContactIds) {
-        const canonicalEvents = await input.persistence.repositories.canonicalEvents.listByContactId(
-          contactId
-        );
-        const timelineRows = await input.persistence.repositories.timelineProjection.listByContactId(
-          contactId
-        );
-        const inboxRow = await input.persistence.repositories.inboxProjection.findByContactId(
-          contactId
-        );
+        const canonicalEvents =
+          await input.persistence.repositories.canonicalEvents.listByContactId(
+            contactId,
+          );
+        const timelineRows =
+          await input.persistence.repositories.timelineProjection.listByContactId(
+            contactId,
+          );
+        const inboxRow =
+          await input.persistence.repositories.inboxProjection.findByContactId(
+            contactId,
+          );
         const inboxDrivingEventCount = canonicalEvents.filter((event) =>
-          isInboxDrivingEvent(event.eventType)
+          isInboxDrivingEvent(event.eventType),
         ).length;
 
         sampledContacts.push({
@@ -1243,7 +1310,7 @@ export function createStage1WorkerOrchestrationService(input: {
           canonicalEventCount: canonicalEvents.length,
           timelineRowCount: timelineRows.length,
           hasInboxRow: inboxRow !== null,
-          inboxDrivingEventCount
+          inboxDrivingEventCount,
         });
 
         if (timelineRows.length !== canonicalEvents.length) {
@@ -1264,7 +1331,7 @@ export function createStage1WorkerOrchestrationService(input: {
           severity: "warning",
           message:
             "At least one sampled contact has a timeline projection row count that does not match canonical event count.",
-          entityIds: sampledTimelineMismatchIds
+          entityIds: sampledTimelineMismatchIds,
         });
       }
 
@@ -1274,7 +1341,7 @@ export function createStage1WorkerOrchestrationService(input: {
           severity: "warning",
           message:
             "At least one sampled contact has an inbox projection mismatch against inbox-driving canonical events.",
-          entityIds: sampledInboxMismatchIds
+          entityIds: sampledInboxMismatchIds,
         });
       }
 
@@ -1293,8 +1360,8 @@ export function createStage1WorkerOrchestrationService(input: {
           timelineEventParityPercent,
           canonicalEventCount,
           timelineProjectionCount,
-          inboxProjectionCount
-        }
+          inboxProjectionCount,
+        },
       });
       const completedSyncState = await syncState.completeWindow({
         syncStateId: payload.syncStateId,
@@ -1305,10 +1372,13 @@ export function createStage1WorkerOrchestrationService(input: {
         checkpoint: payload.checkpointId,
         windowStart: null,
         windowEnd: payload.evaluatedAt,
-        parityPercent: Math.min(queueRowParityPercent, timelineEventParityPercent),
+        parityPercent: Math.min(
+          queueRowParityPercent,
+          timelineEventParityPercent,
+        ),
         freshnessP95Seconds: null,
         freshnessP99Seconds: null,
-        completedAt: payload.evaluatedAt
+        completedAt: payload.evaluatedAt,
       });
 
       return {
@@ -1320,10 +1390,14 @@ export function createStage1WorkerOrchestrationService(input: {
         sampledContacts,
         discrepancies,
         auditEvidenceId: auditEvidence.id,
-        failure: null
+        failure: null,
       };
     } catch (error) {
-      const failure = buildJobFailure(error, payload.attempt, payload.maxAttempts);
+      const failure = buildJobFailure(
+        error,
+        payload.attempt,
+        payload.maxAttempts,
+      );
       const failedSyncState = await syncState.failWindow({
         syncStateId: payload.syncStateId,
         scope: "orchestration",
@@ -1334,7 +1408,7 @@ export function createStage1WorkerOrchestrationService(input: {
         windowStart: null,
         windowEnd: payload.evaluatedAt,
         deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
-        deadLettered: failure.disposition === "dead_letter"
+        deadLettered: failure.disposition === "dead_letter",
       });
       await recordSyncFailureAudit(input.persistence, {
         syncStateId: payload.syncStateId,
@@ -1346,7 +1420,7 @@ export function createStage1WorkerOrchestrationService(input: {
         windowEnd: payload.evaluatedAt,
         failure,
         occurredAt: payload.evaluatedAt,
-        actorId: "stage1-orchestration"
+        actorId: "stage1-orchestration",
       });
 
       return {
@@ -1364,18 +1438,18 @@ export function createStage1WorkerOrchestrationService(input: {
           timelineEventParityPercent: 0,
           openIdentityConflictCount: 0,
           openIdentityCaseCount: 0,
-          openRoutingCaseCount: 0
+          openRoutingCaseCount: 0,
         },
         sampledContacts: [],
         discrepancies: [],
         auditEvidenceId: null,
-        failure
+        failure,
       };
     }
   }
 
   async function runCutoverCheckpointBatch(
-    rawPayload: CutoverCheckpointBatchPayload
+    rawPayload: CutoverCheckpointBatchPayload,
   ): Promise<Stage1CutoverCheckpointJobOutcome> {
     const payload = cutoverCheckpointBatchPayloadSchema.parse(rawPayload);
     await syncState.startWindow({
@@ -1386,7 +1460,7 @@ export function createStage1WorkerOrchestrationService(input: {
       cursor: null,
       checkpoint: payload.checkpointId,
       windowStart: null,
-      windowEnd: payload.evaluatedAt
+      windowEnd: payload.evaluatedAt,
     });
 
     try {
@@ -1407,8 +1481,8 @@ export function createStage1WorkerOrchestrationService(input: {
           sampleSize: 25,
           queueParityThresholdPercent: 99.5,
           timelineParityThresholdPercent: 99,
-          evaluatedAt: payload.evaluatedAt
-        })
+          evaluatedAt: payload.evaluatedAt,
+        }),
       );
       const syncSnapshots: Stage1CutoverSyncSnapshot[] = [];
       const discrepancies = [...parity.discrepancies];
@@ -1418,20 +1492,19 @@ export function createStage1WorkerOrchestrationService(input: {
           await input.persistence.repositories.syncState.findLatest({
             scope: "provider",
             provider,
-            jobType: "historical_backfill"
+            jobType: "historical_backfill",
           });
-        const liveIngest = await input.persistence.repositories.syncState.findLatest(
-          {
+        const liveIngest =
+          await input.persistence.repositories.syncState.findLatest({
             scope: "provider",
             provider,
-            jobType: "live_ingest"
-          }
-        );
+            jobType: "live_ingest",
+          });
 
         syncSnapshots.push({
           provider,
           historicalBackfill,
-          liveIngest
+          liveIngest,
         });
 
         if (
@@ -1442,7 +1515,8 @@ export function createStage1WorkerOrchestrationService(input: {
             code: "historical_backfill_incomplete",
             severity: "blocking",
             message: `Provider ${provider} does not yet have a succeeded historical backfill checkpoint.`,
-            entityIds: historicalBackfill === null ? [] : [historicalBackfill.id]
+            entityIds:
+              historicalBackfill === null ? [] : [historicalBackfill.id],
           });
         }
 
@@ -1451,7 +1525,7 @@ export function createStage1WorkerOrchestrationService(input: {
             code: "live_ingest_missing",
             severity: "blocking",
             message: `Provider ${provider} has no live ingest sync state yet.`,
-            entityIds: []
+            entityIds: [],
           });
         } else if (
           payload.requireLiveIngestCoverage &&
@@ -1461,7 +1535,7 @@ export function createStage1WorkerOrchestrationService(input: {
             code: "live_ingest_incomplete",
             severity: "blocking",
             message: `Provider ${provider} does not yet have a succeeded live ingest checkpoint.`,
-            entityIds: liveIngest === null ? [] : [liveIngest.id]
+            entityIds: liveIngest === null ? [] : [liveIngest.id],
           });
         }
 
@@ -1469,16 +1543,13 @@ export function createStage1WorkerOrchestrationService(input: {
           continue;
         }
 
-        if (
-          provider === "gmail" ||
-          provider === "simpletexting"
-        ) {
+        if (provider === "gmail" || provider === "simpletexting") {
           if (liveIngest.freshnessP95Seconds === null) {
             discrepancies.push({
               code: "comms_freshness_p95_unavailable",
               severity: "blocking",
               message: `Provider ${provider} has no live comms freshness p95 metric recorded yet.`,
-              entityIds: [liveIngest.id]
+              entityIds: [liveIngest.id],
             });
           } else if (
             liveIngest.freshnessP95Seconds >
@@ -1488,7 +1559,7 @@ export function createStage1WorkerOrchestrationService(input: {
               code: "comms_freshness_p95_above_threshold",
               severity: "blocking",
               message: `Provider ${provider} has live comms freshness p95 ${String(liveIngest.freshnessP95Seconds)}s above the ${String(gmailAndSimpleTextingP95ThresholdSeconds)}s cutover threshold.`,
-              entityIds: [liveIngest.id]
+              entityIds: [liveIngest.id],
             });
           }
 
@@ -1497,7 +1568,7 @@ export function createStage1WorkerOrchestrationService(input: {
               code: "comms_freshness_p99_unavailable",
               severity: "blocking",
               message: `Provider ${provider} has no live comms freshness p99 metric recorded yet.`,
-              entityIds: [liveIngest.id]
+              entityIds: [liveIngest.id],
             });
           } else if (
             liveIngest.freshnessP99Seconds >
@@ -1507,7 +1578,7 @@ export function createStage1WorkerOrchestrationService(input: {
               code: "comms_freshness_p99_above_threshold",
               severity: "blocking",
               message: `Provider ${provider} has live comms freshness p99 ${String(liveIngest.freshnessP99Seconds)}s above the ${String(gmailAndSimpleTextingP99ThresholdSeconds)}s cutover threshold.`,
-              entityIds: [liveIngest.id]
+              entityIds: [liveIngest.id],
             });
           }
         }
@@ -1519,7 +1590,7 @@ export function createStage1WorkerOrchestrationService(input: {
               severity: "blocking",
               message:
                 "Salesforce has no lifecycle freshness p95 metric recorded yet.",
-              entityIds: [liveIngest.id]
+              entityIds: [liveIngest.id],
             });
           } else if (
             liveIngest.freshnessP95Seconds >
@@ -1529,7 +1600,7 @@ export function createStage1WorkerOrchestrationService(input: {
               code: "lifecycle_freshness_p95_above_threshold",
               severity: "blocking",
               message: `Salesforce lifecycle freshness p95 ${String(liveIngest.freshnessP95Seconds)}s is above the ${String(salesforceLifecycleP95ThresholdSeconds)}s cutover threshold.`,
-              entityIds: [liveIngest.id]
+              entityIds: [liveIngest.id],
             });
           }
         }
@@ -1548,11 +1619,11 @@ export function createStage1WorkerOrchestrationService(input: {
         metadataJson: {
           providerCount: payload.providers.length,
           discrepancyCount: discrepancies.length,
-          parityCheckpointId: parity.checkpointId
-        }
+          parityCheckpointId: parity.checkpointId,
+        },
       });
       const ready = discrepancies.every(
-        (discrepancy) => discrepancy.severity !== "blocking"
+        (discrepancy) => discrepancy.severity !== "blocking",
       );
       const completedSyncState = await syncState.completeWindow({
         syncStateId: payload.syncStateId,
@@ -1566,7 +1637,7 @@ export function createStage1WorkerOrchestrationService(input: {
         parityPercent: parity.metrics.timelineEventParityPercent,
         freshnessP95Seconds: null,
         freshnessP99Seconds: null,
-        completedAt: payload.evaluatedAt
+        completedAt: payload.evaluatedAt,
       });
 
       return {
@@ -1579,10 +1650,14 @@ export function createStage1WorkerOrchestrationService(input: {
         syncSnapshots,
         discrepancies,
         auditEvidenceId: auditEvidence.id,
-        failure: null
+        failure: null,
       };
     } catch (error) {
-      const failure = buildJobFailure(error, payload.attempt, payload.maxAttempts);
+      const failure = buildJobFailure(
+        error,
+        payload.attempt,
+        payload.maxAttempts,
+      );
       const failedSyncState = await syncState.failWindow({
         syncStateId: payload.syncStateId,
         scope: "orchestration",
@@ -1593,7 +1668,7 @@ export function createStage1WorkerOrchestrationService(input: {
         windowStart: null,
         windowEnd: payload.evaluatedAt,
         deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
-        deadLettered: failure.disposition === "dead_letter"
+        deadLettered: failure.disposition === "dead_letter",
       });
       await recordSyncFailureAudit(input.persistence, {
         syncStateId: payload.syncStateId,
@@ -1605,7 +1680,7 @@ export function createStage1WorkerOrchestrationService(input: {
         windowEnd: payload.evaluatedAt,
         failure,
         occurredAt: payload.evaluatedAt,
-        actorId: "stage1-orchestration"
+        actorId: "stage1-orchestration",
       });
 
       return {
@@ -1629,17 +1704,17 @@ export function createStage1WorkerOrchestrationService(input: {
             timelineEventParityPercent: 0,
             openIdentityConflictCount: 0,
             openIdentityCaseCount: 0,
-            openRoutingCaseCount: 0
+            openRoutingCaseCount: 0,
           },
           sampledContacts: [],
           discrepancies: [],
           auditEvidenceId: null,
-          failure
+          failure,
         },
         syncSnapshots: [],
         discrepancies: [],
         auditEvidenceId: null,
-        failure
+        failure,
       };
     }
   }
@@ -1652,18 +1727,21 @@ export function createStage1WorkerOrchestrationService(input: {
           gmailHistoricalCaptureBatchPayloadSchema.parse(rawPayload),
         capture: (batchPayload) =>
           input.capture.gmail.captureHistoricalBatch(batchPayload),
-        ingestRecord: (record) => input.ingest.ingestGmailHistoricalRecord(record),
-        mapRecord: mapGmailRecord
+        ingestRecord: (record) =>
+          input.ingest.ingestGmailHistoricalRecord(record),
+        mapRecord: mapGmailRecord,
       });
     },
 
     runGmailLiveCaptureBatch: (payload) => {
       return runCapturedBatch({
         payload,
-        parse: (rawPayload) => gmailLiveCaptureBatchPayloadSchema.parse(rawPayload),
-        capture: (batchPayload) => input.capture.gmail.captureLiveBatch(batchPayload),
+        parse: (rawPayload) =>
+          gmailLiveCaptureBatchPayloadSchema.parse(rawPayload),
+        capture: (batchPayload) =>
+          input.capture.gmail.captureLiveBatch(batchPayload),
         ingestRecord: (record) => input.ingest.ingestGmailLiveRecord(record),
-        mapRecord: mapGmailRecord
+        mapRecord: mapGmailRecord,
       });
     },
 
@@ -1676,7 +1754,7 @@ export function createStage1WorkerOrchestrationService(input: {
           input.capture.salesforce.captureHistoricalBatch(batchPayload),
         ingestRecord: (record) =>
           input.ingest.ingestSalesforceHistoricalRecord(record),
-        mapRecord: mapSalesforceRecord
+        mapRecord: mapSalesforceRecord,
       });
     },
 
@@ -1687,8 +1765,9 @@ export function createStage1WorkerOrchestrationService(input: {
           salesforceLiveCaptureBatchPayloadSchema.parse(rawPayload),
         capture: (batchPayload) =>
           input.capture.salesforce.captureLiveBatch(batchPayload),
-        ingestRecord: (record) => input.ingest.ingestSalesforceLiveRecord(record),
-        mapRecord: mapSalesforceRecord
+        ingestRecord: (record) =>
+          input.ingest.ingestSalesforceLiveRecord(record),
+        mapRecord: mapSalesforceRecord,
       });
     },
 
@@ -1701,7 +1780,7 @@ export function createStage1WorkerOrchestrationService(input: {
           input.capture.simpleTexting.captureHistoricalBatch(batchPayload),
         ingestRecord: (record) =>
           input.ingest.ingestSimpleTextingHistoricalRecord(record),
-        mapRecord: mapSimpleTextingRecord
+        mapRecord: mapSimpleTextingRecord,
       });
     },
 
@@ -1714,7 +1793,7 @@ export function createStage1WorkerOrchestrationService(input: {
           input.capture.simpleTexting.captureLiveBatch(batchPayload),
         ingestRecord: (record) =>
           input.ingest.ingestSimpleTextingLiveRecord(record),
-        mapRecord: mapSimpleTextingRecord
+        mapRecord: mapSimpleTextingRecord,
       });
     },
 
@@ -1725,8 +1804,9 @@ export function createStage1WorkerOrchestrationService(input: {
           mailchimpHistoricalCaptureBatchPayloadSchema.parse(rawPayload),
         capture: (batchPayload) =>
           input.capture.mailchimp.captureHistoricalBatch(batchPayload),
-        ingestRecord: (record) => input.ingest.ingestMailchimpHistoricalRecord(record),
-        mapRecord: mapMailchimpRecord
+        ingestRecord: (record) =>
+          input.ingest.ingestMailchimpHistoricalRecord(record),
+        mapRecord: mapMailchimpRecord,
       });
     },
 
@@ -1737,13 +1817,15 @@ export function createStage1WorkerOrchestrationService(input: {
           mailchimpTransitionCaptureBatchPayloadSchema.parse(rawPayload),
         capture: (batchPayload) =>
           input.capture.mailchimp.captureTransitionBatch(batchPayload),
-        ingestRecord: (record) => input.ingest.ingestMailchimpTransitionRecord(record),
-        mapRecord: mapMailchimpRecord
+        ingestRecord: (record) =>
+          input.ingest.ingestMailchimpTransitionRecord(record),
+        mapRecord: mapMailchimpRecord,
       });
     },
 
     runReplayBatch: (rawPayload) => {
       const payload = replayBatchPayloadSchema.parse(rawPayload);
+      const replayProvider = payload.provider as Stage1WorkerProvider;
 
       return runCapturedBatch({
         payload,
@@ -1753,46 +1835,52 @@ export function createStage1WorkerOrchestrationService(input: {
             input.capture,
             input.persistence,
             input.gmailHistoricalReplay,
-            parsedPayload
+            parsedPayload,
           ),
         ingestRecord: (record) => {
-          switch (payload.provider) {
+          switch (replayProvider) {
             case "gmail":
               return payload.mode === "historical"
-                ? input.ingest.ingestGmailHistoricalRecord(record as GmailRecord)
+                ? input.ingest.ingestGmailHistoricalRecord(
+                    record as GmailRecord,
+                  )
                 : input.ingest.ingestGmailLiveRecord(record as GmailRecord);
             case "salesforce":
               return payload.mode === "historical"
                 ? input.ingest.ingestSalesforceHistoricalRecord(
-                    record as SalesforceRecord
+                    record as SalesforceRecord,
                   )
                 : input.ingest.ingestSalesforceLiveRecord(
-                    record as SalesforceRecord
+                    record as SalesforceRecord,
                   );
             case "simpletexting":
               return payload.mode === "historical"
                 ? input.ingest.ingestSimpleTextingHistoricalRecord(
-                    record as SimpleTextingRecord
+                    record as SimpleTextingRecord,
                   )
                 : input.ingest.ingestSimpleTextingLiveRecord(
-                    record as SimpleTextingRecord
+                    record as SimpleTextingRecord,
                   );
             case "mailchimp":
               return payload.mode === "historical"
                 ? input.ingest.ingestMailchimpHistoricalRecord(
-                    record as MailchimpRecord
+                    record as MailchimpRecord,
                   )
                 : input.ingest.ingestMailchimpTransitionRecord(
-                    record as MailchimpRecord
+                    record as MailchimpRecord,
                   );
+            case "manual":
+              throw new Stage1NonRetryableJobError(
+                "Manual note provider is not supported for replay ingest batches.",
+              );
           }
         },
-        mapRecord: (record) => getMappedResultForRecord(payload.provider, record)
+        mapRecord: (record) => getMappedResultForRecord(replayProvider, record),
       });
     },
 
     runProjectionRebuildBatch,
     runParityCheckBatch,
-    runCutoverCheckpointBatch
+    runCutoverCheckpointBatch,
   };
 }
