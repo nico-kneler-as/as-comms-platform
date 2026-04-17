@@ -434,12 +434,12 @@ async function readMailchimpCampaignArtifact(input: {
   ] as const);
 
   return mailchimpCampaignArtifactSchema.parse({
-    summary: JSON.parse(summaryText),
-    sentTo: JSON.parse(sentToText),
-    openDetails: JSON.parse(openDetailsText),
-    clickDetails: JSON.parse(clickDetailsText),
-    clickMembers: JSON.parse(clickMembersText),
-    unsubscribed: JSON.parse(unsubscribedText),
+    summary: JSON.parse(summaryText) as unknown,
+    sentTo: JSON.parse(sentToText) as unknown,
+    openDetails: JSON.parse(openDetailsText) as unknown,
+    clickDetails: JSON.parse(clickDetailsText) as unknown,
+    clickMembers: JSON.parse(clickMembersText) as unknown,
+    unsubscribed: JSON.parse(unsubscribedText) as unknown,
   });
 }
 
