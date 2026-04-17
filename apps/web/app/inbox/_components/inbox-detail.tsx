@@ -296,36 +296,15 @@ function FollowUpToggleButton({
 // ---------- Unresolved banner ----------
 
 function UnresolvedBanner() {
-  const [expanded, setExpanded] = useState(false);
-
   return (
-    <div className={`border-b border-amber-200 ${TONE.amber.subtle}`}>
-      <button
-        type="button"
-        onClick={() => {
-          setExpanded((e) => !e);
-        }}
-        className={`flex w-full items-center gap-2 px-6 py-2.5 text-left ${TRANSITION.fast} hover:bg-amber-100/60`}
-        aria-expanded={expanded}
-      >
-        <AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-600" />
-        <span className="flex-1 text-sm font-medium text-amber-900">
-          Unresolved items need attention
-        </span>
-        <span className="text-xs text-amber-600">
-          {expanded ? "Hide" : "Details"}
-        </span>
-      </button>
-
-      {expanded ? (
-        <div className="border-t border-amber-200 px-6 py-3">
-          <p className="text-xs leading-5 text-amber-800">
-            This contact has open items that require action before the
-            conversation can be considered resolved. Review the timeline
-            for pending requests and routing notices.
-          </p>
-        </div>
-      ) : null}
+    <div
+      className={`flex items-center gap-2 border-b border-amber-200 px-6 py-2.5 ${TONE.amber.subtle}`}
+      role="status"
+    >
+      <AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-600" />
+      <span className="text-sm font-medium text-amber-900">
+        Unresolved items need attention
+      </span>
     </div>
   );
 }
