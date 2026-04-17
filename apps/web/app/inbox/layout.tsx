@@ -8,6 +8,16 @@ export const metadata = {
 };
 
 /**
+ * The inbox is per-operator and backed by request-time projection reads
+ * against Railway's runtime-only Postgres host. Opt out of build-time
+ * static generation so the layout's DB fetch doesn't run during
+ * `next build` (where `postgres.railway.internal` doesn't resolve).
+ * Applies to all descendant routes (`/inbox`, `/inbox/[contactId]`,
+ * `/inbox/states`).
+ */
+export const dynamic = "force-dynamic";
+
+/**
  * Server Component: composes the persistent shell (icon rail + list column)
  * once for both `/inbox` and `/inbox/[contactId]`. The page slot underneath
  * renders either the empty state or the selected-contact detail workspace.
