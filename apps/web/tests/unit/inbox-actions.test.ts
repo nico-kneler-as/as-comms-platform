@@ -109,7 +109,8 @@ describe("server-backed follow-up actions", () => {
     formData.set("contactId", "contact:michael-chen");
 
     const result = await markInboxNeedsFollowUpAction(formData);
-    const projection = await runtime!.context.repositories.inboxProjection.findByContactId(
+    if (!runtime) throw new Error("runtime not initialized");
+    const projection = await runtime.context.repositories.inboxProjection.findByContactId(
       "contact:michael-chen"
     );
     const after = await getInboxList();
@@ -160,7 +161,8 @@ describe("server-backed follow-up actions", () => {
     revalidateTag.mockReset();
 
     const result = await clearInboxNeedsFollowUpAction(formData);
-    const projection = await runtime!.context.repositories.inboxProjection.findByContactId(
+    if (!runtime) throw new Error("runtime not initialized");
+    const projection = await runtime.context.repositories.inboxProjection.findByContactId(
       "contact:michael-chen"
     );
     const followUpList = await getInboxList("follow-up");
