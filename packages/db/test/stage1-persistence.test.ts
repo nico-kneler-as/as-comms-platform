@@ -181,12 +181,12 @@ describe("Stage 1 persistence service", () => {
         primarySourceEvidenceId: sourceEvidenceResult.record.id,
         supportingSourceEvidenceIds: [],
         winnerReason: "single_source" as const,
-        sourceRecordType: null,
-        sourceRecordId: null,
-        messageKind: null,
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-message-1",
+        messageKind: "one_to_one" as const,
         campaignRef: null,
         threadRef: null,
-        direction: null
+        direction: "inbound" as const
       },
       reviewState: "clear" as const
     };
@@ -293,12 +293,12 @@ describe("Stage 1 persistence service", () => {
         primarySourceEvidenceId: sourceEvidenceResult.record.id,
         supportingSourceEvidenceIds: [],
         winnerReason: "single_source",
-        sourceRecordType: null,
-        sourceRecordId: null,
-        messageKind: null,
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-message-1",
+        messageKind: "one_to_one",
         campaignRef: null,
         threadRef: null,
-        direction: null
+        direction: "outbound"
       },
       reviewState: "clear"
     });

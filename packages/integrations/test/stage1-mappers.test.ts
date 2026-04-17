@@ -57,6 +57,17 @@ describe("Stage 1 provider-close mappers", () => {
           }
         ]);
         expect(result.command.input.identity.salesforceContactId).toBe("003-stage1");
+        expect(result.command.input.communicationClassification).toEqual({
+          messageKind: "one_to_one",
+          sourceRecordType: "message",
+          sourceRecordId: "gmail-message-1",
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: "email-thread-1",
+            providerThreadId: "thread-1"
+          },
+          direction: "outbound"
+        });
         expect(result.command.input.gmailMessageDetail).toMatchObject({
           subject: "Checking in",
           snippetClean: "Following up by email",
@@ -210,7 +221,8 @@ describe("Stage 1 provider-close mappers", () => {
             sourceEvidenceId: `source-evidence:salesforce:lifecycle_milestone:${lifecycleCase.recordId}`,
             salesforceContactId: "003-stage1",
             projectId: "project_1",
-            expeditionId: "expedition_1"
+            expeditionId: "expedition_1",
+            sourceField: lifecycleCase.sourceField
           });
           expect(lifecycleResult.command.input.projectDimensions).toEqual([
             {
@@ -232,17 +244,19 @@ describe("Stage 1 provider-close mappers", () => {
     }
   });
 
-  it("maps Salesforce task communication records into auto-message canonical events", () => {
+  it("maps Salesforce task communication records into classified canonical events", () => {
 
     const taskResult = mapSalesforceRecord({
       recordType: "task_communication",
       recordId: "task-1",
       channel: "email",
+      messageKind: "one_to_one",
       salesforceContactId: "003-stage1",
       occurredAt: "2026-01-01T00:02:00.000Z",
       receivedAt: "2026-01-01T00:03:00.000Z",
       payloadRef: "payloads/salesforce/task-1.json",
       checksum: "checksum-task-1",
+      subject: "Logged outbound follow-up",
       snippet: "Logged outbound follow-up",
       normalizedEmails: ["volunteer@example.org"],
       normalizedPhones: [],
@@ -274,6 +288,27 @@ describe("Stage 1 provider-close mappers", () => {
         expect(taskResult.command.input.canonicalEvent.summary).toBe(
           "Outbound email sent"
         );
+        expect(taskResult.command.input.communicationClassification).toEqual({
+          messageKind: "one_to_one",
+          sourceRecordType: "task_communication",
+          sourceRecordId: "task-1",
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: "email-thread-1",
+            providerThreadId: null
+          },
+          direction: "outbound"
+        });
+        expect(taskResult.command.input.salesforceCommunicationDetail).toEqual({
+          sourceEvidenceId:
+            "source-evidence:salesforce:task_communication:task-1",
+          providerRecordId: "task-1",
+          channel: "email",
+          messageKind: "one_to_one",
+          subject: "Logged outbound follow-up",
+          snippet: "Logged outbound follow-up",
+          sourceLabel: "Salesforce Task"
+        });
         expect(taskResult.command.input.canonicalEvent.idempotencyKey).toBe(
           "canonical-event:collapse:communication.email.outbound:email-thread-1"
         );
@@ -286,12 +321,16 @@ describe("Stage 1 provider-close mappers", () => {
       recordType: "message",
       recordId: "sms-1",
       direction: "outbound",
+      messageKind: "campaign",
       occurredAt: "2026-01-01T00:00:00.000Z",
       receivedAt: "2026-01-01T00:01:00.000Z",
       payloadRef: "payloads/simpletexting/sms-1.json",
       checksum: "checksum-sms-1",
       snippet: "Outbound SMS body",
       normalizedPhone: "+15555550123",
+      campaignId: "campaign-1",
+      campaignName: "Launch SMS",
+      providerThreadId: "simpletexting-thread-1",
       salesforceContactId: "003-stage1",
       volunteerIdPlainValues: [],
       normalizedEmails: [],
@@ -312,6 +351,33 @@ describe("Stage 1 provider-close mappers", () => {
         expect(outboundMessage.command.input.canonicalEvent.eventType).toBe(
           "communication.sms.outbound"
         );
+        expect(outboundMessage.command.input.communicationClassification).toEqual({
+          messageKind: "campaign",
+          sourceRecordType: "message",
+          sourceRecordId: "sms-1",
+          campaignRef: {
+            providerCampaignId: "campaign-1",
+            providerAudienceId: null,
+            providerMessageName: "Launch SMS"
+          },
+          threadRef: {
+            crossProviderCollapseKey: "sms-thread-1",
+            providerThreadId: "simpletexting-thread-1"
+          },
+          direction: "outbound"
+        });
+        expect(outboundMessage.command.input.simpleTextingMessageDetail).toEqual({
+          sourceEvidenceId: "source-evidence:simpletexting:message:sms-1",
+          providerRecordId: "sms-1",
+          direction: "outbound",
+          messageKind: "campaign",
+          messageTextPreview: "Outbound SMS body",
+          normalizedPhone: "+15555550123",
+          campaignId: "campaign-1",
+          campaignName: "Launch SMS",
+          providerThreadId: "simpletexting-thread-1",
+          threadKey: "sms-thread-1"
+        });
       }
     }
 
@@ -356,6 +422,7 @@ describe("Stage 1 provider-close mappers", () => {
       campaignId: "campaign-1",
       audienceId: "audience-1",
       memberId: "member-1",
+      campaignName: "Welcome Series",
       snippet: "Clicked the campaign CTA"
     });
 
@@ -366,6 +433,20 @@ describe("Stage 1 provider-close mappers", () => {
         expect(supported.command.input.canonicalEvent.eventType).toBe(
           "campaign.email.clicked"
         );
+        expect(supported.command.input.canonicalEvent.idempotencyKey).toBe(
+          "canonical-event:collapse:campaign.email.clicked:mailchimp:audience-1:campaign-1:member-1:clicked"
+        );
+        expect(supported.command.input.mailchimpCampaignActivityDetail).toEqual({
+          sourceEvidenceId:
+            "source-evidence:mailchimp:campaign_member_activity:campaign-activity-1",
+          providerRecordId: "campaign-activity-1",
+          activityType: "clicked",
+          campaignId: "campaign-1",
+          audienceId: "audience-1",
+          memberId: "member-1",
+          campaignName: "Welcome Series",
+          snippet: "Clicked the campaign CTA"
+        });
       }
     }
 

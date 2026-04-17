@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createGmailCaptureService,
-  createGmailMailboxApiClient
+  createGmailMailboxApiClient,
+  gmailMessageRecordSchema
 } from "../src/index.js";
 import { sha256Json } from "../src/capture-services/shared.js";
 
@@ -280,17 +281,14 @@ describe("Gmail capture service", () => {
       maxRecords: 25
     });
 
-    const [firstRecord] = result.records;
-
     expect(result.records).toHaveLength(1);
-    expect(firstRecord).toMatchObject({
+    expect(result.records[0]).toMatchObject({
       recordType: "message",
       subject: "Checking in"
     });
-    if (!firstRecord || !("checksum" in firstRecord)) {
-      throw new Error("Expected a Gmail message record");
-    }
-    expect(firstRecord.checksum).toBe(
+    const record = gmailMessageRecordSchema.parse(result.records[0]);
+
+    expect(record.checksum).toBe(
       sha256Json({
         id: "gmail-live-1",
         threadId: "thread-live-1",
@@ -307,12 +305,12 @@ describe("Gmail capture service", () => {
   });
 
   it("uses OAuth refresh-token exchange before polling the live mailbox", async () => {
-    const requests: {
+    const requests: Array<{
       readonly url: string;
       readonly method: string;
       readonly headers: Headers;
       readonly bodyText: string;
-    }[] = [];
+    }> = [];
     const client = createGmailMailboxApiClient(
       {
         bearerToken: "gmail-token",
@@ -323,13 +321,8 @@ describe("Gmail capture service", () => {
         oauthRefreshToken: "gmail-oauth-refresh-token"
       },
       {
-        fetchImplementation: (input, init) => {
-          const url =
-            typeof input === "string"
-              ? input
-              : input instanceof URL
-                ? input.toString()
-                : input.url;
+        fetchImplementation: async (input, init) => {
+          const url = String(input);
           const method = init?.method ?? "GET";
           const headers = new Headers(init?.headers);
           const bodyText =
@@ -343,8 +336,7 @@ describe("Gmail capture service", () => {
           });
 
           if (url === "https://oauth2.googleapis.com/token") {
-            return Promise.resolve(
-              new Response(
+            return new Response(
               JSON.stringify({
                 access_token: "gmail-access-token",
                 expires_in: 3600
@@ -355,22 +347,19 @@ describe("Gmail capture service", () => {
                   "content-type": "application/json"
                 }
               }
-              )
             );
           }
 
-          return Promise.resolve(
-            new Response(
-              JSON.stringify({
-                messages: []
-              }),
-              {
-                status: 200,
-                headers: {
-                  "content-type": "application/json"
-                }
+          return new Response(
+            JSON.stringify({
+              messages: []
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json"
               }
-            )
+            }
           );
         }
       }

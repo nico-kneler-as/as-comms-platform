@@ -127,11 +127,13 @@ export const salesforceTaskCommunicationRecordSchema = z.object({
   recordType: z.literal("task_communication"),
   recordId: z.string().min(1),
   channel: z.enum(["email", "sms"]),
+  messageKind: z.enum(["one_to_one", "auto"]).default("one_to_one"),
   salesforceContactId: nullableStringSchema.default(null),
   occurredAt: timestampSchema,
   receivedAt: timestampSchema,
   payloadRef: z.string().min(1),
   checksum: z.string().min(1),
+  subject: nullableStringSchema.default(null),
   snippet: z.string().default(""),
   normalizedEmails: stringArraySchema.default([]),
   normalizedPhones: stringArraySchema.default([]),
@@ -412,7 +414,8 @@ function mapSalesforceLifecycleRecord(
       ),
       salesforceContactId: record.salesforceContactId,
       projectId: record.routing.projectId,
-      expeditionId: record.routing.expeditionId
+      expeditionId: record.routing.expeditionId,
+      sourceField: record.sourceField
     },
     projectDimensions:
       record.routing.projectId !== null && record.routing.projectName !== null
@@ -439,14 +442,19 @@ function mapSalesforceLifecycleRecord(
   };
 }
 
-function buildSalesforceTaskSummary(eventType: CanonicalEventType): string {
-  switch (eventType) {
+function buildSalesforceTaskSummary(input: {
+  readonly eventType: CanonicalEventType;
+  readonly messageKind: "one_to_one" | "auto";
+}): string {
+  switch (input.eventType) {
     case "communication.email.outbound":
-      return "Outbound email sent";
+      return input.messageKind === "auto"
+        ? "Auto email sent"
+        : "Outbound email sent";
     case "communication.sms.outbound":
       return "Outbound SMS sent";
     default:
-      throw new Error(`Unsupported Salesforce task event type: ${eventType}`);
+      throw new Error(`Unsupported Salesforce task event type: ${input.eventType}`);
   }
 }
 
@@ -497,7 +505,10 @@ function mapSalesforceTaskCommunicationRecord(
         eventType,
         crossProviderCollapseKey: record.crossProviderCollapseKey
       }),
-      summary: buildSalesforceTaskSummary(eventType),
+      summary: buildSalesforceTaskSummary({
+        eventType,
+        messageKind: record.messageKind
+      }),
       snippet: record.snippet
     },
     identity: {
@@ -508,6 +519,31 @@ function mapSalesforceTaskCommunicationRecord(
     },
     routing: record.routing,
     supportingSources: buildSupportingSourceReferences(record.supportingRecords),
+    communicationClassification: {
+      messageKind: record.messageKind,
+      sourceRecordType: providerRecordType,
+      sourceRecordId: providerRecordId,
+      campaignRef: null,
+      threadRef: {
+        crossProviderCollapseKey: record.crossProviderCollapseKey,
+        providerThreadId: null
+      },
+      direction: "outbound"
+    },
+    salesforceCommunicationDetail: {
+      sourceEvidenceId: buildSourceEvidenceId(
+        "salesforce",
+        providerRecordType,
+        providerRecordId
+      ),
+      providerRecordId,
+      channel: record.channel,
+      messageKind: record.messageKind,
+      subject: record.subject,
+      snippet: record.snippet,
+      sourceLabel:
+        record.messageKind === "auto" ? "Salesforce Flow" : "Salesforce Task"
+    },
     salesforceEventContext: {
       sourceEvidenceId: buildSourceEvidenceId(
         "salesforce",
@@ -516,7 +552,8 @@ function mapSalesforceTaskCommunicationRecord(
       ),
       salesforceContactId: record.salesforceContactId,
       projectId: record.routing.projectId,
-      expeditionId: record.routing.expeditionId
+      expeditionId: record.routing.expeditionId,
+      sourceField: null
     },
     projectDimensions:
       record.routing.projectId !== null && record.routing.projectName !== null

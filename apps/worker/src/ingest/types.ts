@@ -1,5 +1,6 @@
 import type {
   IdentityResolutionReasonCode,
+  Provider,
   QuarantineReasonCode,
   RoutingReviewReasonCode
 } from "@as-comms/contracts";
@@ -21,7 +22,7 @@ export interface Stage1IngestReviewCaseSummary {
 
 interface Stage1IngestResultBase {
   readonly ingestMode: Stage1IngestMode;
-  readonly provider: "gmail" | "salesforce" | "simpletexting" | "mailchimp";
+  readonly provider: Provider;
   readonly sourceRecordType: string;
   readonly sourceRecordId: string;
 }

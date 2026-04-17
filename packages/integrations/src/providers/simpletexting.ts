@@ -29,12 +29,16 @@ export const simpleTextingMessageRecordSchema = z.object({
   recordType: z.literal("message"),
   recordId: z.string().min(1),
   direction: z.enum(["inbound", "outbound"]),
+  messageKind: z.enum(["one_to_one", "campaign"]),
   occurredAt: timestampSchema,
   receivedAt: timestampSchema,
   payloadRef: z.string().min(1),
   checksum: z.string().min(1),
   snippet: z.string().default(""),
   normalizedPhone: z.string().min(1),
+  campaignId: nullableStringSchema.default(null),
+  campaignName: nullableStringSchema.default(null),
+  providerThreadId: nullableStringSchema.default(null),
   salesforceContactId: nullableStringSchema.default(null),
   volunteerIdPlainValues: stringArraySchema.default([]),
   normalizedEmails: stringArraySchema.default([]),
@@ -125,6 +129,11 @@ function mapSimpleTextingMessageRecord(
   const eventType = resolveSimpleTextingMessageEventType(record.direction);
   const providerRecordType = record.recordType;
   const providerRecordId = record.recordId;
+  const crossProviderCollapseKey =
+    record.crossProviderCollapseKey ??
+    (record.messageKind === "campaign" && record.campaignId !== null
+      ? `simpletexting:campaign:${record.campaignId}:${record.normalizedPhone}`
+      : null);
 
   return {
     sourceEvidence: {
@@ -152,7 +161,7 @@ function mapSimpleTextingMessageRecord(
         providerRecordType,
         providerRecordId,
         eventType,
-        crossProviderCollapseKey: record.crossProviderCollapseKey
+        crossProviderCollapseKey
       }),
       eventType,
       occurredAt: record.occurredAt,
@@ -161,7 +170,7 @@ function mapSimpleTextingMessageRecord(
         providerRecordType,
         providerRecordId,
         eventType,
-        crossProviderCollapseKey: record.crossProviderCollapseKey
+        crossProviderCollapseKey
       }),
       summary: buildSmsSummary(eventType),
       snippet: record.snippet
@@ -172,7 +181,41 @@ function mapSimpleTextingMessageRecord(
       normalizedEmails: uniqueStrings(record.normalizedEmails),
       normalizedPhones: [record.normalizedPhone]
     },
-    supportingSources: buildSupportingSourceReferences(record.supportingRecords)
+    supportingSources: buildSupportingSourceReferences(record.supportingRecords),
+    communicationClassification: {
+      messageKind: record.messageKind,
+      sourceRecordType: providerRecordType,
+      sourceRecordId: providerRecordId,
+      campaignRef:
+        record.messageKind === "campaign"
+          ? {
+              providerCampaignId: record.campaignId,
+              providerAudienceId: null,
+              providerMessageName: record.campaignName
+            }
+          : null,
+      threadRef: {
+        crossProviderCollapseKey,
+        providerThreadId: record.providerThreadId
+      },
+      direction: record.direction
+    },
+    simpleTextingMessageDetail: {
+      sourceEvidenceId: buildSourceEvidenceId(
+        "simpletexting",
+        providerRecordType,
+        providerRecordId
+      ),
+      providerRecordId,
+      direction: record.direction,
+      messageKind: record.messageKind,
+      messageTextPreview: record.snippet,
+      normalizedPhone: record.normalizedPhone,
+      campaignId: record.campaignId,
+      campaignName: record.campaignName,
+      providerThreadId: record.providerThreadId,
+      threadKey: crossProviderCollapseKey
+    }
   };
 }
 

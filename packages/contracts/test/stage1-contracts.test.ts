@@ -14,7 +14,7 @@ import {
 
 describe("Stage 1 contracts", () => {
   it("keeps the canonical event taxonomy and channel mapping aligned", () => {
-    expect(canonicalEventTypeValues).toHaveLength(14);
+    expect(canonicalEventTypeValues).toHaveLength(15);
     expect(resolveCanonicalChannel("communication.email.inbound")).toBe("email");
     expect(resolveCanonicalChannel("communication.sms.opt_out")).toBe("sms");
     expect(resolveCanonicalChannel("lifecycle.completed_training")).toBe(
@@ -23,6 +23,7 @@ describe("Stage 1 contracts", () => {
     expect(resolveCanonicalChannel("campaign.email.clicked")).toBe(
       "campaign_email"
     );
+    expect(resolveCanonicalChannel("note.internal.created")).toBe("note");
   });
 
   it("rejects canonical events whose channel disagrees with the taxonomy", () => {
@@ -50,7 +51,13 @@ describe("Stage 1 contracts", () => {
         primaryProvider: "gmail",
         primarySourceEvidenceId: sourceEvidence.id,
         supportingSourceEvidenceIds: [],
-        winnerReason: "single_source"
+        winnerReason: "single_source",
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-message-1",
+        messageKind: "one_to_one",
+        campaignRef: null,
+        threadRef: null,
+        direction: "inbound"
       },
       reviewState: "clear"
     });

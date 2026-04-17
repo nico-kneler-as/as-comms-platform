@@ -1,3 +1,4 @@
+export * from "./notes.js";
 export * from "./normalization.js";
 export * from "./readiness.js";
 export * from "./persistence.js";

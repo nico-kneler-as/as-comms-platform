@@ -451,7 +451,8 @@ Alias drift outbound message.
             "source-evidence:salesforce:lifecycle_milestone:membership-stage1%3AExpedition_Members__c.CreatedDate",
           salesforceContactId,
           projectId: "project-stage1",
-          expeditionId: "expedition-stage1"
+          expeditionId: "expedition-stage1",
+          sourceField: "Expedition_Members__c.CreatedDate"
         }
       ]);
     } finally {
@@ -1065,12 +1066,11 @@ Alias drift outbound message.
           entityId: "sync:salesforce:non-retryable:1",
           policyCode: "stage1.sync.failure",
           result: "recorded",
-          metadataJson:
-            expect.objectContaining({
-              message: "Unsupported Salesforce batch shape.",
-              disposition: "non_retryable",
-              retryable: false
-            }) as unknown
+          metadataJson: expect.objectContaining({
+            message: "Unsupported Salesforce batch shape.",
+            disposition: "non_retryable",
+            retryable: false
+          })
         })
       ]);
     } finally {

@@ -17,7 +17,11 @@ import {
   resolveCanonicalChannel,
   routingAmbiguityInputSchema,
   routingReviewReasonCodeValues,
+  mailchimpCampaignActivityDetailSchema,
+  manualNoteDetailSchema,
+  salesforceCommunicationDetailSchema,
   salesforceEventContextSchema,
+  simpleTextingMessageDetailSchema,
   syncStateUpdateInputSchema,
   timelineProjectionApplyInputSchema,
   type AuditEvidenceRecord,
@@ -27,6 +31,7 @@ import {
   type ContactMembershipRecord,
   type ContactRecord,
   type ExpeditionDimensionRecord,
+  type GmailMessageDetailRecord,
   type IdentityAmbiguityInput,
   type IdentityResolutionCase,
   type InboxDrivingEventType,
@@ -42,6 +47,7 @@ import {
   type QuarantineReasonCode,
   type RoutingAmbiguityInput,
   type RoutingReviewCase,
+  type SalesforceEventContextRecord,
   type SourceEvidenceRecord,
   type SyncStateRecord,
   type SyncStateUpdateInput,
@@ -52,6 +58,15 @@ import {
 import type { Stage1PersistenceService } from "./persistence.js";
 
 type ContactLookupMap = ReadonlyMap<string, ContactRecord>;
+
+interface IdentityResolutionContext {
+  loadContactsForIdentityKind(
+    kind: ContactIdentityKind,
+    values: readonly string[]
+  ): Promise<ContactLookupMap>;
+  findAnchoredContact(salesforceContactId: string): Promise<ContactRecord | null>;
+  clear(): void;
+}
 
 interface WinnerDecision {
   readonly winnerReason: ProvenanceWinnerReason;
@@ -219,6 +234,17 @@ function isInboxDrivingEventType(
   return inboxDrivingEventTypes.has(eventType);
 }
 
+function isInboxDrivingCanonicalEvent(
+  event: Pick<CanonicalEventRecord, "eventType" | "provenance">
+): event is Pick<CanonicalEventRecord, "eventType" | "provenance"> & {
+  readonly eventType: InboxDrivingEventType;
+} {
+  return (
+    isInboxDrivingEventType(event.eventType) &&
+    event.provenance.messageKind === "one_to_one"
+  );
+}
+
 function isInboundEvent(eventType: InboxDrivingEventType): boolean {
   return (
     eventType === "communication.email.inbound" ||
@@ -255,21 +281,6 @@ function buildQuarantineAuditId(
   reasonCode: QuarantineReasonCode
 ): string {
   return `audit:${entityType}:${entityId}:${reasonCode}`;
-}
-
-function compareStableEventOrder(
-  left: { readonly occurredAt: string; readonly id: string },
-  right: { readonly occurredAt: string; readonly id: string }
-): number {
-  if (left.occurredAt < right.occurredAt) {
-    return -1;
-  }
-
-  if (left.occurredAt > right.occurredAt) {
-    return 1;
-  }
-
-  return left.id.localeCompare(right.id);
 }
 
 function newestTimestamp(
@@ -469,31 +480,113 @@ async function loadContactsForIdentityKind(
   );
 }
 
+function createIdentityResolutionContext(
+  persistence: Stage1PersistenceService
+): IdentityResolutionContext {
+  const contactByIdCache = new Map<string, Promise<ContactRecord | null>>();
+  const contactsByIdentityValueCache = new Map<
+    string,
+    Promise<readonly ContactRecord[]>
+  >();
+  const anchoredContactCache = new Map<string, Promise<ContactRecord | null>>();
+
+  const loadContactById = (contactId: string): Promise<ContactRecord | null> => {
+    const cached = contactByIdCache.get(contactId);
+
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const lookup = persistence.repositories.contacts.findById(contactId);
+    contactByIdCache.set(contactId, lookup);
+    return lookup;
+  };
+
+  return {
+    async loadContactsForIdentityKind(kind, values) {
+      const contactGroups = await Promise.all(
+        uniqueStrings(values).map(async (normalizedValue) => {
+          const cacheKey = `${kind}:${normalizedValue}`;
+          const cached = contactsByIdentityValueCache.get(cacheKey);
+
+          if (cached !== undefined) {
+            return cached;
+          }
+
+          const lookup = (async () => {
+            const identities =
+              await persistence.repositories.contactIdentities.listByNormalizedValue({
+                kind,
+                normalizedValue
+              });
+            const contacts = await Promise.all(
+              uniqueStrings(identities.map((identity) => identity.contactId)).map(
+                loadContactById
+              )
+            );
+
+            return uniqueById(
+              contacts.filter(
+                (contact): contact is ContactRecord => contact !== null
+              )
+            );
+          })();
+
+          contactsByIdentityValueCache.set(cacheKey, lookup);
+          return lookup;
+        })
+      );
+
+      return new Map(
+        uniqueById(contactGroups.flat()).map((contact) => [contact.id, contact] as const)
+      );
+    },
+
+    findAnchoredContact(salesforceContactId) {
+      const cached = anchoredContactCache.get(salesforceContactId);
+
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      const lookup =
+        persistence.repositories.contacts.findBySalesforceContactId(
+          salesforceContactId
+        );
+      anchoredContactCache.set(salesforceContactId, lookup);
+      return lookup;
+    },
+
+    clear() {
+      contactByIdCache.clear();
+      contactsByIdentityValueCache.clear();
+      anchoredContactCache.clear();
+    }
+  };
+}
+
 async function resolveIdentityDecision(
-  persistence: Stage1PersistenceService,
+  context: IdentityResolutionContext,
   sourceEvidenceId: string,
   openedAt: string,
   identity: NormalizedIdentityEvidence
 ): Promise<IdentityResolutionDecision> {
-  const emailMatches = await loadContactsForIdentityKind(
-    persistence,
+  const emailMatches = await context.loadContactsForIdentityKind(
     "email",
     identity.normalizedEmails
   );
-  const phoneMatches = await loadContactsForIdentityKind(
-    persistence,
+  const phoneMatches = await context.loadContactsForIdentityKind(
     "phone",
     identity.normalizedPhones
   );
-  const volunteerMatches = await loadContactsForIdentityKind(
-    persistence,
+  const volunteerMatches = await context.loadContactsForIdentityKind(
     "volunteer_id_plain",
     identity.volunteerIdPlainValues
   );
   const normalizedIdentityValues = buildNormalizedIdentityValues(identity);
 
   if (identity.salesforceContactId !== null) {
-    const anchored = await persistence.repositories.contacts.findBySalesforceContactId(
+    const anchored = await context.findAnchoredContact(
       identity.salesforceContactId
     );
 
@@ -881,6 +974,10 @@ async function upsertProviderPresentationDetails(
   input: Pick<
     NormalizedCanonicalEventIntake,
     | "gmailMessageDetail"
+    | "salesforceCommunicationDetail"
+    | "simpleTextingMessageDetail"
+    | "mailchimpCampaignActivityDetail"
+    | "manualNoteDetail"
     | "salesforceEventContext"
     | "projectDimensions"
     | "expeditionDimensions"
@@ -897,6 +994,32 @@ async function upsertProviderPresentationDetails(
     );
   }
 
+  if (input.salesforceCommunicationDetail !== undefined) {
+    await persistence.upsertSalesforceCommunicationDetail(
+      salesforceCommunicationDetailSchema.parse(input.salesforceCommunicationDetail)
+    );
+  }
+
+  if (input.simpleTextingMessageDetail !== undefined) {
+    await persistence.upsertSimpleTextingMessageDetail(
+      simpleTextingMessageDetailSchema.parse(input.simpleTextingMessageDetail)
+    );
+  }
+
+  if (input.mailchimpCampaignActivityDetail !== undefined) {
+    await persistence.upsertMailchimpCampaignActivityDetail(
+      mailchimpCampaignActivityDetailSchema.parse(
+        input.mailchimpCampaignActivityDetail
+      )
+    );
+  }
+
+  if (input.manualNoteDetail !== undefined) {
+    await persistence.upsertManualNoteDetail(
+      manualNoteDetailSchema.parse(input.manualNoteDetail)
+    );
+  }
+
   if (input.salesforceEventContext !== undefined) {
     await persistence.upsertSalesforceEventContext(
       salesforceEventContextSchema.parse(input.salesforceEventContext)
@@ -907,6 +1030,7 @@ async function upsertProviderPresentationDetails(
 export function createStage1NormalizationService(
   persistence: Stage1PersistenceService
 ): Stage1NormalizationService {
+  const identityResolutionContext = createIdentityResolutionContext(persistence);
   const service: Stage1NormalizationService = {
     persistence,
 
@@ -993,6 +1117,7 @@ export function createStage1NormalizationService(
         projectDimensions: parsed.projectDimensions,
         expeditionDimensions: parsed.expeditionDimensions
       });
+      identityResolutionContext.clear();
 
       return {
         contact,
@@ -1063,7 +1188,7 @@ export function createStage1NormalizationService(
     async applyInboxProjection(input) {
       const parsed = inboxProjectionApplyInputSchema.parse(input);
 
-      if (!isInboxDrivingEventType(parsed.canonicalEvent.eventType)) {
+      if (!isInboxDrivingCanonicalEvent(parsed.canonicalEvent)) {
         return persistence.repositories.inboxProjection.findByContactId(
           parsed.canonicalEvent.contactId
         );
@@ -1072,58 +1197,68 @@ export function createStage1NormalizationService(
       const existing = await persistence.repositories.inboxProjection.findByContactId(
         parsed.canonicalEvent.contactId
       );
-      const lastInboundAt = isInboundEvent(parsed.canonicalEvent.eventType)
+      const incomingIsInbound = isInboundEvent(parsed.canonicalEvent.eventType);
+      const lastInboundAt = incomingIsInbound
         ? newestTimestamp(
             existing?.lastInboundAt ?? null,
             parsed.canonicalEvent.occurredAt
           )
         : existing?.lastInboundAt ?? null;
-      const lastOutboundAt = isInboundEvent(parsed.canonicalEvent.eventType)
+      const lastOutboundAt = incomingIsInbound
         ? existing?.lastOutboundAt ?? null
         : newestTimestamp(
             existing?.lastOutboundAt ?? null,
             parsed.canonicalEvent.occurredAt
           );
-      const lastActivityAt = newestTimestamp(lastInboundAt, lastOutboundAt);
+      const currentLatestKnownAt =
+        existing === null
+          ? null
+          : newestTimestamp(existing.lastInboundAt, existing.lastOutboundAt);
+      const incomingIsLatestKnown =
+        currentLatestKnownAt === null ||
+        parsed.canonicalEvent.occurredAt >= currentLatestKnownAt;
+      const lastActivityAt =
+        existing === null
+          ? parsed.canonicalEvent.occurredAt
+          : incomingIsInbound && parsed.canonicalEvent.occurredAt > existing.lastActivityAt
+            ? parsed.canonicalEvent.occurredAt
+            : existing.lastInboundAt === null &&
+                !incomingIsInbound &&
+                parsed.canonicalEvent.occurredAt > existing.lastActivityAt
+              ? parsed.canonicalEvent.occurredAt
+              : existing.lastActivityAt;
 
       if (lastActivityAt === null) {
         return null;
       }
-
-      const currentLatest =
-        existing === null
-          ? null
-          : {
-              occurredAt: existing.lastActivityAt,
-              id: existing.lastCanonicalEventId
-            };
-      const incomingIsLatest =
-        currentLatest === null ||
-        compareStableEventOrder(
-          {
-            occurredAt: parsed.canonicalEvent.occurredAt,
-            id: parsed.canonicalEvent.id
-          },
-          currentLatest
-        ) >= 0;
       const hasUnresolved = await contactHasUnresolved(
         persistence,
         parsed.canonicalEvent.contactId
       );
+      const bucket =
+        existing === null
+          ? incomingIsInbound
+            ? "New"
+            : "Opened"
+          : incomingIsInbound && incomingIsLatestKnown
+            ? "New"
+            : existing.bucket;
 
       return persistence.saveInboxProjection({
         contactId: parsed.canonicalEvent.contactId,
-        bucket: lastInboundAt === null ? "Opened" : "New",
+        bucket,
         needsFollowUp: existing?.needsFollowUp ?? false,
         hasUnresolved,
         lastInboundAt,
         lastOutboundAt,
         lastActivityAt,
-        snippet: incomingIsLatest ? parsed.snippet : existing?.snippet ?? parsed.snippet,
-        lastCanonicalEventId: incomingIsLatest
+        snippet: incomingIsLatestKnown
+          ? parsed.snippet
+          : existing?.snippet ?? parsed.snippet,
+        lastCanonicalEventId: incomingIsLatestKnown
           ? parsed.canonicalEvent.id
           : existing?.lastCanonicalEventId ?? parsed.canonicalEvent.id,
-        lastEventType: incomingIsLatest
+        lastEventType: incomingIsLatestKnown
           ? parsed.canonicalEvent.eventType
           : existing?.lastEventType ?? parsed.canonicalEvent.eventType
       });
@@ -1180,6 +1315,10 @@ export function createStage1NormalizationService(
 
       await upsertProviderPresentationDetails(persistence, {
         gmailMessageDetail: parsed.gmailMessageDetail,
+        salesforceCommunicationDetail: parsed.salesforceCommunicationDetail,
+        simpleTextingMessageDetail: parsed.simpleTextingMessageDetail,
+        mailchimpCampaignActivityDetail: parsed.mailchimpCampaignActivityDetail,
+        manualNoteDetail: parsed.manualNoteDetail,
         salesforceEventContext: parsed.salesforceEventContext,
         projectDimensions: parsed.projectDimensions,
         expeditionDimensions: parsed.expeditionDimensions
@@ -1215,7 +1354,7 @@ export function createStage1NormalizationService(
       }
 
       const identityDecision = await resolveIdentityDecision(
-        persistence,
+        identityResolutionContext,
         sourceEvidenceResult.record.id,
         parsed.sourceEvidence.receivedAt,
         parsed.identity
@@ -1247,6 +1386,10 @@ export function createStage1NormalizationService(
       const supportingSourceEvidenceIds = uniqueStrings(
         parsed.supportingSources.map((entry) => entry.sourceEvidenceId)
       );
+      const communicationClassification =
+        parsed.communicationClassification === undefined
+          ? null
+          : parsed.communicationClassification;
       const canonicalEvent = canonicalEventSchema.parse({
         id: parsed.canonicalEvent.id,
         contactId: identityDecision.contact.id,
@@ -1260,6 +1403,16 @@ export function createStage1NormalizationService(
           primarySourceEvidenceId: sourceEvidenceResult.record.id,
           supportingSourceEvidenceIds,
           winnerReason: duplicateCollapseDecision.winner.winnerReason,
+          sourceRecordType:
+            communicationClassification?.sourceRecordType ??
+            parsed.sourceEvidence.providerRecordType,
+          sourceRecordId:
+            communicationClassification?.sourceRecordId ??
+            parsed.sourceEvidence.providerRecordId,
+          messageKind: communicationClassification?.messageKind ?? null,
+          campaignRef: communicationClassification?.campaignRef ?? null,
+          threadRef: communicationClassification?.threadRef ?? null,
+          direction: communicationClassification?.direction ?? null,
           notes: duplicateCollapseDecision.winner.notes
         },
         reviewState
@@ -1315,7 +1468,7 @@ export function createStage1NormalizationService(
         canonicalEvent: persistedEvent,
         summary: parsed.canonicalEvent.summary
       });
-      const inboxProjection = isInboxDrivingEventType(persistedEvent.eventType)
+      const inboxProjection = isInboxDrivingCanonicalEvent(persistedEvent)
         ? await service.applyInboxProjection({
             canonicalEvent: persistedEvent,
             snippet: parsed.canonicalEvent.snippet

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  createStage1NormalizationService,
+  createStage1PersistenceService
+} from "@as-comms/domain";
+
 import { createTestStage1Context } from "./helpers.js";
 
 async function seedContactWithEmail(
@@ -37,6 +42,24 @@ async function seedContactWithEmail(
   });
 
   return context;
+}
+
+function buildOneToOneCommunicationClassification(input: {
+  readonly sourceRecordType: string;
+  readonly sourceRecordId: string;
+  readonly direction: "inbound" | "outbound";
+}) {
+  return {
+    messageKind: "one_to_one" as const,
+    sourceRecordType: input.sourceRecordType,
+    sourceRecordId: input.sourceRecordId,
+    campaignRef: null,
+    threadRef: {
+      crossProviderCollapseKey: null,
+      providerThreadId: null
+    },
+    direction: input.direction
+  };
 }
 
 describe("Stage 1 normalization service", () => {
@@ -144,6 +167,11 @@ describe("Stage 1 normalization service", () => {
         summary: "Inbound email received",
         snippet: "Who should own this?"
       },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-message-1",
+        direction: "inbound"
+      }),
       identity: {
         salesforceContactId: null,
         volunteerIdPlainValues: [],
@@ -194,6 +222,11 @@ describe("Stage 1 normalization service", () => {
         summary: "Outbound email sent",
         snippet: "Following up by email"
       },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-message-1",
+        direction: "outbound"
+      }),
       identity: {
         salesforceContactId: "003-stage1",
         volunteerIdPlainValues: [],
@@ -239,6 +272,11 @@ describe("Stage 1 normalization service", () => {
         summary: "Outbound email sent",
         snippet: "Following up by email"
       },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-message-1",
+        direction: "outbound"
+      }),
       identity: {
         salesforceContactId: "003-stage1",
         volunteerIdPlainValues: [],
@@ -275,6 +313,11 @@ describe("Stage 1 normalization service", () => {
         summary: "Inbound email received",
         snippet: "Thanks for the update"
       },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-message-2",
+        direction: "inbound"
+      }),
       identity: {
         salesforceContactId: "003-stage1",
         volunteerIdPlainValues: [],
@@ -329,6 +372,11 @@ describe("Stage 1 normalization service", () => {
         summary: "Inbound email received",
         snippet: "Initial inbound"
       },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-message-1",
+        direction: "inbound"
+      }),
       identity: {
         salesforceContactId: null,
         volunteerIdPlainValues: [],
@@ -443,6 +491,11 @@ describe("Stage 1 normalization service", () => {
         summary: "Inbound email received",
         snippet: "Need routing help"
       },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-message-1",
+        direction: "inbound"
+      }),
       identity: {
         salesforceContactId: null,
         volunteerIdPlainValues: [],
@@ -539,6 +592,11 @@ describe("Stage 1 normalization service", () => {
         summary: "Outbound email logged",
         snippet: "Salesforce-only outbound"
       },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "task",
+        sourceRecordId: "task-1",
+        direction: "outbound"
+      }),
       identity: {
         salesforceContactId: "003-anchor",
         volunteerIdPlainValues: [],
@@ -555,6 +613,172 @@ describe("Stage 1 normalization service", () => {
       expect(result.identityCase?.reasonCode).toBe("identity_anchor_mismatch");
       expect(result.inboxProjection?.hasUnresolved).toBe(true);
     }
+  });
+
+  it("reuses anchored identity lookups across repeated events for the same contact evidence", async () => {
+    const context = await createTestStage1Context();
+
+    await context.normalization.upsertNormalizedContactGraph({
+      contact: {
+        id: "contact_cached",
+        salesforceContactId: "003-cached",
+        displayName: "Cached Contact",
+        primaryEmail: "cached@example.org",
+        primaryPhone: "+15555550199",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z"
+      },
+      identities: [
+        {
+          id: "identity:contact_cached:email",
+          contactId: "contact_cached",
+          kind: "email",
+          normalizedValue: "cached@example.org",
+          isPrimary: true,
+          source: "salesforce",
+          verifiedAt: "2026-01-01T00:00:00.000Z"
+        },
+        {
+          id: "identity:contact_cached:phone",
+          contactId: "contact_cached",
+          kind: "phone",
+          normalizedValue: "+15555550199",
+          isPrimary: true,
+          source: "salesforce",
+          verifiedAt: "2026-01-01T00:00:00.000Z"
+        }
+      ],
+      memberships: []
+    });
+
+    const lookupCounts = {
+      anchor: 0,
+      byId: 0,
+      byValue: 0
+    };
+    const wrappedRepositories = {
+      ...context.repositories,
+      contacts: {
+        ...context.repositories.contacts,
+        findById: async (contactId: string) => {
+          lookupCounts.byId += 1;
+          return context.repositories.contacts.findById(contactId);
+        },
+        findBySalesforceContactId: async (salesforceContactId: string) => {
+          lookupCounts.anchor += 1;
+          return context.repositories.contacts.findBySalesforceContactId(
+            salesforceContactId
+          );
+        }
+      },
+      contactIdentities: {
+        ...context.repositories.contactIdentities,
+        listByNormalizedValue: async (input: {
+          readonly kind: "email" | "phone" | "salesforce_contact_id" | "volunteer_id_plain";
+          readonly normalizedValue: string;
+        }) => {
+          lookupCounts.byValue += 1;
+          return context.repositories.contactIdentities.listByNormalizedValue(input);
+        }
+      }
+    };
+    const normalization = createStage1NormalizationService(
+      createStage1PersistenceService(wrappedRepositories)
+    );
+
+    const firstResult = await normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_cached_1",
+        provider: "simpletexting",
+        providerRecordType: "message",
+        providerRecordId: "simpletexting-message-1",
+        receivedAt: "2026-02-01T09:01:00.000Z",
+        occurredAt: "2026-02-01T09:00:00.000Z",
+        payloadRef: "payloads/simpletexting/message-1.json",
+        idempotencyKey: "simpletexting:message:1",
+        checksum: "checksum-cached-1"
+      },
+      canonicalEvent: {
+        id: "evt_cached_1",
+        eventType: "communication.sms.outbound",
+        occurredAt: "2026-02-01T09:00:00.000Z",
+        idempotencyKey: "canonical:simpletexting:message:1",
+        summary: "Outbound SMS sent",
+        snippet: "First outbound"
+      },
+      communicationClassification: {
+        messageKind: "one_to_one",
+        sourceRecordType: "message",
+        sourceRecordId: "simpletexting-message-1",
+        campaignRef: null,
+        threadRef: {
+          crossProviderCollapseKey: null,
+          providerThreadId: null
+        },
+        direction: "outbound"
+      },
+      identity: {
+        salesforceContactId: "003-cached",
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["cached@example.org"],
+        normalizedPhones: ["+15555550199"]
+      },
+      supportingSources: []
+    });
+
+    expect(firstResult.outcome).toBe("applied");
+    expect(lookupCounts).toEqual({
+      anchor: 1,
+      byId: 1,
+      byValue: 2
+    });
+
+    const secondResult = await normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_cached_2",
+        provider: "simpletexting",
+        providerRecordType: "message",
+        providerRecordId: "simpletexting-message-2",
+        receivedAt: "2026-02-01T09:06:00.000Z",
+        occurredAt: "2026-02-01T09:05:00.000Z",
+        payloadRef: "payloads/simpletexting/message-2.json",
+        idempotencyKey: "simpletexting:message:2",
+        checksum: "checksum-cached-2"
+      },
+      canonicalEvent: {
+        id: "evt_cached_2",
+        eventType: "communication.sms.inbound",
+        occurredAt: "2026-02-01T09:05:00.000Z",
+        idempotencyKey: "canonical:simpletexting:message:2",
+        summary: "Inbound SMS received",
+        snippet: "Reply inbound"
+      },
+      communicationClassification: {
+        messageKind: "one_to_one",
+        sourceRecordType: "message",
+        sourceRecordId: "simpletexting-message-2",
+        campaignRef: null,
+        threadRef: {
+          crossProviderCollapseKey: null,
+          providerThreadId: null
+        },
+        direction: "inbound"
+      },
+      identity: {
+        salesforceContactId: "003-cached",
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["cached@example.org"],
+        normalizedPhones: ["+15555550199"]
+      },
+      supportingSources: []
+    });
+
+    expect(secondResult.outcome).toBe("applied");
+    expect(lookupCounts).toEqual({
+      anchor: 1,
+      byId: 1,
+      byValue: 2
+    });
   });
 
   it("quarantines a Salesforce-vs-Gmail outbound email tie-break violation once", async () => {
@@ -583,6 +807,11 @@ describe("Stage 1 normalization service", () => {
         summary: "Outbound email logged",
         snippet: "Should quarantine"
       },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "task",
+        sourceRecordId: "task-1",
+        direction: "outbound"
+      }),
       identity: {
         salesforceContactId: null,
         volunteerIdPlainValues: [],
@@ -617,6 +846,11 @@ describe("Stage 1 normalization service", () => {
         summary: "Outbound email logged",
         snippet: "Should quarantine"
       },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "task",
+        sourceRecordId: "task-1",
+        direction: "outbound"
+      }),
       identity: {
         salesforceContactId: null,
         volunteerIdPlainValues: [],

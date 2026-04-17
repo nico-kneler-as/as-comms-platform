@@ -30,9 +30,13 @@ describe("Stage 1 DB schema", () => {
       "expeditionDimensions",
       "gmailMessageDetails",
       "identityResolutionQueue",
+      "mailchimpCampaignActivityDetails",
+      "manualNoteDetails",
       "projectDimensions",
       "routingReviewQueue",
+      "salesforceCommunicationDetails",
       "salesforceEventContext",
+      "simpleTextingMessageDetails",
       "sourceEvidenceLog",
       "syncState"
     ]);
@@ -50,14 +54,17 @@ describe("Stage 1 DB schema", () => {
   });
 
   it("matches the Stage 1 enum surfaces from the shared contracts", () => {
+    expect(providerValues).toContain("manual");
     expect(providerValues).toContain("salesforce");
     expect(channelValues).toEqual([
       "email",
       "sms",
       "lifecycle",
-      "campaign_email"
+      "campaign_email",
+      "note"
     ]);
     expect(canonicalEventTypeValues).toContain("campaign.email.unsubscribed");
+    expect(canonicalEventTypeValues).toContain("note.internal.created");
     expect(reviewStateValues).toEqual([
       "clear",
       "needs_identity_review",

@@ -8,9 +8,13 @@ import {
   gmailMessageDetailSchema,
   identityResolutionSchema,
   inboxProjectionSchema,
+  mailchimpCampaignActivityDetailSchema,
+  manualNoteDetailSchema,
   projectDimensionSchema,
   routingReviewSchema,
+  salesforceCommunicationDetailSchema,
   salesforceEventContextSchema,
+  simpleTextingMessageDetailSchema,
   sourceEvidenceSchema,
   syncStateSchema,
   timelineProjectionSchema,
@@ -23,9 +27,13 @@ import {
   type GmailMessageDetailRecord,
   type IdentityResolutionCase,
   type InboxProjectionRow,
+  type MailchimpCampaignActivityDetailRecord,
+  type ManualNoteDetailRecord,
   type ProjectDimensionRecord,
   type RoutingReviewCase,
+  type SalesforceCommunicationDetailRecord,
   type SalesforceEventContextRecord,
+  type SimpleTextingMessageDetailRecord,
   type SourceEvidenceRecord,
   type SyncStateRecord,
   type TimelineProjectionRow
@@ -96,6 +104,18 @@ export interface Stage1PersistenceService {
   upsertSalesforceEventContext(
     record: SalesforceEventContextRecord
   ): Promise<SalesforceEventContextRecord>;
+  upsertSalesforceCommunicationDetail(
+    record: SalesforceCommunicationDetailRecord
+  ): Promise<SalesforceCommunicationDetailRecord>;
+  upsertSimpleTextingMessageDetail(
+    record: SimpleTextingMessageDetailRecord
+  ): Promise<SimpleTextingMessageDetailRecord>;
+  upsertMailchimpCampaignActivityDetail(
+    record: MailchimpCampaignActivityDetailRecord
+  ): Promise<MailchimpCampaignActivityDetailRecord>;
+  upsertManualNoteDetail(
+    record: ManualNoteDetailRecord
+  ): Promise<ManualNoteDetailRecord>;
   saveIdentityResolutionCase(
     record: IdentityResolutionCase
   ): Promise<IdentityResolutionCase>;
@@ -138,6 +158,11 @@ function sameCanonicalEventRecord(
   incoming: CanonicalEventRecord,
   existing: CanonicalEventRecord
 ): boolean {
+  const incomingCampaignRef = incoming.provenance.campaignRef ?? null;
+  const existingCampaignRef = existing.provenance.campaignRef ?? null;
+  const incomingThreadRef = incoming.provenance.threadRef ?? null;
+  const existingThreadRef = existing.provenance.threadRef ?? null;
+
   return (
     incoming.contactId === existing.contactId &&
     incoming.eventType === existing.eventType &&
@@ -150,6 +175,24 @@ function sameCanonicalEventRecord(
     incoming.provenance.primarySourceEvidenceId ===
       existing.provenance.primarySourceEvidenceId &&
     incoming.provenance.winnerReason === existing.provenance.winnerReason &&
+    (incoming.provenance.sourceRecordType ?? null) ===
+      (existing.provenance.sourceRecordType ?? null) &&
+    (incoming.provenance.sourceRecordId ?? null) ===
+      (existing.provenance.sourceRecordId ?? null) &&
+    (incoming.provenance.messageKind ?? null) ===
+      (existing.provenance.messageKind ?? null) &&
+    (incoming.provenance.direction ?? null) ===
+      (existing.provenance.direction ?? null) &&
+    (incomingCampaignRef?.providerCampaignId ?? null) ===
+      (existingCampaignRef?.providerCampaignId ?? null) &&
+    (incomingCampaignRef?.providerAudienceId ?? null) ===
+      (existingCampaignRef?.providerAudienceId ?? null) &&
+    (incomingCampaignRef?.providerMessageName ?? null) ===
+      (existingCampaignRef?.providerMessageName ?? null) &&
+    (incomingThreadRef?.crossProviderCollapseKey ?? null) ===
+      (existingThreadRef?.crossProviderCollapseKey ?? null) &&
+    (incomingThreadRef?.providerThreadId ?? null) ===
+      (existingThreadRef?.providerThreadId ?? null) &&
     (incoming.provenance.notes ?? null) === (existing.provenance.notes ?? null) &&
     arraysEqual(
       incoming.provenance.supportingSourceEvidenceIds,
@@ -328,6 +371,30 @@ export function createStage1PersistenceService(
     upsertSalesforceEventContext(record) {
       return repositories.salesforceEventContext.upsert(
         salesforceEventContextSchema.parse(record)
+      );
+    },
+
+    upsertSalesforceCommunicationDetail(record) {
+      return repositories.salesforceCommunicationDetails.upsert(
+        salesforceCommunicationDetailSchema.parse(record)
+      );
+    },
+
+    upsertSimpleTextingMessageDetail(record) {
+      return repositories.simpleTextingMessageDetails.upsert(
+        simpleTextingMessageDetailSchema.parse(record)
+      );
+    },
+
+    upsertMailchimpCampaignActivityDetail(record) {
+      return repositories.mailchimpCampaignActivityDetails.upsert(
+        mailchimpCampaignActivityDetailSchema.parse(record)
+      );
+    },
+
+    upsertManualNoteDetail(record) {
+      return repositories.manualNoteDetails.upsert(
+        manualNoteDetailSchema.parse(record)
       );
     },
 

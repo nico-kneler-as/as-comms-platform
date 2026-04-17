@@ -747,7 +747,8 @@ function resolveTaskChannel(input: {
   if (
     normalizedChannelValue === "task" &&
     input.relatedMembership !== null &&
-    subject?.includes("email:") === true
+    subject !== null &&
+    subject.includes("email:")
   ) {
     return "email";
   }
@@ -827,11 +828,20 @@ function buildTaskRecord(input: {
           input.config.membershipExpeditionNameField
         );
   const hasMembershipRoutingContext = projectId !== null || expeditionId !== null;
+  const subject = getStringField(input.task, "Subject");
+  const normalizedSubject = subject?.trim().toLowerCase() ?? "";
+  const messageKind =
+    channel === "email" &&
+    input.relatedMembership !== null &&
+    normalizedSubject.startsWith("→ email:")
+      ? "auto"
+      : "one_to_one";
 
   return salesforceTaskCommunicationRecordSchema.parse({
     recordType: "task_communication",
     recordId: taskId,
     channel,
+    messageKind,
     salesforceContactId,
     occurredAt,
     receivedAt: input.receivedAt,
@@ -839,14 +849,16 @@ function buildTaskRecord(input: {
     checksum: sha256Json({
       taskId,
       channel,
+      messageKind,
       occurredAt,
       contactId: salesforceContactId,
-      subject: getStringField(input.task, "Subject"),
+      subject,
       description: getStringField(input.task, "Description")
     }),
+    subject,
     snippet:
       getStringField(input.task, input.config.taskSnippetField) ??
-      getStringField(input.task, "Subject") ??
+      subject ??
       "",
     normalizedEmails: uniqueValues([getEmailField(input.contact ?? {}, "Email")]),
     normalizedPhones: uniqueValues([getPhoneField(input.contact ?? {}, "Phone")]),

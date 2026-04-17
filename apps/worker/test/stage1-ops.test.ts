@@ -105,6 +105,16 @@ async function seedInspectableContact(context: TestWorkerContext): Promise<void>
       summary: "Inbound email received",
       snippet: "Validation reply"
     },
+    communicationClassification: {
+      messageKind: "one_to_one",
+      sourceRecordType: "message",
+      sourceRecordId: "gmail-message-ops-1",
+      campaignRef: null,
+      threadRef: {
+        providerThreadId: "thread-ops-1"
+      },
+      direction: "inbound"
+    },
     identity: {
       salesforceContactId,
       volunteerIdPlainValues: ["VOL-123"],

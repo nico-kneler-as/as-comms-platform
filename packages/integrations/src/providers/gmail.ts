@@ -142,6 +142,17 @@ function mapGmailMessageRecord(
       normalizedPhones: uniqueStrings(record.normalizedPhones)
     },
     supportingSources: buildSupportingSourceReferences(record.supportingRecords),
+    communicationClassification: {
+      messageKind: "one_to_one",
+      sourceRecordType: providerRecordType,
+      sourceRecordId: providerRecordId,
+      campaignRef: null,
+      threadRef: {
+        crossProviderCollapseKey,
+        providerThreadId: record.threadId
+      },
+      direction: record.direction
+    },
     gmailMessageDetail: {
       sourceEvidenceId: buildSourceEvidenceId(
         "gmail",

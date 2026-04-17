@@ -44,6 +44,7 @@ export const mailchimpCampaignActivityRecordSchema = z.object({
   campaignId: z.string().min(1),
   audienceId: z.string().min(1),
   memberId: z.string().min(1),
+  campaignName: nullableStringSchema.default(null),
   snippet: z.string().default("")
 });
 export type MailchimpCampaignActivityRecord = z.infer<
@@ -107,6 +108,13 @@ function mapMailchimpCampaignActivityRecord(
   const eventType = resolveMailchimpEventType(record.activityType);
   const providerRecordType = record.recordType;
   const providerRecordId = record.recordId;
+  const crossProviderCollapseKey = [
+    "mailchimp",
+    record.audienceId,
+    record.campaignId,
+    record.memberId,
+    record.activityType
+  ].join(":");
 
   return {
     sourceEvidence: {
@@ -130,7 +138,7 @@ function mapMailchimpCampaignActivityRecord(
         providerRecordType,
         providerRecordId,
         eventType,
-        crossProviderCollapseKey: null
+        crossProviderCollapseKey
       }),
       eventType,
       occurredAt: record.occurredAt,
@@ -139,7 +147,7 @@ function mapMailchimpCampaignActivityRecord(
         providerRecordType,
         providerRecordId,
         eventType,
-        crossProviderCollapseKey: null
+        crossProviderCollapseKey
       }),
       summary: buildMailchimpSummary(eventType),
       snippet: record.snippet
@@ -150,7 +158,21 @@ function mapMailchimpCampaignActivityRecord(
       normalizedEmails: [record.normalizedEmail],
       normalizedPhones: record.normalizedPhones
     },
-    supportingSources: []
+    supportingSources: [],
+    mailchimpCampaignActivityDetail: {
+      sourceEvidenceId: buildSourceEvidenceId(
+        "mailchimp",
+        providerRecordType,
+        providerRecordId
+      ),
+      providerRecordId,
+      activityType: record.activityType,
+      campaignId: record.campaignId,
+      audienceId: record.audienceId,
+      memberId: record.memberId,
+      campaignName: record.campaignName,
+      snippet: record.snippet
+    }
   };
 }
 

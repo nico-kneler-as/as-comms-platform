@@ -8,13 +8,21 @@ import {
   expeditionDimensionSchema,
   gmailMessageDetailSchema,
   inboxProjectionSchema,
+  mailchimpCampaignActivityDetailSchema,
+  manualNoteDetailSchema,
   projectDimensionSchema,
+  salesforceCommunicationDetailSchema,
   salesforceEventContextSchema,
+  communicationCampaignRefSchema,
+  communicationThreadRefSchema,
+  simpleTextingMessageDetailSchema,
   sourceEvidenceSchema,
   syncStateSchema
 } from "./stage1-records.js";
 import {
   canonicalEventTypeSchema,
+  communicationDirectionSchema,
+  communicationMessageKindSchema,
   contactIdentityKindSchema,
   identityResolutionReasonCodeSchema,
   providerSchema,
@@ -89,6 +97,18 @@ export type SupportingSourceReference = z.infer<
   typeof supportingSourceReferenceSchema
 >;
 
+export const communicationClassificationSchema = z.object({
+  messageKind: communicationMessageKindSchema,
+  sourceRecordType: z.string().min(1),
+  sourceRecordId: z.string().min(1),
+  campaignRef: communicationCampaignRefSchema.nullable().default(null),
+  threadRef: communicationThreadRefSchema.nullable().default(null),
+  direction: communicationDirectionSchema.nullable().default(null)
+});
+export type CommunicationClassification = z.infer<
+  typeof communicationClassificationSchema
+>;
+
 export const normalizedCanonicalEventPayloadSchema = z.object({
   id: idSchema,
   eventType: canonicalEventTypeSchema,
@@ -108,7 +128,13 @@ export const normalizedCanonicalEventIntakeSchema = z
     identity: normalizedIdentityEvidenceSchema,
     routing: normalizedRoutingContextSchema.optional(),
     supportingSources: z.array(supportingSourceReferenceSchema).default([]),
+    communicationClassification: communicationClassificationSchema.optional(),
     gmailMessageDetail: gmailMessageDetailSchema.optional(),
+    salesforceCommunicationDetail: salesforceCommunicationDetailSchema.optional(),
+    simpleTextingMessageDetail: simpleTextingMessageDetailSchema.optional(),
+    mailchimpCampaignActivityDetail:
+      mailchimpCampaignActivityDetailSchema.optional(),
+    manualNoteDetail: manualNoteDetailSchema.optional(),
     salesforceEventContext: salesforceEventContextSchema.optional(),
     projectDimensions: z.array(projectDimensionSchema).default([]),
     expeditionDimensions: z.array(expeditionDimensionSchema).default([])
@@ -150,6 +176,94 @@ export const normalizedCanonicalEventIntakeSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "gmailMessageDetail is only valid for Gmail source evidence"
+      });
+    }
+
+    if (
+      value.salesforceCommunicationDetail !== undefined &&
+      value.salesforceCommunicationDetail.sourceEvidenceId !== value.sourceEvidence.id
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "salesforceCommunicationDetail.sourceEvidenceId must match sourceEvidence.id"
+      });
+    }
+
+    if (
+      value.salesforceCommunicationDetail !== undefined &&
+      value.sourceEvidence.provider !== "salesforce"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "salesforceCommunicationDetail is only valid for Salesforce source evidence"
+      });
+    }
+
+    if (
+      value.simpleTextingMessageDetail !== undefined &&
+      value.simpleTextingMessageDetail.sourceEvidenceId !== value.sourceEvidence.id
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "simpleTextingMessageDetail.sourceEvidenceId must match sourceEvidence.id"
+      });
+    }
+
+    if (
+      value.simpleTextingMessageDetail !== undefined &&
+      value.sourceEvidence.provider !== "simpletexting"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "simpleTextingMessageDetail is only valid for SimpleTexting source evidence"
+      });
+    }
+
+    if (
+      value.mailchimpCampaignActivityDetail !== undefined &&
+      value.mailchimpCampaignActivityDetail.sourceEvidenceId !==
+        value.sourceEvidence.id
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "mailchimpCampaignActivityDetail.sourceEvidenceId must match sourceEvidence.id"
+      });
+    }
+
+    if (
+      value.mailchimpCampaignActivityDetail !== undefined &&
+      value.sourceEvidence.provider !== "mailchimp"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "mailchimpCampaignActivityDetail is only valid for Mailchimp source evidence"
+      });
+    }
+
+    if (
+      value.manualNoteDetail !== undefined &&
+      value.manualNoteDetail.sourceEvidenceId !== value.sourceEvidence.id
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "manualNoteDetail.sourceEvidenceId must match sourceEvidence.id"
+      });
+    }
+
+    if (
+      value.manualNoteDetail !== undefined &&
+      value.sourceEvidence.provider !== "manual"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "manualNoteDetail is only valid for manual source evidence"
       });
     }
 

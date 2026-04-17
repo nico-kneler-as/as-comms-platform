@@ -3,93 +3,28 @@ import { describe, expect, it, vi } from "vitest";
 import {
   resolveCanonicalChannel,
   type NormalizedCanonicalEventIntake,
-  type NormalizedContactGraphUpsertInput,
+  type NormalizedContactGraphUpsertInput
 } from "@as-comms/contracts";
 import type {
   NormalizedCanonicalEventResult,
-  NormalizedContactGraphResult,
+  NormalizedContactGraphResult
 } from "@as-comms/domain";
 
 import { createStage1IngestService } from "../src/ingest/index.js";
 
-interface CompatibilityCommunicationClassification {
-  readonly messageKind?: "auto" | "campaign" | "one_to_one" | null;
-  readonly campaignRef?: {
-    readonly providerCampaignId?: string | null;
-    readonly providerAudienceId?: string | null;
-    readonly providerMessageName?: string | null;
-  } | null;
-  readonly threadRef?: {
-    readonly crossProviderCollapseKey?: string | null;
-    readonly providerThreadId?: string | null;
-  } | null;
-  readonly direction?: "inbound" | "outbound" | null;
-}
-
 function buildContactGraphResult(
-  input: NormalizedContactGraphUpsertInput,
+  input: NormalizedContactGraphUpsertInput
 ): NormalizedContactGraphResult {
   return {
     contact: input.contact,
     identities: input.identities ?? [],
-    memberships: input.memberships ?? [],
+    memberships: input.memberships ?? []
   };
 }
 
 function buildAppliedCanonicalEventResult(
-  input: NormalizedCanonicalEventIntake,
+  input: NormalizedCanonicalEventIntake
 ): NormalizedCanonicalEventResult {
-  const communicationClassification = (
-    input as NormalizedCanonicalEventIntake & {
-      readonly communicationClassification?: CompatibilityCommunicationClassification;
-    }
-  ).communicationClassification;
-  const provenance = {
-    primaryProvider: input.sourceEvidence.provider,
-    primarySourceEvidenceId: input.sourceEvidence.id,
-    supportingSourceEvidenceIds: (input.supportingSources ?? []).map(
-      (source) => source.sourceEvidenceId,
-    ),
-    winnerReason:
-      input.sourceEvidence.provider === "gmail" &&
-      (input.supportingSources ?? []).some(
-        (source) => source.provider === "salesforce",
-      )
-        ? "gmail_wins_duplicate_collapse"
-        : "single_source",
-    sourceRecordType: input.sourceEvidence.providerRecordType,
-    sourceRecordId: input.sourceEvidence.providerRecordId,
-    messageKind: communicationClassification?.messageKind ?? null,
-    campaignRef:
-      communicationClassification?.campaignRef === undefined
-        ? null
-        : {
-            providerCampaignId:
-              communicationClassification.campaignRef?.providerCampaignId ??
-              null,
-            providerAudienceId:
-              communicationClassification.campaignRef?.providerAudienceId ??
-              null,
-            providerMessageName:
-              communicationClassification.campaignRef?.providerMessageName ??
-              null,
-          },
-    threadRef:
-      communicationClassification?.threadRef === undefined
-        ? null
-        : {
-            crossProviderCollapseKey:
-              communicationClassification.threadRef?.crossProviderCollapseKey ??
-              null,
-            providerThreadId:
-              communicationClassification.threadRef?.providerThreadId ?? null,
-          },
-    direction: communicationClassification?.direction ?? null,
-  } as Extract<
-    NormalizedCanonicalEventResult,
-    { readonly outcome: "applied" | "duplicate" }
-  >["canonicalEvent"]["provenance"];
-
   return {
     outcome: "applied",
     sourceEvidence: input.sourceEvidence,
@@ -101,8 +36,50 @@ function buildAppliedCanonicalEventResult(
       occurredAt: input.canonicalEvent.occurredAt,
       sourceEvidenceId: input.sourceEvidence.id,
       idempotencyKey: input.canonicalEvent.idempotencyKey,
-      provenance,
-      reviewState: "clear",
+      provenance: {
+        primaryProvider: input.sourceEvidence.provider,
+        primarySourceEvidenceId: input.sourceEvidence.id,
+        supportingSourceEvidenceIds: (input.supportingSources ?? []).map(
+          (source) => source.sourceEvidenceId
+        ),
+        winnerReason:
+          input.sourceEvidence.provider === "gmail" &&
+          (input.supportingSources ?? []).some(
+            (source) => source.provider === "salesforce"
+          )
+            ? "gmail_wins_duplicate_collapse"
+            : "single_source",
+        sourceRecordType: input.sourceEvidence.providerRecordType,
+        sourceRecordId: input.sourceEvidence.providerRecordId,
+        messageKind: input.communicationClassification?.messageKind ?? null,
+        campaignRef:
+          input.communicationClassification?.campaignRef === undefined
+            ? null
+            : {
+                providerCampaignId:
+                  input.communicationClassification.campaignRef
+                    ?.providerCampaignId ?? null,
+                providerAudienceId:
+                  input.communicationClassification.campaignRef
+                    ?.providerAudienceId ?? null,
+                providerMessageName:
+                  input.communicationClassification.campaignRef
+                    ?.providerMessageName ?? null
+              },
+        threadRef:
+          input.communicationClassification?.threadRef === undefined
+            ? null
+            : {
+                crossProviderCollapseKey:
+                  input.communicationClassification.threadRef
+                    ?.crossProviderCollapseKey ?? null,
+                providerThreadId:
+                  input.communicationClassification.threadRef
+                    ?.providerThreadId ?? null
+              },
+        direction: input.communicationClassification?.direction ?? null
+      },
+      reviewState: "clear"
     },
     timelineProjection: {
       id: `timeline:${input.canonicalEvent.id}`,
@@ -114,12 +91,12 @@ function buildAppliedCanonicalEventResult(
       summary: input.canonicalEvent.summary,
       channel: resolveCanonicalChannel(input.canonicalEvent.eventType),
       primaryProvider: input.sourceEvidence.provider,
-      reviewState: "clear",
+      reviewState: "clear"
     },
     inboxProjection: null,
     identityCase: null,
     routingCase: null,
-    auditEvidence: null,
+    auditEvidence: null
   };
 }
 
@@ -127,15 +104,15 @@ describe("Stage 1 worker ingest service", () => {
   it("routes Gmail historical and live intake through the same normalized path", async () => {
     const applyNormalizedCanonicalEvent = vi.fn(
       (input: NormalizedCanonicalEventIntake) =>
-        Promise.resolve(buildAppliedCanonicalEventResult(input)),
+        Promise.resolve(buildAppliedCanonicalEventResult(input))
     );
     const upsertNormalizedContactGraph = vi.fn(
       (input: NormalizedContactGraphUpsertInput) =>
-        Promise.resolve(buildContactGraphResult(input)),
+        Promise.resolve(buildContactGraphResult(input))
     );
     const service = createStage1IngestService({
       applyNormalizedCanonicalEvent,
-      upsertNormalizedContactGraph,
+      upsertNormalizedContactGraph
     });
 
     const record = {
@@ -157,13 +134,11 @@ describe("Stage 1 worker ingest service", () => {
         {
           provider: "salesforce" as const,
           providerRecordType: "task_communication",
-          providerRecordId: "task-1",
-        },
+          providerRecordId: "task-1"
+        }
       ],
-      crossProviderCollapseKey: "email-thread-1",
-      messageKind: "one_to_one",
-      subject: null,
-    } as Parameters<typeof service.ingestGmailHistoricalRecord>[0];
+      crossProviderCollapseKey: "email-thread-1"
+    };
 
     const historicalResult = await service.ingestGmailHistoricalRecord(record);
     const liveResult = await service.ingestGmailLiveRecord(record);
@@ -172,38 +147,35 @@ describe("Stage 1 worker ingest service", () => {
     expect(liveResult.outcome).toBe("normalized");
     expect(applyNormalizedCanonicalEvent).toHaveBeenCalledTimes(2);
     expect(applyNormalizedCanonicalEvent.mock.calls[0]?.[0]).toEqual(
-      applyNormalizedCanonicalEvent.mock.calls[1]?.[0],
+      applyNormalizedCanonicalEvent.mock.calls[1]?.[0]
     );
     expect(
-      applyNormalizedCanonicalEvent.mock.calls[0]?.[0].supportingSources,
+      applyNormalizedCanonicalEvent.mock.calls[0]?.[0].supportingSources
     ).toEqual([
       {
         provider: "salesforce",
         sourceEvidenceId:
-          "source-evidence:salesforce:task_communication:task-1",
-      },
+          "source-evidence:salesforce:task_communication:task-1"
+      }
     ]);
     expect(
-      applyNormalizedCanonicalEvent.mock.calls[0]?.[0].canonicalEvent
-        .idempotencyKey,
-    ).toBe(
-      "canonical-event:collapse:communication.email.outbound:email-thread-1",
-    );
+      applyNormalizedCanonicalEvent.mock.calls[0]?.[0].canonicalEvent.idempotencyKey
+    ).toBe("canonical-event:collapse:communication.email.outbound:email-thread-1");
     expect(upsertNormalizedContactGraph).not.toHaveBeenCalled();
   });
 
   it("sends Salesforce contact snapshots through the contact-graph normalization path", async () => {
     const applyNormalizedCanonicalEvent = vi.fn(
       (input: NormalizedCanonicalEventIntake) =>
-        Promise.resolve(buildAppliedCanonicalEventResult(input)),
+        Promise.resolve(buildAppliedCanonicalEventResult(input))
     );
     const upsertNormalizedContactGraph = vi.fn(
       (input: NormalizedContactGraphUpsertInput) =>
-        Promise.resolve(buildContactGraphResult(input)),
+        Promise.resolve(buildContactGraphResult(input))
     );
     const service = createStage1IngestService({
       applyNormalizedCanonicalEvent,
-      upsertNormalizedContactGraph,
+      upsertNormalizedContactGraph
     });
 
     const result = await service.ingestSalesforceHistoricalRecord({
@@ -218,7 +190,7 @@ describe("Stage 1 worker ingest service", () => {
       volunteerIdPlainValues: ["VOL-123"],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
-      memberships: [],
+      memberships: []
     });
 
     expect(result).toEqual({
@@ -230,7 +202,7 @@ describe("Stage 1 worker ingest service", () => {
       commandKind: "contact_graph",
       sourceEvidenceId: null,
       canonicalEventId: null,
-      contactId: "contact:salesforce:003-stage1",
+      contactId: "contact:salesforce:003-stage1"
     });
     expect(upsertNormalizedContactGraph).toHaveBeenCalledTimes(1);
     expect(applyNormalizedCanonicalEvent).not.toHaveBeenCalled();
@@ -239,20 +211,20 @@ describe("Stage 1 worker ingest service", () => {
   it("returns explicit deferred outcomes for unsupported provider records without calling normalization", async () => {
     const applyNormalizedCanonicalEvent = vi.fn(
       (input: NormalizedCanonicalEventIntake) =>
-        Promise.resolve(buildAppliedCanonicalEventResult(input)),
+        Promise.resolve(buildAppliedCanonicalEventResult(input))
     );
     const upsertNormalizedContactGraph = vi.fn(
       (input: NormalizedContactGraphUpsertInput) =>
-        Promise.resolve(buildContactGraphResult(input)),
+        Promise.resolve(buildContactGraphResult(input))
     );
     const service = createStage1IngestService({
       applyNormalizedCanonicalEvent,
-      upsertNormalizedContactGraph,
+      upsertNormalizedContactGraph
     });
 
     const result = await service.ingestMailchimpHistoricalRecord({
       recordType: "audience_mutation",
-      recordId: "audience-1",
+      recordId: "audience-1"
     });
 
     expect(result).toEqual({
@@ -262,7 +234,7 @@ describe("Stage 1 worker ingest service", () => {
       sourceRecordType: "audience_mutation",
       sourceRecordId: "audience-1",
       reason: "deferred_record_family",
-      detail: "Mailchimp audience_mutation records are deferred in Stage 1.",
+      detail: "Mailchimp audience_mutation records are deferred in Stage 1."
     });
     expect(applyNormalizedCanonicalEvent).not.toHaveBeenCalled();
     expect(upsertNormalizedContactGraph).not.toHaveBeenCalled();
@@ -271,9 +243,7 @@ describe("Stage 1 worker ingest service", () => {
   it("surfaces review-opened and quarantined outcomes from the normalization boundary", async () => {
     const applyNormalizedCanonicalEvent = vi
       .fn<
-        (
-          input: NormalizedCanonicalEventIntake,
-        ) => Promise<NormalizedCanonicalEventResult>
+        (input: NormalizedCanonicalEventIntake) => Promise<NormalizedCanonicalEventResult>
       >()
       .mockResolvedValueOnce({
         outcome: "needs_identity_review",
@@ -286,7 +256,7 @@ describe("Stage 1 worker ingest service", () => {
           occurredAt: "2026-01-01T00:00:00.000Z",
           payloadRef: "payloads/gmail/gmail-message-1.json",
           idempotencyKey: "source-evidence:gmail:message:gmail-message-1",
-          checksum: "checksum-1",
+          checksum: "checksum-1"
         },
         identityCase: {
           id: "identity-review:source-evidence:gmail:message:gmail-message-1:identity_multi_candidate",
@@ -298,9 +268,9 @@ describe("Stage 1 worker ingest service", () => {
           resolvedAt: null,
           normalizedIdentityValues: ["shared@example.org"],
           anchoredContactId: null,
-          explanation: "Multiple contacts matched the same email.",
+          explanation: "Multiple contacts matched the same email."
         },
-        auditEvidence: null,
+        auditEvidence: null
       })
       .mockResolvedValueOnce({
         outcome: "quarantined",
@@ -312,13 +282,11 @@ describe("Stage 1 worker ingest service", () => {
           receivedAt: "2026-01-01T00:02:00.000Z",
           occurredAt: "2026-01-01T00:01:00.000Z",
           payloadRef: "payloads/salesforce/task-1.json",
-          idempotencyKey:
-            "source-evidence:salesforce:task_communication:task-1",
-          checksum: "checksum-task-1",
+          idempotencyKey: "source-evidence:salesforce:task_communication:task-1",
+          checksum: "checksum-task-1"
         },
         reasonCode: "duplicate_collapse_conflict",
-        explanation:
-          "Gmail must win duplicate collapse for the same outbound email.",
+        explanation: "Gmail must win duplicate collapse for the same outbound email.",
         existingCanonicalEvent: null,
         auditEvidence: {
           id: "audit:canonical_event:task-1:duplicate_collapse_conflict",
@@ -330,16 +298,16 @@ describe("Stage 1 worker ingest service", () => {
           occurredAt: "2026-01-01T00:02:00.000Z",
           result: "recorded",
           policyCode: "stage1.quarantine.duplicate_collapse_conflict",
-          metadataJson: {},
-        },
+          metadataJson: {}
+        }
       });
     const upsertNormalizedContactGraph = vi.fn(
       (input: NormalizedContactGraphUpsertInput) =>
-        Promise.resolve(buildContactGraphResult(input)),
+        Promise.resolve(buildContactGraphResult(input))
     );
     const service = createStage1IngestService({
       applyNormalizedCanonicalEvent,
-      upsertNormalizedContactGraph,
+      upsertNormalizedContactGraph
     });
 
     const reviewResult = await service.ingestGmailHistoricalRecord({
@@ -358,10 +326,8 @@ describe("Stage 1 worker ingest service", () => {
       volunteerIdPlainValues: [],
       normalizedPhones: [],
       supportingRecords: [],
-      crossProviderCollapseKey: null,
-      messageKind: "one_to_one",
-      subject: null,
-    } as Parameters<typeof service.ingestGmailHistoricalRecord>[0]);
+      crossProviderCollapseKey: null
+    });
 
     const quarantineResult = await service.ingestSalesforceLiveRecord({
       recordType: "task_communication",
@@ -380,17 +346,19 @@ describe("Stage 1 worker ingest service", () => {
         {
           provider: "gmail",
           providerRecordType: "message",
-          providerRecordId: "gmail-message-1",
-        },
+          providerRecordId: "gmail-message-1"
+        }
       ],
       crossProviderCollapseKey: "email-thread-1",
+      messageKind: "one_to_one",
+      subject: null,
       routing: {
         required: false,
         projectId: null,
         expeditionId: null,
         projectName: null,
-        expeditionName: null,
-      },
+        expeditionName: null
+      }
     });
 
     expect(reviewResult).toEqual({
@@ -408,9 +376,9 @@ describe("Stage 1 worker ingest service", () => {
           queue: "identity",
           caseId:
             "identity-review:source-evidence:gmail:message:gmail-message-1:identity_multi_candidate",
-          reasonCode: "identity_multi_candidate",
-        },
-      ],
+          reasonCode: "identity_multi_candidate"
+        }
+      ]
     });
     expect(quarantineResult).toEqual({
       outcome: "quarantined",
@@ -425,8 +393,7 @@ describe("Stage 1 worker ingest service", () => {
       reasonCode: "duplicate_collapse_conflict",
       explanation:
         "Gmail must win duplicate collapse for the same outbound email.",
-      auditEvidenceId:
-        "audit:canonical_event:task-1:duplicate_collapse_conflict",
+      auditEvidenceId: "audit:canonical_event:task-1:duplicate_collapse_conflict"
     });
   });
 });
