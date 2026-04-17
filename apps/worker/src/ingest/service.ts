@@ -3,18 +3,18 @@ import type {
   MailchimpRecord,
   ProviderMappingResult,
   SalesforceRecord,
-  SimpleTextingRecord
+  SimpleTextingRecord,
 } from "@as-comms/integrations";
 import {
   mapGmailRecord,
   mapMailchimpRecord,
   mapSalesforceRecord,
-  mapSimpleTextingRecord
+  mapSimpleTextingRecord,
 } from "@as-comms/integrations";
 import type {
   NormalizedCanonicalEventResult,
   NormalizedContactGraphResult,
-  Stage1NormalizationService
+  Stage1NormalizationService,
 } from "@as-comms/domain";
 
 import type {
@@ -25,7 +25,7 @@ import type {
   Stage1IngestReviewCaseSummary,
   Stage1NormalizedIngestResult,
   Stage1QuarantinedIngestResult,
-  Stage1ReviewOpenedIngestResult
+  Stage1ReviewOpenedIngestResult,
 } from "./types.js";
 
 export type Stage1IngestNormalizationPort = Pick<
@@ -37,27 +37,27 @@ export interface Stage1IngestService {
   ingestGmailHistoricalRecord(record: GmailRecord): Promise<Stage1IngestResult>;
   ingestGmailLiveRecord(record: GmailRecord): Promise<Stage1IngestResult>;
   ingestSalesforceHistoricalRecord(
-    record: SalesforceRecord
+    record: SalesforceRecord,
   ): Promise<Stage1IngestResult>;
   ingestSalesforceLiveRecord(
-    record: SalesforceRecord
+    record: SalesforceRecord,
   ): Promise<Stage1IngestResult>;
   ingestSimpleTextingHistoricalRecord(
-    record: SimpleTextingRecord
+    record: SimpleTextingRecord,
   ): Promise<Stage1IngestResult>;
   ingestSimpleTextingLiveRecord(
-    record: SimpleTextingRecord
+    record: SimpleTextingRecord,
   ): Promise<Stage1IngestResult>;
   ingestMailchimpHistoricalRecord(
-    record: MailchimpRecord
+    record: MailchimpRecord,
   ): Promise<Stage1IngestResult>;
   ingestMailchimpTransitionRecord(
-    record: MailchimpRecord
+    record: MailchimpRecord,
   ): Promise<Stage1IngestResult>;
 }
 
 function buildReviewCases(
-  result: NormalizedCanonicalEventResult
+  result: NormalizedCanonicalEventResult,
 ): Stage1IngestReviewCaseSummary[] {
   switch (result.outcome) {
     case "needs_identity_review":
@@ -65,8 +65,8 @@ function buildReviewCases(
         {
           queue: "identity",
           caseId: result.identityCase.id,
-          reasonCode: result.identityCase.reasonCode
-        }
+          reasonCode: result.identityCase.reasonCode,
+        },
       ];
     case "applied":
     case "duplicate": {
@@ -76,7 +76,7 @@ function buildReviewCases(
         reviewCases.push({
           queue: "identity",
           caseId: result.identityCase.id,
-          reasonCode: result.identityCase.reasonCode
+          reasonCode: result.identityCase.reasonCode,
         });
       }
 
@@ -84,7 +84,7 @@ function buildReviewCases(
         reviewCases.push({
           queue: "routing",
           caseId: result.routingCase.id,
-          reasonCode: result.routingCase.reasonCode
+          reasonCode: result.routingCase.reasonCode,
         });
       }
 
@@ -97,17 +97,33 @@ function buildReviewCases(
 
 function mapDeferredResult(
   input: ProviderMappingResult & { readonly outcome: "deferred" },
-  ingestMode: Stage1IngestMode
+  ingestMode: Stage1IngestMode,
 ): Stage1DeferredIngestResult {
   return {
     outcome: "deferred",
     ingestMode,
-    provider: input.provider,
+    provider: toStage1IngestProvider(input.provider),
     sourceRecordType: input.sourceRecordType,
     sourceRecordId: input.sourceRecordId,
     reason: input.reason,
-    detail: input.detail
+    detail: input.detail,
   };
+}
+
+function toStage1IngestProvider(
+  provider: Stage1IngestResult["provider"] | "manual",
+): Stage1IngestResult["provider"] {
+  switch (provider) {
+    case "gmail":
+    case "salesforce":
+    case "simpletexting":
+    case "mailchimp":
+      return provider;
+    case "manual":
+      throw new Error(
+        "Manual provider records are not supported by the Stage 1 ingest service.",
+      );
+  }
 }
 
 function mapContactGraphResult(input: {
@@ -118,13 +134,13 @@ function mapContactGraphResult(input: {
   return {
     outcome: "normalized",
     ingestMode: input.ingestMode,
-    provider: input.mapped.provider,
+    provider: toStage1IngestProvider(input.mapped.provider),
     sourceRecordType: input.mapped.sourceRecordType,
     sourceRecordId: input.mapped.sourceRecordId,
     commandKind: "contact_graph",
     sourceEvidenceId: null,
     canonicalEventId: null,
-    contactId: input.result.contact.id
+    contactId: input.result.contact.id,
   };
 }
 
@@ -139,10 +155,10 @@ function mapCanonicalEventResult(input: {
   | Stage1QuarantinedIngestResult {
   const base = {
     ingestMode: input.ingestMode,
-    provider: input.mapped.provider,
+    provider: toStage1IngestProvider(input.mapped.provider),
     sourceRecordType: input.mapped.sourceRecordType,
     sourceRecordId: input.mapped.sourceRecordId,
-    commandKind: "canonical_event" as const
+    commandKind: "canonical_event" as const,
   };
 
   switch (input.result.outcome) {
@@ -156,7 +172,7 @@ function mapCanonicalEventResult(input: {
           sourceEvidenceId: input.result.sourceEvidence.id,
           canonicalEventId: input.result.canonicalEvent.id,
           contactId: input.result.canonicalEvent.contactId,
-          reviewCases
+          reviewCases,
         };
       }
 
@@ -165,7 +181,7 @@ function mapCanonicalEventResult(input: {
         outcome: "normalized",
         sourceEvidenceId: input.result.sourceEvidence.id,
         canonicalEventId: input.result.canonicalEvent.id,
-        contactId: input.result.canonicalEvent.contactId
+        contactId: input.result.canonicalEvent.contactId,
       };
     }
     case "duplicate": {
@@ -178,7 +194,7 @@ function mapCanonicalEventResult(input: {
           sourceEvidenceId: input.result.sourceEvidence.id,
           canonicalEventId: input.result.canonicalEvent.id,
           contactId: input.result.canonicalEvent.contactId,
-          reviewCases
+          reviewCases,
         };
       }
 
@@ -187,7 +203,7 @@ function mapCanonicalEventResult(input: {
         outcome: "duplicate",
         sourceEvidenceId: input.result.sourceEvidence.id,
         canonicalEventId: input.result.canonicalEvent.id,
-        contactId: input.result.canonicalEvent.contactId
+        contactId: input.result.canonicalEvent.contactId,
       };
     }
     case "needs_identity_review":
@@ -197,7 +213,7 @@ function mapCanonicalEventResult(input: {
         sourceEvidenceId: input.result.sourceEvidence.id,
         canonicalEventId: null,
         contactId: input.result.identityCase.anchoredContactId,
-        reviewCases: buildReviewCases(input.result)
+        reviewCases: buildReviewCases(input.result),
       };
     case "quarantined":
       return {
@@ -208,7 +224,7 @@ function mapCanonicalEventResult(input: {
         contactId: input.result.existingCanonicalEvent?.contactId ?? null,
         reasonCode: input.result.reasonCode,
         explanation: input.result.explanation,
-        auditEvidenceId: input.result.auditEvidence.id
+        auditEvidenceId: input.result.auditEvidence.id,
       };
   }
 }
@@ -216,7 +232,7 @@ function mapCanonicalEventResult(input: {
 async function executeMappedCommand(
   normalization: Stage1IngestNormalizationPort,
   ingestMode: Stage1IngestMode,
-  mapped: ProviderMappingResult
+  mapped: ProviderMappingResult,
 ): Promise<Stage1IngestResult> {
   if (mapped.outcome === "deferred") {
     return mapDeferredResult(mapped, ingestMode);
@@ -228,14 +244,14 @@ async function executeMappedCommand(
     return mapContactGraphResult({
       ingestMode,
       mapped,
-      result: await normalization.upsertNormalizedContactGraph(command.input)
+      result: await normalization.upsertNormalizedContactGraph(command.input),
     });
   }
 
   return mapCanonicalEventResult({
     ingestMode,
     mapped,
-    result: await normalization.applyNormalizedCanonicalEvent(command.input)
+    result: await normalization.applyNormalizedCanonicalEvent(command.input),
   });
 }
 
@@ -245,24 +261,24 @@ async function ingestRecord<TRecord>(
     readonly ingestMode: Stage1IngestMode;
     readonly mapper: (record: TRecord) => ProviderMappingResult;
     readonly record: TRecord;
-  }
+  },
 ): Promise<Stage1IngestResult> {
   return executeMappedCommand(
     normalization,
     input.ingestMode,
-    input.mapper(input.record)
+    input.mapper(input.record),
   );
 }
 
 export function createStage1IngestService(
-  normalization: Stage1IngestNormalizationPort
+  normalization: Stage1IngestNormalizationPort,
 ): Stage1IngestService {
   return {
     ingestGmailHistoricalRecord(record) {
       return ingestRecord(normalization, {
         ingestMode: "historical",
         mapper: mapGmailRecord,
-        record
+        record,
       });
     },
 
@@ -270,7 +286,7 @@ export function createStage1IngestService(
       return ingestRecord(normalization, {
         ingestMode: "live",
         mapper: mapGmailRecord,
-        record
+        record,
       });
     },
 
@@ -278,7 +294,7 @@ export function createStage1IngestService(
       return ingestRecord(normalization, {
         ingestMode: "historical",
         mapper: mapSalesforceRecord,
-        record
+        record,
       });
     },
 
@@ -286,7 +302,7 @@ export function createStage1IngestService(
       return ingestRecord(normalization, {
         ingestMode: "live",
         mapper: mapSalesforceRecord,
-        record
+        record,
       });
     },
 
@@ -294,7 +310,7 @@ export function createStage1IngestService(
       return ingestRecord(normalization, {
         ingestMode: "historical",
         mapper: mapSimpleTextingRecord,
-        record
+        record,
       });
     },
 
@@ -302,7 +318,7 @@ export function createStage1IngestService(
       return ingestRecord(normalization, {
         ingestMode: "live",
         mapper: mapSimpleTextingRecord,
-        record
+        record,
       });
     },
 
@@ -310,7 +326,7 @@ export function createStage1IngestService(
       return ingestRecord(normalization, {
         ingestMode: "historical",
         mapper: mapMailchimpRecord,
-        record
+        record,
       });
     },
 
@@ -318,8 +334,8 @@ export function createStage1IngestService(
       return ingestRecord(normalization, {
         ingestMode: "transition_live",
         mapper: mapMailchimpRecord,
-        record
+        record,
       });
-    }
+    },
   };
 }
