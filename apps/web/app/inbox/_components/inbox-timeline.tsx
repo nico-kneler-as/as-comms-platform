@@ -30,8 +30,8 @@ export function InboxTimeline({
 
   if (entries.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-200 p-10 text-center text-sm text-slate-500">
-        No history yet for this person.
+      <div className="flex min-h-[6rem] items-center justify-center py-10 text-center text-sm text-slate-400">
+        No timeline entries yet.
       </div>
     );
   }
@@ -202,7 +202,7 @@ function AutomatedRow({
       : isEmail
         ? "Campaign Email"
         : "Campaign SMS";
-  const headline = entry.subject ?? "(no subject)";
+  const headline = entry.subject;
 
   return (
     <li className="flex w-full flex-col items-end">
@@ -216,11 +216,17 @@ function AutomatedRow({
         className={`group flex w-full max-w-2xl items-center gap-3 ${RADIUS.md} border border-dashed border-slate-300 bg-white px-4 py-2.5 text-left ${TRANSITION.fast} hover:bg-slate-50`}
       >
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium leading-snug text-slate-700">
-            {headline}
-          </p>
+          {headline ? (
+            <p className="text-[13px] font-medium leading-snug text-slate-700">
+              {headline}
+            </p>
+          ) : null}
           {isExpanded ? (
-            <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-600">
+            <p
+              className={`whitespace-pre-wrap text-[13px] leading-relaxed text-slate-600 ${
+                headline ? "mt-2" : ""
+              }`}
+            >
               {entry.body}
             </p>
           ) : null}

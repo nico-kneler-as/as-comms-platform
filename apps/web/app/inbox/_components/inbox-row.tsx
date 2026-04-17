@@ -22,13 +22,6 @@ export function InboxRow({ item, isActive }: RowProps) {
   const isUnread = item.bucket === "new";
   const ChannelIcon = item.latestChannel === "email" ? MailIcon : PhoneIcon;
 
-  const accentClass =
-    item.bucket === "new"
-      ? "bg-sky-500"
-      : item.needsFollowUp
-        ? "bg-rose-500"
-        : null;
-
   const showBadges =
     Boolean(item.projectLabel) ||
     item.needsFollowUp ||
@@ -46,12 +39,7 @@ export function InboxRow({ item, isActive }: RowProps) {
             : "hover:bg-slate-50/80"
         }`}
       >
-        {accentClass ? (
-          <span
-            aria-hidden="true"
-            className={`absolute left-0 top-0 h-full w-1 ${accentClass}`}
-          />
-        ) : null}
+        <AccentBar unread={isUnread} needsFollowUp={item.needsFollowUp} />
 
         <InboxAvatar
           initials={item.initials}
@@ -126,5 +114,44 @@ export function InboxRow({ item, isActive }: RowProps) {
         </div>
       </Link>
     </li>
+  );
+}
+
+/**
+ * Left accent bar. Renders both flags as stacked segments when a contact is
+ * both unread and flagged for follow-up, so neither signal is hidden by the
+ * other. When only one applies, the active color fills the full height —
+ * visually identical to the previous single-color bar.
+ */
+function AccentBar({
+  unread,
+  needsFollowUp
+}: {
+  readonly unread: boolean;
+  readonly needsFollowUp: boolean;
+}) {
+  if (!unread && !needsFollowUp) {
+    return null;
+  }
+
+  if (unread && needsFollowUp) {
+    return (
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute left-0 top-0 flex h-full w-1 flex-col"
+      >
+        <span className="h-1/2 w-full bg-sky-500" />
+        <span className="h-1/2 w-full bg-rose-500" />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className={`pointer-events-none absolute left-0 top-0 h-full w-1 ${
+        unread ? "bg-sky-500" : "bg-rose-500"
+      }`}
+    />
   );
 }

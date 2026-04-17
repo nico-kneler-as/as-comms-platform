@@ -151,17 +151,13 @@ export function InboxComposer({
     setComposerErrors([]);
     setComposerStatus("sending");
     setTimeout(() => {
-      if (Math.random() > 0.2) {
-        setComposerStatus("sent-success");
-        setDraft("");
-        setSubject("");
-        resetAiDraft();
-        setTimeout(() => {
-          setComposerStatus("idle");
-        }, 2500);
-      } else {
-        setComposerStatus("send-failure");
-      }
+      setComposerStatus("sent-success");
+      setDraft("");
+      setSubject("");
+      resetAiDraft();
+      setTimeout(() => {
+        setComposerStatus("idle");
+      }, 2500);
     }, 1200);
   };
 
