@@ -3,8 +3,11 @@ import { z } from "zod";
 import {
   auditActorTypeSchema,
   auditResultSchema,
+  campaignEmailActivityTypeSchema,
   canonicalEventTypeSchema,
   channelSchema,
+  communicationDirectionSchema,
+  communicationMessageKindSchema,
   contactIdentityKindSchema,
   identityResolutionReasonCodeSchema,
   inboxBucketSchema,
@@ -29,12 +32,35 @@ const stringArraySchema = z.array(z.string().min(1));
 const metadataJsonSchema = z.record(z.string(), z.unknown());
 const nullableStringSchema = z.string().min(1).nullable();
 
+export const communicationCampaignRefSchema = z.object({
+  providerCampaignId: nullableStringSchema.default(null),
+  providerAudienceId: nullableStringSchema.default(null),
+  providerMessageName: nullableStringSchema.default(null)
+});
+export type CommunicationCampaignRef = z.infer<
+  typeof communicationCampaignRefSchema
+>;
+
+export const communicationThreadRefSchema = z.object({
+  crossProviderCollapseKey: nullableStringSchema.default(null),
+  providerThreadId: nullableStringSchema.default(null)
+});
+export type CommunicationThreadRef = z.infer<
+  typeof communicationThreadRefSchema
+>;
+
 // Stage 1 intentionally keeps provenance serialization compact and explicit.
 export const canonicalEventProvenanceSchema = z.object({
   primaryProvider: providerSchema,
   primarySourceEvidenceId: idSchema,
   supportingSourceEvidenceIds: stringArraySchema.default([]),
   winnerReason: provenanceWinnerReasonSchema,
+  sourceRecordType: nullableStringSchema.default(null),
+  sourceRecordId: nullableStringSchema.default(null),
+  messageKind: communicationMessageKindSchema.nullable().default(null),
+  campaignRef: communicationCampaignRefSchema.nullable().default(null),
+  threadRef: communicationThreadRefSchema.nullable().default(null),
+  direction: communicationDirectionSchema.nullable().default(null),
   notes: z.string().min(1).nullable().optional()
 });
 export type CanonicalEventProvenance = z.infer<
@@ -155,11 +181,63 @@ export const salesforceEventContextSchema = z.object({
   sourceEvidenceId: idSchema,
   salesforceContactId: nullableStringSchema,
   projectId: nullableStringSchema,
-  expeditionId: nullableStringSchema
+  expeditionId: nullableStringSchema,
+  sourceField: nullableStringSchema.default(null)
 });
 export type SalesforceEventContextRecord = z.infer<
   typeof salesforceEventContextSchema
 >;
+
+export const salesforceCommunicationDetailSchema = z.object({
+  sourceEvidenceId: idSchema,
+  providerRecordId: z.string().min(1),
+  channel: z.enum(["email", "sms"]),
+  messageKind: communicationMessageKindSchema,
+  subject: nullableStringSchema,
+  snippet: z.string(),
+  sourceLabel: z.string().min(1)
+});
+export type SalesforceCommunicationDetailRecord = z.infer<
+  typeof salesforceCommunicationDetailSchema
+>;
+
+export const simpleTextingMessageDetailSchema = z.object({
+  sourceEvidenceId: idSchema,
+  providerRecordId: z.string().min(1),
+  direction: communicationDirectionSchema,
+  messageKind: communicationMessageKindSchema,
+  messageTextPreview: z.string(),
+  normalizedPhone: nullableStringSchema,
+  campaignId: nullableStringSchema,
+  campaignName: nullableStringSchema,
+  providerThreadId: nullableStringSchema,
+  threadKey: nullableStringSchema
+});
+export type SimpleTextingMessageDetailRecord = z.infer<
+  typeof simpleTextingMessageDetailSchema
+>;
+
+export const mailchimpCampaignActivityDetailSchema = z.object({
+  sourceEvidenceId: idSchema,
+  providerRecordId: z.string().min(1),
+  activityType: campaignEmailActivityTypeSchema,
+  campaignId: nullableStringSchema,
+  audienceId: nullableStringSchema,
+  memberId: nullableStringSchema,
+  campaignName: nullableStringSchema,
+  snippet: z.string()
+});
+export type MailchimpCampaignActivityDetailRecord = z.infer<
+  typeof mailchimpCampaignActivityDetailSchema
+>;
+
+export const manualNoteDetailSchema = z.object({
+  sourceEvidenceId: idSchema,
+  providerRecordId: z.string().min(1),
+  body: z.string().min(1),
+  authorDisplayName: nullableStringSchema.default(null)
+});
+export type ManualNoteDetailRecord = z.infer<typeof manualNoteDetailSchema>;
 
 export const identityResolutionSchema = z
   .object({
@@ -220,16 +298,34 @@ export const inboxProjectionSchema = z
     lastEventType: inboxDrivingEventTypeSchema
   })
   .superRefine((value, context) => {
-    const latestKnownAt = [value.lastInboundAt, value.lastOutboundAt]
-      .filter((timestamp): timestamp is string => timestamp !== null)
-      .sort()
-      .at(-1);
-
-    if (latestKnownAt !== undefined && latestKnownAt !== value.lastActivityAt) {
+    if (value.lastInboundAt === null && value.lastOutboundAt === null) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "lastActivityAt must match the newest known inbound or outbound timestamp"
+          "an inbox projection must include at least one inbound or outbound timestamp"
+      });
+    }
+
+    if (
+      value.lastInboundAt === null &&
+      value.lastOutboundAt !== null &&
+      value.lastActivityAt !== value.lastOutboundAt
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "outbound-only inbox rows must set lastActivityAt to lastOutboundAt"
+      });
+    }
+
+    if (
+      value.lastInboundAt !== null &&
+      value.lastActivityAt < value.lastInboundAt
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "lastActivityAt must be at least as recent as lastInboundAt when inbound history exists"
       });
     }
   });

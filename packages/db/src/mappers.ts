@@ -8,9 +8,13 @@ import {
   gmailMessageDetailSchema,
   identityResolutionSchema,
   inboxProjectionSchema,
+  mailchimpCampaignActivityDetailSchema,
+  manualNoteDetailSchema,
   projectDimensionSchema,
   routingReviewSchema,
+  salesforceCommunicationDetailSchema,
   salesforceEventContextSchema,
+  simpleTextingMessageDetailSchema,
   sourceEvidenceSchema,
   syncStateSchema,
   timelineProjectionSchema,
@@ -23,9 +27,13 @@ import {
   type GmailMessageDetailRecord,
   type IdentityResolutionCase,
   type InboxProjectionRow,
+  type MailchimpCampaignActivityDetailRecord,
+  type ManualNoteDetailRecord,
   type ProjectDimensionRecord,
   type RoutingReviewCase,
+  type SalesforceCommunicationDetailRecord,
   type SalesforceEventContextRecord,
+  type SimpleTextingMessageDetailRecord,
   type SourceEvidenceRecord,
   type SyncStateRecord,
   type TimelineProjectionRow
@@ -42,9 +50,13 @@ import type {
   expeditionDimensions,
   gmailMessageDetails,
   identityResolutionQueue,
+  mailchimpCampaignActivityDetails,
+  manualNoteDetails,
   projectDimensions,
   routingReviewQueue,
+  salesforceCommunicationDetails,
   salesforceEventContext,
+  simpleTextingMessageDetails,
   sourceEvidenceLog,
   syncState
 } from "./schema/index.js";
@@ -58,6 +70,13 @@ type ProjectDimensionRow = typeof projectDimensions.$inferSelect;
 type ExpeditionDimensionRow = typeof expeditionDimensions.$inferSelect;
 type GmailMessageDetailRow = typeof gmailMessageDetails.$inferSelect;
 type SalesforceEventContextRow = typeof salesforceEventContext.$inferSelect;
+type SalesforceCommunicationDetailRow =
+  typeof salesforceCommunicationDetails.$inferSelect;
+type SimpleTextingMessageDetailRow =
+  typeof simpleTextingMessageDetails.$inferSelect;
+type MailchimpCampaignActivityDetailRow =
+  typeof mailchimpCampaignActivityDetails.$inferSelect;
+type ManualNoteDetailRow = typeof manualNoteDetails.$inferSelect;
 type IdentityResolutionRow = typeof identityResolutionQueue.$inferSelect;
 type RoutingReviewRow = typeof routingReviewQueue.$inferSelect;
 type InboxProjectionRowDb = typeof contactInboxProjection.$inferSelect;
@@ -314,7 +333,8 @@ export function mapSalesforceEventContextRow(
     sourceEvidenceId: row.sourceEvidenceId,
     salesforceContactId: row.salesforceContactId,
     projectId: row.projectId,
-    expeditionId: row.expeditionId
+    expeditionId: row.expeditionId,
+    sourceField: row.sourceField
   });
 }
 
@@ -327,7 +347,130 @@ export function mapSalesforceEventContextToInsert(
     sourceEvidenceId: parsed.sourceEvidenceId,
     salesforceContactId: parsed.salesforceContactId,
     projectId: parsed.projectId,
-    expeditionId: parsed.expeditionId
+    expeditionId: parsed.expeditionId,
+    sourceField: parsed.sourceField
+  };
+}
+
+export function mapSalesforceCommunicationDetailRow(
+  row: SalesforceCommunicationDetailRow
+): SalesforceCommunicationDetailRecord {
+  return salesforceCommunicationDetailSchema.parse({
+    sourceEvidenceId: row.sourceEvidenceId,
+    providerRecordId: row.providerRecordId,
+    channel: row.channel,
+    messageKind: row.messageKind,
+    subject: row.subject,
+    snippet: row.snippet,
+    sourceLabel: row.sourceLabel
+  });
+}
+
+export function mapSalesforceCommunicationDetailToInsert(
+  record: SalesforceCommunicationDetailRecord
+): typeof salesforceCommunicationDetails.$inferInsert {
+  const parsed = salesforceCommunicationDetailSchema.parse(record);
+
+  return {
+    sourceEvidenceId: parsed.sourceEvidenceId,
+    providerRecordId: parsed.providerRecordId,
+    channel: parsed.channel,
+    messageKind: parsed.messageKind,
+    subject: parsed.subject,
+    snippet: parsed.snippet,
+    sourceLabel: parsed.sourceLabel
+  };
+}
+
+export function mapSimpleTextingMessageDetailRow(
+  row: SimpleTextingMessageDetailRow
+): SimpleTextingMessageDetailRecord {
+  return simpleTextingMessageDetailSchema.parse({
+    sourceEvidenceId: row.sourceEvidenceId,
+    providerRecordId: row.providerRecordId,
+    direction: row.direction,
+    messageKind: row.messageKind,
+    messageTextPreview: row.messageTextPreview,
+    normalizedPhone: row.normalizedPhone,
+    campaignId: row.campaignId,
+    campaignName: row.campaignName,
+    providerThreadId: row.providerThreadId,
+    threadKey: row.threadKey
+  });
+}
+
+export function mapSimpleTextingMessageDetailToInsert(
+  record: SimpleTextingMessageDetailRecord
+): typeof simpleTextingMessageDetails.$inferInsert {
+  const parsed = simpleTextingMessageDetailSchema.parse(record);
+
+  return {
+    sourceEvidenceId: parsed.sourceEvidenceId,
+    providerRecordId: parsed.providerRecordId,
+    direction: parsed.direction,
+    messageKind: parsed.messageKind,
+    messageTextPreview: parsed.messageTextPreview,
+    normalizedPhone: parsed.normalizedPhone,
+    campaignId: parsed.campaignId,
+    campaignName: parsed.campaignName,
+    providerThreadId: parsed.providerThreadId,
+    threadKey: parsed.threadKey
+  };
+}
+
+export function mapMailchimpCampaignActivityDetailRow(
+  row: MailchimpCampaignActivityDetailRow
+): MailchimpCampaignActivityDetailRecord {
+  return mailchimpCampaignActivityDetailSchema.parse({
+    sourceEvidenceId: row.sourceEvidenceId,
+    providerRecordId: row.providerRecordId,
+    activityType: row.activityType,
+    campaignId: row.campaignId,
+    audienceId: row.audienceId,
+    memberId: row.memberId,
+    campaignName: row.campaignName,
+    snippet: row.snippet
+  });
+}
+
+export function mapMailchimpCampaignActivityDetailToInsert(
+  record: MailchimpCampaignActivityDetailRecord
+): typeof mailchimpCampaignActivityDetails.$inferInsert {
+  const parsed = mailchimpCampaignActivityDetailSchema.parse(record);
+
+  return {
+    sourceEvidenceId: parsed.sourceEvidenceId,
+    providerRecordId: parsed.providerRecordId,
+    activityType: parsed.activityType,
+    campaignId: parsed.campaignId,
+    audienceId: parsed.audienceId,
+    memberId: parsed.memberId,
+    campaignName: parsed.campaignName,
+    snippet: parsed.snippet
+  };
+}
+
+export function mapManualNoteDetailRow(
+  row: ManualNoteDetailRow
+): ManualNoteDetailRecord {
+  return manualNoteDetailSchema.parse({
+    sourceEvidenceId: row.sourceEvidenceId,
+    providerRecordId: row.providerRecordId,
+    body: row.body,
+    authorDisplayName: row.authorDisplayName
+  });
+}
+
+export function mapManualNoteDetailToInsert(
+  record: ManualNoteDetailRecord
+): typeof manualNoteDetails.$inferInsert {
+  const parsed = manualNoteDetailSchema.parse(record);
+
+  return {
+    sourceEvidenceId: parsed.sourceEvidenceId,
+    providerRecordId: parsed.providerRecordId,
+    body: parsed.body,
+    authorDisplayName: parsed.authorDisplayName
   };
 }
 

@@ -261,7 +261,11 @@ describe("real inbox selectors", () => {
   });
 
   it("preserves Stage 1 timeline families instead of flattening them into generic system events", async () => {
-    await seedInboxCampaignEmailEvent(runtime!.context, {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxCampaignEmailEvent(runtime.context, {
       id: "sarah-campaign-email-1",
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-10T09:00:00.000Z",
@@ -269,28 +273,28 @@ describe("real inbox selectors", () => {
       campaignName: "Spring Kickoff",
       snippet: "Welcome to the new field season."
     });
-    await seedInboxAutoEmailEvent(runtime!.context, {
+    await seedInboxAutoEmailEvent(runtime.context, {
       id: "sarah-auto-email-1",
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-11T09:00:00.000Z",
       subject: "Training confirmation",
       snippet: "You are confirmed for training."
     });
-    await seedInboxCampaignSmsEvent(runtime!.context, {
+    await seedInboxCampaignSmsEvent(runtime.context, {
       id: "sarah-campaign-sms-1",
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-12T09:00:00.000Z",
       campaignName: "Field Reminder",
       messageTextPreview: "Field reminder text"
     });
-    await seedInboxInternalNoteEvent(runtime!.context, {
+    await seedInboxInternalNoteEvent(runtime.context, {
       id: "sarah-note-1",
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-12T12:00:00.000Z",
       body: "Prefers SMS check-ins before training.",
       authorDisplayName: "Jordan"
     });
-    await seedInboxLifecycleEvent(runtime!.context, {
+    await seedInboxLifecycleEvent(runtime.context, {
       id: "sarah-lifecycle-1",
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-09T09:00:00.000Z",
@@ -333,7 +337,11 @@ describe("real inbox selectors", () => {
   });
 
   it("keeps Salesforce outbound email in the 1:1 contract unless canon explicitly marks it auto", async () => {
-    await seedInboxSalesforceOutboundEmailEvent(runtime!.context, {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxSalesforceOutboundEmailEvent(runtime.context, {
       id: "sarah-salesforce-null-1",
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-10T06:00:00.000Z",
@@ -341,7 +349,7 @@ describe("real inbox selectors", () => {
       snippet: "Logged Salesforce follow-up body.",
       messageKind: null
     });
-    await seedInboxSalesforceOutboundEmailEvent(runtime!.context, {
+    await seedInboxSalesforceOutboundEmailEvent(runtime.context, {
       id: "sarah-salesforce-one-to-one-1",
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-10T07:00:00.000Z",

@@ -212,6 +212,7 @@ export const salesforceEventContext = pgTable(
     salesforceContactId: text("salesforce_contact_id"),
     projectId: text("project_id"),
     expeditionId: text("expedition_id"),
+    sourceField: text("source_field"),
     createdAt: createdAtColumn,
     updatedAt: updatedAtColumn
   },
@@ -221,6 +222,94 @@ export const salesforceEventContext = pgTable(
       table.projectId,
       table.expeditionId
     )
+  ]
+);
+
+export const salesforceCommunicationDetails = pgTable(
+  "salesforce_communication_details",
+  {
+    sourceEvidenceId: text("source_evidence_id")
+      .primaryKey()
+      .references(() => sourceEvidenceLog.id, { onDelete: "cascade" }),
+    providerRecordId: text("provider_record_id").notNull(),
+    channel: text("channel").notNull(),
+    messageKind: text("message_kind").notNull(),
+    subject: text("subject"),
+    snippet: text("snippet").notNull().default(""),
+    sourceLabel: text("source_label").notNull(),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [
+    index("salesforce_communication_details_record_idx").on(
+      table.providerRecordId
+    )
+  ]
+);
+
+export const simpleTextingMessageDetails = pgTable(
+  "simpletexting_message_details",
+  {
+    sourceEvidenceId: text("source_evidence_id")
+      .primaryKey()
+      .references(() => sourceEvidenceLog.id, { onDelete: "cascade" }),
+    providerRecordId: text("provider_record_id").notNull(),
+    direction: text("direction").notNull(),
+    messageKind: text("message_kind").notNull(),
+    messageTextPreview: text("message_text_preview").notNull().default(""),
+    normalizedPhone: text("normalized_phone"),
+    campaignId: text("campaign_id"),
+    campaignName: text("campaign_name"),
+    providerThreadId: text("provider_thread_id"),
+    threadKey: text("thread_key"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [
+    index("simpletexting_message_details_record_idx").on(table.providerRecordId),
+    index("simpletexting_message_details_campaign_idx").on(table.campaignId),
+    index("simpletexting_message_details_thread_idx").on(table.threadKey)
+  ]
+);
+
+export const mailchimpCampaignActivityDetails = pgTable(
+  "mailchimp_campaign_activity_details",
+  {
+    sourceEvidenceId: text("source_evidence_id")
+      .primaryKey()
+      .references(() => sourceEvidenceLog.id, { onDelete: "cascade" }),
+    providerRecordId: text("provider_record_id").notNull(),
+    activityType: text("activity_type").notNull(),
+    campaignId: text("campaign_id"),
+    audienceId: text("audience_id"),
+    memberId: text("member_id"),
+    campaignName: text("campaign_name"),
+    snippet: text("snippet").notNull().default(""),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [
+    index("mailchimp_campaign_activity_details_record_idx").on(
+      table.providerRecordId
+    ),
+    index("mailchimp_campaign_activity_details_campaign_idx").on(table.campaignId)
+  ]
+);
+
+export const manualNoteDetails = pgTable(
+  "manual_note_details",
+  {
+    sourceEvidenceId: text("source_evidence_id")
+      .primaryKey()
+      .references(() => sourceEvidenceLog.id, { onDelete: "cascade" }),
+    providerRecordId: text("provider_record_id").notNull(),
+    body: text("body").notNull(),
+    authorDisplayName: text("author_display_name"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [
+    index("manual_note_details_record_idx").on(table.providerRecordId)
   ]
 );
 

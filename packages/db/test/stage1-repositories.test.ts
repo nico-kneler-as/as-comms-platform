@@ -156,7 +156,8 @@ describe("Stage 1 DB repositories", () => {
       sourceEvidenceId: sourceEvidence.id,
       salesforceContactId: contact.salesforceContactId,
       projectId: "project_1",
-      expeditionId: "expedition_1"
+      expeditionId: "expedition_1",
+      sourceField: null
     });
     const salesforceCommunicationDetail =
       (await repositories.salesforceCommunicationDetails.upsert({

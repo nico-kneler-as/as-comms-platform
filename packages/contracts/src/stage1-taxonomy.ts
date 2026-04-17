@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const providerValues = [
+  "manual",
   "gmail",
   "salesforce",
   "simpletexting",
@@ -24,7 +25,8 @@ export const channelValues = [
   "email",
   "sms",
   "lifecycle",
-  "campaign_email"
+  "campaign_email",
+  "note"
 ] as const;
 export const channelSchema = z.enum(channelValues);
 export type Channel = z.infer<typeof channelSchema>;
@@ -43,7 +45,8 @@ export const canonicalEventTypeValues = [
   "campaign.email.sent",
   "campaign.email.opened",
   "campaign.email.clicked",
-  "campaign.email.unsubscribed"
+  "campaign.email.unsubscribed",
+  "note.internal.created"
 ] as const;
 export const canonicalEventTypeSchema = z.enum(canonicalEventTypeValues);
 export type CanonicalEventType = z.infer<typeof canonicalEventTypeSchema>;
@@ -71,7 +74,8 @@ export const canonicalEventTypeChannel = {
   "campaign.email.sent": "campaign_email",
   "campaign.email.opened": "campaign_email",
   "campaign.email.clicked": "campaign_email",
-  "campaign.email.unsubscribed": "campaign_email"
+  "campaign.email.unsubscribed": "campaign_email",
+  "note.internal.created": "note"
 } as const satisfies Record<CanonicalEventType, Channel>;
 
 export function resolveCanonicalChannel(
@@ -111,6 +115,47 @@ export const contactIdentityKindValues = [
 ] as const;
 export const contactIdentityKindSchema = z.enum(contactIdentityKindValues);
 export type ContactIdentityKind = z.infer<typeof contactIdentityKindSchema>;
+
+export const communicationMessageKindValues = [
+  "one_to_one",
+  "auto",
+  "campaign"
+] as const;
+export const communicationMessageKindSchema = z.enum(
+  communicationMessageKindValues
+);
+export type CommunicationMessageKind = z.infer<
+  typeof communicationMessageKindSchema
+>;
+
+export const communicationDirectionValues = ["inbound", "outbound"] as const;
+export const communicationDirectionSchema = z.enum(communicationDirectionValues);
+export type CommunicationDirection = z.infer<typeof communicationDirectionSchema>;
+
+export const campaignEmailActivityTypeValues = [
+  "sent",
+  "opened",
+  "clicked",
+  "unsubscribed"
+] as const;
+export const campaignEmailActivityTypeSchema = z.enum(
+  campaignEmailActivityTypeValues
+);
+export type CampaignEmailActivityType = z.infer<
+  typeof campaignEmailActivityTypeSchema
+>;
+
+export const timelineFamilyValues = [
+  "salesforce_event",
+  "auto_email",
+  "campaign_email",
+  "campaign_sms",
+  "one_to_one_email",
+  "one_to_one_sms",
+  "internal_note"
+] as const;
+export const timelineFamilySchema = z.enum(timelineFamilyValues);
+export type TimelineFamily = z.infer<typeof timelineFamilySchema>;
 
 export const inboxBucketValues = ["New", "Opened"] as const;
 export const inboxBucketSchema = z.enum(inboxBucketValues);

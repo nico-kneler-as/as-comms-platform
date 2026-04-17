@@ -1,10 +1,8 @@
 import { unstable_cache } from "next/cache";
 
 import type {
-  CanonicalEventRecord,
   ContactMembershipRecord,
   ContactRecord,
-  GmailMessageDetailRecord,
   InboxDrivingEventType,
   InboxProjectionRow,
   TimelineItem,
