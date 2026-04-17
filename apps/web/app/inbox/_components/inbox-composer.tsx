@@ -67,6 +67,8 @@ const EMAIL_ALIASES = [
   { id: "noreply", label: "No Reply", email: "noreply@adventurescientists.org" }
 ] as const;
 
+type EmailAliasId = (typeof EMAIL_ALIASES)[number]["id"];
+
 export function InboxComposer({
   contactDisplayName,
   smsEligible,
@@ -81,7 +83,7 @@ export function InboxComposer({
   const [mode, setMode] = useState<ComposerMode>("email");
   const [draft, setDraft] = useState("");
   const [subject, setSubject] = useState("");
-  const [fromAlias, setFromAlias] = useState(EMAIL_ALIASES[0].id);
+  const [fromAlias, setFromAlias] = useState<EmailAliasId>(EMAIL_ALIASES[0].id);
   const [aiPrompt, setAiPrompt] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -314,7 +316,7 @@ export function InboxComposer({
                 value={fromAlias}
                 onChange={(e) => {
                   const target = e.currentTarget as unknown as {
-                    readonly value: string;
+                    readonly value: EmailAliasId;
                   };
                   setFromAlias(target.value);
                 }}
