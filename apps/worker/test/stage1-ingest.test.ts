@@ -12,7 +12,7 @@ import type {
 
 import { createStage1IngestService } from "../src/ingest/index.js";
 
-type CompatibilityCommunicationClassification = {
+interface CompatibilityCommunicationClassification {
   readonly messageKind?: "auto" | "campaign" | "one_to_one" | null;
   readonly campaignRef?: {
     readonly providerCampaignId?: string | null;
@@ -24,7 +24,7 @@ type CompatibilityCommunicationClassification = {
     readonly providerThreadId?: string | null;
   } | null;
   readonly direction?: "inbound" | "outbound" | null;
-};
+}
 
 function buildContactGraphResult(
   input: NormalizedContactGraphUpsertInput,
