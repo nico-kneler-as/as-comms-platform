@@ -35,10 +35,12 @@
 | --- | --- |
 | `0` | engineering foundation and repo bootstrap |
 | `1` | trusted identity, canonical events, projections, cutover tooling |
-| `2` | app-owned settings, routing, access, integration health, timezone, knowledge config |
-| `3` | one-to-one Inbox on canonical projections |
-| `4` | grounded AI drafts and reusable memory |
-| `5A` | Email Campaigns |
+| `2` | app-owned settings, access, integration health, timezone (knowledge config deferred to Stage 4) |
+| `3` | one-to-one Inbox on canonical projections (read surface, follow-up, overlays) |
+| `3.5` | Composer: real send/reply via Gmail with optimistic UI, net-new to SF contacts and external partners |
+| `4` | grounded AI drafts and reusable memory (depends on Composer) |
+| `V` | validation gate — real operator use of Inbox + Composer + AI in production, harden before Campaigns |
+| `5A` | Email Campaigns (gated on `V`) |
 | `5B` | SMS Campaigns after Email trust gates pass |
 | `6` | later reporting only after the operating system is stable |
 

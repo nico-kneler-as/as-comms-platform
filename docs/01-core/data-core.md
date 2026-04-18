@@ -41,6 +41,7 @@
 | `ID-04` | Synthetic fallback is last resort only. |
 | `ID-05` | Ambiguous matches must not auto-link. |
 | `ID-06` | Non-volunteer contacts remain first-class supported records. |
+| `ID-07` | Missing Salesforce Contact ID is NOT ambiguity. A plain unmatched inbound or operator-initiated send creates a new canonical contact anchored by normalized email or phone, with `salesforceContactId=null`. Review opens only on genuine ambiguity (see `ID-05`) or replay/conflict cases. |
 
 ## Dedupe And Replay Rules
 
@@ -68,6 +69,9 @@
 - manual resolution must show evidence and candidate matches
 - resolving identity must refresh projections without duplicating history
 - the system must preserve what was inferred, what was explicit, and what was manually chosen
+- non-Salesforce contacts do not require manual resolution; they are valid canonical contacts with `salesforceContactId=null`
+- routing review cases only open for contacts where `salesforceContactId IS NOT NULL`; external-partner and non-volunteer contacts have no project context and are not eligible for routing review
+- internal notes are stored separately from the canonical event ledger and unioned into the timeline projection at read time (see decision `D-029`)
 
 ## Read Next
 

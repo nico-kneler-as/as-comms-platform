@@ -27,9 +27,13 @@ Build the one-to-one operator workspace on top of canonical projections.
 - one mixed contact list sorted by most recent inbound message
 - `New` and `Opened` remain projection-driven bucket states, but they are row states and filters rather than the primary Inbox partition
 - unread comes from bucket state
-- `needsFollowUp` is an explicit operator-controlled follow-up flag, not a bucket synonym
+- `needsFollowUp` is an explicit operator-controlled follow-up flag, not a bucket synonym (pure toggle, no auto-clear on inbound/reply/bucket transitions)
 - unresolved review layers on top of the row state model
-- internal notes are included
+- `hasUnresolved` triggers only on genuine ambiguity cases (`identity_multi_candidate`, `identity_conflict`, `identity_anchor_mismatch`, replay/collapse conflicts), and routing review cases only for Salesforce-anchored contacts (per `D-027`, `D-028`)
+- the contact rail shows lifecycle activity only; 1:1 email and SMS render in the main timeline
+- the unresolved state in the detail pane replaces the normal "Volunteer details" rail trigger with an "Unresolved details" rail that explains the specific reason and provides a searchbar over Salesforce-anchored canonical contacts to manually link
+- send and compose details live in the Composer stage (see `D-026`); inbox stage covers read, overlays, and follow-up toggle
+- internal notes are included and stored separately from the canonical event ledger (per `D-029`); team-visible, plain text, inline in the timeline
 - owners and tags are not in the first Inbox release
 - send behavior defaults to send and remain opened
 - first release does not depend on close / reopen lifecycle actions
@@ -37,11 +41,12 @@ Build the one-to-one operator workspace on top of canonical projections.
 ## Required Interfaces / Concepts
 
 - contact-centric queue read model
-- per-person timeline read model
-- manual identity resolution path
-- note-taking support
-- reply by email and eligible SMS
-- project context and relevant memberships
+- per-person timeline read model (unions canonical events + operator-authored notes)
+- manual identity resolution path (invoked from the unresolved-details rail variant)
+- note-taking support (team-visible, plain text)
+- project context and relevant memberships with links to the Expedition Member Salesforce record per project
+- reply by email and eligible SMS **is Composer stage scope**, not Inbox stage scope (see `D-026`)
+- reminders are **MVP-mock, client-session-only** (per `D-030`); do not build a durable reminders table in this stage
 
 ## Allowed / Not Allowed
 

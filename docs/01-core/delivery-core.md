@@ -20,9 +20,11 @@
 | --- | --- |
 | `0` | engineering foundation |
 | `1` | data foundation |
-| `2` | settings / admin foundation |
-| `3` | Inbox |
-| `4` | AI assistant |
+| `2` | settings / admin foundation (with Auth.js Google SSO, per `D-025`) |
+| `3` | Inbox read surface (list, detail, follow-up, overlays) |
+| `3.5` | Composer (send/reply, per `D-026`) |
+| `4` | AI assistant (per `D-032`) |
+| `V` | validation gate in production; Campaigns blocked until clear (per `D-031`) |
 | `5A` | Email Campaigns |
 | `5B` | SMS Campaigns after Email trust is proven |
 | `6` | later reporting |

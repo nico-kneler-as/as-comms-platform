@@ -40,6 +40,14 @@
 | `D-022` | Build Web Apps is limited to approved web and UI surfaces. | UI acceleration without system-design drift. |
 | `D-023` | Curated Vercel React / Next rules are mandatory. | Performance and maintainability are part of the build. |
 | `D-024` | CI must enforce boundary, performance, verification, and security gates. | Guardrails must be enforceable. |
+| `D-025` | Stage 2 Settings uses Auth.js v5 + Google + Drizzle, two flat roles (`admin`, `operator`), and trusted-header dev bypass. | Canonical Next.js App Router auth pattern; right-sized for a 1-3 operator team; dev bypass matches the bundle's "header auth is dev/internal only" rule. |
+| `D-026` | Composer is its own stage between Stage 3 Inbox and Stage 4 AI. | Inbox and Composer are independently large; AI drafts presuppose a working Composer; Composer is the team's comms hub, not just a reply widget. |
+| `D-027` | Non-Salesforce contacts are first-class. `identity_missing_anchor` only opens on genuine ambiguity, not on a plain unmatched email. | Operators must be able to reply to external partners without pre-clearing identity cases. |
+| `D-028` | Routing review (`routing_missing_membership`, `routing_multiple_memberships`, `routing_context_conflict`) only fires for contacts with `salesforceContactId IS NOT NULL`. | Non-volunteer contacts have no project context and cannot be routed. |
+| `D-029` | Internal notes live in a separate notes store and are unioned into the timeline projection at read time; they never occupy rows in `canonical_event_ledger`. | The ledger's promise is immutable provider-close evidence; notes are operator-authored and mutable. |
+| `D-030` | Reminders are MVP-mock, client-session-only. No backend table or Server Action. | Durable cross-operator reminders are scope-expanding without clear demand. |
+| `D-031` | Campaigns (Stage 5A Email, Stage 5B SMS) are deferred until post-launch validation of Inbox + Composer + AI. | Campaigns is a large subproduct; layering it in before the foundation is battle-tested risks focus drift. |
+| `D-032` | Stage 4 AI is a human-in-the-loop drafting assistant with strict grounding order, single backend orchestration service, one LLM call by default, deterministic fallback, memory captured only from human-sent replies, visible grounding in UI. | Fin-like product discipline without Fin-like runtime complexity. |
 
 ## Change Rule
 

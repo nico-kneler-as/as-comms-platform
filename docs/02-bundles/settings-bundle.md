@@ -22,18 +22,39 @@ Make routing, access, integration health, timezone, and AI knowledge configurati
 ## Locked
 
 - Settings is required before Inbox is production-ready
+- **Auth.js v5 (NextAuth)** with Google OAuth provider and Drizzle session adapter (per `D-025`)
+- 30-day rolling cookie sessions
 - Google SSO + server-owned sessions in production
-- header auth is dev/internal only
+- **Two flat roles: `admin` and `operator`** — no permissions matrix (per `D-025`)
+- First-time Google sign-in creates an `operator` by default; admins are promoted via a one-time ops script
+- header auth is dev/internal only: trusted header `x-dev-operator: <email>` is accepted only when `NODE_ENV !== 'production'`, seeded by a dev-only `/api/dev-auth?email=X` route that must 404 in prod
 - Notion-backed AI knowledge uses background sync/cache with no approval gate
-- admin mutations must be auditable
+- admin mutations must be auditable via `audit_policy_evidence`
+- Settings blocks Composer stage (per `D-026`); Composer builds on real Stage 2 auth
+- Composer depends on DB-backed project-inbox aliases (`project_aliases` table replacing the `GMAIL_PROJECT_INBOX_ALIASES` env var; worker reads DB first, env as fallback during cutover)
 
 ## Required Interfaces / Concepts
 
-- project activation and routing config
-- role-aware admin/settings surface
-- integration health views
-- timezone and organization settings
-- knowledge-source and sync configuration
+### MVP scope (must ship)
+
+- Google SSO sign-in + session middleware gating `/inbox/*` and `/settings/*`
+- project-inbox alias admin CRUD (replaces `GMAIL_PROJECT_INBOX_ALIASES` env var)
+- users + roles admin (list users, promote/demote admin, deactivate)
+
+### MVP scope (ship thin)
+
+- organization settings (read-only card — org name, timezone `America/Denver`)
+- integration health (read-only summary of `sync_state` by provider)
+
+### Deferred to Stage 4
+
+- knowledge-source and sync configuration (Notion workspace/page picker) — unblocks AI, not Composer
+
+### Out of scope
+
+- routing rules / assignee partitioning (no assignee-based queue partitioning per current product decisions)
+- multi-tenancy, multiple organizations
+- password auth, email-magic-link, non-Google OAuth providers
 
 ## Allowed / Not Allowed
 
