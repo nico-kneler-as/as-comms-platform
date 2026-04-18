@@ -29,6 +29,11 @@
     "format": "prettier --check .",
     "format:write": "prettier --write ."
   },
+  "pnpm": {
+    "overrides": {
+      "vite": "^7.3.2"
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^9.23.0",
     "@next/eslint-plugin-next": "^15.2.2",
