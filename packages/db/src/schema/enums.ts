@@ -50,3 +50,4 @@ export const auditActorTypeEnum = pgEnum(
   auditActorTypeValues
 );
 export const auditResultEnum = pgEnum("audit_result", auditResultValues);
+export const userRoleEnum = pgEnum("user_role", ["admin", "operator"]);

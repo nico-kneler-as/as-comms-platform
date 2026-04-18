@@ -11,7 +11,9 @@ describe("follow-up action validation", () => {
   it("returns a validation error when contactId is missing", async () => {
     const formData = new FormData();
 
-    await expect(markInboxNeedsFollowUpAction(formData)).resolves.toEqual({
+    await expect(
+      markInboxNeedsFollowUpAction(formData)
+    ).resolves.toMatchObject({
       ok: false,
       code: "validation_error"
     });

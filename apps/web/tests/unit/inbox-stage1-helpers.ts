@@ -4,7 +4,7 @@ import {
   createStage1WebTestRuntime,
   type Stage1WebTestRuntime,
   type TestStage1Context,
-} from "../../src/server/stage1-runtime";
+} from "../../src/server/stage1-runtime.test-support";
 
 export type InboxTestRuntime = Stage1WebTestRuntime;
 export const createInboxTestRuntime = createStage1WebTestRuntime;

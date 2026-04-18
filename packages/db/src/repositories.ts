@@ -14,8 +14,17 @@ import {
 } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
-import type { Stage1RepositoryBundle } from "@as-comms/domain";
-import { defineStage1RepositoryBundle } from "@as-comms/domain";
+import type {
+  ProjectAliasRecord,
+  Stage1RepositoryBundle,
+  Stage2RepositoryBundle,
+  UserRecord,
+  UserRole
+} from "@as-comms/domain";
+import {
+  defineStage1RepositoryBundle,
+  defineStage2RepositoryBundle
+} from "@as-comms/domain";
 
 import type { DatabaseConnection } from "./client.js";
 import {
@@ -37,6 +46,8 @@ import {
   mapIdentityResolutionToInsert,
   mapInboxProjectionRow,
   mapInboxProjectionToInsert,
+  mapProjectAliasRow,
+  mapProjectAliasToInsert,
   mapProjectDimensionRow,
   mapProjectDimensionToInsert,
   mapRoutingReviewRow,
@@ -48,7 +59,9 @@ import {
   mapSyncStateRow,
   mapSyncStateToInsert,
   mapTimelineProjectionRow,
-  mapTimelineProjectionToInsert
+  mapTimelineProjectionToInsert,
+  mapUserRow,
+  mapUserToInsert
 } from "./mappers.js";
 import type { DatabaseSchema } from "./schema/index.js";
 import {
@@ -64,13 +77,15 @@ import {
   identityResolutionQueue,
   mailchimpCampaignActivityDetails,
   manualNoteDetails,
+  projectAliases,
   projectDimensions,
   routingReviewQueue,
   salesforceCommunicationDetails,
   salesforceEventContext,
   simpleTextingMessageDetails,
   sourceEvidenceLog,
-  syncState
+  syncState,
+  users
 } from "./schema/index.js";
 
 export type Stage1Database = PgDatabase<PgQueryResultHKT, DatabaseSchema>;
@@ -785,6 +800,15 @@ function createStage1RepositoriesInternal(
     },
 
     projectDimensions: {
+      async listAll() {
+        const rows = await db
+          .select()
+          .from(projectDimensions)
+          .orderBy(asc(projectDimensions.projectName));
+
+        return rows.map(mapProjectDimensionRow);
+      },
+
       async listByIds(projectIds) {
         if (projectIds.length === 0) {
           return [];
@@ -1652,6 +1676,15 @@ function createStage1RepositoriesInternal(
         return row === undefined ? null : mapSyncStateRow(row);
       },
 
+      async listAll() {
+        const rows = await db
+          .select()
+          .from(syncState)
+          .orderBy(asc(syncState.provider), asc(syncState.jobType));
+
+        return rows.map(mapSyncStateRow);
+      },
+
       async upsert(record) {
         const values = mapSyncStateToInsert(record);
         const [row] = await db
@@ -1727,4 +1760,191 @@ export function createStage1RepositoryBundleFromConnection(
   connection: Pick<DatabaseConnection, "db">
 ): Stage1RepositoryBundle {
   return createStage1RepositoriesInternal(connection.db);
+}
+
+function createStage2RepositoriesInternal(
+  db: Stage1Database
+): Stage2RepositoryBundle {
+  return defineStage2RepositoryBundle({
+    users: {
+      async findByEmail(email) {
+        const [row] = await db
+          .select()
+          .from(users)
+          .where(eq(users.email, email))
+          .limit(1);
+
+        return row === undefined ? null : mapUserRow(row);
+      },
+
+      async findById(id) {
+        const [row] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, id))
+          .limit(1);
+
+        return row === undefined ? null : mapUserRow(row);
+      },
+
+      async listAll() {
+        const rows = await db
+          .select()
+          .from(users)
+          .orderBy(asc(users.email));
+
+        return rows.map(mapUserRow);
+      },
+
+      async updateRole(id, role: UserRole) {
+        const [row] = await db
+          .update(users)
+          .set({
+            role,
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, id))
+          .returning();
+
+        return mapUserRow(
+          requireRow(row, "Expected user row to be returned from updateRole.")
+        );
+      },
+
+      async setDeactivated(id, deactivatedAt) {
+        const [row] = await db
+          .update(users)
+          .set({
+            deactivatedAt,
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, id))
+          .returning();
+
+        return mapUserRow(
+          requireRow(
+            row,
+            "Expected user row to be returned from setDeactivated."
+          )
+        );
+      },
+
+      async upsert(record: UserRecord) {
+        const values = mapUserToInsert(record);
+        const [row] = await db
+          .insert(users)
+          .values(values)
+          .onConflictDoUpdate({
+            target: users.id,
+            set: {
+              name: values.name,
+              email: values.email,
+              emailVerified: values.emailVerified,
+              image: values.image,
+              role: values.role,
+              deactivatedAt: values.deactivatedAt,
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        return mapUserRow(
+          requireRow(row, "Expected user row to be returned from upsert.")
+        );
+      }
+    },
+
+    aliases: {
+      async listAll() {
+        const rows = await db
+          .select()
+          .from(projectAliases)
+          .orderBy(asc(projectAliases.alias));
+
+        return rows.map(mapProjectAliasRow);
+      },
+
+      async findById(id) {
+        const [row] = await db
+          .select()
+          .from(projectAliases)
+          .where(eq(projectAliases.id, id))
+          .limit(1);
+
+        return row === undefined ? null : mapProjectAliasRow(row);
+      },
+
+      async findByAlias(alias) {
+        const [row] = await db
+          .select()
+          .from(projectAliases)
+          .where(eq(projectAliases.alias, alias))
+          .limit(1);
+
+        return row === undefined ? null : mapProjectAliasRow(row);
+      },
+
+      async listAssigned() {
+        const rows = await db
+          .select()
+          .from(projectAliases)
+          .where(sql`${projectAliases.projectId} is not null`)
+          .orderBy(asc(projectAliases.alias));
+
+        return rows.map(mapProjectAliasRow);
+      },
+
+      async create(record: ProjectAliasRecord) {
+        const values = mapProjectAliasToInsert(record);
+        const [row] = await db
+          .insert(projectAliases)
+          .values(values)
+          .returning();
+
+        return mapProjectAliasRow(
+          requireRow(
+            row,
+            "Expected project alias row to be returned from create."
+          )
+        );
+      },
+
+      async update(record: ProjectAliasRecord) {
+        const values = mapProjectAliasToInsert(record);
+        const [row] = await db
+          .update(projectAliases)
+          .set({
+            alias: values.alias,
+            projectId: values.projectId,
+            updatedAt: new Date(),
+            updatedBy: values.updatedBy
+          })
+          .where(eq(projectAliases.id, values.id))
+          .returning();
+
+        return mapProjectAliasRow(
+          requireRow(
+            row,
+            "Expected project alias row to be returned from update."
+          )
+        );
+      },
+
+      async delete(id) {
+        await db.delete(projectAliases).where(eq(projectAliases.id, id));
+      }
+    }
+  });
+}
+
+export function createStage2RepositoryBundle(
+  db: Stage1Database
+): Stage2RepositoryBundle {
+  return createStage2RepositoriesInternal(db);
+}
+
+export function createStage2RepositoryBundleFromConnection(
+  connection: Pick<DatabaseConnection, "db">
+): Stage2RepositoryBundle {
+  return createStage2RepositoriesInternal(connection.db);
 }

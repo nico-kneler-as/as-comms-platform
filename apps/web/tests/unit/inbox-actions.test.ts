@@ -118,10 +118,12 @@ describe("server-backed follow-up actions", () => {
     const after = await getInboxList();
     const detail = await getInboxDetail("contact:michael-chen");
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
-      contactId: "contact:michael-chen",
-      needsFollowUp: true
+      data: {
+        contactId: "contact:michael-chen",
+        needsFollowUp: true
+      }
     });
     expect(before.items.map((item) => item.contactId)).toEqual([
       "contact:sarah-martinez",
@@ -169,10 +171,12 @@ describe("server-backed follow-up actions", () => {
     );
     const followUpList = await getInboxList("follow-up");
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
-      contactId: "contact:michael-chen",
-      needsFollowUp: false
+      data: {
+        contactId: "contact:michael-chen",
+        needsFollowUp: false
+      }
     });
     expect(projection).toMatchObject({
       contactId: "contact:michael-chen",
@@ -233,10 +237,12 @@ describe("server-backed follow-up actions", () => {
       "contact:michael-chen"
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
-      contactId: "contact:michael-chen",
-      needsFollowUp: true
+      data: {
+        contactId: "contact:michael-chen",
+        needsFollowUp: true
+      }
     });
     expect(projection).toMatchObject({
       contactId: "contact:michael-chen",

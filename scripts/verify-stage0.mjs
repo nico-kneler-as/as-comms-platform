@@ -142,14 +142,40 @@ async function main() {
 
   try {
     const dbSchema = await readText("packages/db/src/schema/index.ts");
-    if (dbSchema.includes("pgTable(")) {
+    // Assert the databaseSchema export includes the full set of Stage 1 tables.
+    // This catches accidental deletions or import drift; it does not forbid table additions.
+    const expectedTables = [
+      "sourceEvidenceLog",
+      "contacts",
+      "contactIdentities",
+      "contactMemberships",
+      "projectDimensions",
+      "expeditionDimensions",
+      "gmailMessageDetails",
+      "salesforceEventContext",
+      "salesforceCommunicationDetails",
+      "simpleTextingMessageDetails",
+      "mailchimpCampaignActivityDetails",
+      "manualNoteDetails",
+      "canonicalEventLedger",
+      "identityResolutionQueue",
+      "routingReviewQueue",
+      "contactInboxProjection",
+      "contactTimelineProjection",
+      "syncState",
+      "auditPolicyEvidence"
+    ];
+    const missingTables = expectedTables.filter(
+      (table) => !dbSchema.includes(table)
+    );
+    if (missingTables.length > 0) {
       failures.push(
-        "packages/db/src/schema/index.ts must stay free of business table definitions in Stage 0."
+        `packages/db/src/schema/index.ts is missing expected Stage 1 table exports: ${missingTables.join(", ")}.`
       );
     }
   } catch (error) {
     failures.push(
-      `Unable to validate Stage 0 DB schema boundary: ${
+      `Unable to validate DB schema exports: ${
         error instanceof Error ? error.message : String(error)
       }`
     );
@@ -192,6 +218,21 @@ async function main() {
         error instanceof Error ? error.message : String(error)
       }`
     );
+  }
+
+  try {
+    const devAuthContent = await readText("apps/web/app/api/dev-auth/route.ts");
+    if (
+      !devAuthContent.includes("NODE_ENV") ||
+      !devAuthContent.includes('"production"') ||
+      !devAuthContent.includes("404")
+    ) {
+      failures.push(
+        "apps/web/app/api/dev-auth/route.ts is missing a NODE_ENV production guard — this endpoint MUST 404 in production."
+      );
+    }
+  } catch {
+    failures.push("Missing required file: apps/web/app/api/dev-auth/route.ts");
   }
 
   if (failures.length > 0) {

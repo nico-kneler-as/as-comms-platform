@@ -1,26 +1,37 @@
 import {
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
+  createStage2RepositoryBundleFromConnection,
   type DatabaseConnection
 } from "@as-comms/db";
-import type { TestStage1Context } from "@as-comms/db/test-helpers";
 import {
   createStage1TimelinePresentationService,
   type Stage1RepositoryBundle,
-  type Stage1TimelinePresentationService
+  type Stage1TimelinePresentationService,
+  type Stage2RepositoryBundle
 } from "@as-comms/domain";
 
-export type { TestStage1Context } from "@as-comms/db/test-helpers";
+/**
+ * Production Stage 1 composition root for `apps/web`.
+ *
+ * Boundary rule: this file is the ONLY place in `apps/web` allowed to import
+ * from `@as-comms/db` (enforced by `scripts/boundary-check.mjs`). It must NOT
+ * import `@as-comms/db/test-helpers`, which pulls in PGlite and its dynamic
+ * code evaluation — banned under Next.js Edge Runtime used by `middleware.ts`.
+ *
+ * Test-only wiring (`createStage1WebTestRuntime`, `TestStage1Context`) lives
+ * in `./stage1-runtime.test-support.ts` and is imported only from test code.
+ */
+
+export interface Stage2RepositoryAccess {
+  readonly settings: Stage2RepositoryBundle;
+}
 
 export interface Stage1WebRuntime {
   readonly connection: Pick<DatabaseConnection, "db" | "sql"> | null;
   readonly repositories: Stage1RepositoryBundle;
+  readonly settings: Stage2RepositoryBundle;
   readonly timelinePresentation: Stage1TimelinePresentationService;
-}
-
-export interface Stage1WebTestRuntime {
-  readonly context: TestStage1Context;
-  dispose(): Promise<void>;
 }
 
 let runtimeOverride: Stage1WebRuntime | null = null;
@@ -37,10 +48,12 @@ function createRuntime(): Stage1WebRuntime {
     connectionString
   });
   const repositories = createStage1RepositoryBundleFromConnection(connection);
+  const settings = createStage2RepositoryBundleFromConnection(connection);
 
   return {
     connection,
     repositories,
+    settings,
     timelinePresentation: createStage1TimelinePresentationService(repositories)
   };
 }
@@ -54,30 +67,14 @@ export async function getStage1WebRuntime(): Promise<Stage1WebRuntime> {
   return runtimePromise;
 }
 
+export async function getSettingsRepositories(): Promise<Stage2RepositoryBundle> {
+  const runtime = await getStage1WebRuntime();
+  return runtime.settings;
+}
+
 export function setStage1WebRuntimeForTests(
   runtime: Stage1WebRuntime | null
 ): void {
   runtimeOverride = runtime;
   runtimePromise = null;
-}
-
-export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime> {
-  const { createTestStage1Context } = await import("@as-comms/db/test-helpers");
-  const context = await createTestStage1Context();
-
-  setStage1WebRuntimeForTests({
-    connection: null,
-    repositories: context.repositories,
-    timelinePresentation: createStage1TimelinePresentationService(
-      context.repositories
-    )
-  });
-
-  return {
-    context,
-    async dispose() {
-      setStage1WebRuntimeForTests(null);
-      await context.client.close();
-    }
-  };
 }

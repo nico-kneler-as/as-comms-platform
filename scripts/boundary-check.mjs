@@ -44,6 +44,16 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
     return true;
   }
 
+  if (
+    relativeFile === "apps/web/src/server/stage1-runtime.test-support.ts" &&
+    specifier.startsWith("@as-comms/db")
+  ) {
+    // Test-only split of the composition root. Keeps `@as-comms/db/test-helpers`
+    // (which pulls in PGlite) off the production Edge Runtime bundle path.
+    // Only test files may import this module.
+    return true;
+  }
+
   return false;
 }
 

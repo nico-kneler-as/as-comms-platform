@@ -99,3 +99,67 @@ These entries were recorded on `2026-04-05` from the current repo canon and the 
 - Why: the work is complete in practice, merged into `main`, and no longer represents an open prerequisite for deferred-provider validation.
 - Impact: Stage `1C` and Stage `1D` can proceed without reopening the launch-scope Gmail plus Salesforce baseline. Residual launch-scope notes are non-blocking cleanup unless they reopen locked mappings, representative-contact explainability, or replay, parity, cutover, or audit trust.
 - Related refs: [../stage-1-acceptance.md](../stage-1-acceptance.md), [../stage-1-post-validation-roadmap.md](../stage-1-post-validation-roadmap.md), [../../apps/worker/test/stage1-launch-scope.test.ts](../../apps/worker/test/stage1-launch-scope.test.ts), [../../apps/worker/test/stage1-orchestration.test.ts](../../apps/worker/test/stage1-orchestration.test.ts)
+
+### 2026-04-18 - Composer is its own stage between Inbox and AI
+
+- Status: `locked`
+- Decision: the send/reply Composer is a distinct product stage, sequenced after Stage 3 Inbox read-surface and before Stage 4 AI drafts. Composer scope covers replies, net-new sends to existing Salesforce-anchored contacts, and net-new sends to arbitrary external emails (non-volunteer partners). Alias selection defaults to the alias that received the last inbound. Composer UI must show the outbound message optimistically while the real provider send runs in the background.
+- Why: Inbox and Composer are large enough to deserve separate stages; AI drafts presuppose a working Composer; the app is the team's center of comms, so Composer must support more than just replies to existing inbox threads.
+- Impact: the canonical stage map in product-core and delivery-core reflects the insertion between Stage 3 and Stage 4. A new `docs/02-bundles/composer-bundle.md` is authored when Composer build begins. Composer depends on Stage 2 auth; AI drafts depend on Composer.
+- Related refs: [product-core.md](./product-core.md), [delivery-core.md](./delivery-core.md)
+
+### 2026-04-18 - Non-Salesforce contacts are first-class, not an unresolved review case
+
+- Status: `locked`
+- Decision: missing Salesforce Contact ID is a normal canonical-contact state (`salesforceContactId=null`), not an unresolved review case. `identity_missing_anchor` is narrowed to fire only when source evidence is too ambiguous or conflicting to produce a safe new canonical contact — a plain unmatched email produces a new canonical contact anchored by normalized email instead. Genuine ambiguity (`identity_multi_candidate`, `identity_conflict`, `identity_anchor_mismatch`, `duplicate_collapse_conflict`, `replay_checksum_mismatch`) still opens review.
+- Why: AS operators need to reply to external partners and non-volunteer contacts without pre-clearing identity cases. The previous `identity_missing_anchor` behavior combined with "identity cases with no chosen contact do not create a synthetic Inbox row" would have hidden partner emails from the inbox entirely, breaking the product's "team comms hub" intent.
+- Impact: Stage 1 normalization auto-creates a canonical contact on first inbound from an unknown email (source=provider) and on operator-initiated compose to a typed email (source=operator). Projections mark non-SF contacts with a soft non-overlay indicator, not `hasUnresolved=true`. Merging a non-SF contact with a later SF anchor is out of immediate scope.
+- Related refs: [data-core.md](./data-core.md), [../04-implementation-specs/stage-1-review-queue-reason-codes.md](../04-implementation-specs/stage-1-review-queue-reason-codes.md)
+
+### 2026-04-18 - Routing review triggers only for Salesforce-anchored contacts
+
+- Status: `locked`
+- Decision: `routing_missing_membership`, `routing_multiple_memberships`, and `routing_context_conflict` review cases only open for contacts where `salesforceContactId IS NOT NULL`. External-partner and non-volunteer contacts have no project context by definition and therefore are not eligible for routing review.
+- Why: without this narrowing, every partner email would trigger a perpetual routing-missing-membership case that operators cannot resolve.
+- Impact: Stage 1 normalization routing logic skips non-SF contacts entirely. `hasUnresolved=true` overlays in the inbox projection reflect this narrower set.
+- Related refs: [../04-implementation-specs/stage-1-review-queue-reason-codes.md](../04-implementation-specs/stage-1-review-queue-reason-codes.md)
+
+### 2026-04-18 - Stage 2 Settings locked to Auth.js v5, two flat roles, and trusted-header dev bypass
+
+- Status: `locked`
+- Decision: Stage 2 Settings/Admin uses Auth.js v5 (NextAuth) with a Google OAuth provider and a Drizzle session adapter, 30-day rolling cookie sessions, two flat roles (`admin`, `operator`), and a trusted-header dev bypass (`x-dev-operator: <email>`) gated on `NODE_ENV !== 'production'` and seeded by a dev-only `/api/dev-auth?email=X` cookie route. MVP surfaces: Auth, Project inbox aliases, Users/roles admin (must-ship); Org settings and Integration health (ship-thin, read-only); Knowledge config deferred to Stage 4; Routing rules out of scope.
+- Why: Google SSO + server-owned sessions already locked in [settings-bundle.md](../02-bundles/settings-bundle.md); Auth.js v5 is the canonical Next.js App Router pattern; two flat roles is enough for a 1–3 operator team; trusted-header dev bypass matches the bundle's "header auth is dev/internal only" line. Composer depends on real auth, so Stage 2 must land before Composer.
+- Impact: the Stage 2 Codex thread must not pick a different auth library, introduce a permissions matrix, or change the dev bypass shape without reopening this decision. Project-inbox aliases move from `GMAIL_PROJECT_INBOX_ALIASES` env var to a `project_aliases` DB table with admin CRUD; worker reads DB first, env as fallback during cutover.
+- Related refs: [../02-bundles/settings-bundle.md](../02-bundles/settings-bundle.md), [../../scripts/verify-stage0.mjs](../../scripts/verify-stage0.mjs)
+
+### 2026-04-18 - Internal notes are stored separate from the canonical event ledger
+
+- Status: `locked`
+- Decision: internal notes use their own storage (`manualNoteDetails` plus the associated notes table) and are unioned into the timeline projection at read time. Notes do NOT occupy rows in `canonical_event_ledger`. Notes are team-visible (no private notes), plain text, author-stamped, editable and deletable by the author, and rendered inline with canonical timeline entries.
+- Why: the ledger's semantic promise is "immutable provider-close evidence normalized into canonical events." Notes are operator-authored, editable, and have no source evidence — they do not belong in the ledger.
+- Impact: timeline projection queries union notes from the notes table. Note writes go through a Server Action with `audit_policy_evidence` entries. Notes never mutate bucket state, `needsFollowUp`, or `hasUnresolved`.
+- Related refs: [data-core.md](./data-core.md), [interfaces-core.md](./interfaces-core.md), [../02-bundles/inbox-bundle.md](../02-bundles/inbox-bundle.md)
+
+### 2026-04-18 - Reminders are MVP-mock, not backend-persisted
+
+- Status: `active`
+- Decision: reminder state in the Inbox detail pane remains client-session-only for the MVP. No `contact_reminders` table, no Server Action, no cross-session or cross-operator visibility. The UI continues to render the reminder popover and badge, but reminder data does not survive reload.
+- Why: durable cross-operator reminders would expand scope (new table, notifications, firing semantics) without clear operator demand at 1–3 operator scale.
+- Impact: do not build a `contact_reminders` table or Server Action during Stage 3, Stage 2, or the Composer stage. Revisit post-launch when active notifications become a real need.
+- Related refs: [../02-bundles/inbox-bundle.md](../02-bundles/inbox-bundle.md)
+
+### 2026-04-18 - Campaigns deferred until post-launch validation of Inbox + Composer + AI
+
+- Status: `active`
+- Decision: Stage 5A Email Campaigns and Stage 5B SMS Campaigns are out of the MVP. A validation gate is inserted between Stage 4 AI and Stage 5A — Campaigns resume only after the Inbox + Composer + AI surfaces are validated in production operator use.
+- Why: Campaigns is a large subproduct on its own; layering it on before the foundational surfaces are battle-tested risks focus and quality drift.
+- Impact: do not add campaign-authoring tables, audience-builder schemas, or SendGrid integration until the validation gate clears. Existing Stage 1 `campaign.email.*` canonical events (Mailchimp transition ingest) remain valid timeline evidence; they do not drive any product UI beyond the timeline entries already built. `D-014` (Email before SMS) still applies when Campaigns eventually resumes.
+- Related refs: [product-core.md](./product-core.md), [delivery-core.md](./delivery-core.md)
+
+### 2026-04-18 - Stage 4 AI drafting pipeline, grounding order, and runtime shape locked
+
+- Status: `locked`
+- Decision: Stage 4 AI is a human-in-the-loop drafting assistant (no auto-send) with strict grounding order (general instructions → project-specific instructions → approved knowledge → current conversation/contact/project context → reusable approved-reply memory). Implementation is a single backend orchestration service (not a separate microservice) with internal modules for classification, retrieval, response-mode decision, draft generation, validation, explainability, and memory capture. One LLM call by default; a second only for reprompt or hard cases. Deterministic fallback required. Reusable memory is captured only from human-approved sent replies. Visible grounding is a product contract. Cost ~10–15¢/response is acceptable.
+- Why: establishes the Stage 4 product shape ahead of Composer build so Composer can reserve a clean `draft:generate` integration surface. Matches Fin-like product discipline without Fin-like runtime complexity.
+- Impact: a new `docs/04-implementation-specs/stage-4-ai-pipeline.md` codifies the full pipeline contract. Notion-backed knowledge uses background sync/cache per `D-008` (no approval gate). AI never sends automatically per `D-009`. Composer Server Actions include a `draft:generate` endpoint whose payload matches the grounding-bundle contract.
+- Related refs: [product-core.md](./product-core.md), [decision-core.md](./decision-core.md), [../04-implementation-specs/stage-4-ai-pipeline.md](../04-implementation-specs/stage-4-ai-pipeline.md) (pending write)
