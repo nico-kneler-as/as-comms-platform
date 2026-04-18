@@ -17,6 +17,7 @@
     "ops:worker:enqueue": "pnpm --filter @as-comms/worker ops:enqueue",
     "ops:worker:import-gmail-mbox": "pnpm --filter @as-comms/worker ops:import-gmail-mbox",
     "ops:worker:inspect": "pnpm --filter @as-comms/worker ops:inspect",
+    "ops:promote-admin": "tsx scripts/ops/promote-admin.ts",
     "build": "turbo build && node scripts/verify-runtime-exports.mjs",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
@@ -35,6 +36,7 @@
     }
   },
   "devDependencies": {
+    "@as-comms/db": "workspace:*",
     "@eslint/js": "^9.23.0",
     "@next/eslint-plugin-next": "^15.2.2",
     "@playwright/test": "^1.52.0",

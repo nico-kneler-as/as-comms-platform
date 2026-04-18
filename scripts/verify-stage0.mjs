@@ -194,6 +194,21 @@ async function main() {
     );
   }
 
+  try {
+    const devAuthContent = await readText("apps/web/app/api/dev-auth/route.ts");
+    if (
+      !devAuthContent.includes("NODE_ENV") ||
+      !devAuthContent.includes('"production"') ||
+      !devAuthContent.includes("404")
+    ) {
+      failures.push(
+        "apps/web/app/api/dev-auth/route.ts is missing a NODE_ENV production guard — this endpoint MUST 404 in production."
+      );
+    }
+  } catch {
+    failures.push("Missing required file: apps/web/app/api/dev-auth/route.ts");
+  }
+
   if (failures.length > 0) {
     console.error("Stage 0 verification gate failed.");
     for (const failure of failures) {
