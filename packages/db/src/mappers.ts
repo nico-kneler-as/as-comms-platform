@@ -40,6 +40,11 @@ import {
 } from "@as-comms/contracts";
 
 import type {
+  ProjectAliasRecord,
+  UserRecord
+} from "@as-comms/domain";
+
+import type {
   auditPolicyEvidence,
   canonicalEventLedger,
   contactIdentities,
@@ -52,13 +57,15 @@ import type {
   identityResolutionQueue,
   mailchimpCampaignActivityDetails,
   manualNoteDetails,
+  projectAliases,
   projectDimensions,
   routingReviewQueue,
   salesforceCommunicationDetails,
   salesforceEventContext,
   simpleTextingMessageDetails,
   sourceEvidenceLog,
-  syncState
+  syncState,
+  users
 } from "./schema/index.js";
 
 type SourceEvidenceRow = typeof sourceEvidenceLog.$inferSelect;
@@ -83,6 +90,8 @@ type InboxProjectionRowDb = typeof contactInboxProjection.$inferSelect;
 type TimelineProjectionRowDb = typeof contactTimelineProjection.$inferSelect;
 type SyncStateRow = typeof syncState.$inferSelect;
 type AuditEvidenceRow = typeof auditPolicyEvidence.$inferSelect;
+type UserRow = typeof users.$inferSelect;
+type ProjectAliasRow = typeof projectAliases.$inferSelect;
 
 function fromDate(value: Date | null): string | null {
   return value?.toISOString() ?? null;
@@ -690,5 +699,61 @@ export function mapAuditEvidenceToInsert(
     result: parsed.result,
     policyCode: parsed.policyCode,
     metadataJson: parsed.metadataJson
+  };
+}
+
+export function mapUserRow(row: UserRow): UserRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    emailVerified: row.emailVerified,
+    image: row.image,
+    role: row.role,
+    deactivatedAt: row.deactivatedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+
+export function mapUserToInsert(
+  record: UserRecord
+): typeof users.$inferInsert {
+  return {
+    id: record.id,
+    name: record.name,
+    email: record.email,
+    emailVerified: record.emailVerified,
+    image: record.image,
+    role: record.role,
+    deactivatedAt: record.deactivatedAt,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  };
+}
+
+export function mapProjectAliasRow(row: ProjectAliasRow): ProjectAliasRecord {
+  return {
+    id: row.id,
+    alias: row.alias,
+    projectId: row.projectId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    createdBy: row.createdBy,
+    updatedBy: row.updatedBy
+  };
+}
+
+export function mapProjectAliasToInsert(
+  record: ProjectAliasRecord
+): typeof projectAliases.$inferInsert {
+  return {
+    id: record.id,
+    alias: record.alias,
+    projectId: record.projectId,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    createdBy: record.createdBy,
+    updatedBy: record.updatedBy
   };
 }

@@ -6,6 +6,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex
@@ -26,7 +27,8 @@ import {
   routingReviewReasonCodeEnum,
   syncScopeEnum,
   syncJobTypeEnum,
-  syncStatusEnum
+  syncStatusEnum,
+  userRoleEnum
 } from "./enums.js";
 
 const createdAtColumn = timestamp("created_at", {
@@ -582,4 +584,101 @@ export const auditPolicyEvidence = pgTable(
       table.occurredAt
     )
   ]
+);
+
+export const users = pgTable("users", {
+  id: text("id").primaryKey(),
+  name: text("name"),
+  email: text("email").notNull().unique(),
+  emailVerified: timestamp("email_verified", {
+    mode: "date",
+    withTimezone: true
+  }),
+  image: text("image"),
+  role: userRoleEnum("role").notNull().default("operator"),
+  deactivatedAt: timestamp("deactivated_at", {
+    mode: "date",
+    withTimezone: true
+  }),
+  createdAt: createdAtColumn,
+  updatedAt: updatedAtColumn
+});
+
+export const accounts = pgTable(
+  "accounts",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    provider: text("provider").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    refresh_token: text("refresh_token"),
+    access_token: text("access_token"),
+    expires_at: integer("expires_at"),
+    token_type: text("token_type"),
+    scope: text("scope"),
+    id_token: text("id_token"),
+    session_state: text("session_state")
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.provider, table.providerAccountId],
+      name: "accounts_provider_provider_account_id_pk"
+    }),
+    index("accounts_user_id_idx").on(table.userId)
+  ]
+);
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    sessionToken: text("session_token").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expires: timestamp("expires", {
+      mode: "date",
+      withTimezone: true
+    }).notNull()
+  },
+  (table) => [index("sessions_user_id_idx").on(table.userId)]
+);
+
+export const verificationTokens = pgTable(
+  "verification_tokens",
+  {
+    identifier: text("identifier").notNull(),
+    token: text("token").notNull(),
+    expires: timestamp("expires", {
+      mode: "date",
+      withTimezone: true
+    }).notNull()
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.identifier, table.token],
+      name: "verification_tokens_identifier_token_pk"
+    })
+  ]
+);
+
+export const projectAliases = pgTable(
+  "project_aliases",
+  {
+    id: text("id").primaryKey(),
+    alias: text("alias").notNull().unique(),
+    projectId: text("project_id").references(() => projectDimensions.projectId, {
+      onDelete: "set null"
+    }),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+    createdBy: text("created_by").references(() => users.id, {
+      onDelete: "set null"
+    }),
+    updatedBy: text("updated_by").references(() => users.id, {
+      onDelete: "set null"
+    })
+  },
+  (table) => [index("project_aliases_project_idx").on(table.projectId)]
 );
