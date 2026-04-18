@@ -1,3 +1,5 @@
+import { createStage2RepositoryBundleFromConnection } from "@as-comms/db";
+import type { DatabaseConnection } from "@as-comms/db";
 import { z } from "zod";
 
 const emailSchema = z.string().email();
@@ -118,27 +120,52 @@ function parseSalesforceCaptureModeEnv(
 }
 
 export function readStage1LaunchScopeConfig(
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
+  aliasOverride?: readonly string[]
 ): Stage1LaunchScopeConfig {
   return stage1LaunchScopeConfigSchema.parse({
-    gmail: readStage1LaunchScopeGmailConfig(env),
+    gmail: readStage1LaunchScopeGmailConfig(env, aliasOverride),
     salesforce: readStage1LaunchScopeSalesforceConfig(env)
   });
 }
 
 export function readStage1LaunchScopeGmailConfig(
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
+  aliasOverride?: readonly string[]
 ): Stage1LaunchScopeGmailConfig {
+  const projectInboxAliases =
+    aliasOverride !== undefined && aliasOverride.length > 0
+      ? [...aliasOverride]
+      : parseEmailCsvEnv(env, "GMAIL_PROJECT_INBOX_ALIASES");
+
   return stage1LaunchScopeGmailConfigSchema.parse({
     historicalBackfillMode: "mbox_import",
     liveAccount: parseRequiredStringEnv(env, "GMAIL_LIVE_ACCOUNT"),
-    projectInboxAliases: parseEmailCsvEnv(env, "GMAIL_PROJECT_INBOX_ALIASES"),
+    projectInboxAliases,
     livePollIntervalSeconds: parsePositiveIntegerEnv(
       env,
       "GMAIL_LIVE_POLL_INTERVAL_SECONDS",
       60
     )
   });
+}
+
+/**
+ * Reads project inbox aliases from the database.
+ * Returns the alias strings if the table has any rows, or null if empty
+ * (signalling the caller to fall back to the GMAIL_PROJECT_INBOX_ALIASES env var).
+ */
+export async function readProjectInboxAliasesFromDb(
+  connection: DatabaseConnection
+): Promise<readonly string[] | null> {
+  const { aliases } = createStage2RepositoryBundleFromConnection(connection);
+  const rows = await aliases.listAll();
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return rows.map((row) => row.alias);
 }
 
 export function readStage1LaunchScopeSalesforceConfig(
