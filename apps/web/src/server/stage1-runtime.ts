@@ -4,7 +4,6 @@ import {
   createStage2RepositoryBundleFromConnection,
   type DatabaseConnection
 } from "@as-comms/db";
-import type { TestStage1Context } from "@as-comms/db/test-helpers";
 import {
   createStage1TimelinePresentationService,
   type Stage1RepositoryBundle,
@@ -12,7 +11,17 @@ import {
   type Stage2RepositoryBundle
 } from "@as-comms/domain";
 
-export type { TestStage1Context } from "@as-comms/db/test-helpers";
+/**
+ * Production Stage 1 composition root for `apps/web`.
+ *
+ * Boundary rule: this file is the ONLY place in `apps/web` allowed to import
+ * from `@as-comms/db` (enforced by `scripts/boundary-check.mjs`). It must NOT
+ * import `@as-comms/db/test-helpers`, which pulls in PGlite and its dynamic
+ * code evaluation — banned under Next.js Edge Runtime used by `middleware.ts`.
+ *
+ * Test-only wiring (`createStage1WebTestRuntime`, `TestStage1Context`) lives
+ * in `./stage1-runtime.test-support.ts` and is imported only from test code.
+ */
 
 export interface Stage2RepositoryAccess {
   readonly settings: Stage2RepositoryBundle;
@@ -23,11 +32,6 @@ export interface Stage1WebRuntime {
   readonly repositories: Stage1RepositoryBundle;
   readonly settings: Stage2RepositoryBundle;
   readonly timelinePresentation: Stage1TimelinePresentationService;
-}
-
-export interface Stage1WebTestRuntime {
-  readonly context: TestStage1Context;
-  dispose(): Promise<void>;
 }
 
 let runtimeOverride: Stage1WebRuntime | null = null;
@@ -73,26 +77,4 @@ export function setStage1WebRuntimeForTests(
 ): void {
   runtimeOverride = runtime;
   runtimePromise = null;
-}
-
-export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime> {
-  const { createTestStage1Context } = await import("@as-comms/db/test-helpers");
-  const context = await createTestStage1Context();
-
-  setStage1WebRuntimeForTests({
-    connection: null,
-    repositories: context.repositories,
-    settings: context.settings,
-    timelinePresentation: createStage1TimelinePresentationService(
-      context.repositories
-    )
-  });
-
-  return {
-    context,
-    async dispose() {
-      setStage1WebRuntimeForTests(null);
-      await context.client.close();
-    }
-  };
 }

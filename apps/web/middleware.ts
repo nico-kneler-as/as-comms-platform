@@ -1,6 +1,7 @@
+import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 
-import { auth } from "./src/server/auth";
+import { authEdgeConfig } from "./src/server/auth/config";
 
 /**
  * Route protection for `/inbox/:path*` and `/settings/:path*`.
@@ -12,10 +13,17 @@ import { auth } from "./src/server/auth";
  * Production: unauthenticated requests get redirected to `/auth/sign-in`.
  *
  * Constraint: this file is a Next.js Edge middleware. It must NOT import
- * Node-only modules (fs, pg, etc.) or perform DB calls. Session lookup is
- * delegated to the Auth.js `auth()` wrapper, which handles Edge-safe
- * session decoding.
+ * Node-only modules (fs, pg, node:crypto, etc.) or perform DB calls — so it
+ * uses the Edge-safe `authEdgeConfig` from `./src/server/auth/config` rather
+ * than the full Node-runtime auth in `./src/server/auth/index.ts`.
+ *
+ * The full `auth()` wrapper (with DrizzleAdapter + DB-backed callbacks) runs
+ * in Server Components, Server Actions, and the Auth.js route handler.
+ * Middleware only gates on cookie presence + dev bypass; route handlers do
+ * the authoritative role check.
  */
+const { auth } = NextAuth(authEdgeConfig);
+
 // Explicit `unknown` assertion avoids TS2742 portability errors from the
 // Auth.js return type referencing internal `next-auth/lib` paths.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

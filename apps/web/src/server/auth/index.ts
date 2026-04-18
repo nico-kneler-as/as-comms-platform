@@ -1,17 +1,23 @@
 /**
- * Auth.js v5 composition for the Stage 2 Settings slice.
+ * Auth.js v5 full composition for Node-runtime consumers — Server
+ * Components, Server Actions, and the `/api/auth/[...nextauth]` route
+ * handler.
  *
  * Environment variables:
  * - `AUTH_SECRET` (required in production): HMAC secret for JWT / CSRF.
  * - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (or the v5-preferred
  *   `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`): OAuth app credentials.
  *
+ * Edge-runtime middleware uses `./config.ts` instead to avoid pulling the
+ * DrizzleAdapter + Stage 1 runtime into the Edge bundle. See
+ * `apps/web/middleware.ts`.
+ *
  * Boundary rule: this file MUST NOT import from `@as-comms/db`. The only
  * approved path into the Drizzle db instance from apps/web is through the
- * composition root at `apps/web/src/server/stage1-runtime.ts`, which exposes
- * `getStage1WebRuntime()` (returning `runtime.connection.db`).
+ * composition root at `apps/web/src/server/stage1-runtime.ts`, which
+ * exposes `getStage1WebRuntime()` (returning `runtime.connection.db`).
  *
- * Adapter wiring uses Auth.js v5 lazy/async config (see `NextAuth(async ...)`):
+ * Adapter wiring uses Auth.js v5 lazy/async config (see `NextAuth(async …)`):
  * the DrizzleAdapter is created inside the async config callback after the
  * Stage 1 runtime has been awaited, which keeps the module load side-effect
  * free while still handing the adapter a synchronous Drizzle db instance.
@@ -20,12 +26,14 @@ import NextAuth, {
   type NextAuthConfig,
   type NextAuthResult
 } from "next-auth";
-import Google from "next-auth/providers/google";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 
 import { getStage1WebRuntime, getSettingsRepositories } from "../stage1-runtime";
-
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30-day rolling session
+import {
+  authEdgeConfig,
+  SESSION_MAX_AGE_SECONDS,
+  SESSION_UPDATE_AGE_SECONDS
+} from "./config";
 
 async function buildAuthConfig(): Promise<NextAuthConfig> {
   const runtime = await getStage1WebRuntime();
@@ -36,19 +44,16 @@ async function buildAuthConfig(): Promise<NextAuthConfig> {
   }
 
   return {
+    ...authEdgeConfig,
     // `database` strategy forces Auth.js to persist sessions through the
     // adapter; this matches the settings-bundle mandate that production runs
     // with server-owned sessions rather than JWTs.
     session: {
       strategy: "database",
       maxAge: SESSION_MAX_AGE_SECONDS,
-      updateAge: 24 * 60 * 60
+      updateAge: SESSION_UPDATE_AGE_SECONDS
     },
     adapter: DrizzleAdapter(runtime.connection.db),
-    providers: [Google],
-    pages: {
-      signIn: "/auth/sign-in"
-    },
     callbacks: {
       async signIn({ user }) {
         // Deactivated operators must not be able to sign in, even if an
@@ -76,10 +81,7 @@ async function buildAuthConfig(): Promise<NextAuthConfig> {
         }
         return session;
       }
-    },
-    // `trustHost` is required under hosted previews / Railway where the
-    // request host is not identical to `AUTH_URL`.
-    trustHost: true
+    }
   };
 }
 
