@@ -1143,7 +1143,13 @@ describe("real inbox selectors", () => {
     expect(searched.page.hasMore).toBe(false);
   });
 
-  it("matches query terms across subject, project label, and snippet without failing on empty results", async () => {
+  it("matches query terms across display name, email, project label, subject, and snippet", async () => {
+    const byDisplayName = await getInboxList("all", {
+      query: "Alex Thompson",
+    });
+    const byEmail = await getInboxList("all", {
+      query: "sarah@example.org",
+    });
     const bySubject = await getInboxList("all", {
       query: "Safety protocols",
     });
@@ -1157,6 +1163,12 @@ describe("real inbox selectors", () => {
       query: "Michelle Neitzey",
     });
 
+    expect(byDisplayName.items.map((item) => item.contactId)).toEqual([
+      "contact:alex-thompson",
+    ]);
+    expect(byEmail.items.map((item) => item.contactId)).toEqual([
+      "contact:sarah-martinez",
+    ]);
     expect(bySubject.items.map((item) => item.contactId)).toEqual([
       "contact:lisa-zhang",
     ]);
@@ -1169,5 +1181,153 @@ describe("real inbox selectors", () => {
     expect(noMatch.items).toEqual([]);
     expect(noMatch.page.total).toBe(0);
     expect(noMatch.page.hasMore).toBe(false);
+  });
+
+  it("falls back to expedition names when project names are unavailable during search", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:expedition-only",
+      salesforceContactId: "003-expedition-only",
+      displayName: "Expedition Only",
+      primaryEmail: "expedition-only@example.org",
+      primaryPhone: null,
+    });
+    await runtime.context.repositories.expeditionDimensions.upsert({
+      expeditionId: "expedition:amazon-fallback",
+      projectId: null,
+      expeditionName: "Amazon Basin Expedition",
+      source: "salesforce",
+    });
+    await runtime.context.repositories.contactMemberships.upsert({
+      id: "membership:expedition-only",
+      contactId: "contact:expedition-only",
+      projectId: null,
+      expeditionId: "expedition:amazon-fallback",
+      role: "volunteer",
+      status: "active",
+      source: "salesforce",
+    });
+
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "expedition-only-email-1",
+      contactId: "contact:expedition-only",
+      occurredAt: "2026-04-15T16:00:00.000Z",
+      direction: "inbound",
+      subject: "Expedition-only routing",
+      snippet: "I only have expedition context on this contact.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:expedition-only",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-15T16:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-15T16:00:00.000Z",
+      snippet: "I only have expedition context on this contact.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const searched = await getInboxList("all", {
+      query: "Amazon Basin Expedition",
+    });
+
+    expect(searched.items.map((item) => item.contactId)).toEqual([
+      "contact:expedition-only",
+    ]);
+  });
+
+  it("composes search with unread, follow-up, and unresolved filters", async () => {
+    const unread = await getInboxList("unread", {
+      query: "sarah@example.org",
+    });
+    const followUp = await getInboxList("follow-up", {
+      query: "Sarah",
+    });
+    const unresolved = await getInboxList("unresolved", {
+      query: "weather",
+    });
+
+    expect(unread.items.map((item) => item.contactId)).toEqual([
+      "contact:sarah-martinez",
+    ]);
+    expect(followUp.items.map((item) => item.contactId)).toEqual([
+      "contact:sarah-martinez",
+    ]);
+    expect(unresolved.items.map((item) => item.contactId)).toEqual([
+      "contact:alex-thompson",
+    ]);
+  });
+
+  it("treats an empty query as the default ordered inbox list", async () => {
+    const defaultList = await getInboxList("all");
+    const emptyQueryList = await getInboxList("all", {
+      query: "   ",
+    });
+
+    expect(emptyQueryList.items.map((item) => item.contactId)).toEqual(
+      defaultList.items.map((item) => item.contactId),
+    );
+    expect(emptyQueryList.page).toEqual(defaultList.page);
+  });
+
+  it("paginates search results while preserving recency order", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxEmailOnlyContact(runtime, {
+      contactId: "contact:ridge-alpha",
+      displayName: "Ridge Alpha",
+      salesforceContactId: "003-ridge-alpha",
+      subject: "Ridge weather update",
+      snippet: "The ridge weather shifted again overnight.",
+      occurredAt: "2026-04-15T18:00:00.000Z",
+    });
+    await seedInboxEmailOnlyContact(runtime, {
+      contactId: "contact:ridge-beta",
+      displayName: "Ridge Beta",
+      salesforceContactId: "003-ridge-beta",
+      subject: "Ridge transport note",
+      snippet: "Sharing the ridge transport plan for tomorrow.",
+      occurredAt: "2026-04-15T17:00:00.000Z",
+    });
+    await seedInboxEmailOnlyContact(runtime, {
+      contactId: "contact:ridge-gamma",
+      displayName: "Ridge Gamma",
+      salesforceContactId: "003-ridge-gamma",
+      subject: "Ridge camping logistics",
+      snippet: "The ridge camping checklist is attached.",
+      occurredAt: "2026-04-15T16:00:00.000Z",
+    });
+
+    const firstPage = await getInboxList("all", {
+      query: "ridge",
+      limit: 2,
+    });
+
+    expect(firstPage.items.map((item) => item.contactId)).toEqual([
+      "contact:ridge-alpha",
+      "contact:ridge-beta",
+    ]);
+    expect(firstPage.page.total).toBe(3);
+    expect(firstPage.page.hasMore).toBe(true);
+    expect(firstPage.page.nextCursor).not.toBeNull();
+
+    const secondPage = await getInboxList("all", {
+      query: "ridge",
+      limit: 2,
+      cursor: firstPage.page.nextCursor,
+    });
+
+    expect(secondPage.items.map((item) => item.contactId)).toEqual([
+      "contact:ridge-gamma",
+    ]);
+    expect(secondPage.page.total).toBe(3);
+    expect(secondPage.page.hasMore).toBe(false);
   });
 });

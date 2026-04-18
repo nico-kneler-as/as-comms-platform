@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import type {
@@ -37,7 +37,9 @@ export function InboxList({
   initialList,
   initialFilterId = "all"
 }: ListColumnProps) {
+  const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const activeContactId = extractContactId(pathname);
   const {
     search,
@@ -46,6 +48,7 @@ export function InboxList({
     isQueueLoading,
     setQueueLoading
   } = useInboxClient();
+  const urlQuery = searchParams.get("q") ?? "";
   const deferredQuery = useDeferredValue(search.query);
   const normalizedQuery = deferredQuery.trim();
   const isServerSearchActive = normalizedQuery.length > 0;
@@ -72,6 +75,36 @@ export function InboxList({
       initialList
     };
   }, [activeFilter, initialList]);
+
+  useEffect(() => {
+    if (search.query !== urlQuery) {
+      setSearchQuery(urlQuery);
+    }
+  }, [search.query, setSearchQuery, urlQuery]);
+
+  useEffect(() => {
+    const currentUrlQuery = urlQuery.trim();
+
+    if (normalizedQuery === currentUrlQuery) {
+      return;
+    }
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+
+    if (normalizedQuery.length === 0) {
+      nextParams.delete("q");
+    } else {
+      nextParams.set("q", normalizedQuery);
+    }
+
+    const nextQueryString = nextParams.toString();
+    const nextHref =
+      nextQueryString.length === 0
+        ? pathname
+        : `${pathname}?${nextQueryString}`;
+
+    router.replace(nextHref, { scroll: false });
+  }, [normalizedQuery, pathname, router, searchParams, urlQuery]);
 
   const loadFilterPage = useCallback(
     async (input: {
@@ -271,9 +304,9 @@ export function InboxList({
               ) : (
                 <>
                   <span className="font-medium text-slate-700">
-                    {displayItems.length}
+                    {currentList.page.total}
                   </span>{" "}
-                  {displayItems.length === 1 ? "result" : "results"} for
+                  {currentList.page.total === 1 ? "result" : "results"} for
                   &ldquo;{search.query}&rdquo;
                 </>
               )}
@@ -346,8 +379,7 @@ function SearchEmptyState({ query }: { readonly query: string }) {
       title="No results"
       description={
         <>
-          Nothing in the loaded queue matches &ldquo;{query}&rdquo;. Try a different
-          search.
+          Nothing in the inbox matches &ldquo;{query}&rdquo;. Try a different search.
         </>
       }
     />

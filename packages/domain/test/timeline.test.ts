@@ -168,6 +168,11 @@ function createRepositoryBundle(input: {
       findByContactId: () => Promise.resolve(null),
       listAllOrderedByRecency: () => Promise.resolve([]),
       listInvalidRecencyContactIds: () => Promise.resolve([]),
+      searchPageOrderedByRecency: () =>
+        Promise.resolve({
+          rows: [],
+          total: 0
+        }),
       listPageOrderedByRecency: () => Promise.resolve([]),
       countByFilters: () =>
         Promise.resolve({

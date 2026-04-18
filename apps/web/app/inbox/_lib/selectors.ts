@@ -720,15 +720,6 @@ function parseCommunicationPreview(raw: string): ParsedPreview {
   };
 }
 
-function previewSubjectForSearch(raw: string): string | null {
-  return parseCommunicationPreview(raw).subject;
-}
-
-function previewBodyForSearch(raw: string): string {
-  const parsed = parseCommunicationPreview(raw);
-  return parsed.body.length > 0 ? parsed.body : sanitizePreviewText(raw);
-}
-
 function resolvePreferredMessagePreview(input: {
   readonly explicitSubjects?: readonly (string | null | undefined)[];
   readonly rawCandidates: readonly (string | null | undefined)[];
@@ -1375,50 +1366,6 @@ function totalForFilter(
   }
 }
 
-function primaryProjectLabelForSearch(
-  memberships: readonly ContactMembershipRecord[],
-  projectNameById: Readonly<Record<string, string>>,
-): string | null {
-  const primaryMembership = sortMemberships(memberships)[0] ?? null;
-
-  if (primaryMembership === null) {
-    return null;
-  }
-
-  return resolveProjectName(primaryMembership, projectNameById);
-}
-
-function matchesQueryText(
-  value: string | null | undefined,
-  normalizedQuery: string,
-): boolean {
-  return value?.toLowerCase().includes(normalizedQuery) ?? false;
-}
-
-function matchesInboxListQuery(
-  row: InboxListCacheRow,
-  normalizedQuery: string,
-  projectNameById: Readonly<Record<string, string>>,
-): boolean {
-  const projectionSubject =
-    normalizeInlineText(row.latestMessagePreview?.subject) ??
-    previewSubjectForSearch(row.inboxProjection.snippet) ??
-    fallbackLatestSubject(row.inboxProjection.lastEventType);
-  const projectionSnippet = previewBodyForSearch(row.inboxProjection.snippet);
-  const projectLabel = primaryProjectLabelForSearch(
-    row.memberships,
-    projectNameById,
-  );
-
-  return (
-    matchesQueryText(row.contact.displayName, normalizedQuery) ||
-    matchesQueryText(row.contact.primaryEmail, normalizedQuery) ||
-    matchesQueryText(projectionSubject, normalizedQuery) ||
-    matchesQueryText(projectionSnippet, normalizedQuery) ||
-    matchesQueryText(projectLabel, normalizedQuery)
-  );
-}
-
 async function readInboxListCacheData(input: {
   readonly filterId: InboxFilterId;
   readonly cursor: string | null;
@@ -1427,52 +1374,45 @@ async function readInboxListCacheData(input: {
 }): Promise<InboxListCacheData> {
   const runtime = await getStage1WebRuntime();
   const decodedCursor = decodeInboxListCursor(input.cursor);
-  const normalizedQuery =
-    normalizeInlineText(input.query)?.toLowerCase() ?? null;
-  const [allCandidateProjections, counts, freshness] = await Promise.all([
+  const normalizedQuery = normalizeInlineText(input.query) ?? null;
+  const [projectionPage, counts, freshness] = await Promise.all([
     normalizedQuery === null
-      ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
+      ? runtime.repositories.inboxProjection
+          .listPageOrderedByRecency({
+            filter: input.filterId,
+            limit: input.limit + 1,
+            cursor: decodedCursor,
+          })
+          .then((rows) => ({
+            rows,
+            total: 0,
+          }))
+      : runtime.repositories.inboxProjection.searchPageOrderedByRecency({
           filter: input.filterId,
           limit: input.limit + 1,
           cursor: decodedCursor,
-        })
-      : runtime.repositories.inboxProjection.listAllOrderedByRecency(),
+          query: normalizedQuery,
+        }),
     runtime.repositories.inboxProjection.countByFilters(),
     runtime.repositories.inboxProjection.getFreshness(),
   ]);
-  const filteredProjections =
-    normalizedQuery === null
-      ? allCandidateProjections
-      : allCandidateProjections.filter((projection) => {
-          if (decodedCursor === null) {
-            return true;
-          }
-
-          const sortAt = projection.lastInboundAt ?? projection.lastActivityAt;
-
-          return (
-            sortAt < decodedCursor.sortAt ||
-            (sortAt === decodedCursor.sortAt &&
-              (projection.lastActivityAt < decodedCursor.lastActivityAt ||
-                (projection.lastActivityAt === decodedCursor.lastActivityAt &&
-                  projection.contactId > decodedCursor.contactId)))
-          );
-        });
-  const candidateContactIds = filteredProjections.map(
-    (projection) => projection.contactId,
-  );
+  const hasMore = projectionPage.rows.length > input.limit;
+  const pageProjections = hasMore
+    ? projectionPage.rows.slice(0, input.limit)
+    : projectionPage.rows;
+  const candidateContactIds = pageProjections.map((projection) => projection.contactId);
   const [contacts, memberships, latestMessagePreviewByCanonicalEventId] =
     await Promise.all([
       runtime.repositories.contacts.listByIds(candidateContactIds),
       runtime.repositories.contactMemberships.listByContactIds(
         candidateContactIds,
       ),
-      loadLatestSubjectByCanonicalEventId(filteredProjections),
+      loadLatestSubjectByCanonicalEventId(pageProjections),
     ]);
   const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
   const membershipsByContactId = groupMembershipsByContactId(memberships);
   const projectNameById = await loadProjectNameById(memberships);
-  const candidateRows = filteredProjections.flatMap((inboxProjection) => {
+  const pageRows = pageProjections.flatMap((inboxProjection) => {
     const contact = contactById.get(inboxProjection.contactId);
 
     if (contact === undefined) {
@@ -1492,14 +1432,6 @@ async function readInboxListCacheData(input: {
       } satisfies InboxListCacheRow,
     ];
   });
-  const searchedRows =
-    normalizedQuery === null
-      ? candidateRows
-      : candidateRows.filter((row) =>
-          matchesInboxListQuery(row, normalizedQuery, projectNameById),
-        );
-  const hasMore = searchedRows.length > input.limit;
-  const pageRows = hasMore ? searchedRows.slice(0, input.limit) : searchedRows;
 
   return {
     rows: pageRows,
@@ -1523,7 +1455,7 @@ async function readInboxListCacheData(input: {
       total:
         normalizedQuery === null
           ? totalForFilter(counts, input.filterId)
-          : searchedRows.length,
+          : projectionPage.total,
     },
     freshness,
   };

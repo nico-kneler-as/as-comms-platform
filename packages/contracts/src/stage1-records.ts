@@ -61,6 +61,10 @@ export const canonicalEventProvenanceSchema = z.object({
   campaignRef: communicationCampaignRefSchema.nullable().default(null),
   threadRef: communicationThreadRefSchema.nullable().default(null),
   direction: communicationDirectionSchema.nullable().default(null),
+  inboxProjectionExclusionReason: z
+    .enum(["forwarded_chain"])
+    .nullable()
+    .optional(),
   notes: z.string().min(1).nullable().optional()
 });
 export type CanonicalEventProvenance = z.infer<

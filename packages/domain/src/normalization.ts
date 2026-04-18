@@ -279,6 +279,56 @@ function newestTimestamp(
   return left > right ? left : right;
 }
 
+const FORWARDED_SUBJECT_PATTERN = /^\s*fwd?:/i;
+const FORWARDED_BODY_PATTERNS = [
+  /(?:\n|^)\s*-{2,}\s*forwarded message\s*-{2,}\s*(?:\n|$)/i,
+  /(?:\n|^)\s*forwarded message:/i,
+  /(?:\n|^)\s*begin forwarded message:/i
+];
+
+function detectInboxProjectionExclusionReason(
+  input: Pick<
+    NormalizedCanonicalEventIntake,
+    "canonicalEvent" | "gmailMessageDetail" | "sourceEvidence"
+  >
+): "forwarded_chain" | null {
+  if (
+    input.sourceEvidence.provider !== "gmail" ||
+    (input.canonicalEvent.eventType !== "communication.email.inbound" &&
+      input.canonicalEvent.eventType !== "communication.email.outbound")
+  ) {
+    return null;
+  }
+
+  const gmailMessageDetail = input.gmailMessageDetail;
+
+  if (gmailMessageDetail === undefined) {
+    return null;
+  }
+
+  if (
+    gmailMessageDetail.subject !== null &&
+    FORWARDED_SUBJECT_PATTERN.test(gmailMessageDetail.subject)
+  ) {
+    return "forwarded_chain";
+  }
+
+  const previewCandidates = [
+    gmailMessageDetail.bodyTextPreview,
+    gmailMessageDetail.snippetClean
+  ];
+
+  for (const preview of previewCandidates) {
+    for (const pattern of FORWARDED_BODY_PATTERNS) {
+      if (pattern.test(preview)) {
+        return "forwarded_chain";
+      }
+    }
+  }
+
+  return null;
+}
+
 function buildNormalizedIdentityValues(
   identity: NormalizedIdentityEvidence
 ): string[] {
@@ -1326,6 +1376,8 @@ export function createStage1NormalizationService(
       );
       const communicationClassification =
         parsed.communicationClassification ?? null;
+      const inboxProjectionExclusionReason =
+        detectInboxProjectionExclusionReason(parsed);
       const canonicalEvent = canonicalEventSchema.parse({
         id: parsed.canonicalEvent.id,
         contactId: identityDecision.contact.id,
@@ -1349,6 +1401,9 @@ export function createStage1NormalizationService(
           campaignRef: communicationClassification?.campaignRef ?? null,
           threadRef: communicationClassification?.threadRef ?? null,
           direction: communicationClassification?.direction ?? null,
+          ...(inboxProjectionExclusionReason === null
+            ? {}
+            : { inboxProjectionExclusionReason }),
           notes: duplicateCollapseDecision.winner.notes
         },
         reviewState
