@@ -4,28 +4,35 @@ import { useState } from "react";
 
 import type {
   InboxTimelineEntryKind,
-  InboxTimelineEntryViewModel
+  InboxTimelineEntryViewModel,
 } from "../_lib/view-models";
-import {
-  ChevronRightIcon,
-  MailIcon,
-  NoteIcon,
-  PhoneIcon
-} from "./icons";
+import { ChevronRightIcon, MailIcon, NoteIcon, PhoneIcon } from "./icons";
 import { DividerLabel } from "@/components/ui/divider-label";
-import { RADIUS, SHADOW, TEXT, TONE, TRANSITION } from "@/app/_lib/design-tokens";
+import {
+  RADIUS,
+  SHADOW,
+  TEXT,
+  TONE,
+  TRANSITION,
+} from "@/app/_lib/design-tokens";
 
 interface TimelineProps {
   readonly entries: readonly InboxTimelineEntryViewModel[];
   readonly volunteerFirstName: string;
+  readonly hasMore?: boolean;
+  readonly isLoadingOlder?: boolean;
+  readonly onLoadOlder?: () => void;
 }
 
 export function InboxTimeline({
   entries,
-  volunteerFirstName
+  volunteerFirstName,
+  hasMore = false,
+  isLoadingOlder = false,
+  onLoadOlder,
 }: TimelineProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
-    () => new Set<string>()
+    () => new Set<string>(),
   );
 
   if (entries.length === 0) {
@@ -37,8 +44,8 @@ export function InboxTimeline({
   }
 
   const toggle = (id: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
+    setExpanded((previous) => {
+      const next = new Set(previous);
       if (next.has(id)) {
         next.delete(id);
       } else {
@@ -49,23 +56,38 @@ export function InboxTimeline({
   };
 
   return (
-    <ol className="flex flex-col gap-4">
-      {entries.map((entry) => (
-        <TimelineEntry
-          key={entry.id}
-          entry={entry}
-          volunteerFirstName={volunteerFirstName}
-          isExpanded={expanded.has(entry.id)}
-          onToggle={() => {
-            toggle(entry.id);
-          }}
-        />
-      ))}
-    </ol>
+    <div className="flex flex-col gap-4">
+      {hasMore && onLoadOlder ? (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            disabled={isLoadingOlder}
+            onClick={onLoadOlder}
+            className={`rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ${TRANSITION.fast} hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            {isLoadingOlder
+              ? "Loading older activity..."
+              : "Load older activity"}
+          </button>
+        </div>
+      ) : null}
+
+      <ol className="flex flex-col gap-4">
+        {entries.map((entry) => (
+          <TimelineEntry
+            key={entry.id}
+            entry={entry}
+            volunteerFirstName={volunteerFirstName}
+            isExpanded={expanded.has(entry.id)}
+            onToggle={() => {
+              toggle(entry.id);
+            }}
+          />
+        ))}
+      </ol>
+    </div>
   );
 }
-
-// ---------- Entry router ----------
 
 interface EntryProps {
   readonly entry: InboxTimelineEntryViewModel;
@@ -78,7 +100,7 @@ function TimelineEntry({
   entry,
   volunteerFirstName,
   isExpanded,
-  onToggle
+  onToggle,
 }: EntryProps) {
   const role = roleForKind(entry.kind);
 
@@ -89,6 +111,7 @@ function TimelineEntry({
       return <OutboundBubble entry={entry} />;
     case "automated":
     case "campaign":
+    case "activity":
       return (
         <AutomatedRow
           entry={entry}
@@ -101,41 +124,37 @@ function TimelineEntry({
       return <NoteEntry entry={entry} />;
     case "system":
       return (
-        <SystemDivider
-          entry={entry}
-          volunteerFirstName={volunteerFirstName}
-        />
+        <SystemDivider entry={entry} volunteerFirstName={volunteerFirstName} />
       );
   }
 }
 
-// ---------- Inbound bubble (them, left) ----------
-
 function InboundBubble({
-  entry
+  entry,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
 }) {
   const isEmail = entry.channel === "email";
   const ChannelIcon = isEmail ? MailIcon : PhoneIcon;
+  const body = bodyTextForEntry(entry);
 
   return (
     <li className="flex w-full flex-col items-start">
-      <div className={`max-w-2xl ${RADIUS.bubble} rounded-bl-sm border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}>
+      <div
+        className={`max-w-2xl ${RADIUS.bubble} rounded-bl-sm border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}
+      >
         {isEmail && entry.subject ? (
           <p className="mb-1.5 text-[13px] font-semibold leading-snug text-slate-900">
             {entry.subject}
           </p>
         ) : null}
-        <p className={`whitespace-pre-wrap ${TEXT.bodySm}`}>
-          {entry.body}
-        </p>
+        {body.length > 0 ? (
+          <p className={`whitespace-pre-wrap ${TEXT.bodySm}`}>{body}</p>
+        ) : null}
       </div>
       <div className={`mt-1.5 flex items-center gap-1.5 px-1 ${TEXT.micro}`}>
         <ChannelIcon className="h-3 w-3" />
-        <span className="font-medium text-slate-500">
-          {entry.actorLabel}
-        </span>
+        <span className="font-medium text-slate-500">{entry.actorLabel}</span>
         <span>·</span>
         <span>{entry.occurredAtLabel}</span>
         {entry.isUnread ? (
@@ -149,27 +168,30 @@ function InboundBubble({
   );
 }
 
-// ---------- Outbound bubble (you, right) — dark ----------
-
 function OutboundBubble({
-  entry
+  entry,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
 }) {
   const isEmail = entry.channel === "email";
   const ChannelIcon = isEmail ? MailIcon : PhoneIcon;
+  const body = bodyTextForEntry(entry);
 
   return (
     <li className="flex w-full flex-col items-end">
-      <div className={`max-w-2xl ${RADIUS.bubble} rounded-br-sm bg-slate-800 px-4 py-3 ${SHADOW.sm}`}>
+      <div
+        className={`max-w-2xl ${RADIUS.bubble} rounded-br-sm bg-slate-800 px-4 py-3 ${SHADOW.sm}`}
+      >
         {isEmail && entry.subject ? (
           <p className="mb-1.5 text-[13px] font-semibold leading-snug text-slate-100">
             {entry.subject}
           </p>
         ) : null}
-        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-200">
-          {entry.body}
-        </p>
+        {body.length > 0 ? (
+          <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-200">
+            {body}
+          </p>
+        ) : null}
       </div>
       <div className={`mt-1.5 flex items-center gap-1.5 px-1 ${TEXT.micro}`}>
         <span>{entry.occurredAtLabel}</span>
@@ -180,35 +202,38 @@ function OutboundBubble({
   );
 }
 
-// ---------- Automated / campaign — inline row, not a bubble ----------
-
 function AutomatedRow({
   entry,
   role,
   isExpanded,
-  onToggle
+  onToggle,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
-  readonly role: "automated" | "campaign";
+  readonly role: "automated" | "campaign" | "activity";
   readonly isExpanded: boolean;
   readonly onToggle: () => void;
 }) {
   const isEmail = entry.channel === "email";
   const label =
-    role === "automated"
+    role === "activity"
       ? isEmail
-        ? "Automated Email"
-        : "Automated SMS"
-      : isEmail
-        ? "Campaign Email"
-        : "Campaign SMS";
+        ? "Email Activity"
+        : "SMS Activity"
+      : role === "automated"
+        ? isEmail
+          ? "Automated Email"
+          : "Automated SMS"
+        : isEmail
+          ? "Campaign Email"
+          : "Campaign SMS";
   const headline = entry.subject;
+  const body = bodyTextForEntry(entry);
 
   return (
     <li className="flex w-full flex-col items-end">
-      <span className={`mb-1 px-1 ${TEXT.micro}`}>
-        {label}
-      </span>
+      <div className="mb-1 flex w-full max-w-2xl items-center justify-between px-1">
+        <span className={TEXT.micro}>{label}</span>
+      </div>
       <button
         type="button"
         aria-expanded={isExpanded}
@@ -221,13 +246,13 @@ function AutomatedRow({
               {headline}
             </p>
           ) : null}
-          {isExpanded ? (
+          {!(role === "campaign" && !isExpanded) && body.length > 0 ? (
             <p
-              className={`whitespace-pre-wrap text-[13px] leading-relaxed text-slate-600 ${
-                headline ? "mt-2" : ""
-              }`}
+              className={`text-[13px] leading-relaxed text-slate-600 ${
+                headline ? "mt-1.5" : ""
+              } ${isExpanded ? "whitespace-pre-wrap" : "line-clamp-1"}`}
             >
-              {entry.body}
+              {body}
             </p>
           ) : null}
         </div>
@@ -246,16 +271,12 @@ function AutomatedRow({
   );
 }
 
-// ---------- Internal note — left-border accent ----------
-
-function NoteEntry({
-  entry
-}: {
-  readonly entry: InboxTimelineEntryViewModel;
-}) {
+function NoteEntry({ entry }: { readonly entry: InboxTimelineEntryViewModel }) {
   return (
     <li className="flex w-full flex-col items-end">
-      <div className={`max-w-2xl ${RADIUS.md} border-l-2 border-amber-400 ${TONE.amber.subtle} px-4 py-2.5`}>
+      <div
+        className={`max-w-2xl ${RADIUS.md} border-l-2 border-amber-400 ${TONE.amber.subtle} px-4 py-2.5`}
+      >
         <div className="mb-1 flex items-center gap-1.5 text-[11px] text-amber-700">
           <NoteIcon className="h-3 w-3" />
           <span className="font-medium">Note</span>
@@ -272,11 +293,9 @@ function NoteEntry({
   );
 }
 
-// ---------- System event — centered divider ----------
-
 function SystemDivider({
   entry,
-  volunteerFirstName
+  volunteerFirstName,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
   readonly volunteerFirstName: string;
@@ -290,7 +309,9 @@ function SystemDivider({
   );
 }
 
-// ---------- Helpers ----------
+function bodyTextForEntry(entry: InboxTimelineEntryViewModel): string {
+  return entry.body.trim();
+}
 
 function personalizeSystemBody(body: string, firstName: string): string {
   if (body.length === 0) return firstName;
@@ -302,6 +323,7 @@ function personalizeSystemBody(body: string, firstName: string): string {
 type EntryRole =
   | "inbound"
   | "outbound"
+  | "activity"
   | "automated"
   | "campaign"
   | "note"
@@ -315,7 +337,10 @@ function roleForKind(kind: InboxTimelineEntryKind): EntryRole {
     case "outbound-email":
     case "outbound-sms":
       return "outbound";
+    case "email-activity":
+      return "activity";
     case "outbound-auto-email":
+    case "outbound-auto-sms":
       return "automated";
     case "outbound-campaign-email":
     case "outbound-campaign-sms":

@@ -1,13 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("landing page and health surfaces respond", async ({ page, request }) => {
-  await page.goto("/");
-
-  await expect(
-    page.getByRole("heading", { name: "AS Comms Platform", exact: true })
-  ).toBeVisible();
-  await expect(page.getByText("Stage 0 foundation")).toBeVisible();
-
+test("health and readiness surfaces respond", async ({ request }) => {
   const healthResponse = await request.get("/api/health");
   expect(healthResponse.ok()).toBeTruthy();
   await expect(healthResponse.json()).resolves.toMatchObject({

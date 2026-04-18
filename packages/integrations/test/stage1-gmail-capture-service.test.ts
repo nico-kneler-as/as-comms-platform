@@ -7,6 +7,31 @@ import {
 } from "../src/index.js";
 import { sha256Json } from "../src/capture-services/shared.js";
 
+function hasRequestUrl(input: unknown): input is { url: string } {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    "url" in input &&
+    typeof input.url === "string"
+  );
+}
+
+function resolveRequestUrl(input: unknown): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  if (input instanceof URL) {
+    return input.toString();
+  }
+
+  if (hasRequestUrl(input)) {
+    return input.url;
+  }
+
+  throw new Error("Expected request input to be a string, URL, or Request-like object.");
+}
+
 describe("Gmail capture service", () => {
   it("enforces bearer auth at the HTTP boundary", async () => {
     const service = createGmailCaptureService(
@@ -305,12 +330,12 @@ describe("Gmail capture service", () => {
   });
 
   it("uses OAuth refresh-token exchange before polling the live mailbox", async () => {
-    const requests: Array<{
+    const requests: {
       readonly url: string;
       readonly method: string;
       readonly headers: Headers;
       readonly bodyText: string;
-    }> = [];
+    }[] = [];
     const client = createGmailMailboxApiClient(
       {
         bearerToken: "gmail-token",
@@ -321,8 +346,8 @@ describe("Gmail capture service", () => {
         oauthRefreshToken: "gmail-oauth-refresh-token"
       },
       {
-        fetchImplementation: async (input, init) => {
-          const url = String(input);
+        fetchImplementation: (input, init) => {
+          const url = resolveRequestUrl(input);
           const method = init?.method ?? "GET";
           const headers = new Headers(init?.headers);
           const bodyText =
@@ -336,10 +361,26 @@ describe("Gmail capture service", () => {
           });
 
           if (url === "https://oauth2.googleapis.com/token") {
-            return new Response(
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  access_token: "gmail-access-token",
+                  expires_in: 3600
+                }),
+                {
+                  status: 200,
+                  headers: {
+                    "content-type": "application/json"
+                  }
+                }
+              )
+            );
+          }
+
+          return Promise.resolve(
+            new Response(
               JSON.stringify({
-                access_token: "gmail-access-token",
-                expires_in: 3600
+                messages: []
               }),
               {
                 status: 200,
@@ -347,19 +388,7 @@ describe("Gmail capture service", () => {
                   "content-type": "application/json"
                 }
               }
-            );
-          }
-
-          return new Response(
-            JSON.stringify({
-              messages: []
-            }),
-            {
-              status: 200,
-              headers: {
-                "content-type": "application/json"
-              }
-            }
+            )
           );
         }
       }

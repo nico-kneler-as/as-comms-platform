@@ -23,6 +23,7 @@ describe("defineStage1RepositoryBundle", () => {
       sourceEvidence: {
         append: (record) => Promise.resolve(record),
         findById: () => Promise.resolve(null),
+        listByIds: () => Promise.resolve([]),
         findByIdempotencyKey: () => Promise.resolve(null),
         countByProvider: () => Promise.resolve(0),
         listByProviderRecord: () => Promise.resolve([])
@@ -100,8 +101,25 @@ describe("defineStage1RepositoryBundle", () => {
       },
       inboxProjection: {
         countAll: () => Promise.resolve(0),
+        countInvalidRecencyRows: () => Promise.resolve(0),
         findByContactId: () => Promise.resolve(null),
         listAllOrderedByRecency: () => Promise.resolve([]),
+        listInvalidRecencyContactIds: () => Promise.resolve([]),
+        listPageOrderedByRecency: () => Promise.resolve([]),
+        countByFilters: () =>
+          Promise.resolve({
+            all: 0,
+            unread: 0,
+            followUp: 0,
+            unresolved: 0
+          }),
+        getFreshness: () =>
+          Promise.resolve({
+            total: 0,
+            latestUpdatedAt: null
+          }),
+        getFreshnessByContactId: () => Promise.resolve(null),
+        deleteByContactId: () => Promise.resolve(),
         setNeedsFollowUp: () => Promise.resolve(null),
         upsert: (record) => Promise.resolve(record)
       },
@@ -109,6 +127,15 @@ describe("defineStage1RepositoryBundle", () => {
         countAll: () => Promise.resolve(0),
         findByCanonicalEventId: () => Promise.resolve(null),
         listByContactId: () => Promise.resolve([]),
+        listRecentByContactId: () => Promise.resolve([]),
+        countByContactId: () => Promise.resolve(0),
+        getFreshnessByContactId: (contactId) =>
+          Promise.resolve({
+            contactId,
+            total: 0,
+            latestUpdatedAt: null,
+            latestSortKey: null
+          }),
         upsert: (record) => Promise.resolve(record)
       },
       syncState: {

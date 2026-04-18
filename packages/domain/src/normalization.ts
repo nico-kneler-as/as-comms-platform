@@ -7,7 +7,6 @@ import {
   gmailMessageDetailSchema,
   identityAmbiguityInputSchema,
   identityResolutionReasonCodeValues,
-  inboxDrivingEventTypeValues,
   inboxProjectionApplyInputSchema,
   inboxReviewOverlayRefreshInputSchema,
   normalizedCanonicalEventIntakeSchema,
@@ -31,7 +30,6 @@ import {
   type ContactMembershipRecord,
   type ContactRecord,
   type ExpeditionDimensionRecord,
-  type GmailMessageDetailRecord,
   type IdentityAmbiguityInput,
   type IdentityResolutionCase,
   type InboxDrivingEventType,
@@ -47,7 +45,6 @@ import {
   type QuarantineReasonCode,
   type RoutingAmbiguityInput,
   type RoutingReviewCase,
-  type SalesforceEventContextRecord,
   type SourceEvidenceRecord,
   type SyncStateRecord,
   type SyncStateUpdateInput,
@@ -55,6 +52,9 @@ import {
   type TimelineProjectionRow
 } from "@as-comms/contracts";
 
+import {
+  isInboxDrivingCanonicalEvent
+} from "./inbox-driving.js";
 import type { Stage1PersistenceService } from "./persistence.js";
 
 type ContactLookupMap = ReadonlyMap<string, ContactRecord>;
@@ -185,8 +185,6 @@ export interface Stage1NormalizationService {
   ): Promise<NormalizedCanonicalEventResult>;
 }
 
-const inboxDrivingEventTypes = new Set<string>(inboxDrivingEventTypeValues);
-
 function uniqueStrings(values: readonly string[]): string[] {
   return Array.from(new Set(values)).sort((left, right) =>
     left.localeCompare(right)
@@ -226,23 +224,6 @@ function requireValue<T>(value: T | undefined, message: string): T {
   }
 
   return value;
-}
-
-function isInboxDrivingEventType(
-  eventType: CanonicalEventRecord["eventType"]
-): eventType is InboxDrivingEventType {
-  return inboxDrivingEventTypes.has(eventType);
-}
-
-function isInboxDrivingCanonicalEvent(
-  event: Pick<CanonicalEventRecord, "eventType" | "provenance">
-): event is Pick<CanonicalEventRecord, "eventType" | "provenance"> & {
-  readonly eventType: InboxDrivingEventType;
-} {
-  return (
-    isInboxDrivingEventType(event.eventType) &&
-    event.provenance.messageKind === "one_to_one"
-  );
 }
 
 function isInboundEvent(eventType: InboxDrivingEventType): boolean {
@@ -444,40 +425,6 @@ function decideDuplicateCollapse(
       notes: null
     }
   };
-}
-
-async function loadContactsForIdentityKind(
-  persistence: Stage1PersistenceService,
-  kind: ContactIdentityKind,
-  values: readonly string[]
-): Promise<ContactLookupMap> {
-  const contactIds = new Set<string>();
-
-  for (const value of uniqueStrings(values)) {
-    const identities =
-      await persistence.repositories.contactIdentities.listByNormalizedValue({
-        kind,
-        normalizedValue: value
-      });
-
-    for (const identity of identities) {
-      contactIds.add(identity.contactId);
-    }
-  }
-
-  const entries = await Promise.all(
-    Array.from(contactIds).map(async (contactId) => {
-      const contact = await persistence.repositories.contacts.findById(contactId);
-
-      return contact === null ? null : [contact.id, contact] as const;
-    })
-  );
-
-  return new Map(
-    entries.filter(
-      (entry): entry is readonly [string, ContactRecord] => entry !== null
-    )
-  );
 }
 
 function createIdentityResolutionContext(
@@ -1217,16 +1164,7 @@ export function createStage1NormalizationService(
       const incomingIsLatestKnown =
         currentLatestKnownAt === null ||
         parsed.canonicalEvent.occurredAt >= currentLatestKnownAt;
-      const lastActivityAt =
-        existing === null
-          ? parsed.canonicalEvent.occurredAt
-          : incomingIsInbound && parsed.canonicalEvent.occurredAt > existing.lastActivityAt
-            ? parsed.canonicalEvent.occurredAt
-            : existing.lastInboundAt === null &&
-                !incomingIsInbound &&
-                parsed.canonicalEvent.occurredAt > existing.lastActivityAt
-              ? parsed.canonicalEvent.occurredAt
-              : existing.lastActivityAt;
+      const lastActivityAt = newestTimestamp(lastInboundAt, lastOutboundAt);
 
       if (lastActivityAt === null) {
         return null;
@@ -1387,9 +1325,7 @@ export function createStage1NormalizationService(
         parsed.supportingSources.map((entry) => entry.sourceEvidenceId)
       );
       const communicationClassification =
-        parsed.communicationClassification === undefined
-          ? null
-          : parsed.communicationClassification;
+        parsed.communicationClassification ?? null;
       const canonicalEvent = canonicalEventSchema.parse({
         id: parsed.canonicalEvent.id,
         contactId: identityDecision.contact.id,

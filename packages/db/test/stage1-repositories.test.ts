@@ -437,6 +437,10 @@ describe("Stage 1 DB repositories", () => {
       ...inboxProjection,
       needsFollowUp: true
     });
+    await repositories.inboxProjection.deleteByContactId("contact_1");
+    await expect(
+      repositories.inboxProjection.findByContactId("contact_1")
+    ).resolves.toBeNull();
     await expect(
       repositories.timelineProjection.findByCanonicalEventId(canonicalEvent.id)
     ).resolves.toEqual(timelineProjection);
@@ -502,5 +506,86 @@ describe("Stage 1 DB repositories", () => {
         entityId: "contact_1"
       })
     ).resolves.toEqual([auditRecord]);
+  });
+
+  it("lists contacts whose inbox recency projection is still invalid", async () => {
+    const { client, repositories } = await createTestStage1Context();
+
+    await repositories.contacts.upsert({
+      id: "contact_invalid",
+      salesforceContactId: "003-invalid",
+      displayName: "Invalid Projection",
+      primaryEmail: "invalid@example.org",
+      primaryPhone: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    await repositories.sourceEvidence.append({
+      id: "sev_invalid",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-invalid",
+      receivedAt: "2026-01-01T00:05:00.000Z",
+      occurredAt: "2026-01-01T00:05:00.000Z",
+      payloadRef: "payloads/gmail/gmail-invalid.json",
+      idempotencyKey: "gmail:invalid",
+      checksum: "checksum-invalid"
+    });
+    await repositories.canonicalEvents.upsert({
+      id: "evt_invalid",
+      contactId: "contact_invalid",
+      eventType: "communication.email.outbound",
+      channel: "email",
+      occurredAt: "2026-01-01T00:05:00.000Z",
+      sourceEvidenceId: "sev_invalid",
+      idempotencyKey: "canonical:invalid",
+      provenance: {
+        primaryProvider: "gmail",
+        primarySourceEvidenceId: "sev_invalid",
+        supportingSourceEvidenceIds: [],
+        winnerReason: "single_source",
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-invalid",
+        messageKind: "one_to_one",
+        campaignRef: null,
+        threadRef: null,
+        direction: "outbound",
+        notes: null
+      },
+      reviewState: "clear"
+    });
+
+    await client.exec(`
+      insert into contact_inbox_projection (
+        contact_id,
+        bucket,
+        is_starred,
+        has_unresolved,
+        last_inbound_at,
+        last_outbound_at,
+        last_activity_at,
+        snippet,
+        last_canonical_event_id,
+        last_event_type
+      ) values (
+        'contact_invalid',
+        'Opened',
+        false,
+        false,
+        '2026-01-01T00:01:00.000Z',
+        '2026-01-01T00:05:00.000Z',
+        '2026-01-01T00:01:00.000Z',
+        'Legacy stale projection',
+        'evt_invalid',
+        'communication.email.outbound'
+      );
+    `);
+
+    await expect(
+      repositories.inboxProjection.countInvalidRecencyRows()
+    ).resolves.toBe(1);
+    await expect(
+      repositories.inboxProjection.listInvalidRecencyContactIds()
+    ).resolves.toEqual(["contact_invalid"]);
   });
 });

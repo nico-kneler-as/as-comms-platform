@@ -148,6 +148,7 @@ export type CampaignEmailActivityType = z.infer<
 export const timelineFamilyValues = [
   "salesforce_event",
   "auto_email",
+  "auto_sms",
   "campaign_email",
   "campaign_sms",
   "one_to_one_email",

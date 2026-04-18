@@ -118,7 +118,9 @@ export interface InboxContactSummaryViewModel {
 export type InboxTimelineEntryKind =
   | "inbound-email"
   | "outbound-email"
+  | "email-activity"
   | "outbound-auto-email"
+  | "outbound-auto-sms"
   | "outbound-campaign-email"
   | "inbound-sms"
   | "outbound-sms"
@@ -136,6 +138,7 @@ export interface InboxTimelineEntryViewModel {
   readonly body: string;
   readonly channel: InboxChannel | null;
   readonly isUnread: boolean;
+  readonly isPreview: boolean;
 }
 
 export interface InboxDetailViewModel {
@@ -144,6 +147,16 @@ export interface InboxDetailViewModel {
   readonly bucket: InboxBucket;
   readonly needsFollowUp: boolean;
   readonly smsEligible: boolean;
+  readonly timelinePage: {
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly total: number;
+  };
+  readonly freshness: {
+    readonly inboxUpdatedAt: string | null;
+    readonly timelineUpdatedAt: string | null;
+    readonly timelineCount: number;
+  };
 }
 
 export interface InboxFilterViewModel {
@@ -159,5 +172,16 @@ export interface InboxListViewModel {
   readonly totals: {
     readonly all: number;
     readonly unread: number;
+    readonly followUp: number;
+    readonly unresolved: number;
+  };
+  readonly page: {
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly total: number;
+  };
+  readonly freshness: {
+    readonly latestUpdatedAt: string | null;
+    readonly total: number;
   };
 }

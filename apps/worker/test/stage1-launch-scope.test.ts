@@ -160,7 +160,7 @@ describe("Stage 1 narrowed Gmail + Salesforce launch scope", () => {
       ]);
       expect(timelineRows.map((row) => row.summary)).toEqual([
         "Volunteer completed training",
-        "Outbound email sent",
+        "Auto email sent",
         "Inbound email received"
       ]);
 

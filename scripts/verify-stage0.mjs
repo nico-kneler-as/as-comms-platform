@@ -100,7 +100,15 @@ async function main() {
     assertWorkspaceDependencySubset(
       webPackage,
       "@as-comms/web",
-      new Set(["@as-comms/contracts", "@as-comms/domain", "@as-comms/ui"])
+      // apps/web carries @as-comms/db only to support the explicit Stage 1
+      // composition root in src/server/stage1-runtime.ts. File-level import
+      // enforcement still lives in scripts/boundary-check.mjs.
+      new Set([
+        "@as-comms/contracts",
+        "@as-comms/db",
+        "@as-comms/domain",
+        "@as-comms/ui"
+      ])
     );
   } catch (error) {
     failures.push(

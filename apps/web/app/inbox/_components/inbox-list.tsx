@@ -1,13 +1,13 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import type {
   InboxFilterId,
-  InboxFilterViewModel,
-  InboxListItemViewModel
+  InboxListViewModel
 } from "../_lib/view-models";
+import { fetchInboxListPage } from "../_lib/client-api";
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { useInboxClient } from "./inbox-client-provider";
@@ -22,100 +22,195 @@ import { QueueLoadingSkeleton } from "./inbox-loading";
 import { InboxRow } from "./inbox-row";
 
 interface ListColumnProps {
-  readonly items: readonly InboxListItemViewModel[];
-  readonly filters: readonly InboxFilterViewModel[];
+  readonly initialList: InboxListViewModel;
   readonly initialFilterId?: InboxFilterId;
 }
 
+const FILTER_IDS: readonly InboxFilterId[] = [
+  "all",
+  "unread",
+  "follow-up",
+  "unresolved"
+];
+
 export function InboxList({
-  items,
-  filters,
+  initialList,
   initialFilterId = "all"
 }: ListColumnProps) {
   const pathname = usePathname();
   const activeContactId = extractContactId(pathname);
-  const { search, setSearchQuery, clearSearch, isQueueLoading } = useInboxClient();
-
+  const {
+    search,
+    setSearchQuery,
+    clearSearch,
+    isQueueLoading,
+    setQueueLoading
+  } = useInboxClient();
+  const deferredQuery = useDeferredValue(search.query);
+  const normalizedQuery = deferredQuery.trim();
+  const isServerSearchActive = normalizedQuery.length > 0;
   const [activeFilter, setActiveFilter] = useState<InboxFilterId>(initialFilterId);
-  const filterLabels = useMemo(
+  const [currentList, setCurrentList] = useState(initialList);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [isFilterTransitionPending, startFilterTransition] = useTransition();
+  const activeRequestIdRef = useRef(0);
+  const previousFilterRef = useRef<InboxFilterId>(initialFilterId);
+  const latestShellStateRef = useRef({
+    activeFilter: initialFilterId,
+    initialList
+  });
+  const listFreshnessKey = `${initialList.freshness.latestUpdatedAt ?? "none"}:${initialList.freshness.total.toString()}`;
+  const initialFilterCountById = useMemo(
     () =>
-      new Map(filters.map((filter) => [filter.id, filter.label] as const)),
-    [filters]
+      new Map(initialList.filters.map((filter) => [filter.id, filter.count] as const)),
+    [initialList.filters]
   );
 
-  // Compute filter counts from the server-backed projection state.
-  const filterCounts = useMemo(() => {
-    let unread = 0;
-    let followUpCount = 0;
-    let unresolved = 0;
-    for (const item of items) {
-      if (item.bucket === "new") unread++;
-      if (item.needsFollowUp) {
-        followUpCount++;
-      }
-      if (item.hasUnresolved) unresolved++;
-    }
-    return {
-      all: items.length,
-      unread,
-      "follow-up": followUpCount,
-      unresolved
+  useEffect(() => {
+    latestShellStateRef.current = {
+      activeFilter,
+      initialList
     };
-  }, [items]);
+  }, [activeFilter, initialList]);
 
-  // Apply filters: active filter -> search
-  const filteredItems = useMemo(() => {
-    let result = items.filter((item) => matchesActiveFilter(item, activeFilter));
+  const loadFilterPage = useCallback(
+    async (input: {
+      readonly filterId: InboxFilterId;
+      readonly cursor?: string | null;
+      readonly append: boolean;
+      readonly query?: string | null;
+    }) => {
+      const requestId = activeRequestIdRef.current + 1;
+      activeRequestIdRef.current = requestId;
+      setQueueLoading(true);
+      setQueueError(null);
 
-    // Search filter
-    if (search.isActive && search.resultContactIds.length > 0) {
-      const ids = new Set(search.resultContactIds);
-      result = result.filter((item) => ids.has(item.contactId));
+      try {
+        const nextList = await fetchInboxListPage({
+          filterId: input.filterId,
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+          query: input.query ?? null
+        });
+
+        if (activeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setCurrentList((previousList) =>
+          input.append
+            ? {
+                ...nextList,
+                items: [...previousList.items, ...nextList.items]
+              }
+            : nextList
+        );
+      } catch {
+        if (activeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setQueueError("Inbox refresh failed. Keeping the last loaded rows.");
+      } finally {
+        if (activeRequestIdRef.current === requestId) {
+          setQueueLoading(false);
+        }
+      }
+    },
+    [setQueueLoading]
+  );
+
+  useEffect(() => {
+    const previousFilter = previousFilterRef.current;
+    previousFilterRef.current = activeFilter;
+    activeRequestIdRef.current += 1;
+    const latestShellState = latestShellStateRef.current;
+
+    if (activeFilter === "all" && !isServerSearchActive) {
+      setQueueLoading(false);
+      setQueueError(null);
+      setCurrentList(latestShellState.initialList);
+      return;
     }
 
-    return result;
-  }, [items, activeFilter, search]);
+    if (previousFilter !== activeFilter) {
+      setCurrentList((previousList) => ({
+        ...previousList,
+        items: [],
+        page: {
+          hasMore: false,
+          nextCursor: null,
+          total: initialFilterCountById.get(activeFilter) ?? previousList.page.total
+        }
+      }));
+    }
 
-  // For local search simulation: filter by query string matching
-  const searchFilteredItems = useMemo(() => {
-    if (!search.isActive || search.query.length === 0) return filteredItems;
-    const q = search.query.toLowerCase();
-    return filteredItems.filter(
-      (item) =>
-        item.displayName.toLowerCase().includes(q) ||
-        item.latestSubject.toLowerCase().includes(q) ||
-        item.snippet.toLowerCase().includes(q) ||
-        (item.projectLabel?.toLowerCase().includes(q) ?? false)
-    );
-  }, [filteredItems, search]);
+    void loadFilterPage({
+      filterId: activeFilter,
+      append: false,
+      query: normalizedQuery
+    });
+  }, [
+    activeFilter,
+    initialFilterCountById,
+    isServerSearchActive,
+    loadFilterPage,
+    normalizedQuery,
+    setQueueLoading
+  ]);
 
-  const displayItems = search.isActive ? searchFilteredItems : filteredItems;
+  useEffect(() => {
+    const latestShellState = latestShellStateRef.current;
 
-  const filterIds: readonly InboxFilterId[] = ["all", "unread", "follow-up", "unresolved"];
+    if (latestShellState.activeFilter === "all" && !isServerSearchActive) {
+      setCurrentList(latestShellState.initialList);
+      setQueueError(null);
+      return;
+    }
+
+    void loadFilterPage({
+      filterId: latestShellState.activeFilter,
+      append: false,
+      query: normalizedQuery
+    });
+  }, [isServerSearchActive, listFreshnessKey, loadFilterPage, normalizedQuery]);
+
+  const filterLabels = useMemo(
+    () =>
+      new Map(currentList.filters.map((filter) => [filter.id, filter.label] as const)),
+    [currentList.filters]
+  );
+
+  const filterCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        currentList.filters.map((filter) => [filter.id, filter.count] as const)
+      ) as Record<InboxFilterId, number>,
+    [currentList.filters]
+  );
+
+  const displayItems = currentList.items;
+
+  const shouldShowInitialSkeleton = isQueueLoading && currentList.items.length === 0;
+  const canLoadMore = currentList.page.hasMore && currentList.page.nextCursor !== null;
 
   return (
     <section className={`relative flex ${LAYOUT.listWidth} shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white`}>
       <div className="sticky top-0 z-10 bg-white/95 backdrop-blur">
-        {/* Header */}
         <div className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-5`}>
           <h1 className={`min-w-0 flex-1 truncate ${TEXT.headingLg}`}>
             Inbox
           </h1>
         </div>
 
-        {/* Search bar */}
         <div className="px-5 pb-3 pt-3">
           <label className={`flex items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm} ${TRANSITION.fast} focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300`}>
             <SearchIcon className="h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search people, subjects, projects"
+              placeholder="Search people, emails, projects"
               value={search.query}
-              onChange={(e) => {
-                const target = e.currentTarget as unknown as {
-                  readonly value: string;
-                };
-                setSearchQuery(target.value);
+              onChange={(event) => {
+                setSearchQuery(event.currentTarget.value);
               }}
               className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
             />
@@ -132,9 +227,8 @@ export function InboxList({
           </label>
         </div>
 
-        {/* Inline filter chips */}
         <div className="flex flex-wrap gap-1.5 px-5 pb-3">
-          {filterIds.map((id) => {
+          {FILTER_IDS.map((id) => {
             const isActive = activeFilter === id;
             return (
               <button
@@ -142,7 +236,9 @@ export function InboxList({
                 type="button"
                 aria-pressed={isActive}
                 onClick={() => {
-                  setActiveFilter(id);
+                  startFilterTransition(() => {
+                    setActiveFilter(id);
+                  });
                 }}
                 className={`rounded-full px-2.5 py-1 text-xs font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
                   isActive
@@ -159,20 +255,25 @@ export function InboxList({
           })}
         </div>
 
-        {/* Search active indicator */}
+        {queueError ? (
+          <div className="border-t border-rose-100 bg-rose-50 px-5 py-2 text-xs text-rose-700">
+            {queueError}
+          </div>
+        ) : null}
+
         {search.isActive ? (
           <div className="border-t border-slate-100 px-5 py-2">
             <p className="text-xs text-slate-500">
-              {searchFilteredItems.length === 0 ? (
+              {displayItems.length === 0 ? (
                 <span className="text-slate-400">
                   No results for &ldquo;{search.query}&rdquo;
                 </span>
               ) : (
                 <>
                   <span className="font-medium text-slate-700">
-                    {searchFilteredItems.length}
+                    {displayItems.length}
                   </span>{" "}
-                  {searchFilteredItems.length === 1 ? "result" : "results"} for
+                  {displayItems.length === 1 ? "result" : "results"} for
                   &ldquo;{search.query}&rdquo;
                 </>
               )}
@@ -181,31 +282,52 @@ export function InboxList({
         ) : null}
       </div>
 
-      {/* List body */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {isQueueLoading ? (
+        {shouldShowInitialSkeleton ? (
           <QueueLoadingSkeleton />
-        ) : search.isActive && searchFilteredItems.length === 0 ? (
+        ) : search.isActive && displayItems.length === 0 ? (
           <SearchEmptyState query={search.query} />
         ) : displayItems.length === 0 ? (
           <QueueEmptyState />
         ) : (
-          <ul className="divide-y divide-slate-100">
-            {displayItems.map((item) => (
-              <InboxRow
-                key={item.contactId}
-                item={item}
-                isActive={item.contactId === activeContactId}
-              />
-            ))}
-          </ul>
+          <>
+            <ul className="divide-y divide-slate-100">
+              {displayItems.map((item) => (
+                <InboxRow
+                  key={item.contactId}
+                  item={item}
+                  isActive={item.contactId === activeContactId}
+                />
+              ))}
+            </ul>
+
+            {canLoadMore ? (
+              <div className="border-t border-slate-100 px-5 py-4">
+                <button
+                  type="button"
+                  disabled={isQueueLoading || isFilterTransitionPending}
+                  onClick={() => {
+                    void loadFilterPage({
+                      filterId: activeFilter,
+                      cursor: currentList.page.nextCursor,
+                      append: true,
+                      query: normalizedQuery
+                    });
+                  }}
+                  className={`w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 ${TRANSITION.fast} hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  {isQueueLoading
+                    ? "Loading more conversations..."
+                    : `Load more (${currentList.items.length.toString()} of ${currentList.page.total.toString()})`}
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </section>
   );
 }
-
-// ---------- Empty states ----------
 
 function QueueEmptyState() {
   return (
@@ -222,12 +344,15 @@ function SearchEmptyState({ query }: { readonly query: string }) {
     <EmptyState
       icon={<SearchXIcon className="h-6 w-6" />}
       title="No results"
-      description={<>Nothing matches &ldquo;{query}&rdquo;. Try a different search.</>}
+      description={
+        <>
+          Nothing in the loaded queue matches &ldquo;{query}&rdquo;. Try a different
+          search.
+        </>
+      }
     />
   );
 }
-
-// ---------- Helpers ----------
 
 function extractContactId(pathname: string | null): string | null {
   if (!pathname) return null;
@@ -238,21 +363,5 @@ function extractContactId(pathname: string | null): string | null {
     return decodeURIComponent(match[1] ?? "");
   } catch {
     return match[1] ?? null;
-  }
-}
-
-function matchesActiveFilter(
-  item: InboxListItemViewModel,
-  activeFilter: InboxFilterId
-): boolean {
-  switch (activeFilter) {
-    case "all":
-      return true;
-    case "unread":
-      return item.bucket === "new";
-    case "follow-up":
-      return item.needsFollowUp;
-    case "unresolved":
-      return item.hasUnresolved;
   }
 }

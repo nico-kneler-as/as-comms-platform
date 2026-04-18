@@ -22,10 +22,10 @@ export const dynamic = "force-dynamic";
  * once for both `/inbox` and `/inbox/[contactId]`. The page slot underneath
  * renders either the empty state or the selected-contact detail workspace.
  *
- * Following FP-01/FP-02: the full list is assembled here from a server-side
- * selector and only minimized view models flow into the client list island.
- * The client applies the active filter locally against those view models, so
- * the sidebar collapse has no effect on where canonical state lives.
+ * Following FP-01/FP-02: the initial inbox page is assembled here from a
+ * server-side selector and only minimized view models flow into the client
+ * list island. The client fetches additional filtered pages on demand, while
+ * canonical queue state remains server-owned.
  */
 export default async function InboxLayout({
   children
@@ -36,8 +36,7 @@ export default async function InboxLayout({
 
   return (
     <InboxShell
-      filters={list.filters}
-      items={list.items}
+      initialList={list}
       initialFilterId="all"
     >
       {children}

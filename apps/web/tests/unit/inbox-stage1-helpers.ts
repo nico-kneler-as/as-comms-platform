@@ -1,36 +1,13 @@
 import type { InboxProjectionRow } from "@as-comms/contracts";
-import { createStage1TimelinePresentationService } from "../../../../packages/domain/src/timeline.js";
 
 import {
-  createTestStage1Context,
-  type TestStage1Context
-} from "../../../../packages/db/test/helpers.js";
-import { setStage1WebRuntimeForTests } from "../../src/server/stage1-runtime";
+  createStage1WebTestRuntime,
+  type Stage1WebTestRuntime,
+  type TestStage1Context,
+} from "../../src/server/stage1-runtime";
 
-export interface InboxTestRuntime {
-  readonly context: TestStage1Context;
-  dispose(): Promise<void>;
-}
-
-export async function createInboxTestRuntime(): Promise<InboxTestRuntime> {
-  const context = await createTestStage1Context();
-
-  setStage1WebRuntimeForTests({
-    connection: null,
-    repositories: context.repositories,
-    timelinePresentation: createStage1TimelinePresentationService(
-      context.repositories
-    )
-  });
-
-  return {
-    context,
-    async dispose() {
-      setStage1WebRuntimeForTests(null);
-      await context.client.close();
-    }
-  };
-}
+export type InboxTestRuntime = Stage1WebTestRuntime;
+export const createInboxTestRuntime = createStage1WebTestRuntime;
 
 export async function seedInboxContact(
   context: TestStage1Context,
@@ -44,7 +21,7 @@ export async function seedInboxContact(
     readonly projectName?: string;
     readonly membershipId?: string;
     readonly membershipStatus?: string | null;
-  }
+  },
 ): Promise<void> {
   await context.repositories.contacts.upsert({
     id: input.contactId,
@@ -53,14 +30,14 @@ export async function seedInboxContact(
     primaryEmail: input.primaryEmail,
     primaryPhone: input.primaryPhone,
     createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z"
+    updatedAt: "2026-01-01T00:00:00.000Z",
   });
 
   if (input.projectId !== undefined) {
     await context.repositories.projectDimensions.upsert({
       projectId: input.projectId,
       projectName: input.projectName ?? input.projectId,
-      source: "salesforce"
+      source: "salesforce",
     });
   }
 
@@ -72,7 +49,7 @@ export async function seedInboxContact(
       expeditionId: null,
       role: "volunteer",
       status: input.membershipStatus ?? null,
-      source: "salesforce"
+      source: "salesforce",
     });
   }
 }
@@ -86,7 +63,9 @@ export async function seedInboxEmailEvent(
     readonly direction: "inbound" | "outbound";
     readonly subject: string;
     readonly snippet: string;
-  }
+    readonly snippetClean?: string;
+    readonly bodyTextPreview?: string;
+  },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
   const canonicalEventId = `event:${input.id}`;
@@ -100,7 +79,7 @@ export async function seedInboxEmailEvent(
     occurredAt: input.occurredAt,
     payloadRef: `payloads/gmail/${input.id}.json`,
     idempotencyKey: `gmail:${input.id}`,
-    checksum: `checksum:${input.id}`
+    checksum: `checksum:${input.id}`,
   });
 
   await context.repositories.canonicalEvents.upsert({
@@ -125,9 +104,9 @@ export async function seedInboxEmailEvent(
       campaignRef: null,
       threadRef: null,
       direction: input.direction,
-      notes: null
+      notes: null,
     },
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   await context.repositories.gmailMessageDetails.upsert({
@@ -137,10 +116,10 @@ export async function seedInboxEmailEvent(
     rfc822MessageId: `<${input.id}@example.org>`,
     direction: input.direction,
     subject: input.subject,
-    snippetClean: input.snippet,
-    bodyTextPreview: input.snippet,
+    snippetClean: input.snippetClean ?? input.snippet,
+    bodyTextPreview: input.bodyTextPreview ?? input.snippet,
     capturedMailbox: "volunteers@example.org",
-    projectInboxAlias: "volunteers@example.org"
+    projectInboxAlias: "volunteers@example.org",
   });
 
   await context.repositories.timelineProjection.upsert({
@@ -156,11 +135,11 @@ export async function seedInboxEmailEvent(
     summary: input.subject,
     channel: "email",
     primaryProvider: "gmail",
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   return {
-    canonicalEventId
+    canonicalEventId,
   };
 }
 
@@ -172,7 +151,7 @@ export async function seedInboxSmsEvent(
     readonly occurredAt: string;
     readonly direction: "inbound" | "outbound";
     readonly summary: string;
-  }
+  },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
   const canonicalEventId = `event:${input.id}`;
@@ -186,7 +165,7 @@ export async function seedInboxSmsEvent(
     occurredAt: input.occurredAt,
     payloadRef: `payloads/salesforce/${input.id}.json`,
     idempotencyKey: `salesforce:${input.id}`,
-    checksum: `checksum:${input.id}`
+    checksum: `checksum:${input.id}`,
   });
 
   await context.repositories.canonicalEvents.upsert({
@@ -211,9 +190,9 @@ export async function seedInboxSmsEvent(
       campaignRef: null,
       threadRef: null,
       direction: input.direction,
-      notes: null
+      notes: null,
     },
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   await context.repositories.timelineProjection.upsert({
@@ -229,11 +208,11 @@ export async function seedInboxSmsEvent(
     summary: input.summary,
     channel: "sms",
     primaryProvider: "salesforce",
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   return {
-    canonicalEventId
+    canonicalEventId,
   };
 }
 
@@ -246,7 +225,7 @@ export async function seedInboxAutoEmailEvent(
     readonly subject: string;
     readonly snippet: string;
     readonly sourceLabel?: string;
-  }
+  },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
   const canonicalEventId = `event:${input.id}`;
@@ -260,7 +239,7 @@ export async function seedInboxAutoEmailEvent(
     occurredAt: input.occurredAt,
     payloadRef: `payloads/salesforce/${input.id}.json`,
     idempotencyKey: `salesforce:${input.id}`,
-    checksum: `checksum:${input.id}`
+    checksum: `checksum:${input.id}`,
   });
 
   await context.repositories.canonicalEvents.upsert({
@@ -282,9 +261,9 @@ export async function seedInboxAutoEmailEvent(
       campaignRef: null,
       threadRef: null,
       direction: "outbound",
-      notes: null
+      notes: null,
     },
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   await context.repositories.salesforceCommunicationDetails.upsert({
@@ -294,7 +273,7 @@ export async function seedInboxAutoEmailEvent(
     messageKind: "auto",
     subject: input.subject,
     snippet: input.snippet,
-    sourceLabel: input.sourceLabel ?? "Salesforce Flow"
+    sourceLabel: input.sourceLabel ?? "Salesforce Flow",
   });
 
   await context.repositories.timelineProjection.upsert({
@@ -307,11 +286,88 @@ export async function seedInboxAutoEmailEvent(
     summary: input.subject,
     channel: "email",
     primaryProvider: "salesforce",
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   return {
-    canonicalEventId
+    canonicalEventId,
+  };
+}
+
+export async function seedInboxAutoSmsEvent(
+  context: TestStage1Context,
+  input: {
+    readonly id: string;
+    readonly contactId: string;
+    readonly occurredAt: string;
+    readonly messageTextPreview: string;
+    readonly sourceLabel?: string;
+  },
+): Promise<{ readonly canonicalEventId: string }> {
+  const sourceEvidenceId = `source:${input.id}`;
+  const canonicalEventId = `event:${input.id}`;
+
+  await context.repositories.sourceEvidence.append({
+    id: sourceEvidenceId,
+    provider: "salesforce",
+    providerRecordType: "task",
+    providerRecordId: input.id,
+    receivedAt: input.occurredAt,
+    occurredAt: input.occurredAt,
+    payloadRef: `payloads/salesforce/${input.id}.json`,
+    idempotencyKey: `salesforce:${input.id}`,
+    checksum: `checksum:${input.id}`,
+  });
+
+  await context.repositories.canonicalEvents.upsert({
+    id: canonicalEventId,
+    contactId: input.contactId,
+    eventType: "communication.sms.outbound",
+    channel: "sms",
+    occurredAt: input.occurredAt,
+    sourceEvidenceId,
+    idempotencyKey: `canonical:${input.id}`,
+    provenance: {
+      primaryProvider: "salesforce",
+      primarySourceEvidenceId: sourceEvidenceId,
+      supportingSourceEvidenceIds: [],
+      winnerReason: "single_source",
+      sourceRecordType: "task",
+      sourceRecordId: input.id,
+      messageKind: "auto",
+      campaignRef: null,
+      threadRef: null,
+      direction: "outbound",
+      notes: null,
+    },
+    reviewState: "clear",
+  });
+
+  await context.repositories.salesforceCommunicationDetails.upsert({
+    sourceEvidenceId,
+    providerRecordId: input.id,
+    channel: "sms",
+    messageKind: "auto",
+    subject: null,
+    snippet: input.messageTextPreview,
+    sourceLabel: input.sourceLabel ?? "Salesforce Flow",
+  });
+
+  await context.repositories.timelineProjection.upsert({
+    id: `timeline:${input.id}`,
+    contactId: input.contactId,
+    canonicalEventId,
+    occurredAt: input.occurredAt,
+    sortKey: `${input.occurredAt}::${canonicalEventId}`,
+    eventType: "communication.sms.outbound",
+    summary: input.messageTextPreview,
+    channel: "sms",
+    primaryProvider: "salesforce",
+    reviewState: "clear",
+  });
+
+  return {
+    canonicalEventId,
   };
 }
 
@@ -326,7 +382,7 @@ export async function seedInboxSalesforceOutboundEmailEvent(
     readonly messageKind: "one_to_one" | null;
     readonly sourceRecordType?: string;
     readonly sourceLabel?: string;
-  }
+  },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
   const canonicalEventId = `event:${input.id}`;
@@ -341,7 +397,7 @@ export async function seedInboxSalesforceOutboundEmailEvent(
     occurredAt: input.occurredAt,
     payloadRef: `payloads/salesforce/${input.id}.json`,
     idempotencyKey: `salesforce:${input.id}`,
-    checksum: `checksum:${input.id}`
+    checksum: `checksum:${input.id}`,
   });
 
   await context.repositories.canonicalEvents.upsert({
@@ -363,9 +419,9 @@ export async function seedInboxSalesforceOutboundEmailEvent(
       campaignRef: null,
       threadRef: null,
       direction: "outbound",
-      notes: null
+      notes: null,
     },
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   await context.repositories.salesforceCommunicationDetails.upsert({
@@ -377,7 +433,7 @@ export async function seedInboxSalesforceOutboundEmailEvent(
     messageKind: input.messageKind ?? "one_to_one",
     subject: input.subject,
     snippet: input.snippet,
-    sourceLabel: input.sourceLabel ?? "Salesforce Logged Email"
+    sourceLabel: input.sourceLabel ?? "Salesforce Logged Email",
   });
 
   await context.repositories.timelineProjection.upsert({
@@ -390,11 +446,80 @@ export async function seedInboxSalesforceOutboundEmailEvent(
     summary: input.subject,
     channel: "email",
     primaryProvider: "salesforce",
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   return {
-    canonicalEventId
+    canonicalEventId,
+  };
+}
+
+export async function seedInboxLegacySalesforceOutboundEmailEvent(
+  context: TestStage1Context,
+  input: {
+    readonly id: string;
+    readonly contactId: string;
+    readonly occurredAt: string;
+    readonly summary?: string;
+    readonly messageKind: "one_to_one" | null;
+    readonly sourceRecordType?: string;
+  },
+): Promise<{ readonly canonicalEventId: string }> {
+  const sourceEvidenceId = `source:${input.id}`;
+  const canonicalEventId = `event:${input.id}`;
+  const sourceRecordType = input.sourceRecordType ?? "task_communication";
+
+  await context.repositories.sourceEvidence.append({
+    id: sourceEvidenceId,
+    provider: "salesforce",
+    providerRecordType: sourceRecordType,
+    providerRecordId: input.id,
+    receivedAt: input.occurredAt,
+    occurredAt: input.occurredAt,
+    payloadRef: `payloads/salesforce/${input.id}.json`,
+    idempotencyKey: `salesforce:${input.id}`,
+    checksum: `checksum:${input.id}`,
+  });
+
+  await context.repositories.canonicalEvents.upsert({
+    id: canonicalEventId,
+    contactId: input.contactId,
+    eventType: "communication.email.outbound",
+    channel: "email",
+    occurredAt: input.occurredAt,
+    sourceEvidenceId,
+    idempotencyKey: `canonical:${input.id}`,
+    provenance: {
+      primaryProvider: "salesforce",
+      primarySourceEvidenceId: sourceEvidenceId,
+      supportingSourceEvidenceIds: [],
+      winnerReason: "single_source",
+      sourceRecordType,
+      sourceRecordId: input.id,
+      messageKind: input.messageKind,
+      campaignRef: null,
+      threadRef: null,
+      direction: "outbound",
+      notes: null,
+    },
+    reviewState: "clear",
+  });
+
+  await context.repositories.timelineProjection.upsert({
+    id: `timeline:${input.id}`,
+    contactId: input.contactId,
+    canonicalEventId,
+    occurredAt: input.occurredAt,
+    sortKey: `${input.occurredAt}::${canonicalEventId}`,
+    eventType: "communication.email.outbound",
+    summary: input.summary ?? "Outbound email sent",
+    channel: "email",
+    primaryProvider: "salesforce",
+    reviewState: "clear",
+  });
+
+  return {
+    canonicalEventId,
   };
 }
 
@@ -407,7 +532,7 @@ export async function seedInboxCampaignEmailEvent(
     readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
     readonly campaignName: string;
     readonly snippet: string;
-  }
+  },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
   const canonicalEventId = `event:${input.id}`;
@@ -422,7 +547,7 @@ export async function seedInboxCampaignEmailEvent(
     occurredAt: input.occurredAt,
     payloadRef: `payloads/mailchimp/${input.id}.json`,
     idempotencyKey: `mailchimp:${input.id}`,
-    checksum: `checksum:${input.id}`
+    checksum: `checksum:${input.id}`,
   });
 
   await context.repositories.canonicalEvents.upsert({
@@ -444,13 +569,13 @@ export async function seedInboxCampaignEmailEvent(
       campaignRef: {
         providerCampaignId: "campaign_email_1",
         providerAudienceId: "audience_1",
-        providerMessageName: input.campaignName
+        providerMessageName: input.campaignName,
       },
       threadRef: null,
       direction: "outbound",
-      notes: null
+      notes: null,
     },
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   await context.repositories.mailchimpCampaignActivityDetails.upsert({
@@ -461,7 +586,7 @@ export async function seedInboxCampaignEmailEvent(
     audienceId: "audience_1",
     memberId: "member_1",
     campaignName: input.campaignName,
-    snippet: input.snippet
+    snippet: input.snippet,
   });
 
   await context.repositories.timelineProjection.upsert({
@@ -474,11 +599,11 @@ export async function seedInboxCampaignEmailEvent(
     summary: input.campaignName,
     channel: "campaign_email",
     primaryProvider: "mailchimp",
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   return {
-    canonicalEventId
+    canonicalEventId,
   };
 }
 
@@ -490,7 +615,7 @@ export async function seedInboxCampaignSmsEvent(
     readonly occurredAt: string;
     readonly campaignName: string;
     readonly messageTextPreview: string;
-  }
+  },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
   const canonicalEventId = `event:${input.id}`;
@@ -504,7 +629,7 @@ export async function seedInboxCampaignSmsEvent(
     occurredAt: input.occurredAt,
     payloadRef: `payloads/simpletexting/${input.id}.json`,
     idempotencyKey: `simpletexting:${input.id}`,
-    checksum: `checksum:${input.id}`
+    checksum: `checksum:${input.id}`,
   });
 
   await context.repositories.canonicalEvents.upsert({
@@ -526,13 +651,13 @@ export async function seedInboxCampaignSmsEvent(
       campaignRef: {
         providerCampaignId: "campaign_sms_1",
         providerAudienceId: null,
-        providerMessageName: input.campaignName
+        providerMessageName: input.campaignName,
       },
       threadRef: null,
       direction: "outbound",
-      notes: null
+      notes: null,
     },
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   await context.repositories.simpleTextingMessageDetails.upsert({
@@ -545,7 +670,7 @@ export async function seedInboxCampaignSmsEvent(
     campaignId: "campaign_sms_1",
     campaignName: input.campaignName,
     providerThreadId: `thread:${input.contactId}`,
-    threadKey: `thread:${input.contactId}`
+    threadKey: `thread:${input.contactId}`,
   });
 
   await context.repositories.timelineProjection.upsert({
@@ -558,11 +683,11 @@ export async function seedInboxCampaignSmsEvent(
     summary: input.campaignName,
     channel: "sms",
     primaryProvider: "simpletexting",
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   return {
-    canonicalEventId
+    canonicalEventId,
   };
 }
 
@@ -574,7 +699,7 @@ export async function seedInboxInternalNoteEvent(
     readonly occurredAt: string;
     readonly body: string;
     readonly authorDisplayName: string;
-  }
+  },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
   const canonicalEventId = `event:${input.id}`;
@@ -588,7 +713,7 @@ export async function seedInboxInternalNoteEvent(
     occurredAt: input.occurredAt,
     payloadRef: `payloads/manual/${input.id}.json`,
     idempotencyKey: `manual:${input.id}`,
-    checksum: `checksum:${input.id}`
+    checksum: `checksum:${input.id}`,
   });
 
   await context.repositories.canonicalEvents.upsert({
@@ -610,16 +735,16 @@ export async function seedInboxInternalNoteEvent(
       campaignRef: null,
       threadRef: null,
       direction: null,
-      notes: null
+      notes: null,
     },
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   await context.repositories.manualNoteDetails.upsert({
     sourceEvidenceId,
     providerRecordId: input.id,
     body: input.body,
-    authorDisplayName: input.authorDisplayName
+    authorDisplayName: input.authorDisplayName,
   });
 
   await context.repositories.timelineProjection.upsert({
@@ -632,11 +757,11 @@ export async function seedInboxInternalNoteEvent(
     summary: "Internal note added",
     channel: "note",
     primaryProvider: "manual",
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   return {
-    canonicalEventId
+    canonicalEventId,
   };
 }
 
@@ -654,7 +779,7 @@ export async function seedInboxLifecycleEvent(
     readonly summary: string;
     readonly projectId?: string | null;
     readonly expeditionId?: string | null;
-  }
+  },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
   const canonicalEventId = `event:${input.id}`;
@@ -668,7 +793,7 @@ export async function seedInboxLifecycleEvent(
     occurredAt: input.occurredAt,
     payloadRef: `payloads/salesforce/${input.id}.json`,
     idempotencyKey: `salesforce:${input.id}`,
-    checksum: `checksum:${input.id}`
+    checksum: `checksum:${input.id}`,
   });
 
   await context.repositories.canonicalEvents.upsert({
@@ -690,9 +815,9 @@ export async function seedInboxLifecycleEvent(
       campaignRef: null,
       threadRef: null,
       direction: null,
-      notes: null
+      notes: null,
     },
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   await context.repositories.salesforceEventContext.upsert({
@@ -700,7 +825,7 @@ export async function seedInboxLifecycleEvent(
     salesforceContactId: null,
     projectId: input.projectId ?? null,
     expeditionId: input.expeditionId ?? null,
-    sourceField: "Lifecycle"
+    sourceField: "Lifecycle",
   });
 
   await context.repositories.timelineProjection.upsert({
@@ -713,17 +838,17 @@ export async function seedInboxLifecycleEvent(
     summary: input.summary,
     channel: "lifecycle",
     primaryProvider: "salesforce",
-    reviewState: "clear"
+    reviewState: "clear",
   });
 
   return {
-    canonicalEventId
+    canonicalEventId,
   };
 }
 
 export async function seedInboxProjection(
   context: TestStage1Context,
-  row: InboxProjectionRow
+  row: InboxProjectionRow,
 ): Promise<void> {
   await context.repositories.inboxProjection.upsert(row);
 }

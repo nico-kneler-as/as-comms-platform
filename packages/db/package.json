@@ -9,6 +9,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./test-helpers": {
+      "types": "./src/test-helpers.ts",
+      "default": "./dist/test-helpers.js"
     }
   },
   "files": ["dist"],

@@ -925,7 +925,8 @@ function buildTimeline(
       subject: seed.subject ?? null,
       body: seed.body,
       channel: channelForKind(seed.kind),
-      isUnread: seed.isUnread
+      isUnread: seed.isUnread,
+      isPreview: seed.kind !== "internal-note" && seed.kind !== "system-event",
     };
   });
 }
@@ -934,10 +935,12 @@ function channelForKind(kind: InboxTimelineEntryKind): InboxChannel | null {
   switch (kind) {
     case "inbound-email":
     case "outbound-email":
+    case "email-activity":
     case "outbound-auto-email":
     case "outbound-campaign-email":
       return "email";
     case "inbound-sms":
+    case "outbound-auto-sms":
     case "outbound-sms":
     case "outbound-campaign-sms":
       return "sms";

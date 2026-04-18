@@ -62,6 +62,24 @@ function buildOneToOneCommunicationClassification(input: {
   };
 }
 
+function buildAutoCommunicationClassification(input: {
+  readonly sourceRecordType: string;
+  readonly sourceRecordId: string;
+  readonly direction: "outbound";
+}) {
+  return {
+    messageKind: "auto" as const,
+    sourceRecordType: input.sourceRecordType,
+    sourceRecordId: input.sourceRecordId,
+    campaignRef: null,
+    threadRef: {
+      crossProviderCollapseKey: null,
+      providerThreadId: null
+    },
+    direction: input.direction
+  };
+}
+
 describe("Stage 1 normalization service", () => {
   it("upserts canonical contact graph state through the application boundary", async () => {
     const { normalization, repositories } = await createTestStage1Context();
@@ -344,6 +362,188 @@ describe("Stage 1 normalization service", () => {
     const timelineRows =
       await context.repositories.timelineProjection.listByContactId("contact_1");
     expect(timelineRows).toHaveLength(2);
+  });
+
+  it("keeps lastActivityAt pinned to the newest inbound or outbound one-to-one event", async () => {
+    const context = await seedContactWithEmail("volunteer@example.org", {
+      contactId: "contact_1",
+      displayName: "Projection Invariant Contact"
+    });
+
+    await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_projection_1",
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "projection-message-1",
+        receivedAt: "2026-01-01T00:01:00.000Z",
+        occurredAt: "2026-01-01T00:01:00.000Z",
+        payloadRef: "payloads/gmail/projection-message-1.json",
+        idempotencyKey: "gmail:message:projection-message-1",
+        checksum: "checksum-projection-1"
+      },
+      canonicalEvent: {
+        id: "evt_projection_1",
+        eventType: "communication.email.inbound",
+        occurredAt: "2026-01-01T00:01:00.000Z",
+        idempotencyKey: "canonical:projection-message-1",
+        summary: "Inbound email received",
+        snippet: "Initial inbound"
+      },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "projection-message-1",
+        direction: "inbound"
+      }),
+      identity: {
+        salesforceContactId: null,
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["volunteer@example.org"],
+        normalizedPhones: []
+      },
+      supportingSources: []
+    });
+
+    const outbound = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_projection_2",
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "projection-message-2",
+        receivedAt: "2026-01-01T00:05:00.000Z",
+        occurredAt: "2026-01-01T00:05:00.000Z",
+        payloadRef: "payloads/gmail/projection-message-2.json",
+        idempotencyKey: "gmail:message:projection-message-2",
+        checksum: "checksum-projection-2"
+      },
+      canonicalEvent: {
+        id: "evt_projection_2",
+        eventType: "communication.email.outbound",
+        occurredAt: "2026-01-01T00:05:00.000Z",
+        idempotencyKey: "canonical:projection-message-2",
+        summary: "Outbound email sent",
+        snippet: "Fresh outbound reply"
+      },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "projection-message-2",
+        direction: "outbound"
+      }),
+      identity: {
+        salesforceContactId: null,
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["volunteer@example.org"],
+        normalizedPhones: []
+      },
+      supportingSources: []
+    });
+
+    expect(outbound.outcome).toBe("applied");
+    if (outbound.outcome === "applied") {
+      expect(outbound.inboxProjection).toMatchObject({
+        bucket: "New",
+        lastInboundAt: "2026-01-01T00:01:00.000Z",
+        lastOutboundAt: "2026-01-01T00:05:00.000Z",
+        lastActivityAt: "2026-01-01T00:05:00.000Z"
+      });
+    }
+
+    const inbound = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_projection_3",
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "projection-message-3",
+        receivedAt: "2026-01-01T00:07:00.000Z",
+        occurredAt: "2026-01-01T00:07:00.000Z",
+        payloadRef: "payloads/gmail/projection-message-3.json",
+        idempotencyKey: "gmail:message:projection-message-3",
+        checksum: "checksum-projection-3"
+      },
+      canonicalEvent: {
+        id: "evt_projection_3",
+        eventType: "communication.email.inbound",
+        occurredAt: "2026-01-01T00:07:00.000Z",
+        idempotencyKey: "canonical:projection-message-3",
+        summary: "Inbound email received",
+        snippet: "Fresh inbound follow-up"
+      },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "projection-message-3",
+        direction: "inbound"
+      }),
+      identity: {
+        salesforceContactId: null,
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["volunteer@example.org"],
+        normalizedPhones: []
+      },
+      supportingSources: []
+    });
+
+    expect(inbound.outcome).toBe("applied");
+    if (inbound.outcome === "applied") {
+      expect(inbound.inboxProjection).toMatchObject({
+        bucket: "New",
+        lastInboundAt: "2026-01-01T00:07:00.000Z",
+        lastOutboundAt: "2026-01-01T00:05:00.000Z",
+        lastActivityAt: "2026-01-01T00:07:00.000Z"
+      });
+    }
+  });
+
+  it("keeps Salesforce auto task messages out of inbox projection mutation", async () => {
+    const context = await seedContactWithEmail("auto@example.org", {
+      contactId: "contact_1",
+      displayName: "Auto Task Contact"
+    });
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_auto_task_1",
+        provider: "salesforce",
+        providerRecordType: "task_communication",
+        providerRecordId: "task-auto-1",
+        receivedAt: "2026-01-01T00:02:00.000Z",
+        occurredAt: "2026-01-01T00:02:00.000Z",
+        payloadRef: "payloads/salesforce/task-auto-1.json",
+        idempotencyKey: "salesforce:task_communication:task-auto-1",
+        checksum: "checksum-auto-task-1"
+      },
+      canonicalEvent: {
+        id: "evt_auto_task_1",
+        eventType: "communication.email.outbound",
+        occurredAt: "2026-01-01T00:02:00.000Z",
+        idempotencyKey: "canonical:task-auto-1",
+        summary: "Outbound email sent",
+        snippet: "Automated Salesforce follow-up"
+      },
+      communicationClassification: buildAutoCommunicationClassification({
+        sourceRecordType: "task_communication",
+        sourceRecordId: "task-auto-1",
+        direction: "outbound"
+      }),
+      identity: {
+        salesforceContactId: null,
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["auto@example.org"],
+        normalizedPhones: []
+      },
+      supportingSources: []
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome === "applied") {
+      expect(result.inboxProjection).toBeNull();
+    }
+
+    await expect(
+      context.repositories.inboxProjection.findByContactId("contact_1")
+    ).resolves.toBeNull();
+    await expect(
+      context.repositories.timelineProjection.listByContactId("contact_1")
+    ).resolves.toHaveLength(1);
   });
 
   it("keeps campaign activity out of inbox bucket mutation while preserving timeline history", async () => {

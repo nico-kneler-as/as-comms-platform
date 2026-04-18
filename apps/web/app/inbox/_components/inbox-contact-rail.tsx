@@ -49,7 +49,7 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
             {contact.displayName}
           </h2>
           <p className={`mt-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-500`}>
-            Volunteer ID · {contact.volunteerId}
+            CRM ID · {contact.volunteerId}
           </p>
         </div>
         {onClose ? (
@@ -106,7 +106,7 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
       {contact.recentActivity.length > 0 ? (
         <section className={SPACING.section}>
           <SectionLabel>
-            Recent activity
+            Project activity
           </SectionLabel>
           <ul className="mt-3 space-y-0">
             {contact.recentActivity.map((entry, index) => (

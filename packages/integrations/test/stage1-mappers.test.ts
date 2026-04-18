@@ -316,6 +316,65 @@ describe("Stage 1 provider-close mappers", () => {
     }
   });
 
+  it("maps Salesforce auto task communication records into auto-classified canonical events", () => {
+    const taskResult = mapSalesforceRecord({
+      recordType: "task_communication",
+      recordId: "task-auto-1",
+      channel: "sms",
+      messageKind: "auto",
+      salesforceContactId: "003-stage1",
+      occurredAt: "2026-01-01T00:04:00.000Z",
+      receivedAt: "2026-01-01T00:05:00.000Z",
+      payloadRef: "payloads/salesforce/task-auto-1.json",
+      checksum: "checksum-task-auto-1",
+      subject: null,
+      snippet: "Automated Salesforce SMS",
+      normalizedEmails: [],
+      normalizedPhones: ["+15555550123"],
+      volunteerIdPlainValues: [],
+      supportingRecords: [],
+      crossProviderCollapseKey: null,
+      routing: {
+        required: false,
+        projectId: null,
+        expeditionId: null,
+        projectName: null,
+        expeditionName: null
+      }
+    });
+
+    expect(taskResult.outcome).toBe("command");
+    if (taskResult.outcome === "command") {
+      expect(taskResult.command.kind).toBe("canonical_event");
+      if (taskResult.command.kind === "canonical_event") {
+        expect(taskResult.command.input.canonicalEvent.eventType).toBe(
+          "communication.sms.outbound"
+        );
+        expect(taskResult.command.input.communicationClassification).toEqual({
+          messageKind: "auto",
+          sourceRecordType: "task_communication",
+          sourceRecordId: "task-auto-1",
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: null,
+            providerThreadId: null
+          },
+          direction: "outbound"
+        });
+        expect(taskResult.command.input.salesforceCommunicationDetail).toEqual({
+          sourceEvidenceId:
+            "source-evidence:salesforce:task_communication:task-auto-1",
+          providerRecordId: "task-auto-1",
+          channel: "sms",
+          messageKind: "auto",
+          subject: null,
+          snippet: "Automated Salesforce SMS",
+          sourceLabel: "Salesforce Flow"
+        });
+      }
+    }
+  });
+
   it("maps SimpleTexting transport and compliance records into canonical SMS events", () => {
     const outboundMessage = mapSimpleTextingRecord({
       recordType: "message",

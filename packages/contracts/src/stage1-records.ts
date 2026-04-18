@@ -328,6 +328,26 @@ export const inboxProjectionSchema = z
           "lastActivityAt must be at least as recent as lastInboundAt when inbound history exists"
       });
     }
+
+    const expectedLastActivityAt =
+      value.lastInboundAt === null
+        ? value.lastOutboundAt
+        : value.lastOutboundAt === null
+          ? value.lastInboundAt
+          : value.lastInboundAt > value.lastOutboundAt
+            ? value.lastInboundAt
+            : value.lastOutboundAt;
+
+    if (
+      expectedLastActivityAt !== null &&
+      value.lastActivityAt !== expectedLastActivityAt
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "lastActivityAt must equal the newest inbound or outbound timestamp"
+      });
+    }
   });
 export type InboxProjectionRow = z.infer<typeof inboxProjectionSchema>;
 

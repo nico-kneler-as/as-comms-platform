@@ -60,6 +60,33 @@ interface ManualNoteDetail {
   readonly authorDisplayName: string | null;
 }
 
+interface TimelinePresentationContext {
+  readonly sourceEvidenceById: ReadonlyMap<string, SourceEvidenceRecord>;
+  readonly salesforceContextBySourceEvidenceId: ReadonlyMap<
+    string,
+    SalesforceEventContextDetail
+  >;
+  readonly gmailDetailBySourceEvidenceId: ReadonlyMap<
+    string,
+    GmailMessageDetailRecord
+  >;
+  readonly salesforceCommunicationBySourceEvidenceId: ReadonlyMap<
+    string,
+    SalesforceCommunicationDetail
+  >;
+  readonly simpleTextingDetailBySourceEvidenceId: ReadonlyMap<
+    string,
+    SimpleTextingMessageDetail
+  >;
+  readonly mailchimpDetailBySourceEvidenceId: ReadonlyMap<
+    string,
+    MailchimpCampaignActivityDetail
+  >;
+  readonly manualNoteDetailBySourceEvidenceId: ReadonlyMap<string, ManualNoteDetail>;
+  readonly projectNameById: ReadonlyMap<string, string>;
+  readonly expeditionNameById: ReadonlyMap<string, string>;
+}
+
 function getLifecycleMilestone(
   eventType: CanonicalEventRecord["eventType"]
 ): "signed_up" | "received_training" | "completed_training" | "submitted_first_data" {
@@ -98,6 +125,13 @@ function resolveFamily(event: CanonicalEventRecord): TimelineItem["family"] {
     provenance.messageKind === "auto"
   ) {
     return "auto_email";
+  }
+
+  if (
+    eventType === "communication.sms.outbound" &&
+    provenance.messageKind === "auto"
+  ) {
+    return "auto_sms";
   }
 
   if (
@@ -151,6 +185,275 @@ function commonFields(
 
 export interface Stage1TimelinePresentationService {
   listTimelineItemsByContactId(contactId: string): Promise<readonly TimelineItem[]>;
+  listTimelineItemsPageByContactId(
+    contactId: string,
+    input: {
+      readonly limit: number;
+      readonly beforeSortKey: string | null;
+    }
+  ): Promise<{
+    readonly items: readonly TimelineItem[];
+    readonly hasMore: boolean;
+    readonly nextBeforeSortKey: string | null;
+    readonly total: number;
+  }>;
+}
+
+function uniqueStrings(values: readonly (string | null | undefined)[]): string[] {
+  return Array.from(
+    new Set(
+      values.filter((value): value is string => typeof value === "string")
+    )
+  );
+}
+
+async function loadTimelinePresentationContext(
+  repositories: Stage1RepositoryBundle,
+  canonicalEvents: readonly CanonicalEventRecord[]
+): Promise<TimelinePresentationContext> {
+  const sourceEvidenceIds = uniqueStrings(
+    canonicalEvents.map((event) => event.sourceEvidenceId)
+  );
+  const sourceEvidence = await repositories.sourceEvidence.listByIds(sourceEvidenceIds);
+  const sourceEvidenceById = new Map(
+    sourceEvidence.map((record) => [record.id, record])
+  );
+  const [
+    gmailDetails,
+    salesforceContexts,
+    salesforceCommunicationDetails,
+    simpleTextingMessageDetails,
+    mailchimpCampaignActivityDetails,
+    manualNoteDetails
+  ] = (await Promise.all([
+    repositories.gmailMessageDetails.listBySourceEvidenceIds(sourceEvidenceIds),
+    repositories.salesforceEventContext.listBySourceEvidenceIds(sourceEvidenceIds),
+    repositories.salesforceCommunicationDetails.listBySourceEvidenceIds(
+      sourceEvidenceIds
+    ),
+    repositories.simpleTextingMessageDetails.listBySourceEvidenceIds(
+      sourceEvidenceIds
+    ),
+    repositories.mailchimpCampaignActivityDetails.listBySourceEvidenceIds(
+      sourceEvidenceIds
+    ),
+    repositories.manualNoteDetails.listBySourceEvidenceIds(sourceEvidenceIds)
+  ])) as [
+    readonly GmailMessageDetailRecord[],
+    readonly SalesforceEventContextDetail[],
+    readonly SalesforceCommunicationDetail[],
+    readonly SimpleTextingMessageDetail[],
+    readonly MailchimpCampaignActivityDetail[],
+    readonly ManualNoteDetail[]
+  ];
+
+  const [projectDimensions, expeditionDimensions] = await Promise.all([
+    repositories.projectDimensions.listByIds(
+      uniqueStrings(salesforceContexts.map((context) => context.projectId))
+    ),
+    repositories.expeditionDimensions.listByIds(
+      uniqueStrings(salesforceContexts.map((context) => context.expeditionId))
+    )
+  ]);
+
+  return {
+    sourceEvidenceById,
+    salesforceContextBySourceEvidenceId: new Map(
+      salesforceContexts.map((detail) => [detail.sourceEvidenceId, detail])
+    ),
+    gmailDetailBySourceEvidenceId: new Map(
+      gmailDetails.map((detail) => [detail.sourceEvidenceId, detail])
+    ),
+    salesforceCommunicationBySourceEvidenceId: new Map(
+      salesforceCommunicationDetails.map((detail) => [
+        detail.sourceEvidenceId,
+        detail
+      ])
+    ),
+    simpleTextingDetailBySourceEvidenceId: new Map(
+      simpleTextingMessageDetails.map((detail) => [detail.sourceEvidenceId, detail])
+    ),
+    mailchimpDetailBySourceEvidenceId: new Map(
+      mailchimpCampaignActivityDetails.map((detail) => [
+        detail.sourceEvidenceId,
+        detail
+      ])
+    ),
+    manualNoteDetailBySourceEvidenceId: new Map(
+      manualNoteDetails.map((detail) => [detail.sourceEvidenceId, detail])
+    ),
+    projectNameById: new Map(
+      projectDimensions.map((dimension) => [
+        dimension.projectId,
+        dimension.projectName
+      ])
+    ),
+    expeditionNameById: new Map(
+      expeditionDimensions.map((dimension) => [
+        dimension.expeditionId,
+        dimension.expeditionName
+      ])
+    )
+  };
+}
+
+function buildTimelineItemsFromRows(input: {
+  readonly timelineRows: readonly TimelineProjectionRow[];
+  readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
+  readonly context: TimelinePresentationContext;
+}): readonly TimelineItem[] {
+  const items: TimelineItem[] = [];
+
+  for (const row of input.timelineRows) {
+    const event = input.canonicalEventById.get(row.canonicalEventId);
+
+    if (event === undefined) {
+      continue;
+    }
+
+    const evidence = input.context.sourceEvidenceById.get(event.sourceEvidenceId);
+
+    if (evidence === undefined) {
+      continue;
+    }
+
+    const family = resolveFamily(event);
+    const base = commonFields(row);
+    const provenance = event.provenance as TimelineProvenance;
+    const salesforceContext =
+      input.context.salesforceContextBySourceEvidenceId.get(evidence.id);
+    const gmailDetail = input.context.gmailDetailBySourceEvidenceId.get(evidence.id);
+    const salesforceCommunicationDetail =
+      input.context.salesforceCommunicationBySourceEvidenceId.get(evidence.id);
+    const simpleTextingDetail =
+      input.context.simpleTextingDetailBySourceEvidenceId.get(evidence.id);
+    const mailchimpDetail =
+      input.context.mailchimpDetailBySourceEvidenceId.get(evidence.id);
+    const manualNoteDetail =
+      input.context.manualNoteDetailBySourceEvidenceId.get(evidence.id);
+
+    switch (family) {
+      case "salesforce_event":
+        items.push({
+          ...base,
+          family,
+          milestone: getLifecycleMilestone(event.eventType),
+          projectName:
+            salesforceContext?.projectId === null ||
+            salesforceContext?.projectId === undefined
+              ? null
+              : (input.context.projectNameById.get(salesforceContext.projectId) ??
+                null),
+          expeditionName:
+            salesforceContext?.expeditionId === null ||
+            salesforceContext?.expeditionId === undefined
+              ? null
+              : (input.context.expeditionNameById.get(
+                  salesforceContext.expeditionId
+                ) ?? null),
+          sourceField: salesforceContext?.sourceField ?? null
+        });
+        break;
+      case "auto_email":
+        items.push({
+          ...base,
+          family,
+          direction: "outbound",
+          subject: salesforceCommunicationDetail?.subject ?? null,
+          snippet: salesforceCommunicationDetail?.snippet ?? "",
+          sourceLabel:
+            salesforceCommunicationDetail?.sourceLabel ?? "Salesforce Flow"
+        });
+        break;
+      case "auto_sms":
+        items.push({
+          ...base,
+          family,
+          direction: "outbound",
+          messageTextPreview: salesforceCommunicationDetail?.snippet ?? "",
+          sourceLabel:
+            salesforceCommunicationDetail?.sourceLabel ?? "Salesforce Flow"
+        });
+        break;
+      case "campaign_email":
+        items.push({
+          ...base,
+          family,
+          activityType:
+            mailchimpDetail?.activityType ??
+            (event.eventType.replace(
+              "campaign.email.",
+              ""
+            ) as CampaignEmailTimelineItem["activityType"]),
+          campaignName: mailchimpDetail?.campaignName ?? null,
+          campaignId: mailchimpDetail?.campaignId ?? null,
+          audienceId: mailchimpDetail?.audienceId ?? null,
+          snippet: mailchimpDetail?.snippet ?? ""
+        });
+        break;
+      case "campaign_sms":
+        items.push({
+          ...base,
+          family,
+          direction: "outbound",
+          messageTextPreview: simpleTextingDetail?.messageTextPreview ?? "",
+          campaignName:
+            simpleTextingDetail?.campaignName ??
+            provenance.campaignRef?.providerMessageName ??
+            null,
+          campaignId:
+            simpleTextingDetail?.campaignId ??
+            provenance.campaignRef?.providerCampaignId ??
+            null
+        });
+        break;
+      case "one_to_one_email":
+        items.push({
+          ...base,
+          family,
+          direction: gmailDetail?.direction ?? provenance.direction ?? "outbound",
+          subject:
+            gmailDetail?.subject ?? salesforceCommunicationDetail?.subject ?? null,
+          snippet:
+            gmailDetail?.snippetClean ?? salesforceCommunicationDetail?.snippet ?? "",
+          bodyPreview: gmailDetail?.bodyTextPreview ?? null,
+          mailbox:
+            gmailDetail?.projectInboxAlias ?? gmailDetail?.capturedMailbox ?? null,
+          threadId:
+            gmailDetail?.gmailThreadId ??
+            provenance.threadRef?.providerThreadId ??
+            null
+        });
+        break;
+      case "one_to_one_sms":
+        items.push({
+          ...base,
+          family,
+          direction:
+            simpleTextingDetail?.direction ?? provenance.direction ?? "outbound",
+          messageTextPreview:
+            simpleTextingDetail?.messageTextPreview ??
+            salesforceCommunicationDetail?.snippet ??
+            "",
+          phone: simpleTextingDetail?.normalizedPhone ?? null,
+          threadKey:
+            simpleTextingDetail?.threadKey ??
+            provenance.threadRef?.crossProviderCollapseKey ??
+            null
+        });
+        break;
+      case "internal_note":
+        items.push({
+          ...base,
+          family,
+          body: manualNoteDetail?.body ?? "",
+          authorDisplayName: manualNoteDetail?.authorDisplayName ?? null
+        });
+        break;
+    }
+  }
+
+  return timelineItemListSchema.parse(items);
 }
 
 export function createStage1TimelinePresentationService(
@@ -165,240 +468,52 @@ export function createStage1TimelinePresentationService(
       const canonicalEventById = new Map(
         canonicalEvents.map((event) => [event.id, event])
       );
-      const sourceEvidence = (
-        await Promise.all(
-          canonicalEvents.map((event) =>
-            repositories.sourceEvidence.findById(event.sourceEvidenceId)
-          )
-        )
-      ).filter((record): record is SourceEvidenceRecord => record !== null);
-      const sourceEvidenceById = new Map(
-        sourceEvidence.map((record) => [record.id, record])
+      const context = await loadTimelinePresentationContext(
+        repositories,
+        canonicalEvents
       );
-      const sourceEvidenceIds = sourceEvidence.map((record) => record.id);
-      const [
-        gmailDetails,
-        salesforceContexts,
-        salesforceCommunicationDetails,
-        simpleTextingMessageDetails,
-        mailchimpCampaignActivityDetails,
-        manualNoteDetails
-      ] = (await Promise.all([
-        repositories.gmailMessageDetails.listBySourceEvidenceIds(sourceEvidenceIds),
-        repositories.salesforceEventContext.listBySourceEvidenceIds(sourceEvidenceIds),
-        repositories.salesforceCommunicationDetails.listBySourceEvidenceIds(
-          sourceEvidenceIds
-        ),
-        repositories.simpleTextingMessageDetails.listBySourceEvidenceIds(
-          sourceEvidenceIds
-        ),
-        repositories.mailchimpCampaignActivityDetails.listBySourceEvidenceIds(
-          sourceEvidenceIds
-        ),
-        repositories.manualNoteDetails.listBySourceEvidenceIds(sourceEvidenceIds)
-      ])) as [
-        readonly GmailMessageDetailRecord[],
-        readonly SalesforceEventContextDetail[],
-        readonly SalesforceCommunicationDetail[],
-        readonly SimpleTextingMessageDetail[],
-        readonly MailchimpCampaignActivityDetail[],
-        readonly ManualNoteDetail[]
-      ];
 
-      const salesforceContextBySourceEvidenceId = new Map(
-        salesforceContexts.map((detail) => [detail.sourceEvidenceId, detail])
-      );
-      const gmailDetailBySourceEvidenceId = new Map(
-        gmailDetails.map((detail) => [detail.sourceEvidenceId, detail])
-      );
-      const salesforceCommunicationBySourceEvidenceId = new Map(
-        salesforceCommunicationDetails.map((detail) => [
-          detail.sourceEvidenceId,
-          detail
-        ])
-      );
-      const simpleTextingDetailBySourceEvidenceId = new Map(
-        simpleTextingMessageDetails.map((detail) => [detail.sourceEvidenceId, detail])
-      );
-      const mailchimpDetailBySourceEvidenceId = new Map(
-        mailchimpCampaignActivityDetails.map((detail) => [
-          detail.sourceEvidenceId,
-          detail
-        ])
-      );
-      const manualNoteDetailBySourceEvidenceId = new Map(
-        manualNoteDetails.map((detail) => [detail.sourceEvidenceId, detail])
-      );
-      const [projectDimensions, expeditionDimensions] = await Promise.all([
-        repositories.projectDimensions.listByIds(
-          Array.from(
-            new Set(
-              salesforceContexts
-                .map((context) => context.projectId)
-                .filter((value): value is string => value !== null)
-            )
-          )
-        ),
-        repositories.expeditionDimensions.listByIds(
-          Array.from(
-            new Set(
-              salesforceContexts
-                .map((context) => context.expeditionId)
-                .filter((value): value is string => value !== null)
-            )
-          )
-        )
+      return buildTimelineItemsFromRows({
+        timelineRows,
+        canonicalEventById,
+        context
+      });
+    },
+
+    async listTimelineItemsPageByContactId(contactId, input) {
+      const [rows, total] = await Promise.all([
+        repositories.timelineProjection.listRecentByContactId({
+          contactId,
+          limit: input.limit + 1,
+          beforeSortKey: input.beforeSortKey
+        }),
+        repositories.timelineProjection.countByContactId(contactId)
       ]);
-      const projectNameById = new Map(
-        projectDimensions.map((dimension) => [
-          dimension.projectId,
-          dimension.projectName
-        ])
+      const hasMore = rows.length > input.limit;
+      const pageRowsDescending = hasMore ? rows.slice(0, input.limit) : rows;
+      const pageRows = [...pageRowsDescending].reverse();
+      const canonicalEvents = await repositories.canonicalEvents.listByIds(
+        pageRows.map((row) => row.canonicalEventId)
       );
-      const expeditionNameById = new Map(
-        expeditionDimensions.map((dimension) => [
-          dimension.expeditionId,
-          dimension.expeditionName
-        ])
+      const canonicalEventById = new Map(
+        canonicalEvents.map((event) => [event.id, event])
+      );
+      const context = await loadTimelinePresentationContext(
+        repositories,
+        canonicalEvents
       );
 
-      const items: TimelineItem[] = [];
-
-      for (const row of timelineRows) {
-        const event = canonicalEventById.get(row.canonicalEventId);
-
-        if (event === undefined) {
-          continue;
-        }
-
-        const evidence = sourceEvidenceById.get(event.sourceEvidenceId);
-
-        if (evidence === undefined) {
-          continue;
-        }
-
-        const family = resolveFamily(event);
-        const base = commonFields(row);
-        const provenance = event.provenance as TimelineProvenance;
-        const salesforceContext = salesforceContextBySourceEvidenceId.get(evidence.id);
-        const gmailDetail = gmailDetailBySourceEvidenceId.get(evidence.id);
-        const salesforceCommunicationDetail =
-          salesforceCommunicationBySourceEvidenceId.get(evidence.id);
-        const simpleTextingDetail = simpleTextingDetailBySourceEvidenceId.get(
-          evidence.id
-        );
-        const mailchimpDetail = mailchimpDetailBySourceEvidenceId.get(evidence.id);
-        const manualNoteDetail = manualNoteDetailBySourceEvidenceId.get(evidence.id);
-
-        switch (family) {
-          case "salesforce_event":
-            items.push({
-              ...base,
-              family,
-              milestone: getLifecycleMilestone(event.eventType),
-              projectName:
-                salesforceContext?.projectId === null ||
-                salesforceContext?.projectId === undefined
-                  ? null
-                  : (projectNameById.get(salesforceContext.projectId) ?? null),
-              expeditionName:
-                salesforceContext?.expeditionId === null ||
-                salesforceContext?.expeditionId === undefined
-                  ? null
-                  : (expeditionNameById.get(salesforceContext.expeditionId) ?? null),
-              sourceField: salesforceContext?.sourceField ?? null
-            });
-            break;
-          case "auto_email":
-            items.push({
-              ...base,
-              family,
-              direction: "outbound",
-              subject: salesforceCommunicationDetail?.subject ?? null,
-              snippet: salesforceCommunicationDetail?.snippet ?? "",
-              sourceLabel:
-                salesforceCommunicationDetail?.sourceLabel ?? "Salesforce Flow"
-            });
-            break;
-          case "campaign_email":
-            items.push({
-              ...base,
-              family,
-              activityType:
-                mailchimpDetail?.activityType ??
-                (event.eventType.replace("campaign.email.", "") as CampaignEmailTimelineItem["activityType"]),
-              campaignName: mailchimpDetail?.campaignName ?? null,
-              campaignId: mailchimpDetail?.campaignId ?? null,
-              audienceId: mailchimpDetail?.audienceId ?? null,
-              snippet: mailchimpDetail?.snippet ?? ""
-            });
-            break;
-          case "campaign_sms":
-            items.push({
-              ...base,
-              family,
-              direction: "outbound",
-              messageTextPreview: simpleTextingDetail?.messageTextPreview ?? "",
-              campaignName:
-                simpleTextingDetail?.campaignName ??
-                provenance.campaignRef?.providerMessageName ??
-                null,
-              campaignId:
-                simpleTextingDetail?.campaignId ??
-                provenance.campaignRef?.providerCampaignId ??
-                null
-            });
-            break;
-          case "one_to_one_email":
-            items.push({
-              ...base,
-              family,
-              direction:
-                gmailDetail?.direction ?? provenance.direction ?? "outbound",
-              subject:
-                gmailDetail?.subject ?? salesforceCommunicationDetail?.subject ?? null,
-              snippet:
-                gmailDetail?.snippetClean ?? salesforceCommunicationDetail?.snippet ?? "",
-              bodyPreview: gmailDetail?.bodyTextPreview ?? null,
-              mailbox:
-                gmailDetail?.projectInboxAlias ?? gmailDetail?.capturedMailbox ?? null,
-              threadId:
-                gmailDetail?.gmailThreadId ??
-                provenance.threadRef?.providerThreadId ??
-                null
-            });
-            break;
-          case "one_to_one_sms":
-            items.push({
-              ...base,
-              family,
-              direction:
-                simpleTextingDetail?.direction ??
-                provenance.direction ??
-                "outbound",
-              messageTextPreview:
-                simpleTextingDetail?.messageTextPreview ??
-                salesforceCommunicationDetail?.snippet ??
-                "",
-              phone: simpleTextingDetail?.normalizedPhone ?? null,
-              threadKey:
-                simpleTextingDetail?.threadKey ??
-                provenance.threadRef?.crossProviderCollapseKey ??
-                null
-            });
-            break;
-          case "internal_note":
-            items.push({
-              ...base,
-              family,
-              body: manualNoteDetail?.body ?? "",
-              authorDisplayName: manualNoteDetail?.authorDisplayName ?? null
-            });
-            break;
-        }
-      }
-
-      return timelineItemListSchema.parse(items);
+      return {
+        items: buildTimelineItemsFromRows({
+          timelineRows: pageRows,
+          canonicalEventById,
+          context
+        }),
+        hasMore,
+        nextBeforeSortKey:
+          pageRowsDescending[pageRowsDescending.length - 1]?.sortKey ?? null,
+        total
+      };
     }
   };
 }
