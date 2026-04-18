@@ -11,6 +11,7 @@ import {
   type SalesforceLiveCaptureBatchPayload
 } from "@as-comms/contracts";
 import {
+  classifySalesforceTaskMessageKind,
   salesforceContactSnapshotRecordSchema,
   salesforceLifecycleRecordSchema,
   salesforceRecordSchema,
@@ -480,6 +481,10 @@ function buildTaskFields(
     "Id",
     "CreatedDate",
     "LastModifiedDate",
+    "OwnerId",
+    "Owner.Name",
+    "Owner.Username",
+    "TaskSubtype",
     "Subject",
     "Description",
     "WhatId",
@@ -837,7 +842,14 @@ function buildTaskRecord(input: {
         );
   const hasMembershipRoutingContext = projectId !== null || expeditionId !== null;
   const subject = getStringField(input.task, "Subject");
-  const messageKind = "auto";
+  const messageKind = classifySalesforceTaskMessageKind({
+    channel,
+    taskSubtype: getStringField(input.task, "TaskSubtype"),
+    ownerId: getStringField(input.task, "OwnerId"),
+    ownerName: getStringField(input.task, "Owner.Name"),
+    ownerUsername: getStringField(input.task, "Owner.Username"),
+    subject
+  }).messageKind;
 
   return salesforceTaskCommunicationRecordSchema.parse({
     recordType: "task_communication",
