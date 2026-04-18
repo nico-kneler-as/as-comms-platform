@@ -42,7 +42,7 @@
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "autoprefixer": "^10.4.21",
-    "drizzle-kit": "^0.31.1",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9.23.0",
     "eslint-config-prettier": "^10.1.2",
     "playwright": "^1.52.0",

@@ -78,11 +78,7 @@ async function runDependencyAudit() {
     return process.env.CI === "true" ? 1 : 0;
   }
 
-  // TODO: raise back to "high" once the deferred CVE follow-up lands:
-  //   - #23 drizzle-orm 0.41.0 → 0.45.2+ (GHSA-gpj5-g38j-94v9)
-  // Threshold temporarily lowered to "critical" so PR #21 (inbox recovery)
-  // could land without bundling dep bumps that warrant their own focused PRs.
-  const result = spawnSync("pnpm", ["audit", "--audit-level", "critical"], {
+  const result = spawnSync("pnpm", ["audit", "--audit-level", "high"], {
     cwd: repoRoot,
     encoding: "utf8"
   });
