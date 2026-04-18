@@ -23,6 +23,7 @@ import {
 
 import { createStage1IngestService } from "./ingest/index.js";
 import {
+  readProjectInboxAliasesFromDb,
   readStage1LaunchScopeConfig,
   stage1LaunchScopeConfigSchema,
   type Stage1SafeRuntimeConfigSummary
@@ -191,15 +192,24 @@ export function buildSafeRuntimeConfigSummary(
   };
 }
 
-export function createStage1WorkerRuntimeServices(
+export async function createStage1WorkerRuntimeServices(
   config: WorkerConfig,
   input?: {
     readonly fetchImplementation?: FetchImplementation;
   }
-): Stage1WorkerRuntimeServices {
+): Promise<Stage1WorkerRuntimeServices> {
   const connection = createDatabaseConnection({
     connectionString: config.connectionString
   });
+
+  // Prefer aliases from the DB; fall back to the env-var-derived config if the
+  // project_aliases table is empty (bootstrap path — env var remains required).
+  const dbAliases = await readProjectInboxAliasesFromDb(connection);
+  const projectInboxAliases =
+    dbAliases !== null && dbAliases.length > 0
+      ? dbAliases
+      : [...config.launchScope.gmail.projectInboxAliases];
+
   const repositories = createStage1RepositoryBundleFromConnection(connection);
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
@@ -241,7 +251,7 @@ export function createStage1WorkerRuntimeServices(
     revalidateInboxViews,
     gmailHistoricalReplay: {
       liveAccount: config.launchScope.gmail.liveAccount,
-      projectInboxAliases: [...config.launchScope.gmail.projectInboxAliases]
+      projectInboxAliases
     }
   });
 
@@ -302,7 +312,7 @@ export async function startWorker(
     return null;
   }
 
-  const runtime = createStage1WorkerRuntimeServices(config);
+  const runtime = await createStage1WorkerRuntimeServices(config);
 
   try {
     const runner = await run({
