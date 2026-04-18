@@ -165,6 +165,21 @@ export interface InboxProjectionRepository {
   findByContactId(contactId: string): Promise<InboxProjectionRow | null>;
   listInvalidRecencyContactIds(): Promise<readonly string[]>;
   listAllOrderedByRecency(): Promise<readonly InboxProjectionRow[]>;
+  searchPageOrderedByRecency(input: {
+    readonly filter: "all" | "unread" | "follow-up" | "unresolved";
+    readonly limit: number;
+    readonly query: string;
+    readonly cursor:
+      | {
+          readonly sortAt: string;
+          readonly lastActivityAt: string;
+          readonly contactId: string;
+        }
+      | null;
+  }): Promise<{
+    readonly rows: readonly InboxProjectionRow[];
+    readonly total: number;
+  }>;
   listPageOrderedByRecency(input: {
     readonly filter: "all" | "unread" | "follow-up" | "unresolved";
     readonly limit: number;

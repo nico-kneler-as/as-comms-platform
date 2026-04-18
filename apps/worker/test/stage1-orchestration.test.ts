@@ -75,7 +75,32 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
   });
 }
 
-function buildGmailMessageRecord() {
+function buildGmailMessageRecord(
+  overrides: Partial<{
+    readonly recordId: string;
+    readonly direction: "inbound" | "outbound";
+    readonly occurredAt: string;
+    readonly receivedAt: string;
+    readonly payloadRef: string;
+    readonly checksum: string;
+    readonly snippet: string;
+    readonly subject: string | null;
+    readonly snippetClean: string;
+    readonly bodyTextPreview: string;
+    readonly threadId: string | null;
+    readonly rfc822MessageId: string | null;
+    readonly normalizedParticipantEmails: readonly string[];
+    readonly salesforceContactId: string | null;
+    readonly volunteerIdPlainValues: readonly string[];
+    readonly normalizedPhones: readonly string[];
+    readonly supportingRecords: readonly {
+      readonly provider: "salesforce";
+      readonly providerRecordType: string;
+      readonly providerRecordId: string;
+    }[];
+    readonly crossProviderCollapseKey: string | null;
+  }> = {}
+) {
   return {
     recordType: "message" as const,
     recordId: "gmail-message-1",
@@ -85,6 +110,9 @@ function buildGmailMessageRecord() {
     payloadRef: "payloads/gmail/gmail-message-1.json",
     checksum: "checksum-1",
     snippet: "Following up by email",
+    subject: null,
+    snippetClean: "Following up by email",
+    bodyTextPreview: "Following up by email",
     threadId: "thread-1",
     rfc822MessageId: "<message-1@example.org>",
     normalizedParticipantEmails: ["volunteer@example.org"],
@@ -98,7 +126,8 @@ function buildGmailMessageRecord() {
         providerRecordId: "task-1"
       }
     ],
-    crossProviderCollapseKey: "collapse:email:1"
+    crossProviderCollapseKey: "collapse:email:1",
+    ...overrides
   };
 }
 
@@ -1046,6 +1075,237 @@ Alias drift outbound message.
       await expect(
         context.repositories.inboxProjection.findByContactId(contactId)
       ).resolves.toBeNull();
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("stores forwarded inbound events while leaving queue-driving inbox state untouched", async () => {
+    const context = await createTestWorkerContext({
+      capture: createEmptyCapturePorts()
+    });
+
+    try {
+      await seedContact(context);
+
+      const baseline = await context.ingest.ingestGmailHistoricalRecord(
+        buildGmailMessageRecord({
+          recordId: "gmail-baseline-outbound",
+          occurredAt: "2026-03-31T17:00:00.000Z",
+          receivedAt: "2026-03-31T17:01:00.000Z",
+          payloadRef: "payloads/gmail/gmail-baseline-outbound.json",
+          checksum: "checksum:baseline:outbound",
+          snippet: "Baseline outbound message",
+          snippetClean: "Baseline outbound message",
+          bodyTextPreview: "Baseline outbound message",
+          crossProviderCollapseKey: "collapse:baseline:outbound"
+        })
+      );
+
+      expect(baseline.outcome).toBe("normalized");
+
+      const inboxBefore = await context.repositories.inboxProjection.findByContactId(
+        contactId
+      );
+
+      const forwarded = await context.ingest.ingestGmailHistoricalRecord(
+        buildGmailMessageRecord({
+          recordId: "gmail-forwarded-inbound",
+          direction: "inbound",
+          occurredAt: "2026-03-31T18:00:00.000Z",
+          receivedAt: "2026-03-31T18:01:00.000Z",
+          payloadRef: "payloads/gmail/gmail-forwarded-inbound.json",
+          checksum: "checksum:forwarded:inbound",
+          subject: "Fwd: Volunteer intro",
+          snippet: "Forwarded volunteer intro",
+          snippetClean: "Forwarded volunteer intro",
+          bodyTextPreview: "Please meet this volunteer.",
+          crossProviderCollapseKey: "collapse:forwarded:inbound"
+        })
+      );
+
+      expect(forwarded.outcome).toBe("normalized");
+      if (forwarded.outcome !== "normalized" || forwarded.canonicalEventId === null) {
+        throw new Error("Expected forwarded inbound ingest to persist a canonical event.");
+      }
+      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(2);
+      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(2);
+
+      const canonicalEvent = await context.repositories.canonicalEvents.findById(
+        forwarded.canonicalEventId
+      );
+      const timelineRow = await context.repositories.timelineProjection.findByCanonicalEventId(
+        forwarded.canonicalEventId
+      );
+      const inboxAfter = await context.repositories.inboxProjection.findByContactId(
+        contactId
+      );
+
+      expect(canonicalEvent?.provenance).toMatchObject({
+        inboxProjectionExclusionReason: "forwarded_chain"
+      });
+      expect(timelineRow).toMatchObject({
+        canonicalEventId: forwarded.canonicalEventId,
+        eventType: "communication.email.inbound"
+      });
+      expect(inboxAfter).toEqual(inboxBefore);
+      expect(inboxAfter).toMatchObject({
+        bucket: "Opened",
+        lastInboundAt: null,
+        lastOutboundAt: "2026-03-31T17:00:00.000Z",
+        lastActivityAt: "2026-03-31T17:00:00.000Z"
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("stores forwarded outbound events while leaving inbox recency and bucket state unchanged", async () => {
+    const context = await createTestWorkerContext({
+      capture: createEmptyCapturePorts()
+    });
+
+    try {
+      await seedContact(context);
+
+      const baseline = await context.ingest.ingestGmailHistoricalRecord(
+        buildGmailMessageRecord({
+          recordId: "gmail-baseline-inbound",
+          direction: "inbound",
+          occurredAt: "2026-03-31T17:00:00.000Z",
+          receivedAt: "2026-03-31T17:01:00.000Z",
+          payloadRef: "payloads/gmail/gmail-baseline-inbound.json",
+          checksum: "checksum:baseline:inbound",
+          subject: "Question about training",
+          snippet: "Can you confirm the training time?",
+          snippetClean: "Can you confirm the training time?",
+          bodyTextPreview: "Can you confirm the training time?",
+          crossProviderCollapseKey: "collapse:baseline:inbound"
+        })
+      );
+
+      expect(baseline.outcome).toBe("normalized");
+
+      const inboxBefore = await context.repositories.inboxProjection.findByContactId(
+        contactId
+      );
+
+      const forwarded = await context.ingest.ingestGmailHistoricalRecord(
+        buildGmailMessageRecord({
+          recordId: "gmail-forwarded-outbound",
+          direction: "outbound",
+          occurredAt: "2026-03-31T18:00:00.000Z",
+          receivedAt: "2026-03-31T18:01:00.000Z",
+          payloadRef: "payloads/gmail/gmail-forwarded-outbound.json",
+          checksum: "checksum:forwarded:outbound",
+          subject: "Volunteer follow-up",
+          snippet: "Forwarded details about a volunteer.",
+          snippetClean: "Forwarded details about a volunteer.",
+          bodyTextPreview: [
+            "---------- Forwarded message ---------",
+            "From: Someone Else <someone@example.org>",
+            "",
+            "Looping this along for reference."
+          ].join("\n"),
+          crossProviderCollapseKey: "collapse:forwarded:outbound"
+        })
+      );
+
+      expect(forwarded.outcome).toBe("normalized");
+      if (forwarded.outcome !== "normalized" || forwarded.canonicalEventId === null) {
+        throw new Error("Expected forwarded outbound ingest to persist a canonical event.");
+      }
+      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(2);
+      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(2);
+
+      const canonicalEvent = await context.repositories.canonicalEvents.findById(
+        forwarded.canonicalEventId
+      );
+      const timelineRow = await context.repositories.timelineProjection.findByCanonicalEventId(
+        forwarded.canonicalEventId
+      );
+      const inboxAfter = await context.repositories.inboxProjection.findByContactId(
+        contactId
+      );
+
+      expect(canonicalEvent?.provenance).toMatchObject({
+        inboxProjectionExclusionReason: "forwarded_chain"
+      });
+      expect(timelineRow).toMatchObject({
+        canonicalEventId: forwarded.canonicalEventId,
+        eventType: "communication.email.outbound"
+      });
+      expect(inboxAfter).toEqual(inboxBefore);
+      expect(inboxAfter).toMatchObject({
+        bucket: "New",
+        lastInboundAt: "2026-03-31T17:00:00.000Z",
+        lastOutboundAt: null,
+        lastActivityAt: "2026-03-31T17:00:00.000Z"
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("continues to let non-forwarded Gmail messages drive inbox projection state", async () => {
+    const context = await createTestWorkerContext({
+      capture: createEmptyCapturePorts()
+    });
+
+    try {
+      await seedContact(context);
+
+      const baseline = await context.ingest.ingestGmailHistoricalRecord(
+        buildGmailMessageRecord({
+          recordId: "gmail-non-forwarded-baseline",
+          occurredAt: "2026-03-31T17:00:00.000Z",
+          receivedAt: "2026-03-31T17:01:00.000Z",
+          payloadRef: "payloads/gmail/gmail-non-forwarded-baseline.json",
+          checksum: "checksum:non-forwarded:baseline",
+          snippet: "Baseline outbound message",
+          snippetClean: "Baseline outbound message",
+          bodyTextPreview: "Baseline outbound message",
+          crossProviderCollapseKey: "collapse:non-forwarded:baseline"
+        })
+      );
+
+      expect(baseline.outcome).toBe("normalized");
+
+      const inbound = await context.ingest.ingestGmailHistoricalRecord(
+        buildGmailMessageRecord({
+          recordId: "gmail-non-forwarded-inbound",
+          direction: "inbound",
+          occurredAt: "2026-03-31T18:00:00.000Z",
+          receivedAt: "2026-03-31T18:01:00.000Z",
+          payloadRef: "payloads/gmail/gmail-non-forwarded-inbound.json",
+          checksum: "checksum:non-forwarded:inbound",
+          subject: "Volunteer replied",
+          snippet: "This is a normal inbox-driving reply.",
+          snippetClean: "This is a normal inbox-driving reply.",
+          bodyTextPreview: "This is a normal inbox-driving reply.",
+          crossProviderCollapseKey: "collapse:non-forwarded:inbound"
+        })
+      );
+
+      expect(inbound.outcome).toBe("normalized");
+      if (inbound.outcome !== "normalized" || inbound.canonicalEventId === null) {
+        throw new Error("Expected normal inbound ingest to persist a canonical event.");
+      }
+
+      const canonicalEvent = await context.repositories.canonicalEvents.findById(
+        inbound.canonicalEventId
+      );
+      const inboxAfter = await context.repositories.inboxProjection.findByContactId(
+        contactId
+      );
+
+      expect(canonicalEvent?.provenance.inboxProjectionExclusionReason).toBeUndefined();
+      expect(inboxAfter).toMatchObject({
+        bucket: "New",
+        lastInboundAt: "2026-03-31T18:00:00.000Z",
+        lastActivityAt: "2026-03-31T18:00:00.000Z",
+        snippet: "This is a normal inbox-driving reply."
+      });
     } finally {
       await context.dispose();
     }

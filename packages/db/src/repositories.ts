@@ -9,7 +9,8 @@ import {
   isNull,
   lt,
   or,
-  sql
+  sql,
+  type SQL
 } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
@@ -254,6 +255,134 @@ function requireRow<T>(row: T | undefined, message: string): T {
   }
 
   return row;
+}
+
+type InboxProjectionFilter = "all" | "unread" | "follow-up" | "unresolved";
+
+function buildInboxRecencyExpression() {
+  return sql<Date>`coalesce(${contactInboxProjection.lastInboundAt}, ${contactInboxProjection.lastActivityAt})`;
+}
+
+function buildInboxFilterPredicate(filter: InboxProjectionFilter): SQL | undefined {
+  return filter === "unread"
+    ? eq(contactInboxProjection.bucket, "New")
+    : filter === "follow-up"
+      ? eq(contactInboxProjection.isStarred, true)
+      : filter === "unresolved"
+        ? eq(contactInboxProjection.hasUnresolved, true)
+        : undefined;
+}
+
+function buildInboxCursorPredicate(input: {
+  readonly cursor:
+    | {
+        readonly sortAt: string;
+        readonly lastActivityAt: string;
+        readonly contactId: string;
+      }
+    | null;
+  readonly recencyExpression: SQL<Date>;
+}): SQL | undefined {
+  return input.cursor === null
+    ? undefined
+    : sql`(
+        ${input.recencyExpression} < ${new Date(input.cursor.sortAt)}
+        or (
+          ${input.recencyExpression} = ${new Date(input.cursor.sortAt)}
+          and ${contactInboxProjection.lastActivityAt} < ${new Date(input.cursor.lastActivityAt)}
+        )
+        or (
+          ${input.recencyExpression} = ${new Date(input.cursor.sortAt)}
+          and ${contactInboxProjection.lastActivityAt} = ${new Date(input.cursor.lastActivityAt)}
+          and ${contactInboxProjection.contactId} > ${input.cursor.contactId}
+        )
+      )`;
+}
+
+function combinePredicates(
+  ...predicates: readonly (SQL | undefined)[]
+): SQL | undefined {
+  const definedPredicates = predicates.filter(
+    (predicate): predicate is SQL => predicate !== undefined
+  );
+
+  if (definedPredicates.length === 0) {
+    return undefined;
+  }
+
+  if (definedPredicates.length === 1) {
+    return definedPredicates[0];
+  }
+
+  return and(...definedPredicates);
+}
+
+function escapeIlikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+function buildInboxPrimaryProjectLabelExpression() {
+  return sql<string>`coalesce((
+    select coalesce(${projectDimensions.projectName}, ${expeditionDimensions.expeditionName})
+    from ${contactMemberships}
+    left join ${projectDimensions}
+      on ${contactMemberships.projectId} = ${projectDimensions.projectId}
+    left join ${expeditionDimensions}
+      on ${contactMemberships.expeditionId} = ${expeditionDimensions.expeditionId}
+    where ${contactMemberships.contactId} = ${contactInboxProjection.contactId}
+    order by
+      case
+        when lower(coalesce(${contactMemberships.status}, '')) = 'lead' then 0
+        when lower(coalesce(${contactMemberships.status}, '')) in ('applied', 'applicant') then 1
+        when lower(coalesce(${contactMemberships.status}, '')) in ('in-training', 'training') then 2
+        when lower(coalesce(${contactMemberships.status}, '')) = 'trip-planning' then 3
+        when lower(coalesce(${contactMemberships.status}, '')) in ('in-field', 'active') then 4
+        when lower(coalesce(${contactMemberships.status}, '')) in ('successful', 'completed') then 5
+        else 6
+      end asc,
+      coalesce(${contactMemberships.projectId}, '') asc,
+      ${contactMemberships.id} asc
+    limit 1
+  ), '')`;
+}
+
+function buildInboxLatestSubjectExpression() {
+  return sql<string>`coalesce((
+    select coalesce(${gmailMessageDetails.subject}, ${salesforceCommunicationDetails.subject})
+    from ${canonicalEventLedger}
+    left join ${gmailMessageDetails}
+      on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+    left join ${salesforceCommunicationDetails}
+      on ${salesforceCommunicationDetailsTable.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+    where ${canonicalEventLedger.id} = ${contactInboxProjection.lastCanonicalEventId}
+    limit 1
+  ), '')`;
+}
+
+function buildInboxSearchPredicate(query: string): SQL {
+  const pattern = `%${escapeIlikePattern(query)}%`;
+  const contactDisplayNameExpression = sql<string>`coalesce((
+    select ${contacts.displayName}
+    from ${contacts}
+    where ${contacts.id} = ${contactInboxProjection.contactId}
+    limit 1
+  ), '')`;
+  const contactPrimaryEmailExpression = sql<string>`coalesce((
+    select ${contacts.primaryEmail}
+    from ${contacts}
+    where ${contacts.id} = ${contactInboxProjection.contactId}
+    limit 1
+  ), '')`;
+  const primaryProjectLabelExpression = buildInboxPrimaryProjectLabelExpression();
+  const latestSubjectExpression = buildInboxLatestSubjectExpression();
+
+  return sql`(
+    ${contactDisplayNameExpression} ilike ${pattern} escape '\\'
+    or ${contactPrimaryEmailExpression} ilike ${pattern} escape '\\'
+    or ${primaryProjectLabelExpression} ilike ${pattern} escape '\\'
+    or ${latestSubjectExpression} ilike ${pattern} escape '\\'
+    or ${contactInboxProjection.snippet} ilike ${pattern} escape '\\'
+  )`;
 }
 
 function createStage1RepositoriesInternal(
@@ -1197,13 +1326,12 @@ function createStage1RepositoriesInternal(
       },
 
       async listAllOrderedByRecency() {
+        const recencyExpression = buildInboxRecencyExpression();
         const rows = await db
           .select()
           .from(contactInboxProjection)
           .orderBy(
-            desc(
-              sql`coalesce(${contactInboxProjection.lastInboundAt}, ${contactInboxProjection.lastActivityAt})`
-            ),
+            desc(recencyExpression),
             desc(contactInboxProjection.lastActivityAt),
             asc(contactInboxProjection.contactId)
           );
@@ -1212,37 +1340,15 @@ function createStage1RepositoriesInternal(
       },
 
       async listPageOrderedByRecency(input) {
-        const recencyExpression = sql<Date>`coalesce(${contactInboxProjection.lastInboundAt}, ${contactInboxProjection.lastActivityAt})`;
-        const filterPredicate =
-          input.filter === "unread"
-            ? eq(contactInboxProjection.bucket, "New")
-            : input.filter === "follow-up"
-              ? eq(contactInboxProjection.isStarred, true)
-              : input.filter === "unresolved"
-                ? eq(contactInboxProjection.hasUnresolved, true)
-                : undefined;
-        const cursorPredicate =
-          input.cursor === null
-            ? undefined
-            : sql`(
-                ${recencyExpression} < ${new Date(input.cursor.sortAt)}
-                or (
-                  ${recencyExpression} = ${new Date(input.cursor.sortAt)}
-                  and ${contactInboxProjection.lastActivityAt} < ${new Date(input.cursor.lastActivityAt)}
-                )
-                or (
-                  ${recencyExpression} = ${new Date(input.cursor.sortAt)}
-                  and ${contactInboxProjection.lastActivityAt} = ${new Date(input.cursor.lastActivityAt)}
-                  and ${contactInboxProjection.contactId} > ${input.cursor.contactId}
-                )
-              )`;
-        const whereClause =
-          filterPredicate !== undefined && cursorPredicate !== undefined
-            ? and(filterPredicate, cursorPredicate)
-            : filterPredicate ?? cursorPredicate;
-        const baseQuery = db
-          .select()
-          .from(contactInboxProjection);
+        const recencyExpression = buildInboxRecencyExpression();
+        const whereClause = combinePredicates(
+          buildInboxFilterPredicate(input.filter),
+          buildInboxCursorPredicate({
+            cursor: input.cursor,
+            recencyExpression
+          })
+        );
+        const baseQuery = db.select().from(contactInboxProjection);
         const filteredQuery =
           whereClause === undefined ? baseQuery : baseQuery.where(whereClause);
         const rows = await filteredQuery
@@ -1254,6 +1360,48 @@ function createStage1RepositoriesInternal(
           .limit(input.limit);
 
         return rows.map(mapInboxProjectionRow);
+      },
+
+      async searchPageOrderedByRecency(input) {
+        const recencyExpression = buildInboxRecencyExpression();
+        const whereClause = combinePredicates(
+          buildInboxFilterPredicate(input.filter),
+          buildInboxCursorPredicate({
+            cursor: input.cursor,
+            recencyExpression
+          }),
+          buildInboxSearchPredicate(input.query)
+        );
+        const filteredQuery = db
+          .select()
+          .from(contactInboxProjection)
+          .where(whereClause);
+        const [rows, totalRow] = await Promise.all([
+          filteredQuery
+            .orderBy(
+              desc(recencyExpression),
+              desc(contactInboxProjection.lastActivityAt),
+              asc(contactInboxProjection.contactId)
+            )
+            .limit(input.limit),
+          db
+            .select({
+              value: count()
+            })
+            .from(contactInboxProjection)
+            .where(
+              combinePredicates(
+                buildInboxFilterPredicate(input.filter),
+                buildInboxSearchPredicate(input.query)
+              )
+            )
+            .then((result) => result[0])
+        ]);
+
+        return {
+          rows: rows.map(mapInboxProjectionRow),
+          total: totalRow?.value ?? 0
+        };
       },
 
       async countByFilters() {

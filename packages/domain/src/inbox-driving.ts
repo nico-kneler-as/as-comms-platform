@@ -16,9 +16,16 @@ export function isInboxDrivingEventType(
 function hasTrustedInboxDrivingEvidence(
   provenance: Pick<
     CanonicalEventProvenance,
-    "messageKind" | "primaryProvider" | "sourceRecordType"
+    | "inboxProjectionExclusionReason"
+    | "messageKind"
+    | "primaryProvider"
+    | "sourceRecordType"
   >
 ): boolean {
+  if (provenance.inboxProjectionExclusionReason === "forwarded_chain") {
+    return false;
+  }
+
   if (provenance.sourceRecordType === "internal_only_message") {
     return false;
   }

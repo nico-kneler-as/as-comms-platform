@@ -52,7 +52,7 @@ export function fetchInboxListPage(input: {
   const trimmedQuery = input.query?.trim();
 
   if (trimmedQuery !== undefined && trimmedQuery.length > 0) {
-    params.set("query", trimmedQuery);
+    params.set("q", trimmedQuery);
   }
 
   return readJson<InboxListViewModel>(`/api/inbox/list?${params.toString()}`);

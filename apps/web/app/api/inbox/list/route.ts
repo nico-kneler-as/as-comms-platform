@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     await getInboxList(parsedFilter.data, {
       cursor: searchParams.get("cursor"),
       ...(limit === undefined ? {} : { limit }),
-      query: searchParams.get("query")
+      query: searchParams.get("q") ?? searchParams.get("query")
     })
   );
 }

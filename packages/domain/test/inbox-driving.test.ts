@@ -24,6 +24,8 @@ function buildEvent(
       campaignRef: overrides.campaignRef ?? null,
       threadRef: overrides.threadRef ?? null,
       direction: overrides.direction ?? null,
+      inboxProjectionExclusionReason:
+        overrides.inboxProjectionExclusionReason ?? null,
       notes: overrides.notes ?? null
     }
   };
@@ -63,6 +65,19 @@ describe("inbox-driving predicate", () => {
           primaryProvider: "gmail",
           sourceRecordType: "internal_only_message",
           messageKind: null
+        })
+      )
+    ).toBe(false);
+  });
+
+  it("excludes canonical events flagged as forwarded chains from queue-driving behavior", () => {
+    expect(
+      isInboxDrivingCanonicalEvent(
+        buildEvent({
+          primaryProvider: "gmail",
+          sourceRecordType: "message",
+          messageKind: "one_to_one",
+          inboxProjectionExclusionReason: "forwarded_chain"
         })
       )
     ).toBe(false);
