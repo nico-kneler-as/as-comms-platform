@@ -62,6 +62,13 @@ function createRepositoryBundle(input: {
     sourceEvidence: {
       append: (record) => Promise.resolve(record),
       findById: (id) => Promise.resolve(sourceEvidenceById.get(id) ?? null),
+      listByIds: (ids) =>
+        Promise.resolve(
+          ids.flatMap((id) => {
+            const evidence = sourceEvidenceById.get(id);
+            return evidence === undefined ? [] : [evidence];
+          })
+        ),
       findByIdempotencyKey: () => Promise.resolve(null),
       countByProvider: () => Promise.resolve(0),
       listByProviderRecord: () => Promise.resolve([])
@@ -157,11 +164,28 @@ function createRepositoryBundle(input: {
     },
     inboxProjection: {
       countAll: () => Promise.resolve(0),
+      countInvalidRecencyRows: () => Promise.resolve(0),
       findByContactId: () => Promise.resolve(null),
       listAllOrderedByRecency: () => Promise.resolve([]),
-      setNeedsFollowUp: () => Promise.resolve(null),
-      upsert: (record: InboxProjectionRow) => Promise.resolve(record)
-    },
+      listInvalidRecencyContactIds: () => Promise.resolve([]),
+      listPageOrderedByRecency: () => Promise.resolve([]),
+      countByFilters: () =>
+        Promise.resolve({
+          all: 0,
+          unread: 0,
+          followUp: 0,
+          unresolved: 0
+        }),
+        getFreshness: () =>
+          Promise.resolve({
+            total: 0,
+            latestUpdatedAt: null
+          }),
+        getFreshnessByContactId: () => Promise.resolve(null),
+        deleteByContactId: () => Promise.resolve(),
+        setNeedsFollowUp: () => Promise.resolve(null),
+        upsert: (record: InboxProjectionRow) => Promise.resolve(record)
+      },
     timelineProjection: {
       countAll: () => Promise.resolve(input.timelineRows.length),
       findByCanonicalEventId: (canonicalEventId) =>
@@ -170,6 +194,30 @@ function createRepositoryBundle(input: {
         Promise.resolve(
           input.timelineRows.filter((row) => row.contactId === contactId)
         ),
+      listRecentByContactId: ({ contactId, limit, beforeSortKey }) =>
+        Promise.resolve(
+          input.timelineRows
+            .filter(
+              (row) =>
+                row.contactId === contactId &&
+                (beforeSortKey === null || row.sortKey < beforeSortKey)
+            )
+            .sort((left, right) => right.sortKey.localeCompare(left.sortKey))
+            .slice(0, limit)
+        ),
+      countByContactId: (contactId) =>
+        Promise.resolve(
+          input.timelineRows.filter((row) => row.contactId === contactId).length
+        ),
+      getFreshnessByContactId: (contactId) => {
+        const rows = input.timelineRows.filter((row) => row.contactId === contactId);
+        return Promise.resolve({
+          contactId,
+          total: rows.length,
+          latestUpdatedAt: null,
+          latestSortKey: rows.at(-1)?.sortKey ?? null
+        });
+      },
       upsert: (record) => Promise.resolve(record)
     },
     syncState: {

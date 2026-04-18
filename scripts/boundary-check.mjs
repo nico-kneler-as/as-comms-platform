@@ -30,6 +30,23 @@ const workspaceRules = {
   }
 };
 
+function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
+  if (workspaceRules[scope].allowedWorkspaceImports.has(specifier)) {
+    return true;
+  }
+
+  if (
+    relativeFile === "apps/web/src/server/stage1-runtime.ts" &&
+    specifier.startsWith("@as-comms/db")
+  ) {
+    // This file is the explicit Stage 1 composition root for web runtime wiring.
+    // It may assemble concrete db-backed repositories, but no other apps/web file may.
+    return true;
+  }
+
+  return false;
+}
+
 async function collectFiles(root) {
   const entries = await fs.readdir(root, { withFileTypes: true });
   const files = [];
@@ -148,7 +165,7 @@ async function main() {
         continue;
       }
 
-      if (!rules.allowedWorkspaceImports.has(specifier)) {
+      if (!isAllowedWorkspaceImport(scope, relativeFile, specifier)) {
         violations.push(
           formatViolation(
             relativeFile,

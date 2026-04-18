@@ -127,7 +127,7 @@ export const salesforceTaskCommunicationRecordSchema = z.object({
   recordType: z.literal("task_communication"),
   recordId: z.string().min(1),
   channel: z.enum(["email", "sms"]),
-  messageKind: z.enum(["one_to_one", "auto"]).default("one_to_one"),
+  messageKind: z.enum(["one_to_one", "auto"]).default("auto"),
   salesforceContactId: nullableStringSchema.default(null),
   occurredAt: timestampSchema,
   receivedAt: timestampSchema,
@@ -452,7 +452,9 @@ function buildSalesforceTaskSummary(input: {
         ? "Auto email sent"
         : "Outbound email sent";
     case "communication.sms.outbound":
-      return "Outbound SMS sent";
+      return input.messageKind === "auto"
+        ? "Auto SMS sent"
+        : "Outbound SMS sent";
     default:
       throw new Error(`Unsupported Salesforce task event type: ${input.eventType}`);
   }

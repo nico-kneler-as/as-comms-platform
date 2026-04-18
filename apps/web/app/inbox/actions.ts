@@ -1,8 +1,7 @@
 "use server";
 
-import { revalidateTag } from "next/cache";
-
 import { setInboxNeedsFollowUp } from "../../src/server/inbox/follow-up";
+import { revalidateInboxContact } from "../../src/server/inbox/revalidate";
 
 export type FollowUpActionResult =
   | {
@@ -18,12 +17,6 @@ export type FollowUpActionResult =
 function readContactId(formData: FormData): string | null {
   const value = formData.get("contactId");
   return typeof value === "string" && value.trim().length > 0 ? value : null;
-}
-
-function revalidateInboxContact(contactId: string): void {
-  revalidateTag("inbox");
-  revalidateTag(`inbox:contact:${contactId}`);
-  revalidateTag(`timeline:contact:${contactId}`);
 }
 
 async function updateNeedsFollowUp(

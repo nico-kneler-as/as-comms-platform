@@ -42,11 +42,17 @@ const workerCaptureConfigSchema = z.object({
   mailchimp: capturePortHttpConfigSchema.optional()
 });
 
+const workerWebConfigSchema = z.object({
+  revalidateBaseUrl: z.string().url(),
+  revalidateToken: z.string().min(1)
+});
+
 const workerConfigSchema = z.object({
   connectionString: z.string().min(1),
   concurrency: z.number().int().positive().default(1),
   launchScope: stage1LaunchScopeConfigSchema,
-  capture: workerCaptureConfigSchema
+  capture: workerCaptureConfigSchema,
+  web: workerWebConfigSchema.optional()
 });
 
 export type WorkerConfig = z.infer<typeof workerConfigSchema>;
@@ -80,6 +86,27 @@ function readOptionalCaptureConfig(
 
 function buildDeferredLaunchScopeMessage(providerLabel: string): string {
   return `${providerLabel} capture is deferred for the narrowed Gmail + Salesforce Stage 1 launch scope. Configure this capture port only when resuming non-launch providers.`;
+}
+
+function readOptionalWebConfig(
+  env: NodeJS.ProcessEnv
+):
+  | {
+      readonly revalidateBaseUrl?: string;
+      readonly revalidateToken?: string;
+    }
+  | undefined {
+  const revalidateBaseUrl = env.INBOX_REVALIDATE_BASE_URL;
+  const revalidateToken = env.INBOX_REVALIDATE_TOKEN;
+
+  if (revalidateBaseUrl === undefined && revalidateToken === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(revalidateBaseUrl === undefined ? {} : { revalidateBaseUrl }),
+    ...(revalidateToken === undefined ? {} : { revalidateToken })
+  };
 }
 
 function rejectDeferredLaunchScopeProvider(providerLabel: string): Promise<never> {
@@ -134,7 +161,8 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig | null {
         baseUrlKey: "MAILCHIMP_CAPTURE_BASE_URL",
         tokenKey: "MAILCHIMP_CAPTURE_TOKEN"
       })
-    }
+    },
+    web: readOptionalWebConfig(env)
   });
 }
 
@@ -182,6 +210,7 @@ export function createStage1WorkerRuntimeServices(
       : {
           fetchImplementation: input.fetchImplementation
         };
+  const fetchImplementation = input?.fetchImplementation ?? fetch;
   const capture = {
     gmail: createGmailCapturePort(config.capture.gmail, fetchOptions),
     salesforce: createSalesforceCapturePort(
@@ -200,11 +229,16 @@ export function createStage1WorkerRuntimeServices(
         ? createDeferredMailchimpCapturePort()
         : createMailchimpCapturePort(config.capture.mailchimp, fetchOptions)
   };
+  const revalidateInboxViews = createWebInboxInvalidationPort(
+    config.web,
+    fetchImplementation
+  );
   const orchestration = createStage1WorkerOrchestrationService({
     capture,
     ingest,
     normalization,
     persistence,
+    revalidateInboxViews,
     gmailHistoricalReplay: {
       liveAccount: config.launchScope.gmail.liveAccount,
       projectInboxAliases: [...config.launchScope.gmail.projectInboxAliases]
@@ -217,6 +251,41 @@ export function createStage1WorkerRuntimeServices(
     taskList: createTaskList(orchestration),
     dispose() {
       return closeDatabaseConnection(connection);
+    }
+  };
+}
+
+function createWebInboxInvalidationPort(
+  config: WorkerConfig["web"],
+  fetchImplementation: FetchImplementation
+): (input: { readonly contactIds: readonly string[] }) => Promise<void> {
+  if (config === undefined) {
+    return () => Promise.resolve();
+  }
+
+  return async (input) => {
+    if (input.contactIds.length === 0) {
+      return;
+    }
+
+    const response = await fetchImplementation(
+      new URL("/api/internal/revalidate", config.revalidateBaseUrl),
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${config.revalidateToken}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          contactIds: input.contactIds
+        })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Inbox revalidation failed with status ${response.status.toString()}.`
+      );
     }
   };
 }

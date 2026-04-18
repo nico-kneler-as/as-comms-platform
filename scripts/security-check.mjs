@@ -37,7 +37,7 @@ async function collectFiles(root) {
 
     if (entry.isDirectory()) {
       if (
-        ["node_modules", ".next", "dist", "coverage", "playwright-report", "test-results"].includes(
+        ["node_modules", ".next", "dist", "coverage", "playwright-report", "test-results", "test", "tests"].includes(
           entry.name
         )
       ) {

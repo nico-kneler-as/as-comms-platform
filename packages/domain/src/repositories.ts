@@ -29,6 +29,7 @@ import type {
 export interface SourceEvidenceRepository {
   append(record: SourceEvidenceRecord): Promise<SourceEvidenceRecord>;
   findById(id: string): Promise<SourceEvidenceRecord | null>;
+  listByIds(ids: readonly string[]): Promise<readonly SourceEvidenceRecord[]>;
   findByIdempotencyKey(idempotencyKey: string): Promise<SourceEvidenceRecord | null>;
   countByProvider(provider: Provider): Promise<number>;
   listByProviderRecord(input: {
@@ -160,8 +161,36 @@ export interface RoutingReviewRepository {
 
 export interface InboxProjectionRepository {
   countAll(): Promise<number>;
+  countInvalidRecencyRows(): Promise<number>;
   findByContactId(contactId: string): Promise<InboxProjectionRow | null>;
+  listInvalidRecencyContactIds(): Promise<readonly string[]>;
   listAllOrderedByRecency(): Promise<readonly InboxProjectionRow[]>;
+  listPageOrderedByRecency(input: {
+    readonly filter: "all" | "unread" | "follow-up" | "unresolved";
+    readonly limit: number;
+    readonly cursor:
+      | {
+          readonly sortAt: string;
+          readonly lastActivityAt: string;
+          readonly contactId: string;
+        }
+      | null;
+  }): Promise<readonly InboxProjectionRow[]>;
+  countByFilters(): Promise<{
+    readonly all: number;
+    readonly unread: number;
+    readonly followUp: number;
+    readonly unresolved: number;
+  }>;
+  getFreshness(): Promise<{
+    readonly total: number;
+    readonly latestUpdatedAt: string | null;
+  }>;
+  getFreshnessByContactId(contactId: string): Promise<{
+    readonly contactId: string;
+    readonly updatedAt: string | null;
+  } | null>;
+  deleteByContactId(contactId: string): Promise<void>;
   setNeedsFollowUp(input: {
     readonly contactId: string;
     readonly needsFollowUp: boolean;
@@ -173,6 +202,18 @@ export interface TimelineProjectionRepository {
   countAll(): Promise<number>;
   findByCanonicalEventId(canonicalEventId: string): Promise<TimelineProjectionRow | null>;
   listByContactId(contactId: string): Promise<readonly TimelineProjectionRow[]>;
+  listRecentByContactId(input: {
+    readonly contactId: string;
+    readonly limit: number;
+    readonly beforeSortKey: string | null;
+  }): Promise<readonly TimelineProjectionRow[]>;
+  countByContactId(contactId: string): Promise<number>;
+  getFreshnessByContactId(contactId: string): Promise<{
+    readonly contactId: string;
+    readonly total: number;
+    readonly latestUpdatedAt: string | null;
+    readonly latestSortKey: string | null;
+  }>;
   upsert(record: TimelineProjectionRow): Promise<TimelineProjectionRow>;
 }
 

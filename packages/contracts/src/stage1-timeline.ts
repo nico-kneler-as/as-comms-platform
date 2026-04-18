@@ -61,6 +61,14 @@ export const autoEmailTimelineItemSchema = timelineItemBaseSchema.extend({
 });
 export type AutoEmailTimelineItem = z.infer<typeof autoEmailTimelineItemSchema>;
 
+export const autoSmsTimelineItemSchema = timelineItemBaseSchema.extend({
+  family: z.literal("auto_sms"),
+  direction: z.literal("outbound"),
+  messageTextPreview: z.string(),
+  sourceLabel: z.string().min(1)
+});
+export type AutoSmsTimelineItem = z.infer<typeof autoSmsTimelineItemSchema>;
+
 export const campaignEmailTimelineItemSchema = timelineItemBaseSchema.extend({
   family: z.literal("campaign_email"),
   activityType: campaignEmailActivityTypeSchema,
@@ -120,6 +128,7 @@ export type InternalNoteTimelineItem = z.infer<
 export const timelineItemSchema = z.discriminatedUnion("family", [
   salesforceTimelineItemSchema,
   autoEmailTimelineItemSchema,
+  autoSmsTimelineItemSchema,
   campaignEmailTimelineItemSchema,
   campaignSmsTimelineItemSchema,
   oneToOneEmailTimelineItemSchema,

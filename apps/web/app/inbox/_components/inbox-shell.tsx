@@ -2,16 +2,15 @@ import type { ReactNode } from "react";
 
 import type {
   InboxFilterId,
-  InboxFilterViewModel,
-  InboxListItemViewModel
+  InboxListViewModel
 } from "../_lib/view-models";
 import { InboxClientProvider } from "./inbox-client-provider";
+import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import { InboxIconRail } from "./inbox-icon-rail";
 import { InboxList } from "./inbox-list";
 
 interface ShellProps {
-  readonly filters: readonly InboxFilterViewModel[];
-  readonly items: readonly InboxListItemViewModel[];
+  readonly initialList: InboxListViewModel;
   readonly initialFilterId: InboxFilterId;
   readonly children: ReactNode;
 }
@@ -26,19 +25,18 @@ interface ShellProps {
  * server selectors for both the list shell and the selected-contact detail.
  */
 export function InboxShell({
-  filters,
-  items,
+  initialList,
   initialFilterId,
   children
 }: ShellProps) {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-100 text-slate-900 antialiased">
       <InboxClientProvider>
+        <InboxFreshnessPoller listFreshness={initialList.freshness} />
         <InboxIconRail />
 
         <InboxList
-          items={items}
-          filters={filters}
+          initialList={initialList}
           initialFilterId={initialFilterId}
         />
 

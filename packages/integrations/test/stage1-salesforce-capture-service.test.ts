@@ -314,6 +314,7 @@ describe("Salesforce capture service", () => {
         expect.objectContaining({
           recordType: "task_communication",
           channel: "email",
+          messageKind: "auto",
           salesforceContactId: "003-stage1"
         }),
         expect.objectContaining({
@@ -409,6 +410,7 @@ describe("Salesforce capture service", () => {
         expect.objectContaining({
           recordType: "task_communication",
           recordId: "00T-task-1",
+          messageKind: "auto",
           salesforceContactId: "003-stage1"
         })
       ])
@@ -687,6 +689,7 @@ describe("Salesforce capture service", () => {
           recordType: "task_communication",
           recordId: "00T-auto-email",
           channel: "email",
+          messageKind: "auto",
           salesforceContactId: "003-auto",
           routing: {
             required: true,
@@ -752,6 +755,7 @@ describe("Salesforce capture service", () => {
         expect.objectContaining({
           recordType: "task_communication",
           recordId: "00T-task-1",
+          messageKind: "auto",
           salesforceContactId: "003-stage1"
         })
       ])
@@ -803,6 +807,7 @@ describe("Salesforce capture service", () => {
         }),
         expect.objectContaining({
           recordType: "task_communication",
+          messageKind: "auto",
           salesforceContactId: "003-stage1"
         })
       ])

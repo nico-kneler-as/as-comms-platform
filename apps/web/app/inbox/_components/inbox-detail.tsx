@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,9 @@ import {
   clearInboxNeedsFollowUpAction,
   markInboxNeedsFollowUpAction
 } from "../actions";
+import { fetchInboxTimelinePage } from "../_lib/client-api";
 import type { InboxDetailViewModel } from "../_lib/view-models";
+import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import {
   useInboxClient,
   type Reminder
@@ -46,19 +48,89 @@ interface DetailProps {
 type ReminderUnit = "hours" | "days" | "weeks";
 
 export function InboxDetail({ detail }: DetailProps) {
-  const { contact, timeline, smsEligible } = detail;
-  const timelineRef = useRef<HTMLDivElement>(null);
-  const { reminders, setReminder, clearReminder, isTimelineLoading } =
-    useInboxClient();
+  const { contact, smsEligible } = detail;
+  const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const activeTimelineRequestIdRef = useRef(0);
+  const {
+    reminders,
+    setReminder,
+    clearReminder,
+    isTimelineLoading,
+    setTimelineLoading
+  } = useInboxClient();
 
   const [railOpen, setRailOpen] = useState(false);
   const [reminderOpen, setReminderOpen] = useState(false);
   const [reminderValue, setReminderValue] = useState("");
   const [reminderUnit, setReminderUnit] = useState<ReminderUnit>("hours");
+  const [timelineEntries, setTimelineEntries] = useState(detail.timeline);
+  const [timelinePage, setTimelinePage] = useState(detail.timelinePage);
+
+  useEffect(() => {
+    activeTimelineRequestIdRef.current += 1;
+    setTimelineLoading(false);
+    setTimelineEntries(detail.timeline);
+    setTimelinePage(detail.timelinePage);
+  }, [
+    detail.contact.contactId,
+    detail.freshness.inboxUpdatedAt,
+    detail.freshness.timelineCount,
+    detail.freshness.timelineUpdatedAt,
+    detail.timeline,
+    detail.timelinePage,
+    setTimelineLoading
+  ]);
+
+  const loadOlderTimeline = useCallback(async () => {
+    if (!timelinePage.hasMore || timelinePage.nextCursor === null) {
+      return;
+    }
+
+    const requestId = activeTimelineRequestIdRef.current + 1;
+    activeTimelineRequestIdRef.current = requestId;
+    const container = timelineScrollRef.current;
+    const previousScrollHeight = container?.scrollHeight ?? 0;
+    const previousScrollTop = container?.scrollTop ?? 0;
+    setTimelineLoading(true);
+
+    try {
+      const nextPage = await fetchInboxTimelinePage({
+        contactId: contact.contactId,
+        cursor: timelinePage.nextCursor
+      });
+
+      if (activeTimelineRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setTimelineEntries((previousEntries) => [
+        ...nextPage.entries,
+        ...previousEntries
+      ]);
+      setTimelinePage(nextPage.page);
+
+      window.requestAnimationFrame(() => {
+        const nextContainer = timelineScrollRef.current;
+
+        if (!nextContainer) {
+          return;
+        }
+
+        const nextScrollHeight = nextContainer.scrollHeight;
+        nextContainer.scrollTop =
+          previousScrollTop + (nextScrollHeight - previousScrollHeight);
+      });
+    } catch {
+      // Keep the current timeline page visible; polling or the next click can retry.
+    } finally {
+      if (activeTimelineRequestIdRef.current === requestId) {
+        setTimelineLoading(false);
+      }
+    }
+  }, [contact.contactId, setTimelineLoading, timelinePage]);
 
   const activeProject = contact.activeProjects[0] ?? null;
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
-
   const isFollowUp = detail.needsFollowUp;
   const existingReminder = reminders.get(contact.contactId) ?? null;
 
@@ -77,8 +149,12 @@ export function InboxDetail({ detail }: DetailProps) {
 
   return (
     <div className="flex min-h-0 flex-1">
+      <InboxFreshnessPoller
+        contactId={contact.contactId}
+        detailFreshness={detail.freshness}
+      />
+
       <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
-        {/* Detail header */}
         <header className={`flex ${LAYOUT.headerHeight} items-center justify-between gap-4 border-b border-slate-200 px-6`}>
           <div className="flex min-w-0 items-center gap-4">
             <h1 className={`truncate ${TEXT.headingLg}`}>
@@ -101,32 +177,30 @@ export function InboxDetail({ detail }: DetailProps) {
               )}
             </div>
             <div className="hidden items-center gap-1.5 sm:flex">
-              {detail.bucket === "new" && (
+              {detail.bucket === "new" ? (
                 <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800">
                   Unread
                 </span>
-              )}
-              {isFollowUp && (
+              ) : null}
+              {isFollowUp ? (
                 <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-800">
                   Needs Follow-Up
                 </span>
-              )}
-              {contact.hasUnresolved && (
+              ) : null}
+              {contact.hasUnresolved ? (
                 <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                   Unresolved
                 </span>
-              )}
+              ) : null}
             </div>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {/* Needs Follow Up toggle — off / on */}
             <FollowUpToggleForm
               contactId={contact.contactId}
               needsFollowUp={isFollowUp}
             />
 
-            {/* Reminder popover */}
             <Popover open={reminderOpen} onOpenChange={setReminderOpen}>
               <PopoverTrigger asChild>
                 {existingReminder ? (
@@ -183,20 +257,23 @@ export function InboxDetail({ detail }: DetailProps) {
           </div>
         </header>
 
-        {/* Unresolved banner */}
         {contact.hasUnresolved ? <UnresolvedBanner /> : null}
 
-        {/* Timeline area */}
         <div
-          ref={timelineRef}
+          ref={timelineScrollRef}
           className={`min-h-0 flex-1 overflow-y-auto ${TONE.slate.subtle} ${SPACING.container}`}
         >
-          {isTimelineLoading ? (
+          {isTimelineLoading && timelineEntries.length === 0 ? (
             <TimelineSkeleton />
           ) : (
             <InboxTimeline
-              entries={timeline}
+              entries={timelineEntries}
               volunteerFirstName={firstName}
+              hasMore={timelinePage.hasMore}
+              isLoadingOlder={isTimelineLoading}
+              onLoadOlder={() => {
+                void loadOlderTimeline();
+              }}
             />
           )}
         </div>
@@ -206,14 +283,13 @@ export function InboxDetail({ detail }: DetailProps) {
             contactDisplayName={contact.displayName}
             smsEligible={smsEligible}
             onOpenChange={(open) => {
-              if (open && timelineRef.current) {
-                // Scroll timeline to bottom when composer opens
-                // so the latest messages stay visible
+              if (open && timelineScrollRef.current) {
                 setTimeout(() => {
-                  const el = timelineRef.current as unknown as
-                    | { scrollTop: number; scrollHeight: number }
-                    | null;
-                  if (el) el.scrollTop = el.scrollHeight;
+                  const element = timelineScrollRef.current;
+
+                  if (element) {
+                    element.scrollTop = element.scrollHeight;
+                  }
                 }, 50);
               }
             }}
@@ -221,7 +297,6 @@ export function InboxDetail({ detail }: DetailProps) {
         </div>
       </section>
 
-      {/* Animated contact rail — width transitions from 0 → 20rem */}
       <div
         className={cn(
           `overflow-hidden border-l ${TRANSITION.layout} ${TRANSITION.reduceMotion}`,
@@ -293,8 +368,6 @@ function FollowUpToggleButton({
   );
 }
 
-// ---------- Unresolved banner ----------
-
 function UnresolvedBanner() {
   return (
     <div
@@ -308,8 +381,6 @@ function UnresolvedBanner() {
     </div>
   );
 }
-
-// ---------- Reminder popover body ----------
 
 interface ReminderPopoverBodyProps {
   readonly existing: Reminder | null;
@@ -371,7 +442,6 @@ function ReminderPopoverBody({
         Remind me in
       </SectionLabel>
       <div className="mt-2 flex items-center gap-2">
-        {/* Number stepper */}
         <div className="flex h-9 w-16 items-center overflow-hidden rounded-md border border-slate-200 shadow-sm">
           <span
             className="flex-1 select-none text-center text-sm font-semibold tabular-nums text-slate-900"
@@ -384,8 +454,8 @@ function ReminderPopoverBody({
               type="button"
               aria-label="Increase"
               onClick={() => {
-                const n = Math.min(99, (Number(value) || 0) + 1);
-                onChangeValue(n.toString());
+                const nextValue = Math.min(99, (Number(value) || 0) + 1);
+                onChangeValue(nextValue.toString());
               }}
               className="flex h-[18px] w-6 items-center justify-center text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
             >
@@ -395,8 +465,8 @@ function ReminderPopoverBody({
               type="button"
               aria-label="Decrease"
               onClick={() => {
-                const n = Math.max(0, (Number(value) || 0) - 1);
-                onChangeValue(n.toString());
+                const nextValue = Math.max(0, (Number(value) || 0) - 1);
+                onChangeValue(nextValue.toString());
               }}
               className="flex h-[18px] w-6 items-center justify-center border-t border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
             >
@@ -448,8 +518,6 @@ function ReminderPopoverBody({
     </>
   );
 }
-
-// ---------- Reminder helpers ----------
 
 function buildReminder(value: number, unit: ReminderUnit): Reminder {
   const ms = value * millisPerUnit(unit);
@@ -521,30 +589,24 @@ function formatTime(target: Date): string {
 }
 
 function weekdayName(day: number): string {
-  return [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday"
-  ][day] ?? "";
+  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][
+    day
+  ] ?? "Unknown";
 }
 
 function monthName(month: number): string {
   return [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
+    "January",
+    "February",
+    "March",
+    "April",
     "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec"
-  ][month] ?? "";
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December"
+  ][month] ?? "Unknown";
 }

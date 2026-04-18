@@ -1,13 +1,12 @@
 import { readFile } from "node:fs/promises";
 
-import { z, ZodError } from "zod";
+import { ZodError, type infer as ZodInfer } from "zod";
 
 import {
   cutoverCheckpointBatchPayloadSchema,
   gmailHistoricalCaptureBatchPayloadSchema,
   gmailLiveCaptureBatchPayloadSchema,
   identityResolutionReasonCodeValues,
-  inboxDrivingEventTypeValues,
   mailchimpHistoricalCaptureBatchPayloadSchema,
   mailchimpTransitionCaptureBatchPayloadSchema,
   parityCheckBatchPayloadSchema,
@@ -45,6 +44,7 @@ import type {
   Stage1NormalizationService,
   Stage1PersistenceService
 } from "@as-comms/domain";
+import { isInboxDrivingCanonicalEvent } from "@as-comms/domain";
 
 import type { Stage1IngestService } from "../ingest/service.js";
 import type { Stage1IngestResult } from "../ingest/types.js";
@@ -74,7 +74,6 @@ import type {
 
 const paritySnapshotPolicyCode = "stage1.parity.snapshot";
 const cutoverCheckpointPolicyCode = "stage1.cutover.checkpoint";
-const inboxDrivingEventTypes = new Set<string>(inboxDrivingEventTypeValues);
 const gmailAndSimpleTextingP95ThresholdSeconds = 120;
 const gmailAndSimpleTextingP99ThresholdSeconds = 300;
 const salesforceLifecycleP95ThresholdSeconds = 600;
@@ -136,10 +135,7 @@ function compareEventOrder(
 function isInboxDrivingEvent(
   event: Pick<CanonicalEventRecord, "eventType" | "provenance">
 ): boolean {
-  return (
-    inboxDrivingEventTypes.has(event.eventType) &&
-    event.provenance.messageKind === "one_to_one"
-  );
+  return isInboxDrivingCanonicalEvent(event);
 }
 
 function buildDefaultProjectionSeed(
@@ -456,18 +452,18 @@ function getMappedResultForRecord(
 function prioritizeCapturedRecordsForIngest<TRecord>(
   records: readonly TRecord[],
   mapRecord: (record: TRecord) => ProviderMappingResult
-): Array<{
+): {
   readonly record: TRecord;
   readonly mapped: ProviderMappingResult;
-}> {
-  const contactGraphRecords: Array<{
+}[] {
+  const contactGraphRecords: {
     readonly record: TRecord;
     readonly mapped: ProviderMappingResult;
-  }> = [];
-  const remainingRecords: Array<{
+  }[] = [];
+  const remainingRecords: {
     readonly record: TRecord;
     readonly mapped: ProviderMappingResult;
-  }> = [];
+  }[] = [];
 
   for (const record of records) {
     const mapped = mapRecord(record);
@@ -685,7 +681,7 @@ function parseGmailHistoricalPayloadRef(
 async function captureHistoricalGmailRecordsForReplay(
   persistence: Stage1PersistenceService,
   gmailHistoricalReplay: Stage1GmailHistoricalReplayConfig,
-  payload: z.infer<typeof gmailHistoricalCaptureBatchPayloadSchema>
+  payload: ZodInfer<typeof gmailHistoricalCaptureBatchPayloadSchema>
 ): Promise<{
   readonly records: readonly GmailRecord[];
   readonly nextCursor: string | null;
@@ -784,8 +780,7 @@ async function captureHistoricalGmailRecordsForReplay(
     const replayedRecord = importedRecords[parsedPayloadRef.messageNumber - 1];
 
     if (
-      replayedRecord === undefined ||
-      replayedRecord.recordType !== "message" ||
+      replayedRecord?.recordType !== "message" ||
       replayedRecord.recordId !== recordId
     ) {
       throw new Stage1NonRetryableJobError(
@@ -812,6 +807,9 @@ export function createStage1WorkerOrchestrationService(input: {
   >;
   readonly persistence: Stage1PersistenceService;
   readonly gmailHistoricalReplay: Stage1GmailHistoricalReplayConfig;
+  readonly revalidateInboxViews?: (input: {
+    readonly contactIds: readonly string[];
+  }) => Promise<void>;
 }): Stage1WorkerOrchestrationService {
   const syncState = createStage1SyncStateService(input.persistence);
 
@@ -909,6 +907,30 @@ export function createStage1WorkerOrchestrationService(input: {
         freshnessP99Seconds: freshnessMetrics.p99Seconds,
         completedAt: payload.windowEnd ?? new Date().toISOString()
       });
+      const touchedContactIds = Array.from(
+        new Set(
+          ingestResults.reduce<string[]>((contactIds, result) => {
+            if ("contactId" in result && typeof result.contactId === "string") {
+              contactIds.push(result.contactId);
+            }
+
+            return contactIds;
+          }, [])
+        )
+      );
+
+      if (
+        input.revalidateInboxViews !== undefined &&
+        touchedContactIds.length > 0
+      ) {
+        try {
+          await input.revalidateInboxViews({
+            contactIds: touchedContactIds
+          });
+        } catch {
+          // Revalidation is best effort; the worker should not fail after ingest succeeds.
+        }
+      }
 
       return {
         outcome: "succeeded",
@@ -1004,6 +1026,14 @@ export function createStage1WorkerOrchestrationService(input: {
             contactId
           )
         )].sort(compareEventOrder);
+        const rebuildInboxProjection =
+          payload.projection === "inbox" || payload.projection === "all";
+
+        if (rebuildInboxProjection) {
+          await input.persistence.repositories.inboxProjection.deleteByContactId(
+            contactId
+          );
+        }
 
         for (const event of canonicalEvents) {
           const projectionSeed = await loadProjectionSeed(input.persistence, event);
@@ -1021,7 +1051,7 @@ export function createStage1WorkerOrchestrationService(input: {
           }
 
           if (
-            (payload.projection === "inbox" || payload.projection === "all") &&
+            rebuildInboxProjection &&
             isInboxDrivingEvent(event)
           ) {
             await input.normalization.applyInboxProjection({
@@ -1034,7 +1064,7 @@ export function createStage1WorkerOrchestrationService(input: {
 
         if (
           payload.includeReviewOverlayRefresh &&
-          (payload.projection === "inbox" || payload.projection === "all")
+          rebuildInboxProjection
         ) {
           await input.normalization.refreshInboxReviewOverlay({
             contactId

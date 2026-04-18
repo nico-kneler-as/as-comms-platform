@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const revalidateTag = vi.hoisted(() => vi.fn());
+const revalidatePath = vi.hoisted(() => vi.fn());
 
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
-  revalidateTag
+  revalidateTag,
+  revalidatePath
 }));
 
 import {

@@ -7,6 +7,7 @@ import {
   eq,
   inArray,
   isNull,
+  lt,
   or,
   sql
 } from "drizzle-orm";
@@ -306,6 +307,20 @@ function createStage1RepositoriesInternal(
           .limit(1);
 
         return row === undefined ? null : mapSourceEvidenceRow(row);
+      },
+
+      async listByIds(ids) {
+        if (ids.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(sourceEvidenceLog)
+          .where(inArray(sourceEvidenceLog.id, [...ids]))
+          .orderBy(asc(sourceEvidenceLog.id));
+
+        return rows.map(mapSourceEvidenceRow);
       },
 
       async findByIdempotencyKey(idempotencyKey) {
@@ -1138,6 +1153,22 @@ function createStage1RepositoriesInternal(
         return row?.value ?? 0;
       },
 
+      async countInvalidRecencyRows() {
+        const [row] = await db
+          .select({
+            value: count()
+          })
+          .from(contactInboxProjection)
+          .where(
+            sql`${contactInboxProjection.lastActivityAt} is distinct from greatest(
+              coalesce(${contactInboxProjection.lastInboundAt}, '-infinity'::timestamptz),
+              coalesce(${contactInboxProjection.lastOutboundAt}, '-infinity'::timestamptz)
+            )`
+          );
+
+        return row?.value ?? 0;
+      },
+
       async findByContactId(contactId) {
         const [row] = await db
           .select()
@@ -1146,6 +1177,23 @@ function createStage1RepositoriesInternal(
           .limit(1);
 
         return row === undefined ? null : mapInboxProjectionRow(row);
+      },
+
+      async listInvalidRecencyContactIds() {
+        const rows = await db
+          .select({
+            contactId: contactInboxProjection.contactId
+          })
+          .from(contactInboxProjection)
+          .where(
+            sql`${contactInboxProjection.lastActivityAt} is distinct from greatest(
+              coalesce(${contactInboxProjection.lastInboundAt}, '-infinity'::timestamptz),
+              coalesce(${contactInboxProjection.lastOutboundAt}, '-infinity'::timestamptz)
+            )`
+          )
+          .orderBy(asc(contactInboxProjection.contactId));
+
+        return rows.map((row) => row.contactId);
       },
 
       async listAllOrderedByRecency() {
@@ -1161,6 +1209,116 @@ function createStage1RepositoriesInternal(
           );
 
         return rows.map(mapInboxProjectionRow);
+      },
+
+      async listPageOrderedByRecency(input) {
+        const recencyExpression = sql<Date>`coalesce(${contactInboxProjection.lastInboundAt}, ${contactInboxProjection.lastActivityAt})`;
+        const filterPredicate =
+          input.filter === "unread"
+            ? eq(contactInboxProjection.bucket, "New")
+            : input.filter === "follow-up"
+              ? eq(contactInboxProjection.isStarred, true)
+              : input.filter === "unresolved"
+                ? eq(contactInboxProjection.hasUnresolved, true)
+                : undefined;
+        const cursorPredicate =
+          input.cursor === null
+            ? undefined
+            : sql`(
+                ${recencyExpression} < ${new Date(input.cursor.sortAt)}
+                or (
+                  ${recencyExpression} = ${new Date(input.cursor.sortAt)}
+                  and ${contactInboxProjection.lastActivityAt} < ${new Date(input.cursor.lastActivityAt)}
+                )
+                or (
+                  ${recencyExpression} = ${new Date(input.cursor.sortAt)}
+                  and ${contactInboxProjection.lastActivityAt} = ${new Date(input.cursor.lastActivityAt)}
+                  and ${contactInboxProjection.contactId} > ${input.cursor.contactId}
+                )
+              )`;
+        const whereClause =
+          filterPredicate !== undefined && cursorPredicate !== undefined
+            ? and(filterPredicate, cursorPredicate)
+            : filterPredicate ?? cursorPredicate;
+        const baseQuery = db
+          .select()
+          .from(contactInboxProjection);
+        const filteredQuery =
+          whereClause === undefined ? baseQuery : baseQuery.where(whereClause);
+        const rows = await filteredQuery
+          .orderBy(
+            desc(recencyExpression),
+            desc(contactInboxProjection.lastActivityAt),
+            asc(contactInboxProjection.contactId)
+          )
+          .limit(input.limit);
+
+        return rows.map(mapInboxProjectionRow);
+      },
+
+      async countByFilters() {
+        const [row] = await db
+          .select({
+            all: count(),
+            unread:
+              sql<number>`coalesce(sum(case when ${contactInboxProjection.bucket} = 'New' then 1 else 0 end), 0)`,
+            followUp:
+              sql<number>`coalesce(sum(case when ${contactInboxProjection.isStarred} then 1 else 0 end), 0)`,
+            unresolved:
+              sql<number>`coalesce(sum(case when ${contactInboxProjection.hasUnresolved} then 1 else 0 end), 0)`
+          })
+          .from(contactInboxProjection);
+
+        return {
+          all: row?.all ?? 0,
+          unread: row?.unread ?? 0,
+          followUp: row?.followUp ?? 0,
+          unresolved: row?.unresolved ?? 0
+        };
+      },
+
+      async getFreshness() {
+        const [row] = await db
+          .select({
+            total: count(),
+            latestUpdatedAt:
+              sql<Date | null>`max(${contactInboxProjection.updatedAt})`
+          })
+          .from(contactInboxProjection);
+
+        return {
+          total: row?.total ?? 0,
+          latestUpdatedAt:
+            row?.latestUpdatedAt instanceof Date
+              ? row.latestUpdatedAt.toISOString()
+              : null
+        };
+      },
+
+      async getFreshnessByContactId(contactId) {
+        const [row] = await db
+          .select({
+            updatedAt: contactInboxProjection.updatedAt
+          })
+          .from(contactInboxProjection)
+          .where(eq(contactInboxProjection.contactId, contactId))
+          .limit(1);
+
+        if (row === undefined) {
+          return null;
+        }
+
+        return {
+          contactId,
+          updatedAt:
+            row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null
+        };
+      },
+
+      async deleteByContactId(contactId) {
+        await db
+          .delete(contactInboxProjection)
+          .where(eq(contactInboxProjection.contactId, contactId));
       },
 
       async setNeedsFollowUp(input) {
@@ -1233,6 +1391,58 @@ function createStage1RepositoriesInternal(
           .orderBy(asc(contactTimelineProjection.sortKey));
 
         return rows.map(mapTimelineProjectionRow);
+      },
+
+      async listRecentByContactId(input) {
+        const predicate =
+          input.beforeSortKey === null
+            ? eq(contactTimelineProjection.contactId, input.contactId)
+            : and(
+                eq(contactTimelineProjection.contactId, input.contactId),
+                lt(contactTimelineProjection.sortKey, input.beforeSortKey)
+              );
+        const rows = await db
+          .select()
+          .from(contactTimelineProjection)
+          .where(predicate)
+          .orderBy(desc(contactTimelineProjection.sortKey))
+          .limit(input.limit);
+
+        return rows.map(mapTimelineProjectionRow);
+      },
+
+      async countByContactId(contactId) {
+        const [row] = await db
+          .select({
+            value: count()
+          })
+          .from(contactTimelineProjection)
+          .where(eq(contactTimelineProjection.contactId, contactId));
+
+        return row?.value ?? 0;
+      },
+
+      async getFreshnessByContactId(contactId) {
+        const [row] = await db
+          .select({
+            total: count(),
+            latestUpdatedAt:
+              sql<Date | null>`max(${contactTimelineProjection.updatedAt})`,
+            latestSortKey:
+              sql<string | null>`max(${contactTimelineProjection.sortKey})`
+          })
+          .from(contactTimelineProjection)
+          .where(eq(contactTimelineProjection.contactId, contactId));
+
+        return {
+          contactId,
+          total: row?.total ?? 0,
+          latestUpdatedAt:
+            row?.latestUpdatedAt instanceof Date
+              ? row.latestUpdatedAt.toISOString()
+              : null,
+          latestSortKey: row?.latestSortKey ?? null
+        };
       },
 
       async upsert(record) {

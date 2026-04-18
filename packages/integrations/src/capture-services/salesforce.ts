@@ -747,8 +747,7 @@ function resolveTaskChannel(input: {
   if (
     normalizedChannelValue === "task" &&
     input.relatedMembership !== null &&
-    subject !== null &&
-    subject.includes("email:")
+    subject?.includes("email:") === true
   ) {
     return "email";
   }
@@ -829,13 +828,7 @@ function buildTaskRecord(input: {
         );
   const hasMembershipRoutingContext = projectId !== null || expeditionId !== null;
   const subject = getStringField(input.task, "Subject");
-  const normalizedSubject = subject?.trim().toLowerCase() ?? "";
-  const messageKind =
-    channel === "email" &&
-    input.relatedMembership !== null &&
-    normalizedSubject.startsWith("→ email:")
-      ? "auto"
-      : "one_to_one";
+  const messageKind = "auto";
 
   return salesforceTaskCommunicationRecordSchema.parse({
     recordType: "task_communication",

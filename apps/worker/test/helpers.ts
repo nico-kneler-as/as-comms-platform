@@ -116,6 +116,9 @@ export async function createTestWorkerContext(input?: {
     readonly liveAccount?: string;
     readonly projectInboxAliases?: readonly string[];
   };
+  readonly revalidateInboxViews?: (input: {
+    readonly contactIds: readonly string[];
+  }) => Promise<void>;
 }): Promise<TestWorkerContext> {
   const baseContext = await createTestStage1Context();
   const { normalization, persistence } = baseContext;
@@ -135,7 +138,12 @@ export async function createTestWorkerContext(input?: {
           "orcas@adventurescientists.org"
         ])
       ]
-    }
+    },
+    ...(input?.revalidateInboxViews === undefined
+      ? {}
+      : {
+          revalidateInboxViews: input.revalidateInboxViews
+        })
   });
 
   return {

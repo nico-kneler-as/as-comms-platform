@@ -767,6 +767,290 @@ Alias drift outbound message.
     }
   });
 
+  it("clears stale inbox rows during projection rebuild when a contact has no queue-driving communication", async () => {
+    const context = await createTestWorkerContext({
+      capture: createEmptyCapturePorts()
+    });
+
+    try {
+      await seedContact(context);
+
+      await context.repositories.sourceEvidence.append({
+        id: "sev:stale-salesforce-task",
+        provider: "salesforce",
+        providerRecordType: "task_communication",
+        providerRecordId: "task-stale-1",
+        receivedAt: "2026-01-01T00:01:00.000Z",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        payloadRef: "payloads/salesforce/task-stale-1.json",
+        idempotencyKey: "salesforce:task-stale-1",
+        checksum: "checksum:task-stale-1"
+      });
+
+      await context.repositories.canonicalEvents.upsert({
+        id: "evt:stale-salesforce-task",
+        contactId,
+        eventType: "communication.email.outbound",
+        channel: "email",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        sourceEvidenceId: "sev:stale-salesforce-task",
+        idempotencyKey: "canonical:task-stale-1",
+        provenance: {
+          primaryProvider: "salesforce",
+          primarySourceEvidenceId: "sev:stale-salesforce-task",
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "task_communication",
+          sourceRecordId: "task-stale-1",
+          messageKind: null,
+          campaignRef: null,
+          threadRef: null,
+          direction: "outbound",
+          notes: null
+        },
+        reviewState: "clear"
+      });
+
+      await context.repositories.timelineProjection.upsert({
+        id: "timeline:stale-salesforce-task",
+        contactId,
+        canonicalEventId: "evt:stale-salesforce-task",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        sortKey: "2026-01-01T00:00:00.000Z::evt:stale-salesforce-task",
+        eventType: "communication.email.outbound",
+        summary: "Outbound email sent",
+        channel: "email",
+        primaryProvider: "salesforce",
+        reviewState: "clear"
+      });
+
+      await context.repositories.inboxProjection.upsert({
+        contactId,
+        bucket: "Opened",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt: null,
+        lastOutboundAt: "2026-01-01T00:00:00.000Z",
+        lastActivityAt: "2026-01-01T00:00:00.000Z",
+        snippet: "Outbound email sent",
+        lastCanonicalEventId: "evt:stale-salesforce-task",
+        lastEventType: "communication.email.outbound"
+      });
+
+      const rebuilt = await context.orchestration.runProjectionRebuildBatch(
+        projectionRebuildBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:projection:clear-stale-row",
+          correlationId: "corr:projection:clear-stale-row",
+          traceId: null,
+          batchId: "batch:projection:clear-stale-row",
+          syncStateId: "sync:projection:clear-stale-row",
+          attempt: 1,
+          maxAttempts: 3,
+          jobType: "projection_rebuild",
+          projection: "all",
+          contactIds: [contactId],
+          includeReviewOverlayRefresh: true
+        })
+      );
+
+      expect(rebuilt.outcome).toBe("succeeded");
+      if (rebuilt.outcome !== "succeeded") {
+        throw new Error("Expected stale-row projection rebuild to succeed.");
+      }
+
+      expect(rebuilt.rebuiltTimelineRows).toBe(1);
+      expect(rebuilt.rebuiltInboxRows).toBe(0);
+      await expect(
+        context.repositories.inboxProjection.findByContactId(contactId)
+      ).resolves.toBeNull();
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("rebuilds inbox state from Gmail events even when historical provenance messageKind is null", async () => {
+    const context = await createTestWorkerContext({
+      capture: createEmptyCapturePorts()
+    });
+
+    try {
+      await seedContact(context);
+
+      await context.repositories.sourceEvidence.append({
+        id: "sev:gmail-historical-null-kind",
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-null-kind-1",
+        receivedAt: "2026-03-31T17:31:38.000Z",
+        occurredAt: "2026-03-31T17:31:38.000Z",
+        payloadRef: "payloads/gmail/gmail-null-kind-1.json",
+        idempotencyKey: "gmail:null-kind-1",
+        checksum: "checksum:gmail:null-kind-1"
+      });
+
+      await context.repositories.canonicalEvents.upsert({
+        id: "evt:gmail-historical-null-kind",
+        contactId,
+        eventType: "communication.email.inbound",
+        channel: "email",
+        occurredAt: "2026-03-31T17:31:38.000Z",
+        sourceEvidenceId: "sev:gmail-historical-null-kind",
+        idempotencyKey: "canonical:gmail:null-kind-1",
+        provenance: {
+          primaryProvider: "gmail",
+          primarySourceEvidenceId: "sev:gmail-historical-null-kind",
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: null,
+          sourceRecordId: null,
+          messageKind: null,
+          campaignRef: null,
+          threadRef: null,
+          direction: null,
+          notes: null
+        },
+        reviewState: "clear"
+      });
+
+      await context.repositories.gmailMessageDetails.upsert({
+        sourceEvidenceId: "sev:gmail-historical-null-kind",
+        providerRecordId: "gmail-null-kind-1",
+        gmailThreadId: "thread:gmail-null-kind",
+        rfc822MessageId: "<gmail-null-kind-1@example.org>",
+        direction: "inbound",
+        subject: "Re: Plan your Adventure Today!",
+        snippetClean: "Thanks for checking in. I'll claim some hexes soon.",
+        bodyTextPreview:
+          "Thanks for checking in. I'll claim some hexes soon. A piece of feedback on the web map...",
+        capturedMailbox: "pnwbio@adventurescientists.org",
+        projectInboxAlias: "pnwbio@adventurescientists.org"
+      });
+
+      const rebuilt = await context.orchestration.runProjectionRebuildBatch(
+        projectionRebuildBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:projection:gmail-null-kind",
+          correlationId: "corr:projection:gmail-null-kind",
+          traceId: null,
+          batchId: "batch:projection:gmail-null-kind",
+          syncStateId: "sync:projection:gmail-null-kind",
+          attempt: 1,
+          maxAttempts: 3,
+          jobType: "projection_rebuild",
+          projection: "all",
+          contactIds: [contactId],
+          includeReviewOverlayRefresh: true
+        })
+      );
+
+      expect(rebuilt.outcome).toBe("succeeded");
+      if (rebuilt.outcome !== "succeeded") {
+        throw new Error("Expected Gmail null-messageKind rebuild to succeed.");
+      }
+
+      expect(rebuilt.rebuiltInboxRows).toBe(1);
+      await expect(
+        context.repositories.inboxProjection.findByContactId(contactId)
+      ).resolves.toMatchObject({
+        contactId,
+        bucket: "New",
+        lastInboundAt: "2026-03-31T17:31:38.000Z",
+        lastCanonicalEventId: "evt:gmail-historical-null-kind"
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("excludes internal-only forwarded staff messages during projection rebuild", async () => {
+    const context = await createTestWorkerContext({
+      capture: createEmptyCapturePorts()
+    });
+
+    try {
+      await seedContact(context);
+
+      await context.repositories.sourceEvidence.append({
+        id: "sev:gmail-internal-only",
+        provider: "gmail",
+        providerRecordType: "internal_only_message",
+        providerRecordId: "gmail-internal-only-1",
+        receivedAt: "2026-03-31T18:00:00.000Z",
+        occurredAt: "2026-03-31T18:00:00.000Z",
+        payloadRef: "payloads/gmail/gmail-internal-only-1.json",
+        idempotencyKey: "gmail:internal-only-1",
+        checksum: "checksum:gmail:internal-only-1"
+      });
+
+      await context.repositories.canonicalEvents.upsert({
+        id: "evt:gmail-internal-only",
+        contactId,
+        eventType: "communication.email.outbound",
+        channel: "email",
+        occurredAt: "2026-03-31T18:00:00.000Z",
+        sourceEvidenceId: "sev:gmail-internal-only",
+        idempotencyKey: "canonical:gmail:internal-only-1",
+        provenance: {
+          primaryProvider: "gmail",
+          primarySourceEvidenceId: "sev:gmail-internal-only",
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "internal_only_message",
+          sourceRecordId: "gmail-internal-only-1",
+          messageKind: null,
+          campaignRef: null,
+          threadRef: null,
+          direction: null,
+          notes: null
+        },
+        reviewState: "clear"
+      });
+
+      await context.repositories.inboxProjection.upsert({
+        contactId,
+        bucket: "Opened",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt: null,
+        lastOutboundAt: "2026-03-31T18:00:00.000Z",
+        lastActivityAt: "2026-03-31T18:00:00.000Z",
+        snippet: "Staff forwarded this internally.",
+        lastCanonicalEventId: "evt:gmail-internal-only",
+        lastEventType: "communication.email.outbound"
+      });
+
+      const rebuilt = await context.orchestration.runProjectionRebuildBatch(
+        projectionRebuildBatchPayloadSchema.parse({
+          version: 1,
+          jobId: "job:projection:exclude-internal-only",
+          correlationId: "corr:projection:exclude-internal-only",
+          traceId: null,
+          batchId: "batch:projection:exclude-internal-only",
+          syncStateId: "sync:projection:exclude-internal-only",
+          attempt: 1,
+          maxAttempts: 3,
+          jobType: "projection_rebuild",
+          projection: "all",
+          contactIds: [contactId],
+          includeReviewOverlayRefresh: true
+        })
+      );
+
+      expect(rebuilt.outcome).toBe("succeeded");
+      if (rebuilt.outcome !== "succeeded") {
+        throw new Error("Expected internal-only rebuild to succeed.");
+      }
+
+      expect(rebuilt.rebuiltInboxRows).toBe(0);
+      await expect(
+        context.repositories.inboxProjection.findByContactId(contactId)
+      ).resolves.toBeNull();
+    } finally {
+      await context.dispose();
+    }
+  });
+
   it("produces parity snapshots and explicit cutover blockers without auto-resolving them", async () => {
     const gmailRecord = buildGmailMessageRecord();
     const capture = createEmptyCapturePorts();
@@ -1055,24 +1339,23 @@ Alias drift outbound message.
 
       expect(nonRetryable.failure.disposition).toBe("non_retryable");
       expect(nonRetryable.syncState.status).toBe("failed");
-      await expect(
-        nonRetryableContext.repositories.auditEvidence.listByEntity({
-          entityType: "sync_state",
-          entityId: "sync:salesforce:non-retryable:1"
-        })
-      ).resolves.toEqual([
-        expect.objectContaining({
-          entityType: "sync_state",
-          entityId: "sync:salesforce:non-retryable:1",
-          policyCode: "stage1.sync.failure",
-          result: "recorded",
-          metadataJson: expect.objectContaining({
-            message: "Unsupported Salesforce batch shape.",
-            disposition: "non_retryable",
-            retryable: false
-          })
-        })
-      ]);
+      const auditEvidence = await nonRetryableContext.repositories.auditEvidence.listByEntity({
+        entityType: "sync_state",
+        entityId: "sync:salesforce:non-retryable:1"
+      });
+
+      expect(auditEvidence).toHaveLength(1);
+      expect(auditEvidence[0]).toMatchObject({
+        entityType: "sync_state",
+        entityId: "sync:salesforce:non-retryable:1",
+        policyCode: "stage1.sync.failure",
+        result: "recorded"
+      });
+      expect(auditEvidence[0]?.metadataJson).toMatchObject({
+        message: "Unsupported Salesforce batch shape.",
+        disposition: "non_retryable",
+        retryable: false
+      });
     } finally {
       await nonRetryableContext.dispose();
     }

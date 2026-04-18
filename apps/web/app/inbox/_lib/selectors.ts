@@ -6,7 +6,6 @@ import type {
   InboxDrivingEventType,
   InboxProjectionRow,
   TimelineItem,
-  TimelineProjectionRow
 } from "@as-comms/contracts";
 
 import { getStage1WebRuntime } from "../../../src/server/stage1-runtime";
@@ -27,19 +26,37 @@ import type {
   InboxRecentActivityViewModel,
   InboxTimelineEntryKind,
   InboxTimelineEntryViewModel,
-  InboxVolunteerStage
+  InboxVolunteerStage,
 } from "./view-models";
 
 interface InboxListCacheRow {
   readonly contact: ContactRecord;
   readonly inboxProjection: InboxProjectionRow;
   readonly memberships: readonly ContactMembershipRecord[];
-  readonly latestSubject: string | null;
+  readonly latestMessagePreview: {
+    readonly subject: string | null;
+    readonly body: string;
+  } | null;
 }
 
 interface InboxListCacheData {
   readonly rows: readonly InboxListCacheRow[];
   readonly projectNameById: Readonly<Record<string, string>>;
+  readonly counts: {
+    readonly all: number;
+    readonly unread: number;
+    readonly followUp: number;
+    readonly unresolved: number;
+  };
+  readonly page: {
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly total: number;
+  };
+  readonly freshness: {
+    readonly latestUpdatedAt: string | null;
+    readonly total: number;
+  };
 }
 
 interface InboxDetailCacheData {
@@ -48,7 +65,20 @@ interface InboxDetailCacheData {
   readonly memberships: readonly ContactMembershipRecord[];
   readonly timelineItems: readonly TimelineItem[];
   readonly projectNameById: Readonly<Record<string, string>>;
+  readonly timelinePage: {
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly total: number;
+  };
+  readonly freshness: {
+    readonly inboxUpdatedAt: string | null;
+    readonly timelineUpdatedAt: string | null;
+    readonly timelineCount: number;
+  };
 }
+
+const DEFAULT_INBOX_LIST_PAGE_SIZE = 50;
+const DEFAULT_INBOX_TIMELINE_PAGE_SIZE = 40;
 
 const AVATAR_TONES: readonly InboxAvatarTone[] = [
   "indigo",
@@ -58,7 +88,7 @@ const AVATAR_TONES: readonly InboxAvatarTone[] = [
   "sky",
   "violet",
   "teal",
-  "slate"
+  "slate",
 ];
 
 /**
@@ -67,7 +97,7 @@ const AVATAR_TONES: readonly InboxAvatarTone[] = [
  */
 export const compareInboxRecency = (
   a: InboxListItemViewModel,
-  b: InboxListItemViewModel
+  b: InboxListItemViewModel,
 ): number => {
   const aSortAt = a.lastInboundAt ?? a.lastActivityAt;
   const bSortAt = b.lastInboundAt ?? b.lastActivityAt;
@@ -83,12 +113,54 @@ export const compareInboxRecency = (
   return a.contactId.localeCompare(b.contactId);
 };
 
-function uniqueStrings(values: readonly (string | null | undefined)[]): string[] {
+function uniqueStrings(
+  values: readonly (string | null | undefined)[],
+): string[] {
   return Array.from(
     new Set(
-      values.filter((value): value is string => typeof value === "string")
-    )
+      values.filter((value): value is string => typeof value === "string"),
+    ),
   );
+}
+
+function encodeInboxListCursor(input: {
+  readonly sortAt: string;
+  readonly lastActivityAt: string;
+  readonly contactId: string;
+}): string {
+  return Buffer.from(JSON.stringify(input), "utf8").toString("base64url");
+}
+
+function decodeInboxListCursor(cursor: string | null): {
+  readonly sortAt: string;
+  readonly lastActivityAt: string;
+  readonly contactId: string;
+} | null {
+  if (cursor === null) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8"),
+    ) as Partial<{
+      readonly sortAt: string;
+      readonly lastActivityAt: string;
+      readonly contactId: string;
+    }>;
+
+    return typeof parsed.sortAt === "string" &&
+      typeof parsed.lastActivityAt === "string" &&
+      typeof parsed.contactId === "string"
+      ? {
+          sortAt: parsed.sortAt,
+          lastActivityAt: parsed.lastActivityAt,
+          contactId: parsed.contactId,
+        }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function toInitials(displayName: string): string {
@@ -102,9 +174,7 @@ function toInitials(displayName: string): string {
     return "??";
   }
 
-  return parts
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
+  return parts.map((part) => part.charAt(0).toUpperCase()).join("");
 }
 
 function hashString(value: string): number {
@@ -134,7 +204,10 @@ function normalizeMembershipStatus(status: string | null): string | null {
     return null;
   }
 
-  const normalized = status.trim().toLowerCase().replace(/[_\s]+/g, "-");
+  const normalized = status
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
   return normalized.length > 0 ? normalized : null;
 }
 
@@ -162,7 +235,7 @@ function membershipSortRank(membership: ContactMembershipRecord): number {
 }
 
 function sortMemberships(
-  memberships: readonly ContactMembershipRecord[]
+  memberships: readonly ContactMembershipRecord[],
 ): readonly ContactMembershipRecord[] {
   return [...memberships].sort((left, right) => {
     const rankDifference = membershipSortRank(left) - membershipSortRank(right);
@@ -180,10 +253,12 @@ function sortMemberships(
 }
 
 function mapVolunteerStage(
-  memberships: readonly ContactMembershipRecord[]
+  memberships: readonly ContactMembershipRecord[],
 ): InboxVolunteerStage {
   const primaryMembership = sortMemberships(memberships)[0] ?? null;
-  const normalizedStatus = normalizeMembershipStatus(primaryMembership?.status ?? null);
+  const normalizedStatus = normalizeMembershipStatus(
+    primaryMembership?.status ?? null,
+  );
 
   switch (normalizedStatus) {
     case "lead":
@@ -230,7 +305,7 @@ function mapProjectStatus(status: string | null): InboxProjectStatus {
 
 function resolveProjectName(
   membership: ContactMembershipRecord,
-  projectNameById: Readonly<Record<string, string>>
+  projectNameById: Readonly<Record<string, string>>,
 ): string | null {
   if (membership.projectId === null) {
     return null;
@@ -241,7 +316,7 @@ function resolveProjectName(
 
 function buildProjectMembershipViewModel(
   membership: ContactMembershipRecord,
-  projectNameById: Readonly<Record<string, string>>
+  projectNameById: Readonly<Record<string, string>>,
 ): InboxProjectMembershipViewModel | null {
   const projectName = resolveProjectName(membership, projectNameById);
 
@@ -260,8 +335,8 @@ function buildProjectMembershipViewModel(
     // Gap: the canonical project URL is not stored yet, so the shell uses a
     // stable best-effort CRM path derived from the project identifier.
     crmUrl: `https://adventurescientists.lightning.force.com/lightning/r/Project__c/${encodeURIComponent(
-      membership.projectId
-    )}/view`
+      membership.projectId,
+    )}/view`,
   };
 }
 
@@ -273,13 +348,16 @@ function formatJoinedAtLabel(createdAt: string): string {
   const formatter = new Intl.DateTimeFormat("en-US", {
     month: "short",
     year: "numeric",
-    timeZone: "UTC"
+    timeZone: "UTC",
   });
 
   return `Joined ${formatter.format(new Date(createdAt))}`;
 }
 
-function formatRelativeTimestamp(timestamp: string, referenceNowIso: string): string {
+function formatRelativeTimestamp(
+  timestamp: string,
+  referenceNowIso: string,
+): string {
   const target = new Date(timestamp).getTime();
   const now = new Date(referenceNowIso).getTime();
   const deltaMs = Math.max(0, now - target);
@@ -318,20 +396,499 @@ function formatRelativeTimestamp(timestamp: string, referenceNowIso: string): st
   return `${Math.floor(days / 365).toString()}y ago`;
 }
 
-function defaultLatestSubject(
-  eventType: InboxDrivingEventType,
-  fallback: string | null
-): string {
-  if (fallback !== null && fallback.trim().length > 0) {
-    return fallback;
+function normalizeInlineText(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null;
   }
 
-  return mapChannel(eventType) === "sms" ? "SMS conversation" : "Email conversation";
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > 0 ? normalized : null;
 }
 
-function mapTimelineKind(
-  item: TimelineItem
-): InboxTimelineEntryKind {
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x27;/gi, "'");
+}
+
+function decodeQuotedPrintable(value: string): string {
+  const unfolded = value.replace(/=(?:\r\n|\r|\n)/g, "");
+
+  return unfolded.replace(/(?:=[0-9A-F]{2})+/gi, (match) => {
+    try {
+      const bytes = match
+        .split("=")
+        .filter((segment) => segment.length > 0)
+        .map((segment) => Number.parseInt(segment, 16));
+      return Buffer.from(bytes).toString("utf8");
+    } catch {
+      return match;
+    }
+  });
+}
+
+function stripMimeScaffolding(value: string): string {
+  const normalized = value.replace(
+    /(?<!\n)(Content-Type:|Content-Transfer-Encoding:|Content-Disposition:|MIME-Version:)/gi,
+    "\n$1",
+  );
+  const keptLines: string[] = [];
+  let skippingMimeContinuation = false;
+
+  for (const line of normalized.split(/\r\n?|\n/)) {
+    const trimmed = line.trim();
+
+    if (trimmed.length === 0) {
+      skippingMimeContinuation = false;
+      keptLines.push("");
+      continue;
+    }
+
+    if (MIME_HEADER_LINE_PATTERN.test(trimmed)) {
+      skippingMimeContinuation = true;
+      continue;
+    }
+
+    if (
+      skippingMimeContinuation &&
+      (/^[\t ]/.test(line) ||
+        /^[;=]/.test(trimmed) ||
+        /^(charset|boundary|name|filename)=/i.test(trimmed))
+    ) {
+      continue;
+    }
+
+    skippingMimeContinuation = false;
+
+    if (
+      /^--(?:Apple-Mail|_mimepart|=_|[0-9A-Za-z][0-9A-Za-z._:-]{8,})/i.test(
+        trimmed,
+      )
+    ) {
+      continue;
+    }
+
+    keptLines.push(line);
+  }
+
+  return keptLines.join("\n");
+}
+
+function sanitizePreviewText(value: string): string {
+  const mimeAware = stripMimeScaffolding(decodeQuotedPrintable(value));
+  const htmlAware = /<[^>]+>/.test(mimeAware)
+    ? mimeAware
+        .replace(/<\s*br\s*\/?>/gi, "\n")
+        .replace(
+          /<\/(p|div|section|article|tr|table|blockquote|ul|ol)\s*>/gi,
+          "\n",
+        )
+        .replace(/<li[^>]*>/gi, "- ")
+        .replace(/<\/li\s*>/gi, "\n")
+        .replace(/<[^>]+>/g, " ")
+    : mimeAware;
+
+  return decodeHtmlEntities(htmlAware)
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+interface ParsedPreview {
+  readonly structuredEmail: boolean;
+  readonly fromAddresses: readonly string[];
+  readonly recipientAddresses: readonly string[];
+  readonly subject: string | null;
+  readonly body: string;
+}
+
+interface ResolvedMessagePreview {
+  readonly subject: string | null;
+  readonly body: string;
+  readonly directionPreview: ParsedPreview | null;
+}
+
+const MIME_HEADER_LINE_PATTERN =
+  /^(Content-Type|Content-Transfer-Encoding|Content-Disposition|MIME-Version|charset|boundary|name|filename):/i;
+const FORWARDED_HEADER_LINE_PATTERN =
+  /^(From|To|Recipients|Cc|Bcc|Reply-To|Sent|Date|Subject):/i;
+const STRUCTURED_EMAIL_HEADER_PATTERN =
+  /(?:^|\n)(From|To|Recipients|Cc|Bcc|Reply-To|Sent|Date|Subject|Body):/i;
+const FROM_HEADER_PATTERN = /(?:^|\n)From:\s*(.+?)(?:\n|$)/i;
+const RECIPIENTS_HEADER_PATTERN = /(?:^|\n)(?:Recipients|To):\s*(.+?)(?:\n|$)/i;
+const CC_HEADER_PATTERN = /(?:^|\n)Cc:\s*(.+?)(?:\n|$)/i;
+const BCC_HEADER_PATTERN = /(?:^|\n)Bcc:\s*(.+?)(?:\n|$)/i;
+const REPLY_TO_HEADER_PATTERN = /(?:^|\n)Reply-To:\s*(.+?)(?:\n|$)/i;
+const SUBJECT_HEADER_PATTERN = /(?:^|\n)Subject:\s*(.+?)(?:\n|$)/i;
+const BODY_HEADER_PATTERN = /(?:^|\n)Body:\s*([\s\S]*)$/i;
+
+function extractEmailAddresses(value: string | null | undefined): string[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      Array.from(value.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)).map(
+        (match) => match[0].toLowerCase(),
+      ),
+    ),
+  );
+}
+
+function firstNonEmptyNormalized(
+  values: readonly (string | null | undefined)[],
+): string | null {
+  for (const value of values) {
+    const normalized = normalizeInlineText(value);
+
+    if (normalized !== null) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+function findForwardedHeaderBlockStart(value: string): number {
+  const lines = value.split("\n");
+  let offset = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trim();
+
+    if (!FORWARDED_HEADER_LINE_PATTERN.test(trimmed)) {
+      offset += line.length + 1;
+      continue;
+    }
+
+    let headerCount = 0;
+    let lineIndex = index;
+
+    while (lineIndex < lines.length) {
+      const candidate = lines[lineIndex] ?? "";
+      const candidateTrimmed = candidate.trim();
+
+      if (candidateTrimmed.length === 0) {
+        break;
+      }
+
+      if (FORWARDED_HEADER_LINE_PATTERN.test(candidateTrimmed)) {
+        headerCount += 1;
+        lineIndex += 1;
+        continue;
+      }
+
+      if (/^[\t ]/.test(candidate)) {
+        lineIndex += 1;
+        continue;
+      }
+
+      break;
+    }
+
+    if (headerCount >= 3) {
+      return offset;
+    }
+
+    offset += line.length + 1;
+  }
+
+  return -1;
+}
+
+function trimQuotedReplyContent(value: string): string {
+  const normalized = sanitizePreviewText(value);
+
+  if (normalized.length === 0) {
+    return "";
+  }
+
+  const boundaries = [
+    /(?:\n|^)\s*On .+ wrote:\s*$/im,
+    /(?:\n|^)\s*From:\s.+?(?:Date:|Sent:)\s.+/is,
+    /(?:\n|^)\s*-{2,}\s*Original Message\s*-{2,}/im,
+    /(?:\n|^)\s*Begin forwarded message:/im,
+    /(?:\n|^)\s*Forwarded message:/im,
+    /(?:\n|^)\s*>/m,
+  ];
+  let earliestBoundary = -1;
+
+  for (const boundary of boundaries) {
+    const match = boundary.exec(normalized);
+
+    if (match === null) {
+      continue;
+    }
+
+    if (earliestBoundary === -1 || match.index < earliestBoundary) {
+      earliestBoundary = match.index;
+    }
+  }
+
+  const forwardedHeaderBoundary = findForwardedHeaderBlockStart(normalized);
+
+  if (
+    forwardedHeaderBoundary !== -1 &&
+    (earliestBoundary === -1 || forwardedHeaderBoundary < earliestBoundary)
+  ) {
+    earliestBoundary = forwardedHeaderBoundary;
+  }
+
+  return (
+    earliestBoundary === -1 ? normalized : normalized.slice(0, earliestBoundary)
+  ).trim();
+}
+
+function parseCommunicationPreview(raw: string): ParsedPreview {
+  const sanitized = sanitizePreviewText(raw);
+
+  if (sanitized.length === 0) {
+    return {
+      structuredEmail: false,
+      fromAddresses: [],
+      recipientAddresses: [],
+      subject: null,
+      body: "",
+    };
+  }
+
+  const structuredEmail = STRUCTURED_EMAIL_HEADER_PATTERN.test(sanitized);
+  const fromMatch = FROM_HEADER_PATTERN.exec(sanitized);
+  const recipientsMatch = RECIPIENTS_HEADER_PATTERN.exec(sanitized);
+  const ccMatch = CC_HEADER_PATTERN.exec(sanitized);
+  const bccMatch = BCC_HEADER_PATTERN.exec(sanitized);
+  const replyToMatch = REPLY_TO_HEADER_PATTERN.exec(sanitized);
+  const subjectMatch = SUBJECT_HEADER_PATTERN.exec(sanitized);
+  const subject = normalizeInlineText(subjectMatch?.[1] ?? null);
+  const fromAddresses = extractEmailAddresses(fromMatch?.[1]);
+  const recipientAddresses = uniqueStrings([
+    ...extractEmailAddresses(recipientsMatch?.[1]),
+    ...extractEmailAddresses(ccMatch?.[1]),
+    ...extractEmailAddresses(bccMatch?.[1]),
+    ...extractEmailAddresses(replyToMatch?.[1]),
+  ]);
+
+  if (!structuredEmail) {
+    return {
+      structuredEmail: false,
+      fromAddresses,
+      recipientAddresses,
+      subject: null,
+      body: trimQuotedReplyContent(sanitized),
+    };
+  }
+
+  const bodyMatch = BODY_HEADER_PATTERN.exec(sanitized);
+
+  if (bodyMatch !== null) {
+    return {
+      structuredEmail: true,
+      fromAddresses,
+      recipientAddresses,
+      subject,
+      body: trimQuotedReplyContent(bodyMatch[1] ?? ""),
+    };
+  }
+
+  const body = sanitized
+    .split("\n")
+    .filter(
+      (line) =>
+        !/^(From|To|Recipients|Cc|Bcc|Reply-To|Sent|Date|Subject|Body):/i.test(
+          line.trim(),
+        ),
+    )
+    .join("\n");
+
+  return {
+    structuredEmail: true,
+    fromAddresses,
+    recipientAddresses,
+    subject,
+    body: trimQuotedReplyContent(body),
+  };
+}
+
+function previewSubjectForSearch(raw: string): string | null {
+  return parseCommunicationPreview(raw).subject;
+}
+
+function previewBodyForSearch(raw: string): string {
+  const parsed = parseCommunicationPreview(raw);
+  return parsed.body.length > 0 ? parsed.body : sanitizePreviewText(raw);
+}
+
+function resolvePreferredMessagePreview(input: {
+  readonly explicitSubjects?: readonly (string | null | undefined)[];
+  readonly rawCandidates: readonly (string | null | undefined)[];
+}): ResolvedMessagePreview {
+  const subjectFromExplicit = firstNonEmptyNormalized(
+    input.explicitSubjects ?? [],
+  );
+  let subjectFromPreview: string | null = null;
+  let body = "";
+  let sanitizedFallback = "";
+  let directionPreview: ParsedPreview | null = null;
+
+  for (const rawCandidate of input.rawCandidates) {
+    if (typeof rawCandidate !== "string" || rawCandidate.trim().length === 0) {
+      continue;
+    }
+
+    const parsed = parseCommunicationPreview(rawCandidate);
+
+    if (
+      directionPreview === null &&
+      parsed.structuredEmail &&
+      (parsed.fromAddresses.length > 0 || parsed.recipientAddresses.length > 0)
+    ) {
+      directionPreview = parsed;
+    }
+
+    if (subjectFromPreview === null && parsed.subject !== null) {
+      subjectFromPreview = parsed.subject;
+    }
+
+    if (body.length === 0 && parsed.body.length > 0) {
+      body = parsed.body;
+      continue;
+    }
+
+    if (sanitizedFallback.length === 0) {
+      const sanitized = sanitizePreviewText(rawCandidate);
+
+      if (sanitized.length > 0) {
+        sanitizedFallback = sanitized;
+      }
+    }
+  }
+
+  return {
+    subject: subjectFromExplicit ?? subjectFromPreview,
+    body: body.length > 0 ? body : sanitizedFallback,
+    directionPreview,
+  };
+}
+
+function splitHeadlineAndBody(value: string): {
+  readonly headline: string | null;
+  readonly body: string;
+} {
+  const lines = value
+    .split("\n")
+    .map((line) => normalizeInlineText(line))
+    .filter((line): line is string => line !== null);
+  const headline = lines[0] ?? null;
+  const body = lines.slice(1).join("\n").trim();
+
+  return {
+    headline,
+    body,
+  };
+}
+
+function campaignHeadlineAndBody(
+  item: Extract<TimelineItem, { family: "campaign_email" | "campaign_sms" }>,
+): {
+  readonly headline: string | null;
+  readonly body: string;
+} {
+  const resolvedPreview =
+    item.family === "campaign_email"
+      ? resolvePreferredMessagePreview({
+          rawCandidates: [item.snippet],
+        })
+      : resolvePreferredMessagePreview({
+          rawCandidates: [item.messageTextPreview],
+        });
+  const cleaned =
+    resolvedPreview.body.length > 0
+      ? resolvedPreview.body
+      : (normalizeInlineText(item.summary) ?? "");
+  const split = splitHeadlineAndBody(cleaned);
+
+  return {
+    headline:
+      resolvedPreview.subject ??
+      split.headline ??
+      normalizeInlineText(item.campaignName) ??
+      normalizeInlineText(item.summary),
+    body:
+      resolvedPreview.subject !== null
+        ? cleaned
+        : split.body.length > 0
+          ? split.body
+          : cleaned,
+  };
+}
+
+function lifecycleActivityLabel(
+  item: Extract<TimelineItem, { family: "salesforce_event" }>,
+): string {
+  const context =
+    normalizeInlineText(item.projectName) ??
+    normalizeInlineText(item.expeditionName);
+
+  switch (item.milestone) {
+    case "signed_up":
+      return context === null ? "Signed up" : `Signed up for ${context}`;
+    case "received_training":
+      return context === null
+        ? "Received training"
+        : `Received training for ${context}`;
+    case "completed_training":
+      return context === null
+        ? "Completed training"
+        : `Completed training for ${context}`;
+    case "submitted_first_data":
+      return context === null
+        ? "Submitted first data"
+        : `Submitted first data for ${context}`;
+  }
+}
+
+function fallbackLatestSubject(eventType: InboxDrivingEventType): string {
+  switch (eventType) {
+    case "communication.email.inbound":
+      return "Inbound email received";
+    case "communication.email.outbound":
+      return "Outbound email sent";
+    case "communication.sms.inbound":
+      return "Inbound SMS received";
+    case "communication.sms.outbound":
+      return "Outbound SMS sent";
+  }
+}
+
+function defaultLatestSubject(
+  eventType: InboxDrivingEventType,
+  fallback: string | null,
+  previewSubject: string | null,
+): string {
+  const normalizedFallback = normalizeInlineText(fallback);
+
+  if (normalizedFallback !== null) {
+    return normalizedFallback;
+  }
+
+  if (previewSubject !== null) {
+    return previewSubject;
+  }
+
+  return fallbackLatestSubject(eventType);
+}
+
+function mapTimelineKind(item: TimelineItem): InboxTimelineEntryKind {
   switch (item.family) {
     case "one_to_one_email":
       return item.direction === "inbound" ? "inbound-email" : "outbound-email";
@@ -339,6 +896,8 @@ function mapTimelineKind(
       return item.direction === "inbound" ? "inbound-sms" : "outbound-sms";
     case "auto_email":
       return "outbound-auto-email";
+    case "auto_sms":
+      return "outbound-auto-sms";
     case "campaign_email":
       return "outbound-campaign-email";
     case "campaign_sms":
@@ -350,34 +909,68 @@ function mapTimelineKind(
   }
 }
 
-function recentActivityLabel(item: TimelineItem): string {
-  switch (item.family) {
-    case "one_to_one_email":
-    case "auto_email":
-      return item.subject ?? item.summary;
-    case "one_to_one_sms":
-    case "campaign_sms":
-      return item.messageTextPreview || item.summary;
-    case "campaign_email":
-      return item.campaignName ?? item.summary;
-    case "internal_note":
-      return item.body;
-    case "salesforce_event":
-      return item.summary;
+function inferPreviewDirection(
+  preview: ParsedPreview | null,
+  contactPrimaryEmail: string | null,
+): "inbound" | "outbound" | null {
+  const normalizedContactEmail = normalizeInlineText(contactPrimaryEmail);
+  const contactEmail =
+    normalizedContactEmail === null
+      ? null
+      : normalizedContactEmail.toLowerCase();
+
+  if (
+    preview === null ||
+    !preview.structuredEmail ||
+    contactEmail === null
+  ) {
+    return null;
   }
+
+  const fromContact = preview.fromAddresses.includes(contactEmail);
+  const recipientContact = preview.recipientAddresses.includes(contactEmail);
+
+  if (fromContact && !recipientContact) {
+    return "inbound";
+  }
+
+  if (recipientContact && !fromContact) {
+    return "outbound";
+  }
+
+  return null;
+}
+
+function isLegacySalesforceEmailWithoutMessageDetail(
+  item: TimelineItem,
+): boolean {
+  return (
+    item.family === "one_to_one_email" &&
+    item.primaryProvider === "salesforce" &&
+    normalizeInlineText(item.subject) === null &&
+    sanitizePreviewText(item.bodyPreview ?? "") === "" &&
+    parseCommunicationPreview(item.snippet).body === ""
+  );
 }
 
 function buildRecentActivity(
   timelineItems: readonly TimelineItem[],
-  referenceNowIso: string
+  referenceNowIso: string,
 ): readonly InboxRecentActivityViewModel[] {
   return [...timelineItems]
+    .filter(
+      (item): item is Extract<TimelineItem, { family: "salesforce_event" }> =>
+        item.family === "salesforce_event",
+    )
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
     .slice(0, 5)
     .map((item) => ({
       id: item.id,
-      label: recentActivityLabel(item),
-      occurredAtLabel: formatRelativeTimestamp(item.occurredAt, referenceNowIso)
+      label: lifecycleActivityLabel(item),
+      occurredAtLabel: formatRelativeTimestamp(
+        item.occurredAt,
+        referenceNowIso,
+      ),
     }));
 }
 
@@ -387,6 +980,7 @@ function timelineChannel(item: TimelineItem): InboxChannel | null {
     case "auto_email":
     case "campaign_email":
       return "email";
+    case "auto_sms":
     case "one_to_one_sms":
     case "campaign_sms":
       return "sms";
@@ -398,13 +992,27 @@ function timelineChannel(item: TimelineItem): InboxChannel | null {
 
 function timelineActorLabel(
   item: TimelineItem,
-  contactDisplayName: string
+  contactDisplayName: string,
+  kind: InboxTimelineEntryKind,
 ): string {
+  if (kind === "inbound-email" || kind === "inbound-sms") {
+    return contactDisplayName;
+  }
+
+  if (kind === "outbound-email" || kind === "outbound-sms") {
+    return "You";
+  }
+
+  if (kind === "email-activity") {
+    return "Email activity";
+  }
+
   switch (item.family) {
     case "one_to_one_email":
     case "one_to_one_sms":
-      return item.direction === "inbound" ? contactDisplayName : "You";
+      return "You";
     case "auto_email":
+    case "auto_sms":
       return item.sourceLabel;
     case "campaign_email":
     case "campaign_sms":
@@ -419,11 +1027,17 @@ function timelineActorLabel(
 function timelineSubject(item: TimelineItem): string | null {
   switch (item.family) {
     case "one_to_one_email":
+      return (
+        normalizeInlineText(item.subject) ??
+        parseCommunicationPreview(item.snippet).subject
+      );
     case "auto_email":
-      return item.subject;
+      return normalizeInlineText(item.subject);
+    case "auto_sms":
+      return null;
     case "campaign_email":
     case "campaign_sms":
-      return item.campaignName ?? item.summary;
+      return campaignHeadlineAndBody(item).headline;
     case "one_to_one_sms":
     case "internal_note":
     case "salesforce_event":
@@ -434,72 +1048,139 @@ function timelineSubject(item: TimelineItem): string | null {
 function timelineBody(item: TimelineItem): string {
   switch (item.family) {
     case "one_to_one_email":
-      return item.bodyPreview ?? item.snippet;
+      return (
+        trimQuotedReplyContent(item.bodyPreview ?? "") ||
+        parseCommunicationPreview(item.snippet).body ||
+        item.summary
+      );
     case "one_to_one_sms":
       return item.messageTextPreview;
     case "auto_email":
-      return item.snippet;
-    case "campaign_email":
-      return item.snippet;
-    case "campaign_sms":
+      return parseCommunicationPreview(item.snippet).body || item.summary;
+    case "auto_sms":
       return item.messageTextPreview;
+    case "campaign_email":
+      return campaignHeadlineAndBody(item).body;
+    case "campaign_sms":
+      return campaignHeadlineAndBody(item).body;
     case "internal_note":
       return item.body;
     case "salesforce_event":
-      return item.summary;
+      return lifecycleActivityLabel(item);
   }
 }
 
-function isUnreadTimelineItem(
-  item: TimelineItem,
-  inboxProjection: InboxProjectionRow
-): boolean {
-  if (inboxProjection.bucket !== "New") {
-    return false;
-  }
-
+function isPreviewTimelineItem(item: TimelineItem): boolean {
   switch (item.family) {
-    case "one_to_one_email":
-    case "one_to_one_sms":
-      return (
-        item.direction === "inbound" &&
-        item.canonicalEventId === inboxProjection.lastCanonicalEventId
-      );
+    case "salesforce_event":
+    case "internal_note":
+      return false;
     case "auto_email":
+    case "auto_sms":
     case "campaign_email":
     case "campaign_sms":
-    case "internal_note":
-    case "salesforce_event":
-      return false;
+    case "one_to_one_email":
+    case "one_to_one_sms":
+      return true;
   }
 }
 
-function buildTimelineEntry(
-  input: {
-    readonly contactDisplayName: string;
-    readonly inboxProjection: InboxProjectionRow;
-    readonly item: TimelineItem;
-    readonly referenceNowIso: string;
-  }
-): InboxTimelineEntryViewModel {
+function buildTimelineEntry(input: {
+  readonly contactDisplayName: string;
+  readonly contactPrimaryEmail: string | null;
+  readonly inboxProjection: InboxProjectionRow;
+  readonly item: TimelineItem;
+  readonly referenceNowIso: string;
+}): InboxTimelineEntryViewModel {
+  const latestProjectionSnippet =
+    input.item.family === "one_to_one_email" &&
+    input.item.canonicalEventId === input.inboxProjection.lastCanonicalEventId
+      ? input.inboxProjection.snippet
+      : null;
+  const latestProjectionDirectionPreview =
+    latestProjectionSnippet === null
+      ? null
+      : parseCommunicationPreview(latestProjectionSnippet);
+  const itemPreview =
+    input.item.family === "one_to_one_email"
+      ? resolvePreferredMessagePreview({
+          explicitSubjects: [input.item.subject],
+          rawCandidates: [
+            input.item.bodyPreview,
+            input.item.snippet,
+            latestProjectionSnippet,
+          ],
+        })
+      : null;
+  const body = timelineBody(input.item);
+  const inferredDirection =
+    input.item.family === "one_to_one_email"
+      ? inferPreviewDirection(
+          itemPreview?.directionPreview ?? latestProjectionDirectionPreview,
+          input.contactPrimaryEmail,
+        )
+      : null;
+  const isLegacySalesforceEmail = isLegacySalesforceEmailWithoutMessageDetail(
+    input.item,
+  );
+  const kind =
+    input.item.family === "one_to_one_email" &&
+    isLegacySalesforceEmail &&
+    inferredDirection === null
+      ? "email-activity"
+      : input.item.family === "one_to_one_email" && inferredDirection !== null
+        ? inferredDirection === "inbound"
+          ? "inbound-email"
+          : "outbound-email"
+        : mapTimelineKind(input.item);
+  const subject =
+    input.item.family === "one_to_one_email"
+      ? (itemPreview?.subject ?? null)
+      : (timelineSubject(input.item) ?? null);
+  const resolvedBody =
+    input.item.family === "one_to_one_email"
+      ? itemPreview?.body !== undefined && itemPreview.body.length > 0
+        ? itemPreview.body
+        : body
+      : body;
+  const hasRenderableEmailContent =
+    kind === "inbound-email" || kind === "outbound-email"
+      ? subject !== null || resolvedBody.trim().length > 0
+      : true;
+  const finalKind =
+    !hasRenderableEmailContent &&
+    input.item.family === "one_to_one_email"
+      ? "email-activity"
+      : kind;
+  const isUnread =
+    input.inboxProjection.bucket === "New" &&
+    input.item.canonicalEventId ===
+      input.inboxProjection.lastCanonicalEventId &&
+    (finalKind === "inbound-email" || finalKind === "inbound-sms");
+
   return {
     id: input.item.id,
-    kind: mapTimelineKind(input.item),
+    kind: finalKind,
     occurredAt: input.item.occurredAt,
     occurredAtLabel: formatRelativeTimestamp(
       input.item.occurredAt,
-      input.referenceNowIso
+      input.referenceNowIso,
     ),
-    actorLabel: timelineActorLabel(input.item, input.contactDisplayName),
-    subject: timelineSubject(input.item),
-    body: timelineBody(input.item),
+    actorLabel: timelineActorLabel(
+      input.item,
+      input.contactDisplayName,
+      finalKind,
+    ),
+    subject,
+    body: resolvedBody,
     channel: timelineChannel(input.item),
-    isUnread: isUnreadTimelineItem(input.item, input.inboxProjection)
+    isUnread,
+    isPreview: isPreviewTimelineItem(input.item),
   };
 }
 
 function groupMembershipsByContactId(
-  memberships: readonly ContactMembershipRecord[]
+  memberships: readonly ContactMembershipRecord[],
 ): ReadonlyMap<string, readonly ContactMembershipRecord[]> {
   const grouped = new Map<string, ContactMembershipRecord[]>();
 
@@ -518,10 +1199,10 @@ function groupMembershipsByContactId(
 }
 
 async function loadProjectNameById(
-  memberships: readonly ContactMembershipRecord[]
+  memberships: readonly ContactMembershipRecord[],
 ): Promise<Readonly<Record<string, string>>> {
   const projectIds = uniqueStrings(
-    memberships.map((membership) => membership.projectId)
+    memberships.map((membership) => membership.projectId),
   );
 
   if (projectIds.length === 0) {
@@ -529,18 +1210,29 @@ async function loadProjectNameById(
   }
 
   const runtime = await getStage1WebRuntime();
-  const dimensions = await runtime.repositories.projectDimensions.listByIds(projectIds);
+  const dimensions =
+    await runtime.repositories.projectDimensions.listByIds(projectIds);
 
   return Object.fromEntries(
-    dimensions.map((dimension) => [dimension.projectId, dimension.projectName])
+    dimensions.map((dimension) => [dimension.projectId, dimension.projectName]),
   );
 }
 
 async function loadLatestSubjectByCanonicalEventId(
-  projections: readonly InboxProjectionRow[]
-): Promise<Readonly<Record<string, string | null>>> {
+  projections: readonly InboxProjectionRow[],
+): Promise<
+  Readonly<
+    Record<
+      string,
+      {
+        readonly subject: string | null;
+        readonly body: string;
+      }
+    >
+  >
+> {
   const eventIds = uniqueStrings(
-    projections.map((projection) => projection.lastCanonicalEventId)
+    projections.map((projection) => projection.lastCanonicalEventId),
   );
 
   if (eventIds.length === 0) {
@@ -548,30 +1240,43 @@ async function loadLatestSubjectByCanonicalEventId(
   }
 
   const runtime = await getStage1WebRuntime();
-  const [canonicalEvents, timelineRows] = await Promise.all([
-    runtime.repositories.canonicalEvents.listByIds(eventIds),
-    Promise.all(
-      eventIds.map((eventId) =>
-        runtime.repositories.timelineProjection.findByCanonicalEventId(eventId)
-      )
-    )
-  ]);
+  const canonicalEvents =
+    await runtime.repositories.canonicalEvents.listByIds(eventIds);
   const sourceEvidenceIds = uniqueStrings(
-    canonicalEvents.map((event) => event.sourceEvidenceId)
+    canonicalEvents.map((event) => event.sourceEvidenceId),
   );
-  const gmailDetails = await runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
-    sourceEvidenceIds
-  );
+  const [
+    gmailDetails,
+    salesforceCommunicationDetails,
+    simpleTextingMessageDetails,
+  ] = await Promise.all([
+    runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
+      sourceEvidenceIds,
+    ),
+    runtime.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds(
+      sourceEvidenceIds,
+    ),
+    runtime.repositories.simpleTextingMessageDetails.listBySourceEvidenceIds(
+      sourceEvidenceIds,
+    ),
+  ]);
   const canonicalEventById = new Map(
-    canonicalEvents.map((event) => [event.id, event])
-  );
-  const timelineByCanonicalEventId = new Map(
-    timelineRows
-      .filter((row): row is TimelineProjectionRow => row !== null)
-      .map((row) => [row.canonicalEventId, row])
+    canonicalEvents.map((event) => [event.id, event]),
   );
   const gmailDetailBySourceEvidenceId = new Map(
-    gmailDetails.map((detail) => [detail.sourceEvidenceId, detail])
+    gmailDetails.map((detail) => [detail.sourceEvidenceId, detail]),
+  );
+  const salesforceCommunicationBySourceEvidenceId = new Map(
+    salesforceCommunicationDetails.map((detail) => [
+      detail.sourceEvidenceId,
+      detail,
+    ]),
+  );
+  const simpleTextingBySourceEvidenceId = new Map(
+    simpleTextingMessageDetails.map((detail) => [
+      detail.sourceEvidenceId,
+      detail,
+    ]),
   );
 
   return Object.fromEntries(
@@ -579,62 +1284,248 @@ async function loadLatestSubjectByCanonicalEventId(
       const event = canonicalEventById.get(eventId);
 
       if (event === undefined) {
-        return [eventId, null] as const;
+        return [
+          eventId,
+          {
+            subject: null,
+            body: "",
+          },
+        ] as const;
       }
+
+      const gmailDetail =
+        gmailDetailBySourceEvidenceId.get(event.sourceEvidenceId) ?? null;
+      const salesforceDetail =
+        salesforceCommunicationBySourceEvidenceId.get(event.sourceEvidenceId) ??
+        null;
+      const simpleTextingDetail =
+        simpleTextingBySourceEvidenceId.get(event.sourceEvidenceId) ?? null;
+      const resolvedPreview = resolvePreferredMessagePreview({
+        explicitSubjects: [gmailDetail?.subject, salesforceDetail?.subject],
+        rawCandidates:
+          event.channel === "email"
+            ? [
+                gmailDetail?.bodyTextPreview,
+                gmailDetail?.snippetClean,
+                salesforceDetail?.snippet,
+              ]
+            : [
+                simpleTextingDetail?.messageTextPreview,
+                salesforceDetail?.snippet,
+              ],
+      });
 
       return [
         eventId,
-        gmailDetailBySourceEvidenceId.get(event.sourceEvidenceId)?.subject ??
-          timelineByCanonicalEventId.get(eventId)?.summary ??
-          null
+        {
+          subject: resolvedPreview.subject,
+          body: resolvedPreview.body,
+        },
       ] as const;
-    })
+    }),
   );
 }
 
-async function readInboxListCacheData(): Promise<InboxListCacheData> {
+function totalForFilter(
+  counts: {
+    readonly all: number;
+    readonly unread: number;
+    readonly followUp: number;
+    readonly unresolved: number;
+  },
+  filterId: InboxFilterId,
+): number {
+  switch (filterId) {
+    case "all":
+      return counts.all;
+    case "unread":
+      return counts.unread;
+    case "follow-up":
+      return counts.followUp;
+    case "unresolved":
+      return counts.unresolved;
+  }
+}
+
+function primaryProjectLabelForSearch(
+  memberships: readonly ContactMembershipRecord[],
+  projectNameById: Readonly<Record<string, string>>,
+): string | null {
+  const primaryMembership = sortMemberships(memberships)[0] ?? null;
+
+  if (primaryMembership === null) {
+    return null;
+  }
+
+  return resolveProjectName(primaryMembership, projectNameById);
+}
+
+function matchesQueryText(
+  value: string | null | undefined,
+  normalizedQuery: string,
+): boolean {
+  return value?.toLowerCase().includes(normalizedQuery) ?? false;
+}
+
+function matchesInboxListQuery(
+  row: InboxListCacheRow,
+  normalizedQuery: string,
+  projectNameById: Readonly<Record<string, string>>,
+): boolean {
+  const projectionSubject =
+    normalizeInlineText(row.latestMessagePreview?.subject) ??
+    previewSubjectForSearch(row.inboxProjection.snippet) ??
+    fallbackLatestSubject(row.inboxProjection.lastEventType);
+  const projectionSnippet = previewBodyForSearch(row.inboxProjection.snippet);
+  const projectLabel = primaryProjectLabelForSearch(
+    row.memberships,
+    projectNameById,
+  );
+
+  return (
+    matchesQueryText(row.contact.displayName, normalizedQuery) ||
+    matchesQueryText(row.contact.primaryEmail, normalizedQuery) ||
+    matchesQueryText(projectionSubject, normalizedQuery) ||
+    matchesQueryText(projectionSnippet, normalizedQuery) ||
+    matchesQueryText(projectLabel, normalizedQuery)
+  );
+}
+
+async function readInboxListCacheData(input: {
+  readonly filterId: InboxFilterId;
+  readonly cursor: string | null;
+  readonly limit: number;
+  readonly query: string | null;
+}): Promise<InboxListCacheData> {
   const runtime = await getStage1WebRuntime();
-  const projections = await runtime.repositories.inboxProjection.listAllOrderedByRecency();
-  const contactIds = projections.map((projection) => projection.contactId);
-  const [contacts, memberships, latestSubjectByCanonicalEventId] = await Promise.all([
-    runtime.repositories.contacts.listByIds(contactIds),
-    runtime.repositories.contactMemberships.listByContactIds(contactIds),
-    loadLatestSubjectByCanonicalEventId(projections)
+  const decodedCursor = decodeInboxListCursor(input.cursor);
+  const normalizedQuery =
+    normalizeInlineText(input.query)?.toLowerCase() ?? null;
+  const [allCandidateProjections, counts, freshness] = await Promise.all([
+    normalizedQuery === null
+      ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
+          filter: input.filterId,
+          limit: input.limit + 1,
+          cursor: decodedCursor,
+        })
+      : runtime.repositories.inboxProjection.listAllOrderedByRecency(),
+    runtime.repositories.inboxProjection.countByFilters(),
+    runtime.repositories.inboxProjection.getFreshness(),
   ]);
+  const filteredProjections =
+    normalizedQuery === null
+      ? allCandidateProjections
+      : allCandidateProjections.filter((projection) => {
+          if (decodedCursor === null) {
+            return true;
+          }
+
+          const sortAt = projection.lastInboundAt ?? projection.lastActivityAt;
+
+          return (
+            sortAt < decodedCursor.sortAt ||
+            (sortAt === decodedCursor.sortAt &&
+              (projection.lastActivityAt < decodedCursor.lastActivityAt ||
+                (projection.lastActivityAt === decodedCursor.lastActivityAt &&
+                  projection.contactId > decodedCursor.contactId)))
+          );
+        });
+  const candidateContactIds = filteredProjections.map(
+    (projection) => projection.contactId,
+  );
+  const [contacts, memberships, latestMessagePreviewByCanonicalEventId] =
+    await Promise.all([
+      runtime.repositories.contacts.listByIds(candidateContactIds),
+      runtime.repositories.contactMemberships.listByContactIds(
+        candidateContactIds,
+      ),
+      loadLatestSubjectByCanonicalEventId(filteredProjections),
+    ]);
   const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
   const membershipsByContactId = groupMembershipsByContactId(memberships);
+  const projectNameById = await loadProjectNameById(memberships);
+  const candidateRows = filteredProjections.flatMap((inboxProjection) => {
+    const contact = contactById.get(inboxProjection.contactId);
+
+    if (contact === undefined) {
+      return [];
+    }
+
+    return [
+      {
+        contact,
+        inboxProjection,
+        memberships:
+          membershipsByContactId.get(inboxProjection.contactId) ?? [],
+        latestMessagePreview:
+          latestMessagePreviewByCanonicalEventId[
+            inboxProjection.lastCanonicalEventId
+          ] ?? null,
+      } satisfies InboxListCacheRow,
+    ];
+  });
+  const searchedRows =
+    normalizedQuery === null
+      ? candidateRows
+      : candidateRows.filter((row) =>
+          matchesInboxListQuery(row, normalizedQuery, projectNameById),
+        );
+  const hasMore = searchedRows.length > input.limit;
+  const pageRows = hasMore ? searchedRows.slice(0, input.limit) : searchedRows;
 
   return {
-    rows: projections.flatMap((inboxProjection) => {
-      const contact = contactById.get(inboxProjection.contactId);
-
-      if (contact === undefined) {
-        return [];
-      }
-
-      return [
-        {
-          contact,
-          inboxProjection,
-          memberships: membershipsByContactId.get(inboxProjection.contactId) ?? [],
-          latestSubject:
-            latestSubjectByCanonicalEventId[inboxProjection.lastCanonicalEventId] ?? null
-        } satisfies InboxListCacheRow
-      ];
-    }),
-    projectNameById: await loadProjectNameById(memberships)
+    rows: pageRows,
+    projectNameById,
+    counts,
+    page: {
+      hasMore,
+      nextCursor:
+        !hasMore || pageRows.length === 0
+          ? null
+          : encodeInboxListCursor({
+              sortAt:
+                pageRows[pageRows.length - 1]?.inboxProjection.lastInboundAt ??
+                pageRows[pageRows.length - 1]?.inboxProjection.lastActivityAt ??
+                "",
+              lastActivityAt:
+                pageRows[pageRows.length - 1]?.inboxProjection.lastActivityAt ??
+                "",
+              contactId: pageRows[pageRows.length - 1]?.contact.id ?? "",
+            }),
+      total:
+        normalizedQuery === null
+          ? totalForFilter(counts, input.filterId)
+          : searchedRows.length,
+    },
+    freshness,
   };
 }
 
 async function readInboxDetailCacheData(
-  contactId: string
+  contactId: string,
+  input: {
+    readonly timelineLimit: number;
+    readonly timelineCursor: string | null;
+  },
 ): Promise<InboxDetailCacheData | null> {
   const runtime = await getStage1WebRuntime();
-  const [contact, inboxProjection, memberships, timelineItems] = await Promise.all([
+  const [
+    contact,
+    inboxProjection,
+    memberships,
+    timelinePage,
+    inboxFreshness,
+    timelineFreshness,
+  ] = await Promise.all([
     runtime.repositories.contacts.findById(contactId),
     runtime.repositories.inboxProjection.findByContactId(contactId),
     runtime.repositories.contactMemberships.listByContactId(contactId),
-    runtime.timelinePresentation.listTimelineItemsByContactId(contactId)
+    runtime.timelinePresentation.listTimelineItemsPageByContactId(contactId, {
+      limit: input.timelineLimit,
+      beforeSortKey: input.timelineCursor,
+    }),
+    runtime.repositories.inboxProjection.getFreshnessByContactId(contactId),
+    runtime.repositories.timelineProjection.getFreshnessByContactId(contactId),
   ]);
 
   if (contact === null || inboxProjection === null) {
@@ -645,36 +1536,82 @@ async function readInboxDetailCacheData(
     contact,
     inboxProjection,
     memberships,
-    timelineItems,
-    projectNameById: await loadProjectNameById(memberships)
+    timelineItems: timelinePage.items,
+    projectNameById: await loadProjectNameById(memberships),
+    timelinePage: {
+      hasMore: timelinePage.hasMore,
+      nextCursor: timelinePage.hasMore ? timelinePage.nextBeforeSortKey : null,
+      total: timelinePage.total,
+    },
+    freshness: {
+      inboxUpdatedAt: inboxFreshness?.updatedAt ?? null,
+      timelineUpdatedAt: timelineFreshness.latestUpdatedAt,
+      timelineCount: timelineFreshness.total,
+    },
   };
 }
 
-const loadInboxListCacheData = unstable_cache(
-  readInboxListCacheData,
-  ["inbox:list:data"],
-  {
-    tags: ["inbox"]
+function loadInboxListCacheData(input: {
+  readonly filterId: InboxFilterId;
+  readonly cursor: string | null;
+  readonly limit: number;
+  readonly query: string | null;
+}) {
+  if (process.env.NODE_ENV !== "production") {
+    return readInboxListCacheData(input);
   }
-);
 
-function loadInboxDetailCacheData(contactId: string) {
   return unstable_cache(
-    () => readInboxDetailCacheData(contactId),
-    [`inbox:detail:data:${contactId}`],
+    () => readInboxListCacheData(input),
+    [
+      `inbox:list:data:${input.filterId}:${input.cursor ?? "first"}:${input.limit.toString()}:${input.query ?? "none"}`,
+    ],
     {
-      tags: ["inbox", `inbox:contact:${contactId}`, `timeline:contact:${contactId}`]
-    }
+      tags: ["inbox"],
+    },
+  )();
+}
+
+function loadInboxDetailCacheData(
+  contactId: string,
+  input: {
+    readonly timelineLimit: number;
+    readonly timelineCursor: string | null;
+  },
+) {
+  if (process.env.NODE_ENV !== "production") {
+    return readInboxDetailCacheData(contactId, input);
+  }
+
+  return unstable_cache(
+    () => readInboxDetailCacheData(contactId, input),
+    [
+      `inbox:detail:data:${contactId}:${input.timelineCursor ?? "latest"}:${input.timelineLimit.toString()}`,
+    ],
+    {
+      tags: [
+        "inbox",
+        `inbox:contact:${contactId}`,
+        `timeline:contact:${contactId}`,
+      ],
+    },
   )();
 }
 
 function toListItemViewModel(
   row: InboxListCacheRow,
   projectNameById: Readonly<Record<string, string>>,
-  referenceNowIso: string
+  referenceNowIso: string,
 ): InboxListItemViewModel {
   const sortedMemberships = sortMemberships(row.memberships);
   const primaryMembership = sortedMemberships[0] ?? null;
+  const preview = resolvePreferredMessagePreview({
+    explicitSubjects: [row.latestMessagePreview?.subject],
+    rawCandidates: [
+      row.latestMessagePreview?.body,
+      row.inboxProjection.snippet,
+    ],
+  });
 
   return {
     contactId: row.contact.id,
@@ -683,9 +1620,13 @@ function toListItemViewModel(
     avatarTone: avatarToneForContact(row.contact.id),
     latestSubject: defaultLatestSubject(
       row.inboxProjection.lastEventType,
-      row.latestSubject
+      row.latestMessagePreview?.subject ?? null,
+      preview.subject,
     ),
-    snippet: row.inboxProjection.snippet,
+    snippet:
+      preview.body ||
+      sanitizePreviewText(row.inboxProjection.snippet) ||
+      fallbackLatestSubject(row.inboxProjection.lastEventType),
     latestChannel: mapChannel(row.inboxProjection.lastEventType),
     projectLabel:
       primaryMembership === null
@@ -701,27 +1642,28 @@ function toListItemViewModel(
     lastEventType: row.inboxProjection.lastEventType,
     lastActivityLabel: formatRelativeTimestamp(
       row.inboxProjection.lastActivityAt,
-      referenceNowIso
-    )
+      referenceNowIso,
+    ),
   };
 }
 
-function buildContactSummary(
-  input: {
-    readonly contact: ContactRecord;
-    readonly inboxProjection: InboxProjectionRow;
-    readonly memberships: readonly ContactMembershipRecord[];
-    readonly timelineItems: readonly TimelineItem[];
-    readonly projectNameById: Readonly<Record<string, string>>;
-    readonly referenceNowIso: string;
-  }
-): InboxContactSummaryViewModel {
+function buildContactSummary(input: {
+  readonly contact: ContactRecord;
+  readonly inboxProjection: InboxProjectionRow;
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly timelineItems: readonly TimelineItem[];
+  readonly projectNameById: Readonly<Record<string, string>>;
+  readonly referenceNowIso: string;
+}): InboxContactSummaryViewModel {
   const memberships = sortMemberships(input.memberships);
   const projectMemberships = memberships
     .map((membership) =>
-      buildProjectMembershipViewModel(membership, input.projectNameById)
+      buildProjectMembershipViewModel(membership, input.projectNameById),
     )
-    .filter((membership): membership is InboxProjectMembershipViewModel => membership !== null);
+    .filter(
+      (membership): membership is InboxProjectMembershipViewModel =>
+        membership !== null,
+    );
 
   return {
     contactId: input.contact.id,
@@ -733,21 +1675,21 @@ function buildContactSummary(
     joinedAtLabel: formatJoinedAtLabel(input.contact.createdAt),
     hasUnresolved: input.inboxProjection.hasUnresolved,
     activeProjects: projectMemberships.filter(
-      (membership) => !isPastProject(membership.status)
+      (membership) => !isPastProject(membership.status),
     ),
     pastProjects: projectMemberships.filter((membership) =>
-      isPastProject(membership.status)
+      isPastProject(membership.status),
     ),
     recentActivity: buildRecentActivity(
       input.timelineItems,
-      input.referenceNowIso
-    )
+      input.referenceNowIso,
+    ),
   };
 }
 
 function matchesServerFilter(
   item: InboxListItemViewModel,
-  filterId: InboxFilterId
+  filterId: InboxFilterId,
 ): boolean {
   switch (filterId) {
     case "all":
@@ -762,19 +1704,24 @@ function matchesServerFilter(
 }
 
 export async function getInboxList(
-  filterId: InboxFilterId = "all"
+  filterId: InboxFilterId = "all",
+  input: {
+    readonly cursor?: string | null;
+    readonly limit?: number;
+    readonly query?: string | null;
+  } = {},
 ): Promise<InboxListViewModel> {
-  const cachedData = await loadInboxListCacheData();
+  const cachedData = await loadInboxListCacheData({
+    filterId,
+    cursor: input.cursor ?? null,
+    limit: input.limit ?? DEFAULT_INBOX_LIST_PAGE_SIZE,
+    query: input.query ?? null,
+  });
   const referenceNowIso = new Date().toISOString();
   const items = cachedData.rows.map((row) =>
-    toListItemViewModel(row, cachedData.projectNameById, referenceNowIso)
+    toListItemViewModel(row, cachedData.projectNameById, referenceNowIso),
   );
-  const totals = {
-    all: items.length,
-    unread: items.filter((item) => item.bucket === "new").length,
-    followUp: items.filter((item) => item.needsFollowUp).length,
-    unresolved: items.filter((item) => item.hasUnresolved).length
-  };
+  const totals = cachedData.counts;
   const filters: InboxFilterViewModel[] = INBOX_FILTERS.map((filter) => ({
     id: filter.id,
     label: filter.label,
@@ -784,20 +1731,104 @@ export async function getInboxList(
         ? totals.followUp
         : filter.id === "unresolved"
           ? totals.unresolved
-          : totals[filter.id]
+          : totals[filter.id],
   }));
 
   return {
     items: items.filter((item) => matchesServerFilter(item, filterId)),
     filters,
-    totals
+    totals,
+    page: cachedData.page,
+    freshness: cachedData.freshness,
+  };
+}
+
+export async function getInboxTimelinePage(
+  contactId: string,
+  input: {
+    readonly cursor?: string | null;
+    readonly limit?: number;
+  } = {},
+): Promise<{
+  readonly entries: readonly InboxTimelineEntryViewModel[];
+  readonly page: {
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly total: number;
+  };
+} | null> {
+  const cachedData = await loadInboxDetailCacheData(contactId, {
+    timelineLimit: input.limit ?? DEFAULT_INBOX_TIMELINE_PAGE_SIZE,
+    timelineCursor: input.cursor ?? null,
+  });
+
+  if (cachedData === null) {
+    return null;
+  }
+
+  const referenceNowIso = new Date().toISOString();
+
+  return {
+    entries: cachedData.timelineItems.map((item) =>
+      buildTimelineEntry({
+        contactDisplayName: cachedData.contact.displayName,
+        contactPrimaryEmail: cachedData.contact.primaryEmail,
+        inboxProjection: cachedData.inboxProjection,
+        item,
+        referenceNowIso,
+      }),
+    ),
+    page: cachedData.timelinePage,
+  };
+}
+
+export async function getInboxFreshness(contactId?: string): Promise<{
+  readonly list: {
+    readonly latestUpdatedAt: string | null;
+    readonly total: number;
+  };
+  readonly detail: {
+    readonly inboxUpdatedAt: string | null;
+    readonly timelineUpdatedAt: string | null;
+    readonly timelineCount: number;
+  } | null;
+}> {
+  const runtime = await getStage1WebRuntime();
+  const list = await runtime.repositories.inboxProjection.getFreshness();
+
+  if (contactId === undefined) {
+    return {
+      list,
+      detail: null,
+    };
+  }
+
+  const [inboxFreshness, timelineFreshness] = await Promise.all([
+    runtime.repositories.inboxProjection.getFreshnessByContactId(contactId),
+    runtime.repositories.timelineProjection.getFreshnessByContactId(contactId),
+  ]);
+
+  return {
+    list,
+    detail: {
+      inboxUpdatedAt: inboxFreshness?.updatedAt ?? null,
+      timelineUpdatedAt: timelineFreshness.latestUpdatedAt,
+      timelineCount: timelineFreshness.total,
+    },
   };
 }
 
 export async function getInboxDetail(
-  contactId: string
+  contactId: string,
+  input: {
+    readonly timelineCursor?: string | null;
+    readonly timelineLimit?: number;
+  } = {},
 ): Promise<InboxDetailViewModel | null> {
-  const cachedData = await loadInboxDetailCacheData(contactId);
+  const cachedData = await loadInboxDetailCacheData(contactId, {
+    timelineLimit: input.timelineLimit ?? DEFAULT_INBOX_TIMELINE_PAGE_SIZE,
+    timelineCursor: input.timelineCursor ?? null,
+  });
 
   if (cachedData === null) {
     return null;
@@ -812,18 +1843,21 @@ export async function getInboxDetail(
       memberships: cachedData.memberships,
       timelineItems: cachedData.timelineItems,
       projectNameById: cachedData.projectNameById,
-      referenceNowIso
+      referenceNowIso,
     }),
     timeline: cachedData.timelineItems.map((item) =>
       buildTimelineEntry({
         contactDisplayName: cachedData.contact.displayName,
+        contactPrimaryEmail: cachedData.contact.primaryEmail,
         inboxProjection: cachedData.inboxProjection,
         item,
-        referenceNowIso
-      })
+        referenceNowIso,
+      }),
     ),
     bucket: mapBucket(cachedData.inboxProjection.bucket),
     needsFollowUp: cachedData.inboxProjection.needsFollowUp,
-    smsEligible: cachedData.contact.primaryPhone !== null
+    smsEligible: cachedData.contact.primaryPhone !== null,
+    timelinePage: cachedData.timelinePage,
+    freshness: cachedData.freshness,
   };
 }

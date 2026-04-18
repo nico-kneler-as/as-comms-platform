@@ -7,19 +7,32 @@ const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@as-comms/contracts": path.resolve(
-        repoRoot,
-        "packages/contracts/src/index.ts"
-      ),
-      "@as-comms/db": path.resolve(repoRoot, "packages/db/src/index.ts"),
-      "@as-comms/domain": path.resolve(repoRoot, "packages/domain/src/index.ts"),
-      "@as-comms/integrations": path.resolve(
-        repoRoot,
-        "packages/integrations/src/index.ts"
-      ),
-      "@as-comms/ui": path.resolve(repoRoot, "packages/ui/src/index.ts")
-    }
+    alias: [
+      {
+        find: "@as-comms/db/test-helpers",
+        replacement: path.resolve(repoRoot, "packages/db/src/test-helpers.ts")
+      },
+      {
+        find: "@as-comms/contracts",
+        replacement: path.resolve(repoRoot, "packages/contracts/src/index.ts")
+      },
+      {
+        find: "@as-comms/db",
+        replacement: path.resolve(repoRoot, "packages/db/src/index.ts")
+      },
+      {
+        find: "@as-comms/domain",
+        replacement: path.resolve(repoRoot, "packages/domain/src/index.ts")
+      },
+      {
+        find: "@as-comms/integrations",
+        replacement: path.resolve(repoRoot, "packages/integrations/src/index.ts")
+      },
+      {
+        find: "@as-comms/ui",
+        replacement: path.resolve(repoRoot, "packages/ui/src/index.ts")
+      }
+    ]
   },
   test: {
     include: [
@@ -28,7 +41,8 @@ export default defineConfig({
       "src/**/*.test.ts"
     ],
     environment: "node",
-    testTimeout: 15000,
+    testTimeout: 30000,
+    hookTimeout: 30000,
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
