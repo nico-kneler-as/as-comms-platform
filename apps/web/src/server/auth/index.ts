@@ -28,7 +28,11 @@ import NextAuth, {
 } from "next-auth";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 
-import { getStage1WebRuntime, getSettingsRepositories } from "../stage1-runtime";
+import {
+  authAdapterTables,
+  getStage1WebRuntime,
+  getSettingsRepositories
+} from "../stage1-runtime";
 import {
   authEdgeConfig,
   SESSION_MAX_AGE_SECONDS,
@@ -53,7 +57,7 @@ async function buildAuthConfig(): Promise<NextAuthConfig> {
       maxAge: SESSION_MAX_AGE_SECONDS,
       updateAge: SESSION_UPDATE_AGE_SECONDS
     },
-    adapter: DrizzleAdapter(runtime.connection.db),
+    adapter: DrizzleAdapter(runtime.connection.db, authAdapterTables),
     callbacks: {
       async signIn({ user }) {
         // Deactivated operators must not be able to sign in, even if an
