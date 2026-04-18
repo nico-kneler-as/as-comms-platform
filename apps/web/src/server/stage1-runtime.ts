@@ -1,20 +1,27 @@
 import {
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
+  createStage2RepositoryBundleFromConnection,
   type DatabaseConnection
 } from "@as-comms/db";
 import type { TestStage1Context } from "@as-comms/db/test-helpers";
 import {
   createStage1TimelinePresentationService,
   type Stage1RepositoryBundle,
-  type Stage1TimelinePresentationService
+  type Stage1TimelinePresentationService,
+  type Stage2RepositoryBundle
 } from "@as-comms/domain";
 
 export type { TestStage1Context } from "@as-comms/db/test-helpers";
 
+export interface Stage2RepositoryAccess {
+  readonly settings: Stage2RepositoryBundle;
+}
+
 export interface Stage1WebRuntime {
   readonly connection: Pick<DatabaseConnection, "db" | "sql"> | null;
   readonly repositories: Stage1RepositoryBundle;
+  readonly settings: Stage2RepositoryBundle;
   readonly timelinePresentation: Stage1TimelinePresentationService;
 }
 
@@ -37,10 +44,12 @@ function createRuntime(): Stage1WebRuntime {
     connectionString
   });
   const repositories = createStage1RepositoryBundleFromConnection(connection);
+  const settings = createStage2RepositoryBundleFromConnection(connection);
 
   return {
     connection,
     repositories,
+    settings,
     timelinePresentation: createStage1TimelinePresentationService(repositories)
   };
 }
@@ -52,6 +61,11 @@ export async function getStage1WebRuntime(): Promise<Stage1WebRuntime> {
 
   runtimePromise ??= Promise.resolve(createRuntime());
   return runtimePromise;
+}
+
+export async function getSettingsRepositories(): Promise<Stage2RepositoryBundle> {
+  const runtime = await getStage1WebRuntime();
+  return runtime.settings;
 }
 
 export function setStage1WebRuntimeForTests(
@@ -68,6 +82,7 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
   setStage1WebRuntimeForTests({
     connection: null,
     repositories: context.repositories,
+    settings: context.settings,
     timelinePresentation: createStage1TimelinePresentationService(
       context.repositories
     )

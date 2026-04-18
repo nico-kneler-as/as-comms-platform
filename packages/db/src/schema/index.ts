@@ -1,6 +1,7 @@
 export * from "./enums.js";
 export * from "./tables.js";
 import {
+  accounts,
   auditPolicyEvidence,
   canonicalEventLedger,
   contactIdentities,
@@ -13,13 +14,17 @@ import {
   identityResolutionQueue,
   mailchimpCampaignActivityDetails,
   manualNoteDetails,
+  projectAliases,
   projectDimensions,
   routingReviewQueue,
   salesforceCommunicationDetails,
   salesforceEventContext,
+  sessions,
   simpleTextingMessageDetails,
   sourceEvidenceLog,
-  syncState
+  syncState,
+  users,
+  verificationTokens
 } from "./tables.js";
 
 export const databaseSchema = {
@@ -41,7 +46,12 @@ export const databaseSchema = {
   contactInboxProjection,
   contactTimelineProjection,
   syncState,
-  auditPolicyEvidence
+  auditPolicyEvidence,
+  users,
+  accounts,
+  sessions,
+  verificationTokens,
+  projectAliases
 };
 
 export type DatabaseSchema = typeof databaseSchema;
