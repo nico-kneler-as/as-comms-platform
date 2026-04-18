@@ -9,9 +9,24 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     env:
       CI: "true"
       PLAYWRIGHT_BROWSERS_PATH: 0
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,6 +59,14 @@ jobs:
 
       - name: Unit tests
         run: pnpm test:unit
+
+      - name: Apply database migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          for migration in packages/db/drizzle/*.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+          done
 
       - name: Playwright smoke
         run: pnpm test:e2e
