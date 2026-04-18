@@ -4,6 +4,7 @@ import { setInboxNeedsFollowUp } from "../../src/server/inbox/follow-up";
 import { revalidateInboxContact } from "../../src/server/inbox/revalidate";
 import type { UiResult } from "../../src/server/ui-result";
 
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
 export type FollowUpActionData = {
   readonly contactId: string;
   readonly needsFollowUp: boolean;
