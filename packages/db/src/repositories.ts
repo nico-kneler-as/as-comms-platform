@@ -800,6 +800,15 @@ function createStage1RepositoriesInternal(
     },
 
     projectDimensions: {
+      async listAll() {
+        const rows = await db
+          .select()
+          .from(projectDimensions)
+          .orderBy(asc(projectDimensions.projectName));
+
+        return rows.map(mapProjectDimensionRow);
+      },
+
       async listByIds(projectIds) {
         if (projectIds.length === 0) {
           return [];

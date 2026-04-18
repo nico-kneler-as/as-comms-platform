@@ -80,6 +80,7 @@ export interface ContactMembershipRepository {
 }
 
 export interface ProjectDimensionRepository {
+  listAll(): Promise<readonly ProjectDimensionRecord[]>;
   listByIds(projectIds: readonly string[]): Promise<readonly ProjectDimensionRecord[]>;
   upsert(record: ProjectDimensionRecord): Promise<ProjectDimensionRecord>;
 }
