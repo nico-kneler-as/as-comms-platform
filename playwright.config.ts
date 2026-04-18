@@ -16,7 +16,7 @@ export default defineConfig({
   },
   webServer: {
     command: `bash -lc 'set -a && [ -f .env.local ] && source .env.local; set +a && pnpm --dir apps/web exec next build && pnpm --dir apps/web exec next start --hostname 127.0.0.1 --port ${port}'`,
-    url: `http://127.0.0.1:${port}`,
+    url: `http://127.0.0.1:${port}/api/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 120000
   },

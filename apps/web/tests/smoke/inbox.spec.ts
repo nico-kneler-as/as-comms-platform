@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+test.skip(
+  !process.env.DATABASE_URL,
+  "Inbox smoke requires DATABASE_URL — skipped in CI until a Postgres test database is provisioned"
+);
+
 test("inbox renders as a single mixed list backed by real data", async ({ page }) => {
   await page.goto("/inbox");
 
