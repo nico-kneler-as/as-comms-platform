@@ -1,9 +1,26 @@
 import {
+  accounts,
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
+  sessions,
+  users,
+  verificationTokens,
   type DatabaseConnection
 } from "@as-comms/db";
+
+// Re-export the Auth.js adapter tables so `apps/web/src/server/auth/index.ts`
+// can hand them to `DrizzleAdapter` without crossing the composition-root
+// boundary. Without this explicit schema map, the adapter falls back to its
+// internal defaults (singular `"user"` / `"account"` / `"session"` / `"verificationToken"`
+// table names) which do not exist in our DB and cause 42P01 "relation does not
+// exist" errors at callback time.
+export const authAdapterTables = {
+  usersTable: users,
+  accountsTable: accounts,
+  sessionsTable: sessions,
+  verificationTokensTable: verificationTokens
+} as const;
 import {
   createStage1TimelinePresentationService,
   type Stage1RepositoryBundle,
