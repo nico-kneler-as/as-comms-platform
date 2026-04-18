@@ -123,6 +123,134 @@ export type SalesforceLifecycleRecord = z.infer<
   typeof salesforceLifecycleRecordSchema
 >;
 
+const automatedOwnerSignalPatterns = [
+  /\bmarketing\s*cloud\b/iu,
+  /\bpardot\b/iu,
+  /\bworkflow\b/iu,
+  /\bautomated\s+process\b/iu,
+  /\bsystem\b/iu,
+  /\bintegration\b/iu
+] as const;
+
+const automatedSubjectPatterns = [
+  /^fw:/iu,
+  /^fwd:/iu,
+  /^→\s*email:/iu,
+  /\bsign(?:\s|-)?up confirmation\b/iu,
+  /\btraining reminder\b/iu,
+  /\bstart your training\b/iu,
+  /\bcomplete your training\b/iu
+] as const;
+
+function normalizeComparableString(
+  value: string | null | undefined
+): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function matchesAnyPattern(
+  value: string | null,
+  patterns: readonly RegExp[]
+): boolean {
+  if (value === null) {
+    return false;
+  }
+
+  return patterns.some((pattern) => pattern.test(value));
+}
+
+export interface SalesforceTaskMessageKindClassificationInput {
+  readonly channel: "email" | "sms";
+  readonly taskSubtype?: string | null;
+  readonly ownerId?: string | null;
+  readonly ownerName?: string | null;
+  readonly ownerUsername?: string | null;
+  readonly subject?: string | null;
+}
+
+export interface SalesforceTaskMessageKindClassification {
+  readonly messageKind: "one_to_one" | "auto";
+  readonly reason:
+    | "non_email_task"
+    | "automated_owner"
+    | "subject_pattern"
+    | "human_owned_task"
+    | "insufficient_metadata";
+}
+
+function hasAutomatedOwnerSignal(
+  input: SalesforceTaskMessageKindClassificationInput
+): boolean {
+  return matchesAnyPattern(normalizeComparableString(input.ownerId), [
+    ...automatedOwnerSignalPatterns
+  ])
+    || matchesAnyPattern(normalizeComparableString(input.ownerName), [
+      ...automatedOwnerSignalPatterns
+    ])
+    || matchesAnyPattern(normalizeComparableString(input.ownerUsername), [
+      ...automatedOwnerSignalPatterns
+    ]);
+}
+
+function hasHumanOwnerSignal(
+  input: SalesforceTaskMessageKindClassificationInput
+): boolean {
+  return (
+    normalizeComparableString(input.ownerName) !== null ||
+    normalizeComparableString(input.ownerUsername) !== null
+  );
+}
+
+export function classifySalesforceTaskMessageKind(
+  input: SalesforceTaskMessageKindClassificationInput
+): SalesforceTaskMessageKindClassification {
+  if (input.channel !== "email") {
+    return {
+      messageKind: "auto",
+      reason: "non_email_task"
+    };
+  }
+
+  const subject = normalizeComparableString(input.subject);
+
+  // TODO(canon): codify the Stage 1 Salesforce Task messageKind heuristic in
+  // the provider ingest matrix / decision log so the automated-owner and
+  // workflow-subject rules stay explicit canon.
+  // Stage 1 queue truth is safer when ambiguous historical Salesforce Tasks
+  // fall out of inbox-driving behavior. We only promote to one_to_one when we
+  // have a human-like owner signal and the subject is not workflow-shaped.
+  if (matchesAnyPattern(subject, [...automatedSubjectPatterns])) {
+    return {
+      messageKind: "auto",
+      reason: "subject_pattern"
+    };
+  }
+
+  if (hasAutomatedOwnerSignal(input)) {
+    return {
+      messageKind: "auto",
+      reason: "automated_owner"
+    };
+  }
+
+  if (hasHumanOwnerSignal(input)) {
+    return {
+      messageKind: "one_to_one",
+      reason: "human_owned_task"
+    };
+  }
+
+  return {
+    messageKind: "auto",
+    reason: "insufficient_metadata"
+  };
+}
+
 export const salesforceTaskCommunicationRecordSchema = z.object({
   recordType: z.literal("task_communication"),
   recordId: z.string().min(1),

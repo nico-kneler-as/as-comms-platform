@@ -1,5 +1,10 @@
 export * from "./provider-types.js";
 export * from "./shared.js";
+export {
+  classifySalesforceTaskMessageKind,
+  type SalesforceTaskMessageKindClassification,
+  type SalesforceTaskMessageKindClassificationInput
+} from "./providers/salesforce.js";
 export * from "./capture/shared.js";
 export * from "./capture/gmail.js";
 export * from "./capture/mailchimp.js";

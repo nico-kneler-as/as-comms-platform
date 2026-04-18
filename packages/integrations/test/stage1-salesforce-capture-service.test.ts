@@ -131,6 +131,11 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
   const taskRow = {
     Id: "00T-task-1",
     WhoId: "003-stage1",
+    OwnerId: "005-human-owner",
+    Owner: {
+      Name: "Volunteer Coordinator",
+      Username: "coordinator@example.org"
+    },
     TaskSubtype: "Email",
     Subject: "Outbound follow-up",
     Description: "Logged outbound follow-up from Task",
@@ -314,7 +319,7 @@ describe("Salesforce capture service", () => {
         expect.objectContaining({
           recordType: "task_communication",
           channel: "email",
-          messageKind: "auto",
+          messageKind: "one_to_one",
           salesforceContactId: "003-stage1"
         }),
         expect.objectContaining({
@@ -363,6 +368,14 @@ describe("Salesforce capture service", () => {
         )
       ])
     );
+    expect(
+      queries.some(
+        (query) =>
+          query.includes("Owner.Name") &&
+          query.includes("Owner.Username") &&
+          query.includes("OwnerId")
+      )
+    ).toBe(true);
     expect(
       queries.some((query) => query.includes("WhoId LIKE '003%'"))
     ).toBe(false);
@@ -413,7 +426,7 @@ describe("Salesforce capture service", () => {
         expect.objectContaining({
           recordType: "task_communication",
           recordId: "00T-task-1",
-          messageKind: "auto",
+          messageKind: "one_to_one",
           salesforceContactId: "003-stage1"
         })
       ])
@@ -758,7 +771,7 @@ describe("Salesforce capture service", () => {
         expect.objectContaining({
           recordType: "task_communication",
           recordId: "00T-task-1",
-          messageKind: "auto",
+          messageKind: "one_to_one",
           salesforceContactId: "003-stage1"
         })
       ])
@@ -810,7 +823,7 @@ describe("Salesforce capture service", () => {
         }),
         expect.objectContaining({
           recordType: "task_communication",
-          messageKind: "auto",
+          messageKind: "one_to_one",
           salesforceContactId: "003-stage1"
         })
       ])
