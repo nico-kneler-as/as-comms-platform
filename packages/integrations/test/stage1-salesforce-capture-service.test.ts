@@ -347,6 +347,9 @@ describe("Salesforce capture service", () => {
           "FROM Expedition_Members__c WHERE Contact__c != null AND ((CreatedDate >= 2026-01-01T00:00:00.000Z AND CreatedDate < 2026-01-06T00:00:00.000Z)"
         ),
         expect.stringContaining(
+          "FROM Contact WHERE LastModifiedDate >= 2026-01-01T00:00:00.000Z AND LastModifiedDate < 2026-01-06T00:00:00.000Z AND Id IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)"
+        ),
+        expect.stringContaining(
           "Date_Training_Sent__c >= 2026-01-01 AND Date_Training_Sent__c < 2026-01-06"
         ),
         expect.stringContaining(

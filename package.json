@@ -17,6 +17,7 @@
     "ops:worker:enqueue": "pnpm --filter @as-comms/worker ops:enqueue",
     "ops:worker:import-gmail-mbox": "pnpm --filter @as-comms/worker ops:import-gmail-mbox",
     "ops:worker:inspect": "pnpm --filter @as-comms/worker ops:inspect",
+    "ops:cleanup-non-volunteer-contacts": "tsx scripts/ops/cleanup-non-volunteer-contacts.ts",
     "ops:worker:seed-aliases-from-env": "tsx scripts/ops/seed-aliases-from-env.ts",
     "ops:promote-admin": "tsx scripts/ops/promote-admin.ts",
     "build": "turbo build && node scripts/verify-runtime-exports.mjs",

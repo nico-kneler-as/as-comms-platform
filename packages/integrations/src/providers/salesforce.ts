@@ -588,6 +588,17 @@ export function mapSalesforceRecord(
   const contactSnapshot = salesforceContactSnapshotRecordSchema.safeParse(rawRecord);
 
   if (contactSnapshot.success) {
+    if (contactSnapshot.data.memberships.length === 0) {
+      return createDeferredMappingResult({
+        provider: "salesforce",
+        sourceRecordType: contactSnapshot.data.recordType,
+        sourceRecordId: contactSnapshot.data.recordId,
+        reason: "deferred_record_family",
+        detail:
+          "Salesforce contact_snapshot records without expedition memberships are skipped in Stage 1."
+      });
+    }
+
     return createCommandMappingResult({
       provider: "salesforce",
       sourceRecordType: contactSnapshot.data.recordType,

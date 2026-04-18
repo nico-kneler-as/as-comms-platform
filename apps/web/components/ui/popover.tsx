@@ -5,18 +5,35 @@ import * as PopoverPrimitive from "@radix-ui/react-popover"
 
 import { cn } from "@/lib/utils"
 
+type PrimitiveNoRef = React.ComponentType<Record<string, unknown>>
+type PrimitiveWithRef = React.ForwardRefExoticComponent<
+  Record<string, unknown> & React.RefAttributes<HTMLElement>
+>
+
+const PopoverPortalPrimitive =
+  PopoverPrimitive.Portal as unknown as PrimitiveNoRef
+const PopoverContentPrimitive =
+  PopoverPrimitive.Content as unknown as PrimitiveWithRef
+
 const Popover = PopoverPrimitive.Root
 
 const PopoverTrigger = PopoverPrimitive.Trigger
 
 const PopoverAnchor = PopoverPrimitive.Anchor
 
+type PopoverContentProps = React.HTMLAttributes<HTMLDivElement> & {
+  align?: string
+  onOpenAutoFocus?: (event: Event) => void
+  side?: string
+  sideOffset?: number
+}
+
 const PopoverContent = React.forwardRef<
-  React.ComponentRef<typeof PopoverPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
+  HTMLElement,
+  PopoverContentProps
 >(({ className, align = "center", sideOffset = 4, ...props }, ref) => (
-  <PopoverPrimitive.Portal>
-    <PopoverPrimitive.Content
+  <PopoverPortalPrimitive>
+    <PopoverContentPrimitive
       ref={ref}
       align={align}
       sideOffset={sideOffset}
@@ -26,7 +43,7 @@ const PopoverContent = React.forwardRef<
       )}
       {...props}
     />
-  </PopoverPrimitive.Portal>
+  </PopoverPortalPrimitive>
 ))
 PopoverContent.displayName = PopoverPrimitive.Content.displayName
 
