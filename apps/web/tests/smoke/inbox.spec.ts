@@ -1,6 +1,24 @@
 import { expect, test } from "@playwright/test";
 
 test("inbox shell renders with empty live data", async ({ page }) => {
+  // Middleware (apps/web/middleware.ts) now gates /inbox/* on session-
+  // cookie presence. Seed a dev session first so the smoke test can
+  // actually reach the shell. The dev-auth route is non-prod-only; if
+  // the CI/dev environment doesn't expose it (e.g., NODE_ENV=production
+  // with no seeded admin), skip gracefully — same pattern as
+  // settings.spec.ts.
+  const devAuthResponse = await page.request.get(
+    "/api/dev-auth?email=nico@adventurescientists.org"
+  );
+  if (devAuthResponse.status() === 404) {
+    test.skip(
+      true,
+      "Dev user nico@adventurescientists.org not found or dev-auth route unavailable — seed via pnpm ops:promote-admin and run in non-production mode."
+    );
+    return;
+  }
+  expect(devAuthResponse.ok()).toBeTruthy();
+
   await page.goto("/inbox");
 
   await expect(
