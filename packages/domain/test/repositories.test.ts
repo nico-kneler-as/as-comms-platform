@@ -56,6 +56,7 @@ describe("defineStage1RepositoryBundle", () => {
         upsert: (record) => Promise.resolve(record)
       },
       projectDimensions: {
+        listAll: () => Promise.resolve([]),
         listByIds: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record)
       },
