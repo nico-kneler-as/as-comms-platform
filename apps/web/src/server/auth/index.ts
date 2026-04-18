@@ -49,11 +49,19 @@ async function buildAuthConfig(): Promise<NextAuthConfig> {
 
   return {
     ...authEdgeConfig,
-    // `database` strategy forces Auth.js to persist sessions through the
-    // adapter; this matches the settings-bundle mandate that production runs
-    // with server-owned sessions rather than JWTs.
+    // JWT session strategy so Edge middleware can decode the session
+    // cookie without a DB call. The cookie is a JWE signed + encrypted
+    // with AUTH_SECRET — "server-owned" in the sense that only the
+    // server can mint or verify it. Database strategy is incompatible
+    // with middleware gating (middleware can't query the sessions
+    // table from Edge Runtime) and is unnecessary at our operator scale.
+    //
+    // Note: the `sessions` table added by migration 0005 is unused under
+    // JWT strategy and can be dropped in a later cleanup. Users,
+    // accounts, and verification_tokens are still required by the
+    // adapter for OAuth linking and email verification flows.
     session: {
-      strategy: "database",
+      strategy: "jwt",
       maxAge: SESSION_MAX_AGE_SECONDS,
       updateAge: SESSION_UPDATE_AGE_SECONDS
     },
@@ -72,16 +80,39 @@ async function buildAuthConfig(): Promise<NextAuthConfig> {
         }
         return true;
       },
-      async session({ session, user }) {
-        // Project the operator's role and id onto the session so server
-        // handlers can make role checks without an extra DB hit per request.
+      async jwt({ token, user }) {
+        // `user` is only present on the initial sign-in. On every
+        // subsequent JWT decode, only `token` is populated — so we
+        // early-return to avoid redundant DB lookups per request.
+        // On sign-in, stamp the operator's id and role onto the token
+        // so middleware + session callbacks don't need another DB hit.
+        // Auth.js types `user` as non-nullable in this callback, but at
+        // runtime it's only set on the initial sign-in (undefined on
+        // subsequent JWT decodes). The optional chain is semantically
+        // required; the lint rule is wrong here.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        const userId = user?.id;
+        if (!userId) {
+          return token;
+        }
         const repos = await getSettingsRepositories();
-        const record = await repos.users.findById(user.id);
+        const record = await repos.users.findById(userId);
         if (record) {
-          session.user.id = record.id;
-          session.user.role = record.role;
+          token.id = record.id;
+          token.role = record.role;
         } else {
-          session.user.id = user.id;
+          token.id = userId;
+        }
+        return token;
+      },
+      session({ session, token }) {
+        // Project the operator's role and id from the JWT token onto
+        // the session object consumed by Server Components / Actions.
+        if (typeof token.id === "string") {
+          session.user.id = token.id;
+        }
+        if (token.role) {
+          session.user.role = token.role;
         }
         return session;
       }
