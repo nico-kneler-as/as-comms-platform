@@ -1676,6 +1676,15 @@ function createStage1RepositoriesInternal(
         return row === undefined ? null : mapSyncStateRow(row);
       },
 
+      async listAll() {
+        const rows = await db
+          .select()
+          .from(syncState)
+          .orderBy(asc(syncState.provider), asc(syncState.jobType));
+
+        return rows.map(mapSyncStateRow);
+      },
+
       async upsert(record) {
         const values = mapSyncStateToInsert(record);
         const [row] = await db

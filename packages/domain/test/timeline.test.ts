@@ -229,6 +229,7 @@ function createRepositoryBundle(input: {
     syncState: {
       findById: () => Promise.resolve(null),
       findLatest: () => Promise.resolve(null),
+      listAll: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record)
     },
     auditEvidence: {

@@ -240,6 +240,7 @@ export interface SyncStateRepository {
     readonly provider: Provider | null;
     readonly jobType: SyncJobType;
   }): Promise<SyncStateRecord | null>;
+  listAll(): Promise<readonly SyncStateRecord[]>;
   upsert(record: SyncStateRecord): Promise<SyncStateRecord>;
 }
 
