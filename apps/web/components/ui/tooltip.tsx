@@ -5,18 +5,33 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 
 import { cn } from "@/lib/utils"
 
+type PrimitiveNoRef = React.ComponentType<Record<string, unknown>>
+type PrimitiveWithRef = React.ForwardRefExoticComponent<
+  Record<string, unknown> & React.RefAttributes<HTMLElement>
+>
+
+const TooltipPortalPrimitive =
+  TooltipPrimitive.Portal as unknown as PrimitiveNoRef
+const TooltipContentPrimitive =
+  TooltipPrimitive.Content as unknown as PrimitiveWithRef
+
 const TooltipProvider = TooltipPrimitive.Provider
 
 const Tooltip = TooltipPrimitive.Root
 
 const TooltipTrigger = TooltipPrimitive.Trigger
 
+type TooltipContentProps = React.HTMLAttributes<HTMLDivElement> & {
+  side?: string
+  sideOffset?: number
+}
+
 const TooltipContent = React.forwardRef<
-  React.ComponentRef<typeof TooltipPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
+  HTMLElement,
+  TooltipContentProps
 >(({ className, sideOffset = 4, ...props }, ref) => (
-  <TooltipPrimitive.Portal>
-    <TooltipPrimitive.Content
+  <TooltipPortalPrimitive>
+    <TooltipContentPrimitive
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
@@ -25,7 +40,7 @@ const TooltipContent = React.forwardRef<
       )}
       {...props}
     />
-  </TooltipPrimitive.Portal>
+  </TooltipPortalPrimitive>
 ))
 TooltipContent.displayName = TooltipPrimitive.Content.displayName
 

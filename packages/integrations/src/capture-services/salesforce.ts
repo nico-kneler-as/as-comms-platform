@@ -503,6 +503,15 @@ function buildContactWindowWhere(window: {
   return `LastModifiedDate >= ${formatSoqlDateTime(window.windowStart)} AND LastModifiedDate < ${formatSoqlDateTime(window.windowEnd)}`;
 }
 
+function buildVolunteerScopedContactWhere(
+  baseWhere: string,
+  config: ResolvedSalesforceCaptureServiceConfig
+): string {
+  // TODO(canon): lock the Stage 1 Salesforce volunteer-only Contact ingest rule in the
+  // provider ingest matrix / decision log so this belt-and-suspenders filter is explicit canon.
+  return `${baseWhere} AND Id IN (SELECT ${config.membershipContactField} FROM ${config.membershipObjectName} WHERE ${config.membershipContactField} != null)`;
+}
+
 function buildTaskWindowWhere(window: {
   readonly mode: "historical" | "live";
   readonly windowStart: string | null;
@@ -906,6 +915,7 @@ export function createSalesforceCaptureService(
     readonly objectName: string;
     readonly fields: readonly string[];
     readonly recordIds: readonly string[];
+    readonly extraWhere?: string;
   }): Promise<readonly SalesforceRow[]> {
     if (input.recordIds.length === 0) {
       return [];
@@ -914,9 +924,14 @@ export function createSalesforceCaptureService(
     const rows: SalesforceRow[] = [];
 
     for (const recordIds of chunkValues(input.recordIds, 200)) {
+      const whereClauses = [
+        `Id IN ${buildInClause(recordIds)}`,
+        ...(input.extraWhere === undefined ? [] : [input.extraWhere])
+      ];
+
       rows.push(
         ...(await apiClient.queryAll(
-          `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE Id IN ${buildInClause(recordIds)}`
+          `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE ${whereClauses.join(" AND ")}`
         ))
       );
     }
@@ -1045,11 +1060,16 @@ export function createSalesforceCaptureService(
         ? await queryRowsByIds({
             objectName: "Contact",
             fields: contactFields,
-            recordIds: input.recordIds
+            recordIds: input.recordIds,
+            extraWhere: buildVolunteerScopedContactWhere(
+              "Id != null",
+              parsedConfig
+            )
           })
         : await apiClient.queryAll(
-            `SELECT ${contactFields.join(", ")} FROM Contact WHERE ${buildContactWindowWhere(
-              window
+            `SELECT ${contactFields.join(", ")} FROM Contact WHERE ${buildVolunteerScopedContactWhere(
+              buildContactWindowWhere(window),
+              parsedConfig
             )}`
           );
     const contactsById = new Map<string, SalesforceRow>();
@@ -1073,7 +1093,8 @@ export function createSalesforceCaptureService(
       const additionalContacts = await queryRowsByIds({
         objectName: "Contact",
         fields: contactFields,
-        recordIds: missingTouchedContactIds
+        recordIds: missingTouchedContactIds,
+        extraWhere: buildVolunteerScopedContactWhere("Id != null", parsedConfig)
       });
 
       for (const contact of additionalContacts) {

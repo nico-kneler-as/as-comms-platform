@@ -46,7 +46,17 @@ async function seedContact(context: TestWorkerContext) {
         verifiedAt: "2026-01-01T00:00:00.000Z"
       }
     ],
-    memberships: []
+    memberships: [
+      {
+        id: `membership:${contactId}:project-stage1`,
+        contactId,
+        projectId: "project-stage1",
+        expeditionId: "expedition-stage1",
+        role: "volunteer",
+        status: "active",
+        source: "salesforce"
+      }
+    ]
   });
 }
 

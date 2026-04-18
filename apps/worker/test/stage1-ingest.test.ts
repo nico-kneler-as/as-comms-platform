@@ -190,7 +190,16 @@ describe("Stage 1 worker ingest service", () => {
       volunteerIdPlainValues: ["VOL-123"],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
-      memberships: []
+      memberships: [
+        {
+          projectId: "project_1",
+          projectName: "Project Antarctica",
+          expeditionId: "expedition_1",
+          expeditionName: "Expedition Antarctica",
+          role: "volunteer",
+          status: "active"
+        }
+      ]
     });
 
     expect(result).toEqual({
@@ -205,6 +214,49 @@ describe("Stage 1 worker ingest service", () => {
       contactId: "contact:salesforce:003-stage1"
     });
     expect(upsertNormalizedContactGraph).toHaveBeenCalledTimes(1);
+    expect(applyNormalizedCanonicalEvent).not.toHaveBeenCalled();
+  });
+
+  it("defers Salesforce contact snapshots that do not have expedition memberships", async () => {
+    const applyNormalizedCanonicalEvent = vi.fn(
+      (input: NormalizedCanonicalEventIntake) =>
+        Promise.resolve(buildAppliedCanonicalEventResult(input))
+    );
+    const upsertNormalizedContactGraph = vi.fn(
+      (input: NormalizedContactGraphUpsertInput) =>
+        Promise.resolve(buildContactGraphResult(input))
+    );
+    const service = createStage1IngestService({
+      applyNormalizedCanonicalEvent,
+      upsertNormalizedContactGraph
+    });
+
+    const result = await service.ingestSalesforceHistoricalRecord({
+      recordType: "contact_snapshot",
+      recordId: "003-non-volunteer",
+      salesforceContactId: "003-non-volunteer",
+      displayName: "Non Volunteer Contact",
+      primaryEmail: "donor@example.org",
+      primaryPhone: null,
+      normalizedEmails: ["donor@example.org"],
+      normalizedPhones: [],
+      volunteerIdPlainValues: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      memberships: []
+    });
+
+    expect(result).toEqual({
+      outcome: "deferred",
+      ingestMode: "historical",
+      provider: "salesforce",
+      sourceRecordType: "contact_snapshot",
+      sourceRecordId: "003-non-volunteer",
+      reason: "deferred_record_family",
+      detail:
+        "Salesforce contact_snapshot records without expedition memberships are skipped in Stage 1."
+    });
+    expect(upsertNormalizedContactGraph).not.toHaveBeenCalled();
     expect(applyNormalizedCanonicalEvent).not.toHaveBeenCalled();
   });
 

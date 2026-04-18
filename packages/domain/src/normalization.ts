@@ -226,6 +226,21 @@ function requireValue<T>(value: T | undefined, message: string): T {
   return value;
 }
 
+function assertVolunteerScopedSalesforceContactGraph(
+  input: NormalizedContactGraphUpsertInput
+): void {
+  const memberships = input.memberships ?? [];
+
+  if (
+    input.contact.salesforceContactId !== null &&
+    memberships.length === 0
+  ) {
+    throw new Error(
+      `Salesforce contact ${input.contact.salesforceContactId} is missing expedition memberships and cannot be upserted into the Stage 1 volunteer contact graph.`
+    );
+  }
+}
+
 function isInboundEvent(eventType: InboxDrivingEventType): boolean {
   return (
     eventType === "communication.email.inbound" ||
@@ -1070,6 +1085,7 @@ export function createStage1NormalizationService(
 
     async upsertNormalizedContactGraph(input) {
       const parsed = normalizedContactGraphUpsertInputSchema.parse(input);
+      assertVolunteerScopedSalesforceContactGraph(parsed);
       const contact = await persistence.upsertCanonicalContact(
         contactSchema.parse(parsed.contact)
       );

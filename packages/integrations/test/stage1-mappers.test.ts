@@ -145,6 +145,33 @@ describe("Stage 1 provider-close mappers", () => {
     }
   });
 
+  it("defers Salesforce contact snapshots that are not backed by expedition memberships", () => {
+    const result = mapSalesforceRecord({
+      recordType: "contact_snapshot",
+      recordId: "003-non-volunteer",
+      salesforceContactId: "003-non-volunteer",
+      displayName: "Non Volunteer Contact",
+      primaryEmail: "donor@example.org",
+      primaryPhone: null,
+      normalizedEmails: ["donor@example.org"],
+      normalizedPhones: [],
+      volunteerIdPlainValues: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      memberships: []
+    });
+
+    expect(result).toEqual({
+      outcome: "deferred",
+      provider: "salesforce",
+      sourceRecordType: "contact_snapshot",
+      sourceRecordId: "003-non-volunteer",
+      reason: "deferred_record_family",
+      detail:
+        "Salesforce contact_snapshot records without expedition memberships are skipped in Stage 1."
+    });
+  });
+
   it("maps the four locked Expedition_Members lifecycle source fields into canonical lifecycle events", () => {
     const lifecycleCases = [
       {

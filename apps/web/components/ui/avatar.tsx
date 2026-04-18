@@ -5,11 +5,27 @@ import * as AvatarPrimitive from "@radix-ui/react-avatar"
 
 import { cn } from "@/lib/utils"
 
+const AvatarRoot = AvatarPrimitive.Root as unknown as React.ForwardRefExoticComponent<
+  React.ComponentPropsWithoutRef<"span"> & React.RefAttributes<HTMLSpanElement>
+>
+const AvatarImagePrimitive =
+  AvatarPrimitive.Image as unknown as React.ForwardRefExoticComponent<
+    React.ComponentPropsWithoutRef<"img"> &
+      React.RefAttributes<HTMLImageElement>
+  >
+const AvatarFallbackPrimitive =
+  AvatarPrimitive.Fallback as unknown as React.ForwardRefExoticComponent<
+    React.ComponentPropsWithoutRef<"span"> &
+      React.RefAttributes<HTMLSpanElement> & {
+        delayMs?: number
+      }
+  >
+
 const Avatar = React.forwardRef<
-  React.ComponentRef<typeof AvatarPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Root>
+  HTMLSpanElement,
+  React.ComponentPropsWithoutRef<"span">
 >(({ className, ...props }, ref) => (
-  <AvatarPrimitive.Root
+  <AvatarRoot
     ref={ref}
     className={cn(
       "relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full",
@@ -21,10 +37,10 @@ const Avatar = React.forwardRef<
 Avatar.displayName = AvatarPrimitive.Root.displayName
 
 const AvatarImage = React.forwardRef<
-  React.ComponentRef<typeof AvatarPrimitive.Image>,
-  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Image>
+  HTMLImageElement,
+  React.ComponentPropsWithoutRef<"img">
 >(({ className, ...props }, ref) => (
-  <AvatarPrimitive.Image
+  <AvatarImagePrimitive
     ref={ref}
     className={cn("aspect-square h-full w-full", className)}
     {...props}
@@ -33,10 +49,12 @@ const AvatarImage = React.forwardRef<
 AvatarImage.displayName = AvatarPrimitive.Image.displayName
 
 const AvatarFallback = React.forwardRef<
-  React.ComponentRef<typeof AvatarPrimitive.Fallback>,
-  React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Fallback>
+  HTMLSpanElement,
+  React.ComponentPropsWithoutRef<"span"> & {
+    delayMs?: number
+  }
 >(({ className, ...props }, ref) => (
-  <AvatarPrimitive.Fallback
+  <AvatarFallbackPrimitive
     ref={ref}
     className={cn(
       "flex h-full w-full items-center justify-center rounded-full bg-muted",
