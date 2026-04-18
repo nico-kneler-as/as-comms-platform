@@ -2,17 +2,15 @@
 
 import { setInboxNeedsFollowUp } from "../../src/server/inbox/follow-up";
 import { revalidateInboxContact } from "../../src/server/inbox/revalidate";
+import type { UiResult } from "../../src/server/ui-result";
 
-export type FollowUpActionResult =
-  | {
-      readonly ok: true;
-      readonly contactId: string;
-      readonly needsFollowUp: boolean;
-    }
-  | {
-      readonly ok: false;
-      readonly code: "validation_error" | "inbox_contact_not_found";
-    };
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+export type FollowUpActionData = {
+  readonly contactId: string;
+  readonly needsFollowUp: boolean;
+};
+
+export type FollowUpActionResult = UiResult<FollowUpActionData>;
 
 function readContactId(formData: FormData): string | null {
   const value = formData.get("contactId");
@@ -23,12 +21,16 @@ async function updateNeedsFollowUp(
   formData: FormData,
   needsFollowUp: boolean
 ): Promise<FollowUpActionResult> {
+  const requestId = crypto.randomUUID();
   const contactId = readContactId(formData);
 
   if (contactId === null) {
     return {
       ok: false,
-      code: "validation_error"
+      code: "validation_error",
+      message: "Missing contactId",
+      requestId,
+      fieldErrors: { contactId: "required" }
     };
   }
 
@@ -38,15 +40,21 @@ async function updateNeedsFollowUp(
   });
 
   if (!result.ok) {
-    return result;
+    return {
+      ok: false,
+      code: "inbox_contact_not_found",
+      message: "No inbox row for that contact",
+      requestId,
+      retryable: false
+    };
   }
 
   revalidateInboxContact(contactId);
 
   return {
     ok: true,
-    contactId,
-    needsFollowUp
+    data: { contactId, needsFollowUp },
+    requestId
   };
 }
 

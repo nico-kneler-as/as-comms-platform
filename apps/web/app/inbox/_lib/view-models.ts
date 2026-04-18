@@ -102,7 +102,6 @@ export interface InboxContactSummaryViewModel {
   readonly volunteerId: string;
   readonly primaryEmail: string | null;
   readonly primaryPhone: string | null;
-  readonly cityState: string | null;
   readonly joinedAtLabel: string;
   readonly hasUnresolved: boolean;
   readonly activeProjects: readonly InboxProjectMembershipViewModel[];
