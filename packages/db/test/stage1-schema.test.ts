@@ -18,8 +18,10 @@ import {
 } from "../src/index.js";
 
 describe("Stage 1 DB schema", () => {
-  it("exports the Stage 1 durable tables", () => {
+  it("exports the Stage 1 and Stage 2 durable tables", () => {
     expect(Object.keys(databaseSchema).sort()).toEqual([
+      // Auth.js v5 + Stage 2 Settings tables (see D-025)
+      "accounts",
       "auditPolicyEvidence",
       "canonicalEventLedger",
       "contactIdentities",
@@ -32,13 +34,17 @@ describe("Stage 1 DB schema", () => {
       "identityResolutionQueue",
       "mailchimpCampaignActivityDetails",
       "manualNoteDetails",
+      "projectAliases",
       "projectDimensions",
       "routingReviewQueue",
       "salesforceCommunicationDetails",
       "salesforceEventContext",
+      "sessions",
       "simpleTextingMessageDetails",
       "sourceEvidenceLog",
-      "syncState"
+      "syncState",
+      "users",
+      "verificationTokens"
     ]);
   });
 
