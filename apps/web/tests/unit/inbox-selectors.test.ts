@@ -1,8 +1,54 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import React, { createElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
   revalidateTag: vi.fn(),
+}));
+
+Object.assign(globalThis, { React });
+
+vi.mock("@/components/ui/button", () => ({
+  Button: ({ children }: { readonly children?: ReactNode }) =>
+    createElement("button", null, children),
+}));
+
+vi.mock("@/components/ui/section-label", () => ({
+  SectionLabel: ({ children }: { readonly children?: ReactNode }) =>
+    createElement("span", null, children),
+}));
+
+vi.mock("@/components/ui/status-badge", () => ({
+  StatusBadge: ({ label }: { readonly label: string }) =>
+    createElement("span", null, label),
+}));
+
+vi.mock("@/app/_lib/design-tokens", () => ({
+  LAYOUT: {
+    railWidth: "w-80",
+    headerHeight: "h-14",
+  },
+  PROJECT_STATUS_BADGE: {
+    lead: "",
+    applied: "",
+    "in-training": "",
+    "trip-planning": "",
+    "in-field": "",
+    successful: "",
+  },
+  TEXT: {
+    headingSm: "text-sm",
+    label: "text-xs",
+  },
+  TONE: {
+    slate: {
+      subtle: "bg-slate-50",
+    },
+  },
+  SPACING: {
+    section: "p-4",
+  },
 }));
 
 import {
@@ -11,6 +57,7 @@ import {
   getInboxList,
   getInboxTimelinePage,
 } from "../../app/inbox/_lib/selectors";
+import { InboxContactRail } from "../../app/inbox/_components/inbox-contact-rail";
 import type { InboxListItemViewModel } from "../../app/inbox/_lib/view-models";
 import {
   createInboxTestRuntime,
@@ -164,6 +211,48 @@ async function seedInboxFixture(runtime: InboxTestRuntime): Promise<void> {
     snippet: "Had to postpone due to weather. Proposing new dates.",
     lastCanonicalEventId: alexLatest.canonicalEventId,
     lastEventType: "communication.sms.inbound",
+  });
+}
+
+async function seedInboxEmailOnlyContact(
+  runtime: InboxTestRuntime,
+  input: {
+    readonly contactId: string;
+    readonly displayName: string;
+    readonly salesforceContactId: string | null;
+    readonly subject: string;
+    readonly snippet: string;
+    readonly occurredAt: string;
+  },
+): Promise<void> {
+  await seedInboxContact(runtime.context, {
+    contactId: input.contactId,
+    salesforceContactId: input.salesforceContactId,
+    displayName: input.displayName,
+    primaryEmail: `${input.contactId}@example.org`,
+    primaryPhone: null,
+  });
+
+  const latest = await seedInboxEmailEvent(runtime.context, {
+    id: `${input.contactId}-email-1`,
+    contactId: input.contactId,
+    occurredAt: input.occurredAt,
+    direction: "inbound",
+    subject: input.subject,
+    snippet: input.snippet,
+  });
+
+  await seedInboxProjection(runtime.context, {
+    contactId: input.contactId,
+    bucket: "New",
+    needsFollowUp: false,
+    hasUnresolved: false,
+    lastInboundAt: input.occurredAt,
+    lastOutboundAt: null,
+    lastActivityAt: input.occurredAt,
+    snippet: input.snippet,
+    lastCanonicalEventId: latest.canonicalEventId,
+    lastEventType: "communication.email.inbound",
   });
 }
 
@@ -361,11 +450,195 @@ describe("real inbox selectors", () => {
     expect(detail?.contact.recentActivity).toHaveLength(1);
     expect(detail?.contact.recentActivity[0]).toMatchObject({
       id: "timeline:sarah-lifecycle-1",
-      label: "Received training for Amazon Basin Research",
+      label: "Received training - Amazon Basin Research",
     });
     expect(detail?.contact.recentActivity[0]?.occurredAtLabel).toEqual(
       expect.any(String),
     );
+  });
+
+  it("builds right-rail lifecycle activity for all four locked milestones in newest-first order", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "sarah-signed-up",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-08T09:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "sarah-received-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-09T09:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "sarah-completed-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-10T09:00:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Completed training",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "sarah-submitted-first-data",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-11T09:00:00.000Z",
+      eventType: "lifecycle.submitted_first_data",
+      summary: "Submitted first data",
+      projectId: "project:amazon-basin",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
+      "Submitted first data - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
+    ]);
+  });
+
+  it("shows only the lifecycle milestones that exist for a contact", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "sarah-partial-signed-up",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-08T09:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "sarah-partial-completed-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-10T09:00:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Completed training",
+      projectId: "project:amazon-basin",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
+      "Completed training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
+    ]);
+  });
+
+  it("falls back to expeditionName when projectName is unavailable", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.expeditionDimensions.upsert({
+      expeditionId: "expedition:amazon-fallback",
+      projectId: null,
+      expeditionName: "Amazon Basin Expedition",
+      source: "salesforce",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "sarah-expedition-only",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-10T09:00:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Completed training",
+      expeditionId: "expedition:amazon-fallback",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.contact.recentActivity).toMatchObject([
+      {
+        label: "Completed training - Amazon Basin Expedition",
+      },
+    ]);
+  });
+
+  it("renders the milestone alone when lifecycle activity has no project context", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "sarah-no-context",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-10T09:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.contact.recentActivity).toMatchObject([
+      {
+        label: "Signed up",
+      },
+    ]);
+  });
+
+  it("shows an empty project-activity state for non-volunteer contacts without lifecycle events", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxEmailOnlyContact(runtime, {
+      contactId: "contact:morgan-sponsor",
+      displayName: "Morgan Sponsor",
+      salesforceContactId: null,
+      subject: "Sponsorship follow-up",
+      snippet: "Checking on the sponsorship paperwork timeline.",
+      occurredAt: "2026-04-15T10:00:00.000Z",
+    });
+
+    const detail = await getInboxDetail("contact:morgan-sponsor");
+    if (detail === null) {
+      throw new Error("Expected inbox detail for non-volunteer contact");
+    }
+
+    expect(detail.contact.recentActivity).toEqual([]);
+    expect(detail.contact.volunteerId).toEqual("contact:morgan-sponsor");
+    expect(
+      renderToStaticMarkup(
+        createElement(InboxContactRail, {
+          contact: detail.contact,
+        }),
+      ),
+    ).toContain("No project activity recorded.");
+  });
+
+  it("does not borrow email or campaign timeline entries when no lifecycle activity exists", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "lisa-campaign-email-1",
+      contactId: "contact:lisa-zhang",
+      occurredAt: "2026-04-15T09:00:00.000Z",
+      activityType: "opened",
+      campaignName: "Spring Kickoff",
+      snippet: "Opened the kickoff campaign.",
+    });
+
+    const detail = await getInboxDetail("contact:lisa-zhang");
+
+    expect(
+      detail?.timeline.some((entry) => entry.kind === "outbound-campaign-email"),
+    ).toBe(true);
+    expect(
+      detail?.timeline.some((entry) => entry.kind === "outbound-email"),
+    ).toBe(true);
+    expect(detail?.contact.recentActivity).toEqual([]);
   });
 
   it("keeps Salesforce outbound email in the 1:1 contract unless canon explicitly marks it auto", async () => {

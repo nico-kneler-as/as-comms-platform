@@ -244,7 +244,7 @@ export function InboxDetail({ detail }: DetailProps) {
                 variant="outline"
                 size="icon"
                 className="h-8 w-8"
-                aria-label="Expand volunteer details"
+                aria-label="Expand contact details"
                 aria-expanded={false}
                 aria-controls="inbox-contact-rail"
                 onClick={() => {

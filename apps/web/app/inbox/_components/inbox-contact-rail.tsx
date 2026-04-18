@@ -29,9 +29,9 @@ interface RailProps {
 }
 
 /**
- * Server component: renders volunteer reference data for the detail workspace.
+ * Server component: renders contact reference data for the detail workspace.
  *
- * Starts with a minimal name + volunteer ID header (no avatar placeholder,
+ * Starts with a minimal name + record ID header (no avatar placeholder,
  * no stage badge), then contact details, active and past project
  * participations, and milestone activity. Visibility is controlled by the
  * parent detail component via conditional render.
@@ -41,7 +41,7 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
     <aside
       id="inbox-contact-rail"
       className={`flex min-h-0 ${LAYOUT.railWidth} shrink-0 flex-col ${TONE.slate.subtle}`}
-      aria-label="Volunteer details"
+      aria-label="Contact details"
     >
       <header className={`flex ${LAYOUT.headerHeight} shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-5`}>
         <div className="min-w-0 flex-1">
@@ -49,7 +49,7 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
             {contact.displayName}
           </h2>
           <p className={`mt-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-500`}>
-            CRM ID · {contact.volunteerId}
+            Record ID · {contact.volunteerId}
           </p>
         </div>
         {onClose ? (
@@ -57,7 +57,7 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
             variant="outline"
             size="icon"
             className="h-8 w-8 shrink-0"
-            aria-label="Collapse volunteer details"
+            aria-label="Collapse contact details"
             onClick={onClose}
           >
             <PanelRightCloseIcon className="h-4 w-4" />
@@ -103,11 +103,15 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
         emptyLabel="No past projects"
       />
 
-      {contact.recentActivity.length > 0 ? (
-        <section className={SPACING.section}>
-          <SectionLabel>
-            Project activity
-          </SectionLabel>
+      <section className={SPACING.section}>
+        <SectionLabel>
+          Project activity
+        </SectionLabel>
+        {contact.recentActivity.length === 0 ? (
+          <p className="mt-2 text-[12px] text-slate-400">
+            No project activity recorded.
+          </p>
+        ) : (
           <ul className="mt-3 space-y-0">
             {contact.recentActivity.map((entry, index) => (
               <li
@@ -131,8 +135,8 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
               </li>
             ))}
           </ul>
-        </section>
-      ) : null}
+        )}
+      </section>
       </div>
     </aside>
   );

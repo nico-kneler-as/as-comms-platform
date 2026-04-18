@@ -63,6 +63,7 @@ interface InboxDetailCacheData {
   readonly contact: ContactRecord;
   readonly inboxProjection: InboxProjectionRow;
   readonly memberships: readonly ContactMembershipRecord[];
+  readonly activityTimelineItems: readonly TimelineItem[];
   readonly timelineItems: readonly TimelineItem[];
   readonly projectNameById: Readonly<Record<string, string>>;
   readonly timelinePage: {
@@ -832,7 +833,7 @@ function campaignHeadlineAndBody(
   };
 }
 
-function lifecycleActivityLabel(
+function timelineLifecycleBodyLabel(
   item: Extract<TimelineItem, { family: "salesforce_event" }>,
 ): string {
   const context =
@@ -854,6 +855,33 @@ function lifecycleActivityLabel(
       return context === null
         ? "Submitted first data"
         : `Submitted first data for ${context}`;
+  }
+}
+
+function lifecycleRailActivityLabel(
+  item: Extract<TimelineItem, { family: "salesforce_event" }>,
+): string {
+  const projectContext =
+    normalizeInlineText(item.projectName) ??
+    normalizeInlineText(item.expeditionName);
+
+  switch (item.milestone) {
+    case "signed_up":
+      return projectContext === null
+        ? "Signed up"
+        : `Signed up - ${projectContext}`;
+    case "received_training":
+      return projectContext === null
+        ? "Received training"
+        : `Received training - ${projectContext}`;
+    case "completed_training":
+      return projectContext === null
+        ? "Completed training"
+        : `Completed training - ${projectContext}`;
+    case "submitted_first_data":
+      return projectContext === null
+        ? "Submitted first data"
+        : `Submitted first data - ${projectContext}`;
   }
 }
 
@@ -966,7 +994,7 @@ function buildRecentActivity(
     .slice(0, 5)
     .map((item) => ({
       id: item.id,
-      label: lifecycleActivityLabel(item),
+      label: lifecycleRailActivityLabel(item),
       occurredAtLabel: formatRelativeTimestamp(
         item.occurredAt,
         referenceNowIso,
@@ -1066,7 +1094,7 @@ function timelineBody(item: TimelineItem): string {
     case "internal_note":
       return item.body;
     case "salesforce_event":
-      return lifecycleActivityLabel(item);
+      return timelineLifecycleBodyLabel(item);
   }
 }
 
@@ -1513,6 +1541,7 @@ async function readInboxDetailCacheData(
     contact,
     inboxProjection,
     memberships,
+    activityTimelineItems,
     timelinePage,
     inboxFreshness,
     timelineFreshness,
@@ -1520,6 +1549,7 @@ async function readInboxDetailCacheData(
     runtime.repositories.contacts.findById(contactId),
     runtime.repositories.inboxProjection.findByContactId(contactId),
     runtime.repositories.contactMemberships.listByContactId(contactId),
+    runtime.timelinePresentation.listTimelineItemsByContactId(contactId),
     runtime.timelinePresentation.listTimelineItemsPageByContactId(contactId, {
       limit: input.timelineLimit,
       beforeSortKey: input.timelineCursor,
@@ -1536,6 +1566,7 @@ async function readInboxDetailCacheData(
     contact,
     inboxProjection,
     memberships,
+    activityTimelineItems,
     timelineItems: timelinePage.items,
     projectNameById: await loadProjectNameById(memberships),
     timelinePage: {
@@ -1651,7 +1682,7 @@ function buildContactSummary(input: {
   readonly contact: ContactRecord;
   readonly inboxProjection: InboxProjectionRow;
   readonly memberships: readonly ContactMembershipRecord[];
-  readonly timelineItems: readonly TimelineItem[];
+  readonly activityTimelineItems: readonly TimelineItem[];
   readonly projectNameById: Readonly<Record<string, string>>;
   readonly referenceNowIso: string;
 }): InboxContactSummaryViewModel {
@@ -1681,7 +1712,7 @@ function buildContactSummary(input: {
       isPastProject(membership.status),
     ),
     recentActivity: buildRecentActivity(
-      input.timelineItems,
+      input.activityTimelineItems,
       input.referenceNowIso,
     ),
   };
@@ -1841,7 +1872,7 @@ export async function getInboxDetail(
       contact: cachedData.contact,
       inboxProjection: cachedData.inboxProjection,
       memberships: cachedData.memberships,
-      timelineItems: cachedData.timelineItems,
+      activityTimelineItems: cachedData.activityTimelineItems,
       projectNameById: cachedData.projectNameById,
       referenceNowIso,
     }),
