@@ -18,12 +18,23 @@ import Google from "next-auth/providers/google";
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30-day rolling session
 export const SESSION_UPDATE_AGE_SECONDS = 24 * 60 * 60;
 
-export const authEdgeConfig = {
-  providers: [Google],
+export const authEdgeConfig: NextAuthConfig = {
+  providers: [
+    // `allowDangerousEmailAccountLinking` lets Google OAuth link to an
+    // existing `users` row matched by email, rather than refusing with
+    // `OAuthAccountNotLinked`. The admin pre-seeding workflow (users
+    // rows are created by `ops:promote-admin` or the initial setup
+    // script before the operator has ever OAuth'd) relies on this. Safe
+    // here because Google is our only provider and the operator pool is
+    // restricted to the verified `@adventurescientists.org` Workspace
+    // domain; there is no third-party OAuth surface that could spoof a
+    // Workspace email.
+    Google({ allowDangerousEmailAccountLinking: true })
+  ],
   pages: {
     signIn: "/auth/sign-in"
   },
   // `trustHost` is required under hosted previews / Railway where the
   // request host is not identical to `AUTH_URL`.
   trustHost: true
-} satisfies NextAuthConfig;
+};
