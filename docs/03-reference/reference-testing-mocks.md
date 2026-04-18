@@ -9,8 +9,15 @@
 
 - Dependency injection through adapter interfaces is the default testing strategy.
 - Unit and integration tests use fakes or stubs, not live provider APIs.
-- Playwright uses seeded app state or a seeded test backend.
+- Playwright uses a controlled test backend; seeded fixtures remain the preferred path for data-driven flows.
 - CI never hits real Salesforce, Gmail, or SimpleTexting APIs.
+
+## CI Test Environment
+
+- CI provisions a GitHub Actions `postgres:16` service for the Playwright smoke and exports `DATABASE_URL=postgres://postgres:postgres@localhost:5432/test`.
+- The verify job applies `packages/db/drizzle/*.sql` in filename order with `psql` before the smoke test so the Stage 1 inbox runtime boots against Postgres in CI.
+- The current inbox smoke is shell-only against an empty live database: it verifies the Inbox heading and secondary filters render, and that legacy donor buttons stay absent.
+- TODO: add a seeded fixture path for CI so a later smoke can exercise the row click and detail flow without depending on ambient environment data.
 
 ## Default Pattern
 
