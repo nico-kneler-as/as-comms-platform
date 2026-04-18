@@ -18,7 +18,6 @@ import {
   CalendarIcon,
   ChevronRightIcon,
   MailIcon,
-  MapPinIcon,
   PanelRightCloseIcon,
   PhoneIcon
 } from "./icons";
@@ -79,11 +78,6 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
           {contact.primaryPhone ? (
             <ContactLine icon={<PhoneIcon className="h-3.5 w-3.5" />}>
               {contact.primaryPhone}
-            </ContactLine>
-          ) : null}
-          {contact.cityState ? (
-            <ContactLine icon={<MapPinIcon className="h-3.5 w-3.5" />}>
-              {contact.cityState}
             </ContactLine>
           ) : null}
           <ContactLine icon={<CalendarIcon className="h-3.5 w-3.5" />}>

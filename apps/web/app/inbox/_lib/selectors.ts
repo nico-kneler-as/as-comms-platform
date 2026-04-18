@@ -1634,7 +1634,6 @@ function buildContactSummary(input: {
     volunteerId: input.contact.salesforceContactId ?? input.contact.id,
     primaryEmail: input.contact.primaryEmail,
     primaryPhone: input.contact.primaryPhone,
-    cityState: null,
     joinedAtLabel: formatJoinedAtLabel(input.contact.createdAt),
     hasUnresolved: input.inboxProjection.hasUnresolved,
     activeProjects: projectMemberships.filter(
