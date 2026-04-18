@@ -24,7 +24,10 @@ export interface TestStage1Context {
 
 export async function createTestStage1Context(): Promise<TestStage1Context> {
   const client = new PGlite();
-  const drizzleDirectoryUrl = new URL("../drizzle/", import.meta.url);
+  const drizzleDirectoryUrl = new URL(
+    /* webpackIgnore: true */ "../drizzle/",
+    import.meta.url
+  );
   const migrationFiles = (await readdir(drizzleDirectoryUrl))
     .filter((fileName) => fileName.endsWith(".sql"))
     .sort((left, right) => left.localeCompare(right));
