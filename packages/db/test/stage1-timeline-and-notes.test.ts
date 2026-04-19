@@ -16,6 +16,18 @@ async function seedVolunteerContact(input: {
 }) {
   const context = await createTestStage1Context();
 
+  await context.repositories.projectDimensions.upsert({
+    projectId: "project-stage1-seed",
+    projectName: "Project Stage 1 Seed",
+    source: "salesforce"
+  });
+  await context.repositories.expeditionDimensions.upsert({
+    expeditionId: "expedition-stage1-seed",
+    projectId: "project-stage1-seed",
+    expeditionName: "Expedition Stage 1 Seed",
+    source: "salesforce"
+  });
+
   await context.normalization.upsertNormalizedContactGraph({
     contact: {
       id: input.contactId,
@@ -46,7 +58,17 @@ async function seedVolunteerContact(input: {
         verifiedAt: "2026-01-01T00:00:00.000Z"
       }
     ],
-    memberships: []
+    memberships: [
+      {
+        id: `${input.contactId}:membership-seed`,
+        contactId: input.contactId,
+        projectId: "project-stage1-seed",
+        expeditionId: "expedition-stage1-seed",
+        role: null,
+        status: "applied",
+        source: "salesforce"
+      }
+    ]
   });
 
   return context;
