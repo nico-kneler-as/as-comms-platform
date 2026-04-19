@@ -245,6 +245,13 @@ async function main(): Promise<void> {
         `);
       }
 
+      for (const ids of chunkValues(timelineProjectionIds, 500)) {
+        await tx.unsafe(`
+          delete from contact_timeline_projection
+          where id in ${buildInClause(ids)}
+        `);
+      }
+
       for (const ids of chunkValues(routingCaseIds, 500)) {
         await tx.unsafe(`
           delete from routing_review_queue
