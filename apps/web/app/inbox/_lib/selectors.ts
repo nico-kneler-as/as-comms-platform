@@ -789,20 +789,60 @@ function splitHeadlineAndBody(value: string): {
   };
 }
 
+function suppressDuplicateHeadlineBody(
+  headline: string | null,
+  body: string,
+): string {
+  const normalizedHeadline = normalizeInlineText(headline);
+  const normalizedBody = normalizeInlineText(body);
+
+  if (
+    normalizedHeadline !== null &&
+    normalizedBody !== null &&
+    normalizedHeadline.toLowerCase() === normalizedBody.toLowerCase()
+  ) {
+    return "";
+  }
+
+  return body;
+}
+
 function campaignHeadlineAndBody(
   item: Extract<TimelineItem, { family: "campaign_email" | "campaign_sms" }>,
 ): {
   readonly headline: string | null;
   readonly body: string;
 } {
-  const resolvedPreview =
-    item.family === "campaign_email"
-      ? resolvePreferredMessagePreview({
-          rawCandidates: [item.snippet],
-        })
-      : resolvePreferredMessagePreview({
-          rawCandidates: [item.messageTextPreview],
-        });
+  if (item.family === "campaign_email") {
+    const parsedPreview = parseCommunicationPreview(item.snippet);
+    const cleaned =
+      parsedPreview.subject !== null
+        ? parsedPreview.body
+        : parsedPreview.body.length > 0
+        ? parsedPreview.body
+        : (normalizeInlineText(item.summary) ?? "");
+    const split = splitHeadlineAndBody(cleaned);
+    const headline =
+      parsedPreview.subject ??
+      split.headline ??
+      normalizeInlineText(item.campaignName) ??
+      normalizeInlineText(item.summary);
+    const body =
+      parsedPreview.subject !== null
+        ? cleaned
+        : split.body.length > 0
+          ? split.body
+          : cleaned;
+
+    return {
+      headline,
+      body: suppressDuplicateHeadlineBody(headline, body),
+    };
+  }
+
+  const resolvedPreview = resolvePreferredMessagePreview({
+    rawCandidates: [item.messageTextPreview],
+  });
   const cleaned =
     resolvedPreview.body.length > 0
       ? resolvedPreview.body
@@ -811,16 +851,10 @@ function campaignHeadlineAndBody(
 
   return {
     headline:
-      resolvedPreview.subject ??
       split.headline ??
       normalizeInlineText(item.campaignName) ??
       normalizeInlineText(item.summary),
-    body:
-      resolvedPreview.subject !== null
-        ? cleaned
-        : split.body.length > 0
-          ? split.body
-          : cleaned,
+    body: split.body.length > 0 ? split.body : cleaned,
   };
 }
 

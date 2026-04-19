@@ -422,7 +422,7 @@ describe("real inbox selectors", () => {
     expect(detail?.timeline[1]).toMatchObject({
       kind: "outbound-campaign-email",
       subject: "Welcome to the new field season.",
-      body: "Welcome to the new field season.",
+      body: "",
     });
     expect(detail?.timeline[2]).toMatchObject({
       kind: "outbound-auto-email",
@@ -1081,6 +1081,38 @@ describe("real inbox selectors", () => {
       kind: "outbound-campaign-email",
       subject: "April field update",
       body: "Hi Sarah,\nPlease bring your field notebook.",
+      isPreview: true,
+    });
+  });
+
+  it("does not duplicate the campaign subject as the expanded body when no body content is cached", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "sarah-campaign-email-subject-only",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T16:00:00.000Z",
+      activityType: "sent",
+      campaignName: "April Volunteer Update",
+      snippet: [
+        "From: volunteers@example.org",
+        "To: sarah@example.org",
+        "",
+        "Subject: April field update",
+      ].join("\n"),
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+    const campaignEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-campaign-email-subject-only",
+    );
+
+    expect(campaignEntry).toMatchObject({
+      kind: "outbound-campaign-email",
+      subject: "April field update",
+      body: "",
       isPreview: true,
     });
   });
