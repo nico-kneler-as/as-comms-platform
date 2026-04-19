@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { ZodError, type infer as ZodInfer } from "zod";
@@ -17,12 +18,15 @@ import {
   salesforceLiveCaptureBatchPayloadSchema,
   simpleTextingHistoricalCaptureBatchPayloadSchema,
   simpleTextingLiveCaptureBatchPayloadSchema,
+  stage1JobVersion,
   type CanonicalEventRecord,
   type CutoverCheckpointBatchPayload,
+  type GmailLiveCaptureBatchPayload,
   type ParityCheckBatchPayload,
   type ProjectionRebuildBatchPayload,
   type Provider,
   type ReplayBatchPayload,
+  type SalesforceLiveCaptureBatchPayload,
   type SyncJobType
 } from "@as-comms/contracts";
 import {
@@ -77,6 +81,9 @@ const cutoverCheckpointPolicyCode = "stage1.cutover.checkpoint";
 const gmailAndSimpleTextingP95ThresholdSeconds = 120;
 const gmailAndSimpleTextingP99ThresholdSeconds = 300;
 const salesforceLifecycleP95ThresholdSeconds = 600;
+const defaultGmailLivePollIntervalSeconds = 60;
+const defaultSalesforceLivePollIntervalSeconds = 300;
+const livePollMaxRecords = 1000;
 
 type CapturedProviderRecord =
   | GmailRecord
@@ -92,6 +99,11 @@ interface Stage1FreshnessMetrics {
 interface Stage1GmailHistoricalReplayConfig {
   readonly liveAccount: string;
   readonly projectInboxAliases: readonly string[];
+}
+
+interface Stage1LivePollingConfig {
+  readonly gmailPollIntervalSeconds: number;
+  readonly salesforcePollIntervalSeconds: number;
 }
 
 interface ParsedGmailHistoricalPayloadRef {
@@ -130,6 +142,46 @@ function compareEventOrder(
   }
 
   return left.id.localeCompare(right.id);
+}
+
+function buildWorkerOperationId(prefix: string): string {
+  return `${prefix}:${randomUUID()}`;
+}
+
+function subtractSeconds(now: Date, seconds: number): string {
+  return new Date(now.getTime() - seconds * 1000).toISOString();
+}
+
+function resolveLivePollCheckpoint(input: {
+  readonly syncState: {
+    readonly status: string;
+    readonly cursor: string | null;
+    readonly lastSuccessfulAt: string | null;
+    readonly windowStart: string | null;
+    readonly windowEnd: string | null;
+  } | null;
+  readonly fallbackWindowStart: string;
+}): string {
+  if (input.syncState === null) {
+    return input.fallbackWindowStart;
+  }
+
+  if (input.syncState.status === "failed" || input.syncState.status === "quarantined") {
+    return (
+      input.syncState.cursor ??
+      input.syncState.windowStart ??
+      input.syncState.lastSuccessfulAt ??
+      input.syncState.windowEnd ??
+      input.fallbackWindowStart
+    );
+  }
+
+  return (
+    input.syncState.lastSuccessfulAt ??
+    input.syncState.windowEnd ??
+    input.syncState.cursor ??
+    input.fallbackWindowStart
+  );
 }
 
 function isInboxDrivingEvent(
@@ -807,11 +859,98 @@ export function createStage1WorkerOrchestrationService(input: {
   >;
   readonly persistence: Stage1PersistenceService;
   readonly gmailHistoricalReplay: Stage1GmailHistoricalReplayConfig;
+  readonly livePolling?: Partial<Stage1LivePollingConfig>;
   readonly revalidateInboxViews?: (input: {
     readonly contactIds: readonly string[];
   }) => Promise<void>;
 }): Stage1WorkerOrchestrationService {
   const syncState = createStage1SyncStateService(input.persistence);
+  const livePolling: Stage1LivePollingConfig = {
+    gmailPollIntervalSeconds:
+      input.livePolling?.gmailPollIntervalSeconds ??
+      defaultGmailLivePollIntervalSeconds,
+    salesforcePollIntervalSeconds:
+      input.livePolling?.salesforcePollIntervalSeconds ??
+      defaultSalesforceLivePollIntervalSeconds
+  };
+
+  async function planGmailLiveCaptureBatch(
+    now = new Date()
+  ): Promise<GmailLiveCaptureBatchPayload | null> {
+    const latestSyncState = await input.persistence.repositories.syncState.findLatest({
+      scope: "provider",
+      provider: "gmail",
+      jobType: "live_ingest"
+    });
+
+    if (latestSyncState?.status === "running") {
+      return null;
+    }
+
+    const windowEnd = now.toISOString();
+    const windowStart = resolveLivePollCheckpoint({
+      syncState: latestSyncState,
+      fallbackWindowStart: subtractSeconds(
+        now,
+        livePolling.gmailPollIntervalSeconds
+      )
+    });
+
+    return gmailLiveCaptureBatchPayloadSchema.parse({
+      version: stage1JobVersion,
+      jobId: buildWorkerOperationId("stage1:gmail:live:job"),
+      correlationId: buildWorkerOperationId("stage1:gmail:live:correlation"),
+      batchId: buildWorkerOperationId("stage1:gmail:live:batch"),
+      syncStateId: buildWorkerOperationId("stage1:gmail:live:sync-state"),
+      provider: "gmail",
+      mode: "live",
+      jobType: "live_ingest",
+      checkpoint: windowStart,
+      windowStart,
+      windowEnd,
+      maxRecords: livePollMaxRecords
+    });
+  }
+
+  async function planSalesforceLiveCaptureBatch(
+    now = new Date()
+  ): Promise<SalesforceLiveCaptureBatchPayload | null> {
+    const latestSyncState = await input.persistence.repositories.syncState.findLatest(
+      {
+        scope: "provider",
+        provider: "salesforce",
+        jobType: "live_ingest"
+      }
+    );
+
+    if (latestSyncState?.status === "running") {
+      return null;
+    }
+
+    const windowEnd = now.toISOString();
+    const windowStart = resolveLivePollCheckpoint({
+      syncState: latestSyncState,
+      fallbackWindowStart: subtractSeconds(
+        now,
+        livePolling.salesforcePollIntervalSeconds
+      )
+    });
+
+    return salesforceLiveCaptureBatchPayloadSchema.parse({
+      version: stage1JobVersion,
+      jobId: buildWorkerOperationId("stage1:salesforce:live:job"),
+      correlationId: buildWorkerOperationId("stage1:salesforce:live:correlation"),
+      batchId: buildWorkerOperationId("stage1:salesforce:live:batch"),
+      syncStateId: buildWorkerOperationId("stage1:salesforce:live:sync-state"),
+      provider: "salesforce",
+      mode: "live",
+      jobType: "live_ingest",
+      checkpoint: windowStart,
+      windowStart,
+      windowEnd,
+      maxRecords: livePollMaxRecords
+    });
+  }
 
   async function runCapturedBatch<TPayload, TRecord>(params: {
     readonly payload: TPayload;
@@ -1694,6 +1833,8 @@ export function createStage1WorkerOrchestrationService(input: {
   }
 
   return {
+    planGmailLiveCaptureBatch,
+    planSalesforceLiveCaptureBatch,
     runGmailHistoricalCaptureBatch: (payload) => {
       return runCapturedBatch({
         payload,

@@ -203,6 +203,12 @@ export interface Stage1CutoverCheckpointJobOutcome extends Stage1JobOutcomeBase 
 }
 
 export interface Stage1WorkerOrchestrationService {
+  planGmailLiveCaptureBatch(
+    now?: Date
+  ): Promise<GmailLiveCaptureBatchPayload | null>;
+  planSalesforceLiveCaptureBatch(
+    now?: Date
+  ): Promise<SalesforceLiveCaptureBatchPayload | null>;
   runGmailHistoricalCaptureBatch(
     payload: GmailHistoricalCaptureBatchPayload
   ): Promise<Stage1CaptureJobOutcome>;

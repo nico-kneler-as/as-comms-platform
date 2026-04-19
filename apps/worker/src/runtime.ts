@@ -23,6 +23,7 @@ import {
 
 import { createStage1IngestService } from "./ingest/index.js";
 import {
+  Stage1WorkerConfigError,
   readProjectInboxAliasesFromDb,
   readStage1LaunchScopeConfig,
   stage1LaunchScopeConfigSchema,
@@ -31,6 +32,8 @@ import {
 import {
   createStage1WorkerOrchestrationService,
   type MailchimpCapturePort,
+  pollGmailLiveJobName,
+  pollSalesforceLiveJobName,
   type SimpleTextingCapturePort,
   type Stage1WorkerOrchestrationService
 } from "./orchestration/index.js";
@@ -63,6 +66,32 @@ export interface Stage1WorkerRuntimeServices {
   readonly orchestration: Stage1WorkerOrchestrationService;
   readonly taskList: TaskList;
   dispose(): Promise<void>;
+}
+
+function toCronMinuteInterval(providerLabel: string, seconds: number): number {
+  if (seconds % 60 !== 0) {
+    throw new Stage1WorkerConfigError(
+      `${providerLabel} poll interval must be a whole-number multiple of 60 seconds for Graphile Worker crontab scheduling.`
+    );
+  }
+
+  return seconds / 60;
+}
+
+export function buildWorkerCrontab(config: WorkerConfig): string {
+  const gmailMinutes = toCronMinuteInterval(
+    "Gmail live",
+    config.launchScope.gmail.livePollIntervalSeconds
+  );
+  const salesforceMinutes = toCronMinuteInterval(
+    "Salesforce Task",
+    config.launchScope.salesforce.taskPollIntervalSeconds
+  );
+
+  return [
+    `*/${String(gmailMinutes)} * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
+    `*/${String(salesforceMinutes)} * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`
+  ].join("\n");
 }
 
 function readOptionalCaptureConfig(
@@ -248,6 +277,11 @@ export async function createStage1WorkerRuntimeServices(
     ingest,
     normalization,
     persistence,
+    livePolling: {
+      gmailPollIntervalSeconds: config.launchScope.gmail.livePollIntervalSeconds,
+      salesforcePollIntervalSeconds:
+        config.launchScope.salesforce.taskPollIntervalSeconds
+    },
     revalidateInboxViews,
     gmailHistoricalReplay: {
       liveAccount: config.launchScope.gmail.liveAccount,
@@ -318,6 +352,7 @@ export async function startWorker(
     const runner = await run({
       connectionString: config.connectionString,
       concurrency: config.concurrency,
+      crontab: buildWorkerCrontab(config),
       noHandleSignals: true,
       pollInterval: 2000,
       taskList: runtime.taskList
