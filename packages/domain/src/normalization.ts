@@ -148,6 +148,13 @@ export type NormalizedCanonicalEventResult =
       readonly auditEvidence: null;
     }
   | {
+      readonly outcome: "skipped";
+      readonly sourceEvidence: SourceEvidenceRecord;
+      readonly reasonCode: "skipped_non_volunteer_task";
+      readonly explanation: string;
+      readonly auditEvidence: AuditEvidenceRecord;
+    }
+  | {
       readonly outcome: "quarantined";
       readonly sourceEvidence: SourceEvidenceRecord;
       readonly reasonCode: QuarantineReasonCode;
@@ -279,6 +286,14 @@ function buildQuarantineAuditId(
   return `audit:${entityType}:${entityId}:${reasonCode}`;
 }
 
+function buildSkipAuditId(
+  entityType: string,
+  entityId: string,
+  action: "skipped_non_volunteer_task"
+): string {
+  return `audit:${entityType}:${entityId}:${action}`;
+}
+
 function newestTimestamp(
   left: string | null,
   right: string | null
@@ -406,6 +421,19 @@ function buildRoutingExplanation(
     case "routing_context_conflict":
       return "Provider-supplied routing context conflicts with canonical membership state.";
   }
+}
+
+function isSalesforceTaskCommunicationIntake(
+  input: Pick<NormalizedCanonicalEventIntake, "sourceEvidence">
+): boolean {
+  return (
+    input.sourceEvidence.provider === "salesforce" &&
+    input.sourceEvidence.providerRecordType === "task_communication"
+  );
+}
+
+function buildSkippedNonVolunteerTaskExplanation(): string {
+  return "Salesforce task communications for non-volunteer contacts are skipped in Stage 1.";
 }
 
 function decideDuplicateCollapse(
@@ -867,6 +895,64 @@ async function resolveRoutingDecision(
   };
 }
 
+async function resolveNonVolunteerSalesforceTaskSkip(
+  persistence: Stage1PersistenceService,
+  context: IdentityResolutionContext,
+  input: Pick<
+    NormalizedCanonicalEventIntake,
+    "identity" | "salesforceEventContext" | "sourceEvidence"
+  >
+): Promise<
+  | {
+      readonly outcome: "continue";
+    }
+  | {
+      readonly outcome: "skipped";
+      readonly whoId: string;
+    }
+> {
+  if (!isSalesforceTaskCommunicationIntake(input)) {
+    return {
+      outcome: "continue"
+    };
+  }
+
+  const whoId =
+    input.identity.salesforceContactId ??
+    input.salesforceEventContext?.salesforceContactId ??
+    null;
+
+  if (whoId === null) {
+    return {
+      outcome: "continue"
+    };
+  }
+
+  const anchoredContact = await context.findAnchoredContact(whoId);
+
+  if (anchoredContact === null) {
+    return {
+      outcome: "skipped",
+      whoId
+    };
+  }
+
+  const memberships = await persistence.repositories.contactMemberships.listByContactId(
+    anchoredContact.id
+  );
+
+  if (memberships.length > 0) {
+    return {
+      outcome: "continue"
+    };
+  }
+
+  return {
+    outcome: "skipped",
+    whoId
+  };
+}
+
 async function listOpenIdentityCasesForContact(
   persistence: Stage1PersistenceService,
   contactId: string
@@ -943,6 +1029,43 @@ async function recordQuarantineAuditOnce(
       input.entityId,
       input.reasonCode
     ),
+    actorType: "system",
+    actorId: "stage1-normalization",
+    action: input.action,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    occurredAt: input.occurredAt,
+    result: "recorded",
+    policyCode,
+    metadataJson: input.metadataJson
+  });
+}
+
+async function recordSkipAuditOnce(
+  persistence: Stage1PersistenceService,
+  input: {
+    readonly entityType: string;
+    readonly entityId: string;
+    readonly occurredAt: string;
+    readonly action: "skipped_non_volunteer_task";
+    readonly metadataJson: Record<string, unknown>;
+  }
+): Promise<AuditEvidenceRecord> {
+  const policyCode = `stage1.skip.${input.action}`;
+  const existingRecords = await persistence.repositories.auditEvidence.listByEntity({
+    entityType: input.entityType,
+    entityId: input.entityId
+  });
+  const existingRecord = existingRecords.find(
+    (record) => record.policyCode === policyCode
+  );
+
+  if (existingRecord !== undefined) {
+    return existingRecord;
+  }
+
+  return persistence.recordAuditEvidence({
+    id: buildSkipAuditId(input.entityType, input.entityId, input.action),
     actorType: "system",
     actorId: "stage1-normalization",
     action: input.action,
@@ -1314,6 +1437,34 @@ export function createStage1NormalizationService(
             "The incoming source evidence replay conflicted with previously recorded evidence.",
           existingCanonicalEvent: null,
           auditEvidence: sourceEvidenceResult.auditEvidence
+        };
+      }
+
+      const nonVolunteerTaskDecision =
+        await resolveNonVolunteerSalesforceTaskSkip(
+          persistence,
+          identityResolutionContext,
+          parsed
+        );
+
+      if (nonVolunteerTaskDecision.outcome === "skipped") {
+        const auditEvidence = await recordSkipAuditOnce(persistence, {
+          entityType: "source_evidence",
+          entityId: sourceEvidenceResult.record.id,
+          occurredAt: parsed.sourceEvidence.receivedAt,
+          action: "skipped_non_volunteer_task",
+          metadataJson: {
+            salesforceTaskId: parsed.sourceEvidence.providerRecordId,
+            whoId: nonVolunteerTaskDecision.whoId
+          }
+        });
+
+        return {
+          outcome: "skipped",
+          sourceEvidence: sourceEvidenceResult.record,
+          reasonCode: "skipped_non_volunteer_task",
+          explanation: buildSkippedNonVolunteerTaskExplanation(),
+          auditEvidence
         };
       }
 

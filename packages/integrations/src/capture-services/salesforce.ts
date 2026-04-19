@@ -517,6 +517,14 @@ function buildVolunteerScopedContactWhere(
   return `${baseWhere} AND Id IN (SELECT ${config.membershipContactField} FROM ${config.membershipObjectName} WHERE ${config.membershipContactField} != null)`;
 }
 
+function buildVolunteerScopedTaskWhere(
+  baseWhere: string,
+  config: ResolvedSalesforceCaptureServiceConfig
+): string {
+  // TODO(canon): document D-034 — non-volunteer SF comms are dropped at capture.
+  return `${baseWhere} AND ${config.taskContactField} IN (SELECT ${config.membershipContactField} FROM ${config.membershipObjectName} WHERE ${config.membershipContactField} != null)`;
+}
+
 function buildTaskWindowWhere(window: {
   readonly mode: "historical" | "live";
   readonly windowStart: string | null;
@@ -1020,15 +1028,29 @@ export function createSalesforceCaptureService(
         ? queryRowsByIds({
             objectName: "Task",
             fields: taskFields,
-            recordIds: input.recordIds
+            recordIds: input.recordIds,
+            extraWhere: buildVolunteerScopedTaskWhere(
+              buildTaskWindowWhere(
+                {
+                  mode: input.mode,
+                  windowStart: window.windowStart,
+                  windowEnd: window.windowEnd
+                },
+                parsedConfig
+              ),
+              parsedConfig
+            )
           })
         : apiClient.queryAll(
-            `SELECT ${taskFields.join(", ")} FROM Task WHERE ${buildTaskWindowWhere(
-              {
-                mode: input.mode,
-                windowStart: window.windowStart,
-                windowEnd: window.windowEnd
-              },
+            `SELECT ${taskFields.join(", ")} FROM Task WHERE ${buildVolunteerScopedTaskWhere(
+              buildTaskWindowWhere(
+                {
+                  mode: input.mode,
+                  windowStart: window.windowStart,
+                  windowEnd: window.windowEnd
+                },
+                parsedConfig
+              ),
               parsedConfig
             )}`
           )
