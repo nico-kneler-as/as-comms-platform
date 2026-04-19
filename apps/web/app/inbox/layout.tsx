@@ -1,10 +1,13 @@
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+
+import { requireSession } from "@/src/server/auth/session";
 
 import { InboxShell } from "./_components/inbox-shell";
 import { getInboxList } from "./_lib/selectors";
 
 export const metadata = {
-  title: "Inbox"
+  title: "Inbox",
 };
 
 /**
@@ -28,17 +31,23 @@ export const dynamic = "force-dynamic";
  * canonical queue state remains server-owned.
  */
 export default async function InboxLayout({
-  children
+  children,
 }: {
   readonly children: ReactNode;
 }) {
+  try {
+    await requireSession();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      redirect("/auth/sign-in");
+    }
+    throw error;
+  }
+
   const list = await getInboxList("all");
 
   return (
-    <InboxShell
-      initialList={list}
-      initialFilterId="all"
-    >
+    <InboxShell initialList={list} initialFilterId="all">
       {children}
     </InboxShell>
   );

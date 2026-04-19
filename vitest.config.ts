@@ -10,43 +10,46 @@ export default defineConfig({
     alias: [
       {
         find: "@as-comms/db/test-helpers",
-        replacement: path.resolve(repoRoot, "packages/db/src/test-helpers.ts")
+        replacement: path.resolve(repoRoot, "packages/db/src/test-helpers.ts"),
       },
       {
         find: "@as-comms/contracts",
-        replacement: path.resolve(repoRoot, "packages/contracts/src/index.ts")
+        replacement: path.resolve(repoRoot, "packages/contracts/src/index.ts"),
       },
       {
         find: "@as-comms/db",
-        replacement: path.resolve(repoRoot, "packages/db/src/index.ts")
+        replacement: path.resolve(repoRoot, "packages/db/src/index.ts"),
       },
       {
         find: "@as-comms/domain",
-        replacement: path.resolve(repoRoot, "packages/domain/src/index.ts")
+        replacement: path.resolve(repoRoot, "packages/domain/src/index.ts"),
       },
       {
         find: "@as-comms/integrations",
-        replacement: path.resolve(repoRoot, "packages/integrations/src/index.ts")
+        replacement: path.resolve(
+          repoRoot,
+          "packages/integrations/src/index.ts",
+        ),
       },
       {
         find: "@as-comms/ui",
-        replacement: path.resolve(repoRoot, "packages/ui/src/index.ts")
-      }
-    ]
+        replacement: path.resolve(repoRoot, "packages/ui/src/index.ts"),
+      },
+      {
+        find: "@",
+        replacement: path.resolve(repoRoot, "apps/web"),
+      },
+    ],
   },
   test: {
-    include: [
-      "test/**/*.test.ts",
-      "tests/**/*.test.ts",
-      "src/**/*.test.ts"
-    ],
+    include: ["test/**/*.test.ts", "tests/**/*.test.ts", "src/**/*.test.ts"],
     environment: "node",
     testTimeout: 30000,
     hookTimeout: 30000,
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      reportsDirectory: "./coverage/unit"
-    }
-  }
+      reportsDirectory: "./coverage/unit",
+    },
+  },
 });

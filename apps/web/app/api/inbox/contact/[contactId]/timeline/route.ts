@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getInboxTimelinePage } from "../../../../../inbox/_lib/selectors";
+import { requireApiSession } from "../../../../../../src/server/auth/api";
 
 export const dynamic = "force-dynamic";
 
@@ -24,25 +25,30 @@ export async function GET(
     readonly params: Promise<{
       readonly contactId: string;
     }>;
-  }
+  },
 ) {
+  const session = await requireApiSession();
+  if (!session.ok) {
+    return session.response;
+  }
+
   const { searchParams } = new URL(request.url);
   const { contactId } = await context.params;
   const limit = parseLimit(searchParams.get("limit"));
   const page = await getInboxTimelinePage(decodeURIComponent(contactId), {
     cursor: searchParams.get("cursor"),
-    ...(limit === undefined ? {} : { limit })
+    ...(limit === undefined ? {} : { limit }),
   });
 
   if (page === null) {
     return NextResponse.json(
       {
         ok: false,
-        code: "inbox_contact_not_found"
+        code: "inbox_contact_not_found",
       },
       {
-        status: 404
-      }
+        status: 404,
+      },
     );
   }
 

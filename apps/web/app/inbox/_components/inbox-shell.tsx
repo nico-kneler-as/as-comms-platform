@@ -7,6 +7,7 @@ import type {
 import { InboxClientProvider } from "./inbox-client-provider";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import { InboxIconRail } from "./inbox-icon-rail";
+import { InboxKeyboardProvider } from "./inbox-keyboard-provider";
 import { InboxList } from "./inbox-list";
 
 interface ShellProps {
@@ -30,8 +31,8 @@ export function InboxShell({
   children
 }: ShellProps) {
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-100 text-slate-900 antialiased">
-      <InboxClientProvider>
+    <InboxClientProvider>
+      <InboxKeyboardProvider>
         <InboxFreshnessPoller listFreshness={initialList.freshness} />
         <InboxIconRail />
 
@@ -43,7 +44,7 @@ export function InboxShell({
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {children}
         </main>
-      </InboxClientProvider>
-    </div>
+      </InboxKeyboardProvider>
+    </InboxClientProvider>
   );
 }
