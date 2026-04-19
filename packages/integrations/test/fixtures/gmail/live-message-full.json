@@ -1,0 +1,75 @@
+{
+  "id": "gmail-live-fixture-1",
+  "threadId": "thread-live-fixture-1",
+  "snippet": "Thanks for the update. We can confirm your training is complete.",
+  "internalDate": "1774520100000",
+  "payload": {
+    "mimeType": "multipart/alternative",
+    "filename": "",
+    "headers": [
+      {
+        "name": "Date",
+        "value": "Thu, 26 Mar 2026 10:15:00 +0000"
+      },
+      {
+        "name": "From",
+        "value": "PNW Forest Biodiversity <pnw@example.org>"
+      },
+      {
+        "name": "To",
+        "value": "Silvia Maldonado <silvia@example.org>"
+      },
+      {
+        "name": "Subject",
+        "value": "Re: Last Call: PNW Training"
+      },
+      {
+        "name": "Message-ID",
+        "value": "<gmail-live-fixture-1@example.org>"
+      },
+      {
+        "name": "Content-Type",
+        "value": "multipart/alternative; boundary=\"00000000000027fc9f064e932947\""
+      }
+    ],
+    "body": null,
+    "parts": [
+      {
+        "mimeType": "text/plain",
+        "filename": "",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "text/plain; charset=\"UTF-8\""
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": "quoted-printable"
+          }
+        ],
+        "body": {
+          "data": "SGVsbG8gU2lsdmlhLAoKVGhhbmtzIGZvciB0aGUgdXBkYXRlLiBXZSBjYW4gY29uZmlybSB5b3VyIHRyYWluaW5nIGlzIGNvbXBsZXRlLgoKT24gVGh1LCBNYXIgMjYsIDIwMjYgYXQgOToxNSBBTSBQTlcgRm9yZXN0IEJpb2RpdmVyc2l0eSA8cG53QGV4YW1wbGUub3JnPiB3cm90ZToKPiBIaSBTaWx2aWEsCj4gV2U9RTI9ODA9OTlyZSBjaGVja2luZyBpbiBvbmUgZmluYWwgdGltZSB0byBzZWUgaWYgeW91IHN0aWxsIG5lZWQgaGVscC4K"
+        },
+        "parts": []
+      },
+      {
+        "mimeType": "text/html",
+        "filename": "",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "text/html; charset=\"UTF-8\""
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": "quoted-printable"
+          }
+        ],
+        "body": {
+          "data": "PGRpdj5IZWxsbyBTaWx2aWEsPC9kaXY-PGRpdj48YnI-PC9kaXY-PGRpdj5UaGFua3MgZm9yIHRoZSB1cGRhdGUuIFdlIGNhbiBjb25maXJtIHlvdXIgdHJhaW5pbmcgaXMgY29tcGxldGUuPC9kaXY-PGRpdj48YnI-PC9kaXY-PGJsb2NrcXVvdGU-SGkgU2lsdmlhLCB3ZSZyc3F1bztyZSBjaGVja2luZyBpbiBvbmUgZmluYWwgdGltZS48L2Jsb2NrcXVvdGU-"
+        },
+        "parts": []
+      }
+    ]
+  }
+}

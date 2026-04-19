@@ -9,7 +9,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "node ../../scripts/clean-dist.mjs dist && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
+    "ops": "tsx src/ops/cli.ts",
     "ops:check-config": "tsx src/ops/cli.ts check-config",
+    "ops:backfill-gmail-message-bodies": "tsx src/ops/backfill-gmail-message-bodies.ts",
     "ops:enqueue": "tsx src/ops/cli.ts enqueue",
     "ops:import-gmail-mbox": "tsx src/ops/cli.ts import-gmail-mbox",
     "ops:reclassify-salesforce-tasks": "tsx src/ops/reclassify-salesforce-tasks.ts",
@@ -23,6 +25,7 @@
     "@as-comms/db": "workspace:*",
     "@as-comms/domain": "workspace:*",
     "@as-comms/integrations": "workspace:*",
+    "drizzle-orm": "^0.45.2",
     "graphile-worker": "^0.16.6",
     "zod": "^3.24.2"
   }

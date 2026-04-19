@@ -11,7 +11,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "node ../../scripts/clean-dist.mjs dist && tsc -p tsconfig.build.json",
     "lint": "eslint src test --max-warnings=0",
@@ -20,6 +22,10 @@
   },
   "dependencies": {
     "@as-comms/contracts": "workspace:*",
+    "mailparser": "^3.9.8",
     "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.4.6"
   }
 }
