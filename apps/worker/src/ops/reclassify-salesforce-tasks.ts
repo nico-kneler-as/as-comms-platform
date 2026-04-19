@@ -39,23 +39,23 @@ import {
   type Stage1EnqueueRequest
 } from "./enqueue.js";
 
-type SqlRunner = {
+interface SqlRunner {
   unsafe<T extends readonly object[]>(query: string): Promise<T>;
   begin<T>(callback: (sql: SqlRunner) => Promise<T>): Promise<T>;
-};
+}
 
-type ReclassificationCandidateRow = {
+interface ReclassificationCandidateRow {
   readonly canonical_event_id: string;
   readonly contact_id: string;
   readonly source_evidence_id: string;
   readonly current_message_kind: string | null;
   readonly subject: string | null;
   readonly snippet: string | null;
-};
+}
 
-type IdRow = {
+interface IdRow {
   readonly id: string;
-};
+}
 
 export interface SalesforceTaskReclassificationCandidate {
   readonly canonicalEventId: string;
@@ -252,9 +252,15 @@ function printPlanSummary(
 ): void {
   console.log("reclassify-salesforce-tasks");
   console.log(`Mode: ${confirm ? "confirm" : "dry-run"}`);
-  console.log(`- scanned Salesforce outbound email events: ${plan.scannedCount}`);
-  console.log(`- would reclassify (one_to_one|null) -> auto: ${plan.reclassifiedCount}`);
-  console.log(`- affected contacts: ${plan.affectedContactIds.length}`);
+  console.log(
+    `- scanned Salesforce outbound email events: ${String(plan.scannedCount)}`
+  );
+  console.log(
+    `- would reclassify (one_to_one|null) -> auto: ${String(plan.reclassifiedCount)}`
+  );
+  console.log(
+    `- affected contacts: ${String(plan.affectedContactIds.length)}`
+  );
 
   if (Object.keys(plan.reasonCounts).length > 0) {
     console.log("Reason counts:");
@@ -419,8 +425,10 @@ export async function runReclassifySalesforceTasks(input: {
     }
 
     console.log("Reclassification complete.");
-    console.log(`- updated canonical events: ${plan.reclassifiedCount}`);
-    console.log(`- enqueued projection rebuild jobs: ${enqueuedJobIds.length}`);
+    console.log(`- updated canonical events: ${String(plan.reclassifiedCount)}`);
+    console.log(
+      `- enqueued projection rebuild jobs: ${String(enqueuedJobIds.length)}`
+    );
 
     return {
       confirm: true,

@@ -68,16 +68,23 @@ describe("reclassify-salesforce-tasks planning", () => {
         buildId: (prefix) => `${prefix}:${String(++idCounter)}`
       }
     );
+    const firstRequest: (typeof requests)[number] | undefined = requests[0];
+    const payload = firstRequest?.payload as
+      | {
+          readonly jobType: string;
+          readonly projection: string;
+          readonly contactIds: readonly string[];
+          readonly includeReviewOverlayRefresh: boolean;
+        }
+      | undefined;
 
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({
-      jobName: "stage1.projection.rebuild",
-      payload: expect.objectContaining({
-        jobType: "projection_rebuild",
-        projection: "all",
-        contactIds: ["contact:a", "contact:b"],
-        includeReviewOverlayRefresh: true
-      })
+    expect(firstRequest?.jobName).toBe("stage1.projection.rebuild");
+    expect(payload).toMatchObject({
+      jobType: "projection_rebuild",
+      projection: "all",
+      contactIds: ["contact:a", "contact:b"],
+      includeReviewOverlayRefresh: true
     });
   });
 });
