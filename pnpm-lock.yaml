@@ -185,6 +185,9 @@ importers:
       '@as-comms/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.2.17)(@types/pg@8.20.0)(pg@8.20.0)(postgres@3.4.8)
       graphile-worker:
         specifier: ^0.16.6
         version: 0.16.6(typescript@5.9.3)

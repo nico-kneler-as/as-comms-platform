@@ -14,3 +14,4 @@ test-results
 .DS_Store
 .playwright-cli
 output
+.claude/settings.local.json
