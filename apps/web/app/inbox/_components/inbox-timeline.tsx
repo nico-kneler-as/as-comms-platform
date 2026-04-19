@@ -228,6 +228,10 @@ function AutomatedRow({
           : "Campaign SMS";
   const headline = entry.subject;
   const body = bodyTextForEntry(entry);
+  const hideCollapsedBody =
+    !isExpanded &&
+    (role === "campaign" ||
+      (entry.kind === "outbound-auto-email" && headline !== null));
 
   return (
     <li className="flex w-full flex-col items-end">
@@ -246,7 +250,7 @@ function AutomatedRow({
               {headline}
             </p>
           ) : null}
-          {!(role === "campaign" && !isExpanded) && body.length > 0 ? (
+          {!hideCollapsedBody && body.length > 0 ? (
             <p
               className={`text-[13px] leading-relaxed text-slate-600 ${
                 headline ? "mt-1.5" : ""

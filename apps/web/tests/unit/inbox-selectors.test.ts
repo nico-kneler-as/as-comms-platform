@@ -813,7 +813,7 @@ describe("real inbox selectors", () => {
     expect(activityEntries.at(-1)).toMatchObject({
       kind: "email-activity",
       subject: null,
-      body: "Outbound email sent",
+      body: "Email body not cached - open in Salesforce",
     });
   });
 
@@ -985,6 +985,65 @@ describe("real inbox selectors", () => {
       kind: "outbound-email",
       subject: "Field schedule update",
       body: "Here is the clean Salesforce body for Maria.",
+    });
+  });
+
+  it("shows an informative fallback when a Salesforce 1:1 email has no cached body", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:maria-no-body",
+      salesforceContactId: "003-maria-no-body",
+      displayName: "Maria No Body",
+      primaryEmail: "maria.nobody@example.org",
+      primaryPhone: null,
+    });
+    const latestSalesforceEvent = await seedInboxSalesforceOutboundEmailEvent(
+      runtime.context,
+      {
+        id: "maria-no-body-latest",
+        contactId: "contact:maria-no-body",
+        occurredAt: "2026-04-16T12:30:00.000Z",
+        subject: "Volunteer onboarding details",
+        snippet: "",
+        messageKind: "one_to_one",
+      },
+    );
+    await runtime.context.repositories.timelineProjection.upsert({
+      id: "timeline:maria-no-body-latest",
+      contactId: "contact:maria-no-body",
+      canonicalEventId: latestSalesforceEvent.canonicalEventId,
+      occurredAt: "2026-04-16T12:30:00.000Z",
+      sortKey:
+        "2026-04-16T12:30:00.000Z::event:maria-no-body-latest",
+      eventType: "communication.email.outbound",
+      summary: "Outbound Email Sent",
+      channel: "email",
+      primaryProvider: "salesforce",
+      reviewState: "clear",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:maria-no-body",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-16T12:30:00.000Z",
+      lastActivityAt: "2026-04-16T12:30:00.000Z",
+      snippet: "",
+      lastCanonicalEventId: latestSalesforceEvent.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:maria-no-body");
+    const latestEntry = detail?.timeline.at(-1);
+
+    expect(latestEntry).toMatchObject({
+      kind: "outbound-email",
+      subject: "Volunteer onboarding details",
+      body: "Email body not cached - open in Salesforce",
     });
   });
 
