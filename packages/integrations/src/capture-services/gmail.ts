@@ -17,6 +17,10 @@ import {
   buildGmailMessageRecord,
   type GmailProviderCloseMessageInput
 } from "../providers/gmail-record-builder.js";
+import {
+  extractGmailBodyPreviewFromPayload,
+  type GmailApiMessagePart
+} from "../providers/gmail-body.js";
 import { z } from "zod";
 
 import type {
@@ -62,12 +66,47 @@ type ResolvedGmailCaptureServiceConfig = z.output<
   typeof gmailCaptureServiceConfigSchema
 >;
 
-interface GmailMessageMetadata {
+type GmailApiMessagePartSchema = z.ZodType<GmailApiMessagePart>;
+
+const gmailApiMessagePartSchema: GmailApiMessagePartSchema = z.lazy(
+  (): GmailApiMessagePartSchema =>
+  z.object({
+    mimeType: z.string().min(1).nullable().optional(),
+    filename: z.string().nullable().optional(),
+    headers: z
+      .array(
+        z.object({
+          name: z.string().min(1),
+          value: z.string()
+        })
+      )
+      .nullable()
+      .optional(),
+    body: z
+      .object({
+        attachmentId: z.string().min(1).nullable().optional(),
+        data: z.string().min(1).nullable().optional(),
+        size: z.number().int().nonnegative().nullable().optional()
+      })
+      .nullable()
+      .optional(),
+    parts: z.array(gmailApiMessagePartSchema).nullable().optional()
+  })
+);
+
+export const gmailMessageFullResponseSchema = z.object({
+  id: z.string().min(1),
+  threadId: z.string().min(1).optional(),
+  snippet: z.string().default(""),
+  internalDate: z.string().min(1),
+  payload: gmailApiMessagePartSchema
+});
+export interface GmailMessageMetadata {
   readonly id: string;
   readonly threadId: string | null;
   readonly snippet: string;
   readonly internalDate: string;
-  readonly headers: Record<string, string>;
+  readonly payload: GmailApiMessagePart;
 }
 
 const liveGmailChecksumHeaderNames = new Set([
@@ -102,13 +141,21 @@ function selectLiveGmailChecksumHeaders(
   );
 }
 
+function buildHeaderRecord(
+  headers: readonly { readonly name: string; readonly value: string }[]
+): Record<string, string> {
+  return Object.fromEntries(headers.map((header) => [header.name, header.value]));
+}
+
 function buildLiveGmailChecksum(message: GmailMessageMetadata): string {
   return sha256Json({
     id: message.id,
     threadId: message.threadId,
     internalDate: message.internalDate,
     snippet: message.snippet,
-    headers: selectLiveGmailChecksumHeaders(message.headers)
+    headers: selectLiveGmailChecksumHeaders(
+      buildHeaderRecord(message.payload.headers ?? [])
+    )
   });
 }
 
@@ -131,23 +178,6 @@ const gmailListResponseSchema = z.object({
     )
     .default([]),
   nextPageToken: z.string().min(1).optional()
-});
-
-const gmailMessageMetadataResponseSchema = z.object({
-  id: z.string().min(1),
-  threadId: z.string().min(1).optional(),
-  snippet: z.string().default(""),
-  internalDate: z.string().min(1),
-  payload: z.object({
-    headers: z
-      .array(
-        z.object({
-          name: z.string().min(1),
-          value: z.string()
-        })
-      )
-      .default([])
-  })
 });
 
 export function createGmailMailboxApiClient(
@@ -280,26 +310,13 @@ export function createGmailMailboxApiClient(
         `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(mailbox)}/messages/${encodeURIComponent(messageId)}`
       );
 
-      url.searchParams.set("format", "metadata");
-      for (const headerName of [
-        "Date",
-        "From",
-        "To",
-        "Cc",
-        "Bcc",
-        "Subject",
-        "Message-ID",
-        "Delivered-To",
-        "Reply-To"
-      ]) {
-        url.searchParams.append("metadataHeaders", headerName);
-      }
+      url.searchParams.set("format", "full");
 
       try {
         const response = await gmailFetchJson({
           mailbox,
           url: url.toString(),
-          schema: gmailMessageMetadataResponseSchema
+          schema: gmailMessageFullResponseSchema
         });
 
         return {
@@ -307,9 +324,7 @@ export function createGmailMailboxApiClient(
           threadId: response.threadId ?? null,
           snippet: response.snippet,
           internalDate: response.internalDate,
-          headers: Object.fromEntries(
-            response.payload.headers.map((header) => [header.name, header.value])
-          )
+          payload: response.payload
         };
       } catch (error) {
         if (error instanceof Error && error.message === "not_found") {
@@ -340,21 +355,24 @@ function buildGmailListQuery(input: {
   return `after:${String(afterEpochSeconds)} before:${String(beforeEpochSeconds)} -in:chats`;
 }
 
-function mapLiveGmailMessageToRecord(input: {
+export async function mapLiveGmailMessageToRecord(input: {
   readonly message: GmailMessageMetadata;
   readonly capturedMailbox: string;
   readonly liveAccount: string;
   readonly projectInboxAliases: readonly string[];
   readonly receivedAt: string;
-}): GmailRecord {
+}): Promise<GmailRecord> {
+  const headers = buildHeaderRecord(input.message.payload.headers ?? []);
   const builderInput: GmailProviderCloseMessageInput = {
     recordId: input.message.id,
     threadId: input.message.threadId,
     snippet: input.message.snippet,
     snippetClean: input.message.snippet,
-    bodyTextPreview: input.message.snippet,
+    bodyTextPreview: await extractGmailBodyPreviewFromPayload(
+      input.message.payload
+    ),
     internalDate: input.message.internalDate,
-    headers: input.message.headers,
+    headers,
     payloadRef: `gmail://${encodeURIComponent(input.capturedMailbox)}/messages/${encodeURIComponent(input.message.id)}`,
     checksum: buildLiveGmailChecksum(input.message),
     capturedMailbox: input.capturedMailbox,
@@ -463,7 +481,7 @@ export function createGmailCaptureService(
           continue;
         }
 
-        const mappedRecord = mapLiveGmailMessageToRecord({
+        const mappedRecord = await mapLiveGmailMessageToRecord({
           message,
           capturedMailbox: mailbox,
           liveAccount: parsedConfig.liveAccount,

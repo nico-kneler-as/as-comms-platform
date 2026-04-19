@@ -4,6 +4,9 @@ import {
   toSafeIsoTimestamp,
   type GmailProviderCloseMessageInput
 } from "./gmail-record-builder.js";
+import {
+  extractGmailBodyPreviewFromMimeMessage
+} from "./gmail-body.js";
 import { gmailRecordSchema, type GmailRecord } from "./gmail.js";
 
 import { z } from "zod";
@@ -112,15 +115,6 @@ function parseHeaders(headerSection: string): Readonly<Record<string, string>> {
   return Object.fromEntries(headers.entries());
 }
 
-function buildCleanBodyPreview(bodyText: string): string {
-  return normalizeLineEndings(bodyText)
-    .replace(/=\n/gu, "")
-    .replace(/<[^>]+>/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .slice(0, 2_000);
-}
-
 function buildSnippet(cleanBodyPreview: string, subject: string | undefined): string {
   if (cleanBodyPreview.length > 0) {
     return cleanBodyPreview.slice(0, 280);
@@ -155,13 +149,15 @@ function buildMboxRecordId(input: {
   )}`;
 }
 
-export function importGmailMboxRecords(input: GmailMboxImportInput): GmailRecord[] {
+export async function importGmailMboxRecords(
+  input: GmailMboxImportInput
+): Promise<GmailRecord[]> {
   const parsedInput = gmailMboxImportSchema.parse(input);
   const messages = splitMboxMessages(parsedInput.mboxText);
   const selectedMessages =
     parsedInput.limit === null ? messages : messages.slice(0, parsedInput.limit);
 
-  return selectedMessages.map((message) => {
+  return Promise.all(selectedMessages.map(async (message) => {
     const recordId = buildMboxRecordId({
       rawMessage: message.rawMessage,
       capturedMailbox: parsedInput.capturedMailbox
@@ -172,7 +168,10 @@ export function importGmailMboxRecords(input: GmailMboxImportInput): GmailRecord
     const checksum = sha256Text(normalizeLineEndings(message.rawMessage));
     const internalDate =
       toSafeIsoTimestamp(message.headers.Date) ?? parsedInput.receivedAt;
-    const bodyTextPreview = buildCleanBodyPreview(message.bodyText);
+    const bodyTextPreview = await extractGmailBodyPreviewFromMimeMessage({
+      rawMessage: message.rawMessage,
+      fallbackBodyText: message.bodyText
+    });
     const snippetClean = buildSnippet(bodyTextPreview, message.headers.Subject);
     const recordInput: GmailProviderCloseMessageInput = {
       recordId,
@@ -197,5 +196,5 @@ export function importGmailMboxRecords(input: GmailMboxImportInput): GmailRecord
     };
 
     return gmailRecordSchema.parse(buildGmailMessageRecord(recordInput));
-  });
+  }));
 }

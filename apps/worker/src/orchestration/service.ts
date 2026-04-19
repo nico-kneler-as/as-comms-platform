@@ -765,7 +765,7 @@ async function captureHistoricalGmailRecordsForReplay(
     let importedRecords = importedRecordsByCacheKey.get(importedRecordCacheKey);
 
     if (importedRecords === undefined) {
-      importedRecords = importGmailMboxRecords({
+      importedRecords = await importGmailMboxRecords({
         mboxText,
         mboxPath: parsedPayloadRef.mboxPath,
         capturedMailbox,

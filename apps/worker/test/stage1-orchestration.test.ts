@@ -165,7 +165,7 @@ Second replay proof message.
     try {
       await seedContact(context);
       await writeFile(mboxPath, mboxText, "utf8");
-      const importedRecords = importGmailMboxRecords({
+      const importedRecords = await importGmailMboxRecords({
         mboxText,
         mboxPath,
         capturedMailbox: "volunteers@adventurescientists.org",
@@ -260,14 +260,14 @@ Alias drift outbound message.
     try {
       await seedContact(context);
       await writeFile(mboxPath, mboxText, "utf8");
-      const importedRecord = importGmailMboxRecords({
+      const importedRecord = (await importGmailMboxRecords({
         mboxText,
         mboxPath,
         capturedMailbox: "volunteers@adventurescientists.org",
         liveAccount: "volunteers@adventurescientists.org",
         projectInboxAliases: ["project-antarctica@example.org"],
         receivedAt: "2026-01-03T00:05:00.000Z"
-      })[0];
+      }))[0];
 
       expect(importedRecord).toBeDefined();
       if (importedRecord === undefined) {

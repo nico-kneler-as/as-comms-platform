@@ -17,8 +17,8 @@ Hello from an exported mailbox.
 `;
 
 describe("Stage 1 Gmail .mbox import", () => {
-  it("parses .mbox messages into the Gmail provider-close record shape", () => {
-    const records = importGmailMboxRecords({
+  it("parses .mbox messages into the Gmail provider-close record shape", async () => {
+    const records = await importGmailMboxRecords({
       mboxText,
       mboxPath: "/tmp/project-antarctica.mbox",
       capturedMailbox: "project-antarctica@example.org",
@@ -42,15 +42,15 @@ describe("Stage 1 Gmail .mbox import", () => {
     ]);
   });
 
-  it("converges with live Gmail API records through the same downstream mapper contract", () => {
-    const historicalRecord = importGmailMboxRecords({
+  it("converges with live Gmail API records through the same downstream mapper contract", async () => {
+    const historicalRecord = (await importGmailMboxRecords({
       mboxText,
       mboxPath: "/tmp/project-antarctica.mbox",
       capturedMailbox: "project-antarctica@example.org",
       liveAccount: "volunteers@adventurescientists.org",
       projectInboxAliases: ["project-antarctica@example.org"],
       receivedAt: "2026-01-03T00:05:00.000Z"
-    })[0];
+    }))[0];
 
     expect(historicalRecord).toBeDefined();
     if (historicalRecord === undefined) {
@@ -108,8 +108,8 @@ describe("Stage 1 Gmail .mbox import", () => {
     }
   });
 
-  it("imports blank-subject mbox messages without throwing and normalizes subject to null", () => {
-    const records = importGmailMboxRecords({
+  it("imports blank-subject mbox messages without throwing and normalizes subject to null", async () => {
+    const records = await importGmailMboxRecords({
       mboxText: `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
 Date: Fri, 03 Jan 2026 00:00:00 +0000
 From: Volunteer <volunteer@example.org>

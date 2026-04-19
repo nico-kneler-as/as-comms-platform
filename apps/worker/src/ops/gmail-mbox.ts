@@ -132,7 +132,7 @@ export function createStage1GmailMboxImportService(
     async importMbox(input: GmailMboxImportInput): Promise<Stage1GmailMboxImportResult> {
       const parsedInput = gmailMboxImportInputSchema.parse(input);
       const receivedAt = parsedInput.receivedAt ?? now().toISOString();
-      const records = importGmailMboxRecords({
+      const records = await importGmailMboxRecords({
         mboxText: parsedInput.mboxText,
         mboxPath: parsedInput.mboxPath,
         capturedMailbox: parsedInput.capturedMailbox,

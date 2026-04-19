@@ -3,9 +3,40 @@ import { describe, expect, it } from "vitest";
 import {
   createGmailCaptureService,
   createGmailMailboxApiClient,
+  type GmailMessageMetadata,
   gmailMessageRecordSchema
 } from "../src/index.js";
 import { sha256Json } from "../src/capture-services/shared.js";
+
+function buildFullMessagePayload(input: {
+  readonly bodyText: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly mimeType?: string;
+  readonly transferEncoding?: "7bit" | "8bit" | "base64" | "quoted-printable";
+}): GmailMessageMetadata["payload"] {
+  return {
+    mimeType: input.mimeType ?? "text/plain",
+    filename: "",
+    headers: [
+      ...Object.entries(input.headers).map(([name, value]) => ({
+        name,
+        value
+      })),
+      {
+        name: "Content-Type",
+        value: `${input.mimeType ?? "text/plain"}; charset="UTF-8"`
+      },
+      {
+        name: "Content-Transfer-Encoding",
+        value: input.transferEncoding ?? "7bit"
+      }
+    ],
+    body: {
+      data: Buffer.from(input.bodyText, "utf8").toString("base64url")
+    },
+    parts: []
+  };
+}
 
 function hasRequestUrl(input: unknown): input is { url: string } {
   return (
@@ -209,14 +240,18 @@ describe("Gmail capture service", () => {
               threadId: "thread-live-1",
               snippet: "Outbound follow-up from volunteers",
               internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
-              headers: {
-                Date: "Mon, 05 Jan 2026 00:00:00 +0000",
-                From:
-                  "Project Oceans <project-oceans@example.org>",
-                To: "Volunteer <volunteer@example.org>",
-                Subject: "Checking in",
-                "Message-ID": "<gmail-live-1@example.org>"
-              }
+              payload: buildFullMessagePayload({
+                bodyText:
+                  "Checking in with the full body.\n\nCan you confirm your availability?",
+                headers: {
+                  Date: "Mon, 05 Jan 2026 00:00:00 +0000",
+                  From:
+                    "Project Oceans <project-oceans@example.org>",
+                  To: "Volunteer <volunteer@example.org>",
+                  Subject: "Checking in",
+                  "Message-ID": "<gmail-live-1@example.org>"
+                }
+              })
             })
         },
         now: () => new Date("2026-01-05T00:01:00.000Z")
@@ -248,7 +283,8 @@ describe("Gmail capture service", () => {
       recordType: "message",
       direction: "outbound",
       subject: "Checking in",
-      bodyTextPreview: "Outbound follow-up from volunteers",
+      bodyTextPreview:
+        "Checking in with the full body.\n\nCan you confirm your availability?",
       capturedMailbox: "volunteers@example.org",
       projectInboxAlias: "project-oceans@example.org"
     });
@@ -273,13 +309,16 @@ describe("Gmail capture service", () => {
               threadId: "thread-live-1",
               snippet: "Outbound follow-up from volunteers",
               internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
-              headers: {
-                Date: "Mon, 05 Jan 2026 00:00:00 +0000",
-                From: "Project Oceans <project-oceans@example.org>",
-                To: "Volunteer <volunteer@example.org>",
-                Subject: "Checking in",
-                "Message-ID": "<gmail-live-1@example.org>"
-              }
+              payload: buildFullMessagePayload({
+                bodyText: "Checking in with the full body.",
+                headers: {
+                  Date: "Mon, 05 Jan 2026 00:00:00 +0000",
+                  From: "Project Oceans <project-oceans@example.org>",
+                  To: "Volunteer <volunteer@example.org>",
+                  Subject: "Checking in",
+                  "Message-ID": "<gmail-live-1@example.org>"
+                }
+              })
             })
         },
         now: () => new Date("2026-01-05T00:01:00.000Z")

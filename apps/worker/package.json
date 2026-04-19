@@ -11,6 +11,7 @@
     "start": "node dist/index.js",
     "ops": "tsx src/ops/cli.ts",
     "ops:check-config": "tsx src/ops/cli.ts check-config",
+    "ops:backfill-gmail-message-bodies": "tsx src/ops/backfill-gmail-message-bodies.ts",
     "ops:backfill-salesforce-communication-details": "tsx src/ops/backfill-salesforce-communication-details.ts",
     "ops:enqueue": "tsx src/ops/cli.ts enqueue",
     "ops:import-gmail-mbox": "tsx src/ops/cli.ts import-gmail-mbox",
