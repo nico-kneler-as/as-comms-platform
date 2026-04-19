@@ -824,6 +824,21 @@ function campaignHeadlineAndBody(
   };
 }
 
+function fallbackOneToOneEmailBody(
+  item: Extract<TimelineItem, { family: "one_to_one_email" }>,
+): string {
+  const normalizedSummary = normalizeInlineText(item.summary) ?? "";
+
+  if (
+    item.primaryProvider === "salesforce" &&
+    /^(outbound|inbound) email (sent|received)$/i.test(normalizedSummary)
+  ) {
+    return "Email body not cached - open in Salesforce";
+  }
+
+  return normalizedSummary;
+}
+
 function timelineLifecycleBodyLabel(
   item: Extract<TimelineItem, { family: "salesforce_event" }>,
 ): string {
@@ -1070,7 +1085,7 @@ function timelineBody(item: TimelineItem): string {
       return (
         trimQuotedReplyContent(item.bodyPreview ?? "") ||
         parseCommunicationPreview(item.snippet).body ||
-        item.summary
+        fallbackOneToOneEmailBody(item)
       );
     case "one_to_one_sms":
       return item.messageTextPreview;
