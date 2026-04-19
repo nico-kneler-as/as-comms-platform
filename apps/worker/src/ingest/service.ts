@@ -90,6 +90,7 @@ function buildReviewCases(
 
       return reviewCases;
     }
+    case "skipped":
     case "quarantined":
       return [];
   }
@@ -148,9 +149,10 @@ function mapCanonicalEventResult(input: {
   readonly ingestMode: Stage1IngestMode;
   readonly mapped: ProviderMappingResult & { readonly outcome: "command" };
   readonly result: NormalizedCanonicalEventResult;
-}):
+}): 
   | Stage1NormalizedIngestResult
   | Stage1DuplicateIngestResult
+  | Stage1DeferredIngestResult
   | Stage1ReviewOpenedIngestResult
   | Stage1QuarantinedIngestResult {
   const base = {
@@ -214,6 +216,16 @@ function mapCanonicalEventResult(input: {
         canonicalEventId: null,
         contactId: input.result.identityCase.anchoredContactId,
         reviewCases: buildReviewCases(input.result),
+      };
+    case "skipped":
+      return {
+        outcome: "deferred",
+        ingestMode: input.ingestMode,
+        provider: toStage1IngestProvider(input.mapped.provider),
+        sourceRecordType: input.mapped.sourceRecordType,
+        sourceRecordId: input.mapped.sourceRecordId,
+        reason: "skipped_by_policy",
+        detail: input.result.explanation,
       };
     case "quarantined":
       return {

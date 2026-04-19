@@ -16,6 +16,20 @@ async function seedContactWithEmail(
   }
 ) {
   const context = await createTestStage1Context();
+  const memberships =
+    input.salesforceContactId === undefined || input.salesforceContactId === null
+      ? []
+      : [
+          {
+            id: `membership:${input.contactId}:default`,
+            contactId: input.contactId,
+            projectId: "project_default",
+            expeditionId: "expedition_default",
+            role: "volunteer",
+            status: "active",
+            source: "salesforce" as const
+          }
+        ];
 
   await context.normalization.upsertNormalizedContactGraph({
     contact: {
@@ -36,9 +50,9 @@ async function seedContactWithEmail(
         isPrimary: true,
         source: "salesforce",
         verifiedAt: "2026-01-01T00:00:00.000Z"
-      }
-    ],
-    memberships: []
+        }
+      ],
+    memberships
   });
 
   return context;
@@ -210,6 +224,104 @@ describe("Stage 1 normalization service", () => {
 
     await expect(
       context.repositories.canonicalEvents.listByContactId("contact_1")
+    ).resolves.toEqual([]);
+  });
+
+  it("skips Salesforce task events for non-volunteer contacts without opening review", async () => {
+    const context = await createTestStage1Context();
+
+    await context.repositories.contacts.upsert({
+      id: "contact_non_volunteer",
+      salesforceContactId: "003-non-volunteer",
+      displayName: "Non Volunteer Contact",
+      primaryEmail: "donor@example.org",
+      primaryPhone: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_non_volunteer_task",
+        provider: "salesforce",
+        providerRecordType: "task_communication",
+        providerRecordId: "00T-non-volunteer",
+        receivedAt: "2026-01-01T00:03:00.000Z",
+        occurredAt: "2026-01-01T00:02:00.000Z",
+        payloadRef: "payloads/salesforce/00T-non-volunteer.json",
+        idempotencyKey: "salesforce:task:00T-non-volunteer",
+        checksum: "checksum-non-volunteer-task"
+      },
+      canonicalEvent: {
+        id: "evt_non_volunteer_task",
+        eventType: "communication.email.outbound",
+        occurredAt: "2026-01-01T00:02:00.000Z",
+        idempotencyKey: "canonical:salesforce:task:00T-non-volunteer",
+        summary: "Outbound email sent",
+        snippet: "This Salesforce task should be skipped."
+      },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "task_communication",
+        sourceRecordId: "00T-non-volunteer",
+        direction: "outbound"
+      }),
+      identity: {
+        salesforceContactId: "003-non-volunteer",
+        volunteerIdPlainValues: [],
+        normalizedEmails: [],
+        normalizedPhones: []
+      },
+      supportingSources: [],
+      salesforceCommunicationDetail: {
+        sourceEvidenceId: "sev_non_volunteer_task",
+        providerRecordId: "00T-non-volunteer",
+        channel: "email",
+        messageKind: "one_to_one",
+        subject: "Logged outbound follow-up",
+        snippet: "This Salesforce task should be skipped.",
+        sourceLabel: "Salesforce Task"
+      },
+      salesforceEventContext: {
+        sourceEvidenceId: "sev_non_volunteer_task",
+        salesforceContactId: "003-non-volunteer",
+        projectId: null,
+        expeditionId: null,
+        sourceField: null
+      }
+    });
+
+    expect(result.outcome).toBe("skipped");
+    if (result.outcome === "skipped") {
+      expect(result.reasonCode).toBe("skipped_non_volunteer_task");
+      expect(result.auditEvidence).toMatchObject({
+        action: "skipped_non_volunteer_task",
+        entityType: "source_evidence",
+        entityId: "sev_non_volunteer_task",
+        policyCode: "stage1.skip.skipped_non_volunteer_task"
+      });
+      expect(result.auditEvidence.metadataJson).toEqual({
+        salesforceTaskId: "00T-non-volunteer",
+        whoId: "003-non-volunteer"
+      });
+    }
+
+    await expect(
+      context.repositories.canonicalEvents.listByContactId("contact_non_volunteer")
+    ).resolves.toEqual([]);
+    await expect(
+      context.repositories.routingReviewQueue.listOpenByReasonCode(
+        "routing_missing_membership"
+      )
+    ).resolves.toEqual([]);
+    await expect(
+      context.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds([
+        "sev_non_volunteer_task"
+      ])
+    ).resolves.toEqual([]);
+    await expect(
+      context.repositories.salesforceEventContext.listBySourceEvidenceIds([
+        "sev_non_volunteer_task"
+      ])
     ).resolves.toEqual([]);
   });
 
@@ -745,7 +857,17 @@ describe("Stage 1 normalization service", () => {
         updatedAt: "2026-01-01T00:00:00.000Z"
       },
       identities: [],
-      memberships: []
+      memberships: [
+        {
+          id: "membership_anchor_default",
+          contactId: "contact_anchor",
+          projectId: "project_anchor",
+          expeditionId: "expedition_anchor",
+          role: "volunteer",
+          status: "active",
+          source: "salesforce"
+        }
+      ]
     });
 
     await context.normalization.upsertNormalizedContactGraph({
@@ -848,7 +970,17 @@ describe("Stage 1 normalization service", () => {
           verifiedAt: "2026-01-01T00:00:00.000Z"
         }
       ],
-      memberships: []
+      memberships: [
+        {
+          id: "membership_cached_default",
+          contactId: "contact_cached",
+          projectId: "project_cached",
+          expeditionId: "expedition_cached",
+          role: "volunteer",
+          status: "active",
+          source: "salesforce"
+        }
+      ]
     });
 
     const lookupCounts = {

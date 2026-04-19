@@ -155,6 +155,18 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
         return Promise.resolve([contactRow]);
       }
 
+      if (soql.includes(" FROM Task ")) {
+        if (soql.includes(" WHERE Id IN ")) {
+          return Promise.resolve(soql.includes("'00T-task-1'") ? [taskRow] : []);
+        }
+
+        if (soql.includes(" WHERE WhoId IN ")) {
+          return Promise.resolve(soql.includes("'003-stage1'") ? [taskRow] : []);
+        }
+
+        return Promise.resolve([taskRow]);
+      }
+
       if (soql.includes(" FROM Expedition_Members__c ")) {
         if (soql.includes(" WHERE Id IN ")) {
           return Promise.resolve(
@@ -169,18 +181,6 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
         }
 
         return Promise.resolve([membershipRow]);
-      }
-
-      if (soql.includes(" FROM Task ")) {
-        if (soql.includes(" WHERE Id IN ")) {
-          return Promise.resolve(soql.includes("'00T-task-1'") ? [taskRow] : []);
-        }
-
-        if (soql.includes(" WHERE WhoId IN ")) {
-          return Promise.resolve(soql.includes("'003-stage1'") ? [taskRow] : []);
-        }
-
-        return Promise.resolve([taskRow]);
       }
 
       return Promise.resolve([]);
@@ -364,7 +364,7 @@ describe("Salesforce capture service", () => {
           "Date_First_Sample_Collected__c >= 2026-01-01 AND Date_First_Sample_Collected__c < 2026-01-06"
         ),
         expect.stringContaining(
-          "FROM Task WHERE Who.Type = 'Contact' AND CreatedDate >= 2026-01-01T00:00:00.000Z AND CreatedDate < 2026-01-06T00:00:00.000Z"
+          "FROM Task WHERE Who.Type = 'Contact' AND CreatedDate >= 2026-01-01T00:00:00.000Z AND CreatedDate < 2026-01-06T00:00:00.000Z AND WhoId IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)"
         )
       ])
     );
@@ -438,6 +438,64 @@ describe("Salesforce capture service", () => {
     );
   });
 
+  it("keeps task-id replays volunteer-scoped at the SOQL boundary", async () => {
+    const queries: string[] = [];
+    const baseApiClient = createFakeSalesforceApiClient();
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: {
+          queryAll: (soql) => {
+            queries.push(soql);
+            return baseApiClient.queryAll(soql);
+          }
+        },
+        now: () => new Date("2026-01-05T00:05:00.000Z")
+      }
+    );
+
+    const result = await service.captureHistoricalBatch({
+      version: 1,
+      jobId: "job:salesforce:historical:task-replay",
+      correlationId: "corr:salesforce:historical:task-replay",
+      traceId: null,
+      batchId: "batch:salesforce:historical:task-replay",
+      syncStateId: "sync:salesforce:historical:task-replay",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "historical",
+      jobType: "historical_backfill",
+      cursor: null,
+      checkpoint: null,
+      windowStart: null,
+      windowEnd: null,
+      recordIds: ["00T-task-1"],
+      maxRecords: 25
+    });
+
+    expect(result.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "contact_snapshot",
+          salesforceContactId: "003-stage1"
+        }),
+        expect.objectContaining({
+          recordType: "task_communication",
+          recordId: "00T-task-1",
+          salesforceContactId: "003-stage1"
+        })
+      ])
+    );
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "FROM Task WHERE Id IN ('00T-task-1') AND Who.Type = 'Contact' AND WhoId IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)"
+        )
+      ])
+    );
+  });
+
   it("uses contact-safe task filters for live window capture batches", async () => {
     const queries: string[] = [];
     const baseApiClient = createFakeSalesforceApiClient();
@@ -477,7 +535,7 @@ describe("Salesforce capture service", () => {
     expect(queries).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          "FROM Task WHERE Who.Type = 'Contact' AND LastModifiedDate >= 2026-01-01T00:00:00.000Z AND LastModifiedDate < 2026-01-06T00:00:00.000Z"
+          "FROM Task WHERE Who.Type = 'Contact' AND LastModifiedDate >= 2026-01-01T00:00:00.000Z AND LastModifiedDate < 2026-01-06T00:00:00.000Z AND WhoId IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)"
         )
       ])
     );
@@ -640,22 +698,6 @@ describe("Salesforce capture service", () => {
               return Promise.resolve([contactRow]);
             }
 
-            if (soql.includes(" FROM Expedition_Members__c ")) {
-              if (soql.includes(" WHERE Id IN ")) {
-                return Promise.resolve(
-                  soql.includes("'a01-membership-auto'") ? [membershipRow] : []
-                );
-              }
-
-              if (soql.includes(" WHERE Contact__c IN ")) {
-                return Promise.resolve(
-                  soql.includes("'003-auto'") ? [membershipRow] : []
-                );
-              }
-
-              return Promise.resolve([membershipRow]);
-            }
-
             if (soql.includes(" FROM Task ")) {
               if (soql.includes(" WHERE Id IN ")) {
                 return Promise.resolve(
@@ -670,6 +712,22 @@ describe("Salesforce capture service", () => {
               }
 
               return Promise.resolve([autoEmailTaskRow]);
+            }
+
+            if (soql.includes(" FROM Expedition_Members__c ")) {
+              if (soql.includes(" WHERE Id IN ")) {
+                return Promise.resolve(
+                  soql.includes("'a01-membership-auto'") ? [membershipRow] : []
+                );
+              }
+
+              if (soql.includes(" WHERE Contact__c IN ")) {
+                return Promise.resolve(
+                  soql.includes("'003-auto'") ? [membershipRow] : []
+                );
+              }
+
+              return Promise.resolve([membershipRow]);
             }
 
             return Promise.resolve([]);

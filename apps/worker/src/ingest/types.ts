@@ -66,7 +66,10 @@ export interface Stage1QuarantinedIngestResult extends Stage1IngestResultBase {
 
 export interface Stage1DeferredIngestResult extends Stage1IngestResultBase {
   readonly outcome: "deferred";
-  readonly reason: "unsupported_record_type" | "deferred_record_family";
+  readonly reason:
+    | "unsupported_record_type"
+    | "deferred_record_family"
+    | "skipped_by_policy";
   readonly detail: string;
 }
 
