@@ -10,6 +10,7 @@ import type {
 import { fetchInboxListPage } from "../_lib/client-api";
 import { EmptyState } from "@/components/ui/empty-state";
 
+import { extractInboxContactId } from "./inbox-keyboard-helpers";
 import { useInboxClient } from "./inbox-client-provider";
 import { FOCUS_RING, LAYOUT, RADIUS, SHADOW, TEXT, TRANSITION } from "@/app/_lib/design-tokens";
 import {
@@ -40,7 +41,7 @@ export function InboxList({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const activeContactId = extractContactId(pathname);
+  const activeContactId = extractInboxContactId(pathname);
   const {
     search,
     setSearchQuery,
@@ -239,6 +240,9 @@ export function InboxList({
           <label className={`flex items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm} ${TRANSITION.fast} focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300`}>
             <SearchIcon className="h-4 w-4 text-slate-400" />
             <input
+              id="inbox-search-input"
+              data-inbox-search-input="true"
+              aria-keyshortcuts="/"
               type="text"
               placeholder="Search people, emails, projects"
               value={search.query}
@@ -384,16 +388,4 @@ function SearchEmptyState({ query }: { readonly query: string }) {
       }
     />
   );
-}
-
-function extractContactId(pathname: string | null): string | null {
-  if (!pathname) return null;
-  const match = /^\/inbox\/([^/]+)/.exec(pathname);
-  if (!match) return null;
-
-  try {
-    return decodeURIComponent(match[1] ?? "");
-  } catch {
-    return match[1] ?? null;
-  }
 }

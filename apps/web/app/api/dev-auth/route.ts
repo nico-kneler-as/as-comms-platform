@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getSettingsRepositories } from "../../../src/server/stage1-runtime";
+import {
+  enforceRateLimit,
+  getClientIp,
+} from "../../../src/server/security/rate-limit";
 
 // Dev-only cookie seeder. The production guard MUST be the first thing in
 // the handler — `scripts/verify-stage0.mjs` inspects this file statically
@@ -13,11 +17,43 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return new NextResponse(null, { status: 404 });
   }
 
+  const clientIp = getClientIp(request);
+  const decision = await enforceRateLimit({
+    scope: "route:/api/dev-auth",
+    identifier: clientIp,
+    limit: 5,
+    audit: {
+      actorType: "system",
+      actorId: clientIp,
+      action: "dev_auth.request.rate_limited",
+      entityType: "route",
+      entityId: request.nextUrl.pathname,
+      metadataJson: {
+        method: request.method,
+      },
+    },
+  });
+
+  if (!decision.allowed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "rate_limit_exceeded",
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(decision.retryAfterSeconds),
+        },
+      },
+    );
+  }
+
   const email = request.nextUrl.searchParams.get("email");
   if (!email) {
     return NextResponse.json(
       { ok: false, code: "validation_error", message: "email is required" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -26,15 +62,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   if (!user || user.deactivatedAt) {
     return NextResponse.json(
-      { ok: false, code: "not_found", message: "user not found or deactivated" },
-      { status: 404 }
+      {
+        ok: false,
+        code: "not_found",
+        message: "user not found or deactivated",
+      },
+      { status: 404 },
     );
   }
 
   const response = NextResponse.json({
     ok: true,
     email: user.email,
-    role: user.role
+    role: user.role,
   });
   response.cookies.set(
     "dev-session",
@@ -43,8 +83,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       httpOnly: true,
       sameSite: "strict",
       path: "/",
-      maxAge: 8 * 60 * 60
-    }
+      maxAge: 8 * 60 * 60,
+    },
   );
   return response;
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useRef } from "react";
 
 import type { InboxListItemViewModel } from "../_lib/view-models";
 import { InboxAvatar } from "./inbox-avatar";
@@ -19,8 +21,11 @@ interface RowProps {
  * (rose) and review/unresolved (amber) state at a glance.
  */
 export function InboxRow({ item, isActive }: RowProps) {
+  const router = useRouter();
+  const prefetchedRef = useRef(false);
   const isUnread = item.bucket === "new";
   const ChannelIcon = item.latestChannel === "email" ? MailIcon : PhoneIcon;
+  const href = `/inbox/${encodeURIComponent(item.contactId)}`;
 
   const showBadges =
     Boolean(item.projectLabel) ||
@@ -28,11 +33,27 @@ export function InboxRow({ item, isActive }: RowProps) {
     item.hasUnresolved ||
     item.unreadCount > 0;
 
+  const prefetchDetail = useCallback(() => {
+    if (prefetchedRef.current) {
+      return;
+    }
+
+    prefetchedRef.current = true;
+    router.prefetch(href);
+  }, [href, router]);
+
   return (
     <li>
       <Link
-        href={`/inbox/${encodeURIComponent(item.contactId)}`}
+        href={href}
+        prefetch={false}
+        data-inbox-row="true"
+        data-contact-id={item.contactId}
+        data-active={isActive ? "true" : "false"}
         aria-current={isActive ? "page" : undefined}
+        aria-keyshortcuts="Enter"
+        onMouseEnter={prefetchDetail}
+        onFocus={prefetchDetail}
         className={`relative flex gap-3 border-b border-slate-100 ${SPACING.listItem} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
           isActive
             ? "bg-sky-50/60 ring-1 ring-inset ring-sky-200"

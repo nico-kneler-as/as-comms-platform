@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getInboxList } from "../../../inbox/_lib/selectors";
+import { requireApiSession } from "../../../../src/server/auth/api";
 
 export const dynamic = "force-dynamic";
 
@@ -22,19 +23,26 @@ function parseLimit(raw: string | null): number | undefined {
 }
 
 export async function GET(request: Request) {
+  const session = await requireApiSession();
+  if (!session.ok) {
+    return session.response;
+  }
+
   const { searchParams } = new URL(request.url);
-  const parsedFilter = filterSchema.safeParse(searchParams.get("filter") ?? "all");
+  const parsedFilter = filterSchema.safeParse(
+    searchParams.get("filter") ?? "all",
+  );
   const limit = parseLimit(searchParams.get("limit"));
 
   if (!parsedFilter.success) {
     return NextResponse.json(
       {
         ok: false,
-        code: "validation_error"
+        code: "validation_error",
       },
       {
-        status: 400
-      }
+        status: 400,
+      },
     );
   }
 
@@ -42,7 +50,7 @@ export async function GET(request: Request) {
     await getInboxList(parsedFilter.data, {
       cursor: searchParams.get("cursor"),
       ...(limit === undefined ? {} : { limit }),
-      query: searchParams.get("q") ?? searchParams.get("query")
-    })
+      query: searchParams.get("q") ?? searchParams.get("query"),
+    }),
   );
 }

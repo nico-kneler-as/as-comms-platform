@@ -8,6 +8,7 @@ import type {
   TimelineItem,
 } from "@as-comms/contracts";
 
+import { recordSensitiveReadForCurrentUserDetached } from "@/src/server/security/audit";
 import { getStage1WebRuntime } from "../../../src/server/stage1-runtime";
 
 import { INBOX_FILTERS } from "./filters";
@@ -819,8 +820,8 @@ function campaignHeadlineAndBody(
       parsedPreview.subject !== null
         ? parsedPreview.body
         : parsedPreview.body.length > 0
-        ? parsedPreview.body
-        : (normalizeInlineText(item.summary) ?? "");
+          ? parsedPreview.body
+          : (normalizeInlineText(item.summary) ?? "");
     const split = splitHeadlineAndBody(cleaned);
     const headline =
       parsedPreview.subject ??
@@ -987,11 +988,7 @@ function inferPreviewDirection(
       ? null
       : normalizedContactEmail.toLowerCase();
 
-  if (
-    preview === null ||
-    !preview.structuredEmail ||
-    contactEmail === null
-  ) {
+  if (preview === null || !preview.structuredEmail || contactEmail === null) {
     return null;
   }
 
@@ -1216,8 +1213,7 @@ function buildTimelineEntry(input: {
       ? subject !== null || resolvedBody.trim().length > 0
       : true;
   const finalKind =
-    !hasRenderableEmailContent &&
-    input.item.family === "one_to_one_email"
+    !hasRenderableEmailContent && input.item.family === "one_to_one_email"
       ? "email-activity"
       : kind;
   const isUnread =
@@ -1449,7 +1445,9 @@ async function readInboxListCacheData(input: {
   const pageProjections = hasMore
     ? projectionPage.rows.slice(0, input.limit)
     : projectionPage.rows;
-  const candidateContactIds = pageProjections.map((projection) => projection.contactId);
+  const candidateContactIds = pageProjections.map(
+    (projection) => projection.contactId,
+  );
   const [contacts, memberships, latestMessagePreviewByCanonicalEventId] =
     await Promise.all([
       runtime.repositories.contacts.listByIds(candidateContactIds),
@@ -1844,6 +1842,15 @@ export async function getInboxDetail(
   if (cachedData === null) {
     return null;
   }
+
+  recordSensitiveReadForCurrentUserDetached({
+    action: "contact.timeline.read",
+    entityType: "contact",
+    entityId: contactId,
+    metadataJson: {
+      timelineCount: cachedData.timelinePage.total,
+    },
+  });
 
   const referenceNowIso = new Date().toISOString();
 

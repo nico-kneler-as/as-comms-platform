@@ -1,7 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useFormStatus } from "react-dom";
+import {
+  useCallback,
+  useEffect,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +23,7 @@ import {
 } from "../actions";
 import { fetchInboxTimelinePage } from "../_lib/client-api";
 import type { InboxDetailViewModel } from "../_lib/view-models";
+import type { UiError, UiResult } from "@/src/server/ui-result";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import {
   useInboxClient,
@@ -129,9 +136,26 @@ export function InboxDetail({ detail }: DetailProps) {
     }
   }, [contact.contactId, setTimelineLoading, timelinePage]);
 
+  const followUpToggle = useOptimisticBooleanToggle({
+    scopeKey: contact.contactId,
+    value: detail.needsFollowUp,
+    perform: useCallback(
+      async (nextValue: boolean): Promise<UiResult<unknown>> => {
+        const formData = new FormData();
+        formData.set("contactId", contact.contactId);
+
+        if (nextValue) {
+          return markInboxNeedsFollowUpAction(formData);
+        }
+
+        return clearInboxNeedsFollowUpAction(formData);
+      },
+      [contact.contactId]
+    )
+  });
   const activeProject = contact.activeProjects[0] ?? null;
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
-  const isFollowUp = detail.needsFollowUp;
+  const isFollowUp = followUpToggle.value;
   const existingReminder = reminders.get(contact.contactId) ?? null;
 
   const handleSetReminder = () => {
@@ -196,9 +220,11 @@ export function InboxDetail({ detail }: DetailProps) {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <FollowUpToggleForm
-              contactId={contact.contactId}
+            <FollowUpToggleControl
               needsFollowUp={isFollowUp}
+              isPending={followUpToggle.isPending}
+              error={followUpToggle.error}
+              onToggle={followUpToggle.toggle}
             />
 
             <Popover open={reminderOpen} onOpenChange={setReminderOpen}>
@@ -318,44 +344,56 @@ export function InboxDetail({ detail }: DetailProps) {
   );
 }
 
-function FollowUpToggleForm({
-  contactId,
-  needsFollowUp
+function FollowUpToggleControl({
+  needsFollowUp,
+  isPending,
+  error,
+  onToggle
 }: {
-  readonly contactId: string;
   readonly needsFollowUp: boolean;
+  readonly isPending: boolean;
+  readonly error: UiError | null;
+  readonly onToggle: () => void;
 }) {
-  const action = async (formData: FormData) => {
-    if (needsFollowUp) {
-      await clearInboxNeedsFollowUpAction(formData);
-      return;
-    }
-
-    await markInboxNeedsFollowUpAction(formData);
-  };
-
   return (
-    <form action={action}>
-      <input type="hidden" name="contactId" value={contactId} />
-      <FollowUpToggleButton needsFollowUp={needsFollowUp} />
-    </form>
+    <div className="relative">
+      <FollowUpToggleButton
+        needsFollowUp={needsFollowUp}
+        pending={isPending}
+        onToggle={onToggle}
+      />
+
+      {error ? (
+        <div
+          role="alert"
+          className="absolute right-0 top-full z-10 mt-2 w-72 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 shadow-sm"
+        >
+          {error.message}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 function FollowUpToggleButton({
-  needsFollowUp
+  needsFollowUp,
+  pending,
+  onToggle
 }: {
   readonly needsFollowUp: boolean;
+  readonly pending: boolean;
+  readonly onToggle: () => void;
 }) {
-  const { pending } = useFormStatus();
-
   return (
     <Button
-      type="submit"
+      type="button"
       variant="outline"
       size="sm"
       disabled={pending}
       aria-pressed={needsFollowUp}
+      aria-keyshortcuts="f"
+      data-inbox-follow-up-toggle="true"
+      onClick={onToggle}
       className={cn(
         "gap-1.5",
         needsFollowUp &&
@@ -366,6 +404,57 @@ function FollowUpToggleButton({
       Needs Follow-Up
     </Button>
   );
+}
+
+function useOptimisticBooleanToggle({
+  scopeKey,
+  value,
+  perform
+}: {
+  readonly scopeKey: string;
+  readonly value: boolean;
+  readonly perform: (nextValue: boolean) => Promise<UiResult<unknown>>;
+}) {
+  const serverValueRef = useRef(value);
+  const [committedValue, setCommittedValue] = useState(value);
+  const [error, setError] = useState<UiError | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const [optimisticValue, setOptimisticValue] = useOptimistic(
+    committedValue,
+    (_currentValue: boolean, nextValue: boolean) => nextValue
+  );
+
+  useEffect(() => {
+    serverValueRef.current = value;
+    setCommittedValue(value);
+    setError(null);
+  }, [scopeKey, value]);
+
+  const toggle = useCallback(() => {
+    const nextValue = !optimisticValue;
+
+    startTransition(async () => {
+      setError(null);
+      setOptimisticValue(nextValue);
+      const result = await perform(nextValue);
+
+      if (result.ok) {
+        serverValueRef.current = nextValue;
+        setCommittedValue(nextValue);
+        return;
+      }
+
+      setCommittedValue(serverValueRef.current);
+      setError(result);
+    });
+  }, [optimisticValue, perform, setOptimisticValue]);
+
+  return {
+    value: optimisticValue,
+    isPending,
+    error,
+    toggle
+  } as const;
 }
 
 function UnresolvedBanner() {

@@ -1,28 +1,27 @@
 import { redirect } from "next/navigation";
 
 import { requireAdmin } from "@/src/server/auth/session";
+import { recordSensitiveReadDetached } from "@/src/server/security/audit";
 import { getSettingsRepositories } from "@/src/server/stage1-runtime";
 
 import { UsersTable, type UserRowViewModel } from "./_components/users-table";
 
 export const dynamic = "force-dynamic";
 
-function toUserRowViewModel(
-  user: {
-    readonly id: string;
-    readonly email: string;
-    readonly name: string | null;
-    readonly role: "admin" | "operator";
-    readonly deactivatedAt: Date | null;
-  }
-): UserRowViewModel {
+function toUserRowViewModel(user: {
+  readonly id: string;
+  readonly email: string;
+  readonly name: string | null;
+  readonly role: "admin" | "operator";
+  readonly deactivatedAt: Date | null;
+}): UserRowViewModel {
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     role: user.role,
     isDeactivated: user.deactivatedAt !== null,
-    deactivatedAt: user.deactivatedAt?.toISOString() ?? null
+    deactivatedAt: user.deactivatedAt?.toISOString() ?? null,
   };
 }
 
@@ -56,6 +55,15 @@ export default async function UsersPage() {
 
   const { users } = await getSettingsRepositories();
   const allUsers = await users.listAll();
+  recordSensitiveReadDetached({
+    actorId: currentUser.id,
+    action: "settings.users.read",
+    entityType: "settings_page",
+    entityId: "users",
+    metadataJson: {
+      visibleUserCount: allUsers.length,
+    },
+  });
 
   const rows: readonly UserRowViewModel[] = allUsers.map(toUserRowViewModel);
 
