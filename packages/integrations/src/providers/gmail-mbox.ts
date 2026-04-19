@@ -1,5 +1,6 @@
 import {
   buildGmailMessageRecord,
+  normalizeGmailSubject,
   sha256Text,
   toSafeIsoTimestamp,
   type GmailProviderCloseMessageInput
@@ -120,7 +121,7 @@ function buildSnippet(cleanBodyPreview: string, subject: string | undefined): st
     return cleanBodyPreview.slice(0, 280);
   }
 
-  return subject?.trim() ?? "";
+  return normalizeGmailSubject(subject) ?? "";
 }
 
 function buildThreadId(headers: Readonly<Record<string, string>>): string | null {

@@ -52,6 +52,14 @@ describe("Gmail body extraction", () => {
     );
   });
 
+  it("strips multi-dash MIME boundary markers from flattened previews", () => {
+    expect(
+      cleanGmailBodyPreviewText(
+        "------=_Part_2324998_585856288.1775021416555\nrest of body"
+      )
+    ).toBe("rest of body");
+  });
+
   it("maps live Gmail full payloads to decoded body previews instead of snippets", async () => {
     const fixtureJson = JSON.parse(
       await readFixtureText("live-message-full.json")

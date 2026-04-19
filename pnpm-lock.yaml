@@ -234,6 +234,9 @@ importers:
       '@as-comms/contracts':
         specifier: workspace:*
         version: link:../contracts
+      libmime:
+        specifier: ^5.3.8
+        version: 5.3.8
       mailparser:
         specifier: ^3.9.8
         version: 3.9.8
