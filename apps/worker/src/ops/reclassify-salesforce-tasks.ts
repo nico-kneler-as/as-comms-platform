@@ -70,7 +70,7 @@ export interface SalesforceTaskReclassificationChange {
   readonly canonicalEventId: string;
   readonly contactId: string;
   readonly sourceEvidenceId: string;
-  readonly previousMessageKind: "one_to_one";
+  readonly previousMessageKind: "one_to_one" | null;
   readonly nextMessageKind: "auto";
   readonly subject: string | null;
   readonly snippet: string;
@@ -170,10 +170,19 @@ export function planSalesforceTaskReclassifications(
       subject: candidate.subject
     });
 
-    if (
-      candidate.currentMessageKind === "one_to_one" &&
-      classification.messageKind === "auto"
-    ) {
+    // Flip both explicit `one_to_one` rows and null-kind historical rows
+    // when the classifier resolves to `auto`. Historical Stage 1 rows landed
+    // with `messageKind = null` before the Slice 2 classifier existed; those
+    // rows are the real blast radius for the Alice-Chang-at-top-of-inbox bug.
+    // Per the classifier's own conservative default (documented at the call
+    // site above), ambiguous legacy Salesforce Tasks prefer `auto` to protect
+    // queue truth — a legit 1:1 mis-classified as auto is visible-but-wrong
+    // and safely recoverable, whereas automation masquerading as 1:1 keeps
+    // polluting the inbox triage surface.
+    const isFlippableSource =
+      candidate.currentMessageKind === "one_to_one" ||
+      candidate.currentMessageKind === null;
+    if (isFlippableSource && classification.messageKind === "auto") {
       reasonCounts.set(
         classification.reason,
         (reasonCounts.get(classification.reason) ?? 0) + 1
@@ -182,7 +191,7 @@ export function planSalesforceTaskReclassifications(
         canonicalEventId: candidate.canonicalEventId,
         contactId: candidate.contactId,
         sourceEvidenceId: candidate.sourceEvidenceId,
-        previousMessageKind: "one_to_one",
+        previousMessageKind: candidate.currentMessageKind,
         nextMessageKind: "auto",
         subject: candidate.subject,
         snippet: candidate.snippet,
@@ -244,7 +253,7 @@ function printPlanSummary(
   console.log("reclassify-salesforce-tasks");
   console.log(`Mode: ${confirm ? "confirm" : "dry-run"}`);
   console.log(`- scanned Salesforce outbound email events: ${plan.scannedCount}`);
-  console.log(`- would reclassify one_to_one -> auto: ${plan.reclassifiedCount}`);
+  console.log(`- would reclassify (one_to_one|null) -> auto: ${plan.reclassifiedCount}`);
   console.log(`- affected contacts: ${plan.affectedContactIds.length}`);
 
   if (Object.keys(plan.reasonCounts).length > 0) {
