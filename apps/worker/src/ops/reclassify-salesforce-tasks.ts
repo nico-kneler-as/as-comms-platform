@@ -29,7 +29,7 @@ import {
 import {
   classifySalesforceTaskMessageKind,
   type SalesforceTaskMessageKindClassification
-} from "../../../../packages/integrations/src/providers/salesforce.js";
+} from "@as-comms/integrations";
 
 import {
   buildOperationId
