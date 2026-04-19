@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@as-comms/contracts": "workspace:*",
+    "libmime": "^5.3.8",
     "mailparser": "^3.9.8",
     "zod": "^3.24.2"
   },

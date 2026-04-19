@@ -869,6 +869,59 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("strips multi-dash MIME boundaries from projection snippet fallbacks", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:alice-mime-boundary",
+      salesforceContactId: "003-alice-mime-boundary",
+      displayName: "Alice Mime Boundary",
+      primaryEmail: "alice.mime@example.org",
+      primaryPhone: null,
+    });
+    const latestLegacyEvent = await seedInboxLegacySalesforceOutboundEmailEvent(
+      runtime.context,
+      {
+        id: "alice-salesforce-legacy-mime-boundary",
+        contactId: "contact:alice-mime-boundary",
+        occurredAt: "2026-04-16T10:00:00.000Z",
+        messageKind: null,
+      },
+    );
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:alice-mime-boundary",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-16T10:00:00.000Z",
+      lastActivityAt: "2026-04-16T10:00:00.000Z",
+      snippet: [
+        "------=_Part_2324998_585856288.1775021416555",
+        "rest of body",
+      ].join("\n"),
+      lastCanonicalEventId: latestLegacyEvent.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const list = await getInboxList();
+    const detail = await getInboxDetail("contact:alice-mime-boundary");
+    const row = list.items.find(
+      (item) => item.contactId === "contact:alice-mime-boundary",
+    );
+    const latestEntry = detail?.timeline.at(-1);
+
+    expect(row).toMatchObject({
+      snippet: "rest of body",
+    });
+    expect(latestEntry).toMatchObject({
+      kind: "email-activity",
+      body: "rest of body",
+    });
+  });
+
   it("prefers Gmail clean body previews over noisier projection snippets so Maria stays aligned between list and detail", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");

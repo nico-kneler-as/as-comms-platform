@@ -467,7 +467,7 @@ function stripMimeScaffolding(value: string): string {
     skippingMimeContinuation = false;
 
     if (
-      /^--(?:Apple-Mail|_mimepart|=_|[0-9A-Za-z][0-9A-Za-z._:-]{8,})/i.test(
+      /^-{2,}(?:Apple-Mail|_mimepart|=_|[0-9A-Za-z][0-9A-Za-z._:-]{8,})/i.test(
         trimmed,
       )
     ) {

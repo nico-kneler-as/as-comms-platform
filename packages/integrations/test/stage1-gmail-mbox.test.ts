@@ -133,7 +133,65 @@ Hello from an exported mailbox.
     ]);
   });
 
-  it("normalizes missing or blank subjects to null while preserving non-empty subjects", () => {
+  it("decodes RFC 2047 subjects during mbox import", async () => {
+    const cases = [
+      {
+        name: "quoted-printable",
+        subjectHeader: "=?utf-8?Q?Re:_Training_=3D_=E2=9C=85?=",
+        expectedSubject: "Re: Training = ✅"
+      },
+      {
+        name: "base64",
+        subjectHeader: "=?utf-8?B?UmU6IEludml0YXRpb24=?=",
+        expectedSubject: "Re: Invitation"
+      },
+      {
+        name: "chained-words",
+        subjectHeader: "=?utf-8?Q?Hi?= =?utf-8?Q?_world?=",
+        expectedSubject: "Hi world"
+      },
+      {
+        name: "mixed-charsets",
+        subjectHeader:
+          "=?iso-8859-1?Q?Ol=E1?= =?windows-1252?Q?_price_=80100?=",
+        expectedSubject: "Olá price €100"
+      },
+      {
+        name: "unknown-charset-fallback",
+        subjectHeader: "=?x-unknown?Q?Re:_caf=C3=A9?=",
+        expectedSubject: "Re: café"
+      }
+    ] as const;
+
+    for (const testCase of cases) {
+      const records = await importGmailMboxRecords({
+        mboxText: `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
+Date: Fri, 03 Jan 2026 00:00:00 +0000
+From: Volunteer <volunteer@example.org>
+To: Project Antarctica <project-antarctica@example.org>
+Subject: ${testCase.subjectHeader}
+Message-ID: <gmail-mbox-${testCase.name}@example.org>
+
+`,
+        mboxPath: `/tmp/project-antarctica-${testCase.name}.mbox`,
+        capturedMailbox: "project-antarctica@example.org",
+        liveAccount: "volunteers@adventurescientists.org",
+        projectInboxAliases: ["project-antarctica@example.org"],
+        receivedAt: "2026-01-03T00:05:00.000Z"
+      });
+
+      expect(records).toEqual([
+        expect.objectContaining({
+          recordType: "message",
+          subject: testCase.expectedSubject,
+          snippet: testCase.expectedSubject,
+          snippetClean: testCase.expectedSubject
+        })
+      ]);
+    }
+  });
+
+  it("normalizes missing or blank subjects to null while preserving non-empty and decoded live subjects", () => {
     const cases = [
       {
         name: "missing subject",
@@ -177,6 +235,62 @@ Hello from an exported mailbox.
           "Message-ID": "<gmail-live-normal@example.org>"
         },
         expectedSubject: "Status update"
+      },
+      {
+        name: "quoted-printable",
+        headers: {
+          Date: "Fri, 03 Jan 2026 00:00:00 +0000",
+          From: "Project Antarctica <project-antarctica@example.org>",
+          To: "Volunteer <volunteer@example.org>",
+          Subject: "=?utf-8?Q?Re:_Training_=3D_=E2=9C=85?=",
+          "Message-ID": "<gmail-live-qp@example.org>"
+        },
+        expectedSubject: "Re: Training = ✅"
+      },
+      {
+        name: "base64",
+        headers: {
+          Date: "Fri, 03 Jan 2026 00:00:00 +0000",
+          From: "Project Antarctica <project-antarctica@example.org>",
+          To: "Volunteer <volunteer@example.org>",
+          Subject: "=?utf-8?B?UmU6IEludml0YXRpb24=?=",
+          "Message-ID": "<gmail-live-b64@example.org>"
+        },
+        expectedSubject: "Re: Invitation"
+      },
+      {
+        name: "chained-words",
+        headers: {
+          Date: "Fri, 03 Jan 2026 00:00:00 +0000",
+          From: "Project Antarctica <project-antarctica@example.org>",
+          To: "Volunteer <volunteer@example.org>",
+          Subject: "=?utf-8?Q?Hi?= =?utf-8?Q?_world?=",
+          "Message-ID": "<gmail-live-chained@example.org>"
+        },
+        expectedSubject: "Hi world"
+      },
+      {
+        name: "mixed-charsets",
+        headers: {
+          Date: "Fri, 03 Jan 2026 00:00:00 +0000",
+          From: "Project Antarctica <project-antarctica@example.org>",
+          To: "Volunteer <volunteer@example.org>",
+          Subject:
+            "=?iso-8859-1?Q?Ol=E1?= =?windows-1252?Q?_price_=80100?=",
+          "Message-ID": "<gmail-live-mixed@example.org>"
+        },
+        expectedSubject: "Olá price €100"
+      },
+      {
+        name: "unknown-charset-fallback",
+        headers: {
+          Date: "Fri, 03 Jan 2026 00:00:00 +0000",
+          From: "Project Antarctica <project-antarctica@example.org>",
+          To: "Volunteer <volunteer@example.org>",
+          Subject: "=?x-unknown?Q?Re:_caf=C3=A9?=",
+          "Message-ID": "<gmail-live-unknown@example.org>"
+        },
+        expectedSubject: "Re: café"
       }
     ] as const;
 

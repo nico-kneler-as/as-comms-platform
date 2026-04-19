@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import libmime from "libmime";
+
 import {
   gmailMessageRecordSchema,
   type GmailRecord
@@ -116,6 +118,27 @@ export function sha256Text(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+export function normalizeGmailSubject(
+  value: string | null | undefined
+): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  try {
+    const decoded = libmime.decodeWords(trimmed).trim();
+    return decoded.length > 0 ? decoded : null;
+  } catch {
+    return trimmed;
+  }
+}
+
 export function buildGmailMessageRecord(
   input: GmailProviderCloseMessageInput
 ): GmailRecord {
@@ -155,11 +178,7 @@ export function buildGmailMessageRecord(
     ? "outbound"
     : "inbound";
   const rfc822MessageId = input.headers["Message-ID"]?.trim() ?? null;
-  const trimmedSubject = input.headers.Subject?.trim();
-  const subject =
-    trimmedSubject === undefined || trimmedSubject.length === 0
-      ? null
-      : trimmedSubject;
+  const subject = normalizeGmailSubject(input.headers.Subject);
   const occurredAt =
     toSafeIsoTimestamp(input.headers.Date) ??
     toSafeIsoTimestamp(input.internalDate ?? undefined) ??
