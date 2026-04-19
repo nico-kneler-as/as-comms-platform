@@ -29,6 +29,9 @@ import {
 
 import type { Stage1WorkerOrchestrationService } from "./types.js";
 
+export const pollGmailLiveJobName = "poll-gmail-live" as const;
+export const pollSalesforceLiveJobName = "poll-salesforce-live" as const;
+
 function isFailedStage1TaskOutcome(
   value: unknown
 ): value is {
@@ -76,6 +79,25 @@ function createStage1Task<TPayload>(
   };
 }
 
+function createPollingTask<TPayload>(
+  plan: (now: Date) => Promise<TPayload | null>,
+  input: {
+    readonly jobName: string;
+  }
+): Task {
+  return async (_rawPayload: unknown, helpers) => {
+    const payload = await plan(new Date());
+
+    if (payload === null) {
+      return;
+    }
+
+    await helpers.addJob(input.jobName, payload, {
+      maxAttempts: 1
+    });
+  };
+}
+
 export function createStage1TaskList(
   orchestration: Stage1WorkerOrchestrationService
 ): TaskList {
@@ -88,6 +110,12 @@ export function createStage1TaskList(
       (payload) => gmailLiveCaptureBatchPayloadSchema.parse(payload),
       (payload) => orchestration.runGmailLiveCaptureBatch(payload)
     ),
+    [pollGmailLiveJobName]: createPollingTask(
+      (now) => orchestration.planGmailLiveCaptureBatch(now),
+      {
+        jobName: gmailLiveCaptureBatchJobName
+      }
+    ),
     [salesforceHistoricalCaptureBatchJobName]: createStage1Task(
       (payload) => salesforceHistoricalCaptureBatchPayloadSchema.parse(payload),
       (payload) => orchestration.runSalesforceHistoricalCaptureBatch(payload)
@@ -95,6 +123,12 @@ export function createStage1TaskList(
     [salesforceLiveCaptureBatchJobName]: createStage1Task(
       (payload) => salesforceLiveCaptureBatchPayloadSchema.parse(payload),
       (payload) => orchestration.runSalesforceLiveCaptureBatch(payload)
+    ),
+    [pollSalesforceLiveJobName]: createPollingTask(
+      (now) => orchestration.planSalesforceLiveCaptureBatch(now),
+      {
+        jobName: salesforceLiveCaptureBatchJobName
+      }
     ),
     [simpleTextingHistoricalCaptureBatchJobName]: createStage1Task(
       (payload) => simpleTextingHistoricalCaptureBatchPayloadSchema.parse(payload),

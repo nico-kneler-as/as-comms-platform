@@ -5,7 +5,14 @@ import {
   gmailHistoricalCaptureBatchPayloadSchema
 } from "@as-comms/contracts";
 
-import { readWorkerConfig } from "../src/runtime.js";
+import {
+  buildWorkerCrontab,
+  readWorkerConfig
+} from "../src/runtime.js";
+import {
+  pollGmailLiveJobName,
+  pollSalesforceLiveJobName
+} from "../src/orchestration/tasks.js";
 import { createTaskList } from "../src/tasks.js";
 import {
   buildCapturedBatch,
@@ -119,6 +126,22 @@ describe("Stage 1 worker runtime task registration", () => {
         GMAIL_LIVE_ACCOUNT: "project-antarctica@example.org"
       })
     ).toThrow("Gmail live account must be a volunteers@... address.");
+  });
+
+  it("builds the Graphile Worker crontab for Gmail and Salesforce live polling", () => {
+    const config = readWorkerConfig(launchScopeEnv);
+
+    expect(config).not.toBeNull();
+    if (config === null) {
+      throw new Error("Expected launch-scope config to be present.");
+    }
+
+    expect(buildWorkerCrontab(config)).toBe(
+      [
+        `*/1 * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
+        `*/5 * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`
+      ].join("\n")
+    );
   });
 
   it("registers Stage 1 task names and executes them through the existing orchestration path", async () => {
