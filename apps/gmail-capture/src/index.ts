@@ -1,10 +1,15 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import {
+  checkGmailCaptureServiceHealth,
   createGmailCaptureService,
   type CaptureServiceHttpRequest,
   type GmailCaptureServiceConfig
 } from "@as-comms/integrations";
+import {
+  integrationHealthCheckResponseSchema,
+  type IntegrationHealthCheckResponse
+} from "@as-comms/contracts";
 import { z } from "zod";
 
 const emailSchema = z.string().email();
@@ -152,6 +157,36 @@ function writeResponse(
   response.end(input.body);
 }
 
+function readServiceVersion(env: NodeJS.ProcessEnv): string | null {
+  const version =
+    env.RAILWAY_GIT_COMMIT_SHA ??
+    env.SERVICE_VERSION ??
+    env.GIT_COMMIT_SHA ??
+    null;
+  const trimmed = version?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+}
+
+export async function handleGmailHealthRequest(
+  config: GmailCaptureRuntimeConfig,
+  input?: {
+    readonly fetchImplementation?: typeof fetch;
+    readonly now?: () => Date;
+    readonly version?: string | null;
+  }
+): Promise<IntegrationHealthCheckResponse> {
+  const health = await checkGmailCaptureServiceHealth(config.service, {
+    timeoutMs: 5_000,
+    version: input?.version ?? readServiceVersion(process.env),
+    ...(input?.fetchImplementation === undefined
+      ? {}
+      : { fetchImplementation: input.fetchImplementation }),
+    ...(input?.now === undefined ? {} : { now: input.now })
+  });
+
+  return integrationHealthCheckResponseSchema.parse(health);
+}
+
 export async function startGmailCaptureServer(
   config: GmailCaptureRuntimeConfig
 ): Promise<Server> {
@@ -170,15 +205,13 @@ export async function startGmailCaptureServer(
       ).pathname;
 
       if (request.method === "GET" && path === "/health") {
+        const health = await handleGmailHealthRequest(config);
         writeResponse(response, {
           status: 200,
           headers: {
             "content-type": "application/json; charset=utf-8"
           },
-          body: JSON.stringify({
-            service: "gmail-capture",
-            status: "ok"
-          })
+          body: JSON.stringify(health)
         });
         return;
       }

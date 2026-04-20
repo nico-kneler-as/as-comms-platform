@@ -7,8 +7,11 @@ import {
 import {
   salesforceHistoricalCaptureBatchPayloadSchema,
   salesforceLiveCaptureBatchPayloadSchema,
+  integrationHealthCheckResponseSchema,
   type SalesforceHistoricalCaptureBatchPayload,
-  type SalesforceLiveCaptureBatchPayload
+  type SalesforceLiveCaptureBatchPayload,
+  type IntegrationHealthCheckResponse,
+  type IntegrationHealthStatus
 } from "@as-comms/contracts";
 import {
   classifySalesforceTaskMessageKind,
@@ -95,6 +98,19 @@ interface SalesforceAccessTokenCacheEntry {
   readonly expiresAtEpochMs: number;
 }
 
+class SalesforceHealthCheckError extends Error {
+  constructor(
+    readonly status: Extract<
+      IntegrationHealthStatus,
+      "needs_attention" | "disconnected"
+    >,
+    message: string
+  ) {
+    super(message);
+    this.name = "SalesforceHealthCheckError";
+  }
+}
+
 const salesforceTokenResponseSchema = z.object({
   access_token: z.string().min(1),
   instance_url: z.string().url()
@@ -105,6 +121,278 @@ const salesforceQueryResponseSchema = z.object({
   nextRecordsUrl: z.string().min(1).optional(),
   done: z.boolean()
 });
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
+}
+
+function isDisconnectedSalesforceAuthError(
+  status: number,
+  responseText: string
+): boolean {
+  if (status !== 400 && status !== 401) {
+    return false;
+  }
+
+  return /(invalid|expired|unauthorized|assertion|credentials|authentication)/iu.test(
+    responseText
+  );
+}
+
+function resolveRemainingTimeoutMs(input: {
+  readonly timeoutMs: number;
+  readonly now: () => Date;
+  readonly startedAtMs?: number;
+}): number {
+  if (input.startedAtMs === undefined) {
+    return input.timeoutMs;
+  }
+
+  const elapsedMs = input.now().getTime() - input.startedAtMs;
+  return Math.max(1, input.timeoutMs - elapsedMs);
+}
+
+async function exchangeSalesforceAccessToken(input: {
+  readonly config: ResolvedSalesforceCaptureServiceConfig;
+  readonly fetchImplementation: typeof fetch;
+  readonly now: () => Date;
+  readonly accessTokenCache: SalesforceAccessTokenCacheEntry | null;
+  readonly timeoutMs: number;
+  readonly startedAtMs?: number;
+}): Promise<SalesforceAccessTokenCacheEntry> {
+  const currentTime = input.now().getTime();
+  const nowEpochSeconds = Math.floor(currentTime / 1000);
+
+  if (
+    input.accessTokenCache !== null &&
+    input.accessTokenCache.expiresAtEpochMs - 30_000 > currentTime
+  ) {
+    return input.accessTokenCache;
+  }
+
+  const tokenUrl = new URL(
+    "/services/oauth2/token",
+    input.config.loginUrl
+  ).toString();
+  let assertion: string;
+
+  try {
+    assertion = createSalesforceJwtAssertion({
+      clientId: input.config.clientId,
+      username: input.config.username,
+      loginUrl: input.config.loginUrl,
+      jwtPrivateKey: input.config.jwtPrivateKey,
+      nowEpochSeconds,
+      jwtExpirationSeconds: input.config.jwtExpirationSeconds
+    });
+  } catch {
+    throw new SalesforceHealthCheckError(
+      "needs_attention",
+      "Salesforce JWT signing failed."
+    );
+  }
+
+  let response: Response;
+  const requestTimeoutMs =
+    input.startedAtMs === undefined
+      ? resolveRemainingTimeoutMs({
+          timeoutMs: input.timeoutMs,
+          now: input.now
+        })
+      : resolveRemainingTimeoutMs({
+          timeoutMs: input.timeoutMs,
+          now: input.now,
+          startedAtMs: input.startedAtMs
+        });
+
+  try {
+    response = await input.fetchImplementation(tokenUrl, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion
+      }).toString(),
+      signal: AbortSignal.timeout(requestTimeoutMs)
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new SalesforceHealthCheckError(
+        "needs_attention",
+        "Salesforce token exchange timed out."
+      );
+    }
+
+    throw new SalesforceHealthCheckError(
+      "needs_attention",
+      "Salesforce token exchange request failed."
+    );
+  }
+
+  if (!response.ok) {
+    const responseText = await response.text();
+
+    if (isDisconnectedSalesforceAuthError(response.status, responseText)) {
+      throw new SalesforceHealthCheckError(
+        "disconnected",
+        `Invalid or expired credentials: ${responseText}`
+      );
+    }
+
+    throw new SalesforceHealthCheckError(
+      "needs_attention",
+      `Salesforce token exchange failed with status ${String(response.status)}: ${responseText}`
+    );
+  }
+
+  let tokenJson: z.infer<typeof salesforceTokenResponseSchema>;
+
+  try {
+    const tokenPayload: unknown = JSON.parse(await response.text());
+    tokenJson = salesforceTokenResponseSchema.parse(tokenPayload);
+  } catch {
+    throw new SalesforceHealthCheckError(
+      "needs_attention",
+      "Salesforce token exchange returned an unexpected response."
+    );
+  }
+
+  return {
+    accessToken: tokenJson.access_token,
+    instanceUrl: tokenJson.instance_url,
+    expiresAtEpochMs: currentTime + 30 * 60 * 1000
+  } satisfies SalesforceAccessTokenCacheEntry;
+}
+
+export async function checkSalesforceCaptureServiceHealth(
+  config: SalesforceCaptureServiceConfig,
+  input?: {
+    readonly fetchImplementation?: typeof fetch;
+    readonly now?: () => Date;
+    readonly timeoutMs?: number;
+    readonly version?: string | null;
+  }
+): Promise<IntegrationHealthCheckResponse> {
+  const parsedConfig = salesforceCaptureServiceConfigSchema.parse(config);
+  const fetchImplementation = input?.fetchImplementation ?? globalThis.fetch;
+  const now = input?.now ?? (() => new Date());
+  const timeoutMs = Math.min(parsedConfig.timeoutMs, input?.timeoutMs ?? 5_000);
+  const checkedAt = now().toISOString();
+  const startedAtMs = now().getTime();
+
+  if (typeof fetchImplementation !== "function") {
+    return integrationHealthCheckResponseSchema.parse({
+      service: "salesforce",
+      status: "needs_attention",
+      checkedAt,
+      detail: "Global fetch is unavailable.",
+      version: input?.version ?? null
+    });
+  }
+
+  try {
+    const token = await exchangeSalesforceAccessToken({
+      config: parsedConfig,
+      fetchImplementation,
+      now,
+      accessTokenCache: null,
+      timeoutMs,
+      startedAtMs
+    });
+    const describeUrl = new URL(
+      `/services/data/v${parsedConfig.apiVersion}/sobjects/Contact/describe`,
+      token.instanceUrl
+    ).toString();
+
+    let response: Response;
+
+    try {
+      response = await fetchImplementation(describeUrl, {
+        headers: {
+          authorization: `Bearer ${token.accessToken}`,
+          accept: "application/json"
+        },
+        signal: AbortSignal.timeout(
+          resolveRemainingTimeoutMs({
+            timeoutMs,
+            now,
+            startedAtMs
+          })
+        )
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        return integrationHealthCheckResponseSchema.parse({
+          service: "salesforce",
+          status: "needs_attention",
+          checkedAt,
+          detail: "Salesforce describe request timed out.",
+          version: input?.version ?? null
+        });
+      }
+
+      return integrationHealthCheckResponseSchema.parse({
+        service: "salesforce",
+        status: "needs_attention",
+        checkedAt,
+        detail: "Salesforce describe request failed.",
+        version: input?.version ?? null
+      });
+    }
+
+    if (response.status === 401) {
+      return integrationHealthCheckResponseSchema.parse({
+        service: "salesforce",
+        status: "disconnected",
+        checkedAt,
+        detail: "Invalid or expired credentials.",
+        version: input?.version ?? null
+      });
+    }
+
+    if (!response.ok) {
+      return integrationHealthCheckResponseSchema.parse({
+        service: "salesforce",
+        status: "needs_attention",
+        checkedAt,
+        detail: `Salesforce describe request failed with status ${String(response.status)}.`,
+        version: input?.version ?? null
+      });
+    }
+
+    // JWT bearer flow mints a fresh access token on demand and does not expose
+    // a reliable token-expiry timestamp for health reporting, so we treat a
+    // successful lightweight authenticated call as healthy.
+    return integrationHealthCheckResponseSchema.parse({
+      service: "salesforce",
+      status: "healthy",
+      checkedAt,
+      detail: null,
+      version: input?.version ?? null
+    });
+  } catch (error) {
+    if (error instanceof SalesforceHealthCheckError) {
+      return integrationHealthCheckResponseSchema.parse({
+        service: "salesforce",
+        status: error.status,
+        checkedAt,
+        detail: error.message,
+        version: input?.version ?? null
+      });
+    }
+
+    return integrationHealthCheckResponseSchema.parse({
+      service: "salesforce",
+      status: "needs_attention",
+      checkedAt,
+      detail: "Unexpected health check failure.",
+      version: input?.version ?? null
+    });
+  }
+}
 
 function base64UrlEncode(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
@@ -143,19 +431,6 @@ function createSalesforceJwtAssertion(input: {
   const signature = signer.sign(normalizePrivateKey(input.jwtPrivateKey));
 
   return `${signingInput}.${signature.toString("base64url")}`;
-}
-
-function formatUpstreamErrorSuffix(responseText: string): string {
-  const trimmed = responseText.trim();
-
-  if (trimmed.length === 0) {
-    return "";
-  }
-
-  const summarized =
-    trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed;
-
-  return ` Response body: ${summarized}`;
 }
 
 const lifecycleSources = [
@@ -349,54 +624,13 @@ export function createSalesforceApiClient(
   }
 
   async function getAccessToken(): Promise<SalesforceAccessTokenCacheEntry> {
-    const currentTime = now().getTime();
-    const nowEpochSeconds = Math.floor(currentTime / 1000);
-
-    if (
-      accessTokenCache !== null &&
-      accessTokenCache.expiresAtEpochMs - 30_000 > currentTime
-    ) {
-      return accessTokenCache;
-    }
-
-    const tokenUrl = new URL("/services/oauth2/token", parsedConfig.loginUrl).toString();
-    const assertion = createSalesforceJwtAssertion({
-      clientId: parsedConfig.clientId,
-      username: parsedConfig.username,
-      loginUrl: parsedConfig.loginUrl,
-      jwtPrivateKey: parsedConfig.jwtPrivateKey,
-      nowEpochSeconds,
-      jwtExpirationSeconds: parsedConfig.jwtExpirationSeconds
+    accessTokenCache = await exchangeSalesforceAccessToken({
+      config: parsedConfig,
+      fetchImplementation,
+      now,
+      accessTokenCache,
+      timeoutMs: parsedConfig.timeoutMs
     });
-    const response = await fetchImplementation(tokenUrl, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/x-www-form-urlencoded"
-      },
-      body: new URLSearchParams({
-        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        assertion
-      }).toString(),
-      signal: AbortSignal.timeout(parsedConfig.timeoutMs)
-    });
-
-    if (!response.ok) {
-      const responseText = await response.text();
-      throw new Error(
-        `Salesforce token exchange failed with status ${String(response.status)}.${formatUpstreamErrorSuffix(
-          responseText
-        )}`
-      );
-    }
-
-    const tokenPayload: unknown = JSON.parse(await response.text());
-    const tokenJson = salesforceTokenResponseSchema.parse(tokenPayload);
-    accessTokenCache = {
-      accessToken: tokenJson.access_token,
-      instanceUrl: tokenJson.instance_url,
-      expiresAtEpochMs: currentTime + 30 * 60 * 1000
-    };
 
     return accessTokenCache;
   }
