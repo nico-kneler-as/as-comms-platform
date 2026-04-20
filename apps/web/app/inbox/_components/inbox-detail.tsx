@@ -201,11 +201,6 @@ export function InboxDetail({ detail }: DetailProps) {
               )}
             </div>
             <div className="hidden items-center gap-1.5 sm:flex">
-              {detail.bucket === "new" ? (
-                <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-800">
-                  Unread
-                </span>
-              ) : null}
               {isFollowUp ? (
                 <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-800">
                   Needs Follow-Up

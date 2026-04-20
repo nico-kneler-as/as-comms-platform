@@ -8,12 +8,19 @@ import type {
   InboxListViewModel
 } from "../_lib/view-models";
 import { fetchInboxListPage } from "../_lib/client-api";
+import { DISPLAY_INBOX_FILTERS } from "../_lib/filters";
+import {
+  Collapsible,
+  CollapsibleContent
+} from "@/components/ui/collapsible";
 import { EmptyState } from "@/components/ui/empty-state";
+import { cn } from "@/lib/utils";
 
 import { extractInboxContactId } from "./inbox-keyboard-helpers";
 import { useInboxClient } from "./inbox-client-provider";
 import { FOCUS_RING, LAYOUT, RADIUS, SHADOW, TEXT, TRANSITION } from "@/app/_lib/design-tokens";
 import {
+  FilterIcon,
   InboxIcon,
   SearchIcon,
   SearchXIcon,
@@ -27,12 +34,11 @@ interface ListColumnProps {
   readonly initialFilterId?: InboxFilterId;
 }
 
-const FILTER_IDS: readonly InboxFilterId[] = [
-  "all",
-  "unread",
-  "follow-up",
-  "unresolved"
-];
+const DISPLAY_FILTER_IDS: readonly InboxFilterId[] = DISPLAY_INBOX_FILTERS.map(
+  (filter) => filter.id
+);
+
+const DEFAULT_TITLE = "Inbox";
 
 export function InboxList({
   initialList,
@@ -57,6 +63,7 @@ export function InboxList({
   const [currentList, setCurrentList] = useState(initialList);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [isFilterTransitionPending, startFilterTransition] = useTransition();
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const activeRequestIdRef = useRef(0);
   const previousFilterRef = useRef<InboxFilterId>(initialFilterId);
   const latestShellStateRef = useRef({
@@ -226,14 +233,38 @@ export function InboxList({
 
   const shouldShowInitialSkeleton = isQueueLoading && currentList.items.length === 0;
   const canLoadMore = currentList.page.hasMore && currentList.page.nextCursor !== null;
+  const titleLabel =
+    filterLabels.get(activeFilter) ??
+    DISPLAY_INBOX_FILTERS.find((filter) => filter.id === activeFilter)?.label ??
+    DEFAULT_TITLE;
 
   return (
     <section className={`relative flex ${LAYOUT.listWidth} shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white`}>
       <div className="sticky top-0 z-10 bg-white/95 backdrop-blur">
         <div className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-5`}>
           <h1 className={`min-w-0 flex-1 truncate ${TEXT.headingLg}`}>
-            Inbox
+            {titleLabel}
           </h1>
+          <button
+            type="button"
+            aria-label={filterPanelOpen ? "Close filters" : "Open filters"}
+            aria-expanded={filterPanelOpen}
+            aria-controls="inbox-filter-panel"
+            onClick={() => {
+              setFilterPanelOpen((open) => !open);
+            }}
+            className={cn(
+              `inline-flex h-8 w-8 shrink-0 items-center justify-center ${RADIUS.md} border`,
+              TRANSITION.fast,
+              TRANSITION.reduceMotion,
+              FOCUS_RING,
+              filterPanelOpen
+                ? "border-slate-300 bg-slate-100 text-slate-900"
+                : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+            )}
+          >
+            <FilterIcon className="h-4 w-4" />
+          </button>
         </div>
 
         <div className="px-5 pb-3 pt-3">
@@ -264,33 +295,55 @@ export function InboxList({
           </label>
         </div>
 
-        <div className="flex flex-wrap gap-1.5 px-5 pb-3">
-          {FILTER_IDS.map((id) => {
-            const isActive = activeFilter === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={isActive}
-                onClick={() => {
-                  startFilterTransition(() => {
-                    setActiveFilter(id);
-                  });
-                }}
-                className={`rounded-full px-2.5 py-1 text-xs font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
-                  isActive
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                {filterLabels.get(id) ?? id}{" "}
-                <span className={isActive ? "text-slate-300" : "text-slate-400"}>
-                  {filterCounts[id]}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <Collapsible open={filterPanelOpen} onOpenChange={setFilterPanelOpen}>
+          <CollapsibleContent
+            id="inbox-filter-panel"
+            className="border-t border-slate-100 px-5 pb-3 pt-3"
+          >
+            <div className="flex flex-col gap-2">
+              <p className={TEXT.label}>Status</p>
+              <div className="flex flex-wrap gap-1.5">
+                {DISPLAY_FILTER_IDS.map((id) => {
+                  const isActive = activeFilter === id;
+                  const showCount = id !== "all";
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      aria-pressed={isActive}
+                      onClick={() => {
+                        startFilterTransition(() => {
+                          setActiveFilter(id);
+                        });
+                      }}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-xs font-medium",
+                        TRANSITION.fast,
+                        TRANSITION.reduceMotion,
+                        FOCUS_RING,
+                        isActive
+                          ? "bg-slate-900 text-white"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      )}
+                    >
+                      {filterLabels.get(id) ?? id}
+                      {showCount ? (
+                        <span
+                          className={cn(
+                            "ml-1 tabular-nums",
+                            isActive ? "text-slate-300" : "text-slate-400"
+                          )}
+                        >
+                          {filterCounts[id]}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {queueError ? (
           <div className="border-t border-rose-100 bg-rose-50 px-5 py-2 text-xs text-rose-700">

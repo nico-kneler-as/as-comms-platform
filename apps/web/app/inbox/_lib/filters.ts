@@ -21,3 +21,11 @@ export const INBOX_FILTERS: readonly FilterDefinition[] = [
   { id: "follow-up", label: "Needs Follow-Up", hint: "Flagged by you" },
   { id: "unresolved", label: "Unresolved", hint: "Has pending review items" }
 ];
+
+/**
+ * Filters surfaced in the list column filter panel. Unresolved is tracked
+ * server-side and surfaced via the detail rail + banner, not offered as a
+ * top-level filter — operators triage it per row.
+ */
+export const DISPLAY_INBOX_FILTERS: readonly FilterDefinition[] =
+  INBOX_FILTERS.filter((filter) => filter.id !== "unresolved");
