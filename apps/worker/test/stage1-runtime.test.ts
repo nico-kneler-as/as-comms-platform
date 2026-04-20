@@ -11,6 +11,7 @@ import {
 } from "../src/runtime.js";
 import {
   pollGmailLiveJobName,
+  pollIntegrationHealthJobName,
   pollSalesforceLiveJobName
 } from "../src/orchestration/tasks.js";
 import { createTaskList } from "../src/tasks.js";
@@ -139,7 +140,8 @@ describe("Stage 1 worker runtime task registration", () => {
     expect(buildWorkerCrontab(config)).toBe(
       [
         `*/1 * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
-        `*/5 * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`
+        `*/5 * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
+        `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`
       ].join("\n")
     );
   });

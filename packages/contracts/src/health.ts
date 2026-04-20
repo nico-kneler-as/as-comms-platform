@@ -1,7 +1,32 @@
 import { z } from "zod";
 
+import { integrationHealthStatusSchema } from "./settings-records.js";
+
 export const stageStatusSchema = z.enum(["ok", "warn", "fail"]);
 export type StageStatus = z.infer<typeof stageStatusSchema>;
+
+export const integrationHealthServiceSchema = z.enum([
+  "salesforce",
+  "gmail",
+  "simpletexting",
+  "mailchimp",
+  "notion",
+  "openai"
+]);
+export type IntegrationHealthService = z.infer<
+  typeof integrationHealthServiceSchema
+>;
+
+export const integrationHealthCheckResponseSchema = z.object({
+  service: integrationHealthServiceSchema,
+  status: integrationHealthStatusSchema,
+  checkedAt: z.string().datetime(),
+  detail: z.string().nullable(),
+  version: z.string().nullable().default(null)
+});
+export type IntegrationHealthCheckResponse = z.infer<
+  typeof integrationHealthCheckResponseSchema
+>;
 
 export const serviceHealthSchema = z.object({
   service: z.string().min(1),

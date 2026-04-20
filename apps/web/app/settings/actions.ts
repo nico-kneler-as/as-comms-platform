@@ -13,6 +13,14 @@
 
 import { randomUUID } from "node:crypto";
 
+import type { IntegrationHealthRecord } from "@as-comms/contracts";
+
+import { requireAdmin } from "@/src/server/auth/session";
+import {
+  isMissingIntegrationHealthTableError,
+  refreshIntegrationHealthRecord
+} from "@/src/server/settings/integration-health";
+import { revalidateIntegrationHealth } from "@/src/server/settings/revalidate";
 import type { UiResult, UiSuccess } from "@/src/server/ui-result";
 
 function newRequestId(): string {
@@ -43,6 +51,26 @@ function readOptionalString(
 async function stub<T>(data: T): Promise<UiSuccess<T>> {
   await Promise.resolve();
   return { ok: true, data, requestId: newRequestId() };
+}
+
+function errorResult(
+  code: string,
+  message: string,
+  input?: {
+    readonly retryable?: boolean;
+  }
+) {
+  return {
+    ok: false,
+    code,
+    message,
+    requestId: newRequestId(),
+    ...(input?.retryable === undefined
+      ? {}
+      : {
+          retryable: input.retryable
+        })
+  } as const;
 }
 
 // ─── Projects ───────────────────────────────────────────────────────────────
@@ -197,4 +225,65 @@ export async function syncIntegrationAction(
 ): Promise<UiResult<IntegrationIdResult>> {
   // TODO(stage2): wire to real persistence
   return stub({ id: readString(formData, "id") });
+}
+
+export async function refreshIntegrationHealthAction(
+  formData: FormData
+): Promise<UiResult<IntegrationHealthRecord>> {
+  try {
+    await requireAdmin();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return errorResult(
+        "unauthorized",
+        "You must be signed in to refresh integration health."
+      );
+    }
+
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      return errorResult(
+        "forbidden",
+        "Only admins can refresh integration health."
+      );
+    }
+
+    throw error;
+  }
+
+  const serviceName = readString(formData, "service");
+  if (serviceName.length === 0) {
+    return errorResult("validation_error", "A service name is required.");
+  }
+
+  try {
+    const record = await refreshIntegrationHealthRecord(serviceName);
+    revalidateIntegrationHealth();
+    return {
+      ok: true,
+      data: record,
+      requestId: newRequestId()
+    };
+  } catch (error) {
+    if (isMissingIntegrationHealthTableError(error)) {
+      return errorResult(
+        "dependency_unavailable",
+        "Integration health storage is not available yet.",
+        {
+          retryable: true
+        }
+      );
+    }
+
+    if (error instanceof Error && /invalid_enum_value|Invalid enum value/iu.test(error.message)) {
+      return errorResult("validation_error", "Unknown integration service.");
+    }
+
+    return errorResult(
+      "integration_refresh_failed",
+      "Unable to refresh integration health right now.",
+      {
+        retryable: true
+      }
+    );
+  }
 }
