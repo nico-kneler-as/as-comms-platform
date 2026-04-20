@@ -14,10 +14,16 @@ const workspaceRules = {
     ])
   },
   "apps/gmail-capture": {
-    allowedWorkspaceImports: new Set(["@as-comms/integrations"])
+    allowedWorkspaceImports: new Set([
+      "@as-comms/contracts",
+      "@as-comms/integrations"
+    ])
   },
   "apps/salesforce-capture": {
-    allowedWorkspaceImports: new Set(["@as-comms/integrations"])
+    allowedWorkspaceImports: new Set([
+      "@as-comms/contracts",
+      "@as-comms/integrations"
+    ])
   },
   "packages/contracts": {
     allowedWorkspaceImports: new Set()

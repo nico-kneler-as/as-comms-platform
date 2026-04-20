@@ -74,6 +74,9 @@ importers:
 
   apps/gmail-capture:
     dependencies:
+      '@as-comms/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@as-comms/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
@@ -83,6 +86,9 @@ importers:
 
   apps/salesforce-capture:
     dependencies:
+      '@as-comms/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@as-comms/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations

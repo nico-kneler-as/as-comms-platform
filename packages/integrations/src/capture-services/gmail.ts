@@ -5,8 +5,11 @@ import {
 import {
   gmailHistoricalCaptureBatchPayloadSchema,
   gmailLiveCaptureBatchPayloadSchema,
+  integrationHealthCheckResponseSchema,
   type GmailHistoricalCaptureBatchPayload,
-  type GmailLiveCaptureBatchPayload
+  type GmailLiveCaptureBatchPayload,
+  type IntegrationHealthCheckResponse,
+  type IntegrationHealthStatus
 } from "@as-comms/contracts";
 import {
   type GmailMessageRecord,
@@ -164,6 +167,19 @@ interface GmailAccessTokenCacheEntry {
   readonly expiresAtEpochSeconds: number;
 }
 
+class GmailHealthCheckError extends Error {
+  constructor(
+    readonly status: Extract<
+      IntegrationHealthStatus,
+      "needs_attention" | "disconnected"
+    >,
+    message: string
+  ) {
+    super(message);
+    this.name = "GmailHealthCheckError";
+  }
+}
+
 const gmailTokenResponseSchema = z.object({
   access_token: z.string().min(1),
   expires_in: z.number().int().positive().default(3600)
@@ -179,6 +195,174 @@ const gmailListResponseSchema = z.object({
     .default([]),
   nextPageToken: z.string().min(1).optional()
 });
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
+}
+
+function isDisconnectedGmailTokenError(
+  status: number,
+  responseText: string
+): boolean {
+  if (status !== 400 && status !== 401) {
+    return false;
+  }
+
+  return /(invalid_grant|revoked|permission|access_denied)/iu.test(
+    responseText
+  );
+}
+
+async function exchangeGmailAccessToken(input: {
+  readonly config: ResolvedGmailCaptureServiceConfig;
+  readonly mailbox: string;
+  readonly fetchImplementation: typeof fetch;
+  readonly now: () => Date;
+  readonly accessTokenByMailbox: Map<string, GmailAccessTokenCacheEntry>;
+  readonly timeoutMs: number;
+}): Promise<GmailAccessTokenCacheEntry> {
+  const nowEpochSeconds = Math.floor(input.now().getTime() / 1000);
+  const cachedToken = input.accessTokenByMailbox.get(input.mailbox);
+
+  if (
+    cachedToken !== undefined &&
+    cachedToken.expiresAtEpochSeconds - 30 > nowEpochSeconds
+  ) {
+    return cachedToken;
+  }
+
+  let response: Response;
+
+  try {
+    response = await input.fetchImplementation(input.config.tokenUri, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: input.config.oauthClientId,
+        client_secret: input.config.oauthClientSecret,
+        refresh_token: input.config.oauthRefreshToken
+      }).toString(),
+      signal: AbortSignal.timeout(input.timeoutMs)
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new GmailHealthCheckError(
+        "needs_attention",
+        "OAuth token exchange timed out."
+      );
+    }
+
+    throw new GmailHealthCheckError(
+      "needs_attention",
+      "OAuth token exchange request failed."
+    );
+  }
+
+  if (!response.ok) {
+    const responseText = await response.text();
+
+    if (isDisconnectedGmailTokenError(response.status, responseText)) {
+      throw new GmailHealthCheckError(
+        "disconnected",
+        "OAuth refresh token expired, was revoked, or lost required permissions."
+      );
+    }
+
+    throw new GmailHealthCheckError(
+      "needs_attention",
+      `OAuth token exchange failed with status ${String(response.status)}.`
+    );
+  }
+
+  let tokenJson: z.infer<typeof gmailTokenResponseSchema>;
+
+  try {
+    tokenJson = gmailTokenResponseSchema.parse(
+      JSON.parse(await response.text()) as unknown
+    );
+  } catch {
+    throw new GmailHealthCheckError(
+      "needs_attention",
+      "OAuth token exchange returned an unexpected response."
+    );
+  }
+
+  const token = {
+    accessToken: tokenJson.access_token,
+    expiresAtEpochSeconds: nowEpochSeconds + tokenJson.expires_in
+  } satisfies GmailAccessTokenCacheEntry;
+  input.accessTokenByMailbox.set(input.mailbox, token);
+
+  return token;
+}
+
+export async function checkGmailCaptureServiceHealth(
+  config: GmailCaptureServiceConfig,
+  input?: {
+    readonly fetchImplementation?: typeof fetch;
+    readonly now?: () => Date;
+    readonly timeoutMs?: number;
+    readonly version?: string | null;
+  }
+): Promise<IntegrationHealthCheckResponse> {
+  const parsedConfig = gmailCaptureServiceConfigSchema.parse(config);
+  const fetchImplementation = input?.fetchImplementation ?? globalThis.fetch;
+  const now = input?.now ?? (() => new Date());
+  const accessTokenByMailbox = new Map<string, GmailAccessTokenCacheEntry>();
+  const timeoutMs = Math.min(parsedConfig.timeoutMs, input?.timeoutMs ?? 5_000);
+  const checkedAt = now().toISOString();
+
+  if (typeof fetchImplementation !== "function") {
+    return integrationHealthCheckResponseSchema.parse({
+      service: "gmail",
+      status: "needs_attention",
+      checkedAt,
+      detail: "Global fetch is unavailable.",
+      version: input?.version ?? null
+    });
+  }
+
+  try {
+    await exchangeGmailAccessToken({
+      config: parsedConfig,
+      mailbox: parsedConfig.liveAccount,
+      fetchImplementation,
+      now,
+      accessTokenByMailbox,
+      timeoutMs
+    });
+
+    return integrationHealthCheckResponseSchema.parse({
+      service: "gmail",
+      status: "healthy",
+      checkedAt,
+      detail: null,
+      version: input?.version ?? null
+    });
+  } catch (error) {
+    if (error instanceof GmailHealthCheckError) {
+      return integrationHealthCheckResponseSchema.parse({
+        service: "gmail",
+        status: error.status,
+        checkedAt,
+        detail: error.message,
+        version: input?.version ?? null
+      });
+    }
+
+    return integrationHealthCheckResponseSchema.parse({
+      service: "gmail",
+      status: "needs_attention",
+      checkedAt,
+      detail: "Unexpected health check failure.",
+      version: input?.version ?? null
+    });
+  }
+}
 
 export function createGmailMailboxApiClient(
   config: GmailCaptureServiceConfig,
@@ -198,46 +382,16 @@ export function createGmailMailboxApiClient(
   }
 
   async function getAccessToken(mailbox: string): Promise<string> {
-    const nowEpochSeconds = Math.floor(now().getTime() / 1000);
-    const cachedToken = accessTokenByMailbox.get(mailbox);
-
-    if (
-      cachedToken !== undefined &&
-      cachedToken.expiresAtEpochSeconds - 30 > nowEpochSeconds
-    ) {
-      return cachedToken.accessToken;
-    }
-
-    const response = await fetchImplementation(parsedConfig.tokenUri, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/x-www-form-urlencoded"
-      },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        client_id: parsedConfig.oauthClientId,
-        client_secret: parsedConfig.oauthClientSecret,
-        refresh_token: parsedConfig.oauthRefreshToken
-      }).toString(),
-      signal: AbortSignal.timeout(parsedConfig.timeoutMs)
+    const token = await exchangeGmailAccessToken({
+      config: parsedConfig,
+      mailbox,
+      fetchImplementation,
+      now,
+      accessTokenByMailbox,
+      timeoutMs: parsedConfig.timeoutMs
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `Gmail token exchange failed with status ${String(response.status)}.`
-      );
-    }
-
-    const tokenJson = gmailTokenResponseSchema.parse(
-      JSON.parse(await response.text()) as unknown
-    );
-    accessTokenByMailbox.set(mailbox, {
-      accessToken: tokenJson.access_token,
-      expiresAtEpochSeconds: nowEpochSeconds + tokenJson.expires_in
-    });
-
-    return tokenJson.access_token;
+    return token.accessToken;
   }
 
   async function gmailFetchJson<TSchema extends z.ZodType<unknown>>(input: {
