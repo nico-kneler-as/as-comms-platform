@@ -6,6 +6,7 @@ import type {
   InboxTimelineEntryKind,
   InboxTimelineEntryViewModel,
 } from "../_lib/view-models";
+import { autolinkText } from "./_autolink";
 import { ChevronRightIcon, MailIcon, NoteIcon, PhoneIcon } from "./icons";
 import { DividerLabel } from "@/components/ui/divider-label";
 import { cn } from "@/lib/utils";
@@ -148,7 +149,7 @@ function InboundBubble({
   return (
     <li className="flex w-full flex-col items-start">
       <div
-        className={`max-w-2xl ${RADIUS.bubble} rounded-bl-sm border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}
+        className={`w-full max-w-2xl ${RADIUS.bubble} rounded-bl-sm border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}
       >
         {isEmail && entry.subject ? (
           <p className="mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-900">
@@ -156,7 +157,9 @@ function InboundBubble({
           </p>
         ) : null}
         {body.length > 0 ? (
-          <p className={`whitespace-pre-wrap text-pretty ${TEXT.bodySm}`}>{body}</p>
+          <p className={`whitespace-pre-wrap text-pretty ${TEXT.bodySm}`}>
+            {autolinkText(body, "text-sky-600")}
+          </p>
         ) : null}
       </div>
       <div className={`mt-1.5 flex items-center gap-1.5 px-1 ${TEXT.micro}`}>
@@ -187,7 +190,7 @@ function OutboundBubble({
   return (
     <li className="flex w-full flex-col items-end">
       <div
-        className={`max-w-2xl ${RADIUS.bubble} rounded-br-sm bg-slate-800 px-4 py-3 ${SHADOW.sm}`}
+        className={`w-full max-w-2xl ${RADIUS.bubble} rounded-br-sm bg-slate-800 px-4 py-3 ${SHADOW.sm}`}
       >
         {isEmail && entry.subject ? (
           <p className="mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-100">
@@ -196,7 +199,7 @@ function OutboundBubble({
         ) : null}
         {body.length > 0 ? (
           <p className="whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-slate-200">
-            {body}
+            {autolinkText(body, "text-sky-300")}
           </p>
         ) : null}
       </div>
@@ -271,7 +274,7 @@ function AutomatedRow({
                 isExpanded ? "whitespace-pre-wrap text-pretty" : "line-clamp-1"
               )}
             >
-              {body}
+              {isExpanded ? autolinkText(body, "text-sky-600") : body}
             </p>
           ) : null}
         </div>
@@ -294,7 +297,7 @@ function NoteEntry({ entry }: { readonly entry: InboxTimelineEntryViewModel }) {
   return (
     <li className="flex w-full flex-col items-end">
       <div
-        className={`max-w-2xl ${RADIUS.md} border-l-2 border-amber-400 ${TONE.amber.subtle} px-4 py-2.5`}
+        className={`w-full max-w-2xl ${RADIUS.md} border-l-2 border-amber-400 ${TONE.amber.subtle} px-4 py-2.5`}
       >
         <div className="mb-1 flex items-center gap-1.5 text-[11px] text-amber-700">
           <NoteIcon className="h-3 w-3" />

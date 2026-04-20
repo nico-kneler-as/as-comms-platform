@@ -506,6 +506,70 @@ function sanitizePreviewText(value: string): string {
     .trim();
 }
 
+const STRUCTURED_EMAIL_TRANSLATION_MARKER_PATTERN =
+  /\b(?:en|es|fr|de|pt):(?=[A-ZÀ-Ý])/g;
+const STRUCTURED_EMAIL_PARAGRAPH_STARTERS = [
+  "Thank you",
+  "Thanks",
+  "We are",
+  "We're",
+  "This",
+  "These",
+  "That",
+  "The project coordinator",
+  "The",
+  "Gracias",
+  "El coordinador",
+  "Esta",
+  "Este",
+  "Estas",
+  "Estos",
+  "Saludos,",
+] as const;
+const SIGNATURE_SEPARATOR_PATTERN = /^(?:---|--\s)$/;
+const SENT_WITH_SIGNATURE_PATTERN = /^Sent with\b/i;
+const SIGN_OFF_LINE_PATTERN =
+  /^(?:Best,|Thanks,|Warmly,|Cheers,|Sincerely,|Saludos,)(?:\s.*)?$/i;
+
+function restoreStructuredEmailParagraphs(value: string): string {
+  const normalized = value.trim();
+
+  if (normalized.length === 0 || normalized.includes("\n")) {
+    return normalized;
+  }
+
+  const hasGreeting =
+    /^(?:Hi|Hello|Hey|Hola|Dear)\b[^,\n]{0,80},(?=\S)/i.test(normalized);
+  const hasTranslationMarker =
+    STRUCTURED_EMAIL_TRANSLATION_MARKER_PATTERN.test(normalized);
+  const sentenceBreaks = normalized.match(/[.!?](?=\S)/g)?.length ?? 0;
+
+  if (!hasGreeting && !hasTranslationMarker && sentenceBreaks < 3) {
+    return normalized;
+  }
+
+  const paragraphStarterPattern = new RegExp(
+    `([.!?])\\s*(?=(?:¡|¿|${STRUCTURED_EMAIL_PARAGRAPH_STARTERS.map((starter) =>
+      starter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    ).join("|")}))`,
+    "g",
+  );
+
+  return normalized
+    .replace(
+      /^((?:Hi|Hello|Hey|Hola|Dear)\b[^,\n]{0,80},)(?=\S)/i,
+      "$1\n\n",
+    )
+    .replace(paragraphStarterPattern, "$1\n\n")
+    .replace(
+      /([.!?])\s*(?=(?:en|es|fr|de|pt):(?=[A-ZÀ-Ý]))/g,
+      "$1\n\n",
+    )
+    .replace(STRUCTURED_EMAIL_TRANSLATION_MARKER_PATTERN, "\n\n$&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 interface ParsedPreview {
   readonly structuredEmail: boolean;
   readonly fromAddresses: readonly string[];
@@ -653,6 +717,98 @@ function trimQuotedReplyContent(value: string): string {
   ).trim();
 }
 
+function signatureLooksLikeClosing(
+  lines: readonly string[],
+  index: number,
+): boolean {
+  const trailingLines = lines.slice(index);
+  const trailingNonEmpty = trailingLines.filter(
+    (line) => line.trim().length > 0,
+  );
+
+  if (trailingNonEmpty.length === 0 || trailingNonEmpty.length > 6) {
+    return false;
+  }
+
+  if (index === lines.length - 1) {
+    return true;
+  }
+
+  return trailingLines.slice(1).some((line) => {
+    const trimmed = line.trim();
+
+    return (
+      trimmed.length === 0 ||
+      /^[A-Z][A-Za-zÀ-ÿ'’.-]+(?:\s+[A-Z][A-Za-zÀ-ÿ'’.-]+){0,3}$/.test(
+        trimmed,
+      ) ||
+      /@|https?:\/\/|\b(?:adventure scientists|docuseal|sent from my)\b/i.test(
+        trimmed,
+      )
+    );
+  });
+}
+
+export function stripSignature(body: string): string {
+  const normalized = body.replace(/\r\n?/g, "\n").trim();
+
+  if (normalized.length === 0) {
+    return "";
+  }
+
+  const lines = normalized.split("\n");
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = (lines[index] ?? "").trim();
+
+    if (
+      SIGNATURE_SEPARATOR_PATTERN.test(trimmed) ||
+      SENT_WITH_SIGNATURE_PATTERN.test(trimmed) ||
+      /^(?:[-—]\s*)?The Adventure Scientists Team$/i.test(trimmed) ||
+      /^Adventure Scientists$/i.test(trimmed)
+    ) {
+      return lines.slice(0, index).join("\n").trim();
+    }
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = (lines[index] ?? "").trim();
+
+    if (
+      SIGN_OFF_LINE_PATTERN.test(trimmed) &&
+      signatureLooksLikeClosing(lines, index)
+    ) {
+      return lines.slice(0, index).join("\n").trim();
+    }
+  }
+
+  const inlineClosingMatch =
+    /([.!?])\s*(?:Best,|Thanks,|Warmly,|Cheers,|Sincerely,|Saludos,).*/i.exec(
+      normalized,
+    );
+
+  if (
+    inlineClosingMatch !== null &&
+    inlineClosingMatch.index >= normalized.length - 200
+  ) {
+    return normalized.slice(0, inlineClosingMatch.index + 1).trim();
+  }
+
+  const trailingSignatureMatch =
+    /\n+\s*(?:Best,|Thanks,|Warmly,|Cheers,|Sincerely,|Saludos,).*/i.exec(
+      normalized,
+    );
+
+  if (
+    trailingSignatureMatch !== null &&
+    trailingSignatureMatch.index >= normalized.length - 200
+  ) {
+    return normalized.slice(0, trailingSignatureMatch.index).trim();
+  }
+
+  return normalized;
+}
+
 function parseCommunicationPreview(raw: string): ParsedPreview {
   const sanitized = sanitizePreviewText(raw);
 
@@ -700,7 +856,9 @@ function parseCommunicationPreview(raw: string): ParsedPreview {
       fromAddresses,
       recipientAddresses,
       subject,
-      body: trimQuotedReplyContent(bodyMatch[1] ?? ""),
+      body: restoreStructuredEmailParagraphs(
+        trimQuotedReplyContent(bodyMatch[1] ?? ""),
+      ),
     };
   }
 
@@ -719,7 +877,7 @@ function parseCommunicationPreview(raw: string): ParsedPreview {
     fromAddresses,
     recipientAddresses,
     subject,
-    body: trimQuotedReplyContent(body),
+    body: restoreStructuredEmailParagraphs(trimQuotedReplyContent(body)),
   };
 }
 
@@ -770,7 +928,7 @@ function resolvePreferredMessagePreview(input: {
 
   return {
     subject: subjectFromExplicit ?? subjectFromPreview,
-    body: body.length > 0 ? body : sanitizedFallback,
+    body: stripSignature(body.length > 0 ? body : sanitizedFallback),
     directionPreview,
   };
 }
@@ -1115,19 +1273,21 @@ function timelineSubject(item: TimelineItem): string | null {
 function timelineBody(item: TimelineItem): string {
   switch (item.family) {
     case "one_to_one_email":
-      return (
+      return stripSignature(
         trimQuotedReplyContent(item.bodyPreview ?? "") ||
-        parseCommunicationPreview(item.snippet).body ||
-        fallbackOneToOneEmailBody(item)
+          parseCommunicationPreview(item.snippet).body ||
+          fallbackOneToOneEmailBody(item),
       );
     case "one_to_one_sms":
       return item.messageTextPreview;
     case "auto_email":
-      return parseCommunicationPreview(item.snippet).body || item.summary;
+      return stripSignature(
+        parseCommunicationPreview(item.snippet).body || item.summary,
+      );
     case "auto_sms":
       return item.messageTextPreview;
     case "campaign_email":
-      return campaignHeadlineAndBody(item).body;
+      return stripSignature(campaignHeadlineAndBody(item).body);
     case "campaign_sms":
       return campaignHeadlineAndBody(item).body;
     case "internal_note":

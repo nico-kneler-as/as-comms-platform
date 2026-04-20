@@ -56,6 +56,7 @@ import {
   getInboxDetail,
   getInboxList,
   getInboxTimelinePage,
+  stripSignature,
 } from "../../app/inbox/_lib/selectors";
 import { InboxContactRail } from "../../app/inbox/_components/inbox-contact-rail";
 import type { InboxListItemViewModel } from "../../app/inbox/_lib/view-models";
@@ -1405,6 +1406,140 @@ describe("real inbox selectors", () => {
     expect(unresolved.items.map((item) => item.contactId)).toEqual([
       "contact:alex-thompson",
     ]);
+  });
+
+  it("restores paragraph breaks for flattened structured Salesforce email bodies", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:mylee-marques",
+      salesforceContactId: "003-mylee-marques",
+      displayName: "Mylee Marques",
+      primaryEmail: "mylee@example.org",
+      primaryPhone: null,
+    });
+    const latestSalesforceEvent = await seedInboxSalesforceOutboundEmailEvent(
+      runtime.context,
+      {
+        id: "mylee-flattened-salesforce-body",
+        contactId: "contact:mylee-marques",
+        occurredAt: "2026-04-16T14:00:00.000Z",
+        subject:
+          "Email: Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral",
+        snippet: [
+          "To: mylee@example.org",
+          "",
+          "Subject: Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral",
+          "Body:",
+          "Hola Mylee,Gracias por aplicar al Proyecto de Monitoreo y Restauracion de Arrecifes de Coral. ¡Estamos emocionados de tenerte a bordo en esta aventura unica!Esta iniciativa multinacional es la primera de su tipo en America Latina en emplear ciencia ciudadana y protocolos de monitoreo globales para generar datos estandarizados y de alta calidad sobre arrecifes de coral. El coordinador del proyecto en tu area estara revisando tu solicitud y, si es aprobada, se pondra en contacto contigo pronto para informarte sobre los siguientes pasos.en:Thank you for applying to the Coral Reef Monitoring and Restoration Project. We are excited for your interest in participating in this one of a kind adventure!This multi-country initiative is the first of its kind in Latin America to employ citizen science and global monitoring protocols to generate high-quality, standardized coral reef data. The project coordinator for your area will be reviewing your application, and if approved, they will be in touch soon about next steps.Saludos,Adventure Scientists",
+        ].join("\n"),
+        messageKind: "one_to_one",
+      },
+    );
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:mylee-marques",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-16T14:00:00.000Z",
+      lastActivityAt: "2026-04-16T14:00:00.000Z",
+      snippet: "Flattened Salesforce fallback should not win.",
+      lastCanonicalEventId: latestSalesforceEvent.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:mylee-marques");
+    const latestEntry = detail?.timeline.at(-1);
+
+    expect(latestEntry).toMatchObject({
+      kind: "outbound-email",
+      body: [
+        "Hola Mylee,",
+        "",
+        "Gracias por aplicar al Proyecto de Monitoreo y Restauracion de Arrecifes de Coral.",
+        "",
+        "¡Estamos emocionados de tenerte a bordo en esta aventura unica!",
+        "",
+        "Esta iniciativa multinacional es la primera de su tipo en America Latina en emplear ciencia ciudadana y protocolos de monitoreo globales para generar datos estandarizados y de alta calidad sobre arrecifes de coral.",
+        "",
+        "El coordinador del proyecto en tu area estara revisando tu solicitud y, si es aprobada, se pondra en contacto contigo pronto para informarte sobre los siguientes pasos.",
+        "",
+        "en:Thank you for applying to the Coral Reef Monitoring and Restoration Project.",
+        "",
+        "We are excited for your interest in participating in this one of a kind adventure!",
+        "",
+        "This multi-country initiative is the first of its kind in Latin America to employ citizen science and global monitoring protocols to generate high-quality, standardized coral reef data.",
+        "",
+        "The project coordinator for your area will be reviewing your application, and if approved, they will be in touch soon about next steps.",
+      ].join("\n"),
+    });
+  });
+
+  it("strips signature fixtures without stripping inline closing phrases", () => {
+    expect(
+      stripSignature(
+        [
+          "Please review the attached scope update.",
+          "---",
+          "Adventure Scientists",
+        ].join("\n"),
+      ),
+    ).toBe("Please review the attached scope update.");
+
+    expect(
+      stripSignature(
+        [
+          "Your document is ready for signature.",
+          "Sent with DocuSeal Pro",
+          "https://docuseal.com/e/example",
+        ].join("\n"),
+      ),
+    ).toBe("Your document is ready for signature.");
+
+    expect(
+      stripSignature(
+        [
+          "We work with Seaside High School, Neah-kah-nie High School, and Northwest Academy.",
+          "",
+          "Best, Elise",
+        ].join("\n"),
+      ),
+    ).toBe(
+      "We work with Seaside High School, Neah-kah-nie High School, and Northwest Academy.",
+    );
+
+    expect(
+      stripSignature(
+        [
+          "We are thrilled to have you in our pod and look forward to seeing where this project takes us, together.",
+          "The Adventure Scientists Team",
+        ].join("\n"),
+      ),
+    ).toBe(
+      "We are thrilled to have you in our pod and look forward to seeing where this project takes us, together.",
+    );
+
+    expect(
+      stripSignature(
+        [
+          "Got this point moved last week but did not email you that I did.",
+          "",
+          "Thanks,",
+          "John",
+        ].join("\n"),
+      ),
+    ).toBe("Got this point moved last week but did not email you that I did.");
+
+    expect(
+      stripSignature(
+        "Best regards, Samantha mentioned the confirmation timing in the paragraph above.",
+      ),
+    ).toBe(
+      "Best regards, Samantha mentioned the confirmation timing in the paragraph above.",
+    );
   });
 
   it("treats an empty query as the default ordered inbox list", async () => {
