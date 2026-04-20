@@ -75,12 +75,7 @@ export function SettingsSectionNav() {
           SPACING.section
         )}
       >
-        <div>
-          <h2 className={TEXT.headingSm}>Settings</h2>
-          <p className={cn(TEXT.caption, "mt-0.5")}>
-            Workspace configuration.
-          </p>
-        </div>
+        <h2 className={TEXT.headingSm}>Settings</h2>
       </div>
 
       <nav className="flex flex-col gap-0.5 p-2">

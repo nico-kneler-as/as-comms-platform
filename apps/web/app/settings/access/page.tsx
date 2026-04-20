@@ -48,10 +48,7 @@ export default async function SettingsAccessPage() {
   const isAdmin = currentUser.role === "admin";
 
   return (
-    <SettingsContent
-      title="Access"
-      description="Teammates with access to this workspace. Admins can change roles and deactivate accounts."
-    >
+    <SettingsContent>
       <AccessSection
         users={users}
         currentUserId={currentUser.id}

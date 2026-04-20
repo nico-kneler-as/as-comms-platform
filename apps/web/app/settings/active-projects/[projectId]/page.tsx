@@ -37,7 +37,7 @@ export default async function SettingsProjectDetailPage({ params }: PageProps) {
   const isAdmin = currentUser.role === "admin";
 
   return (
-    <SettingsContent title={project.name}>
+    <SettingsContent>
       <ProjectDetail project={project} isAdmin={isAdmin} />
     </SettingsContent>
   );

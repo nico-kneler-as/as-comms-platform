@@ -30,10 +30,7 @@ export default async function SettingsActiveProjectsPage() {
   const activeProjects = MOCK_PROJECTS.filter((project) => project.active);
 
   return (
-    <SettingsContent
-      title="Active Projects"
-      description="Projects currently routing inbound mail. Click a row to edit its alias and connected addresses."
-    >
+    <SettingsContent>
       <ActiveProjectsSection
         projects={activeProjects}
         inactiveProjects={MOCK_INACTIVE_PROJECTS}
