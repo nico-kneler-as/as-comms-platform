@@ -4,9 +4,10 @@ import type {
   InboxFilterId,
   InboxListViewModel
 } from "../_lib/view-models";
+import { PrimaryIconRail } from "@/app/_components/primary-icon-rail";
+
 import { InboxClientProvider } from "./inbox-client-provider";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
-import { InboxIconRail } from "./inbox-icon-rail";
 import { InboxKeyboardProvider } from "./inbox-keyboard-provider";
 import { InboxList } from "./inbox-list";
 
@@ -34,7 +35,7 @@ export function InboxShell({
     <InboxClientProvider>
       <InboxKeyboardProvider>
         <InboxFreshnessPoller listFreshness={initialList.freshness} />
-        <InboxIconRail />
+        <PrimaryIconRail />
 
         <InboxList
           initialList={initialList}

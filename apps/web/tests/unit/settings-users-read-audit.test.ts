@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const requireSession = vi.hoisted(() => vi.fn());
 const getCurrentUser = vi.hoisted(() => vi.fn());
 const redirect = vi.hoisted(() => vi.fn());
+const notFound = vi.hoisted(() => vi.fn());
 
 Object.assign(globalThis, { React });
 
 vi.mock("next/navigation", () => ({
   redirect,
+  notFound,
 }));
 
 vi.mock("@/src/server/auth/session", () => ({
@@ -16,7 +18,7 @@ vi.mock("@/src/server/auth/session", () => ({
   getCurrentUser,
 }));
 
-import SettingsPage from "../../app/settings/page";
+import SettingsAccessPage from "../../app/settings/access/page";
 import { waitForPendingSecurityAuditTasksForTests } from "../../src/server/security/audit";
 import {
   createStage1WebTestRuntime,
@@ -57,6 +59,7 @@ describe("settings users read audit", () => {
 
   beforeEach(async () => {
     redirect.mockReset();
+    notFound.mockReset();
     requireSession.mockReset();
     getCurrentUser.mockReset();
     runtime = await createStage1WebTestRuntime();
@@ -76,7 +79,7 @@ describe("settings users read audit", () => {
     await runtime.context.settings.users.upsert(operator);
 
     // Session helpers return the admin; both `requireSession` and
-    // `getCurrentUser` are called from the redesigned page.
+    // `getCurrentUser` are called from the Access sub-route.
     requireSession.mockResolvedValue(admin);
     getCurrentUser.mockResolvedValue(admin);
   });
@@ -87,8 +90,8 @@ describe("settings users read audit", () => {
     runtime = null;
   });
 
-  it("records who opened the redesigned settings page", async () => {
-    const page = await SettingsPage();
+  it("records who opened the settings Access page", async () => {
+    const page = await SettingsAccessPage();
     if (!runtime) {
       throw new Error("runtime not initialized");
     }
