@@ -2003,13 +2003,56 @@ function createStage2RepositoriesInternal(
     },
 
     projects: {
-      async findById(projectId) {
+      async findById(projectId: string) {
         const [row] = await loadSettingsProjects([projectId]);
         return row ?? null;
       },
 
       async listAll() {
         return loadSettingsProjects();
+      },
+
+      async setActive(projectId: string, isActive: boolean) {
+        const [row] = await db
+          .update(projectDimensions)
+          .set({
+            isActive,
+            updatedAt: new Date()
+          })
+          .where(eq(projectDimensions.projectId, projectId))
+          .returning({
+            projectId: projectDimensions.projectId
+          });
+
+        if (row === undefined) {
+          return null;
+        }
+
+        const [project] = await loadSettingsProjects([row.projectId]);
+        return project ?? null;
+      },
+
+      async setAiKnowledgeUrl(
+        projectId: string,
+        aiKnowledgeUrl: string | null
+      ) {
+        const [row] = await db
+          .update(projectDimensions)
+          .set({
+            aiKnowledgeUrl,
+            updatedAt: new Date()
+          })
+          .where(eq(projectDimensions.projectId, projectId))
+          .returning({
+            projectId: projectDimensions.projectId
+          });
+
+        if (row === undefined) {
+          return null;
+        }
+
+        const [project] = await loadSettingsProjects([row.projectId]);
+        return project ?? null;
       }
     },
 
@@ -2139,6 +2182,43 @@ function createStage2RepositoriesInternal(
           .orderBy(asc(projectAliases.alias));
 
         return rows.map(mapProjectAliasRow);
+      },
+
+      async replaceForProject(input: {
+        readonly projectId: string;
+        readonly aliases: readonly string[];
+        readonly actorId: string;
+      }) {
+        return db.transaction(async (tx: Stage1Database) => {
+          await tx
+            .delete(projectAliases)
+            .where(eq(projectAliases.projectId, input.projectId));
+
+          if (input.aliases.length === 0) {
+            return [];
+          }
+
+          const createdAtBase = Date.now();
+          const rows = await tx
+            .insert(projectAliases)
+            .values(
+              input.aliases.map((alias: string, index: number) => {
+                const occurredAt = new Date(createdAtBase + index);
+                return {
+                  id: crypto.randomUUID(),
+                  alias,
+                  projectId: input.projectId,
+                  createdAt: occurredAt,
+                  updatedAt: occurredAt,
+                  createdBy: input.actorId,
+                  updatedBy: input.actorId
+                };
+              })
+            )
+            .returning();
+
+          return rows.map(mapProjectAliasRow);
+        });
       },
 
       async create(record: ProjectAliasRecord) {

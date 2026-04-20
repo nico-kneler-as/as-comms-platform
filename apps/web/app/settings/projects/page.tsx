@@ -19,7 +19,7 @@ export default async function SettingsProjectsPage() {
   }
 
   const viewModel = await loadProjectsSettings({
-    filter: "active"
+    filter: "all"
   });
 
   return (

@@ -21,6 +21,11 @@ export interface ProjectAliasesRepository {
   findById(id: string): Promise<ProjectAliasRecord | null>;
   findByAlias(alias: string): Promise<ProjectAliasRecord | null>;
   listAssigned(): Promise<readonly ProjectAliasRecord[]>;
+  replaceForProject(input: {
+    readonly projectId: string;
+    readonly aliases: readonly string[];
+    readonly actorId: string;
+  }): Promise<readonly ProjectAliasRecord[]>;
   create(record: ProjectAliasRecord): Promise<ProjectAliasRecord>;
   update(record: ProjectAliasRecord): Promise<ProjectAliasRecord>;
   delete(id: string): Promise<void>;
@@ -29,6 +34,14 @@ export interface ProjectAliasesRepository {
 export interface SettingsProjectsRepository {
   findById(projectId: string): Promise<SettingsProjectRecord | null>;
   listAll(): Promise<readonly SettingsProjectRecord[]>;
+  setActive(
+    projectId: string,
+    isActive: boolean
+  ): Promise<SettingsProjectRecord | null>;
+  setAiKnowledgeUrl(
+    projectId: string,
+    aiKnowledgeUrl: string | null
+  ): Promise<SettingsProjectRecord | null>;
 }
 
 export interface IntegrationHealthRepository {

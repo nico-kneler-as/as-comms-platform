@@ -1,22 +1,9 @@
-"use client";
-
-import { useMemo, useState, useTransition } from "react";
-
 import {
-  FOCUS_RING,
   RADIUS,
   SHADOW,
   TEXT,
   TRANSITION
 } from "@/app/_lib/design-tokens";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ToneAvatar } from "@/components/ui/tone-avatar";
 import { cn } from "@/lib/utils";
@@ -25,23 +12,7 @@ import type {
   UserRowViewModel
 } from "@/src/server/settings/selectors";
 
-import {
-  deactivateUserAction,
-  demoteUserAction,
-  inviteUserAction,
-  promoteUserAction,
-  reactivateUserAction
-} from "../actions";
 import { SettingsSection } from "./settings-section";
-
-interface AccessSectionProps {
-  readonly viewModel: AccessSettingsViewModel;
-}
-
-interface FeedbackState {
-  readonly kind: "success" | "error";
-  readonly message: string;
-}
 
 const AVATAR_TONES = [
   "indigo",
@@ -70,11 +41,10 @@ function initialsFor(user: UserRowViewModel): string {
 
 function toneFor(user: UserRowViewModel): AvatarTone {
   let hash = 0;
-  for (let i = 0; i < user.userId.length; i += 1) {
-    hash = (hash * 31 + user.userId.charCodeAt(i)) | 0;
+  for (let index = 0; index < user.userId.length; index += 1) {
+    hash = (hash * 31 + user.userId.charCodeAt(index)) | 0;
   }
-  const index = Math.abs(hash) % AVATAR_TONES.length;
-  const tone = AVATAR_TONES[index];
+  const tone = AVATAR_TONES[Math.abs(hash) % AVATAR_TONES.length];
   return tone ?? ("slate" as AvatarTone);
 }
 
@@ -98,136 +68,37 @@ function formatRelative(iso: string | null): string {
   return `${String(years)}y ago`;
 }
 
-export function AccessSection({ viewModel }: AccessSectionProps) {
-  const [rows, setRows] = useState([
-    ...viewModel.admins,
-    ...viewModel.internalUsers
-  ]);
-  const [pending, startTransition] = useTransition();
-  const [pendingRowId, setPendingRowId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+function sortUsers(
+  rows: readonly UserRowViewModel[],
+  currentUserId: string | null
+): readonly UserRowViewModel[] {
+  const statusRank = {
+    active: 0,
+    pending: 1,
+    deactivated: 2
+  } as const;
 
-  const sorted = useMemo(() => {
-    const statusRank = {
-      active: 0,
-      pending: 1,
-      deactivated: 2
-    } as const;
+  return [...rows].sort((left, right) => {
+    if (left.userId === currentUserId) return -1;
+    if (right.userId === currentUserId) return 1;
 
-    return [...rows].sort((left, right) => {
-      if (left.userId === viewModel.currentUserId) return -1;
-      if (right.userId === viewModel.currentUserId) return 1;
+    const statusDelta = statusRank[left.status] - statusRank[right.status];
+    if (statusDelta !== 0) {
+      return statusDelta;
+    }
 
-      const statusDelta = statusRank[left.status] - statusRank[right.status];
-      if (statusDelta !== 0) {
-        return statusDelta;
-      }
+    return left.displayName.localeCompare(right.displayName);
+  });
+}
 
-      return left.displayName.localeCompare(right.displayName);
-    });
-  }, [rows, viewModel.currentUserId]);
-
-  function announce(message: string, kind: FeedbackState["kind"] = "success") {
-    setFeedback({ kind, message });
-    window.setTimeout(() => {
-      setFeedback(null);
-    }, 3500);
-  }
-
-  function updateRow(id: string, patch: Partial<UserRowViewModel>) {
-    setRows((current) =>
-      current.map((row) => (row.userId === id ? { ...row, ...patch } : row))
-    );
-  }
-
-  function handlePromote(user: UserRowViewModel) {
-    setPendingRowId(user.userId);
-    startTransition(async () => {
-      const formData = new FormData();
-      formData.set("id", user.userId);
-      const result = await promoteUserAction(formData);
-      setPendingRowId(null);
-      if (result.ok) {
-        updateRow(user.userId, { role: "admin" });
-        announce(`${user.displayName} is now an admin. (stub)`);
-      }
-    });
-  }
-
-  function handleDemote(user: UserRowViewModel) {
-    setPendingRowId(user.userId);
-    startTransition(async () => {
-      const formData = new FormData();
-      formData.set("id", user.userId);
-      const result = await demoteUserAction(formData);
-      setPendingRowId(null);
-      if (result.ok) {
-        updateRow(user.userId, { role: "internal_user" });
-        announce(`${user.displayName} is now an internal user. (stub)`);
-      }
-    });
-  }
-
-  function handleDeactivate(user: UserRowViewModel) {
-    setPendingRowId(user.userId);
-    startTransition(async () => {
-      const formData = new FormData();
-      formData.set("id", user.userId);
-      const result = await deactivateUserAction(formData);
-      setPendingRowId(null);
-      if (result.ok) {
-        updateRow(user.userId, { status: "deactivated" });
-        announce(`${user.displayName} deactivated. (stub)`);
-      }
-    });
-  }
-
-  function handleReactivate(user: UserRowViewModel) {
-    setPendingRowId(user.userId);
-    startTransition(async () => {
-      const formData = new FormData();
-      formData.set("id", user.userId);
-      const result = await reactivateUserAction(formData);
-      setPendingRowId(null);
-      if (result.ok) {
-        updateRow(user.userId, {
-          status: user.lastActiveAt === null ? "pending" : "active"
-        });
-        announce(`${user.displayName} reactivated. (stub)`);
-      }
-    });
-  }
-
-  function handleInvite() {
-    startTransition(async () => {
-      const formData = new FormData();
-      formData.set("email", "");
-      formData.set("role", "internal_user");
-      const result = await inviteUserAction(formData);
-      if (result.ok) {
-        announce("Invite flow is not wired yet. (stub)");
-      }
-    });
-  }
+export function AccessSection({ viewModel }: { readonly viewModel: AccessSettingsViewModel }) {
+  const rows = sortUsers(
+    [...viewModel.admins, ...viewModel.internalUsers],
+    viewModel.currentUserId
+  );
 
   return (
-    <SettingsSection
-      id="settings-access"
-      title="Access"
-      action={
-        viewModel.isAdmin ? (
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleInvite}
-            disabled={pending}
-          >
-            Invite teammate
-          </Button>
-        ) : null
-      }
-      feedback={feedback}
-    >
+    <SettingsSection id="settings-access" title="Access">
       <div
         className={cn(
           "overflow-hidden",
@@ -269,28 +140,18 @@ export function AccessSection({ viewModel }: AccessSectionProps) {
               >
                 Last active
               </th>
-              <th
-                scope="col"
-                className={cn(
-                  "px-5 py-3 text-right",
-                  TEXT.label,
-                  "tracking-wider"
-                )}
-              >
-                <span className="sr-only">Actions</span>
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {sorted.map((user) => {
+            {rows.map((user) => {
               const isSelf = user.userId === viewModel.currentUserId;
-              const isRowPending = pending && pendingRowId === user.userId;
+
               return (
                 <tr
                   key={user.userId}
                   className={cn(
                     TRANSITION.fast,
-                    isRowPending ? "opacity-60" : "hover:bg-slate-50/80",
+                    "hover:bg-slate-50/80",
                     user.status === "deactivated" && "bg-slate-50/60"
                   )}
                 >
@@ -313,11 +174,11 @@ export function AccessSection({ viewModel }: AccessSectionProps) {
                           >
                             {user.displayName}
                           </p>
-                          {isSelf && (
+                          {isSelf ? (
                             <span className={cn(TEXT.micro, "text-slate-400")}>
                               (you)
                             </span>
-                          )}
+                          ) : null}
                         </div>
                         <p
                           className={cn(
@@ -347,73 +208,6 @@ export function AccessSection({ viewModel }: AccessSectionProps) {
                     >
                       {formatRelative(user.lastActiveAt)}
                     </span>
-                  </td>
-                  <td className="px-5 py-3 align-middle">
-                    <div className="flex justify-end">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            disabled={
-                              !viewModel.isAdmin || isSelf || isRowPending
-                            }
-                            aria-label={`Actions for ${user.displayName}`}
-                            className={cn(
-                              "flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700",
-                              TRANSITION.fast,
-                              FOCUS_RING,
-                              "disabled:cursor-not-allowed disabled:opacity-40"
-                            )}
-                          >
-                            <MoreIcon className="h-4 w-4" aria-hidden="true" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-52">
-                          {user.status === "deactivated" ? (
-                            <DropdownMenuItem
-                              onSelect={(event) => {
-                                event.preventDefault();
-                                handleReactivate(user);
-                              }}
-                            >
-                              Reactivate
-                            </DropdownMenuItem>
-                          ) : (
-                            <>
-                              {user.role === "internal_user" ? (
-                                <DropdownMenuItem
-                                  onSelect={(event) => {
-                                    event.preventDefault();
-                                    handlePromote(user);
-                                  }}
-                                >
-                                  Promote to admin
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem
-                                  onSelect={(event) => {
-                                    event.preventDefault();
-                                    handleDemote(user);
-                                  }}
-                                >
-                                  Demote to internal user
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onSelect={(event) => {
-                                  event.preventDefault();
-                                  handleDeactivate(user);
-                                }}
-                                className="text-rose-700 focus:bg-rose-50 focus:text-rose-800"
-                              >
-                                Deactivate
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
                   </td>
                 </tr>
               );
@@ -474,19 +268,4 @@ function UserStatusBadge({
   }
 
   return null;
-}
-
-function MoreIcon({ className }: { readonly className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <circle cx="4" cy="10" r="1.5" />
-      <circle cx="10" cy="10" r="1.5" />
-      <circle cx="16" cy="10" r="1.5" />
-    </svg>
-  );
 }

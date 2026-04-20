@@ -38,3 +38,38 @@ export async function requireApiSession(): Promise<
     throw error;
   }
 }
+
+export async function resolveAdminSession(): Promise<
+  | {
+      readonly ok: true;
+      readonly user: UserRecord;
+    }
+  | {
+      readonly ok: false;
+      readonly code: "unauthorized" | "forbidden";
+    }
+> {
+  try {
+    const user = await requireSession();
+    if (user.role !== "admin") {
+      return {
+        ok: false,
+        code: "forbidden"
+      };
+    }
+
+    return {
+      ok: true,
+      user
+    };
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return {
+        ok: false,
+        code: "unauthorized"
+      };
+    }
+
+    throw error;
+  }
+}

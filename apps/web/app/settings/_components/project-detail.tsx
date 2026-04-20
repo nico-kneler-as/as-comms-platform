@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { ArrowLeft, RefreshCw, Trash2 } from "lucide-react";
 
 import {
@@ -28,29 +27,128 @@ import { cn } from "@/lib/utils";
 import type { ProjectSettingsDetailViewModel } from "@/src/server/settings/selectors";
 
 import {
-  addProjectEmailAction,
+  activateProjectAction,
   deactivateProjectAction,
-  removeProjectEmailAction
+  type ProjectEmailInput,
+  type ProjectMutationData,
+  updateProjectAiKnowledgeAction,
+  updateProjectEmailsAction
 } from "../actions";
-
-interface ProjectDetailProps {
-  readonly project: ProjectSettingsDetailViewModel;
-}
 
 interface FeedbackState {
   readonly kind: "success" | "error";
   readonly message: string;
 }
 
-export function ProjectDetail({ project }: ProjectDetailProps) {
-  const router = useRouter();
-  const [emails, setEmails] = useState(project.emails);
+function hasActivationRequirements(input: {
+  readonly aiKnowledgeUrl: string | null;
+  readonly emails: readonly ProjectEmailInput[];
+}): boolean {
+  return (
+    input.emails.length >= 1 &&
+    (input.aiKnowledgeUrl?.trim().length ?? 0) > 0
+  );
+}
+
+function buildProjectState(
+  project: ProjectSettingsDetailViewModel
+): ProjectMutationData {
+  return {
+    projectId: project.projectId,
+    projectName: project.projectName,
+    isActive: project.isActive,
+    aiKnowledgeUrl: project.aiKnowledgeUrl,
+    aiKnowledgeSyncedAt: project.aiKnowledgeSyncedAt,
+    activationRequirementsMet: project.activationRequirementsMet,
+    emails: project.emails
+  };
+}
+
+function mergeProjectState(
+  current: ProjectMutationData,
+  patch: Partial<ProjectMutationData>
+): ProjectMutationData {
+  const next = {
+    ...current,
+    ...patch
+  };
+
+  return {
+    ...next,
+    activationRequirementsMet: hasActivationRequirements({
+      aiKnowledgeUrl: next.aiKnowledgeUrl,
+      emails: next.emails
+    })
+  };
+}
+
+function promotePrimaryEmail(
+  emails: readonly ProjectEmailInput[],
+  address: string
+): readonly ProjectEmailInput[] {
+  const selected = emails.find((email) => email.address === address);
+  if (!selected) {
+    return emails;
+  }
+
+  return [
+    {
+      address: selected.address,
+      isPrimary: true
+    },
+    ...emails
+      .filter((email) => email.address !== address)
+      .map((email) => ({
+        address: email.address,
+        isPrimary: false
+      }))
+  ];
+}
+
+function removeEmail(
+  emails: readonly ProjectEmailInput[],
+  address: string
+): readonly ProjectEmailInput[] {
+  const remaining = emails.filter((email) => email.address !== address);
+  if (remaining.length === 0) {
+    return [];
+  }
+
+  if (remaining.some((email) => email.isPrimary)) {
+    return remaining;
+  }
+
+  return remaining.map((email, index) => ({
+    address: email.address,
+    isPrimary: index === 0
+  }));
+}
+
+function formatLastSynced(iso: string | null): string {
+  return iso
+    ? `Knowledge last synced ${new Date(iso).toLocaleString()}`
+    : "Knowledge has not been synced yet.";
+}
+
+export function ProjectDetail({
+  project
+}: {
+  readonly project: ProjectSettingsDetailViewModel;
+}) {
+  const [projectState, setProjectState] = useState(() => buildProjectState(project));
+  const [optimisticProject, applyOptimisticProject] = useOptimistic(
+    projectState,
+    mergeProjectState
+  );
+  const [knowledgeDraft, setKnowledgeDraft] = useState(project.aiKnowledgeUrl ?? "");
   const [newEmail, setNewEmail] = useState("");
-  const [emailPending, startEmailTransition] = useTransition();
-  const [deactivatePending, startDeactivateTransition] = useTransition();
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
-  const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [activationMessage, setActivationMessage] = useState<string | null>(null);
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [knowledgePending, startKnowledgeTransition] = useTransition();
+  const [emailPending, startEmailTransition] = useTransition();
+  const [activationPending, startActivationTransition] = useTransition();
+  const [deactivateOpen, setDeactivateOpen] = useState(false);
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
     setFeedback({ kind, message });
@@ -59,80 +157,170 @@ export function ProjectDetail({ project }: ProjectDetailProps) {
     }, 3500);
   }
 
+  function commitProject(nextProject: ProjectMutationData) {
+    setProjectState(nextProject);
+    setKnowledgeDraft(nextProject.aiKnowledgeUrl ?? "");
+    setActivationMessage(null);
+  }
+
   function handleKnowledgeSync() {
-    announce("Knowledge sync will be wired in a follow-up brief. (stub)");
+    announce("Knowledge sync stays stubbed in this brief.", "error");
   }
 
   function handleAddEmail() {
-    const trimmed = newEmail.trim();
-    if (trimmed.length === 0) return;
-    if (
-      emails.some(
-        (email) => email.address.toLowerCase() === trimmed.toLowerCase()
-      )
-    ) {
-      announce(`${trimmed} is already connected.`, "error");
+    const normalizedAddress = newEmail.trim().toLowerCase();
+    if (normalizedAddress.length === 0) {
       return;
     }
-    setPendingEmail(trimmed);
+
+    if (
+      optimisticProject.emails.some(
+        (email) => email.address.toLowerCase() === normalizedAddress
+      )
+    ) {
+      announce(`${normalizedAddress} is already connected.`, "error");
+      return;
+    }
+
+    const nextEmails =
+      optimisticProject.emails.length === 0
+        ? [{ address: normalizedAddress, isPrimary: true }]
+        : [
+            ...optimisticProject.emails,
+            { address: normalizedAddress, isPrimary: false }
+          ];
+
+    setPendingEmail(normalizedAddress);
     startEmailTransition(async () => {
-      const formData = new FormData();
-      formData.set("projectId", project.projectId);
-      formData.set("email", trimmed);
-      const result = await addProjectEmailAction(formData);
+      applyOptimisticProject({ emails: nextEmails });
+      const result = await updateProjectEmailsAction(
+        project.projectId,
+        nextEmails
+      );
       setPendingEmail(null);
-      if (result.ok) {
-        setEmails((current) => [
-          ...current,
-          { address: trimmed, isPrimary: current.length === 0 }
-        ]);
-        setNewEmail("");
-        announce(`Added ${trimmed}. (stub)`);
+
+      if (!result.ok) {
+        announce(result.message, "error");
+        return;
       }
+
+      commitProject(result.data);
+      setNewEmail("");
+      announce(`Added ${normalizedAddress}.`);
     });
   }
 
-  function handleRemoveEmail(email: string) {
-    setPendingEmail(email);
-    startEmailTransition(async () => {
-      const formData = new FormData();
-      formData.set("projectId", project.projectId);
-      formData.set("email", email);
-      const result = await removeProjectEmailAction(formData);
-      setPendingEmail(null);
-      if (result.ok) {
-        setEmails((current) => {
-          const next = current.filter((value) => value.address !== email);
-          if (next.length === 0 || next.some((value) => value.isPrimary)) {
-            return next;
-          }
+  function handleRemoveEmail(address: string) {
+    const nextEmails = removeEmail(optimisticProject.emails, address);
 
-          return next.map((value, index) => ({
-            ...value,
-            isPrimary: index === 0
-          }));
-        });
-        announce(`Removed ${email}. (stub)`);
+    setPendingEmail(address);
+    startEmailTransition(async () => {
+      applyOptimisticProject({ emails: nextEmails });
+      const result = await updateProjectEmailsAction(
+        project.projectId,
+        nextEmails
+      );
+      setPendingEmail(null);
+
+      if (!result.ok) {
+        announce(result.message, "error");
+        return;
       }
+
+      commitProject(result.data);
+      announce(`Removed ${address}.`);
+    });
+  }
+
+  function handleMakePrimary(address: string) {
+    const nextEmails = promotePrimaryEmail(optimisticProject.emails, address);
+
+    setPendingEmail(address);
+    startEmailTransition(async () => {
+      applyOptimisticProject({ emails: nextEmails });
+      const result = await updateProjectEmailsAction(
+        project.projectId,
+        nextEmails
+      );
+      setPendingEmail(null);
+
+      if (!result.ok) {
+        announce(result.message, "error");
+        return;
+      }
+
+      commitProject(result.data);
+      announce(`${address} is now the primary email.`);
+    });
+  }
+
+  function handleSaveKnowledgeUrl() {
+    const nextUrl = knowledgeDraft.trim().length === 0 ? null : knowledgeDraft.trim();
+
+    startKnowledgeTransition(async () => {
+      applyOptimisticProject({ aiKnowledgeUrl: nextUrl });
+      const result = await updateProjectAiKnowledgeAction(
+        project.projectId,
+        nextUrl
+      );
+
+      if (!result.ok) {
+        announce(result.message, "error");
+        return;
+      }
+
+      commitProject(result.data);
+      announce(
+        nextUrl === null
+          ? "Cleared the AI knowledge URL."
+          : "Updated the AI knowledge URL."
+      );
+    });
+  }
+
+  function handleActivate() {
+    startActivationTransition(async () => {
+      applyOptimisticProject({ isActive: true });
+      const result = await activateProjectAction(project.projectId);
+
+      if (!result.ok) {
+        setActivationMessage(result.message);
+        announce(result.message, "error");
+        return;
+      }
+
+      commitProject(result.data);
+      announce(`${result.data.projectName} is now active.`);
     });
   }
 
   function handleDeactivate() {
-    startDeactivateTransition(async () => {
-      const formData = new FormData();
-      formData.set("id", project.projectId);
-      const result = await deactivateProjectAction(formData);
-      if (result.ok) {
-        setDeactivateOpen(false);
-        router.push("/settings/projects");
-        router.refresh();
+    startActivationTransition(async () => {
+      applyOptimisticProject({ isActive: false });
+      const result = await deactivateProjectAction(project.projectId);
+
+      if (!result.ok) {
+        announce(result.message, "error");
+        return;
       }
+
+      commitProject(result.data);
+      setDeactivateOpen(false);
+      announce(`${result.data.projectName} is now inactive.`);
     });
   }
 
+  const knowledgeDirty =
+    knowledgeDraft.trim() !== (optimisticProject.aiKnowledgeUrl ?? "");
+  const inactiveActivationMessage =
+    activationMessage ??
+    (!optimisticProject.activationRequirementsMet
+      ? "Add at least one email and an AI knowledge URL to activate."
+      : null);
+
   return (
     <div className="flex max-w-3xl flex-col gap-8">
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-4">
         <Link
           href="/settings/projects"
           className={cn(
@@ -143,21 +331,104 @@ export function ProjectDetail({ project }: ProjectDetailProps) {
           )}
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-          Back to Active Projects
+          Back to Projects
         </Link>
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-lg font-semibold tracking-tight text-slate-950">
-            {project.projectName}
-          </h1>
-          <StatusBadge
-            label={project.isActive ? "Active" : "Inactive"}
-            colorClasses={
-              project.isActive
-                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                : "bg-amber-50 text-amber-800 ring-amber-200"
-            }
-            variant="soft"
-          />
+
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg font-semibold tracking-tight text-slate-950">
+                {project.projectName}
+              </h1>
+              <StatusBadge
+                label={optimisticProject.isActive ? "Active" : "Inactive"}
+                colorClasses={
+                  optimisticProject.isActive
+                    ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                    : "bg-amber-50 text-amber-800 ring-amber-200"
+                }
+                variant="soft"
+              />
+            </div>
+            <p className={TEXT.caption}>
+              Activation requires at least one connected inbox email and an AI
+              knowledge source.
+            </p>
+          </div>
+
+          {project.isAdmin ? (
+            <div className="flex min-w-[240px] flex-col items-start gap-2">
+              {optimisticProject.isActive ? (
+                <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={activationPending}
+                    >
+                      Deactivate project
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>
+                        Deactivate {project.projectName}?
+                      </DialogTitle>
+                      <DialogDescription>
+                        This will hide the project from the active list.
+                        Continue?
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-4">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setDeactivateOpen(false);
+                        }}
+                        disabled={activationPending}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        onClick={handleDeactivate}
+                        disabled={activationPending}
+                      >
+                        Deactivate project
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={handleActivate}
+                  disabled={
+                    activationPending ||
+                    !optimisticProject.activationRequirementsMet
+                  }
+                >
+                  Activate project
+                </Button>
+              )}
+
+              {!optimisticProject.isActive && inactiveActivationMessage ? (
+                <p
+                  className={cn(
+                    "max-w-[240px]",
+                    TEXT.caption,
+                    "text-slate-600"
+                  )}
+                >
+                  {inactiveActivationMessage}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -189,10 +460,6 @@ export function ProjectDetail({ project }: ProjectDetailProps) {
           <h2 id="project-details-heading" className={TEXT.headingSm}>
             Project details
           </h2>
-          <p className={cn("mt-0.5", TEXT.caption)}>
-            Activation requires at least one connected inbox email and an AI
-            knowledge source.
-          </p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -219,26 +486,49 @@ export function ProjectDetail({ project }: ProjectDetailProps) {
             >
               AI knowledge source
             </label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="project-ai-knowledge-url"
-                value={project.aiKnowledgeUrl ?? ""}
-                disabled
-                readOnly
-                placeholder="No source configured"
-                className="font-mono text-[13px]"
-              />
-              {project.isAdmin ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={handleKnowledgeSync}
-                >
-                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                  Sync
-                </Button>
-              ) : null}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <Input
+                  id="project-ai-knowledge-url"
+                  value={knowledgeDraft}
+                  onChange={(event) => {
+                    setKnowledgeDraft(event.target.value);
+                    setActivationMessage(null);
+                  }}
+                  disabled={!project.isAdmin || knowledgePending}
+                  readOnly={!project.isAdmin}
+                  placeholder="https://..."
+                  className="font-mono text-[13px]"
+                />
+                {project.isAdmin ? (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleSaveKnowledgeUrl}
+                      disabled={knowledgePending || !knowledgeDirty}
+                    >
+                      Save URL
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleKnowledgeSync}
+                    >
+                      <RefreshCw
+                        className="mr-1.5 h-3.5 w-3.5"
+                        aria-hidden="true"
+                      />
+                      Sync
+                    </Button>
+                  </>
+                ) : null}
+              </div>
+              <span className={TEXT.caption}>
+                {formatLastSynced(optimisticProject.aiKnowledgeSyncedAt)}
+              </span>
             </div>
           </div>
         </div>
@@ -246,22 +536,17 @@ export function ProjectDetail({ project }: ProjectDetailProps) {
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge
             label={
-              project.activationRequirementsMet
+              optimisticProject.activationRequirementsMet
                 ? "Activation ready"
                 : "Needs setup"
             }
             colorClasses={
-              project.activationRequirementsMet
+              optimisticProject.activationRequirementsMet
                 ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
                 : "bg-amber-50 text-amber-800 ring-amber-200"
             }
             variant="soft"
           />
-          <span className={TEXT.caption}>
-            {project.aiKnowledgeSyncedAt
-              ? `Knowledge last synced ${new Date(project.aiKnowledgeSyncedAt).toLocaleString()}`
-              : "Knowledge has not been synced yet."}
-          </span>
         </div>
       </section>
 
@@ -291,7 +576,7 @@ export function ProjectDetail({ project }: ProjectDetailProps) {
             "border border-slate-100"
           )}
         >
-          {emails.map((email) => {
+          {optimisticProject.emails.map((email) => {
             const isRowPending = emailPending && pendingEmail === email.address;
             return (
               <li
@@ -311,7 +596,20 @@ export function ProjectDetail({ project }: ProjectDetailProps) {
                     variant="soft"
                   />
                 ) : null}
-                {project.isAdmin && emails.length > 1 ? (
+                {project.isAdmin && !email.isPrimary ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={emailPending}
+                    onClick={() => {
+                      handleMakePrimary(email.address);
+                    }}
+                  >
+                    Make primary
+                  </Button>
+                ) : null}
+                {project.isAdmin ? (
                   <button
                     type="button"
                     aria-label={`Remove ${email.address}`}
@@ -333,13 +631,13 @@ export function ProjectDetail({ project }: ProjectDetailProps) {
               </li>
             );
           })}
-          {emails.length === 0 && (
+          {optimisticProject.emails.length === 0 ? (
             <li className="px-3 py-4 text-center">
               <p className={TEXT.caption}>
-                No connected addresses. Add one below.
+                No connected addresses yet.
               </p>
             </li>
-          )}
+          ) : null}
         </ul>
 
         {project.isAdmin ? (
@@ -353,6 +651,7 @@ export function ProjectDetail({ project }: ProjectDetailProps) {
               value={newEmail}
               onChange={(event) => {
                 setNewEmail(event.target.value);
+                setActivationMessage(null);
               }}
               disabled={emailPending}
               placeholder="inbox@asc.internal"
@@ -370,75 +669,6 @@ export function ProjectDetail({ project }: ProjectDetailProps) {
           </div>
         ) : null}
       </section>
-
-      {project.isAdmin ? (
-        <section
-          aria-labelledby="project-danger-heading"
-          className={cn(
-            "flex flex-col gap-3 p-5",
-            RADIUS.md,
-            "border border-rose-200 bg-white ring-1 ring-inset ring-rose-100",
-            SHADOW.sm
-          )}
-        >
-          <div>
-            <h2
-              id="project-danger-heading"
-              className="text-sm font-semibold text-rose-800"
-            >
-              Danger zone
-            </h2>
-            <p className={cn("mt-0.5", TEXT.caption)}>
-              Deactivated projects stop routing inbound mail but are preserved
-              in the record.
-            </p>
-          </div>
-          <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
-            <DialogTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="w-fit border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
-              >
-                Deactivate project
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Deactivate {project.projectName}?</DialogTitle>
-                <DialogDescription>
-                  Deactivated projects stop routing inbound mail but are
-                  preserved in the record. You can reactivate them from a
-                  follow-up admin workflow later.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter className="mt-4">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setDeactivateOpen(false);
-                  }}
-                  disabled={deactivatePending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleDeactivate}
-                  disabled={deactivatePending}
-                  className="bg-rose-600 hover:bg-rose-700"
-                >
-                  Deactivate
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </section>
-      ) : null}
     </div>
   );
 }
