@@ -15,7 +15,7 @@ import type { InboxDrivingEventType } from "@as-comms/contracts";
  *   - "unresolved" is an overlay on top of the queue model (INBX-04)
  *   - campaign and automated sends are surfaced in the timeline as collapsed
  *     entries so 1:1 history stays readable (INBX-05)
- *   - default list order: lastInboundAt desc, fallback lastActivityAt desc
+ *   - default list order: lastInboundAt desc nulls last, then lastActivityAt desc
  *   - toggling follow-up does NOT change row ordering
  */
 

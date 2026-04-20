@@ -103,11 +103,16 @@ export const compareInboxRecency = (
   a: InboxListItemViewModel,
   b: InboxListItemViewModel,
 ): number => {
-  const aSortAt = a.lastInboundAt ?? a.lastActivityAt;
-  const bSortAt = b.lastInboundAt ?? b.lastActivityAt;
+  if (a.lastInboundAt !== b.lastInboundAt) {
+    if (a.lastInboundAt === null) {
+      return 1;
+    }
 
-  if (aSortAt !== bSortAt) {
-    return aSortAt < bSortAt ? 1 : -1;
+    if (b.lastInboundAt === null) {
+      return -1;
+    }
+
+    return a.lastInboundAt < b.lastInboundAt ? 1 : -1;
   }
 
   if (a.lastActivityAt !== b.lastActivityAt) {
@@ -128,7 +133,7 @@ function uniqueStrings(
 }
 
 function encodeInboxListCursor(input: {
-  readonly sortAt: string;
+  readonly lastInboundAt: string | null;
   readonly lastActivityAt: string;
   readonly contactId: string;
 }): string {
@@ -136,7 +141,7 @@ function encodeInboxListCursor(input: {
 }
 
 function decodeInboxListCursor(cursor: string | null): {
-  readonly sortAt: string;
+  readonly lastInboundAt: string | null;
   readonly lastActivityAt: string;
   readonly contactId: string;
 } | null {
@@ -148,16 +153,17 @@ function decodeInboxListCursor(cursor: string | null): {
     const parsed = JSON.parse(
       Buffer.from(cursor, "base64url").toString("utf8"),
     ) as Partial<{
-      readonly sortAt: string;
+      readonly lastInboundAt: string | null;
       readonly lastActivityAt: string;
       readonly contactId: string;
     }>;
 
-    return typeof parsed.sortAt === "string" &&
+    return (parsed.lastInboundAt === null ||
+      typeof parsed.lastInboundAt === "string") &&
       typeof parsed.lastActivityAt === "string" &&
       typeof parsed.contactId === "string"
       ? {
-          sortAt: parsed.sortAt,
+          lastInboundAt: parsed.lastInboundAt ?? null,
           lastActivityAt: parsed.lastActivityAt,
           contactId: parsed.contactId,
         }
@@ -1423,38 +1429,38 @@ async function readInboxListCacheData(input: {
   const runtime = await getStage1WebRuntime();
   const decodedCursor = decodeInboxListCursor(input.cursor);
   const normalizedQuery = normalizeInlineText(input.query) ?? null;
-  const [projectionPage, counts, freshness, activeProjectRecords] = await Promise.all([
-    normalizedQuery === null
-      ? runtime.repositories.inboxProjection
-          .listPageOrderedByRecency({
+  const [projectionPage, counts, freshness, activeProjectRecords] =
+    await Promise.all([
+      normalizedQuery === null
+        ? runtime.repositories.inboxProjection
+            .listPageOrderedByRecency({
+              filter: input.filterId,
+              limit: input.limit + 1,
+              cursor: decodedCursor,
+              projectId: input.projectId,
+            })
+            .then((rows) => ({
+              rows,
+              total: 0,
+            }))
+        : runtime.repositories.inboxProjection.searchPageOrderedByRecency({
             filter: input.filterId,
             limit: input.limit + 1,
             cursor: decodedCursor,
+            query: normalizedQuery,
             projectId: input.projectId,
-          })
-          .then((rows) => ({
-            rows,
-            total: 0,
-          }))
-      : runtime.repositories.inboxProjection.searchPageOrderedByRecency({
-          filter: input.filterId,
-          limit: input.limit + 1,
-          cursor: decodedCursor,
-          query: normalizedQuery,
-          projectId: input.projectId,
-        }),
-    runtime.repositories.inboxProjection.countByFilters({
-      projectId: input.projectId,
-    }),
-    runtime.repositories.inboxProjection.getFreshness(),
-    runtime.repositories.projectDimensions.listActive(),
-  ]);
-  const activeProjects: readonly InboxActiveProjectOption[] = activeProjectRecords.map(
-    (record) => ({
+          }),
+      runtime.repositories.inboxProjection.countByFilters({
+        projectId: input.projectId,
+      }),
+      runtime.repositories.inboxProjection.getFreshness(),
+      runtime.repositories.projectDimensions.listActive(),
+    ]);
+  const activeProjects: readonly InboxActiveProjectOption[] =
+    activeProjectRecords.map((record) => ({
       id: record.projectId,
       name: record.projectName,
-    }),
-  );
+    }));
   const hasMore = projectionPage.rows.length > input.limit;
   const pageProjections = hasMore
     ? projectionPage.rows.slice(0, input.limit)
@@ -1505,10 +1511,9 @@ async function readInboxListCacheData(input: {
         !hasMore || pageRows.length === 0
           ? null
           : encodeInboxListCursor({
-              sortAt:
+              lastInboundAt:
                 pageRows[pageRows.length - 1]?.inboxProjection.lastInboundAt ??
-                pageRows[pageRows.length - 1]?.inboxProjection.lastActivityAt ??
-                "",
+                null,
               lastActivityAt:
                 pageRows[pageRows.length - 1]?.inboxProjection.lastActivityAt ??
                 "",

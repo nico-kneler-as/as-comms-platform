@@ -1,38 +1,48 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
-import type {
-  InboxFilterId,
-  InboxListViewModel
-} from "../_lib/view-models";
+import type { InboxFilterId, InboxListViewModel } from "../_lib/view-models";
 import { fetchInboxListPage } from "../_lib/client-api";
 import { DISPLAY_INBOX_FILTERS } from "../_lib/filters";
-import {
-  Collapsible,
-  CollapsibleContent
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 
 import { extractInboxContactId } from "./inbox-keyboard-helpers";
+import { resolveAutoLoadInboxCursor } from "./inbox-list-pagination";
 import { useInboxClient } from "./inbox-client-provider";
-import { FOCUS_RING, LAYOUT, RADIUS, SHADOW, TEXT, TRANSITION } from "@/app/_lib/design-tokens";
+import {
+  FOCUS_RING,
+  LAYOUT,
+  RADIUS,
+  SHADOW,
+  TEXT,
+  TRANSITION,
+} from "@/app/_lib/design-tokens";
 import {
   ChevronDownIcon,
   FilterIcon,
   InboxIcon,
   SearchIcon,
   SearchXIcon,
-  XIcon
+  XIcon,
 } from "./icons";
 
 const ALL_PROJECTS_VALUE = "__all__";
@@ -45,14 +55,14 @@ interface ListColumnProps {
 }
 
 const DISPLAY_FILTER_IDS: readonly InboxFilterId[] = DISPLAY_INBOX_FILTERS.map(
-  (filter) => filter.id
+  (filter) => filter.id,
 );
 
 const DEFAULT_TITLE = "Inbox";
 
 export function InboxList({
   initialList,
-  initialFilterId = "all"
+  initialFilterId = "all",
 }: ListColumnProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -63,40 +73,46 @@ export function InboxList({
     setSearchQuery,
     clearSearch,
     isQueueLoading,
-    setQueueLoading
+    setQueueLoading,
   } = useInboxClient();
   const urlQuery = searchParams.get("q") ?? "";
   const deferredQuery = useDeferredValue(search.query);
   const normalizedQuery = deferredQuery.trim();
   const isServerSearchActive = normalizedQuery.length > 0;
-  const [activeFilter, setActiveFilter] = useState<InboxFilterId>(initialFilterId);
+  const [activeFilter, setActiveFilter] =
+    useState<InboxFilterId>(initialFilterId);
   const [selectedProjectId, setSelectedProjectId] = useState(
-    initialList.selectedProjectId ?? null
+    initialList.selectedProjectId ?? null,
   );
   const [currentList, setCurrentList] = useState(initialList);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [isFilterTransitionPending, startFilterTransition] = useTransition();
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const activeRequestIdRef = useRef(0);
+  const listViewportRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const pendingAppendCursorRef = useRef<string | null>(null);
   const previousFilterRef = useRef<InboxFilterId>(initialFilterId);
   const previousProjectIdRef = useRef<string | null>(null);
   const latestShellStateRef = useRef({
     activeFilter: initialFilterId,
     selectedProjectId: initialList.selectedProjectId ?? null,
-    initialList
+    initialList,
   });
   const listFreshnessKey = `${initialList.freshness.latestUpdatedAt ?? "none"}:${initialList.freshness.total.toString()}`;
   const initialFilterCountById = useMemo(
     () =>
-      new Map(initialList.filters.map((filter) => [filter.id, filter.count] as const)),
-    [initialList.filters]
+      new Map(
+        initialList.filters.map((filter) => [filter.id, filter.count] as const),
+      ),
+    [initialList.filters],
   );
 
   useEffect(() => {
     latestShellStateRef.current = {
       activeFilter,
       selectedProjectId,
-      initialList
+      initialList,
     };
   }, [activeFilter, initialList, selectedProjectId]);
 
@@ -138,6 +154,22 @@ export function InboxList({
       readonly query?: string | null;
       readonly projectId?: string | null;
     }) => {
+      const appendCursor = input.append ? (input.cursor ?? null) : null;
+
+      if (input.append) {
+        if (appendCursor === null) {
+          return;
+        }
+
+        if (pendingAppendCursorRef.current === appendCursor) {
+          return;
+        }
+
+        pendingAppendCursorRef.current = appendCursor;
+      } else {
+        pendingAppendCursorRef.current = null;
+      }
+
       const requestId = activeRequestIdRef.current + 1;
       activeRequestIdRef.current = requestId;
       setQueueLoading(true);
@@ -148,7 +180,7 @@ export function InboxList({
           filterId: input.filterId,
           ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
           query: input.query ?? null,
-          projectId: input.projectId ?? null
+          projectId: input.projectId ?? null,
         });
 
         if (activeRequestIdRef.current !== requestId) {
@@ -159,9 +191,9 @@ export function InboxList({
           input.append
             ? {
                 ...nextList,
-                items: [...previousList.items, ...nextList.items]
+                items: [...previousList.items, ...nextList.items],
               }
-            : nextList
+            : nextList,
         );
       } catch {
         if (activeRequestIdRef.current !== requestId) {
@@ -170,12 +202,19 @@ export function InboxList({
 
         setQueueError("Inbox refresh failed. Keeping the last loaded rows.");
       } finally {
+        if (
+          appendCursor !== null &&
+          pendingAppendCursorRef.current === appendCursor
+        ) {
+          pendingAppendCursorRef.current = null;
+        }
+
         if (activeRequestIdRef.current === requestId) {
           setQueueLoading(false);
         }
       }
     },
-    [setQueueLoading]
+    [setQueueLoading],
   );
 
   useEffect(() => {
@@ -207,8 +246,9 @@ export function InboxList({
         page: {
           hasMore: false,
           nextCursor: null,
-          total: initialFilterCountById.get(activeFilter) ?? previousList.page.total
-        }
+          total:
+            initialFilterCountById.get(activeFilter) ?? previousList.page.total,
+        },
       }));
     }
 
@@ -216,7 +256,7 @@ export function InboxList({
       filterId: activeFilter,
       append: false,
       query: normalizedQuery,
-      projectId: selectedProjectId
+      projectId: selectedProjectId,
     });
   }, [
     activeFilter,
@@ -225,7 +265,7 @@ export function InboxList({
     loadFilterPage,
     normalizedQuery,
     selectedProjectId,
-    setQueueLoading
+    setQueueLoading,
   ]);
 
   useEffect(() => {
@@ -245,33 +285,40 @@ export function InboxList({
       filterId: latestShellState.activeFilter,
       append: false,
       query: normalizedQuery,
-      projectId: latestShellState.selectedProjectId
+      projectId: latestShellState.selectedProjectId,
     });
   }, [isServerSearchActive, listFreshnessKey, loadFilterPage, normalizedQuery]);
 
   const filterLabels = useMemo(
     () =>
-      new Map(currentList.filters.map((filter) => [filter.id, filter.label] as const)),
-    [currentList.filters]
+      new Map(
+        currentList.filters.map((filter) => [filter.id, filter.label] as const),
+      ),
+    [currentList.filters],
   );
 
   const filterCounts = useMemo(
     () =>
       Object.fromEntries(
-        currentList.filters.map((filter) => [filter.id, filter.count] as const)
+        currentList.filters.map((filter) => [filter.id, filter.count] as const),
       ) as Record<InboxFilterId, number>,
-    [currentList.filters]
+    [currentList.filters],
   );
 
   const displayItems = currentList.items;
 
-  const shouldShowInitialSkeleton = isQueueLoading && currentList.items.length === 0;
-  const canLoadMore = currentList.page.hasMore && currentList.page.nextCursor !== null;
+  const shouldShowInitialSkeleton =
+    isQueueLoading && currentList.items.length === 0;
+  const canLoadMore =
+    currentList.page.hasMore && currentList.page.nextCursor !== null;
+  const isLoadingMore =
+    isQueueLoading && pendingAppendCursorRef.current !== null;
   const activeProjects = currentList.activeProjects;
   const selectedProjectName =
     selectedProjectId === null
       ? null
-      : (activeProjects.find((project) => project.id === selectedProjectId)?.name ?? null);
+      : (activeProjects.find((project) => project.id === selectedProjectId)
+          ?.name ?? null);
   const filterLabel =
     filterLabels.get(activeFilter) ??
     DISPLAY_INBOX_FILTERS.find((filter) => filter.id === activeFilter)?.label ??
@@ -281,10 +328,72 @@ export function InboxList({
       ? filterLabel
       : `${filterLabel} · ${selectedProjectName}`;
 
+  useEffect(() => {
+    const root = listViewportRef.current;
+    const sentinel = loadMoreSentinelRef.current;
+
+    if (root === null || sentinel === null) {
+      return;
+    }
+
+    if (!canLoadMore) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const nextCursor = resolveAutoLoadInboxCursor({
+          isIntersecting: entries.some((entry) => entry.isIntersecting),
+          hasMore: currentList.page.hasMore,
+          nextCursor: currentList.page.nextCursor,
+          isQueueLoading,
+          isFilterTransitionPending,
+          pendingCursor: pendingAppendCursorRef.current,
+        });
+
+        if (nextCursor === null) {
+          return;
+        }
+
+        void loadFilterPage({
+          filterId: activeFilter,
+          cursor: nextCursor,
+          append: true,
+          query: normalizedQuery,
+          projectId: selectedProjectId,
+        });
+      },
+      {
+        root,
+        rootMargin: "240px 0px",
+      },
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [
+    activeFilter,
+    canLoadMore,
+    currentList.page.hasMore,
+    currentList.page.nextCursor,
+    isFilterTransitionPending,
+    isQueueLoading,
+    loadFilterPage,
+    normalizedQuery,
+    selectedProjectId,
+  ]);
+
   return (
-    <section className={`relative flex ${LAYOUT.listWidth} shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white`}>
+    <section
+      className={`relative flex ${LAYOUT.listWidth} shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white`}
+    >
       <div className="sticky top-0 z-10 bg-white/95 backdrop-blur">
-        <div className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-5`}>
+        <div
+          className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-5`}
+        >
           <h1 className={`min-w-0 flex-1 truncate ${TEXT.headingLg}`}>
             {titleLabel}
           </h1>
@@ -305,7 +414,7 @@ export function InboxList({
               FOCUS_RING,
               filterPanelOpen
                 ? "border-slate-300 bg-slate-100 text-slate-900"
-                : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900",
             )}
           >
             <FilterIcon className="h-4 w-4" />
@@ -313,7 +422,9 @@ export function InboxList({
         </div>
 
         <div className="px-5 pb-3 pt-3">
-          <label className={`flex items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm} ${TRANSITION.fast} focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300`}>
+          <label
+            className={`flex items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm} ${TRANSITION.fast} focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300`}
+          >
             <SearchIcon className="h-4 w-4 text-slate-400" />
             <input
               id="inbox-search-input"
@@ -336,7 +447,7 @@ export function InboxList({
                   "relative rounded p-0.5 text-slate-400 hover:text-slate-700",
                   "transition-[color,transform] duration-150 ease-out active:scale-[0.96]",
                   "after:absolute after:-inset-2.5 after:content-['']",
-                  TRANSITION.reduceMotion
+                  TRANSITION.reduceMotion,
                 )}
               >
                 <XIcon className="h-3.5 w-3.5" />
@@ -375,7 +486,7 @@ export function InboxList({
                           FOCUS_RING,
                           isActive
                             ? "bg-slate-900 text-white"
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200",
                         )}
                       >
                         {filterLabels.get(id) ?? id}
@@ -383,7 +494,7 @@ export function InboxList({
                           <span
                             className={cn(
                               "ml-1 tabular-nums",
-                              isActive ? "text-slate-300" : "text-slate-400"
+                              isActive ? "text-slate-300" : "text-slate-400",
                             )}
                           >
                             {filterCounts[id]}
@@ -407,7 +518,7 @@ export function InboxList({
                         "active:scale-[0.96]",
                         TRANSITION.reduceMotion,
                         FOCUS_RING,
-                        "hover:border-slate-300 hover:bg-slate-50"
+                        "hover:border-slate-300 hover:bg-slate-50",
                       )}
                     >
                       <span className="flex-1 truncate text-left text-slate-900">
@@ -425,7 +536,7 @@ export function InboxList({
                       onValueChange={(value) => {
                         startFilterTransition(() => {
                           setSelectedProjectId(
-                            value === ALL_PROJECTS_VALUE ? null : value
+                            value === ALL_PROJECTS_VALUE ? null : value,
                           );
                         });
                       }}
@@ -476,7 +587,7 @@ export function InboxList({
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto">
         {shouldShowInitialSkeleton ? (
           <QueueLoadingSkeleton />
         ) : search.isActive && displayItems.length === 0 ? (
@@ -497,30 +608,16 @@ export function InboxList({
 
             {canLoadMore ? (
               <div className="border-t border-slate-100 px-5 py-4">
-                <button
-                  type="button"
-                  disabled={isQueueLoading || isFilterTransitionPending}
-                  onClick={() => {
-                    void loadFilterPage({
-                      filterId: activeFilter,
-                      cursor: currentList.page.nextCursor,
-                      append: true,
-                      query: normalizedQuery,
-                      projectId: selectedProjectId
-                    });
-                  }}
-                  className={cn(
-                    "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700",
-                    "transition-[color,background-color,transform] duration-150 ease-out",
-                    "active:scale-[0.96] disabled:active:scale-100",
-                    TRANSITION.reduceMotion,
-                    "hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  )}
-                >
-                  {isQueueLoading
-                    ? "Loading more conversations..."
-                    : `Load more (${currentList.items.length.toString()} of ${currentList.page.total.toString()})`}
-                </button>
+                <div
+                  ref={loadMoreSentinelRef}
+                  aria-hidden="true"
+                  className="h-px w-full"
+                />
+                {isLoadingMore ? (
+                  <p className="pt-3 text-center text-sm text-slate-500">
+                    Loading more conversations...
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </>
@@ -547,7 +644,8 @@ function SearchEmptyState({ query }: { readonly query: string }) {
       title="No results"
       description={
         <>
-          Nothing in the inbox matches &ldquo;{query}&rdquo;. Try a different search.
+          Nothing in the inbox matches &ldquo;{query}&rdquo;. Try a different
+          search.
         </>
       }
     />

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { createTestStage1Context } from "./helpers.js";
+import {
+  inboxRecencyExpectedOrder,
+  inboxRecencyFixture,
+} from "../../../test/inbox-recency-fixture";
 
 interface SalesforceCommunicationDetailRecord {
   readonly sourceEvidenceId: string;
@@ -43,6 +47,127 @@ interface ManualNoteDetailRecord {
   readonly authorDisplayName: string | null;
 }
 
+async function seedSharedInboxRecencyFixture(): Promise<{
+  readonly repositories: Awaited<
+    ReturnType<typeof createTestStage1Context>
+  >["repositories"];
+}> {
+  const context = await createTestStage1Context();
+
+  for (const [index, row] of inboxRecencyFixture.entries()) {
+    await context.repositories.contacts.upsert({
+      id: row.contactId,
+      salesforceContactId: `003-recency-${index.toString()}`,
+      displayName: row.displayName,
+      primaryEmail: `${row.contactId}@example.org`,
+      primaryPhone: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    if (row.lastInboundAt !== null) {
+      const inboundSourceEvidenceId = `sev-recency-inbound-${index.toString()}`;
+      const inboundCanonicalEventId = `evt-recency-inbound-${index.toString()}`;
+
+      await context.repositories.sourceEvidence.append({
+        id: inboundSourceEvidenceId,
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: inboundCanonicalEventId,
+        receivedAt: row.lastInboundAt,
+        occurredAt: row.lastInboundAt,
+        payloadRef: `payloads/gmail/${inboundCanonicalEventId}.json`,
+        idempotencyKey: `gmail:${inboundCanonicalEventId}`,
+        checksum: `checksum:${inboundCanonicalEventId}`,
+      });
+      await context.repositories.canonicalEvents.upsert({
+        id: inboundCanonicalEventId,
+        contactId: row.contactId,
+        eventType: "communication.email.inbound",
+        channel: "email",
+        occurredAt: row.lastInboundAt,
+        sourceEvidenceId: inboundSourceEvidenceId,
+        idempotencyKey: `canonical:${inboundCanonicalEventId}`,
+        provenance: {
+          primaryProvider: "gmail",
+          primarySourceEvidenceId: inboundSourceEvidenceId,
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "message",
+          sourceRecordId: inboundCanonicalEventId,
+          messageKind: "one_to_one",
+          campaignRef: null,
+          threadRef: null,
+          direction: "inbound",
+          notes: null,
+        },
+        reviewState: "clear",
+      });
+    }
+
+    if (row.lastOutboundAt !== null) {
+      const outboundSourceEvidenceId = `sev-recency-outbound-${index.toString()}`;
+      const outboundCanonicalEventId = `evt-recency-outbound-${index.toString()}`;
+
+      await context.repositories.sourceEvidence.append({
+        id: outboundSourceEvidenceId,
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: outboundCanonicalEventId,
+        receivedAt: row.lastOutboundAt,
+        occurredAt: row.lastOutboundAt,
+        payloadRef: `payloads/gmail/${outboundCanonicalEventId}.json`,
+        idempotencyKey: `gmail:${outboundCanonicalEventId}`,
+        checksum: `checksum:${outboundCanonicalEventId}`,
+      });
+      await context.repositories.canonicalEvents.upsert({
+        id: outboundCanonicalEventId,
+        contactId: row.contactId,
+        eventType: "communication.email.outbound",
+        channel: "email",
+        occurredAt: row.lastOutboundAt,
+        sourceEvidenceId: outboundSourceEvidenceId,
+        idempotencyKey: `canonical:${outboundCanonicalEventId}`,
+        provenance: {
+          primaryProvider: "gmail",
+          primarySourceEvidenceId: outboundSourceEvidenceId,
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "message",
+          sourceRecordId: outboundCanonicalEventId,
+          messageKind: "one_to_one",
+          campaignRef: null,
+          threadRef: null,
+          direction: "outbound",
+          notes: null,
+        },
+        reviewState: "clear",
+      });
+    }
+
+    await context.repositories.inboxProjection.upsert({
+      contactId: row.contactId,
+      bucket: row.lastInboundAt === null ? "Opened" : "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: row.lastInboundAt,
+      lastOutboundAt: row.lastOutboundAt,
+      lastActivityAt: row.lastActivityAt,
+      snippet: `${row.displayName} preview`,
+      lastCanonicalEventId:
+        row.lastActivityAt === row.lastInboundAt
+          ? `evt-recency-inbound-${index.toString()}`
+          : `evt-recency-outbound-${index.toString()}`,
+      lastEventType:
+        row.lastActivityAt === row.lastInboundAt
+          ? "communication.email.inbound"
+          : "communication.email.outbound",
+    });
+  }
+
+  return context;
+}
+
 describe("Stage 1 DB repositories", () => {
   it("persists and maps source evidence, contacts, identities, and memberships", async () => {
     const { repositories } = await createTestStage1Context();
@@ -56,21 +181,23 @@ describe("Stage 1 DB repositories", () => {
       occurredAt: "2026-01-01T00:00:00.000Z",
       payloadRef: "payloads/gmail/gmail-message-1.json",
       idempotencyKey: "gmail:message:gmail-message-1",
-      checksum: "checksum-1"
+      checksum: "checksum-1",
     });
 
-    expect(await repositories.sourceEvidence.findById(sourceEvidence.id)).toEqual(
-      sourceEvidence
-    );
+    expect(
+      await repositories.sourceEvidence.findById(sourceEvidence.id),
+    ).toEqual(sourceEvidence);
     await expect(
-      repositories.sourceEvidence.findByIdempotencyKey(sourceEvidence.idempotencyKey)
+      repositories.sourceEvidence.findByIdempotencyKey(
+        sourceEvidence.idempotencyKey,
+      ),
     ).resolves.toEqual(sourceEvidence);
     await expect(
       repositories.sourceEvidence.listByProviderRecord({
         provider: sourceEvidence.provider,
         providerRecordType: sourceEvidence.providerRecordType,
-        providerRecordId: sourceEvidence.providerRecordId
-      })
+        providerRecordId: sourceEvidence.providerRecordId,
+      }),
     ).resolves.toEqual([sourceEvidence]);
 
     const contact = await repositories.contacts.upsert({
@@ -80,18 +207,18 @@ describe("Stage 1 DB repositories", () => {
       primaryEmail: "volunteer@example.org",
       primaryPhone: "+15555550123",
       createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z"
+      updatedAt: "2026-01-01T00:00:00.000Z",
     });
 
     await expect(repositories.contacts.findById(contact.id)).resolves.toEqual(
-      contact
+      contact,
     );
     await expect(
-      repositories.contacts.findBySalesforceContactId("003-stage1")
+      repositories.contacts.findBySalesforceContactId("003-stage1"),
     ).resolves.toEqual(contact);
-    await expect(repositories.contacts.listByIds([contact.id])).resolves.toEqual([
-      contact
-    ]);
+    await expect(
+      repositories.contacts.listByIds([contact.id]),
+    ).resolves.toEqual([contact]);
 
     const identity = await repositories.contactIdentities.upsert({
       id: "identity_1",
@@ -100,7 +227,7 @@ describe("Stage 1 DB repositories", () => {
       normalizedValue: "volunteer@example.org",
       isPrimary: true,
       source: "salesforce",
-      verifiedAt: "2026-01-01T00:00:00.000Z"
+      verifiedAt: "2026-01-01T00:00:00.000Z",
     });
 
     const membership = await repositories.contactMemberships.upsert({
@@ -110,35 +237,35 @@ describe("Stage 1 DB repositories", () => {
       expeditionId: "expedition_1",
       role: "volunteer",
       status: "active",
-      source: "salesforce"
+      source: "salesforce",
     });
 
     await expect(
-      repositories.contactIdentities.listByContactId(contact.id)
+      repositories.contactIdentities.listByContactId(contact.id),
     ).resolves.toEqual([identity]);
     await expect(
       repositories.contactIdentities.listByNormalizedValue({
         kind: "email",
-        normalizedValue: "volunteer@example.org"
-      })
+        normalizedValue: "volunteer@example.org",
+      }),
     ).resolves.toEqual([identity]);
     await expect(
-      repositories.contactMemberships.listByContactId(contact.id)
+      repositories.contactMemberships.listByContactId(contact.id),
     ).resolves.toEqual([membership]);
     await expect(
-      repositories.contactMemberships.listByContactIds([contact.id])
+      repositories.contactMemberships.listByContactIds([contact.id]),
     ).resolves.toEqual([membership]);
 
     const projectDimension = await repositories.projectDimensions.upsert({
       projectId: "project_1",
       projectName: "Project Antarctica",
-      source: "salesforce"
+      source: "salesforce",
     });
     const expeditionDimension = await repositories.expeditionDimensions.upsert({
       expeditionId: "expedition_1",
       projectId: "project_1",
       expeditionName: "Expedition Antarctica",
-      source: "salesforce"
+      source: "salesforce",
     });
     const gmailDetail = await repositories.gmailMessageDetails.upsert({
       sourceEvidenceId: sourceEvidence.id,
@@ -150,14 +277,14 @@ describe("Stage 1 DB repositories", () => {
       snippetClean: "Hello there",
       bodyTextPreview: "Hello there from the volunteer mailbox.",
       capturedMailbox: "volunteers@example.org",
-      projectInboxAlias: "project-antarctica@example.org"
+      projectInboxAlias: "project-antarctica@example.org",
     });
     const salesforceContext = await repositories.salesforceEventContext.upsert({
       sourceEvidenceId: sourceEvidence.id,
       salesforceContactId: contact.salesforceContactId,
       projectId: "project_1",
       expeditionId: "expedition_1",
-      sourceField: null
+      sourceField: null,
     });
     const salesforceCommunicationDetail =
       (await repositories.salesforceCommunicationDetails.upsert({
@@ -167,7 +294,7 @@ describe("Stage 1 DB repositories", () => {
         messageKind: "auto",
         subject: "Automation complete",
         snippet: "Your workflow completed successfully.",
-        sourceLabel: "Salesforce Flow"
+        sourceLabel: "Salesforce Flow",
       })) as SalesforceCommunicationDetailRecord;
     const simpleTextingMessageDetail =
       (await repositories.simpleTextingMessageDetails.upsert({
@@ -180,7 +307,7 @@ describe("Stage 1 DB repositories", () => {
         campaignId: "campaign_sms_1",
         campaignName: "Volunteer Reminders",
         providerThreadId: "thread_1",
-        threadKey: "thread-key-1"
+        threadKey: "thread-key-1",
       })) as SimpleTextingMessageDetailRecord;
     const mailchimpCampaignActivityDetail =
       (await repositories.mailchimpCampaignActivityDetails.upsert({
@@ -191,46 +318,50 @@ describe("Stage 1 DB repositories", () => {
         audienceId: "audience_1",
         memberId: "member_1",
         campaignName: "Spring Launch",
-        snippet: "Campaign launch message"
+        snippet: "Campaign launch message",
       })) as MailchimpCampaignActivityDetailRecord;
     const manualNoteDetail = (await repositories.manualNoteDetails.upsert({
       sourceEvidenceId: sourceEvidence.id,
       providerRecordId: sourceEvidence.providerRecordId,
       body: "Follow up after the kickoff call.",
-      authorDisplayName: "Stage One Operator"
+      authorDisplayName: "Stage One Operator",
     })) as ManualNoteDetailRecord;
 
     await expect(
-      repositories.projectDimensions.listByIds(["project_1"])
+      repositories.projectDimensions.listByIds(["project_1"]),
     ).resolves.toEqual([projectDimension]);
     await expect(
-      repositories.expeditionDimensions.listByIds(["expedition_1"])
+      repositories.expeditionDimensions.listByIds(["expedition_1"]),
     ).resolves.toEqual([expeditionDimension]);
     await expect(
-      repositories.gmailMessageDetails.listBySourceEvidenceIds([sourceEvidence.id])
+      repositories.gmailMessageDetails.listBySourceEvidenceIds([
+        sourceEvidence.id,
+      ]),
     ).resolves.toEqual([gmailDetail]);
     await expect(
       repositories.salesforceEventContext.listBySourceEvidenceIds([
-        sourceEvidence.id
-      ])
+        sourceEvidence.id,
+      ]),
     ).resolves.toEqual([salesforceContext]);
     await expect(
       repositories.salesforceCommunicationDetails.listBySourceEvidenceIds([
-        sourceEvidence.id
-      ])
+        sourceEvidence.id,
+      ]),
     ).resolves.toEqual([salesforceCommunicationDetail]);
     await expect(
       repositories.simpleTextingMessageDetails.listBySourceEvidenceIds([
-        sourceEvidence.id
-      ])
+        sourceEvidence.id,
+      ]),
     ).resolves.toEqual([simpleTextingMessageDetail]);
     await expect(
       repositories.mailchimpCampaignActivityDetails.listBySourceEvidenceIds([
-        sourceEvidence.id
-      ])
+        sourceEvidence.id,
+      ]),
     ).resolves.toEqual([mailchimpCampaignActivityDetail]);
     await expect(
-      repositories.manualNoteDetails.listBySourceEvidenceIds([sourceEvidence.id])
+      repositories.manualNoteDetails.listBySourceEvidenceIds([
+        sourceEvidence.id,
+      ]),
     ).resolves.toEqual([manualNoteDetail]);
   });
 
@@ -244,7 +375,7 @@ describe("Stage 1 DB repositories", () => {
       primaryEmail: "volunteer@example.org",
       primaryPhone: null,
       createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z"
+      updatedAt: "2026-01-01T00:00:00.000Z",
     });
 
     await repositories.sourceEvidence.append({
@@ -256,7 +387,7 @@ describe("Stage 1 DB repositories", () => {
       occurredAt: "2026-01-01T00:00:00.000Z",
       payloadRef: "payloads/gmail/gmail-message-1.json",
       idempotencyKey: "gmail:message:gmail-message-1",
-      checksum: "checksum-1"
+      checksum: "checksum-1",
     });
 
     const canonicalEvent = await repositories.canonicalEvents.upsert({
@@ -278,9 +409,9 @@ describe("Stage 1 DB repositories", () => {
         campaignRef: null,
         threadRef: null,
         direction: "inbound",
-        notes: null
+        notes: null,
       },
-      reviewState: "clear"
+      reviewState: "clear",
     });
 
     const identityCase = await repositories.identityResolutionQueue.upsert({
@@ -293,7 +424,7 @@ describe("Stage 1 DB repositories", () => {
       resolvedAt: null,
       normalizedIdentityValues: ["volunteer@example.org"],
       anchoredContactId: "contact_1",
-      explanation: "Needs explicit confirmation for the first Stage 1 pass."
+      explanation: "Needs explicit confirmation for the first Stage 1 pass.",
     });
 
     const routingCase = await repositories.routingReviewQueue.upsert({
@@ -305,7 +436,7 @@ describe("Stage 1 DB repositories", () => {
       openedAt: "2026-01-01T00:03:00.000Z",
       resolvedAt: null,
       candidateMembershipIds: [],
-      explanation: "Project context is intentionally absent in this fixture."
+      explanation: "Project context is intentionally absent in this fixture.",
     });
 
     const inboxProjection = await repositories.inboxProjection.upsert({
@@ -318,7 +449,7 @@ describe("Stage 1 DB repositories", () => {
       lastActivityAt: "2026-01-01T00:00:00.000Z",
       snippet: "Inbound hello",
       lastCanonicalEventId: canonicalEvent.id,
-      lastEventType: "communication.email.inbound"
+      lastEventType: "communication.email.inbound",
     });
 
     const timelineProjection = await repositories.timelineProjection.upsert({
@@ -331,7 +462,7 @@ describe("Stage 1 DB repositories", () => {
       summary: "Inbound email received",
       channel: canonicalEvent.channel,
       primaryProvider: "gmail",
-      reviewState: "clear"
+      reviewState: "clear",
     });
     await repositories.contacts.upsert({
       id: "contact_2",
@@ -340,7 +471,7 @@ describe("Stage 1 DB repositories", () => {
       primaryEmail: "another@example.org",
       primaryPhone: null,
       createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z"
+      updatedAt: "2026-01-01T00:00:00.000Z",
     });
     await repositories.sourceEvidence.append({
       id: "sev_2",
@@ -351,7 +482,7 @@ describe("Stage 1 DB repositories", () => {
       occurredAt: "2026-01-01T00:10:00.000Z",
       payloadRef: "payloads/gmail/gmail-message-2.json",
       idempotencyKey: "gmail:message:gmail-message-2",
-      checksum: "checksum-2"
+      checksum: "checksum-2",
     });
     const secondCanonicalEvent = await repositories.canonicalEvents.upsert({
       id: "evt_2",
@@ -372,9 +503,9 @@ describe("Stage 1 DB repositories", () => {
         campaignRef: null,
         threadRef: null,
         direction: "outbound",
-        notes: null
+        notes: null,
       },
-      reviewState: "clear"
+      reviewState: "clear",
     });
     const secondInboxProjection = await repositories.inboxProjection.upsert({
       contactId: "contact_2",
@@ -386,66 +517,66 @@ describe("Stage 1 DB repositories", () => {
       lastActivityAt: "2026-01-01T00:10:00.000Z",
       snippet: "Outbound only follow-up",
       lastCanonicalEventId: secondCanonicalEvent.id,
-      lastEventType: "communication.email.outbound"
+      lastEventType: "communication.email.outbound",
     });
 
     await expect(
       repositories.canonicalEvents.findByIdempotencyKey(
-        canonicalEvent.idempotencyKey
-      )
+        canonicalEvent.idempotencyKey,
+      ),
     ).resolves.toEqual(canonicalEvent);
     await expect(
-      repositories.canonicalEvents.listByContactId("contact_1")
+      repositories.canonicalEvents.listByContactId("contact_1"),
     ).resolves.toEqual([canonicalEvent]);
     await expect(
-      repositories.canonicalEvents.listByIds([canonicalEvent.id])
+      repositories.canonicalEvents.listByIds([canonicalEvent.id]),
     ).resolves.toEqual([canonicalEvent]);
     await expect(
-      repositories.identityResolutionQueue.listOpenByContactId("contact_1")
+      repositories.identityResolutionQueue.listOpenByContactId("contact_1"),
     ).resolves.toEqual([identityCase]);
     await expect(
       repositories.identityResolutionQueue.listOpenByReasonCode(
-        "identity_missing_anchor"
-      )
+        "identity_missing_anchor",
+      ),
     ).resolves.toEqual([identityCase]);
     await expect(
-      repositories.routingReviewQueue.listOpenByContactId("contact_1")
+      repositories.routingReviewQueue.listOpenByContactId("contact_1"),
     ).resolves.toEqual([routingCase]);
     await expect(
       repositories.routingReviewQueue.listOpenByReasonCode(
-        "routing_missing_membership"
-      )
+        "routing_missing_membership",
+      ),
     ).resolves.toEqual([routingCase]);
     await expect(
-      repositories.inboxProjection.findByContactId("contact_1")
+      repositories.inboxProjection.findByContactId("contact_1"),
     ).resolves.toEqual(inboxProjection);
     await expect(
-      repositories.inboxProjection.listAllOrderedByRecency()
-    ).resolves.toEqual([secondInboxProjection, inboxProjection]);
+      repositories.inboxProjection.listAllOrderedByRecency(),
+    ).resolves.toEqual([inboxProjection, secondInboxProjection]);
     await expect(
       repositories.inboxProjection.setNeedsFollowUp({
         contactId: "contact_1",
-        needsFollowUp: true
-      })
+        needsFollowUp: true,
+      }),
     ).resolves.toEqual({
       ...inboxProjection,
-      needsFollowUp: true
+      needsFollowUp: true,
     });
     await expect(
-      repositories.inboxProjection.findByContactId("contact_1")
+      repositories.inboxProjection.findByContactId("contact_1"),
     ).resolves.toEqual({
       ...inboxProjection,
-      needsFollowUp: true
+      needsFollowUp: true,
     });
     await repositories.inboxProjection.deleteByContactId("contact_1");
     await expect(
-      repositories.inboxProjection.findByContactId("contact_1")
+      repositories.inboxProjection.findByContactId("contact_1"),
     ).resolves.toBeNull();
     await expect(
-      repositories.timelineProjection.findByCanonicalEventId(canonicalEvent.id)
+      repositories.timelineProjection.findByCanonicalEventId(canonicalEvent.id),
     ).resolves.toEqual(timelineProjection);
     await expect(
-      repositories.timelineProjection.listByContactId("contact_1")
+      repositories.timelineProjection.listByContactId("contact_1"),
     ).resolves.toEqual([timelineProjection]);
   });
 
@@ -465,14 +596,14 @@ describe("Stage 1 DB repositories", () => {
       freshnessP95Seconds: null,
       freshnessP99Seconds: null,
       lastSuccessfulAt: "2026-01-01T01:00:00.000Z",
-      deadLetterCount: 2
+      deadLetterCount: 2,
     });
 
     const syncUpdate = await repositories.syncState.upsert({
       ...syncRecord,
       status: "succeeded",
       parityPercent: 100,
-      deadLetterCount: 0
+      deadLetterCount: 0,
     });
 
     const auditRecord = await repositories.auditEvidence.append({
@@ -486,8 +617,8 @@ describe("Stage 1 DB repositories", () => {
       result: "recorded",
       policyCode: "stage1.audit.test",
       metadataJson: {
-        reason: "repository-integration"
-      }
+        reason: "repository-integration",
+      },
     });
 
     expect(syncUpdate.parityPercent).toBe(100);
@@ -497,14 +628,14 @@ describe("Stage 1 DB repositories", () => {
       repositories.syncState.findLatest({
         scope: "provider",
         provider: "gmail",
-        jobType: "historical_backfill"
-      })
+        jobType: "historical_backfill",
+      }),
     ).resolves.toEqual(syncUpdate);
     await expect(
       repositories.auditEvidence.listByEntity({
         entityType: "contact",
-        entityId: "contact_1"
-      })
+        entityId: "contact_1",
+      }),
     ).resolves.toEqual([auditRecord]);
   });
 
@@ -518,7 +649,7 @@ describe("Stage 1 DB repositories", () => {
       primaryEmail: "invalid@example.org",
       primaryPhone: null,
       createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z"
+      updatedAt: "2026-01-01T00:00:00.000Z",
     });
     await repositories.sourceEvidence.append({
       id: "sev_invalid",
@@ -529,7 +660,7 @@ describe("Stage 1 DB repositories", () => {
       occurredAt: "2026-01-01T00:05:00.000Z",
       payloadRef: "payloads/gmail/gmail-invalid.json",
       idempotencyKey: "gmail:invalid",
-      checksum: "checksum-invalid"
+      checksum: "checksum-invalid",
     });
     await repositories.canonicalEvents.upsert({
       id: "evt_invalid",
@@ -550,9 +681,9 @@ describe("Stage 1 DB repositories", () => {
         campaignRef: null,
         threadRef: null,
         direction: "outbound",
-        notes: null
+        notes: null,
       },
-      reviewState: "clear"
+      reviewState: "clear",
     });
 
     await client.exec(`
@@ -582,10 +713,47 @@ describe("Stage 1 DB repositories", () => {
     `);
 
     await expect(
-      repositories.inboxProjection.countInvalidRecencyRows()
+      repositories.inboxProjection.countInvalidRecencyRows(),
     ).resolves.toBe(1);
     await expect(
-      repositories.inboxProjection.listInvalidRecencyContactIds()
+      repositories.inboxProjection.listInvalidRecencyContactIds(),
     ).resolves.toEqual(["contact_invalid"]);
+  });
+
+  it("orders and paginates inbox rows with null inbound timestamps last", async () => {
+    const { repositories } = await seedSharedInboxRecencyFixture();
+
+    const orderedRows =
+      await repositories.inboxProjection.listAllOrderedByRecency();
+
+    expect(orderedRows.map((row) => row.contactId)).toEqual(
+      inboxRecencyExpectedOrder,
+    );
+
+    const firstPage =
+      await repositories.inboxProjection.listPageOrderedByRecency({
+        filter: "all",
+        limit: 4,
+        cursor: null,
+      });
+
+    expect(firstPage.map((row) => row.contactId)).toEqual(
+      inboxRecencyExpectedOrder.slice(0, 4),
+    );
+
+    const secondPage =
+      await repositories.inboxProjection.listPageOrderedByRecency({
+        filter: "all",
+        limit: 4,
+        cursor: {
+          lastInboundAt: firstPage[firstPage.length - 1]?.lastInboundAt ?? null,
+          lastActivityAt: firstPage[firstPage.length - 1]?.lastActivityAt ?? "",
+          contactId: firstPage[firstPage.length - 1]?.contactId ?? "",
+        },
+      });
+
+    expect(secondPage.map((row) => row.contactId)).toEqual(
+      inboxRecencyExpectedOrder.slice(4),
+    );
   });
 });
