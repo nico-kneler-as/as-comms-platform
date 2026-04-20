@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import * as React from "react";
 import { useOptimistic, useState, useTransition } from "react";
 import { ArrowLeft, RefreshCw, Trash2 } from "lucide-react";
 
