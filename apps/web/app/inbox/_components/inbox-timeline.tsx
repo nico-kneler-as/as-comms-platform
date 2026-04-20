@@ -8,6 +8,7 @@ import type {
 } from "../_lib/view-models";
 import { ChevronRightIcon, MailIcon, NoteIcon, PhoneIcon } from "./icons";
 import { DividerLabel } from "@/components/ui/divider-label";
+import { cn } from "@/lib/utils";
 import {
   RADIUS,
   SHADOW,
@@ -63,7 +64,13 @@ export function InboxTimeline({
             type="button"
             disabled={isLoadingOlder}
             onClick={onLoadOlder}
-            className={`rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ${TRANSITION.fast} hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60`}
+            className={cn(
+              "rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600",
+              "transition-[color,background-color,transform] duration-150 ease-out",
+              "active:scale-[0.96] disabled:active:scale-100",
+              TRANSITION.reduceMotion,
+              "hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            )}
           >
             {isLoadingOlder
               ? "Loading older activity..."
@@ -144,12 +151,12 @@ function InboundBubble({
         className={`max-w-2xl ${RADIUS.bubble} rounded-bl-sm border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}
       >
         {isEmail && entry.subject ? (
-          <p className="mb-1.5 text-[13px] font-semibold leading-snug text-slate-900">
+          <p className="mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-900">
             {entry.subject}
           </p>
         ) : null}
         {body.length > 0 ? (
-          <p className={`whitespace-pre-wrap ${TEXT.bodySm}`}>{body}</p>
+          <p className={`whitespace-pre-wrap text-pretty ${TEXT.bodySm}`}>{body}</p>
         ) : null}
       </div>
       <div className={`mt-1.5 flex items-center gap-1.5 px-1 ${TEXT.micro}`}>
@@ -183,12 +190,12 @@ function OutboundBubble({
         className={`max-w-2xl ${RADIUS.bubble} rounded-br-sm bg-slate-800 px-4 py-3 ${SHADOW.sm}`}
       >
         {isEmail && entry.subject ? (
-          <p className="mb-1.5 text-[13px] font-semibold leading-snug text-slate-100">
+          <p className="mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-100">
             {entry.subject}
           </p>
         ) : null}
         {body.length > 0 ? (
-          <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-200">
+          <p className="whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-slate-200">
             {body}
           </p>
         ) : null}
@@ -242,19 +249,27 @@ function AutomatedRow({
         type="button"
         aria-expanded={isExpanded}
         onClick={onToggle}
-        className={`group flex w-full max-w-2xl items-center gap-3 ${RADIUS.md} border border-dashed border-slate-300 bg-white px-4 py-2.5 text-left ${TRANSITION.fast} hover:bg-slate-50`}
+        className={cn(
+          `group flex w-full max-w-2xl items-center gap-3 ${RADIUS.md} border border-dashed border-slate-300 bg-white px-4 py-2.5 text-left`,
+          "transition-[color,background-color,transform] duration-150 ease-out",
+          "active:scale-[0.96]",
+          TRANSITION.reduceMotion,
+          "hover:bg-slate-50"
+        )}
       >
         <div className="min-w-0 flex-1">
           {headline ? (
-            <p className="text-[13px] font-medium leading-snug text-slate-700">
+            <p className="text-pretty text-[13px] font-medium leading-snug text-slate-700">
               {headline}
             </p>
           ) : null}
           {!hideCollapsedBody && body.length > 0 ? (
             <p
-              className={`text-[13px] leading-relaxed text-slate-600 ${
-                headline ? "mt-1.5" : ""
-              } ${isExpanded ? "whitespace-pre-wrap" : "line-clamp-1"}`}
+              className={cn(
+                "text-[13px] leading-relaxed text-slate-600",
+                headline && "mt-1.5",
+                isExpanded ? "whitespace-pre-wrap text-pretty" : "line-clamp-1"
+              )}
             >
               {body}
             </p>
@@ -289,7 +304,7 @@ function NoteEntry({ entry }: { readonly entry: InboxTimelineEntryViewModel }) {
           <span className="text-amber-300">·</span>
           <span>{entry.occurredAtLabel}</span>
         </div>
-        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-amber-900">
+        <p className="whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-amber-900">
           {entry.body}
         </p>
       </div>
