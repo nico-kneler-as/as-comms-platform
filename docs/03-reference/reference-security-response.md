@@ -96,7 +96,7 @@ Restart vs redeploy:
 
 ### Unauthorized operator sign-in
 
-1. Deactivate the operator in `/settings/users` immediately, or update the user row directly if the UI is unavailable.
+1. Deactivate the user from the Access section of `/settings` immediately, or update the user row directly if the UI is unavailable.
 2. Rotate `AUTH_SECRET` to invalidate current JWT-backed sessions, then redeploy `web`.
 3. If the Google account itself is suspect, revoke/rotate the Google OAuth client secret, confirm the Workspace account status, and review recent audit evidence plus platform logs.
 

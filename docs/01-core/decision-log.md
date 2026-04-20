@@ -156,6 +156,14 @@ These entries were recorded on `2026-04-05` from the current repo canon and the 
 - Impact: do not add campaign-authoring tables, audience-builder schemas, or SendGrid integration until the validation gate clears. Existing Stage 1 `campaign.email.*` canonical events (Mailchimp transition ingest) remain valid timeline evidence; they do not drive any product UI beyond the timeline entries already built. `D-014` (Email before SMS) still applies when Campaigns eventually resumes.
 - Related refs: [product-core.md](./product-core.md), [delivery-core.md](./delivery-core.md)
 
+### 2026-04-20 - Settings is a single-page surface with Projects, Access, Integrations
+
+- Status: `active`
+- Decision: `/settings` renders as one page with three stacked sections — Projects, Access, Integrations — rather than a multi-page `/settings/*` layout with a left sidebar. The UI scaffold ships ahead of persistence wiring: data is mocked in `apps/web/app/settings/_lib/mock-data.ts` and every mutation is a stubbed Server Action in `apps/web/app/settings/actions.ts` returning an FP-07 `UiSuccess` envelope. The sole preserved live behaviour is the `settings.users.read` sensitive-read audit. Role label in the UI is `admin | internal_user`; the existing DB enum `user_role` (`admin | operator`) is untouched. Reconciliation happens at the persistence-wiring boundary: either migrate the enum to `admin | internal_user` or map `internal_user` → `operator` at the repository layer. UI labels stay `internal_user` per product.
+- Why: single-page Settings matches the operator scale (1–3 teammates, low config surface) and avoids a sidebar that would dominate a mostly-read screen. Shipping the UI shell before persistence lets product validate the visual contract and flow before Stage 2 back-end work continues.
+- Impact: do not re-introduce `/settings/aliases`, `/settings/users`, `/settings/organization`, or `/settings/integrations` as standalone routes or a left settings sidebar. Any new settings surface joins the single page as a new stacked section. When wiring real persistence, resolve the role-label divergence at the repository boundary rather than leaking `operator` into the UI. Supersedes the Stage 2 brief language that assumed a multi-page structure; the `admin | operator` memory note is preserved for historical context but the UI canon is now `admin | internal_user`.
+- Related refs: [../02-bundles/settings-bundle.md](../02-bundles/settings-bundle.md), [apps/web/app/settings/page.tsx](../../apps/web/app/settings/page.tsx), [apps/web/app/settings/_lib/mock-data.ts](../../apps/web/app/settings/_lib/mock-data.ts), [apps/web/app/settings/actions.ts](../../apps/web/app/settings/actions.ts), [PR #55](https://github.com/nico-kneler-as/as-comms-platform/pull/55)
+
 ### 2026-04-18 - Stage 4 AI drafting pipeline, grounding order, and runtime shape locked
 
 - Status: `locked`
