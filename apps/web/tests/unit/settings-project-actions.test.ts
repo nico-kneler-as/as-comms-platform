@@ -75,6 +75,18 @@ describe("settings project actions", () => {
     revalidateIntegrationHealth.mockReset();
     resolveAdminSession.mockResolvedValue(adminSession());
     runtime = await createStage1WebTestRuntime();
+    const now = new Date("2026-04-20T15:00:00.000Z");
+    await runtime.context.settings.users.upsert({
+      id: "user:admin",
+      name: "admin",
+      email: "admin@adventurescientists.org",
+      emailVerified: now,
+      image: null,
+      role: "admin",
+      deactivatedAt: null,
+      createdAt: now,
+      updatedAt: now
+    });
   });
 
   afterEach(async () => {
