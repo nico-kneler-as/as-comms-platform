@@ -24,7 +24,7 @@ import type {
   IntegrationsSettingsViewModel
 } from "@/src/server/settings/selectors";
 
-import { syncIntegrationAction } from "../actions";
+import { refreshIntegrationHealthAction } from "../actions";
 import { SettingsSection } from "./settings-section";
 
 interface IntegrationsSectionProps {
@@ -111,9 +111,7 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
   function handleRefresh(integration: IntegrationHealthViewModel) {
     setPendingId(integration.serviceName);
     startTransition(async () => {
-      const formData = new FormData();
-      formData.set("id", integration.serviceName);
-      const result = await syncIntegrationAction(formData);
+      const result = await refreshIntegrationHealthAction(integration.serviceName);
       setPendingId(null);
 
       if (result.ok) {
@@ -122,12 +120,14 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
             item.serviceName === integration.serviceName
               ? {
                   ...item,
-                  lastCheckedAt: new Date().toISOString()
+                  status: result.data.status,
+                  detail: result.data.detail,
+                  lastCheckedAt: result.data.lastCheckedAt
                 }
               : item
           )
         );
-        announce(`Refreshing ${integration.displayName}. (stub)`);
+        announce(`Refreshed ${integration.displayName}.`);
         return;
       }
 

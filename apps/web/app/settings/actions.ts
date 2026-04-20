@@ -1,35 +1,27 @@
 "use server";
 
-/**
- * Settings stub actions (UI-only redesign).
- *
- * Every export below is a no-op that immediately returns an FP-07 UiSuccess
- * envelope. The shape matches the production envelope in
- * `apps/web/src/server/ui-result.ts`, so swapping a stub for a real action
- * later is a local change — callers don't need to know the difference.
- *
- * TODO(stage2): wire each of these to real repositories and audit events.
- */
-
 import { randomUUID } from "node:crypto";
 
-import type { IntegrationHealthRecord } from "@as-comms/contracts";
+import {
+  createProjectAliasSchema,
+  type IntegrationHealthRecord
+} from "@as-comms/contracts";
 
-import { requireAdmin } from "@/src/server/auth/session";
+import { resolveAdminSession } from "@/src/server/auth/api";
+import { appendSecurityAudit } from "@/src/server/security/audit";
 import {
   isMissingIntegrationHealthTableError,
   refreshIntegrationHealthRecord
 } from "@/src/server/settings/integration-health";
-import { revalidateIntegrationHealth } from "@/src/server/settings/revalidate";
-import type { UiResult, UiSuccess } from "@/src/server/ui-result";
+import {
+  revalidateIntegrationHealth,
+  revalidateProjectSettings
+} from "@/src/server/settings/revalidate";
+import { getSettingsRepositories } from "@/src/server/stage1-runtime";
+import type { UiError, UiResult } from "@/src/server/ui-result";
 
 function newRequestId(): string {
   return randomUUID();
-}
-
-function readString(formData: FormData, name: string): string {
-  const value = formData.get(name);
-  return typeof value === "string" ? value : "";
 }
 
 function readOptionalString(
@@ -42,59 +34,399 @@ function readOptionalString(
   return trimmed.length === 0 ? undefined : trimmed;
 }
 
-/**
- * Boxes a synchronous stub payload in the async envelope all Server Actions
- * must expose. Adding an actual `await` point also satisfies the lint rule
- * that requires `async` functions to contain at least one await — when real
- * persistence lands, that await will be the DB call itself.
- */
-async function stub<T>(data: T): Promise<UiSuccess<T>> {
-  await Promise.resolve();
-  return { ok: true, data, requestId: newRequestId() };
-}
-
 function errorResult(
   code: string,
   message: string,
   input?: {
+    readonly fieldErrors?: Record<string, string>;
     readonly retryable?: boolean;
   }
-) {
+): UiError {
   return {
     ok: false,
     code,
     message,
     requestId: newRequestId(),
+    ...(input?.fieldErrors === undefined
+      ? {}
+      : {
+          fieldErrors: input.fieldErrors
+        }),
     ...(input?.retryable === undefined
       ? {}
       : {
           retryable: input.retryable
         })
-  } as const;
+  };
+}
+
+function hasActivationRequirements(input: {
+  readonly aiKnowledgeUrl: string | null;
+  readonly emails: readonly { readonly address: string; readonly isPrimary: boolean }[];
+}): boolean {
+  return (
+    input.emails.length >= 1 &&
+    (input.aiKnowledgeUrl?.trim().length ?? 0) > 0
+  );
+}
+
+function serializeProjectMutationData(input: {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly isActive: boolean;
+  readonly aiKnowledgeUrl: string | null;
+  readonly aiKnowledgeSyncedAt: Date | null;
+  readonly emails: readonly { readonly address: string; readonly isPrimary: boolean }[];
+}): ProjectMutationData {
+  return {
+    projectId: input.projectId,
+    projectName: input.projectName,
+    isActive: input.isActive,
+    aiKnowledgeUrl: input.aiKnowledgeUrl,
+    aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt?.toISOString() ?? null,
+    activationRequirementsMet: hasActivationRequirements({
+      aiKnowledgeUrl: input.aiKnowledgeUrl,
+      emails: input.emails
+    }),
+    emails: input.emails.map((email) => ({
+      address: email.address,
+      isPrimary: email.isPrimary
+    }))
+  };
+}
+
+async function resolveSettingsAdmin(input: {
+  readonly unauthorizedMessage: string;
+  readonly forbiddenMessage: string;
+}): Promise<
+  | {
+      readonly ok: true;
+      readonly userId: string;
+    }
+  | {
+      readonly ok: false;
+      readonly error: UiError;
+    }
+> {
+  const session = await resolveAdminSession();
+  if (!session.ok) {
+    return {
+      ok: false,
+      error:
+        session.code === "unauthorized"
+          ? errorResult("unauthorized", input.unauthorizedMessage)
+          : errorResult("forbidden", input.forbiddenMessage)
+    };
+  }
+
+  return {
+    ok: true,
+    userId: session.user.id
+  };
+}
+
+async function appendSettingsAudit(input: {
+  readonly actorId: string;
+  readonly action: string;
+  readonly entityType: string;
+  readonly entityId: string;
+  readonly metadataJson?: Readonly<Record<string, unknown>>;
+}): Promise<void> {
+  await appendSecurityAudit({
+    actorType: "user",
+    actorId: input.actorId,
+    action: input.action,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    result: "recorded",
+    policyCode: "settings.admin_mutation",
+    metadataJson: input.metadataJson ?? {}
+  });
+}
+
+function notImplementedResult(message: string): UiError {
+  return errorResult("not_implemented", message);
+}
+
+function normalizeIncomingEmail(address: string): string {
+  return address.trim().toLowerCase();
+}
+
+function validateProjectEmails(
+  emails: readonly ProjectEmailInput[]
+):
+  | {
+      readonly ok: true;
+      readonly orderedEmails: readonly ProjectEmailInput[];
+    }
+  | {
+      readonly ok: false;
+      readonly error: UiError;
+    } {
+  const normalizedEmails = emails.map((email) => ({
+    address: normalizeIncomingEmail(email.address),
+    isPrimary: email.isPrimary
+  }));
+
+  for (const email of normalizedEmails) {
+    const parsed = createProjectAliasSchema.shape.alias.safeParse(email.address);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: errorResult(
+          "invalid_email_format",
+          "Enter a valid project email address.",
+          {
+            fieldErrors: {
+              emails: "Enter a valid project email address."
+            }
+          }
+        )
+      };
+    }
+  }
+
+  const distinctEmails = new Set(normalizedEmails.map((email) => email.address));
+  if (distinctEmails.size !== normalizedEmails.length) {
+    return {
+      ok: false,
+      error: errorResult(
+        "duplicate_email",
+        "Each project email must be unique.",
+        {
+          fieldErrors: {
+            emails: "Each project email must be unique."
+          }
+        }
+      )
+    };
+  }
+
+  if (normalizedEmails.length === 0) {
+    return {
+      ok: true,
+      orderedEmails: []
+    };
+  }
+
+  const primaryCount = normalizedEmails.filter((email) => email.isPrimary).length;
+  if (primaryCount === 0) {
+    return {
+      ok: false,
+      error: errorResult(
+        "primary_email_required",
+        "Choose one primary email address.",
+        {
+          fieldErrors: {
+            emails: "Choose one primary email address."
+          }
+        }
+      )
+    };
+  }
+
+  if (primaryCount > 1) {
+    return {
+      ok: false,
+      error: errorResult(
+        "multiple_primary_emails",
+        "Choose exactly one primary email address.",
+        {
+          fieldErrors: {
+            emails: "Choose exactly one primary email address."
+          }
+        }
+      )
+    };
+  }
+
+  const primaryEmail = normalizedEmails.find((email) => email.isPrimary);
+  const orderedEmails = normalizedEmails
+    .filter((email) => !email.isPrimary)
+    .map((email) => ({
+      address: email.address,
+      isPrimary: false
+    }));
+
+  return {
+    ok: true,
+    orderedEmails:
+      primaryEmail === undefined
+        ? orderedEmails
+        : [
+            {
+              address: primaryEmail.address,
+              isPrimary: true
+            },
+            ...orderedEmails
+          ]
+  };
+}
+
+function normalizeAiKnowledgeUrl(
+  rawUrl: string | null
+):
+  | {
+      readonly ok: true;
+      readonly url: string | null;
+    }
+  | {
+      readonly ok: false;
+      readonly error: UiError;
+    } {
+  const trimmed = rawUrl?.trim() ?? "";
+  if (trimmed.length === 0) {
+    return {
+      ok: true,
+      url: null
+    };
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:") {
+      return {
+        ok: false,
+        error: errorResult(
+          "invalid_url",
+          "AI knowledge URL must start with https://.",
+          {
+            fieldErrors: {
+              aiKnowledgeUrl: "AI knowledge URL must start with https://."
+            }
+          }
+        )
+      };
+    }
+
+    return {
+      ok: true,
+      url: parsed.toString()
+    };
+  } catch {
+    return {
+      ok: false,
+      error: errorResult(
+        "invalid_url",
+        "Enter a valid AI knowledge URL.",
+        {
+          fieldErrors: {
+            aiKnowledgeUrl: "Enter a valid AI knowledge URL."
+          }
+        }
+      )
+    };
+  }
+}
+
+function isProjectAliasConflictError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const message =
+    "message" in error && typeof error.message === "string" ? error.message : "";
+  const code =
+    "code" in error && typeof error.code === "string" ? error.code : null;
+
+  return (
+    code === "23505" ||
+    /project_aliases_alias_unique|duplicate key value violates unique constraint/iu.test(
+      message
+    )
+  );
+}
+
+export interface ProjectEmailInput {
+  readonly address: string;
+  readonly isPrimary: boolean;
+}
+
+export interface ProjectMutationData {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly isActive: boolean;
+  readonly aiKnowledgeUrl: string | null;
+  readonly aiKnowledgeSyncedAt: string | null;
+  readonly activationRequirementsMet: boolean;
+  readonly emails: readonly ProjectEmailInput[];
 }
 
 // ─── Projects ───────────────────────────────────────────────────────────────
 
-export interface ActivateProjectResult {
-  readonly id: string;
-  readonly name: string;
-  readonly alias: string;
-}
-
-/**
- * Activate a Salesforce project so inbound routing includes it. Replaces the
- * previous `addProjectAction` — the redesigned flow picks an existing
- * non-active project from our cached SF snapshot rather than inventing one.
- */
 export async function activateProjectAction(
-  formData: FormData
-): Promise<UiResult<ActivateProjectResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({
-    id: readString(formData, "id"),
-    name: readString(formData, "name"),
-    alias: readString(formData, "alias")
+  projectId: string
+): Promise<UiResult<ProjectMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to activate a project.",
+    forbiddenMessage: "Only admins can activate projects."
   });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const repositories = await getSettingsRepositories();
+  const project = await repositories.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  if (project.isActive) {
+    return errorResult("already_active", "This project is already active.");
+  }
+
+  if (project.emails.length < 1) {
+    return errorResult(
+      "requirements_not_met",
+      "Add at least one email and an AI knowledge URL to activate this project.",
+      {
+        fieldErrors: {
+          emails: "Add at least one email to activate this project."
+        }
+      }
+    );
+  }
+
+  if ((project.aiKnowledgeUrl?.trim().length ?? 0) === 0) {
+    return errorResult(
+      "requirements_not_met",
+      "Add at least one email and an AI knowledge URL to activate this project.",
+      {
+        fieldErrors: {
+          aiKnowledgeUrl:
+            "Add an AI knowledge URL to activate this project."
+        }
+      }
+    );
+  }
+
+  const updatedProject = await repositories.projects.setActive(projectId, true);
+  if (updatedProject === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.activated",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      before: {
+        isActive: project.isActive
+      },
+      after: {
+        isActive: updatedProject.isActive
+      }
+    }
+  });
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: serializeProjectMutationData(updatedProject),
+    requestId: newRequestId()
+  };
 }
 
 export interface UpdateProjectAliasResult {
@@ -102,58 +434,214 @@ export interface UpdateProjectAliasResult {
   readonly alias: string;
 }
 
-/**
- * Rename the short alias used across the platform for this project. Reads
- * `projectId` (preferred) or legacy `id` from the form payload.
- */
 export async function updateProjectAliasAction(
   formData: FormData
 ): Promise<UiResult<UpdateProjectAliasResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({
-    id: readString(formData, "projectId") || readString(formData, "id"),
-    alias: readString(formData, "alias")
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update project aliases.",
+    forbiddenMessage: "Only admins can update project aliases."
   });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  void formData;
+
+  return notImplementedResult(
+    "Project alias editing is not implemented in this brief."
+  );
 }
 
-export interface ProjectEmailResult {
-  readonly projectId: string;
-  readonly email: string;
-}
-
-export async function addProjectEmailAction(
-  formData: FormData
-): Promise<UiResult<ProjectEmailResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({
-    projectId: readString(formData, "projectId"),
-    email: readString(formData, "email")
+export async function updateProjectEmailsAction(
+  projectId: string,
+  emails: readonly ProjectEmailInput[]
+): Promise<UiResult<ProjectMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update project emails.",
+    forbiddenMessage: "Only admins can update project emails."
   });
-}
+  if (!admin.ok) {
+    return admin.error;
+  }
 
-export async function removeProjectEmailAction(
-  formData: FormData
-): Promise<UiResult<ProjectEmailResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({
-    projectId: readString(formData, "projectId"),
-    email: readString(formData, "email")
+  const repositories = await getSettingsRepositories();
+  const project = await repositories.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  const validation = validateProjectEmails(emails);
+  if (!validation.ok) {
+    return validation.error;
+  }
+
+  for (const email of validation.orderedEmails) {
+    const existingAlias = await repositories.aliases.findByAlias(email.address);
+    if (
+      existingAlias !== null &&
+      existingAlias.projectId !== null &&
+      existingAlias.projectId !== projectId
+    ) {
+      return errorResult(
+        "email_in_use",
+        `${email.address} is already assigned to another project.`,
+        {
+          fieldErrors: {
+            emails: `${email.address} is already assigned to another project.`
+          }
+        }
+      );
+    }
+  }
+
+  try {
+    await repositories.aliases.replaceForProject({
+      projectId,
+      aliases: validation.orderedEmails.map((email) => email.address),
+      actorId: admin.userId
+    });
+  } catch (error) {
+    if (isProjectAliasConflictError(error)) {
+      return errorResult(
+        "email_in_use",
+        "One of those email addresses is already assigned to another project.",
+        {
+          fieldErrors: {
+            emails:
+              "One of those email addresses is already assigned to another project."
+          }
+        }
+      );
+    }
+
+    throw error;
+  }
+
+  const updatedProject = await repositories.projects.findById(projectId);
+  if (updatedProject === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.email_changed",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      before: project.emails,
+      after: updatedProject.emails
+    }
   });
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: serializeProjectMutationData(updatedProject),
+    requestId: newRequestId()
+  };
 }
 
-export interface DeactivateProjectResult {
-  readonly id: string;
+export async function updateProjectAiKnowledgeAction(
+  projectId: string,
+  url: string | null
+): Promise<UiResult<ProjectMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to update the AI knowledge URL.",
+    forbiddenMessage: "Only admins can update the AI knowledge URL."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const repositories = await getSettingsRepositories();
+  const project = await repositories.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  const normalizedUrl = normalizeAiKnowledgeUrl(url);
+  if (!normalizedUrl.ok) {
+    return normalizedUrl.error;
+  }
+
+  const updatedProject = await repositories.projects.setAiKnowledgeUrl(
+    projectId,
+    normalizedUrl.url
+  );
+  if (updatedProject === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.ai_knowledge_updated",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      before: project.aiKnowledgeUrl,
+      after: updatedProject.aiKnowledgeUrl
+    }
+  });
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: serializeProjectMutationData(updatedProject),
+    requestId: newRequestId()
+  };
 }
 
-/**
- * Deactivate a project so inbound routing ignores it. Renamed from
- * `archiveProjectAction` to match the product copy on the danger-zone card.
- */
 export async function deactivateProjectAction(
-  formData: FormData
-): Promise<UiResult<DeactivateProjectResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({ id: readString(formData, "id") });
+  projectId: string
+): Promise<UiResult<ProjectMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to deactivate a project.",
+    forbiddenMessage: "Only admins can deactivate projects."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const repositories = await getSettingsRepositories();
+  const project = await repositories.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  if (!project.isActive) {
+    return errorResult("already_inactive", "This project is already inactive.");
+  }
+
+  const updatedProject = await repositories.projects.setActive(projectId, false);
+  if (updatedProject === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.deactivated",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      before: {
+        isActive: project.isActive
+      },
+      after: {
+        isActive: updatedProject.isActive
+      }
+    }
+  });
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: serializeProjectMutationData(updatedProject),
+    requestId: newRequestId()
+  };
 }
 
 // ─── Access (users) ─────────────────────────────────────────────────────────
@@ -166,14 +654,22 @@ export interface InviteUserResult {
 export async function inviteUserAction(
   formData: FormData
 ): Promise<UiResult<InviteUserResult>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to invite teammates.",
+    forbiddenMessage: "Only admins can invite teammates."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
   const rawRole = readOptionalString(formData, "role") ?? "internal_user";
   const role: "admin" | "internal_user" =
     rawRole === "admin" ? "admin" : "internal_user";
-  // TODO(stage2): wire to real persistence
-  return stub({
-    email: readString(formData, "email"),
-    role
-  });
+
+  void role;
+  void formData;
+
+  return notImplementedResult("User invites are intentionally stubbed in this brief.");
 }
 
 export interface UserIdResult {
@@ -183,29 +679,73 @@ export interface UserIdResult {
 export async function promoteUserAction(
   formData: FormData
 ): Promise<UiResult<UserIdResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({ id: readString(formData, "id") });
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update user access.",
+    forbiddenMessage: "Only admins can update user access."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  void formData;
+
+  return notImplementedResult(
+    "User promotion is intentionally stubbed in this brief."
+  );
 }
 
 export async function demoteUserAction(
   formData: FormData
 ): Promise<UiResult<UserIdResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({ id: readString(formData, "id") });
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update user access.",
+    forbiddenMessage: "Only admins can update user access."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  void formData;
+
+  return notImplementedResult(
+    "User demotion is intentionally stubbed in this brief."
+  );
 }
 
 export async function deactivateUserAction(
   formData: FormData
 ): Promise<UiResult<UserIdResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({ id: readString(formData, "id") });
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update user access.",
+    forbiddenMessage: "Only admins can update user access."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  void formData;
+
+  return notImplementedResult(
+    "User deactivation is intentionally stubbed in this brief."
+  );
 }
 
 export async function reactivateUserAction(
   formData: FormData
 ): Promise<UiResult<UserIdResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({ id: readString(formData, "id") });
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update user access.",
+    forbiddenMessage: "Only admins can update user access."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  void formData;
+
+  return notImplementedResult(
+    "User reactivation is intentionally stubbed in this brief."
+  );
 }
 
 // ─── Integrations ───────────────────────────────────────────────────────────
@@ -214,49 +754,50 @@ export interface IntegrationIdResult {
   readonly id: string;
 }
 
-/**
- * Trigger a one-off sync for an integration. Replaces the previous
- * connect/disconnect/reconfigure trio — the redesigned settings surface
- * treats provider configuration as infrastructure state and exposes only the
- * operator-level "refresh now" action.
- */
 export async function syncIntegrationAction(
   formData: FormData
 ): Promise<UiResult<IntegrationIdResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({ id: readString(formData, "id") });
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to refresh integrations.",
+    forbiddenMessage: "Only admins can refresh integrations."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  void formData;
+
+  return notImplementedResult("Use refreshIntegrationHealthAction instead.");
 }
 
 export async function refreshIntegrationHealthAction(
-  formData: FormData
+  serviceName: string
 ): Promise<UiResult<IntegrationHealthRecord>> {
-  try {
-    await requireAdmin();
-  } catch (error) {
-    if (error instanceof Error && error.message === "UNAUTHORIZED") {
-      return errorResult(
-        "unauthorized",
-        "You must be signed in to refresh integration health."
-      );
-    }
-
-    if (error instanceof Error && error.message === "FORBIDDEN") {
-      return errorResult(
-        "forbidden",
-        "Only admins can refresh integration health."
-      );
-    }
-
-    throw error;
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to refresh integration health.",
+    forbiddenMessage: "Only admins can refresh integration health."
+  });
+  if (!admin.ok) {
+    return admin.error;
   }
 
-  const serviceName = readString(formData, "service");
-  if (serviceName.length === 0) {
+  const normalizedServiceName = serviceName.trim();
+  if (normalizedServiceName.length === 0) {
     return errorResult("validation_error", "A service name is required.");
   }
 
   try {
-    const record = await refreshIntegrationHealthRecord(serviceName);
+    const record = await refreshIntegrationHealthRecord(normalizedServiceName);
+    await appendSettingsAudit({
+      actorId: admin.userId,
+      action: "settings.integration.refreshed",
+      entityType: "integration",
+      entityId: record.serviceName,
+      metadataJson: {
+        status: record.status,
+        checkedAt: record.lastCheckedAt
+      }
+    });
     revalidateIntegrationHealth();
     return {
       ok: true,
@@ -274,7 +815,10 @@ export async function refreshIntegrationHealthAction(
       );
     }
 
-    if (error instanceof Error && /invalid_enum_value|Invalid enum value/iu.test(error.message)) {
+    if (
+      error instanceof Error &&
+      /invalid_enum_value|Invalid enum value/iu.test(error.message)
+    ) {
       return errorResult("validation_error", "Unknown integration service.");
     }
 
