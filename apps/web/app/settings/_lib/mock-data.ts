@@ -10,8 +10,28 @@
 export interface MockProject {
   readonly id: string;
   readonly name: string;
+  /** Short slug used across the platform (e.g. `killer-whales`). */
+  readonly alias: string;
+  /** Inbound email address routed to this project's inbox. */
   readonly inboxAlias: string;
+  /** Every email address routed to the project. Most have one; some have two. */
+  readonly emails: readonly string[];
   readonly active: boolean;
+}
+
+/**
+ * Non-active Salesforce projects surfaced in the "Activate new project"
+ * dialog. Stored with the same shape as {@link MockProject} plus a
+ * `lastActiveAt` ISO timestamp and a short description so the dialog row has
+ * something meaningful to show.
+ */
+export interface MockInactiveProject {
+  readonly id: string;
+  readonly name: string;
+  readonly alias: string;
+  readonly inboxAlias: string;
+  readonly description: string;
+  readonly lastActiveAt: string | null;
 }
 
 export interface MockUser {
@@ -45,26 +65,126 @@ export const MOCK_PROJECTS: readonly MockProject[] = [
   {
     id: "project:killer-whales",
     name: "Searching for Killer Whales",
+    alias: "killer-whales",
     inboxAlias: "killer-whales@asc.internal",
+    emails: ["killer-whales@asc.internal"],
     active: true
   },
   {
     id: "project:coral-reefs",
     name: "Monitoring Coral Reefs",
+    alias: "coral-reefs",
     inboxAlias: "coral-reefs@asc.internal",
+    // One of the multi-email paths — exercises add/remove on the detail page.
+    emails: ["coral-reefs@asc.internal", "reef-support@asc.internal"],
     active: true
   },
   {
     id: "project:butternut-beech",
     name: "Butternut and Beech",
+    alias: "butternut-beech",
     inboxAlias: "butternut-beech@asc.internal",
+    emails: ["butternut-beech@asc.internal"],
     active: true
   },
   {
     id: "project:pnw-forest-biodiversity",
     name: "PNW Forest Biodiversity",
+    alias: "pnw-forest",
     inboxAlias: "pnw-forest@asc.internal",
+    emails: ["pnw-forest@asc.internal"],
     active: false
+  }
+];
+
+/**
+ * Non-active Salesforce projects that show up in the "Activate New Project"
+ * dialog.
+ *
+ * TODO(stage2): default result set comes from cached Salesforce projects in
+ * our DB — no Salesforce ping needed. Wire to the real non-active projects
+ * query when persistence lands.
+ */
+export const MOCK_INACTIVE_PROJECTS: readonly MockInactiveProject[] = [
+  {
+    id: "sf-project:yellowstone-wolves",
+    name: "Yellowstone Wolves",
+    alias: "yellowstone-wolves",
+    inboxAlias: "yellowstone-wolves@asc.internal",
+    description: "Pack surveys in the greater Yellowstone ecosystem.",
+    lastActiveAt: "2025-10-14T00:00:00.000Z"
+  },
+  {
+    id: "sf-project:amazon-canopy-soundscapes",
+    name: "Amazon Canopy Soundscapes",
+    alias: "amazon-canopy",
+    inboxAlias: "amazon-canopy@asc.internal",
+    description: "Bioacoustic recordings from upper-canopy research stations.",
+    lastActiveAt: "2025-08-02T00:00:00.000Z"
+  },
+  {
+    id: "sf-project:arctic-seabird-counts",
+    name: "Arctic Seabird Counts",
+    alias: "arctic-seabirds",
+    inboxAlias: "arctic-seabirds@asc.internal",
+    description: "Breeding-season colony counts across circumpolar cliffs.",
+    lastActiveAt: "2024-06-20T00:00:00.000Z"
+  },
+  {
+    id: "sf-project:california-tide-pools",
+    name: "California Tide Pools",
+    alias: "ca-tide-pools",
+    inboxAlias: "ca-tide-pools@asc.internal",
+    description: "Intertidal biodiversity monitoring along the Pacific coast.",
+    lastActiveAt: "2025-11-30T00:00:00.000Z"
+  },
+  {
+    id: "sf-project:montana-wildfire-regrowth",
+    name: "Montana Wildfire Regrowth",
+    alias: "mt-regrowth",
+    inboxAlias: "mt-regrowth@asc.internal",
+    description: "Post-burn vegetation recovery transects in Rocky Mountain plots.",
+    lastActiveAt: null
+  },
+  {
+    id: "sf-project:nepal-glacier-retreat",
+    name: "Nepal Glacier Retreat",
+    alias: "nepal-glaciers",
+    inboxAlias: "nepal-glaciers@asc.internal",
+    description: "Photo-point resurvey of high-altitude ice fronts in the Khumbu.",
+    lastActiveAt: "2023-05-09T00:00:00.000Z"
+  },
+  {
+    id: "sf-project:patagonia-pumas",
+    name: "Patagonia Pumas",
+    alias: "patagonia-pumas",
+    inboxAlias: "patagonia-pumas@asc.internal",
+    description: "Track, scat, and camera-trap sampling across estancia corridors.",
+    lastActiveAt: "2025-03-17T00:00:00.000Z"
+  },
+  {
+    id: "sf-project:sierra-snowpack",
+    name: "Sierra Snowpack",
+    alias: "sierra-snow",
+    inboxAlias: "sierra-snow@asc.internal",
+    description: "Volunteer-collected SWE samples for watershed forecasting.",
+    lastActiveAt: "2025-12-08T00:00:00.000Z"
+  },
+  {
+    id: "sf-project:appalachian-salamanders",
+    name: "Appalachian Salamanders",
+    alias: "appalachian-sallies",
+    inboxAlias: "appalachian-sallies@asc.internal",
+    description: "Stream-side plethodon surveys for chytrid surveillance.",
+    lastActiveAt: null
+  },
+  {
+    id: "sf-project:great-plains-pollinators",
+    name: "Great Plains Pollinators",
+    alias: "plains-pollinators",
+    inboxAlias: "plains-pollinators@asc.internal",
+    description: "Native bee transect counts across restored prairie fragments.",
+    lastActiveAt: "2024-09-21T00:00:00.000Z"
   }
 ];
 
@@ -161,6 +281,11 @@ export function buildMockUsers(
   // Drop the seed admin so we keep the total at ~5 users.
   const rest = BASE_MOCK_USERS.filter((user) => user.id !== "user:admin-seed");
   return [injected, ...rest];
+}
+
+/** Look up a single project by id; returns `null` when the id is unknown. */
+export function findMockProjectById(id: string): MockProject | null {
+  return MOCK_PROJECTS.find((project) => project.id === id) ?? null;
 }
 
 export const MOCK_INTEGRATIONS: readonly MockIntegration[] = [

@@ -47,45 +47,83 @@ async function stub<T>(data: T): Promise<UiSuccess<T>> {
 
 // ─── Projects ───────────────────────────────────────────────────────────────
 
-export interface AddProjectResult {
+export interface ActivateProjectResult {
   readonly id: string;
   readonly name: string;
-  readonly inboxAlias: string;
+  readonly alias: string;
 }
 
-export async function addProjectAction(
+/**
+ * Activate a Salesforce project so inbound routing includes it. Replaces the
+ * previous `addProjectAction` — the redesigned flow picks an existing
+ * non-active project from our cached SF snapshot rather than inventing one.
+ */
+export async function activateProjectAction(
   formData: FormData
-): Promise<UiResult<AddProjectResult>> {
+): Promise<UiResult<ActivateProjectResult>> {
   // TODO(stage2): wire to real persistence
   return stub({
-    id: `project:stub:${randomUUID()}`,
+    id: readString(formData, "id"),
     name: readString(formData, "name"),
-    inboxAlias: readString(formData, "inboxAlias")
+    alias: readString(formData, "alias")
   });
 }
 
 export interface UpdateProjectAliasResult {
   readonly id: string;
-  readonly inboxAlias: string;
+  readonly alias: string;
 }
 
+/**
+ * Rename the short alias used across the platform for this project. Reads
+ * `projectId` (preferred) or legacy `id` from the form payload.
+ */
 export async function updateProjectAliasAction(
   formData: FormData
 ): Promise<UiResult<UpdateProjectAliasResult>> {
   // TODO(stage2): wire to real persistence
   return stub({
-    id: readString(formData, "id"),
-    inboxAlias: readString(formData, "inboxAlias")
+    id: readString(formData, "projectId") || readString(formData, "id"),
+    alias: readString(formData, "alias")
   });
 }
 
-export interface ArchiveProjectResult {
+export interface ProjectEmailResult {
+  readonly projectId: string;
+  readonly email: string;
+}
+
+export async function addProjectEmailAction(
+  formData: FormData
+): Promise<UiResult<ProjectEmailResult>> {
+  // TODO(stage2): wire to real persistence
+  return stub({
+    projectId: readString(formData, "projectId"),
+    email: readString(formData, "email")
+  });
+}
+
+export async function removeProjectEmailAction(
+  formData: FormData
+): Promise<UiResult<ProjectEmailResult>> {
+  // TODO(stage2): wire to real persistence
+  return stub({
+    projectId: readString(formData, "projectId"),
+    email: readString(formData, "email")
+  });
+}
+
+export interface DeactivateProjectResult {
   readonly id: string;
 }
 
-export async function archiveProjectAction(
+/**
+ * Deactivate a project so inbound routing ignores it. Renamed from
+ * `archiveProjectAction` to match the product copy on the danger-zone card.
+ */
+export async function deactivateProjectAction(
   formData: FormData
-): Promise<UiResult<ArchiveProjectResult>> {
+): Promise<UiResult<DeactivateProjectResult>> {
   // TODO(stage2): wire to real persistence
   return stub({ id: readString(formData, "id") });
 }
@@ -148,21 +186,13 @@ export interface IntegrationIdResult {
   readonly id: string;
 }
 
-export async function connectIntegrationAction(
-  formData: FormData
-): Promise<UiResult<IntegrationIdResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({ id: readString(formData, "id") });
-}
-
-export async function disconnectIntegrationAction(
-  formData: FormData
-): Promise<UiResult<IntegrationIdResult>> {
-  // TODO(stage2): wire to real persistence
-  return stub({ id: readString(formData, "id") });
-}
-
-export async function reconfigureIntegrationAction(
+/**
+ * Trigger a one-off sync for an integration. Replaces the previous
+ * connect/disconnect/reconfigure trio — the redesigned settings surface
+ * treats provider configuration as infrastructure state and exposes only the
+ * operator-level "refresh now" action.
+ */
+export async function syncIntegrationAction(
   formData: FormData
 ): Promise<UiResult<IntegrationIdResult>> {
   // TODO(stage2): wire to real persistence
