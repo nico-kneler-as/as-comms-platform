@@ -150,7 +150,10 @@ export type ContactMembershipRecord = z.infer<typeof contactMembershipSchema>;
 export const projectDimensionSchema = z.object({
   projectId: idSchema,
   projectName: z.string().min(1),
-  source: recordSourceSchema
+  source: recordSourceSchema,
+  isActive: z.boolean().optional(),
+  aiKnowledgeUrl: nullableStringSchema.optional(),
+  aiKnowledgeSyncedAt: optionalTimestampSchema.optional()
 });
 export type ProjectDimensionRecord = z.infer<typeof projectDimensionSchema>;
 

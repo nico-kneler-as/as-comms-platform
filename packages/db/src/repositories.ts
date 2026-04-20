@@ -42,6 +42,8 @@ import {
   mapExpeditionDimensionToInsert,
   mapGmailMessageDetailRow,
   mapGmailMessageDetailToInsert,
+  mapIntegrationHealthRow,
+  mapIntegrationHealthToInsert,
   mapIdentityResolutionRow,
   mapIdentityResolutionToInsert,
   mapInboxProjectionRow,
@@ -74,6 +76,7 @@ import {
   contacts,
   expeditionDimensions,
   gmailMessageDetails,
+  integrationHealth,
   identityResolutionQueue,
   mailchimpCampaignActivityDetails,
   manualNoteDetails,
@@ -271,6 +274,45 @@ function requireRow<T>(row: T | undefined, message: string): T {
 
   return row;
 }
+
+const DEFAULT_INTEGRATION_HEALTH_SEED = [
+  {
+    id: "salesforce",
+    serviceName: "salesforce",
+    category: "crm",
+    status: "not_checked"
+  },
+  {
+    id: "gmail",
+    serviceName: "gmail",
+    category: "messaging",
+    status: "not_checked"
+  },
+  {
+    id: "simpletexting",
+    serviceName: "simpletexting",
+    category: "messaging",
+    status: "not_configured"
+  },
+  {
+    id: "mailchimp",
+    serviceName: "mailchimp",
+    category: "messaging",
+    status: "not_configured"
+  },
+  {
+    id: "notion",
+    serviceName: "notion",
+    category: "knowledge",
+    status: "not_configured"
+  },
+  {
+    id: "openai",
+    serviceName: "openai",
+    category: "ai",
+    status: "not_configured"
+  }
+] as const;
 
 type InboxProjectionFilter = "all" | "unread" | "follow-up" | "unresolved";
 
@@ -832,6 +874,9 @@ function createStage1RepositoriesInternal(
             target: projectDimensions.projectId,
             set: {
               projectName: values.projectName,
+              isActive: values.isActive,
+              aiKnowledgeUrl: values.aiKnowledgeUrl,
+              aiKnowledgeSyncedAt: values.aiKnowledgeSyncedAt,
               source: values.source,
               updatedAt: new Date()
             }
@@ -1765,7 +1810,178 @@ export function createStage1RepositoryBundleFromConnection(
 function createStage2RepositoriesInternal(
   db: Stage1Database
 ): Stage2RepositoryBundle {
+  async function loadSettingsProjects(projectIds?: readonly string[]) {
+    const normalizedProjectIds =
+      projectIds === undefined
+        ? null
+        : [...new Set(projectIds.filter((projectId) => projectId.trim().length > 0))];
+
+    if (normalizedProjectIds !== null && normalizedProjectIds.length === 0) {
+      return [];
+    }
+
+    const projectRows =
+      normalizedProjectIds === null
+        ? await db
+            .select()
+            .from(projectDimensions)
+            .orderBy(asc(projectDimensions.projectId))
+        : await db
+            .select()
+            .from(projectDimensions)
+            .where(inArray(projectDimensions.projectId, normalizedProjectIds))
+            .orderBy(asc(projectDimensions.projectId));
+
+    if (projectRows.length === 0) {
+      return [];
+    }
+
+    const resolvedProjectIds = projectRows.map((row) => row.projectId);
+    const aliasRows = await db
+      .select()
+      .from(projectAliases)
+      .where(inArray(projectAliases.projectId, resolvedProjectIds))
+      .orderBy(
+        asc(projectAliases.projectId),
+        asc(projectAliases.createdAt),
+        asc(projectAliases.alias)
+      );
+    const memberCountRows = await db
+      .select({
+        projectId: contactMemberships.projectId,
+        memberCount: count()
+      })
+      .from(contactMemberships)
+      .where(inArray(contactMemberships.projectId, resolvedProjectIds))
+      .groupBy(contactMemberships.projectId);
+
+    const emailsByProjectId = new Map<
+      string,
+      { readonly address: string; readonly createdAt: Date }[]
+    >();
+    for (const aliasRow of aliasRows) {
+      if (aliasRow.projectId === null) {
+        continue;
+      }
+
+      const projectEmails = emailsByProjectId.get(aliasRow.projectId) ?? [];
+      projectEmails.push({
+        address: aliasRow.alias,
+        createdAt: aliasRow.createdAt
+      });
+      emailsByProjectId.set(aliasRow.projectId, projectEmails);
+    }
+
+    const memberCountByProjectId = new Map(
+      memberCountRows.flatMap((row) =>
+        row.projectId === null
+          ? []
+          : [[row.projectId, row.memberCount] as const]
+      )
+    );
+
+    return projectRows.map((row) => {
+      const orderedEmails = (emailsByProjectId.get(row.projectId) ?? [])
+        .slice()
+        .sort(
+          (left, right) =>
+            left.createdAt.getTime() - right.createdAt.getTime() ||
+            left.address.localeCompare(right.address)
+        )
+        .map((email, index) => ({
+          address: email.address,
+          isPrimary: index === 0
+        }));
+
+      return {
+        projectId: row.projectId,
+        salesforceProjectId: row.projectId,
+        projectName: row.projectName,
+        isActive: row.isActive,
+        aiKnowledgeUrl: row.aiKnowledgeUrl,
+        aiKnowledgeSyncedAt: row.aiKnowledgeSyncedAt,
+        emails: orderedEmails,
+        memberCount: memberCountByProjectId.get(row.projectId) ?? 0,
+        updatedAt: row.updatedAt
+      };
+    });
+  }
+
   return defineStage2RepositoryBundle({
+    integrationHealth: {
+      async findById(id) {
+        const [row] = await db
+          .select()
+          .from(integrationHealth)
+          .where(eq(integrationHealth.id, id))
+          .limit(1);
+
+        return row === undefined ? null : mapIntegrationHealthRow(row);
+      },
+
+      async listAll() {
+        const rows = await db
+          .select()
+          .from(integrationHealth)
+          .orderBy(asc(integrationHealth.serviceName));
+
+        return rows.map(mapIntegrationHealthRow);
+      },
+
+      async seedDefaults() {
+        await db
+          .insert(integrationHealth)
+          .values(
+            DEFAULT_INTEGRATION_HEALTH_SEED.map((row) => ({
+              ...row,
+              detail: null,
+              metadataJson: {}
+            }))
+          )
+          .onConflictDoNothing({
+            target: integrationHealth.id
+          });
+      },
+
+      async upsert(record) {
+        const values = mapIntegrationHealthToInsert(record);
+        const [row] = await db
+          .insert(integrationHealth)
+          .values(values)
+          .onConflictDoUpdate({
+            target: integrationHealth.id,
+            set: {
+              serviceName: values.serviceName,
+              category: values.category,
+              status: values.status,
+              lastCheckedAt: values.lastCheckedAt,
+              detail: values.detail,
+              metadataJson: values.metadataJson,
+              updatedAt: new Date()
+            }
+          })
+          .returning();
+
+        return mapIntegrationHealthRow(
+          requireRow(
+            row,
+            "Expected integration health row to be returned from upsert."
+          )
+        );
+      }
+    },
+
+    projects: {
+      async findById(projectId) {
+        const [row] = await loadSettingsProjects([projectId]);
+        return row ?? null;
+      },
+
+      async listAll() {
+        return loadSettingsProjects();
+      }
+    },
+
     users: {
       async findByEmail(email) {
         const [row] = await db

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, Trash2 } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -23,19 +23,18 @@ import {
   DialogTrigger
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
+import type { ProjectSettingsDetailViewModel } from "@/src/server/settings/selectors";
 
 import {
   addProjectEmailAction,
   deactivateProjectAction,
-  removeProjectEmailAction,
-  updateProjectAliasAction
+  removeProjectEmailAction
 } from "../actions";
-import type { MockProject } from "../_lib/mock-data";
 
 interface ProjectDetailProps {
-  readonly project: MockProject;
-  readonly isAdmin: boolean;
+  readonly project: ProjectSettingsDetailViewModel;
 }
 
 interface FeedbackState {
@@ -43,12 +42,10 @@ interface FeedbackState {
   readonly message: string;
 }
 
-export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
+export function ProjectDetail({ project }: ProjectDetailProps) {
   const router = useRouter();
-  const [alias, setAlias] = useState(project.alias);
   const [emails, setEmails] = useState(project.emails);
   const [newEmail, setNewEmail] = useState("");
-  const [aliasPending, startAliasTransition] = useTransition();
   const [emailPending, startEmailTransition] = useTransition();
   const [deactivatePending, startDeactivateTransition] = useTransition();
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
@@ -62,34 +59,33 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
     }, 3500);
   }
 
-  function handleSaveAlias() {
-    startAliasTransition(async () => {
-      const formData = new FormData();
-      formData.set("projectId", project.id);
-      formData.set("alias", alias);
-      const result = await updateProjectAliasAction(formData);
-      if (result.ok) {
-        announce(`Alias saved for ${project.name}. (stub)`);
-      }
-    });
+  function handleKnowledgeSync() {
+    announce("Knowledge sync will be wired in a follow-up brief. (stub)");
   }
 
   function handleAddEmail() {
     const trimmed = newEmail.trim();
     if (trimmed.length === 0) return;
-    if (emails.includes(trimmed)) {
+    if (
+      emails.some(
+        (email) => email.address.toLowerCase() === trimmed.toLowerCase()
+      )
+    ) {
       announce(`${trimmed} is already connected.`, "error");
       return;
     }
     setPendingEmail(trimmed);
     startEmailTransition(async () => {
       const formData = new FormData();
-      formData.set("projectId", project.id);
+      formData.set("projectId", project.projectId);
       formData.set("email", trimmed);
       const result = await addProjectEmailAction(formData);
       setPendingEmail(null);
       if (result.ok) {
-        setEmails((current) => [...current, trimmed]);
+        setEmails((current) => [
+          ...current,
+          { address: trimmed, isPrimary: current.length === 0 }
+        ]);
         setNewEmail("");
         announce(`Added ${trimmed}. (stub)`);
       }
@@ -100,12 +96,22 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
     setPendingEmail(email);
     startEmailTransition(async () => {
       const formData = new FormData();
-      formData.set("projectId", project.id);
+      formData.set("projectId", project.projectId);
       formData.set("email", email);
       const result = await removeProjectEmailAction(formData);
       setPendingEmail(null);
       if (result.ok) {
-        setEmails((current) => current.filter((value) => value !== email));
+        setEmails((current) => {
+          const next = current.filter((value) => value.address !== email);
+          if (next.length === 0 || next.some((value) => value.isPrimary)) {
+            return next;
+          }
+
+          return next.map((value, index) => ({
+            ...value,
+            isPrimary: index === 0
+          }));
+        });
         announce(`Removed ${email}. (stub)`);
       }
     });
@@ -114,12 +120,11 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
   function handleDeactivate() {
     startDeactivateTransition(async () => {
       const formData = new FormData();
-      formData.set("id", project.id);
+      formData.set("id", project.projectId);
       const result = await deactivateProjectAction(formData);
       if (result.ok) {
         setDeactivateOpen(false);
-        // Stub mutation — let the caller route back so the list re-renders.
-        router.push("/settings/active-projects");
+        router.push("/settings/projects");
         router.refresh();
       }
     });
@@ -129,7 +134,7 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
     <div className="flex max-w-3xl flex-col gap-8">
       <div className="flex flex-col gap-2">
         <Link
-          href="/settings/active-projects"
+          href="/settings/projects"
           className={cn(
             "inline-flex items-center gap-1.5 self-start text-sm font-medium text-slate-600 hover:text-slate-900",
             TRANSITION.fast,
@@ -140,9 +145,20 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           Back to Active Projects
         </Link>
-        <h1 className="text-lg font-semibold tracking-tight text-slate-950">
-          {project.name}
-        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-lg font-semibold tracking-tight text-slate-950">
+            {project.projectName}
+          </h1>
+          <StatusBadge
+            label={project.isActive ? "Active" : "Inactive"}
+            colorClasses={
+              project.isActive
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                : "bg-amber-50 text-amber-800 ring-amber-200"
+            }
+            variant="soft"
+          />
+        </div>
       </div>
 
       {feedback ? (
@@ -161,46 +177,91 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
       ) : null}
 
       <section
-        aria-labelledby="project-alias-heading"
+        aria-labelledby="project-details-heading"
         className={cn(
-          "flex flex-col gap-3 p-5",
+          "flex flex-col gap-4 p-5",
           RADIUS.md,
           "border border-slate-200 bg-white",
           SHADOW.sm
         )}
       >
         <div>
-          <h2 id="project-alias-heading" className={TEXT.headingSm}>
-            Alias
+          <h2 id="project-details-heading" className={TEXT.headingSm}>
+            Project details
           </h2>
           <p className={cn("mt-0.5", TEXT.caption)}>
-            The short name used across the platform.
+            Activation requires at least one connected inbox email and an AI
+            knowledge source.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="project-alias-input" className="sr-only">
-            Project alias
-          </label>
-          <Input
-            id="project-alias-input"
-            value={alias}
-            onChange={(event) => {
-              setAlias(event.target.value);
-            }}
-            disabled={!isAdmin || aliasPending}
-            placeholder="project-slug"
-            className="max-w-sm font-mono text-[13px]"
-          />
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleSaveAlias}
-            disabled={
-              !isAdmin || aliasPending || alias.trim() === project.alias
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="project-salesforce-id"
+              className={cn(TEXT.label, "text-slate-600")}
+            >
+              Salesforce project ID
+            </label>
+            <Input
+              id="project-salesforce-id"
+              value={project.salesforceProjectId ?? ""}
+              disabled
+              readOnly
+              className="font-mono text-[13px]"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="project-ai-knowledge-url"
+              className={cn(TEXT.label, "text-slate-600")}
+            >
+              AI knowledge source
+            </label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="project-ai-knowledge-url"
+                value={project.aiKnowledgeUrl ?? ""}
+                disabled
+                readOnly
+                placeholder="No source configured"
+                className="font-mono text-[13px]"
+              />
+              {project.isAdmin ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleKnowledgeSync}
+                >
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                  Sync
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge
+            label={
+              project.activationRequirementsMet
+                ? "Activation ready"
+                : "Needs setup"
             }
-          >
-            Save
-          </Button>
+            colorClasses={
+              project.activationRequirementsMet
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                : "bg-amber-50 text-amber-800 ring-amber-200"
+            }
+            variant="soft"
+          />
+          <span className={TEXT.caption}>
+            {project.aiKnowledgeSyncedAt
+              ? `Knowledge last synced ${new Date(project.aiKnowledgeSyncedAt).toLocaleString()}`
+              : "Knowledge has not been synced yet."}
+          </span>
         </div>
       </section>
 
@@ -231,25 +292,32 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
           )}
         >
           {emails.map((email) => {
-            const isRowPending = emailPending && pendingEmail === email;
+            const isRowPending = emailPending && pendingEmail === email.address;
             return (
               <li
-                key={email}
+                key={email.address}
                 className={cn(
                   "flex items-center gap-2 px-3 py-2",
                   isRowPending && "opacity-60"
                 )}
               >
                 <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-slate-700">
-                  {email}
+                  {email.address}
                 </span>
-                {isAdmin && emails.length > 1 ? (
+                {email.isPrimary ? (
+                  <StatusBadge
+                    label="Primary"
+                    colorClasses="bg-sky-50 text-sky-700 ring-sky-200"
+                    variant="soft"
+                  />
+                ) : null}
+                {project.isAdmin && emails.length > 1 ? (
                   <button
                     type="button"
-                    aria-label={`Remove ${email}`}
+                    aria-label={`Remove ${email.address}`}
                     disabled={isRowPending}
                     onClick={() => {
-                      handleRemoveEmail(email);
+                      handleRemoveEmail(email.address);
                     }}
                     className={cn(
                       "flex h-7 w-7 items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-700",
@@ -274,7 +342,7 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
           )}
         </ul>
 
-        {isAdmin ? (
+        {project.isAdmin ? (
           <div className="flex items-center gap-2">
             <label htmlFor="project-email-input" className="sr-only">
               Add email
@@ -303,7 +371,7 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
         ) : null}
       </section>
 
-      {isAdmin ? (
+      {project.isAdmin ? (
         <section
           aria-labelledby="project-danger-heading"
           className={cn(
@@ -338,11 +406,11 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Deactivate {project.name}?</DialogTitle>
+                <DialogTitle>Deactivate {project.projectName}?</DialogTitle>
                 <DialogDescription>
                   Deactivated projects stop routing inbound mail but are
-                  preserved in the record. You can reactivate from the
-                  Active Projects list later.
+                  preserved in the record. You can reactivate them from a
+                  follow-up admin workflow later.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="mt-4">

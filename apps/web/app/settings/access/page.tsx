@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
 
-import { getCurrentUser, requireSession } from "@/src/server/auth/session";
-import { recordSensitiveReadDetached } from "@/src/server/security/audit";
+import { requireSession } from "@/src/server/auth/session";
+import { loadAccessSettings } from "@/src/server/settings/selectors";
 
 import { AccessSection } from "../_components/access-section";
 import { SettingsContent } from "../_components/settings-content";
-import { buildMockUsers } from "../_lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
@@ -24,36 +23,11 @@ export default async function SettingsAccessPage() {
     throw error;
   }
 
-  const currentUser = await getCurrentUser();
-  if (!currentUser) {
-    redirect("/auth/sign-in");
-  }
-
-  const users = buildMockUsers({
-    id: currentUser.id,
-    email: currentUser.email,
-    name: currentUser.name
-  });
-
-  recordSensitiveReadDetached({
-    actorId: currentUser.id,
-    action: "settings.users.read",
-    entityType: "settings_page",
-    entityId: "users",
-    metadataJson: {
-      visibleUserCount: users.length
-    }
-  });
-
-  const isAdmin = currentUser.role === "admin";
+  const viewModel = await loadAccessSettings();
 
   return (
     <SettingsContent>
-      <AccessSection
-        users={users}
-        currentUserId={currentUser.id}
-        isAdmin={isAdmin}
-      />
+      <AccessSection viewModel={viewModel} />
     </SettingsContent>
   );
 }

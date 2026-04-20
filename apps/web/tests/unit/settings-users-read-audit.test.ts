@@ -8,6 +8,10 @@ const notFound = vi.hoisted(() => vi.fn());
 
 Object.assign(globalThis, { React });
 
+vi.mock("next/cache", () => ({
+  unstable_cache: (loader: () => unknown) => loader
+}));
+
 vi.mock("next/navigation", () => ({
   redirect,
   notFound,

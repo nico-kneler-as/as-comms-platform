@@ -6,6 +6,7 @@ import {
   contactSchema,
   expeditionDimensionSchema,
   gmailMessageDetailSchema,
+  integrationHealthSchema,
   identityResolutionSchema,
   inboxProjectionSchema,
   mailchimpCampaignActivityDetailSchema,
@@ -25,6 +26,7 @@ import {
   type ContactRecord,
   type ExpeditionDimensionRecord,
   type GmailMessageDetailRecord,
+  type IntegrationHealthRecord,
   type IdentityResolutionCase,
   type InboxProjectionRow,
   type MailchimpCampaignActivityDetailRecord,
@@ -54,6 +56,7 @@ import type {
   contacts,
   expeditionDimensions,
   gmailMessageDetails,
+  integrationHealth,
   identityResolutionQueue,
   mailchimpCampaignActivityDetails,
   manualNoteDetails,
@@ -76,6 +79,7 @@ type ContactMembershipRow = typeof contactMemberships.$inferSelect;
 type ProjectDimensionRow = typeof projectDimensions.$inferSelect;
 type ExpeditionDimensionRow = typeof expeditionDimensions.$inferSelect;
 type GmailMessageDetailRow = typeof gmailMessageDetails.$inferSelect;
+type IntegrationHealthRow = typeof integrationHealth.$inferSelect;
 type SalesforceEventContextRow = typeof salesforceEventContext.$inferSelect;
 type SalesforceCommunicationDetailRow =
   typeof salesforceCommunicationDetails.$inferSelect;
@@ -259,7 +263,10 @@ export function mapProjectDimensionRow(
   return projectDimensionSchema.parse({
     projectId: row.projectId,
     projectName: row.projectName,
-    source: row.source
+    source: row.source,
+    isActive: row.isActive,
+    aiKnowledgeUrl: row.aiKnowledgeUrl,
+    aiKnowledgeSyncedAt: fromDate(row.aiKnowledgeSyncedAt)
   });
 }
 
@@ -271,7 +278,49 @@ export function mapProjectDimensionToInsert(
   return {
     projectId: parsed.projectId,
     projectName: parsed.projectName,
+    isActive: parsed.isActive ?? false,
+    aiKnowledgeUrl: parsed.aiKnowledgeUrl ?? null,
+    aiKnowledgeSyncedAt:
+      parsed.aiKnowledgeSyncedAt === undefined ||
+      parsed.aiKnowledgeSyncedAt === null
+        ? null
+        : toDate(parsed.aiKnowledgeSyncedAt),
     source: parsed.source
+  };
+}
+
+export function mapIntegrationHealthRow(
+  row: IntegrationHealthRow
+): IntegrationHealthRecord {
+  return integrationHealthSchema.parse({
+    id: row.id,
+    serviceName: row.serviceName,
+    category: row.category,
+    status: row.status,
+    lastCheckedAt: fromDate(row.lastCheckedAt),
+    detail: row.detail,
+    metadataJson: row.metadataJson,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  });
+}
+
+export function mapIntegrationHealthToInsert(
+  record: IntegrationHealthRecord
+): typeof integrationHealth.$inferInsert {
+  const parsed = integrationHealthSchema.parse(record);
+
+  return {
+    id: parsed.id,
+    serviceName: parsed.serviceName,
+    category: parsed.category,
+    status: parsed.status,
+    lastCheckedAt:
+      parsed.lastCheckedAt === null ? null : toDate(parsed.lastCheckedAt),
+    detail: parsed.detail,
+    metadataJson: parsed.metadataJson,
+    createdAt: toDate(parsed.createdAt),
+    updatedAt: toDate(parsed.updatedAt)
   };
 }
 

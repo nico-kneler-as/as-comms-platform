@@ -20,6 +20,10 @@ import {
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ToneAvatar } from "@/components/ui/tone-avatar";
 import { cn } from "@/lib/utils";
+import type {
+  AccessSettingsViewModel,
+  UserRowViewModel
+} from "@/src/server/settings/selectors";
 
 import {
   deactivateUserAction,
@@ -28,13 +32,10 @@ import {
   promoteUserAction,
   reactivateUserAction
 } from "../actions";
-import type { MockUser } from "../_lib/mock-data";
 import { SettingsSection } from "./settings-section";
 
 interface AccessSectionProps {
-  readonly users: readonly MockUser[];
-  readonly currentUserId: string;
-  readonly isAdmin: boolean;
+  readonly viewModel: AccessSettingsViewModel;
 }
 
 interface FeedbackState {
@@ -54,8 +55,8 @@ const AVATAR_TONES = [
 
 type AvatarTone = (typeof AVATAR_TONES)[number];
 
-function initialsFor(user: MockUser): string {
-  const source = user.name ?? user.email;
+function initialsFor(user: UserRowViewModel): string {
+  const source = user.displayName || user.email;
   const parts = source
     .split(/[\s._-]+/)
     .map((part) => part.trim())
@@ -67,15 +68,14 @@ function initialsFor(user: MockUser): string {
   return `${first}${second}`.toUpperCase();
 }
 
-function toneFor(user: MockUser): AvatarTone {
-  // Stable hash so the same user always gets the same tone.
+function toneFor(user: UserRowViewModel): AvatarTone {
   let hash = 0;
-  for (let i = 0; i < user.id.length; i += 1) {
-    hash = (hash * 31 + user.id.charCodeAt(i)) | 0;
+  for (let i = 0; i < user.userId.length; i += 1) {
+    hash = (hash * 31 + user.userId.charCodeAt(i)) | 0;
   }
   const index = Math.abs(hash) % AVATAR_TONES.length;
   const tone = AVATAR_TONES[index];
-  return tone ?? "slate" as AvatarTone;
+  return tone ?? ("slate" as AvatarTone);
 }
 
 function formatRelative(iso: string | null): string {
@@ -98,28 +98,34 @@ function formatRelative(iso: string | null): string {
   return `${String(years)}y ago`;
 }
 
-export function AccessSection({
-  users,
-  currentUserId,
-  isAdmin
-}: AccessSectionProps) {
-  const [rows, setRows] = useState(users);
+export function AccessSection({ viewModel }: AccessSectionProps) {
+  const [rows, setRows] = useState([
+    ...viewModel.admins,
+    ...viewModel.internalUsers
+  ]);
   const [pending, startTransition] = useTransition();
   const [pendingRowId, setPendingRowId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
 
-  const sorted = useMemo(
-    () =>
-      [...rows].sort((a, b) => {
-        if (a.id === currentUserId) return -1;
-        if (b.id === currentUserId) return 1;
-        if (a.isDeactivated !== b.isDeactivated) {
-          return a.isDeactivated ? 1 : -1;
-        }
-        return (a.name ?? a.email).localeCompare(b.name ?? b.email);
-      }),
-    [rows, currentUserId]
-  );
+  const sorted = useMemo(() => {
+    const statusRank = {
+      active: 0,
+      pending: 1,
+      deactivated: 2
+    } as const;
+
+    return [...rows].sort((left, right) => {
+      if (left.userId === viewModel.currentUserId) return -1;
+      if (right.userId === viewModel.currentUserId) return 1;
+
+      const statusDelta = statusRank[left.status] - statusRank[right.status];
+      if (statusDelta !== 0) {
+        return statusDelta;
+      }
+
+      return left.displayName.localeCompare(right.displayName);
+    });
+  }, [rows, viewModel.currentUserId]);
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
     setFeedback({ kind, message });
@@ -128,66 +134,66 @@ export function AccessSection({
     }, 3500);
   }
 
-  function updateRow(id: string, patch: Partial<MockUser>) {
+  function updateRow(id: string, patch: Partial<UserRowViewModel>) {
     setRows((current) =>
-      current.map((row) => (row.id === id ? { ...row, ...patch } : row))
+      current.map((row) => (row.userId === id ? { ...row, ...patch } : row))
     );
   }
 
-  function handlePromote(user: MockUser) {
-    setPendingRowId(user.id);
+  function handlePromote(user: UserRowViewModel) {
+    setPendingRowId(user.userId);
     startTransition(async () => {
       const formData = new FormData();
-      formData.set("id", user.id);
+      formData.set("id", user.userId);
       const result = await promoteUserAction(formData);
       setPendingRowId(null);
       if (result.ok) {
-        updateRow(user.id, { role: "admin" });
-        announce(`${user.name ?? user.email} is now an admin. (stub)`);
+        updateRow(user.userId, { role: "admin" });
+        announce(`${user.displayName} is now an admin. (stub)`);
       }
     });
   }
 
-  function handleDemote(user: MockUser) {
-    setPendingRowId(user.id);
+  function handleDemote(user: UserRowViewModel) {
+    setPendingRowId(user.userId);
     startTransition(async () => {
       const formData = new FormData();
-      formData.set("id", user.id);
+      formData.set("id", user.userId);
       const result = await demoteUserAction(formData);
       setPendingRowId(null);
       if (result.ok) {
-        updateRow(user.id, { role: "internal_user" });
-        announce(
-          `${user.name ?? user.email} is now an internal user. (stub)`
-        );
+        updateRow(user.userId, { role: "internal_user" });
+        announce(`${user.displayName} is now an internal user. (stub)`);
       }
     });
   }
 
-  function handleDeactivate(user: MockUser) {
-    setPendingRowId(user.id);
+  function handleDeactivate(user: UserRowViewModel) {
+    setPendingRowId(user.userId);
     startTransition(async () => {
       const formData = new FormData();
-      formData.set("id", user.id);
+      formData.set("id", user.userId);
       const result = await deactivateUserAction(formData);
       setPendingRowId(null);
       if (result.ok) {
-        updateRow(user.id, { isDeactivated: true });
-        announce(`${user.name ?? user.email} deactivated. (stub)`);
+        updateRow(user.userId, { status: "deactivated" });
+        announce(`${user.displayName} deactivated. (stub)`);
       }
     });
   }
 
-  function handleReactivate(user: MockUser) {
-    setPendingRowId(user.id);
+  function handleReactivate(user: UserRowViewModel) {
+    setPendingRowId(user.userId);
     startTransition(async () => {
       const formData = new FormData();
-      formData.set("id", user.id);
+      formData.set("id", user.userId);
       const result = await reactivateUserAction(formData);
       setPendingRowId(null);
       if (result.ok) {
-        updateRow(user.id, { isDeactivated: false });
-        announce(`${user.name ?? user.email} reactivated. (stub)`);
+        updateRow(user.userId, {
+          status: user.lastActiveAt === null ? "pending" : "active"
+        });
+        announce(`${user.displayName} reactivated. (stub)`);
       }
     });
   }
@@ -209,7 +215,7 @@ export function AccessSection({
       id="settings-access"
       title="Access"
       action={
-        isAdmin ? (
+        viewModel.isAdmin ? (
           <Button
             type="button"
             size="sm"
@@ -261,7 +267,7 @@ export function AccessSection({
                   "tracking-wider"
                 )}
               >
-                Last sign-in
+                Last active
               </th>
               <th
                 scope="col"
@@ -277,17 +283,15 @@ export function AccessSection({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {sorted.map((user) => {
-              const isSelf = user.id === currentUserId;
-              const isRowPending = pending && pendingRowId === user.id;
+              const isSelf = user.userId === viewModel.currentUserId;
+              const isRowPending = pending && pendingRowId === user.userId;
               return (
                 <tr
-                  key={user.id}
+                  key={user.userId}
                   className={cn(
                     TRANSITION.fast,
-                    isRowPending
-                      ? "opacity-60"
-                      : "hover:bg-slate-50/80",
-                    user.isDeactivated && "bg-slate-50/60"
+                    isRowPending ? "opacity-60" : "hover:bg-slate-50/80",
+                    user.status === "deactivated" && "bg-slate-50/60"
                   )}
                 >
                   <td className="px-5 py-3">
@@ -302,12 +306,12 @@ export function AccessSection({
                           <p
                             className={cn(
                               "truncate text-sm font-medium",
-                              user.isDeactivated
+                              user.status === "deactivated"
                                 ? "text-slate-500"
                                 : "text-slate-900"
                             )}
                           >
-                            {user.name ?? user.email}
+                            {user.displayName}
                           </p>
                           {isSelf && (
                             <span className={cn(TEXT.micro, "text-slate-400")}>
@@ -319,7 +323,7 @@ export function AccessSection({
                           className={cn(
                             "truncate",
                             TEXT.caption,
-                            user.isDeactivated && "text-slate-400"
+                            user.status === "deactivated" && "text-slate-400"
                           )}
                         >
                           {user.email}
@@ -330,13 +334,7 @@ export function AccessSection({
                   <td className="px-5 py-3 align-middle">
                     <div className="flex items-center gap-2">
                       <RoleBadge role={user.role} />
-                      {user.isDeactivated && (
-                        <StatusBadge
-                          label="Deactivated"
-                          colorClasses="bg-slate-100 text-slate-600 ring-slate-200"
-                          variant="soft"
-                        />
-                      )}
+                      <UserStatusBadge status={user.status} />
                     </div>
                   </td>
                   <td className="px-5 py-3 align-middle">
@@ -347,7 +345,7 @@ export function AccessSection({
                         "text-slate-600"
                       )}
                     >
-                      {formatRelative(user.lastSignInAt)}
+                      {formatRelative(user.lastActiveAt)}
                     </span>
                   </td>
                   <td className="px-5 py-3 align-middle">
@@ -356,8 +354,10 @@ export function AccessSection({
                         <DropdownMenuTrigger asChild>
                           <button
                             type="button"
-                            disabled={!isAdmin || isSelf || isRowPending}
-                            aria-label={`Actions for ${user.name ?? user.email}`}
+                            disabled={
+                              !viewModel.isAdmin || isSelf || isRowPending
+                            }
+                            aria-label={`Actions for ${user.displayName}`}
                             className={cn(
                               "flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-700",
                               TRANSITION.fast,
@@ -365,14 +365,11 @@ export function AccessSection({
                               "disabled:cursor-not-allowed disabled:opacity-40"
                             )}
                           >
-                            <MoreIcon
-                              className="h-4 w-4"
-                              aria-hidden="true"
-                            />
+                            <MoreIcon className="h-4 w-4" aria-hidden="true" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-52">
-                          {user.isDeactivated ? (
+                          {user.status === "deactivated" ? (
                             <DropdownMenuItem
                               onSelect={(event) => {
                                 event.preventDefault();
@@ -449,6 +446,34 @@ function RoleBadge({
       variant="soft"
     />
   );
+}
+
+function UserStatusBadge({
+  status
+}: {
+  readonly status: UserRowViewModel["status"];
+}) {
+  if (status === "pending") {
+    return (
+      <StatusBadge
+        label="Pending"
+        colorClasses="bg-amber-50 text-amber-800 ring-amber-200"
+        variant="soft"
+      />
+    );
+  }
+
+  if (status === "deactivated") {
+    return (
+      <StatusBadge
+        label="Deactivated"
+        colorClasses="bg-slate-100 text-slate-600 ring-slate-200"
+        variant="soft"
+      />
+    );
+  }
+
+  return null;
 }
 
 function MoreIcon({ className }: { readonly className?: string }) {

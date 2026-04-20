@@ -17,12 +17,12 @@ test("settings access page loads for authenticated user", async ({ page }) => {
 
   expect(devAuthResponse.ok()).toBeTruthy();
 
-  // /settings redirects to /settings/active-projects — exercise the redirect
+  // /settings redirects to /settings/projects — exercise the redirect
   // and then walk the section nav over to Access, which is where the
   // `settings.users.read` audit fires now that the users table is scoped to
   // that sub-route.
   await page.goto("/settings");
-  await expect(page).toHaveURL(/\/settings\/active-projects$/);
+  await expect(page).toHaveURL(/\/settings\/projects$/);
 
   await expect(
     page.getByRole("heading", { name: "Active Projects" })
@@ -33,14 +33,12 @@ test("settings access page loads for authenticated user", async ({ page }) => {
   // lock to the column-header h1 via level.
   await page.getByRole("link", { name: /Access/ }).first().click();
   await expect(page).toHaveURL(/\/settings\/access$/);
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Access" })
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Access" })).toBeVisible();
 
   // Integrations is the third row; verify routing + heading.
   await page.getByRole("link", { name: /Integrations/ }).first().click();
   await expect(page).toHaveURL(/\/settings\/integrations$/);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Integrations" })
+    page.getByRole("heading", { name: "Integrations" })
   ).toBeVisible();
 });

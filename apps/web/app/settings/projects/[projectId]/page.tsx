@@ -1,10 +1,10 @@
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 
-import { getCurrentUser, requireSession } from "@/src/server/auth/session";
+import { requireSession } from "@/src/server/auth/session";
+import { loadProjectSettingsDetail } from "@/src/server/settings/selectors";
 
 import { ProjectDetail } from "../../_components/project-detail";
 import { SettingsContent } from "../../_components/settings-content";
-import { findMockProjectById } from "../../_lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
@@ -22,23 +22,16 @@ export default async function SettingsProjectDetailPage({ params }: PageProps) {
     throw error;
   }
 
-  const currentUser = await getCurrentUser();
-  if (!currentUser) {
-    redirect("/auth/sign-in");
-  }
-
   const { projectId } = await params;
   const decoded = decodeURIComponent(projectId);
-  const project = findMockProjectById(decoded);
+  const project = await loadProjectSettingsDetail(decoded);
   if (!project) {
-    notFound();
+    redirect("/settings/projects");
   }
-
-  const isAdmin = currentUser.role === "admin";
 
   return (
     <SettingsContent>
-      <ProjectDetail project={project} isAdmin={isAdmin} />
+      <ProjectDetail project={project} />
     </SettingsContent>
   );
 }

@@ -21,3 +21,20 @@ export interface ProjectAliasRecord {
   readonly createdBy: string | null;
   readonly updatedBy: string | null;
 }
+
+export interface SettingsProjectEmailRecord {
+  readonly address: string;
+  readonly isPrimary: boolean;
+}
+
+export interface SettingsProjectRecord {
+  readonly projectId: string;
+  readonly salesforceProjectId: string | null;
+  readonly projectName: string;
+  readonly isActive: boolean;
+  readonly aiKnowledgeUrl: string | null;
+  readonly aiKnowledgeSyncedAt: Date | null;
+  readonly emails: readonly SettingsProjectEmailRecord[];
+  readonly memberCount: number;
+  readonly updatedAt: Date;
+}

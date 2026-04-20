@@ -1,4 +1,8 @@
-import type { CanonicalEventProvenance } from "@as-comms/contracts";
+import type {
+  CanonicalEventProvenance,
+  IntegrationHealthCategory,
+  IntegrationHealthStatus
+} from "@as-comms/contracts";
 import {
   boolean,
   index,
@@ -163,6 +167,12 @@ export const contactMemberships = pgTable(
 export const projectDimensions = pgTable("project_dimensions", {
   projectId: text("project_id").primaryKey(),
   projectName: text("project_name").notNull(),
+  isActive: boolean("is_active").notNull().default(false),
+  aiKnowledgeUrl: text("ai_knowledge_url"),
+  aiKnowledgeSyncedAt: timestamp("ai_knowledge_synced_at", {
+    mode: "date",
+    withTimezone: true
+  }),
   source: recordSourceEnum("source").notNull(),
   createdAt: createdAtColumn,
   updatedAt: updatedAtColumn
@@ -681,4 +691,29 @@ export const projectAliases = pgTable(
     })
   },
   (table) => [index("project_aliases_project_idx").on(table.projectId)]
+);
+
+export const integrationHealth = pgTable(
+  "integration_health",
+  {
+    id: text("id").primaryKey(),
+    serviceName: text("service_name").notNull(),
+    category: text("category").$type<IntegrationHealthCategory>().notNull(),
+    status: text("status")
+      .$type<IntegrationHealthStatus>()
+      .notNull()
+      .default("not_configured"),
+    lastCheckedAt: timestamp("last_checked_at", {
+      mode: "date",
+      withTimezone: true
+    }),
+    detail: text("detail"),
+    metadataJson: jsonb("metadata_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [index("integration_health_updated_at_idx").on(table.updatedAt)]
 );

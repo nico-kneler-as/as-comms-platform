@@ -1,5 +1,8 @@
+import type { IntegrationHealthRecord } from "@as-comms/contracts";
+
 import type {
   ProjectAliasRecord,
+  SettingsProjectRecord,
   UserRecord,
   UserRole
 } from "./records.js";
@@ -23,7 +26,21 @@ export interface ProjectAliasesRepository {
   delete(id: string): Promise<void>;
 }
 
+export interface SettingsProjectsRepository {
+  findById(projectId: string): Promise<SettingsProjectRecord | null>;
+  listAll(): Promise<readonly SettingsProjectRecord[]>;
+}
+
+export interface IntegrationHealthRepository {
+  findById(id: string): Promise<IntegrationHealthRecord | null>;
+  listAll(): Promise<readonly IntegrationHealthRecord[]>;
+  seedDefaults(): Promise<void>;
+  upsert(record: IntegrationHealthRecord): Promise<IntegrationHealthRecord>;
+}
+
 export interface Stage2RepositoryBundle {
+  readonly integrationHealth: IntegrationHealthRepository;
+  readonly projects: SettingsProjectsRepository;
   readonly users: UsersRepository;
   readonly aliases: ProjectAliasesRepository;
 }

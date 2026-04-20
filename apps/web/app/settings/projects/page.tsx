@@ -1,14 +1,14 @@
 import { redirect } from "next/navigation";
 
 import { requireSession } from "@/src/server/auth/session";
-import { loadIntegrationHealth } from "@/src/server/settings/selectors";
+import { loadProjectsSettings } from "@/src/server/settings/selectors";
 
-import { IntegrationsSection } from "../_components/integrations-section";
+import { ProjectsSection } from "../_components/projects-section";
 import { SettingsContent } from "../_components/settings-content";
 
 export const dynamic = "force-dynamic";
 
-export default async function SettingsIntegrationsPage() {
+export default async function SettingsProjectsPage() {
   try {
     await requireSession();
   } catch (error) {
@@ -18,11 +18,13 @@ export default async function SettingsIntegrationsPage() {
     throw error;
   }
 
-  const viewModel = await loadIntegrationHealth();
+  const viewModel = await loadProjectsSettings({
+    filter: "active"
+  });
 
   return (
     <SettingsContent>
-      <IntegrationsSection viewModel={viewModel} />
+      <ProjectsSection viewModel={viewModel} />
     </SettingsContent>
   );
 }
