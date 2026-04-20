@@ -238,13 +238,13 @@ async function exchangeSalesforceAccessToken(input: {
     if (isDisconnectedSalesforceAuthError(response.status, responseText)) {
       throw new SalesforceHealthCheckError(
         "disconnected",
-        "Invalid or expired credentials."
+        `Invalid or expired credentials: ${responseText}`
       );
     }
 
     throw new SalesforceHealthCheckError(
       "needs_attention",
-      `Salesforce token exchange failed with status ${String(response.status)}.`
+      `Salesforce token exchange failed with status ${String(response.status)}: ${responseText}`
     );
   }
 
