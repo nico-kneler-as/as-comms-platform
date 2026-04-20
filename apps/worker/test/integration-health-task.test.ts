@@ -19,34 +19,38 @@ function toRequestUrl(input: string | URL | Request): string {
 describe("integration health poller task", () => {
   it("upserts Gmail and Salesforce health rows without crashing on partial failures", async () => {
     const fetchImplementation = vi.fn(
-      async (input: string | URL | Request): Promise<Response> => {
+      (input: string | URL | Request): Promise<Response> => {
         const url = toRequestUrl(input);
 
         if (url === "https://gmail-capture.example.test/health") {
-          return new Response(
-            JSON.stringify({
-              service: "gmail",
-              status: "healthy",
-              checkedAt: "2026-04-20T16:00:00.000Z",
-              detail: null,
-              version: "gmail-sha"
-            }),
-            {
-              status: 200,
-              headers: {
-                "content-type": "application/json"
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                service: "gmail",
+                status: "healthy",
+                checkedAt: "2026-04-20T16:00:00.000Z",
+                detail: null,
+                version: "gmail-sha"
+              }),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json"
+                }
               }
-            }
+            )
           );
         }
 
         if (url === "https://salesforce-capture.example.test/health") {
-          return new Response("upstream unavailable", {
-            status: 503
-          });
+          return Promise.resolve(
+            new Response("upstream unavailable", {
+              status: 503
+            })
+          );
         }
 
-        throw new Error(`Unexpected health request: ${url}`);
+        return Promise.reject(new Error(`Unexpected health request: ${url}`));
       }
     );
     const context = await createTestWorkerContext();
