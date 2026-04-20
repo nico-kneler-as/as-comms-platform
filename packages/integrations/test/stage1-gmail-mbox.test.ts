@@ -191,6 +191,96 @@ Message-ID: <gmail-mbox-${testCase.name}@example.org>
     }
   });
 
+  it("uses Message-ID to keep mbox record ids stable across captured mailbox changes", async () => {
+    const firstRecord = (await importGmailMboxRecords({
+      mboxText,
+      mboxPath: "/tmp/project-antarctica-a.mbox",
+      capturedMailbox: "project-antarctica@example.org",
+      liveAccount: "volunteers@adventurescientists.org",
+      projectInboxAliases: ["project-antarctica@example.org"],
+      receivedAt: "2026-01-03T00:05:00.000Z"
+    }))[0];
+    const secondRecord = (await importGmailMboxRecords({
+      mboxText,
+      mboxPath: "/tmp/project-antarctica-b.mbox",
+      capturedMailbox: "volunteers@adventurescientists.org",
+      liveAccount: "volunteers@adventurescientists.org",
+      projectInboxAliases: ["project-antarctica@example.org"],
+      receivedAt: "2026-01-03T00:06:00.000Z"
+    }))[0];
+
+    expect(firstRecord).toMatchObject({
+      recordType: "message"
+    });
+    expect(secondRecord).toMatchObject({
+      recordType: "message"
+    });
+
+    if (
+      firstRecord?.recordType !== "message" ||
+      secondRecord?.recordType !== "message" ||
+      !("checksum" in firstRecord) ||
+      !("checksum" in secondRecord)
+    ) {
+      throw new Error("Expected imported Gmail .mbox records to be messages.");
+    }
+
+    expect(firstRecord.recordId).toBe(secondRecord.recordId);
+    expect(firstRecord.checksum).toBe(secondRecord.checksum);
+  });
+
+  it("falls back to content hashing when Message-ID is absent", async () => {
+    const firstRecord = (await importGmailMboxRecords({
+      mboxText: `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
+Date: Fri, 03 Jan 2026 00:00:00 +0000
+From: Volunteer <volunteer@example.org>
+To: Project Antarctica <project-antarctica@example.org>
+Subject: Historical volunteer reply
+
+Hello from an exported mailbox.
+`,
+      mboxPath: "/tmp/project-antarctica-no-id-a.mbox",
+      capturedMailbox: "project-antarctica@example.org",
+      liveAccount: "volunteers@adventurescientists.org",
+      projectInboxAliases: ["project-antarctica@example.org"],
+      receivedAt: "2026-01-03T00:05:00.000Z"
+    }))[0];
+    const secondRecord = (await importGmailMboxRecords({
+      mboxText: `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
+Date: Fri, 03 Jan 2026 00:00:00 +0000
+From: Volunteer <volunteer@example.org>
+To: Project Antarctica <project-antarctica@example.org>
+Subject: Historical volunteer reply
+
+Hello from a different exported mailbox body.
+`,
+      mboxPath: "/tmp/project-antarctica-no-id-b.mbox",
+      capturedMailbox: "project-antarctica@example.org",
+      liveAccount: "volunteers@adventurescientists.org",
+      projectInboxAliases: ["project-antarctica@example.org"],
+      receivedAt: "2026-01-03T00:06:00.000Z"
+    }))[0];
+
+    expect(firstRecord).toMatchObject({
+      recordType: "message"
+    });
+    expect(secondRecord).toMatchObject({
+      recordType: "message"
+    });
+
+    if (
+      firstRecord?.recordType !== "message" ||
+      secondRecord?.recordType !== "message" ||
+      !("checksum" in firstRecord) ||
+      !("checksum" in secondRecord)
+    ) {
+      throw new Error("Expected imported Gmail .mbox records to be messages.");
+    }
+
+    expect(firstRecord.recordId).not.toBe(secondRecord.recordId);
+    expect(firstRecord.checksum).not.toBe(secondRecord.checksum);
+  });
+
   it("normalizes missing or blank subjects to null while preserving non-empty and decoded live subjects", () => {
     const cases = [
       {

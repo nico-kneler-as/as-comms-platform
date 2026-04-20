@@ -34,6 +34,7 @@ import {
 import {
   buildOperationId,
   parseCliFlags,
+  readOptionalBooleanFlag,
   readOptionalIntegerFlag,
   readOptionalStringFlag,
   readRequiredFlag
@@ -131,7 +132,8 @@ async function runImportGmailMbox(args: readonly string[]): Promise<void> {
         buildOperationId("stage1:gmail:mbox:correlation"),
       traceId: readOptionalStringFlag(flags, "trace-id"),
       receivedAt: readOptionalStringFlag(flags, "received-at"),
-      limit: readOptionalIntegerFlag(flags, "limit", 0) || null
+      limit: readOptionalIntegerFlag(flags, "limit", 0) || null,
+      overwriteBodies: readOptionalBooleanFlag(flags, "overwrite-bodies", false)
     });
 
     console.info(JSON.stringify(result, null, 2));

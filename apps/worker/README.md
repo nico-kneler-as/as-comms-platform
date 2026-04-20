@@ -46,3 +46,14 @@ Use these commands when you do want the worker running locally:
 pnpm ops:worker:check-config
 WORKER_BOOT_MODE=run pnpm dev:worker
 ```
+
+Historical Gmail `.mbox` imports also support an optional `--overwrite-bodies` flag:
+
+```bash
+pnpm ops:worker:import-gmail-mbox -- \
+  --mbox-path /absolute/path/project-antarctica.mbox \
+  --captured-mailbox project-antarctica@example.org \
+  --overwrite-bodies
+```
+
+Leave `--overwrite-bodies` off to preserve the existing Gmail detail preview fields on duplicate re-imports. Enable it when a duplicate-safe re-import should refresh `subject`, `snippetClean`, and `bodyTextPreview` from the current `.mbox` parse.

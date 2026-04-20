@@ -33,8 +33,15 @@ export type Stage1IngestNormalizationPort = Pick<
   "applyNormalizedCanonicalEvent" | "upsertNormalizedContactGraph"
 >;
 
+export interface Stage1CanonicalEventIngestOptions {
+  readonly overwriteDuplicateGmailMessageDetail?: boolean;
+}
+
 export interface Stage1IngestService {
-  ingestGmailHistoricalRecord(record: GmailRecord): Promise<Stage1IngestResult>;
+  ingestGmailHistoricalRecord(
+    record: GmailRecord,
+    options?: Stage1CanonicalEventIngestOptions,
+  ): Promise<Stage1IngestResult>;
   ingestGmailLiveRecord(record: GmailRecord): Promise<Stage1IngestResult>;
   ingestSalesforceHistoricalRecord(
     record: SalesforceRecord,
@@ -245,6 +252,7 @@ async function executeMappedCommand(
   normalization: Stage1IngestNormalizationPort,
   ingestMode: Stage1IngestMode,
   mapped: ProviderMappingResult,
+  options?: Stage1CanonicalEventIngestOptions,
 ): Promise<Stage1IngestResult> {
   if (mapped.outcome === "deferred") {
     return mapDeferredResult(mapped, ingestMode);
@@ -263,7 +271,7 @@ async function executeMappedCommand(
   return mapCanonicalEventResult({
     ingestMode,
     mapped,
-    result: await normalization.applyNormalizedCanonicalEvent(command.input),
+    result: await normalization.applyNormalizedCanonicalEvent(command.input, options),
   });
 }
 
@@ -273,12 +281,14 @@ async function ingestRecord<TRecord>(
     readonly ingestMode: Stage1IngestMode;
     readonly mapper: (record: TRecord) => ProviderMappingResult;
     readonly record: TRecord;
+    readonly options?: Stage1CanonicalEventIngestOptions;
   },
 ): Promise<Stage1IngestResult> {
   return executeMappedCommand(
     normalization,
     input.ingestMode,
     input.mapper(input.record),
+    input.options,
   );
 }
 
@@ -286,11 +296,12 @@ export function createStage1IngestService(
   normalization: Stage1IngestNormalizationPort,
 ): Stage1IngestService {
   return {
-    ingestGmailHistoricalRecord(record) {
+    ingestGmailHistoricalRecord(record, options) {
       return ingestRecord(normalization, {
         ingestMode: "historical",
         mapper: mapGmailRecord,
         record,
+        ...(options === undefined ? {} : { options }),
       });
     },
 
