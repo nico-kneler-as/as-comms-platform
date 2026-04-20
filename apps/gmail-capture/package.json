@@ -14,6 +14,7 @@
     "test:unit": "vitest run --config ../../vitest.config.ts --passWithNoTests"
   },
   "dependencies": {
+    "@as-comms/contracts": "workspace:*",
     "@as-comms/integrations": "workspace:*",
     "zod": "^3.24.2"
   }

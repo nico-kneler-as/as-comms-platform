@@ -5,6 +5,7 @@ import {
   closeDatabaseConnection,
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
+  createStage2RepositoryBundleFromConnection,
   type DatabaseConnection
 } from "@as-comms/db";
 import {
@@ -33,6 +34,7 @@ import {
   createStage1WorkerOrchestrationService,
   type MailchimpCapturePort,
   pollGmailLiveJobName,
+  pollIntegrationHealthJobName,
   pollSalesforceLiveJobName,
   type SimpleTextingCapturePort,
   type Stage1WorkerOrchestrationService
@@ -90,7 +92,8 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
 
   return [
     `*/${String(gmailMinutes)} * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
-    `*/${String(salesforceMinutes)} * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`
+    `*/${String(salesforceMinutes)} * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
+    `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`
   ].join("\n");
 }
 
@@ -240,6 +243,7 @@ export async function createStage1WorkerRuntimeServices(
       : [...config.launchScope.gmail.projectInboxAliases];
 
   const repositories = createStage1RepositoryBundleFromConnection(connection);
+  const settings = createStage2RepositoryBundleFromConnection(connection);
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
   const ingest = createStage1IngestService(normalization);
@@ -292,7 +296,16 @@ export async function createStage1WorkerRuntimeServices(
   return {
     connection,
     orchestration,
-    taskList: createTaskList(orchestration),
+    taskList: createTaskList(orchestration, {
+      integrationHealth: {
+        integrationHealth: settings.integrationHealth,
+        captureBaseUrls: {
+          gmail: config.capture.gmail.baseUrl,
+          salesforce: config.capture.salesforce.baseUrl
+        },
+        fetchImplementation
+      }
+    }),
     dispose() {
       return closeDatabaseConnection(connection);
     }
