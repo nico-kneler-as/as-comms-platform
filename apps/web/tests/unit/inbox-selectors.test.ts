@@ -422,8 +422,8 @@ describe("real inbox selectors", () => {
     ]);
     expect(detail?.timeline[1]).toMatchObject({
       kind: "outbound-campaign-email",
-      subject: "Welcome to the new field season.",
-      body: "",
+      subject: null,
+      body: "Welcome to the new field season.",
     });
     expect(detail?.timeline[2]).toMatchObject({
       kind: "outbound-auto-email",
@@ -634,7 +634,9 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:lisa-zhang");
 
     expect(
-      detail?.timeline.some((entry) => entry.kind === "outbound-campaign-email"),
+      detail?.timeline.some(
+        (entry) => entry.kind === "outbound-campaign-email",
+      ),
     ).toBe(true);
     expect(
       detail?.timeline.some((entry) => entry.kind === "outbound-email"),
@@ -1070,8 +1072,7 @@ describe("real inbox selectors", () => {
       contactId: "contact:maria-no-body",
       canonicalEventId: latestSalesforceEvent.canonicalEventId,
       occurredAt: "2026-04-16T12:30:00.000Z",
-      sortKey:
-        "2026-04-16T12:30:00.000Z::event:maria-no-body-latest",
+      sortKey: "2026-04-16T12:30:00.000Z::event:maria-no-body-latest",
       eventType: "communication.email.outbound",
       summary: "Outbound Email Sent",
       channel: "email",
@@ -1195,6 +1196,170 @@ describe("real inbox selectors", () => {
       subject: "April field update",
       body: "Hi Sarah,\nPlease bring your field notebook.",
       isPreview: true,
+    });
+  });
+
+  it("strips outbound email prefixes from automated and campaign email subjects before display", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxAutoEmailEvent(runtime.context, {
+      id: "sarah-auto-email-prefixed",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T15:30:00.000Z",
+      subject: "→ Email: Re: still time to get involved?",
+      snippet: "Checking in before the training window closes.",
+    });
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "sarah-campaign-email-arrow-ascii",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T15:45:00.000Z",
+      activityType: "sent",
+      campaignName: "PNW Training",
+      snippet: [
+        "From: volunteers@example.org",
+        "To: sarah@example.org",
+        "",
+        "Subject: -> Email: Last Call: PNW Training",
+        "Body:",
+        "Please confirm your attendance today.",
+      ].join("\n"),
+    });
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "sarah-campaign-email-arrow-entity",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T15:50:00.000Z",
+      activityType: "sent",
+      campaignName: "Weekly Digest",
+      snippet: [
+        "From: volunteers@example.org",
+        "To: sarah@example.org",
+        "",
+        "Subject: &rarr; Email: Weekly Digest",
+        "Body:",
+        "A quick recap from this week.",
+      ].join("\n"),
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+    const autoEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-auto-email-prefixed",
+    );
+    const asciiCampaignEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-campaign-email-arrow-ascii",
+    );
+    const entityCampaignEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-campaign-email-arrow-entity",
+    );
+
+    expect(autoEntry).toMatchObject({
+      kind: "outbound-auto-email",
+      subject: "Re: still time to get involved?",
+    });
+    expect(asciiCampaignEntry).toMatchObject({
+      kind: "outbound-campaign-email",
+      subject: "Last Call: PNW Training",
+    });
+    expect(entityCampaignEntry).toMatchObject({
+      kind: "outbound-campaign-email",
+      subject: "Weekly Digest",
+    });
+  });
+
+  it("hides unusable automated and campaign email subjects while keeping meaningful body and embedded URLs", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const zoomUrl =
+      "https://us02web.zoom.us/webinar/register/WN_BrC0DjiqS36ei74Vhtg7sw";
+
+    await seedInboxAutoEmailEvent(runtime.context, {
+      id: "sarah-auto-email-url-subject",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T16:05:00.000Z",
+      subject: zoomUrl,
+      snippet: `Body:\n${zoomUrl}`,
+    });
+    await seedInboxAutoEmailEvent(runtime.context, {
+      id: "sarah-auto-email-embedded-url",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T16:10:00.000Z",
+      subject: `Register here: ${zoomUrl}`,
+      snippet: "Sharing the registration link for next week's webinar.",
+    });
+    await seedInboxAutoEmailEvent(runtime.context, {
+      id: "sarah-auto-email-empty-after-prefix",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T16:15:00.000Z",
+      subject: "→ Email:    ",
+      snippet: "The automation body still needs to render.",
+    });
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "sarah-campaign-email-url-subject",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T16:20:00.000Z",
+      activityType: "sent",
+      campaignName: "Webinar Push",
+      snippet: [
+        "From: volunteers@example.org",
+        "To: sarah@example.org",
+        "",
+        `Subject: ${zoomUrl}`,
+        "Body:",
+        zoomUrl,
+      ].join("\n"),
+    });
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "sarah-campaign-email-no-subject",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T16:25:00.000Z",
+      activityType: "sent",
+      campaignName: "Field Update",
+      snippet: "Welcome to the new field season.",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+    const autoUrlEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-auto-email-url-subject",
+    );
+    const autoEmbeddedUrlEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-auto-email-embedded-url",
+    );
+    const autoEmptyEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-auto-email-empty-after-prefix",
+    );
+    const campaignUrlEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-campaign-email-url-subject",
+    );
+    const campaignNoSubjectEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-campaign-email-no-subject",
+    );
+
+    expect(autoUrlEntry).toMatchObject({
+      kind: "outbound-auto-email",
+      subject: null,
+      body: zoomUrl,
+    });
+    expect(autoEmbeddedUrlEntry).toMatchObject({
+      kind: "outbound-auto-email",
+      subject: `Register here: ${zoomUrl}`,
+    });
+    expect(autoEmptyEntry).toMatchObject({
+      kind: "outbound-auto-email",
+      subject: null,
+      body: "The automation body still needs to render.",
+    });
+    expect(campaignUrlEntry).toMatchObject({
+      kind: "outbound-campaign-email",
+      subject: null,
+      body: zoomUrl,
+    });
+    expect(campaignNoSubjectEntry).toMatchObject({
+      kind: "outbound-campaign-email",
+      subject: null,
+      body: "Welcome to the new field season.",
     });
   });
 

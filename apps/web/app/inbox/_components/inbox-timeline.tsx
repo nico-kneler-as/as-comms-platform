@@ -70,7 +70,7 @@ export function InboxTimeline({
               "transition-[color,background-color,transform] duration-150 ease-out",
               "active:scale-[0.96] disabled:active:scale-100",
               TRANSITION.reduceMotion,
-              "hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              "hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60",
             )}
           >
             {isLoadingOlder
@@ -238,10 +238,11 @@ function AutomatedRow({
           : "Campaign SMS";
   const headline = entry.subject;
   const body = bodyTextForEntry(entry);
-  const hideCollapsedBody =
-    !isExpanded &&
-    (role === "campaign" ||
-      (entry.kind === "outbound-auto-email" && headline !== null));
+  const hideCollapsedBody = shouldHideAutomatedRowBody({
+    isExpanded,
+    kind: entry.kind,
+    headline,
+  });
 
   return (
     <li className="flex w-full flex-col items-end">
@@ -257,7 +258,7 @@ function AutomatedRow({
           "transition-[color,background-color,transform] duration-150 ease-out",
           "active:scale-[0.96]",
           TRANSITION.reduceMotion,
-          "hover:bg-slate-50"
+          "hover:bg-slate-50",
         )}
       >
         <div className="min-w-0 flex-1">
@@ -271,7 +272,7 @@ function AutomatedRow({
               className={cn(
                 "text-[13px] leading-relaxed text-slate-600",
                 headline && "mt-1.5",
-                isExpanded ? "whitespace-pre-wrap text-pretty" : "line-clamp-1"
+                isExpanded ? "whitespace-pre-wrap text-pretty" : "line-clamp-1",
               )}
             >
               {isExpanded ? autolinkText(body, "text-sky-600") : body}
@@ -290,6 +291,18 @@ function AutomatedRow({
         </div>
       </button>
     </li>
+  );
+}
+
+export function shouldHideAutomatedRowBody(input: {
+  readonly isExpanded: boolean;
+  readonly kind: InboxTimelineEntryKind;
+  readonly headline: string | null;
+}): boolean {
+  return (
+    !input.isExpanded &&
+    input.kind === "outbound-auto-email" &&
+    input.headline !== null
   );
 }
 
