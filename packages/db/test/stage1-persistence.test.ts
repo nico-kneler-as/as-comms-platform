@@ -36,6 +36,18 @@ describe("Stage 1 persistence service", () => {
       checksum: "checksum-1"
     });
 
+    const duplicateFromMovedPayloadResult = await persistence.recordSourceEvidence({
+      id: "sev_2_moved",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-message-1",
+      receivedAt: "2026-01-01T00:02:30.000Z",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      payloadRef: "payloads/gmail/archive/gmail-message-1.json",
+      idempotencyKey: "gmail:message:gmail-message-1",
+      checksum: "checksum-1"
+    });
+
     const conflictResult = await persistence.recordSourceEvidence({
       id: "sev_3",
       provider: "gmail",
@@ -54,6 +66,10 @@ describe("Stage 1 persistence service", () => {
 
     expect(firstResult.outcome).toBe("inserted");
     expect(duplicateResult).toEqual({
+      outcome: "duplicate",
+      record: firstResult.record
+    });
+    expect(duplicateFromMovedPayloadResult).toEqual({
       outcome: "duplicate",
       record: firstResult.record
     });

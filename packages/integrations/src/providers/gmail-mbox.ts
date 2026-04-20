@@ -38,6 +38,25 @@ function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n/gu, "\n").replace(/\r/gu, "\n");
 }
 
+function normalizeRecordIdEmail(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function uniqueNormalizedStrings(values: readonly (string | null | undefined)[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => normalizeRecordIdEmail(value))
+        .filter((value): value is string => value !== null)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+}
+
 function splitMboxMessages(mboxText: string): ParsedMboxMessage[] {
   const normalized = normalizeLineEndings(mboxText);
   const lines = normalized.split("\n");
@@ -141,7 +160,29 @@ function buildThreadId(headers: Readonly<Record<string, string>>): string | null
   return inReplyTo !== null && inReplyTo.length > 0 ? inReplyTo : null;
 }
 
-function buildMboxRecordId(input: {
+function normalizeRfc822MessageId(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+export function buildMboxRecordId(input: {
+  readonly rawMessage: string;
+  readonly rfc822MessageId: string | null | undefined;
+}): string {
+  const normalizedRfc822MessageId = normalizeRfc822MessageId(input.rfc822MessageId);
+
+  if (normalizedRfc822MessageId !== null) {
+    return `mbox:${sha256Text(normalizedRfc822MessageId)}`;
+  }
+
+  return `mbox:${sha256Text(normalizeLineEndings(input.rawMessage))}`;
+}
+
+export function buildLegacyMboxRecordId(input: {
   readonly rawMessage: string;
   readonly capturedMailbox: string;
 }): string {
@@ -150,8 +191,47 @@ function buildMboxRecordId(input: {
   )}`;
 }
 
+export function buildLegacyMboxRecordIdCandidates(input: {
+  readonly rawMessage: string;
+  readonly capturedMailbox: string;
+  readonly liveAccount: string;
+  readonly projectInboxAliases: readonly string[];
+  readonly projectInboxAliasOverride: string | null;
+}): string[] {
+  return uniqueNormalizedStrings([
+    input.capturedMailbox,
+    input.liveAccount,
+    input.projectInboxAliasOverride,
+    ...input.projectInboxAliases
+  ]).map((capturedMailbox) =>
+    buildLegacyMboxRecordId({
+      rawMessage: input.rawMessage,
+      capturedMailbox
+    })
+  );
+}
+
+export interface GmailMboxRecordIdResolutionInput {
+  readonly messageIndex: number;
+  readonly rawMessage: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly checksum: string;
+  readonly preferredRecordId: string;
+  readonly legacyRecordIds: readonly string[];
+  readonly rfc822MessageId: string | null;
+  readonly capturedMailbox: string;
+  readonly payloadRef: string;
+}
+
+export interface GmailMboxImportOptions {
+  readonly resolveRecordId?: (
+    input: GmailMboxRecordIdResolutionInput
+  ) => Promise<string> | string;
+}
+
 export async function importGmailMboxRecords(
-  input: GmailMboxImportInput
+  input: GmailMboxImportInput,
+  options?: GmailMboxImportOptions
 ): Promise<GmailRecord[]> {
   const parsedInput = gmailMboxImportSchema.parse(input);
   const messages = splitMboxMessages(parsedInput.mboxText);
@@ -159,14 +239,34 @@ export async function importGmailMboxRecords(
     parsedInput.limit === null ? messages : messages.slice(0, parsedInput.limit);
 
   return Promise.all(selectedMessages.map(async (message) => {
-    const recordId = buildMboxRecordId({
+    const rfc822MessageId = message.headers["Message-ID"]?.trim() ?? null;
+    const preferredRecordId = buildMboxRecordId({
       rawMessage: message.rawMessage,
-      capturedMailbox: parsedInput.capturedMailbox
+      rfc822MessageId
     });
     const payloadRef = `mbox://${encodeURIComponent(parsedInput.mboxPath)}#message=${String(
       message.index + 1
     )}`;
     const checksum = sha256Text(normalizeLineEndings(message.rawMessage));
+    const legacyRecordIds = buildLegacyMboxRecordIdCandidates({
+      rawMessage: message.rawMessage,
+      capturedMailbox: parsedInput.capturedMailbox,
+      liveAccount: parsedInput.liveAccount,
+      projectInboxAliases: parsedInput.projectInboxAliases,
+      projectInboxAliasOverride: parsedInput.projectInboxAliasOverride
+    });
+    const recordId =
+      (await options?.resolveRecordId?.({
+        messageIndex: message.index + 1,
+        rawMessage: message.rawMessage,
+        headers: message.headers,
+        checksum,
+        preferredRecordId,
+        legacyRecordIds,
+        rfc822MessageId,
+        capturedMailbox: parsedInput.capturedMailbox,
+        payloadRef
+      })) ?? preferredRecordId;
     const internalDate =
       toSafeIsoTimestamp(message.headers.Date) ?? parsedInput.receivedAt;
     const bodyTextPreview = await extractGmailBodyPreviewFromMimeMessage({

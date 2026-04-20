@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { mapGmailRecord, importGmailMboxRecords } from "@as-comms/integrations";
+import {
+  buildSourceEvidenceIdempotencyKey,
+  importGmailMboxRecords,
+  mapGmailRecord,
+  sha256Text
+} from "@as-comms/integrations";
 import type { Stage1PersistenceService } from "@as-comms/domain";
 import type { SyncStateRecord } from "@as-comms/contracts";
 
@@ -22,7 +27,8 @@ const gmailMboxImportInputSchema = z.object({
   correlationId: z.string().min(1),
   traceId: z.string().min(1).nullable().default(null),
   receivedAt: z.string().datetime().nullable().default(null),
-  limit: z.number().int().positive().nullable().default(null)
+  limit: z.number().int().positive().nullable().default(null),
+  overwriteBodies: z.boolean().default(false)
 });
 
 export type GmailMboxImportInput = z.input<typeof gmailMboxImportInputSchema>;
@@ -123,6 +129,186 @@ function resolveProjectInboxAlias(records: readonly unknown[]): string | null {
   return null;
 }
 
+function normalizeLineEndings(value: string): string {
+  return value.replace(/\r\n/gu, "\n").replace(/\r/gu, "\n");
+}
+
+function splitMboxRawMessages(mboxText: string): string[] {
+  const normalized = normalizeLineEndings(mboxText);
+  const lines = normalized.split("\n");
+  const messages: string[] = [];
+  let currentLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("From ")) {
+      if (currentLines.length > 0) {
+        messages.push(currentLines.join("\n").trim());
+        currentLines = [];
+      }
+
+      continue;
+    }
+
+    currentLines.push(line);
+  }
+
+  if (currentLines.length > 0) {
+    messages.push(currentLines.join("\n").trim());
+  }
+
+  return messages.filter((message) => message.length > 0);
+}
+
+function buildLegacyMboxRecordId(input: {
+  readonly rawMessage: string;
+  readonly capturedMailbox: string;
+}): string {
+  return `mbox:${sha256Text(
+    `${input.capturedMailbox.toLowerCase()}\n${normalizeLineEndings(input.rawMessage)}`
+  )}`;
+}
+
+function buildLegacyMboxRecordIdCandidates(input: {
+  readonly rawMessage: string;
+  readonly capturedMailbox: string;
+  readonly liveAccount: string;
+  readonly projectInboxAliases: readonly string[];
+  readonly projectInboxAliasOverride: string | null;
+}): string[] {
+  const candidateMailboxes = Array.from(
+    new Set(
+      [
+        input.capturedMailbox,
+        input.liveAccount,
+        input.projectInboxAliasOverride,
+        ...input.projectInboxAliases
+      ]
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length > 0)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+
+  return candidateMailboxes.map((capturedMailbox) =>
+    buildLegacyMboxRecordId({
+      rawMessage: input.rawMessage,
+      capturedMailbox
+    })
+  );
+}
+
+function buildSourceEvidenceEntityId(providerRecordId: string): string {
+  return `gmail:message:${providerRecordId}`;
+}
+
+async function recordMboxRecordIdCompatibilityAuditOnce(
+  persistence: Stage1PersistenceService,
+  input: {
+    readonly occurredAt: string;
+    readonly preferredProviderRecordId: string;
+    readonly resolvedProviderRecordId: string;
+    readonly legacyProviderRecordIds: readonly string[];
+  }
+): Promise<void> {
+  const entityId = buildSourceEvidenceEntityId(input.resolvedProviderRecordId);
+  const policyCode = "stage1.mapper.gmail_mbox_record_id_compatibility";
+  const existingRecords = await persistence.repositories.auditEvidence.listByEntity({
+    entityType: "source_evidence",
+    entityId
+  });
+
+  if (existingRecords.some((record) => record.policyCode === policyCode)) {
+    return;
+  }
+
+  await persistence.recordAuditEvidence({
+    id: `audit:source_evidence:${entityId}:gmail_mbox_record_id_compatibility`,
+    actorType: "system",
+    actorId: "stage1-gmail-mbox-import",
+    action: "reuse_legacy_mbox_record_id",
+    entityType: "source_evidence",
+    entityId,
+    occurredAt: input.occurredAt,
+    result: "recorded",
+    policyCode,
+    metadataJson: {
+      preferredProviderRecordId: input.preferredProviderRecordId,
+      resolvedProviderRecordId: input.resolvedProviderRecordId,
+      legacyProviderRecordIds: [...input.legacyProviderRecordIds]
+    }
+  });
+}
+
+export async function resolveGmailMboxRecordId(
+  persistence: Stage1PersistenceService,
+  input: {
+    readonly messageIndex: number;
+    readonly checksum: string;
+    readonly preferredRecordId: string;
+    readonly legacyRecordIds: readonly string[];
+    readonly occurredAt: string;
+  }
+): Promise<string> {
+  const candidateRecordIds = Array.from(
+    new Set([input.preferredRecordId, ...input.legacyRecordIds])
+  );
+  const matches = (
+    await Promise.all(
+      candidateRecordIds.map(async (providerRecordId) => {
+        const existing = await persistence.findSourceEvidenceByIdempotencyKey(
+          buildSourceEvidenceIdempotencyKey("gmail", "message", providerRecordId)
+        );
+
+        if (existing?.checksum !== input.checksum) {
+          return null;
+        }
+
+        return existing;
+      })
+    )
+  ).filter((record): record is NonNullable<typeof record> => record !== null);
+
+  const uniqueMatches = Array.from(
+    new Map(matches.map((record) => [record.providerRecordId, record])).values()
+  );
+  const preferredMatch = uniqueMatches.find(
+    (record) => record.providerRecordId === input.preferredRecordId
+  );
+
+  if (preferredMatch !== undefined) {
+    return preferredMatch.providerRecordId;
+  }
+
+  if (uniqueMatches.length === 0) {
+    return input.preferredRecordId;
+  }
+
+  if (uniqueMatches.length > 1) {
+    throw new Error(
+      `Multiple existing Gmail mbox source evidence rows matched message ${String(
+        input.messageIndex
+      )}; refusing to guess which legacy providerRecordId to reuse.`
+    );
+  }
+
+  const [legacyMatch] = uniqueMatches;
+
+  if (legacyMatch === undefined) {
+    return input.preferredRecordId;
+  }
+
+  if (legacyMatch.providerRecordId !== input.preferredRecordId) {
+    await recordMboxRecordIdCompatibilityAuditOnce(persistence, {
+      occurredAt: input.occurredAt,
+      preferredProviderRecordId: input.preferredRecordId,
+      resolvedProviderRecordId: legacyMatch.providerRecordId,
+      legacyProviderRecordIds: input.legacyRecordIds
+    });
+  }
+
+  return legacyMatch.providerRecordId;
+}
+
 export function createStage1GmailMboxImportService(
   dependencies: Stage1GmailMboxImportDependencies
 ) {
@@ -132,6 +318,7 @@ export function createStage1GmailMboxImportService(
     async importMbox(input: GmailMboxImportInput): Promise<Stage1GmailMboxImportResult> {
       const parsedInput = gmailMboxImportInputSchema.parse(input);
       const receivedAt = parsedInput.receivedAt ?? now().toISOString();
+      const rawMessages = splitMboxRawMessages(parsedInput.mboxText);
       const records = await importGmailMboxRecords({
         mboxText: parsedInput.mboxText,
         mboxPath: parsedInput.mboxPath,
@@ -142,8 +329,45 @@ export function createStage1GmailMboxImportService(
         receivedAt,
         limit: parsedInput.limit
       });
-      const historicalWindow = calculateHistoricalWindow(records);
-      const resolvedProjectInboxAlias = resolveProjectInboxAlias(records);
+      const resolvedRecords = await Promise.all(records.map(async (record, index) => {
+        if (record.recordType !== "message" || !("checksum" in record)) {
+          return record;
+        }
+
+        const rawMessage = rawMessages[index];
+
+        if (rawMessage === undefined) {
+          throw new Error(
+            `Expected raw Gmail mbox message ${String(index + 1)} while resolving providerRecordId compatibility.`
+          );
+        }
+
+        const resolvedRecordId = await resolveGmailMboxRecordId(
+          dependencies.persistence,
+          {
+            messageIndex: index + 1,
+            checksum: record.checksum,
+            preferredRecordId: record.recordId,
+            legacyRecordIds: buildLegacyMboxRecordIdCandidates({
+              rawMessage,
+              capturedMailbox: parsedInput.capturedMailbox,
+              liveAccount: parsedInput.liveAccount,
+              projectInboxAliases: parsedInput.projectInboxAliases,
+              projectInboxAliasOverride: parsedInput.projectInboxAliasOverride
+            }),
+            occurredAt: receivedAt
+          }
+        );
+
+        return resolvedRecordId === record.recordId
+          ? record
+          : {
+              ...record,
+              recordId: resolvedRecordId
+            };
+      }));
+      const historicalWindow = calculateHistoricalWindow(resolvedRecords);
+      const resolvedProjectInboxAlias = resolveProjectInboxAlias(resolvedRecords);
 
       await dependencies.syncState.startWindow({
         syncStateId: parsedInput.syncStateId,
@@ -159,9 +383,13 @@ export function createStage1GmailMboxImportService(
       try {
         const ingestResults: Stage1IngestResult[] = [];
 
-        for (const record of records) {
-          const ingestResult =
-            await dependencies.ingest.ingestGmailHistoricalRecord(record);
+        for (const record of resolvedRecords) {
+          const ingestResult = await dependencies.ingest.ingestGmailHistoricalRecord(
+            record,
+            {
+              overwriteDuplicateGmailMessageDetail: parsedInput.overwriteBodies
+            }
+          );
           ingestResults.push(ingestResult);
 
           if (
@@ -216,7 +444,7 @@ export function createStage1GmailMboxImportService(
           mboxPath: parsedInput.mboxPath,
           capturedMailbox: parsedInput.capturedMailbox,
           projectInboxAlias: resolvedProjectInboxAlias,
-          parsedRecords: records.length,
+          parsedRecords: resolvedRecords.length,
           syncStateId: parsedInput.syncStateId,
           correlationId: parsedInput.correlationId,
           summary,
@@ -242,7 +470,7 @@ export function createStage1GmailMboxImportService(
           mboxPath: parsedInput.mboxPath,
           capturedMailbox: parsedInput.capturedMailbox,
           projectInboxAlias: resolvedProjectInboxAlias,
-          parsedRecords: records.length,
+          parsedRecords: resolvedRecords.length,
           syncStateId: parsedInput.syncStateId,
           correlationId: parsedInput.correlationId,
           summary: {

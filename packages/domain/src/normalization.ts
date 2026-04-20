@@ -188,7 +188,10 @@ export interface Stage1NormalizationService {
   ): Promise<InboxProjectionRow | null>;
   updateSyncState(input: SyncStateUpdateInput): Promise<SyncStateRecord>;
   applyNormalizedCanonicalEvent(
-    input: NormalizedCanonicalEventIntake
+    input: NormalizedCanonicalEventIntake,
+    options?: {
+      readonly overwriteDuplicateGmailMessageDetail?: boolean;
+    }
   ): Promise<NormalizedCanonicalEventResult>;
 }
 
@@ -1116,14 +1119,20 @@ async function upsertProviderPresentationDetails(
     | "salesforceEventContext"
     | "projectDimensions"
     | "expeditionDimensions"
-  >
+  >,
+  options?: {
+    readonly allowDuplicateGmailMessageDetailOverwrite?: boolean;
+  }
 ): Promise<void> {
   await upsertProjectAndExpeditionDimensions(persistence, {
     projectDimensions: input.projectDimensions ?? [],
     expeditionDimensions: input.expeditionDimensions ?? []
   });
 
-  if (input.gmailMessageDetail !== undefined) {
+  if (
+    input.gmailMessageDetail !== undefined &&
+    (options?.allowDuplicateGmailMessageDetailOverwrite ?? true)
+  ) {
     await persistence.upsertGmailMessageDetail(
       gmailMessageDetailSchema.parse(input.gmailMessageDetail)
     );
@@ -1422,7 +1431,7 @@ export function createStage1NormalizationService(
       return persistence.saveSyncState(parsed.syncState);
     },
 
-    async applyNormalizedCanonicalEvent(input) {
+    async applyNormalizedCanonicalEvent(input, options) {
       const parsed = normalizedCanonicalEventIntakeSchema.parse(input);
       const sourceEvidenceResult = await service.recordNormalizedSourceEvidence({
         sourceEvidence: parsed.sourceEvidence
@@ -1477,6 +1486,10 @@ export function createStage1NormalizationService(
         salesforceEventContext: parsed.salesforceEventContext,
         projectDimensions: parsed.projectDimensions,
         expeditionDimensions: parsed.expeditionDimensions
+      }, {
+        allowDuplicateGmailMessageDetailOverwrite:
+          sourceEvidenceResult.outcome !== "duplicate" ||
+          (options?.overwriteDuplicateGmailMessageDetail ?? true)
       });
 
       const duplicateCollapseDecision = decideDuplicateCollapse(parsed);

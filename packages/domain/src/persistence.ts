@@ -148,7 +148,6 @@ function sameSourceEvidenceRecord(
     incoming.providerRecordType === existing.providerRecordType &&
     incoming.providerRecordId === existing.providerRecordId &&
     incoming.occurredAt === existing.occurredAt &&
-    incoming.payloadRef === existing.payloadRef &&
     incoming.idempotencyKey === existing.idempotencyKey &&
     incoming.checksum === existing.checksum
   );
