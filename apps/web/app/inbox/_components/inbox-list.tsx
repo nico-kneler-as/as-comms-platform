@@ -70,7 +70,7 @@ export function InboxList({
   const normalizedQuery = deferredQuery.trim();
   const isServerSearchActive = normalizedQuery.length > 0;
   const [activeFilter, setActiveFilter] = useState<InboxFilterId>(initialFilterId);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+  const [selectedProjectId, setSelectedProjectId] = useState(
     initialList.selectedProjectId ?? null
   );
   const [currentList, setCurrentList] = useState(initialList);
@@ -79,9 +79,7 @@ export function InboxList({
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const activeRequestIdRef = useRef(0);
   const previousFilterRef = useRef<InboxFilterId>(initialFilterId);
-  const previousProjectIdRef = useRef<string | null>(
-    initialList.selectedProjectId ?? null
-  );
+  const previousProjectIdRef = useRef<string | null>(null);
   const latestShellStateRef = useRef({
     activeFilter: initialFilterId,
     selectedProjectId: initialList.selectedProjectId ?? null,

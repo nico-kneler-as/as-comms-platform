@@ -56,6 +56,9 @@ type DropdownMenuContentProps = DropdownMenuElementProps & {
 type DropdownMenuCheckboxItemProps = DropdownMenuElementProps & {
   checked?: boolean | "indeterminate"
 }
+type DropdownMenuRadioItemProps = DropdownMenuElementProps & {
+  value: string
+}
 
 const DropdownMenuSubTrigger = React.forwardRef<
   HTMLElement,
@@ -154,7 +157,7 @@ DropdownMenuCheckboxItem.displayName =
 
 const DropdownMenuRadioItem = React.forwardRef<
   HTMLElement,
-  DropdownMenuElementProps
+  DropdownMenuRadioItemProps
 >(({ className, children, ...props }, ref) => (
   <DropdownMenuRadioItemPrimitive
     ref={ref}
