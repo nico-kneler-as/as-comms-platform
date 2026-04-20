@@ -165,6 +165,11 @@ export interface InboxFilterViewModel {
   readonly hint: string | null;
 }
 
+export interface InboxActiveProjectOption {
+  readonly id: string;
+  readonly name: string;
+}
+
 export interface InboxListViewModel {
   readonly items: readonly InboxListItemViewModel[];
   readonly filters: readonly InboxFilterViewModel[];
@@ -174,6 +179,8 @@ export interface InboxListViewModel {
     readonly followUp: number;
     readonly unresolved: number;
   };
+  readonly activeProjects: readonly InboxActiveProjectOption[];
+  readonly selectedProjectId: string | null;
   readonly page: {
     readonly hasMore: boolean;
     readonly nextCursor: string | null;

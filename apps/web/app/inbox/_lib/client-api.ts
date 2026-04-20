@@ -36,6 +36,7 @@ export function fetchInboxListPage(input: {
   readonly cursor?: string | null;
   readonly limit?: number;
   readonly query?: string | null;
+  readonly projectId?: string | null;
 }): Promise<InboxListViewModel> {
   const params = new URLSearchParams({
     filter: input.filterId
@@ -53,6 +54,10 @@ export function fetchInboxListPage(input: {
 
   if (trimmedQuery !== undefined && trimmedQuery.length > 0) {
     params.set("q", trimmedQuery);
+  }
+
+  if (input.projectId !== undefined && input.projectId !== null && input.projectId.length > 0) {
+    params.set("projectId", input.projectId);
   }
 
   return readJson<InboxListViewModel>(`/api/inbox/list?${params.toString()}`);

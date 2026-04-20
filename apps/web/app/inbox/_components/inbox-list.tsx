@@ -13,6 +13,13 @@ import {
   Collapsible,
   CollapsibleContent
 } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 
@@ -20,12 +27,15 @@ import { extractInboxContactId } from "./inbox-keyboard-helpers";
 import { useInboxClient } from "./inbox-client-provider";
 import { FOCUS_RING, LAYOUT, RADIUS, SHADOW, TEXT, TRANSITION } from "@/app/_lib/design-tokens";
 import {
+  ChevronDownIcon,
   FilterIcon,
   InboxIcon,
   SearchIcon,
   SearchXIcon,
   XIcon
 } from "./icons";
+
+const ALL_PROJECTS_VALUE = "__all__";
 import { QueueLoadingSkeleton } from "./inbox-loading";
 import { InboxRow } from "./inbox-row";
 
@@ -60,14 +70,19 @@ export function InboxList({
   const normalizedQuery = deferredQuery.trim();
   const isServerSearchActive = normalizedQuery.length > 0;
   const [activeFilter, setActiveFilter] = useState<InboxFilterId>(initialFilterId);
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    initialList.selectedProjectId ?? null
+  );
   const [currentList, setCurrentList] = useState(initialList);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [isFilterTransitionPending, startFilterTransition] = useTransition();
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const activeRequestIdRef = useRef(0);
   const previousFilterRef = useRef<InboxFilterId>(initialFilterId);
+  const previousProjectIdRef = useRef<string | null>(null);
   const latestShellStateRef = useRef({
     activeFilter: initialFilterId,
+    selectedProjectId: initialList.selectedProjectId ?? null,
     initialList
   });
   const listFreshnessKey = `${initialList.freshness.latestUpdatedAt ?? "none"}:${initialList.freshness.total.toString()}`;
@@ -80,9 +95,10 @@ export function InboxList({
   useEffect(() => {
     latestShellStateRef.current = {
       activeFilter,
+      selectedProjectId,
       initialList
     };
-  }, [activeFilter, initialList]);
+  }, [activeFilter, initialList, selectedProjectId]);
 
   useEffect(() => {
     if (search.query !== urlQuery) {
@@ -120,6 +136,7 @@ export function InboxList({
       readonly cursor?: string | null;
       readonly append: boolean;
       readonly query?: string | null;
+      readonly projectId?: string | null;
     }) => {
       const requestId = activeRequestIdRef.current + 1;
       activeRequestIdRef.current = requestId;
@@ -130,7 +147,8 @@ export function InboxList({
         const nextList = await fetchInboxListPage({
           filterId: input.filterId,
           ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
-          query: input.query ?? null
+          query: input.query ?? null,
+          projectId: input.projectId ?? null
         });
 
         if (activeRequestIdRef.current !== requestId) {
@@ -162,18 +180,27 @@ export function InboxList({
 
   useEffect(() => {
     const previousFilter = previousFilterRef.current;
+    const previousProjectId = previousProjectIdRef.current;
     previousFilterRef.current = activeFilter;
+    previousProjectIdRef.current = selectedProjectId;
     activeRequestIdRef.current += 1;
     const latestShellState = latestShellStateRef.current;
 
-    if (activeFilter === "all" && !isServerSearchActive) {
+    if (
+      activeFilter === "all" &&
+      selectedProjectId === null &&
+      !isServerSearchActive
+    ) {
       setQueueLoading(false);
       setQueueError(null);
       setCurrentList(latestShellState.initialList);
       return;
     }
 
-    if (previousFilter !== activeFilter) {
+    if (
+      previousFilter !== activeFilter ||
+      previousProjectId !== selectedProjectId
+    ) {
       setCurrentList((previousList) => ({
         ...previousList,
         items: [],
@@ -188,7 +215,8 @@ export function InboxList({
     void loadFilterPage({
       filterId: activeFilter,
       append: false,
-      query: normalizedQuery
+      query: normalizedQuery,
+      projectId: selectedProjectId
     });
   }, [
     activeFilter,
@@ -196,13 +224,18 @@ export function InboxList({
     isServerSearchActive,
     loadFilterPage,
     normalizedQuery,
+    selectedProjectId,
     setQueueLoading
   ]);
 
   useEffect(() => {
     const latestShellState = latestShellStateRef.current;
 
-    if (latestShellState.activeFilter === "all" && !isServerSearchActive) {
+    if (
+      latestShellState.activeFilter === "all" &&
+      latestShellState.selectedProjectId === null &&
+      !isServerSearchActive
+    ) {
       setCurrentList(latestShellState.initialList);
       setQueueError(null);
       return;
@@ -211,7 +244,8 @@ export function InboxList({
     void loadFilterPage({
       filterId: latestShellState.activeFilter,
       append: false,
-      query: normalizedQuery
+      query: normalizedQuery,
+      projectId: latestShellState.selectedProjectId
     });
   }, [isServerSearchActive, listFreshnessKey, loadFilterPage, normalizedQuery]);
 
@@ -233,10 +267,19 @@ export function InboxList({
 
   const shouldShowInitialSkeleton = isQueueLoading && currentList.items.length === 0;
   const canLoadMore = currentList.page.hasMore && currentList.page.nextCursor !== null;
-  const titleLabel =
+  const activeProjects = currentList.activeProjects;
+  const selectedProjectName =
+    selectedProjectId === null
+      ? null
+      : (activeProjects.find((project) => project.id === selectedProjectId)?.name ?? null);
+  const filterLabel =
     filterLabels.get(activeFilter) ??
     DISPLAY_INBOX_FILTERS.find((filter) => filter.id === activeFilter)?.label ??
     DEFAULT_TITLE;
+  const titleLabel =
+    selectedProjectName === null
+      ? filterLabel
+      : `${filterLabel} · ${selectedProjectName}`;
 
   return (
     <section className={`relative flex ${LAYOUT.listWidth} shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white`}>
@@ -300,46 +343,97 @@ export function InboxList({
             id="inbox-filter-panel"
             className="border-t border-slate-100 px-5 pb-3 pt-3"
           >
-            <div className="flex flex-col gap-2">
-              <p className={TEXT.label}>Status</p>
-              <div className="flex flex-wrap gap-1.5">
-                {DISPLAY_FILTER_IDS.map((id) => {
-                  const isActive = activeFilter === id;
-                  const showCount = id !== "all";
-                  return (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <p className={TEXT.label}>Status</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {DISPLAY_FILTER_IDS.map((id) => {
+                    const isActive = activeFilter === id;
+                    const showCount = id !== "all";
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        aria-pressed={isActive}
+                        onClick={() => {
+                          startFilterTransition(() => {
+                            setActiveFilter(id);
+                          });
+                        }}
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-xs font-medium",
+                          TRANSITION.fast,
+                          TRANSITION.reduceMotion,
+                          FOCUS_RING,
+                          isActive
+                            ? "bg-slate-900 text-white"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        )}
+                      >
+                        {filterLabels.get(id) ?? id}
+                        {showCount ? (
+                          <span
+                            className={cn(
+                              "ml-1 tabular-nums",
+                              isActive ? "text-slate-300" : "text-slate-400"
+                            )}
+                          >
+                            {filterCounts[id]}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <p className={TEXT.label}>Project</p>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
                     <button
-                      key={id}
                       type="button"
-                      aria-pressed={isActive}
-                      onClick={() => {
-                        startFilterTransition(() => {
-                          setActiveFilter(id);
-                        });
-                      }}
                       className={cn(
-                        "rounded-full px-2.5 py-1 text-xs font-medium",
+                        `flex w-full items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm}`,
                         TRANSITION.fast,
-                        TRANSITION.reduceMotion,
                         FOCUS_RING,
-                        isActive
-                          ? "bg-slate-900 text-white"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        "hover:border-slate-300 hover:bg-slate-50"
                       )}
                     >
-                      {filterLabels.get(id) ?? id}
-                      {showCount ? (
-                        <span
-                          className={cn(
-                            "ml-1 tabular-nums",
-                            isActive ? "text-slate-300" : "text-slate-400"
-                          )}
-                        >
-                          {filterCounts[id]}
-                        </span>
-                      ) : null}
+                      <span className="flex-1 truncate text-left text-slate-900">
+                        {selectedProjectName ?? "All projects"}
+                      </span>
+                      <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                     </button>
-                  );
-                })}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="max-h-64 w-[18rem] overflow-y-auto"
+                  >
+                    <DropdownMenuRadioGroup
+                      value={selectedProjectId ?? ALL_PROJECTS_VALUE}
+                      onValueChange={(value) => {
+                        startFilterTransition(() => {
+                          setSelectedProjectId(
+                            value === ALL_PROJECTS_VALUE ? null : value
+                          );
+                        });
+                      }}
+                    >
+                      <DropdownMenuRadioItem value={ALL_PROJECTS_VALUE}>
+                        All projects
+                      </DropdownMenuRadioItem>
+                      {activeProjects.map((project) => (
+                        <DropdownMenuRadioItem
+                          key={project.id}
+                          value={project.id}
+                        >
+                          <span className="truncate">{project.name}</span>
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </CollapsibleContent>
@@ -401,7 +495,8 @@ export function InboxList({
                       filterId: activeFilter,
                       cursor: currentList.page.nextCursor,
                       append: true,
-                      query: normalizedQuery
+                      query: normalizedQuery,
+                      projectId: selectedProjectId
                     });
                   }}
                   className={`w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 ${TRANSITION.fast} hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60`}

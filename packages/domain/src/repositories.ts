@@ -81,6 +81,7 @@ export interface ContactMembershipRepository {
 
 export interface ProjectDimensionRepository {
   listAll(): Promise<readonly ProjectDimensionRecord[]>;
+  listActive(): Promise<readonly ProjectDimensionRecord[]>;
   listByIds(projectIds: readonly string[]): Promise<readonly ProjectDimensionRecord[]>;
   upsert(record: ProjectDimensionRecord): Promise<ProjectDimensionRecord>;
 }
@@ -170,6 +171,7 @@ export interface InboxProjectionRepository {
     readonly filter: "all" | "unread" | "follow-up" | "unresolved";
     readonly limit: number;
     readonly query: string;
+    readonly projectId?: string | null;
     readonly cursor:
       | {
           readonly sortAt: string;
@@ -184,6 +186,7 @@ export interface InboxProjectionRepository {
   listPageOrderedByRecency(input: {
     readonly filter: "all" | "unread" | "follow-up" | "unresolved";
     readonly limit: number;
+    readonly projectId?: string | null;
     readonly cursor:
       | {
           readonly sortAt: string;
@@ -192,7 +195,9 @@ export interface InboxProjectionRepository {
         }
       | null;
   }): Promise<readonly InboxProjectionRow[]>;
-  countByFilters(): Promise<{
+  countByFilters(input?: {
+    readonly projectId?: string | null;
+  }): Promise<{
     readonly all: number;
     readonly unread: number;
     readonly followUp: number;

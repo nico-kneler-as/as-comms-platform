@@ -46,11 +46,18 @@ export async function GET(request: Request) {
     );
   }
 
+  const rawProjectId = searchParams.get("projectId");
+  const projectId =
+    rawProjectId === null || rawProjectId.trim().length === 0
+      ? null
+      : rawProjectId.trim();
+
   return NextResponse.json(
     await getInboxList(parsedFilter.data, {
       cursor: searchParams.get("cursor"),
       ...(limit === undefined ? {} : { limit }),
       query: searchParams.get("q") ?? searchParams.get("query"),
+      projectId,
     }),
   );
 }
