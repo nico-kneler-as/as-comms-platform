@@ -92,7 +92,7 @@ function isActive(pathname: string, prefixes: readonly string[]): boolean {
 }
 
 export function PrimaryIconRail() {
-  const pathname = usePathname() ?? "";
+  const pathname = usePathname();
 
   return (
     <TooltipProvider delayDuration={200}>
