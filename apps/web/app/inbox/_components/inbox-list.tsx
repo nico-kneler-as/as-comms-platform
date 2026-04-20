@@ -297,8 +297,10 @@ export function InboxList({
               setFilterPanelOpen((open) => !open);
             }}
             className={cn(
-              `inline-flex h-8 w-8 shrink-0 items-center justify-center ${RADIUS.md} border`,
-              TRANSITION.fast,
+              `relative inline-flex h-8 w-8 shrink-0 items-center justify-center ${RADIUS.md} border`,
+              "transition-[color,background-color,transform] duration-150 ease-out",
+              "active:scale-[0.96]",
+              "after:absolute after:-inset-1 after:content-['']",
               TRANSITION.reduceMotion,
               FOCUS_RING,
               filterPanelOpen
@@ -330,7 +332,12 @@ export function InboxList({
                 type="button"
                 aria-label="Clear search"
                 onClick={clearSearch}
-                className="rounded p-0.5 text-slate-400 hover:text-slate-700"
+                className={cn(
+                  "relative rounded p-0.5 text-slate-400 hover:text-slate-700",
+                  "transition-[color,transform] duration-150 ease-out active:scale-[0.96]",
+                  "after:absolute after:-inset-2.5 after:content-['']",
+                  TRANSITION.reduceMotion
+                )}
               >
                 <XIcon className="h-3.5 w-3.5" />
               </button>
@@ -362,7 +369,8 @@ export function InboxList({
                         }}
                         className={cn(
                           "rounded-full px-2.5 py-1 text-xs font-medium",
-                          TRANSITION.fast,
+                          "transition-[color,background-color,transform] duration-150 ease-out",
+                          "active:scale-[0.96]",
                           TRANSITION.reduceMotion,
                           FOCUS_RING,
                           isActive
@@ -395,7 +403,9 @@ export function InboxList({
                       type="button"
                       className={cn(
                         `flex w-full items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm}`,
-                        TRANSITION.fast,
+                        "transition-[color,background-color,border-color,transform] duration-150 ease-out",
+                        "active:scale-[0.96]",
+                        TRANSITION.reduceMotion,
                         FOCUS_RING,
                         "hover:border-slate-300 hover:bg-slate-50"
                       )}
@@ -499,7 +509,13 @@ export function InboxList({
                       projectId: selectedProjectId
                     });
                   }}
-                  className={`w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 ${TRANSITION.fast} hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60`}
+                  className={cn(
+                    "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700",
+                    "transition-[color,background-color,transform] duration-150 ease-out",
+                    "active:scale-[0.96] disabled:active:scale-100",
+                    TRANSITION.reduceMotion,
+                    "hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  )}
                 >
                   {isQueueLoading
                     ? "Loading more conversations..."
