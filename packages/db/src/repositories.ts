@@ -330,6 +330,20 @@ function buildInboxFilterPredicate(filter: InboxProjectionFilter): SQL | undefin
         : undefined;
 }
 
+function buildInboxProjectPredicate(
+  projectId: string | null | undefined
+): SQL | undefined {
+  if (projectId === null || projectId === undefined || projectId.length === 0) {
+    return undefined;
+  }
+
+  return sql`exists (
+    select 1 from ${contactMemberships}
+    where ${contactMemberships.contactId} = ${contactInboxProjection.contactId}
+      and ${contactMemberships.projectId} = ${projectId}
+  )`;
+}
+
 function buildInboxCursorPredicate(input: {
   readonly cursor:
     | {
@@ -846,6 +860,16 @@ function createStage1RepositoriesInternal(
         const rows = await db
           .select()
           .from(projectDimensions)
+          .orderBy(asc(projectDimensions.projectName));
+
+        return rows.map(mapProjectDimensionRow);
+      },
+
+      async listActive() {
+        const rows = await db
+          .select()
+          .from(projectDimensions)
+          .where(eq(projectDimensions.isActive, true))
           .orderBy(asc(projectDimensions.projectName));
 
         return rows.map(mapProjectDimensionRow);
@@ -1412,6 +1436,7 @@ function createStage1RepositoriesInternal(
         const recencyExpression = buildInboxRecencyExpression();
         const whereClause = combinePredicates(
           buildInboxFilterPredicate(input.filter),
+          buildInboxProjectPredicate(input.projectId),
           buildInboxCursorPredicate({
             cursor: input.cursor,
             recencyExpression
@@ -1435,6 +1460,7 @@ function createStage1RepositoriesInternal(
         const recencyExpression = buildInboxRecencyExpression();
         const whereClause = combinePredicates(
           buildInboxFilterPredicate(input.filter),
+          buildInboxProjectPredicate(input.projectId),
           buildInboxCursorPredicate({
             cursor: input.cursor,
             recencyExpression
@@ -1461,6 +1487,7 @@ function createStage1RepositoriesInternal(
             .where(
               combinePredicates(
                 buildInboxFilterPredicate(input.filter),
+                buildInboxProjectPredicate(input.projectId),
                 buildInboxSearchPredicate(input.query)
               )
             )
@@ -1473,8 +1500,9 @@ function createStage1RepositoriesInternal(
         };
       },
 
-      async countByFilters() {
-        const [row] = await db
+      async countByFilters(input) {
+        const projectPredicate = buildInboxProjectPredicate(input?.projectId);
+        const baseQuery = db
           .select({
             all: count(),
             unread:
@@ -1485,6 +1513,9 @@ function createStage1RepositoriesInternal(
               sql<number>`coalesce(sum(case when ${contactInboxProjection.hasUnresolved} then 1 else 0 end), 0)`
           })
           .from(contactInboxProjection);
+        const [row] = await (projectPredicate === undefined
+          ? baseQuery
+          : baseQuery.where(projectPredicate));
 
         return {
           all: row?.all ?? 0,

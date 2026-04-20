@@ -13,6 +13,7 @@ import { getStage1WebRuntime } from "../../../src/server/stage1-runtime";
 
 import { INBOX_FILTERS } from "./filters";
 import type {
+  InboxActiveProjectOption,
   InboxAvatarTone,
   InboxBucket,
   InboxChannel,
@@ -49,6 +50,7 @@ interface InboxListCacheData {
     readonly followUp: number;
     readonly unresolved: number;
   };
+  readonly activeProjects: readonly InboxActiveProjectOption[];
   readonly page: {
     readonly hasMore: boolean;
     readonly nextCursor: string | null;
@@ -1416,17 +1418,19 @@ async function readInboxListCacheData(input: {
   readonly cursor: string | null;
   readonly limit: number;
   readonly query: string | null;
+  readonly projectId: string | null;
 }): Promise<InboxListCacheData> {
   const runtime = await getStage1WebRuntime();
   const decodedCursor = decodeInboxListCursor(input.cursor);
   const normalizedQuery = normalizeInlineText(input.query) ?? null;
-  const [projectionPage, counts, freshness] = await Promise.all([
+  const [projectionPage, counts, freshness, activeProjectRecords] = await Promise.all([
     normalizedQuery === null
       ? runtime.repositories.inboxProjection
           .listPageOrderedByRecency({
             filter: input.filterId,
             limit: input.limit + 1,
             cursor: decodedCursor,
+            projectId: input.projectId,
           })
           .then((rows) => ({
             rows,
@@ -1437,10 +1441,20 @@ async function readInboxListCacheData(input: {
           limit: input.limit + 1,
           cursor: decodedCursor,
           query: normalizedQuery,
+          projectId: input.projectId,
         }),
-    runtime.repositories.inboxProjection.countByFilters(),
+    runtime.repositories.inboxProjection.countByFilters({
+      projectId: input.projectId,
+    }),
     runtime.repositories.inboxProjection.getFreshness(),
+    runtime.repositories.projectDimensions.listActive(),
   ]);
+  const activeProjects: readonly InboxActiveProjectOption[] = activeProjectRecords.map(
+    (record) => ({
+      id: record.projectId,
+      name: record.projectName,
+    }),
+  );
   const hasMore = projectionPage.rows.length > input.limit;
   const pageProjections = hasMore
     ? projectionPage.rows.slice(0, input.limit)
@@ -1484,6 +1498,7 @@ async function readInboxListCacheData(input: {
     rows: pageRows,
     projectNameById,
     counts,
+    activeProjects,
     page: {
       hasMore,
       nextCursor:
@@ -1566,6 +1581,7 @@ function loadInboxListCacheData(input: {
   readonly cursor: string | null;
   readonly limit: number;
   readonly query: string | null;
+  readonly projectId: string | null;
 }) {
   if (process.env.NODE_ENV !== "production") {
     return readInboxListCacheData(input);
@@ -1574,7 +1590,7 @@ function loadInboxListCacheData(input: {
   return unstable_cache(
     () => readInboxListCacheData(input),
     [
-      `inbox:list:data:${input.filterId}:${input.cursor ?? "first"}:${input.limit.toString()}:${input.query ?? "none"}`,
+      `inbox:list:data:${input.filterId}:${input.cursor ?? "first"}:${input.limit.toString()}:${input.query ?? "none"}:${input.projectId ?? "none"}`,
     ],
     {
       tags: ["inbox"],
@@ -1718,13 +1734,16 @@ export async function getInboxList(
     readonly cursor?: string | null;
     readonly limit?: number;
     readonly query?: string | null;
+    readonly projectId?: string | null;
   } = {},
 ): Promise<InboxListViewModel> {
+  const projectId = input.projectId ?? null;
   const cachedData = await loadInboxListCacheData({
     filterId,
     cursor: input.cursor ?? null,
     limit: input.limit ?? DEFAULT_INBOX_LIST_PAGE_SIZE,
     query: input.query ?? null,
+    projectId,
   });
   const referenceNowIso = new Date().toISOString();
   const items = cachedData.rows.map((row) =>
@@ -1747,6 +1766,8 @@ export async function getInboxList(
     items: items.filter((item) => matchesServerFilter(item, filterId)),
     filters,
     totals,
+    activeProjects: cachedData.activeProjects,
+    selectedProjectId: projectId,
     page: cachedData.page,
     freshness: cachedData.freshness,
   };

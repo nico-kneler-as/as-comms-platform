@@ -111,6 +111,7 @@ function createRepositoryBundle(input: {
     },
     projectDimensions: {
       listAll: () => Promise.resolve([]),
+      listActive: () => Promise.resolve([]),
       listByIds: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record)
     },
