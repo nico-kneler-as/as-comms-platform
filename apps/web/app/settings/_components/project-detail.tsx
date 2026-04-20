@@ -127,11 +127,11 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
-      <div>
+      <div className="flex flex-col gap-2">
         <Link
           href="/settings/active-projects"
           className={cn(
-            "inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900",
+            "inline-flex items-center gap-1.5 self-start text-sm font-medium text-slate-600 hover:text-slate-900",
             TRANSITION.fast,
             FOCUS_RING,
             RADIUS.sm
@@ -140,6 +140,9 @@ export function ProjectDetail({ project, isAdmin }: ProjectDetailProps) {
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           Back to Active Projects
         </Link>
+        <h1 className="text-lg font-semibold tracking-tight text-slate-950">
+          {project.name}
+        </h1>
       </div>
 
       {feedback ? (

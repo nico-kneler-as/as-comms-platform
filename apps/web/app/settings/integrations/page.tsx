@@ -26,10 +26,7 @@ export default async function SettingsIntegrationsPage() {
   const isAdmin = currentUser.role === "admin";
 
   return (
-    <SettingsContent
-      title="Integrations"
-      description="Providers connected to your workspace. Syncs run on demand from here."
-    >
+    <SettingsContent>
       <IntegrationsSection
         integrations={MOCK_INTEGRATIONS}
         isAdmin={isAdmin}

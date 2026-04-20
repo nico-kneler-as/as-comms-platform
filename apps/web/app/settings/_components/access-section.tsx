@@ -208,7 +208,6 @@ export function AccessSection({
     <SettingsSection
       id="settings-access"
       title="Access"
-      description="Teammates with access to this workspace. Admins can change roles and deactivate accounts."
       action={
         isAdmin ? (
           <Button

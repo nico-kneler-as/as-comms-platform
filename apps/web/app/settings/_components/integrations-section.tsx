@@ -134,7 +134,6 @@ export function IntegrationsSection({
       <SettingsSection
         id="settings-integrations"
         title="Integrations"
-        description="Providers connected to your workspace. Trigger a manual refresh when you need the latest data."
         feedback={feedback}
       >
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">

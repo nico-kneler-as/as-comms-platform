@@ -61,7 +61,6 @@ export function ActiveProjectsSection({
     <SettingsSection
       id="settings-active-projects"
       title="Active Projects"
-      description="Each active project receives inbound mail at its connected addresses."
       action={
         isAdmin ? (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
