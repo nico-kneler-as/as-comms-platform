@@ -1,0 +1,514 @@
+import { unstable_cache } from "next/cache";
+
+import type {
+  IntegrationHealthCategory,
+  IntegrationHealthStatus
+} from "@as-comms/contracts";
+
+import { getCurrentUser } from "../auth/session";
+import { recordSensitiveReadForCurrentUserDetached } from "../security/audit";
+import { getStage1WebRuntime } from "../stage1-runtime";
+
+export interface ProjectRowViewModel {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly isActive: boolean;
+  readonly primaryEmail: string | null;
+  readonly additionalEmailCount: number;
+  readonly aiKnowledgeUrl: string | null;
+  readonly aiKnowledgeSyncedAt: string | null;
+  readonly memberCount: number;
+  readonly activationRequirementsMet: boolean;
+}
+
+export interface ProjectsSettingsViewModel {
+  readonly isAdmin: boolean;
+  readonly active: readonly ProjectRowViewModel[];
+  readonly inactive: readonly ProjectRowViewModel[];
+  readonly counts: {
+    readonly active: number;
+    readonly inactive: number;
+    readonly total: number;
+  };
+}
+
+export interface ProjectSettingsDetailViewModel extends ProjectRowViewModel {
+  readonly isAdmin: boolean;
+  readonly emails: readonly {
+    readonly address: string;
+    readonly isPrimary: boolean;
+  }[];
+  readonly salesforceProjectId: string | null;
+}
+
+export interface UserRowViewModel {
+  readonly userId: string;
+  readonly displayName: string;
+  readonly email: string;
+  readonly role: "admin" | "internal_user";
+  readonly lastActiveAt: string | null;
+  readonly status: "active" | "pending" | "deactivated";
+}
+
+export interface AccessSettingsViewModel {
+  readonly isAdmin: boolean;
+  readonly currentUserId: string | null;
+  readonly admins: readonly UserRowViewModel[];
+  readonly internalUsers: readonly UserRowViewModel[];
+}
+
+export interface IntegrationHealthViewModel {
+  readonly serviceName: string;
+  readonly displayName: string;
+  readonly description: string;
+  readonly logo: string;
+  readonly category: IntegrationHealthCategory;
+  readonly status: IntegrationHealthStatus;
+  readonly lastCheckedAt: string | null;
+  readonly detail: string | null;
+  readonly supportsRefresh: boolean;
+}
+
+export interface IntegrationsSettingsViewModel {
+  readonly isAdmin: boolean;
+  readonly integrations: readonly IntegrationHealthViewModel[];
+}
+
+const INTEGRATION_ORDER = [
+  "salesforce",
+  "gmail",
+  "simpletexting",
+  "mailchimp",
+  "notion",
+  "openai"
+] as const;
+
+const INTEGRATION_META = {
+  salesforce: {
+    displayName: "Salesforce",
+    description:
+      "Source of truth for volunteer contacts, projects, and participation history.",
+    logo: "SF",
+    supportsRefresh: true
+  },
+  gmail: {
+    displayName: "Gmail",
+    description:
+      "Routes incoming mail to project inboxes and sends replies on behalf of operators.",
+    logo: "G",
+    supportsRefresh: true
+  },
+  simpletexting: {
+    displayName: "SimpleTexting",
+    description:
+      "Two-way SMS channel for volunteer check-ins and field-support threads.",
+    logo: "ST",
+    supportsRefresh: false
+  },
+  mailchimp: {
+    displayName: "Mailchimp",
+    description:
+      "Legacy campaign-delivery provider kept for historical compatibility.",
+    logo: "MC",
+    supportsRefresh: false
+  },
+  notion: {
+    displayName: "Notion",
+    description:
+      "Knowledge source backing grounded AI context once Stage 4 sync lands.",
+    logo: "N",
+    supportsRefresh: false
+  },
+  openai: {
+    displayName: "OpenAI",
+    description:
+      "Draft-generation model provider used by the future AI assistant stage.",
+    logo: "OA",
+    supportsRefresh: false
+  }
+} as const satisfies Record<
+  (typeof INTEGRATION_ORDER)[number],
+  {
+    readonly displayName: string;
+    readonly description: string;
+    readonly logo: string;
+    readonly supportsRefresh: boolean;
+  }
+>;
+
+function normalizeSearch(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length === 0 ? null : trimmed.toLowerCase();
+}
+
+function hasActivationRequirements(input: {
+  readonly aiKnowledgeUrl: string | null;
+  readonly emailCount: number;
+}): boolean {
+  return (
+    input.emailCount >= 1 &&
+    (input.aiKnowledgeUrl?.trim().length ?? 0) > 0
+  );
+}
+
+function toProjectRowViewModel(input: {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly isActive: boolean;
+  readonly aiKnowledgeUrl: string | null;
+  readonly aiKnowledgeSyncedAt: Date | null;
+  readonly emails: readonly { readonly address: string; readonly isPrimary: boolean }[];
+  readonly memberCount: number;
+}): ProjectRowViewModel {
+  const primaryEmail =
+    input.emails.find((email) => email.isPrimary)?.address ?? null;
+  const additionalEmailCount = Math.max(input.emails.length - 1, 0);
+
+  return {
+    projectId: input.projectId,
+    projectName: input.projectName,
+    isActive: input.isActive,
+    primaryEmail,
+    additionalEmailCount,
+    aiKnowledgeUrl: input.aiKnowledgeUrl,
+    aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt?.toISOString() ?? null,
+    memberCount: input.memberCount,
+    activationRequirementsMet: hasActivationRequirements({
+      aiKnowledgeUrl: input.aiKnowledgeUrl,
+      emailCount: input.emails.length
+    })
+  };
+}
+
+async function readProjectsSettings(input: {
+  readonly filter: "active" | "inactive" | "all";
+  readonly search?: string | null;
+}): Promise<Omit<ProjectsSettingsViewModel, "isAdmin">> {
+  const runtime = await getStage1WebRuntime();
+  const normalizedSearch = normalizeSearch(input.search);
+  const projects = await runtime.settings.projects.listAll();
+
+  const matchingProjects = projects.filter((project) => {
+    if (normalizedSearch === null) {
+      return true;
+    }
+
+    return (
+      project.projectName.toLowerCase().includes(normalizedSearch) ||
+      project.emails.some((email) =>
+        email.address.toLowerCase().includes(normalizedSearch)
+      )
+    );
+  });
+
+  const filteredProjects = matchingProjects.filter((project) => {
+    if (input.filter === "all") {
+      return true;
+    }
+
+    return input.filter === "active" ? project.isActive : !project.isActive;
+  });
+
+  const active = filteredProjects
+    .filter((project) => project.isActive)
+    .sort(
+      (left, right) =>
+        right.updatedAt.getTime() - left.updatedAt.getTime() ||
+        left.projectName.localeCompare(right.projectName)
+    )
+    .map(toProjectRowViewModel);
+  const inactive = filteredProjects
+    .filter((project) => !project.isActive)
+    .sort((left, right) => left.projectName.localeCompare(right.projectName))
+    .map(toProjectRowViewModel);
+
+  return {
+    active,
+    inactive,
+    counts: {
+      active: active.length,
+      inactive: inactive.length,
+      total: active.length + inactive.length
+    }
+  };
+}
+
+async function readProjectSettingsDetail(
+  projectId: string
+) {
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(projectId);
+
+  if (project === null) {
+    return null;
+  }
+
+  return {
+    ...toProjectRowViewModel(project),
+    emails: project.emails,
+    salesforceProjectId: project.salesforceProjectId
+  };
+}
+
+function toUserViewModel(user: {
+  readonly id: string;
+  readonly name: string | null;
+  readonly email: string;
+  readonly role: "admin" | "operator";
+  readonly emailVerified: Date | null;
+  readonly deactivatedAt: Date | null;
+  readonly updatedAt: Date;
+}): UserRowViewModel {
+  const status =
+    user.deactivatedAt !== null
+      ? "deactivated"
+      : user.emailVerified === null
+        ? "pending"
+        : "active";
+
+  return {
+    userId: user.id,
+    displayName: user.name ?? user.email,
+    email: user.email,
+    role: user.role === "admin" ? "admin" : "internal_user",
+    lastActiveAt:
+      status === "pending"
+        ? null
+        : (user.deactivatedAt ?? user.updatedAt).toISOString(),
+    status
+  };
+}
+
+function sortUsers(
+  users: readonly UserRowViewModel[],
+  currentUserId: string | null
+): UserRowViewModel[] {
+  const statusRank = {
+    active: 0,
+    pending: 1,
+    deactivated: 2
+  } as const;
+
+  return users.slice().sort((left, right) => {
+    if (left.userId === currentUserId) {
+      return -1;
+    }
+    if (right.userId === currentUserId) {
+      return 1;
+    }
+
+    const statusDelta = statusRank[left.status] - statusRank[right.status];
+    if (statusDelta !== 0) {
+      return statusDelta;
+    }
+
+    return left.displayName.localeCompare(right.displayName);
+  });
+}
+
+async function readAccessSettings() {
+  const runtime = await getStage1WebRuntime();
+  const users = await runtime.settings.users.listAll();
+  const rows = users.map(toUserViewModel);
+  return {
+    rows
+  };
+}
+
+async function readIntegrationHealth() {
+  const runtime = await getStage1WebRuntime();
+
+  await runtime.settings.integrationHealth.seedDefaults();
+  const rows = await runtime.settings.integrationHealth.listAll();
+
+  const integrationById = new Map(rows.map((row) => [row.id, row] as const));
+  const integrations = INTEGRATION_ORDER.flatMap((serviceName) => {
+    const record = integrationById.get(serviceName);
+    if (record === undefined) {
+      return [];
+    }
+
+    const meta = INTEGRATION_META[serviceName];
+    return [
+      {
+        serviceName: record.serviceName,
+        displayName: meta.displayName,
+        description: meta.description,
+        logo: meta.logo,
+        category: record.category,
+        status: record.status,
+        lastCheckedAt: record.lastCheckedAt,
+        detail: record.detail,
+        supportsRefresh: meta.supportsRefresh
+      }
+    ];
+  });
+
+  return {
+    integrations
+  };
+}
+
+function loadProjectsSettingsCacheData(input: {
+  readonly filter: "active" | "inactive" | "all";
+  readonly search?: string | null;
+}) {
+  if (process.env.NODE_ENV !== "production") {
+    return readProjectsSettings(input);
+  }
+
+  return unstable_cache(
+    () => readProjectsSettings(input),
+    [
+      `settings:projects:${input.filter}:${normalizeSearch(input.search) ?? "none"}`
+    ],
+    {
+      tags: ["settings:projects"]
+    }
+  )();
+}
+
+function loadProjectSettingsDetailCacheData(projectId: string) {
+  if (process.env.NODE_ENV !== "production") {
+    return readProjectSettingsDetail(projectId);
+  }
+
+  return unstable_cache(
+    () => readProjectSettingsDetail(projectId),
+    [`settings:project:${projectId}`],
+    {
+      tags: ["settings:projects", `settings:projects:${projectId}`]
+    }
+  )();
+}
+
+function loadAccessSettingsCacheData() {
+  if (process.env.NODE_ENV !== "production") {
+    return readAccessSettings();
+  }
+
+  return unstable_cache(() => readAccessSettings(), ["settings:access"], {
+    tags: ["settings:access"]
+  })();
+}
+
+function loadIntegrationHealthCacheData() {
+  if (process.env.NODE_ENV !== "production") {
+    return readIntegrationHealth();
+  }
+
+  return unstable_cache(
+    () => readIntegrationHealth(),
+    ["settings:integrations"],
+    {
+      tags: ["settings:integrations"]
+    }
+  )();
+}
+
+export async function loadProjectsSettings(input: {
+  readonly filter: "active" | "inactive" | "all";
+  readonly search?: string | null;
+}): Promise<ProjectsSettingsViewModel> {
+  const [currentUser, cachedData] = await Promise.all([
+    getCurrentUser(),
+    loadProjectsSettingsCacheData(input)
+  ]);
+  const normalizedSearch = normalizeSearch(input.search);
+
+  recordSensitiveReadForCurrentUserDetached({
+    action: "settings.projects.read",
+    entityType: "settings_page",
+    entityId: "projects",
+    metadataJson: {
+      filter: input.filter,
+      visibleProjectCount: cachedData.counts.total,
+      search: normalizedSearch
+    }
+  });
+
+  return {
+    isAdmin: currentUser?.role === "admin",
+    ...cachedData
+  };
+}
+
+export async function loadProjectSettingsDetail(
+  projectId: string
+): Promise<ProjectSettingsDetailViewModel | null> {
+  const [currentUser, cachedData] = await Promise.all([
+    getCurrentUser(),
+    loadProjectSettingsDetailCacheData(projectId)
+  ]);
+
+  if (cachedData === null) {
+    return null;
+  }
+
+  recordSensitiveReadForCurrentUserDetached({
+    action: "settings.project.read",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      emailCount: cachedData.emails.length
+    }
+  });
+
+  return {
+    ...cachedData,
+    isAdmin: currentUser?.role === "admin"
+  };
+}
+
+export async function loadAccessSettings(): Promise<AccessSettingsViewModel> {
+  const [currentUser, cachedData] = await Promise.all([
+    getCurrentUser(),
+    loadAccessSettingsCacheData()
+  ]);
+  const currentUserId = currentUser?.id ?? null;
+  const admins = sortUsers(
+    cachedData.rows.filter((user) => user.role === "admin"),
+    currentUserId
+  );
+  const internalUsers = sortUsers(
+    cachedData.rows.filter((user) => user.role === "internal_user"),
+    currentUserId
+  );
+
+  recordSensitiveReadForCurrentUserDetached({
+    action: "settings.users.read",
+    entityType: "settings_page",
+    entityId: "users",
+    metadataJson: {
+      visibleUserCount: cachedData.rows.length
+    }
+  });
+
+  return {
+    isAdmin: currentUser?.role === "admin",
+    currentUserId,
+    admins,
+    internalUsers
+  };
+}
+
+export async function loadIntegrationHealth(): Promise<IntegrationsSettingsViewModel> {
+  const [currentUser, cachedData] = await Promise.all([
+    getCurrentUser(),
+    loadIntegrationHealthCacheData()
+  ]);
+
+  recordSensitiveReadForCurrentUserDetached({
+    action: "settings.integrations.read",
+    entityType: "settings_page",
+    entityId: "integrations",
+    metadataJson: {
+      visibleIntegrationCount: cachedData.integrations.length
+    }
+  });
+
+  return {
+    isAdmin: currentUser?.role === "admin",
+    integrations: cachedData.integrations
+  };
+}

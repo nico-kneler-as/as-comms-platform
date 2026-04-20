@@ -19,18 +19,16 @@ import {
   TooltipTrigger
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import type {
+  IntegrationHealthViewModel,
+  IntegrationsSettingsViewModel
+} from "@/src/server/settings/selectors";
 
 import { syncIntegrationAction } from "../actions";
-import type {
-  MockIntegration,
-  MockIntegrationCategory,
-  MockIntegrationStatus
-} from "../_lib/mock-data";
 import { SettingsSection } from "./settings-section";
 
 interface IntegrationsSectionProps {
-  readonly integrations: readonly MockIntegration[];
-  readonly isAdmin: boolean;
+  readonly viewModel: IntegrationsSettingsViewModel;
 }
 
 interface FeedbackState {
@@ -39,7 +37,7 @@ interface FeedbackState {
 }
 
 const CATEGORY_TONE: Record<
-  MockIntegrationCategory,
+  IntegrationHealthViewModel["category"],
   "indigo" | "emerald" | "amber" | "sky" | "violet" | "teal"
 > = {
   crm: "sky",
@@ -48,7 +46,7 @@ const CATEGORY_TONE: Record<
   ai: "emerald"
 };
 
-const CATEGORY_LABEL: Record<MockIntegrationCategory, string> = {
+const CATEGORY_LABEL: Record<IntegrationHealthViewModel["category"], string> = {
   crm: "CRM",
   messaging: "Messaging",
   knowledge: "Knowledge",
@@ -56,15 +54,15 @@ const CATEGORY_LABEL: Record<MockIntegrationCategory, string> = {
 };
 
 const STATUS_META: Record<
-  MockIntegrationStatus,
+  IntegrationHealthViewModel["status"],
   { readonly label: string; readonly colorClasses: string }
 > = {
-  connected: {
-    label: "Connected",
+  healthy: {
+    label: "Healthy",
     colorClasses: "bg-emerald-50 text-emerald-700 ring-emerald-200"
   },
-  degraded: {
-    label: "Degraded",
+  needs_attention: {
+    label: "Needs attention",
     colorClasses: "bg-amber-50 text-amber-800 ring-amber-200"
   },
   disconnected: {
@@ -74,30 +72,31 @@ const STATUS_META: Record<
   not_configured: {
     label: "Not configured",
     colorClasses: "bg-slate-100 text-slate-600 ring-slate-200"
+  },
+  not_checked: {
+    label: "Not checked",
+    colorClasses: "bg-slate-100 text-slate-700 ring-slate-200"
   }
 };
 
 function formatRelative(iso: string | null): string {
-  if (iso === null) return "Never synced";
+  if (iso === null) return "Never checked";
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "—";
   const now = Date.now();
   const diffMs = now - then;
   if (diffMs < 0) return "Just now";
   const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "Synced just now";
-  if (minutes < 60) return `Synced ${String(minutes)}m ago`;
+  if (minutes < 1) return "Checked just now";
+  if (minutes < 60) return `Checked ${String(minutes)}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Synced ${String(hours)}h ago`;
+  if (hours < 24) return `Checked ${String(hours)}h ago`;
   const days = Math.floor(hours / 24);
-  return `Synced ${String(days)}d ago`;
+  return `Checked ${String(days)}d ago`;
 }
 
-export function IntegrationsSection({
-  integrations,
-  isAdmin
-}: IntegrationsSectionProps) {
-  const [items, setItems] = useState(integrations);
+export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
+  const [items, setItems] = useState(viewModel.integrations);
   const [pending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
@@ -109,23 +108,30 @@ export function IntegrationsSection({
     }, 3500);
   }
 
-  function handleSync(integration: MockIntegration) {
-    setPendingId(integration.id);
+  function handleRefresh(integration: IntegrationHealthViewModel) {
+    setPendingId(integration.serviceName);
     startTransition(async () => {
       const formData = new FormData();
-      formData.set("id", integration.id);
+      formData.set("id", integration.serviceName);
       const result = await syncIntegrationAction(formData);
       setPendingId(null);
+
       if (result.ok) {
         setItems((current) =>
           current.map((item) =>
-            item.id === integration.id
-              ? { ...item, lastSyncAt: new Date().toISOString() }
+            item.serviceName === integration.serviceName
+              ? {
+                  ...item,
+                  lastCheckedAt: new Date().toISOString()
+                }
               : item
           )
         );
-        announce(`Syncing ${integration.name}. (stub)`);
+        announce(`Refreshing ${integration.displayName}. (stub)`);
+        return;
       }
+
+      announce(result.message, "error");
     });
   }
 
@@ -139,13 +145,14 @@ export function IntegrationsSection({
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((integration) => {
             const statusMeta = STATUS_META[integration.status];
-            const isRowPending = pending && pendingId === integration.id;
+            const isRowPending =
+              pending && pendingId === integration.serviceName;
             const isSyncDisabled =
-              integration.status === "not_configured" || isRowPending;
+              !integration.supportsRefresh || isRowPending;
 
             return (
               <li
-                key={integration.id}
+                key={integration.serviceName}
                 className={cn(
                   "flex min-h-full flex-col gap-4 p-5",
                   RADIUS.md,
@@ -164,7 +171,7 @@ export function IntegrationsSection({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <p className="truncate text-sm font-semibold text-slate-900">
-                        {integration.name}
+                        {integration.displayName}
                       </p>
                       <span className={cn(TEXT.caption, "text-slate-500")}>
                         {CATEGORY_LABEL[integration.category]}
@@ -177,7 +184,7 @@ export function IntegrationsSection({
                         "text-slate-600"
                       )}
                     >
-                      {integration.description}
+                      {integration.detail ?? integration.description}
                     </p>
                   </div>
                 </div>
@@ -191,18 +198,18 @@ export function IntegrationsSection({
                       className="self-start"
                     />
                     <span className={cn(TEXT.micro, "tabular-nums")}>
-                      {formatRelative(integration.lastSyncAt)}
+                      {formatRelative(integration.lastCheckedAt)}
                     </span>
                   </div>
 
-                  {isAdmin && (
+                  {viewModel.isAdmin && (
                     <SyncButton
                       disabled={isSyncDisabled}
-                      notConfigured={integration.status === "not_configured"}
+                      supportsRefresh={integration.supportsRefresh}
                       pending={isRowPending}
-                      integrationName={integration.name}
+                      integrationName={integration.displayName}
                       onSync={() => {
-                        handleSync(integration);
+                        handleRefresh(integration);
                       }}
                     />
                   )}
@@ -218,7 +225,7 @@ export function IntegrationsSection({
 
 interface SyncButtonProps {
   readonly disabled: boolean;
-  readonly notConfigured: boolean;
+  readonly supportsRefresh: boolean;
   readonly pending: boolean;
   readonly integrationName: string;
   readonly onSync: () => void;
@@ -226,7 +233,7 @@ interface SyncButtonProps {
 
 function SyncButton({
   disabled,
-  notConfigured,
+  supportsRefresh,
   pending,
   integrationName,
   onSync
@@ -237,39 +244,33 @@ function SyncButton({
       size="sm"
       onClick={onSync}
       disabled={disabled}
-      aria-label={`Sync ${integrationName}`}
+      aria-label={`Refresh ${integrationName}`}
     >
       <RefreshCw
         className={cn("mr-1.5 h-3.5 w-3.5", pending && "animate-spin")}
         aria-hidden="true"
       />
-      Sync
+      Refresh
     </Button>
   );
 
-  if (notConfigured) {
-    return (
-      <Tooltip>
-        {/*
-         * Radix Tooltip hides the trigger from screen readers when the
-         * underlying control is disabled. Wrapping in a span (with
-         * `tabIndex={0}`) keeps the tooltip reachable and preserves the
-         * visual treatment from the shared Button primitive.
-         */}
-        <TooltipTrigger asChild>
-          <span tabIndex={0} aria-disabled="true" className="inline-flex">
-            {button}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent
-          side="top"
-          className="rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white"
-        >
-          Provider not configured yet.
-        </TooltipContent>
-      </Tooltip>
-    );
+  if (supportsRefresh) {
+    return button;
   }
 
-  return button;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} aria-disabled="true" className="inline-flex">
+          {button}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        className="rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white"
+      >
+        Health checks are not wired for this provider yet.
+      </TooltipContent>
+    </Tooltip>
+  );
 }

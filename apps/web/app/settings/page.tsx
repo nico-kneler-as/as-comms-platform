@@ -8,5 +8,5 @@ export const dynamic = "force-dynamic";
  * has an active row.
  */
 export default function SettingsIndexPage(): never {
-  redirect("/settings/active-projects");
+  redirect("/settings/projects");
 }

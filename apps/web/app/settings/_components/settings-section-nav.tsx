@@ -25,10 +25,10 @@ interface SectionItem {
 
 const ITEMS: readonly SectionItem[] = [
   {
-    id: "active-projects",
+    id: "projects",
     label: "Active Projects",
     description: "Projects currently receiving inbound mail.",
-    href: "/settings/active-projects",
+    href: "/settings/projects",
     Icon: FolderOpen
   },
   {

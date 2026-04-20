@@ -457,7 +457,10 @@ Alias drift outbound message.
         {
           projectId: "project-stage1",
           projectName: "Project Stage 1",
-          source: "salesforce"
+          source: "salesforce",
+          isActive: false,
+          aiKnowledgeUrl: null,
+          aiKnowledgeSyncedAt: null
         }
       ]);
       await expect(
