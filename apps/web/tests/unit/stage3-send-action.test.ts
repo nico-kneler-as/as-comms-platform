@@ -57,6 +57,7 @@ async function seedComposerFixture(runtime: Stage1WebTestRuntime): Promise<void>
   await runtime.context.settings.aliases.create({
     id: "alias:antarctica",
     alias: "antarctica@example.org",
+    signature: "",
     projectId: "project:antarctica",
     createdAt: now,
     updatedAt: now,
