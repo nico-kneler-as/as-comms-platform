@@ -25,6 +25,16 @@
 - environment values exposed to the browser must be intentionally non-secret
 - runtime-specific security headers still need explicit verification even if the hosting edge provides defaults
 
+## Stage 4 Notion Sync
+
+| Env var | Runtime | Required | Notes |
+| --- | --- | --- | --- |
+| `NOTION_API_KEY` | `worker` | yes | Internal Notion integration token. Keep backend-only. |
+| `NOTION_GENERAL_TRAINING_PAGE_ID` | `worker` | yes | Default local/example value: `3278a9129211804baa72c76a86d084d0`. Read at worker startup; missing config surfaces `integration_health.notion = not_configured`. |
+| `NOTION_PROJECT_TRAINING_DATABASE_ID` | `worker` | yes | Default local/example value: `3278a91292118095b86aff5836821428`. Read at worker startup; missing config surfaces `integration_health.notion = not_configured`. |
+
+The worker cron is the only current consumer. The web service may carry the same env values in shared deployment config, but it does not call Notion directly in this brief.
+
 ## Deep References
 
 - full donor lookup: [`../../restart-prd/env-and-secrets-matrix.md`](../../restart-prd/env-and-secrets-matrix.md)

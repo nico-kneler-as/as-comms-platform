@@ -3,6 +3,7 @@ export * from "./tables.js";
 import {
   accounts,
   auditPolicyEvidence,
+  aiKnowledgeEntries,
   canonicalEventLedger,
   contactIdentities,
   contactInboxProjection,
@@ -31,6 +32,7 @@ import {
 
 export const databaseSchema = {
   sourceEvidenceLog,
+  aiKnowledgeEntries,
   contacts,
   contactIdentities,
   contactMemberships,

@@ -770,6 +770,42 @@ export const pendingComposerOutbounds = pgTable(
   ],
 );
 
+export const aiKnowledgeEntries = pgTable(
+  "ai_knowledge_entries",
+  {
+    id: text("id").primaryKey(),
+    scope: text("scope").notNull(),
+    scopeKey: text("scope_key"),
+    sourceProvider: text("source_provider").notNull(),
+    sourceId: text("source_id").notNull(),
+    sourceUrl: text("source_url"),
+    title: text("title"),
+    content: text("content").notNull(),
+    contentHash: text("content_hash").notNull(),
+    metadataJson: jsonb("metadata_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    sourceLastEditedAt: timestamp("source_last_edited_at", {
+      mode: "date",
+      withTimezone: true
+    }),
+    syncedAt: timestamp("synced_at", {
+      mode: "date",
+      withTimezone: true
+    }).notNull(),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [
+    uniqueIndex("ai_knowledge_entries_source_idx").on(
+      table.sourceProvider,
+      table.sourceId
+    ),
+    index("ai_knowledge_entries_scope_idx").on(table.scope, table.scopeKey)
+  ]
+);
+
 export const integrationHealth = pgTable(
   "integration_health",
   {

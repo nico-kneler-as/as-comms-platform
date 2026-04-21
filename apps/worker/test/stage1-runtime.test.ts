@@ -9,6 +9,7 @@ import {
   buildWorkerCrontab,
   readWorkerConfig
 } from "../src/runtime.js";
+import { notionKnowledgeSyncJobName } from "../src/jobs/notion-knowledge-sync/index.js";
 import {
   pollGmailLiveJobName,
   pollIntegrationHealthJobName,
@@ -143,6 +144,7 @@ describe("Stage 1 worker runtime task registration", () => {
         `*/1 * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
         `*/5 * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
         `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
+        `*/15 * * * * ${notionKnowledgeSyncJobName} ?id=notion-knowledge-sync&max=1`,
         `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`
       ].join("\n")
     );
