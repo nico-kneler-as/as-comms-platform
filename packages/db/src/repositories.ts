@@ -316,11 +316,11 @@ const DEFAULT_INTEGRATION_HEALTH_SEED = [
 
 type InboxProjectionFilter = "all" | "unread" | "follow-up" | "unresolved";
 
-type InboxRecencyCursor = {
+interface InboxRecencyCursor {
   readonly lastInboundAt: string | null;
   readonly lastActivityAt: string;
   readonly contactId: string;
-};
+}
 
 function buildInboxRecencyOrderBy(): [SQL, SQL, SQL] {
   return [

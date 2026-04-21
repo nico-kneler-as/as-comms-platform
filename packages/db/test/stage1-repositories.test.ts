@@ -4,7 +4,7 @@ import { createTestStage1Context } from "./helpers.js";
 import {
   inboxRecencyExpectedOrder,
   inboxRecencyFixture,
-} from "../../../test/inbox-recency-fixture";
+} from "./fixtures/inbox-recency-fixture";
 
 interface SalesforceCommunicationDetailRecord {
   readonly sourceEvidenceId: string;
