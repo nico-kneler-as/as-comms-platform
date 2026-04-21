@@ -982,28 +982,33 @@ function campaignHeadlineAndBody(
 } {
   if (item.family === "campaign_email") {
     const parsedPreview = parseCommunicationPreview(item.snippet);
+
+    if (parsedPreview.subject !== null) {
+      return {
+        headline: parsedPreview.subject,
+        body:
+          resolveDisplayableOutboundSubject(parsedPreview.subject) === null
+            ? parsedPreview.body
+            : suppressDuplicateHeadlineBody(
+                parsedPreview.subject,
+                parsedPreview.body,
+              ),
+      };
+    }
+
     const cleaned =
-      parsedPreview.subject !== null
+      parsedPreview.body.length > 0
         ? parsedPreview.body
-        : parsedPreview.body.length > 0
-          ? parsedPreview.body
-          : (normalizeInlineText(item.summary) ?? "");
+        : (normalizeInlineText(item.summary) ?? "");
+
     const split = splitHeadlineAndBody(cleaned);
-    const headline =
-      parsedPreview.subject ??
-      split.headline ??
-      normalizeInlineText(item.campaignName) ??
-      normalizeInlineText(item.summary);
-    const body =
-      parsedPreview.subject !== null
-        ? cleaned
-        : split.body.length > 0
-          ? split.body
-          : cleaned;
 
     return {
-      headline,
-      body: suppressDuplicateHeadlineBody(headline, body),
+      headline:
+        split.headline ??
+        normalizeInlineText(item.campaignName) ??
+        normalizeInlineText(item.summary),
+      body: cleaned,
     };
   }
 
@@ -1255,6 +1260,37 @@ function timelineActorLabel(
   }
 }
 
+const OUTBOUND_SUBJECT_PREFIX_PATTERN =
+  /^\s*(?:→|->|&rarr;|\u2192)\s*Email:\s*/i;
+
+function stripOutboundSubjectPrefix(subject: string | null): string | null {
+  const normalized = normalizeInlineText(subject);
+
+  if (normalized === null) {
+    return null;
+  }
+
+  return normalizeInlineText(
+    normalized.replace(OUTBOUND_SUBJECT_PREFIX_PATTERN, ""),
+  );
+}
+
+function looksLikeUrl(subject: string): boolean {
+  return /^https?:\/\//i.test(subject.trim());
+}
+
+function resolveDisplayableOutboundSubject(
+  subject: string | null,
+): string | null {
+  const stripped = stripOutboundSubjectPrefix(subject);
+
+  if (stripped === null || looksLikeUrl(stripped)) {
+    return null;
+  }
+
+  return stripped;
+}
+
 function timelineSubject(item: TimelineItem): string | null {
   switch (item.family) {
     case "one_to_one_email":
@@ -1263,10 +1299,16 @@ function timelineSubject(item: TimelineItem): string | null {
         parseCommunicationPreview(item.snippet).subject
       );
     case "auto_email":
-      return normalizeInlineText(item.subject);
+      return resolveDisplayableOutboundSubject(
+        normalizeInlineText(item.subject) ??
+          parseCommunicationPreview(item.snippet).subject,
+      );
     case "auto_sms":
       return null;
     case "campaign_email":
+      return resolveDisplayableOutboundSubject(
+        parseCommunicationPreview(item.snippet).subject,
+      );
     case "campaign_sms":
       return campaignHeadlineAndBody(item).headline;
     case "one_to_one_sms":
