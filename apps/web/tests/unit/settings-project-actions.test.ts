@@ -57,6 +57,7 @@ async function seedProject(
     await runtime.context.settings.aliases.create({
       id: `${input.projectId}:alias:${String(index)}`,
       alias: email,
+      signature: "",
       projectId: input.projectId,
       createdAt: new Date(`2026-04-20T15:0${String(index)}:00.000Z`),
       updatedAt: new Date(`2026-04-20T15:0${String(index)}:00.000Z`),

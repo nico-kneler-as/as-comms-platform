@@ -35,8 +35,10 @@ export interface ProjectsSettingsViewModel {
 export interface ProjectSettingsDetailViewModel extends ProjectRowViewModel {
   readonly isAdmin: boolean;
   readonly emails: readonly {
+    readonly id: string;
     readonly address: string;
     readonly isPrimary: boolean;
+    readonly signature: string;
   }[];
   readonly salesforceProjectId: string | null;
 }
@@ -157,7 +159,12 @@ function toProjectRowViewModel(input: {
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
-  readonly emails: readonly { readonly address: string; readonly isPrimary: boolean }[];
+  readonly emails: readonly {
+    readonly id: string;
+    readonly address: string;
+    readonly isPrimary: boolean;
+    readonly signature: string;
+  }[];
   readonly memberCount: number;
 }): ProjectRowViewModel {
   const primaryEmail =

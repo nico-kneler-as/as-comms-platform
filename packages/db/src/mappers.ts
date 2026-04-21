@@ -787,6 +787,7 @@ export function mapProjectAliasRow(row: ProjectAliasRow): ProjectAliasRecord {
   return {
     id: row.id,
     alias: row.alias,
+    signature: row.signature,
     projectId: row.projectId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -801,6 +802,7 @@ export function mapProjectAliasToInsert(
   return {
     id: record.id,
     alias: record.alias,
+    signature: record.signature,
     projectId: record.projectId,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,

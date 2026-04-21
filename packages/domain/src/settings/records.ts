@@ -15,6 +15,7 @@ export interface UserRecord {
 export interface ProjectAliasRecord {
   readonly id: string;
   readonly alias: string;
+  readonly signature: string;
   readonly projectId: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -23,8 +24,10 @@ export interface ProjectAliasRecord {
 }
 
 export interface SettingsProjectEmailRecord {
+  readonly id: string;
   readonly address: string;
   readonly isPrimary: boolean;
+  readonly signature: string;
 }
 
 export interface SettingsProjectRecord {

@@ -26,6 +26,11 @@ export interface ProjectAliasesRepository {
     readonly aliases: readonly string[];
     readonly actorId: string;
   }): Promise<readonly ProjectAliasRecord[]>;
+  updateSignature(input: {
+    readonly aliasId: string;
+    readonly signature: string;
+    readonly actorId: string;
+  }): Promise<ProjectAliasRecord | null>;
   create(record: ProjectAliasRecord): Promise<ProjectAliasRecord>;
   update(record: ProjectAliasRecord): Promise<ProjectAliasRecord>;
   delete(id: string): Promise<void>;
