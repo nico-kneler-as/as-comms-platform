@@ -190,6 +190,7 @@ describe("Stage 1 persistence service", () => {
       eventType: "communication.email.inbound" as const,
       channel: "email" as const,
       occurredAt: "2026-01-01T00:00:00.000Z",
+      contentFingerprint: null,
       sourceEvidenceId: sourceEvidenceResult.record.id,
       idempotencyKey: "canonical:gmail-message-1",
       provenance: {
@@ -302,6 +303,7 @@ describe("Stage 1 persistence service", () => {
       eventType: "communication.email.outbound",
       channel: "email",
       occurredAt: "2026-01-01T00:00:00.000Z",
+      contentFingerprint: null,
       sourceEvidenceId: sourceEvidenceResult.record.id,
       idempotencyKey: "canonical:gmail-message-1",
       provenance: {

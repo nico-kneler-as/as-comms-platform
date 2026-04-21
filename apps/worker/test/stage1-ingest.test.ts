@@ -34,6 +34,7 @@ function buildAppliedCanonicalEventResult(
       eventType: input.canonicalEvent.eventType,
       channel: resolveCanonicalChannel(input.canonicalEvent.eventType),
       occurredAt: input.canonicalEvent.occurredAt,
+      contentFingerprint: null,
       sourceEvidenceId: input.sourceEvidence.id,
       idempotencyKey: input.canonicalEvent.idempotencyKey,
       provenance: {

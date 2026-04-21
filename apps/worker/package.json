@@ -10,6 +10,7 @@
     "build": "node ../../scripts/clean-dist.mjs dist && tsc -p tsconfig.build.json",
     "start": "node dist/index.js",
     "ops": "tsx src/ops/cli.ts",
+    "ops:backfill-content-fingerprint": "tsx src/ops/backfill-content-fingerprint.ts",
     "ops:check-config": "tsx src/ops/cli.ts check-config",
     "ops:backfill-gmail-message-bodies": "tsx src/ops/backfill-gmail-message-bodies.ts",
     "ops:backfill-salesforce-communication-details": "tsx src/ops/backfill-salesforce-communication-details.ts",

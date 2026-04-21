@@ -93,6 +93,7 @@ export async function seedInboxEmailEvent(
     occurredAt: input.occurredAt,
     sourceEvidenceId,
     idempotencyKey: `canonical:${input.id}`,
+    contentFingerprint: null,
     provenance: {
       primaryProvider: "gmail",
       primarySourceEvidenceId: sourceEvidenceId,
@@ -179,6 +180,7 @@ export async function seedInboxSmsEvent(
     occurredAt: input.occurredAt,
     sourceEvidenceId,
     idempotencyKey: `canonical:${input.id}`,
+    contentFingerprint: null,
     provenance: {
       primaryProvider: "salesforce",
       primarySourceEvidenceId: sourceEvidenceId,
@@ -250,6 +252,7 @@ export async function seedInboxAutoEmailEvent(
     occurredAt: input.occurredAt,
     sourceEvidenceId,
     idempotencyKey: `canonical:${input.id}`,
+    contentFingerprint: null,
     provenance: {
       primaryProvider: "salesforce",
       primarySourceEvidenceId: sourceEvidenceId,
@@ -327,6 +330,7 @@ export async function seedInboxAutoSmsEvent(
     occurredAt: input.occurredAt,
     sourceEvidenceId,
     idempotencyKey: `canonical:${input.id}`,
+    contentFingerprint: null,
     provenance: {
       primaryProvider: "salesforce",
       primarySourceEvidenceId: sourceEvidenceId,
@@ -408,6 +412,7 @@ export async function seedInboxSalesforceOutboundEmailEvent(
     occurredAt: input.occurredAt,
     sourceEvidenceId,
     idempotencyKey: `canonical:${input.id}`,
+    contentFingerprint: null,
     provenance: {
       primaryProvider: "salesforce",
       primarySourceEvidenceId: sourceEvidenceId,
@@ -489,6 +494,7 @@ export async function seedInboxLegacySalesforceOutboundEmailEvent(
     occurredAt: input.occurredAt,
     sourceEvidenceId,
     idempotencyKey: `canonical:${input.id}`,
+    contentFingerprint: null,
     provenance: {
       primaryProvider: "salesforce",
       primarySourceEvidenceId: sourceEvidenceId,
@@ -558,6 +564,7 @@ export async function seedInboxCampaignEmailEvent(
     occurredAt: input.occurredAt,
     sourceEvidenceId,
     idempotencyKey: `canonical:${input.id}`,
+    contentFingerprint: null,
     provenance: {
       primaryProvider: "mailchimp",
       primarySourceEvidenceId: sourceEvidenceId,
@@ -640,6 +647,7 @@ export async function seedInboxCampaignSmsEvent(
     occurredAt: input.occurredAt,
     sourceEvidenceId,
     idempotencyKey: `canonical:${input.id}`,
+    contentFingerprint: null,
     provenance: {
       primaryProvider: "simpletexting",
       primarySourceEvidenceId: sourceEvidenceId,
@@ -724,6 +732,7 @@ export async function seedInboxInternalNoteEvent(
     occurredAt: input.occurredAt,
     sourceEvidenceId,
     idempotencyKey: `canonical:${input.id}`,
+    contentFingerprint: null,
     provenance: {
       primaryProvider: "manual",
       primarySourceEvidenceId: sourceEvidenceId,
@@ -804,6 +813,7 @@ export async function seedInboxLifecycleEvent(
     occurredAt: input.occurredAt,
     sourceEvidenceId,
     idempotencyKey: `canonical:${input.id}`,
+    contentFingerprint: null,
     provenance: {
       primaryProvider: "salesforce",
       primarySourceEvidenceId: sourceEvidenceId,

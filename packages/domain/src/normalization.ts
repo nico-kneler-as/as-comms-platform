@@ -59,12 +59,18 @@ import {
   isInboxDrivingCanonicalEvent
 } from "./inbox-driving.js";
 import {
+  buildIncomingContentFingerprintSource,
   buildIncomingOutboundEmailFingerprintSource,
   buildOutboundEmailDuplicateFingerprint,
+  computeContentFingerprint,
+  computeSalesforceSnippetClusterFingerprint,
+  isWithinContentFingerprintWindow,
   buildPersistedOutboundEmailFingerprintSource,
   isWithinOutboundEmailFingerprintWindow,
   resolveOutboundEmailMergedWinnerDecision,
-  selectOutboundEmailDuplicateWinner
+  salesforceSnippetClusterWindowMs,
+  selectOutboundEmailDuplicateWinner,
+  selectSalesforceSelfDuplicateWinner
 } from "./outbound-email-dedup.js";
 import type { Stage1PersistenceService } from "./persistence.js";
 
@@ -589,9 +595,11 @@ async function findOutboundEmailDuplicateMatch(
   persistence: Stage1PersistenceService,
   input: {
     readonly existingEvents: readonly CanonicalEventRecord[];
+    readonly contactId: string;
     readonly incoming: Pick<
       NormalizedCanonicalEventIntake,
       | "canonicalEvent"
+      | "communicationClassification"
       | "sourceEvidence"
       | "gmailMessageDetail"
       | "salesforceCommunicationDetail"
@@ -690,6 +698,150 @@ async function findOutboundEmailDuplicateMatch(
         winnerReason: winnerSelection.winnerReason,
         notes: winnerSelection.notes,
         keepIncomingAsPrimary: winnerSelection.winner === "incoming"
+      }
+    };
+  }
+
+  const incomingContentFingerprintSource = buildIncomingContentFingerprintSource(
+    input.incoming
+  );
+  const incomingContentFingerprint =
+    incomingContentFingerprintSource === null
+      ? null
+      : computeContentFingerprint({
+          ...incomingContentFingerprintSource,
+          contactId: input.contactId
+        });
+
+  if (incomingContentFingerprint !== null) {
+    const fingerprintCandidates =
+      await persistence.repositories.canonicalEvents.listByContentFingerprintWindow({
+        contactId: input.contactId,
+        channel: "email",
+        contentFingerprint: incomingContentFingerprint,
+        occurredAt: input.incoming.canonicalEvent.occurredAt,
+        windowMinutes: 5
+      });
+
+    for (const existingEvent of [...fingerprintCandidates].sort(
+      compareDuplicateCandidateEvents
+    )) {
+      const winnerSelection = selectOutboundEmailDuplicateWinner({
+        incoming: {
+          provider: input.incoming.sourceEvidence.provider,
+          occurredAt: input.incoming.canonicalEvent.occurredAt
+        },
+        existing: {
+          provider: existingEvent.provenance.primaryProvider,
+          occurredAt: existingEvent.occurredAt
+        }
+      });
+
+      if (winnerSelection === null) {
+        continue;
+      }
+
+      return {
+        existingEvent,
+        existingTimelineProjection:
+          await persistence.repositories.timelineProjection.findByCanonicalEventId(
+            existingEvent.id
+          ),
+        winner: {
+          winnerReason: winnerSelection.winnerReason,
+          notes: winnerSelection.notes,
+          keepIncomingAsPrimary: winnerSelection.winner === "incoming"
+        }
+      };
+    }
+  }
+
+  if (input.incoming.sourceEvidence.provider !== "salesforce") {
+    return null;
+  }
+
+  const salesforceSnippetClusterFingerprint =
+    computeSalesforceSnippetClusterFingerprint({
+      subject: input.incoming.salesforceCommunicationDetail?.subject ?? null,
+      snippet:
+        input.incoming.salesforceCommunicationDetail?.snippet ??
+        input.incoming.canonicalEvent.snippet ??
+        "",
+      contactId: input.contactId,
+      channel: "email",
+      direction: input.incoming.communicationClassification?.direction ?? null
+    });
+
+  if (salesforceSnippetClusterFingerprint === null) {
+    return null;
+  }
+
+  const salesforceCandidateEvents = input.existingEvents
+    .filter(
+      (event) =>
+        event.eventType === "communication.email.outbound" &&
+        event.provenance.primaryProvider === "salesforce" &&
+        isWithinContentFingerprintWindow({
+          leftOccurredAt: event.occurredAt,
+          rightOccurredAt: input.incoming.canonicalEvent.occurredAt,
+          windowMs: salesforceSnippetClusterWindowMs
+        })
+    )
+    .sort(compareDuplicateCandidateEvents);
+
+  if (salesforceCandidateEvents.length === 0) {
+    return null;
+  }
+
+  const salesforceDetailMaps = await loadProviderDetailMaps(
+    persistence,
+    salesforceCandidateEvents.map((event) => event.sourceEvidenceId)
+  );
+
+  for (const existingEvent of salesforceCandidateEvents) {
+    const existingDetail =
+      salesforceDetailMaps.salesforceCommunicationDetailBySourceEvidenceId.get(
+        existingEvent.sourceEvidenceId
+      );
+
+    if (existingDetail === undefined) {
+      continue;
+    }
+
+    const existingSalesforceSnippetClusterFingerprint =
+      computeSalesforceSnippetClusterFingerprint({
+        subject: existingDetail.subject,
+        snippet: existingDetail.snippet,
+        contactId: input.contactId,
+        channel: existingEvent.channel,
+        direction: existingEvent.provenance.direction
+      });
+
+    if (
+      existingSalesforceSnippetClusterFingerprint === null ||
+      existingSalesforceSnippetClusterFingerprint !==
+        salesforceSnippetClusterFingerprint
+    ) {
+      continue;
+    }
+
+    const keepIncomingAsPrimary =
+      selectSalesforceSelfDuplicateWinner({
+        incomingOccurredAt: input.incoming.canonicalEvent.occurredAt,
+        existingOccurredAt: existingEvent.occurredAt
+      }) === "incoming";
+
+    return {
+      existingEvent,
+      existingTimelineProjection:
+        await persistence.repositories.timelineProjection.findByCanonicalEventId(
+          existingEvent.id
+        ),
+      winner: {
+        winnerReason: "salesforce_only_best_evidence",
+        notes:
+          "The earliest Salesforce Task remained canonical for the same subject and snippet within the 10 minute Flow double-fire window.",
+        keepIncomingAsPrimary
       }
     };
   }
@@ -1999,12 +2151,23 @@ export function createStage1NormalizationService(
         parsed.communicationClassification ?? null;
       const inboxProjectionExclusionReason =
         detectInboxProjectionExclusionReason(parsed);
+      const contentFingerprintSource = buildIncomingContentFingerprintSource(
+        parsed
+      );
+      const contentFingerprint =
+        contentFingerprintSource === null
+          ? null
+          : computeContentFingerprint({
+              ...contentFingerprintSource,
+              contactId: resolvedContact.id
+            });
       const canonicalEvent = canonicalEventSchema.parse({
         id: parsed.canonicalEvent.id,
         contactId: resolvedContact.id,
         eventType: parsed.canonicalEvent.eventType,
         channel: resolveCanonicalChannel(parsed.canonicalEvent.eventType),
         occurredAt: parsed.canonicalEvent.occurredAt,
+        contentFingerprint,
         sourceEvidenceId: sourceEvidenceResult.record.id,
         idempotencyKey: parsed.canonicalEvent.idempotencyKey,
         provenance: {
@@ -2119,8 +2282,15 @@ export function createStage1NormalizationService(
         parsed.canonicalEvent.eventType === "communication.email.outbound"
           ? await findOutboundEmailDuplicateMatch(persistence, {
               existingEvents: await getContactEvents(),
+              contactId: resolvedContact.id,
               incoming: {
-                canonicalEvent: parsed.canonicalEvent,
+                canonicalEvent: {
+                  ...parsed.canonicalEvent,
+                  contentFingerprint
+                },
+                ...(communicationClassification === null
+                  ? {}
+                  : { communicationClassification }),
                 sourceEvidence: sourceEvidenceResult.record,
                 gmailMessageDetail: parsed.gmailMessageDetail,
                 salesforceCommunicationDetail:
@@ -2181,6 +2351,9 @@ export function createStage1NormalizationService(
             occurredAt: duplicateMatch.winner.keepIncomingAsPrimary
               ? canonicalEvent.occurredAt
               : duplicateMatch.existingEvent.occurredAt,
+            contentFingerprint: duplicateMatch.winner.keepIncomingAsPrimary
+              ? canonicalEvent.contentFingerprint
+              : duplicateMatch.existingEvent.contentFingerprint,
             sourceEvidenceId: duplicateMatch.winner.keepIncomingAsPrimary
               ? sourceEvidenceResult.record.id
               : duplicateMatch.existingEvent.sourceEvidenceId,

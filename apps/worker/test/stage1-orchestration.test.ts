@@ -825,6 +825,7 @@ Alias drift outbound message.
         eventType: "communication.email.outbound",
         channel: "email",
         occurredAt: "2026-01-01T00:00:00.000Z",
+        contentFingerprint: null,
         sourceEvidenceId: "sev:stale-salesforce-task",
         idempotencyKey: "canonical:task-stale-1",
         provenance: {
@@ -927,6 +928,7 @@ Alias drift outbound message.
         eventType: "communication.email.inbound",
         channel: "email",
         occurredAt: "2026-03-31T17:31:38.000Z",
+        contentFingerprint: null,
         sourceEvidenceId: "sev:gmail-historical-null-kind",
         idempotencyKey: "canonical:gmail:null-kind-1",
         provenance: {
@@ -1021,6 +1023,7 @@ Alias drift outbound message.
         eventType: "communication.email.outbound",
         channel: "email",
         occurredAt: "2026-03-31T18:00:00.000Z",
+        contentFingerprint: null,
         sourceEvidenceId: "sev:gmail-internal-only",
         idempotencyKey: "canonical:gmail:internal-only-1",
         provenance: {

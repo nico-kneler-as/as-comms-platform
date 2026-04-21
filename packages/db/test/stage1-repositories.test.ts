@@ -86,6 +86,7 @@ async function seedSharedInboxRecencyFixture(): Promise<{
         eventType: "communication.email.inbound",
         channel: "email",
         occurredAt: row.lastInboundAt,
+        contentFingerprint: null,
         sourceEvidenceId: inboundSourceEvidenceId,
         idempotencyKey: `canonical:${inboundCanonicalEventId}`,
         provenance: {
@@ -126,6 +127,7 @@ async function seedSharedInboxRecencyFixture(): Promise<{
         eventType: "communication.email.outbound",
         channel: "email",
         occurredAt: row.lastOutboundAt,
+        contentFingerprint: null,
         sourceEvidenceId: outboundSourceEvidenceId,
         idempotencyKey: `canonical:${outboundCanonicalEventId}`,
         provenance: {
@@ -396,6 +398,7 @@ describe("Stage 1 DB repositories", () => {
       eventType: "communication.email.inbound",
       channel: "email",
       occurredAt: "2026-01-01T00:00:00.000Z",
+      contentFingerprint: null,
       sourceEvidenceId: "sev_1",
       idempotencyKey: "canonical:gmail-message-1",
       provenance: {
@@ -490,6 +493,7 @@ describe("Stage 1 DB repositories", () => {
       eventType: "communication.email.outbound",
       channel: "email",
       occurredAt: "2026-01-01T00:10:00.000Z",
+      contentFingerprint: null,
       sourceEvidenceId: "sev_2",
       idempotencyKey: "canonical:gmail-message-2",
       provenance: {
@@ -668,6 +672,7 @@ describe("Stage 1 DB repositories", () => {
       eventType: "communication.email.outbound",
       channel: "email",
       occurredAt: "2026-01-01T00:05:00.000Z",
+      contentFingerprint: null,
       sourceEvidenceId: "sev_invalid",
       idempotencyKey: "canonical:invalid",
       provenance: {
