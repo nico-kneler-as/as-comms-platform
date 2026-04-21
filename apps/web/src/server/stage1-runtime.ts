@@ -8,6 +8,15 @@ import {
   verificationTokens,
   type DatabaseConnection
 } from "@as-comms/db";
+import {
+  createStage1NormalizationService,
+  createStage1PersistenceService,
+  createStage1TimelinePresentationService,
+  type Stage1NormalizationService,
+  type Stage1RepositoryBundle,
+  type Stage1TimelinePresentationService,
+  type Stage2RepositoryBundle
+} from "@as-comms/domain";
 
 // Re-export the Auth.js adapter tables so `apps/web/src/server/auth/index.ts`
 // can hand them to `DrizzleAdapter` without crossing the composition-root
@@ -21,12 +30,6 @@ export const authAdapterTables = {
   sessionsTable: sessions,
   verificationTokensTable: verificationTokens
 } as const;
-import {
-  createStage1TimelinePresentationService,
-  type Stage1RepositoryBundle,
-  type Stage1TimelinePresentationService,
-  type Stage2RepositoryBundle
-} from "@as-comms/domain";
 
 /**
  * Production Stage 1 composition root for `apps/web`.
@@ -48,6 +51,7 @@ export interface Stage1WebRuntime {
   readonly connection: Pick<DatabaseConnection, "db" | "sql"> | null;
   readonly repositories: Stage1RepositoryBundle;
   readonly settings: Stage2RepositoryBundle;
+  readonly normalization: Stage1NormalizationService;
   readonly timelinePresentation: Stage1TimelinePresentationService;
 }
 
@@ -66,11 +70,14 @@ function createRuntime(): Stage1WebRuntime {
   });
   const repositories = createStage1RepositoryBundleFromConnection(connection);
   const settings = createStage2RepositoryBundleFromConnection(connection);
+  const persistence = createStage1PersistenceService(repositories);
+  const normalization = createStage1NormalizationService(persistence);
 
   return {
     connection,
     repositories,
     settings,
+    normalization,
     timelinePresentation: createStage1TimelinePresentationService(repositories)
   };
 }

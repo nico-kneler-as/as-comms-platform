@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type {
   CanonicalEventProvenance,
   IntegrationHealthCategory,
@@ -24,6 +25,7 @@ import {
   contactIdentityKindEnum,
   identityResolutionReasonCodeEnum,
   inboxBucketEnum,
+  pendingOutboundStatusEnum,
   providerEnum,
   recordSourceEnum,
   reviewCaseStatusEnum,
@@ -48,6 +50,12 @@ const updatedAtColumn = timestamp("updated_at", {
 })
   .notNull()
   .defaultNow();
+
+type PendingComposerOutboundAttachmentMetadata = Readonly<{
+  filename: string;
+  size: number;
+  contentType: string;
+}>;
 
 export const sourceEvidenceLog = pgTable(
   "source_evidence_log",
@@ -698,6 +706,61 @@ export const projectAliases = pgTable(
     })
   },
   (table) => [index("project_aliases_project_idx").on(table.projectId)]
+);
+
+export const pendingComposerOutbounds = pgTable(
+  "pending_composer_outbounds",
+  {
+    id: text("id").primaryKey(),
+    fingerprint: text("fingerprint").notNull(),
+    status: pendingOutboundStatusEnum("status").notNull().default("pending"),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    canonicalContactId: text("canonical_contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "restrict" }),
+    projectId: text("project_id").references(() => projectDimensions.projectId, {
+      onDelete: "set null"
+    }),
+    fromAlias: text("from_alias").notNull(),
+    toEmailNormalized: text("to_email_normalized").notNull(),
+    subject: text("subject").notNull(),
+    bodyPlaintext: text("body_plaintext").notNull(),
+    bodySha256: text("body_sha256").notNull(),
+    attachmentMetadataJson: jsonb("attachment_metadata_json")
+      .$type<readonly PendingComposerOutboundAttachmentMetadata[]>()
+      .notNull()
+      .default([]),
+    gmailThreadId: text("gmail_thread_id"),
+    inReplyToRfc822: text("in_reply_to_rfc822"),
+    sentAt: timestamp("sent_at", {
+      mode: "date",
+      withTimezone: true
+    }).notNull(),
+    reconciledEventId: text("reconciled_event_id"),
+    reconciledAt: timestamp("reconciled_at", {
+      mode: "date",
+      withTimezone: true
+    }),
+    failedReason: text("failed_reason"),
+    orphanedAt: timestamp("orphaned_at", {
+      mode: "date",
+      withTimezone: true
+    }),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [
+    index("pending_composer_outbounds_fingerprint_idx").on(table.fingerprint),
+    index("pending_composer_outbounds_contact_status_idx").on(
+      table.canonicalContactId,
+      table.status
+    ),
+    index("pending_composer_outbounds_pending_sweep_idx")
+      .on(table.status, table.sentAt)
+      .where(sql`${table.status} = 'pending'`)
+  ]
 );
 
 export const integrationHealth = pgTable(

@@ -14,6 +14,7 @@ import {
   type Stage1RepositoryBundle,
   defineStage1RepositoryBundle
 } from "../src/repositories.js";
+import type { PendingComposerOutboundRecord } from "../src/pending-outbounds.js";
 import { createStage1TimelinePresentationService } from "../src/timeline.js";
 
 interface SalesforceCommunicationDetailRecord {
@@ -31,6 +32,7 @@ function createRepositoryBundle(input: {
   readonly sourceEvidence: readonly SourceEvidenceRecord[];
   readonly salesforceCommunicationDetails: readonly SalesforceCommunicationDetailRecord[];
   readonly timelineRows: readonly TimelineProjectionRow[];
+  readonly pendingOutbounds?: readonly PendingComposerOutboundRecord[];
 }): Stage1RepositoryBundle {
   const canonicalEventsById = new Map(
     input.canonicalEvents.map((event) => [event.id, event])
@@ -152,6 +154,20 @@ function createRepositoryBundle(input: {
     manualNoteDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record)
+    },
+    pendingOutbounds: {
+      insert: ({ id }) => Promise.resolve(id),
+      findByFingerprint: () => Promise.resolve(null),
+      markConfirmed: () => Promise.resolve(),
+      markFailed: () => Promise.resolve(),
+      markSuperseded: () => Promise.resolve(),
+      sweepOrphans: () => Promise.resolve(0),
+      findForContact: (contactId, { limit }) =>
+        Promise.resolve(
+          (input.pendingOutbounds ?? [])
+            .filter((row) => row.canonicalContactId === contactId)
+            .slice(0, limit)
+        )
     },
     identityResolutionQueue: {
       findById: () => Promise.resolve(null),
@@ -395,5 +411,63 @@ describe("Stage 1 timeline presenter", () => {
         family: "auto_email"
       }
     ]);
+  });
+
+  it("unions pending composer outbounds into the timeline read model", async () => {
+    const outbound = buildSalesforceOutboundEmailEvent({
+      id: "evt_salesforce_one_to_one",
+      sourceEvidenceId: "sev_salesforce_one_to_one",
+      occurredAt: "2026-01-01T00:01:00.000Z",
+      messageKind: "one_to_one",
+      subject: "Existing outbound",
+      snippet: "Existing outbound body"
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [outbound.canonicalEvent],
+      sourceEvidence: [
+        buildSourceEvidence("sev_salesforce_one_to_one", "salesforce-one-to-one")
+      ],
+      salesforceCommunicationDetails: [outbound.detail],
+      timelineRows: [outbound.timelineRow],
+      pendingOutbounds: [
+        {
+          id: "pending:1",
+          fingerprint: "fp:pending:1",
+          status: "pending",
+          actorId: "user:operator",
+          canonicalContactId: "contact_1",
+          projectId: null,
+          fromAlias: "antarctica@example.org",
+          toEmailNormalized: "volunteer@example.org",
+          subject: "Pending outbound",
+          bodyPlaintext: "Pending outbound body",
+          bodySha256: "sha256:pending",
+          attachmentMetadata: [],
+          gmailThreadId: null,
+          inReplyToRfc822: null,
+          sentAt: "2026-01-01T00:02:00.000Z",
+          reconciledEventId: null,
+          reconciledAt: null,
+          failedReason: null,
+          orphanedAt: null,
+          createdAt: "2026-01-01T00:02:00.000Z",
+          updatedAt: "2026-01-01T00:02:00.000Z"
+        }
+      ]
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items.map((item) => item.canonicalEventId)).toEqual([
+      "evt_salesforce_one_to_one",
+      "pending-outbound:pending:1"
+    ]);
+    expect(items[1]).toMatchObject({
+      family: "one_to_one_email",
+      primaryProvider: "manual",
+      subject: "Pending outbound",
+      bodyPreview: "Pending outbound body"
+    });
   });
 });

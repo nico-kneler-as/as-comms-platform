@@ -4,6 +4,7 @@ import type { ContactRecord } from "@as-comms/contracts";
 
 import {
   defineStage1RepositoryBundle,
+  type PendingComposerOutboundRecord,
   type Stage1RepositoryBundle
 } from "../src/index.js";
 
@@ -89,6 +90,16 @@ describe("defineStage1RepositoryBundle", () => {
       manualNoteDetails: {
         listBySourceEvidenceIds: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record)
+      },
+      pendingOutbounds: {
+        insert: ({ id }) => Promise.resolve(id),
+        findByFingerprint: () =>
+          Promise.resolve<PendingComposerOutboundRecord | null>(null),
+        markConfirmed: () => Promise.resolve(),
+        markFailed: () => Promise.resolve(),
+        markSuperseded: () => Promise.resolve(),
+        sweepOrphans: () => Promise.resolve(0),
+        findForContact: () => Promise.resolve([])
       },
       identityResolutionQueue: {
         findById: () => Promise.resolve(null),

@@ -337,6 +337,22 @@ export function computeContentFingerprint(
   return `fp:${sha256Text(key)}`;
 }
 
+export function computePendingComposerOutboundFingerprint(input: {
+  readonly contactId: string;
+  readonly subject: string;
+  readonly bodyPlaintext: string;
+  readonly sentAt: string;
+}): string | null {
+  return computeContentFingerprint({
+    subject: input.subject,
+    occurredAt: input.sentAt,
+    contactId: input.contactId,
+    channel: "email",
+    direction: "outbound",
+    previewText: input.bodyPlaintext,
+  });
+}
+
 export function computeSalesforceSnippetClusterFingerprint(input: {
   readonly subject: string | null;
   readonly snippet: string;

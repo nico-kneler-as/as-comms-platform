@@ -14,6 +14,7 @@ import {
   pollIntegrationHealthJobName,
   pollSalesforceLiveJobName
 } from "../src/orchestration/tasks.js";
+import { sweepPendingOutboundsJobName } from "../src/jobs/sweep-pending-outbounds.js";
 import { createTaskList } from "../src/tasks.js";
 import {
   buildCapturedBatch,
@@ -141,7 +142,8 @@ describe("Stage 1 worker runtime task registration", () => {
       [
         `*/1 * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
         `*/5 * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
-        `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`
+        `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
+        `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`
       ].join("\n")
     );
   });

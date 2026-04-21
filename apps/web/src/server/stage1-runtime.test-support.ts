@@ -34,6 +34,7 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
     connection: null,
     repositories: context.repositories,
     settings: context.settings,
+    normalization: context.normalization,
     timelinePresentation: createStage1TimelinePresentationService(
       context.repositories
     )
