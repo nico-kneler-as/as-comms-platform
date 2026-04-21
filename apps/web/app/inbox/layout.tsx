@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { requireSession } from "@/src/server/auth/session";
 
 import { InboxShell } from "./_components/inbox-shell";
+import { getInboxComposerAliases } from "./_lib/composer-data";
 import { getInboxList } from "./_lib/selectors";
 
 export const metadata = {
@@ -44,10 +45,17 @@ export default async function InboxLayout({
     throw error;
   }
 
-  const list = await getInboxList("all");
+  const [list, composerAliases] = await Promise.all([
+    getInboxList("all"),
+    getInboxComposerAliases(),
+  ]);
 
   return (
-    <InboxShell initialList={list} initialFilterId="all">
+    <InboxShell
+      initialList={list}
+      initialFilterId="all"
+      composerAliases={composerAliases}
+    >
       {children}
     </InboxShell>
   );

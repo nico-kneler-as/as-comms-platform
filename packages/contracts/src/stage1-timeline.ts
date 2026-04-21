@@ -99,7 +99,11 @@ export const oneToOneEmailTimelineItemSchema = timelineItemBaseSchema.extend({
   snippet: z.string(),
   bodyPreview: nullableStringSchema,
   mailbox: nullableStringSchema,
-  threadId: nullableStringSchema
+  threadId: nullableStringSchema,
+  rfc822MessageId: nullableStringSchema.optional(),
+  inReplyToRfc822: nullableStringSchema.optional(),
+  sendStatus: z.enum(["pending", "failed", "orphaned"]).nullable().optional(),
+  attachmentCount: z.number().int().nonnegative().optional()
 });
 export type OneToOneEmailTimelineItem = z.infer<
   typeof oneToOneEmailTimelineItemSchema

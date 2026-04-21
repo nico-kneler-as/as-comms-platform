@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 import type {
   InboxFilterId,
-  InboxListViewModel
+  InboxListViewModel,
+  InboxComposerAliasOption
 } from "../_lib/view-models";
 import { PrimaryIconRail } from "@/app/_components/primary-icon-rail";
 
@@ -10,10 +11,12 @@ import { InboxClientProvider } from "./inbox-client-provider";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import { InboxKeyboardProvider } from "./inbox-keyboard-provider";
 import { InboxList } from "./inbox-list";
+import { InboxWorkspace } from "./inbox-workspace";
 
 interface ShellProps {
   readonly initialList: InboxListViewModel;
   readonly initialFilterId: InboxFilterId;
+  readonly composerAliases: readonly InboxComposerAliasOption[];
   readonly children: ReactNode;
 }
 
@@ -29,10 +32,11 @@ interface ShellProps {
 export function InboxShell({
   initialList,
   initialFilterId,
+  composerAliases,
   children
 }: ShellProps) {
   return (
-    <InboxClientProvider>
+    <InboxClientProvider composerAliases={composerAliases}>
       <InboxKeyboardProvider>
         <InboxFreshnessPoller listFreshness={initialList.freshness} />
         <PrimaryIconRail />
@@ -42,9 +46,7 @@ export function InboxShell({
           initialFilterId={initialFilterId}
         />
 
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {children}
-        </main>
+        <InboxWorkspace>{children}</InboxWorkspace>
       </InboxKeyboardProvider>
     </InboxClientProvider>
   );

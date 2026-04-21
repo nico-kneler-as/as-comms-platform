@@ -19,7 +19,8 @@ import { cn } from "@/lib/utils";
 
 import {
   clearInboxNeedsFollowUpAction,
-  markInboxNeedsFollowUpAction
+  markInboxNeedsFollowUpAction,
+  sendComposerAction
 } from "../actions";
 import { fetchInboxTimelinePage } from "../_lib/client-api";
 import type { InboxDetailViewModel } from "../_lib/view-models";
@@ -31,7 +32,7 @@ import {
 } from "./inbox-client-provider";
 import { SectionLabel } from "@/components/ui/section-label";
 import { LAYOUT, TEXT, TONE, TRANSITION, SPACING } from "@/app/_lib/design-tokens";
-import { InboxComposer } from "./inbox-composer";
+import { InboxComposerReplyBar } from "./inbox-composer";
 import {
   InboxContactRail,
   InboxProjectStatusBadge
@@ -55,7 +56,7 @@ interface DetailProps {
 type ReminderUnit = "hours" | "days" | "weeks";
 
 export function InboxDetail({ detail }: DetailProps) {
-  const { contact, smsEligible } = detail;
+  const { contact } = detail;
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const activeTimelineRequestIdRef = useRef(0);
   const {
@@ -63,7 +64,9 @@ export function InboxDetail({ detail }: DetailProps) {
     setReminder,
     clearReminder,
     isTimelineLoading,
-    setTimelineLoading
+    setTimelineLoading,
+    openReplyDraft,
+    showToast
   } = useInboxClient();
 
   const [railOpen, setRailOpen] = useState(false);
@@ -72,6 +75,8 @@ export function InboxDetail({ detail }: DetailProps) {
   const [reminderUnit, setReminderUnit] = useState<ReminderUnit>("hours");
   const [timelineEntries, setTimelineEntries] = useState(detail.timeline);
   const [timelinePage, setTimelinePage] = useState(detail.timelinePage);
+  const [retryingEntryId, setRetryingEntryId] = useState<string | null>(null);
+  const [isRetryPending, startRetryTransition] = useTransition();
 
   useEffect(() => {
     activeTimelineRequestIdRef.current += 1;
@@ -157,6 +162,7 @@ export function InboxDetail({ detail }: DetailProps) {
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
   const isFollowUp = followUpToggle.value;
   const existingReminder = reminders.get(contact.contactId) ?? null;
+  const composerReplyContext = detail.composerReplyContext;
 
   const handleSetReminder = () => {
     const numeric = Number(reminderValue);
@@ -170,6 +176,63 @@ export function InboxDetail({ detail }: DetailProps) {
     clearReminder(contact.contactId);
     setReminderOpen(false);
   };
+
+  const handleRetryPending = useCallback(
+    (entryId: string) => {
+      const entry = timelineEntries.find((item) => item.id === entryId);
+
+      if (
+        entry?.sendStatus === undefined ||
+        entry.sendStatus === null ||
+        entry.sendStatus === "pending" ||
+        entry.attachmentCount > 0 ||
+        entry.mailbox === null
+      ) {
+        return;
+      }
+
+      const pendingId = entry.id.startsWith("pending-outbound:")
+        ? entry.id.slice("pending-outbound:".length)
+        : null;
+
+      if (pendingId === null) {
+        return;
+      }
+
+      const mailbox = entry.mailbox;
+
+      setRetryingEntryId(entry.id);
+      startRetryTransition(async () => {
+        try {
+          const result = await sendComposerAction({
+            recipient: {
+              kind: "contact",
+              contactId: contact.contactId
+            },
+            alias: mailbox,
+            subject: entry.subject ?? "",
+            bodyPlaintext: entry.body,
+            attachments: [],
+            ...(entry.threadId === null ? {} : { threadId: entry.threadId }),
+            ...(entry.inReplyToRfc822 === null
+              ? {}
+              : { inReplyToRfc822: entry.inReplyToRfc822 }),
+            supersedesPendingId: pendingId
+          });
+
+          if (result.ok) {
+            showToast(`Sent to ${contact.displayName}`, "success");
+          } else {
+            showToast(result.message, "error");
+          }
+        } catch {
+          showToast("We could not retry that email right now.", "error");
+        }
+        setRetryingEntryId(null);
+      });
+    },
+    [contact.contactId, contact.displayName, showToast, timelineEntries]
+  );
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -292,6 +355,8 @@ export function InboxDetail({ detail }: DetailProps) {
               volunteerFirstName={firstName}
               hasMore={timelinePage.hasMore}
               isLoadingOlder={isTimelineLoading}
+              retryingEntryId={isRetryPending ? retryingEntryId : null}
+              onRetryPending={handleRetryPending}
               onLoadOlder={() => {
                 void loadOlderTimeline();
               }}
@@ -300,21 +365,14 @@ export function InboxDetail({ detail }: DetailProps) {
         </div>
 
         <div className="shrink-0">
-          <InboxComposer
-            contactDisplayName={contact.displayName}
-            smsEligible={smsEligible}
-            onOpenChange={(open) => {
-              if (open && timelineScrollRef.current) {
-                setTimeout(() => {
-                  const element = timelineScrollRef.current;
-
-                  if (element) {
-                    element.scrollTop = element.scrollHeight;
-                  }
-                }, 50);
-              }
-            }}
-          />
+          {composerReplyContext ? (
+            <InboxComposerReplyBar
+              contactDisplayName={contact.displayName}
+              onReply={() => {
+                openReplyDraft(composerReplyContext);
+              }}
+            />
+          ) : null}
         </div>
       </section>
 

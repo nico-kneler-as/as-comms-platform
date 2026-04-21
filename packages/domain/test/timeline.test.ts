@@ -100,6 +100,7 @@ function createRepositoryBundle(input: {
       findBySalesforceContactId: () => Promise.resolve(contact),
       listAll: () => Promise.resolve([contact]),
       listByIds: () => Promise.resolve([contact]),
+      searchByQuery: () => Promise.resolve([contact]),
       upsert: (record) => Promise.resolve(record)
     },
     contactIdentities: {
@@ -467,7 +468,9 @@ describe("Stage 1 timeline presenter", () => {
       family: "one_to_one_email",
       primaryProvider: "manual",
       subject: "Pending outbound",
-      bodyPreview: "Pending outbound body"
+      bodyPreview: "Pending outbound body",
+      sendStatus: "pending",
+      attachmentCount: 0
     });
   });
 });

@@ -21,11 +21,13 @@ import {
   getAdjacentFocusedRowContactId,
   getPreferredFocusedRowContactId,
   INBOX_FOLLOW_UP_TOGGLE_SELECTOR,
+  INBOX_LIST_ROOT_SELECTOR,
   INBOX_ROW_SELECTOR,
   INBOX_SEARCH_INPUT_SELECTOR,
   isEditableShortcutTarget,
   isInboxKeyboardPath
 } from "./inbox-keyboard-helpers";
+import { useInboxClient } from "./inbox-client-provider";
 import { XIcon } from "./icons";
 
 interface InboxKeyboardProviderProps {
@@ -41,6 +43,7 @@ const SHORTCUTS = [
   { key: "J", description: "Focus the next conversation" },
   { key: "K", description: "Focus the previous conversation" },
   { key: "Enter", description: "Open the focused conversation" },
+  { key: "C", description: "Open a new draft" },
   { key: "Esc", description: "Return to the inbox list" },
   { key: "F", description: "Toggle Needs Follow-Up" },
   { key: "/", description: "Focus search" },
@@ -55,6 +58,7 @@ export function InboxKeyboardProvider({
   const rootRef = useRef<HTMLDivElement>(null);
   const lastFocusedContactIdRef = useRef<string | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const { composerPane, closeComposer, openNewDraft } = useInboxClient();
 
   const getRowTargets = useCallback((): readonly RowTarget[] => {
     const root = rootRef.current;
@@ -163,6 +167,17 @@ export function InboxKeyboardProvider({
     button.click();
   }, []);
 
+  const isListFocused = useCallback((target: HTMLElement | null): boolean => {
+    const root = rootRef.current;
+    const listRoot = root?.querySelector<HTMLElement>(INBOX_LIST_ROOT_SELECTOR);
+
+    if (!listRoot || target === null) {
+      return false;
+    }
+
+    return listRoot.contains(target);
+  }, []);
+
   useEffect(() => {
     const root = rootRef.current;
 
@@ -233,6 +248,12 @@ export function InboxKeyboardProvider({
           setShortcutsOpen(false);
         }
 
+        if (composerPane.mode !== "closed") {
+          event.preventDefault();
+          closeComposer();
+          return;
+        }
+
         if (pathname !== "/inbox") {
           event.preventDefault();
           router.push("/inbox", { scroll: false });
@@ -252,6 +273,14 @@ export function InboxKeyboardProvider({
         case "k":
           event.preventDefault();
           focusAdjacentRow(-1);
+          return;
+        case "c":
+          if (!isListFocused(target)) {
+            return;
+          }
+
+          event.preventDefault();
+          openNewDraft();
           return;
         case "f":
           event.preventDefault();
@@ -297,13 +326,17 @@ export function InboxKeyboardProvider({
     pathname,
     router,
     shortcutsOpen,
-    triggerFollowUpToggle
+    triggerFollowUpToggle,
+    composerPane.mode,
+    closeComposer,
+    isListFocused,
+    openNewDraft
   ]);
 
   return (
     <div
       ref={rootRef}
-      className="relative flex h-screen w-screen overflow-hidden bg-slate-100 text-slate-900 antialiased"
+      className="relative flex h-dvh w-full overflow-hidden bg-slate-100 text-slate-900 antialiased"
     >
       <Popover open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
         <PopoverAnchor asChild>

@@ -7,8 +7,21 @@ import type {
   InboxTimelineEntryViewModel,
 } from "../_lib/view-models";
 import { autolinkText } from "./_autolink";
-import { ChevronRightIcon, MailIcon, NoteIcon, PhoneIcon } from "./icons";
+import {
+  ChevronRightIcon,
+  LoaderIcon,
+  MailIcon,
+  NoteIcon,
+  PhoneIcon,
+  RefreshCwIcon,
+} from "./icons";
 import { DividerLabel } from "@/components/ui/divider-label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   RADIUS,
@@ -24,6 +37,8 @@ interface TimelineProps {
   readonly hasMore?: boolean;
   readonly isLoadingOlder?: boolean;
   readonly onLoadOlder?: () => void;
+  readonly retryingEntryId?: string | null;
+  readonly onRetryPending?: (entryId: string) => void;
 }
 
 export function InboxTimeline({
@@ -32,6 +47,8 @@ export function InboxTimeline({
   hasMore = false,
   isLoadingOlder = false,
   onLoadOlder,
+  retryingEntryId = null,
+  onRetryPending,
 }: TimelineProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
@@ -87,6 +104,8 @@ export function InboxTimeline({
             entry={entry}
             volunteerFirstName={volunteerFirstName}
             isExpanded={expanded.has(entry.id)}
+            retryingEntryId={retryingEntryId}
+            onRetryPending={onRetryPending}
             onToggle={() => {
               toggle(entry.id);
             }}
@@ -101,6 +120,8 @@ interface EntryProps {
   readonly entry: InboxTimelineEntryViewModel;
   readonly volunteerFirstName: string;
   readonly isExpanded: boolean;
+  readonly retryingEntryId: string | null;
+  readonly onRetryPending: ((entryId: string) => void) | undefined;
   readonly onToggle: () => void;
 }
 
@@ -108,6 +129,8 @@ function TimelineEntry({
   entry,
   volunteerFirstName,
   isExpanded,
+  retryingEntryId,
+  onRetryPending,
   onToggle,
 }: EntryProps) {
   const role = roleForKind(entry.kind);
@@ -116,7 +139,13 @@ function TimelineEntry({
     case "inbound":
       return <InboundBubble entry={entry} />;
     case "outbound":
-      return <OutboundBubble entry={entry} />;
+      return (
+        <OutboundBubble
+          entry={entry}
+          isRetrying={retryingEntryId === entry.id}
+          onRetryPending={onRetryPending}
+        />
+      );
     case "automated":
     case "campaign":
     case "activity":
@@ -180,18 +209,82 @@ function InboundBubble({
 
 function OutboundBubble({
   entry,
+  isRetrying,
+  onRetryPending,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
+  readonly isRetrying: boolean;
+  readonly onRetryPending: ((entryId: string) => void) | undefined;
 }) {
   const isEmail = entry.channel === "email";
   const ChannelIcon = isEmail ? MailIcon : PhoneIcon;
   const body = bodyTextForEntry(entry);
+  const canRetry =
+    (entry.sendStatus === "failed" || entry.sendStatus === "orphaned") &&
+    entry.attachmentCount === 0 &&
+    onRetryPending !== undefined;
+  const retryDisabledReason =
+    entry.attachmentCount > 0
+      ? "Re-attach files and send as a new message"
+      : null;
 
   return (
     <li className="flex w-full flex-col items-end">
       <div
         className={`w-full max-w-2xl ${RADIUS.bubble} rounded-br-sm bg-slate-800 px-4 py-3 ${SHADOW.sm}`}
       >
+        {entry.sendStatus === "pending" ? (
+          <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-1 text-[11px] font-medium text-slate-100">
+            <LoaderIcon className="size-3 animate-spin" />
+            Sending...
+          </div>
+        ) : null}
+
+        {entry.sendStatus === "failed" || entry.sendStatus === "orphaned" ? (
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+            <span>
+              {entry.sendStatus === "failed"
+                ? "Send failed."
+                : "Send stalled before confirmation."}
+            </span>
+            {retryDisabledReason ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 font-medium text-rose-500"
+                    >
+                      <RefreshCwIcon className="size-3" />
+                      Retry
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{retryDisabledReason}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <button
+                type="button"
+                disabled={!canRetry || isRetrying}
+                onClick={() => {
+                  if (canRetry) {
+                    onRetryPending(entry.id);
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 font-medium text-rose-800 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isRetrying ? (
+                  <LoaderIcon className="size-3 animate-spin" />
+                ) : (
+                  <RefreshCwIcon className="size-3" />
+                )}
+                Retry
+              </button>
+            )}
+          </div>
+        ) : null}
+
         {isEmail && entry.subject ? (
           <p className="mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-100">
             {entry.subject}

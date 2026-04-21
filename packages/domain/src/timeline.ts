@@ -209,6 +209,15 @@ function buildPendingTimelineItems(
       bodyPreview: row.bodyPlaintext,
       mailbox: row.fromAlias,
       threadId: row.gmailThreadId,
+      rfc822MessageId: null,
+      inReplyToRfc822: row.inReplyToRfc822,
+      sendStatus:
+        row.status === "pending" ||
+        row.status === "failed" ||
+        row.status === "orphaned"
+          ? row.status
+          : null,
+      attachmentCount: row.attachmentMetadata.length,
     }))
   );
 }
@@ -238,6 +247,7 @@ export interface Stage1TimelinePresentationService {
     readonly nextBeforeSortKey: string | null;
     readonly total: number;
   }>;
+  findLastInboundAliasForContact(contactId: string): Promise<string | null>;
 }
 
 function uniqueStrings(values: readonly (string | null | undefined)[]): string[] {
@@ -463,7 +473,11 @@ function buildTimelineItemsFromRows(input: {
           threadId:
             gmailDetail?.gmailThreadId ??
             provenance.threadRef?.providerThreadId ??
-            null
+            null,
+          rfc822MessageId: gmailDetail?.rfc822MessageId ?? null,
+          inReplyToRfc822: null,
+          sendStatus: null,
+          attachmentCount: 0
         });
         break;
       case "one_to_one_sms":
@@ -569,6 +583,41 @@ export function createStage1TimelinePresentationService(
           pageItemsDescending[pageItemsDescending.length - 1]?.sortKey ?? null,
         total: mergedItems.length
       };
+    },
+
+    async findLastInboundAliasForContact(contactId) {
+      const canonicalEvents =
+        await repositories.canonicalEvents.listByContactId(contactId);
+      const inboundEmailEvents = canonicalEvents
+        .filter((event) => event.eventType === "communication.email.inbound")
+        .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+
+      if (inboundEmailEvents.length === 0) {
+        return null;
+      }
+
+      const gmailDetails =
+        await repositories.gmailMessageDetails.listBySourceEvidenceIds(
+          uniqueStrings(
+            inboundEmailEvents.map((event) => event.sourceEvidenceId)
+          )
+        );
+      const aliasBySourceEvidenceId = new Map(
+        gmailDetails.map((detail) => [
+          detail.sourceEvidenceId,
+          detail.projectInboxAlias
+        ])
+      );
+
+      for (const event of inboundEmailEvents) {
+        const alias = aliasBySourceEvidenceId.get(event.sourceEvidenceId);
+
+        if (typeof alias === "string" && alias.trim().length > 0) {
+          return alias;
+        }
+      }
+
+      return null;
     }
   };
 }

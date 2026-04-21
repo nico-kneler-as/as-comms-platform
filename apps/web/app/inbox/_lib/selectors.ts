@@ -17,6 +17,7 @@ import type {
   InboxAvatarTone,
   InboxBucket,
   InboxChannel,
+  InboxComposerReplyContext,
   InboxContactSummaryViewModel,
   InboxDetailViewModel,
   InboxFilterId,
@@ -1318,6 +1319,23 @@ function timelineSubject(item: TimelineItem): string | null {
   }
 }
 
+const REPLY_SUBJECT_PREFIX_PATTERN =
+  /^\s*(?:(?:re|fwd?)\s*:\s*)+/i;
+
+function buildReplySubject(subject: string | null): string {
+  const normalizedSubject = normalizeInlineText(subject);
+
+  if (normalizedSubject === null) {
+    return "";
+  }
+
+  const trimmedSubject = normalizeInlineText(
+    normalizedSubject.replace(REPLY_SUBJECT_PREFIX_PATTERN, "")
+  );
+
+  return trimmedSubject === null ? "" : `Re: ${trimmedSubject}`;
+}
+
 function timelineBody(item: TimelineItem): string {
   switch (item.family) {
     case "one_to_one_email":
@@ -1450,6 +1468,54 @@ function buildTimelineEntry(input: {
     channel: timelineChannel(input.item),
     isUnread,
     isPreview: isPreviewTimelineItem(input.item),
+    mailbox:
+      input.item.family === "one_to_one_email" ? input.item.mailbox ?? null : null,
+    threadId:
+      input.item.family === "one_to_one_email" ? input.item.threadId ?? null : null,
+    rfc822MessageId:
+      input.item.family === "one_to_one_email"
+        ? input.item.rfc822MessageId ?? null
+        : null,
+    inReplyToRfc822:
+      input.item.family === "one_to_one_email"
+        ? input.item.inReplyToRfc822 ?? null
+        : null,
+    sendStatus:
+      input.item.family === "one_to_one_email"
+        ? input.item.sendStatus ?? null
+        : null,
+    attachmentCount:
+      input.item.family === "one_to_one_email"
+        ? input.item.attachmentCount ?? 0
+        : 0,
+  };
+}
+
+function buildComposerReplyContext(input: {
+  readonly contact: ContactRecord;
+  readonly timelineItems: readonly TimelineItem[];
+  readonly defaultAlias: string | null;
+}): InboxComposerReplyContext | null {
+  const latestInboundEmail = [...input.timelineItems]
+    .reverse()
+    .find(
+      (
+        item
+      ): item is Extract<TimelineItem, { family: "one_to_one_email" }> =>
+        item.family === "one_to_one_email" && item.direction === "inbound"
+    );
+
+  if (latestInboundEmail === undefined) {
+    return null;
+  }
+
+  return {
+    contactId: input.contact.id,
+    contactDisplayName: input.contact.displayName,
+    subject: buildReplySubject(latestInboundEmail.subject),
+    threadId: latestInboundEmail.threadId ?? null,
+    inReplyToRfc822: latestInboundEmail.rfc822MessageId ?? null,
+    defaultAlias: input.defaultAlias,
   };
 }
 
@@ -2083,7 +2149,15 @@ export async function getInboxDetail(
     },
   });
 
+  const runtime = await getStage1WebRuntime();
   const referenceNowIso = new Date().toISOString();
+  const composerReplyContext = buildComposerReplyContext({
+    contact: cachedData.contact,
+    timelineItems: cachedData.timelineItems,
+    defaultAlias: await runtime.timelinePresentation.findLastInboundAliasForContact(
+      contactId
+    ),
+  });
 
   return {
     contact: buildContactSummary({
@@ -2106,6 +2180,7 @@ export async function getInboxDetail(
     bucket: mapBucket(cachedData.inboxProjection.bucket),
     needsFollowUp: cachedData.inboxProjection.needsFollowUp,
     smsEligible: cachedData.contact.primaryPhone !== null,
+    composerReplyContext,
     timelinePage: cachedData.timelinePage,
     freshness: cachedData.freshness,
   };

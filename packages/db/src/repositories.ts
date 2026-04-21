@@ -788,6 +788,34 @@ function createStage1RepositoriesInternal(
         return rows.map(mapContactRow);
       },
 
+      async searchByQuery(input) {
+        const normalizedQuery = input.query.trim().toLowerCase();
+
+        if (normalizedQuery.length < 2) {
+          return [];
+        }
+
+        const limit = Math.max(1, Math.min(input.limit, 8));
+        const pattern = `%${normalizedQuery}%`;
+        const rows = await db
+          .select()
+          .from(contacts)
+          .where(
+            or(
+              sql`lower(${contacts.displayName}) like ${pattern}`,
+              sql`lower(coalesce(${contacts.primaryEmail}, '')) like ${pattern}`
+            )
+          )
+          .orderBy(
+            sql`case when lower(${contacts.displayName}) like ${pattern} then 0 else 1 end`,
+            asc(contacts.displayName),
+            asc(contacts.id)
+          )
+          .limit(limit);
+
+        return rows.map(mapContactRow);
+      },
+
       async upsert(record) {
         const values = mapContactToInsert(record);
         const [row] = await db

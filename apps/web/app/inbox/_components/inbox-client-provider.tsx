@@ -9,27 +9,25 @@ import {
   type ReactNode
 } from "react";
 
-/**
- * Prototype-local client state shared across the Inbox list column and
- * Detail workspace. These are intentionally ephemeral UI concerns only.
- *
- * Extended to cover every interactive state the UI needs:
- *   - reminders
- *   - search query + results
- *   - composer status (idle → saving → saved / error → sending → sent / failed)
- *   - AI draft lifecycle (idle → generating → inserted → edited / discarded)
- *   - queue & timeline loading flags
- */
+import type {
+  InboxComposerAliasOption,
+  InboxComposerReplyContext
+} from "../_lib/view-models";
+import {
+  reduceComposerPane,
+  type ComposerPaneState
+} from "../_lib/composer-ui";
 
-// ---------- Reminder ----------
+/**
+ * Ephemeral Inbox UI state shared across the list column and detail workspace.
+ * This stays strictly session-local by design.
+ */
 
 export interface Reminder {
   readonly value: number;
   readonly unit: "hours" | "days" | "weeks";
   readonly firesAt: string;
 }
-
-// ---------- Composer status ----------
 
 export type ComposerStatus =
   | "idle"
@@ -41,11 +39,9 @@ export type ComposerStatus =
   | "send-failure";
 
 export interface ComposerValidationError {
-  readonly field: "subject" | "body" | "recipient";
+  readonly field: "subject" | "body" | "recipient" | "alias" | "attachments";
   readonly message: string;
 }
-
-// ---------- AI draft lifecycle ----------
 
 export type AiDraftStatus =
   | "idle"
@@ -71,8 +67,6 @@ const INITIAL_AI_DRAFT: AiDraftState = {
   errorMessage: null
 };
 
-// ---------- Search ----------
-
 export interface SearchState {
   readonly query: string;
   readonly isActive: boolean;
@@ -85,33 +79,45 @@ const INITIAL_SEARCH: SearchState = {
   resultContactIds: []
 };
 
-// ---------- Context shape ----------
+export interface InboxToastState {
+  readonly id: number;
+  readonly message: string;
+  readonly tone: "success" | "error";
+}
 
 interface InboxClientState {
-  // Reminders
   readonly reminders: ReadonlyMap<string, Reminder>;
   readonly setReminder: (contactId: string, reminder: Reminder) => void;
   readonly clearReminder: (contactId: string) => void;
 
-  // Search
   readonly search: SearchState;
   readonly setSearchQuery: (query: string) => void;
   readonly setSearchResults: (contactIds: readonly string[]) => void;
   readonly clearSearch: () => void;
 
-  // Loading flags
   readonly isQueueLoading: boolean;
   readonly setQueueLoading: (loading: boolean) => void;
   readonly isTimelineLoading: boolean;
   readonly setTimelineLoading: (loading: boolean) => void;
 
-  // Composer status
+  readonly composerAliases: readonly InboxComposerAliasOption[];
+  readonly composerPane: ComposerPaneState;
+  readonly openNewDraft: () => void;
+  readonly openReplyDraft: (replyContext: InboxComposerReplyContext) => void;
+  readonly closeComposer: () => void;
+
   readonly composerStatus: ComposerStatus;
   readonly composerErrors: readonly ComposerValidationError[];
   readonly setComposerStatus: (status: ComposerStatus) => void;
   readonly setComposerErrors: (errors: readonly ComposerValidationError[]) => void;
 
-  // AI drafting
+  readonly toast: InboxToastState | null;
+  readonly showToast: (
+    message: string,
+    tone?: InboxToastState["tone"]
+  ) => void;
+  readonly clearToast: () => void;
+
   readonly aiDraft: AiDraftState;
   readonly startAiGeneration: (prompt: string) => void;
   readonly insertAiDraft: (text: string) => void;
@@ -123,51 +129,62 @@ interface InboxClientState {
   readonly resetAiDraft: () => void;
 }
 
-const InboxClientContext = createContext<InboxClientState | null>(
-  null
-);
+const InboxClientContext = createContext<InboxClientState | null>(null);
 
 export function InboxClientProvider({
-  children
+  children,
+  composerAliases
 }: {
   readonly children: ReactNode;
+  readonly composerAliases: readonly InboxComposerAliasOption[];
 }) {
-  // Reminders
   const [reminders, setReminders] = useState<ReadonlyMap<string, Reminder>>(
     () => new Map<string, Reminder>()
   );
+  const [search, setSearch] = useState(INITIAL_SEARCH);
+  const [isQueueLoading, setQueueLoading] = useState(false);
+  const [isTimelineLoading, setTimelineLoading] = useState(false);
+  const [composerPane, setComposerPane] = useState<ComposerPaneState>({
+    mode: "closed"
+  });
+  const [composerStatus, setComposerStatus] = useState<ComposerStatus>("idle");
+  const [composerErrors, setComposerErrors] = useState<
+    readonly ComposerValidationError[]
+  >([]);
+  const [toast, setToast] = useState<InboxToastState | null>(null);
+  const [aiDraft, setAiDraft] = useState(INITIAL_AI_DRAFT);
 
   const setReminder = useCallback((contactId: string, reminder: Reminder) => {
-    setReminders((prev) => {
-      const next = new Map(prev);
+    setReminders((previous) => {
+      const next = new Map(previous);
       next.set(contactId, reminder);
       return next;
     });
   }, []);
 
   const clearReminder = useCallback((contactId: string) => {
-    setReminders((prev) => {
-      if (!prev.has(contactId)) return prev;
-      const next = new Map(prev);
+    setReminders((previous) => {
+      if (!previous.has(contactId)) {
+        return previous;
+      }
+
+      const next = new Map(previous);
       next.delete(contactId);
       return next;
     });
   }, []);
 
-  // Search
-  const [search, setSearch] = useState(INITIAL_SEARCH);
-
   const setSearchQuery = useCallback((query: string) => {
-    setSearch((prev) => ({
-      ...prev,
+    setSearch((previous) => ({
+      ...previous,
       query,
       isActive: query.length > 0
     }));
   }, []);
 
   const setSearchResults = useCallback((contactIds: readonly string[]) => {
-    setSearch((prev) => ({
-      ...prev,
+    setSearch((previous) => ({
+      ...previous,
       resultContactIds: contactIds
     }));
   }, []);
@@ -176,18 +193,54 @@ export function InboxClientProvider({
     setSearch(INITIAL_SEARCH);
   }, []);
 
-  // Loading flags
-  const [isQueueLoading, setQueueLoading] = useState(false);
-  const [isTimelineLoading, setTimelineLoading] = useState(false);
+  const openNewDraft = useCallback(() => {
+    setComposerPane((previous) =>
+      reduceComposerPane(previous, {
+        type: "open-new-draft"
+      })
+    );
+    setComposerStatus("idle");
+    setComposerErrors([]);
+  }, []);
 
-  // Composer status
-  const [composerStatus, setComposerStatus] = useState<ComposerStatus>("idle");
-  const [composerErrors, setComposerErrors] = useState<
-    readonly ComposerValidationError[]
-  >([]);
+  const openReplyDraft = useCallback(
+    (replyContext: InboxComposerReplyContext) => {
+      setComposerPane((previous) =>
+        reduceComposerPane(previous, {
+          type: "open-reply",
+          replyContext
+        })
+      );
+      setComposerStatus("idle");
+      setComposerErrors([]);
+    },
+    []
+  );
 
-  // AI draft lifecycle
-  const [aiDraft, setAiDraft] = useState(INITIAL_AI_DRAFT);
+  const closeComposer = useCallback(() => {
+    setComposerPane((previous) =>
+      reduceComposerPane(previous, {
+        type: "close"
+      })
+    );
+    setComposerStatus("idle");
+    setComposerErrors([]);
+  }, []);
+
+  const showToast = useCallback(
+    (message: string, tone: InboxToastState["tone"] = "success") => {
+      setToast({
+        id: Date.now(),
+        message,
+        tone
+      });
+    },
+    []
+  );
+
+  const clearToast = useCallback(() => {
+    setToast(null);
+  }, []);
 
   const startAiGeneration = useCallback((prompt: string) => {
     setAiDraft({
@@ -199,23 +252,23 @@ export function InboxClientProvider({
   }, []);
 
   const insertAiDraft = useCallback((text: string) => {
-    setAiDraft((prev) => ({
-      ...prev,
+    setAiDraft((previous) => ({
+      ...previous,
       status: "inserted",
       generatedText: text
     }));
   }, []);
 
   const markAiDraftEdited = useCallback(() => {
-    setAiDraft((prev) => ({
-      ...prev,
+    setAiDraft((previous) => ({
+      ...previous,
       status: "edited-after-generation"
     }));
   }, []);
 
   const discardAiDraft = useCallback(() => {
-    setAiDraft((prev) => ({
-      ...prev,
+    setAiDraft((previous) => ({
+      ...previous,
       status: "discarded",
       generatedText: ""
     }));
@@ -231,16 +284,16 @@ export function InboxClientProvider({
   }, []);
 
   const setAiUnavailable = useCallback(() => {
-    setAiDraft((prev) => ({
-      ...prev,
+    setAiDraft((previous) => ({
+      ...previous,
       status: "unavailable",
       errorMessage: "AI drafting is currently unavailable."
     }));
   }, []);
 
   const setAiError = useCallback((message: string) => {
-    setAiDraft((prev) => ({
-      ...prev,
+    setAiDraft((previous) => ({
+      ...previous,
       status: "error",
       errorMessage: message
     }));
@@ -263,10 +316,18 @@ export function InboxClientProvider({
       setQueueLoading,
       isTimelineLoading,
       setTimelineLoading,
+      composerAliases,
+      composerPane,
+      openNewDraft,
+      openReplyDraft,
+      closeComposer,
       composerStatus,
       composerErrors,
       setComposerStatus,
       setComposerErrors,
+      toast,
+      showToast,
+      clearToast,
       aiDraft,
       startAiGeneration,
       insertAiDraft,
@@ -287,8 +348,16 @@ export function InboxClientProvider({
       clearSearch,
       isQueueLoading,
       isTimelineLoading,
+      composerAliases,
+      composerPane,
+      openNewDraft,
+      openReplyDraft,
+      closeComposer,
       composerStatus,
       composerErrors,
+      toast,
+      showToast,
+      clearToast,
       aiDraft,
       startAiGeneration,
       insertAiDraft,
@@ -310,10 +379,10 @@ export function InboxClientProvider({
 
 export function useInboxClient(): InboxClientState {
   const value = useContext(InboxClientContext);
+
   if (!value) {
-    throw new Error(
-      "useInboxClient must be used inside InboxClientProvider"
-    );
+    throw new Error("useInboxClient must be used inside InboxClientProvider");
   }
+
   return value;
 }
