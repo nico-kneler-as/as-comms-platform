@@ -10,6 +10,12 @@ import {
   createStage1NormalizationService,
   createStage1PersistenceService
 } from "@as-comms/domain";
+import {
+  createGmailCapturePort,
+  createMailchimpCapturePort,
+  createSalesforceCapturePort,
+  createSimpleTextingCapturePort
+} from "@as-comms/integrations";
 
 import {
   buildSafeRuntimeConfigSummary,
@@ -31,6 +37,7 @@ import {
 import {
   runBackfillSalesforceCommunicationDetailsCommand
 } from "./backfill-salesforce-communication-details.js";
+import { reconcileIdentityQueue } from "./reconcile-identity-queue.js";
 import {
   runDedupHistoricalLedgerCommand
 } from "./dedup-historical-ledger.js";
@@ -54,6 +61,30 @@ function readConnectionString(env: NodeJS.ProcessEnv): string {
   }
 
   return connectionString;
+}
+
+function rejectUnconfiguredProvider(providerLabel: string): Promise<never> {
+  return Promise.reject(
+    new Error(`${providerLabel} capture is not configured for this worker runtime.`)
+  );
+}
+
+function readOptionalLimitArg(args: readonly string[]): number | undefined {
+  const inlineLimit = args.find((arg) => arg.startsWith("--limit="));
+
+  if (inlineLimit !== undefined) {
+    const parsed = Number.parseInt(inlineLimit.split("=")[1] ?? "", 10);
+
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error("Flag --limit must be a positive integer.");
+    }
+
+    return parsed;
+  }
+
+  const flags = parseCliFlags(args);
+  const parsed = readOptionalIntegerFlag(flags, "limit", 0);
+  return parsed === 0 ? undefined : parsed;
 }
 
 function runCheckConfig(): void {
@@ -234,6 +265,63 @@ async function runInspect(args: readonly string[]): Promise<void> {
   }
 }
 
+async function runReconcileIdentityQueue(args: readonly string[]): Promise<void> {
+  const dryRun = !args.includes("--execute");
+  const limit = readOptionalLimitArg(args);
+  const config = readWorkerConfig({
+    ...process.env,
+    WORKER_BOOT_MODE: "run"
+  });
+
+  if (config === null) {
+    throw new Error("Expected a validated worker config.");
+  }
+
+  const connection = createDatabaseConnection({
+    connectionString: readConnectionString(process.env)
+  });
+
+  try {
+    const repositories = createStage1RepositoryBundleFromConnection(connection);
+    const report = await reconcileIdentityQueue({
+      db: connection.db,
+      repositories,
+      capture: {
+        gmail: createGmailCapturePort(config.capture.gmail),
+        salesforce: createSalesforceCapturePort(config.capture.salesforce),
+        simpleTexting:
+          config.capture.simpleTexting === undefined
+            ? {
+                captureHistoricalBatch: () =>
+                  rejectUnconfiguredProvider("SimpleTexting"),
+                captureLiveBatch: () =>
+                  rejectUnconfiguredProvider("SimpleTexting")
+              }
+            : createSimpleTextingCapturePort(config.capture.simpleTexting),
+        mailchimp:
+          config.capture.mailchimp === undefined
+            ? {
+                captureHistoricalBatch: () =>
+                  rejectUnconfiguredProvider("Mailchimp"),
+                captureTransitionBatch: () =>
+                  rejectUnconfiguredProvider("Mailchimp")
+              }
+            : createMailchimpCapturePort(config.capture.mailchimp)
+      },
+      gmailHistoricalReplay: {
+        liveAccount: config.launchScope.gmail.liveAccount,
+        projectInboxAliases: [...config.launchScope.gmail.projectInboxAliases]
+      },
+      dryRun,
+      ...(limit === undefined ? {} : { limit })
+    });
+
+    console.log("Final report:", report);
+  } finally {
+    await closeDatabaseConnection(connection);
+  }
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
 
@@ -256,9 +344,12 @@ async function main(): Promise<void> {
     case "dedup-historical-ledger":
       await runDedupHistoricalLedgerCommand(rest, process.env);
       return;
+    case "reconcile-identity-queue":
+      await runReconcileIdentityQueue(rest);
+      return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, dedup-historical-ledger."
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, dedup-historical-ledger, reconcile-identity-queue."
       );
   }
 }

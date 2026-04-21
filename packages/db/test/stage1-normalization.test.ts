@@ -302,6 +302,270 @@ describe("Stage 1 normalization service", () => {
     );
   });
 
+  it("creates a new canonical contact for an unmatched email and writes the canonical event", async () => {
+    const context = await createTestStage1Context();
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_unknown_email_1",
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-unknown-email-1",
+        receivedAt: "2026-01-01T00:05:00.000Z",
+        occurredAt: "2026-01-01T00:04:00.000Z",
+        payloadRef: "payloads/gmail/gmail-unknown-email-1.json",
+        idempotencyKey: "gmail:message:gmail-unknown-email-1",
+        checksum: "checksum-unknown-email-1"
+      },
+      canonicalEvent: {
+        id: "evt_unknown_email_1",
+        eventType: "communication.email.inbound",
+        occurredAt: "2026-01-01T00:04:00.000Z",
+        idempotencyKey: "canonical:gmail-unknown-email-1",
+        summary: "Inbound email received",
+        snippet: "Hello from a new external partner"
+      },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-unknown-email-1",
+        direction: "inbound"
+      }),
+      identity: {
+        salesforceContactId: null,
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["fresh-partner@example.org"],
+        normalizedPhones: []
+      },
+      supportingSources: [],
+      gmailMessageDetail: {
+        sourceEvidenceId: "sev_unknown_email_1",
+        providerRecordId: "gmail-unknown-email-1",
+        gmailThreadId: "thread-unknown-email-1",
+        rfc822MessageId: "<gmail-unknown-email-1@example.org>",
+        direction: "inbound",
+        subject: "New partner outreach",
+        snippetClean: "Hello from a new external partner",
+        bodyTextPreview: "Hello from a new external partner",
+        capturedMailbox: "volunteers@adventurescientists.org",
+        projectInboxAlias: null
+      }
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome === "applied") {
+      expect(result.canonicalEvent.contactId).toBe(
+        "contact:email:fresh-partner@example.org"
+      );
+      expect(result.identityCase).toBeNull();
+    }
+
+    await expect(
+      context.repositories.contacts.findById(
+        "contact:email:fresh-partner@example.org"
+      )
+    ).resolves.toMatchObject({
+      id: "contact:email:fresh-partner@example.org",
+      salesforceContactId: null,
+      displayName: "fresh-partner@example.org",
+      primaryEmail: "fresh-partner@example.org",
+      primaryPhone: null
+    });
+    await expect(
+      context.repositories.contactIdentities.listByContactId(
+        "contact:email:fresh-partner@example.org"
+      )
+    ).resolves.toEqual([
+      expect.objectContaining({
+        contactId: "contact:email:fresh-partner@example.org",
+        kind: "email",
+        normalizedValue: "fresh-partner@example.org",
+        isPrimary: true,
+        source: "gmail"
+      })
+    ]);
+    await expect(
+      context.repositories.canonicalEvents.listByContactId(
+        "contact:email:fresh-partner@example.org"
+      )
+    ).resolves.toHaveLength(1);
+  });
+
+  it("creates a new canonical contact for an unmatched phone-only identity and writes the canonical event", async () => {
+    const context = await createTestStage1Context();
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_unknown_phone_1",
+        provider: "simpletexting",
+        providerRecordType: "conversation_message",
+        providerRecordId: "sms-unknown-phone-1",
+        receivedAt: "2026-01-01T00:05:00.000Z",
+        occurredAt: "2026-01-01T00:04:00.000Z",
+        payloadRef: "payloads/simpletexting/sms-unknown-phone-1.json",
+        idempotencyKey: "simpletexting:conversation_message:sms-unknown-phone-1",
+        checksum: "checksum-unknown-phone-1"
+      },
+      canonicalEvent: {
+        id: "evt_unknown_phone_1",
+        eventType: "communication.sms.inbound",
+        occurredAt: "2026-01-01T00:04:00.000Z",
+        idempotencyKey: "canonical:sms-unknown-phone-1",
+        summary: "Inbound SMS received",
+        snippet: "Text from a new phone number"
+      },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "conversation_message",
+        sourceRecordId: "sms-unknown-phone-1",
+        direction: "inbound"
+      }),
+      identity: {
+        salesforceContactId: null,
+        volunteerIdPlainValues: [],
+        normalizedEmails: [],
+        normalizedPhones: ["+15555550999"]
+      },
+      supportingSources: [],
+      simpleTextingMessageDetail: {
+        sourceEvidenceId: "sev_unknown_phone_1",
+        providerRecordId: "sms-unknown-phone-1",
+        direction: "inbound",
+        messageKind: "one_to_one",
+        messageTextPreview: "Text from a new phone number",
+        normalizedPhone: "+15555550999",
+        campaignId: null,
+        campaignName: null,
+        providerThreadId: "thread-sms-unknown-phone-1",
+        threadKey: "thread-sms-unknown-phone-1"
+      }
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome === "applied") {
+      expect(result.canonicalEvent.contactId).toBe("contact:phone:+15555550999");
+      expect(result.identityCase).toBeNull();
+    }
+
+    await expect(
+      context.repositories.contacts.findById("contact:phone:+15555550999")
+    ).resolves.toMatchObject({
+      id: "contact:phone:+15555550999",
+      salesforceContactId: null,
+      displayName: "+15555550999",
+      primaryEmail: null,
+      primaryPhone: "+15555550999"
+    });
+    await expect(
+      context.repositories.contactIdentities.listByContactId(
+        "contact:phone:+15555550999"
+      )
+    ).resolves.toEqual([
+      expect.objectContaining({
+        contactId: "contact:phone:+15555550999",
+        kind: "phone",
+        normalizedValue: "+15555550999",
+        isPrimary: true,
+        source: "simpletexting"
+      })
+    ]);
+  });
+
+  it("resolves an unmatched Salesforce-less email to the existing canonical contact when the identity already exists", async () => {
+    const context = await seedContactWithEmail("known@example.org", {
+      contactId: "contact_known_email",
+      displayName: "Known Contact"
+    });
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_known_email_1",
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-known-email-1",
+        receivedAt: "2026-01-01T00:05:00.000Z",
+        occurredAt: "2026-01-01T00:04:00.000Z",
+        payloadRef: "payloads/gmail/gmail-known-email-1.json",
+        idempotencyKey: "gmail:message:gmail-known-email-1",
+        checksum: "checksum-known-email-1"
+      },
+      canonicalEvent: {
+        id: "evt_known_email_1",
+        eventType: "communication.email.inbound",
+        occurredAt: "2026-01-01T00:04:00.000Z",
+        idempotencyKey: "canonical:gmail-known-email-1",
+        summary: "Inbound email received",
+        snippet: "Known contact checking in"
+      },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-known-email-1",
+        direction: "inbound"
+      }),
+      identity: {
+        salesforceContactId: null,
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["known@example.org"],
+        normalizedPhones: []
+      },
+      supportingSources: []
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome === "applied") {
+      expect(result.canonicalEvent.contactId).toBe("contact_known_email");
+    }
+
+    await expect(context.repositories.contacts.listAll()).resolves.toHaveLength(1);
+    await expect(
+      context.repositories.canonicalEvents.listByContactId("contact_known_email")
+    ).resolves.toHaveLength(1);
+  });
+
+  it("still opens identity_missing_anchor when a Salesforce Contact ID is present but the anchored contact does not exist", async () => {
+    const context = await createTestStage1Context();
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_missing_sf_anchor_1",
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-missing-sf-anchor-1",
+        receivedAt: "2026-01-01T00:05:00.000Z",
+        occurredAt: "2026-01-01T00:04:00.000Z",
+        payloadRef: "payloads/gmail/gmail-missing-sf-anchor-1.json",
+        idempotencyKey: "gmail:message:gmail-missing-sf-anchor-1",
+        checksum: "checksum-missing-sf-anchor-1"
+      },
+      canonicalEvent: {
+        id: "evt_missing_sf_anchor_1",
+        eventType: "communication.email.inbound",
+        occurredAt: "2026-01-01T00:04:00.000Z",
+        idempotencyKey: "canonical:gmail-missing-sf-anchor-1",
+        summary: "Inbound email received",
+        snippet: "Anchored contact is missing"
+      },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-missing-sf-anchor-1",
+        direction: "inbound"
+      }),
+      identity: {
+        salesforceContactId: "003-missing-anchor",
+        volunteerIdPlainValues: [],
+        normalizedEmails: [],
+        normalizedPhones: []
+      },
+      supportingSources: []
+    });
+
+    expect(result.outcome).toBe("needs_identity_review");
+    if (result.outcome === "needs_identity_review") {
+      expect(result.identityCase.reasonCode).toBe("identity_missing_anchor");
+      expect(result.identityCase.anchoredContactId).toBeNull();
+    }
+
+    await expect(context.repositories.contacts.listAll()).resolves.toHaveLength(0);
+  });
+
   it("opens identity review instead of guessing when multiple contacts share one normalized email", async () => {
     const context = await seedContactWithEmail("shared@example.org", {
       contactId: "contact_1",
