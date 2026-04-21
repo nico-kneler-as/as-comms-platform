@@ -9,12 +9,12 @@
 
 - Stage 4 is a **human-in-the-loop drafting assistant**, not an autonomous agent.
 - Implementation is a **single backend orchestration service** living in the restart repo, not a separate microservice.
-- OpenAI is the model provider; the product app owns orchestration, grounding order, safety, fallback, and explainability.
+- **Anthropic (Claude Sonnet 4.6)** is the draft-generation model provider; OpenAI `text-embedding-3-small` is the embedding provider for tier-5 memory similarity (dual-vendor accepted for MVP). The product app owns orchestration, grounding order, safety, fallback, and explainability.
 - **Strict grounding order** (top wins): general instructions → project-specific instructions → approved knowledge → current conversation/contact/project context → reusable approved-reply memory.
 - **One LLM call** by default; a second only for reprompt or hard cases. Deterministic fallback is required.
 - Visible grounding is a **product contract**, not a nice-to-have.
 - Composer landing is a prerequisite (see `D-026`): Stage 4 plugs into a Composer that can already send real messages.
-- Cost ~10–15¢/response is acceptable; optimize for trust, quality, debuggability over marginal cost.
+- Cost ~10–15¢/response is acceptable; daily spend is soft-capped at **$20/day** org-wide via `AI_DAILY_CAP_USD` (warn-only, not a hard block). Optimize for trust, quality, debuggability over marginal cost.
 
 ## Locked
 
@@ -56,7 +56,7 @@ Every draft request composes a grounding bundle in this fixed priority order. Hi
   - general instructions: 1 page (always)
   - project-specific instructions: 1 page (if a project context resolves)
   - approved knowledge: up to 5 relevant chunks
-  - context: full current thread timeline (bounded by contact's recent history) + project metadata
+  - context: last 20 canonical events for the contact OR 90 days (whichever is smaller); each event body truncated to ~500 characters; target inbound always included in full; no inline images / attachments passed into the prompt; plus project metadata (alias, project name, active state)
   - reusable approved-reply memory: up to 3 most similar approved replies
 
 ## Runtime Pipeline
@@ -170,8 +170,17 @@ The orchestration service returns a response that the Composer renders directly:
 - `draft` — text body (or empty for `recommend_handoff` / `ask_clarification` modes)
 - `mode` — one of `draft` / `ask_clarification` / `recommend_handoff` / `deterministic_fallback`
 - `grounding` — ordered source list for the explainability panel
-- `warnings` — non-blocking validator warnings
+- `warnings` — typed warnings array; each entry carries a `code` drawn from `{provider_timeout, provider_rate_limited, over_budget, validation_blocked, grounding_empty, notion_stale, budget_warn}` plus a human-readable `message`
+- `cost_estimate_usd` — estimated cost of this call; feeds the daily-spend rollup for the $20/day cap
+- `provider_status` — one of `ok` / `degraded` / `unavailable` for the draft-generation provider
 - `draftId` — stable ID for later memory capture linking
+
+Failure-mode rules:
+
+- `over_budget` — emit a `budget_warn` warning, still produce a draft; do NOT hard-block the operator
+- `grounding_empty` — still produce a draft with a `grounding_empty` warning surfaced above it ("not enough context for this project yet")
+- `notion_stale` — never blocks drafting; surfaces as an informational warning only
+- `provider_timeout` / `provider_rate_limited` / `validation_blocked` — collapse into `mode = deterministic_fallback` with the corresponding warning code
 
 ### Post-send memory hook
 
@@ -185,14 +194,16 @@ Capture happens only once the send succeeds. Send failure does not capture memor
 
 ## Data Model
 
-Stage 4 uses the existing `aiDurableState` contract from [`../01-core/interfaces-core.md`](../01-core/interfaces-core.md). No new tables required for the initial implementation.
+Stage 4 splits durable state across two tables:
 
-Expected `kind` values:
+- **`ai_knowledge_entries`** (new table, migration `0020`): tier 1–3 cache — general instructions, project instructions, approved knowledge — populated by the Notion background sync job per `D-008`. Keyed by `(source_provider, source_id)`; each row carries a `scope` column (`global` | `project`) and `scope_key` (NULL for global, `project_id` for project). Discovery matches Notion's `Project ID` property to `project_dimensions.project_id` — there is no per-project URL wiring. See brief `.codex-stage4-notion-knowledge-sync-2026-04-21.md`.
+- **`aiDurableState`** (existing contract — see [`../01-core/interfaces-core.md`](../01-core/interfaces-core.md)): tier 5 reusable memory and operator feedback only. Knowledge does NOT live here.
+
+Expected `kind` values on `aiDurableState`:
 
 | Kind | Content | Source | Lifecycle |
 | --- | --- | --- | --- |
-| `knowledge_cache` | synced Notion page content | background Notion sync | refreshed by background job; no human approval gate per `D-008` |
-| `resolved_reply_example` | final sent reply + inbound + grounding summary | post-Composer-send memory capture | append-only; humans may later mark as low-quality but not auto-purge |
+| `resolved_reply_example` | final sent reply + inbound + grounding summary. PII masked: first names → `{NAME}`, full emails → `{EMAIL}`, phones → `{PHONE}`; product and expedition terms preserved. Paired with an OpenAI `text-embedding-3-small` vector for cosine-similarity retrieval. | post-Composer-send memory capture | append-only; humans may later mark as low-quality; dedup via cosine > 0.95 within the same `project_id`; no TTL |
 | `assistant_feedback` | operator feedback on a draft (e.g., "reprompt", "discard", "edited 60%") | inline Composer feedback controls | append-only; used for prompt tuning signals |
 
 ## Fallback Contract
@@ -223,6 +234,7 @@ The UI MAY collapse this behind an "About this draft" disclosure. It MUST NOT hi
 - retrieval, classification, validation, and fallback construction stay in normal backend code
 - embedding retrieval calls (if used) are cheap and excluded from the "one LLM call" count
 - target p95 end-to-end latency: 3–6s for a single draft (UX: operator is waiting)
+- daily spend cap: soft-warn at **$20/day** org-wide via `AI_DAILY_CAP_USD` env var. Each response carries a `cost_estimate_usd` that the orchestration service rolls up; when the day's projected spend exceeds the cap, responses emit a `budget_warn` warning alongside the draft. Over-budget NEVER hard-blocks — the operator always gets a draft or a deterministic fallback.
 
 ## Explicitly Deferred From Stage 4
 
