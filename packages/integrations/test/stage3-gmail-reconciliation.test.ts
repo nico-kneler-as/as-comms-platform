@@ -91,6 +91,7 @@ describe("Gmail outbound reconciliation", () => {
     const subject = "Field logistics";
     const bodyTextPreview = "Thanks again for confirming the field logistics.";
     const occurredAt = "2026-04-21T12:34:20.000Z";
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
     const fingerprint: string | null = computePendingComposerOutboundFingerprint({
       contactId: "contact:email:volunteer@example.org",
       subject,
