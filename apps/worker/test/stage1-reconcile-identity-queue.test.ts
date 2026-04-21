@@ -129,7 +129,7 @@ async function createReconcileContext(): Promise<TestWorkerContext> {
     ].map((record) => [record.recordId, record] as const)
   );
 
-  capture.gmail.captureLiveBatch = async (payload) => ({
+  capture.gmail.captureLiveBatch = (payload) => Promise.resolve({
     records: payload.recordIds.flatMap((recordId: string) => {
       const record = recordsById.get(recordId);
       return record === undefined ? [] : [record];
@@ -192,7 +192,7 @@ describe("reconcileIdentityQueue", () => {
         },
         dryRun: true,
         logger: {
-          log() {}
+          log: () => undefined
         }
       });
 
@@ -232,7 +232,7 @@ describe("reconcileIdentityQueue", () => {
         },
         dryRun: false,
         logger: {
-          log() {}
+          log: () => undefined
         }
       });
 

@@ -326,12 +326,6 @@ async function loadHistoricalGmailRecords(input: {
       importedRecordsByCacheKey.set(cacheKey, importedRecords);
     }
 
-    if (importedRecords === undefined) {
-      throw new Error(
-        `Expected imported Gmail historical records for ${parsedPayloadRef.mboxPath}.`
-      );
-    }
-
     const replayedRecord = importedRecords[parsedPayloadRef.messageNumber - 1];
 
     if (
@@ -723,6 +717,9 @@ async function executeTarget(input: {
     await input.db.transaction(runInTransaction);
   }
 
+  // TS can't narrow through the closure assignment in runInTransaction, so this
+  // check looks unnecessary to the linter even though it's a real runtime guard.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (execution === null) {
     throw new Error(
       `Expected reconcile execution result for source evidence ${input.target.sourceEvidence.id}.`
