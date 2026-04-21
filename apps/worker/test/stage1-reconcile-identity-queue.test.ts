@@ -2,74 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { reconcileIdentityQueue } from "../src/ops/reconcile-identity-queue.js";
 import {
-  createEmptyCapturePorts,
   createTestWorkerContext,
   type TestWorkerContext
 } from "./helpers.js";
-
-function buildGmailMessageRecord(input: {
-  readonly recordId: string;
-  readonly occurredAt: string;
-  readonly receivedAt: string;
-  readonly normalizedParticipantEmails: readonly string[];
-}) {
-  return {
-    recordType: "message" as const,
-    recordId: input.recordId,
-    direction: "inbound" as const,
-    occurredAt: input.occurredAt,
-    receivedAt: input.receivedAt,
-    payloadRef: `capture://gmail/${input.recordId}`,
-    checksum: `checksum:${input.recordId}`,
-    snippet: `snippet:${input.recordId}`,
-    subject: `subject:${input.recordId}`,
-    snippetClean: `snippet:${input.recordId}`,
-    bodyTextPreview: `body:${input.recordId}`,
-    threadId: `thread:${input.recordId}`,
-    rfc822MessageId: `<${input.recordId}@example.org>`,
-    capturedMailbox: "volunteers@adventurescientists.org",
-    projectInboxAlias: null,
-    normalizedParticipantEmails: [...input.normalizedParticipantEmails],
-    salesforceContactId: null,
-    volunteerIdPlainValues: [],
-    normalizedPhones: [],
-    supportingRecords: [],
-    crossProviderCollapseKey: null
-  };
-}
-
-async function seedReplayCandidate(
-  context: TestWorkerContext,
-  input: {
-    readonly sourceEvidenceId: string;
-    readonly providerRecordId: string;
-    readonly receivedAt: string;
-  }
-): Promise<void> {
-  await context.repositories.sourceEvidence.append({
-    id: input.sourceEvidenceId,
-    provider: "gmail",
-    providerRecordType: "message",
-    providerRecordId: input.providerRecordId,
-    receivedAt: input.receivedAt,
-    occurredAt: input.receivedAt,
-    payloadRef: `capture://gmail/${input.providerRecordId}`,
-    idempotencyKey: `source-evidence:gmail:message:${input.providerRecordId}`,
-    checksum: `checksum:${input.providerRecordId}`
-  });
-  await context.repositories.identityResolutionQueue.upsert({
-    id: `identity-review:${input.sourceEvidenceId}:identity_missing_anchor`,
-    sourceEvidenceId: input.sourceEvidenceId,
-    candidateContactIds: [],
-    reasonCode: "identity_missing_anchor",
-    status: "open",
-    openedAt: input.receivedAt,
-    resolvedAt: null,
-    normalizedIdentityValues: [],
-    anchoredContactId: null,
-    explanation: "Seeded stuck identity review case for reconciliation."
-  });
-}
 
 async function seedExistingEmailContact(
   context: TestWorkerContext,
@@ -104,48 +39,135 @@ async function seedExistingEmailContact(
   });
 }
 
+async function seedOpenIdentityMissingAnchorCase(
+  context: TestWorkerContext,
+  input: {
+    readonly sourceEvidenceId: string;
+    readonly normalizedIdentityValues: readonly string[];
+    readonly openedAt: string;
+  }
+): Promise<void> {
+  await context.repositories.identityResolutionQueue.upsert({
+    id: `identity-review:${input.sourceEvidenceId}:identity_missing_anchor`,
+    sourceEvidenceId: input.sourceEvidenceId,
+    candidateContactIds: [],
+    reasonCode: "identity_missing_anchor",
+    status: "open",
+    openedAt: input.openedAt,
+    resolvedAt: null,
+    normalizedIdentityValues: [...input.normalizedIdentityValues],
+    anchoredContactId: null,
+    explanation: "Seeded stuck identity review case for reconciliation."
+  });
+}
+
+async function seedStoredGmailCase(
+  context: TestWorkerContext,
+  input: {
+    readonly recordId: string;
+    readonly payloadRef: string;
+    readonly normalizedIdentityValues: readonly string[];
+    readonly subject: string;
+    readonly occurredAt: string;
+    readonly receivedAt: string;
+  }
+): Promise<void> {
+  const sourceEvidenceId = `source-evidence:gmail:message:${input.recordId}`;
+
+  await context.repositories.sourceEvidence.append({
+    id: sourceEvidenceId,
+    provider: "gmail",
+    providerRecordType: "message",
+    providerRecordId: input.recordId,
+    receivedAt: input.receivedAt,
+    occurredAt: input.occurredAt,
+    payloadRef: input.payloadRef,
+    idempotencyKey: `source-evidence:gmail:message:${input.recordId}`,
+    checksum: `checksum:${input.recordId}`
+  });
+  await context.repositories.gmailMessageDetails.upsert({
+    sourceEvidenceId,
+    providerRecordId: input.recordId,
+    gmailThreadId: `thread:${input.recordId}`,
+    rfc822MessageId: `<${input.recordId}@example.org>`,
+    direction: "inbound",
+    subject: input.subject,
+    snippetClean: `snippet:${input.recordId}`,
+    bodyTextPreview: `body:${input.recordId}`,
+    capturedMailbox: "volunteers@adventurescientists.org",
+    projectInboxAlias: null
+  });
+  await seedOpenIdentityMissingAnchorCase(context, {
+    sourceEvidenceId,
+    normalizedIdentityValues: input.normalizedIdentityValues,
+    openedAt: input.receivedAt
+  });
+}
+
+async function seedStoredSalesforceCase(
+  context: TestWorkerContext,
+  input: {
+    readonly recordId: string;
+    readonly normalizedIdentityValues: readonly string[];
+    readonly subject: string;
+    readonly occurredAt: string;
+    readonly receivedAt: string;
+  }
+): Promise<void> {
+  const sourceEvidenceId =
+    `source-evidence:salesforce:task_communication:${input.recordId}`;
+
+  await context.repositories.sourceEvidence.append({
+    id: sourceEvidenceId,
+    provider: "salesforce",
+    providerRecordType: "task_communication",
+    providerRecordId: input.recordId,
+    receivedAt: input.receivedAt,
+    occurredAt: input.occurredAt,
+    payloadRef: `capture://salesforce/${input.recordId}`,
+    idempotencyKey: `source-evidence:salesforce:task_communication:${input.recordId}`,
+    checksum: `checksum:${input.recordId}`
+  });
+  await context.repositories.salesforceCommunicationDetails.upsert({
+    sourceEvidenceId,
+    providerRecordId: input.recordId,
+    channel: "email",
+    messageKind: "one_to_one",
+    subject: input.subject,
+    snippet: `snippet:${input.recordId}`,
+    sourceLabel: "Salesforce Task"
+  });
+  await context.repositories.salesforceEventContext.upsert({
+    sourceEvidenceId,
+    salesforceContactId: null,
+    projectId: null,
+    expeditionId: null,
+    sourceField: null
+  });
+  await seedOpenIdentityMissingAnchorCase(context, {
+    sourceEvidenceId,
+    normalizedIdentityValues: input.normalizedIdentityValues,
+    openedAt: input.receivedAt
+  });
+}
+
 async function createReconcileContext(): Promise<TestWorkerContext> {
-  const capture = createEmptyCapturePorts();
-  const recordsById = new Map(
-    [
-      buildGmailMessageRecord({
-        recordId: "gmail-known-1",
-        occurredAt: "2026-01-01T00:01:00.000Z",
-        receivedAt: "2026-01-01T00:01:00.000Z",
-        normalizedParticipantEmails: ["known@example.org"]
-      }),
-      buildGmailMessageRecord({
-        recordId: "gmail-new-1",
-        occurredAt: "2026-01-01T00:02:00.000Z",
-        receivedAt: "2026-01-01T00:02:00.000Z",
-        normalizedParticipantEmails: ["fresh@example.org"]
-      }),
-      buildGmailMessageRecord({
-        recordId: "gmail-ambiguous-1",
-        occurredAt: "2026-01-01T00:03:00.000Z",
-        receivedAt: "2026-01-01T00:03:00.000Z",
-        normalizedParticipantEmails: ["shared@example.org"]
-      })
-    ].map((record) => [record.recordId, record] as const)
-  );
-
-  capture.gmail.captureLiveBatch = (payload) => Promise.resolve({
-    records: payload.recordIds.flatMap((recordId: string) => {
-      const record = recordsById.get(recordId);
-      return record === undefined ? [] : [record];
-    }),
-    nextCursor: null,
-    checkpoint: payload.recordIds.at(-1) ?? null
-  });
-
-  const context = await createTestWorkerContext({
-    capture
-  });
+  const context = await createTestWorkerContext();
 
   await seedExistingEmailContact(context, {
-    contactId: "contact_known",
-    email: "known@example.org",
-    displayName: "Known Contact"
+    contactId: "contact_live_known",
+    email: "known-live@example.org",
+    displayName: "Known Live Contact"
+  });
+  await seedExistingEmailContact(context, {
+    contactId: "contact_mbox_known",
+    email: "known-mbox@example.org",
+    displayName: "Known Mbox Contact"
+  });
+  await seedExistingEmailContact(context, {
+    contactId: "contact_salesforce_known",
+    email: "known-salesforce@example.org",
+    displayName: "Known Salesforce Contact"
   });
   await seedExistingEmailContact(context, {
     contactId: "contact_shared_1",
@@ -158,27 +180,52 @@ async function createReconcileContext(): Promise<TestWorkerContext> {
     displayName: "Shared Contact Two"
   });
 
-  await seedReplayCandidate(context, {
-    sourceEvidenceId: "source-evidence:gmail:message:gmail-known-1",
-    providerRecordId: "gmail-known-1",
+  await seedStoredGmailCase(context, {
+    recordId: "gmail-live-known",
+    payloadRef: "capture://gmail/gmail-live-known",
+    normalizedIdentityValues: ["known-live@example.org"],
+    subject: "Known live message",
+    occurredAt: "2026-01-01T00:01:00.000Z",
     receivedAt: "2026-01-01T00:01:00.000Z"
   });
-  await seedReplayCandidate(context, {
-    sourceEvidenceId: "source-evidence:gmail:message:gmail-new-1",
-    providerRecordId: "gmail-new-1",
+  await seedStoredGmailCase(context, {
+    recordId: "gmail-mbox-known",
+    payloadRef:
+      "mbox://%2Fdefinitely%2Fmissing%2Forcas.mbox#message=17",
+    normalizedIdentityValues: ["known-mbox@example.org"],
+    subject: "Known mbox message",
+    occurredAt: "2026-01-01T00:02:00.000Z",
     receivedAt: "2026-01-01T00:02:00.000Z"
   });
-  await seedReplayCandidate(context, {
-    sourceEvidenceId: "source-evidence:gmail:message:gmail-ambiguous-1",
-    providerRecordId: "gmail-ambiguous-1",
+  await seedStoredSalesforceCase(context, {
+    recordId: "sf-known-1",
+    normalizedIdentityValues: ["known-salesforce@example.org"],
+    subject: "Re: Known Salesforce message",
+    occurredAt: "2026-01-01T00:03:00.000Z",
     receivedAt: "2026-01-01T00:03:00.000Z"
+  });
+  await seedStoredGmailCase(context, {
+    recordId: "gmail-new-1",
+    payloadRef: "capture://gmail/gmail-new-1",
+    normalizedIdentityValues: ["fresh@example.org"],
+    subject: "Fresh message",
+    occurredAt: "2026-01-01T00:04:00.000Z",
+    receivedAt: "2026-01-01T00:04:00.000Z"
+  });
+  await seedStoredGmailCase(context, {
+    recordId: "gmail-ambiguous-1",
+    payloadRef: "capture://gmail/gmail-ambiguous-1",
+    normalizedIdentityValues: ["shared@example.org"],
+    subject: "Shared identity message",
+    occurredAt: "2026-01-01T00:05:00.000Z",
+    receivedAt: "2026-01-01T00:05:00.000Z"
   });
 
   return context;
 }
 
 describe("reconcileIdentityQueue", () => {
-  it("reports resolved, created, and skipped counts in dry-run mode without mutating queue or ledger state", async () => {
+  it("reconstructs Gmail live, Gmail mbox, and Salesforce cases from stored rows in dry-run mode", async () => {
     const context = await createReconcileContext();
 
     try {
@@ -198,8 +245,8 @@ describe("reconcileIdentityQueue", () => {
 
       expect(report).toMatchObject({
         dryRun: true,
-        scanned: 3,
-        resolved: 1,
+        scanned: 5,
+        resolved: 3,
         created: 1,
         skipped: 1
       });
@@ -211,14 +258,14 @@ describe("reconcileIdentityQueue", () => {
         context.repositories.identityResolutionQueue.listOpenByReasonCode(
           "identity_missing_anchor"
         )
-      ).resolves.toHaveLength(3);
-      await expect(context.repositories.contacts.listAll()).resolves.toHaveLength(3);
+      ).resolves.toHaveLength(5);
+      await expect(context.repositories.contacts.listAll()).resolves.toHaveLength(5);
     } finally {
       await context.dispose();
     }
   });
 
-  it("replays stuck items into resolved, created, and reclassified queue outcomes when executed", async () => {
+  it("reconciles stored Gmail live, Gmail mbox, and Salesforce cases without filesystem access when executed", async () => {
     const context = await createReconcileContext();
 
     try {
@@ -238,15 +285,15 @@ describe("reconcileIdentityQueue", () => {
 
       expect(report).toMatchObject({
         dryRun: false,
-        scanned: 3,
-        resolved: 1,
+        scanned: 5,
+        resolved: 3,
         created: 1,
         skipped: 1
       });
       expect(report.errors).toEqual([]);
       await expect(
         context.repositories.canonicalEvents.countAll()
-      ).resolves.toBe(2);
+      ).resolves.toBe(4);
       await expect(
         context.repositories.contacts.findById("contact:email:fresh@example.org")
       ).resolves.toMatchObject({
@@ -263,6 +310,60 @@ describe("reconcileIdentityQueue", () => {
           "identity_multi_candidate"
         )
       ).resolves.toHaveLength(1);
+      await expect(context.repositories.contacts.listAll()).resolves.toHaveLength(6);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("is idempotent on rerun after the original stuck cases have already been cleared", async () => {
+    const context = await createReconcileContext();
+
+    try {
+      const first = await reconcileIdentityQueue({
+        db: context.db,
+        repositories: context.repositories,
+        capture: context.capture,
+        gmailHistoricalReplay: {
+          liveAccount: "volunteers@adventurescientists.org",
+          projectInboxAliases: ["orcas@adventurescientists.org"]
+        },
+        dryRun: false,
+        logger: {
+          log: () => undefined
+        }
+      });
+      const second = await reconcileIdentityQueue({
+        db: context.db,
+        repositories: context.repositories,
+        capture: context.capture,
+        gmailHistoricalReplay: {
+          liveAccount: "volunteers@adventurescientists.org",
+          projectInboxAliases: ["orcas@adventurescientists.org"]
+        },
+        dryRun: false,
+        logger: {
+          log: () => undefined
+        }
+      });
+
+      expect(first).toMatchObject({
+        scanned: 5,
+        resolved: 3,
+        created: 1,
+        skipped: 1
+      });
+      expect(second).toEqual({
+        dryRun: false,
+        scanned: 0,
+        resolved: 0,
+        created: 0,
+        skipped: 0,
+        errors: []
+      });
+      await expect(
+        context.repositories.canonicalEvents.countAll()
+      ).resolves.toBe(4);
     } finally {
       await context.dispose();
     }
