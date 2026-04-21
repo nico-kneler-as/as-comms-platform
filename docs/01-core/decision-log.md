@@ -171,3 +171,51 @@ These entries were recorded on `2026-04-05` from the current repo canon and the 
 - Why: establishes the Stage 4 product shape ahead of Composer build so Composer can reserve a clean `draft:generate` integration surface. Matches Fin-like product discipline without Fin-like runtime complexity.
 - Impact: a new `docs/04-implementation-specs/stage-4-ai-pipeline.md` codifies the full pipeline contract. Notion-backed knowledge uses background sync/cache per `D-008` (no approval gate). AI never sends automatically per `D-009`. Composer Server Actions include a `draft:generate` endpoint whose payload matches the grounding-bundle contract.
 - Related refs: [product-core.md](./product-core.md), [decision-core.md](./decision-core.md), [../04-implementation-specs/stage-4-ai-pipeline.md](../04-implementation-specs/stage-4-ai-pipeline.md) (pending write)
+
+### 2026-04-19 - Salesforce comms ingest excludes non-volunteer contacts
+
+- Status: `locked`
+- Decision: Salesforce is not a comms source for non-volunteer contacts. Tasks whose target is a non-volunteer (no `Expedition_Member__c` relationship) must not produce canonical events via the Salesforce capture path. Non-volunteer correspondence flows through Gmail only.
+- Why: operators triage volunteer-related replies; non-volunteer CRM Tasks are administrative records that would pollute the inbox with no reply loop. The product rule is "the inbox is for volunteer comms"; Gmail covers partner and external-contact correspondence.
+- Impact: Salesforce capture pipelines must apply a volunteer-gate at both the Contact level and the Task level. Gmail ingestion is unaffected — non-volunteer emails still flow normally. Volunteer status changes are picked up at the next contact-snapshot sync; a freshly-added volunteer's historical Tasks backfill via replay.
+- Related refs: [decision-core.md](./decision-core.md), [../04-implementation-specs/stage-1-provider-ingest-matrix.md](../04-implementation-specs/stage-1-provider-ingest-matrix.md), [../03-reference/reference-salesforce-mapping.md](../03-reference/reference-salesforce-mapping.md), [PR #40](https://github.com/nico-kneler-as/as-comms-platform/pull/40), [PR #53](https://github.com/nico-kneler-as/as-comms-platform/pull/53)
+
+### 2026-04-19 - Salesforce Task capture filters WhoIds to volunteer-linked contacts
+
+- Status: `locked`
+- Decision: the Salesforce Task capture query filters Tasks at the provider boundary so only Tasks whose `WhoId` resolves to a volunteer (a Contact with an `Expedition_Member__c` record) are ingested. The filter is on `WhoId` linkage, not on subject heuristics — `classifySalesforceTaskMessageKind` still handles automated-vs-one-to-one classification after the volunteer gate.
+- Why: implements D-033 at the ingestion boundary. Filtering at capture (not at normalization) means non-volunteer Task evidence never enters `sourceEvidenceLog`, keeping storage, replay, and audit surfaces narrower. Downstream normalization code does not need to re-apply the filter.
+- Impact: Salesforce capture must maintain the volunteer-gate as capture query evolves. If the WhoId is null (Task not linked to a Contact), the Task is excluded — non-volunteer Tasks without WhoId resolution are not surfaced. Volunteer-snapshot freshness becomes part of the Salesforce capture contract.
+- Related refs: [decision-core.md](./decision-core.md), [../04-implementation-specs/stage-1-provider-ingest-matrix.md](../04-implementation-specs/stage-1-provider-ingest-matrix.md), [../../packages/integrations/src/providers/salesforce.ts](../../packages/integrations/src/providers/salesforce.ts), [PR #53](https://github.com/nico-kneler-as/as-comms-platform/pull/53)
+
+### 2026-04-19 - Stage 2 Auth session strategy is JWT, not database-backed
+
+- Status: `locked`
+- Decision: Auth.js v5 session strategy is JWT (stateless cookie sessions), not a database-adapter session. Session data lives in the signed cookie; there is no `sessions` table. User-identity lookups during sign-in still hit the `users` table via the Drizzle adapter.
+- Why: the app's protected-route middleware runs in Edge Runtime, which cannot open a Postgres connection and therefore cannot decode database-backed sessions. JWT sessions decode in Edge Runtime via a shared secret, removing the need for a Node/Edge runtime split in middleware. This was a mid-flight change during Stage 2 auth integration (initial implementation used a DB adapter before the Edge Runtime limitation surfaced).
+- Impact: D-025 remains the higher-order canon (Auth.js v5, Google provider, two flat roles, dev bypass). This entry narrows the session-strategy dimension specifically. Future auth work must not reintroduce DB sessions without reopening this decision — any Edge Runtime workaround must either preserve JWT or propose a replacement that demonstrably works in the middleware path.
+- Related refs: [decision-core.md](./decision-core.md), [../02-bundles/settings-bundle.md](../02-bundles/settings-bundle.md), [../../apps/web/auth.ts](../../apps/web/auth.ts), [../../apps/web/middleware.ts](../../apps/web/middleware.ts), [PR #38](https://github.com/nico-kneler-as/as-comms-platform/pull/38)
+
+### 2026-04-20 - project_dimensions.is_active is admin-owned, not Salesforce-derived
+
+- Status: `locked`
+- Decision: `project_dimensions.is_active` is a boolean column owned by admins via the Settings UI. It is NOT derived from Salesforce project state, membership counts, or recent activity. Admins toggle it directly through Settings; the toggle emits an audit entry.
+- Why: deriving active state from Salesforce or membership churn couples local admin intent to external state changes and introduces round-trip delays. Admin-owned is simpler and matches the operator mental model — "active means we're currently working this project" — which is independent of whatever SF reports.
+- Impact: projections and queries that scope to active projects must read `project_dimensions.is_active` directly. Do not infer active state from memberships, SF flags, or recent events. Admin mutation handlers must emit `audit_policy_evidence` entries for `is_active` transitions. Automated state changes (e.g., cascading toggles) require a canon reopening.
+- Related refs: [decision-core.md](./decision-core.md), [../02-bundles/settings-bundle.md](../02-bundles/settings-bundle.md), [../../packages/db/src/schema/tables.ts](../../packages/db/src/schema/tables.ts), [PR #59](https://github.com/nico-kneler-as/as-comms-platform/pull/59), [PR #66](https://github.com/nico-kneler-as/as-comms-platform/pull/66)
+
+### 2026-04-20 - Project AI knowledge is a single URL on project_dimensions with an activation gate
+
+- Status: `locked`
+- Decision: each project has a single `ai_knowledge_url` column (plus `ai_knowledge_synced_at`) on `project_dimensions`. Multiple knowledge sources per project are out of MVP scope. A project can only transition to `is_active = true` when both preconditions hold: at least one project email alias exists AND `ai_knowledge_url IS NOT NULL`.
+- Why: one URL per project matches the current operator workflow (one Notion page per project). Storing it on the dimension row avoids a join and a lifecycle question that a separate table would introduce. The activation gate ensures an active project has enough grounding context for Stage 4 AI to produce usable drafts — without both emails and knowledge, AI cannot ground.
+- Impact: Stage 4 AI knowledge retrieval reads `project_dimensions.ai_knowledge_url` directly. If future product scope needs multiple knowledge sources per project (e.g., Notion + a shared doc), this canon must be reopened first. Admin mutations that flip `is_active` to `true` must enforce both preconditions server-side, not just in the UI.
+- Related refs: [decision-core.md](./decision-core.md), [../02-bundles/settings-bundle.md](../02-bundles/settings-bundle.md), [../../packages/db/src/schema/tables.ts](../../packages/db/src/schema/tables.ts), [PR #59](https://github.com/nico-kneler-as/as-comms-platform/pull/59), [PR #66](https://github.com/nico-kneler-as/as-comms-platform/pull/66)
+
+### 2026-04-20 - Integration health is a polled projection, not live-on-demand
+
+- Status: `locked`
+- Decision: integration health is surfaced via an `integration_health` table written by a 5-minute worker cron (same cadence pattern as live polling). The Settings UI reads the table for status; it does NOT probe `/health` endpoints live on page render. Each capture service (`gmail-capture`, `salesforce-capture`) exposes a `/health` endpoint that the worker cron is the sole consumer of.
+- Why: live-on-demand probes from the Settings UI would introduce variable latency, hammer capture services under page refreshes, and conflate "UI responsiveness" with "capture service availability." Projection-based health means Settings loads instantly and the worker owns the health-check rate. Mirrors the architecture already used for Gmail (1-min poll) and Salesforce (5-min poll).
+- Impact: capture services must expose `/health` with a stable contract. The worker cron cadence cannot exceed 5 minutes without reopening this decision. Settings UI treats the projection as authoritative; an in-UI manual "refresh" action must enqueue a worker check or await the next cron tick — it must not probe capture services directly. Services that don't yet have a `/health` endpoint surface as `not_configured` in the projection.
+- Related refs: [decision-core.md](./decision-core.md), [../02-bundles/settings-bundle.md](../02-bundles/settings-bundle.md), [../../apps/worker/src/integration-health](../../apps/worker/src/integration-health), [PR #59](https://github.com/nico-kneler-as/as-comms-platform/pull/59), [PR #60](https://github.com/nico-kneler-as/as-comms-platform/pull/60)
