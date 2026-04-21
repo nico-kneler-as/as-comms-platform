@@ -91,13 +91,12 @@ describe("Gmail outbound reconciliation", () => {
     const subject = "Field logistics";
     const bodyTextPreview = "Thanks again for confirming the field logistics.";
     const occurredAt = "2026-04-21T12:34:20.000Z";
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-    const fingerprint: string | null = computePendingComposerOutboundFingerprint({
+    const fingerprint = computePendingComposerOutboundFingerprint({
       contactId: "contact:email:volunteer@example.org",
       subject,
       bodyPlaintext: bodyTextPreview,
       sentAt: "2026-04-21T12:34:01.000Z",
-    });
+    }) as unknown as string | null;
 
     if (fingerprint === null) {
       throw new Error("Expected fingerprint for pending outbound.");
