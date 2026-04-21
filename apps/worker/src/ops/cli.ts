@@ -32,6 +32,9 @@ import {
   runBackfillSalesforceCommunicationDetailsCommand
 } from "./backfill-salesforce-communication-details.js";
 import {
+  runDedupHistoricalLedgerCommand
+} from "./dedup-historical-ledger.js";
+import {
   buildOperationId,
   parseCliFlags,
   readOptionalBooleanFlag,
@@ -250,9 +253,12 @@ async function main(): Promise<void> {
     case "backfill-salesforce-communication-details":
       await runBackfillSalesforceCommunicationDetailsCommand(rest, process.env);
       return;
+    case "dedup-historical-ledger":
+      await runDedupHistoricalLedgerCommand(rest, process.env);
+      return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details."
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, dedup-historical-ledger."
       );
   }
 }

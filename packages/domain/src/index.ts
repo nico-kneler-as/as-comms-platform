@@ -1,6 +1,7 @@
 export * from "./inbox-driving.js";
 export * from "./notes.js";
 export * from "./normalization.js";
+export * from "./outbound-email-dedup.js";
 export * from "./readiness.js";
 export * from "./persistence.js";
 export * from "./records.js";

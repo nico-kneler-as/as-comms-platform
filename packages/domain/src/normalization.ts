@@ -30,6 +30,7 @@ import {
   type ContactMembershipRecord,
   type ContactRecord,
   type ExpeditionDimensionRecord,
+  type GmailMessageDetailRecord,
   type IdentityAmbiguityInput,
   type IdentityResolutionCase,
   type InboxDrivingEventType,
@@ -45,6 +46,8 @@ import {
   type QuarantineReasonCode,
   type RoutingAmbiguityInput,
   type RoutingReviewCase,
+  type SalesforceCommunicationDetailRecord,
+  type SimpleTextingMessageDetailRecord,
   type SourceEvidenceRecord,
   type SyncStateRecord,
   type SyncStateUpdateInput,
@@ -55,6 +58,14 @@ import {
 import {
   isInboxDrivingCanonicalEvent
 } from "./inbox-driving.js";
+import {
+  buildIncomingOutboundEmailFingerprintSource,
+  buildOutboundEmailDuplicateFingerprint,
+  buildPersistedOutboundEmailFingerprintSource,
+  isWithinOutboundEmailFingerprintWindow,
+  resolveOutboundEmailMergedWinnerDecision,
+  selectOutboundEmailDuplicateWinner
+} from "./outbound-email-dedup.js";
 import type { Stage1PersistenceService } from "./persistence.js";
 
 type ContactLookupMap = ReadonlyMap<string, ContactRecord>;
@@ -71,6 +82,29 @@ interface IdentityResolutionContext {
 interface WinnerDecision {
   readonly winnerReason: ProvenanceWinnerReason;
   readonly notes: string | null;
+}
+
+interface ProviderDetailMaps {
+  readonly gmailMessageDetailBySourceEvidenceId: ReadonlyMap<
+    string,
+    GmailMessageDetailRecord
+  >;
+  readonly salesforceCommunicationDetailBySourceEvidenceId: ReadonlyMap<
+    string,
+    SalesforceCommunicationDetailRecord
+  >;
+  readonly simpleTextingMessageDetailBySourceEvidenceId: ReadonlyMap<
+    string,
+    SimpleTextingMessageDetailRecord
+  >;
+}
+
+interface OutboundEmailDuplicateMatch {
+  readonly existingEvent: CanonicalEventRecord;
+  readonly existingTimelineProjection: TimelineProjectionRow | null;
+  readonly winner: WinnerDecision & {
+    readonly keepIncomingAsPrimary: boolean;
+  };
 }
 
 type DuplicateCollapseDecision =
@@ -386,6 +420,308 @@ function pickCanonicalReviewState(input: {
   }
 
   return "clear";
+}
+
+function mergeCanonicalReviewState(
+  left: CanonicalEventRecord["reviewState"],
+  right: CanonicalEventRecord["reviewState"]
+): CanonicalEventRecord["reviewState"] {
+  if (left === "quarantined" || right === "quarantined") {
+    return "quarantined";
+  }
+
+  if (
+    left === "needs_identity_review" ||
+    right === "needs_identity_review"
+  ) {
+    return "needs_identity_review";
+  }
+
+  if (left === "needs_routing_review" || right === "needs_routing_review") {
+    return "needs_routing_review";
+  }
+
+  return "clear";
+}
+
+function mapBySourceEvidenceId<TValue extends { readonly sourceEvidenceId: string }>(
+  values: readonly TValue[]
+): ReadonlyMap<string, TValue> {
+  return new Map(values.map((value) => [value.sourceEvidenceId, value]));
+}
+
+async function loadProviderDetailMaps(
+  persistence: Stage1PersistenceService,
+  sourceEvidenceIds: readonly string[]
+): Promise<ProviderDetailMaps> {
+  const uniqueSourceEvidenceIds = uniqueStrings(sourceEvidenceIds);
+  const [gmailMessageDetails, salesforceCommunicationDetails, simpleTextingMessageDetails] =
+    await Promise.all([
+      persistence.repositories.gmailMessageDetails.listBySourceEvidenceIds(
+        uniqueSourceEvidenceIds
+      ),
+      persistence.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds(
+        uniqueSourceEvidenceIds
+      ),
+      persistence.repositories.simpleTextingMessageDetails.listBySourceEvidenceIds(
+        uniqueSourceEvidenceIds
+      )
+    ]);
+
+  return {
+    gmailMessageDetailBySourceEvidenceId: mapBySourceEvidenceId(gmailMessageDetails),
+    salesforceCommunicationDetailBySourceEvidenceId: mapBySourceEvidenceId(
+      salesforceCommunicationDetails
+    ),
+    simpleTextingMessageDetailBySourceEvidenceId: mapBySourceEvidenceId(
+      simpleTextingMessageDetails
+    )
+  };
+}
+
+function findCanonicalEventForSourceEvidence(
+  events: readonly CanonicalEventRecord[],
+  sourceEvidenceId: string
+): CanonicalEventRecord | null {
+  return (
+    events.find(
+      (event) =>
+        event.sourceEvidenceId === sourceEvidenceId ||
+        event.provenance.supportingSourceEvidenceIds.includes(sourceEvidenceId)
+    ) ?? null
+  );
+}
+
+function compareDuplicateCandidateEvents(
+  left: CanonicalEventRecord,
+  right: CanonicalEventRecord
+): number {
+  if (
+    left.provenance.primaryProvider !== right.provenance.primaryProvider
+  ) {
+    return left.provenance.primaryProvider === "gmail" ? -1 : 1;
+  }
+
+  if (left.occurredAt !== right.occurredAt) {
+    return left.occurredAt.localeCompare(right.occurredAt);
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+async function findOutboundEmailDuplicateMatch(
+  persistence: Stage1PersistenceService,
+  input: {
+    readonly existingEvents: readonly CanonicalEventRecord[];
+    readonly incoming: Pick<
+      NormalizedCanonicalEventIntake,
+      | "canonicalEvent"
+      | "sourceEvidence"
+      | "gmailMessageDetail"
+      | "salesforceCommunicationDetail"
+    >;
+  }
+): Promise<OutboundEmailDuplicateMatch | null> {
+  if (
+    input.incoming.canonicalEvent.eventType !== "communication.email.outbound"
+  ) {
+    return null;
+  }
+
+  const incomingSource = buildIncomingOutboundEmailFingerprintSource(
+    input.incoming
+  );
+
+  if (incomingSource === null) {
+    return null;
+  }
+
+  const incomingFingerprint = buildOutboundEmailDuplicateFingerprint({
+    subject: incomingSource.subject,
+    body: incomingSource.body
+  });
+
+  if (incomingFingerprint === null) {
+    return null;
+  }
+
+  const candidateEvents = input.existingEvents
+    .filter(
+      (event) =>
+        event.eventType === "communication.email.outbound" &&
+        (event.provenance.primaryProvider === "gmail" ||
+          event.provenance.primaryProvider === "salesforce") &&
+        isWithinOutboundEmailFingerprintWindow({
+          leftOccurredAt: event.occurredAt,
+          rightOccurredAt: input.incoming.canonicalEvent.occurredAt
+        })
+    )
+    .sort(compareDuplicateCandidateEvents);
+
+  if (candidateEvents.length === 0) {
+    return null;
+  }
+
+  const detailMaps = await loadProviderDetailMaps(
+    persistence,
+    candidateEvents.map((event) => event.sourceEvidenceId)
+  );
+
+  for (const existingEvent of candidateEvents) {
+    const existingSource = buildPersistedOutboundEmailFingerprintSource({
+      event: existingEvent,
+      gmailMessageDetailBySourceEvidenceId:
+        detailMaps.gmailMessageDetailBySourceEvidenceId,
+      salesforceCommunicationDetailBySourceEvidenceId:
+        detailMaps.salesforceCommunicationDetailBySourceEvidenceId
+    });
+
+    if (existingSource === null) {
+      continue;
+    }
+
+    const existingFingerprint = buildOutboundEmailDuplicateFingerprint({
+      subject: existingSource.subject,
+      body: existingSource.body
+    });
+
+    if (existingFingerprint === null || existingFingerprint !== incomingFingerprint) {
+      continue;
+    }
+
+    const winnerSelection = selectOutboundEmailDuplicateWinner({
+      incoming: {
+        provider: input.incoming.sourceEvidence.provider,
+        occurredAt: input.incoming.canonicalEvent.occurredAt
+      },
+      existing: {
+        provider: existingEvent.provenance.primaryProvider,
+        occurredAt: existingEvent.occurredAt
+      }
+    });
+
+    if (winnerSelection === null) {
+      continue;
+    }
+
+    return {
+      existingEvent,
+      existingTimelineProjection:
+        await persistence.repositories.timelineProjection.findByCanonicalEventId(
+          existingEvent.id
+        ),
+      winner: {
+        winnerReason: winnerSelection.winnerReason,
+        notes: winnerSelection.notes,
+        keepIncomingAsPrimary: winnerSelection.winner === "incoming"
+      }
+    };
+  }
+
+  return null;
+}
+
+function resolveInboxSnippet(
+  event: CanonicalEventRecord,
+  detailMaps: ProviderDetailMaps
+): string {
+  if (event.provenance.primaryProvider === "gmail") {
+    const detail = detailMaps.gmailMessageDetailBySourceEvidenceId.get(
+      event.sourceEvidenceId
+    );
+
+    if (detail === undefined) {
+      return "";
+    }
+
+    return detail.snippetClean.length > 0
+      ? detail.snippetClean
+      : detail.bodyTextPreview;
+  }
+
+  if (event.provenance.primaryProvider === "salesforce") {
+    return (
+      detailMaps.salesforceCommunicationDetailBySourceEvidenceId.get(
+        event.sourceEvidenceId
+      )?.snippet ?? ""
+    );
+  }
+
+  if (event.provenance.primaryProvider === "simpletexting") {
+    return (
+      detailMaps.simpleTextingMessageDetailBySourceEvidenceId.get(
+        event.sourceEvidenceId
+      )?.messageTextPreview ?? ""
+    );
+  }
+
+  return "";
+}
+
+async function rebuildInboxProjectionForContact(
+  persistence: Stage1PersistenceService,
+  contactId: string
+): Promise<InboxProjectionRow | null> {
+  const existing = await persistence.repositories.inboxProjection.findByContactId(
+    contactId
+  );
+  const events = await persistence.repositories.canonicalEvents.listByContactId(
+    contactId
+  );
+  const inboxDrivingEvents = events.filter(
+    (
+      event
+    ): event is CanonicalEventRecord & { readonly eventType: InboxDrivingEventType } =>
+      isInboxDrivingCanonicalEvent(event)
+  );
+
+  if (inboxDrivingEvents.length === 0) {
+    if (existing !== null) {
+      await persistence.repositories.inboxProjection.deleteByContactId(contactId);
+    }
+
+    return null;
+  }
+
+  const detailMaps = await loadProviderDetailMaps(
+    persistence,
+    inboxDrivingEvents.map((event) => event.sourceEvidenceId)
+  );
+  const latestEvent = requireValue(
+    inboxDrivingEvents[inboxDrivingEvents.length - 1],
+    "Expected an inbox-driving event when rebuilding inbox projection."
+  );
+  let lastInboundAt: string | null = null;
+  let lastOutboundAt: string | null = null;
+
+  for (const event of inboxDrivingEvents) {
+    if (isInboundEvent(event.eventType)) {
+      lastInboundAt = newestTimestamp(lastInboundAt, event.occurredAt);
+    } else {
+      lastOutboundAt = newestTimestamp(lastOutboundAt, event.occurredAt);
+    }
+  }
+
+  const lastActivityAt = newestTimestamp(lastInboundAt, lastOutboundAt);
+
+  if (lastActivityAt === null) {
+    return null;
+  }
+
+  return persistence.saveInboxProjection({
+    contactId,
+    bucket:
+      existing?.bucket ??
+      (isInboundEvent(latestEvent.eventType) ? "New" : "Opened"),
+    needsFollowUp: existing?.needsFollowUp ?? false,
+    hasUnresolved: await contactHasUnresolved(persistence, contactId),
+    lastInboundAt,
+    lastOutboundAt,
+    lastActivityAt,
+    snippet: resolveInboxSnippet(latestEvent, detailMaps),
+    lastCanonicalEventId: latestEvent.id,
+    lastEventType: latestEvent.eventType
+  });
 }
 
 function buildIdentityMissingAnchorExplanation(
@@ -1588,9 +1924,253 @@ export function createStage1NormalizationService(
         },
         reviewState
       });
-      const eventWriteResult = await persistence.persistCanonicalEvent(
-        canonicalEvent
-      );
+      let contactEvents: readonly CanonicalEventRecord[] | null = null;
+      const getContactEvents = async (): Promise<
+        readonly CanonicalEventRecord[]
+      > => {
+        if (contactEvents !== null) {
+          return contactEvents;
+        }
+
+        contactEvents = await persistence.repositories.canonicalEvents.listByContactId(
+          identityDecision.contact.id
+        );
+        return contactEvents;
+      };
+      const alreadyMergedEvent =
+        sourceEvidenceResult.outcome === "duplicate"
+          ? findCanonicalEventForSourceEvidence(
+              await getContactEvents(),
+              sourceEvidenceResult.record.id
+            )
+          : null;
+
+      if (alreadyMergedEvent !== null) {
+        const persistedEvent =
+          alreadyMergedEvent.reviewState === reviewState
+            ? alreadyMergedEvent
+            : await persistence.repositories.canonicalEvents.upsert({
+                ...alreadyMergedEvent,
+                reviewState: mergeCanonicalReviewState(
+                  alreadyMergedEvent.reviewState,
+                  reviewState
+                )
+              });
+        const identityCase =
+          identityDecision.reviewInput === null
+            ? null
+            : (
+                await service.saveIdentityAmbiguityCase(
+                  identityDecision.reviewInput
+                )
+              ).caseRecord;
+        const routingCase =
+          routingDecision.reviewInput === null
+            ? null
+            : (
+                await service.saveRoutingAmbiguityCase(
+                  routingDecision.reviewInput
+                )
+              )
+                .caseRecord;
+        const existingTimelineProjection =
+          await persistence.repositories.timelineProjection.findByCanonicalEventId(
+            persistedEvent.id
+          );
+        const timelineProjection =
+          existingTimelineProjection === null
+            ? await service.applyTimelineProjection({
+                canonicalEvent: persistedEvent,
+                summary: parsed.canonicalEvent.summary
+              })
+            : persistedEvent.reviewState === alreadyMergedEvent.reviewState
+              ? existingTimelineProjection
+              : await service.applyTimelineProjection({
+                  canonicalEvent: persistedEvent,
+                  summary: existingTimelineProjection.summary
+                });
+        const inboxProjection = isInboxDrivingCanonicalEvent(persistedEvent)
+          ? await rebuildInboxProjectionForContact(
+              persistence,
+              persistedEvent.contactId
+            )
+          : await service.refreshInboxReviewOverlay({
+              contactId: persistedEvent.contactId
+            });
+
+        return {
+          outcome: "duplicate",
+          sourceEvidence: sourceEvidenceResult.record,
+          canonicalEvent: persistedEvent,
+          timelineProjection,
+          inboxProjection,
+          identityCase,
+          routingCase,
+          auditEvidence: null
+        };
+      }
+
+      const duplicateMatch =
+        parsed.canonicalEvent.eventType === "communication.email.outbound"
+          ? await findOutboundEmailDuplicateMatch(persistence, {
+              existingEvents: await getContactEvents(),
+              incoming: {
+                canonicalEvent: parsed.canonicalEvent,
+                sourceEvidence: sourceEvidenceResult.record,
+                gmailMessageDetail: parsed.gmailMessageDetail,
+                salesforceCommunicationDetail:
+                  parsed.salesforceCommunicationDetail
+              }
+            })
+          : null;
+
+      if (duplicateMatch !== null) {
+        const mergedSupportingSourceEvidenceIds = uniqueStrings([
+          ...duplicateMatch.existingEvent.provenance.supportingSourceEvidenceIds,
+          ...supportingSourceEvidenceIds,
+          duplicateMatch.existingEvent.sourceEvidenceId,
+          sourceEvidenceResult.record.id
+        ]).filter(
+          (sourceEvidenceId) =>
+            sourceEvidenceId !==
+            (duplicateMatch.winner.keepIncomingAsPrimary
+              ? sourceEvidenceResult.record.id
+              : duplicateMatch.existingEvent.sourceEvidenceId)
+        );
+        const supportingProviders = new Set<
+          CanonicalEventRecord["provenance"]["primaryProvider"]
+        >([
+          ...parsed.supportingSources.map((entry) => entry.provider),
+          duplicateMatch.winner.keepIncomingAsPrimary
+            ? duplicateMatch.existingEvent.provenance.primaryProvider
+            : parsed.sourceEvidence.provider
+        ]);
+
+        if (
+          duplicateMatch.existingEvent.provenance.winnerReason ===
+          "gmail_wins_duplicate_collapse"
+        ) {
+          supportingProviders.add("salesforce");
+        }
+
+        if (
+          duplicateMatch.existingEvent.provenance.winnerReason ===
+          "earliest_gmail_wins_duplicate_collapse"
+        ) {
+          supportingProviders.add("gmail");
+        }
+
+        const mergedWinner = resolveOutboundEmailMergedWinnerDecision({
+          primaryProvider: duplicateMatch.winner.keepIncomingAsPrimary
+            ? canonicalEvent.provenance.primaryProvider
+            : duplicateMatch.existingEvent.provenance.primaryProvider,
+          supportingProviders: [...supportingProviders],
+          fallback: duplicateMatch.winner
+        });
+        const persistedEvent = await persistence.repositories.canonicalEvents.upsert(
+          canonicalEventSchema.parse({
+            id: duplicateMatch.existingEvent.id,
+            contactId: identityDecision.contact.id,
+            eventType: canonicalEvent.eventType,
+            channel: canonicalEvent.channel,
+            occurredAt: duplicateMatch.winner.keepIncomingAsPrimary
+              ? canonicalEvent.occurredAt
+              : duplicateMatch.existingEvent.occurredAt,
+            sourceEvidenceId: duplicateMatch.winner.keepIncomingAsPrimary
+              ? sourceEvidenceResult.record.id
+              : duplicateMatch.existingEvent.sourceEvidenceId,
+            idempotencyKey: duplicateMatch.winner.keepIncomingAsPrimary
+              ? canonicalEvent.idempotencyKey
+              : duplicateMatch.existingEvent.idempotencyKey,
+            provenance: {
+              primaryProvider: duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.provenance.primaryProvider
+                : duplicateMatch.existingEvent.provenance.primaryProvider,
+              primarySourceEvidenceId: duplicateMatch.winner.keepIncomingAsPrimary
+                ? sourceEvidenceResult.record.id
+                : duplicateMatch.existingEvent.sourceEvidenceId,
+              supportingSourceEvidenceIds: mergedSupportingSourceEvidenceIds,
+              winnerReason: mergedWinner.winnerReason,
+              sourceRecordType: duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.provenance.sourceRecordType
+                : duplicateMatch.existingEvent.provenance.sourceRecordType,
+              sourceRecordId: duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.provenance.sourceRecordId
+                : duplicateMatch.existingEvent.provenance.sourceRecordId,
+              messageKind: duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.provenance.messageKind
+                : duplicateMatch.existingEvent.provenance.messageKind,
+              campaignRef: duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.provenance.campaignRef
+                : duplicateMatch.existingEvent.provenance.campaignRef,
+              threadRef: duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.provenance.threadRef
+                : duplicateMatch.existingEvent.provenance.threadRef,
+              direction: duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.provenance.direction
+                : duplicateMatch.existingEvent.provenance.direction,
+              ...((duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.provenance.inboxProjectionExclusionReason
+                : duplicateMatch.existingEvent.provenance
+                    .inboxProjectionExclusionReason) === undefined
+                ? {}
+                : {
+                    inboxProjectionExclusionReason:
+                      duplicateMatch.winner.keepIncomingAsPrimary
+                        ? canonicalEvent.provenance.inboxProjectionExclusionReason
+                        : duplicateMatch.existingEvent.provenance
+                            .inboxProjectionExclusionReason
+                  }),
+              notes: mergedWinner.notes
+            },
+            reviewState: mergeCanonicalReviewState(
+              duplicateMatch.existingEvent.reviewState,
+              canonicalEvent.reviewState
+            )
+          })
+        );
+        const identityCase =
+          identityDecision.reviewInput === null
+            ? null
+            : (
+                await service.saveIdentityAmbiguityCase(
+                  identityDecision.reviewInput
+                )
+              ).caseRecord;
+        const routingCase =
+          routingDecision.reviewInput === null
+            ? null
+            : (
+                await service.saveRoutingAmbiguityCase(
+                  routingDecision.reviewInput
+                )
+              )
+                .caseRecord;
+        const timelineProjection = await service.applyTimelineProjection({
+          canonicalEvent: persistedEvent,
+          summary: duplicateMatch.winner.keepIncomingAsPrimary
+            ? parsed.canonicalEvent.summary
+            : duplicateMatch.existingTimelineProjection?.summary ??
+              parsed.canonicalEvent.summary
+        });
+        const inboxProjection = await rebuildInboxProjectionForContact(
+          persistence,
+          persistedEvent.contactId
+        );
+
+        return {
+          outcome: "applied",
+          sourceEvidence: sourceEvidenceResult.record,
+          canonicalEvent: persistedEvent,
+          timelineProjection,
+          inboxProjection,
+          identityCase,
+          routingCase,
+          auditEvidence: null
+        };
+      }
+
+      const eventWriteResult = await persistence.persistCanonicalEvent(canonicalEvent);
 
       if (eventWriteResult.outcome === "conflict") {
         const auditEvidence = await recordQuarantineAuditOnce(persistence, {

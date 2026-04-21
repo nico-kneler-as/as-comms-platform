@@ -94,6 +94,159 @@ function buildAutoCommunicationClassification(input: {
   };
 }
 
+function buildGmailOutboundEmailFixture(input: {
+  readonly key: string;
+  readonly email: string;
+  readonly salesforceContactId: string | null;
+  readonly occurredAt: string;
+  readonly receivedAt: string;
+  readonly subject: string;
+  readonly bodyTextPreview: string;
+  readonly snippetClean?: string;
+  readonly snippet?: string;
+}) {
+  return {
+    sourceEvidence: {
+      id: `sev_${input.key}`,
+      provider: "gmail" as const,
+      providerRecordType: "message",
+      providerRecordId: `gmail-${input.key}`,
+      receivedAt: input.receivedAt,
+      occurredAt: input.occurredAt,
+      payloadRef: `payloads/gmail/${input.key}.json`,
+      idempotencyKey: `gmail:message:${input.key}`,
+      checksum: `checksum:${input.key}`
+    },
+    canonicalEvent: {
+      id: `evt_${input.key}`,
+      eventType: "communication.email.outbound" as const,
+      occurredAt: input.occurredAt,
+      idempotencyKey: `canonical:${input.key}`,
+      summary: "Outbound email sent",
+      snippet: input.snippet ?? input.bodyTextPreview
+    },
+    communicationClassification: buildOneToOneCommunicationClassification({
+      sourceRecordType: "message",
+      sourceRecordId: `gmail-${input.key}`,
+      direction: "outbound"
+    }),
+    identity: {
+      salesforceContactId: input.salesforceContactId,
+      volunteerIdPlainValues: [],
+      normalizedEmails: [input.email],
+      normalizedPhones: []
+    },
+    supportingSources: [],
+    gmailMessageDetail: {
+      sourceEvidenceId: `sev_${input.key}`,
+      providerRecordId: `gmail-${input.key}`,
+      gmailThreadId: `thread-${input.key}`,
+      rfc822MessageId: `<${input.key}@example.org>`,
+      direction: "outbound" as const,
+      subject: input.subject,
+      snippetClean: input.snippetClean ?? input.bodyTextPreview,
+      bodyTextPreview: input.bodyTextPreview,
+      capturedMailbox: "volunteers@example.org",
+      projectInboxAlias: null
+    }
+  };
+}
+
+function buildSalesforceOutboundEmailFixture(input: {
+  readonly key: string;
+  readonly email: string;
+  readonly salesforceContactId: string;
+  readonly occurredAt: string;
+  readonly receivedAt: string;
+  readonly subject: string;
+  readonly snippet: string;
+  readonly messageKind?: "auto" | "one_to_one";
+}) {
+  const messageKind = input.messageKind ?? "auto";
+
+  return {
+    sourceEvidence: {
+      id: `sev_${input.key}`,
+      provider: "salesforce" as const,
+      providerRecordType: "task_communication",
+      providerRecordId: `task-${input.key}`,
+      receivedAt: input.receivedAt,
+      occurredAt: input.occurredAt,
+      payloadRef: `payloads/salesforce/${input.key}.json`,
+      idempotencyKey: `salesforce:task_communication:${input.key}`,
+      checksum: `checksum:${input.key}`
+    },
+    canonicalEvent: {
+      id: `evt_${input.key}`,
+      eventType: "communication.email.outbound" as const,
+      occurredAt: input.occurredAt,
+      idempotencyKey: `canonical:${input.key}`,
+      summary: "Outbound email logged",
+      snippet: input.snippet
+    },
+    communicationClassification:
+      messageKind === "auto"
+        ? buildAutoCommunicationClassification({
+            sourceRecordType: "task_communication",
+            sourceRecordId: `task-${input.key}`,
+            direction: "outbound"
+          })
+        : buildOneToOneCommunicationClassification({
+            sourceRecordType: "task_communication",
+            sourceRecordId: `task-${input.key}`,
+            direction: "outbound"
+          }),
+    identity: {
+      salesforceContactId: input.salesforceContactId,
+      volunteerIdPlainValues: [],
+      normalizedEmails: [input.email],
+      normalizedPhones: []
+    },
+    supportingSources: [],
+    salesforceCommunicationDetail: {
+      sourceEvidenceId: `sev_${input.key}`,
+      providerRecordId: `task-${input.key}`,
+      channel: "email" as const,
+      messageKind,
+      subject: input.subject,
+      snippet: input.snippet,
+      sourceLabel: messageKind === "auto" ? "Salesforce Flow" : "Salesforce Task"
+    },
+    salesforceEventContext: {
+      sourceEvidenceId: `sev_${input.key}`,
+      salesforceContactId: input.salesforceContactId,
+      projectId: "project_default",
+      expeditionId: "expedition_default",
+      sourceField: null
+    }
+  };
+}
+
+async function expectExactlyOneCanonicalEvent(
+  context: Awaited<ReturnType<typeof seedContactWithEmail>>,
+  contactId: string
+) {
+  const canonicalEvents =
+    await context.repositories.canonicalEvents.listByContactId(contactId);
+  const timelineRows =
+    await context.repositories.timelineProjection.listByContactId(contactId);
+
+  expect(canonicalEvents).toHaveLength(1);
+  expect(timelineRows).toHaveLength(1);
+
+  const canonicalEvent = canonicalEvents[0];
+  const timelineProjection = timelineRows[0];
+
+  if (canonicalEvent === undefined || timelineProjection === undefined) {
+    throw new Error("Expected exactly one canonical event and one timeline row.");
+  }
+
+  return {
+    canonicalEvent,
+    timelineProjection
+  };
+}
+
 describe("Stage 1 normalization service", () => {
   it("upserts canonical contact graph state through the application boundary", async () => {
     const { normalization, repositories } = await createTestStage1Context();
@@ -603,6 +756,204 @@ describe("Stage 1 normalization service", () => {
         lastActivityAt: "2026-01-01T00:07:00.000Z"
       });
     }
+  });
+
+  it("keeps Tori Rogers cross-provider duplicates to a single Gmail-ledger row regardless of arrival order", async () => {
+    const toriEmail = "tori@example.org";
+    const toriSalesforceContactId = "003-tori";
+    const runSequence = async (order: readonly ("salesforce" | "gmail")[]) => {
+      const context = await seedContactWithEmail(toriEmail, {
+        contactId: "contact_tori",
+        salesforceContactId: toriSalesforceContactId,
+        displayName: "Tori Rogers"
+      });
+      const gmailFixture = buildGmailOutboundEmailFixture({
+        key: "tori-gmail",
+        email: toriEmail,
+        salesforceContactId: toriSalesforceContactId,
+        occurredAt: "2026-04-20T14:40:57.000Z",
+        receivedAt: "2026-04-20T14:41:05.000Z",
+        subject: "Re: Confirmed: Hex 13174",
+        bodyTextPreview: "Confirmed. You are all set for Hex 13174.",
+        snippetClean: "Confirmed. You are all set for Hex 13174."
+      });
+      const salesforceFixture = buildSalesforceOutboundEmailFixture({
+        key: "tori-salesforce",
+        email: toriEmail,
+        salesforceContactId: toriSalesforceContactId,
+        occurredAt: "2026-04-20T14:40:57.000Z",
+        receivedAt: "2026-04-20T14:45:00.000Z",
+        subject: "Re: Confirmed: Hex 13174",
+        snippet: "Confirmed. You are all set for Hex 13174.",
+        messageKind: "auto"
+      });
+
+      for (const source of order) {
+        await context.normalization.applyNormalizedCanonicalEvent(
+          source === "gmail" ? gmailFixture : salesforceFixture
+        );
+      }
+
+      const { canonicalEvent, timelineProjection } =
+        await expectExactlyOneCanonicalEvent(context, "contact_tori");
+      expect(canonicalEvent.sourceEvidenceId).toBe("sev_tori-gmail");
+      expect(canonicalEvent.provenance.primaryProvider).toBe("gmail");
+      expect(canonicalEvent.provenance.winnerReason).toBe(
+        "gmail_wins_duplicate_collapse"
+      );
+      expect(canonicalEvent.provenance.supportingSourceEvidenceIds).toEqual([
+        "sev_tori-salesforce"
+      ]);
+      expect(canonicalEvent.provenance.messageKind).toBe("one_to_one");
+      expect(timelineProjection.primaryProvider).toBe("gmail");
+
+      await expect(
+        context.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds([
+          "sev_tori-salesforce"
+        ])
+      ).resolves.toHaveLength(1);
+    };
+
+    await runSequence(["salesforce", "gmail"]);
+    await runSequence(["gmail", "salesforce"]);
+  });
+
+  it("keeps Rosie Yacoub duplicates to the earliest Gmail row while preserving Salesforce evidence", async () => {
+    const context = await seedContactWithEmail("rosie@example.org", {
+      contactId: "contact_rosie",
+      salesforceContactId: "003-rosie",
+      displayName: "Rosie Yacoub"
+    });
+    const firstGmail = buildGmailOutboundEmailFixture({
+      key: "rosie-gmail-1",
+      email: "rosie@example.org",
+      salesforceContactId: "003-rosie",
+      occurredAt: "2026-04-20T14:54:44.000Z",
+      receivedAt: "2026-04-20T14:54:50.000Z",
+      subject: "Re: still time to get involved?",
+      bodyTextPreview:
+        "There is still time to get involved if you want a spot on the next training.",
+      snippetClean:
+        "There is still time to get involved if you want a spot on the next training."
+    });
+    const secondGmail = buildGmailOutboundEmailFixture({
+      key: "rosie-gmail-2",
+      email: "rosie@example.org",
+      salesforceContactId: "003-rosie",
+      occurredAt: "2026-04-20T14:55:46.000Z",
+      receivedAt: "2026-04-20T14:55:52.000Z",
+      subject: "Re: still time to get involved?",
+      bodyTextPreview:
+        "There is still time to get involved if you want a spot on the next training.\n\nSent from my iPhone",
+      snippetClean:
+        "There is still time to get involved if you want a spot on the next training."
+    });
+    const salesforce = buildSalesforceOutboundEmailFixture({
+      key: "rosie-salesforce",
+      email: "rosie@example.org",
+      salesforceContactId: "003-rosie",
+      occurredAt: "2026-04-20T14:56:32.000Z",
+      receivedAt: "2026-04-20T15:00:00.000Z",
+      subject: "Re: still time to get involved?",
+      snippet:
+        "There is still time to get involved if you want a spot on the next training.",
+      messageKind: "auto"
+    });
+
+    for (let pass = 0; pass < 2; pass += 1) {
+      await context.normalization.applyNormalizedCanonicalEvent(firstGmail);
+      await context.normalization.applyNormalizedCanonicalEvent(secondGmail);
+      await context.normalization.applyNormalizedCanonicalEvent(salesforce);
+    }
+
+    const { canonicalEvent, timelineProjection } =
+      await expectExactlyOneCanonicalEvent(context, "contact_rosie");
+    expect(canonicalEvent.sourceEvidenceId).toBe("sev_rosie-gmail-1");
+    expect(canonicalEvent.provenance.primaryProvider).toBe("gmail");
+    expect(canonicalEvent.provenance.supportingSourceEvidenceIds).toEqual([
+      "sev_rosie-gmail-2",
+      "sev_rosie-salesforce"
+    ]);
+    expect(canonicalEvent.provenance.winnerReason).toBe(
+      "gmail_wins_duplicate_collapse"
+    );
+    expect(canonicalEvent.provenance.messageKind).toBe("one_to_one");
+    expect(canonicalEvent.occurredAt).toBe("2026-04-20T14:54:44.000Z");
+    expect(timelineProjection.primaryProvider).toBe("gmail");
+    await expect(
+      context.repositories.inboxProjection.findByContactId("contact_rosie")
+    ).resolves.toMatchObject({
+      lastCanonicalEventId: "evt_rosie-gmail-1",
+      lastOutboundAt: "2026-04-20T14:54:44.000Z"
+    });
+  });
+
+  it("keeps Tani Thomas duplicates to the earliest Gmail row after normalization strips reply noise and tracking params", async () => {
+    const context = await seedContactWithEmail("tani@example.org", {
+      contactId: "contact_tani",
+      salesforceContactId: "003-tani",
+      displayName: "Tani Thomas"
+    });
+    const firstGmail = buildGmailOutboundEmailFixture({
+      key: "tani-gmail-1",
+      email: "tani@example.org",
+      salesforceContactId: "003-tani",
+      occurredAt: "2026-04-20T14:42:48.000Z",
+      receivedAt: "2026-04-20T14:42:55.000Z",
+      subject: "Re: Hex 31476: Were You Able to Pick Up Your ARU?",
+      bodyTextPreview:
+        "Were you able to pick up your ARU? Here is the link: https://example.org/aru?utm_source=gmail&utm_campaign=follow-up",
+      snippetClean:
+        "Were you able to pick up your ARU? Here is the link: https://example.org/aru?utm_source=gmail&utm_campaign=follow-up"
+    });
+    const secondGmail = buildGmailOutboundEmailFixture({
+      key: "tani-gmail-2",
+      email: "tani@example.org",
+      salesforceContactId: "003-tani",
+      occurredAt: "2026-04-20T14:43:14.000Z",
+      receivedAt: "2026-04-20T14:43:18.000Z",
+      subject: "Re: Hex 31476: Were You Able to Pick Up Your ARU?",
+      bodyTextPreview:
+        "Were you able to pick up your ARU? Here is the link: https://example.org/aru?utm_medium=email&utm_campaign=follow-up\n\n--\nCecilia\n\nOn Mon, Apr 20, 2026 at 10:00 AM Tani wrote:\n> Checking in",
+      snippetClean:
+        "Were you able to pick up your ARU? Here is the link: https://example.org/aru?utm_medium=email&utm_campaign=follow-up"
+    });
+    const salesforce = buildSalesforceOutboundEmailFixture({
+      key: "tani-salesforce",
+      email: "tani@example.org",
+      salesforceContactId: "003-tani",
+      occurredAt: "2026-04-20T14:43:12.000Z",
+      receivedAt: "2026-04-20T14:48:00.000Z",
+      subject: "→ Email: Re: Hex 31476: Were You Able to Pick Up Your ARU?",
+      snippet:
+        "Were you able to pick up your ARU? Here is the link: https://example.org/aru?utm_term=aru",
+      messageKind: "auto"
+    });
+
+    for (let pass = 0; pass < 2; pass += 1) {
+      await context.normalization.applyNormalizedCanonicalEvent(firstGmail);
+      await context.normalization.applyNormalizedCanonicalEvent(salesforce);
+      await context.normalization.applyNormalizedCanonicalEvent(secondGmail);
+    }
+
+    const { canonicalEvent, timelineProjection } =
+      await expectExactlyOneCanonicalEvent(context, "contact_tani");
+    expect(canonicalEvent.sourceEvidenceId).toBe("sev_tani-gmail-1");
+    expect(canonicalEvent.provenance.primaryProvider).toBe("gmail");
+    expect(canonicalEvent.provenance.supportingSourceEvidenceIds).toEqual([
+      "sev_tani-gmail-2",
+      "sev_tani-salesforce"
+    ]);
+    expect(canonicalEvent.provenance.winnerReason).toBe(
+      "gmail_wins_duplicate_collapse"
+    );
+    expect(canonicalEvent.occurredAt).toBe("2026-04-20T14:42:48.000Z");
+    expect(timelineProjection.primaryProvider).toBe("gmail");
+    await expect(
+      context.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds([
+        "sev_tani-salesforce"
+      ])
+    ).resolves.toHaveLength(1);
   });
 
   it("keeps Salesforce auto task messages out of inbox projection mutation", async () => {
