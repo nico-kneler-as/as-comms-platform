@@ -52,7 +52,7 @@
 | `D-034` | Salesforce Task capture filters WhoIds to volunteer-linked contacts at the provider boundary. | Enforces D-033 at capture so non-volunteer Task evidence never enters source evidence. |
 | `D-035` | Stage 2 Auth session strategy is JWT, not database-backed. | Edge Runtime middleware cannot decode database sessions; JWT decodes via shared secret. |
 | `D-036` | `project_dimensions.is_active` is admin-owned, not derived from Salesforce state or memberships. | Decouples admin intent from external state churn; admins toggle directly in Settings. |
-| `D-037` | Each project has a single `ai_knowledge_url` on `project_dimensions`; activation requires both `emails ≥ 1` AND `ai_knowledge_url IS NOT NULL`. | One URL per project matches MVP workflow; activation gate ensures AI has enough context to ground drafts. |
+| `D-037` | Each project's AI knowledge comes from a Notion Project Training row matched by `Project ID`; activation requires both `emails ≥ 1` AND `ai_knowledge_synced_at IS NOT NULL`. | Knowledge lives in Notion and is discovered by matching the project ID; the synced-at timestamp is the authoritative signal that knowledge exists and is cached. |
 | `D-038` | Integration health is a polled projection (`integration_health` table, 5-min worker cron), not live-on-demand. | Projection reads are instant; live probes would introduce variable UI latency and capture-service load. |
 
 ## Change Rule
