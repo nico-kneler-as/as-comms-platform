@@ -16,6 +16,7 @@ export * from "./capture-services/salesforce.js";
 export * from "./providers/gmail.js";
 export * from "./providers/gmail-body.js";
 export * from "./providers/gmail-mbox.js";
+export * from "./providers/gmail-send.js";
 export * from "./providers/gmail-record-builder.js";
 export * from "./providers/mailchimp.js";
 export * from "./providers/salesforce.js";

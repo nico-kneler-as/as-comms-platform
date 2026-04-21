@@ -8,8 +8,7 @@ import {
   integrationHealthCheckResponseSchema,
   type GmailHistoricalCaptureBatchPayload,
   type GmailLiveCaptureBatchPayload,
-  type IntegrationHealthCheckResponse,
-  type IntegrationHealthStatus
+  type IntegrationHealthCheckResponse
 } from "@as-comms/contracts";
 import {
   type GmailMessageRecord,
@@ -24,6 +23,11 @@ import {
   extractGmailBodyPreviewFromPayload,
   type GmailApiMessagePart
 } from "../providers/gmail-body.js";
+import {
+  type GmailAccessTokenCacheEntry,
+  GmailOAuthExchangeError,
+  exchangeGmailAccessToken
+} from "../providers/gmail-oauth.js";
 import { z } from "zod";
 
 import type {
@@ -162,29 +166,6 @@ function buildLiveGmailChecksum(message: GmailMessageMetadata): string {
   });
 }
 
-interface GmailAccessTokenCacheEntry {
-  readonly accessToken: string;
-  readonly expiresAtEpochSeconds: number;
-}
-
-class GmailHealthCheckError extends Error {
-  constructor(
-    readonly status: Extract<
-      IntegrationHealthStatus,
-      "needs_attention" | "disconnected"
-    >,
-    message: string
-  ) {
-    super(message);
-    this.name = "GmailHealthCheckError";
-  }
-}
-
-const gmailTokenResponseSchema = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().int().positive().default(3600)
-});
-
 const gmailListResponseSchema = z.object({
   messages: z
     .array(
@@ -195,110 +176,6 @@ const gmailListResponseSchema = z.object({
     .default([]),
   nextPageToken: z.string().min(1).optional()
 });
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "TimeoutError";
-}
-
-function isDisconnectedGmailTokenError(
-  status: number,
-  responseText: string
-): boolean {
-  if (status !== 400 && status !== 401) {
-    return false;
-  }
-
-  return /(invalid_grant|revoked|permission|access_denied)/iu.test(
-    responseText
-  );
-}
-
-async function exchangeGmailAccessToken(input: {
-  readonly config: ResolvedGmailCaptureServiceConfig;
-  readonly mailbox: string;
-  readonly fetchImplementation: typeof fetch;
-  readonly now: () => Date;
-  readonly accessTokenByMailbox: Map<string, GmailAccessTokenCacheEntry>;
-  readonly timeoutMs: number;
-}): Promise<GmailAccessTokenCacheEntry> {
-  const nowEpochSeconds = Math.floor(input.now().getTime() / 1000);
-  const cachedToken = input.accessTokenByMailbox.get(input.mailbox);
-
-  if (
-    cachedToken !== undefined &&
-    cachedToken.expiresAtEpochSeconds - 30 > nowEpochSeconds
-  ) {
-    return cachedToken;
-  }
-
-  let response: Response;
-
-  try {
-    response = await input.fetchImplementation(input.config.tokenUri, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/x-www-form-urlencoded"
-      },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        client_id: input.config.oauthClientId,
-        client_secret: input.config.oauthClientSecret,
-        refresh_token: input.config.oauthRefreshToken
-      }).toString(),
-      signal: AbortSignal.timeout(input.timeoutMs)
-    });
-  } catch (error) {
-    if (isAbortError(error)) {
-      throw new GmailHealthCheckError(
-        "needs_attention",
-        "OAuth token exchange timed out."
-      );
-    }
-
-    throw new GmailHealthCheckError(
-      "needs_attention",
-      "OAuth token exchange request failed."
-    );
-  }
-
-  if (!response.ok) {
-    const responseText = await response.text();
-
-    if (isDisconnectedGmailTokenError(response.status, responseText)) {
-      throw new GmailHealthCheckError(
-        "disconnected",
-        "OAuth refresh token expired, was revoked, or lost required permissions."
-      );
-    }
-
-    throw new GmailHealthCheckError(
-      "needs_attention",
-      `OAuth token exchange failed with status ${String(response.status)}.`
-    );
-  }
-
-  let tokenJson: z.infer<typeof gmailTokenResponseSchema>;
-
-  try {
-    tokenJson = gmailTokenResponseSchema.parse(
-      JSON.parse(await response.text()) as unknown
-    );
-  } catch {
-    throw new GmailHealthCheckError(
-      "needs_attention",
-      "OAuth token exchange returned an unexpected response."
-    );
-  }
-
-  const token = {
-    accessToken: tokenJson.access_token,
-    expiresAtEpochSeconds: nowEpochSeconds + tokenJson.expires_in
-  } satisfies GmailAccessTokenCacheEntry;
-  input.accessTokenByMailbox.set(input.mailbox, token);
-
-  return token;
-}
 
 export async function checkGmailCaptureServiceHealth(
   config: GmailCaptureServiceConfig,
@@ -328,12 +205,19 @@ export async function checkGmailCaptureServiceHealth(
 
   try {
     await exchangeGmailAccessToken({
-      config: parsedConfig,
-      mailbox: parsedConfig.liveAccount,
+      config: {
+        oauthClient: {
+          clientId: parsedConfig.oauthClientId,
+          clientSecret: parsedConfig.oauthClientSecret,
+          tokenUri: parsedConfig.tokenUri
+        },
+        oauthRefreshToken: parsedConfig.oauthRefreshToken,
+        timeoutMs
+      },
+      cacheKey: parsedConfig.liveAccount,
       fetchImplementation,
       now,
-      accessTokenByMailbox,
-      timeoutMs
+      accessTokenCache: accessTokenByMailbox
     });
 
     return integrationHealthCheckResponseSchema.parse({
@@ -344,10 +228,13 @@ export async function checkGmailCaptureServiceHealth(
       version: input?.version ?? null
     });
   } catch (error) {
-    if (error instanceof GmailHealthCheckError) {
+    if (error instanceof GmailOAuthExchangeError) {
+      const status =
+        error.reason === "disconnected" ? "disconnected" : "needs_attention";
+
       return integrationHealthCheckResponseSchema.parse({
         service: "gmail",
-        status: error.status,
+        status,
         checkedAt,
         detail: error.message,
         version: input?.version ?? null
@@ -383,12 +270,19 @@ export function createGmailMailboxApiClient(
 
   async function getAccessToken(mailbox: string): Promise<string> {
     const token = await exchangeGmailAccessToken({
-      config: parsedConfig,
-      mailbox,
+      config: {
+        oauthClient: {
+          clientId: parsedConfig.oauthClientId,
+          clientSecret: parsedConfig.oauthClientSecret,
+          tokenUri: parsedConfig.tokenUri
+        },
+        oauthRefreshToken: parsedConfig.oauthRefreshToken,
+        timeoutMs: parsedConfig.timeoutMs
+      },
+      cacheKey: mailbox,
       fetchImplementation,
       now,
-      accessTokenByMailbox,
-      timeoutMs: parsedConfig.timeoutMs
+      accessTokenCache: accessTokenByMailbox
     });
 
     return token.accessToken;
