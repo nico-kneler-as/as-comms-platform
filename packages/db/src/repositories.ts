@@ -611,6 +611,35 @@ function createStage1RepositoriesInternal(
         return row === undefined ? null : mapCanonicalEventRow(row);
       },
 
+      async listByContentFingerprintWindow(input) {
+        const occurredAt = new Date(input.occurredAt);
+
+        if (Number.isNaN(occurredAt.getTime())) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(canonicalEventLedger)
+          .where(
+            and(
+              eq(canonicalEventLedger.contactId, input.contactId),
+              eq(canonicalEventLedger.channel, input.channel),
+              eq(
+                canonicalEventLedger.contentFingerprint,
+                input.contentFingerprint,
+              ),
+              sql`abs(extract(epoch from (${canonicalEventLedger.occurredAt} - cast(${occurredAt} as timestamptz)))) <= ${input.windowMinutes * 60}`,
+            ),
+          )
+          .orderBy(
+            asc(canonicalEventLedger.occurredAt),
+            asc(canonicalEventLedger.createdAt),
+          );
+
+        return rows.map(mapCanonicalEventRow);
+      },
+
       async countAll() {
         const [row] = await db
           .select({
@@ -693,6 +722,7 @@ function createStage1RepositoriesInternal(
               eventType: values.eventType,
               channel: values.channel,
               occurredAt: values.occurredAt,
+              contentFingerprint: values.contentFingerprint,
               sourceEvidenceId: values.sourceEvidenceId,
               idempotencyKey: values.idempotencyKey,
               provenance: values.provenance,

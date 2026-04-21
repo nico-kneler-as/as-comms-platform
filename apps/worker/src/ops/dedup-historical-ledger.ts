@@ -7,9 +7,10 @@
  *   pnpm --filter @as-comms/worker ops dedup-historical-ledger --limit 100
  *   pnpm --filter @as-comms/worker ops dedup-historical-ledger --execute --limit 100
  *
- * Dry-run by default. Finds historical outbound-email duplicates using the same
- * 15 minute fingerprint heuristic as live normalization, emits a JSONL audit
- * trail to stdout, and can optionally merge the surviving ledger rows in-place.
+ * Dry-run by default. Finds historical outbound-email duplicates using the live
+ * exact-body heuristic plus the persisted content-fingerprint fallback and the
+ * Salesforce Flow double-fire subject+snippet rule. Emits a JSONL audit trail
+ * to stdout and can optionally merge the surviving ledger rows in-place.
  */
 import process from "node:process";
 
@@ -34,11 +35,17 @@ import {
   type Stage1Database
 } from "@as-comms/db";
 import {
+  buildPersistedContentFingerprintSource,
   buildOutboundEmailDuplicateFingerprint,
+  computeContentFingerprint,
+  computeSalesforceSnippetClusterFingerprint,
+  isWithinContentFingerprintWindow,
   buildPersistedOutboundEmailFingerprintSource,
   isWithinOutboundEmailFingerprintWindow,
   resolveOutboundEmailMergedWinnerDecision,
-  selectOutboundEmailDuplicateWinner
+  salesforceSnippetClusterWindowMs,
+  selectOutboundEmailDuplicateWinner,
+  selectSalesforceSelfDuplicateWinner
 } from "@as-comms/domain";
 
 import {
@@ -68,10 +75,16 @@ interface CanonicalEventReference {
 
 interface HistoricalOutboundEmailCandidate {
   readonly event: CanonicalEventRecord;
-  readonly fingerprint: string;
+  readonly exactBodyFingerprint: string | null;
+  readonly contentFingerprint: string | null;
+  readonly salesforceSnippetClusterFingerprint: string | null;
 }
 
 interface HistoricalDedupClusterPlan {
+  readonly reason:
+    | "exact_body_fingerprint"
+    | "content_fingerprint"
+    | "salesforce_subject_snippet";
   winner: HistoricalOutboundEmailCandidate;
   losers: HistoricalOutboundEmailCandidate[];
 }
@@ -83,6 +96,7 @@ interface HistoricalDedupAuditLine {
   readonly loserProvider: CanonicalEventRecord["provenance"]["primaryProvider"];
   readonly contactId: string;
   readonly occurredAt: string;
+  readonly reason: HistoricalDedupClusterPlan["reason"];
   readonly operation: "would_merge" | "merged" | "skipped_already_merged";
 }
 
@@ -248,6 +262,7 @@ function applyLimitToPlans(
     }
 
     limitedPlans.push({
+      reason: plan.reason,
       winner: plan.winner,
       losers: plan.losers.slice(0, remaining)
     });
@@ -328,6 +343,7 @@ async function loadHistoricalOutboundEmailCandidates(input: {
       eventType: row.eventType,
       channel: row.channel,
       occurredAt: normalizeOccurredAt(row.occurredAt),
+      contentFingerprint: row.contentFingerprint,
       sourceEvidenceId: row.sourceEvidenceId,
       idempotencyKey: row.idempotencyKey,
       provenance: row.provenance,
@@ -346,33 +362,61 @@ async function loadHistoricalOutboundEmailCandidates(input: {
       gmailMessageDetailBySourceEvidenceId,
       salesforceCommunicationDetailBySourceEvidenceId
     });
-
-    if (source === null) {
-      continue;
-    }
-
-    const fingerprint = buildOutboundEmailDuplicateFingerprint({
-      subject: source.subject,
-      body: source.body
+    const contentFingerprintSource = buildPersistedContentFingerprintSource({
+      event,
+      sourceEvidenceId: event.sourceEvidenceId,
+      gmailMessageDetailBySourceEvidenceId,
+      salesforceCommunicationDetailBySourceEvidenceId
     });
-
-    if (fingerprint === null) {
-      continue;
-    }
+    const salesforceDetail =
+      salesforceCommunicationDetailBySourceEvidenceId.get(event.sourceEvidenceId);
 
     candidates.push({
       event,
-      fingerprint
+      exactBodyFingerprint:
+        source === null
+          ? null
+          : buildOutboundEmailDuplicateFingerprint({
+              subject: source.subject,
+              body: source.body
+            }),
+      contentFingerprint:
+        event.contentFingerprint ??
+        (contentFingerprintSource === null
+          ? null
+          : computeContentFingerprint(contentFingerprintSource)),
+      salesforceSnippetClusterFingerprint:
+        event.provenance.primaryProvider !== "salesforce" ||
+        salesforceDetail === undefined
+          ? null
+          : computeSalesforceSnippetClusterFingerprint({
+              subject: salesforceDetail.subject,
+              snippet: salesforceDetail.snippet,
+              contactId: event.contactId,
+              channel: event.channel,
+              direction: event.provenance.direction
+            })
     });
   }
 
   return candidates.sort(compareCandidates);
 }
 
-export function planHistoricalLedgerDedup(
+function planHistoricalLedgerDedupByRule(
   candidates: readonly HistoricalOutboundEmailCandidate[],
-  input?: {
-    readonly limit?: number | null;
+  input: {
+    readonly reason: HistoricalDedupClusterPlan["reason"];
+    readonly getFingerprint: (
+      candidate: HistoricalOutboundEmailCandidate
+    ) => string | null;
+    readonly isWithinWindow: (
+      left: HistoricalOutboundEmailCandidate,
+      right: HistoricalOutboundEmailCandidate
+    ) => boolean;
+    readonly selectWinner: (
+      candidate: HistoricalOutboundEmailCandidate,
+      existingWinner: HistoricalOutboundEmailCandidate
+    ) => "incoming" | "existing" | null;
   }
 ): readonly HistoricalDedupClusterPlan[] {
   const clustersByContactAndFingerprint = new Map<
@@ -381,7 +425,13 @@ export function planHistoricalLedgerDedup(
   >();
 
   for (const candidate of candidates) {
-    const clusterKey = `${candidate.event.contactId}::${candidate.fingerprint}`;
+    const fingerprint = input.getFingerprint(candidate);
+
+    if (fingerprint === null) {
+      continue;
+    }
+
+    const clusterKey = `${candidate.event.contactId}::${fingerprint}`;
     const clusters = clustersByContactAndFingerprint.get(clusterKey) ?? [];
     let matchedCluster: HistoricalDedupClusterPlan | null = null;
 
@@ -392,25 +442,11 @@ export function planHistoricalLedgerDedup(
         continue;
       }
 
-      if (
-        !isWithinOutboundEmailFingerprintWindow({
-          leftOccurredAt: cluster.winner.event.occurredAt,
-          rightOccurredAt: candidate.event.occurredAt
-        })
-      ) {
+      if (!input.isWithinWindow(cluster.winner, candidate)) {
         break;
       }
 
-      const winnerSelection = selectOutboundEmailDuplicateWinner({
-        incoming: {
-          provider: candidate.event.provenance.primaryProvider,
-          occurredAt: candidate.event.occurredAt
-        },
-        existing: {
-          provider: cluster.winner.event.provenance.primaryProvider,
-          occurredAt: cluster.winner.event.occurredAt
-        }
-      });
+      const winnerSelection = input.selectWinner(candidate, cluster.winner);
 
       if (winnerSelection === null) {
         continue;
@@ -418,7 +454,7 @@ export function planHistoricalLedgerDedup(
 
       matchedCluster = cluster;
 
-      if (winnerSelection.winner === "incoming") {
+      if (winnerSelection === "incoming") {
         cluster.losers = [...cluster.losers, cluster.winner];
         cluster.winner = candidate;
       } else {
@@ -433,16 +469,132 @@ export function planHistoricalLedgerDedup(
     }
 
     clusters.push({
+      reason: input.reason,
       winner: candidate,
       losers: []
     });
     clustersByContactAndFingerprint.set(clusterKey, clusters);
   }
 
-  const plans = Array.from(clustersByContactAndFingerprint.values())
+  return Array.from(clustersByContactAndFingerprint.values())
     .flat()
     .filter((plan) => plan.losers.length > 0)
     .sort((left, right) => compareCandidates(left.winner, right.winner));
+}
+
+export function planHistoricalLedgerDedup(
+  candidates: readonly HistoricalOutboundEmailCandidate[],
+  input?: {
+    readonly limit?: number | null;
+  }
+): readonly HistoricalDedupClusterPlan[] {
+  let remainingCandidates = [...candidates];
+  const plans: HistoricalDedupClusterPlan[] = [];
+  const rules = [
+    {
+      reason: "exact_body_fingerprint" as const,
+      getFingerprint: (candidate: HistoricalOutboundEmailCandidate) =>
+        candidate.exactBodyFingerprint,
+      isWithinWindow: (
+        left: HistoricalOutboundEmailCandidate,
+        right: HistoricalOutboundEmailCandidate
+      ) =>
+        isWithinOutboundEmailFingerprintWindow({
+          leftOccurredAt: left.event.occurredAt,
+          rightOccurredAt: right.event.occurredAt
+        }),
+      selectWinner: (
+        candidate: HistoricalOutboundEmailCandidate,
+        existingWinner: HistoricalOutboundEmailCandidate
+      ) =>
+        selectOutboundEmailDuplicateWinner({
+          incoming: {
+            provider: candidate.event.provenance.primaryProvider,
+            occurredAt: candidate.event.occurredAt
+          },
+          existing: {
+            provider: existingWinner.event.provenance.primaryProvider,
+            occurredAt: existingWinner.event.occurredAt
+          }
+        })?.winner ?? null
+    },
+    {
+      reason: "content_fingerprint" as const,
+      getFingerprint: (candidate: HistoricalOutboundEmailCandidate) =>
+        candidate.contentFingerprint,
+      isWithinWindow: (
+        left: HistoricalOutboundEmailCandidate,
+        right: HistoricalOutboundEmailCandidate
+      ) =>
+        isWithinContentFingerprintWindow({
+          leftOccurredAt: left.event.occurredAt,
+          rightOccurredAt: right.event.occurredAt
+        }),
+      selectWinner: (
+        candidate: HistoricalOutboundEmailCandidate,
+        existingWinner: HistoricalOutboundEmailCandidate
+      ) =>
+        selectOutboundEmailDuplicateWinner({
+          incoming: {
+            provider: candidate.event.provenance.primaryProvider,
+            occurredAt: candidate.event.occurredAt
+          },
+          existing: {
+            provider: existingWinner.event.provenance.primaryProvider,
+            occurredAt: existingWinner.event.occurredAt
+          }
+        })?.winner ?? null
+    },
+    {
+      reason: "salesforce_subject_snippet" as const,
+      getFingerprint: (candidate: HistoricalOutboundEmailCandidate) =>
+        candidate.salesforceSnippetClusterFingerprint,
+      isWithinWindow: (
+        left: HistoricalOutboundEmailCandidate,
+        right: HistoricalOutboundEmailCandidate
+      ) =>
+        isWithinContentFingerprintWindow({
+          leftOccurredAt: left.event.occurredAt,
+          rightOccurredAt: right.event.occurredAt,
+          windowMs: salesforceSnippetClusterWindowMs
+        }),
+      selectWinner: (
+        candidate: HistoricalOutboundEmailCandidate,
+        existingWinner: HistoricalOutboundEmailCandidate
+      ) => {
+        if (
+          candidate.event.provenance.primaryProvider !== "salesforce" ||
+          existingWinner.event.provenance.primaryProvider !== "salesforce"
+        ) {
+          return null;
+        }
+
+        return selectSalesforceSelfDuplicateWinner({
+          incomingOccurredAt: candidate.event.occurredAt,
+          existingOccurredAt: existingWinner.event.occurredAt
+        });
+      }
+    }
+  ] as const;
+
+  for (const rule of rules) {
+    const rulePlans = planHistoricalLedgerDedupByRule(
+      remainingCandidates,
+      rule
+    );
+
+    if (rulePlans.length === 0) {
+      continue;
+    }
+
+    plans.push(...rulePlans);
+    const loserIds = new Set(
+      rulePlans.flatMap((plan) => plan.losers.map((loser) => loser.event.id))
+    );
+    remainingCandidates = remainingCandidates.filter(
+      (candidate) => !loserIds.has(candidate.event.id)
+    );
+  }
 
   return applyLimitToPlans(plans, input?.limit ?? null);
 }
@@ -459,6 +611,7 @@ function buildAuditLinesForPlans(
       loserProvider: loser.event.provenance.primaryProvider,
       contactId: plan.winner.event.contactId,
       occurredAt: loser.event.occurredAt,
+      reason: plan.reason,
       operation
     }))
   );
@@ -500,6 +653,7 @@ async function applyDedupPlans(input: {
               loserProvider: loser.event.provenance.primaryProvider,
               contactId: plan.winner.event.contactId,
               occurredAt: loser.event.occurredAt,
+              reason: plan.reason,
               operation: "skipped_already_merged"
             };
             auditLines.push(auditLine);
@@ -530,6 +684,7 @@ async function applyDedupPlans(input: {
             loserProvider: loser.event.provenance.primaryProvider,
             contactId: winner.contactId,
             occurredAt: loser.event.occurredAt,
+            reason: plan.reason,
             operation: "skipped_already_merged"
           };
           auditLines.push(auditLine);
@@ -584,6 +739,7 @@ async function applyDedupPlans(input: {
             loserProvider: loser.provenance.primaryProvider,
             contactId: mergedWinner.contactId,
             occurredAt: loser.occurredAt,
+            reason: plan.reason,
             operation: "merged"
           };
           auditLines.push(auditLine);

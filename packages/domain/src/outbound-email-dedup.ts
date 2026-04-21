@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type {
   CanonicalEventRecord,
   GmailMessageDetailRecord,
@@ -8,10 +10,15 @@ import type {
 } from "@as-comms/contracts";
 
 export const outboundEmailFingerprintWindowMs = 15 * 60 * 1000;
+export const contentFingerprintWindowMs = 5 * 60 * 1000;
+export const salesforceSnippetClusterWindowMs = 10 * 60 * 1000;
 
 const trackedQueryParamPattern =
   /^(utm_[a-z0-9_]+|fbclid|gclid|msclkid|mc_cid|mc_eid|vero_[a-z0-9_]+)$/iu;
 const emailPrefixPattern = /^\s*→\s*email:\s*/iu;
+const replyForwardPrefixPattern = /^(?:(?:re|fwd?|aw):\s*)+/iu;
+const subjectArrowPrefixPattern = /^[←→⇐⇒]\s*(?:email:\s*)?/iu;
+const externalEmailPrefixPattern = /^\[external email\]\s*/iu;
 const conservativeSignatureBoundaryPatterns = [
   /^\s*--\s*$/u,
   /^\s*sent from my (iphone|ipad|android|mobile device)\s*$/iu,
@@ -46,8 +53,35 @@ export interface OutboundEmailWinnerDecision {
   readonly notes: string | null;
 }
 
+export interface ContentFingerprintInput {
+  readonly subject: string | null;
+  readonly occurredAt: string;
+  readonly contactId: string | null;
+  readonly channel: CanonicalEventRecord["channel"];
+  readonly direction: "inbound" | "outbound" | null;
+  readonly previewText?: string | null;
+}
+
+function resolveContentFingerprintChannel(
+  eventType: NormalizedCanonicalEventIntake["canonicalEvent"]["eventType"]
+): CanonicalEventRecord["channel"] | null {
+  if (eventType.startsWith("communication.email.")) {
+    return "email";
+  }
+
+  if (eventType.startsWith("communication.sms.")) {
+    return "sms";
+  }
+
+  return null;
+}
+
 function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n/gu, "\n").replace(/\r/gu, "\n");
+}
+
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 function stripCampaignQueryParamsFromUrls(value: string): string {
@@ -215,6 +249,127 @@ function normalizeSubject(value: string | null): string {
   );
 }
 
+export function normalizeContentFingerprintSubject(
+  value: string | null
+): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = collapseWhitespace(
+    value
+      .trim()
+      .toLowerCase()
+      .replace(externalEmailPrefixPattern, "")
+      .replace(subjectArrowPrefixPattern, "")
+      .replace(replyForwardPrefixPattern, "")
+  );
+
+  return normalized.length === 0 ? null : normalized;
+}
+
+function normalizeContentFingerprintPreview(
+  value: string | null | undefined
+): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = collapseWhitespace(
+    stripConservativeSignatureBlock(
+      stripQuotedReplyBlocks(
+        stripCampaignQueryParamsFromUrls(
+          stripTrackingPixelMarkup(
+            normalizeLineEndings(value).toLowerCase()
+          )
+        )
+      )
+    )
+  );
+
+  return normalized.length === 0 ? null : normalized;
+}
+
+function buildMinuteBucket(occurredAt: string): string | null {
+  const occurredAtMs = Date.parse(occurredAt);
+
+  if (Number.isNaN(occurredAtMs)) {
+    return null;
+  }
+
+  return new Date(occurredAtMs).toISOString().slice(0, 16);
+}
+
+export function computeContentFingerprint(
+  input: ContentFingerprintInput
+): string | null {
+  if (
+    input.contactId === null ||
+    input.direction === null ||
+    input.channel !== "email"
+  ) {
+    return null;
+  }
+
+  const normalizedSubject = normalizeContentFingerprintSubject(input.subject);
+  const normalizedPreview = normalizeContentFingerprintPreview(
+    input.previewText
+  );
+  const minuteBucket = buildMinuteBucket(input.occurredAt);
+
+  if (
+    normalizedSubject === null ||
+    normalizedPreview === null ||
+    minuteBucket === null
+  ) {
+    return null;
+  }
+
+  const key = [
+    input.contactId,
+    input.channel,
+    input.direction,
+    minuteBucket,
+    normalizedSubject,
+    sha256Text(normalizedPreview)
+  ].join("|");
+
+  return `fp:${sha256Text(key)}`;
+}
+
+export function computeSalesforceSnippetClusterFingerprint(input: {
+  readonly subject: string | null;
+  readonly snippet: string;
+  readonly contactId: string | null;
+  readonly channel: CanonicalEventRecord["channel"];
+  readonly direction: "inbound" | "outbound" | null;
+}): string | null {
+  if (
+    input.contactId === null ||
+    input.direction === null ||
+    input.channel !== "email"
+  ) {
+    return null;
+  }
+
+  const normalizedSubject = normalizeContentFingerprintSubject(input.subject);
+  const normalizedSnippet = normalizeContentFingerprintPreview(input.snippet);
+
+  if (normalizedSubject === null || normalizedSnippet === null) {
+    return null;
+  }
+
+  const key = [
+    input.contactId,
+    input.channel,
+    input.direction,
+    normalizedSubject,
+    sha256Text(normalizedSnippet)
+  ].join("|");
+
+  return `sf:${sha256Text(key)}`;
+}
+
 /**
  * Normalizes an outbound email fingerprint conservatively so we collapse only
  * very high-confidence duplicates. The normalizer:
@@ -331,6 +486,140 @@ export function buildPersistedOutboundEmailFingerprintSource(input: {
   }
 
   return null;
+}
+
+export function buildIncomingContentFingerprintSource(
+  input: Pick<
+    NormalizedCanonicalEventIntake,
+    | "canonicalEvent"
+    | "communicationClassification"
+    | "gmailMessageDetail"
+    | "salesforceCommunicationDetail"
+  >
+): ContentFingerprintInput | null {
+  const channel = resolveContentFingerprintChannel(
+    input.canonicalEvent.eventType
+  );
+
+  if (channel === null) {
+    return null;
+  }
+
+  const direction = input.communicationClassification?.direction ?? null;
+  const previewText =
+    input.gmailMessageDetail?.bodyTextPreview ??
+    input.gmailMessageDetail?.snippetClean ??
+    input.salesforceCommunicationDetail?.snippet ??
+    input.canonicalEvent.snippet ??
+    null;
+  const subject =
+    input.gmailMessageDetail?.subject ??
+    input.salesforceCommunicationDetail?.subject ??
+    null;
+
+  return {
+    subject,
+    occurredAt: input.canonicalEvent.occurredAt,
+    contactId: null,
+    channel,
+    direction,
+    previewText
+  };
+}
+
+export function buildPersistedContentFingerprintSource(input: {
+  readonly event: Pick<
+    CanonicalEventRecord,
+    "channel" | "contactId" | "occurredAt" | "provenance"
+  >;
+  readonly gmailMessageDetailBySourceEvidenceId: ReadonlyMap<
+    string,
+    GmailMessageDetailRecord
+  >;
+  readonly salesforceCommunicationDetailBySourceEvidenceId: ReadonlyMap<
+    string,
+    SalesforceCommunicationDetailRecord
+  >;
+} & Pick<CanonicalEventRecord, "sourceEvidenceId">): ContentFingerprintInput | null {
+  if (input.event.channel !== "email") {
+    return null;
+  }
+
+  if (
+    input.event.provenance.primaryProvider === "gmail"
+  ) {
+    const detail = input.gmailMessageDetailBySourceEvidenceId.get(
+      input.sourceEvidenceId
+    );
+
+    if (detail === undefined) {
+      return null;
+    }
+
+    return {
+      subject: detail.subject,
+      occurredAt: input.event.occurredAt,
+      contactId: input.event.contactId,
+      channel: input.event.channel,
+      direction: detail.direction,
+      previewText: detail.bodyTextPreview || detail.snippetClean
+    };
+  }
+
+  if (
+    input.event.provenance.primaryProvider === "salesforce"
+  ) {
+    const detail = input.salesforceCommunicationDetailBySourceEvidenceId.get(
+      input.sourceEvidenceId
+    );
+
+    if (detail === undefined) {
+      return null;
+    }
+
+    return {
+      subject: detail.subject,
+      occurredAt: input.event.occurredAt,
+      contactId: input.event.contactId,
+      channel: input.event.channel,
+      direction: input.event.provenance.direction,
+      previewText: detail.snippet
+    };
+  }
+
+  return null;
+}
+
+export function isWithinContentFingerprintWindow(input: {
+  readonly leftOccurredAt: string;
+  readonly rightOccurredAt: string;
+  readonly windowMs?: number;
+}): boolean {
+  const left = Date.parse(input.leftOccurredAt);
+  const right = Date.parse(input.rightOccurredAt);
+
+  if (Number.isNaN(left) || Number.isNaN(right)) {
+    return false;
+  }
+
+  return Math.abs(left - right) <= (input.windowMs ?? contentFingerprintWindowMs);
+}
+
+export function selectSalesforceSelfDuplicateWinner(input: {
+  readonly incomingOccurredAt: string;
+  readonly existingOccurredAt: string;
+}): "incoming" | "existing" {
+  const incomingOccurredAt = Date.parse(input.incomingOccurredAt);
+  const existingOccurredAt = Date.parse(input.existingOccurredAt);
+
+  if (
+    Number.isNaN(incomingOccurredAt) ||
+    Number.isNaN(existingOccurredAt)
+  ) {
+    return "existing";
+  }
+
+  return incomingOccurredAt < existingOccurredAt ? "incoming" : "existing";
 }
 
 export function isWithinOutboundEmailFingerprintWindow(input: {

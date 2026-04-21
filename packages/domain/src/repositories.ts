@@ -46,6 +46,13 @@ export interface CanonicalEventRepository {
   findByIdempotencyKey(
     idempotencyKey: string,
   ): Promise<CanonicalEventRecord | null>;
+  listByContentFingerprintWindow(input: {
+    readonly contactId: string;
+    readonly channel: CanonicalEventRecord["channel"];
+    readonly contentFingerprint: string;
+    readonly occurredAt: string;
+    readonly windowMinutes: number;
+  }): Promise<readonly CanonicalEventRecord[]>;
   countAll(): Promise<number>;
   countByPrimaryProvider(provider: Provider): Promise<number>;
   countDistinctInboxContacts(): Promise<number>;

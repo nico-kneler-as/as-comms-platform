@@ -113,6 +113,7 @@ export const normalizedCanonicalEventPayloadSchema = z.object({
   id: idSchema,
   eventType: canonicalEventTypeSchema,
   occurredAt: timestampSchema,
+  contentFingerprint: nullableStringSchema.default(null),
   idempotencyKey: z.string().min(1),
   summary: z.string().min(1),
   snippet: z.string().default("")

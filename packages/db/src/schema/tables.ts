@@ -338,6 +338,7 @@ export const canonicalEventLedger = pgTable(
       mode: "date",
       withTimezone: true
     }).notNull(),
+    contentFingerprint: text("content_fingerprint"),
     sourceEvidenceId: text("source_evidence_id")
       .notNull()
       .references(() => sourceEvidenceLog.id, { onDelete: "restrict" }),
@@ -356,6 +357,11 @@ export const canonicalEventLedger = pgTable(
     index("canonical_event_ledger_contact_occurred_idx").on(
       table.contactId,
       table.occurredAt
+    ),
+    index("canonical_event_ledger_contact_channel_fingerprint_idx").on(
+      table.contactId,
+      table.channel,
+      table.contentFingerprint
     ),
     index("canonical_event_ledger_source_evidence_idx").on(
       table.sourceEvidenceId

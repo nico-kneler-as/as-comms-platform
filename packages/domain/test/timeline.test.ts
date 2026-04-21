@@ -76,6 +76,7 @@ function createRepositoryBundle(input: {
     canonicalEvents: {
       findById: (id) => Promise.resolve(canonicalEventsById.get(id) ?? null),
       findByIdempotencyKey: () => Promise.resolve(null),
+      listByContentFingerprintWindow: () => Promise.resolve([]),
       countAll: () => Promise.resolve(input.canonicalEvents.length),
       countByPrimaryProvider: () => Promise.resolve(0),
       countDistinctInboxContacts: () => Promise.resolve(1),
@@ -276,6 +277,7 @@ function buildSalesforceOutboundEmailEvent(input: {
       eventType: "communication.email.outbound",
       channel: "email",
       occurredAt: input.occurredAt,
+      contentFingerprint: null,
       sourceEvidenceId: input.sourceEvidenceId,
       idempotencyKey: `canonical:${input.id}`,
       provenance: {

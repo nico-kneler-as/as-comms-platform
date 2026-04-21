@@ -91,6 +91,7 @@ export const canonicalEventSchema = z
     eventType: canonicalEventTypeSchema,
     channel: channelSchema,
     occurredAt: timestampSchema,
+    contentFingerprint: nullableStringSchema.default(null),
     sourceEvidenceId: idSchema,
     idempotencyKey: z.string().min(1),
     provenance: canonicalEventProvenanceSchema,

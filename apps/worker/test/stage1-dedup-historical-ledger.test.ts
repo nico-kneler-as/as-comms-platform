@@ -325,6 +325,49 @@ async function seedHistoricalDuplicates(
     lastCanonicalEventId: taniSalesforce.id,
     lastEventType: "communication.email.outbound"
   });
+
+  await seedContact({
+    context,
+    contactId: "contact_next_step",
+    salesforceContactId: "003-next-step",
+    email: "next-step@example.org",
+    displayName: "Next Step Contact"
+  });
+  const nextStepSecond = await seedDirtyOutboundEmail({
+    context,
+    contactId: "contact_next_step",
+    key: "next-step-2",
+    provider: "salesforce",
+    occurredAt: "2026-03-04T21:02:03.000Z",
+    receivedAt: "2026-03-04T21:02:20.000Z",
+    subject: "Next Step for PNW Forest Biodiversity",
+    body: "Thanks for joining the cohort. Here are your next step instructions.",
+    messageKind: "auto"
+  });
+  await seedDirtyOutboundEmail({
+    context,
+    contactId: "contact_next_step",
+    key: "next-step-1",
+    provider: "salesforce",
+    occurredAt: "2026-03-04T21:00:06.000Z",
+    receivedAt: "2026-03-04T21:00:30.000Z",
+    subject: "Next Step for PNW Forest Biodiversity",
+    body: "Thanks for joining the cohort. Here are your next step instructions.",
+    messageKind: "auto"
+  });
+  await context.repositories.inboxProjection.upsert({
+    contactId: "contact_next_step",
+    bucket: "Opened",
+    needsFollowUp: false,
+    hasUnresolved: false,
+    lastInboundAt: null,
+    lastOutboundAt: nextStepSecond.occurredAt,
+    lastActivityAt: nextStepSecond.occurredAt,
+    snippet:
+      "Thanks for joining the cohort. Here are your next step instructions.",
+    lastCanonicalEventId: nextStepSecond.id,
+    lastEventType: "communication.email.outbound"
+  });
 }
 
 function createCapturingWriter() {
@@ -365,7 +408,9 @@ describe("dedup-historical-ledger", () => {
           winnerReason: "salesforce_only_best_evidence",
           messageKind: "auto"
         }),
-        fingerprint: "tori"
+        exactBodyFingerprint: "tori",
+        contentFingerprint: "fp:tori",
+        salesforceSnippetClusterFingerprint: "sf:tori"
       },
       {
         event: buildCandidateEvent({
@@ -378,7 +423,9 @@ describe("dedup-historical-ledger", () => {
           winnerReason: "single_source",
           messageKind: "one_to_one"
         }),
-        fingerprint: "tori"
+        exactBodyFingerprint: "tori",
+        contentFingerprint: "fp:tori",
+        salesforceSnippetClusterFingerprint: null
       },
       {
         event: buildCandidateEvent({
@@ -391,7 +438,9 @@ describe("dedup-historical-ledger", () => {
           winnerReason: "single_source",
           messageKind: "one_to_one"
         }),
-        fingerprint: "rosie"
+        exactBodyFingerprint: "rosie",
+        contentFingerprint: "fp:rosie",
+        salesforceSnippetClusterFingerprint: null
       },
       {
         event: buildCandidateEvent({
@@ -404,7 +453,9 @@ describe("dedup-historical-ledger", () => {
           winnerReason: "single_source",
           messageKind: "one_to_one"
         }),
-        fingerprint: "rosie"
+        exactBodyFingerprint: "rosie",
+        contentFingerprint: "fp:rosie",
+        salesforceSnippetClusterFingerprint: null
       }
     ]);
 
@@ -417,10 +468,12 @@ describe("dedup-historical-ledger", () => {
     );
 
     expect(toriPlan?.winner.event.id).toBe("evt_tori_gmail");
+    expect(toriPlan?.reason).toBe("exact_body_fingerprint");
     expect(toriPlan?.losers.map((loser) => loser.event.id)).toEqual([
       "evt_tori_salesforce"
     ]);
     expect(rosiePlan?.winner.event.id).toBe("evt_rosie_gmail_1");
+    expect(rosiePlan?.reason).toBe("exact_body_fingerprint");
     expect(rosiePlan?.losers.map((loser) => loser.event.id)).toEqual([
       "evt_rosie_gmail_2"
     ]);
@@ -443,9 +496,9 @@ describe("dedup-historical-ledger", () => {
 
       expect(dryRun).toMatchObject({
         dryRun: true,
-        scannedCandidateCount: 8,
-        plannedClusterCount: 3,
-        plannedLoserCount: 5
+        scannedCandidateCount: 10,
+        plannedClusterCount: 4,
+        plannedLoserCount: 6
       });
       expect(dryRun.referenceTargets).toEqual([
         {
@@ -476,17 +529,17 @@ describe("dedup-historical-ledger", () => {
 
       expect(executed).toMatchObject<Partial<HistoricalLedgerDedupResult>>({
         dryRun: false,
-        plannedClusterCount: 3,
-        plannedLoserCount: 5,
-        deletedCanonicalCount: 5,
-        deletedTimelineCount: 5
+        plannedClusterCount: 4,
+        plannedLoserCount: 6,
+        deletedCanonicalCount: 6,
+        deletedTimelineCount: 6
       });
-      expect(executed.repointedInboxCount).toBeGreaterThanOrEqual(3);
+      expect(executed.repointedInboxCount).toBeGreaterThanOrEqual(4);
       expect(
         executeWriter.lines.filter((line) =>
           line.includes("\"operation\":\"merged\"")
         )
-      ).toHaveLength(5);
+      ).toHaveLength(6);
 
       await expect(
         context.repositories.canonicalEvents.listByContactId("contact_tori")
@@ -497,6 +550,9 @@ describe("dedup-historical-ledger", () => {
       await expect(
         context.repositories.canonicalEvents.listByContactId("contact_tani")
       ).resolves.toHaveLength(1);
+      await expect(
+        context.repositories.canonicalEvents.listByContactId("contact_next_step")
+      ).resolves.toHaveLength(1);
 
       const [toriEvent] =
         await context.repositories.canonicalEvents.listByContactId("contact_tori");
@@ -504,6 +560,10 @@ describe("dedup-historical-ledger", () => {
         await context.repositories.canonicalEvents.listByContactId("contact_rosie");
       const [taniEvent] =
         await context.repositories.canonicalEvents.listByContactId("contact_tani");
+      const [nextStepEvent] =
+        await context.repositories.canonicalEvents.listByContactId(
+          "contact_next_step"
+        );
 
       expect(toriEvent?.sourceEvidenceId).toBe("sev_tori-gmail");
       expect(toriEvent?.provenance.supportingSourceEvidenceIds).toEqual([
@@ -518,6 +578,10 @@ describe("dedup-historical-ledger", () => {
       expect(taniEvent?.provenance.supportingSourceEvidenceIds).toEqual([
         "sev_tani-gmail-2",
         "sev_tani-salesforce"
+      ]);
+      expect(nextStepEvent?.sourceEvidenceId).toBe("sev_next-step-1");
+      expect(nextStepEvent?.provenance.supportingSourceEvidenceIds).toEqual([
+        "sev_next-step-2"
       ]);
 
       const secondDryRunWriter = createCapturingWriter();

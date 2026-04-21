@@ -167,6 +167,8 @@ function sameCanonicalEventRecord(
     incoming.eventType === existing.eventType &&
     incoming.channel === existing.channel &&
     incoming.occurredAt === existing.occurredAt &&
+    (incoming.contentFingerprint ?? null) ===
+      (existing.contentFingerprint ?? null) &&
     incoming.sourceEvidenceId === existing.sourceEvidenceId &&
     incoming.idempotencyKey === existing.idempotencyKey &&
     incoming.reviewState === existing.reviewState &&

@@ -1220,6 +1220,134 @@ describe("Stage 1 normalization service", () => {
     ).resolves.toHaveLength(1);
   });
 
+  it("uses the content fingerprint fallback when Gmail and Salesforce differ only by subject prefixes", async () => {
+    const context = await seedContactWithEmail("shakina@example.org", {
+      contactId: "contact_shakina",
+      salesforceContactId: "003-shakina",
+      displayName: "Shakina James"
+    });
+    const gmail = buildGmailOutboundEmailFixture({
+      key: "shakina-gmail",
+      email: "shakina@example.org",
+      salesforceContactId: "003-shakina",
+      occurredAt: "2026-04-20T21:27:03.000Z",
+      receivedAt: "2026-04-20T21:27:09.000Z",
+      subject: "[External Email] Re: ARU pickup details",
+      bodyTextPreview: "Thanks again. Your ARU pickup details are all set.",
+      snippetClean: "Thanks again. Your ARU pickup details are all set."
+    });
+    const salesforce = buildSalesforceOutboundEmailFixture({
+      key: "shakina-salesforce",
+      email: "shakina@example.org",
+      salesforceContactId: "003-shakina",
+      occurredAt: "2026-04-20T21:27:41.000Z",
+      receivedAt: "2026-04-20T21:29:00.000Z",
+      subject: "→ Email: ARU pickup details",
+      snippet: "Thanks again. Your ARU pickup details are all set.",
+      messageKind: "auto"
+    });
+
+    await context.normalization.applyNormalizedCanonicalEvent(salesforce);
+    await context.normalization.applyNormalizedCanonicalEvent(gmail);
+
+    const { canonicalEvent } = await expectExactlyOneCanonicalEvent(
+      context,
+      "contact_shakina"
+    );
+    expect(canonicalEvent.sourceEvidenceId).toBe("sev_shakina-gmail");
+    expect(canonicalEvent.provenance.primaryProvider).toBe("gmail");
+    expect(canonicalEvent.provenance.supportingSourceEvidenceIds).toEqual([
+      "sev_shakina-salesforce"
+    ]);
+    expect(canonicalEvent.contentFingerprint).toMatch(/^fp:/);
+  });
+
+  it("does not collapse distinct same-minute Gmail and Salesforce emails when the body content differs", async () => {
+    const context = await seedContactWithEmail("monica@example.org", {
+      contactId: "contact_monica",
+      salesforceContactId: "003-monica",
+      displayName: "Monica Tomosy"
+    });
+    const gmail = buildGmailOutboundEmailFixture({
+      key: "monica-gmail",
+      email: "monica@example.org",
+      salesforceContactId: "003-monica",
+      occurredAt: "2026-04-20T21:27:03.000Z",
+      receivedAt: "2026-04-20T21:27:09.000Z",
+      subject: "Re: Hex 12345",
+      bodyTextPreview: "First draft with the pickup link and meeting notes.",
+      snippetClean: "First draft with the pickup link and meeting notes."
+    });
+    const salesforce = buildSalesforceOutboundEmailFixture({
+      key: "monica-salesforce",
+      email: "monica@example.org",
+      salesforceContactId: "003-monica",
+      occurredAt: "2026-04-20T21:27:45.000Z",
+      receivedAt: "2026-04-20T21:28:30.000Z",
+      subject: "→ Email: Re: Hex 12345",
+      snippet: "Second draft with a different call to action and follow-up wording.",
+      messageKind: "auto"
+    });
+
+    await context.normalization.applyNormalizedCanonicalEvent(gmail);
+    await context.normalization.applyNormalizedCanonicalEvent(salesforce);
+
+    const canonicalEvents =
+      await context.repositories.canonicalEvents.listByContactId("contact_monica");
+    expect(canonicalEvents).toHaveLength(2);
+    expect(canonicalEvents.map((event) => event.sourceEvidenceId)).toEqual([
+      "sev_monica-gmail",
+      "sev_monica-salesforce"
+    ]);
+  });
+
+  it("collapses Salesforce Flow double-fire rows to the earliest task when subject and snippet are identical", async () => {
+    const context = await seedContactWithEmail("next-step@example.org", {
+      contactId: "contact_next_step",
+      salesforceContactId: "003-next-step",
+      displayName: "Next Step Contact"
+    });
+    const firstTask = buildSalesforceOutboundEmailFixture({
+      key: "next-step-1",
+      email: "next-step@example.org",
+      salesforceContactId: "003-next-step",
+      occurredAt: "2026-03-04T21:00:06.000Z",
+      receivedAt: "2026-03-04T21:00:30.000Z",
+      subject: "Next Step for PNW Forest Biodiversity",
+      snippet:
+        "Thanks for joining the cohort. Here are your next step instructions.",
+      messageKind: "auto"
+    });
+    const secondTask = buildSalesforceOutboundEmailFixture({
+      key: "next-step-2",
+      email: "next-step@example.org",
+      salesforceContactId: "003-next-step",
+      occurredAt: "2026-03-04T21:02:03.000Z",
+      receivedAt: "2026-03-04T21:02:20.000Z",
+      subject: "Next Step for PNW Forest Biodiversity",
+      snippet:
+        "Thanks for joining the cohort. Here are your next step instructions.",
+      messageKind: "auto"
+    });
+
+    await context.normalization.applyNormalizedCanonicalEvent(secondTask);
+    await context.normalization.applyNormalizedCanonicalEvent(firstTask);
+
+    const { canonicalEvent } = await expectExactlyOneCanonicalEvent(
+      context,
+      "contact_next_step"
+    );
+    expect(canonicalEvent.sourceEvidenceId).toBe("sev_next-step-1");
+    expect(canonicalEvent.provenance.primaryProvider).toBe("salesforce");
+    expect(canonicalEvent.provenance.supportingSourceEvidenceIds).toEqual([
+      "sev_next-step-2"
+    ]);
+    expect(canonicalEvent.provenance.winnerReason).toBe(
+      "salesforce_only_best_evidence"
+    );
+    expect(canonicalEvent.occurredAt).toBe("2026-03-04T21:00:06.000Z");
+  });
+
   it("keeps Salesforce auto task messages out of inbox projection mutation", async () => {
     const context = await seedContactWithEmail("auto@example.org", {
       contactId: "contact_1",

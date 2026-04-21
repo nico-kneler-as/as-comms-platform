@@ -31,6 +31,7 @@ describe("defineStage1RepositoryBundle", () => {
       canonicalEvents: {
         findById: () => Promise.resolve(null),
         findByIdempotencyKey: () => Promise.resolve(null),
+        listByContentFingerprintWindow: () => Promise.resolve([]),
         countAll: () => Promise.resolve(0),
         countByPrimaryProvider: () => Promise.resolve(0),
         countDistinctInboxContacts: () => Promise.resolve(0),
