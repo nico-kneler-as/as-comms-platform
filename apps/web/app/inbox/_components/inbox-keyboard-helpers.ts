@@ -7,6 +7,9 @@ export const INBOX_SEARCH_INPUT_SELECTOR =
 export const INBOX_FOLLOW_UP_TOGGLE_SELECTOR =
   '[data-inbox-follow-up-toggle="true"]';
 
+export const INBOX_LIST_ROOT_SELECTOR =
+  '[data-inbox-list-root="true"]';
+
 export type InboxRowDirection = 1 | -1;
 
 export interface ShortcutTargetMeta {
@@ -113,4 +116,3 @@ export function getAdjacentFocusedRowContactId(input: {
 
   return rowContactIds[nextIndex] ?? null;
 }
-

@@ -47,6 +47,12 @@ const baseEntry = {
   channel: "email" as const,
   isUnread: false,
   isPreview: true,
+  mailbox: null,
+  threadId: null,
+  rfc822MessageId: null,
+  inReplyToRfc822: null,
+  sendStatus: null,
+  attachmentCount: 0,
 };
 
 describe("InboxTimeline", () => {

@@ -70,6 +70,10 @@ export interface ContactRepository {
   ): Promise<ContactRecord | null>;
   listAll(): Promise<readonly ContactRecord[]>;
   listByIds(ids: readonly string[]): Promise<readonly ContactRecord[]>;
+  searchByQuery(input: {
+    readonly query: string;
+    readonly limit: number;
+  }): Promise<readonly ContactRecord[]>;
   upsert(record: ContactRecord): Promise<ContactRecord>;
 }
 

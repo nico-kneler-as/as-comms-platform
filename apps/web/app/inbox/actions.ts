@@ -74,6 +74,19 @@ export type ComposerSendActionInput = z.input<
 >;
 export type ComposerSendActionResult = UiResult<ComposerSendActionData>;
 
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+export type ContactSearchResult = {
+  readonly id: string;
+  readonly displayName: string;
+  readonly primaryEmail: string | null;
+  readonly salesforceContactId: string | null;
+  readonly primaryProjectName: string | null;
+};
+
+export type ContactSearchActionResult = UiResult<
+  readonly ContactSearchResult[]
+>;
+
 function unauthorizedError(requestId: string): UiResult<never> {
   return {
     ok: false,
@@ -98,6 +111,16 @@ function composerRateLimitError(requestId: string): ComposerSendActionResult {
     ok: false,
     code: "rate_limit_exceeded",
     message: "Too many composer sends. Please wait a minute and try again.",
+    requestId,
+    retryable: true,
+  };
+}
+
+function contactSearchRateLimitError(requestId: string): ContactSearchActionResult {
+  return {
+    ok: false,
+    code: "rate_limit_exceeded",
+    message: "Too many contact searches. Please wait a minute and try again.",
     requestId,
     retryable: true,
   };
@@ -215,6 +238,35 @@ function normalizeEmailAddress(value: string): string | null {
   return normalized.length === 0 ? null : normalized;
 }
 
+function normalizeMembershipStatus(value: string | null): string {
+  return (value ?? "").trim().toLowerCase().replaceAll("_", "-");
+}
+
+function membershipSortRank(
+  membershipStatus: string | null
+): number {
+  switch (normalizeMembershipStatus(membershipStatus)) {
+    case "lead":
+      return 0;
+    case "applied":
+    case "applicant":
+      return 1;
+    case "in-training":
+    case "training":
+      return 2;
+    case "trip-planning":
+      return 3;
+    case "in-field":
+    case "active":
+      return 4;
+    case "successful":
+    case "completed":
+      return 5;
+    default:
+      return 6;
+  }
+}
+
 function sha256Text(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -238,6 +290,123 @@ function buildAttachmentMetadata(
     size: Buffer.from(attachment.contentBase64, "base64").length,
     contentType: attachment.contentType,
   }));
+}
+
+export async function searchContactsAction(
+  query: string
+): Promise<ContactSearchActionResult> {
+  const requestId = randomUUID();
+
+  let currentUser;
+  try {
+    currentUser = await requireSession();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return unauthorizedError(requestId);
+    }
+    throw error;
+  }
+
+  const decision = await enforceRateLimit({
+    scope: "server-action:inbox-contact-search",
+    identifier: currentUser.id,
+    limit: 60,
+    audit: {
+      actorType: "user",
+      actorId: currentUser.id,
+      action: "inbox.contact_search.rate_limited",
+      entityType: "server_action",
+      entityId: "inbox.contact_search",
+      metadataJson: {
+        queryLength: query.trim().length,
+      },
+    },
+  });
+
+  if (!decision.allowed) {
+    return contactSearchRateLimitError(requestId);
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const contacts = await runtime.repositories.contacts.searchByQuery({
+    query,
+    limit: 8,
+  });
+
+  if (contacts.length === 0) {
+    return {
+      ok: true,
+      data: [],
+      requestId,
+    };
+  }
+
+  const contactIds = contacts.map((contact) => contact.id);
+  const memberships =
+    await runtime.repositories.contactMemberships.listByContactIds(contactIds);
+  const projectIds = Array.from(
+    new Set(
+      memberships
+        .map((membership) => membership.projectId)
+        .filter((projectId): projectId is string => projectId !== null)
+    )
+  );
+  const projectDimensions =
+    await runtime.repositories.projectDimensions.listByIds(projectIds);
+  const membershipsByContactId = new Map<
+    string,
+    ((typeof memberships)[number])[]
+  >();
+
+  for (const membership of memberships) {
+    const existing = membershipsByContactId.get(membership.contactId);
+
+    if (existing === undefined) {
+      membershipsByContactId.set(membership.contactId, [membership]);
+      continue;
+    }
+
+    existing.push(membership);
+  }
+
+  const projectNameById = new Map(
+    projectDimensions.map((project) => [project.projectId, project.projectName])
+  );
+
+  return {
+    ok: true,
+    data: contacts.map((contact) => {
+      const primaryMembership =
+        [...(membershipsByContactId.get(contact.id) ?? [])].sort(
+          (left, right) => {
+            const rankDifference =
+              membershipSortRank(left.status) - membershipSortRank(right.status);
+
+            if (rankDifference !== 0) {
+              return rankDifference;
+            }
+
+            if (left.projectId !== right.projectId) {
+              return (left.projectId ?? "").localeCompare(right.projectId ?? "");
+            }
+
+            return left.id.localeCompare(right.id);
+          }
+        )[0] ?? null;
+
+      return {
+        id: contact.id,
+        displayName: contact.displayName,
+        primaryEmail: contact.primaryEmail,
+        salesforceContactId: contact.salesforceContactId,
+        primaryProjectName:
+          primaryMembership?.projectId === null || primaryMembership === null
+            ? null
+            : (projectNameById.get(primaryMembership.projectId) ?? null),
+      };
+    }),
+    requestId,
+  };
 }
 
 async function resolveContactEmail(input: {

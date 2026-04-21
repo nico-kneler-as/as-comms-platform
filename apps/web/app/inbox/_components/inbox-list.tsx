@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { extractInboxContactId } from "./inbox-keyboard-helpers";
@@ -74,6 +75,7 @@ export function InboxList({
     clearSearch,
     isQueueLoading,
     setQueueLoading,
+    openNewDraft,
   } = useInboxClient();
   const urlQuery = searchParams.get("q") ?? "";
   const deferredQuery = useDeferredValue(search.query);
@@ -388,6 +390,7 @@ export function InboxList({
 
   return (
     <section
+      data-inbox-list-root="true"
       className={`relative flex ${LAYOUT.listWidth} shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white`}
     >
       <div className="sticky top-0 z-10 bg-white/95 backdrop-blur">
@@ -397,6 +400,14 @@ export function InboxList({
           <h1 className={`min-w-0 flex-1 truncate ${TEXT.headingLg}`}>
             {titleLabel}
           </h1>
+          <Button
+            type="button"
+            size="sm"
+            aria-keyshortcuts="c"
+            onClick={openNewDraft}
+          >
+            Compose
+          </Button>
           <button
             type="button"
             aria-label={filterPanelOpen ? "Close filters" : "Open filters"}

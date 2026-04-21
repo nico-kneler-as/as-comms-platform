@@ -127,6 +127,12 @@ export type InboxTimelineEntryKind =
   | "internal-note"
   | "system-event";
 
+export type InboxTimelineEntrySendStatus =
+  | "pending"
+  | "failed"
+  | "orphaned"
+  | null;
+
 export interface InboxTimelineEntryViewModel {
   readonly id: string;
   readonly kind: InboxTimelineEntryKind;
@@ -138,6 +144,28 @@ export interface InboxTimelineEntryViewModel {
   readonly channel: InboxChannel | null;
   readonly isUnread: boolean;
   readonly isPreview: boolean;
+  readonly mailbox: string | null;
+  readonly threadId: string | null;
+  readonly rfc822MessageId: string | null;
+  readonly inReplyToRfc822: string | null;
+  readonly sendStatus: InboxTimelineEntrySendStatus;
+  readonly attachmentCount: number;
+}
+
+export interface InboxComposerAliasOption {
+  readonly id: string;
+  readonly alias: string;
+  readonly projectId: string;
+  readonly projectName: string;
+}
+
+export interface InboxComposerReplyContext {
+  readonly contactId: string;
+  readonly contactDisplayName: string;
+  readonly subject: string;
+  readonly threadId: string | null;
+  readonly inReplyToRfc822: string | null;
+  readonly defaultAlias: string | null;
 }
 
 export interface InboxDetailViewModel {
@@ -146,6 +174,7 @@ export interface InboxDetailViewModel {
   readonly bucket: InboxBucket;
   readonly needsFollowUp: boolean;
   readonly smsEligible: boolean;
+  readonly composerReplyContext: InboxComposerReplyContext | null;
   readonly timelinePage: {
     readonly hasMore: boolean;
     readonly nextCursor: string | null;
