@@ -42,6 +42,9 @@ import {
   runDedupHistoricalLedgerCommand
 } from "./dedup-historical-ledger.js";
 import {
+  runReclassifySfDirectionCommand
+} from "./reclassify-sf-direction.js";
+import {
   buildOperationId,
   parseCliFlags,
   readOptionalBooleanFlag,
@@ -347,9 +350,12 @@ async function main(): Promise<void> {
     case "reconcile-identity-queue":
       await runReconcileIdentityQueue(rest);
       return;
+    case "reclassify-sf-direction":
+      await runReclassifySfDirectionCommand(rest, process.env);
+      return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, dedup-historical-ledger, reconcile-identity-queue."
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, dedup-historical-ledger, reconcile-identity-queue, reclassify-sf-direction."
       );
   }
 }

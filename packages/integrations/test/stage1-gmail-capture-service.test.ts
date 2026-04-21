@@ -368,6 +368,73 @@ describe("Gmail capture service", () => {
     );
   });
 
+  it("captures live Gmail bodies longer than 2000 characters without truncating them", async () => {
+    const longBody = `Hello Samantha,\n\n${"A".repeat(2_600)}`;
+    const service = createGmailCaptureService(
+      {
+        bearerToken: "gmail-token",
+        liveAccount: "volunteers@example.org",
+        projectInboxAliases: ["project-oceans@example.org"],
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
+      },
+      {
+        apiClient: {
+          listMessageIds: () => Promise.resolve(["gmail-live-long-1"]),
+          getMessage: ({ messageId }) =>
+            Promise.resolve({
+              id: messageId,
+              threadId: "thread-live-long-1",
+              snippet: "Long inbound field update",
+              internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
+              payload: buildFullMessagePayload({
+                bodyText: longBody,
+                headers: {
+                  Date: "Mon, 05 Jan 2026 00:00:00 +0000",
+                  From: "Volunteer <volunteer@example.org>",
+                  To: "Project Oceans <project-oceans@example.org>",
+                  Subject: "Long field update",
+                  "Message-ID": "<gmail-live-long-1@example.org>"
+                }
+              })
+            })
+        },
+        now: () => new Date("2026-01-05T00:01:00.000Z")
+      }
+    );
+
+    const result = await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:gmail:live:long-body",
+      correlationId: "corr:gmail:live:long-body",
+      traceId: null,
+      batchId: "batch:gmail:live:long-body",
+      syncStateId: "sync:gmail:live:long-body",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "gmail",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: "2026-01-05T00:00:00.000Z",
+      windowEnd: "2026-01-05T00:05:00.000Z",
+      recordIds: [],
+      maxRecords: 25
+    });
+
+    expect(result.records[0]).toMatchObject({
+      recordType: "message",
+      direction: "inbound",
+      subject: "Long field update",
+      bodyTextPreview: longBody
+    });
+    const record = gmailMessageRecordSchema.parse(result.records[0]);
+
+    expect(record.bodyTextPreview).toHaveLength(longBody.length);
+  });
+
   it("uses OAuth refresh-token exchange before polling the live mailbox", async () => {
     const requests: {
       readonly url: string;

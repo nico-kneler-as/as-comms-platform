@@ -4,10 +4,50 @@ import {
   mapGmailRecord,
   mapMailchimpRecord,
   mapSalesforceRecord,
+  parseSubjectDirection,
   mapSimpleTextingRecord
 } from "../src/index.js";
 
 describe("Stage 1 provider-close mappers", () => {
+  it("parses Salesforce inbound task subjects and strips the arrow prefix", () => {
+    expect(parseSubjectDirection("← Email: Re: Field update")).toEqual({
+      direction: "inbound",
+      cleanSubject: "Re: Field update"
+    });
+  });
+
+  it("parses Salesforce outbound task subjects and strips the arrow prefix", () => {
+    expect(parseSubjectDirection("→ Follow-up from AS")).toEqual({
+      direction: "outbound",
+      cleanSubject: "Follow-up from AS"
+    });
+  });
+
+  it("defaults Salesforce task subjects without an arrow to outbound", () => {
+    expect(parseSubjectDirection(" Status check ")).toEqual({
+      direction: "outbound",
+      cleanSubject: "Status check"
+    });
+  });
+
+  it("supports the unicode Salesforce arrow variants", () => {
+    expect(parseSubjectDirection("⇐ Email: Inbound variant")).toEqual({
+      direction: "inbound",
+      cleanSubject: "Inbound variant"
+    });
+    expect(parseSubjectDirection("⇒ Outbound variant")).toEqual({
+      direction: "outbound",
+      cleanSubject: "Outbound variant"
+    });
+  });
+
+  it("defaults null Salesforce task subjects to outbound with no subject", () => {
+    expect(parseSubjectDirection(null)).toEqual({
+      direction: "outbound",
+      cleanSubject: null
+    });
+  });
+
   it("maps Gmail one-to-one messages into normalized canonical event intake", () => {
     const result = mapGmailRecord({
       recordType: "message",
@@ -339,6 +379,68 @@ describe("Stage 1 provider-close mappers", () => {
         expect(taskResult.command.input.canonicalEvent.idempotencyKey).toBe(
           "canonical-event:collapse:communication.email.outbound:email-thread-1"
         );
+      }
+    }
+  });
+
+  it("maps Salesforce inbound task communication records into inbound canonical events", () => {
+    const taskResult = mapSalesforceRecord({
+      recordType: "task_communication",
+      recordId: "task-inbound-1",
+      channel: "email",
+      messageKind: "one_to_one",
+      salesforceContactId: "003-stage1",
+      occurredAt: "2026-01-01T00:02:00.000Z",
+      receivedAt: "2026-01-01T00:03:00.000Z",
+      payloadRef: "payloads/salesforce/task-inbound-1.json",
+      checksum: "checksum-task-inbound-1",
+      subject: "← Email: Re: Field update",
+      snippet: "Inbound update from the volunteer",
+      normalizedEmails: ["volunteer@example.org"],
+      normalizedPhones: [],
+      volunteerIdPlainValues: [],
+      supportingRecords: [],
+      crossProviderCollapseKey: null,
+      routing: {
+        required: false,
+        projectId: null,
+        expeditionId: null,
+        projectName: null,
+        expeditionName: null
+      }
+    });
+
+    expect(taskResult.outcome).toBe("command");
+    if (taskResult.outcome === "command") {
+      expect(taskResult.command.kind).toBe("canonical_event");
+      if (taskResult.command.kind === "canonical_event") {
+        expect(taskResult.command.input.canonicalEvent.eventType).toBe(
+          "communication.email.inbound"
+        );
+        expect(taskResult.command.input.canonicalEvent.summary).toBe(
+          "Inbound email received"
+        );
+        expect(taskResult.command.input.communicationClassification).toEqual({
+          messageKind: "one_to_one",
+          sourceRecordType: "task_communication",
+          sourceRecordId: "task-inbound-1",
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: null,
+            providerThreadId: null
+          },
+          direction: "inbound"
+        });
+        expect(taskResult.command.input.salesforceCommunicationDetail).toEqual({
+          sourceEvidenceId:
+            "source-evidence:salesforce:task_communication:task-inbound-1",
+          providerRecordId: "task-inbound-1",
+          channel: "email",
+          messageKind: "one_to_one",
+          subject: "Re: Field update",
+          snippet: "Inbound update from the volunteer",
+          sourceLabel: "Salesforce Task"
+        });
       }
     }
   });

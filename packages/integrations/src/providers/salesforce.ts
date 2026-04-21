@@ -341,6 +341,55 @@ function buildLifecycleSummary(eventType: CanonicalEventType): string {
   }
 }
 
+export function parseSubjectDirection(rawSubject: string | null): {
+  readonly direction: "inbound" | "outbound";
+  readonly cleanSubject: string | null;
+} {
+  if (rawSubject === null) {
+    return {
+      direction: "outbound",
+      cleanSubject: null
+    };
+  }
+
+  const trimmed = rawSubject.trim();
+
+  if (trimmed.length === 0) {
+    return {
+      direction: "outbound",
+      cleanSubject: null
+    };
+  }
+
+  const normalizeCleanSubject = (value: string): string | null => {
+    const cleaned = value.trim();
+    return cleaned.length > 0 ? cleaned : null;
+  };
+
+  if (trimmed.startsWith("←") || trimmed.startsWith("⇐")) {
+    return {
+      direction: "inbound",
+      cleanSubject: normalizeCleanSubject(
+        trimmed.replace(/^[←⇐]\s*(?:Email:\s*)?/u, "")
+      )
+    };
+  }
+
+  if (trimmed.startsWith("→") || trimmed.startsWith("⇒")) {
+    return {
+      direction: "outbound",
+      cleanSubject: normalizeCleanSubject(
+        trimmed.replace(/^[→⇒]\s*(?:Email:\s*)?/u, "")
+      )
+    };
+  }
+
+  return {
+    direction: "outbound",
+    cleanSubject: trimmed
+  };
+}
+
 function mapSalesforceContactSnapshot(
   record: SalesforceContactSnapshotRecord
 ): NormalizedContactGraphUpsertInput {
@@ -575,6 +624,8 @@ function buildSalesforceTaskSummary(input: {
   readonly messageKind: "one_to_one" | "auto";
 }): string {
   switch (input.eventType) {
+    case "communication.email.inbound":
+      return "Inbound email received";
     case "communication.email.outbound":
       return input.messageKind === "auto"
         ? "Auto email sent"
@@ -591,9 +642,18 @@ function buildSalesforceTaskSummary(input: {
 function mapSalesforceTaskCommunicationRecord(
   record: SalesforceTaskCommunicationRecord
 ): NormalizedCanonicalEventIntake {
+  const subjectDirection =
+    record.channel === "email"
+      ? parseSubjectDirection(record.subject)
+      : {
+          direction: "outbound" as const,
+          cleanSubject: record.subject
+        };
   const eventType: CanonicalEventType =
     record.channel === "email"
-      ? "communication.email.outbound"
+      ? subjectDirection.direction === "inbound"
+        ? "communication.email.inbound"
+        : "communication.email.outbound"
       : "communication.sms.outbound";
   const providerRecordType = record.recordType;
   const providerRecordId = record.recordId;
@@ -658,7 +718,7 @@ function mapSalesforceTaskCommunicationRecord(
         crossProviderCollapseKey: record.crossProviderCollapseKey,
         providerThreadId: null
       },
-      direction: "outbound"
+      direction: subjectDirection.direction
     },
     salesforceCommunicationDetail: {
       sourceEvidenceId: buildSourceEvidenceId(
@@ -669,7 +729,7 @@ function mapSalesforceTaskCommunicationRecord(
       providerRecordId,
       channel: record.channel,
       messageKind: record.messageKind,
-      subject: record.subject,
+      subject: subjectDirection.cleanSubject,
       snippet: record.snippet,
       sourceLabel:
         record.messageKind === "auto" ? "Salesforce Flow" : "Salesforce Task"

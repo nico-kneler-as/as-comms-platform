@@ -19,12 +19,8 @@ export interface GmailApiMessagePart {
   readonly parts?: readonly GmailApiMessagePart[] | null | undefined;
 }
 
-const BODY_PREVIEW_LIMIT = 2_000;
-
 const MIME_HEADER_LINE_PATTERN =
   /^(Content-Type|Content-Transfer-Encoding|Content-Disposition|MIME-Version|charset|boundary|name|filename):/i;
-const FORWARDED_HEADER_LINE_PATTERN =
-  /^(From|To|Recipients|Cc|Bcc|Reply-To|Sent|Date|Subject):/i;
 
 const SIMPLE_PARSER_OPTIONS = {
   skipImageLinks: true,
@@ -143,54 +139,6 @@ function sanitizePreviewText(value: string): string {
     .trim();
 }
 
-function findForwardedHeaderBlockStart(value: string): number {
-  const lines = value.split("\n");
-  let offset = 0;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    const trimmed = line.trim();
-
-    if (!FORWARDED_HEADER_LINE_PATTERN.test(trimmed)) {
-      offset += line.length + 1;
-      continue;
-    }
-
-    let headerCount = 0;
-    let lineIndex = index;
-
-    while (lineIndex < lines.length) {
-      const candidate = lines[lineIndex] ?? "";
-      const candidateTrimmed = candidate.trim();
-
-      if (candidateTrimmed.length === 0) {
-        break;
-      }
-
-      if (FORWARDED_HEADER_LINE_PATTERN.test(candidateTrimmed)) {
-        headerCount += 1;
-        lineIndex += 1;
-        continue;
-      }
-
-      if (/^[\t ]/u.test(candidate)) {
-        lineIndex += 1;
-        continue;
-      }
-
-      break;
-    }
-
-    if (headerCount >= 3) {
-      return offset;
-    }
-
-    offset += line.length + 1;
-  }
-
-  return -1;
-}
-
 export function trimQuotedReplyContent(value: string): string {
   const normalized = sanitizePreviewText(value);
 
@@ -200,8 +148,7 @@ export function trimQuotedReplyContent(value: string): string {
 
   const boundaries = [
     /(?:\n|^)\s*On .+ wrote:\s*$/imu,
-    /(?:\bOn .+? wrote:)\s*>/isu,
-    /(?:\n|^)\s*From:\s.+?(?:Date:|Sent:)\s.+/isu,
+    /(?:\n|^)\s*On .+? wrote:\s*>/su,
     /(?:\n|^)\s*-{2,}\s*Original Message\s*-{2,}/imu,
     /(?:\n|^)\s*Begin forwarded message:/imu,
     /(?:\n|^)\s*Forwarded message:/imu,
@@ -221,15 +168,6 @@ export function trimQuotedReplyContent(value: string): string {
     }
   }
 
-  const forwardedHeaderBoundary = findForwardedHeaderBlockStart(normalized);
-
-  if (
-    forwardedHeaderBoundary !== -1 &&
-    (earliestBoundary === -1 || forwardedHeaderBoundary < earliestBoundary)
-  ) {
-    earliestBoundary = forwardedHeaderBoundary;
-  }
-
   return (
     earliestBoundary === -1 ? normalized : normalized.slice(0, earliestBoundary)
   ).trim();
@@ -242,7 +180,7 @@ export function cleanGmailBodyPreviewText(value: string): string {
       ? trimmedQuotedReply
       : sanitizePreviewText(value);
 
-  return normalized.slice(0, BODY_PREVIEW_LIMIT);
+  return normalized;
 }
 
 function decodeBase64Url(value: string): Buffer {
