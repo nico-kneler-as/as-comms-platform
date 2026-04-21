@@ -48,6 +48,12 @@
 | `D-030` | Reminders are MVP-mock, client-session-only. No backend table or Server Action. | Durable cross-operator reminders are scope-expanding without clear demand. |
 | `D-031` | Campaigns (Stage 5A Email, Stage 5B SMS) are deferred until post-launch validation of Inbox + Composer + AI. | Campaigns is a large subproduct; layering it in before the foundation is battle-tested risks focus drift. |
 | `D-032` | Stage 4 AI is a human-in-the-loop drafting assistant with strict grounding order, single backend orchestration service, one LLM call by default, deterministic fallback, memory captured only from human-sent replies, visible grounding in UI. | Fin-like product discipline without Fin-like runtime complexity. |
+| `D-033` | Salesforce comms ingest excludes non-volunteer contacts. | Keeps the inbox volunteer-scoped; non-volunteers flow via Gmail only. |
+| `D-034` | Salesforce Task capture filters WhoIds to volunteer-linked contacts at the provider boundary. | Enforces D-033 at capture so non-volunteer Task evidence never enters source evidence. |
+| `D-035` | Stage 2 Auth session strategy is JWT, not database-backed. | Edge Runtime middleware cannot decode database sessions; JWT decodes via shared secret. |
+| `D-036` | `project_dimensions.is_active` is admin-owned, not derived from Salesforce state or memberships. | Decouples admin intent from external state churn; admins toggle directly in Settings. |
+| `D-037` | Each project has a single `ai_knowledge_url` on `project_dimensions`; activation requires both `emails ≥ 1` AND `ai_knowledge_url IS NOT NULL`. | One URL per project matches MVP workflow; activation gate ensures AI has enough context to ground drafts. |
+| `D-038` | Integration health is a polled projection (`integration_health` table, 5-min worker cron), not live-on-demand. | Projection reads are instant; live probes would introduce variable UI latency and capture-service load. |
 
 ## Change Rule
 
