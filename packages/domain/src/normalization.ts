@@ -125,6 +125,11 @@ type IdentityResolutionDecision =
       readonly reviewInput: IdentityAmbiguityInput | null;
     }
   | {
+      readonly outcome: "create_new_contact";
+      readonly normalizedEmail: string | null;
+      readonly normalizedPhone: string | null;
+    }
+  | {
       readonly outcome: "needs_identity_review";
       readonly reviewInput: IdentityAmbiguityInput;
     };
@@ -329,6 +334,77 @@ function buildSkipAuditId(
   action: "skipped_non_volunteer_task"
 ): string {
   return `audit:${entityType}:${entityId}:${action}`;
+}
+
+function buildSyntheticContactId(input: {
+  readonly normalizedEmail: string | null;
+  readonly normalizedPhone: string | null;
+}): string {
+  if (input.normalizedEmail !== null) {
+    return `contact:email:${input.normalizedEmail}`;
+  }
+
+  if (input.normalizedPhone !== null) {
+    return `contact:phone:${input.normalizedPhone}`;
+  }
+
+  throw new Error("Cannot build a synthetic contact id without an email or phone.");
+}
+
+function buildSyntheticContactGraphInput(input: {
+  readonly normalizedEmail: string | null;
+  readonly normalizedPhone: string | null;
+  readonly createdAt: string;
+  readonly source: ContactIdentityRecord["source"];
+}): NormalizedContactGraphUpsertInput {
+  const contactId = buildSyntheticContactId({
+    normalizedEmail: input.normalizedEmail,
+    normalizedPhone: input.normalizedPhone
+  });
+
+  const identities: ContactIdentityRecord[] = [];
+
+  if (input.normalizedEmail !== null) {
+    identities.push(
+      contactIdentitySchema.parse({
+        id: `contact-identity:${contactId}:email:${input.normalizedEmail}`,
+        contactId,
+        kind: "email",
+        normalizedValue: input.normalizedEmail,
+        isPrimary: true,
+        source: input.source,
+        verifiedAt: input.createdAt
+      })
+    );
+  }
+
+  if (input.normalizedPhone !== null) {
+    identities.push(
+      contactIdentitySchema.parse({
+        id: `contact-identity:${contactId}:phone:${input.normalizedPhone}`,
+        contactId,
+        kind: "phone",
+        normalizedValue: input.normalizedPhone,
+        isPrimary: true,
+        source: input.source,
+        verifiedAt: input.createdAt
+      })
+    );
+  }
+
+  return {
+    contact: contactSchema.parse({
+      id: contactId,
+      salesforceContactId: null,
+      displayName: input.normalizedEmail ?? input.normalizedPhone ?? "(unknown)",
+      primaryEmail: input.normalizedEmail,
+      primaryPhone: input.normalizedPhone,
+      createdAt: input.createdAt,
+      updatedAt: input.createdAt
+    }),
+    identities,
+    memberships: []
+  };
 }
 
 function newestTimestamp(
@@ -1112,6 +1188,17 @@ async function resolveIdentityDecision(
     };
   }
 
+  const fallbackNormalizedEmail = identity.normalizedEmails[0] ?? null;
+  const fallbackNormalizedPhone = identity.normalizedPhones[0] ?? null;
+
+  if (fallbackNormalizedEmail !== null || fallbackNormalizedPhone !== null) {
+    return {
+      outcome: "create_new_contact",
+      normalizedEmail: fallbackNormalizedEmail,
+      normalizedPhone: fallbackNormalizedPhone
+    };
+  }
+
   return {
     outcome: "needs_identity_review",
     reviewInput: identityAmbiguityInputSchema.parse({
@@ -1877,14 +1964,32 @@ export function createStage1NormalizationService(
         };
       }
 
+      const resolvedContact =
+        identityDecision.outcome === "create_new_contact"
+          ? (
+              await service.upsertNormalizedContactGraph(
+                buildSyntheticContactGraphInput({
+                  normalizedEmail: identityDecision.normalizedEmail,
+                  normalizedPhone: identityDecision.normalizedPhone,
+                  createdAt: parsed.sourceEvidence.receivedAt,
+                  source: parsed.sourceEvidence.provider
+                })
+              )
+            ).contact
+          : identityDecision.contact;
+      const identityReviewInput =
+        identityDecision.outcome === "resolved"
+          ? identityDecision.reviewInput
+          : null;
+
       const routingDecision = await resolveRoutingDecision(persistence, {
-        contactId: identityDecision.contact.id,
+        contactId: resolvedContact.id,
         sourceEvidenceId: sourceEvidenceResult.record.id,
         openedAt: parsed.sourceEvidence.receivedAt,
         routing: parsed.routing
       });
       const reviewState = pickCanonicalReviewState({
-        hasIdentityReview: identityDecision.reviewInput !== null,
+        hasIdentityReview: identityReviewInput !== null,
         hasRoutingReview: routingDecision.reviewInput !== null
       });
       const supportingSourceEvidenceIds = uniqueStrings(
@@ -1896,7 +2001,7 @@ export function createStage1NormalizationService(
         detectInboxProjectionExclusionReason(parsed);
       const canonicalEvent = canonicalEventSchema.parse({
         id: parsed.canonicalEvent.id,
-        contactId: identityDecision.contact.id,
+        contactId: resolvedContact.id,
         eventType: parsed.canonicalEvent.eventType,
         channel: resolveCanonicalChannel(parsed.canonicalEvent.eventType),
         occurredAt: parsed.canonicalEvent.occurredAt,
@@ -1933,7 +2038,7 @@ export function createStage1NormalizationService(
         }
 
         contactEvents = await persistence.repositories.canonicalEvents.listByContactId(
-          identityDecision.contact.id
+          resolvedContact.id
         );
         return contactEvents;
       };
@@ -1957,11 +2062,11 @@ export function createStage1NormalizationService(
                 )
               });
         const identityCase =
-          identityDecision.reviewInput === null
+          identityReviewInput === null
             ? null
             : (
                 await service.saveIdentityAmbiguityCase(
-                  identityDecision.reviewInput
+                  identityReviewInput
                 )
               ).caseRecord;
         const routingCase =
@@ -2070,7 +2175,7 @@ export function createStage1NormalizationService(
         const persistedEvent = await persistence.repositories.canonicalEvents.upsert(
           canonicalEventSchema.parse({
             id: duplicateMatch.existingEvent.id,
-            contactId: identityDecision.contact.id,
+            contactId: resolvedContact.id,
             eventType: canonicalEvent.eventType,
             channel: canonicalEvent.channel,
             occurredAt: duplicateMatch.winner.keepIncomingAsPrimary
@@ -2130,11 +2235,11 @@ export function createStage1NormalizationService(
           })
         );
         const identityCase =
-          identityDecision.reviewInput === null
+          identityReviewInput === null
             ? null
             : (
                 await service.saveIdentityAmbiguityCase(
-                  identityDecision.reviewInput
+                  identityReviewInput
                 )
               ).caseRecord;
         const routingCase =
@@ -2199,11 +2304,11 @@ export function createStage1NormalizationService(
 
       const persistedEvent = eventWriteResult.record;
       const identityCase =
-        identityDecision.reviewInput === null
+        identityReviewInput === null
           ? null
           : (
               await service.saveIdentityAmbiguityCase(
-                identityDecision.reviewInput
+                identityReviewInput
               )
             ).caseRecord;
       const routingCase =
