@@ -10,7 +10,7 @@ import {
   lt,
   or,
   sql,
-  type SQL
+  type SQL,
 } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
@@ -19,11 +19,11 @@ import type {
   Stage1RepositoryBundle,
   Stage2RepositoryBundle,
   UserRecord,
-  UserRole
+  UserRole,
 } from "@as-comms/domain";
 import {
   defineStage1RepositoryBundle,
-  defineStage2RepositoryBundle
+  defineStage2RepositoryBundle,
 } from "@as-comms/domain";
 
 import type { DatabaseConnection } from "./client.js";
@@ -63,7 +63,7 @@ import {
   mapTimelineProjectionRow,
   mapTimelineProjectionToInsert,
   mapUserRow,
-  mapUserToInsert
+  mapUserToInsert,
 } from "./mappers.js";
 import type { DatabaseSchema } from "./schema/index.js";
 import {
@@ -88,7 +88,7 @@ import {
   simpleTextingMessageDetails,
   sourceEvidenceLog,
   syncState,
-  users
+  users,
 } from "./schema/index.js";
 
 export type Stage1Database = PgDatabase<PgQueryResultHKT, DatabaseSchema>;
@@ -140,7 +140,7 @@ type MailchimpCampaignActivityDetailRow = MailchimpCampaignActivityDetailRecord;
 type ManualNoteDetailRow = ManualNoteDetailRecord;
 
 function mapSalesforceCommunicationDetailRowLocal(
-  row: SalesforceCommunicationDetailRow
+  row: SalesforceCommunicationDetailRow,
 ): SalesforceCommunicationDetailRecord {
   return {
     sourceEvidenceId: row.sourceEvidenceId,
@@ -149,12 +149,12 @@ function mapSalesforceCommunicationDetailRowLocal(
     messageKind: row.messageKind,
     subject: row.subject,
     snippet: row.snippet,
-    sourceLabel: row.sourceLabel
+    sourceLabel: row.sourceLabel,
   };
 }
 
 function mapSalesforceCommunicationDetailToInsertLocal(
-  record: SalesforceCommunicationDetailRecord
+  record: SalesforceCommunicationDetailRecord,
 ) {
   return {
     sourceEvidenceId: record.sourceEvidenceId,
@@ -163,12 +163,12 @@ function mapSalesforceCommunicationDetailToInsertLocal(
     messageKind: record.messageKind,
     subject: record.subject,
     snippet: record.snippet,
-    sourceLabel: record.sourceLabel
+    sourceLabel: record.sourceLabel,
   };
 }
 
 function mapSimpleTextingMessageDetailRowLocal(
-  row: SimpleTextingMessageDetailRow
+  row: SimpleTextingMessageDetailRow,
 ): SimpleTextingMessageDetailRecord {
   return {
     sourceEvidenceId: row.sourceEvidenceId,
@@ -180,12 +180,12 @@ function mapSimpleTextingMessageDetailRowLocal(
     campaignId: row.campaignId,
     campaignName: row.campaignName,
     providerThreadId: row.providerThreadId,
-    threadKey: row.threadKey
+    threadKey: row.threadKey,
   };
 }
 
 function mapSimpleTextingMessageDetailToInsertLocal(
-  record: SimpleTextingMessageDetailRecord
+  record: SimpleTextingMessageDetailRecord,
 ) {
   return {
     sourceEvidenceId: record.sourceEvidenceId,
@@ -197,12 +197,12 @@ function mapSimpleTextingMessageDetailToInsertLocal(
     campaignId: record.campaignId,
     campaignName: record.campaignName,
     providerThreadId: record.providerThreadId,
-    threadKey: record.threadKey
+    threadKey: record.threadKey,
   };
 }
 
 function mapMailchimpCampaignActivityDetailRowLocal(
-  row: MailchimpCampaignActivityDetailRow
+  row: MailchimpCampaignActivityDetailRow,
 ): MailchimpCampaignActivityDetailRecord {
   return {
     sourceEvidenceId: row.sourceEvidenceId,
@@ -212,12 +212,12 @@ function mapMailchimpCampaignActivityDetailRowLocal(
     audienceId: row.audienceId,
     memberId: row.memberId,
     campaignName: row.campaignName,
-    snippet: row.snippet
+    snippet: row.snippet,
   };
 }
 
 function mapMailchimpCampaignActivityDetailToInsertLocal(
-  record: MailchimpCampaignActivityDetailRecord
+  record: MailchimpCampaignActivityDetailRecord,
 ) {
   return {
     sourceEvidenceId: record.sourceEvidenceId,
@@ -227,18 +227,18 @@ function mapMailchimpCampaignActivityDetailToInsertLocal(
     audienceId: record.audienceId,
     memberId: record.memberId,
     campaignName: record.campaignName,
-    snippet: record.snippet
+    snippet: record.snippet,
   };
 }
 
 function mapManualNoteDetailRowLocal(
-  row: ManualNoteDetailRow
+  row: ManualNoteDetailRow,
 ): ManualNoteDetailRecord {
   return {
     sourceEvidenceId: row.sourceEvidenceId,
     providerRecordId: row.providerRecordId,
     body: row.body,
-    authorDisplayName: row.authorDisplayName
+    authorDisplayName: row.authorDisplayName,
   };
 }
 
@@ -247,7 +247,7 @@ function mapManualNoteDetailToInsertLocal(record: ManualNoteDetailRecord) {
     sourceEvidenceId: record.sourceEvidenceId,
     providerRecordId: record.providerRecordId,
     body: record.body,
-    authorDisplayName: record.authorDisplayName
+    authorDisplayName: record.authorDisplayName,
   };
 }
 
@@ -280,47 +280,59 @@ const DEFAULT_INTEGRATION_HEALTH_SEED = [
     id: "salesforce",
     serviceName: "salesforce",
     category: "crm",
-    status: "not_checked"
+    status: "not_checked",
   },
   {
     id: "gmail",
     serviceName: "gmail",
     category: "messaging",
-    status: "not_checked"
+    status: "not_checked",
   },
   {
     id: "simpletexting",
     serviceName: "simpletexting",
     category: "messaging",
-    status: "not_configured"
+    status: "not_configured",
   },
   {
     id: "mailchimp",
     serviceName: "mailchimp",
     category: "messaging",
-    status: "not_configured"
+    status: "not_configured",
   },
   {
     id: "notion",
     serviceName: "notion",
     category: "knowledge",
-    status: "not_configured"
+    status: "not_configured",
   },
   {
     id: "openai",
     serviceName: "openai",
     category: "ai",
-    status: "not_configured"
-  }
+    status: "not_configured",
+  },
 ] as const;
 
 type InboxProjectionFilter = "all" | "unread" | "follow-up" | "unresolved";
 
-function buildInboxRecencyExpression() {
-  return sql<Date>`coalesce(${contactInboxProjection.lastInboundAt}, ${contactInboxProjection.lastActivityAt})`;
+interface InboxRecencyCursor {
+  readonly lastInboundAt: string | null;
+  readonly lastActivityAt: string;
+  readonly contactId: string;
 }
 
-function buildInboxFilterPredicate(filter: InboxProjectionFilter): SQL | undefined {
+function buildInboxRecencyOrderBy(): [SQL, SQL, SQL] {
+  return [
+    sql`${contactInboxProjection.lastInboundAt} desc nulls last`,
+    desc(contactInboxProjection.lastActivityAt),
+    asc(contactInboxProjection.contactId),
+  ];
+}
+
+function buildInboxFilterPredicate(
+  filter: InboxProjectionFilter,
+): SQL | undefined {
   return filter === "unread"
     ? eq(contactInboxProjection.bucket, "New")
     : filter === "follow-up"
@@ -331,7 +343,7 @@ function buildInboxFilterPredicate(filter: InboxProjectionFilter): SQL | undefin
 }
 
 function buildInboxProjectPredicate(
-  projectId: string | null | undefined
+  projectId: string | null | undefined,
 ): SQL | undefined {
   if (projectId === null || projectId === undefined || projectId.length === 0) {
     return undefined;
@@ -345,36 +357,45 @@ function buildInboxProjectPredicate(
 }
 
 function buildInboxCursorPredicate(input: {
-  readonly cursor:
-    | {
-        readonly sortAt: string;
-        readonly lastActivityAt: string;
-        readonly contactId: string;
-      }
-    | null;
-  readonly recencyExpression: SQL<Date>;
+  readonly cursor: InboxRecencyCursor | null;
 }): SQL | undefined {
-  return input.cursor === null
-    ? undefined
-    : sql`(
-        ${input.recencyExpression} < ${new Date(input.cursor.sortAt)}
+  if (input.cursor === null) {
+    return undefined;
+  }
+
+  if (input.cursor.lastInboundAt === null) {
+    return sql`(
+      ${contactInboxProjection.lastInboundAt} is null
+      and (
+        ${contactInboxProjection.lastActivityAt} < ${new Date(input.cursor.lastActivityAt)}
         or (
-          ${input.recencyExpression} = ${new Date(input.cursor.sortAt)}
-          and ${contactInboxProjection.lastActivityAt} < ${new Date(input.cursor.lastActivityAt)}
-        )
-        or (
-          ${input.recencyExpression} = ${new Date(input.cursor.sortAt)}
-          and ${contactInboxProjection.lastActivityAt} = ${new Date(input.cursor.lastActivityAt)}
+          ${contactInboxProjection.lastActivityAt} = ${new Date(input.cursor.lastActivityAt)}
           and ${contactInboxProjection.contactId} > ${input.cursor.contactId}
         )
-      )`;
+      )
+    )`;
+  }
+
+  return sql`(
+    ${contactInboxProjection.lastInboundAt} is null
+    or ${contactInboxProjection.lastInboundAt} < ${new Date(input.cursor.lastInboundAt)}
+    or (
+      ${contactInboxProjection.lastInboundAt} = ${new Date(input.cursor.lastInboundAt)}
+      and ${contactInboxProjection.lastActivityAt} < ${new Date(input.cursor.lastActivityAt)}
+    )
+    or (
+      ${contactInboxProjection.lastInboundAt} = ${new Date(input.cursor.lastInboundAt)}
+      and ${contactInboxProjection.lastActivityAt} = ${new Date(input.cursor.lastActivityAt)}
+      and ${contactInboxProjection.contactId} > ${input.cursor.contactId}
+    )
+  )`;
 }
 
 function combinePredicates(
   ...predicates: readonly (SQL | undefined)[]
 ): SQL | undefined {
   const definedPredicates = predicates.filter(
-    (predicate): predicate is SQL => predicate !== undefined
+    (predicate): predicate is SQL => predicate !== undefined,
   );
 
   if (definedPredicates.length === 0) {
@@ -444,7 +465,8 @@ function buildInboxSearchPredicate(query: string): SQL {
     where ${contacts.id} = ${contactInboxProjection.contactId}
     limit 1
   ), '')`;
-  const primaryProjectLabelExpression = buildInboxPrimaryProjectLabelExpression();
+  const primaryProjectLabelExpression =
+    buildInboxPrimaryProjectLabelExpression();
   const latestSubjectExpression = buildInboxLatestSubjectExpression();
 
   return sql`(
@@ -457,7 +479,7 @@ function buildInboxSearchPredicate(query: string): SQL {
 }
 
 function createStage1RepositoriesInternal(
-  db: Stage1Database
+  db: Stage1Database,
 ): Stage1RepositoryBundle {
   return defineStage1RepositoryBundle({
     sourceEvidence: {
@@ -470,8 +492,8 @@ function createStage1RepositoriesInternal(
             target: [
               sourceEvidenceLog.provider,
               sourceEvidenceLog.idempotencyKey,
-              sourceEvidenceLog.checksum
-            ]
+              sourceEvidenceLog.checksum,
+            ],
           })
           .returning();
 
@@ -486,16 +508,16 @@ function createStage1RepositoriesInternal(
             and(
               eq(sourceEvidenceLog.provider, values.provider),
               eq(sourceEvidenceLog.idempotencyKey, values.idempotencyKey),
-              eq(sourceEvidenceLog.checksum, values.checksum)
-            )
+              eq(sourceEvidenceLog.checksum, values.checksum),
+            ),
           )
           .limit(1);
 
         return mapSourceEvidenceRow(
           requireRow(
             existing,
-            "Expected an existing source evidence row after duplicate append."
-          )
+            "Expected an existing source evidence row after duplicate append.",
+          ),
         );
       },
 
@@ -537,7 +559,7 @@ function createStage1RepositoriesInternal(
       async countByProvider(provider) {
         const [row] = await db
           .select({
-            value: count()
+            value: count(),
           })
           .from(sourceEvidenceLog)
           .where(eq(sourceEvidenceLog.provider, provider));
@@ -552,17 +574,20 @@ function createStage1RepositoriesInternal(
           .where(
             and(
               eq(sourceEvidenceLog.provider, input.provider),
-              eq(sourceEvidenceLog.providerRecordType, input.providerRecordType),
-              eq(sourceEvidenceLog.providerRecordId, input.providerRecordId)
-            )
+              eq(
+                sourceEvidenceLog.providerRecordType,
+                input.providerRecordType,
+              ),
+              eq(sourceEvidenceLog.providerRecordId, input.providerRecordId),
+            ),
           )
           .orderBy(
             asc(sourceEvidenceLog.occurredAt),
-            asc(sourceEvidenceLog.createdAt)
+            asc(sourceEvidenceLog.createdAt),
           );
 
         return rows.map(mapSourceEvidenceRow);
-      }
+      },
     },
 
     canonicalEvents: {
@@ -589,7 +614,7 @@ function createStage1RepositoriesInternal(
       async countAll() {
         const [row] = await db
           .select({
-            value: count()
+            value: count(),
           })
           .from(canonicalEventLedger);
 
@@ -599,12 +624,12 @@ function createStage1RepositoriesInternal(
       async countByPrimaryProvider(provider) {
         const [row] = await db
           .select({
-            value: count()
+            value: count(),
           })
           .from(canonicalEventLedger)
           .innerJoin(
             sourceEvidenceLog,
-            eq(canonicalEventLedger.sourceEvidenceId, sourceEvidenceLog.id)
+            eq(canonicalEventLedger.sourceEvidenceId, sourceEvidenceLog.id),
           )
           .where(eq(sourceEvidenceLog.provider, provider));
 
@@ -614,7 +639,7 @@ function createStage1RepositoriesInternal(
       async countDistinctInboxContacts() {
         const [row] = await db
           .select({
-            value: countDistinct(canonicalEventLedger.contactId)
+            value: countDistinct(canonicalEventLedger.contactId),
           })
           .from(canonicalEventLedger)
           .where(
@@ -622,8 +647,8 @@ function createStage1RepositoriesInternal(
               "communication.email.inbound",
               "communication.email.outbound",
               "communication.sms.inbound",
-              "communication.sms.outbound"
-            ])
+              "communication.sms.outbound",
+            ]),
           );
 
         return row?.value ?? 0;
@@ -650,7 +675,7 @@ function createStage1RepositoriesInternal(
           .where(eq(canonicalEventLedger.contactId, contactId))
           .orderBy(
             asc(canonicalEventLedger.occurredAt),
-            asc(canonicalEventLedger.createdAt)
+            asc(canonicalEventLedger.createdAt),
           );
 
         return rows.map(mapCanonicalEventRow);
@@ -672,15 +697,15 @@ function createStage1RepositoriesInternal(
               idempotencyKey: values.idempotencyKey,
               provenance: values.provenance,
               reviewState: values.reviewState,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapCanonicalEventRow(
-          requireRow(row, "Expected canonical event row to be returned.")
+          requireRow(row, "Expected canonical event row to be returned."),
         );
-      }
+      },
     },
 
     contacts: {
@@ -737,13 +762,15 @@ function createStage1RepositoriesInternal(
               primaryEmail: values.primaryEmail,
               primaryPhone: values.primaryPhone,
               createdAt: values.createdAt,
-              updatedAt: values.updatedAt
-            }
+              updatedAt: values.updatedAt,
+            },
           })
           .returning();
 
-        return mapContactRow(requireRow(row, "Expected contact row to be returned."));
-      }
+        return mapContactRow(
+          requireRow(row, "Expected contact row to be returned."),
+        );
+      },
     },
 
     contactIdentities: {
@@ -754,7 +781,7 @@ function createStage1RepositoriesInternal(
           .where(eq(contactIdentities.contactId, contactId))
           .orderBy(
             desc(contactIdentities.isPrimary),
-            asc(contactIdentities.normalizedValue)
+            asc(contactIdentities.normalizedValue),
           );
 
         return rows.map(mapContactIdentityRow);
@@ -767,10 +794,13 @@ function createStage1RepositoriesInternal(
           .where(
             and(
               eq(contactIdentities.kind, input.kind),
-              eq(contactIdentities.normalizedValue, input.normalizedValue)
-            )
+              eq(contactIdentities.normalizedValue, input.normalizedValue),
+            ),
           )
-          .orderBy(desc(contactIdentities.isPrimary), asc(contactIdentities.id));
+          .orderBy(
+            desc(contactIdentities.isPrimary),
+            asc(contactIdentities.id),
+          );
 
         return rows.map(mapContactIdentityRow);
       },
@@ -784,21 +814,21 @@ function createStage1RepositoriesInternal(
             target: [
               contactIdentities.contactId,
               contactIdentities.kind,
-              contactIdentities.normalizedValue
+              contactIdentities.normalizedValue,
             ],
             set: {
               isPrimary: values.isPrimary,
               source: values.source,
               verifiedAt: values.verifiedAt,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapContactIdentityRow(
-          requireRow(row, "Expected contact identity row to be returned.")
+          requireRow(row, "Expected contact identity row to be returned."),
         );
-      }
+      },
     },
 
     contactMemberships: {
@@ -807,7 +837,10 @@ function createStage1RepositoriesInternal(
           .select()
           .from(contactMemberships)
           .where(eq(contactMemberships.contactId, contactId))
-          .orderBy(asc(contactMemberships.projectId), asc(contactMemberships.id));
+          .orderBy(
+            asc(contactMemberships.projectId),
+            asc(contactMemberships.id),
+          );
 
         return rows.map(mapContactMembershipRow);
       },
@@ -824,7 +857,7 @@ function createStage1RepositoriesInternal(
           .orderBy(
             asc(contactMemberships.contactId),
             asc(contactMemberships.projectId),
-            asc(contactMemberships.id)
+            asc(contactMemberships.id),
           );
 
         return rows.map(mapContactMembershipRow);
@@ -844,15 +877,15 @@ function createStage1RepositoriesInternal(
               role: values.role,
               status: values.status,
               source: values.source,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapContactMembershipRow(
-          requireRow(row, "Expected contact membership row to be returned.")
+          requireRow(row, "Expected contact membership row to be returned."),
         );
-      }
+      },
     },
 
     projectDimensions: {
@@ -902,15 +935,15 @@ function createStage1RepositoriesInternal(
               aiKnowledgeUrl: values.aiKnowledgeUrl,
               aiKnowledgeSyncedAt: values.aiKnowledgeSyncedAt,
               source: values.source,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapProjectDimensionRow(
-          requireRow(row, "Expected project dimension row to be returned.")
+          requireRow(row, "Expected project dimension row to be returned."),
         );
-      }
+      },
     },
 
     expeditionDimensions: {
@@ -939,15 +972,15 @@ function createStage1RepositoriesInternal(
               projectId: values.projectId,
               expeditionName: values.expeditionName,
               source: values.source,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapExpeditionDimensionRow(
-          requireRow(row, "Expected expedition dimension row to be returned.")
+          requireRow(row, "Expected expedition dimension row to be returned."),
         );
-      }
+      },
     },
 
     gmailMessageDetails: {
@@ -960,7 +993,9 @@ function createStage1RepositoriesInternal(
           .select()
           .from(gmailMessageDetails)
           .where(
-            inArray(gmailMessageDetails.sourceEvidenceId, [...sourceEvidenceIds])
+            inArray(gmailMessageDetails.sourceEvidenceId, [
+              ...sourceEvidenceIds,
+            ]),
           )
           .orderBy(asc(gmailMessageDetails.sourceEvidenceId));
 
@@ -984,15 +1019,15 @@ function createStage1RepositoriesInternal(
               bodyTextPreview: values.bodyTextPreview,
               capturedMailbox: values.capturedMailbox,
               projectInboxAlias: values.projectInboxAlias,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapGmailMessageDetailRow(
-          requireRow(row, "Expected Gmail message detail row to be returned.")
+          requireRow(row, "Expected Gmail message detail row to be returned."),
         );
-      }
+      },
     },
 
     salesforceEventContext: {
@@ -1006,8 +1041,8 @@ function createStage1RepositoriesInternal(
           .from(salesforceEventContext)
           .where(
             inArray(salesforceEventContext.sourceEvidenceId, [
-              ...sourceEvidenceIds
-            ])
+              ...sourceEvidenceIds,
+            ]),
           )
           .orderBy(asc(salesforceEventContext.sourceEvidenceId));
 
@@ -1025,15 +1060,18 @@ function createStage1RepositoriesInternal(
               salesforceContactId: values.salesforceContactId,
               projectId: values.projectId,
               expeditionId: values.expeditionId,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapSalesforceEventContextRow(
-          requireRow(row, "Expected Salesforce event context row to be returned.")
+          requireRow(
+            row,
+            "Expected Salesforce event context row to be returned.",
+          ),
         );
-      }
+      },
     },
 
     salesforceCommunicationDetails: {
@@ -1048,7 +1086,9 @@ function createStage1RepositoriesInternal(
           .select()
           .from(salesforceCommunicationDetails)
           .where(inArray(sourceEvidenceIdColumn, [...sourceEvidenceIds]))
-          .orderBy(asc(sourceEvidenceIdColumn))) as SalesforceCommunicationDetailRow[];
+          .orderBy(
+            asc(sourceEvidenceIdColumn),
+          )) as SalesforceCommunicationDetailRow[];
 
         return rows.map(mapSalesforceCommunicationDetailRowLocal);
       },
@@ -1057,7 +1097,7 @@ function createStage1RepositoriesInternal(
         const sourceEvidenceIdColumn =
           salesforceCommunicationDetailsTable.sourceEvidenceId;
         const values = mapSalesforceCommunicationDetailToInsertLocal(
-          record as SalesforceCommunicationDetailRecord
+          record as SalesforceCommunicationDetailRecord,
         );
         const [row] = (await db
           .insert(salesforceCommunicationDetails)
@@ -1071,18 +1111,18 @@ function createStage1RepositoriesInternal(
               subject: values.subject,
               snippet: values.snippet,
               sourceLabel: values.sourceLabel,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning()) as SalesforceCommunicationDetailRow[];
 
         return mapSalesforceCommunicationDetailRowLocal(
           requireRow(
             row,
-            "Expected Salesforce communication detail row to be returned."
-          )
+            "Expected Salesforce communication detail row to be returned.",
+          ),
         );
-      }
+      },
     },
 
     simpleTextingMessageDetails: {
@@ -1091,20 +1131,24 @@ function createStage1RepositoriesInternal(
           return [];
         }
 
-        const sourceEvidenceIdColumn = simpleTextingMessageDetailsTable.sourceEvidenceId;
+        const sourceEvidenceIdColumn =
+          simpleTextingMessageDetailsTable.sourceEvidenceId;
         const rows = (await db
           .select()
           .from(simpleTextingMessageDetails)
           .where(inArray(sourceEvidenceIdColumn, [...sourceEvidenceIds]))
-          .orderBy(asc(sourceEvidenceIdColumn))) as SimpleTextingMessageDetailRow[];
+          .orderBy(
+            asc(sourceEvidenceIdColumn),
+          )) as SimpleTextingMessageDetailRow[];
 
         return rows.map(mapSimpleTextingMessageDetailRowLocal);
       },
 
       async upsert(record) {
-        const sourceEvidenceIdColumn = simpleTextingMessageDetailsTable.sourceEvidenceId;
+        const sourceEvidenceIdColumn =
+          simpleTextingMessageDetailsTable.sourceEvidenceId;
         const values = mapSimpleTextingMessageDetailToInsertLocal(
-          record as SimpleTextingMessageDetailRecord
+          record as SimpleTextingMessageDetailRecord,
         );
         const [row] = (await db
           .insert(simpleTextingMessageDetails)
@@ -1121,18 +1165,18 @@ function createStage1RepositoriesInternal(
               campaignName: values.campaignName,
               providerThreadId: values.providerThreadId,
               threadKey: values.threadKey,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning()) as SimpleTextingMessageDetailRow[];
 
         return mapSimpleTextingMessageDetailRowLocal(
           requireRow(
             row,
-            "Expected SimpleTexting message detail row to be returned."
-          )
+            "Expected SimpleTexting message detail row to be returned.",
+          ),
         );
-      }
+      },
     },
 
     mailchimpCampaignActivityDetails: {
@@ -1147,7 +1191,9 @@ function createStage1RepositoriesInternal(
           .select()
           .from(mailchimpCampaignActivityDetails)
           .where(inArray(sourceEvidenceIdColumn, [...sourceEvidenceIds]))
-          .orderBy(asc(sourceEvidenceIdColumn))) as MailchimpCampaignActivityDetailRow[];
+          .orderBy(
+            asc(sourceEvidenceIdColumn),
+          )) as MailchimpCampaignActivityDetailRow[];
 
         return rows.map(mapMailchimpCampaignActivityDetailRowLocal);
       },
@@ -1156,7 +1202,7 @@ function createStage1RepositoriesInternal(
         const sourceEvidenceIdColumn =
           mailchimpCampaignActivityDetailsTable.sourceEvidenceId;
         const values = mapMailchimpCampaignActivityDetailToInsertLocal(
-          record as MailchimpCampaignActivityDetailRecord
+          record as MailchimpCampaignActivityDetailRecord,
         );
         const [row] = (await db
           .insert(mailchimpCampaignActivityDetails)
@@ -1171,18 +1217,18 @@ function createStage1RepositoriesInternal(
               memberId: values.memberId,
               campaignName: values.campaignName,
               snippet: values.snippet,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning()) as MailchimpCampaignActivityDetailRow[];
 
         return mapMailchimpCampaignActivityDetailRowLocal(
           requireRow(
             row,
-            "Expected Mailchimp campaign activity detail row to be returned."
-          )
+            "Expected Mailchimp campaign activity detail row to be returned.",
+          ),
         );
-      }
+      },
     },
 
     manualNoteDetails: {
@@ -1203,7 +1249,9 @@ function createStage1RepositoriesInternal(
 
       async upsert(record) {
         const sourceEvidenceIdColumn = manualNoteDetailsTable.sourceEvidenceId;
-        const values = mapManualNoteDetailToInsertLocal(record as ManualNoteDetailRecord);
+        const values = mapManualNoteDetailToInsertLocal(
+          record as ManualNoteDetailRecord,
+        );
         const [row] = (await db
           .insert(manualNoteDetails)
           .values(values)
@@ -1213,15 +1261,15 @@ function createStage1RepositoriesInternal(
               providerRecordId: values.providerRecordId,
               body: values.body,
               authorDisplayName: values.authorDisplayName,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning()) as ManualNoteDetailRow[];
 
         return mapManualNoteDetailRowLocal(
-          requireRow(row, "Expected manual note detail row to be returned.")
+          requireRow(row, "Expected manual note detail row to be returned."),
         );
-      }
+      },
     },
 
     identityResolutionQueue: {
@@ -1242,8 +1290,8 @@ function createStage1RepositoriesInternal(
           .where(
             and(
               eq(identityResolutionQueue.reasonCode, reasonCode),
-              eq(identityResolutionQueue.status, "open")
-            )
+              eq(identityResolutionQueue.status, "open"),
+            ),
           )
           .orderBy(asc(identityResolutionQueue.openedAt));
 
@@ -1259,11 +1307,14 @@ function createStage1RepositoriesInternal(
               eq(identityResolutionQueue.status, "open"),
               or(
                 eq(identityResolutionQueue.anchoredContactId, contactId),
-                sql`${contactId} = any(${identityResolutionQueue.candidateContactIds})`
-              )
-            )
+                sql`${contactId} = any(${identityResolutionQueue.candidateContactIds})`,
+              ),
+            ),
           )
-          .orderBy(desc(identityResolutionQueue.openedAt), asc(identityResolutionQueue.id));
+          .orderBy(
+            desc(identityResolutionQueue.openedAt),
+            asc(identityResolutionQueue.id),
+          );
 
         return rows.map(mapIdentityResolutionRow);
       },
@@ -1285,15 +1336,15 @@ function createStage1RepositoriesInternal(
               normalizedIdentityValues: values.normalizedIdentityValues,
               anchoredContactId: values.anchoredContactId,
               explanation: values.explanation,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapIdentityResolutionRow(
-          requireRow(row, "Expected identity resolution row to be returned.")
+          requireRow(row, "Expected identity resolution row to be returned."),
         );
-      }
+      },
     },
 
     routingReviewQueue: {
@@ -1314,8 +1365,8 @@ function createStage1RepositoriesInternal(
           .where(
             and(
               eq(routingReviewQueue.reasonCode, reasonCode),
-              eq(routingReviewQueue.status, "open")
-            )
+              eq(routingReviewQueue.status, "open"),
+            ),
           )
           .orderBy(asc(routingReviewQueue.openedAt));
 
@@ -1329,10 +1380,13 @@ function createStage1RepositoriesInternal(
           .where(
             and(
               eq(routingReviewQueue.contactId, contactId),
-              eq(routingReviewQueue.status, "open")
-            )
+              eq(routingReviewQueue.status, "open"),
+            ),
           )
-          .orderBy(desc(routingReviewQueue.openedAt), asc(routingReviewQueue.id));
+          .orderBy(
+            desc(routingReviewQueue.openedAt),
+            asc(routingReviewQueue.id),
+          );
 
         return rows.map(mapRoutingReviewRow);
       },
@@ -1353,22 +1407,22 @@ function createStage1RepositoriesInternal(
               resolvedAt: values.resolvedAt,
               candidateMembershipIds: values.candidateMembershipIds,
               explanation: values.explanation,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapRoutingReviewRow(
-          requireRow(row, "Expected routing review row to be returned.")
+          requireRow(row, "Expected routing review row to be returned."),
         );
-      }
+      },
     },
 
     inboxProjection: {
       async countAll() {
         const [row] = await db
           .select({
-            value: count()
+            value: count(),
           })
           .from(contactInboxProjection);
 
@@ -1378,14 +1432,14 @@ function createStage1RepositoriesInternal(
       async countInvalidRecencyRows() {
         const [row] = await db
           .select({
-            value: count()
+            value: count(),
           })
           .from(contactInboxProjection)
           .where(
             sql`${contactInboxProjection.lastActivityAt} is distinct from greatest(
               coalesce(${contactInboxProjection.lastInboundAt}, '-infinity'::timestamptz),
               coalesce(${contactInboxProjection.lastOutboundAt}, '-infinity'::timestamptz)
-            )`
+            )`,
           );
 
         return row?.value ?? 0;
@@ -1404,14 +1458,14 @@ function createStage1RepositoriesInternal(
       async listInvalidRecencyContactIds() {
         const rows = await db
           .select({
-            contactId: contactInboxProjection.contactId
+            contactId: contactInboxProjection.contactId,
           })
           .from(contactInboxProjection)
           .where(
             sql`${contactInboxProjection.lastActivityAt} is distinct from greatest(
               coalesce(${contactInboxProjection.lastInboundAt}, '-infinity'::timestamptz),
               coalesce(${contactInboxProjection.lastOutboundAt}, '-infinity'::timestamptz)
-            )`
+            )`,
           )
           .orderBy(asc(contactInboxProjection.contactId));
 
@@ -1419,53 +1473,40 @@ function createStage1RepositoriesInternal(
       },
 
       async listAllOrderedByRecency() {
-        const recencyExpression = buildInboxRecencyExpression();
         const rows = await db
           .select()
           .from(contactInboxProjection)
-          .orderBy(
-            desc(recencyExpression),
-            desc(contactInboxProjection.lastActivityAt),
-            asc(contactInboxProjection.contactId)
-          );
+          .orderBy(...buildInboxRecencyOrderBy());
 
         return rows.map(mapInboxProjectionRow);
       },
 
       async listPageOrderedByRecency(input) {
-        const recencyExpression = buildInboxRecencyExpression();
         const whereClause = combinePredicates(
           buildInboxFilterPredicate(input.filter),
           buildInboxProjectPredicate(input.projectId),
           buildInboxCursorPredicate({
             cursor: input.cursor,
-            recencyExpression
-          })
+          }),
         );
         const baseQuery = db.select().from(contactInboxProjection);
         const filteredQuery =
           whereClause === undefined ? baseQuery : baseQuery.where(whereClause);
         const rows = await filteredQuery
-          .orderBy(
-            desc(recencyExpression),
-            desc(contactInboxProjection.lastActivityAt),
-            asc(contactInboxProjection.contactId)
-          )
+          .orderBy(...buildInboxRecencyOrderBy())
           .limit(input.limit);
 
         return rows.map(mapInboxProjectionRow);
       },
 
       async searchPageOrderedByRecency(input) {
-        const recencyExpression = buildInboxRecencyExpression();
         const whereClause = combinePredicates(
           buildInboxFilterPredicate(input.filter),
           buildInboxProjectPredicate(input.projectId),
           buildInboxCursorPredicate({
             cursor: input.cursor,
-            recencyExpression
           }),
-          buildInboxSearchPredicate(input.query)
+          buildInboxSearchPredicate(input.query),
         );
         const filteredQuery = db
           .select()
@@ -1473,30 +1514,26 @@ function createStage1RepositoriesInternal(
           .where(whereClause);
         const [rows, totalRow] = await Promise.all([
           filteredQuery
-            .orderBy(
-              desc(recencyExpression),
-              desc(contactInboxProjection.lastActivityAt),
-              asc(contactInboxProjection.contactId)
-            )
+            .orderBy(...buildInboxRecencyOrderBy())
             .limit(input.limit),
           db
             .select({
-              value: count()
+              value: count(),
             })
             .from(contactInboxProjection)
             .where(
               combinePredicates(
                 buildInboxFilterPredicate(input.filter),
                 buildInboxProjectPredicate(input.projectId),
-                buildInboxSearchPredicate(input.query)
-              )
+                buildInboxSearchPredicate(input.query),
+              ),
             )
-            .then((result) => result[0])
+            .then((result) => result[0]),
         ]);
 
         return {
           rows: rows.map(mapInboxProjectionRow),
-          total: totalRow?.value ?? 0
+          total: totalRow?.value ?? 0,
         };
       },
 
@@ -1505,12 +1542,9 @@ function createStage1RepositoriesInternal(
         const baseQuery = db
           .select({
             all: count(),
-            unread:
-              sql<number>`coalesce(sum(case when ${contactInboxProjection.bucket} = 'New' then 1 else 0 end), 0)`,
-            followUp:
-              sql<number>`coalesce(sum(case when ${contactInboxProjection.isStarred} then 1 else 0 end), 0)`,
-            unresolved:
-              sql<number>`coalesce(sum(case when ${contactInboxProjection.hasUnresolved} then 1 else 0 end), 0)`
+            unread: sql<number>`coalesce(sum(case when ${contactInboxProjection.bucket} = 'New' then 1 else 0 end), 0)`,
+            followUp: sql<number>`coalesce(sum(case when ${contactInboxProjection.isStarred} then 1 else 0 end), 0)`,
+            unresolved: sql<number>`coalesce(sum(case when ${contactInboxProjection.hasUnresolved} then 1 else 0 end), 0)`,
           })
           .from(contactInboxProjection);
         const [row] = await (projectPredicate === undefined
@@ -1521,7 +1555,7 @@ function createStage1RepositoriesInternal(
           all: row?.all ?? 0,
           unread: row?.unread ?? 0,
           followUp: row?.followUp ?? 0,
-          unresolved: row?.unresolved ?? 0
+          unresolved: row?.unresolved ?? 0,
         };
       },
 
@@ -1529,8 +1563,7 @@ function createStage1RepositoriesInternal(
         const [row] = await db
           .select({
             total: count(),
-            latestUpdatedAt:
-              sql<Date | null>`max(${contactInboxProjection.updatedAt})`
+            latestUpdatedAt: sql<Date | null>`max(${contactInboxProjection.updatedAt})`,
           })
           .from(contactInboxProjection);
 
@@ -1539,14 +1572,14 @@ function createStage1RepositoriesInternal(
           latestUpdatedAt:
             row?.latestUpdatedAt instanceof Date
               ? row.latestUpdatedAt.toISOString()
-              : null
+              : null,
         };
       },
 
       async getFreshnessByContactId(contactId) {
         const [row] = await db
           .select({
-            updatedAt: contactInboxProjection.updatedAt
+            updatedAt: contactInboxProjection.updatedAt,
           })
           .from(contactInboxProjection)
           .where(eq(contactInboxProjection.contactId, contactId))
@@ -1559,7 +1592,7 @@ function createStage1RepositoriesInternal(
         return {
           contactId,
           updatedAt:
-            row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null
+            row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
         };
       },
 
@@ -1574,7 +1607,7 @@ function createStage1RepositoriesInternal(
           .update(contactInboxProjection)
           .set({
             isStarred: input.needsFollowUp,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(contactInboxProjection.contactId, input.contactId))
           .returning();
@@ -1599,22 +1632,22 @@ function createStage1RepositoriesInternal(
               snippet: values.snippet,
               lastCanonicalEventId: values.lastCanonicalEventId,
               lastEventType: values.lastEventType,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapInboxProjectionRow(
-          requireRow(row, "Expected inbox projection row to be returned.")
+          requireRow(row, "Expected inbox projection row to be returned."),
         );
-      }
+      },
     },
 
     timelineProjection: {
       async countAll() {
         const [row] = await db
           .select({
-            value: count()
+            value: count(),
           })
           .from(contactTimelineProjection);
 
@@ -1625,7 +1658,9 @@ function createStage1RepositoriesInternal(
         const [row] = await db
           .select()
           .from(contactTimelineProjection)
-          .where(eq(contactTimelineProjection.canonicalEventId, canonicalEventId))
+          .where(
+            eq(contactTimelineProjection.canonicalEventId, canonicalEventId),
+          )
           .limit(1);
 
         return row === undefined ? null : mapTimelineProjectionRow(row);
@@ -1647,7 +1682,7 @@ function createStage1RepositoriesInternal(
             ? eq(contactTimelineProjection.contactId, input.contactId)
             : and(
                 eq(contactTimelineProjection.contactId, input.contactId),
-                lt(contactTimelineProjection.sortKey, input.beforeSortKey)
+                lt(contactTimelineProjection.sortKey, input.beforeSortKey),
               );
         const rows = await db
           .select()
@@ -1662,7 +1697,7 @@ function createStage1RepositoriesInternal(
       async countByContactId(contactId) {
         const [row] = await db
           .select({
-            value: count()
+            value: count(),
           })
           .from(contactTimelineProjection)
           .where(eq(contactTimelineProjection.contactId, contactId));
@@ -1674,10 +1709,10 @@ function createStage1RepositoriesInternal(
         const [row] = await db
           .select({
             total: count(),
-            latestUpdatedAt:
-              sql<Date | null>`max(${contactTimelineProjection.updatedAt})`,
-            latestSortKey:
-              sql<string | null>`max(${contactTimelineProjection.sortKey})`
+            latestUpdatedAt: sql<Date | null>`max(${contactTimelineProjection.updatedAt})`,
+            latestSortKey: sql<
+              string | null
+            >`max(${contactTimelineProjection.sortKey})`,
           })
           .from(contactTimelineProjection)
           .where(eq(contactTimelineProjection.contactId, contactId));
@@ -1689,7 +1724,7 @@ function createStage1RepositoriesInternal(
             row?.latestUpdatedAt instanceof Date
               ? row.latestUpdatedAt.toISOString()
               : null,
-          latestSortKey: row?.latestSortKey ?? null
+          latestSortKey: row?.latestSortKey ?? null,
         };
       },
 
@@ -1709,15 +1744,15 @@ function createStage1RepositoriesInternal(
               channel: values.channel,
               primaryProvider: values.primaryProvider,
               reviewState: values.reviewState,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapTimelineProjectionRow(
-          requireRow(row, "Expected timeline projection row to be returned.")
+          requireRow(row, "Expected timeline projection row to be returned."),
         );
-      }
+      },
     },
 
     syncState: {
@@ -1743,8 +1778,8 @@ function createStage1RepositoriesInternal(
             and(
               eq(syncState.scope, input.scope),
               providerPredicate,
-              eq(syncState.jobType, input.jobType)
-            )
+              eq(syncState.jobType, input.jobType),
+            ),
           )
           .orderBy(desc(syncState.updatedAt), desc(syncState.createdAt))
           .limit(1);
@@ -1781,15 +1816,15 @@ function createStage1RepositoriesInternal(
               freshnessP99Seconds: values.freshnessP99Seconds,
               lastSuccessfulAt: values.lastSuccessfulAt,
               deadLetterCount: values.deadLetterCount,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapSyncStateRow(
-          requireRow(row, "Expected sync state row to be returned.")
+          requireRow(row, "Expected sync state row to be returned."),
         );
-      }
+      },
     },
 
     auditEvidence: {
@@ -1801,7 +1836,7 @@ function createStage1RepositoriesInternal(
           .returning();
 
         return mapAuditEvidenceRow(
-          requireRow(row, "Expected audit evidence row to be returned.")
+          requireRow(row, "Expected audit evidence row to be returned."),
         );
       },
 
@@ -1812,40 +1847,44 @@ function createStage1RepositoriesInternal(
           .where(
             and(
               eq(auditPolicyEvidence.entityType, input.entityType),
-              eq(auditPolicyEvidence.entityId, input.entityId)
-            )
+              eq(auditPolicyEvidence.entityId, input.entityId),
+            ),
           )
           .orderBy(
             asc(auditPolicyEvidence.occurredAt),
-            asc(auditPolicyEvidence.createdAt)
+            asc(auditPolicyEvidence.createdAt),
           );
 
         return rows.map(mapAuditEvidenceRow);
-      }
-    }
+      },
+    },
   });
 }
 
 export function createStage1RepositoryBundle(
-  db: Stage1Database
+  db: Stage1Database,
 ): Stage1RepositoryBundle {
   return createStage1RepositoriesInternal(db);
 }
 
 export function createStage1RepositoryBundleFromConnection(
-  connection: Pick<DatabaseConnection, "db">
+  connection: Pick<DatabaseConnection, "db">,
 ): Stage1RepositoryBundle {
   return createStage1RepositoriesInternal(connection.db);
 }
 
 function createStage2RepositoriesInternal(
-  db: Stage1Database
+  db: Stage1Database,
 ): Stage2RepositoryBundle {
   async function loadSettingsProjects(projectIds?: readonly string[]) {
     const normalizedProjectIds =
       projectIds === undefined
         ? null
-        : [...new Set(projectIds.filter((projectId) => projectId.trim().length > 0))];
+        : [
+            ...new Set(
+              projectIds.filter((projectId) => projectId.trim().length > 0),
+            ),
+          ];
 
     if (normalizedProjectIds !== null && normalizedProjectIds.length === 0) {
       return [];
@@ -1875,12 +1914,12 @@ function createStage2RepositoriesInternal(
       .orderBy(
         asc(projectAliases.projectId),
         asc(projectAliases.createdAt),
-        asc(projectAliases.alias)
+        asc(projectAliases.alias),
       );
     const memberCountRows = await db
       .select({
         projectId: contactMemberships.projectId,
-        memberCount: count()
+        memberCount: count(),
       })
       .from(contactMemberships)
       .where(inArray(contactMemberships.projectId, resolvedProjectIds))
@@ -1898,7 +1937,7 @@ function createStage2RepositoriesInternal(
       const projectEmails = emailsByProjectId.get(aliasRow.projectId) ?? [];
       projectEmails.push({
         address: aliasRow.alias,
-        createdAt: aliasRow.createdAt
+        createdAt: aliasRow.createdAt,
       });
       emailsByProjectId.set(aliasRow.projectId, projectEmails);
     }
@@ -1907,8 +1946,8 @@ function createStage2RepositoriesInternal(
       memberCountRows.flatMap((row) =>
         row.projectId === null
           ? []
-          : [[row.projectId, row.memberCount] as const]
-      )
+          : [[row.projectId, row.memberCount] as const],
+      ),
     );
 
     return projectRows.map((row) => {
@@ -1917,11 +1956,11 @@ function createStage2RepositoriesInternal(
         .sort(
           (left, right) =>
             left.createdAt.getTime() - right.createdAt.getTime() ||
-            left.address.localeCompare(right.address)
+            left.address.localeCompare(right.address),
         )
         .map((email, index) => ({
           address: email.address,
-          isPrimary: index === 0
+          isPrimary: index === 0,
         }));
 
       return {
@@ -1933,7 +1972,7 @@ function createStage2RepositoriesInternal(
         aiKnowledgeSyncedAt: row.aiKnowledgeSyncedAt,
         emails: orderedEmails,
         memberCount: memberCountByProjectId.get(row.projectId) ?? 0,
-        updatedAt: row.updatedAt
+        updatedAt: row.updatedAt,
       };
     });
   }
@@ -1966,11 +2005,11 @@ function createStage2RepositoriesInternal(
             DEFAULT_INTEGRATION_HEALTH_SEED.map((row) => ({
               ...row,
               detail: null,
-              metadataJson: {}
-            }))
+              metadataJson: {},
+            })),
           )
           .onConflictDoNothing({
-            target: integrationHealth.id
+            target: integrationHealth.id,
           });
       },
 
@@ -1988,18 +2027,18 @@ function createStage2RepositoriesInternal(
               lastCheckedAt: values.lastCheckedAt,
               detail: values.detail,
               metadataJson: values.metadataJson,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapIntegrationHealthRow(
           requireRow(
             row,
-            "Expected integration health row to be returned from upsert."
-          )
+            "Expected integration health row to be returned from upsert.",
+          ),
         );
-      }
+      },
     },
 
     projects: {
@@ -2017,11 +2056,11 @@ function createStage2RepositoriesInternal(
           .update(projectDimensions)
           .set({
             isActive,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(projectDimensions.projectId, projectId))
           .returning({
-            projectId: projectDimensions.projectId
+            projectId: projectDimensions.projectId,
           });
 
         if (row === undefined) {
@@ -2034,17 +2073,17 @@ function createStage2RepositoriesInternal(
 
       async setAiKnowledgeUrl(
         projectId: string,
-        aiKnowledgeUrl: string | null
+        aiKnowledgeUrl: string | null,
       ) {
         const [row] = await db
           .update(projectDimensions)
           .set({
             aiKnowledgeUrl,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(projectDimensions.projectId, projectId))
           .returning({
-            projectId: projectDimensions.projectId
+            projectId: projectDimensions.projectId,
           });
 
         if (row === undefined) {
@@ -2053,7 +2092,7 @@ function createStage2RepositoriesInternal(
 
         const [project] = await loadSettingsProjects([row.projectId]);
         return project ?? null;
-      }
+      },
     },
 
     users: {
@@ -2078,10 +2117,7 @@ function createStage2RepositoriesInternal(
       },
 
       async listAll() {
-        const rows = await db
-          .select()
-          .from(users)
-          .orderBy(asc(users.email));
+        const rows = await db.select().from(users).orderBy(asc(users.email));
 
         return rows.map(mapUserRow);
       },
@@ -2091,13 +2127,13 @@ function createStage2RepositoriesInternal(
           .update(users)
           .set({
             role,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(users.id, id))
           .returning();
 
         return mapUserRow(
-          requireRow(row, "Expected user row to be returned from updateRole.")
+          requireRow(row, "Expected user row to be returned from updateRole."),
         );
       },
 
@@ -2106,7 +2142,7 @@ function createStage2RepositoriesInternal(
           .update(users)
           .set({
             deactivatedAt,
-            updatedAt: new Date()
+            updatedAt: new Date(),
           })
           .where(eq(users.id, id))
           .returning();
@@ -2114,8 +2150,8 @@ function createStage2RepositoriesInternal(
         return mapUserRow(
           requireRow(
             row,
-            "Expected user row to be returned from setDeactivated."
-          )
+            "Expected user row to be returned from setDeactivated.",
+          ),
         );
       },
 
@@ -2133,15 +2169,15 @@ function createStage2RepositoriesInternal(
               image: values.image,
               role: values.role,
               deactivatedAt: values.deactivatedAt,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           })
           .returning();
 
         return mapUserRow(
-          requireRow(row, "Expected user row to be returned from upsert.")
+          requireRow(row, "Expected user row to be returned from upsert."),
         );
-      }
+      },
     },
 
     aliases: {
@@ -2211,9 +2247,9 @@ function createStage2RepositoriesInternal(
                   createdAt: occurredAt,
                   updatedAt: occurredAt,
                   createdBy: input.actorId,
-                  updatedBy: input.actorId
+                  updatedBy: input.actorId,
                 };
-              })
+              }),
             )
             .returning();
 
@@ -2231,8 +2267,8 @@ function createStage2RepositoriesInternal(
         return mapProjectAliasRow(
           requireRow(
             row,
-            "Expected project alias row to be returned from create."
-          )
+            "Expected project alias row to be returned from create.",
+          ),
         );
       },
 
@@ -2244,7 +2280,7 @@ function createStage2RepositoriesInternal(
             alias: values.alias,
             projectId: values.projectId,
             updatedAt: new Date(),
-            updatedBy: values.updatedBy
+            updatedBy: values.updatedBy,
           })
           .where(eq(projectAliases.id, values.id))
           .returning();
@@ -2252,26 +2288,26 @@ function createStage2RepositoriesInternal(
         return mapProjectAliasRow(
           requireRow(
             row,
-            "Expected project alias row to be returned from update."
-          )
+            "Expected project alias row to be returned from update.",
+          ),
         );
       },
 
       async delete(id) {
         await db.delete(projectAliases).where(eq(projectAliases.id, id));
-      }
-    }
+      },
+    },
   });
 }
 
 export function createStage2RepositoryBundle(
-  db: Stage1Database
+  db: Stage1Database,
 ): Stage2RepositoryBundle {
   return createStage2RepositoriesInternal(db);
 }
 
 export function createStage2RepositoryBundleFromConnection(
-  connection: Pick<DatabaseConnection, "db">
+  connection: Pick<DatabaseConnection, "db">,
 ): Stage2RepositoryBundle {
   return createStage2RepositoriesInternal(connection.db);
 }

@@ -23,14 +23,16 @@ import type {
   SyncScope,
   SyncJobType,
   SyncStateRecord,
-  TimelineProjectionRow
+  TimelineProjectionRow,
 } from "@as-comms/contracts";
 
 export interface SourceEvidenceRepository {
   append(record: SourceEvidenceRecord): Promise<SourceEvidenceRecord>;
   findById(id: string): Promise<SourceEvidenceRecord | null>;
   listByIds(ids: readonly string[]): Promise<readonly SourceEvidenceRecord[]>;
-  findByIdempotencyKey(idempotencyKey: string): Promise<SourceEvidenceRecord | null>;
+  findByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<SourceEvidenceRecord | null>;
   countByProvider(provider: Provider): Promise<number>;
   listByProviderRecord(input: {
     readonly provider: Provider;
@@ -41,7 +43,9 @@ export interface SourceEvidenceRepository {
 
 export interface CanonicalEventRepository {
   findById(id: string): Promise<CanonicalEventRecord | null>;
-  findByIdempotencyKey(idempotencyKey: string): Promise<CanonicalEventRecord | null>;
+  findByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<CanonicalEventRecord | null>;
   countAll(): Promise<number>;
   countByPrimaryProvider(provider: Provider): Promise<number>;
   countDistinctInboxContacts(): Promise<number>;
@@ -53,7 +57,7 @@ export interface CanonicalEventRepository {
 export interface ContactRepository {
   findById(id: string): Promise<ContactRecord | null>;
   findBySalesforceContactId(
-    salesforceContactId: string
+    salesforceContactId: string,
   ): Promise<ContactRecord | null>;
   listAll(): Promise<readonly ContactRecord[]>;
   listByIds(ids: readonly string[]): Promise<readonly ContactRecord[]>;
@@ -71,10 +75,10 @@ export interface ContactIdentityRepository {
 
 export interface ContactMembershipRepository {
   listByContactId(
-    contactId: string
+    contactId: string,
   ): Promise<readonly ContactMembershipRecord[]>;
   listByContactIds(
-    contactIds: readonly string[]
+    contactIds: readonly string[],
   ): Promise<readonly ContactMembershipRecord[]>;
   upsert(record: ContactMembershipRecord): Promise<ContactMembershipRecord>;
 }
@@ -82,72 +86,76 @@ export interface ContactMembershipRepository {
 export interface ProjectDimensionRepository {
   listAll(): Promise<readonly ProjectDimensionRecord[]>;
   listActive(): Promise<readonly ProjectDimensionRecord[]>;
-  listByIds(projectIds: readonly string[]): Promise<readonly ProjectDimensionRecord[]>;
+  listByIds(
+    projectIds: readonly string[],
+  ): Promise<readonly ProjectDimensionRecord[]>;
   upsert(record: ProjectDimensionRecord): Promise<ProjectDimensionRecord>;
 }
 
 export interface ExpeditionDimensionRepository {
   listByIds(
-    expeditionIds: readonly string[]
+    expeditionIds: readonly string[],
   ): Promise<readonly ExpeditionDimensionRecord[]>;
   upsert(record: ExpeditionDimensionRecord): Promise<ExpeditionDimensionRecord>;
 }
 
 export interface GmailMessageDetailRepository {
   listBySourceEvidenceIds(
-    sourceEvidenceIds: readonly string[]
+    sourceEvidenceIds: readonly string[],
   ): Promise<readonly GmailMessageDetailRecord[]>;
   upsert(record: GmailMessageDetailRecord): Promise<GmailMessageDetailRecord>;
 }
 
 export interface SalesforceEventContextRepository {
   listBySourceEvidenceIds(
-    sourceEvidenceIds: readonly string[]
+    sourceEvidenceIds: readonly string[],
   ): Promise<readonly SalesforceEventContextRecord[]>;
   upsert(
-    record: SalesforceEventContextRecord
+    record: SalesforceEventContextRecord,
   ): Promise<SalesforceEventContextRecord>;
 }
 
 export interface SalesforceCommunicationDetailRepository {
   listBySourceEvidenceIds(
-    sourceEvidenceIds: readonly string[]
+    sourceEvidenceIds: readonly string[],
   ): Promise<readonly SalesforceCommunicationDetailRecord[]>;
   upsert(
-    record: SalesforceCommunicationDetailRecord
+    record: SalesforceCommunicationDetailRecord,
   ): Promise<SalesforceCommunicationDetailRecord>;
 }
 
 export interface SimpleTextingMessageDetailRepository {
   listBySourceEvidenceIds(
-    sourceEvidenceIds: readonly string[]
+    sourceEvidenceIds: readonly string[],
   ): Promise<readonly SimpleTextingMessageDetailRecord[]>;
   upsert(
-    record: SimpleTextingMessageDetailRecord
+    record: SimpleTextingMessageDetailRecord,
   ): Promise<SimpleTextingMessageDetailRecord>;
 }
 
 export interface MailchimpCampaignActivityDetailRepository {
   listBySourceEvidenceIds(
-    sourceEvidenceIds: readonly string[]
+    sourceEvidenceIds: readonly string[],
   ): Promise<readonly MailchimpCampaignActivityDetailRecord[]>;
   upsert(
-    record: MailchimpCampaignActivityDetailRecord
+    record: MailchimpCampaignActivityDetailRecord,
   ): Promise<MailchimpCampaignActivityDetailRecord>;
 }
 
 export interface ManualNoteDetailRepository {
   listBySourceEvidenceIds(
-    sourceEvidenceIds: readonly string[]
+    sourceEvidenceIds: readonly string[],
   ): Promise<readonly ManualNoteDetailRecord[]>;
   upsert(record: ManualNoteDetailRecord): Promise<ManualNoteDetailRecord>;
 }
 
 export interface IdentityResolutionRepository {
   findById(id: string): Promise<IdentityResolutionCase | null>;
-  listOpenByContactId(contactId: string): Promise<readonly IdentityResolutionCase[]>;
+  listOpenByContactId(
+    contactId: string,
+  ): Promise<readonly IdentityResolutionCase[]>;
   listOpenByReasonCode(
-    reasonCode: IdentityResolutionReasonCode
+    reasonCode: IdentityResolutionReasonCode,
   ): Promise<readonly IdentityResolutionCase[]>;
   upsert(record: IdentityResolutionCase): Promise<IdentityResolutionCase>;
 }
@@ -156,7 +164,7 @@ export interface RoutingReviewRepository {
   findById(id: string): Promise<RoutingReviewCase | null>;
   listOpenByContactId(contactId: string): Promise<readonly RoutingReviewCase[]>;
   listOpenByReasonCode(
-    reasonCode: RoutingReviewReasonCode
+    reasonCode: RoutingReviewReasonCode,
   ): Promise<readonly RoutingReviewCase[]>;
   upsert(record: RoutingReviewCase): Promise<RoutingReviewCase>;
 }
@@ -172,13 +180,11 @@ export interface InboxProjectionRepository {
     readonly limit: number;
     readonly query: string;
     readonly projectId?: string | null;
-    readonly cursor:
-      | {
-          readonly sortAt: string;
-          readonly lastActivityAt: string;
-          readonly contactId: string;
-        }
-      | null;
+    readonly cursor: {
+      readonly lastInboundAt: string | null;
+      readonly lastActivityAt: string;
+      readonly contactId: string;
+    } | null;
   }): Promise<{
     readonly rows: readonly InboxProjectionRow[];
     readonly total: number;
@@ -187,17 +193,13 @@ export interface InboxProjectionRepository {
     readonly filter: "all" | "unread" | "follow-up" | "unresolved";
     readonly limit: number;
     readonly projectId?: string | null;
-    readonly cursor:
-      | {
-          readonly sortAt: string;
-          readonly lastActivityAt: string;
-          readonly contactId: string;
-        }
-      | null;
+    readonly cursor: {
+      readonly lastInboundAt: string | null;
+      readonly lastActivityAt: string;
+      readonly contactId: string;
+    } | null;
   }): Promise<readonly InboxProjectionRow[]>;
-  countByFilters(input?: {
-    readonly projectId?: string | null;
-  }): Promise<{
+  countByFilters(input?: { readonly projectId?: string | null }): Promise<{
     readonly all: number;
     readonly unread: number;
     readonly followUp: number;
@@ -221,7 +223,9 @@ export interface InboxProjectionRepository {
 
 export interface TimelineProjectionRepository {
   countAll(): Promise<number>;
-  findByCanonicalEventId(canonicalEventId: string): Promise<TimelineProjectionRow | null>;
+  findByCanonicalEventId(
+    canonicalEventId: string,
+  ): Promise<TimelineProjectionRow | null>;
   listByContactId(contactId: string): Promise<readonly TimelineProjectionRow[]>;
   listRecentByContactId(input: {
     readonly contactId: string;
@@ -280,7 +284,7 @@ export interface Stage1RepositoryBundle {
 }
 
 export function defineStage1RepositoryBundle<T extends Stage1RepositoryBundle>(
-  bundle: T
+  bundle: T,
 ): T {
   return bundle;
 }

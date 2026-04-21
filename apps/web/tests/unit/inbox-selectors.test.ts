@@ -76,6 +76,10 @@ import {
   seedInboxSmsEvent,
   type InboxTestRuntime,
 } from "./inbox-stage1-helpers";
+import {
+  inboxRecencyExpectedOrder,
+  inboxRecencyFixture,
+} from "./fixtures/inbox-recency-fixture.js";
 
 function buildItem(
   overrides: Partial<InboxListItemViewModel>,
@@ -257,20 +261,80 @@ async function seedInboxEmailOnlyContact(
   });
 }
 
-describe("compareInboxRecency", () => {
-  it("falls back to lastActivityAt when lastInboundAt is missing", () => {
-    const outboundOnly = buildItem({
-      contactId: "contact_outbound",
-      lastInboundAt: null,
-      lastActivityAt: "2026-04-14T15:00:00.000Z",
-    });
-    const olderInbound = buildItem({
-      contactId: "contact_inbound",
-      lastInboundAt: "2026-04-14T13:00:00.000Z",
-      lastActivityAt: "2026-04-14T13:15:00.000Z",
+async function seedSharedInboxRecencyFixture(
+  runtime: InboxTestRuntime,
+): Promise<void> {
+  for (const row of inboxRecencyFixture) {
+    await seedInboxContact(runtime.context, {
+      contactId: row.contactId,
+      salesforceContactId: row.contactId.replace("contact:", "003-"),
+      displayName: row.displayName,
+      primaryEmail: `${row.contactId}@example.org`,
+      primaryPhone: null,
     });
 
-    expect(compareInboxRecency(outboundOnly, olderInbound)).toBeLessThan(0);
+    if (row.lastInboundAt !== null) {
+      await seedInboxEmailEvent(runtime.context, {
+        id: `${row.contactId}-inbound`,
+        contactId: row.contactId,
+        occurredAt: row.lastInboundAt,
+        direction: "inbound",
+        subject: `${row.displayName} inbound`,
+        snippet: `${row.displayName} inbound message`,
+      });
+    }
+
+    if (row.lastOutboundAt !== null) {
+      await seedInboxEmailEvent(runtime.context, {
+        id: `${row.contactId}-outbound`,
+        contactId: row.contactId,
+        occurredAt: row.lastOutboundAt,
+        direction: "outbound",
+        subject: `${row.displayName} outbound`,
+        snippet: `${row.displayName} outbound message`,
+      });
+    }
+
+    await seedInboxProjection(runtime.context, {
+      contactId: row.contactId,
+      bucket: row.lastInboundAt === null ? "Opened" : "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: row.lastInboundAt,
+      lastOutboundAt: row.lastOutboundAt,
+      lastActivityAt: row.lastActivityAt,
+      snippet: `${row.displayName} preview`,
+      lastCanonicalEventId:
+        row.lastActivityAt === row.lastInboundAt
+          ? `event:${row.contactId}-inbound`
+          : `event:${row.contactId}-outbound`,
+      lastEventType:
+        row.lastActivityAt === row.lastInboundAt
+          ? "communication.email.inbound"
+          : "communication.email.outbound",
+    });
+  }
+}
+
+describe("compareInboxRecency", () => {
+  it("matches the shared inbound-first ordering fixture", () => {
+    const orderedContactIds = inboxRecencyFixture
+      .map((row) =>
+        buildItem({
+          contactId: row.contactId,
+          displayName: row.displayName,
+          lastInboundAt: row.lastInboundAt,
+          lastActivityAt: row.lastActivityAt,
+          lastEventType:
+            row.lastActivityAt === row.lastInboundAt
+              ? "communication.email.inbound"
+              : "communication.email.outbound",
+        }),
+      )
+      .sort(compareInboxRecency)
+      .map((item) => item.contactId);
+
+    expect(orderedContactIds).toEqual(inboxRecencyExpectedOrder);
   });
 });
 
@@ -291,20 +355,20 @@ describe("real inbox selectors", () => {
     const list = await getInboxList();
 
     expect(list.items.map((item) => item.contactId)).toEqual([
-      "contact:lisa-zhang",
       "contact:sarah-martinez",
       "contact:alex-thompson",
+      "contact:lisa-zhang",
     ]);
     expect(list.items[0]).toMatchObject({
-      contactId: "contact:lisa-zhang",
-      latestSubject: "Safety protocols",
-      bucket: "opened",
-    });
-    expect(list.items[1]).toMatchObject({
       contactId: "contact:sarah-martinez",
       latestSubject: "Re: Amazon Basin equipment list",
       needsFollowUp: true,
       bucket: "new",
+    });
+    expect(list.items[2]).toMatchObject({
+      contactId: "contact:lisa-zhang",
+      latestSubject: "Safety protocols",
+      bucket: "opened",
     });
   });
 
@@ -634,7 +698,9 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:lisa-zhang");
 
     expect(
-      detail?.timeline.some((entry) => entry.kind === "outbound-campaign-email"),
+      detail?.timeline.some(
+        (entry) => entry.kind === "outbound-campaign-email",
+      ),
     ).toBe(true);
     expect(
       detail?.timeline.some((entry) => entry.kind === "outbound-email"),
@@ -1070,8 +1136,7 @@ describe("real inbox selectors", () => {
       contactId: "contact:maria-no-body",
       canonicalEventId: latestSalesforceEvent.canonicalEventId,
       occurredAt: "2026-04-16T12:30:00.000Z",
-      sortKey:
-        "2026-04-16T12:30:00.000Z::event:maria-no-body-latest",
+      sortKey: "2026-04-16T12:30:00.000Z::event:maria-no-body-latest",
       eventType: "communication.email.outbound",
       summary: "Outbound Email Sent",
       channel: "email",
@@ -1236,8 +1301,8 @@ describe("real inbox selectors", () => {
     });
 
     expect(firstPage.items.map((item) => item.contactId)).toEqual([
-      "contact:lisa-zhang",
       "contact:sarah-martinez",
+      "contact:alex-thompson",
     ]);
     expect(firstPage.page.hasMore).toBe(true);
     expect(firstPage.page.nextCursor).not.toBeNull();
@@ -1248,7 +1313,7 @@ describe("real inbox selectors", () => {
     });
 
     expect(secondPage.items.map((item) => item.contactId)).toEqual([
-      "contact:alex-thompson",
+      "contact:lisa-zhang",
     ]);
     expect(secondPage.page.hasMore).toBe(false);
 
@@ -1608,5 +1673,41 @@ describe("real inbox selectors", () => {
     ]);
     expect(secondPage.page.total).toBe(3);
     expect(secondPage.page.hasMore).toBe(false);
+  });
+
+  it("paginates cleanly across the null-inbound boundary", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.dispose();
+    runtime = await createInboxTestRuntime();
+    await seedSharedInboxRecencyFixture(runtime);
+
+    const firstPage = await getInboxList("all", {
+      limit: 3,
+    });
+
+    expect(firstPage.items.map((item) => item.contactId)).toEqual(
+      inboxRecencyExpectedOrder.slice(0, 3),
+    );
+    expect(firstPage.page.hasMore).toBe(true);
+    expect(firstPage.page.nextCursor).not.toBeNull();
+
+    const secondPage = await getInboxList("all", {
+      limit: 3,
+      cursor: firstPage.page.nextCursor,
+    });
+
+    expect(secondPage.items.map((item) => item.contactId)).toEqual(
+      inboxRecencyExpectedOrder.slice(3),
+    );
+    expect(
+      new Set(
+        [...firstPage.items, ...secondPage.items].map((item) => item.contactId),
+      ),
+    ).toHaveLength(inboxRecencyExpectedOrder.length);
+    expect(secondPage.page.hasMore).toBe(false);
+    expect(secondPage.page.nextCursor).toBeNull();
   });
 });
