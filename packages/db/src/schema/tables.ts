@@ -684,6 +684,7 @@ export const projectAliases = pgTable(
   {
     id: text("id").primaryKey(),
     alias: text("alias").notNull().unique(),
+    signature: text("signature").notNull().default(""),
     projectId: text("project_id").references(() => projectDimensions.projectId, {
       onDelete: "set null"
     }),

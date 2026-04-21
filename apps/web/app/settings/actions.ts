@@ -20,6 +20,11 @@ import {
 import { getSettingsRepositories } from "@/src/server/stage1-runtime";
 import type { UiError, UiResult } from "@/src/server/ui-result";
 
+import {
+  getProjectAliasSignatureValidationError,
+  normalizeProjectAliasSignature
+} from "./_lib/project-alias-signature";
+
 function newRequestId(): string {
   return randomUUID();
 }
@@ -76,7 +81,12 @@ function serializeProjectMutationData(input: {
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
-  readonly emails: readonly { readonly address: string; readonly isPrimary: boolean }[];
+  readonly emails: readonly {
+    readonly id: string;
+    readonly address: string;
+    readonly isPrimary: boolean;
+    readonly signature: string;
+  }[];
 }): ProjectMutationData {
   return {
     projectId: input.projectId,
@@ -89,8 +99,10 @@ function serializeProjectMutationData(input: {
       emails: input.emails
     }),
     emails: input.emails.map((email) => ({
+      id: email.id,
       address: email.address,
-      isPrimary: email.isPrimary
+      isPrimary: email.isPrimary,
+      signature: email.signature
     }))
   };
 }
@@ -342,6 +354,11 @@ export interface ProjectEmailInput {
   readonly isPrimary: boolean;
 }
 
+export interface ProjectEmailMutationData extends ProjectEmailInput {
+  readonly id: string;
+  readonly signature: string;
+}
+
 export interface ProjectMutationData {
   readonly projectId: string;
   readonly projectName: string;
@@ -349,7 +366,17 @@ export interface ProjectMutationData {
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: string | null;
   readonly activationRequirementsMet: boolean;
-  readonly emails: readonly ProjectEmailInput[];
+  readonly emails: readonly ProjectEmailMutationData[];
+}
+
+function truncateAuditValue(value: string): string {
+  return value.slice(0, 500);
+}
+
+export interface ProjectAliasSignatureMutationData {
+  readonly id: string;
+  readonly alias: string;
+  readonly signature: string;
 }
 
 // ─── Projects ───────────────────────────────────────────────────────────────
@@ -538,6 +565,70 @@ export async function updateProjectEmailsAction(
   return {
     ok: true,
     data: serializeProjectMutationData(updatedProject),
+    requestId: newRequestId()
+  };
+}
+
+export async function updateProjectAliasSignatureAction(
+  aliasId: string,
+  signature: string
+): Promise<UiResult<ProjectAliasSignatureMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update an alias signature.",
+    forbiddenMessage: "Only admins can update alias signatures."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const repositories = await getSettingsRepositories();
+  const alias = await repositories.aliases.findById(aliasId);
+  if (alias?.projectId == null) {
+    return errorResult("not_found", "That project email no longer exists.");
+  }
+
+  const normalizedSignature = normalizeProjectAliasSignature(signature);
+  const validationError =
+    getProjectAliasSignatureValidationError(normalizedSignature);
+  if (validationError !== null) {
+    return errorResult("invalid_signature", validationError, {
+      fieldErrors: {
+        signature: validationError
+      }
+    });
+  }
+
+  const updatedAlias = await repositories.aliases.updateSignature({
+    aliasId,
+    signature: normalizedSignature,
+    actorId: admin.userId
+  });
+  if (updatedAlias === null) {
+    return errorResult("not_found", "That project email no longer exists.");
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.alias_signature_updated",
+    entityType: "project_alias",
+    entityId: aliasId,
+    metadataJson: {
+      alias: updatedAlias.alias,
+      projectId: alias.projectId,
+      before: truncateAuditValue(alias.signature),
+      after: truncateAuditValue(updatedAlias.signature)
+    }
+  });
+
+  revalidateProjectSettings(alias.projectId);
+
+  return {
+    ok: true,
+    data: {
+      id: updatedAlias.id,
+      alias: updatedAlias.alias,
+      signature: updatedAlias.signature
+    },
     requestId: newRequestId()
   };
 }

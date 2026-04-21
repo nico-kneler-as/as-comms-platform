@@ -1957,7 +1957,12 @@ function createStage2RepositoriesInternal(
 
     const emailsByProjectId = new Map<
       string,
-      { readonly address: string; readonly createdAt: Date }[]
+      {
+        readonly id: string;
+        readonly address: string;
+        readonly createdAt: Date;
+        readonly signature: string;
+      }[]
     >();
     for (const aliasRow of aliasRows) {
       if (aliasRow.projectId === null) {
@@ -1966,8 +1971,10 @@ function createStage2RepositoriesInternal(
 
       const projectEmails = emailsByProjectId.get(aliasRow.projectId) ?? [];
       projectEmails.push({
+        id: aliasRow.id,
         address: aliasRow.alias,
         createdAt: aliasRow.createdAt,
+        signature: aliasRow.signature
       });
       emailsByProjectId.set(aliasRow.projectId, projectEmails);
     }
@@ -1989,8 +1996,10 @@ function createStage2RepositoriesInternal(
             left.address.localeCompare(right.address),
         )
         .map((email, index) => ({
+          id: email.id,
           address: email.address,
           isPrimary: index === 0,
+          signature: email.signature
         }));
 
       return {
@@ -2256,6 +2265,14 @@ function createStage2RepositoriesInternal(
         readonly actorId: string;
       }) {
         return db.transaction(async (tx: Stage1Database) => {
+          const existingRows = await tx
+            .select()
+            .from(projectAliases)
+            .where(eq(projectAliases.projectId, input.projectId));
+          const signatureByAlias = new Map(
+            existingRows.map((row) => [row.alias, row.signature] as const)
+          );
+
           await tx
             .delete(projectAliases)
             .where(eq(projectAliases.projectId, input.projectId));
@@ -2273,6 +2290,7 @@ function createStage2RepositoriesInternal(
                 return {
                   id: crypto.randomUUID(),
                   alias,
+                  signature: signatureByAlias.get(alias) ?? "",
                   projectId: input.projectId,
                   createdAt: occurredAt,
                   updatedAt: occurredAt,
@@ -2285,6 +2303,20 @@ function createStage2RepositoriesInternal(
 
           return rows.map(mapProjectAliasRow);
         });
+      },
+
+      async updateSignature(input) {
+        const [row] = await db
+          .update(projectAliases)
+          .set({
+            signature: input.signature,
+            updatedAt: new Date(),
+            updatedBy: input.actorId
+          })
+          .where(eq(projectAliases.id, input.aliasId))
+          .returning();
+
+        return row === undefined ? null : mapProjectAliasRow(row);
       },
 
       async create(record: ProjectAliasRecord) {
@@ -2308,6 +2340,7 @@ function createStage2RepositoriesInternal(
           .update(projectAliases)
           .set({
             alias: values.alias,
+            signature: values.signature,
             projectId: values.projectId,
             updatedAt: new Date(),
             updatedBy: values.updatedBy,

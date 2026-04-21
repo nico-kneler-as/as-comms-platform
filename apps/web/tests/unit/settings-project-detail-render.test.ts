@@ -77,6 +77,7 @@ vi.mock("@/components/ui/status-badge", () => ({
 vi.mock("../../app/settings/actions", () => ({
   activateProjectAction: vi.fn(),
   deactivateProjectAction: vi.fn(),
+  updateProjectAliasSignatureAction: vi.fn(),
   updateProjectAiKnowledgeAction: vi.fn(),
   updateProjectEmailsAction: vi.fn()
 }));
@@ -100,8 +101,10 @@ describe("ProjectDetail role-aware rendering", () => {
           isAdmin: false,
           emails: [
             {
+              id: "alias:inactive",
               address: "inactive@asc.internal",
-              isPrimary: true
+              isPrimary: true,
+              signature: ""
             }
           ],
           salesforceProjectId: "project:inactive"
@@ -116,5 +119,6 @@ describe("ProjectDetail role-aware rendering", () => {
     expect(html).not.toContain("Save URL");
     expect(html).not.toContain("Sync");
     expect(html).not.toContain("Make primary");
+    expect(html).not.toContain("Save signature");
   });
 });

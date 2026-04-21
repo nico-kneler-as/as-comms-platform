@@ -31,10 +31,16 @@ import {
   activateProjectAction,
   deactivateProjectAction,
   type ProjectEmailInput,
+  type ProjectEmailMutationData,
   type ProjectMutationData,
   updateProjectAiKnowledgeAction,
+  updateProjectAliasSignatureAction,
   updateProjectEmailsAction
 } from "../actions";
+import {
+  getProjectAliasSignatureValidationError,
+  normalizeProjectAliasSignature
+} from "../_lib/project-alias-signature";
 
 interface FeedbackState {
   readonly kind: "success" | "error";
@@ -65,6 +71,14 @@ function buildProjectState(
   };
 }
 
+function buildSignatureDrafts(
+  emails: readonly ProjectEmailMutationData[]
+): Record<string, string> {
+  return Object.fromEntries(
+    emails.map((email) => [email.id, email.signature] as const)
+  );
+}
+
 function mergeProjectState(
   current: ProjectMutationData,
   patch: Partial<ProjectMutationData>
@@ -84,9 +98,9 @@ function mergeProjectState(
 }
 
 function promotePrimaryEmail(
-  emails: readonly ProjectEmailInput[],
+  emails: readonly ProjectEmailMutationData[],
   address: string
-): readonly ProjectEmailInput[] {
+): readonly ProjectEmailMutationData[] {
   const selected = emails.find((email) => email.address === address);
   if (!selected) {
     return emails;
@@ -94,22 +108,26 @@ function promotePrimaryEmail(
 
   return [
     {
+      id: selected.id,
       address: selected.address,
-      isPrimary: true
+      isPrimary: true,
+      signature: selected.signature
     },
     ...emails
       .filter((email) => email.address !== address)
       .map((email) => ({
+        id: email.id,
         address: email.address,
-        isPrimary: false
+        isPrimary: false,
+        signature: email.signature
       }))
   ];
 }
 
 function removeEmail(
-  emails: readonly ProjectEmailInput[],
+  emails: readonly ProjectEmailMutationData[],
   address: string
-): readonly ProjectEmailInput[] {
+): readonly ProjectEmailMutationData[] {
   const remaining = emails.filter((email) => email.address !== address);
   if (remaining.length === 0) {
     return [];
@@ -120,8 +138,19 @@ function removeEmail(
   }
 
   return remaining.map((email, index) => ({
+    id: email.id,
     address: email.address,
-    isPrimary: index === 0
+    isPrimary: index === 0,
+    signature: email.signature
+  }));
+}
+
+function toProjectEmailInputs(
+  emails: readonly ProjectEmailMutationData[]
+): readonly ProjectEmailInput[] {
+  return emails.map((email) => ({
+    address: email.address,
+    isPrimary: email.isPrimary
   }));
 }
 
@@ -142,12 +171,20 @@ export function ProjectDetail({
     mergeProjectState
   );
   const [knowledgeDraft, setKnowledgeDraft] = useState(project.aiKnowledgeUrl ?? "");
+  const [signatureDrafts, setSignatureDrafts] = useState(() =>
+    buildSignatureDrafts(project.emails)
+  );
+  const [signatureErrors, setSignatureErrors] = useState<
+    Record<string, string | undefined>
+  >({});
   const [newEmail, setNewEmail] = useState("");
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [activationMessage, setActivationMessage] = useState<string | null>(null);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [pendingSignatureId, setPendingSignatureId] = useState<string | null>(null);
   const [knowledgePending, startKnowledgeTransition] = useTransition();
   const [emailPending, startEmailTransition] = useTransition();
+  const [signaturePending, startSignatureTransition] = useTransition();
   const [activationPending, startActivationTransition] = useTransition();
   const [deactivateOpen, setDeactivateOpen] = useState(false);
 
@@ -161,6 +198,21 @@ export function ProjectDetail({
   function commitProject(nextProject: ProjectMutationData) {
     setProjectState(nextProject);
     setKnowledgeDraft(nextProject.aiKnowledgeUrl ?? "");
+    setSignatureDrafts((current) =>
+      Object.fromEntries(
+        nextProject.emails.map((email) => [
+          email.id,
+          current[email.id] ?? email.signature
+        ])
+      )
+    );
+    setSignatureErrors((current) =>
+      Object.fromEntries(
+        nextProject.emails.flatMap((email) =>
+          current[email.id] === undefined ? [] : [[email.id, current[email.id]]]
+        )
+      )
+    );
     setActivationMessage(null);
   }
 
@@ -185,10 +237,22 @@ export function ProjectDetail({
 
     const nextEmails =
       optimisticProject.emails.length === 0
-        ? [{ address: normalizedAddress, isPrimary: true }]
+        ? [
+            {
+              id: `temp:${normalizedAddress}`,
+              address: normalizedAddress,
+              isPrimary: true,
+              signature: ""
+            }
+          ]
         : [
             ...optimisticProject.emails,
-            { address: normalizedAddress, isPrimary: false }
+            {
+              id: `temp:${normalizedAddress}`,
+              address: normalizedAddress,
+              isPrimary: false,
+              signature: ""
+            }
           ];
 
     setPendingEmail(normalizedAddress);
@@ -196,7 +260,7 @@ export function ProjectDetail({
       applyOptimisticProject({ emails: nextEmails });
       const result = await updateProjectEmailsAction(
         project.projectId,
-        nextEmails
+        toProjectEmailInputs(nextEmails)
       );
       setPendingEmail(null);
 
@@ -219,7 +283,7 @@ export function ProjectDetail({
       applyOptimisticProject({ emails: nextEmails });
       const result = await updateProjectEmailsAction(
         project.projectId,
-        nextEmails
+        toProjectEmailInputs(nextEmails)
       );
       setPendingEmail(null);
 
@@ -241,7 +305,7 @@ export function ProjectDetail({
       applyOptimisticProject({ emails: nextEmails });
       const result = await updateProjectEmailsAction(
         project.projectId,
-        nextEmails
+        toProjectEmailInputs(nextEmails)
       );
       setPendingEmail(null);
 
@@ -252,6 +316,71 @@ export function ProjectDetail({
 
       commitProject(result.data);
       announce(`${address} is now the primary email.`);
+    });
+  }
+
+  function handleSignatureDraftChange(aliasId: string, nextValue: string) {
+    setSignatureDrafts((current) => ({
+      ...current,
+      [aliasId]: nextValue
+    }));
+    setSignatureErrors((current) => ({
+      ...current,
+      [aliasId]: undefined
+    }));
+  }
+
+  function handleSaveSignature(email: ProjectEmailMutationData) {
+    const currentDraft = signatureDrafts[email.id] ?? email.signature;
+    const normalizedSignature = normalizeProjectAliasSignature(currentDraft);
+    const validationError =
+      getProjectAliasSignatureValidationError(normalizedSignature);
+
+    if (validationError !== null) {
+      setSignatureErrors((current) => ({
+        ...current,
+        [email.id]: validationError
+      }));
+      return;
+    }
+
+    startSignatureTransition(async () => {
+      setPendingSignatureId(email.id);
+      const result = await updateProjectAliasSignatureAction(
+        email.id,
+        currentDraft
+      );
+      setPendingSignatureId(null);
+
+      if (!result.ok) {
+        setSignatureErrors((current) => ({
+          ...current,
+          [email.id]: result.fieldErrors?.signature ?? result.message
+        }));
+        announce(result.message, "error");
+        return;
+      }
+
+      setProjectState((current) => ({
+        ...current,
+        emails: current.emails.map((currentEmail) =>
+          currentEmail.id === result.data.id
+            ? {
+                ...currentEmail,
+                signature: result.data.signature
+              }
+            : currentEmail
+        )
+      }));
+      setSignatureDrafts((current) => ({
+        ...current,
+        [result.data.id]: result.data.signature
+      }));
+      setSignatureErrors((current) => ({
+        ...current,
+        [result.data.id]: undefined
+      }));
+      announce(`Saved the signature for ${result.data.alias}.`);
     });
   }
 
@@ -579,56 +708,114 @@ export function ProjectDetail({
         >
           {optimisticProject.emails.map((email) => {
             const isRowPending = emailPending && pendingEmail === email.address;
+            const isSignaturePending =
+              signaturePending && pendingSignatureId === email.id;
+            const signatureDraft = signatureDrafts[email.id] ?? email.signature;
+            const signatureError = signatureErrors[email.id];
+            const signatureDirty =
+              normalizeProjectAliasSignature(signatureDraft) !== email.signature;
             return (
               <li
-                key={email.address}
+                key={email.id}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-2",
+                  "flex flex-col gap-3 px-3 py-3",
                   isRowPending && "opacity-60"
                 )}
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-slate-700">
-                  {email.address}
-                </span>
-                {email.isPrimary ? (
-                  <StatusBadge
-                    label="Primary"
-                    colorClasses="bg-sky-50 text-sky-700 ring-sky-200"
-                    variant="soft"
-                  />
-                ) : null}
-                {project.isAdmin && !email.isPrimary ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={emailPending}
-                    onClick={() => {
-                      handleMakePrimary(email.address);
-                    }}
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-slate-700">
+                    {email.address}
+                  </span>
+                  {email.isPrimary ? (
+                    <StatusBadge
+                      label="Primary"
+                      colorClasses="bg-sky-50 text-sky-700 ring-sky-200"
+                      variant="soft"
+                    />
+                  ) : null}
+                  {project.isAdmin && !email.isPrimary ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={emailPending}
+                      onClick={() => {
+                        handleMakePrimary(email.address);
+                      }}
+                    >
+                      Make primary
+                    </Button>
+                  ) : null}
+                  {project.isAdmin ? (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${email.address}`}
+                      disabled={isRowPending}
+                      onClick={() => {
+                        handleRemoveEmail(email.address);
+                      }}
+                      className={cn(
+                        "flex h-7 w-7 items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-700",
+                        RADIUS.sm,
+                        TRANSITION.fast,
+                        FOCUS_RING,
+                        "disabled:cursor-not-allowed disabled:opacity-40"
+                      )}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label
+                    htmlFor={`project-email-signature-${email.id}`}
+                    className={cn(TEXT.label, "text-slate-600")}
                   >
-                    Make primary
-                  </Button>
-                ) : null}
-                {project.isAdmin ? (
-                  <button
-                    type="button"
-                    aria-label={`Remove ${email.address}`}
-                    disabled={isRowPending}
-                    onClick={() => {
-                      handleRemoveEmail(email.address);
+                    Signature
+                  </label>
+                  <textarea
+                    id={`project-email-signature-${email.id}`}
+                    value={signatureDraft}
+                    onChange={(event) => {
+                      handleSignatureDraftChange(email.id, event.target.value);
                     }}
+                    disabled={!project.isAdmin || isSignaturePending}
+                    readOnly={!project.isAdmin}
+                    rows={4}
                     className={cn(
-                      "flex h-7 w-7 items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-700",
+                      "w-full resize-y border border-slate-200 bg-white px-3 py-2 font-mono text-[13px] text-slate-900 outline-none",
                       RADIUS.sm,
-                      TRANSITION.fast,
                       FOCUS_RING,
-                      "disabled:cursor-not-allowed disabled:opacity-40"
+                      signatureError &&
+                        "border-rose-300 bg-rose-50/40 text-rose-900"
                     )}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  </button>
-                ) : null}
+                    placeholder="Plain-text signature..."
+                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={cn(TEXT.caption, "tabular-nums")}>
+                      {String(normalizeProjectAliasSignature(signatureDraft).length)}/2000
+                    </span>
+                    {project.isAdmin ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={isSignaturePending || !signatureDirty}
+                        onClick={() => {
+                          handleSaveSignature(email);
+                        }}
+                      >
+                        Save signature
+                      </Button>
+                    ) : null}
+                  </div>
+                  {signatureError ? (
+                    <p className={cn(TEXT.caption, "text-rose-700")}>
+                      {signatureError}
+                    </p>
+                  ) : null}
+                </div>
               </li>
             );
           })}
