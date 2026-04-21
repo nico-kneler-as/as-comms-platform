@@ -101,12 +101,15 @@ async function main() {
       webPackage,
       "@as-comms/web",
       // apps/web carries @as-comms/db only to support the explicit Stage 1
-      // composition root in src/server/stage1-runtime.ts. File-level import
+      // composition root in src/server/stage1-runtime.ts, and
+      // @as-comms/integrations only to support the Composer send composition
+      // root in src/server/composer/gmail-send.ts. File-level import
       // enforcement still lives in scripts/boundary-check.mjs.
       new Set([
         "@as-comms/contracts",
         "@as-comms/db",
         "@as-comms/domain",
+        "@as-comms/integrations",
         "@as-comms/ui"
       ])
     );
