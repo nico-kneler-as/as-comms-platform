@@ -97,6 +97,7 @@ export const provenanceWinnerReasonValues = [
   "single_source",
   "manual_review_resolution",
   "gmail_wins_duplicate_collapse",
+  "earliest_gmail_wins_duplicate_collapse",
   "simpletexting_wins_duplicate_collapse",
   "salesforce_only_best_evidence"
 ] as const;
