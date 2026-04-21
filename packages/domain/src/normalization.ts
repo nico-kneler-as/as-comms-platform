@@ -2038,7 +2038,7 @@ export function createStage1NormalizationService(
         }
 
         contactEvents = await persistence.repositories.canonicalEvents.listByContactId(
-          identityDecision.contact.id
+          resolvedContact.id
         );
         return contactEvents;
       };
@@ -2062,11 +2062,11 @@ export function createStage1NormalizationService(
                 )
               });
         const identityCase =
-          identityDecision.reviewInput === null
+          identityReviewInput === null
             ? null
             : (
                 await service.saveIdentityAmbiguityCase(
-                  identityDecision.reviewInput
+                  identityReviewInput
                 )
               ).caseRecord;
         const routingCase =
@@ -2175,7 +2175,7 @@ export function createStage1NormalizationService(
         const persistedEvent = await persistence.repositories.canonicalEvents.upsert(
           canonicalEventSchema.parse({
             id: duplicateMatch.existingEvent.id,
-            contactId: identityDecision.contact.id,
+            contactId: resolvedContact.id,
             eventType: canonicalEvent.eventType,
             channel: canonicalEvent.channel,
             occurredAt: duplicateMatch.winner.keepIncomingAsPrimary
@@ -2235,11 +2235,11 @@ export function createStage1NormalizationService(
           })
         );
         const identityCase =
-          identityDecision.reviewInput === null
+          identityReviewInput === null
             ? null
             : (
                 await service.saveIdentityAmbiguityCase(
-                  identityDecision.reviewInput
+                  identityReviewInput
                 )
               ).caseRecord;
         const routingCase =
