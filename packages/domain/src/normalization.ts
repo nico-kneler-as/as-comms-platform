@@ -213,6 +213,11 @@ export interface Stage1NormalizationService {
   recordNormalizedSourceEvidence(
     input: NormalizedSourceEvidenceIntake
   ): Promise<NormalizedSourceEvidenceResult>;
+  ensureCanonicalContactForEmail(input: {
+    readonly emailAddress: string;
+    readonly createdAt?: string;
+    readonly source?: ContactIdentityRecord["source"];
+  }): Promise<ContactRecord>;
   upsertNormalizedContactGraph(
     input: NormalizedContactGraphUpsertInput
   ): Promise<NormalizedContactGraphResult>;
@@ -411,6 +416,86 @@ function buildSyntheticContactGraphInput(input: {
     identities,
     memberships: []
   };
+}
+
+function normalizeEmailAddress(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  return normalized.length === 0 ? null : normalized;
+}
+
+function logStructuredEvent(input: {
+  readonly event: string;
+  readonly metadata: Record<string, unknown>;
+}): void {
+  console.log(
+    JSON.stringify({
+      event: input.event,
+      ...input.metadata
+    })
+  );
+}
+
+async function reconcilePendingComposerOutbound(
+  persistence: Stage1PersistenceService,
+  input: {
+    readonly sourceEvidence: SourceEvidenceRecord;
+    readonly canonicalEvent: CanonicalEventRecord;
+  }
+): Promise<void> {
+  if (
+    input.sourceEvidence.provider !== "gmail" ||
+    input.canonicalEvent.eventType !== "communication.email.outbound"
+  ) {
+    return;
+  }
+
+  const fingerprint = input.canonicalEvent.contentFingerprint;
+
+  if (fingerprint === null) {
+    logStructuredEvent({
+      event: "composer.reconciliation.unmatched",
+      metadata: {
+        reason: "missing_fingerprint",
+        canonicalEventId: input.canonicalEvent.id,
+        sourceEvidenceId: input.sourceEvidence.id,
+        providerRecordId: input.sourceEvidence.providerRecordId
+      }
+    });
+    return;
+  }
+
+  const pending = await persistence.repositories.pendingOutbounds.findByFingerprint(
+    fingerprint
+  );
+
+  if (pending !== null && pending.status === "pending") {
+    await persistence.repositories.pendingOutbounds.markConfirmed(pending.id, {
+      reconciledEventId: input.canonicalEvent.id
+    });
+    logStructuredEvent({
+      event: "composer.reconciliation.matched",
+      metadata: {
+        pendingOutboundId: pending.id,
+        fingerprint,
+        canonicalEventId: input.canonicalEvent.id,
+        sourceEvidenceId: input.sourceEvidence.id,
+        providerRecordId: input.sourceEvidence.providerRecordId
+      }
+    });
+    return;
+  }
+
+  logStructuredEvent({
+    event: "composer.reconciliation.unmatched",
+    metadata: {
+      fingerprint,
+      canonicalEventId: input.canonicalEvent.id,
+      sourceEvidenceId: input.sourceEvidence.id,
+      providerRecordId: input.sourceEvidence.providerRecordId,
+      pendingOutboundId: pending?.id ?? null,
+      pendingStatus: pending?.status ?? null
+    }
+  });
 }
 
 function newestTimestamp(
@@ -1846,6 +1931,52 @@ export function createStage1NormalizationService(
       };
     },
 
+    async ensureCanonicalContactForEmail(input) {
+      const normalizedEmail = normalizeEmailAddress(input.emailAddress);
+
+      if (normalizedEmail === null) {
+        throw new Error("Cannot ensure a canonical contact without an email.");
+      }
+
+      const identities =
+        await persistence.repositories.contactIdentities.listByNormalizedValue({
+          kind: "email",
+          normalizedValue: normalizedEmail,
+        });
+      const existingContacts = uniqueById(
+        (
+          await Promise.all(
+            uniqueStrings(identities.map((identity) => identity.contactId)).map(
+              (contactId) => persistence.repositories.contacts.findById(contactId)
+            )
+          )
+        ).filter((contact): contact is ContactRecord => contact !== null)
+      );
+
+      if (existingContacts.length > 0) {
+        const [existingContact] = existingContacts;
+
+        if (existingContact === undefined) {
+          throw new Error(
+            "Expected an existing contact when normalized email matches."
+          );
+        }
+
+        return existingContact;
+      }
+
+      return (
+        await service.upsertNormalizedContactGraph(
+          buildSyntheticContactGraphInput({
+            normalizedEmail,
+            normalizedPhone: null,
+            createdAt: input.createdAt ?? new Date().toISOString(),
+            source: input.source ?? "manual",
+          })
+        )
+      ).contact;
+    },
+
     async saveIdentityAmbiguityCase(input) {
       const parsed = identityAmbiguityInputSchema.parse(input);
       const caseRecord = await persistence.saveIdentityResolutionCase({
@@ -2265,6 +2396,10 @@ export function createStage1NormalizationService(
           : await service.refreshInboxReviewOverlay({
               contactId: persistedEvent.contactId
             });
+        await reconcilePendingComposerOutbound(persistence, {
+          sourceEvidence: sourceEvidenceResult.record,
+          canonicalEvent: persistedEvent
+        });
 
         return {
           outcome: "duplicate",
@@ -2435,6 +2570,10 @@ export function createStage1NormalizationService(
           persistence,
           persistedEvent.contactId
         );
+        await reconcilePendingComposerOutbound(persistence, {
+          sourceEvidence: sourceEvidenceResult.record,
+          canonicalEvent: persistedEvent
+        });
 
         return {
           outcome: "applied",
@@ -2505,6 +2644,10 @@ export function createStage1NormalizationService(
         : await service.refreshInboxReviewOverlay({
             contactId: persistedEvent.contactId
           });
+      await reconcilePendingComposerOutbound(persistence, {
+        sourceEvidence: sourceEvidenceResult.record,
+        canonicalEvent: persistedEvent
+      });
 
       return {
         outcome: eventWriteResult.outcome === "inserted" ? "applied" : "duplicate",

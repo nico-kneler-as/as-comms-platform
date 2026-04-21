@@ -2,6 +2,7 @@ export * from "./provider-types.js";
 export * from "./shared.js";
 export {
   classifySalesforceTaskMessageKind,
+  parseSubjectDirection,
   type SalesforceTaskMessageKindClassification,
   type SalesforceTaskMessageKindClassificationInput
 } from "./providers/salesforce.js";

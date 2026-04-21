@@ -60,6 +60,16 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
     return true;
   }
 
+  if (
+    relativeFile === "apps/web/src/server/composer/gmail-send.ts" &&
+    specifier === "@as-comms/integrations"
+  ) {
+    // Composition root for Composer Gmail sends. Reads env-based OAuth
+    // config and forwards to the integrations send client. No other
+    // apps/web file may import from @as-comms/integrations.
+    return true;
+  }
+
   return false;
 }
 

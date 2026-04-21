@@ -51,3 +51,10 @@ export const auditActorTypeEnum = pgEnum(
 );
 export const auditResultEnum = pgEnum("audit_result", auditResultValues);
 export const userRoleEnum = pgEnum("user_role", ["admin", "operator"]);
+export const pendingOutboundStatusEnum = pgEnum("pending_outbound_status", [
+  "pending",
+  "confirmed",
+  "failed",
+  "orphaned",
+  "superseded"
+]);

@@ -42,6 +42,7 @@ import {
 } from "@as-comms/contracts";
 
 import type {
+  PendingComposerOutboundRecord,
   ProjectAliasRecord,
   UserRecord
 } from "@as-comms/domain";
@@ -60,6 +61,7 @@ import type {
   identityResolutionQueue,
   mailchimpCampaignActivityDetails,
   manualNoteDetails,
+  pendingComposerOutbounds,
   projectAliases,
   projectDimensions,
   routingReviewQueue,
@@ -88,6 +90,7 @@ type SimpleTextingMessageDetailRow =
 type MailchimpCampaignActivityDetailRow =
   typeof mailchimpCampaignActivityDetails.$inferSelect;
 type ManualNoteDetailRow = typeof manualNoteDetails.$inferSelect;
+type PendingComposerOutboundRow = typeof pendingComposerOutbounds.$inferSelect;
 type IdentityResolutionRow = typeof identityResolutionQueue.$inferSelect;
 type RoutingReviewRow = typeof routingReviewQueue.$inferSelect;
 type InboxProjectionRowDb = typeof contactInboxProjection.$inferSelect;
@@ -780,6 +783,63 @@ export function mapUserToInsert(
     deactivatedAt: record.deactivatedAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt
+  };
+}
+
+export function mapPendingComposerOutboundRow(
+  row: PendingComposerOutboundRow
+): PendingComposerOutboundRecord {
+  return {
+    id: row.id,
+    fingerprint: row.fingerprint,
+    status: row.status,
+    actorId: row.actorId,
+    canonicalContactId: row.canonicalContactId,
+    projectId: row.projectId,
+    fromAlias: row.fromAlias,
+    toEmailNormalized: row.toEmailNormalized,
+    subject: row.subject,
+    bodyPlaintext: row.bodyPlaintext,
+    bodySha256: row.bodySha256,
+    attachmentMetadata: row.attachmentMetadataJson,
+    gmailThreadId: row.gmailThreadId,
+    inReplyToRfc822: row.inReplyToRfc822,
+    sentAt: row.sentAt.toISOString(),
+    reconciledEventId: row.reconciledEventId,
+    reconciledAt: fromDate(row.reconciledAt),
+    failedReason: row.failedReason,
+    orphanedAt: fromDate(row.orphanedAt),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+
+export function mapPendingComposerOutboundToInsert(
+  record: PendingComposerOutboundRecord
+): typeof pendingComposerOutbounds.$inferInsert {
+  return {
+    id: record.id,
+    fingerprint: record.fingerprint,
+    status: record.status,
+    actorId: record.actorId,
+    canonicalContactId: record.canonicalContactId,
+    projectId: record.projectId,
+    fromAlias: record.fromAlias,
+    toEmailNormalized: record.toEmailNormalized,
+    subject: record.subject,
+    bodyPlaintext: record.bodyPlaintext,
+    bodySha256: record.bodySha256,
+    attachmentMetadataJson: record.attachmentMetadata,
+    gmailThreadId: record.gmailThreadId,
+    inReplyToRfc822: record.inReplyToRfc822,
+    sentAt: toDate(record.sentAt),
+    reconciledEventId: record.reconciledEventId,
+    reconciledAt:
+      record.reconciledAt === null ? null : toDate(record.reconciledAt),
+    failedReason: record.failedReason,
+    orphanedAt: record.orphanedAt === null ? null : toDate(record.orphanedAt),
+    createdAt: toDate(record.createdAt),
+    updatedAt: toDate(record.updatedAt)
   };
 }
 

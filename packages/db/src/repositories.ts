@@ -15,6 +15,7 @@ import {
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
+  PendingComposerOutboundRecord,
   ProjectAliasRecord,
   Stage1RepositoryBundle,
   Stage2RepositoryBundle,
@@ -48,6 +49,8 @@ import {
   mapIdentityResolutionToInsert,
   mapInboxProjectionRow,
   mapInboxProjectionToInsert,
+  mapPendingComposerOutboundRow,
+  mapPendingComposerOutboundToInsert,
   mapProjectAliasRow,
   mapProjectAliasToInsert,
   mapProjectDimensionRow,
@@ -80,6 +83,7 @@ import {
   identityResolutionQueue,
   mailchimpCampaignActivityDetails,
   manualNoteDetails,
+  pendingComposerOutbounds,
   projectAliases,
   projectDimensions,
   routingReviewQueue,
@@ -138,6 +142,7 @@ type SalesforceCommunicationDetailRow = SalesforceCommunicationDetailRecord;
 type SimpleTextingMessageDetailRow = SimpleTextingMessageDetailRecord;
 type MailchimpCampaignActivityDetailRow = MailchimpCampaignActivityDetailRecord;
 type ManualNoteDetailRow = ManualNoteDetailRecord;
+type PendingComposerOutboundRow = typeof pendingComposerOutbounds.$inferSelect;
 
 function mapSalesforceCommunicationDetailRowLocal(
   row: SalesforceCommunicationDetailRow,
@@ -266,6 +271,10 @@ const mailchimpCampaignActivityDetailsTable =
 const manualNoteDetailsTable = manualNoteDetails as typeof manualNoteDetails & {
   readonly sourceEvidenceId: typeof manualNoteDetails.sourceEvidenceId;
 };
+const pendingComposerOutboundsTable =
+  pendingComposerOutbounds as typeof pendingComposerOutbounds & {
+    readonly id: typeof pendingComposerOutbounds.id;
+  };
 
 function requireRow<T>(row: T | undefined, message: string): T {
   if (row === undefined) {
@@ -1299,6 +1308,155 @@ function createStage1RepositoriesInternal(
         return mapManualNoteDetailRowLocal(
           requireRow(row, "Expected manual note detail row to be returned."),
         );
+      },
+    },
+
+    pendingOutbounds: {
+      async insert(input) {
+        const now = new Date();
+        const values = mapPendingComposerOutboundToInsert({
+          id: input.id,
+          fingerprint: input.fingerprint,
+          status: "pending",
+          actorId: input.actorId,
+          canonicalContactId: input.canonicalContactId,
+          projectId: input.projectId,
+          fromAlias: input.fromAlias,
+          toEmailNormalized: input.toEmailNormalized,
+          subject: input.subject,
+          bodyPlaintext: input.bodyPlaintext,
+          bodySha256: input.bodySha256,
+          attachmentMetadata: input.attachmentMetadata,
+          gmailThreadId: input.gmailThreadId,
+          inReplyToRfc822: input.inReplyToRfc822,
+          sentAt: input.sentAt,
+          reconciledEventId: null,
+          reconciledAt: null,
+          failedReason: null,
+          orphanedAt: null,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        } satisfies PendingComposerOutboundRecord);
+        const [row] = await db
+          .insert(pendingComposerOutbounds)
+          .values(values)
+          .returning({ id: pendingComposerOutboundsTable.id });
+
+        return requireRow(
+          row,
+          "Expected pending composer outbound id to be returned.",
+        ).id;
+      },
+
+      async findByFingerprint(fingerprint) {
+        const [row] = (await db
+          .select()
+          .from(pendingComposerOutbounds)
+          .where(eq(pendingComposerOutbounds.fingerprint, fingerprint))
+          .orderBy(
+            sql`case when ${pendingComposerOutbounds.status} = 'pending' then 0 else 1 end`,
+            desc(pendingComposerOutbounds.sentAt),
+            desc(pendingComposerOutbounds.createdAt),
+          )
+          .limit(1)) as PendingComposerOutboundRow[];
+
+        return row === undefined ? null : mapPendingComposerOutboundRow(row);
+      },
+
+      async markConfirmed(id, input) {
+        await db
+          .update(pendingComposerOutbounds)
+          .set({
+            status: "confirmed",
+            reconciledEventId: input.reconciledEventId,
+            reconciledAt: new Date(),
+            failedReason: null,
+            orphanedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(pendingComposerOutbounds.id, id),
+              eq(pendingComposerOutbounds.status, "pending"),
+            ),
+          );
+      },
+
+      async markFailed(id, input) {
+        await db
+          .update(pendingComposerOutbounds)
+          .set({
+            status: "failed",
+            failedReason: input.reason,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(pendingComposerOutbounds.id, id),
+              eq(pendingComposerOutbounds.status, "pending"),
+            ),
+          );
+      },
+
+      async markSuperseded(id) {
+        await db
+          .update(pendingComposerOutbounds)
+          .set({
+            status: "superseded",
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(pendingComposerOutbounds.id, id),
+              inArray(pendingComposerOutbounds.status, [
+                "pending",
+                "failed",
+                "orphaned",
+              ]),
+            ),
+          );
+      },
+
+      async sweepOrphans(input) {
+        const rows = await db
+          .update(pendingComposerOutbounds)
+          .set({
+            status: "orphaned",
+            orphanedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(pendingComposerOutbounds.status, "pending"),
+              lt(pendingComposerOutbounds.sentAt, input.olderThan),
+            ),
+          )
+          .returning({ id: pendingComposerOutbounds.id });
+
+        return rows.length;
+      },
+
+      async findForContact(contactId, input) {
+        const rows = (await db
+          .select()
+          .from(pendingComposerOutbounds)
+          .where(
+            and(
+              eq(pendingComposerOutbounds.canonicalContactId, contactId),
+              inArray(pendingComposerOutbounds.status, [
+                "pending",
+                "failed",
+                "orphaned",
+              ]),
+            ),
+          )
+          .orderBy(
+            desc(pendingComposerOutbounds.sentAt),
+            desc(pendingComposerOutbounds.createdAt),
+          )
+          .limit(input.limit)) as PendingComposerOutboundRow[];
+
+        return rows.map(mapPendingComposerOutboundRow);
       },
     },
 

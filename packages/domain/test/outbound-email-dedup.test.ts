@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   computeContentFingerprint,
+  computePendingComposerOutboundFingerprint,
   normalizeContentFingerprintSubject
 } from "../src/outbound-email-dedup.js";
 
@@ -70,5 +71,26 @@ describe("content fingerprint helpers", () => {
     });
 
     expect(first).not.toBe(second);
+  });
+
+  it("keeps the pending composer fingerprint aligned with Gmail outbound ingest", () => {
+    const pending = computePendingComposerOutboundFingerprint({
+      contactId: "contact_1",
+      subject: "Re: Field logistics",
+      bodyPlaintext:
+        "Thanks again.\n\nWe are all set for the field logistics follow-up.",
+      sentAt: "2026-04-20T21:27:41.000Z"
+    });
+    const gmailIngested = computeContentFingerprint({
+      subject: "Re: Field logistics",
+      occurredAt: "2026-04-20T21:27:12.000Z",
+      contactId: "contact_1",
+      channel: "email",
+      direction: "outbound",
+      previewText:
+        "Thanks again.\n\nWe are all set for the field logistics follow-up."
+    });
+
+    expect(pending).toBe(gmailIngested);
   });
 });

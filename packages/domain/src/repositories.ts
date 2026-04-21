@@ -26,6 +26,8 @@ import type {
   TimelineProjectionRow,
 } from "@as-comms/contracts";
 
+import type { PendingComposerOutboundRecord } from "./pending-outbounds.js";
+
 export interface SourceEvidenceRepository {
   append(record: SourceEvidenceRecord): Promise<SourceEvidenceRecord>;
   findById(id: string): Promise<SourceEvidenceRecord | null>;
@@ -156,6 +158,39 @@ export interface ManualNoteDetailRepository {
   upsert(record: ManualNoteDetailRecord): Promise<ManualNoteDetailRecord>;
 }
 
+export interface PendingComposerOutboundRepository {
+  insert(input: {
+    readonly id: string;
+    readonly fingerprint: string;
+    readonly actorId: string;
+    readonly canonicalContactId: string;
+    readonly projectId: string | null;
+    readonly fromAlias: string;
+    readonly toEmailNormalized: string;
+    readonly subject: string;
+    readonly bodyPlaintext: string;
+    readonly bodySha256: string;
+    readonly attachmentMetadata: PendingComposerOutboundRecord["attachmentMetadata"];
+    readonly gmailThreadId: string | null;
+    readonly inReplyToRfc822: string | null;
+    readonly sentAt: string;
+  }): Promise<string>;
+  findByFingerprint(
+    fingerprint: string,
+  ): Promise<PendingComposerOutboundRecord | null>;
+  markConfirmed(
+    id: string,
+    input: { readonly reconciledEventId: string },
+  ): Promise<void>;
+  markFailed(id: string, input: { readonly reason: string }): Promise<void>;
+  markSuperseded(id: string): Promise<void>;
+  sweepOrphans(input: { readonly olderThan: Date }): Promise<number>;
+  findForContact(
+    contactId: string,
+    input: { readonly limit: number },
+  ): Promise<readonly PendingComposerOutboundRecord[]>;
+}
+
 export interface IdentityResolutionRepository {
   findById(id: string): Promise<IdentityResolutionCase | null>;
   listOpenByContactId(
@@ -282,6 +317,7 @@ export interface Stage1RepositoryBundle {
   readonly simpleTextingMessageDetails: SimpleTextingMessageDetailRepository;
   readonly mailchimpCampaignActivityDetails: MailchimpCampaignActivityDetailRepository;
   readonly manualNoteDetails: ManualNoteDetailRepository;
+  readonly pendingOutbounds: PendingComposerOutboundRepository;
   readonly identityResolutionQueue: IdentityResolutionRepository;
   readonly routingReviewQueue: RoutingReviewRepository;
   readonly inboxProjection: InboxProjectionRepository;

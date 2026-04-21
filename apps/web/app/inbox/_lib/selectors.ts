@@ -1777,8 +1777,11 @@ async function readInboxDetailCacheData(
     },
     freshness: {
       inboxUpdatedAt: inboxFreshness?.updatedAt ?? null,
-      timelineUpdatedAt: timelineFreshness.latestUpdatedAt,
-      timelineCount: timelineFreshness.total,
+      timelineUpdatedAt:
+        timelineFreshness.latestUpdatedAt ??
+        timelinePage.items[timelinePage.items.length - 1]?.occurredAt ??
+        null,
+      timelineCount: timelinePage.total,
     },
   };
 }

@@ -10,6 +10,7 @@ import {
 } from "@as-comms/contracts";
 
 import type { Stage1RepositoryBundle } from "./repositories.js";
+import type { PendingComposerOutboundRecord } from "./pending-outbounds.js";
 
 type TimelineProvenance = CanonicalEventRecord["provenance"] & {
   readonly messageKind?: "auto" | "campaign" | "one_to_one" | null;
@@ -181,6 +182,46 @@ function commonFields(
     primaryProvider: row.primaryProvider,
     summary: row.summary
   } as Omit<TimelineItem, "family"> & { family?: never };
+}
+
+function buildPendingTimelineSortKey(id: string, sentAt: string): string {
+  return `${sentAt}::pending-outbound:${id}`;
+}
+
+function buildPendingTimelineItems(
+  pendingRows: readonly PendingComposerOutboundRecord[]
+): readonly TimelineItem[] {
+  return timelineItemListSchema.parse(
+    pendingRows.map((row) => ({
+      id: `pending-outbound:${row.id}`,
+      contactId: row.canonicalContactId,
+      canonicalEventId: `pending-outbound:${row.id}`,
+      family: "one_to_one_email" as const,
+      occurredAt: row.sentAt,
+      sortKey: buildPendingTimelineSortKey(row.id, row.sentAt),
+      reviewState: "clear" as const,
+      primaryProvider: "manual" as const,
+      summary:
+        row.subject.trim().length > 0 ? row.subject : "Outbound email pending",
+      direction: "outbound" as const,
+      subject: row.subject,
+      snippet: row.bodyPlaintext,
+      bodyPreview: row.bodyPlaintext,
+      mailbox: row.fromAlias,
+      threadId: row.gmailThreadId,
+    }))
+  );
+}
+
+function mergeTimelineItems(input: {
+  readonly canonicalItems: readonly TimelineItem[];
+  readonly pendingRows: readonly PendingComposerOutboundRecord[];
+}): readonly TimelineItem[] {
+  return timelineItemListSchema.parse(
+    [...input.canonicalItems, ...buildPendingTimelineItems(input.pendingRows)].sort(
+      (left, right) => left.sortKey.localeCompare(right.sortKey)
+    )
+  );
 }
 
 export interface Stage1TimelinePresentationService {
@@ -461,9 +502,12 @@ export function createStage1TimelinePresentationService(
 ): Stage1TimelinePresentationService {
   return {
     async listTimelineItemsByContactId(contactId) {
-      const [canonicalEvents, timelineRows] = await Promise.all([
+      const [canonicalEvents, timelineRows, pendingRows] = await Promise.all([
         repositories.canonicalEvents.listByContactId(contactId),
-        repositories.timelineProjection.listByContactId(contactId)
+        repositories.timelineProjection.listByContactId(contactId),
+        repositories.pendingOutbounds.findForContact(contactId, {
+          limit: Number.MAX_SAFE_INTEGER
+        })
       ]);
       const canonicalEventById = new Map(
         canonicalEvents.map((event) => [event.id, event])
@@ -473,28 +517,24 @@ export function createStage1TimelinePresentationService(
         canonicalEvents
       );
 
-      return buildTimelineItemsFromRows({
-        timelineRows,
-        canonicalEventById,
-        context
+      return mergeTimelineItems({
+        canonicalItems: buildTimelineItemsFromRows({
+          timelineRows,
+          canonicalEventById,
+          context
+        }),
+        pendingRows
       });
     },
 
     async listTimelineItemsPageByContactId(contactId, input) {
-      const [rows, total] = await Promise.all([
-        repositories.timelineProjection.listRecentByContactId({
-          contactId,
-          limit: input.limit + 1,
-          beforeSortKey: input.beforeSortKey
-        }),
-        repositories.timelineProjection.countByContactId(contactId)
+      const [canonicalEvents, rows, pendingRows] = await Promise.all([
+        repositories.canonicalEvents.listByContactId(contactId),
+        repositories.timelineProjection.listByContactId(contactId),
+        repositories.pendingOutbounds.findForContact(contactId, {
+          limit: Number.MAX_SAFE_INTEGER
+        })
       ]);
-      const hasMore = rows.length > input.limit;
-      const pageRowsDescending = hasMore ? rows.slice(0, input.limit) : rows;
-      const pageRows = [...pageRowsDescending].reverse();
-      const canonicalEvents = await repositories.canonicalEvents.listByIds(
-        pageRows.map((row) => row.canonicalEventId)
-      );
       const canonicalEventById = new Map(
         canonicalEvents.map((event) => [event.id, event])
       );
@@ -502,17 +542,32 @@ export function createStage1TimelinePresentationService(
         repositories,
         canonicalEvents
       );
-
-      return {
-        items: buildTimelineItemsFromRows({
-          timelineRows: pageRows,
+      const mergedItems = mergeTimelineItems({
+        canonicalItems: buildTimelineItemsFromRows({
+          timelineRows: rows,
           canonicalEventById,
           context
         }),
+        pendingRows
+      });
+      const beforeSortKey = input.beforeSortKey;
+      const filteredItems =
+        beforeSortKey === null
+          ? mergedItems
+          : mergedItems.filter((item) => item.sortKey < beforeSortKey);
+      const filteredDescending = [...filteredItems].reverse();
+      const hasMore = filteredDescending.length > input.limit;
+      const pageItemsDescending = hasMore
+        ? filteredDescending.slice(0, input.limit)
+        : filteredDescending;
+      const pageItems = [...pageItemsDescending].reverse();
+
+      return {
+        items: pageItems,
         hasMore,
         nextBeforeSortKey:
-          pageRowsDescending[pageRowsDescending.length - 1]?.sortKey ?? null,
-        total
+          pageItemsDescending[pageItemsDescending.length - 1]?.sortKey ?? null,
+        total: mergedItems.length
       };
     }
   };
