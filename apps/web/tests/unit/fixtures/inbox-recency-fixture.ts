@@ -6,7 +6,7 @@ export interface InboxRecencyFixtureRow {
   readonly lastActivityAt: string;
 }
 
-export const inboxRecencyFixture = [
+export const inboxRecencyFixture: readonly InboxRecencyFixtureRow[] = [
   {
     contactId: "contact:inbound-latest",
     displayName: "Inbound Latest",
@@ -42,8 +42,7 @@ export const inboxRecencyFixture = [
     lastOutboundAt: "2026-04-15T18:30:00.000Z",
     lastActivityAt: "2026-04-15T18:30:00.000Z",
   },
-] as const satisfies readonly InboxRecencyFixtureRow[];
+];
 
-export const inboxRecencyExpectedOrder = inboxRecencyFixture.map(
-  (row) => row.contactId,
-);
+export const inboxRecencyExpectedOrder: readonly string[] =
+  inboxRecencyFixture.map((row) => row.contactId);

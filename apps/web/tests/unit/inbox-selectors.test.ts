@@ -78,7 +78,7 @@ import {
 import {
   inboxRecencyExpectedOrder,
   inboxRecencyFixture,
-} from "./fixtures/inbox-recency-fixture";
+} from "./fixtures/inbox-recency-fixture.js";
 
 function buildItem(
   overrides: Partial<InboxListItemViewModel>,
