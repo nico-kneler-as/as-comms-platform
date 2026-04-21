@@ -27,6 +27,8 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@as-comms/db": "workspace:*",
+    "@as-comms/domain": "workspace:*",
     "@types/mailparser": "^3.4.6"
   }
 }

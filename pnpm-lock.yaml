@@ -107,6 +107,9 @@ importers:
       '@as-comms/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@as-comms/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
       '@as-comms/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -253,6 +256,12 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
+      '@as-comms/db':
+        specifier: workspace:*
+        version: link:../db
+      '@as-comms/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@types/mailparser':
         specifier: ^3.4.6
         version: 3.4.6

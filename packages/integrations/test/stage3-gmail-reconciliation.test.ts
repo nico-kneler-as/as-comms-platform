@@ -96,7 +96,7 @@ describe("Gmail outbound reconciliation", () => {
       subject,
       bodyPlaintext: bodyTextPreview,
       sentAt: "2026-04-21T12:34:01.000Z",
-    }) as unknown as string | null;
+    });
 
     if (fingerprint === null) {
       throw new Error("Expected fingerprint for pending outbound.");
