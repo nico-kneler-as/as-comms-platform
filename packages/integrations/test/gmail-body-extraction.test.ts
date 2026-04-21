@@ -107,4 +107,51 @@ describe("Gmail body extraction", () => {
       )
     ).toBe("Thanks for the clarification.");
   });
+
+  it("does not trim plain body content that happens to include From and Sent lines", () => {
+    expect(
+      trimQuotedReplyContent(
+        [
+          "Hello Samantha,",
+          "Here is an update on placing the ARUs.",
+          "From: Basin Ridge",
+          "Sent: after the snow melted"
+        ].join("\n")
+      )
+    ).toBe(
+      [
+        "Hello Samantha,",
+        "Here is an update on placing the ARUs.",
+        "From: Basin Ridge",
+        "Sent: after the snow melted"
+      ].join("\n")
+    );
+  });
+
+  it("does not treat a normal sentence containing 'on' as an On ... wrote quote marker", () => {
+    expect(
+      trimQuotedReplyContent(
+        [
+          "Hello Samantha,",
+          "",
+          "Here is an update on placing the ARUs for HEX 08456.",
+          "",
+          "On Fri, Apr 3, 2026 at 12:19 PM PNW Forest Biodiversity wrote:",
+          "> Prior message"
+        ].join("\n")
+      )
+    ).toBe(
+      [
+        "Hello Samantha,",
+        "",
+        "Here is an update on placing the ARUs for HEX 08456."
+      ].join("\n")
+    );
+  });
+
+  it("preserves bodies longer than 2000 characters", () => {
+    const longBody = `Hello Samantha,\n\n${"A".repeat(2_600)}`;
+
+    expect(cleanGmailBodyPreviewText(longBody)).toBe(longBody);
+  });
 });
