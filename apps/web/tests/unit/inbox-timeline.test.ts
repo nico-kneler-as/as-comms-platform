@@ -58,6 +58,7 @@ const baseEntry = {
   inReplyToRfc822: null,
   sendStatus: null,
   attachmentCount: 0,
+  campaignActivity: [],
 };
 
 describe("InboxTimeline", () => {
@@ -99,6 +100,41 @@ describe("InboxTimeline", () => {
 
     expect(markup).toContain("Campaign Email");
     expect(markup).toContain("Please review the latest field update.");
+  });
+
+  it("shows consolidated campaign activity badges inside the bubble", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            id: "timeline:campaign-email-activity",
+            kind: "outbound-campaign-email" as const,
+            subject: "April field update",
+            body: "Please bring your field notebook.",
+            campaignActivity: [
+              {
+                activityType: "opened" as const,
+                occurredAt: "2026-04-16T13:30:00.000Z",
+                occurredAtLabel: "1h ago",
+                label: "Opened 1h ago",
+              },
+              {
+                activityType: "clicked" as const,
+                occurredAt: "2026-04-16T13:45:00.000Z",
+                occurredAtLabel: "45m ago",
+                label: "Clicked 45m ago",
+              },
+            ],
+          },
+        ],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("Opened 1h ago");
+    expect(markup).toContain("Clicked 45m ago");
   });
 
   it("only hides automated email body text while a subject-bearing row is collapsed", () => {

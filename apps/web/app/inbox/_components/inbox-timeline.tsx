@@ -350,6 +350,9 @@ function AutomatedRow({
           : "Campaign SMS";
   const headline = entry.subject;
   const body = bodyTextForEntry(entry);
+  const campaignActivity = entry.kind === "outbound-campaign-email"
+    ? entry.campaignActivity
+    : [];
   const hideCollapsedBody = shouldHideAutomatedRowBody({
     isExpanded,
     kind: entry.kind,
@@ -379,11 +382,23 @@ function AutomatedRow({
               {headline}
             </p>
           ) : null}
+          {campaignActivity.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {campaignActivity.map((activity) => (
+                <span
+                  key={`${activity.activityType}:${activity.occurredAt}`}
+                  className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium leading-none text-emerald-700"
+                >
+                  {activity.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
           {!hideCollapsedBody && body.length > 0 ? (
             <p
               className={cn(
                 "text-[13px] leading-relaxed text-slate-600",
-                headline && "mt-1.5",
+                (headline || campaignActivity.length > 0) && "mt-1.5",
                 isExpanded ? "whitespace-pre-wrap text-pretty" : "line-clamp-1",
               )}
             >

@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 
 import type {
+  CanonicalEventRecord,
   ContactMembershipRecord,
   ContactRecord,
   InboxDrivingEventType,
@@ -27,6 +28,7 @@ import type {
   InboxProjectMembershipViewModel,
   InboxProjectStatus,
   InboxRecentActivityViewModel,
+  InboxTimelineCampaignActivityViewModel,
   InboxTimelineEntryKind,
   InboxTimelineEntryViewModel,
   InboxVolunteerStage,
@@ -69,6 +71,9 @@ interface InboxDetailCacheData {
   readonly memberships: readonly ContactMembershipRecord[];
   readonly activityTimelineItems: readonly TimelineItem[];
   readonly timelineItems: readonly TimelineItem[];
+  readonly campaignActivitySummaryByCampaignId: Readonly<
+    Record<string, CampaignActivitySummary>
+  >;
   readonly projectNameById: Readonly<Record<string, string>>;
   readonly timelinePage: {
     readonly hasMore: boolean;
@@ -84,6 +89,18 @@ interface InboxDetailCacheData {
 
 const DEFAULT_INBOX_LIST_PAGE_SIZE = 50;
 const DEFAULT_INBOX_TIMELINE_PAGE_SIZE = 40;
+
+type CampaignActivityType = Extract<
+  TimelineItem,
+  { family: "campaign_email" }
+>["activityType"];
+
+interface CampaignActivitySummary {
+  sentAt: string | null;
+  openedAt: string | null;
+  clickedAt: string | null;
+  unsubscribedAt: string | null;
+}
 
 const AVATAR_TONES: readonly InboxAvatarTone[] = [
   "indigo",
@@ -131,6 +148,90 @@ function uniqueStrings(
       values.filter((value): value is string => typeof value === "string"),
     ),
   );
+}
+
+function emptyCampaignActivitySummary(): CampaignActivitySummary {
+  return {
+    sentAt: null,
+    openedAt: null,
+    clickedAt: null,
+    unsubscribedAt: null,
+  };
+}
+
+function campaignActivitySummaryKey(
+  activityType: CampaignActivityType,
+): keyof CampaignActivitySummary {
+  switch (activityType) {
+    case "sent":
+      return "sentAt";
+    case "opened":
+      return "openedAt";
+    case "clicked":
+      return "clickedAt";
+    case "unsubscribed":
+      return "unsubscribedAt";
+  }
+}
+
+function keepMostRecentTimestamp(
+  current: string | null,
+  candidate: string,
+): string {
+  if (current === null) {
+    return candidate;
+  }
+
+  return current >= candidate ? current : candidate;
+}
+
+async function loadCampaignActivitySummaryByCampaignId(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly canonicalEvents: readonly CanonicalEventRecord[];
+}): Promise<Readonly<Record<string, CampaignActivitySummary>>> {
+  const campaignSourceEvidenceIds = uniqueStrings(
+    input.canonicalEvents
+      .filter((event) => event.channel === "campaign_email")
+      .map((event) => event.sourceEvidenceId),
+  );
+
+  if (campaignSourceEvidenceIds.length === 0) {
+    return {};
+  }
+
+  const details =
+    await input.runtime.repositories.mailchimpCampaignActivityDetails.listBySourceEvidenceIds(
+      campaignSourceEvidenceIds,
+    );
+  const detailBySourceEvidenceId = new Map(
+    details.map((detail) => [detail.sourceEvidenceId, detail]),
+  );
+  const summaryByCampaignId: Record<string, CampaignActivitySummary> = {};
+
+  for (const event of input.canonicalEvents) {
+    if (event.channel !== "campaign_email") {
+      continue;
+    }
+
+    const detail = detailBySourceEvidenceId.get(event.sourceEvidenceId);
+    const campaignId = detail?.campaignId;
+
+    if (typeof campaignId !== "string" || campaignId.trim().length === 0) {
+      continue;
+    }
+
+    const key = campaignId.trim();
+    const summary =
+      summaryByCampaignId[key] ?? (summaryByCampaignId[key] = emptyCampaignActivitySummary());
+    const summaryKey = campaignActivitySummaryKey(detail.activityType);
+
+    summary[summaryKey] = keepMostRecentTimestamp(
+      summary[summaryKey],
+      event.occurredAt,
+    );
+  }
+
+  return summaryByCampaignId;
 }
 
 function encodeInboxListCursor(input: {
@@ -1357,6 +1458,73 @@ function timelineBody(item: TimelineItem): string {
   }
 }
 
+function formatCampaignActivityLabel(
+  activityType: Exclude<CampaignActivityType, "sent">,
+  occurredAtLabel: string,
+): string {
+  switch (activityType) {
+    case "opened":
+      return `Opened ${occurredAtLabel}`;
+    case "clicked":
+      return `Clicked ${occurredAtLabel}`;
+    case "unsubscribed":
+      return `Unsubscribed ${occurredAtLabel}`;
+  }
+}
+
+function buildCampaignActivityViewModels(input: {
+  readonly item: Extract<TimelineItem, { family: "campaign_email" }>;
+  readonly campaignActivitySummaryByCampaignId: Readonly<
+    Record<string, CampaignActivitySummary>
+  >;
+  readonly referenceNowIso: string;
+}): readonly InboxTimelineCampaignActivityViewModel[] {
+  const campaignId = input.item.campaignId;
+
+  if (campaignId === null) {
+    return [];
+  }
+
+  const summary = input.campaignActivitySummaryByCampaignId[campaignId];
+
+  if (summary === undefined) {
+    return [];
+  }
+
+  const activities: readonly Exclude<CampaignActivityType, "sent">[] = [
+    "opened",
+    "clicked",
+    "unsubscribed",
+  ];
+
+  return activities.flatMap((activityType) => {
+    const occurredAt =
+      activityType === "opened"
+        ? summary.openedAt
+        : activityType === "clicked"
+          ? summary.clickedAt
+          : summary.unsubscribedAt;
+
+    if (occurredAt === null || activityType === input.item.activityType) {
+      return [];
+    }
+
+    const occurredAtLabel = formatRelativeTimestamp(
+      occurredAt,
+      input.referenceNowIso,
+    );
+
+    return [
+      {
+        activityType,
+        occurredAt,
+        occurredAtLabel,
+        label: formatCampaignActivityLabel(activityType, occurredAtLabel),
+      } satisfies InboxTimelineCampaignActivityViewModel,
+    ];
+  });
+}
+
 function isPreviewTimelineItem(item: TimelineItem): boolean {
   switch (item.family) {
     case "salesforce_event":
@@ -1377,6 +1545,9 @@ function buildTimelineEntry(input: {
   readonly contactPrimaryEmail: string | null;
   readonly inboxProjection: InboxProjectionRow;
   readonly item: TimelineItem;
+  readonly campaignActivitySummaryByCampaignId: Readonly<
+    Record<string, CampaignActivitySummary>
+  >;
   readonly referenceNowIso: string;
 }): InboxTimelineEntryViewModel {
   const latestProjectionSnippet =
@@ -1438,6 +1609,15 @@ function buildTimelineEntry(input: {
     !hasRenderableEmailContent && input.item.family === "one_to_one_email"
       ? "email-activity"
       : kind;
+  const campaignActivity =
+    input.item.family === "campaign_email"
+      ? buildCampaignActivityViewModels({
+          item: input.item,
+          campaignActivitySummaryByCampaignId:
+            input.campaignActivitySummaryByCampaignId,
+          referenceNowIso: input.referenceNowIso,
+        })
+      : [];
   const isUnread =
     input.inboxProjection.bucket === "New" &&
     input.item.canonicalEventId ===
@@ -1486,6 +1666,7 @@ function buildTimelineEntry(input: {
       input.item.family === "one_to_one_email"
         ? (input.item.attachmentCount ?? 0)
         : 0,
+    campaignActivity,
     noteId: input.item.family === "internal_note" ? input.item.noteId : null,
     authorId:
       input.item.family === "internal_note" ? input.item.authorId : null,
@@ -1811,6 +1992,7 @@ async function readInboxDetailCacheData(
     timelinePage,
     inboxFreshness,
     timelineFreshness,
+    canonicalEvents,
   ] = await Promise.all([
     runtime.repositories.contacts.findById(contactId),
     runtime.repositories.inboxProjection.findByContactId(contactId),
@@ -1822,6 +2004,7 @@ async function readInboxDetailCacheData(
     }),
     runtime.repositories.inboxProjection.getFreshnessByContactId(contactId),
     runtime.repositories.timelineProjection.getFreshnessByContactId(contactId),
+    runtime.repositories.canonicalEvents.listByContactId(contactId),
   ]);
 
   if (contact === null || inboxProjection === null) {
@@ -1834,6 +2017,11 @@ async function readInboxDetailCacheData(
     memberships,
     activityTimelineItems,
     timelineItems: timelinePage.items,
+    campaignActivitySummaryByCampaignId:
+      await loadCampaignActivitySummaryByCampaignId({
+        runtime,
+        canonicalEvents,
+      }),
     projectNameById: await loadProjectNameById(memberships),
     timelinePage: {
       hasMore: timelinePage.hasMore,
@@ -2080,6 +2268,8 @@ export async function getInboxTimelinePage(
         contactPrimaryEmail: cachedData.contact.primaryEmail,
         inboxProjection: cachedData.inboxProjection,
         item,
+        campaignActivitySummaryByCampaignId:
+          cachedData.campaignActivitySummaryByCampaignId,
         referenceNowIso,
       }),
     ),
@@ -2174,6 +2364,8 @@ export async function getInboxDetail(
         contactPrimaryEmail: cachedData.contact.primaryEmail,
         inboxProjection: cachedData.inboxProjection,
         item,
+        campaignActivitySummaryByCampaignId:
+          cachedData.campaignActivitySummaryByCampaignId,
         referenceNowIso,
       }),
     ),

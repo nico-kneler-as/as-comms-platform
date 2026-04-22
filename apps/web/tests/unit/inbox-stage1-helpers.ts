@@ -537,12 +537,14 @@ export async function seedInboxCampaignEmailEvent(
     readonly occurredAt: string;
     readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
     readonly campaignName: string;
+    readonly campaignId?: string;
     readonly snippet: string;
   },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
   const canonicalEventId = `event:${input.id}`;
   const eventType = `campaign.email.${input.activityType}` as const;
+  const campaignId = input.campaignId ?? `campaign:${input.id}`;
 
   await context.repositories.sourceEvidence.append({
     id: sourceEvidenceId,
@@ -574,7 +576,7 @@ export async function seedInboxCampaignEmailEvent(
       sourceRecordId: input.id,
       messageKind: "campaign",
       campaignRef: {
-        providerCampaignId: "campaign_email_1",
+        providerCampaignId: campaignId,
         providerAudienceId: "audience_1",
         providerMessageName: input.campaignName,
       },
@@ -589,7 +591,7 @@ export async function seedInboxCampaignEmailEvent(
     sourceEvidenceId,
     providerRecordId: input.id,
     activityType: input.activityType,
-    campaignId: "campaign_email_1",
+    campaignId,
     audienceId: "audience_1",
     memberId: "member_1",
     campaignName: input.campaignName,

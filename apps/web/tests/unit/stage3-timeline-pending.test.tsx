@@ -61,6 +61,7 @@ function buildEntry(
     inReplyToRfc822: "parent-message-id",
     sendStatus: "pending",
     attachmentCount: 0,
+    campaignActivity: [],
     ...overrides,
   };
 }
