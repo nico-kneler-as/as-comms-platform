@@ -247,7 +247,7 @@ describe("Notion provider helpers", () => {
       }
     });
 
-    const rows: Array<{ id: string; url: string | null }> = [];
+    const rows: { id: string; url: string | null }[] = [];
     for await (const row of queryDatabase(client, databaseId)) {
       rows.push({
         id: row.id,

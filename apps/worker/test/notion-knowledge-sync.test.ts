@@ -353,28 +353,26 @@ describe("Notion knowledge sync", () => {
         .from(projectDimensions)
         .orderBy(projectDimensions.projectId);
 
-      expect(syncedProjects).toEqual([
-        {
-          projectId: "project-alpha",
-          aiKnowledgeSyncedAt: expect.any(Date)
-        },
-        {
-          projectId: "project-beta",
-          aiKnowledgeSyncedAt: expect.any(Date)
-        }
+      expect(syncedProjects).toHaveLength(2);
+      expect(syncedProjects.map((project) => project.projectId)).toEqual([
+        "project-alpha",
+        "project-beta"
       ]);
+      for (const project of syncedProjects) {
+        expect(project.aiKnowledgeSyncedAt).toBeInstanceOf(Date);
+      }
 
-      await expect(
-        context.settings.integrationHealth.findById("notion")
-      ).resolves.toMatchObject({
+      const integrationHealth =
+        await context.settings.integrationHealth.findById("notion");
+      expect(integrationHealth).toMatchObject({
         status: "healthy",
         metadataJson: {
           knowledgeEntriesTotal: 3,
           projectsSyncedCount: 2,
-          orphanRowsCount: 0,
-          lastSuccessAt: expect.any(String)
+          orphanRowsCount: 0
         }
       });
+      expect(typeof integrationHealth?.metadataJson.lastSuccessAt).toBe("string");
     } finally {
       await context.dispose();
     }
@@ -961,12 +959,12 @@ describe("Notion knowledge sync", () => {
         "project-alpha"
       ]);
 
-      await expect(
-        context.settings.integrationHealth.findById("notion")
-      ).resolves.toMatchObject({
-        status: "needs_attention",
-        detail: expect.stringContaining("rate_limited")
+      const integrationHealth =
+        await context.settings.integrationHealth.findById("notion");
+      expect(integrationHealth).toMatchObject({
+        status: "needs_attention"
       });
+      expect(integrationHealth?.detail ?? "").toContain("rate_limited");
     } finally {
       await context.dispose();
     }

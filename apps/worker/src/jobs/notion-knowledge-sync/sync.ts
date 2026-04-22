@@ -89,19 +89,28 @@ export function readNotionKnowledgeSyncConfig(
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isUnknownArray(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value);
+}
+
 function extractRichText(value: unknown): string | null {
-  if (!Array.isArray(value)) {
+  if (!isUnknownArray(value)) {
     return null;
   }
 
   const text = value
     .map((item) => {
-      if (typeof item !== "object" || item === null) {
+      if (!isRecord(item)) {
         return "";
       }
 
-      if ("plain_text" in item && typeof item.plain_text === "string") {
-        return item.plain_text;
+      const plainText = item.plain_text;
+      if (typeof plainText === "string") {
+        return plainText;
       }
 
       return "";
@@ -150,16 +159,18 @@ function extractUrlProperty(
   propertyName: string
 ): string | null {
   const property = properties[propertyName];
+  if (!isRecord(property)) {
+    return null;
+  }
+
+  const propertyType = property.type;
+  const url = property.url;
   if (
-    typeof property === "object" &&
-    property !== null &&
-    "type" in property &&
-    property.type === "url" &&
-      "url" in property &&
-      typeof property.url === "string" &&
-      property.url.trim().length > 0
+    propertyType === "url" &&
+    typeof url === "string" &&
+    url.trim().length > 0
   ) {
-    return property.url.trim();
+    return url.trim();
   }
 
   return null;
@@ -170,25 +181,25 @@ function extractMultiSelectProperty(
   propertyName: string
 ): readonly string[] {
   const property = properties[propertyName];
-  if (
-    typeof property !== "object" ||
-    property === null ||
-    !("type" in property) ||
-    property.type !== "multi_select" ||
-    !Array.isArray(property.multi_select)
-  ) {
+  if (!isRecord(property) || property.type !== "multi_select") {
     return [];
   }
 
-  return property.multi_select.flatMap((item) =>
-    typeof item === "object" &&
-    item !== null &&
-    "name" in item &&
-    typeof item.name === "string" &&
-    item.name.trim().length > 0
-      ? [item.name.trim()]
-      : []
-  );
+  const multiSelect = property.multi_select;
+  if (!isUnknownArray(multiSelect)) {
+    return [];
+  }
+
+  return multiSelect.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+
+    const name = item.name;
+    return typeof name === "string" && name.trim().length > 0
+      ? [name.trim()]
+      : [];
+  });
 }
 
 function extractCreatedTimeProperty(
@@ -196,16 +207,18 @@ function extractCreatedTimeProperty(
   propertyName: string
 ): string | null {
   const property = properties[propertyName];
+  if (!isRecord(property)) {
+    return null;
+  }
+
+  const propertyType = property.type;
+  const createdTime = property.created_time;
   if (
-    typeof property === "object" &&
-    property !== null &&
-    "type" in property &&
-    property.type === "created_time" &&
-    "created_time" in property &&
-    typeof property.created_time === "string" &&
-    property.created_time.trim().length > 0
+    propertyType === "created_time" &&
+    typeof createdTime === "string" &&
+    createdTime.trim().length > 0
   ) {
-    return property.created_time;
+    return createdTime;
   }
 
   return null;
@@ -215,7 +228,7 @@ function compactMetadata(
   metadata: Record<string, unknown>
 ): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(metadata).filter(([_key, value]) => {
+    Object.entries(metadata).filter(([, value]) => {
       if (value === null || value === undefined) {
         return false;
       }
@@ -311,16 +324,17 @@ async function writeIntegrationHealth(
 ): Promise<void> {
   await repository.seedDefaults();
   const existingRecord = await repository.findById(NOTION_SERVICE_ID);
+  const recordInput = {
+    baseRecord: existingRecord,
+    checkedAt: input.now.toISOString(),
+    status: input.status,
+    detail: input.detail,
+    ...(input.metadataJson === undefined
+      ? {}
+      : { metadataJson: input.metadataJson })
+  };
 
-  await repository.upsert(
-    buildIntegrationHealthRecord({
-      baseRecord: existingRecord,
-      checkedAt: input.now.toISOString(),
-      status: input.status,
-      detail: input.detail,
-      metadataJson: input.metadataJson
-    })
-  );
+  await repository.upsert(buildIntegrationHealthRecord(recordInput));
 }
 
 async function listKnownProjectIds(db: Stage1Database): Promise<Set<string>> {
