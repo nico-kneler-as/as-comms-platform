@@ -110,6 +110,7 @@ describe("ai_knowledge_entries table", () => {
           .where(eq(aiKnowledgeEntries.id, "ai_knowledge:notion:global"))
       ).resolves.toEqual([]);
     } finally {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
       await context.dispose();
     }
   });
