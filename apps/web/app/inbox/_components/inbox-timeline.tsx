@@ -398,7 +398,7 @@ function AutomatedRow({
             <p
               className={cn(
                 "text-[13px] leading-relaxed text-slate-600",
-                (headline || campaignActivity.length > 0) && "mt-1.5",
+                (headline !== null || campaignActivity.length > 0) && "mt-1.5",
                 isExpanded ? "whitespace-pre-wrap text-pretty" : "line-clamp-1",
               )}
             >
