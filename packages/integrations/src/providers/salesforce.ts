@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   type CanonicalEventType,
   type NormalizedCanonicalEventIntake,
-  type NormalizedContactGraphUpsertInput
+  type NormalizedContactGraphUpsertInput,
 } from "@as-comms/contracts";
 
 import {
@@ -12,7 +12,7 @@ import {
   createContactGraphCommand,
   createDeferredMappingResult,
   supportingProviderRecordSchema,
-  type ProviderMappingResult
+  type ProviderMappingResult,
 } from "../provider-types.js";
 import {
   buildCanonicalEventId,
@@ -23,7 +23,7 @@ import {
   buildSourceEvidenceId,
   buildSourceEvidenceIdempotencyKey,
   buildSupportingSourceReferences,
-  uniqueStrings
+  uniqueStrings,
 } from "../shared.js";
 
 const nullableStringSchema = z.string().min(1).nullable();
@@ -34,13 +34,13 @@ const salesforceLifecycleMilestoneSchema = z.enum([
   "signed_up",
   "received_training",
   "completed_training",
-  "submitted_first_data"
+  "submitted_first_data",
 ]);
 const salesforceLifecycleSourceFieldSchema = z.enum([
   "Expedition_Members__c.CreatedDate",
   "Expedition_Members__c.Date_Training_Sent__c",
   "Expedition_Members__c.Date_Training_Completed__c",
-  "Expedition_Members__c.Date_First_Sample_Collected__c"
+  "Expedition_Members__c.Date_First_Sample_Collected__c",
 ]);
 
 const salesforceRoutingContextSchema = z.object({
@@ -48,7 +48,7 @@ const salesforceRoutingContextSchema = z.object({
   projectId: nullableStringSchema.default(null),
   expeditionId: nullableStringSchema.default(null),
   projectName: nullableStringSchema.default(null),
-  expeditionName: nullableStringSchema.default(null)
+  expeditionName: nullableStringSchema.default(null),
 });
 
 const salesforceMembershipSchema = z.object({
@@ -57,7 +57,7 @@ const salesforceMembershipSchema = z.object({
   expeditionId: nullableStringSchema.default(null),
   expeditionName: nullableStringSchema.default(null),
   role: nullableStringSchema.default(null),
-  status: nullableStringSchema.default(null)
+  status: nullableStringSchema.default(null),
 });
 
 export const salesforceContactSnapshotRecordSchema = z.object({
@@ -72,56 +72,64 @@ export const salesforceContactSnapshotRecordSchema = z.object({
   volunteerIdPlainValues: stringArraySchema.default([]),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
-  memberships: z.array(salesforceMembershipSchema).default([])
+  memberships: z.array(salesforceMembershipSchema).default([]),
 });
 export type SalesforceContactSnapshotRecord = z.infer<
   typeof salesforceContactSnapshotRecordSchema
 >;
 
-export const salesforceLifecycleRecordSchema = z.object({
-  recordType: z.literal("lifecycle_milestone"),
-  recordId: z.string().min(1),
-  salesforceContactId: z.string().min(1),
-  milestone: salesforceLifecycleMilestoneSchema,
-  sourceField: salesforceLifecycleSourceFieldSchema,
-  occurredAt: timestampSchema,
-  receivedAt: timestampSchema,
-  payloadRef: z.string().min(1),
-  checksum: z.string().min(1),
-  normalizedEmails: stringArraySchema.default([]),
-  normalizedPhones: stringArraySchema.default([]),
-  volunteerIdPlainValues: stringArraySchema.default([]),
-  routing: salesforceRoutingContextSchema.default({
-    required: false,
-    projectId: null,
-    expeditionId: null
+export const salesforceLifecycleRecordSchema = z
+  .object({
+    recordType: z.literal("lifecycle_milestone"),
+    recordId: z.string().min(1),
+    salesforceContactId: z.string().min(1),
+    milestone: salesforceLifecycleMilestoneSchema,
+    sourceField: salesforceLifecycleSourceFieldSchema,
+    occurredAt: timestampSchema,
+    receivedAt: timestampSchema,
+    payloadRef: z.string().min(1),
+    checksum: z.string().min(1),
+    normalizedEmails: stringArraySchema.default([]),
+    normalizedPhones: stringArraySchema.default([]),
+    volunteerIdPlainValues: stringArraySchema.default([]),
+    routing: salesforceRoutingContextSchema.default({
+      required: false,
+      projectId: null,
+      expeditionId: null,
+    }),
   })
-}).superRefine((record, ctx) => {
-  const expectedSourceField = (() => {
-    switch (record.milestone) {
-      case "signed_up":
-        return "Expedition_Members__c.CreatedDate";
-      case "received_training":
-        return "Expedition_Members__c.Date_Training_Sent__c";
-      case "completed_training":
-        return "Expedition_Members__c.Date_Training_Completed__c";
-      case "submitted_first_data":
-        return "Expedition_Members__c.Date_First_Sample_Collected__c";
-    }
-  })();
+  .superRefine((record, ctx) => {
+    const expectedSourceField = (() => {
+      switch (record.milestone) {
+        case "signed_up":
+          return "Expedition_Members__c.CreatedDate";
+        case "received_training":
+          return "Expedition_Members__c.Date_Training_Sent__c";
+        case "completed_training":
+          return "Expedition_Members__c.Date_Training_Completed__c";
+        case "submitted_first_data":
+          return "Expedition_Members__c.Date_First_Sample_Collected__c";
+      }
+    })();
 
-  if (record.sourceField !== expectedSourceField) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["sourceField"],
-      message:
-        "Salesforce lifecycle sourceField must match the locked Expedition_Members__c milestone mapping."
-    });
-  }
-});
+    if (record.sourceField !== expectedSourceField) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sourceField"],
+        message:
+          "Salesforce lifecycle sourceField must match the locked Expedition_Members__c milestone mapping.",
+      });
+    }
+  });
 export type SalesforceLifecycleRecord = z.infer<
   typeof salesforceLifecycleRecordSchema
 >;
+
+export const salesforceLaunchScopeAutomatedOwnerNames = ["Nim Admin"] as const;
+
+export const salesforceLaunchScopeAutomatedOwnerUsernames = [
+  "admin+1@adventurescientists.org",
+] as const;
 
 const automatedOwnerSignalPatterns = [
   /\bmarketing\s*cloud\b/iu,
@@ -129,7 +137,7 @@ const automatedOwnerSignalPatterns = [
   /\bworkflow\b/iu,
   /\bautomated\s+process\b/iu,
   /\bsystem\b/iu,
-  /\bintegration\b/iu
+  /\bintegration\b/iu,
 ] as const;
 
 const automatedSubjectPatterns = [
@@ -139,11 +147,11 @@ const automatedSubjectPatterns = [
   /\bsign(?:\s|-)?up confirmation\b/iu,
   /\btraining reminder\b/iu,
   /\bstart your training\b/iu,
-  /\bcomplete your training\b/iu
+  /\bcomplete your training\b/iu,
 ] as const;
 
 function normalizeComparableString(
-  value: string | null | undefined
+  value: string | null | undefined,
 ): string | null {
   if (typeof value !== "string") {
     return null;
@@ -155,13 +163,33 @@ function normalizeComparableString(
 
 function matchesAnyPattern(
   value: string | null,
-  patterns: readonly RegExp[]
+  patterns: readonly RegExp[],
 ): boolean {
   if (value === null) {
     return false;
   }
 
   return patterns.some((pattern) => pattern.test(value));
+}
+
+function normalizeComparableLiteral(
+  value: string | null | undefined,
+): string | null {
+  const normalized = normalizeComparableString(value);
+  return normalized === null ? null : normalized.toLowerCase();
+}
+
+function matchesAnyLiteral(
+  value: string | null | undefined,
+  literals: readonly string[],
+): boolean {
+  const normalizedValue = normalizeComparableLiteral(value);
+
+  if (normalizedValue === null) {
+    return false;
+  }
+
+  return literals.some((literal) => normalizedValue === literal.toLowerCase());
 }
 
 export interface SalesforceTaskMessageKindClassificationInput {
@@ -184,21 +212,31 @@ export interface SalesforceTaskMessageKindClassification {
 }
 
 function hasAutomatedOwnerSignal(
-  input: SalesforceTaskMessageKindClassificationInput
+  input: SalesforceTaskMessageKindClassificationInput,
 ): boolean {
-  return matchesAnyPattern(normalizeComparableString(input.ownerId), [
-    ...automatedOwnerSignalPatterns
-  ])
-    || matchesAnyPattern(normalizeComparableString(input.ownerName), [
-      ...automatedOwnerSignalPatterns
+  return (
+    matchesAnyLiteral(
+      input.ownerName,
+      salesforceLaunchScopeAutomatedOwnerNames,
+    ) ||
+    matchesAnyLiteral(
+      input.ownerUsername,
+      salesforceLaunchScopeAutomatedOwnerUsernames,
+    ) ||
+    matchesAnyPattern(normalizeComparableString(input.ownerId), [
+      ...automatedOwnerSignalPatterns,
+    ]) ||
+    matchesAnyPattern(normalizeComparableString(input.ownerName), [
+      ...automatedOwnerSignalPatterns,
+    ]) ||
+    matchesAnyPattern(normalizeComparableString(input.ownerUsername), [
+      ...automatedOwnerSignalPatterns,
     ])
-    || matchesAnyPattern(normalizeComparableString(input.ownerUsername), [
-      ...automatedOwnerSignalPatterns
-    ]);
+  );
 }
 
 function hasHumanOwnerSignal(
-  input: SalesforceTaskMessageKindClassificationInput
+  input: SalesforceTaskMessageKindClassificationInput,
 ): boolean {
   return (
     normalizeComparableString(input.ownerName) !== null ||
@@ -207,47 +245,46 @@ function hasHumanOwnerSignal(
 }
 
 export function classifySalesforceTaskMessageKind(
-  input: SalesforceTaskMessageKindClassificationInput
+  input: SalesforceTaskMessageKindClassificationInput,
 ): SalesforceTaskMessageKindClassification {
   if (input.channel !== "email") {
     return {
       messageKind: "auto",
-      reason: "non_email_task"
+      reason: "non_email_task",
     };
   }
 
   const subject = normalizeComparableString(input.subject);
 
-  // TODO(canon): codify the Stage 1 Salesforce Task messageKind heuristic in
-  // the provider ingest matrix / decision log so the automated-owner and
-  // workflow-subject rules stay explicit canon.
-  // Stage 1 queue truth is safer when ambiguous historical Salesforce Tasks
-  // fall out of inbox-driving behavior. We only promote to one_to_one when we
-  // have a human-like owner signal and the subject is not workflow-shaped.
-  if (matchesAnyPattern(subject, [...automatedSubjectPatterns])) {
-    return {
-      messageKind: "auto",
-      reason: "subject_pattern"
-    };
-  }
-
+  // D-039 narrows live Salesforce email Task capture to Nim Admin-owned
+  // volunteer automations. When owner metadata is present, owner truth beats
+  // subject heuristics so human-owned CRM mail does not leak back into the
+  // auto bucket. Subject fallback remains for legacy rows that persisted only
+  // the subject/snippet and no owner metadata.
   if (hasAutomatedOwnerSignal(input)) {
     return {
       messageKind: "auto",
-      reason: "automated_owner"
+      reason: "automated_owner",
     };
   }
 
   if (hasHumanOwnerSignal(input)) {
     return {
       messageKind: "one_to_one",
-      reason: "human_owned_task"
+      reason: "human_owned_task",
+    };
+  }
+
+  if (matchesAnyPattern(subject, [...automatedSubjectPatterns])) {
+    return {
+      messageKind: "auto",
+      reason: "subject_pattern",
     };
   }
 
   return {
     messageKind: "auto",
-    reason: "insufficient_metadata"
+    reason: "insufficient_metadata",
   };
 }
 
@@ -271,8 +308,8 @@ export const salesforceTaskCommunicationRecordSchema = z.object({
   routing: salesforceRoutingContextSchema.default({
     required: false,
     projectId: null,
-    expeditionId: null
-  })
+    expeditionId: null,
+  }),
 });
 export type SalesforceTaskCommunicationRecord = z.infer<
   typeof salesforceTaskCommunicationRecordSchema
@@ -281,19 +318,19 @@ export type SalesforceTaskCommunicationRecord = z.infer<
 export const salesforceUnsupportedRecordSchema = z
   .object({
     recordType: z.string().min(1),
-    recordId: z.string().min(1)
+    recordId: z.string().min(1),
   })
   .refine(
     (record) =>
       ![
         "contact_snapshot",
         "lifecycle_milestone",
-        "task_communication"
+        "task_communication",
       ].includes(record.recordType),
     {
       message:
-        "Unsupported Salesforce records must not use a first-scope record type."
-    }
+        "Unsupported Salesforce records must not use a first-scope record type.",
+    },
   );
 export type SalesforceUnsupportedRecord = z.infer<
   typeof salesforceUnsupportedRecordSchema
@@ -303,7 +340,7 @@ export const salesforceRecordSchema = z.union([
   salesforceContactSnapshotRecordSchema,
   salesforceLifecycleRecordSchema,
   salesforceTaskCommunicationRecordSchema,
-  salesforceUnsupportedRecordSchema
+  salesforceUnsupportedRecordSchema,
 ]);
 export type SalesforceRecord =
   | SalesforceContactSnapshotRecord
@@ -312,7 +349,7 @@ export type SalesforceRecord =
   | SalesforceUnsupportedRecord;
 
 function resolveLifecycleEventType(
-  milestone: SalesforceLifecycleRecord["milestone"]
+  milestone: SalesforceLifecycleRecord["milestone"],
 ): CanonicalEventType {
   switch (milestone) {
     case "signed_up":
@@ -348,7 +385,7 @@ export function parseSubjectDirection(rawSubject: string | null): {
   if (rawSubject === null) {
     return {
       direction: "outbound",
-      cleanSubject: null
+      cleanSubject: null,
     };
   }
 
@@ -357,7 +394,7 @@ export function parseSubjectDirection(rawSubject: string | null): {
   if (trimmed.length === 0) {
     return {
       direction: "outbound",
-      cleanSubject: null
+      cleanSubject: null,
     };
   }
 
@@ -370,8 +407,8 @@ export function parseSubjectDirection(rawSubject: string | null): {
     return {
       direction: "inbound",
       cleanSubject: normalizeCleanSubject(
-        trimmed.replace(/^[←⇐]\s*(?:Email:\s*)?/u, "")
-      )
+        trimmed.replace(/^[←⇐]\s*(?:Email:\s*)?/u, ""),
+      ),
     };
   }
 
@@ -379,30 +416,30 @@ export function parseSubjectDirection(rawSubject: string | null): {
     return {
       direction: "outbound",
       cleanSubject: normalizeCleanSubject(
-        trimmed.replace(/^[→⇒]\s*(?:Email:\s*)?/u, "")
-      )
+        trimmed.replace(/^[→⇒]\s*(?:Email:\s*)?/u, ""),
+      ),
     };
   }
 
   return {
     direction: "outbound",
-    cleanSubject: trimmed
+    cleanSubject: normalizeCleanSubject(trimmed.replace(/^Email:\s*/iu, "")),
   };
 }
 
 function mapSalesforceContactSnapshot(
-  record: SalesforceContactSnapshotRecord
+  record: SalesforceContactSnapshotRecord,
 ): NormalizedContactGraphUpsertInput {
   const contactId = buildContactIdFromSalesforceContactId(
-    record.salesforceContactId
+    record.salesforceContactId,
   );
   const normalizedEmails = uniqueStrings([
     ...(record.primaryEmail === null ? [] : [record.primaryEmail]),
-    ...record.normalizedEmails
+    ...record.normalizedEmails,
   ]);
   const normalizedPhones = uniqueStrings([
     ...(record.primaryPhone === null ? [] : [record.primaryPhone]),
-    ...record.normalizedPhones
+    ...record.normalizedPhones,
   ]);
   const volunteerIdPlainValues = uniqueStrings(record.volunteerIdPlainValues);
   const projectDimensionsById = new Map<
@@ -428,7 +465,7 @@ function mapSalesforceContactSnapshot(
       projectDimensionsById.set(membership.projectId, {
         projectId: membership.projectId,
         projectName: membership.projectName,
-        source: "salesforce"
+        source: "salesforce",
       });
     }
 
@@ -440,7 +477,7 @@ function mapSalesforceContactSnapshot(
         expeditionId: membership.expeditionId,
         projectId: membership.projectId,
         expeditionName: membership.expeditionName,
-        source: "salesforce"
+        source: "salesforce",
       });
     }
   }
@@ -453,83 +490,83 @@ function mapSalesforceContactSnapshot(
       primaryEmail: record.primaryEmail,
       primaryPhone: record.primaryPhone,
       createdAt: record.createdAt,
-      updatedAt: record.updatedAt
+      updatedAt: record.updatedAt,
     },
     identities: [
       {
         id: buildContactIdentityId({
           contactId,
           kind: "salesforce_contact_id",
-          normalizedValue: record.salesforceContactId
+          normalizedValue: record.salesforceContactId,
         }),
         contactId,
         kind: "salesforce_contact_id",
         normalizedValue: record.salesforceContactId,
         isPrimary: true,
         source: "salesforce",
-        verifiedAt: record.updatedAt
+        verifiedAt: record.updatedAt,
       },
       ...volunteerIdPlainValues.map((value) => ({
         id: buildContactIdentityId({
           contactId,
           kind: "volunteer_id_plain",
-          normalizedValue: value
+          normalizedValue: value,
         }),
         contactId,
         kind: "volunteer_id_plain" as const,
         normalizedValue: value,
         isPrimary: false,
         source: "salesforce" as const,
-        verifiedAt: record.updatedAt
+        verifiedAt: record.updatedAt,
       })),
       ...normalizedEmails.map((value, index) => ({
         id: buildContactIdentityId({
           contactId,
           kind: "email",
-          normalizedValue: value
+          normalizedValue: value,
         }),
         contactId,
         kind: "email" as const,
         normalizedValue: value,
         isPrimary: index === 0,
         source: "salesforce" as const,
-        verifiedAt: record.updatedAt
+        verifiedAt: record.updatedAt,
       })),
       ...normalizedPhones.map((value, index) => ({
         id: buildContactIdentityId({
           contactId,
           kind: "phone",
-          normalizedValue: value
+          normalizedValue: value,
         }),
         contactId,
         kind: "phone" as const,
         normalizedValue: value,
         isPrimary: index === 0,
         source: "salesforce" as const,
-        verifiedAt: record.updatedAt
-      }))
+        verifiedAt: record.updatedAt,
+      })),
     ],
     memberships: record.memberships.map((membership) => ({
       id: buildContactMembershipId({
         contactId,
         projectId: membership.projectId,
         expeditionId: membership.expeditionId,
-        role: membership.role
+        role: membership.role,
       }),
       contactId,
       projectId: membership.projectId,
       expeditionId: membership.expeditionId,
       role: membership.role,
       status: membership.status,
-      source: "salesforce"
+      source: "salesforce",
     })),
     projectDimensions: Array.from(projectDimensionsById.values()),
-    expeditionDimensions: Array.from(expeditionDimensionsById.values())
+    expeditionDimensions: Array.from(expeditionDimensionsById.values()),
   };
 }
 
 function mapSalesforceLifecycleRecord(
-  record: SalesforceLifecycleRecord
+  record: SalesforceLifecycleRecord,
 ): NormalizedCanonicalEventIntake {
   const eventType = resolveLifecycleEventType(record.milestone);
   const providerRecordType = record.recordType;
@@ -540,7 +577,7 @@ function mapSalesforceLifecycleRecord(
       id: buildSourceEvidenceId(
         "salesforce",
         providerRecordType,
-        providerRecordId
+        providerRecordId,
       ),
       provider: "salesforce",
       providerRecordType,
@@ -551,9 +588,9 @@ function mapSalesforceLifecycleRecord(
       idempotencyKey: buildSourceEvidenceIdempotencyKey(
         "salesforce",
         providerRecordType,
-        providerRecordId
+        providerRecordId,
       ),
-      checksum: record.checksum
+      checksum: record.checksum,
     },
     canonicalEvent: {
       id: buildCanonicalEventId({
@@ -561,7 +598,7 @@ function mapSalesforceLifecycleRecord(
         providerRecordType,
         providerRecordId,
         eventType,
-        crossProviderCollapseKey: null
+        crossProviderCollapseKey: null,
       }),
       eventType,
       occurredAt: record.occurredAt,
@@ -570,16 +607,16 @@ function mapSalesforceLifecycleRecord(
         providerRecordType,
         providerRecordId,
         eventType,
-        crossProviderCollapseKey: null
+        crossProviderCollapseKey: null,
       }),
       summary: buildLifecycleSummary(eventType),
-      snippet: ""
+      snippet: "",
     },
     identity: {
       salesforceContactId: record.salesforceContactId,
       volunteerIdPlainValues: uniqueStrings(record.volunteerIdPlainValues),
       normalizedEmails: uniqueStrings(record.normalizedEmails),
-      normalizedPhones: uniqueStrings(record.normalizedPhones)
+      normalizedPhones: uniqueStrings(record.normalizedPhones),
     },
     routing: record.routing,
     supportingSources: [],
@@ -587,12 +624,12 @@ function mapSalesforceLifecycleRecord(
       sourceEvidenceId: buildSourceEvidenceId(
         "salesforce",
         providerRecordType,
-        providerRecordId
+        providerRecordId,
       ),
       salesforceContactId: record.salesforceContactId,
       projectId: record.routing.projectId,
       expeditionId: record.routing.expeditionId,
-      sourceField: record.sourceField
+      sourceField: record.sourceField,
     },
     projectDimensions:
       record.routing.projectId !== null && record.routing.projectName !== null
@@ -600,8 +637,8 @@ function mapSalesforceLifecycleRecord(
             {
               projectId: record.routing.projectId,
               projectName: record.routing.projectName,
-              source: "salesforce" as const
-            }
+              source: "salesforce" as const,
+            },
           ]
         : [],
     expeditionDimensions:
@@ -612,10 +649,10 @@ function mapSalesforceLifecycleRecord(
               expeditionId: record.routing.expeditionId,
               projectId: record.routing.projectId,
               expeditionName: record.routing.expeditionName,
-              source: "salesforce" as const
-            }
+              source: "salesforce" as const,
+            },
           ]
-        : []
+        : [],
   };
 }
 
@@ -635,19 +672,21 @@ function buildSalesforceTaskSummary(input: {
         ? "Auto SMS sent"
         : "Outbound SMS sent";
     default:
-      throw new Error(`Unsupported Salesforce task event type: ${input.eventType}`);
+      throw new Error(
+        `Unsupported Salesforce task event type: ${input.eventType}`,
+      );
   }
 }
 
 function mapSalesforceTaskCommunicationRecord(
-  record: SalesforceTaskCommunicationRecord
+  record: SalesforceTaskCommunicationRecord,
 ): NormalizedCanonicalEventIntake {
   const subjectDirection =
     record.channel === "email"
       ? parseSubjectDirection(record.subject)
       : {
           direction: "outbound" as const,
-          cleanSubject: record.subject
+          cleanSubject: record.subject,
         };
   const eventType: CanonicalEventType =
     record.channel === "email"
@@ -663,7 +702,7 @@ function mapSalesforceTaskCommunicationRecord(
       id: buildSourceEvidenceId(
         "salesforce",
         providerRecordType,
-        providerRecordId
+        providerRecordId,
       ),
       provider: "salesforce",
       providerRecordType,
@@ -674,9 +713,9 @@ function mapSalesforceTaskCommunicationRecord(
       idempotencyKey: buildSourceEvidenceIdempotencyKey(
         "salesforce",
         providerRecordType,
-        providerRecordId
+        providerRecordId,
       ),
-      checksum: record.checksum
+      checksum: record.checksum,
     },
     canonicalEvent: {
       id: buildCanonicalEventId({
@@ -684,7 +723,7 @@ function mapSalesforceTaskCommunicationRecord(
         providerRecordType,
         providerRecordId,
         eventType,
-        crossProviderCollapseKey: record.crossProviderCollapseKey
+        crossProviderCollapseKey: record.crossProviderCollapseKey,
       }),
       eventType,
       occurredAt: record.occurredAt,
@@ -693,22 +732,24 @@ function mapSalesforceTaskCommunicationRecord(
         providerRecordType,
         providerRecordId,
         eventType,
-        crossProviderCollapseKey: record.crossProviderCollapseKey
+        crossProviderCollapseKey: record.crossProviderCollapseKey,
       }),
       summary: buildSalesforceTaskSummary({
         eventType,
-        messageKind: record.messageKind
+        messageKind: record.messageKind,
       }),
-      snippet: record.snippet
+      snippet: record.snippet,
     },
     identity: {
       salesforceContactId: record.salesforceContactId,
       volunteerIdPlainValues: uniqueStrings(record.volunteerIdPlainValues),
       normalizedEmails: uniqueStrings(record.normalizedEmails),
-      normalizedPhones: uniqueStrings(record.normalizedPhones)
+      normalizedPhones: uniqueStrings(record.normalizedPhones),
     },
     routing: record.routing,
-    supportingSources: buildSupportingSourceReferences(record.supportingRecords),
+    supportingSources: buildSupportingSourceReferences(
+      record.supportingRecords,
+    ),
     communicationClassification: {
       messageKind: record.messageKind,
       sourceRecordType: providerRecordType,
@@ -716,15 +757,15 @@ function mapSalesforceTaskCommunicationRecord(
       campaignRef: null,
       threadRef: {
         crossProviderCollapseKey: record.crossProviderCollapseKey,
-        providerThreadId: null
+        providerThreadId: null,
       },
-      direction: subjectDirection.direction
+      direction: subjectDirection.direction,
     },
     salesforceCommunicationDetail: {
       sourceEvidenceId: buildSourceEvidenceId(
         "salesforce",
         providerRecordType,
-        providerRecordId
+        providerRecordId,
       ),
       providerRecordId,
       channel: record.channel,
@@ -732,18 +773,18 @@ function mapSalesforceTaskCommunicationRecord(
       subject: subjectDirection.cleanSubject,
       snippet: record.snippet,
       sourceLabel:
-        record.messageKind === "auto" ? "Salesforce Flow" : "Salesforce Task"
+        record.messageKind === "auto" ? "Salesforce Flow" : "Salesforce Task",
     },
     salesforceEventContext: {
       sourceEvidenceId: buildSourceEvidenceId(
         "salesforce",
         providerRecordType,
-        providerRecordId
+        providerRecordId,
       ),
       salesforceContactId: record.salesforceContactId,
       projectId: record.routing.projectId,
       expeditionId: record.routing.expeditionId,
-      sourceField: null
+      sourceField: null,
     },
     projectDimensions:
       record.routing.projectId !== null && record.routing.projectName !== null
@@ -751,8 +792,8 @@ function mapSalesforceTaskCommunicationRecord(
             {
               projectId: record.routing.projectId,
               projectName: record.routing.projectName,
-              source: "salesforce" as const
-            }
+              source: "salesforce" as const,
+            },
           ]
         : [],
     expeditionDimensions:
@@ -763,17 +804,18 @@ function mapSalesforceTaskCommunicationRecord(
               expeditionId: record.routing.expeditionId,
               projectId: record.routing.projectId,
               expeditionName: record.routing.expeditionName,
-              source: "salesforce" as const
-            }
+              source: "salesforce" as const,
+            },
           ]
-        : []
+        : [],
   };
 }
 
 export function mapSalesforceRecord(
-  rawRecord: SalesforceRecord
+  rawRecord: SalesforceRecord,
 ): ProviderMappingResult {
-  const contactSnapshot = salesforceContactSnapshotRecordSchema.safeParse(rawRecord);
+  const contactSnapshot =
+    salesforceContactSnapshotRecordSchema.safeParse(rawRecord);
 
   if (contactSnapshot.success) {
     if (contactSnapshot.data.memberships.length === 0) {
@@ -783,7 +825,7 @@ export function mapSalesforceRecord(
         sourceRecordId: contactSnapshot.data.recordId,
         reason: "deferred_record_family",
         detail:
-          "Salesforce contact_snapshot records without expedition memberships are skipped in Stage 1."
+          "Salesforce contact_snapshot records without expedition memberships are skipped in Stage 1.",
       });
     }
 
@@ -792,8 +834,8 @@ export function mapSalesforceRecord(
       sourceRecordType: contactSnapshot.data.recordType,
       sourceRecordId: contactSnapshot.data.recordId,
       command: createContactGraphCommand(
-        mapSalesforceContactSnapshot(contactSnapshot.data)
-      )
+        mapSalesforceContactSnapshot(contactSnapshot.data),
+      ),
     });
   }
 
@@ -805,12 +847,13 @@ export function mapSalesforceRecord(
       sourceRecordType: lifecycleRecord.data.recordType,
       sourceRecordId: lifecycleRecord.data.recordId,
       command: createCanonicalEventCommand(
-        mapSalesforceLifecycleRecord(lifecycleRecord.data)
-      )
+        mapSalesforceLifecycleRecord(lifecycleRecord.data),
+      ),
     });
   }
 
-  const taskRecord = salesforceTaskCommunicationRecordSchema.safeParse(rawRecord);
+  const taskRecord =
+    salesforceTaskCommunicationRecordSchema.safeParse(rawRecord);
 
   if (taskRecord.success) {
     return createCommandMappingResult({
@@ -818,8 +861,8 @@ export function mapSalesforceRecord(
       sourceRecordType: taskRecord.data.recordType,
       sourceRecordId: taskRecord.data.recordId,
       command: createCanonicalEventCommand(
-        mapSalesforceTaskCommunicationRecord(taskRecord.data)
-      )
+        mapSalesforceTaskCommunicationRecord(taskRecord.data),
+      ),
     });
   }
 
@@ -830,6 +873,6 @@ export function mapSalesforceRecord(
     sourceRecordType: deferredRecord.recordType,
     sourceRecordId: deferredRecord.recordId,
     reason: "deferred_record_family",
-    detail: `Salesforce ${deferredRecord.recordType} records are deferred in Stage 1.`
+    detail: `Salesforce ${deferredRecord.recordType} records are deferred in Stage 1.`,
   });
 }

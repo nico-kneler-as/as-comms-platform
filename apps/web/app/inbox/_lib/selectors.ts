@@ -1257,7 +1257,7 @@ function timelineActorLabel(
 }
 
 const OUTBOUND_SUBJECT_PREFIX_PATTERN =
-  /^\s*(?:→|->|&rarr;|\u2192)\s*Email:\s*/i;
+  /^\s*(?:(?:→|->|&rarr;|\u2192)\s*)?Email:\s*/i;
 
 function stripOutboundSubjectPrefix(subject: string | null): string | null {
   const normalized = normalizeInlineText(subject);

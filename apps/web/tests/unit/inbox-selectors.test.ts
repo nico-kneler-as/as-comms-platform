@@ -1305,6 +1305,13 @@ describe("real inbox selectors", () => {
         "A quick recap from this week.",
       ].join("\n"),
     });
+    await seedInboxAutoEmailEvent(runtime.context, {
+      id: "sarah-auto-email-bare-prefix",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T15:55:00.000Z",
+      subject: "Email: Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral",
+      snippet: "Coral project review workflow.",
+    });
 
     const detail = await getInboxDetail("contact:sarah-martinez");
     const autoEntry = detail?.timeline.find(
@@ -1315,6 +1322,9 @@ describe("real inbox selectors", () => {
     );
     const entityCampaignEntry = detail?.timeline.find(
       (entry) => entry.id === "timeline:sarah-campaign-email-arrow-entity",
+    );
+    const barePrefixAutoEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-auto-email-bare-prefix",
     );
 
     expect(autoEntry).toMatchObject({
@@ -1328,6 +1338,11 @@ describe("real inbox selectors", () => {
     expect(entityCampaignEntry).toMatchObject({
       kind: "outbound-campaign-email",
       subject: "Weekly Digest",
+    });
+    expect(barePrefixAutoEntry).toMatchObject({
+      kind: "outbound-auto-email",
+      subject:
+        "Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral",
     });
   });
 

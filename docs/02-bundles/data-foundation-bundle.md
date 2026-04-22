@@ -25,6 +25,7 @@ Build canonical identity, source evidence, normalized history, review queues, pr
 - Salesforce Contact ID primary identity anchor
 - ambiguous identity goes to manual resolution
 - Gmail wins canonical email tie-breaks
+- Salesforce volunteer email Task ingest is limited to Nim Admin-owned automations
 - hybrid cutover with explicit approval or rollback
 
 ## Required Interfaces / Concepts
@@ -39,12 +40,12 @@ Build canonical identity, source evidence, normalized history, review queues, pr
 
 ## Allowed / Not Allowed
 
-| Allowed | Not allowed |
-| --- | --- |
-| provider adapters | separate import-only normalization rules |
-| durable replay-safe jobs | guessing through identity ambiguity |
-| rebuildable projections | UI-owned truth for queue or timeline behavior |
-| explicit parity state | silent duplicate collapse without provenance |
+| Allowed                  | Not allowed                                   |
+| ------------------------ | --------------------------------------------- |
+| provider adapters        | separate import-only normalization rules      |
+| durable replay-safe jobs | guessing through identity ambiguity           |
+| rebuildable projections  | UI-owned truth for queue or timeline behavior |
+| explicit parity state    | silent duplicate collapse without provenance  |
 
 ## Acceptance
 
