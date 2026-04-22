@@ -6,7 +6,7 @@ import {
   createSalesforceCaptureService,
   type CaptureServiceHttpRequest,
   type SalesforceApiClient,
-  type SalesforceCaptureService
+  type SalesforceCaptureService,
 } from "../src/index.js";
 
 const testJwtPrivateKey = `-----BEGIN PRIVATE KEY-----
@@ -46,7 +46,7 @@ function createSalesforceServiceConfig() {
     username: "worker@example.org",
     jwtPrivateKey: testJwtPrivateKey,
     contactCaptureMode: "cdc_compatible" as const,
-    membershipCaptureMode: "cdc_compatible" as const
+    membershipCaptureMode: "cdc_compatible" as const,
   };
 }
 
@@ -61,12 +61,12 @@ function toResponse(input: {
 }): Response {
   return new Response(input.body, {
     status: input.status,
-    headers: input.headers
+    headers: input.headers,
   });
 }
 
 function createFetchFromService(
-  service: SalesforceCaptureService
+  service: SalesforceCaptureService,
 ): typeof fetch {
   function resolveUrl(input: unknown): string {
     if (typeof input === "string") {
@@ -98,7 +98,7 @@ function createFetchFromService(
       method: init?.method ?? "GET",
       path: new URL(resolveUrl(input)).pathname,
       headers: new Headers(init?.headers),
-      bodyText: typeof init?.body === "string" ? init.body : ""
+      bodyText: typeof init?.body === "string" ? init.body : "",
     };
 
     return service.handleHttpRequest(request).then(toResponse);
@@ -113,7 +113,7 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
     Phone: "+15555550123",
     Volunteer_ID_Plain__c: "VOL-123",
     CreatedDate: "2026-01-01T00:00:00.000Z",
-    LastModifiedDate: "2026-01-05T00:00:00.000Z"
+    LastModifiedDate: "2026-01-05T00:00:00.000Z",
   };
   const membershipRow = {
     Id: "a01-membership-1",
@@ -126,21 +126,21 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
     LastModifiedDate: "2026-01-05T00:01:00.000Z",
     Date_Training_Sent__c: "2026-01-03T00:00:00.000Z",
     Date_Training_Completed__c: "2026-01-04T00:00:00.000Z",
-    Date_First_Sample_Collected__c: "2026-01-05T00:00:00.000Z"
+    Date_First_Sample_Collected__c: "2026-01-05T00:00:00.000Z",
   };
   const taskRow = {
     Id: "00T-task-1",
     WhoId: "003-stage1",
-    OwnerId: "005-human-owner",
+    OwnerId: "005-nim-admin",
     Owner: {
-      Name: "Volunteer Coordinator",
-      Username: "coordinator@example.org"
+      Name: "Nim Admin",
+      Username: "admin+1@adventurescientists.org",
     },
     TaskSubtype: "Email",
     Subject: "Outbound follow-up",
     Description: "Logged outbound follow-up from Task",
     CreatedDate: "2026-01-05T00:02:00.000Z",
-    LastModifiedDate: "2026-01-05T00:03:00.000Z"
+    LastModifiedDate: "2026-01-05T00:03:00.000Z",
   };
 
   return {
@@ -148,7 +148,7 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
       if (soql.includes(" FROM Contact ")) {
         if (soql.includes(" WHERE Id IN ")) {
           return Promise.resolve(
-            soql.includes("'003-stage1'") ? [contactRow] : []
+            soql.includes("'003-stage1'") ? [contactRow] : [],
           );
         }
 
@@ -157,11 +157,15 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
 
       if (soql.includes(" FROM Task ")) {
         if (soql.includes(" WHERE Id IN ")) {
-          return Promise.resolve(soql.includes("'00T-task-1'") ? [taskRow] : []);
+          return Promise.resolve(
+            soql.includes("'00T-task-1'") ? [taskRow] : [],
+          );
         }
 
         if (soql.includes(" WHERE WhoId IN ")) {
-          return Promise.resolve(soql.includes("'003-stage1'") ? [taskRow] : []);
+          return Promise.resolve(
+            soql.includes("'003-stage1'") ? [taskRow] : [],
+          );
         }
 
         return Promise.resolve([taskRow]);
@@ -170,13 +174,13 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
       if (soql.includes(" FROM Expedition_Members__c ")) {
         if (soql.includes(" WHERE Id IN ")) {
           return Promise.resolve(
-            soql.includes("'a01-membership-1'") ? [membershipRow] : []
+            soql.includes("'a01-membership-1'") ? [membershipRow] : [],
           );
         }
 
         if (soql.includes(" WHERE Contact__c IN ")) {
           return Promise.resolve(
-            soql.includes("'003-stage1'") ? [membershipRow] : []
+            soql.includes("'003-stage1'") ? [membershipRow] : [],
           );
         }
 
@@ -184,7 +188,7 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
       }
 
       return Promise.resolve([]);
-    }
+    },
   };
 }
 
@@ -197,8 +201,8 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: createFakeSalesforceApiClient()
-      }
+        apiClient: createFakeSalesforceApiClient(),
+      },
     );
 
     const response = await service.handleHttpRequest({
@@ -206,13 +210,13 @@ describe("Salesforce capture service", () => {
       path: "/historical",
       headers: {},
       bodyText: JSON.stringify({
-        version: 1
-      })
+        version: 1,
+      }),
     });
 
     expect(response.status).toBe(401);
     expect(JSON.parse(response.body)).toEqual({
-      error: "unauthorized"
+      error: "unauthorized",
     });
   });
 
@@ -225,16 +229,16 @@ describe("Salesforce capture service", () => {
           queryAll: () => {
             queryCount += 1;
             return Promise.resolve([]);
-          }
-        }
-      }
+          },
+        },
+      },
     );
 
     const response = await service.handleHttpRequest({
       method: "POST",
       path: "/live",
       headers: {
-        authorization: "Bearer salesforce-token"
+        authorization: "Bearer salesforce-token",
       },
       bodyText: JSON.stringify({
         version: 1,
@@ -253,13 +257,13 @@ describe("Salesforce capture service", () => {
         windowStart: null,
         windowEnd: null,
         recordIds: [],
-        maxRecords: 25
-      })
+        maxRecords: 25,
+      }),
     });
 
     expect(response.status).toBe(400);
     expect(JSON.parse(response.body)).toMatchObject({
-      error: "invalid_request"
+      error: "invalid_request",
     });
     expect(queryCount).toBe(0);
   });
@@ -274,20 +278,20 @@ describe("Salesforce capture service", () => {
           queryAll: (soql) => {
             queries.push(soql);
             return baseApiClient.queryAll(soql);
-          }
+          },
         },
-        now: () => new Date("2026-01-05T00:05:00.000Z")
-      }
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
     );
     const port = createSalesforceCapturePort(
       {
         baseUrl: "https://capture.example.test",
         bearerToken: "salesforce-token",
-        timeoutMs: 1_000
+        timeoutMs: 1_000,
       },
       {
-        fetchImplementation: createFetchFromService(service)
-      }
+        fetchImplementation: createFetchFromService(service),
+      },
     );
 
     const result = await port.captureHistoricalBatch({
@@ -307,78 +311,82 @@ describe("Salesforce capture service", () => {
       windowStart: "2026-01-01T00:00:00.000Z",
       windowEnd: "2026-01-06T00:00:00.000Z",
       recordIds: [],
-      maxRecords: 25
+      maxRecords: 25,
     });
 
     expect(result.records).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           recordType: "contact_snapshot",
-          salesforceContactId: "003-stage1"
+          salesforceContactId: "003-stage1",
         }),
         expect.objectContaining({
           recordType: "task_communication",
           channel: "email",
-          messageKind: "one_to_one",
-          salesforceContactId: "003-stage1"
+          messageKind: "auto",
+          salesforceContactId: "003-stage1",
         }),
         expect.objectContaining({
           recordType: "lifecycle_milestone",
           milestone: "signed_up",
-          sourceField: "Expedition_Members__c.CreatedDate"
+          sourceField: "Expedition_Members__c.CreatedDate",
         }),
         expect.objectContaining({
           recordType: "lifecycle_milestone",
           milestone: "received_training",
-          sourceField: "Expedition_Members__c.Date_Training_Sent__c"
+          sourceField: "Expedition_Members__c.Date_Training_Sent__c",
         }),
         expect.objectContaining({
           recordType: "lifecycle_milestone",
           milestone: "completed_training",
-          sourceField: "Expedition_Members__c.Date_Training_Completed__c"
+          sourceField: "Expedition_Members__c.Date_Training_Completed__c",
         }),
         expect.objectContaining({
           recordType: "lifecycle_milestone",
           milestone: "submitted_first_data",
-          sourceField:
-            "Expedition_Members__c.Date_First_Sample_Collected__c"
-        })
-      ])
+          sourceField: "Expedition_Members__c.Date_First_Sample_Collected__c",
+        }),
+      ]),
     );
     expect(result.checkpoint).toBe("2026-01-05T00:03:00.000Z");
     expect(queries).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          "FROM Expedition_Members__c WHERE Contact__c != null AND ((CreatedDate >= 2026-01-01T00:00:00.000Z AND CreatedDate < 2026-01-06T00:00:00.000Z)"
+          "FROM Expedition_Members__c WHERE Contact__c != null AND ((CreatedDate >= 2026-01-01T00:00:00.000Z AND CreatedDate < 2026-01-06T00:00:00.000Z)",
         ),
         expect.stringContaining(
-          "FROM Contact WHERE LastModifiedDate >= 2026-01-01T00:00:00.000Z AND LastModifiedDate < 2026-01-06T00:00:00.000Z AND Id IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)"
+          "FROM Contact WHERE LastModifiedDate >= 2026-01-01T00:00:00.000Z AND LastModifiedDate < 2026-01-06T00:00:00.000Z AND Id IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)",
         ),
         expect.stringContaining(
-          "Date_Training_Sent__c >= 2026-01-01 AND Date_Training_Sent__c < 2026-01-06"
+          "Date_Training_Sent__c >= 2026-01-01 AND Date_Training_Sent__c < 2026-01-06",
         ),
         expect.stringContaining(
-          "Date_Training_Completed__c >= 2026-01-01 AND Date_Training_Completed__c < 2026-01-06"
+          "Date_Training_Completed__c >= 2026-01-01 AND Date_Training_Completed__c < 2026-01-06",
         ),
         expect.stringContaining(
-          "Date_First_Sample_Collected__c >= 2026-01-01 AND Date_First_Sample_Collected__c < 2026-01-06"
+          "Date_First_Sample_Collected__c >= 2026-01-01 AND Date_First_Sample_Collected__c < 2026-01-06",
         ),
         expect.stringContaining(
-          "FROM Task WHERE Who.Type = 'Contact' AND CreatedDate >= 2026-01-01T00:00:00.000Z AND CreatedDate < 2026-01-06T00:00:00.000Z AND WhoId IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)"
-        )
-      ])
+          "FROM Task WHERE Who.Type = 'Contact' AND CreatedDate >= 2026-01-01T00:00:00.000Z AND CreatedDate < 2026-01-06T00:00:00.000Z AND WhoId IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)",
+        ),
+      ]),
     );
     expect(
       queries.some(
         (query) =>
           query.includes("Owner.Name") &&
           query.includes("Owner.Username") &&
-          query.includes("OwnerId")
-      )
+          query.includes("OwnerId"),
+      ),
     ).toBe(true);
     expect(
-      queries.some((query) => query.includes("WhoId LIKE '003%'"))
-    ).toBe(false);
+      queries.some((query) =>
+        query.includes("Owner.Username IN ('admin+1@adventurescientists.org')"),
+      ),
+    ).toBe(true);
+    expect(queries.some((query) => query.includes("WhoId LIKE '003%'"))).toBe(
+      false,
+    );
   });
 
   it("expands task communications for membership-scoped historical backfills", async () => {
@@ -391,10 +399,10 @@ describe("Salesforce capture service", () => {
           queryAll: (soql) => {
             queries.push(soql);
             return baseApiClient.queryAll(soql);
-          }
+          },
         },
-        now: () => new Date("2026-01-05T00:05:00.000Z")
-      }
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
     );
 
     const result = await service.captureHistoricalBatch({
@@ -414,27 +422,27 @@ describe("Salesforce capture service", () => {
       windowStart: null,
       windowEnd: null,
       recordIds: ["a01-membership-1"],
-      maxRecords: 25
+      maxRecords: 25,
     });
 
     expect(result.records).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           recordType: "contact_snapshot",
-          salesforceContactId: "003-stage1"
+          salesforceContactId: "003-stage1",
         }),
         expect.objectContaining({
           recordType: "task_communication",
           recordId: "00T-task-1",
-          messageKind: "one_to_one",
-          salesforceContactId: "003-stage1"
-        })
-      ])
+          messageKind: "auto",
+          salesforceContactId: "003-stage1",
+        }),
+      ]),
     );
     expect(queries).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("FROM Task WHERE WhoId IN ('003-stage1')")
-      ])
+        expect.stringContaining("FROM Task WHERE WhoId IN ('003-stage1')"),
+      ]),
     );
   });
 
@@ -448,10 +456,10 @@ describe("Salesforce capture service", () => {
           queryAll: (soql) => {
             queries.push(soql);
             return baseApiClient.queryAll(soql);
-          }
+          },
         },
-        now: () => new Date("2026-01-05T00:05:00.000Z")
-      }
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
     );
 
     const result = await service.captureHistoricalBatch({
@@ -471,28 +479,28 @@ describe("Salesforce capture service", () => {
       windowStart: null,
       windowEnd: null,
       recordIds: ["00T-task-1"],
-      maxRecords: 25
+      maxRecords: 25,
     });
 
     expect(result.records).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           recordType: "contact_snapshot",
-          salesforceContactId: "003-stage1"
+          salesforceContactId: "003-stage1",
         }),
         expect.objectContaining({
           recordType: "task_communication",
           recordId: "00T-task-1",
-          salesforceContactId: "003-stage1"
-        })
-      ])
+          salesforceContactId: "003-stage1",
+        }),
+      ]),
     );
     expect(queries).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          "FROM Task WHERE Id IN ('00T-task-1') AND Who.Type = 'Contact' AND WhoId IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)"
-        )
-      ])
+          "FROM Task WHERE Id IN ('00T-task-1') AND Who.Type = 'Contact' AND WhoId IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)",
+        ),
+      ]),
     );
   });
 
@@ -506,10 +514,10 @@ describe("Salesforce capture service", () => {
           queryAll: (soql) => {
             queries.push(soql);
             return baseApiClient.queryAll(soql);
-          }
+          },
         },
-        now: () => new Date("2026-01-05T00:05:00.000Z")
-      }
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
     );
 
     await service.captureLiveBatch({
@@ -529,19 +537,19 @@ describe("Salesforce capture service", () => {
       windowStart: "2026-01-01T00:00:00.000Z",
       windowEnd: "2026-01-06T00:00:00.000Z",
       recordIds: [],
-      maxRecords: 25
+      maxRecords: 25,
     });
 
     expect(queries).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          "FROM Task WHERE Who.Type = 'Contact' AND LastModifiedDate >= 2026-01-01T00:00:00.000Z AND LastModifiedDate < 2026-01-06T00:00:00.000Z AND WhoId IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)"
-        )
-      ])
+          "FROM Task WHERE Who.Type = 'Contact' AND LastModifiedDate >= 2026-01-01T00:00:00.000Z AND LastModifiedDate < 2026-01-06T00:00:00.000Z AND WhoId IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null)",
+        ),
+      ]),
     );
-    expect(
-      queries.some((query) => query.includes("WhoId LIKE '003%'"))
-    ).toBe(false);
+    expect(queries.some((query) => query.includes("WhoId LIKE '003%'"))).toBe(
+      false,
+    );
   });
 
   it("keeps date-only lifecycle milestones on live captures keyed by LastModifiedDate", async () => {
@@ -549,8 +557,8 @@ describe("Salesforce capture service", () => {
       createSalesforceServiceConfig(),
       {
         apiClient: createFakeSalesforceApiClient(),
-        now: () => new Date("2026-01-05T00:05:00.000Z")
-      }
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
     );
 
     const result = await service.captureLiveBatch({
@@ -570,18 +578,19 @@ describe("Salesforce capture service", () => {
       windowStart: "2026-01-05T00:00:00.000Z",
       windowEnd: "2026-01-06T00:00:00.000Z",
       recordIds: [],
-      maxRecords: 25
+      maxRecords: 25,
     });
 
     expect(result.records).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           recordType: "lifecycle_milestone",
-          recordId: "a01-membership-1:Expedition_Members__c.Date_Training_Sent__c",
+          recordId:
+            "a01-membership-1:Expedition_Members__c.Date_Training_Sent__c",
           milestone: "received_training",
-          occurredAt: "2026-01-03T00:00:00.000Z"
-        })
-      ])
+          occurredAt: "2026-01-03T00:00:00.000Z",
+        }),
+      ]),
     );
   });
 
@@ -591,17 +600,17 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       {
         ...createSalesforceServiceConfig(),
-        membershipRoleField: null
+        membershipRoleField: null,
       },
       {
         apiClient: {
           queryAll: (soql) => {
             queries.push(soql);
             return baseApiClient.queryAll(soql);
-          }
+          },
         },
-        now: () => new Date("2026-01-05T00:05:00.000Z")
-      }
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
     );
 
     const result = await service.captureLiveBatch({
@@ -621,7 +630,7 @@ describe("Salesforce capture service", () => {
       windowStart: null,
       windowEnd: null,
       recordIds: ["a01-membership-1"],
-      maxRecords: 25
+      maxRecords: 25,
     });
 
     expect(queries.some((query) => query.includes("Role__c"))).toBe(false);
@@ -635,20 +644,19 @@ describe("Salesforce capture service", () => {
               projectId: "project-antarctica",
               expeditionId: "expedition-antarctica",
               role: null,
-              status: "active"
-            })
-          ]
+              status: "active",
+            }),
+          ],
         }),
         expect.objectContaining({
           recordType: "lifecycle_milestone",
           salesforceContactId: "003-stage1",
-          routing:
-            expect.objectContaining({
-              projectId: "project-antarctica",
-              expeditionId: "expedition-antarctica"
-            }) as unknown
-        })
-      ])
+          routing: expect.objectContaining({
+            projectId: "project-antarctica",
+            expeditionId: "expedition-antarctica",
+          }) as unknown,
+        }),
+      ]),
     );
   });
 
@@ -660,7 +668,7 @@ describe("Salesforce capture service", () => {
       Phone: "+15555550124",
       Volunteer_ID_Plain__c: "VOL-124",
       CreatedDate: "2026-01-01T00:00:00.000Z",
-      LastModifiedDate: "2026-01-05T00:00:00.000Z"
+      LastModifiedDate: "2026-01-05T00:00:00.000Z",
     };
     const membershipRow = {
       Id: "a01-membership-auto",
@@ -671,7 +679,7 @@ describe("Salesforce capture service", () => {
       Expedition__r: { Name: "Expedition Auto" },
       Status__c: "trip_planning",
       CreatedDate: "2026-01-02T00:00:00.000Z",
-      LastModifiedDate: "2026-01-05T00:01:00.000Z"
+      LastModifiedDate: "2026-01-05T00:01:00.000Z",
     };
     const autoEmailTaskRow = {
       Id: "00T-auto-email",
@@ -681,7 +689,7 @@ describe("Salesforce capture service", () => {
       Subject: "→ Email: Start your training",
       Description: "Auto-sent training reminder",
       CreatedDate: "2026-01-05T00:02:00.000Z",
-      LastModifiedDate: "2026-01-05T00:03:00.000Z"
+      LastModifiedDate: "2026-01-05T00:03:00.000Z",
     };
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
@@ -691,7 +699,7 @@ describe("Salesforce capture service", () => {
             if (soql.includes(" FROM Contact ")) {
               if (soql.includes(" WHERE Id IN ")) {
                 return Promise.resolve(
-                  soql.includes("'003-auto'") ? [contactRow] : []
+                  soql.includes("'003-auto'") ? [contactRow] : [],
                 );
               }
 
@@ -701,13 +709,13 @@ describe("Salesforce capture service", () => {
             if (soql.includes(" FROM Task ")) {
               if (soql.includes(" WHERE Id IN ")) {
                 return Promise.resolve(
-                  soql.includes("'a01-membership-auto'") ? [] : []
+                  soql.includes("'a01-membership-auto'") ? [] : [],
                 );
               }
 
               if (soql.includes(" WHERE WhoId IN ")) {
                 return Promise.resolve(
-                  soql.includes("'003-auto'") ? [autoEmailTaskRow] : []
+                  soql.includes("'003-auto'") ? [autoEmailTaskRow] : [],
                 );
               }
 
@@ -717,13 +725,13 @@ describe("Salesforce capture service", () => {
             if (soql.includes(" FROM Expedition_Members__c ")) {
               if (soql.includes(" WHERE Id IN ")) {
                 return Promise.resolve(
-                  soql.includes("'a01-membership-auto'") ? [membershipRow] : []
+                  soql.includes("'a01-membership-auto'") ? [membershipRow] : [],
                 );
               }
 
               if (soql.includes(" WHERE Contact__c IN ")) {
                 return Promise.resolve(
-                  soql.includes("'003-auto'") ? [membershipRow] : []
+                  soql.includes("'003-auto'") ? [membershipRow] : [],
                 );
               }
 
@@ -731,10 +739,10 @@ describe("Salesforce capture service", () => {
             }
 
             return Promise.resolve([]);
-          }
+          },
         },
-        now: () => new Date("2026-01-05T00:05:00.000Z")
-      }
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
     );
 
     const result = await service.captureLiveBatch({
@@ -754,7 +762,7 @@ describe("Salesforce capture service", () => {
       windowStart: null,
       windowEnd: null,
       recordIds: ["a01-membership-auto"],
-      maxRecords: 25
+      maxRecords: 25,
     });
 
     expect(result.records).toEqual(
@@ -770,17 +778,17 @@ describe("Salesforce capture service", () => {
             projectId: "project-auto",
             expeditionId: "expedition-auto",
             projectName: "Project Auto",
-            expeditionName: "Expedition Auto"
-          }
-        })
-      ])
+            expeditionName: "Expedition Auto",
+          },
+        }),
+      ]),
     );
     expect(
       result.records.filter(
         (record) =>
           record.recordType === "task_unmapped_channel" &&
-          record.recordId === "00T-auto-email"
-      )
+          record.recordId === "00T-auto-email",
+      ),
     ).toEqual([]);
   });
 
@@ -794,10 +802,10 @@ describe("Salesforce capture service", () => {
           queryAll: (soql) => {
             queries.push(soql);
             return baseApiClient.queryAll(soql);
-          }
+          },
         },
-        now: () => new Date("2026-01-05T00:05:00.000Z")
-      }
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
     );
 
     const result = await service.captureHistoricalBatch({
@@ -817,27 +825,27 @@ describe("Salesforce capture service", () => {
       windowStart: null,
       windowEnd: null,
       recordIds: ["a01-membership-1"],
-      maxRecords: 25
+      maxRecords: 25,
     });
 
     expect(result.records).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           recordType: "contact_snapshot",
-          salesforceContactId: "003-stage1"
+          salesforceContactId: "003-stage1",
         }),
         expect.objectContaining({
           recordType: "task_communication",
           recordId: "00T-task-1",
-          messageKind: "one_to_one",
-          salesforceContactId: "003-stage1"
-        })
-      ])
+          messageKind: "auto",
+          salesforceContactId: "003-stage1",
+        }),
+      ]),
     );
     expect(queries).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("FROM Task WHERE WhoId IN ('003-stage1')")
-      ])
+        expect.stringContaining("FROM Task WHERE WhoId IN ('003-stage1')"),
+      ]),
     );
   });
 
@@ -845,12 +853,12 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       {
         ...createSalesforceServiceConfig(),
-        timeoutMs: 1_000
+        timeoutMs: 1_000,
       },
       {
         apiClient: createFakeSalesforceApiClient(),
-        now: () => new Date("2026-01-05T00:05:00.000Z")
-      }
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
     );
 
     const result = await service.captureLiveBatch({
@@ -870,30 +878,130 @@ describe("Salesforce capture service", () => {
       windowStart: "2026-01-05T00:00:00.000Z",
       windowEnd: "2026-01-06T00:00:00.000Z",
       recordIds: [],
-      maxRecords: 25
+      maxRecords: 25,
     });
 
     expect(result.records).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           recordType: "contact_snapshot",
-          salesforceContactId: "003-stage1"
+          salesforceContactId: "003-stage1",
         }),
         expect.objectContaining({
           recordType: "task_communication",
-          messageKind: "one_to_one",
-          salesforceContactId: "003-stage1"
-        })
-      ])
+          messageKind: "auto",
+          salesforceContactId: "003-stage1",
+        }),
+      ]),
     );
+  });
+
+  it("excludes human-owned Salesforce email tasks at the capture query boundary", async () => {
+    const queries: string[] = [];
+    const contactRow = {
+      Id: "003-human-email",
+      Name: "Human Email Volunteer",
+      Email: "human@example.org",
+      Phone: "+15555550129",
+      Volunteer_ID_Plain__c: "VOL-129",
+      CreatedDate: "2026-01-01T00:00:00.000Z",
+      LastModifiedDate: "2026-01-05T00:00:00.000Z",
+    };
+    const membershipRow = {
+      Id: "a01-membership-human-email",
+      Contact__c: "003-human-email",
+      Project__c: "project-human-email",
+      Expedition__c: "expedition-human-email",
+      Status__c: "active",
+      CreatedDate: "2026-01-02T00:00:00.000Z",
+      LastModifiedDate: "2026-01-05T00:01:00.000Z",
+    };
+    const humanEmailTaskRow = {
+      Id: "00T-human-email",
+      WhoId: "003-human-email",
+      OwnerId: "005-human-owner",
+      Owner: {
+        Name: "Volunteer Coordinator",
+        Username: "coordinator@example.org",
+      },
+      TaskSubtype: "Email",
+      Subject: "Checking in about your expedition",
+      Description: "Human follow-up",
+      CreatedDate: "2026-01-05T00:02:00.000Z",
+      LastModifiedDate: "2026-01-05T00:03:00.000Z",
+    };
+
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: {
+          queryAll: (soql) => {
+            queries.push(soql);
+
+            if (soql.includes(" FROM Contact ")) {
+              return Promise.resolve([contactRow]);
+            }
+
+            if (soql.includes(" FROM Expedition_Members__c ")) {
+              return Promise.resolve([membershipRow]);
+            }
+
+            if (soql.includes(" FROM Task ")) {
+              return Promise.resolve(
+                soql.includes(
+                  "Owner.Username IN ('admin+1@adventurescientists.org')",
+                )
+                  ? []
+                  : [humanEmailTaskRow],
+              );
+            }
+
+            return Promise.resolve([]);
+          },
+        },
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
+    );
+
+    const result = await service.captureHistoricalBatch({
+      version: 1,
+      jobId: "job:salesforce:historical:human-email-filter",
+      correlationId: "corr:salesforce:historical:human-email-filter",
+      traceId: null,
+      batchId: "batch:salesforce:historical:human-email-filter",
+      syncStateId: "sync:salesforce:historical:human-email-filter",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "historical",
+      jobType: "historical_backfill",
+      cursor: null,
+      checkpoint: null,
+      windowStart: null,
+      windowEnd: null,
+      recordIds: ["a01-membership-human-email"],
+      maxRecords: 25,
+    });
+
+    expect(
+      result.records.filter(
+        (record) => record.recordType === "task_communication",
+      ),
+    ).toEqual([]);
+    expect(
+      queries.some((query) =>
+        query.includes("Owner.Username IN ('admin+1@adventurescientists.org')"),
+      ),
+    ).toBe(true);
   });
 
   it("chunks large contact and membership fan-out queries during historical backfills", async () => {
     const touchedContactCount = 450;
     const contactChunkSizes: number[] = [];
     const membershipChunkSizes: number[] = [];
-    const touchedContactIds = Array.from({ length: touchedContactCount }, (_, index) =>
-      `003-stage1-${String(index).padStart(4, "0")}`
+    const touchedContactIds = Array.from(
+      { length: touchedContactCount },
+      (_, index) => `003-stage1-${String(index).padStart(4, "0")}`,
     );
     const contactRows = touchedContactIds.map((contactId, index) => ({
       Id: contactId,
@@ -902,25 +1010,25 @@ describe("Salesforce capture service", () => {
       Phone: `+1555000${String(index).padStart(4, "0")}`,
       Volunteer_ID_Plain__c: `VOL-${String(index).padStart(4, "0")}`,
       CreatedDate: "2026-01-01T00:00:00.000Z",
-      LastModifiedDate: "2026-01-15T12:00:00.000Z"
+      LastModifiedDate: "2026-01-15T12:00:00.000Z",
     }));
     const membershipRows = touchedContactIds.map((contactId, index) => ({
       Id: `a01-membership-${String(index).padStart(4, "0")}`,
       Contact__c: contactId,
       Project__c: `project-${String(index).padStart(4, "0")}`,
       Project__r: {
-        Name: `Project ${String(index).padStart(4, "0")}`
+        Name: `Project ${String(index).padStart(4, "0")}`,
       },
       Expedition__c: `expedition-${String(index).padStart(4, "0")}`,
       Expedition__r: {
-        Name: `Expedition ${String(index).padStart(4, "0")}`
+        Name: `Expedition ${String(index).padStart(4, "0")}`,
       },
       Status__c: "active",
       CreatedDate: "2026-01-10T00:00:00.000Z",
       LastModifiedDate: "2026-01-15T12:00:00.000Z",
       Date_Training_Sent__c: null,
       Date_Training_Completed__c: null,
-      Date_First_Sample_Collected__c: null
+      Date_First_Sample_Collected__c: null,
     }));
 
     const service = createSalesforceCaptureService(
@@ -929,7 +1037,9 @@ describe("Salesforce capture service", () => {
         apiClient: {
           queryAll: (soql) => {
             if (
-              soql.includes("FROM Expedition_Members__c WHERE Contact__c != null AND ((")
+              soql.includes(
+                "FROM Expedition_Members__c WHERE Contact__c != null AND ((",
+              )
             ) {
               return Promise.resolve(membershipRows);
             }
@@ -949,23 +1059,25 @@ describe("Salesforce capture service", () => {
               const ids = extractQuotedIds(soql);
               contactChunkSizes.push(ids.length);
               return Promise.resolve(
-                contactRows.filter((row) => ids.includes(row.Id))
+                contactRows.filter((row) => ids.includes(row.Id)),
               );
             }
 
-            if (soql.includes("FROM Expedition_Members__c WHERE Contact__c IN ")) {
+            if (
+              soql.includes("FROM Expedition_Members__c WHERE Contact__c IN ")
+            ) {
               const ids = extractQuotedIds(soql);
               membershipChunkSizes.push(ids.length);
               return Promise.resolve(
-                membershipRows.filter((row) => ids.includes(row.Contact__c))
+                membershipRows.filter((row) => ids.includes(row.Contact__c)),
               );
             }
 
             return Promise.resolve([]);
-          }
+          },
         },
-        now: () => new Date("2026-01-20T00:00:00.000Z")
-      }
+        now: () => new Date("2026-01-20T00:00:00.000Z"),
+      },
     );
 
     const result = await service.captureHistoricalBatch({
@@ -985,7 +1097,7 @@ describe("Salesforce capture service", () => {
       windowStart: "2026-01-01T00:00:00.000Z",
       windowEnd: "2026-02-01T00:00:00.000Z",
       recordIds: [],
-      maxRecords: 25
+      maxRecords: 25,
     });
 
     expect(contactChunkSizes).toEqual([200, 200, 50]);
@@ -994,7 +1106,7 @@ describe("Salesforce capture service", () => {
     expect(result.records[0]).toMatchObject({
       recordType: "lifecycle_milestone",
       sourceField: "Expedition_Members__c.CreatedDate",
-      salesforceContactId: "003-stage1-0000"
+      salesforceContactId: "003-stage1-0000",
     });
     expect(result.nextCursor).not.toBeNull();
   });
@@ -1012,33 +1124,33 @@ describe("Salesforce capture service", () => {
       if (url === "https://login.example.test/services/oauth2/token") {
         return Promise.resolve(
           new Response(
-          JSON.stringify({
-            access_token: "token-123",
-            instance_url: "https://instance.example.test"
-          }),
-          {
-            status: 200,
-            headers: {
-              "content-type": "application/json"
-            }
-          }
-        )
+            JSON.stringify({
+              access_token: "token-123",
+              instance_url: "https://instance.example.test",
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          ),
         );
       }
 
       return Promise.resolve(
         new Response(
-        JSON.stringify({
-          records: [],
-          done: true
-        }),
-        {
-          status: 200,
-          headers: {
-            "content-type": "application/json"
-          }
-        }
-        )
+          JSON.stringify({
+            records: [],
+            done: true,
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
       );
     });
 
@@ -1046,12 +1158,12 @@ describe("Salesforce capture service", () => {
       {
         ...createSalesforceServiceConfig(),
         loginUrl: "https://login.example.test/custom/path",
-        jwtExpirationSeconds: 180
+        jwtExpirationSeconds: 180,
       },
       {
         fetchImplementation,
-        now: () => fixedNow
-      }
+        now: () => fixedNow,
+      },
     );
 
     await client.queryAll("SELECT Id FROM Contact");
@@ -1062,7 +1174,7 @@ describe("Salesforce capture service", () => {
     const assertion = params.get("assertion");
 
     expect(params.get("grant_type")).toBe(
-      "urn:ietf:params:oauth:grant-type:jwt-bearer"
+      "urn:ietf:params:oauth:grant-type:jwt-bearer",
     );
     expect(assertion).toEqual(expect.any(String));
     expect(params.has("client_secret")).toBe(false);
@@ -1070,7 +1182,7 @@ describe("Salesforce capture service", () => {
     expect(params.has("username")).toBe(false);
 
     const assertionPayload = JSON.parse(
-      Buffer.from(assertion?.split(".")[1] ?? "", "base64url").toString("utf8")
+      Buffer.from(assertion?.split(".")[1] ?? "", "base64url").toString("utf8"),
     ) as Record<string, unknown>;
     const expectedExp = Math.floor(fixedNow.getTime() / 1000) + 180;
 
@@ -1078,7 +1190,7 @@ describe("Salesforce capture service", () => {
       iss: "client-id",
       sub: "worker@example.org",
       aud: "https://login.example.test",
-      exp: expectedExp
+      exp: expectedExp,
     });
   });
 
@@ -1087,22 +1199,22 @@ describe("Salesforce capture service", () => {
       fetchImplementation: () =>
         Promise.resolve(
           new Response(
-          JSON.stringify({
-            error: "invalid_grant",
-            error_description: "user hasn't approved this consumer"
-          }),
-          {
-            status: 400,
-            headers: {
-              "content-type": "application/json"
-            }
-          }
-        )
-        )
+            JSON.stringify({
+              error: "invalid_grant",
+              error_description: "user hasn't approved this consumer",
+            }),
+            {
+              status: 400,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          ),
+        ),
     });
 
     await expect(client.queryAll("SELECT Id FROM Contact")).rejects.toThrow(
-      "invalid_grant"
+      "invalid_grant",
     );
   });
 });

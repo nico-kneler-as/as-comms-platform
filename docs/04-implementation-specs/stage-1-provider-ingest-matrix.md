@@ -77,6 +77,7 @@
   - `completed_training`
   - `submitted_first_data`
 - `Task`-based outbound communication metadata as the only first-scope Salesforce communication source
+- volunteer-linked Salesforce email Tasks only when owned by `Nim Admin` (`admin+1@adventurescientists.org`)
 
 ### Deferred
 
@@ -84,6 +85,7 @@
 - owner or tag-oriented CRM concepts
 - additional lifecycle milestones not named in canon
 - CRM-only communication metadata that cannot be mapped safely to a canonical event
+- volunteer-linked human-owned Salesforce email Tasks
 
 ### Identity fields expected from source
 
@@ -99,7 +101,7 @@
 - `lifecycle.received_training`
 - `lifecycle.completed_training`
 - `lifecycle.submitted_first_data`
-- `communication.email.outbound` from `Task` auto-message evidence only
+- `communication.email.outbound` from volunteer-linked `Nim Admin` `Task` auto-message evidence only
 - `communication.sms.outbound` from `Task` auto-message evidence only
 
 ### Important ambiguity or conflict cases

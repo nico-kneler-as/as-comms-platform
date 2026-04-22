@@ -2,7 +2,7 @@ import { createSign } from "node:crypto";
 
 import {
   createCapturedBatchResponseSchema,
-  type CapturedBatchResponse
+  type CapturedBatchResponse,
 } from "../capture/shared.js";
 import {
   salesforceHistoricalCaptureBatchPayloadSchema,
@@ -11,10 +11,11 @@ import {
   type SalesforceHistoricalCaptureBatchPayload,
   type SalesforceLiveCaptureBatchPayload,
   type IntegrationHealthCheckResponse,
-  type IntegrationHealthStatus
+  type IntegrationHealthStatus,
 } from "@as-comms/contracts";
 import {
   classifySalesforceTaskMessageKind,
+  salesforceLaunchScopeAutomatedOwnerUsernames,
   salesforceContactSnapshotRecordSchema,
   salesforceLifecycleRecordSchema,
   salesforceRecordSchema,
@@ -29,7 +30,7 @@ import { z } from "zod";
 import type {
   CaptureServiceHttpRequest,
   CaptureServiceHttpResponse,
-  CursorMarker
+  CursorMarker,
 } from "./shared.js";
 import {
   CaptureServiceBadRequestError,
@@ -43,12 +44,11 @@ import {
   parseJsonRequestBody,
   sha256Json,
   toIsoTimestamp,
-  uniqueValues
+  uniqueValues,
 } from "./shared.js";
 
-const salesforceCaptureServiceResponseSchema = createCapturedBatchResponseSchema(
-  salesforceRecordSchema
-);
+const salesforceCaptureServiceResponseSchema =
+  createCapturedBatchResponseSchema(salesforceRecordSchema);
 
 const salesforceCaptureModeSchema = z.enum(["delta_polling", "cdc_compatible"]);
 
@@ -67,17 +67,23 @@ const salesforceCaptureServiceConfigSchema = z.object({
   membershipProjectField: z.string().min(1).default("Project__c"),
   membershipProjectNameField: z.string().min(1).default("Project__r.Name"),
   membershipExpeditionField: z.string().min(1).default("Expedition__c"),
-  membershipExpeditionNameField: z.string().min(1).default("Expedition__r.Name"),
+  membershipExpeditionNameField: z
+    .string()
+    .min(1)
+    .default("Expedition__r.Name"),
   membershipRoleField: z.string().min(1).nullable().default(null),
   membershipStatusField: z.string().min(1).default("Status__c"),
   taskContactField: z.string().min(1).default("WhoId"),
   taskChannelField: z.string().min(1).default("TaskSubtype"),
   taskEmailChannelValues: z.array(z.string().min(1)).min(1).default(["Email"]),
-  taskSmsChannelValues: z.array(z.string().min(1)).min(1).default(["SMS", "Text"]),
+  taskSmsChannelValues: z
+    .array(z.string().min(1))
+    .min(1)
+    .default(["SMS", "Text"]),
   taskSnippetField: z.string().min(1).default("Description"),
   taskOccurredAtField: z.string().min(1).default("CreatedDate"),
   taskCrossProviderKeyField: z.string().min(1).nullable().default(null),
-  timeoutMs: z.number().int().positive().default(15_000)
+  timeoutMs: z.number().int().positive().default(15_000),
 });
 export type SalesforceCaptureServiceConfig = z.input<
   typeof salesforceCaptureServiceConfigSchema
@@ -104,7 +110,7 @@ class SalesforceHealthCheckError extends Error {
       IntegrationHealthStatus,
       "needs_attention" | "disconnected"
     >,
-    message: string
+    message: string,
   ) {
     super(message);
     this.name = "SalesforceHealthCheckError";
@@ -113,13 +119,13 @@ class SalesforceHealthCheckError extends Error {
 
 const salesforceTokenResponseSchema = z.object({
   access_token: z.string().min(1),
-  instance_url: z.string().url()
+  instance_url: z.string().url(),
 });
 
 const salesforceQueryResponseSchema = z.object({
   records: z.array(z.record(z.string(), z.unknown())),
   nextRecordsUrl: z.string().min(1).optional(),
-  done: z.boolean()
+  done: z.boolean(),
 });
 
 function isAbortError(error: unknown): boolean {
@@ -128,14 +134,14 @@ function isAbortError(error: unknown): boolean {
 
 function isDisconnectedSalesforceAuthError(
   status: number,
-  responseText: string
+  responseText: string,
 ): boolean {
   if (status !== 400 && status !== 401) {
     return false;
   }
 
   return /(invalid|expired|unauthorized|assertion|credentials|authentication)/iu.test(
-    responseText
+    responseText,
   );
 }
 
@@ -172,7 +178,7 @@ async function exchangeSalesforceAccessToken(input: {
 
   const tokenUrl = new URL(
     "/services/oauth2/token",
-    input.config.loginUrl
+    input.config.loginUrl,
   ).toString();
   let assertion: string;
 
@@ -183,12 +189,12 @@ async function exchangeSalesforceAccessToken(input: {
       loginUrl: input.config.loginUrl,
       jwtPrivateKey: input.config.jwtPrivateKey,
       nowEpochSeconds,
-      jwtExpirationSeconds: input.config.jwtExpirationSeconds
+      jwtExpirationSeconds: input.config.jwtExpirationSeconds,
     });
   } catch {
     throw new SalesforceHealthCheckError(
       "needs_attention",
-      "Salesforce JWT signing failed."
+      "Salesforce JWT signing failed.",
     );
   }
 
@@ -197,12 +203,12 @@ async function exchangeSalesforceAccessToken(input: {
     input.startedAtMs === undefined
       ? resolveRemainingTimeoutMs({
           timeoutMs: input.timeoutMs,
-          now: input.now
+          now: input.now,
         })
       : resolveRemainingTimeoutMs({
           timeoutMs: input.timeoutMs,
           now: input.now,
-          startedAtMs: input.startedAtMs
+          startedAtMs: input.startedAtMs,
         });
 
   try {
@@ -210,25 +216,25 @@ async function exchangeSalesforceAccessToken(input: {
       method: "POST",
       headers: {
         accept: "application/json",
-        "content-type": "application/x-www-form-urlencoded"
+        "content-type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
         grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        assertion
+        assertion,
       }).toString(),
-      signal: AbortSignal.timeout(requestTimeoutMs)
+      signal: AbortSignal.timeout(requestTimeoutMs),
     });
   } catch (error) {
     if (isAbortError(error)) {
       throw new SalesforceHealthCheckError(
         "needs_attention",
-        "Salesforce token exchange timed out."
+        "Salesforce token exchange timed out.",
       );
     }
 
     throw new SalesforceHealthCheckError(
       "needs_attention",
-      "Salesforce token exchange request failed."
+      "Salesforce token exchange request failed.",
     );
   }
 
@@ -238,13 +244,13 @@ async function exchangeSalesforceAccessToken(input: {
     if (isDisconnectedSalesforceAuthError(response.status, responseText)) {
       throw new SalesforceHealthCheckError(
         "disconnected",
-        `Invalid or expired credentials: ${responseText}`
+        `Invalid or expired credentials: ${responseText}`,
       );
     }
 
     throw new SalesforceHealthCheckError(
       "needs_attention",
-      `Salesforce token exchange failed with status ${String(response.status)}: ${responseText}`
+      `Salesforce token exchange failed with status ${String(response.status)}: ${responseText}`,
     );
   }
 
@@ -256,14 +262,14 @@ async function exchangeSalesforceAccessToken(input: {
   } catch {
     throw new SalesforceHealthCheckError(
       "needs_attention",
-      "Salesforce token exchange returned an unexpected response."
+      "Salesforce token exchange returned an unexpected response.",
     );
   }
 
   return {
     accessToken: tokenJson.access_token,
     instanceUrl: tokenJson.instance_url,
-    expiresAtEpochMs: currentTime + 30 * 60 * 1000
+    expiresAtEpochMs: currentTime + 30 * 60 * 1000,
   } satisfies SalesforceAccessTokenCacheEntry;
 }
 
@@ -274,7 +280,7 @@ export async function checkSalesforceCaptureServiceHealth(
     readonly now?: () => Date;
     readonly timeoutMs?: number;
     readonly version?: string | null;
-  }
+  },
 ): Promise<IntegrationHealthCheckResponse> {
   const parsedConfig = salesforceCaptureServiceConfigSchema.parse(config);
   const fetchImplementation = input?.fetchImplementation ?? globalThis.fetch;
@@ -289,7 +295,7 @@ export async function checkSalesforceCaptureServiceHealth(
       status: "needs_attention",
       checkedAt,
       detail: "Global fetch is unavailable.",
-      version: input?.version ?? null
+      version: input?.version ?? null,
     });
   }
 
@@ -300,11 +306,11 @@ export async function checkSalesforceCaptureServiceHealth(
       now,
       accessTokenCache: null,
       timeoutMs,
-      startedAtMs
+      startedAtMs,
     });
     const describeUrl = new URL(
       `/services/data/v${parsedConfig.apiVersion}/sobjects/Contact/describe`,
-      token.instanceUrl
+      token.instanceUrl,
     ).toString();
 
     let response: Response;
@@ -313,15 +319,15 @@ export async function checkSalesforceCaptureServiceHealth(
       response = await fetchImplementation(describeUrl, {
         headers: {
           authorization: `Bearer ${token.accessToken}`,
-          accept: "application/json"
+          accept: "application/json",
         },
         signal: AbortSignal.timeout(
           resolveRemainingTimeoutMs({
             timeoutMs,
             now,
-            startedAtMs
-          })
-        )
+            startedAtMs,
+          }),
+        ),
       });
     } catch (error) {
       if (isAbortError(error)) {
@@ -330,7 +336,7 @@ export async function checkSalesforceCaptureServiceHealth(
           status: "needs_attention",
           checkedAt,
           detail: "Salesforce describe request timed out.",
-          version: input?.version ?? null
+          version: input?.version ?? null,
         });
       }
 
@@ -339,7 +345,7 @@ export async function checkSalesforceCaptureServiceHealth(
         status: "needs_attention",
         checkedAt,
         detail: "Salesforce describe request failed.",
-        version: input?.version ?? null
+        version: input?.version ?? null,
       });
     }
 
@@ -349,7 +355,7 @@ export async function checkSalesforceCaptureServiceHealth(
         status: "disconnected",
         checkedAt,
         detail: "Invalid or expired credentials.",
-        version: input?.version ?? null
+        version: input?.version ?? null,
       });
     }
 
@@ -359,7 +365,7 @@ export async function checkSalesforceCaptureServiceHealth(
         status: "needs_attention",
         checkedAt,
         detail: `Salesforce describe request failed with status ${String(response.status)}.`,
-        version: input?.version ?? null
+        version: input?.version ?? null,
       });
     }
 
@@ -371,7 +377,7 @@ export async function checkSalesforceCaptureServiceHealth(
       status: "healthy",
       checkedAt,
       detail: null,
-      version: input?.version ?? null
+      version: input?.version ?? null,
     });
   } catch (error) {
     if (error instanceof SalesforceHealthCheckError) {
@@ -380,7 +386,7 @@ export async function checkSalesforceCaptureServiceHealth(
         status: error.status,
         checkedAt,
         detail: error.message,
-        version: input?.version ?? null
+        version: input?.version ?? null,
       });
     }
 
@@ -389,7 +395,7 @@ export async function checkSalesforceCaptureServiceHealth(
       status: "needs_attention",
       checkedAt,
       detail: "Unexpected health check failure.",
-      version: input?.version ?? null
+      version: input?.version ?? null,
     });
   }
 }
@@ -412,16 +418,16 @@ function createSalesforceJwtAssertion(input: {
 }): string {
   const header = {
     alg: "RS256",
-    typ: "JWT"
+    typ: "JWT",
   };
   const payload = {
     iss: input.clientId,
     sub: input.username,
     aud: new URL(input.loginUrl).origin,
-    exp: input.nowEpochSeconds + input.jwtExpirationSeconds
+    exp: input.nowEpochSeconds + input.jwtExpirationSeconds,
   };
   const signingInput = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(
-    JSON.stringify(payload)
+    JSON.stringify(payload),
   )}`;
   const signer = createSign("RSA-SHA256");
 
@@ -437,40 +443,40 @@ const lifecycleSources = [
   {
     milestone: "signed_up" as const,
     sourceField: "Expedition_Members__c.CreatedDate" as const,
-    rawFieldName: "CreatedDate"
+    rawFieldName: "CreatedDate",
   },
   {
     milestone: "received_training" as const,
     sourceField: "Expedition_Members__c.Date_Training_Sent__c" as const,
-    rawFieldName: "Date_Training_Sent__c"
+    rawFieldName: "Date_Training_Sent__c",
   },
   {
     milestone: "completed_training" as const,
     sourceField: "Expedition_Members__c.Date_Training_Completed__c" as const,
-    rawFieldName: "Date_Training_Completed__c"
+    rawFieldName: "Date_Training_Completed__c",
   },
   {
     milestone: "submitted_first_data" as const,
     sourceField:
       "Expedition_Members__c.Date_First_Sample_Collected__c" as const,
-    rawFieldName: "Date_First_Sample_Collected__c"
-  }
+    rawFieldName: "Date_First_Sample_Collected__c",
+  },
 ] as const;
 
 function isContactSnapshotRecord(
-  record: SalesforceRecord
+  record: SalesforceRecord,
 ): record is SalesforceContactSnapshotRecord {
   return record.recordType === "contact_snapshot";
 }
 
 function isLifecycleRecord(
-  record: SalesforceRecord
+  record: SalesforceRecord,
 ): record is SalesforceLifecycleRecord {
   return record.recordType === "lifecycle_milestone";
 }
 
 function isTaskCommunicationRecord(
-  record: SalesforceRecord
+  record: SalesforceRecord,
 ): record is SalesforceTaskCommunicationRecord {
   return record.recordType === "task_communication";
 }
@@ -493,7 +499,7 @@ function buildInClause(values: readonly string[]): string {
 
 function chunkValues<TValue>(
   values: readonly TValue[],
-  chunkSize: number
+  chunkSize: number,
 ): TValue[][] {
   const chunks: TValue[][] = [];
 
@@ -552,7 +558,9 @@ function dedupeRowsById(rows: readonly SalesforceRow[]): SalesforceRow[] {
 
 function getStringField(row: SalesforceRow, fieldName: string): string | null {
   const value = getPathValue(row, fieldName);
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
 }
 
 function getEmailField(row: SalesforceRow, fieldName: string): string | null {
@@ -568,7 +576,7 @@ function buildSalesforceCursorMarker(record: SalesforceRecord): CursorMarker {
     return {
       occurredAt: record.updatedAt,
       recordType: record.recordType,
-      recordId: record.recordId
+      recordId: record.recordId,
     };
   }
 
@@ -576,19 +584,19 @@ function buildSalesforceCursorMarker(record: SalesforceRecord): CursorMarker {
     return {
       occurredAt: record.occurredAt,
       recordType: record.recordType,
-      recordId: record.recordId
+      recordId: record.recordId,
     };
   }
 
   return {
     occurredAt: "1970-01-01T00:00:00.000Z",
     recordType: record.recordType,
-    recordId: record.recordId
+    recordId: record.recordId,
   };
 }
 
 function sortSalesforceRecords(
-  records: readonly SalesforceRecord[]
+  records: readonly SalesforceRecord[],
 ): SalesforceRecord[] {
   return [...records].sort((left, right) => {
     const leftMarker = buildSalesforceCursorMarker(left);
@@ -611,7 +619,7 @@ export function createSalesforceApiClient(
   input?: {
     readonly fetchImplementation?: typeof fetch;
     readonly now?: () => Date;
-  }
+  },
 ): SalesforceApiClient {
   const parsedConfig: ResolvedSalesforceCaptureServiceConfig =
     salesforceCaptureServiceConfigSchema.parse(config);
@@ -629,7 +637,7 @@ export function createSalesforceApiClient(
       fetchImplementation,
       now,
       accessTokenCache,
-      timeoutMs: parsedConfig.timeoutMs
+      timeoutMs: parsedConfig.timeoutMs,
     });
 
     return accessTokenCache;
@@ -641,36 +649,38 @@ export function createSalesforceApiClient(
       const records: SalesforceRow[] = [];
       let nextUrl = new URL(
         `/services/data/v${parsedConfig.apiVersion}/query?q=${encodeURIComponent(soql)}`,
-        token.instanceUrl
+        token.instanceUrl,
       ).toString();
 
       while (nextUrl.length > 0) {
         const response = await fetchImplementation(nextUrl, {
           headers: {
             authorization: `Bearer ${token.accessToken}`,
-            accept: "application/json"
+            accept: "application/json",
           },
-          signal: AbortSignal.timeout(parsedConfig.timeoutMs)
+          signal: AbortSignal.timeout(parsedConfig.timeoutMs),
         });
 
         if (!response.ok) {
           throw new Error(
-            `Salesforce query failed with status ${String(response.status)}.`
+            `Salesforce query failed with status ${String(response.status)}.`,
           );
         }
 
         const queryPayload: unknown = JSON.parse(await response.text());
-        const queryResponse =
-          salesforceQueryResponseSchema.parse(queryPayload);
+        const queryResponse = salesforceQueryResponseSchema.parse(queryPayload);
         records.push(...queryResponse.records);
         nextUrl =
           queryResponse.nextRecordsUrl === undefined
             ? ""
-            : new URL(queryResponse.nextRecordsUrl, token.instanceUrl).toString();
+            : new URL(
+                queryResponse.nextRecordsUrl,
+                token.instanceUrl,
+              ).toString();
       }
 
       return records;
-    }
+    },
   };
 }
 
@@ -682,12 +692,12 @@ function buildContactFields(): string[] {
     "Phone",
     "Volunteer_ID_Plain__c",
     "CreatedDate",
-    "LastModifiedDate"
+    "LastModifiedDate",
   ];
 }
 
 function buildMembershipFields(
-  config: ResolvedSalesforceCaptureServiceConfig
+  config: ResolvedSalesforceCaptureServiceConfig,
 ): string[] {
   return uniqueValues([
     "Id",
@@ -704,12 +714,12 @@ function buildMembershipFields(
     ...(config.membershipRoleField === null
       ? []
       : [config.membershipRoleField]),
-    config.membershipStatusField
+    config.membershipStatusField,
   ]);
 }
 
 function buildTaskFields(
-  config: ResolvedSalesforceCaptureServiceConfig
+  config: ResolvedSalesforceCaptureServiceConfig,
 ): string[] {
   return uniqueValues([
     "Id",
@@ -744,7 +754,7 @@ function buildContactWindowWhere(window: {
 
 function buildVolunteerScopedContactWhere(
   baseWhere: string,
-  config: ResolvedSalesforceCaptureServiceConfig
+  config: ResolvedSalesforceCaptureServiceConfig,
 ): string {
   // TODO(canon): lock the Stage 1 Salesforce volunteer-only Contact ingest rule in the
   // provider ingest matrix / decision log so this belt-and-suspenders filter is explicit canon.
@@ -753,17 +763,52 @@ function buildVolunteerScopedContactWhere(
 
 function buildVolunteerScopedTaskWhere(
   baseWhere: string,
-  config: ResolvedSalesforceCaptureServiceConfig
+  config: ResolvedSalesforceCaptureServiceConfig,
 ): string {
-  // TODO(canon): document D-034 — non-volunteer SF comms are dropped at capture.
+  // D-034: non-volunteer Salesforce Tasks are dropped at capture.
   return `${baseWhere} AND ${config.taskContactField} IN (SELECT ${config.membershipContactField} FROM ${config.membershipObjectName} WHERE ${config.membershipContactField} != null)`;
 }
 
-function buildTaskWindowWhere(window: {
-  readonly mode: "historical" | "live";
-  readonly windowStart: string | null;
-  readonly windowEnd: string | null;
-}, config: ResolvedSalesforceCaptureServiceConfig): string {
+function buildEmailLikeTaskWhere(
+  config: ResolvedSalesforceCaptureServiceConfig,
+): string {
+  const emailChannelClauses = config.taskEmailChannelValues.map(
+    (value) => `${config.taskChannelField} = ${quoteSoqlString(value)}`,
+  );
+  const subjectDerivedEmailClause = `(${config.taskChannelField} = ${quoteSoqlString("Task")} AND Subject LIKE '%Email:%')`;
+
+  return [...emailChannelClauses, subjectDerivedEmailClause]
+    .map((clause) => `(${clause})`)
+    .join(" OR ");
+}
+
+function buildLaunchScopeEmailTaskOwnerWhere(): string {
+  return `Owner.Username IN ${buildInClause([
+    ...salesforceLaunchScopeAutomatedOwnerUsernames,
+  ])}`;
+}
+
+function buildLaunchScopedTaskWhere(
+  baseWhere: string,
+  config: ResolvedSalesforceCaptureServiceConfig,
+): string {
+  const volunteerScopedWhere = buildVolunteerScopedTaskWhere(baseWhere, config);
+  const emailLikeTaskWhere = buildEmailLikeTaskWhere(config);
+
+  // D-039: volunteer-linked Salesforce email Tasks are captured only when they
+  // come from the Nim Admin automation owner. Non-email Task shapes keep the
+  // prior launch-scope behavior.
+  return `${volunteerScopedWhere} AND (NOT (${emailLikeTaskWhere}) OR ((${emailLikeTaskWhere}) AND ${buildLaunchScopeEmailTaskOwnerWhere()}))`;
+}
+
+function buildTaskWindowWhere(
+  window: {
+    readonly mode: "historical" | "live";
+    readonly windowStart: string | null;
+    readonly windowEnd: string | null;
+  },
+  config: ResolvedSalesforceCaptureServiceConfig,
+): string {
   const contactWhere =
     config.taskContactField === "WhoId"
       ? "Who.Type = 'Contact'"
@@ -774,7 +819,9 @@ function buildTaskWindowWhere(window: {
   }
 
   const timestampField =
-    window.mode === "historical" ? config.taskOccurredAtField : "LastModifiedDate";
+    window.mode === "historical"
+      ? config.taskOccurredAtField
+      : "LastModifiedDate";
 
   return `${contactWhere} AND ${timestampField} >= ${formatSoqlDateTime(window.windowStart)} AND ${timestampField} < ${formatSoqlDateTime(window.windowEnd)}`;
 }
@@ -801,7 +848,7 @@ function buildMembershipWindowWhere(input: {
     "CreatedDate",
     ...lifecycleSources
       .filter((source) => source.rawFieldName !== "CreatedDate")
-      .map((source) => source.rawFieldName)
+      .map((source) => source.rawFieldName),
   ].map((fieldName) => {
     const formatter =
       fieldName === "CreatedDate" ? formatSoqlDateTime : formatSoqlDate;
@@ -818,8 +865,12 @@ function buildContactSnapshotRecordWithConfig(input: {
   readonly config: ResolvedSalesforceCaptureServiceConfig;
 }): SalesforceRecord {
   const salesforceContactId = getStringField(input.contact, "Id");
-  const updatedAt = toIsoTimestamp(getStringField(input.contact, "LastModifiedDate"));
-  const createdAt = toIsoTimestamp(getStringField(input.contact, "CreatedDate"));
+  const updatedAt = toIsoTimestamp(
+    getStringField(input.contact, "LastModifiedDate"),
+  );
+  const createdAt = toIsoTimestamp(
+    getStringField(input.contact, "CreatedDate"),
+  );
 
   if (
     salesforceContactId === null ||
@@ -828,7 +879,7 @@ function buildContactSnapshotRecordWithConfig(input: {
   ) {
     return {
       recordType: "contact_snapshot_deferred",
-      recordId: salesforceContactId ?? "unknown-contact"
+      recordId: salesforceContactId ?? "unknown-contact",
     };
   }
 
@@ -842,30 +893,33 @@ function buildContactSnapshotRecordWithConfig(input: {
     normalizedEmails: uniqueValues([getEmailField(input.contact, "Email")]),
     normalizedPhones: uniqueValues([getPhoneField(input.contact, "Phone")]),
     volunteerIdPlainValues: uniqueValues([
-      getStringField(input.contact, "Volunteer_ID_Plain__c")
+      getStringField(input.contact, "Volunteer_ID_Plain__c"),
     ]),
     createdAt,
     updatedAt,
     memberships: input.memberships.map((membership) => ({
-      projectId: getStringField(membership, input.config.membershipProjectField),
+      projectId: getStringField(
+        membership,
+        input.config.membershipProjectField,
+      ),
       projectName: getStringField(
         membership,
-        input.config.membershipProjectNameField
+        input.config.membershipProjectNameField,
       ),
       expeditionId: getStringField(
         membership,
-        input.config.membershipExpeditionField
+        input.config.membershipExpeditionField,
       ),
       expeditionName: getStringField(
         membership,
-        input.config.membershipExpeditionNameField
+        input.config.membershipExpeditionNameField,
       ),
       role:
         input.config.membershipRoleField === null
           ? null
           : getStringField(membership, input.config.membershipRoleField),
-      status: getStringField(membership, input.config.membershipStatusField)
-    }))
+      status: getStringField(membership, input.config.membershipStatusField),
+    })),
   });
 }
 
@@ -881,45 +935,48 @@ function buildLifecycleRecords(input: {
   const membershipId = getStringField(input.membership, "Id");
   const salesforceContactId = getStringField(
     input.membership,
-    input.config.membershipContactField
+    input.config.membershipContactField,
   );
 
   if (membershipId === null || salesforceContactId === null) {
     return [
       {
         recordType: "lifecycle_milestone_deferred",
-        recordId: membershipId ?? "unknown-membership"
-      }
+        recordId: membershipId ?? "unknown-membership",
+      },
     ];
   }
 
   const normalizedEmails = uniqueValues([
-    getEmailField(input.contact ?? {}, "Email")
+    getEmailField(input.contact ?? {}, "Email"),
   ]);
   const normalizedPhones = uniqueValues([
-    getPhoneField(input.contact ?? {}, "Phone")
+    getPhoneField(input.contact ?? {}, "Phone"),
   ]);
   const volunteerIdPlainValues = uniqueValues([
-    getStringField(input.contact ?? {}, "Volunteer_ID_Plain__c")
+    getStringField(input.contact ?? {}, "Volunteer_ID_Plain__c"),
   ]);
-  const projectId = getStringField(input.membership, input.config.membershipProjectField);
+  const projectId = getStringField(
+    input.membership,
+    input.config.membershipProjectField,
+  );
   const projectName = getStringField(
     input.membership,
-    input.config.membershipProjectNameField
+    input.config.membershipProjectNameField,
   );
   const expeditionId = getStringField(
     input.membership,
-    input.config.membershipExpeditionField
+    input.config.membershipExpeditionField,
   );
   const expeditionName = getStringField(
     input.membership,
-    input.config.membershipExpeditionNameField
+    input.config.membershipExpeditionNameField,
   );
   const records: SalesforceRecord[] = [];
 
   for (const lifecycleSource of lifecycleSources) {
     const occurredAt = toIsoTimestamp(
-      getStringField(input.membership, lifecycleSource.rawFieldName)
+      getStringField(input.membership, lifecycleSource.rawFieldName),
     );
 
     if (occurredAt === null) {
@@ -932,7 +989,7 @@ function buildLifecycleRecords(input: {
       input.windowEnd !== null &&
       !isTimestampWithinWindow(occurredAt, {
         windowStart: input.windowStart,
-        windowEnd: input.windowEnd
+        windowEnd: input.windowEnd,
       })
     ) {
       continue;
@@ -952,7 +1009,7 @@ function buildLifecycleRecords(input: {
           membershipId,
           lifecycleSource,
           occurredAt,
-          contactId: salesforceContactId
+          contactId: salesforceContactId,
         }),
         normalizedEmails,
         normalizedPhones,
@@ -962,9 +1019,9 @@ function buildLifecycleRecords(input: {
           projectId,
           expeditionId,
           projectName,
-          expeditionName
-        }
-      })
+          expeditionName,
+        },
+      }),
     );
   }
 
@@ -976,7 +1033,10 @@ function resolveTaskChannel(input: {
   readonly relatedMembership: SalesforceRow | null;
   readonly config: ResolvedSalesforceCaptureServiceConfig;
 }): "email" | "sms" | null {
-  const rawChannelValue = getStringField(input.row, input.config.taskChannelField);
+  const rawChannelValue = getStringField(
+    input.row,
+    input.config.taskChannelField,
+  );
 
   if (rawChannelValue === null) {
     return null;
@@ -984,10 +1044,14 @@ function resolveTaskChannel(input: {
 
   const normalizedChannelValue = rawChannelValue.trim().toLowerCase();
   const emailChannelValues = new Set(
-    input.config.taskEmailChannelValues.map((value) => value.trim().toLowerCase())
+    input.config.taskEmailChannelValues.map((value) =>
+      value.trim().toLowerCase(),
+    ),
   );
   const smsChannelValues = new Set(
-    input.config.taskSmsChannelValues.map((value) => value.trim().toLowerCase())
+    input.config.taskSmsChannelValues.map((value) =>
+      value.trim().toLowerCase(),
+    ),
   );
 
   if (emailChannelValues.has(normalizedChannelValue)) {
@@ -1023,31 +1087,32 @@ function buildTaskRecord(input: {
   if (taskId === null) {
     return {
       recordType: "task_missing_id",
-      recordId: "unknown-task"
+      recordId: "unknown-task",
     };
   }
 
   const channel = resolveTaskChannel({
     row: input.task,
     relatedMembership: input.relatedMembership,
-    config: input.config
+    config: input.config,
   });
 
   if (channel === null) {
     return {
       recordType: "task_unmapped_channel",
-      recordId: taskId
+      recordId: taskId,
     };
   }
 
   const occurredAt =
-    toIsoTimestamp(getStringField(input.task, input.config.taskOccurredAtField)) ??
-    toIsoTimestamp(getStringField(input.task, "CreatedDate"));
+    toIsoTimestamp(
+      getStringField(input.task, input.config.taskOccurredAtField),
+    ) ?? toIsoTimestamp(getStringField(input.task, "CreatedDate"));
 
   if (occurredAt === null) {
     return {
       recordType: "task_missing_occurred_at",
-      recordId: taskId
+      recordId: taskId,
     };
   }
 
@@ -1059,30 +1124,31 @@ function buildTaskRecord(input: {
       ? null
       : getStringField(
           input.relatedMembership,
-          input.config.membershipProjectField
+          input.config.membershipProjectField,
         );
   const projectName =
     input.relatedMembership === null
       ? null
       : getStringField(
           input.relatedMembership,
-          input.config.membershipProjectNameField
+          input.config.membershipProjectNameField,
         );
   const expeditionId =
     input.relatedMembership === null
       ? null
       : getStringField(
           input.relatedMembership,
-          input.config.membershipExpeditionField
+          input.config.membershipExpeditionField,
         );
   const expeditionName =
     input.relatedMembership === null
       ? null
       : getStringField(
           input.relatedMembership,
-          input.config.membershipExpeditionNameField
+          input.config.membershipExpeditionNameField,
         );
-  const hasMembershipRoutingContext = projectId !== null || expeditionId !== null;
+  const hasMembershipRoutingContext =
+    projectId !== null || expeditionId !== null;
   const subject = getStringField(input.task, "Subject");
   const messageKind = classifySalesforceTaskMessageKind({
     channel,
@@ -1090,7 +1156,7 @@ function buildTaskRecord(input: {
     ownerId: getStringField(input.task, "OwnerId"),
     ownerName: getStringField(input.task, "Owner.Name"),
     ownerUsername: getStringField(input.task, "Owner.Username"),
-    subject
+    subject,
   }).messageKind;
 
   return salesforceTaskCommunicationRecordSchema.parse({
@@ -1109,17 +1175,21 @@ function buildTaskRecord(input: {
       occurredAt,
       contactId: salesforceContactId,
       subject,
-      description: getStringField(input.task, "Description")
+      description: getStringField(input.task, "Description"),
     }),
     subject,
     snippet:
       getStringField(input.task, input.config.taskSnippetField) ??
       subject ??
       "",
-    normalizedEmails: uniqueValues([getEmailField(input.contact ?? {}, "Email")]),
-    normalizedPhones: uniqueValues([getPhoneField(input.contact ?? {}, "Phone")]),
+    normalizedEmails: uniqueValues([
+      getEmailField(input.contact ?? {}, "Email"),
+    ]),
+    normalizedPhones: uniqueValues([
+      getPhoneField(input.contact ?? {}, "Phone"),
+    ]),
     volunteerIdPlainValues: uniqueValues([
-      getStringField(input.contact ?? {}, "Volunteer_ID_Plain__c")
+      getStringField(input.contact ?? {}, "Volunteer_ID_Plain__c"),
     ]),
     supportingRecords: [],
     crossProviderCollapseKey:
@@ -1131,20 +1201,20 @@ function buildTaskRecord(input: {
       projectId,
       expeditionId,
       projectName,
-      expeditionName
-    }
+      expeditionName,
+    },
   });
 }
 
 export interface SalesforceCaptureService {
   captureHistoricalBatch(
-    payload: SalesforceHistoricalCaptureBatchPayload
+    payload: SalesforceHistoricalCaptureBatchPayload,
   ): Promise<CapturedBatchResponse<SalesforceRecord>>;
   captureLiveBatch(
-    payload: SalesforceLiveCaptureBatchPayload
+    payload: SalesforceLiveCaptureBatchPayload,
   ): Promise<CapturedBatchResponse<SalesforceRecord>>;
   handleHttpRequest(
-    request: CaptureServiceHttpRequest
+    request: CaptureServiceHttpRequest,
   ): Promise<CaptureServiceHttpResponse>;
 }
 
@@ -1153,7 +1223,7 @@ export function createSalesforceCaptureService(
   input?: {
     readonly apiClient?: SalesforceApiClient;
     readonly now?: () => Date;
-  }
+  },
 ): SalesforceCaptureService {
   const parsedConfig: ResolvedSalesforceCaptureServiceConfig =
     salesforceCaptureServiceConfigSchema.parse(config);
@@ -1161,7 +1231,7 @@ export function createSalesforceCaptureService(
     input?.apiClient ??
     createSalesforceApiClient(
       parsedConfig,
-      input?.now === undefined ? undefined : { now: input.now }
+      input?.now === undefined ? undefined : { now: input.now },
     );
   const now = input?.now ?? (() => new Date());
 
@@ -1180,13 +1250,13 @@ export function createSalesforceCaptureService(
     for (const recordIds of chunkValues(input.recordIds, 200)) {
       const whereClauses = [
         `Id IN ${buildInClause(recordIds)}`,
-        ...(input.extraWhere === undefined ? [] : [input.extraWhere])
+        ...(input.extraWhere === undefined ? [] : [input.extraWhere]),
       ];
 
       rows.push(
         ...(await apiClient.queryAll(
-          `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE ${whereClauses.join(" AND ")}`
-        ))
+          `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE ${whereClauses.join(" AND ")}`,
+        )),
       );
     }
 
@@ -1209,13 +1279,13 @@ export function createSalesforceCaptureService(
     for (const values of chunkValues(input.values, 200)) {
       const whereClauses = [
         `${input.fieldName} IN ${buildInClause(values)}`,
-        ...(input.extraWhere === undefined ? [] : [input.extraWhere])
+        ...(input.extraWhere === undefined ? [] : [input.extraWhere]),
       ];
 
       rows.push(
         ...(await apiClient.queryAll(
-          `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE ${whereClauses.join(" AND ")}`
-        ))
+          `SELECT ${input.fields.join(", ")} FROM ${input.objectName} WHERE ${whereClauses.join(" AND ")}`,
+        )),
       );
     }
 
@@ -1234,7 +1304,7 @@ export function createSalesforceCaptureService(
     const window = parseIsoWindow({
       recordIds: input.recordIds,
       windowStart: input.windowStart,
-      windowEnd: input.windowEnd
+      windowEnd: input.windowEnd,
     });
     const receivedAt = now().toISOString();
     const checkpointCandidates: string[] = [];
@@ -1248,52 +1318,54 @@ export function createSalesforceCaptureService(
         ? queryRowsByIds({
             objectName: parsedConfig.membershipObjectName,
             fields: membershipFields,
-            recordIds: input.recordIds
+            recordIds: input.recordIds,
           })
         : apiClient.queryAll(
-            `SELECT ${membershipFields.join(", ")} FROM ${parsedConfig.membershipObjectName} WHERE ${buildMembershipWindowWhere({
-              mode: input.mode,
-              windowStart: window.windowStart,
-              windowEnd: window.windowEnd,
-              config: parsedConfig
-            })}`
+            `SELECT ${membershipFields.join(", ")} FROM ${parsedConfig.membershipObjectName} WHERE ${buildMembershipWindowWhere(
+              {
+                mode: input.mode,
+                windowStart: window.windowStart,
+                windowEnd: window.windowEnd,
+                config: parsedConfig,
+              },
+            )}`,
           ),
       input.recordIds.length > 0
         ? queryRowsByIds({
             objectName: "Task",
             fields: taskFields,
             recordIds: input.recordIds,
-            extraWhere: buildVolunteerScopedTaskWhere(
+            extraWhere: buildLaunchScopedTaskWhere(
               buildTaskWindowWhere(
                 {
                   mode: input.mode,
                   windowStart: window.windowStart,
-                  windowEnd: window.windowEnd
+                  windowEnd: window.windowEnd,
                 },
-                parsedConfig
+                parsedConfig,
               ),
-              parsedConfig
-            )
+              parsedConfig,
+            ),
           })
         : apiClient.queryAll(
-            `SELECT ${taskFields.join(", ")} FROM Task WHERE ${buildVolunteerScopedTaskWhere(
+            `SELECT ${taskFields.join(", ")} FROM Task WHERE ${buildLaunchScopedTaskWhere(
               buildTaskWindowWhere(
                 {
                   mode: input.mode,
                   windowStart: window.windowStart,
-                  windowEnd: window.windowEnd
+                  windowEnd: window.windowEnd,
                 },
-                parsedConfig
+                parsedConfig,
               ),
-              parsedConfig
-            )}`
-          )
+              parsedConfig,
+            )}`,
+          ),
     ]);
 
     const membershipContactIds = uniqueValues(
       membershipRows.map((row) =>
-        getStringField(row, parsedConfig.membershipContactField)
-      )
+        getStringField(row, parsedConfig.membershipContactField),
+      ),
     );
     const taskRows =
       input.recordIds.length > 0 && membershipContactIds.length > 0
@@ -1304,23 +1376,28 @@ export function createSalesforceCaptureService(
               fields: taskFields,
               fieldName: parsedConfig.taskContactField,
               values: membershipContactIds,
-              extraWhere: buildTaskWindowWhere(
-                {
-                  mode: input.mode,
-                  windowStart: window.windowStart,
-                  windowEnd: window.windowEnd
-                },
-                parsedConfig
-              )
-            }))
+              extraWhere: buildLaunchScopedTaskWhere(
+                buildTaskWindowWhere(
+                  {
+                    mode: input.mode,
+                    windowStart: window.windowStart,
+                    windowEnd: window.windowEnd,
+                  },
+                  parsedConfig,
+                ),
+                parsedConfig,
+              ),
+            })),
           ])
         : [...directTaskRows];
 
     const touchedContactIds = uniqueValues([
       ...membershipRows.map((row) =>
-        getStringField(row, parsedConfig.membershipContactField)
+        getStringField(row, parsedConfig.membershipContactField),
       ),
-      ...taskRows.map((row) => getStringField(row, parsedConfig.taskContactField))
+      ...taskRows.map((row) =>
+        getStringField(row, parsedConfig.taskContactField),
+      ),
     ]);
 
     const contactsFromWindow =
@@ -1331,14 +1408,14 @@ export function createSalesforceCaptureService(
             recordIds: input.recordIds,
             extraWhere: buildVolunteerScopedContactWhere(
               "Id != null",
-              parsedConfig
-            )
+              parsedConfig,
+            ),
           })
         : await apiClient.queryAll(
             `SELECT ${contactFields.join(", ")} FROM Contact WHERE ${buildVolunteerScopedContactWhere(
               buildContactWindowWhere(window),
-              parsedConfig
-            )}`
+              parsedConfig,
+            )}`,
           );
     const contactsById = new Map<string, SalesforceRow>();
 
@@ -1354,7 +1431,7 @@ export function createSalesforceCaptureService(
     }
 
     const missingTouchedContactIds = touchedContactIds.filter(
-      (contactId) => !contactsById.has(contactId)
+      (contactId) => !contactsById.has(contactId),
     );
 
     if (missingTouchedContactIds.length > 0) {
@@ -1362,7 +1439,10 @@ export function createSalesforceCaptureService(
         objectName: "Contact",
         fields: contactFields,
         recordIds: missingTouchedContactIds,
-        extraWhere: buildVolunteerScopedContactWhere("Id != null", parsedConfig)
+        extraWhere: buildVolunteerScopedContactWhere(
+          "Id != null",
+          parsedConfig,
+        ),
       });
 
       for (const contact of additionalContacts) {
@@ -1380,7 +1460,7 @@ export function createSalesforceCaptureService(
             objectName: parsedConfig.membershipObjectName,
             fields: membershipFields,
             fieldName: parsedConfig.membershipContactField,
-            values: touchedContactIds
+            values: touchedContactIds,
           });
     const membershipsByContactId = new Map<string, SalesforceRow[]>();
     const membershipsById = new Map<string, SalesforceRow>();
@@ -1389,7 +1469,7 @@ export function createSalesforceCaptureService(
       const membershipId = getStringField(membership, "Id");
       const contactId = getStringField(
         membership,
-        parsedConfig.membershipContactField
+        parsedConfig.membershipContactField,
       );
 
       if (membershipId !== null) {
@@ -1411,14 +1491,19 @@ export function createSalesforceCaptureService(
       records.push(
         buildContactSnapshotRecordWithConfig({
           contact,
-          memberships: membershipsByContactId.get(getStringField(contact, "Id") ?? "") ?? [],
-          config: parsedConfig
-        })
+          memberships:
+            membershipsByContactId.get(getStringField(contact, "Id") ?? "") ??
+            [],
+          config: parsedConfig,
+        }),
       );
     }
 
     for (const membership of membershipRows) {
-      const contactId = getStringField(membership, parsedConfig.membershipContactField);
+      const contactId = getStringField(
+        membership,
+        parsedConfig.membershipContactField,
+      );
       const contact =
         contactId === null ? null : (contactsById.get(contactId) ?? null);
 
@@ -1430,11 +1515,14 @@ export function createSalesforceCaptureService(
           receivedAt,
           mode: input.mode,
           windowStart: window.windowStart,
-          windowEnd: window.windowEnd
-        })
+          windowEnd: window.windowEnd,
+        }),
       );
 
-      const membershipUpdatedAt = getStringField(membership, "LastModifiedDate");
+      const membershipUpdatedAt = getStringField(
+        membership,
+        "LastModifiedDate",
+      );
       if (membershipUpdatedAt !== null) {
         checkpointCandidates.push(membershipUpdatedAt);
       }
@@ -1442,7 +1530,8 @@ export function createSalesforceCaptureService(
 
     for (const task of taskRows) {
       const contactId = getStringField(task, parsedConfig.taskContactField);
-      const contact = contactId === null ? null : (contactsById.get(contactId) ?? null);
+      const contact =
+        contactId === null ? null : (contactsById.get(contactId) ?? null);
       const relatedMembership =
         membershipsById.get(getStringField(task, "WhatId") ?? "") ?? null;
 
@@ -1451,7 +1540,7 @@ export function createSalesforceCaptureService(
         contact,
         relatedMembership,
         config: parsedConfig,
-        receivedAt
+        receivedAt,
       });
 
       if (
@@ -1473,7 +1562,7 @@ export function createSalesforceCaptureService(
     const page = paginateCapturedRecords(sortedRecords, {
       cursor: input.cursor,
       maxRecords: input.maxRecords,
-      getMarker: buildSalesforceCursorMarker
+      getMarker: buildSalesforceCursorMarker,
     });
 
     return salesforceCaptureServiceResponseSchema.parse({
@@ -1487,7 +1576,7 @@ export function createSalesforceCaptureService(
           .at(-1) ??
         input.checkpoint ??
         input.windowEnd ??
-        null
+        null,
     });
   }
 
@@ -1503,12 +1592,13 @@ export function createSalesforceCaptureService(
         cursor: parsedPayload.cursor,
         checkpoint: parsedPayload.checkpoint,
         windowStart: parsedPayload.windowStart,
-        windowEnd: parsedPayload.windowEnd
+        windowEnd: parsedPayload.windowEnd,
       });
     },
 
     captureLiveBatch(payload) {
-      const parsedPayload = salesforceLiveCaptureBatchPayloadSchema.parse(payload);
+      const parsedPayload =
+        salesforceLiveCaptureBatchPayloadSchema.parse(payload);
 
       return captureSalesforceBatch({
         mode: "live",
@@ -1517,20 +1607,20 @@ export function createSalesforceCaptureService(
         cursor: parsedPayload.cursor,
         checkpoint: parsedPayload.checkpoint,
         windowStart: parsedPayload.windowStart,
-        windowEnd: parsedPayload.windowEnd
+        windowEnd: parsedPayload.windowEnd,
       });
     },
 
     async handleHttpRequest(request) {
       if (!hasBearerToken(request, parsedConfig.bearerToken)) {
         return jsonResponse(401, {
-          error: "unauthorized"
+          error: "unauthorized",
         });
       }
 
       if (request.method !== "POST") {
         return jsonResponse(405, {
-          error: "method_not_allowed"
+          error: "method_not_allowed",
         });
       }
 
@@ -1538,7 +1628,7 @@ export function createSalesforceCaptureService(
         if (request.path === "/historical") {
           const payload = parseJsonRequestBody(
             request,
-            salesforceHistoricalCaptureBatchPayloadSchema
+            salesforceHistoricalCaptureBatchPayloadSchema,
           );
 
           return jsonResponse(200, await this.captureHistoricalBatch(payload));
@@ -1547,14 +1637,14 @@ export function createSalesforceCaptureService(
         if (request.path === "/live") {
           const payload = parseJsonRequestBody(
             request,
-            salesforceLiveCaptureBatchPayloadSchema
+            salesforceLiveCaptureBatchPayloadSchema,
           );
 
           return jsonResponse(200, await this.captureLiveBatch(payload));
         }
 
         return jsonResponse(404, {
-          error: "not_found"
+          error: "not_found",
         });
       } catch (error) {
         if (
@@ -1563,14 +1653,14 @@ export function createSalesforceCaptureService(
         ) {
           return jsonResponse(400, {
             error: "invalid_request",
-            message: error.message
+            message: error.message,
           });
         }
 
         return jsonResponse(500, {
-          error: "internal_error"
+          error: "internal_error",
         });
       }
-    }
+    },
   };
 }

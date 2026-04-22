@@ -30,6 +30,18 @@ describe("Stage 1 provider-close mappers", () => {
     });
   });
 
+  it('strips the bare Salesforce "Email:" subject prefix', () => {
+    expect(
+      parseSubjectDirection(
+        " Email: Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral "
+      )
+    ).toEqual({
+      direction: "outbound",
+      cleanSubject:
+        "Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral"
+    });
+  });
+
   it("supports the unicode Salesforce arrow variants", () => {
     expect(parseSubjectDirection("⇐ Email: Inbound variant")).toEqual({
       direction: "inbound",
