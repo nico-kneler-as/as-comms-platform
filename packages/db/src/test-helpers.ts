@@ -22,6 +22,7 @@ export interface TestStage1Context {
   readonly settings: ReturnType<typeof createStage2RepositoryBundle>;
   readonly persistence: ReturnType<typeof createStage1PersistenceService>;
   readonly normalization: ReturnType<typeof createStage1NormalizationService>;
+  readonly dispose: () => Promise<void>;
 }
 
 export async function createTestStage1Context(): Promise<TestStage1Context> {
@@ -56,6 +57,7 @@ export async function createTestStage1Context(): Promise<TestStage1Context> {
     repositories,
     settings,
     persistence,
-    normalization: createStage1NormalizationService(persistence)
+    normalization: createStage1NormalizationService(persistence),
+    dispose: () => client.close()
   };
 }

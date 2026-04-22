@@ -10,6 +10,7 @@ import {
 } from "@as-comms/contracts";
 
 import {
+  aiKnowledgeEntries,
   canonicalEventLedger,
   contactInboxProjection,
   contactTimelineProjection,
@@ -22,6 +23,7 @@ describe("Stage 1 DB schema", () => {
     expect(Object.keys(databaseSchema).sort()).toEqual([
       // Auth.js v5 + Stage 2 Settings tables (see D-025)
       "accounts",
+      "aiKnowledgeEntries",
       "auditPolicyEvidence",
       "canonicalEventLedger",
       "contactIdentities",
@@ -51,6 +53,7 @@ describe("Stage 1 DB schema", () => {
   });
 
   it("keeps canonical table names stable", () => {
+    expect(getTableName(aiKnowledgeEntries)).toBe("ai_knowledge_entries");
     expect(getTableName(sourceEvidenceLog)).toBe("source_evidence_log");
     expect(getTableName(canonicalEventLedger)).toBe("canonical_event_ledger");
     expect(getTableName(contactInboxProjection)).toBe(

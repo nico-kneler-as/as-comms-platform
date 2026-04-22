@@ -31,6 +31,10 @@ import {
   type Stage1SafeRuntimeConfigSummary
 } from "./ops/config.js";
 import {
+  notionKnowledgeSyncJobName,
+  readNotionKnowledgeSyncConfig
+} from "./jobs/notion-knowledge-sync/index.js";
+import {
   createStage1WorkerOrchestrationService,
   type MailchimpCapturePort,
   pollGmailLiveJobName,
@@ -95,6 +99,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `*/${String(gmailMinutes)} * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
     `*/${String(salesforceMinutes)} * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
     `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
+    `*/15 * * * * ${notionKnowledgeSyncJobName} ?id=notion-knowledge-sync&max=1`,
     `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`
   ].join("\n");
 }
@@ -230,6 +235,7 @@ export async function createStage1WorkerRuntimeServices(
   config: WorkerConfig,
   input?: {
     readonly fetchImplementation?: FetchImplementation;
+    readonly env?: NodeJS.ProcessEnv;
   }
 ): Promise<Stage1WorkerRuntimeServices> {
   const connection = createDatabaseConnection({
@@ -246,6 +252,9 @@ export async function createStage1WorkerRuntimeServices(
 
   const repositories = createStage1RepositoryBundleFromConnection(connection);
   const settings = createStage2RepositoryBundleFromConnection(connection);
+  const notionKnowledgeSync = readNotionKnowledgeSyncConfig(
+    input?.env ?? process.env
+  );
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
   const ingest = createStage1IngestService(normalization);
@@ -306,6 +315,11 @@ export async function createStage1WorkerRuntimeServices(
           salesforce: config.capture.salesforce.baseUrl
         },
         fetchImplementation
+      },
+      notionKnowledgeSync: {
+        db: connection.db,
+        integrationHealth: settings.integrationHealth,
+        notion: notionKnowledgeSync
       },
       pendingOutboundSweep: {
         pendingOutbounds: repositories.pendingOutbounds

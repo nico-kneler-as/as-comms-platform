@@ -43,7 +43,7 @@ Every draft request composes a grounding bundle in this fixed priority order. Hi
 | --- | --- | --- | --- |
 | 1 | general instructions | Notion page: "AS global AI instructions" | instruction retriever |
 | 2 | project-specific instructions | Notion page per project (e.g., "PNW Biodiversity instructions") | instruction retriever |
-| 3 | approved knowledge | Notion knowledge pages, synced to `aiDurableState` with `kind=knowledge_cache` | knowledge retriever |
+| 3 | approved knowledge | Notion knowledge pages cached in `ai_knowledge_entries` | knowledge retriever |
 | 4 | current conversation + contact + project context | live Stage 1 projections: inbox row, timeline, memberships | context retriever |
 | 5 | reusable approved-reply memory | past sent replies captured post-approval, stored as `aiDurableState` with `kind=resolved_reply_example` | memory retriever |
 
@@ -137,14 +137,14 @@ The orchestration service is a single backend module with internal components. M
 | --- | --- | --- |
 | request normalizer / classifier | parse draft request, classify intent, detect safety/ambiguity | Stage 1 contact + timeline repos |
 | policy gate | hard-deny out-of-policy requests before retrieval | static policy config |
-| instruction retriever | pull tier-1 + tier-2 Notion instructions from cache | `aiDurableState` knowledge cache |
-| knowledge retriever | retrieve tier-3 approved knowledge chunks | `aiDurableState` knowledge cache, embedding search |
+| instruction retriever | pull tier-1 + tier-2 Notion instructions from cache | `ai_knowledge_entries` |
+| knowledge retriever | retrieve tier-3 approved knowledge chunks | `ai_knowledge_entries`, future chunking / retrieval layer |
 | context retriever | read live Stage 1 contact timeline, project memberships | Stage 1 repositories via composition root |
 | memory retriever | retrieve tier-5 approved-reply examples by similarity | `aiDurableState` resolved-reply memory, embedding search |
 | grounding assembler | merge retriever outputs into ordered bundle with provenance | above retrievers |
 | response-mode decider | pick draft / clarify / handoff / fallback | classifier + grounding coverage |
 | prompt builder | compose final model prompt with grounding hierarchy, masking | grounding bundle + prompt templates |
-| provider adapter | call OpenAI, handle retries, timeouts | provider credentials, network adapter |
+| provider adapter | call Anthropic (Claude Sonnet 4.6), handle retries, timeouts | provider credentials, network adapter |
 | validator | post-generation checks (answers, grounded, hierarchy, PII) | grounding bundle + generated draft |
 | fallback builder | deterministic non-LLM response when provider fails or validation blocks | static template set |
 | grounding presenter | shape the explainability payload for the Composer UI | grounding bundle + validation outcome |
