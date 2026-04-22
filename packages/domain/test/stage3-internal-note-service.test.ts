@@ -58,8 +58,9 @@ describe("Stage1InternalNoteService", () => {
       } as never,
       normalization: {
         applyTimelineProjection: vi.fn(
-          async (_input: unknown): Promise<TimelineProjectionRow> =>
-            ({
+          (...args: unknown[]): Promise<TimelineProjectionRow> => {
+            void args;
+            return Promise.resolve({
               id: "timeline:note-1",
               contactId: "contact:one",
               canonicalEventId: "canonical-event:manual:note:note-1",
@@ -71,7 +72,8 @@ describe("Stage1InternalNoteService", () => {
               channel: "note",
               primaryProvider: "manual",
               reviewState: "clear",
-            }) satisfies TimelineProjectionRow,
+            } satisfies TimelineProjectionRow);
+          },
         ),
         refreshInboxReviewOverlay: vi.fn(() =>
           Promise.resolve(null as InboxProjectionRow | null),
