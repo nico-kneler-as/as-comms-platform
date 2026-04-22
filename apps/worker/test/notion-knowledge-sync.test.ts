@@ -96,6 +96,27 @@ function createFakeNotionClient(input: {
     )
   );
 
+  function readPagedResponse(
+    responses: readonly Record<string, unknown>[],
+    startCursor?: string
+  ): Record<string, unknown> | undefined {
+    if (responses.length === 0) {
+      return undefined;
+    }
+
+    if (startCursor === undefined) {
+      return responses[0];
+    }
+
+    const previousPageIndex = responses.findIndex(
+      (response) => response.next_cursor === startCursor
+    );
+
+    return previousPageIndex === -1
+      ? undefined
+      : responses[previousPageIndex + 1];
+  }
+
   return {
     retrievePage(pageId) {
       const page = input.pages[normalizeNotionId(pageId)];
@@ -115,9 +136,10 @@ function createFakeNotionClient(input: {
         }
       );
     },
-    queryDatabase({ databaseId }) {
+    queryDatabase({ databaseId, startCursor }) {
+      const responses = databaseQueues.get(normalizeNotionId(databaseId)) ?? [];
       return Promise.resolve(
-        databaseQueues.get(normalizeNotionId(databaseId))?.shift() ?? {
+        readPagedResponse(responses, startCursor) ?? {
           results: [],
           has_more: false,
           next_cursor: null
