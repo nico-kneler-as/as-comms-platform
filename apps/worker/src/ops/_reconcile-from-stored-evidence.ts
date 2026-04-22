@@ -238,7 +238,9 @@ function parseSubjectDirection(rawSubject: string | null): {
 
   return {
     direction: "outbound",
-    cleanSubject: trimmed
+    cleanSubject: normalizeCleanSubject(
+      trimmed.replace(/^Email:\s*/iu, "")
+    )
   };
 }
 

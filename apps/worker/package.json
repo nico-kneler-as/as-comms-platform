@@ -14,6 +14,8 @@
     "ops:check-config": "tsx src/ops/cli.ts check-config",
     "ops:backfill-gmail-message-bodies": "tsx src/ops/backfill-gmail-message-bodies.ts",
     "ops:backfill-salesforce-communication-details": "tsx src/ops/backfill-salesforce-communication-details.ts",
+    "ops:audit-salesforce-task-ingest": "tsx src/ops/audit-salesforce-task-ingest.ts",
+    "ops:cleanup-salesforce-owner-scope": "tsx src/ops/cleanup-salesforce-owner-scope.ts",
     "ops:dedup-historical-ledger": "tsx src/ops/dedup-historical-ledger.ts",
     "ops:enqueue": "tsx src/ops/cli.ts enqueue",
     "ops:import-gmail-mbox": "tsx src/ops/cli.ts import-gmail-mbox",

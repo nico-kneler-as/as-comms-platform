@@ -130,7 +130,7 @@ async function loadCandidates(
     where canonical_event_ledger.provenance ->> 'primaryProvider' = 'salesforce'
       and salesforce_communication_details.channel = 'email'
       and salesforce_communication_details.subject is not null
-      and salesforce_communication_details.subject ~ '^[[:space:]]*[←⇐→⇒]'
+      and salesforce_communication_details.subject ~* '^[[:space:]]*(?:[←⇐→⇒]|Email:)'
     order by canonical_event_ledger.occurred_at asc, canonical_event_ledger.id asc
     limit ${String(limit)}
   `);
