@@ -4,56 +4,43 @@ import process from "node:process";
 import {
   closeDatabaseConnection,
   createDatabaseConnection,
-  createStage1RepositoryBundleFromConnection
+  createStage1RepositoryBundleFromConnection,
 } from "@as-comms/db";
 import {
   createStage1NormalizationService,
-  createStage1PersistenceService
+  createStage1PersistenceService,
 } from "@as-comms/domain";
 import {
   createGmailCapturePort,
   createMailchimpCapturePort,
   createSalesforceCapturePort,
-  createSimpleTextingCapturePort
+  createSimpleTextingCapturePort,
 } from "@as-comms/integrations";
 
-import {
-  buildSafeRuntimeConfigSummary,
-  readWorkerConfig
-} from "../runtime.js";
+import { buildSafeRuntimeConfigSummary, readWorkerConfig } from "../runtime.js";
 import { createStage1IngestService } from "../ingest/index.js";
 import { createStage1SyncStateService } from "../orchestration/index.js";
-import {
-  buildStage1EnqueueRequest,
-  enqueueStage1Job
-} from "./enqueue.js";
+import { buildStage1EnqueueRequest, enqueueStage1Job } from "./enqueue.js";
 import { createStage1GmailMboxImportService } from "./gmail-mbox.js";
 import {
   inspectAuditEvidence,
   inspectLatestSyncState,
   inspectSourceEvidenceForProviderRecord,
-  inspectStage1Contact
+  inspectStage1Contact,
 } from "./inspect.js";
-import {
-  runBackfillSalesforceCommunicationDetailsCommand
-} from "./backfill-salesforce-communication-details.js";
-import {
-  runBackfillContentFingerprintCommand
-} from "./backfill-content-fingerprint.js";
+import { runBackfillSalesforceCommunicationDetailsCommand } from "./backfill-salesforce-communication-details.js";
+import { runBackfillContentFingerprintCommand } from "./backfill-content-fingerprint.js";
+import { runCleanupSalesforceOwnerScopeCommand } from "./cleanup-salesforce-owner-scope.js";
 import { reconcileIdentityQueue } from "./reconcile-identity-queue.js";
-import {
-  runDedupHistoricalLedgerCommand
-} from "./dedup-historical-ledger.js";
-import {
-  runReclassifySfDirectionCommand
-} from "./reclassify-sf-direction.js";
+import { runDedupHistoricalLedgerCommand } from "./dedup-historical-ledger.js";
+import { runReclassifySfDirectionCommand } from "./reclassify-sf-direction.js";
 import {
   buildOperationId,
   parseCliFlags,
   readOptionalBooleanFlag,
   readOptionalIntegerFlag,
   readOptionalStringFlag,
-  readRequiredFlag
+  readRequiredFlag,
 } from "./helpers.js";
 import { readStage1LaunchScopeGmailConfig } from "./config.js";
 
@@ -62,7 +49,7 @@ function readConnectionString(env: NodeJS.ProcessEnv): string {
 
   if (connectionString === undefined || connectionString.trim().length === 0) {
     throw new Error(
-      "DATABASE_URL or WORKER_DATABASE_URL is required for Stage 1 ops commands."
+      "DATABASE_URL or WORKER_DATABASE_URL is required for Stage 1 ops commands.",
     );
   }
 
@@ -71,7 +58,9 @@ function readConnectionString(env: NodeJS.ProcessEnv): string {
 
 function rejectUnconfiguredProvider(providerLabel: string): Promise<never> {
   return Promise.reject(
-    new Error(`${providerLabel} capture is not configured for this worker runtime.`)
+    new Error(
+      `${providerLabel} capture is not configured for this worker runtime.`,
+    ),
   );
 }
 
@@ -96,7 +85,7 @@ function readOptionalLimitArg(args: readonly string[]): number | undefined {
 function runCheckConfig(): void {
   const config = readWorkerConfig({
     ...process.env,
-    WORKER_BOOT_MODE: "run"
+    WORKER_BOOT_MODE: "run",
   });
 
   if (config === null) {
@@ -120,7 +109,7 @@ async function runEnqueue(args: readonly string[]): Promise<void> {
     job !== "cutover-checkpoint"
   ) {
     throw new Error(
-      "Unknown enqueue job. Use one of: gmail-historical, gmail-live, salesforce-historical, salesforce-live, replay, projection-rebuild, parity-check, cutover-checkpoint."
+      "Unknown enqueue job. Use one of: gmail-historical, gmail-live, salesforce-historical, salesforce-live, replay, projection-rebuild, parity-check, cutover-checkpoint.",
     );
   }
 
@@ -128,7 +117,7 @@ async function runEnqueue(args: readonly string[]): Promise<void> {
   const request = buildStage1EnqueueRequest(job, flags);
   const result = await enqueueStage1Job({
     connectionString: readConnectionString(process.env),
-    request
+    request,
   });
 
   console.info(JSON.stringify(result, null, 2));
@@ -137,7 +126,7 @@ async function runEnqueue(args: readonly string[]): Promise<void> {
 async function runImportGmailMbox(args: readonly string[]): Promise<void> {
   const flags = parseCliFlags(args);
   const connection = createDatabaseConnection({
-    connectionString: readConnectionString(process.env)
+    connectionString: readConnectionString(process.env),
   });
 
   try {
@@ -150,7 +139,7 @@ async function runImportGmailMbox(args: readonly string[]): Promise<void> {
     const importer = createStage1GmailMboxImportService({
       ingest,
       persistence,
-      syncState
+      syncState,
     });
     const mboxPath = readRequiredFlag(flags, "mbox-path");
     const mboxText = await readFile(mboxPath, "utf8");
@@ -160,7 +149,7 @@ async function runImportGmailMbox(args: readonly string[]): Promise<void> {
       capturedMailbox: readRequiredFlag(flags, "captured-mailbox"),
       projectInboxAliasOverride: readOptionalStringFlag(
         flags,
-        "project-inbox-alias"
+        "project-inbox-alias",
       ),
       liveAccount: gmailConfig.liveAccount,
       projectInboxAliases: [...gmailConfig.projectInboxAliases],
@@ -173,7 +162,11 @@ async function runImportGmailMbox(args: readonly string[]): Promise<void> {
       traceId: readOptionalStringFlag(flags, "trace-id"),
       receivedAt: readOptionalStringFlag(flags, "received-at"),
       limit: readOptionalIntegerFlag(flags, "limit", 0) || null,
-      overwriteBodies: readOptionalBooleanFlag(flags, "overwrite-bodies", false)
+      overwriteBodies: readOptionalBooleanFlag(
+        flags,
+        "overwrite-bodies",
+        false,
+      ),
     });
 
     console.info(JSON.stringify(result, null, 2));
@@ -186,7 +179,7 @@ async function runInspect(args: readonly string[]): Promise<void> {
   const subcommand = args[0];
   const flags = parseCliFlags(args.slice(1));
   const connection = createDatabaseConnection({
-    connectionString: readConnectionString(process.env)
+    connectionString: readConnectionString(process.env),
   });
 
   try {
@@ -197,28 +190,31 @@ async function runInspect(args: readonly string[]): Promise<void> {
         const contactId = readOptionalStringFlag(flags, "contact-id");
         const salesforceContactId = readOptionalStringFlag(
           flags,
-          "salesforce-contact-id"
+          "salesforce-contact-id",
         );
         const email = readOptionalStringFlag(flags, "email");
         const result = await inspectStage1Contact(repositories, {
           ...(contactId === null ? {} : { contactId }),
           ...(salesforceContactId === null ? {} : { salesforceContactId }),
-          ...(email === null ? {} : { email })
+          ...(email === null ? {} : { email }),
         });
 
         console.info(JSON.stringify(result, null, 2));
         return;
       }
       case "source-evidence": {
-        const result = await inspectSourceEvidenceForProviderRecord(repositories, {
-          provider: readRequiredFlag(flags, "provider") as
-            | "gmail"
-            | "salesforce"
-            | "simpletexting"
-            | "mailchimp",
-          providerRecordType: readRequiredFlag(flags, "provider-record-type"),
-          providerRecordId: readRequiredFlag(flags, "provider-record-id")
-        });
+        const result = await inspectSourceEvidenceForProviderRecord(
+          repositories,
+          {
+            provider: readRequiredFlag(flags, "provider") as
+              | "gmail"
+              | "salesforce"
+              | "simpletexting"
+              | "mailchimp",
+            providerRecordType: readRequiredFlag(flags, "provider-record-type"),
+            providerRecordId: readRequiredFlag(flags, "provider-record-id"),
+          },
+        );
 
         console.info(JSON.stringify(result, null, 2));
         return;
@@ -229,10 +225,8 @@ async function runInspect(args: readonly string[]): Promise<void> {
           syncStateId !== null
             ? await inspectLatestSyncState(repositories, { syncStateId })
             : await inspectLatestSyncState(repositories, {
-                scope:
-                  (readOptionalStringFlag(flags, "scope") ?? "provider") as
-                    | "provider"
-                    | "orchestration",
+                scope: (readOptionalStringFlag(flags, "scope") ??
+                  "provider") as "provider" | "orchestration",
                 provider:
                   (readOptionalStringFlag(flags, "provider") as
                     | "gmail"
@@ -246,7 +240,7 @@ async function runInspect(args: readonly string[]): Promise<void> {
                   | "projection_rebuild"
                   | "parity_snapshot"
                   | "final_delta_sync"
-                  | "dead_letter_reprocess"
+                  | "dead_letter_reprocess",
               });
 
         console.info(JSON.stringify(result, null, 2));
@@ -255,7 +249,7 @@ async function runInspect(args: readonly string[]): Promise<void> {
       case "audit": {
         const result = await inspectAuditEvidence(repositories, {
           entityType: readRequiredFlag(flags, "entity-type"),
-          entityId: readRequiredFlag(flags, "entity-id")
+          entityId: readRequiredFlag(flags, "entity-id"),
         });
 
         console.info(JSON.stringify(result, null, 2));
@@ -263,7 +257,7 @@ async function runInspect(args: readonly string[]): Promise<void> {
       }
       default:
         throw new Error(
-          "Unknown inspect command. Use one of: contact, source-evidence, sync, audit."
+          "Unknown inspect command. Use one of: contact, source-evidence, sync, audit.",
         );
     }
   } finally {
@@ -271,12 +265,14 @@ async function runInspect(args: readonly string[]): Promise<void> {
   }
 }
 
-async function runReconcileIdentityQueue(args: readonly string[]): Promise<void> {
+async function runReconcileIdentityQueue(
+  args: readonly string[],
+): Promise<void> {
   const dryRun = !args.includes("--execute");
   const limit = readOptionalLimitArg(args);
   const config = readWorkerConfig({
     ...process.env,
-    WORKER_BOOT_MODE: "run"
+    WORKER_BOOT_MODE: "run",
   });
 
   if (config === null) {
@@ -284,7 +280,7 @@ async function runReconcileIdentityQueue(args: readonly string[]): Promise<void>
   }
 
   const connection = createDatabaseConnection({
-    connectionString: readConnectionString(process.env)
+    connectionString: readConnectionString(process.env),
   });
 
   try {
@@ -301,7 +297,7 @@ async function runReconcileIdentityQueue(args: readonly string[]): Promise<void>
                 captureHistoricalBatch: () =>
                   rejectUnconfiguredProvider("SimpleTexting"),
                 captureLiveBatch: () =>
-                  rejectUnconfiguredProvider("SimpleTexting")
+                  rejectUnconfiguredProvider("SimpleTexting"),
               }
             : createSimpleTextingCapturePort(config.capture.simpleTexting),
         mailchimp:
@@ -310,16 +306,16 @@ async function runReconcileIdentityQueue(args: readonly string[]): Promise<void>
                 captureHistoricalBatch: () =>
                   rejectUnconfiguredProvider("Mailchimp"),
                 captureTransitionBatch: () =>
-                  rejectUnconfiguredProvider("Mailchimp")
+                  rejectUnconfiguredProvider("Mailchimp"),
               }
-            : createMailchimpCapturePort(config.capture.mailchimp)
+            : createMailchimpCapturePort(config.capture.mailchimp),
       },
       gmailHistoricalReplay: {
         liveAccount: config.launchScope.gmail.liveAccount,
-        projectInboxAliases: [...config.launchScope.gmail.projectInboxAliases]
+        projectInboxAliases: [...config.launchScope.gmail.projectInboxAliases],
       },
       dryRun,
-      ...(limit === undefined ? {} : { limit })
+      ...(limit === undefined ? {} : { limit }),
     });
 
     console.log("Final report:", report);
@@ -350,6 +346,9 @@ async function main(): Promise<void> {
     case "backfill-content-fingerprint":
       await runBackfillContentFingerprintCommand(rest, process.env);
       return;
+    case "cleanup-salesforce-owner-scope":
+      await runCleanupSalesforceOwnerScopeCommand(rest, process.env);
+      return;
     case "dedup-historical-ledger":
       await runDedupHistoricalLedgerCommand(rest, process.env);
       return;
@@ -361,14 +360,14 @@ async function main(): Promise<void> {
       return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-content-fingerprint, dedup-historical-ledger, reconcile-identity-queue, reclassify-sf-direction."
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-content-fingerprint, cleanup-salesforce-owner-scope, dedup-historical-ledger, reconcile-identity-queue, reclassify-sf-direction.",
       );
   }
 }
 
 void main().catch((error: unknown) => {
   console.error(
-    error instanceof Error ? error.message : "Stage 1 ops command failed."
+    error instanceof Error ? error.message : "Stage 1 ops command failed.",
   );
   process.exitCode = 1;
 });

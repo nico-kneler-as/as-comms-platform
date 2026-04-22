@@ -74,4 +74,31 @@ describe("reclassify-sf-direction planning", () => {
       })
     );
   });
+
+  it('cleans bare Salesforce "Email:" subjects without reclassifying direction', () => {
+    const plan = planSfDirectionReclassifications([
+      buildCandidate({
+        index: 1,
+        subject: "Email: Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral"
+      })
+    ]);
+
+    expect(plan.scannedCount).toBe(1);
+    expect(plan.reclassifiedCount).toBe(0);
+    expect(plan.cleanedSubjectCount).toBe(1);
+    expect(plan.skippedCrossProviderRows).toEqual([]);
+    expect(plan.changes).toEqual([
+      expect.objectContaining({
+        canonicalEventId: "evt:1",
+        previousEventType: "communication.email.outbound",
+        nextEventType: "communication.email.outbound",
+        previousSubject:
+          "Email: Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral",
+        nextSubject:
+          "Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral",
+        direction: "outbound",
+        reclassifiesEventType: false
+      })
+    ]);
+  });
 });
