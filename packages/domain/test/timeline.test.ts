@@ -4,7 +4,9 @@ import type {
   AuditEvidenceRecord,
   CanonicalEventRecord,
   ContactRecord,
+  GmailMessageDetailRecord,
   InboxProjectionRow,
+  MailchimpCampaignActivityDetailRecord,
   TimelineItem,
   SourceEvidenceRecord,
   TimelineProjectionRow,
@@ -31,6 +33,8 @@ function createRepositoryBundle(input: {
   readonly canonicalEvents: readonly CanonicalEventRecord[];
   readonly sourceEvidence: readonly SourceEvidenceRecord[];
   readonly salesforceCommunicationDetails: readonly SalesforceCommunicationDetailRecord[];
+  readonly gmailMessageDetails?: readonly GmailMessageDetailRecord[];
+  readonly mailchimpCampaignActivityDetails?: readonly MailchimpCampaignActivityDetailRecord[];
   readonly timelineRows: readonly TimelineProjectionRow[];
   readonly pendingOutbounds?: readonly PendingComposerOutboundRecord[];
 }): Stage1RepositoryBundle {
@@ -42,6 +46,18 @@ function createRepositoryBundle(input: {
   );
   const salesforceCommunicationDetailsBySourceEvidenceId = new Map(
     input.salesforceCommunicationDetails.map((detail) => [
+      detail.sourceEvidenceId,
+      detail,
+    ]),
+  );
+  const gmailMessageDetailsBySourceEvidenceId = new Map(
+    (input.gmailMessageDetails ?? []).map((detail) => [
+      detail.sourceEvidenceId,
+      detail,
+    ]),
+  );
+  const mailchimpCampaignActivityDetailsBySourceEvidenceId = new Map(
+    (input.mailchimpCampaignActivityDetails ?? []).map((detail) => [
       detail.sourceEvidenceId,
       detail,
     ]),
@@ -126,7 +142,14 @@ function createRepositoryBundle(input: {
       upsert: (record) => Promise.resolve(record),
     },
     gmailMessageDetails: {
-      listBySourceEvidenceIds: () => Promise.resolve([]),
+      listBySourceEvidenceIds: (sourceEvidenceIds) =>
+        Promise.resolve(
+          sourceEvidenceIds.flatMap((sourceEvidenceId) => {
+            const detail =
+              gmailMessageDetailsBySourceEvidenceId.get(sourceEvidenceId);
+            return detail === undefined ? [] : [detail];
+          }),
+        ),
       upsert: (record) => Promise.resolve(record),
     },
     salesforceEventContext: {
@@ -155,7 +178,16 @@ function createRepositoryBundle(input: {
       upsert: (record) => Promise.resolve(record),
     },
     mailchimpCampaignActivityDetails: {
-      listBySourceEvidenceIds: () => Promise.resolve([]),
+      listBySourceEvidenceIds: (sourceEvidenceIds) =>
+        Promise.resolve(
+          sourceEvidenceIds.flatMap((sourceEvidenceId) => {
+            const detail =
+              mailchimpCampaignActivityDetailsBySourceEvidenceId.get(
+                sourceEvidenceId,
+              );
+            return detail === undefined ? [] : [detail];
+          }),
+        ),
       upsert: (record) => Promise.resolve(record),
     },
     manualNoteDetails: {
@@ -271,20 +303,22 @@ function createRepositoryBundle(input: {
   });
 }
 
-function buildSourceEvidence(
-  id: string,
-  providerRecordId: string,
-): SourceEvidenceRecord {
+function buildSourceEvidence(input: {
+  readonly id: string;
+  readonly providerRecordId: string;
+  readonly provider?: SourceEvidenceRecord["provider"];
+  readonly providerRecordType?: string;
+}): SourceEvidenceRecord {
   return {
-    id,
-    provider: "salesforce",
-    providerRecordType: "task_communication",
-    providerRecordId,
+    id: input.id,
+    provider: input.provider ?? "salesforce",
+    providerRecordType: input.providerRecordType ?? "task_communication",
+    providerRecordId: input.providerRecordId,
     receivedAt: "2026-01-01T00:00:00.000Z",
     occurredAt: "2026-01-01T00:00:00.000Z",
-    payloadRef: `payloads/salesforce/${providerRecordId}.json`,
-    idempotencyKey: `salesforce:${providerRecordId}`,
-    checksum: `checksum:${providerRecordId}`,
+    payloadRef: `payloads/${input.provider ?? "salesforce"}/${input.providerRecordId}.json`,
+    idempotencyKey: `${input.provider ?? "salesforce"}:${input.providerRecordId}`,
+    checksum: `checksum:${input.providerRecordId}`,
   };
 }
 
@@ -297,6 +331,7 @@ function buildSalesforceEmailEvent(input: {
   readonly detailMessageKind?: "one_to_one" | "auto" | "campaign";
   readonly subject: string;
   readonly snippet: string;
+  readonly contentFingerprint?: string | null;
 }): {
   readonly canonicalEvent: CanonicalEventRecord;
   readonly detail: SalesforceCommunicationDetailRecord;
@@ -309,7 +344,7 @@ function buildSalesforceEmailEvent(input: {
       eventType: `communication.email.${input.direction}`,
       channel: "email",
       occurredAt: input.occurredAt,
-      contentFingerprint: null,
+      contentFingerprint: input.contentFingerprint ?? null,
       sourceEvidenceId: input.sourceEvidenceId,
       idempotencyKey: `canonical:${input.id}`,
       provenance: {
@@ -352,6 +387,141 @@ function buildSalesforceEmailEvent(input: {
   };
 }
 
+function buildGmailOutboundEmailEvent(input: {
+  readonly id: string;
+  readonly sourceEvidenceId: string;
+  readonly occurredAt: string;
+  readonly subject: string;
+  readonly snippet: string;
+  readonly bodyPreview: string;
+  readonly contentFingerprint: string;
+}): {
+  readonly canonicalEvent: CanonicalEventRecord;
+  readonly detail: GmailMessageDetailRecord;
+  readonly timelineRow: TimelineProjectionRow;
+} {
+  return {
+    canonicalEvent: {
+      id: input.id,
+      contactId: "contact_1",
+      eventType: "communication.email.outbound",
+      channel: "email",
+      occurredAt: input.occurredAt,
+      contentFingerprint: input.contentFingerprint,
+      sourceEvidenceId: input.sourceEvidenceId,
+      idempotencyKey: `canonical:${input.id}`,
+      provenance: {
+        primaryProvider: "gmail",
+        primarySourceEvidenceId: input.sourceEvidenceId,
+        supportingSourceEvidenceIds: [],
+        winnerReason: "single_source",
+        sourceRecordType: "gmail_message",
+        sourceRecordId: input.id,
+        messageKind: "one_to_one",
+        campaignRef: null,
+        threadRef: {
+          providerThreadId: `thread:${input.id}`,
+          crossProviderCollapseKey: null,
+        },
+        direction: "outbound",
+        notes: null,
+      } as CanonicalEventRecord["provenance"],
+      reviewState: "clear",
+    },
+    detail: {
+      sourceEvidenceId: input.sourceEvidenceId,
+      providerRecordId: input.id,
+      gmailThreadId: `thread:${input.id}`,
+      rfc822MessageId: `<${input.id}@example.org>`,
+      direction: "outbound",
+      subject: input.subject,
+      snippetClean: input.snippet,
+      bodyTextPreview: input.bodyPreview,
+      capturedMailbox: "pnw@example.org",
+      projectInboxAlias: "pnw@example.org",
+    },
+    timelineRow: {
+      id: `timeline:${input.id}`,
+      contactId: "contact_1",
+      canonicalEventId: input.id,
+      occurredAt: input.occurredAt,
+      sortKey: `${input.occurredAt}::${input.id}`,
+      eventType: "communication.email.outbound",
+      summary: input.subject,
+      channel: "email",
+      primaryProvider: "gmail",
+      reviewState: "clear",
+    },
+  };
+}
+
+function buildMailchimpCampaignEmailEvent(input: {
+  readonly id: string;
+  readonly sourceEvidenceId: string;
+  readonly occurredAt: string;
+  readonly snippet: string;
+  readonly campaignName: string;
+  readonly activityType: MailchimpCampaignActivityDetailRecord["activityType"];
+  readonly contentFingerprint: string;
+}): {
+  readonly canonicalEvent: CanonicalEventRecord;
+  readonly detail: MailchimpCampaignActivityDetailRecord;
+  readonly timelineRow: TimelineProjectionRow;
+} {
+  return {
+    canonicalEvent: {
+      id: input.id,
+      contactId: "contact_1",
+      eventType: `campaign.email.${input.activityType}`,
+      channel: "email",
+      occurredAt: input.occurredAt,
+      contentFingerprint: input.contentFingerprint,
+      sourceEvidenceId: input.sourceEvidenceId,
+      idempotencyKey: `canonical:${input.id}`,
+      provenance: {
+        primaryProvider: "mailchimp",
+        primarySourceEvidenceId: input.sourceEvidenceId,
+        supportingSourceEvidenceIds: [],
+        winnerReason: "single_source",
+        sourceRecordType: "campaign_email_activity",
+        sourceRecordId: input.id,
+        messageKind: "campaign",
+        campaignRef: {
+          providerMessageName: input.campaignName,
+          providerCampaignId: "cmp-1",
+          providerAudienceId: "aud-1",
+        },
+        threadRef: null,
+        direction: "outbound",
+        notes: null,
+      } as CanonicalEventRecord["provenance"],
+      reviewState: "clear",
+    },
+    detail: {
+      sourceEvidenceId: input.sourceEvidenceId,
+      providerRecordId: input.id,
+      activityType: input.activityType,
+      campaignId: "cmp-1",
+      audienceId: "aud-1",
+      memberId: "member-1",
+      campaignName: input.campaignName,
+      snippet: input.snippet,
+    },
+    timelineRow: {
+      id: `timeline:${input.id}`,
+      contactId: "contact_1",
+      canonicalEventId: input.id,
+      occurredAt: input.occurredAt,
+      sortKey: `${input.occurredAt}::${input.id}`,
+      eventType: `campaign.email.${input.activityType}`,
+      summary: input.campaignName,
+      channel: "email",
+      primaryProvider: "mailchimp",
+      reviewState: "clear",
+    },
+  };
+}
+
 describe("Stage 1 timeline presenter", () => {
   it("keeps Salesforce outbound email in the 1:1 family unless canon explicitly marks it auto", async () => {
     const nullClassified = buildSalesforceEmailEvent({
@@ -389,12 +559,18 @@ describe("Stage 1 timeline presenter", () => {
         explicitAuto.canonicalEvent,
       ],
       sourceEvidence: [
-        buildSourceEvidence("sev_salesforce_null", "salesforce-null"),
-        buildSourceEvidence(
-          "sev_salesforce_one_to_one",
-          "salesforce-one-to-one",
-        ),
-        buildSourceEvidence("sev_salesforce_auto", "salesforce-auto"),
+        buildSourceEvidence({
+          id: "sev_salesforce_null",
+          providerRecordId: "salesforce-null",
+        }),
+        buildSourceEvidence({
+          id: "sev_salesforce_one_to_one",
+          providerRecordId: "salesforce-one-to-one",
+        }),
+        buildSourceEvidence({
+          id: "sev_salesforce_auto",
+          providerRecordId: "salesforce-auto",
+        }),
       ],
       salesforceCommunicationDetails: [
         nullClassified.detail,
@@ -461,14 +637,14 @@ describe("Stage 1 timeline presenter", () => {
         outboundAutoMismatch.canonicalEvent,
       ],
       sourceEvidence: [
-        buildSourceEvidence(
-          "sev_salesforce_inbound_auto_mismatch",
-          "salesforce-inbound-auto-mismatch",
-        ),
-        buildSourceEvidence(
-          "sev_salesforce_outbound_auto_mismatch",
-          "salesforce-outbound-auto-mismatch",
-        ),
+        buildSourceEvidence({
+          id: "sev_salesforce_inbound_auto_mismatch",
+          providerRecordId: "salesforce-inbound-auto-mismatch",
+        }),
+        buildSourceEvidence({
+          id: "sev_salesforce_outbound_auto_mismatch",
+          providerRecordId: "salesforce-outbound-auto-mismatch",
+        }),
       ],
       salesforceCommunicationDetails: [
         inboundAutoMismatch.detail,
@@ -513,10 +689,10 @@ describe("Stage 1 timeline presenter", () => {
     const repositories = createRepositoryBundle({
       canonicalEvents: [outbound.canonicalEvent],
       sourceEvidence: [
-        buildSourceEvidence(
-          "sev_salesforce_one_to_one",
-          "salesforce-one-to-one",
-        ),
+        buildSourceEvidence({
+          id: "sev_salesforce_one_to_one",
+          providerRecordId: "salesforce-one-to-one",
+        }),
       ],
       salesforceCommunicationDetails: [outbound.detail],
       timelineRows: [outbound.timelineRow],
@@ -561,6 +737,128 @@ describe("Stage 1 timeline presenter", () => {
       bodyPreview: "Pending outbound body",
       sendStatus: "pending",
       attachmentCount: 0,
+    });
+  });
+
+  it("collapses cross-provider outbound email duplicates and keeps the richer Gmail record", async () => {
+    const duplicateFingerprint = "fp:hex-13174";
+    const salesforceAuto = buildSalesforceEmailEvent({
+      id: "evt_salesforce_auto_duplicate",
+      sourceEvidenceId: "sev_salesforce_auto_duplicate",
+      occurredAt: "2026-01-01T00:05:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "auto",
+      subject: "Re: Confirmed: Hex 13174",
+      snippet: "No problem at all! I will plan to retrieve the ARUs.",
+      contentFingerprint: duplicateFingerprint,
+    });
+    const gmailOneToOne = buildGmailOutboundEmailEvent({
+      id: "evt_gmail_duplicate",
+      sourceEvidenceId: "sev_gmail_duplicate",
+      occurredAt: "2026-01-01T00:05:30.000Z",
+      subject: "Re: Confirmed: Hex 13174",
+      snippet: "No problem at all! I will plan to retrieve the ARUs.",
+      bodyPreview: "No problem at all! I will plan to retrieve the ARUs.",
+      contentFingerprint: duplicateFingerprint,
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [
+        salesforceAuto.canonicalEvent,
+        gmailOneToOne.canonicalEvent,
+      ],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_salesforce_auto_duplicate",
+          providerRecordId: "salesforce-auto-duplicate",
+        }),
+        buildSourceEvidence({
+          id: "sev_gmail_duplicate",
+          provider: "gmail",
+          providerRecordType: "gmail_message",
+          providerRecordId: "gmail-duplicate",
+        }),
+      ],
+      salesforceCommunicationDetails: [salesforceAuto.detail],
+      gmailMessageDetails: [gmailOneToOne.detail],
+      timelineRows: [salesforceAuto.timelineRow, gmailOneToOne.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      canonicalEventId: "evt_gmail_duplicate",
+      family: "one_to_one_email",
+      primaryProvider: "gmail",
+      subject: "Re: Confirmed: Hex 13174",
+      bodyPreview: "No problem at all! I will plan to retrieve the ARUs.",
+    });
+  });
+
+  it("collapses duplicate campaign rows before pagination counts them", async () => {
+    const duplicateFingerprint = "fp:campaign-april-update";
+    const firstCampaign = buildMailchimpCampaignEmailEvent({
+      id: "evt_campaign_duplicate_1",
+      sourceEvidenceId: "sev_campaign_duplicate_1",
+      occurredAt: "2026-01-01T00:10:00.000Z",
+      activityType: "sent",
+      campaignName: "April Volunteer Update",
+      snippet: "Subject: April Volunteer Update\n\nBody:\nBring your field notebook.",
+      contentFingerprint: duplicateFingerprint,
+    });
+    const secondCampaign = buildMailchimpCampaignEmailEvent({
+      id: "evt_campaign_duplicate_2",
+      sourceEvidenceId: "sev_campaign_duplicate_2",
+      occurredAt: "2026-01-01T00:10:30.000Z",
+      activityType: "sent",
+      campaignName: "April Volunteer Update",
+      snippet: "Subject: April Volunteer Update\n\nBody:\nBring your field notebook.",
+      contentFingerprint: duplicateFingerprint,
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [
+        firstCampaign.canonicalEvent,
+        secondCampaign.canonicalEvent,
+      ],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_campaign_duplicate_1",
+          provider: "mailchimp",
+          providerRecordType: "campaign_email_activity",
+          providerRecordId: "campaign-duplicate-1",
+        }),
+        buildSourceEvidence({
+          id: "sev_campaign_duplicate_2",
+          provider: "mailchimp",
+          providerRecordType: "campaign_email_activity",
+          providerRecordId: "campaign-duplicate-2",
+        }),
+      ],
+      salesforceCommunicationDetails: [],
+      mailchimpCampaignActivityDetails: [
+        firstCampaign.detail,
+        secondCampaign.detail,
+      ],
+      timelineRows: [firstCampaign.timelineRow, secondCampaign.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const firstPage = await presenter.listTimelineItemsPageByContactId(
+      "contact_1",
+      {
+        limit: 1,
+        beforeSortKey: null,
+      },
+    );
+
+    expect(firstPage.total).toBe(1);
+    expect(firstPage.hasMore).toBe(false);
+    expect(firstPage.items).toHaveLength(1);
+    expect(firstPage.items[0]).toMatchObject({
+      canonicalEventId: "evt_campaign_duplicate_1",
+      family: "campaign_email",
+      campaignName: "April Volunteer Update",
     });
   });
 });

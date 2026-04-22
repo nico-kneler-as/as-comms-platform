@@ -265,6 +265,272 @@ function buildPendingTimelineItems(
   );
 }
 
+interface CanonicalTimelineItemWithEvent {
+  readonly item: TimelineItem;
+  readonly canonicalEvent: CanonicalEventRecord;
+}
+
+const timelineDuplicateWindowMs = 5 * 60 * 1000;
+
+function normalizeDuplicateText(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.replace(/\s+/g, " ").trim().toLowerCase();
+  return normalized.length === 0 ? null : normalized;
+}
+
+function buildTimelineDuplicateSignature(item: TimelineItem): string | null {
+  const parts = (() => {
+    switch (item.family) {
+      case "one_to_one_email":
+        return [
+          item.subject,
+          item.bodyPreview,
+          item.snippet,
+          item.summary,
+          item.mailbox,
+        ];
+      case "auto_email":
+        return [item.subject, item.snippet, item.summary, item.sourceLabel];
+      case "campaign_email":
+        return [
+          item.campaignName,
+          item.activityType,
+          item.snippet,
+          item.summary,
+        ];
+      case "one_to_one_sms":
+        return [item.messageTextPreview, item.summary, item.threadKey];
+      case "auto_sms":
+        return [item.messageTextPreview, item.summary, item.sourceLabel];
+      case "campaign_sms":
+        return [item.campaignName, item.messageTextPreview, item.summary];
+      case "internal_note":
+        return [item.body, item.noteId, item.summary];
+      case "salesforce_event":
+        return [item.milestone, item.projectName, item.expeditionName];
+    }
+  })()
+    .map((value) => normalizeDuplicateText(value))
+    .filter((value): value is string => value !== null);
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  return parts.join("|");
+}
+
+function buildTimelineDuplicateKey(
+  entry: CanonicalTimelineItemWithEvent,
+): string | null {
+  const fingerprint = normalizeDuplicateText(
+    entry.canonicalEvent.contentFingerprint,
+  );
+
+  if (fingerprint !== null) {
+    return [
+      "fingerprint",
+      entry.canonicalEvent.contactId,
+      entry.canonicalEvent.eventType,
+      entry.canonicalEvent.channel,
+      fingerprint,
+    ].join(":");
+  }
+
+  const signature = buildTimelineDuplicateSignature(entry.item);
+
+  if (signature === null) {
+    return null;
+  }
+
+  return [
+    "signature",
+    entry.canonicalEvent.contactId,
+    entry.canonicalEvent.eventType,
+    entry.canonicalEvent.channel,
+    signature,
+  ].join(":");
+}
+
+function timelineOccurredAtMs(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function isTimelinePresentationDuplicate(
+  left: CanonicalTimelineItemWithEvent,
+  right: CanonicalTimelineItemWithEvent,
+): boolean {
+  if (
+    left.canonicalEvent.contactId !== right.canonicalEvent.contactId ||
+    left.canonicalEvent.eventType !== right.canonicalEvent.eventType ||
+    left.canonicalEvent.channel !== right.canonicalEvent.channel
+  ) {
+    return false;
+  }
+
+  return (
+    Math.abs(
+      timelineOccurredAtMs(left.canonicalEvent.occurredAt) -
+        timelineOccurredAtMs(right.canonicalEvent.occurredAt),
+    ) <= timelineDuplicateWindowMs
+  );
+}
+
+function timelineFamilyPriority(item: TimelineItem): number {
+  switch (item.family) {
+    case "one_to_one_email":
+    case "one_to_one_sms":
+      return 3;
+    case "auto_email":
+    case "auto_sms":
+      return 2;
+    case "campaign_email":
+    case "campaign_sms":
+      return 1;
+    case "internal_note":
+    case "salesforce_event":
+      return 0;
+  }
+}
+
+function timelineProviderPriority(
+  provider: CanonicalEventRecord["provenance"]["primaryProvider"],
+): number {
+  switch (provider) {
+    case "gmail":
+    case "simpletexting":
+      return 3;
+    case "mailchimp":
+      return 2;
+    case "salesforce":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function timelineDetailRichness(item: TimelineItem): number {
+  const values = (() => {
+    switch (item.family) {
+      case "one_to_one_email":
+        return [
+          item.subject,
+          item.bodyPreview,
+          item.snippet,
+          item.mailbox,
+          item.threadId,
+        ];
+      case "auto_email":
+        return [item.subject, item.snippet, item.sourceLabel];
+      case "campaign_email":
+        return [item.campaignName, item.activityType, item.snippet];
+      case "one_to_one_sms":
+        return [item.messageTextPreview, item.threadKey];
+      case "auto_sms":
+        return [item.messageTextPreview, item.sourceLabel];
+      case "campaign_sms":
+        return [item.campaignName, item.messageTextPreview];
+      case "internal_note":
+        return [item.body, item.authorDisplayName];
+      case "salesforce_event":
+        return [item.projectName, item.expeditionName, item.sourceField];
+    }
+  })();
+
+  return values.reduce(
+    (score, value) =>
+      normalizeDuplicateText(value) === null ? score : score + 1,
+    0,
+  );
+}
+
+function preferTimelineDuplicate(
+  existing: CanonicalTimelineItemWithEvent,
+  candidate: CanonicalTimelineItemWithEvent,
+): CanonicalTimelineItemWithEvent {
+  const familyDelta =
+    timelineFamilyPriority(candidate.item) -
+    timelineFamilyPriority(existing.item);
+
+  if (familyDelta > 0) {
+    return candidate;
+  }
+
+  if (familyDelta < 0) {
+    return existing;
+  }
+
+  const providerDelta =
+    timelineProviderPriority(candidate.canonicalEvent.provenance.primaryProvider) -
+    timelineProviderPriority(existing.canonicalEvent.provenance.primaryProvider);
+
+  if (providerDelta > 0) {
+    return candidate;
+  }
+
+  if (providerDelta < 0) {
+    return existing;
+  }
+
+  const detailDelta =
+    timelineDetailRichness(candidate.item) -
+    timelineDetailRichness(existing.item);
+
+  if (detailDelta > 0) {
+    return candidate;
+  }
+
+  return existing;
+}
+
+function collapseDuplicateTimelineItems(input: {
+  readonly canonicalItems: readonly TimelineItem[];
+  readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
+}): readonly TimelineItem[] {
+  const deduped: CanonicalTimelineItemWithEvent[] = [];
+  const lastIndexByKey = new Map<string, number>();
+
+  for (const item of input.canonicalItems) {
+    const canonicalEvent = input.canonicalEventById.get(item.canonicalEventId);
+
+    if (canonicalEvent === undefined) {
+      continue;
+    }
+
+    const candidate = {
+      item,
+      canonicalEvent,
+    } satisfies CanonicalTimelineItemWithEvent;
+    const key = buildTimelineDuplicateKey(candidate);
+
+    if (key !== null) {
+      const existingIndex = lastIndexByKey.get(key);
+
+      if (existingIndex !== undefined) {
+        const existing = deduped[existingIndex];
+
+        if (
+          existing !== undefined &&
+          isTimelinePresentationDuplicate(existing, candidate)
+        ) {
+          deduped[existingIndex] = preferTimelineDuplicate(existing, candidate);
+          continue;
+        }
+      }
+
+      lastIndexByKey.set(key, deduped.length);
+    }
+
+    deduped.push(candidate);
+  }
+
+  return timelineItemListSchema.parse(deduped.map((entry) => entry.item));
+}
+
 function mergeTimelineItems(input: {
   readonly canonicalItems: readonly TimelineItem[];
   readonly pendingRows: readonly PendingComposerOutboundRecord[];
@@ -602,13 +868,17 @@ export function createStage1TimelinePresentationService(
         repositories,
         canonicalEvents,
       );
-
-      return mergeTimelineItems({
+      const canonicalItems = collapseDuplicateTimelineItems({
         canonicalItems: buildTimelineItemsFromRows({
           timelineRows,
           canonicalEventById,
           context,
         }),
+        canonicalEventById,
+      });
+
+      return mergeTimelineItems({
+        canonicalItems,
         pendingRows,
       });
     },
@@ -628,12 +898,16 @@ export function createStage1TimelinePresentationService(
         repositories,
         canonicalEvents,
       );
-      const mergedItems = mergeTimelineItems({
+      const canonicalItems = collapseDuplicateTimelineItems({
         canonicalItems: buildTimelineItemsFromRows({
           timelineRows: rows,
           canonicalEventById,
           context,
         }),
+        canonicalEventById,
+      });
+      const mergedItems = mergeTimelineItems({
+        canonicalItems,
         pendingRows,
       });
       const beforeSortKey = input.beforeSortKey;
