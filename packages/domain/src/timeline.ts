@@ -281,6 +281,41 @@ function normalizeDuplicateText(value: string | null | undefined): string | null
   return normalized.length === 0 ? null : normalized;
 }
 
+function timelineCampaignEmailDuplicateKey(
+  item: TimelineItem,
+): string | null {
+  if (item.family !== "campaign_email") {
+    return null;
+  }
+
+  return normalizeDuplicateText(item.campaignId);
+}
+
+function isSameCampaignEmailDuplicate(
+  left: CanonicalTimelineItemWithEvent,
+  right: CanonicalTimelineItemWithEvent,
+): boolean {
+  const leftKey = timelineCampaignEmailDuplicateKey(left.item);
+  const rightKey = timelineCampaignEmailDuplicateKey(right.item);
+
+  return leftKey !== null && leftKey === rightKey;
+}
+
+function campaignEmailPresentationPriority(
+  item: Extract<TimelineItem, { family: "campaign_email" }>,
+): number {
+  switch (item.activityType) {
+    case "sent":
+      return 4;
+    case "opened":
+      return 3;
+    case "clicked":
+      return 2;
+    case "unsubscribed":
+      return 1;
+  }
+}
+
 function buildTimelineDuplicateSignature(item: TimelineItem): string | null {
   const parts = (() => {
     switch (item.family) {
@@ -326,6 +361,17 @@ function buildTimelineDuplicateSignature(item: TimelineItem): string | null {
 function buildTimelineDuplicateKey(
   entry: CanonicalTimelineItemWithEvent,
 ): string | null {
+  const campaignDuplicateKey = timelineCampaignEmailDuplicateKey(entry.item);
+
+  if (campaignDuplicateKey !== null) {
+    return [
+      "campaign",
+      entry.canonicalEvent.contactId,
+      entry.canonicalEvent.channel,
+      campaignDuplicateKey,
+    ].join(":");
+  }
+
   const fingerprint = normalizeDuplicateText(
     entry.canonicalEvent.contentFingerprint,
   );
@@ -366,9 +412,16 @@ function isTimelinePresentationDuplicate(
 ): boolean {
   if (
     left.canonicalEvent.contactId !== right.canonicalEvent.contactId ||
-    left.canonicalEvent.eventType !== right.canonicalEvent.eventType ||
     left.canonicalEvent.channel !== right.canonicalEvent.channel
   ) {
+    return false;
+  }
+
+  if (isSameCampaignEmailDuplicate(left, right)) {
+    return true;
+  }
+
+  if (left.canonicalEvent.eventType !== right.canonicalEvent.eventType) {
     return false;
   }
 
@@ -474,6 +527,24 @@ function preferTimelineDuplicate(
 
   if (providerDelta < 0) {
     return existing;
+  }
+
+  if (
+    existing.item.family === "campaign_email" &&
+    candidate.item.family === "campaign_email" &&
+    isSameCampaignEmailDuplicate(existing, candidate)
+  ) {
+    const activityDelta =
+      campaignEmailPresentationPriority(candidate.item) -
+      campaignEmailPresentationPriority(existing.item);
+
+    if (activityDelta > 0) {
+      return candidate;
+    }
+
+    if (activityDelta < 0) {
+      return existing;
+    }
   }
 
   const detailDelta =
