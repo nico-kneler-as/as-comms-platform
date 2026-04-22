@@ -861,4 +861,63 @@ describe("Stage 1 timeline presenter", () => {
       campaignName: "April Volunteer Update",
     });
   });
+
+  it("collapses sent and opened campaign activity variants into one representative email row", async () => {
+    const sentCampaign = buildMailchimpCampaignEmailEvent({
+      id: "evt_campaign_sent",
+      sourceEvidenceId: "sev_campaign_sent",
+      occurredAt: "2026-01-01T00:10:00.000Z",
+      activityType: "sent",
+      campaignName: "Trailhead Update",
+      snippet: "Subject: Trailhead Update\n\nBody:\nBring your field notebook.",
+      contentFingerprint: "fp:campaign-sent",
+    });
+    const openedCampaign = buildMailchimpCampaignEmailEvent({
+      id: "evt_campaign_opened",
+      sourceEvidenceId: "sev_campaign_opened",
+      occurredAt: "2026-01-02T04:45:00.000Z",
+      activityType: "opened",
+      campaignName: "Trailhead Update",
+      snippet: "Subject: Trailhead Update\n\nBody:\nBring your field notebook.",
+      contentFingerprint: "fp:campaign-opened",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [
+        sentCampaign.canonicalEvent,
+        openedCampaign.canonicalEvent,
+      ],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_campaign_sent",
+          provider: "mailchimp",
+          providerRecordType: "campaign_email_activity",
+          providerRecordId: "campaign-sent",
+        }),
+        buildSourceEvidence({
+          id: "sev_campaign_opened",
+          provider: "mailchimp",
+          providerRecordType: "campaign_email_activity",
+          providerRecordId: "campaign-opened",
+        }),
+      ],
+      salesforceCommunicationDetails: [],
+      mailchimpCampaignActivityDetails: [
+        sentCampaign.detail,
+        openedCampaign.detail,
+      ],
+      timelineRows: [sentCampaign.timelineRow, openedCampaign.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      canonicalEventId: "evt_campaign_sent",
+      family: "campaign_email",
+      activityType: "sent",
+      campaignName: "Trailhead Update",
+      snippet: "Subject: Trailhead Update\n\nBody:\nBring your field notebook.",
+    });
+  });
 });
