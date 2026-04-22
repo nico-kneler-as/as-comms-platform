@@ -214,7 +214,12 @@ async function loadCampaignActivitySummaryByCampaignId(input: {
     }
 
     const detail = detailBySourceEvidenceId.get(event.sourceEvidenceId);
-    const campaignId = detail?.campaignId;
+
+    if (detail === undefined) {
+      continue;
+    }
+
+    const campaignId = detail.campaignId;
 
     if (typeof campaignId !== "string" || campaignId.trim().length === 0) {
       continue;
