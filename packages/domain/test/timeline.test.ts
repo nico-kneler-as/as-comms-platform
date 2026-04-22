@@ -637,14 +637,14 @@ describe("Stage 1 timeline presenter", () => {
         outboundAutoMismatch.canonicalEvent,
       ],
       sourceEvidence: [
-        buildSourceEvidence(
-          "sev_salesforce_inbound_auto_mismatch",
-          "salesforce-inbound-auto-mismatch",
-        ),
-        buildSourceEvidence(
-          "sev_salesforce_outbound_auto_mismatch",
-          "salesforce-outbound-auto-mismatch",
-        ),
+        buildSourceEvidence({
+          id: "sev_salesforce_inbound_auto_mismatch",
+          providerRecordId: "salesforce-inbound-auto-mismatch",
+        }),
+        buildSourceEvidence({
+          id: "sev_salesforce_outbound_auto_mismatch",
+          providerRecordId: "salesforce-outbound-auto-mismatch",
+        }),
       ],
       salesforceCommunicationDetails: [
         inboundAutoMismatch.detail,
@@ -742,11 +742,12 @@ describe("Stage 1 timeline presenter", () => {
 
   it("collapses cross-provider outbound email duplicates and keeps the richer Gmail record", async () => {
     const duplicateFingerprint = "fp:hex-13174";
-    const salesforceAuto = buildSalesforceOutboundEmailEvent({
+    const salesforceAuto = buildSalesforceEmailEvent({
       id: "evt_salesforce_auto_duplicate",
       sourceEvidenceId: "sev_salesforce_auto_duplicate",
       occurredAt: "2026-01-01T00:05:00.000Z",
-      messageKind: "auto",
+      direction: "outbound",
+      canonicalMessageKind: "auto",
       subject: "Re: Confirmed: Hex 13174",
       snippet: "No problem at all! I will plan to retrieve the ARUs.",
       contentFingerprint: duplicateFingerprint,
