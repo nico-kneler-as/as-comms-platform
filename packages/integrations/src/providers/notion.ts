@@ -490,7 +490,7 @@ async function listAllBlockChildren(
   for (;;) {
     const page = await client.listBlockChildren({
       blockId,
-      startCursor: cursor,
+      ...(cursor !== undefined ? { startCursor: cursor } : {}),
       pageSize: DEFAULT_NOTION_PAGE_SIZE
     });
     const rawResults = Array.isArray(page.results) ? page.results : [];
@@ -777,7 +777,7 @@ export async function* queryDatabase(
   for (;;) {
     const page = await client.queryDatabase({
       databaseId: normalizedDatabaseId,
-      startCursor: cursor,
+      ...(cursor !== undefined ? { startCursor: cursor } : {}),
       pageSize: DEFAULT_NOTION_PAGE_SIZE
     });
     const results = Array.isArray(page.results) ? page.results : [];
