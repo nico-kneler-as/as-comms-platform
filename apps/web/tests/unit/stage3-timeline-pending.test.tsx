@@ -6,6 +6,11 @@ import type { InboxTimelineEntryViewModel } from "../../app/inbox/_lib/view-mode
 
 Object.assign(globalThis, { React });
 
+vi.mock("../../app/inbox/actions", () => ({
+  updateNoteAction: vi.fn(),
+  deleteNoteAction: vi.fn(),
+}));
+
 vi.mock("@/components/ui/divider-label", () => ({
   DividerLabel: ({ children }: { readonly children?: React.ReactNode }) =>
     createElement("span", null, children),
@@ -70,6 +75,7 @@ describe("stage3 pending timeline rendering", () => {
       createElement(InboxTimeline, {
         entries: [buildEntry()],
         volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
       }),
     );
 
@@ -82,6 +88,7 @@ describe("stage3 pending timeline rendering", () => {
       createElement(InboxTimeline, {
         entries: [buildEntry({ sendStatus: "failed" })],
         volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
         onRetryPending: vi.fn(),
       }),
     );
@@ -100,6 +107,7 @@ describe("stage3 pending timeline rendering", () => {
           }),
         ],
         volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
         onRetryPending: vi.fn(),
       }),
     );

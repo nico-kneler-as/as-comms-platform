@@ -48,7 +48,9 @@ function buildRepositoryBundle(input: {
       listByIds: () => Promise.resolve(input.canonicalEvents),
       listByContactId: (contactId) =>
         Promise.resolve(
-          input.canonicalEvents.filter((event) => event.contactId === contactId)
+          input.canonicalEvents.filter(
+            (event) => event.contactId === contactId,
+          ),
         ),
       upsert: (record) => Promise.resolve(record),
     },
@@ -84,8 +86,8 @@ function buildRepositoryBundle(input: {
       listBySourceEvidenceIds: (sourceEvidenceIds) =>
         Promise.resolve(
           input.gmailDetails.filter((detail) =>
-            sourceEvidenceIds.includes(detail.sourceEvidenceId)
-          )
+            sourceEvidenceIds.includes(detail.sourceEvidenceId),
+          ),
         ),
       upsert: (record) => Promise.resolve(record),
     },
@@ -108,6 +110,8 @@ function buildRepositoryBundle(input: {
     manualNoteDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record),
+      updateBody: () => Promise.resolve(null),
+      deleteByAuthor: () => Promise.resolve(0),
     },
     pendingOutbounds: {
       insert: ({ id }) => Promise.resolve(id),
@@ -268,11 +272,11 @@ describe("findLastInboundAliasForContact", () => {
             alias: "latest-project@example.org",
           }),
         ],
-      })
+      }),
     );
 
     await expect(
-      presenter.findLastInboundAliasForContact("contact:volunteer")
+      presenter.findLastInboundAliasForContact("contact:volunteer"),
     ).resolves.toBe("latest-project@example.org");
   });
 
@@ -281,11 +285,11 @@ describe("findLastInboundAliasForContact", () => {
       buildRepositoryBundle({
         canonicalEvents: [],
         gmailDetails: [],
-      })
+      }),
     );
 
     await expect(
-      presenter.findLastInboundAliasForContact("contact:volunteer")
+      presenter.findLastInboundAliasForContact("contact:volunteer"),
     ).resolves.toBeNull();
   });
 });

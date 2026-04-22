@@ -1,9 +1,6 @@
 import { z } from "zod";
 
-import {
-  providerSchema,
-  reviewStateSchema
-} from "./stage1-taxonomy.js";
+import { providerSchema, reviewStateSchema } from "./stage1-taxonomy.js";
 
 const idSchema = z.string().min(1);
 const timestampSchema = z.string().datetime();
@@ -15,13 +12,13 @@ const timelineFamilySchema = z.enum([
   "campaign_sms",
   "one_to_one_email",
   "one_to_one_sms",
-  "internal_note"
+  "internal_note",
 ]);
 const campaignEmailActivityTypeSchema = z.enum([
   "sent",
   "opened",
   "clicked",
-  "unsubscribed"
+  "unsubscribed",
 ]);
 
 const timelineItemBaseSchema = z.object({
@@ -33,7 +30,7 @@ const timelineItemBaseSchema = z.object({
   sortKey: z.string().min(1),
   reviewState: reviewStateSchema,
   primaryProvider: providerSchema,
-  summary: z.string().min(1)
+  summary: z.string().min(1),
 });
 
 export const salesforceTimelineItemSchema = timelineItemBaseSchema.extend({
@@ -42,11 +39,11 @@ export const salesforceTimelineItemSchema = timelineItemBaseSchema.extend({
     "signed_up",
     "received_training",
     "completed_training",
-    "submitted_first_data"
+    "submitted_first_data",
   ]),
   projectName: nullableStringSchema,
   expeditionName: nullableStringSchema,
-  sourceField: nullableStringSchema
+  sourceField: nullableStringSchema,
 });
 export type SalesforceTimelineItem = z.infer<
   typeof salesforceTimelineItemSchema
@@ -57,7 +54,7 @@ export const autoEmailTimelineItemSchema = timelineItemBaseSchema.extend({
   direction: z.literal("outbound"),
   subject: nullableStringSchema,
   snippet: z.string(),
-  sourceLabel: z.string().min(1)
+  sourceLabel: z.string().min(1),
 });
 export type AutoEmailTimelineItem = z.infer<typeof autoEmailTimelineItemSchema>;
 
@@ -65,7 +62,7 @@ export const autoSmsTimelineItemSchema = timelineItemBaseSchema.extend({
   family: z.literal("auto_sms"),
   direction: z.literal("outbound"),
   messageTextPreview: z.string(),
-  sourceLabel: z.string().min(1)
+  sourceLabel: z.string().min(1),
 });
 export type AutoSmsTimelineItem = z.infer<typeof autoSmsTimelineItemSchema>;
 
@@ -75,7 +72,7 @@ export const campaignEmailTimelineItemSchema = timelineItemBaseSchema.extend({
   campaignName: nullableStringSchema,
   campaignId: nullableStringSchema,
   audienceId: nullableStringSchema,
-  snippet: z.string()
+  snippet: z.string(),
 });
 export type CampaignEmailTimelineItem = z.infer<
   typeof campaignEmailTimelineItemSchema
@@ -86,7 +83,7 @@ export const campaignSmsTimelineItemSchema = timelineItemBaseSchema.extend({
   direction: z.literal("outbound"),
   messageTextPreview: z.string(),
   campaignName: nullableStringSchema,
-  campaignId: nullableStringSchema
+  campaignId: nullableStringSchema,
 });
 export type CampaignSmsTimelineItem = z.infer<
   typeof campaignSmsTimelineItemSchema
@@ -103,7 +100,7 @@ export const oneToOneEmailTimelineItemSchema = timelineItemBaseSchema.extend({
   rfc822MessageId: nullableStringSchema.optional(),
   inReplyToRfc822: nullableStringSchema.optional(),
   sendStatus: z.enum(["pending", "failed", "orphaned"]).nullable().optional(),
-  attachmentCount: z.number().int().nonnegative().optional()
+  attachmentCount: z.number().int().nonnegative().optional(),
 });
 export type OneToOneEmailTimelineItem = z.infer<
   typeof oneToOneEmailTimelineItemSchema
@@ -114,7 +111,7 @@ export const oneToOneSmsTimelineItemSchema = timelineItemBaseSchema.extend({
   direction: z.enum(["inbound", "outbound"]),
   messageTextPreview: z.string(),
   phone: nullableStringSchema,
-  threadKey: nullableStringSchema
+  threadKey: nullableStringSchema,
 });
 export type OneToOneSmsTimelineItem = z.infer<
   typeof oneToOneSmsTimelineItemSchema
@@ -122,8 +119,10 @@ export type OneToOneSmsTimelineItem = z.infer<
 
 export const internalNoteTimelineItemSchema = timelineItemBaseSchema.extend({
   family: z.literal("internal_note"),
+  noteId: z.string().min(1),
   body: z.string().min(1),
-  authorDisplayName: nullableStringSchema
+  authorDisplayName: nullableStringSchema,
+  authorId: nullableStringSchema.default(null),
 });
 export type InternalNoteTimelineItem = z.infer<
   typeof internalNoteTimelineItemSchema
@@ -137,7 +136,7 @@ export const timelineItemSchema = z.discriminatedUnion("family", [
   campaignSmsTimelineItemSchema,
   oneToOneEmailTimelineItemSchema,
   oneToOneSmsTimelineItemSchema,
-  internalNoteTimelineItemSchema
+  internalNoteTimelineItemSchema,
 ]);
 export type TimelineItem = z.infer<typeof timelineItemSchema>;
 

@@ -9,6 +9,10 @@ import { requireSession } from "@/src/server/auth/session";
 import { sendComposerGmailMessage } from "@/src/server/composer/gmail-send";
 import { setInboxNeedsFollowUp } from "@/src/server/inbox/follow-up";
 import { revalidateInboxContact } from "@/src/server/inbox/revalidate";
+import {
+  getInternalNoteValidationError,
+  normalizeInternalNoteBody,
+} from "@/src/lib/internal-note-validation";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 import { appendSecurityAudit } from "@/src/server/security/audit";
 import { enforceRateLimit } from "@/src/server/security/rate-limit";
@@ -32,12 +36,11 @@ const composerAttachmentSchema = z.object({
   contentBase64: z.string().min(1),
 });
 
-const composerBodyPlaintextSchema = z.string().refine(
-  (value) => value.trim().length > 0,
-  {
+const composerBodyPlaintextSchema = z
+  .string()
+  .refine((value) => value.trim().length > 0, {
     message: "Body is required.",
-  }
-);
+  });
 
 const composerSendActionInputSchema = z.object({
   recipient: composerRecipientSchema,
@@ -73,6 +76,20 @@ export type ComposerSendActionInput = z.input<
   typeof composerSendActionInputSchema
 >;
 export type ComposerSendActionResult = UiResult<ComposerSendActionData>;
+
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+export type NoteCreateActionData = {
+  readonly noteId: string;
+  readonly contactId: string;
+};
+
+export type NoteCreateActionResult = UiResult<NoteCreateActionData>;
+export type NoteUpdateActionResult = UiResult<{
+  readonly noteId: string;
+}>;
+export type NoteDeleteActionResult = UiResult<{
+  readonly noteId: string;
+}>;
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
 export type ContactSearchResult = {
@@ -116,11 +133,43 @@ function composerRateLimitError(requestId: string): ComposerSendActionResult {
   };
 }
 
-function contactSearchRateLimitError(requestId: string): ContactSearchActionResult {
+function contactSearchRateLimitError(
+  requestId: string,
+): ContactSearchActionResult {
   return {
     ok: false,
     code: "rate_limit_exceeded",
     message: "Too many contact searches. Please wait a minute and try again.",
+    requestId,
+    retryable: true,
+  };
+}
+
+function noteCreateRateLimitError(requestId: string): NoteCreateActionResult {
+  return {
+    ok: false,
+    code: "rate_limit_exceeded",
+    message: "Too many note saves. Please wait a minute and try again.",
+    requestId,
+    retryable: true,
+  };
+}
+
+function noteUpdateRateLimitError(requestId: string): NoteUpdateActionResult {
+  return {
+    ok: false,
+    code: "rate_limit_exceeded",
+    message: "Too many note edits. Please wait a minute and try again.",
+    requestId,
+    retryable: true,
+  };
+}
+
+function noteDeleteRateLimitError(requestId: string): NoteDeleteActionResult {
+  return {
+    ok: false,
+    code: "rate_limit_exceeded",
+    message: "Too many note deletes. Please wait a minute and try again.",
     requestId,
     retryable: true,
   };
@@ -131,7 +180,7 @@ function composerValidationError(
   input: {
     readonly message: string;
     readonly fieldErrors?: Record<string, string>;
-  }
+  },
 ): ComposerSendActionResult {
   return {
     ok: false,
@@ -139,12 +188,53 @@ function composerValidationError(
     message: input.message,
     requestId,
     retryable: false,
-    ...(input.fieldErrors === undefined ? {} : { fieldErrors: input.fieldErrors }),
+    ...(input.fieldErrors === undefined
+      ? {}
+      : { fieldErrors: input.fieldErrors }),
+  };
+}
+
+function noteValidationError(
+  requestId: string,
+  input: {
+    readonly message: string;
+    readonly fieldErrors?: Record<string, string>;
+  },
+): UiResult<never> {
+  return {
+    ok: false,
+    code: "validation_error",
+    message: input.message,
+    requestId,
+    retryable: false,
+    ...(input.fieldErrors === undefined
+      ? {}
+      : { fieldErrors: input.fieldErrors }),
+  };
+}
+
+function noteForbiddenError(requestId: string): UiResult<never> {
+  return {
+    ok: false,
+    code: "forbidden",
+    message: "You can only edit or delete your own notes.",
+    requestId,
+    retryable: false,
+  };
+}
+
+function noteNotFoundError(requestId: string): UiResult<never> {
+  return {
+    ok: false,
+    code: "not_found",
+    message: "That note could not be found.",
+    requestId,
+    retryable: false,
   };
 }
 
 function composerGenericRetryableError(
-  requestId: string
+  requestId: string,
 ): ComposerSendActionResult {
   return {
     ok: false,
@@ -165,7 +255,7 @@ function mapComposerProviderError(
     | "attachment_too_large"
     | "rate_limited"
     | "transient"
-    | "permanent"
+    | "permanent",
 ): ComposerSendActionResult {
   switch (kind) {
     case "auth_error":
@@ -238,13 +328,46 @@ function normalizeEmailAddress(value: string): string | null {
   return normalized.length === 0 ? null : normalized;
 }
 
+function resolveCurrentUserDisplayName(input: {
+  readonly name: string | null | undefined;
+  readonly email: string | null | undefined;
+}): string {
+  const trimmedName = input.name?.trim();
+
+  if (trimmedName && trimmedName.length > 0) {
+    return trimmedName;
+  }
+
+  const localPart = input.email?.split("@", 1)[0]?.trim();
+
+  if (localPart && localPart.length > 0) {
+    return localPart;
+  }
+
+  return "Internal note";
+}
+
+function buildManualNoteCanonicalEventId(noteId: string): string {
+  return `canonical-event:manual:note:${noteId}`;
+}
+
+async function resolveManualNoteContactId(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly noteId: string;
+}): Promise<string | null> {
+  const canonicalEvent =
+    await input.runtime.repositories.canonicalEvents.findById(
+      buildManualNoteCanonicalEventId(input.noteId),
+    );
+
+  return canonicalEvent?.contactId ?? null;
+}
+
 function normalizeMembershipStatus(value: string | null): string {
   return (value ?? "").trim().toLowerCase().replaceAll("_", "-");
 }
 
-function membershipSortRank(
-  membershipStatus: string | null
-): number {
+function membershipSortRank(membershipStatus: string | null): number {
   switch (normalizeMembershipStatus(membershipStatus)) {
     case "lead":
       return 0;
@@ -279,11 +402,13 @@ function readAliasSignature(aliasRecord: Record<string, unknown>): string {
 }
 
 function appendSignature(bodyPlaintext: string, signature: string): string {
-  return signature.length > 0 ? `${bodyPlaintext}\n\n${signature}` : bodyPlaintext;
+  return signature.length > 0
+    ? `${bodyPlaintext}\n\n${signature}`
+    : bodyPlaintext;
 }
 
 function buildAttachmentMetadata(
-  attachments: ComposerSendActionParsedInput["attachments"]
+  attachments: ComposerSendActionParsedInput["attachments"],
 ) {
   return attachments.map((attachment) => ({
     filename: attachment.filename,
@@ -293,7 +418,7 @@ function buildAttachmentMetadata(
 }
 
 export async function searchContactsAction(
-  query: string
+  query: string,
 ): Promise<ContactSearchActionResult> {
   const requestId = randomUUID();
 
@@ -348,14 +473,14 @@ export async function searchContactsAction(
     new Set(
       memberships
         .map((membership) => membership.projectId)
-        .filter((projectId): projectId is string => projectId !== null)
-    )
+        .filter((projectId): projectId is string => projectId !== null),
+    ),
   );
   const projectDimensions =
     await runtime.repositories.projectDimensions.listByIds(projectIds);
   const membershipsByContactId = new Map<
     string,
-    ((typeof memberships)[number])[]
+    (typeof memberships)[number][]
   >();
 
   for (const membership of memberships) {
@@ -370,7 +495,10 @@ export async function searchContactsAction(
   }
 
   const projectNameById = new Map(
-    projectDimensions.map((project) => [project.projectId, project.projectName])
+    projectDimensions.map((project) => [
+      project.projectId,
+      project.projectName,
+    ]),
   );
 
   return {
@@ -380,18 +508,21 @@ export async function searchContactsAction(
         [...(membershipsByContactId.get(contact.id) ?? [])].sort(
           (left, right) => {
             const rankDifference =
-              membershipSortRank(left.status) - membershipSortRank(right.status);
+              membershipSortRank(left.status) -
+              membershipSortRank(right.status);
 
             if (rankDifference !== 0) {
               return rankDifference;
             }
 
             if (left.projectId !== right.projectId) {
-              return (left.projectId ?? "").localeCompare(right.projectId ?? "");
+              return (left.projectId ?? "").localeCompare(
+                right.projectId ?? "",
+              );
             }
 
             return left.id.localeCompare(right.id);
-          }
+          },
         )[0] ?? null;
 
       return {
@@ -413,7 +544,9 @@ async function resolveContactEmail(input: {
   readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
   readonly contactId: string;
 }): Promise<string | null> {
-  const contact = await input.runtime.repositories.contacts.findById(input.contactId);
+  const contact = await input.runtime.repositories.contacts.findById(
+    input.contactId,
+  );
 
   if (contact === null) {
     return null;
@@ -429,10 +562,13 @@ async function resolveContactEmail(input: {
   }
 
   const identities =
-    await input.runtime.repositories.contactIdentities.listByContactId(contact.id);
+    await input.runtime.repositories.contactIdentities.listByContactId(
+      contact.id,
+    );
 
   return (
-    identities.find((identity) => identity.kind === "email")?.normalizedValue ?? null
+    identities.find((identity) => identity.kind === "email")?.normalizedValue ??
+    null
   );
 }
 
@@ -513,8 +649,301 @@ async function updateNeedsFollowUp(
   };
 }
 
+export async function createNoteAction(rawInput: {
+  readonly contactId: string;
+  readonly body: string;
+}): Promise<NoteCreateActionResult> {
+  const requestId = randomUUID();
+  const contactId = rawInput.contactId.trim();
+  const body = normalizeInternalNoteBody(rawInput.body);
+
+  if (contactId.length === 0) {
+    return noteValidationError(requestId, {
+      message: "A contact is required to save a note.",
+      fieldErrors: {
+        contactId: "Contact is required.",
+      },
+    });
+  }
+
+  const bodyValidationError = getInternalNoteValidationError(body);
+
+  if (bodyValidationError !== null) {
+    return noteValidationError(requestId, {
+      message: bodyValidationError,
+      fieldErrors: {
+        body: bodyValidationError,
+      },
+    });
+  }
+
+  let currentUser;
+  try {
+    currentUser = await requireSession();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return unauthorizedError(requestId);
+    }
+    throw error;
+  }
+
+  const decision = await enforceRateLimit({
+    scope: "server-action:inbox-note-create",
+    identifier: currentUser.id,
+    limit: 60,
+    audit: {
+      actorType: "user",
+      actorId: currentUser.id,
+      action: "inbox.note_create.rate_limited",
+      entityType: "server_action",
+      entityId: "inbox.note_create",
+      metadataJson: {
+        contactId,
+      },
+    },
+  });
+
+  if (!decision.allowed) {
+    return noteCreateRateLimitError(requestId);
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const noteId = randomUUID();
+
+  await runtime.internalNotes.createNote({
+    noteId,
+    contactId,
+    body,
+    occurredAt: new Date().toISOString(),
+    authorDisplayName: resolveCurrentUserDisplayName({
+      name: currentUser.name,
+      email: currentUser.email,
+    }),
+    authorId: currentUser.id,
+  });
+
+  await appendSecurityAudit({
+    actorType: "user",
+    actorId: currentUser.id,
+    action: "inbox.note_created",
+    entityType: "internal_note",
+    entityId: noteId,
+    result: "recorded",
+    policyCode: "inbox.note",
+    metadataJson: {
+      contactId,
+      noteId,
+    },
+  });
+
+  revalidateInboxContact(contactId);
+
+  return {
+    ok: true,
+    data: {
+      noteId,
+      contactId,
+    },
+    requestId,
+  };
+}
+
+export async function updateNoteAction(rawInput: {
+  readonly noteId: string;
+  readonly body: string;
+}): Promise<NoteUpdateActionResult> {
+  const requestId = randomUUID();
+  const noteId = rawInput.noteId.trim();
+  const body = normalizeInternalNoteBody(rawInput.body);
+
+  if (noteId.length === 0) {
+    return noteValidationError(requestId, {
+      message: "A note id is required.",
+      fieldErrors: {
+        noteId: "Note id is required.",
+      },
+    });
+  }
+
+  const bodyValidationError = getInternalNoteValidationError(body);
+
+  if (bodyValidationError !== null) {
+    return noteValidationError(requestId, {
+      message: bodyValidationError,
+      fieldErrors: {
+        body: bodyValidationError,
+      },
+    });
+  }
+
+  let currentUser;
+  try {
+    currentUser = await requireSession();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return unauthorizedError(requestId);
+    }
+    throw error;
+  }
+
+  const decision = await enforceRateLimit({
+    scope: "server-action:inbox-note-update",
+    identifier: currentUser.id,
+    limit: 60,
+    audit: {
+      actorType: "user",
+      actorId: currentUser.id,
+      action: "inbox.note_update.rate_limited",
+      entityType: "server_action",
+      entityId: "inbox.note_update",
+      metadataJson: {
+        noteId,
+      },
+    },
+  });
+
+  if (!decision.allowed) {
+    return noteUpdateRateLimitError(requestId);
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const contactId = await resolveManualNoteContactId({
+    runtime,
+    noteId,
+  });
+  const result = await runtime.internalNotes.updateNote({
+    noteId,
+    body,
+    authorId: currentUser.id,
+  });
+
+  if (result.outcome === "not_authorized") {
+    return noteForbiddenError(requestId);
+  }
+
+  if (result.outcome === "not_found") {
+    return noteNotFoundError(requestId);
+  }
+
+  await appendSecurityAudit({
+    actorType: "user",
+    actorId: currentUser.id,
+    action: "inbox.note_updated",
+    entityType: "internal_note",
+    entityId: noteId,
+    result: "recorded",
+    policyCode: "inbox.note",
+    metadataJson: {
+      contactId,
+      noteId,
+    },
+  });
+
+  if (contactId !== null) {
+    revalidateInboxContact(contactId);
+  }
+
+  return {
+    ok: true,
+    data: {
+      noteId,
+    },
+    requestId,
+  };
+}
+
+export async function deleteNoteAction(rawInput: {
+  readonly noteId: string;
+}): Promise<NoteDeleteActionResult> {
+  const requestId = randomUUID();
+  const noteId = rawInput.noteId.trim();
+
+  if (noteId.length === 0) {
+    return noteValidationError(requestId, {
+      message: "A note id is required.",
+      fieldErrors: {
+        noteId: "Note id is required.",
+      },
+    });
+  }
+
+  let currentUser;
+  try {
+    currentUser = await requireSession();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return unauthorizedError(requestId);
+    }
+    throw error;
+  }
+
+  const decision = await enforceRateLimit({
+    scope: "server-action:inbox-note-delete",
+    identifier: currentUser.id,
+    limit: 60,
+    audit: {
+      actorType: "user",
+      actorId: currentUser.id,
+      action: "inbox.note_delete.rate_limited",
+      entityType: "server_action",
+      entityId: "inbox.note_delete",
+      metadataJson: {
+        noteId,
+      },
+    },
+  });
+
+  if (!decision.allowed) {
+    return noteDeleteRateLimitError(requestId);
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const contactId = await resolveManualNoteContactId({
+    runtime,
+    noteId,
+  });
+  const result = await runtime.internalNotes.deleteNote({
+    noteId,
+    authorId: currentUser.id,
+  });
+
+  if (result.outcome === "not_authorized") {
+    return noteForbiddenError(requestId);
+  }
+
+  if (result.outcome === "not_found") {
+    return noteNotFoundError(requestId);
+  }
+
+  await appendSecurityAudit({
+    actorType: "user",
+    actorId: currentUser.id,
+    action: "inbox.note_deleted",
+    entityType: "internal_note",
+    entityId: noteId,
+    result: "recorded",
+    policyCode: "inbox.note",
+    metadataJson: {
+      contactId,
+      noteId,
+    },
+  });
+
+  if (contactId !== null) {
+    revalidateInboxContact(contactId);
+  }
+
+  return {
+    ok: true,
+    data: {
+      noteId,
+    },
+    requestId,
+  };
+}
+
 export async function sendComposerAction(
-  rawInput: ComposerSendActionInput
+  rawInput: ComposerSendActionInput,
 ): Promise<ComposerSendActionResult> {
   const requestId = randomUUID();
   const parsedInput = composerSendActionInputSchema.safeParse(rawInput);
@@ -526,7 +955,7 @@ export async function sendComposerAction(
         parsedInput.error.issues.map((issue) => [
           issue.path.join("."),
           issue.message,
-        ])
+        ]),
       ),
     });
   }
@@ -564,7 +993,7 @@ export async function sendComposerAction(
 
   const runtime = await getStage1WebRuntime();
   const alias = await runtime.settings.aliases.findByAlias(
-    parsedInput.data.alias.trim().toLowerCase()
+    parsedInput.data.alias.trim().toLowerCase(),
   );
 
   if (alias === null) {
@@ -584,7 +1013,7 @@ export async function sendComposerAction(
 
   if (parsedInput.data.recipient.kind === "contact") {
     const contact = await runtime.repositories.contacts.findById(
-      parsedInput.data.recipient.contactId
+      parsedInput.data.recipient.contactId,
     );
 
     if (contact === null) {
@@ -598,7 +1027,7 @@ export async function sendComposerAction(
     });
   } else {
     toEmailNormalized = normalizeEmailAddress(
-      parsedInput.data.recipient.emailAddress
+      parsedInput.data.recipient.emailAddress,
     );
 
     if (toEmailNormalized === null) {
@@ -617,8 +1046,13 @@ export async function sendComposerAction(
     return mapComposerProviderError(requestId, "invalid_recipient");
   }
 
-  const signature = readAliasSignature(alias as unknown as Record<string, unknown>);
-  const bodyPlaintext = appendSignature(parsedInput.data.bodyPlaintext, signature);
+  const signature = readAliasSignature(
+    alias as unknown as Record<string, unknown>,
+  );
+  const bodyPlaintext = appendSignature(
+    parsedInput.data.bodyPlaintext,
+    signature,
+  );
   const fingerprint = computePendingComposerOutboundFingerprint({
     contactId: canonicalContactId,
     subject: parsedInput.data.subject,
@@ -711,7 +1145,7 @@ export async function sendComposerAction(
 
       if (parsedInput.data.supersedesPendingId !== undefined) {
         await runtime.repositories.pendingOutbounds.markSuperseded(
-          parsedInput.data.supersedesPendingId
+          parsedInput.data.supersedesPendingId,
         );
       }
 

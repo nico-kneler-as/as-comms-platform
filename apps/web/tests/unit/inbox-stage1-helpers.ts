@@ -707,6 +707,7 @@ export async function seedInboxInternalNoteEvent(
     readonly occurredAt: string;
     readonly body: string;
     readonly authorDisplayName: string;
+    readonly authorId?: string | null;
   },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
@@ -754,6 +755,7 @@ export async function seedInboxInternalNoteEvent(
     providerRecordId: input.id,
     body: input.body,
     authorDisplayName: input.authorDisplayName,
+    authorId: input.authorId ?? null,
   });
 
   await context.repositories.timelineProjection.upsert({

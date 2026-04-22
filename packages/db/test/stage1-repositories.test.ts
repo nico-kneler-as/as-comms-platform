@@ -45,6 +45,7 @@ interface ManualNoteDetailRecord {
   readonly providerRecordId: string;
   readonly body: string;
   readonly authorDisplayName: string | null;
+  readonly authorId: string | null;
 }
 
 async function seedSharedInboxRecencyFixture(): Promise<{
@@ -172,7 +173,19 @@ async function seedSharedInboxRecencyFixture(): Promise<{
 
 describe("Stage 1 DB repositories", () => {
   it("persists and maps source evidence, contacts, identities, and memberships", async () => {
-    const { repositories } = await createTestStage1Context();
+    const { repositories, settings } = await createTestStage1Context();
+
+    await settings.users.upsert({
+      id: "user:stage-one",
+      name: "Stage One Operator",
+      email: "stage-one@example.org",
+      emailVerified: new Date("2026-01-01T00:00:00.000Z"),
+      image: null,
+      role: "operator",
+      deactivatedAt: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
 
     const sourceEvidence = await repositories.sourceEvidence.append({
       id: "sev_1",
@@ -327,6 +340,7 @@ describe("Stage 1 DB repositories", () => {
       providerRecordId: sourceEvidence.providerRecordId,
       body: "Follow up after the kickoff call.",
       authorDisplayName: "Stage One Operator",
+      authorId: "user:stage-one",
     })) as ManualNoteDetailRecord;
 
     await expect(

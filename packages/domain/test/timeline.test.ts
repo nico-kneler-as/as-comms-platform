@@ -7,12 +7,12 @@ import type {
   InboxProjectionRow,
   TimelineItem,
   SourceEvidenceRecord,
-  TimelineProjectionRow
+  TimelineProjectionRow,
 } from "@as-comms/contracts";
 
 import {
   type Stage1RepositoryBundle,
-  defineStage1RepositoryBundle
+  defineStage1RepositoryBundle,
 } from "../src/repositories.js";
 import type { PendingComposerOutboundRecord } from "../src/pending-outbounds.js";
 import { createStage1TimelinePresentationService } from "../src/timeline.js";
@@ -35,19 +35,19 @@ function createRepositoryBundle(input: {
   readonly pendingOutbounds?: readonly PendingComposerOutboundRecord[];
 }): Stage1RepositoryBundle {
   const canonicalEventsById = new Map(
-    input.canonicalEvents.map((event) => [event.id, event])
+    input.canonicalEvents.map((event) => [event.id, event]),
   );
   const sourceEvidenceById = new Map(
-    input.sourceEvidence.map((evidence) => [evidence.id, evidence])
+    input.sourceEvidence.map((evidence) => [evidence.id, evidence]),
   );
   const salesforceCommunicationDetailsBySourceEvidenceId = new Map(
     input.salesforceCommunicationDetails.map((detail) => [
       detail.sourceEvidenceId,
-      detail
-    ])
+      detail,
+    ]),
   );
   const timelineRowsByCanonicalEventId = new Map(
-    input.timelineRows.map((row) => [row.canonicalEventId, row])
+    input.timelineRows.map((row) => [row.canonicalEventId, row]),
   );
 
   const contact: ContactRecord = {
@@ -57,7 +57,7 @@ function createRepositoryBundle(input: {
     primaryEmail: "volunteer@example.org",
     primaryPhone: null,
     createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z"
+    updatedAt: "2026-01-01T00:00:00.000Z",
   };
 
   return defineStage1RepositoryBundle({
@@ -69,11 +69,11 @@ function createRepositoryBundle(input: {
           ids.flatMap((id) => {
             const evidence = sourceEvidenceById.get(id);
             return evidence === undefined ? [] : [evidence];
-          })
+          }),
         ),
       findByIdempotencyKey: () => Promise.resolve(null),
       countByProvider: () => Promise.resolve(0),
-      listByProviderRecord: () => Promise.resolve([])
+      listByProviderRecord: () => Promise.resolve([]),
     },
     canonicalEvents: {
       findById: (id) => Promise.resolve(canonicalEventsById.get(id) ?? null),
@@ -87,13 +87,15 @@ function createRepositoryBundle(input: {
           ids.flatMap((id) => {
             const event = canonicalEventsById.get(id);
             return event === undefined ? [] : [event];
-          })
+          }),
         ),
       listByContactId: (contactId) =>
         Promise.resolve(
-          input.canonicalEvents.filter((event) => event.contactId === contactId)
+          input.canonicalEvents.filter(
+            (event) => event.contactId === contactId,
+          ),
         ),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     contacts: {
       findById: () => Promise.resolve(contact),
@@ -101,60 +103,66 @@ function createRepositoryBundle(input: {
       listAll: () => Promise.resolve([contact]),
       listByIds: () => Promise.resolve([contact]),
       searchByQuery: () => Promise.resolve([contact]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     contactIdentities: {
       listByContactId: () => Promise.resolve([]),
       listByNormalizedValue: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     contactMemberships: {
       listByContactId: () => Promise.resolve([]),
       listByContactIds: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     projectDimensions: {
       listAll: () => Promise.resolve([]),
       listActive: () => Promise.resolve([]),
       listByIds: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     expeditionDimensions: {
       listByIds: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     gmailMessageDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     salesforceEventContext: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     salesforceCommunicationDetails: {
       listBySourceEvidenceIds: (sourceEvidenceIds) =>
         Promise.resolve(
           sourceEvidenceIds.flatMap(
-            (sourceEvidenceId): readonly SalesforceCommunicationDetailRecord[] => {
-            const detail =
-              salesforceCommunicationDetailsBySourceEvidenceId.get(sourceEvidenceId);
-            return detail === undefined ? [] : [detail];
-            }
-          )
+            (
+              sourceEvidenceId,
+            ): readonly SalesforceCommunicationDetailRecord[] => {
+              const detail =
+                salesforceCommunicationDetailsBySourceEvidenceId.get(
+                  sourceEvidenceId,
+                );
+              return detail === undefined ? [] : [detail];
+            },
+          ),
         ),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     simpleTextingMessageDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     mailchimpCampaignActivityDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     manualNoteDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
+      updateBody: () => Promise.resolve(null),
+      deleteByAuthor: () => Promise.resolve(0),
     },
     pendingOutbounds: {
       insert: ({ id }) => Promise.resolve(id),
@@ -167,20 +175,20 @@ function createRepositoryBundle(input: {
         Promise.resolve(
           (input.pendingOutbounds ?? [])
             .filter((row) => row.canonicalContactId === contactId)
-            .slice(0, limit)
-        )
+            .slice(0, limit),
+        ),
     },
     identityResolutionQueue: {
       findById: () => Promise.resolve(null),
       listOpenByContactId: () => Promise.resolve([]),
       listOpenByReasonCode: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     routingReviewQueue: {
       findById: () => Promise.resolve(null),
       listOpenByContactId: () => Promise.resolve([]),
       listOpenByReasonCode: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     inboxProjection: {
       countAll: () => Promise.resolve(0),
@@ -191,7 +199,7 @@ function createRepositoryBundle(input: {
       searchPageOrderedByRecency: () =>
         Promise.resolve({
           rows: [],
-          total: 0
+          total: 0,
         }),
       listPageOrderedByRecency: () => Promise.resolve([]),
       countByFilters: () =>
@@ -199,25 +207,27 @@ function createRepositoryBundle(input: {
           all: 0,
           unread: 0,
           followUp: 0,
-          unresolved: 0
+          unresolved: 0,
         }),
-        getFreshness: () =>
-          Promise.resolve({
-            total: 0,
-            latestUpdatedAt: null
-          }),
-        getFreshnessByContactId: () => Promise.resolve(null),
-        deleteByContactId: () => Promise.resolve(),
-        setNeedsFollowUp: () => Promise.resolve(null),
-        upsert: (record: InboxProjectionRow) => Promise.resolve(record)
-      },
+      getFreshness: () =>
+        Promise.resolve({
+          total: 0,
+          latestUpdatedAt: null,
+        }),
+      getFreshnessByContactId: () => Promise.resolve(null),
+      deleteByContactId: () => Promise.resolve(),
+      setNeedsFollowUp: () => Promise.resolve(null),
+      upsert: (record: InboxProjectionRow) => Promise.resolve(record),
+    },
     timelineProjection: {
       countAll: () => Promise.resolve(input.timelineRows.length),
       findByCanonicalEventId: (canonicalEventId) =>
-        Promise.resolve(timelineRowsByCanonicalEventId.get(canonicalEventId) ?? null),
+        Promise.resolve(
+          timelineRowsByCanonicalEventId.get(canonicalEventId) ?? null,
+        ),
       listByContactId: (contactId) =>
         Promise.resolve(
-          input.timelineRows.filter((row) => row.contactId === contactId)
+          input.timelineRows.filter((row) => row.contactId === contactId),
         ),
       listRecentByContactId: ({ contactId, limit, beforeSortKey }) =>
         Promise.resolve(
@@ -225,42 +235,45 @@ function createRepositoryBundle(input: {
             .filter(
               (row) =>
                 row.contactId === contactId &&
-                (beforeSortKey === null || row.sortKey < beforeSortKey)
+                (beforeSortKey === null || row.sortKey < beforeSortKey),
             )
             .sort((left, right) => right.sortKey.localeCompare(left.sortKey))
-            .slice(0, limit)
+            .slice(0, limit),
         ),
       countByContactId: (contactId) =>
         Promise.resolve(
-          input.timelineRows.filter((row) => row.contactId === contactId).length
+          input.timelineRows.filter((row) => row.contactId === contactId)
+            .length,
         ),
       getFreshnessByContactId: (contactId) => {
-        const rows = input.timelineRows.filter((row) => row.contactId === contactId);
+        const rows = input.timelineRows.filter(
+          (row) => row.contactId === contactId,
+        );
         return Promise.resolve({
           contactId,
           total: rows.length,
           latestUpdatedAt: null,
-          latestSortKey: rows.at(-1)?.sortKey ?? null
+          latestSortKey: rows.at(-1)?.sortKey ?? null,
         });
       },
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     syncState: {
       findById: () => Promise.resolve(null),
       findLatest: () => Promise.resolve(null),
       listAll: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record)
+      upsert: (record) => Promise.resolve(record),
     },
     auditEvidence: {
       append: (record: AuditEvidenceRecord) => Promise.resolve(record),
-      listByEntity: () => Promise.resolve([])
-    }
+      listByEntity: () => Promise.resolve([]),
+    },
   });
 }
 
 function buildSourceEvidence(
   id: string,
-  providerRecordId: string
+  providerRecordId: string,
 ): SourceEvidenceRecord {
   return {
     id,
@@ -271,7 +284,7 @@ function buildSourceEvidence(
     occurredAt: "2026-01-01T00:00:00.000Z",
     payloadRef: `payloads/salesforce/${providerRecordId}.json`,
     idempotencyKey: `salesforce:${providerRecordId}`,
-    checksum: `checksum:${providerRecordId}`
+    checksum: `checksum:${providerRecordId}`,
   };
 }
 
@@ -308,9 +321,9 @@ function buildSalesforceOutboundEmailEvent(input: {
         campaignRef: null,
         threadRef: null,
         direction: "outbound",
-        notes: null
+        notes: null,
       } as CanonicalEventRecord["provenance"],
-      reviewState: "clear"
+      reviewState: "clear",
     },
     detail: {
       sourceEvidenceId: input.sourceEvidenceId,
@@ -321,7 +334,7 @@ function buildSalesforceOutboundEmailEvent(input: {
       messageKind: input.messageKind ?? "one_to_one",
       subject: input.subject,
       snippet: input.snippet,
-      sourceLabel: "Salesforce Logged Email"
+      sourceLabel: "Salesforce Logged Email",
     },
     timelineRow: {
       id: `timeline:${input.id}`,
@@ -333,8 +346,8 @@ function buildSalesforceOutboundEmailEvent(input: {
       summary: input.subject,
       channel: "email",
       primaryProvider: "salesforce",
-      reviewState: "clear"
-    }
+      reviewState: "clear",
+    },
   };
 }
 
@@ -346,7 +359,7 @@ describe("Stage 1 timeline presenter", () => {
       occurredAt: "2026-01-01T00:00:00.000Z",
       messageKind: null,
       subject: "Logged follow-up",
-      snippet: "Logged follow-up body"
+      snippet: "Logged follow-up body",
     });
     const explicitOneToOne = buildSalesforceOutboundEmailEvent({
       id: "evt_salesforce_one_to_one",
@@ -354,7 +367,7 @@ describe("Stage 1 timeline presenter", () => {
       occurredAt: "2026-01-01T00:01:00.000Z",
       messageKind: "one_to_one",
       subject: "Explicit one-to-one follow-up",
-      snippet: "Explicit one-to-one body"
+      snippet: "Explicit one-to-one body",
     });
     const explicitAuto = buildSalesforceOutboundEmailEvent({
       id: "evt_salesforce_auto",
@@ -362,33 +375,35 @@ describe("Stage 1 timeline presenter", () => {
       occurredAt: "2026-01-01T00:02:00.000Z",
       messageKind: "auto",
       subject: "Automation sent",
-      snippet: "Automation body"
+      snippet: "Automation body",
     });
 
     const repositories = createRepositoryBundle({
       canonicalEvents: [
         nullClassified.canonicalEvent,
         explicitOneToOne.canonicalEvent,
-        explicitAuto.canonicalEvent
+        explicitAuto.canonicalEvent,
       ],
       sourceEvidence: [
         buildSourceEvidence("sev_salesforce_null", "salesforce-null"),
-        buildSourceEvidence("sev_salesforce_one_to_one", "salesforce-one-to-one"),
-        buildSourceEvidence("sev_salesforce_auto", "salesforce-auto")
+        buildSourceEvidence(
+          "sev_salesforce_one_to_one",
+          "salesforce-one-to-one",
+        ),
+        buildSourceEvidence("sev_salesforce_auto", "salesforce-auto"),
       ],
       salesforceCommunicationDetails: [
         nullClassified.detail,
         explicitOneToOne.detail,
-        explicitAuto.detail
+        explicitAuto.detail,
       ],
       timelineRows: [
         nullClassified.timelineRow,
         explicitOneToOne.timelineRow,
-        explicitAuto.timelineRow
-      ]
+        explicitAuto.timelineRow,
+      ],
     });
-    const presenter =
-      createStage1TimelinePresentationService(repositories);
+    const presenter = createStage1TimelinePresentationService(repositories);
 
     const items: readonly TimelineItem[] =
       await presenter.listTimelineItemsByContactId("contact_1");
@@ -396,21 +411,21 @@ describe("Stage 1 timeline presenter", () => {
     expect(
       items.map((item) => ({
         canonicalEventId: item.canonicalEventId,
-        family: item.family
-      }))
+        family: item.family,
+      })),
     ).toEqual([
       {
         canonicalEventId: "evt_salesforce_null",
-        family: "one_to_one_email"
+        family: "one_to_one_email",
       },
       {
         canonicalEventId: "evt_salesforce_one_to_one",
-        family: "one_to_one_email"
+        family: "one_to_one_email",
       },
       {
         canonicalEventId: "evt_salesforce_auto",
-        family: "auto_email"
-      }
+        family: "auto_email",
+      },
     ]);
   });
 
@@ -421,12 +436,15 @@ describe("Stage 1 timeline presenter", () => {
       occurredAt: "2026-01-01T00:01:00.000Z",
       messageKind: "one_to_one",
       subject: "Existing outbound",
-      snippet: "Existing outbound body"
+      snippet: "Existing outbound body",
     });
     const repositories = createRepositoryBundle({
       canonicalEvents: [outbound.canonicalEvent],
       sourceEvidence: [
-        buildSourceEvidence("sev_salesforce_one_to_one", "salesforce-one-to-one")
+        buildSourceEvidence(
+          "sev_salesforce_one_to_one",
+          "salesforce-one-to-one",
+        ),
       ],
       salesforceCommunicationDetails: [outbound.detail],
       timelineRows: [outbound.timelineRow],
@@ -452,9 +470,9 @@ describe("Stage 1 timeline presenter", () => {
           failedReason: null,
           orphanedAt: null,
           createdAt: "2026-01-01T00:02:00.000Z",
-          updatedAt: "2026-01-01T00:02:00.000Z"
-        }
-      ]
+          updatedAt: "2026-01-01T00:02:00.000Z",
+        },
+      ],
     });
     const presenter = createStage1TimelinePresentationService(repositories);
 
@@ -462,7 +480,7 @@ describe("Stage 1 timeline presenter", () => {
 
     expect(items.map((item) => item.canonicalEventId)).toEqual([
       "evt_salesforce_one_to_one",
-      "pending-outbound:pending:1"
+      "pending-outbound:pending:1",
     ]);
     expect(items[1]).toMatchObject({
       family: "one_to_one_email",
@@ -470,7 +488,7 @@ describe("Stage 1 timeline presenter", () => {
       subject: "Pending outbound",
       bodyPreview: "Pending outbound body",
       sendStatus: "pending",
-      attachmentCount: 0
+      attachmentCount: 0,
     });
   });
 });

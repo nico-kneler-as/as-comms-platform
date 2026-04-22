@@ -6,16 +6,18 @@ import {
   sessions,
   users,
   verificationTokens,
-  type DatabaseConnection
+  type DatabaseConnection,
 } from "@as-comms/db";
 import {
+  createStage1InternalNoteService,
   createStage1NormalizationService,
   createStage1PersistenceService,
   createStage1TimelinePresentationService,
+  type Stage1InternalNoteService,
   type Stage1NormalizationService,
   type Stage1RepositoryBundle,
   type Stage1TimelinePresentationService,
-  type Stage2RepositoryBundle
+  type Stage2RepositoryBundle,
 } from "@as-comms/domain";
 
 // Re-export the Auth.js adapter tables so `apps/web/src/server/auth/index.ts`
@@ -28,7 +30,7 @@ export const authAdapterTables = {
   usersTable: users,
   accountsTable: accounts,
   sessionsTable: sessions,
-  verificationTokensTable: verificationTokens
+  verificationTokensTable: verificationTokens,
 } as const;
 
 /**
@@ -53,6 +55,7 @@ export interface Stage1WebRuntime {
   readonly settings: Stage2RepositoryBundle;
   readonly normalization: Stage1NormalizationService;
   readonly timelinePresentation: Stage1TimelinePresentationService;
+  readonly internalNotes: Stage1InternalNoteService;
 }
 
 let runtimeOverride: Stage1WebRuntime | null = null;
@@ -62,23 +65,30 @@ function createRuntime(): Stage1WebRuntime {
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 inbox runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 inbox runtime.",
+    );
   }
 
   const connection = createDatabaseConnection({
-    connectionString
+    connectionString,
   });
   const repositories = createStage1RepositoryBundleFromConnection(connection);
   const settings = createStage2RepositoryBundleFromConnection(connection);
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
+  const internalNotes = createStage1InternalNoteService({
+    persistence,
+    normalization,
+  });
 
   return {
     connection,
     repositories,
     settings,
     normalization,
-    timelinePresentation: createStage1TimelinePresentationService(repositories)
+    timelinePresentation: createStage1TimelinePresentationService(repositories),
+    internalNotes,
   };
 }
 
@@ -97,7 +107,7 @@ export async function getSettingsRepositories(): Promise<Stage2RepositoryBundle>
 }
 
 export function setStage1WebRuntimeForTests(
-  runtime: Stage1WebRuntime | null
+  runtime: Stage1WebRuntime | null,
 ): void {
   runtimeOverride = runtime;
   runtimePromise = null;

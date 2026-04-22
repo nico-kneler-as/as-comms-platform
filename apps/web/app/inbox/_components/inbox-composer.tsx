@@ -1,11 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import {
   useEffect,
   useRef,
   useState,
   useTransition,
-  type ChangeEvent
+  type ChangeEvent,
 } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -14,27 +15,32 @@ import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger
+  TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import {
+  getInternalNoteValidationError,
+  normalizeInternalNoteBody,
+} from "@/src/lib/internal-note-validation";
+import type { UiError } from "@/src/server/ui-result";
 
 import {
+  createNoteAction,
   sendComposerAction,
   type ComposerSendActionInput,
-  type ComposerSendActionResult
 } from "../actions";
 import {
   isComposerSendDisabled,
-  resolveDefaultAlias
+  resolveDefaultAlias,
 } from "../_lib/composer-ui";
 import {
   ComposerRecipientPicker,
   type ComposerContactRecipient,
-  type ComposerRecipientValue
+  type ComposerRecipientValue,
 } from "./composer-recipient-picker";
 import {
   useInboxClient,
-  type ComposerValidationError
+  type ComposerValidationError,
 } from "./inbox-client-provider";
 import {
   AlertCircleIcon,
@@ -44,7 +50,7 @@ import {
   NoteIcon,
   PaperclipIcon,
   SendIcon,
-  XIcon
+  XIcon,
 } from "./icons";
 
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -83,7 +89,7 @@ function resolveRecipientLabel(recipient: ComposerRecipientValue): string {
 }
 
 function mapFieldErrors(
-  result: Extract<ComposerSendActionResult, { ok: false }>
+  result: Pick<UiError, "fieldErrors">,
 ): ComposerFieldErrors {
   if (result.fieldErrors === undefined) {
     return [];
@@ -102,6 +108,7 @@ function mapFieldErrors(
       case "attachments":
         mappedErrors.push({ field: "attachments", message });
         break;
+      case "body":
       case "bodyPlaintext":
         mappedErrors.push({ field: "body", message });
         break;
@@ -153,13 +160,13 @@ async function readFileAsAttachment(file: File): Promise<AttachmentDraft> {
     filename: file.name,
     size: file.size,
     contentType: file.type || "application/octet-stream",
-    contentBase64
+    contentBase64,
   };
 }
 
 export function InboxComposerReplyBar({
   contactDisplayName,
-  onReply
+  onReply,
 }: {
   readonly contactDisplayName: string;
   readonly onReply: () => void;
@@ -179,6 +186,7 @@ export function InboxComposerReplyBar({
 }
 
 export function InboxComposerDetailPane() {
+  const router = useRouter();
   const {
     composerAliases,
     composerPane,
@@ -186,16 +194,23 @@ export function InboxComposerDetailPane() {
     showToast,
     composerErrors,
     setComposerErrors,
-    setComposerStatus
+    setComposerStatus,
   } = useInboxClient();
   const [activeTab, setActiveTab] = useState<"email" | "note">("email");
-  const [recipient, setRecipient] = useState<ComposerRecipientValue | null>(null);
+  const [recipient, setRecipient] = useState<ComposerRecipientValue | null>(
+    null,
+  );
   const [selectedAlias, setSelectedAlias] = useState<string | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
-  const [attachments, setAttachments] = useState<readonly AttachmentDraft[]>([]);
-  const [inlineError, setInlineError] = useState<InlineComposerError | null>(null);
+  const [attachments, setAttachments] = useState<readonly AttachmentDraft[]>(
+    [],
+  );
+  const [inlineError, setInlineError] = useState<InlineComposerError | null>(
+    null,
+  );
   const [isSending, startSendTransition] = useTransition();
+  const [isSavingNote, startSaveNoteTransition] = useTransition();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -217,7 +232,7 @@ export function InboxComposerDetailPane() {
             displayName: replyContext.contactDisplayName,
             primaryEmail: null,
             primaryProjectName: null,
-            salesforceContactId: null
+            salesforceContactId: null,
           };
 
     setActiveTab("email");
@@ -229,12 +244,7 @@ export function InboxComposerDetailPane() {
     setInlineError(null);
     setComposerStatus("idle");
     setComposerErrors([]);
-  }, [
-    composerPane.mode,
-    replyContext,
-    setComposerErrors,
-    setComposerStatus
-  ]);
+  }, [composerPane.mode, replyContext, setComposerErrors, setComposerStatus]);
 
   useEffect(() => {
     if (!bodyRef.current) {
@@ -250,32 +260,42 @@ export function InboxComposerDetailPane() {
 
   const attachmentBytes = attachments.reduce(
     (total, attachment) => total + attachment.size,
-    0
+    0,
   );
   const isReplying = composerPane.mode === "replying";
+  const canUseNoteTab = isReplying && replyContext !== null;
   const isSendDisabled = isComposerSendDisabled({
     activeTab,
     recipient,
     selectedAlias,
     subject,
     body,
-    isSending
+    isSending,
   });
+  const isSaveNoteDisabled =
+    activeTab !== "note" ||
+    !canUseNoteTab ||
+    body.trim().length === 0 ||
+    isSavingNote;
   const aliasError = composerErrors.find((error) => error.field === "alias");
-  const subjectError = composerErrors.find((error) => error.field === "subject");
+  const subjectError = composerErrors.find(
+    (error) => error.field === "subject",
+  );
   const bodyError = composerErrors.find((error) => error.field === "body");
   const recipientError = composerErrors.find(
-    (error) => error.field === "recipient"
+    (error) => error.field === "recipient",
   );
   const attachmentError = composerErrors.find(
-    (error) => error.field === "attachments"
+    (error) => error.field === "attachments",
   );
   const clearComposerErrors = () => {
     setInlineError(null);
     setComposerErrors([]);
   };
 
-  const handleRecipientChange = (nextRecipient: ComposerRecipientValue | null) => {
+  const handleRecipientChange = (
+    nextRecipient: ComposerRecipientValue | null,
+  ) => {
     setRecipient(nextRecipient);
     clearComposerErrors();
 
@@ -286,14 +306,12 @@ export function InboxComposerDetailPane() {
     setSelectedAlias(
       resolveDefaultAlias({
         recipient: nextRecipient,
-        aliases: composerAliases
-      })
+        aliases: composerAliases,
+      }),
     );
   };
 
-  const handleFilesSelected = async (
-    event: ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.currentTarget.files;
     event.currentTarget.value = "";
 
@@ -309,20 +327,20 @@ export function InboxComposerDetailPane() {
     if (nextTotalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
       setInlineError({
         message: "Attachments can't exceed 20 MB total.",
-        retryable: false
+        retryable: false,
       });
       setComposerErrors([
         {
           field: "attachments",
-          message: "Attachments can't exceed 20 MB total."
-        }
+          message: "Attachments can't exceed 20 MB total.",
+        },
       ]);
       return;
     }
 
     try {
       const nextAttachments = await Promise.all(
-        selectedFiles.map((file) => readFileAsAttachment(file))
+        selectedFiles.map((file) => readFileAsAttachment(file)),
       );
 
       setAttachments((previous) => [...previous, ...nextAttachments]);
@@ -330,7 +348,7 @@ export function InboxComposerDetailPane() {
     } catch {
       setInlineError({
         message: "We couldn't read one of those files. Please try again.",
-        retryable: true
+        retryable: true,
       });
     }
   };
@@ -345,11 +363,11 @@ export function InboxComposerDetailPane() {
         recipient.kind === "contact"
           ? {
               kind: "contact",
-              contactId: recipient.contactId
+              contactId: recipient.contactId,
             }
           : {
               kind: "email",
-              emailAddress: recipient.emailAddress
+              emailAddress: recipient.emailAddress,
             },
       alias: selectedAlias,
       subject: subject.trim(),
@@ -357,7 +375,7 @@ export function InboxComposerDetailPane() {
       attachments: attachments.map((attachment) => ({
         filename: attachment.filename,
         contentType: attachment.contentType,
-        contentBase64: attachment.contentBase64
+        contentBase64: attachment.contentBase64,
       })),
       ...(replyContext?.threadId === null || replyContext === null
         ? {}
@@ -365,8 +383,8 @@ export function InboxComposerDetailPane() {
       ...(replyContext?.inReplyToRfc822 === null || replyContext === null
         ? {}
         : {
-            inReplyToRfc822: replyContext.inReplyToRfc822
-          })
+            inReplyToRfc822: replyContext.inReplyToRfc822,
+          }),
     };
 
     setInlineError(null);
@@ -385,11 +403,63 @@ export function InboxComposerDetailPane() {
 
       setComposerErrors(mapFieldErrors(result));
       setComposerStatus(
-        result.code === "validation_error" ? "validation-error" : "send-failure"
+        result.code === "validation_error"
+          ? "validation-error"
+          : "send-failure",
       );
       setInlineError({
         message: result.message,
-        retryable: result.retryable === true
+        retryable: result.retryable === true,
+      });
+    });
+  };
+
+  const saveNote = () => {
+    if (!isReplying || replyContext === null) {
+      return;
+    }
+
+    const normalizedBody = normalizeInternalNoteBody(body);
+    const validationError = getInternalNoteValidationError(normalizedBody);
+
+    if (validationError !== null) {
+      setInlineError({
+        message: validationError,
+        retryable: false,
+      });
+      setComposerErrors([
+        {
+          field: "body",
+          message: validationError,
+        },
+      ]);
+      return;
+    }
+
+    setInlineError(null);
+    setComposerErrors([]);
+    setComposerStatus("saving-draft");
+
+    startSaveNoteTransition(async () => {
+      const result = await createNoteAction({
+        contactId: replyContext.contactId,
+        body: normalizedBody,
+      });
+
+      if (result.ok) {
+        setComposerStatus("draft-saved");
+        setBody("");
+        closeComposer();
+        router.refresh();
+        showToast("Note saved.", "success");
+        return;
+      }
+
+      setComposerErrors(mapFieldErrors(result));
+      setComposerStatus("validation-error");
+      setInlineError({
+        message: result.message,
+        retryable: result.retryable === true,
       });
     });
   };
@@ -405,7 +475,9 @@ export function InboxComposerDetailPane() {
                 : "New draft"}
             </p>
             <p className="mt-1 text-sm text-slate-500">
-              Plain-text email with file attachments.
+              {activeTab === "note"
+                ? "Internal note for the team timeline."
+                : "Plain-text email with file attachments."}
             </p>
           </div>
 
@@ -432,117 +504,158 @@ export function InboxComposerDetailPane() {
                 "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium",
                 activeTab === "email"
                   ? "bg-slate-900 text-white"
-                  : "bg-slate-100 text-slate-600"
+                  : "bg-slate-100 text-slate-600",
               )}
             >
               <MailIcon className="size-4" />
               Email
             </button>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  disabled
-                  className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-400"
-                >
-                  <NoteIcon className="size-4" />
-                  Note
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Coming in next update</TooltipContent>
-            </Tooltip>
+            {canUseNoteTab ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("note");
+                  clearComposerErrors();
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium",
+                  activeTab === "note"
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-600",
+                )}
+              >
+                <NoteIcon className="size-4" />
+                Note
+              </button>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-400"
+                  >
+                    <NoteIcon className="size-4" />
+                    Note
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Notes are available when replying to a contact.
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
 
           <div className="mt-5 space-y-5">
-            <ComposerRecipientPicker
-              recipient={recipient}
-              locked={isReplying}
-              onRecipientChange={handleRecipientChange}
-            />
-            {recipientError ? (
-              <p className="-mt-3 text-xs text-rose-700">{recipientError.message}</p>
-            ) : null}
-
-            <label className="flex items-start gap-3">
-              <span className="mt-2 w-10 text-sm font-medium text-slate-700">
-                From:
-              </span>
-              <div className="flex-1">
-                <select
-                  value={selectedAlias ?? ""}
-                  onChange={(event) => {
-                    const nextAlias = event.currentTarget.value;
-                    setSelectedAlias(nextAlias.length > 0 ? nextAlias : null);
-                    clearComposerErrors();
-                  }}
-                  className={cn(
-                    "flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300",
-                    aliasError ? "border-rose-300 ring-1 ring-rose-200" : ""
-                  )}
-                >
-                  <option value="">Choose an alias</option>
-                  {composerAliases.map((alias) => (
-                    <option key={alias.id} value={alias.alias}>
-                      {alias.alias} · {alias.projectName}
-                    </option>
-                  ))}
-                </select>
-                {aliasError ? (
-                  <p className="mt-1 text-xs text-rose-700">{aliasError.message}</p>
-                ) : null}
-              </div>
-            </label>
-
-            <label className="flex items-start gap-3">
-              <span className="mt-2 w-10 text-sm font-medium text-slate-700">
-                Subject:
-              </span>
-              <div className="flex-1">
-                <Input
-                  value={subject}
-                  onChange={(event) => {
-                    setSubject(event.currentTarget.value);
-                    clearComposerErrors();
-                  }}
-                  placeholder="Subject"
-                  className={cn(
-                    subjectError ? "border-rose-300 ring-1 ring-rose-200" : ""
-                  )}
+            {activeTab === "email" ? (
+              <>
+                <ComposerRecipientPicker
+                  recipient={recipient}
+                  locked={isReplying}
+                  onRecipientChange={handleRecipientChange}
                 />
-                {subjectError ? (
-                  <p className="mt-1 text-xs text-rose-700">{subjectError.message}</p>
+                {recipientError ? (
+                  <p className="-mt-3 text-xs text-rose-700">
+                    {recipientError.message}
+                  </p>
                 ) : null}
-              </div>
-            </label>
+
+                <label className="flex items-start gap-3">
+                  <span className="mt-2 w-10 text-sm font-medium text-slate-700">
+                    From:
+                  </span>
+                  <div className="flex-1">
+                    <select
+                      value={selectedAlias ?? ""}
+                      onChange={(event) => {
+                        const nextAlias = event.currentTarget.value;
+                        setSelectedAlias(
+                          nextAlias.length > 0 ? nextAlias : null,
+                        );
+                        clearComposerErrors();
+                      }}
+                      className={cn(
+                        "flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300",
+                        aliasError
+                          ? "border-rose-300 ring-1 ring-rose-200"
+                          : "",
+                      )}
+                    >
+                      <option value="">Choose an alias</option>
+                      {composerAliases.map((alias) => (
+                        <option key={alias.id} value={alias.alias}>
+                          {alias.alias} · {alias.projectName}
+                        </option>
+                      ))}
+                    </select>
+                    {aliasError ? (
+                      <p className="mt-1 text-xs text-rose-700">
+                        {aliasError.message}
+                      </p>
+                    ) : null}
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3">
+                  <span className="mt-2 w-10 text-sm font-medium text-slate-700">
+                    Subject:
+                  </span>
+                  <div className="flex-1">
+                    <Input
+                      value={subject}
+                      onChange={(event) => {
+                        setSubject(event.currentTarget.value);
+                        clearComposerErrors();
+                      }}
+                      placeholder="Subject"
+                      className={cn(
+                        subjectError
+                          ? "border-rose-300 ring-1 ring-rose-200"
+                          : "",
+                      )}
+                    />
+                    {subjectError ? (
+                      <p className="mt-1 text-xs text-rose-700">
+                        {subjectError.message}
+                      </p>
+                    ) : null}
+                  </div>
+                </label>
+              </>
+            ) : null}
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700">Message</span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      attachmentInputRef.current?.click();
-                    }}
-                  >
-                    <PaperclipIcon className="size-4" />
-                    Attach file
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      imageInputRef.current?.click();
-                    }}
-                  >
-                    <ImageIcon className="size-4" />
-                    Embed image
-                  </Button>
-                </div>
+                <span className="text-sm font-medium text-slate-700">
+                  {activeTab === "note" ? "Note" : "Message"}
+                </span>
+                {activeTab === "email" ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        attachmentInputRef.current?.click();
+                      }}
+                    >
+                      <PaperclipIcon className="size-4" />
+                      Attach file
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        imageInputRef.current?.click();
+                      }}
+                    >
+                      <ImageIcon className="size-4" />
+                      Embed image
+                    </Button>
+                  </div>
+                ) : null}
               </div>
 
               <textarea
@@ -556,17 +669,21 @@ export function InboxComposerDetailPane() {
                 onInput={(event) => {
                   autoResizeTextarea(event.currentTarget);
                 }}
-                placeholder="Write your message"
+                placeholder={
+                  activeTab === "note"
+                    ? "Write a team-visible note"
+                    : "Write your message"
+                }
                 className={cn(
                   "max-h-[30rem] min-h-36 w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm leading-6 text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300",
-                  bodyError ? "border-rose-300 ring-1 ring-rose-200" : ""
+                  bodyError ? "border-rose-300 ring-1 ring-rose-200" : "",
                 )}
               />
               {bodyError ? (
                 <p className="text-xs text-rose-700">{bodyError.message}</p>
               ) : null}
 
-              {attachments.length > 0 ? (
+              {activeTab === "email" && attachments.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {attachments.map((attachment) => (
                     <span
@@ -583,7 +700,9 @@ export function InboxComposerDetailPane() {
                         onClick={() => {
                           clearComposerErrors();
                           setAttachments((previous) =>
-                            previous.filter((item) => item.id !== attachment.id)
+                            previous.filter(
+                              (item) => item.id !== attachment.id,
+                            ),
                           );
                         }}
                         className="text-slate-400 hover:text-slate-700"
@@ -595,11 +714,18 @@ export function InboxComposerDetailPane() {
                 </div>
               ) : null}
 
-              <p className="text-xs text-slate-500">
-                {formatBytes(attachmentBytes)} of {formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)} used
-              </p>
-              {attachmentError ? (
-                <p className="text-xs text-rose-700">{attachmentError.message}</p>
+              {activeTab === "email" ? (
+                <>
+                  <p className="text-xs text-slate-500">
+                    {formatBytes(attachmentBytes)} of{" "}
+                    {formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)} used
+                  </p>
+                  {attachmentError ? (
+                    <p className="text-xs text-rose-700">
+                      {attachmentError.message}
+                    </p>
+                  ) : null}
+                </>
               ) : null}
 
               <input
@@ -647,20 +773,30 @@ export function InboxComposerDetailPane() {
           ) : null}
 
           <div className="flex items-center justify-between">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={closeComposer}
-            >
+            <Button type="button" variant="ghost" onClick={closeComposer}>
               Cancel
             </Button>
 
             <Button
               type="button"
-              disabled={isSendDisabled}
-              onClick={submit}
+              disabled={
+                activeTab === "note" ? isSaveNoteDisabled : isSendDisabled
+              }
+              onClick={activeTab === "note" ? saveNote : submit}
             >
-              {isSending ? (
+              {activeTab === "note" ? (
+                isSavingNote ? (
+                  <>
+                    <LoaderIcon className="size-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <NoteIcon className="size-4" />
+                    Save note
+                  </>
+                )
+              ) : isSending ? (
                 <>
                   <LoaderIcon className="size-4 animate-spin" />
                   Sending...

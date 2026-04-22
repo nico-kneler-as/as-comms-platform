@@ -545,8 +545,9 @@ function restoreStructuredEmailParagraphs(value: string): string {
     return normalized;
   }
 
-  const hasGreeting =
-    /^(?:Hi|Hello|Hey|Hola|Dear)\b[^,\n]{0,80},(?=\S)/i.test(normalized);
+  const hasGreeting = /^(?:Hi|Hello|Hey|Hola|Dear)\b[^,\n]{0,80},(?=\S)/i.test(
+    normalized,
+  );
   const hasTranslationMarker =
     STRUCTURED_EMAIL_TRANSLATION_MARKER_PATTERN.test(normalized);
   const sentenceBreaks = normalized.match(/[.!?](?=\S)/g)?.length ?? 0;
@@ -563,15 +564,9 @@ function restoreStructuredEmailParagraphs(value: string): string {
   );
 
   return normalized
-    .replace(
-      /^((?:Hi|Hello|Hey|Hola|Dear)\b[^,\n]{0,80},)(?=\S)/i,
-      "$1\n\n",
-    )
+    .replace(/^((?:Hi|Hello|Hey|Hola|Dear)\b[^,\n]{0,80},)(?=\S)/i, "$1\n\n")
     .replace(paragraphStarterPattern, "$1\n\n")
-    .replace(
-      /([.!?])\s*(?=(?:en|es|fr|de|pt):(?=[A-ZÀ-Ý]))/g,
-      "$1\n\n",
-    )
+    .replace(/([.!?])\s*(?=(?:en|es|fr|de|pt):(?=[A-ZÀ-Ý]))/g, "$1\n\n")
     .replace(STRUCTURED_EMAIL_TRANSLATION_MARKER_PATTERN, "\n\n$&")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -1319,8 +1314,7 @@ function timelineSubject(item: TimelineItem): string | null {
   }
 }
 
-const REPLY_SUBJECT_PREFIX_PATTERN =
-  /^\s*(?:(?:re|fwd?)\s*:\s*)+/i;
+const REPLY_SUBJECT_PREFIX_PATTERN = /^\s*(?:(?:re|fwd?)\s*:\s*)+/i;
 
 function buildReplySubject(subject: string | null): string {
   const normalizedSubject = normalizeInlineText(subject);
@@ -1330,7 +1324,7 @@ function buildReplySubject(subject: string | null): string {
   }
 
   const trimmedSubject = normalizeInlineText(
-    normalizedSubject.replace(REPLY_SUBJECT_PREFIX_PATTERN, "")
+    normalizedSubject.replace(REPLY_SUBJECT_PREFIX_PATTERN, ""),
   );
 
   return trimmedSubject === null ? "" : `Re: ${trimmedSubject}`;
@@ -1469,25 +1463,32 @@ function buildTimelineEntry(input: {
     isUnread,
     isPreview: isPreviewTimelineItem(input.item),
     mailbox:
-      input.item.family === "one_to_one_email" ? input.item.mailbox ?? null : null,
+      input.item.family === "one_to_one_email"
+        ? (input.item.mailbox ?? null)
+        : null,
     threadId:
-      input.item.family === "one_to_one_email" ? input.item.threadId ?? null : null,
+      input.item.family === "one_to_one_email"
+        ? (input.item.threadId ?? null)
+        : null,
     rfc822MessageId:
       input.item.family === "one_to_one_email"
-        ? input.item.rfc822MessageId ?? null
+        ? (input.item.rfc822MessageId ?? null)
         : null,
     inReplyToRfc822:
       input.item.family === "one_to_one_email"
-        ? input.item.inReplyToRfc822 ?? null
+        ? (input.item.inReplyToRfc822 ?? null)
         : null,
     sendStatus:
       input.item.family === "one_to_one_email"
-        ? input.item.sendStatus ?? null
+        ? (input.item.sendStatus ?? null)
         : null,
     attachmentCount:
       input.item.family === "one_to_one_email"
-        ? input.item.attachmentCount ?? 0
+        ? (input.item.attachmentCount ?? 0)
         : 0,
+    noteId: input.item.family === "internal_note" ? input.item.noteId : null,
+    authorId:
+      input.item.family === "internal_note" ? input.item.authorId : null,
   };
 }
 
@@ -1499,10 +1500,8 @@ function buildComposerReplyContext(input: {
   const latestInboundEmail = [...input.timelineItems]
     .reverse()
     .find(
-      (
-        item
-      ): item is Extract<TimelineItem, { family: "one_to_one_email" }> =>
-        item.family === "one_to_one_email" && item.direction === "inbound"
+      (item): item is Extract<TimelineItem, { family: "one_to_one_email" }> =>
+        item.family === "one_to_one_email" && item.direction === "inbound",
     );
 
   if (latestInboundEmail === undefined) {
@@ -2154,9 +2153,10 @@ export async function getInboxDetail(
   const composerReplyContext = buildComposerReplyContext({
     contact: cachedData.contact,
     timelineItems: cachedData.timelineItems,
-    defaultAlias: await runtime.timelinePresentation.findLastInboundAliasForContact(
-      contactId
-    ),
+    defaultAlias:
+      await runtime.timelinePresentation.findLastInboundAliasForContact(
+        contactId,
+      ),
   });
 
   return {
