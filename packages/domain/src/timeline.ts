@@ -31,6 +31,8 @@ type SalesforceEventContextDetail = SalesforceEventContextRecord & {
 
 interface SalesforceCommunicationDetail {
   readonly sourceEvidenceId: string;
+  readonly channel: "email" | "sms";
+  readonly messageKind: "auto" | "campaign" | "one_to_one";
   readonly subject: string | null;
   readonly snippet: string;
   readonly sourceLabel: string;
@@ -114,9 +116,41 @@ function getLifecycleMilestone(
   }
 }
 
-function resolveFamily(event: CanonicalEventRecord): TimelineItem["family"] {
+function resolveCommunicationMessageKind(input: {
+  readonly event: CanonicalEventRecord;
+  readonly salesforceCommunicationDetail: SalesforceCommunicationDetail | undefined;
+}): TimelineProvenance["messageKind"] {
+  const provenance = input.event.provenance as TimelineProvenance;
+  const eventType = input.event.eventType as string;
+
+  if (provenance.primaryProvider === "salesforce") {
+    const expectedChannel = eventType.includes(".sms.")
+      ? "sms"
+      : eventType.includes(".email.")
+        ? "email"
+        : null;
+
+    if (
+      expectedChannel !== null &&
+      input.salesforceCommunicationDetail?.channel === expectedChannel
+    ) {
+      return input.salesforceCommunicationDetail.messageKind;
+    }
+  }
+
+  return provenance.messageKind;
+}
+
+function resolveFamily(
+  event: CanonicalEventRecord,
+  salesforceCommunicationDetail: SalesforceCommunicationDetail | undefined,
+): TimelineItem["family"] {
   const eventType = event.eventType as string;
   const provenance = event.provenance as TimelineProvenance;
+  const messageKind = resolveCommunicationMessageKind({
+    event,
+    salesforceCommunicationDetail,
+  });
 
   if (eventType.startsWith("lifecycle.")) {
     return "salesforce_event";
@@ -132,21 +166,21 @@ function resolveFamily(event: CanonicalEventRecord): TimelineItem["family"] {
 
   if (
     eventType === "communication.email.outbound" &&
-    provenance.messageKind === "auto"
+    messageKind === "auto"
   ) {
     return "auto_email";
   }
 
   if (
     eventType === "communication.sms.outbound" &&
-    provenance.messageKind === "auto"
+    messageKind === "auto"
   ) {
     return "auto_sms";
   }
 
   if (
     eventType === "communication.sms.outbound" &&
-    provenance.messageKind === "campaign"
+    messageKind === "campaign"
   ) {
     return "campaign_sms";
   }
@@ -154,8 +188,8 @@ function resolveFamily(event: CanonicalEventRecord): TimelineItem["family"] {
   if (
     (eventType === "communication.email.inbound" ||
       eventType === "communication.email.outbound") &&
-    (provenance.messageKind === "one_to_one" ||
-      (provenance.messageKind === null &&
+    (messageKind === "one_to_one" ||
+      (messageKind === null &&
         (provenance.primaryProvider === "gmail" ||
           provenance.primaryProvider === "salesforce")))
   ) {
@@ -165,8 +199,8 @@ function resolveFamily(event: CanonicalEventRecord): TimelineItem["family"] {
   if (
     (eventType === "communication.sms.inbound" ||
       eventType === "communication.sms.outbound") &&
-    (provenance.messageKind === "one_to_one" ||
-      (provenance.messageKind === null &&
+    (messageKind === "one_to_one" ||
+      (messageKind === null &&
         (provenance.primaryProvider === "simpletexting" ||
           provenance.primaryProvider === "salesforce")))
   ) {
@@ -390,7 +424,9 @@ function buildTimelineItemsFromRows(input: {
       continue;
     }
 
-    const family = resolveFamily(event);
+    const salesforceCommunicationDetail =
+      input.context.salesforceCommunicationBySourceEvidenceId.get(evidence.id);
+    const family = resolveFamily(event, salesforceCommunicationDetail);
     const base = commonFields(row);
     const provenance = event.provenance as TimelineProvenance;
     const salesforceContext =
@@ -398,8 +434,6 @@ function buildTimelineItemsFromRows(input: {
     const gmailDetail = input.context.gmailDetailBySourceEvidenceId.get(
       evidence.id,
     );
-    const salesforceCommunicationDetail =
-      input.context.salesforceCommunicationBySourceEvidenceId.get(evidence.id);
     const simpleTextingDetail =
       input.context.simpleTextingDetailBySourceEvidenceId.get(evidence.id);
     const mailchimpDetail = input.context.mailchimpDetailBySourceEvidenceId.get(

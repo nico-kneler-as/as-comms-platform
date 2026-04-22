@@ -288,11 +288,13 @@ function buildSourceEvidence(
   };
 }
 
-function buildSalesforceOutboundEmailEvent(input: {
+function buildSalesforceEmailEvent(input: {
   readonly id: string;
   readonly sourceEvidenceId: string;
   readonly occurredAt: string;
-  readonly messageKind: "one_to_one" | "auto" | null;
+  readonly direction: "inbound" | "outbound";
+  readonly canonicalMessageKind: "one_to_one" | "auto" | null;
+  readonly detailMessageKind?: "one_to_one" | "auto" | "campaign";
   readonly subject: string;
   readonly snippet: string;
 }): {
@@ -304,7 +306,7 @@ function buildSalesforceOutboundEmailEvent(input: {
     canonicalEvent: {
       id: input.id,
       contactId: "contact_1",
-      eventType: "communication.email.outbound",
+      eventType: `communication.email.${input.direction}`,
       channel: "email",
       occurredAt: input.occurredAt,
       contentFingerprint: null,
@@ -317,10 +319,10 @@ function buildSalesforceOutboundEmailEvent(input: {
         winnerReason: "single_source",
         sourceRecordType: "task_communication",
         sourceRecordId: input.id,
-        messageKind: input.messageKind,
+        messageKind: input.canonicalMessageKind,
         campaignRef: null,
         threadRef: null,
-        direction: "outbound",
+        direction: input.direction,
         notes: null,
       } as CanonicalEventRecord["provenance"],
       reviewState: "clear",
@@ -329,9 +331,8 @@ function buildSalesforceOutboundEmailEvent(input: {
       sourceEvidenceId: input.sourceEvidenceId,
       providerRecordId: input.id,
       channel: "email",
-      // The detail table stores a concrete message kind even when canonical
-      // provenance remains null for the classification regression case.
-      messageKind: input.messageKind ?? "one_to_one",
+      messageKind:
+        input.detailMessageKind ?? input.canonicalMessageKind ?? "one_to_one",
       subject: input.subject,
       snippet: input.snippet,
       sourceLabel: "Salesforce Logged Email",
@@ -342,7 +343,7 @@ function buildSalesforceOutboundEmailEvent(input: {
       canonicalEventId: input.id,
       occurredAt: input.occurredAt,
       sortKey: `${input.occurredAt}::${input.id}`,
-      eventType: "communication.email.outbound",
+      eventType: `communication.email.${input.direction}`,
       summary: input.subject,
       channel: "email",
       primaryProvider: "salesforce",
@@ -353,27 +354,30 @@ function buildSalesforceOutboundEmailEvent(input: {
 
 describe("Stage 1 timeline presenter", () => {
   it("keeps Salesforce outbound email in the 1:1 family unless canon explicitly marks it auto", async () => {
-    const nullClassified = buildSalesforceOutboundEmailEvent({
+    const nullClassified = buildSalesforceEmailEvent({
       id: "evt_salesforce_null",
       sourceEvidenceId: "sev_salesforce_null",
       occurredAt: "2026-01-01T00:00:00.000Z",
-      messageKind: null,
+      direction: "outbound",
+      canonicalMessageKind: null,
       subject: "Logged follow-up",
       snippet: "Logged follow-up body",
     });
-    const explicitOneToOne = buildSalesforceOutboundEmailEvent({
+    const explicitOneToOne = buildSalesforceEmailEvent({
       id: "evt_salesforce_one_to_one",
       sourceEvidenceId: "sev_salesforce_one_to_one",
       occurredAt: "2026-01-01T00:01:00.000Z",
-      messageKind: "one_to_one",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
       subject: "Explicit one-to-one follow-up",
       snippet: "Explicit one-to-one body",
     });
-    const explicitAuto = buildSalesforceOutboundEmailEvent({
+    const explicitAuto = buildSalesforceEmailEvent({
       id: "evt_salesforce_auto",
       sourceEvidenceId: "sev_salesforce_auto",
       occurredAt: "2026-01-01T00:02:00.000Z",
-      messageKind: "auto",
+      direction: "outbound",
+      canonicalMessageKind: "auto",
       subject: "Automation sent",
       snippet: "Automation body",
     });
@@ -429,12 +433,80 @@ describe("Stage 1 timeline presenter", () => {
     ]);
   });
 
+  it("prefers Salesforce communication detail message kinds when canonical metadata is stale", async () => {
+    const inboundAutoMismatch = buildSalesforceEmailEvent({
+      id: "evt_salesforce_inbound_auto_mismatch",
+      sourceEvidenceId: "sev_salesforce_inbound_auto_mismatch",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      direction: "inbound",
+      canonicalMessageKind: "auto",
+      detailMessageKind: "one_to_one",
+      subject: "Accepted: chat about orcas",
+      snippet: "Elise Newman has accepted this invitation.",
+    });
+    const outboundAutoMismatch = buildSalesforceEmailEvent({
+      id: "evt_salesforce_outbound_auto_mismatch",
+      sourceEvidenceId: "sev_salesforce_outbound_auto_mismatch",
+      occurredAt: "2026-01-01T00:01:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "auto",
+      detailMessageKind: "one_to_one",
+      subject: "Manual follow-up",
+      snippet: "Operator follow-up sent from Salesforce.",
+    });
+
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [
+        inboundAutoMismatch.canonicalEvent,
+        outboundAutoMismatch.canonicalEvent,
+      ],
+      sourceEvidence: [
+        buildSourceEvidence(
+          "sev_salesforce_inbound_auto_mismatch",
+          "salesforce-inbound-auto-mismatch",
+        ),
+        buildSourceEvidence(
+          "sev_salesforce_outbound_auto_mismatch",
+          "salesforce-outbound-auto-mismatch",
+        ),
+      ],
+      salesforceCommunicationDetails: [
+        inboundAutoMismatch.detail,
+        outboundAutoMismatch.detail,
+      ],
+      timelineRows: [
+        inboundAutoMismatch.timelineRow,
+        outboundAutoMismatch.timelineRow,
+      ],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(
+      items.map((item) => ({
+        canonicalEventId: item.canonicalEventId,
+        family: item.family,
+      })),
+    ).toEqual([
+      {
+        canonicalEventId: "evt_salesforce_inbound_auto_mismatch",
+        family: "one_to_one_email",
+      },
+      {
+        canonicalEventId: "evt_salesforce_outbound_auto_mismatch",
+        family: "one_to_one_email",
+      },
+    ]);
+  });
+
   it("unions pending composer outbounds into the timeline read model", async () => {
-    const outbound = buildSalesforceOutboundEmailEvent({
+    const outbound = buildSalesforceEmailEvent({
       id: "evt_salesforce_one_to_one",
       sourceEvidenceId: "sev_salesforce_one_to_one",
       occurredAt: "2026-01-01T00:01:00.000Z",
-      messageKind: "one_to_one",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
       subject: "Existing outbound",
       snippet: "Existing outbound body",
     });
