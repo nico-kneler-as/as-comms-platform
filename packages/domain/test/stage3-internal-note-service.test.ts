@@ -58,7 +58,7 @@ describe("Stage1InternalNoteService", () => {
       } as never,
       normalization: {
         applyTimelineProjection: vi.fn(
-          () =>
+          async (_input: unknown): Promise<TimelineProjectionRow> =>
             ({
               id: "timeline:note-1",
               contactId: "contact:one",
