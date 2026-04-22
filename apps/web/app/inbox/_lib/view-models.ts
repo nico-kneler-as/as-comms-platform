@@ -133,6 +133,13 @@ export type InboxTimelineEntrySendStatus =
   | "orphaned"
   | null;
 
+export interface InboxTimelineCampaignActivityViewModel {
+  readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
+  readonly occurredAt: string;
+  readonly occurredAtLabel: string;
+  readonly label: string;
+}
+
 export interface InboxTimelineEntryViewModel {
   readonly id: string;
   readonly kind: InboxTimelineEntryKind;
@@ -150,6 +157,7 @@ export interface InboxTimelineEntryViewModel {
   readonly inReplyToRfc822: string | null;
   readonly sendStatus: InboxTimelineEntrySendStatus;
   readonly attachmentCount: number;
+  readonly campaignActivity: readonly InboxTimelineCampaignActivityViewModel[];
   readonly noteId?: string | null;
   readonly authorId?: string | null;
 }

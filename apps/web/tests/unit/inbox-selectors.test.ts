@@ -1260,7 +1260,69 @@ describe("real inbox selectors", () => {
       subject: "April field update",
       body: "Hi Sarah,\nPlease bring your field notebook.",
       isPreview: true,
+      campaignActivity: [],
     });
+  });
+
+  it("surfaces opened and clicked metadata on consolidated campaign email rows while keeping the sent body", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "sarah-campaign-email-consolidated-sent",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T15:00:00.000Z",
+      activityType: "sent",
+      campaignId: "campaign:april-field-update",
+      campaignName: "April Volunteer Update",
+      snippet: [
+        "From: volunteers@example.org",
+        "To: sarah@example.org",
+        "",
+        "Subject: April field update",
+        "Body:",
+        "Hi Sarah,",
+        "Please bring your field notebook.",
+      ].join("\n"),
+    });
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "sarah-campaign-email-consolidated-opened",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T16:00:00.000Z",
+      activityType: "opened",
+      campaignId: "campaign:april-field-update",
+      campaignName: "April Volunteer Update",
+      snippet: "Campaign opened",
+    });
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "sarah-campaign-email-consolidated-clicked",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T16:30:00.000Z",
+      activityType: "clicked",
+      campaignId: "campaign:april-field-update",
+      campaignName: "April Volunteer Update",
+      snippet: "https://example.org/register",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+    const campaignEntries =
+      detail?.timeline.filter(
+        (entry) =>
+          entry.kind === "outbound-campaign-email" &&
+          entry.subject === "April field update",
+      ) ?? [];
+
+    expect(campaignEntries).toHaveLength(1);
+    expect(campaignEntries[0]).toMatchObject({
+      kind: "outbound-campaign-email",
+      subject: "April field update",
+      body: "Hi Sarah,\nPlease bring your field notebook.",
+    });
+    expect(campaignEntries[0]?.campaignActivity.map((activity) => activity.activityType)).toEqual([
+      "opened",
+      "clicked",
+    ]);
   });
 
   it("strips outbound email prefixes from automated and campaign email subjects before display", async () => {
