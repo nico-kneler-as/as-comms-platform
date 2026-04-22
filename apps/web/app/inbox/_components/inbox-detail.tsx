@@ -6,36 +6,39 @@ import {
   useOptimistic,
   useRef,
   useState,
-  useTransition
+  useTransition,
 } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
-  PopoverTrigger
+  PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 import {
   clearInboxNeedsFollowUpAction,
   markInboxNeedsFollowUpAction,
-  sendComposerAction
+  sendComposerAction,
 } from "../actions";
 import { fetchInboxTimelinePage } from "../_lib/client-api";
 import type { InboxDetailViewModel } from "../_lib/view-models";
 import type { UiError, UiResult } from "@/src/server/ui-result";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
-import {
-  useInboxClient,
-  type Reminder
-} from "./inbox-client-provider";
+import { useInboxClient, type Reminder } from "./inbox-client-provider";
 import { SectionLabel } from "@/components/ui/section-label";
-import { LAYOUT, TEXT, TONE, TRANSITION, SPACING } from "@/app/_lib/design-tokens";
+import {
+  LAYOUT,
+  TEXT,
+  TONE,
+  TRANSITION,
+  SPACING,
+} from "@/app/_lib/design-tokens";
 import { InboxComposerReplyBar } from "./inbox-composer";
 import {
   InboxContactRail,
-  InboxProjectStatusBadge
+  InboxProjectStatusBadge,
 } from "./inbox-contact-rail";
 import { TimelineSkeleton } from "./inbox-loading";
 import { InboxTimeline } from "./inbox-timeline";
@@ -46,16 +49,17 @@ import {
   ClockIcon,
   CornerUpLeftIcon,
   PanelRightOpenIcon,
-  XIcon
+  XIcon,
 } from "./icons";
 
 interface DetailProps {
   readonly detail: InboxDetailViewModel;
+  readonly currentOperatorUserId: string;
 }
 
 type ReminderUnit = "hours" | "days" | "weeks";
 
-export function InboxDetail({ detail }: DetailProps) {
+export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const { contact } = detail;
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const activeTimelineRequestIdRef = useRef(0);
@@ -66,7 +70,7 @@ export function InboxDetail({ detail }: DetailProps) {
     isTimelineLoading,
     setTimelineLoading,
     openReplyDraft,
-    showToast
+    showToast,
   } = useInboxClient();
 
   const [railOpen, setRailOpen] = useState(false);
@@ -90,7 +94,7 @@ export function InboxDetail({ detail }: DetailProps) {
     detail.freshness.timelineUpdatedAt,
     detail.timeline,
     detail.timelinePage,
-    setTimelineLoading
+    setTimelineLoading,
   ]);
 
   const loadOlderTimeline = useCallback(async () => {
@@ -108,7 +112,7 @@ export function InboxDetail({ detail }: DetailProps) {
     try {
       const nextPage = await fetchInboxTimelinePage({
         contactId: contact.contactId,
-        cursor: timelinePage.nextCursor
+        cursor: timelinePage.nextCursor,
       });
 
       if (activeTimelineRequestIdRef.current !== requestId) {
@@ -117,7 +121,7 @@ export function InboxDetail({ detail }: DetailProps) {
 
       setTimelineEntries((previousEntries) => [
         ...nextPage.entries,
-        ...previousEntries
+        ...previousEntries,
       ]);
       setTimelinePage(nextPage.page);
 
@@ -155,8 +159,8 @@ export function InboxDetail({ detail }: DetailProps) {
 
         return clearInboxNeedsFollowUpAction(formData);
       },
-      [contact.contactId]
-    )
+      [contact.contactId],
+    ),
   });
   const activeProject = contact.activeProjects[0] ?? null;
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
@@ -207,7 +211,7 @@ export function InboxDetail({ detail }: DetailProps) {
           const result = await sendComposerAction({
             recipient: {
               kind: "contact",
-              contactId: contact.contactId
+              contactId: contact.contactId,
             },
             alias: mailbox,
             subject: entry.subject ?? "",
@@ -217,7 +221,7 @@ export function InboxDetail({ detail }: DetailProps) {
             ...(entry.inReplyToRfc822 === null
               ? {}
               : { inReplyToRfc822: entry.inReplyToRfc822 }),
-            supersedesPendingId: pendingId
+            supersedesPendingId: pendingId,
           });
 
           if (result.ok) {
@@ -231,7 +235,7 @@ export function InboxDetail({ detail }: DetailProps) {
         setRetryingEntryId(null);
       });
     },
-    [contact.contactId, contact.displayName, showToast, timelineEntries]
+    [contact.contactId, contact.displayName, showToast, timelineEntries],
   );
 
   return (
@@ -242,7 +246,9 @@ export function InboxDetail({ detail }: DetailProps) {
       />
 
       <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
-        <header className={`flex ${LAYOUT.headerHeight} items-center justify-between gap-4 border-b border-slate-200 px-6`}>
+        <header
+          className={`flex ${LAYOUT.headerHeight} items-center justify-between gap-4 border-b border-slate-200 px-6`}
+        >
           <div className="flex min-w-0 items-center gap-4">
             <h1 className={`truncate ${TEXT.headingLg}`}>
               {contact.displayName}
@@ -252,8 +258,7 @@ export function InboxDetail({ detail }: DetailProps) {
               {activeProject ? (
                 <div className="flex min-w-0 items-center gap-2 text-xs">
                   <span className="min-w-0 truncate font-medium text-slate-700">
-                    {activeProject.projectName}{" "}
-                    {activeProject.year.toString()}
+                    {activeProject.projectName} {activeProject.year.toString()}
                   </span>
                   <InboxProjectStatusBadge status={activeProject.status} />
                 </div>
@@ -353,6 +358,7 @@ export function InboxDetail({ detail }: DetailProps) {
             <InboxTimeline
               entries={timelineEntries}
               volunteerFirstName={firstName}
+              currentOperatorUserId={currentOperatorUserId}
               hasMore={timelinePage.hasMore}
               isLoadingOlder={isTimelineLoading}
               retryingEntryId={isRetryPending ? retryingEntryId : null}
@@ -381,7 +387,7 @@ export function InboxDetail({ detail }: DetailProps) {
           `overflow-hidden border-l ${TRANSITION.layout} ${TRANSITION.reduceMotion}`,
           railOpen
             ? `${LAYOUT.railWidth} border-slate-200 opacity-100`
-            : "w-0 border-transparent opacity-0"
+            : "w-0 border-transparent opacity-0",
         )}
       >
         <div className={LAYOUT.railWidth}>
@@ -401,7 +407,7 @@ function FollowUpToggleControl({
   needsFollowUp,
   isPending,
   error,
-  onToggle
+  onToggle,
 }: {
   readonly needsFollowUp: boolean;
   readonly isPending: boolean;
@@ -431,7 +437,7 @@ function FollowUpToggleControl({
 function FollowUpToggleButton({
   needsFollowUp,
   pending,
-  onToggle
+  onToggle,
 }: {
   readonly needsFollowUp: boolean;
   readonly pending: boolean;
@@ -450,7 +456,7 @@ function FollowUpToggleButton({
       className={cn(
         "gap-1.5",
         needsFollowUp &&
-          "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800"
+          "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800",
       )}
     >
       <CornerUpLeftIcon className="h-3.5 w-3.5" />
@@ -462,7 +468,7 @@ function FollowUpToggleButton({
 function useOptimisticBooleanToggle({
   scopeKey,
   value,
-  perform
+  perform,
 }: {
   readonly scopeKey: string;
   readonly value: boolean;
@@ -474,7 +480,7 @@ function useOptimisticBooleanToggle({
   const [isPending, startTransition] = useTransition();
   const [optimisticValue, setOptimisticValue] = useOptimistic(
     committedValue,
-    (_currentValue: boolean, nextValue: boolean) => nextValue
+    (_currentValue: boolean, nextValue: boolean) => nextValue,
   );
 
   useEffect(() => {
@@ -506,7 +512,7 @@ function useOptimisticBooleanToggle({
     value: optimisticValue,
     isPending,
     error,
-    toggle
+    toggle,
   } as const;
 }
 
@@ -545,7 +551,7 @@ function ReminderPopoverBody({
   onChangeUnit,
   onClose,
   onSet,
-  onClear
+  onClear,
 }: ReminderPopoverBodyProps) {
   const numeric = Number(value);
   const canSet = value.length > 0 && Number.isFinite(numeric) && numeric > 0;
@@ -555,9 +561,7 @@ function ReminderPopoverBody({
     return (
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <SectionLabel as="p">
-            Reminder set
-          </SectionLabel>
+          <SectionLabel as="p">Reminder set</SectionLabel>
           <p className="mt-1 text-sm font-medium text-slate-900">
             {formatLongReminder(existing)}
           </p>
@@ -580,9 +584,7 @@ function ReminderPopoverBody({
 
   return (
     <>
-      <SectionLabel as="p">
-        Remind me in
-      </SectionLabel>
+      <SectionLabel as="p">Remind me in</SectionLabel>
       <div className="mt-2 flex items-center gap-2">
         <div className="flex h-9 w-16 items-center overflow-hidden rounded-md border border-slate-200 shadow-sm">
           <span
@@ -631,7 +633,7 @@ function ReminderPopoverBody({
                   "flex-1 rounded-md px-1.5 py-1 capitalize transition-colors duration-150",
                   isActive
                     ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-900"
+                    : "text-slate-500 hover:text-slate-900",
                 )}
               >
                 {option}
@@ -643,7 +645,7 @@ function ReminderPopoverBody({
       <p
         className={cn(
           "mt-2 min-h-4 text-[11px]",
-          preview ? "text-slate-500" : "text-transparent"
+          preview ? "text-slate-500" : "text-transparent",
         )}
         aria-live="polite"
       >
@@ -699,15 +701,15 @@ function formatAbsolute(target: Date): string {
   const startOfToday = new Date(
     now.getFullYear(),
     now.getMonth(),
-    now.getDate()
+    now.getDate(),
   ).getTime();
   const startOfTarget = new Date(
     target.getFullYear(),
     target.getMonth(),
-    target.getDate()
+    target.getDate(),
   ).getTime();
   const dayDelta = Math.round(
-    (startOfTarget - startOfToday) / (24 * 60 * 60 * 1000)
+    (startOfTarget - startOfToday) / (24 * 60 * 60 * 1000),
   );
 
   const time = formatTime(target);
@@ -731,24 +733,34 @@ function formatTime(target: Date): string {
 }
 
 function weekdayName(day: number): string {
-  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][
-    day
-  ] ?? "Unknown";
+  return (
+    [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ][day] ?? "Unknown"
+  );
 }
 
 function monthName(month: number): string {
-  return [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December"
-  ][month] ?? "Unknown";
+  return (
+    [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ][month] ?? "Unknown"
+  );
 }

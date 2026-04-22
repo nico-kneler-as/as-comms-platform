@@ -38,13 +38,13 @@ import {
   type SimpleTextingMessageDetailRecord,
   type SourceEvidenceRecord,
   type SyncStateRecord,
-  type TimelineProjectionRow
+  type TimelineProjectionRow,
 } from "@as-comms/contracts";
 
 import type {
   PendingComposerOutboundRecord,
   ProjectAliasRecord,
-  UserRecord
+  UserRecord,
 } from "@as-comms/domain";
 
 import type {
@@ -70,7 +70,7 @@ import type {
   simpleTextingMessageDetails,
   sourceEvidenceLog,
   syncState,
-  users
+  users,
 } from "./schema/index.js";
 
 type SourceEvidenceRow = typeof sourceEvidenceLog.$inferSelect;
@@ -108,7 +108,9 @@ function toDate(value: string): Date {
   return new Date(value);
 }
 
-export function mapSourceEvidenceRow(row: SourceEvidenceRow): SourceEvidenceRecord {
+export function mapSourceEvidenceRow(
+  row: SourceEvidenceRow,
+): SourceEvidenceRecord {
   return sourceEvidenceSchema.parse({
     id: row.id,
     provider: row.provider,
@@ -118,12 +120,12 @@ export function mapSourceEvidenceRow(row: SourceEvidenceRow): SourceEvidenceReco
     occurredAt: row.occurredAt.toISOString(),
     payloadRef: row.payloadRef,
     idempotencyKey: row.idempotencyKey,
-    checksum: row.checksum
+    checksum: row.checksum,
   });
 }
 
 export function mapSourceEvidenceToInsert(
-  record: SourceEvidenceRecord
+  record: SourceEvidenceRecord,
 ): typeof sourceEvidenceLog.$inferInsert {
   const parsed = sourceEvidenceSchema.parse(record);
 
@@ -136,11 +138,13 @@ export function mapSourceEvidenceToInsert(
     occurredAt: toDate(parsed.occurredAt),
     payloadRef: parsed.payloadRef,
     idempotencyKey: parsed.idempotencyKey,
-    checksum: parsed.checksum
+    checksum: parsed.checksum,
   };
 }
 
-export function mapCanonicalEventRow(row: CanonicalEventRow): CanonicalEventRecord {
+export function mapCanonicalEventRow(
+  row: CanonicalEventRow,
+): CanonicalEventRecord {
   return canonicalEventSchema.parse({
     id: row.id,
     contactId: row.contactId,
@@ -151,12 +155,12 @@ export function mapCanonicalEventRow(row: CanonicalEventRow): CanonicalEventReco
     sourceEvidenceId: row.sourceEvidenceId,
     idempotencyKey: row.idempotencyKey,
     provenance: row.provenance,
-    reviewState: row.reviewState
+    reviewState: row.reviewState,
   });
 }
 
 export function mapCanonicalEventToInsert(
-  record: CanonicalEventRecord
+  record: CanonicalEventRecord,
 ): typeof canonicalEventLedger.$inferInsert {
   const parsed = canonicalEventSchema.parse(record);
 
@@ -170,7 +174,7 @@ export function mapCanonicalEventToInsert(
     sourceEvidenceId: parsed.sourceEvidenceId,
     idempotencyKey: parsed.idempotencyKey,
     provenance: parsed.provenance,
-    reviewState: parsed.reviewState
+    reviewState: parsed.reviewState,
   };
 }
 
@@ -182,12 +186,12 @@ export function mapContactRow(row: ContactRow): ContactRecord {
     primaryEmail: row.primaryEmail,
     primaryPhone: row.primaryPhone,
     createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString()
+    updatedAt: row.updatedAt.toISOString(),
   });
 }
 
 export function mapContactToInsert(
-  record: ContactRecord
+  record: ContactRecord,
 ): typeof contacts.$inferInsert {
   const parsed = contactSchema.parse(record);
 
@@ -198,12 +202,12 @@ export function mapContactToInsert(
     primaryEmail: parsed.primaryEmail,
     primaryPhone: parsed.primaryPhone,
     createdAt: toDate(parsed.createdAt),
-    updatedAt: toDate(parsed.updatedAt)
+    updatedAt: toDate(parsed.updatedAt),
   };
 }
 
 export function mapContactIdentityRow(
-  row: ContactIdentityRow
+  row: ContactIdentityRow,
 ): ContactIdentityRecord {
   return contactIdentitySchema.parse({
     id: row.id,
@@ -212,12 +216,12 @@ export function mapContactIdentityRow(
     normalizedValue: row.normalizedValue,
     isPrimary: row.isPrimary,
     source: row.source,
-    verifiedAt: fromDate(row.verifiedAt)
+    verifiedAt: fromDate(row.verifiedAt),
   });
 }
 
 export function mapContactIdentityToInsert(
-  record: ContactIdentityRecord
+  record: ContactIdentityRecord,
 ): typeof contactIdentities.$inferInsert {
   const parsed = contactIdentitySchema.parse(record);
 
@@ -228,12 +232,12 @@ export function mapContactIdentityToInsert(
     normalizedValue: parsed.normalizedValue,
     isPrimary: parsed.isPrimary,
     source: parsed.source,
-    verifiedAt: parsed.verifiedAt === null ? null : toDate(parsed.verifiedAt)
+    verifiedAt: parsed.verifiedAt === null ? null : toDate(parsed.verifiedAt),
   };
 }
 
 export function mapContactMembershipRow(
-  row: ContactMembershipRow
+  row: ContactMembershipRow,
 ): ContactMembershipRecord {
   return contactMembershipSchema.parse({
     id: row.id,
@@ -242,12 +246,12 @@ export function mapContactMembershipRow(
     expeditionId: row.expeditionId,
     role: row.role,
     status: row.status,
-    source: row.source
+    source: row.source,
   });
 }
 
 export function mapContactMembershipToInsert(
-  record: ContactMembershipRecord
+  record: ContactMembershipRecord,
 ): typeof contactMemberships.$inferInsert {
   const parsed = contactMembershipSchema.parse(record);
 
@@ -258,12 +262,12 @@ export function mapContactMembershipToInsert(
     expeditionId: parsed.expeditionId,
     role: parsed.role,
     status: parsed.status,
-    source: parsed.source
+    source: parsed.source,
   };
 }
 
 export function mapProjectDimensionRow(
-  row: ProjectDimensionRow
+  row: ProjectDimensionRow,
 ): ProjectDimensionRecord {
   return projectDimensionSchema.parse({
     projectId: row.projectId,
@@ -271,12 +275,12 @@ export function mapProjectDimensionRow(
     source: row.source,
     isActive: row.isActive,
     aiKnowledgeUrl: row.aiKnowledgeUrl,
-    aiKnowledgeSyncedAt: fromDate(row.aiKnowledgeSyncedAt)
+    aiKnowledgeSyncedAt: fromDate(row.aiKnowledgeSyncedAt),
   });
 }
 
 export function mapProjectDimensionToInsert(
-  record: ProjectDimensionRecord
+  record: ProjectDimensionRecord,
 ): typeof projectDimensions.$inferInsert {
   const parsed = projectDimensionSchema.parse(record);
 
@@ -290,12 +294,12 @@ export function mapProjectDimensionToInsert(
       parsed.aiKnowledgeSyncedAt === null
         ? null
         : toDate(parsed.aiKnowledgeSyncedAt),
-    source: parsed.source
+    source: parsed.source,
   };
 }
 
 export function mapIntegrationHealthRow(
-  row: IntegrationHealthRow
+  row: IntegrationHealthRow,
 ): IntegrationHealthRecord {
   return integrationHealthSchema.parse({
     id: row.id,
@@ -306,12 +310,12 @@ export function mapIntegrationHealthRow(
     detail: row.detail,
     metadataJson: row.metadataJson,
     createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString()
+    updatedAt: row.updatedAt.toISOString(),
   });
 }
 
 export function mapIntegrationHealthToInsert(
-  record: IntegrationHealthRecord
+  record: IntegrationHealthRecord,
 ): typeof integrationHealth.$inferInsert {
   const parsed = integrationHealthSchema.parse(record);
 
@@ -325,23 +329,23 @@ export function mapIntegrationHealthToInsert(
     detail: parsed.detail,
     metadataJson: parsed.metadataJson,
     createdAt: toDate(parsed.createdAt),
-    updatedAt: toDate(parsed.updatedAt)
+    updatedAt: toDate(parsed.updatedAt),
   };
 }
 
 export function mapExpeditionDimensionRow(
-  row: ExpeditionDimensionRow
+  row: ExpeditionDimensionRow,
 ): ExpeditionDimensionRecord {
   return expeditionDimensionSchema.parse({
     expeditionId: row.expeditionId,
     projectId: row.projectId,
     expeditionName: row.expeditionName,
-    source: row.source
+    source: row.source,
   });
 }
 
 export function mapExpeditionDimensionToInsert(
-  record: ExpeditionDimensionRecord
+  record: ExpeditionDimensionRecord,
 ): typeof expeditionDimensions.$inferInsert {
   const parsed = expeditionDimensionSchema.parse(record);
 
@@ -349,12 +353,12 @@ export function mapExpeditionDimensionToInsert(
     expeditionId: parsed.expeditionId,
     projectId: parsed.projectId,
     expeditionName: parsed.expeditionName,
-    source: parsed.source
+    source: parsed.source,
   };
 }
 
 export function mapGmailMessageDetailRow(
-  row: GmailMessageDetailRow
+  row: GmailMessageDetailRow,
 ): GmailMessageDetailRecord {
   return gmailMessageDetailSchema.parse({
     sourceEvidenceId: row.sourceEvidenceId,
@@ -366,12 +370,12 @@ export function mapGmailMessageDetailRow(
     snippetClean: row.snippetClean,
     bodyTextPreview: row.bodyTextPreview,
     capturedMailbox: row.capturedMailbox,
-    projectInboxAlias: row.projectInboxAlias
+    projectInboxAlias: row.projectInboxAlias,
   });
 }
 
 export function mapGmailMessageDetailToInsert(
-  record: GmailMessageDetailRecord
+  record: GmailMessageDetailRecord,
 ): typeof gmailMessageDetails.$inferInsert {
   const parsed = gmailMessageDetailSchema.parse(record);
 
@@ -385,24 +389,24 @@ export function mapGmailMessageDetailToInsert(
     snippetClean: parsed.snippetClean,
     bodyTextPreview: parsed.bodyTextPreview,
     capturedMailbox: parsed.capturedMailbox,
-    projectInboxAlias: parsed.projectInboxAlias
+    projectInboxAlias: parsed.projectInboxAlias,
   };
 }
 
 export function mapSalesforceEventContextRow(
-  row: SalesforceEventContextRow
+  row: SalesforceEventContextRow,
 ): SalesforceEventContextRecord {
   return salesforceEventContextSchema.parse({
     sourceEvidenceId: row.sourceEvidenceId,
     salesforceContactId: row.salesforceContactId,
     projectId: row.projectId,
     expeditionId: row.expeditionId,
-    sourceField: row.sourceField
+    sourceField: row.sourceField,
   });
 }
 
 export function mapSalesforceEventContextToInsert(
-  record: SalesforceEventContextRecord
+  record: SalesforceEventContextRecord,
 ): typeof salesforceEventContext.$inferInsert {
   const parsed = salesforceEventContextSchema.parse(record);
 
@@ -411,12 +415,12 @@ export function mapSalesforceEventContextToInsert(
     salesforceContactId: parsed.salesforceContactId,
     projectId: parsed.projectId,
     expeditionId: parsed.expeditionId,
-    sourceField: parsed.sourceField
+    sourceField: parsed.sourceField,
   };
 }
 
 export function mapSalesforceCommunicationDetailRow(
-  row: SalesforceCommunicationDetailRow
+  row: SalesforceCommunicationDetailRow,
 ): SalesforceCommunicationDetailRecord {
   return salesforceCommunicationDetailSchema.parse({
     sourceEvidenceId: row.sourceEvidenceId,
@@ -425,12 +429,12 @@ export function mapSalesforceCommunicationDetailRow(
     messageKind: row.messageKind,
     subject: row.subject,
     snippet: row.snippet,
-    sourceLabel: row.sourceLabel
+    sourceLabel: row.sourceLabel,
   });
 }
 
 export function mapSalesforceCommunicationDetailToInsert(
-  record: SalesforceCommunicationDetailRecord
+  record: SalesforceCommunicationDetailRecord,
 ): typeof salesforceCommunicationDetails.$inferInsert {
   const parsed = salesforceCommunicationDetailSchema.parse(record);
 
@@ -441,12 +445,12 @@ export function mapSalesforceCommunicationDetailToInsert(
     messageKind: parsed.messageKind,
     subject: parsed.subject,
     snippet: parsed.snippet,
-    sourceLabel: parsed.sourceLabel
+    sourceLabel: parsed.sourceLabel,
   };
 }
 
 export function mapSimpleTextingMessageDetailRow(
-  row: SimpleTextingMessageDetailRow
+  row: SimpleTextingMessageDetailRow,
 ): SimpleTextingMessageDetailRecord {
   return simpleTextingMessageDetailSchema.parse({
     sourceEvidenceId: row.sourceEvidenceId,
@@ -458,12 +462,12 @@ export function mapSimpleTextingMessageDetailRow(
     campaignId: row.campaignId,
     campaignName: row.campaignName,
     providerThreadId: row.providerThreadId,
-    threadKey: row.threadKey
+    threadKey: row.threadKey,
   });
 }
 
 export function mapSimpleTextingMessageDetailToInsert(
-  record: SimpleTextingMessageDetailRecord
+  record: SimpleTextingMessageDetailRecord,
 ): typeof simpleTextingMessageDetails.$inferInsert {
   const parsed = simpleTextingMessageDetailSchema.parse(record);
 
@@ -477,12 +481,12 @@ export function mapSimpleTextingMessageDetailToInsert(
     campaignId: parsed.campaignId,
     campaignName: parsed.campaignName,
     providerThreadId: parsed.providerThreadId,
-    threadKey: parsed.threadKey
+    threadKey: parsed.threadKey,
   };
 }
 
 export function mapMailchimpCampaignActivityDetailRow(
-  row: MailchimpCampaignActivityDetailRow
+  row: MailchimpCampaignActivityDetailRow,
 ): MailchimpCampaignActivityDetailRecord {
   return mailchimpCampaignActivityDetailSchema.parse({
     sourceEvidenceId: row.sourceEvidenceId,
@@ -492,12 +496,12 @@ export function mapMailchimpCampaignActivityDetailRow(
     audienceId: row.audienceId,
     memberId: row.memberId,
     campaignName: row.campaignName,
-    snippet: row.snippet
+    snippet: row.snippet,
   });
 }
 
 export function mapMailchimpCampaignActivityDetailToInsert(
-  record: MailchimpCampaignActivityDetailRecord
+  record: MailchimpCampaignActivityDetailRecord,
 ): typeof mailchimpCampaignActivityDetails.$inferInsert {
   const parsed = mailchimpCampaignActivityDetailSchema.parse(record);
 
@@ -509,23 +513,24 @@ export function mapMailchimpCampaignActivityDetailToInsert(
     audienceId: parsed.audienceId,
     memberId: parsed.memberId,
     campaignName: parsed.campaignName,
-    snippet: parsed.snippet
+    snippet: parsed.snippet,
   };
 }
 
 export function mapManualNoteDetailRow(
-  row: ManualNoteDetailRow
+  row: ManualNoteDetailRow,
 ): ManualNoteDetailRecord {
   return manualNoteDetailSchema.parse({
     sourceEvidenceId: row.sourceEvidenceId,
     providerRecordId: row.providerRecordId,
     body: row.body,
-    authorDisplayName: row.authorDisplayName
+    authorDisplayName: row.authorDisplayName,
+    authorId: row.authorId,
   });
 }
 
 export function mapManualNoteDetailToInsert(
-  record: ManualNoteDetailRecord
+  record: ManualNoteDetailRecord,
 ): typeof manualNoteDetails.$inferInsert {
   const parsed = manualNoteDetailSchema.parse(record);
 
@@ -533,12 +538,13 @@ export function mapManualNoteDetailToInsert(
     sourceEvidenceId: parsed.sourceEvidenceId,
     providerRecordId: parsed.providerRecordId,
     body: parsed.body,
-    authorDisplayName: parsed.authorDisplayName
+    authorDisplayName: parsed.authorDisplayName,
+    authorId: parsed.authorId,
   };
 }
 
 export function mapIdentityResolutionRow(
-  row: IdentityResolutionRow
+  row: IdentityResolutionRow,
 ): IdentityResolutionCase {
   return identityResolutionSchema.parse({
     id: row.id,
@@ -550,12 +556,12 @@ export function mapIdentityResolutionRow(
     resolvedAt: fromDate(row.resolvedAt),
     normalizedIdentityValues: row.normalizedIdentityValues,
     anchoredContactId: row.anchoredContactId,
-    explanation: row.explanation
+    explanation: row.explanation,
   });
 }
 
 export function mapIdentityResolutionToInsert(
-  record: IdentityResolutionCase
+  record: IdentityResolutionCase,
 ): typeof identityResolutionQueue.$inferInsert {
   const parsed = identityResolutionSchema.parse(record);
 
@@ -569,7 +575,7 @@ export function mapIdentityResolutionToInsert(
     resolvedAt: parsed.resolvedAt === null ? null : toDate(parsed.resolvedAt),
     normalizedIdentityValues: [...parsed.normalizedIdentityValues],
     anchoredContactId: parsed.anchoredContactId,
-    explanation: parsed.explanation
+    explanation: parsed.explanation,
   };
 }
 
@@ -583,12 +589,12 @@ export function mapRoutingReviewRow(row: RoutingReviewRow): RoutingReviewCase {
     openedAt: row.openedAt.toISOString(),
     resolvedAt: fromDate(row.resolvedAt),
     candidateMembershipIds: row.candidateMembershipIds,
-    explanation: row.explanation
+    explanation: row.explanation,
   });
 }
 
 export function mapRoutingReviewToInsert(
-  record: RoutingReviewCase
+  record: RoutingReviewCase,
 ): typeof routingReviewQueue.$inferInsert {
   const parsed = routingReviewSchema.parse(record);
 
@@ -601,12 +607,12 @@ export function mapRoutingReviewToInsert(
     openedAt: toDate(parsed.openedAt),
     resolvedAt: parsed.resolvedAt === null ? null : toDate(parsed.resolvedAt),
     candidateMembershipIds: [...parsed.candidateMembershipIds],
-    explanation: parsed.explanation
+    explanation: parsed.explanation,
   };
 }
 
 export function mapInboxProjectionRow(
-  row: InboxProjectionRowDb
+  row: InboxProjectionRowDb,
 ): InboxProjectionRow {
   return inboxProjectionSchema.parse({
     contactId: row.contactId,
@@ -618,12 +624,12 @@ export function mapInboxProjectionRow(
     lastActivityAt: row.lastActivityAt.toISOString(),
     snippet: row.snippet,
     lastCanonicalEventId: row.lastCanonicalEventId,
-    lastEventType: row.lastEventType
+    lastEventType: row.lastEventType,
   });
 }
 
 export function mapInboxProjectionToInsert(
-  record: InboxProjectionRow
+  record: InboxProjectionRow,
 ): typeof contactInboxProjection.$inferInsert {
   const parsed = inboxProjectionSchema.parse(record);
 
@@ -639,12 +645,12 @@ export function mapInboxProjectionToInsert(
     lastActivityAt: toDate(parsed.lastActivityAt),
     snippet: parsed.snippet,
     lastCanonicalEventId: parsed.lastCanonicalEventId,
-    lastEventType: parsed.lastEventType
+    lastEventType: parsed.lastEventType,
   };
 }
 
 export function mapTimelineProjectionRow(
-  row: TimelineProjectionRowDb
+  row: TimelineProjectionRowDb,
 ): TimelineProjectionRow {
   return timelineProjectionSchema.parse({
     id: row.id,
@@ -656,12 +662,12 @@ export function mapTimelineProjectionRow(
     summary: row.summary,
     channel: row.channel,
     primaryProvider: row.primaryProvider,
-    reviewState: row.reviewState
+    reviewState: row.reviewState,
   });
 }
 
 export function mapTimelineProjectionToInsert(
-  record: TimelineProjectionRow
+  record: TimelineProjectionRow,
 ): typeof contactTimelineProjection.$inferInsert {
   const parsed = timelineProjectionSchema.parse(record);
 
@@ -675,7 +681,7 @@ export function mapTimelineProjectionToInsert(
     summary: parsed.summary,
     channel: parsed.channel,
     primaryProvider: parsed.primaryProvider,
-    reviewState: parsed.reviewState
+    reviewState: parsed.reviewState,
   };
 }
 
@@ -694,12 +700,12 @@ export function mapSyncStateRow(row: SyncStateRow): SyncStateRecord {
     freshnessP95Seconds: row.freshnessP95Seconds,
     freshnessP99Seconds: row.freshnessP99Seconds,
     lastSuccessfulAt: fromDate(row.lastSuccessfulAt),
-    deadLetterCount: row.deadLetterCount
+    deadLetterCount: row.deadLetterCount,
   });
 }
 
 export function mapSyncStateToInsert(
-  record: SyncStateRecord
+  record: SyncStateRecord,
 ): typeof syncState.$inferInsert {
   const parsed = syncStateSchema.parse(record);
 
@@ -709,7 +715,8 @@ export function mapSyncStateToInsert(
     provider: parsed.provider,
     jobType: parsed.jobType,
     cursor: parsed.cursor,
-    windowStart: parsed.windowStart === null ? null : toDate(parsed.windowStart),
+    windowStart:
+      parsed.windowStart === null ? null : toDate(parsed.windowStart),
     windowEnd: parsed.windowEnd === null ? null : toDate(parsed.windowEnd),
     status: parsed.status,
     parityPercent:
@@ -718,11 +725,13 @@ export function mapSyncStateToInsert(
     freshnessP99Seconds: parsed.freshnessP99Seconds,
     lastSuccessfulAt:
       parsed.lastSuccessfulAt === null ? null : toDate(parsed.lastSuccessfulAt),
-    deadLetterCount: parsed.deadLetterCount
+    deadLetterCount: parsed.deadLetterCount,
   };
 }
 
-export function mapAuditEvidenceRow(row: AuditEvidenceRow): AuditEvidenceRecord {
+export function mapAuditEvidenceRow(
+  row: AuditEvidenceRow,
+): AuditEvidenceRecord {
   return auditEvidenceSchema.parse({
     id: row.id,
     actorType: row.actorType,
@@ -733,12 +742,12 @@ export function mapAuditEvidenceRow(row: AuditEvidenceRow): AuditEvidenceRecord 
     occurredAt: row.occurredAt.toISOString(),
     result: row.result,
     policyCode: row.policyCode,
-    metadataJson: row.metadataJson
+    metadataJson: row.metadataJson,
   });
 }
 
 export function mapAuditEvidenceToInsert(
-  record: AuditEvidenceRecord
+  record: AuditEvidenceRecord,
 ): typeof auditPolicyEvidence.$inferInsert {
   const parsed = auditEvidenceSchema.parse(record);
 
@@ -752,7 +761,7 @@ export function mapAuditEvidenceToInsert(
     occurredAt: toDate(parsed.occurredAt),
     result: parsed.result,
     policyCode: parsed.policyCode,
-    metadataJson: parsed.metadataJson
+    metadataJson: parsed.metadataJson,
   };
 }
 
@@ -766,13 +775,11 @@ export function mapUserRow(row: UserRow): UserRecord {
     role: row.role,
     deactivatedAt: row.deactivatedAt,
     createdAt: row.createdAt,
-    updatedAt: row.updatedAt
+    updatedAt: row.updatedAt,
   };
 }
 
-export function mapUserToInsert(
-  record: UserRecord
-): typeof users.$inferInsert {
+export function mapUserToInsert(record: UserRecord): typeof users.$inferInsert {
   return {
     id: record.id,
     name: record.name,
@@ -782,12 +789,12 @@ export function mapUserToInsert(
     role: record.role,
     deactivatedAt: record.deactivatedAt,
     createdAt: record.createdAt,
-    updatedAt: record.updatedAt
+    updatedAt: record.updatedAt,
   };
 }
 
 export function mapPendingComposerOutboundRow(
-  row: PendingComposerOutboundRow
+  row: PendingComposerOutboundRow,
 ): PendingComposerOutboundRecord {
   return {
     id: row.id,
@@ -810,12 +817,12 @@ export function mapPendingComposerOutboundRow(
     failedReason: row.failedReason,
     orphanedAt: fromDate(row.orphanedAt),
     createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString()
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
 export function mapPendingComposerOutboundToInsert(
-  record: PendingComposerOutboundRecord
+  record: PendingComposerOutboundRecord,
 ): typeof pendingComposerOutbounds.$inferInsert {
   return {
     id: record.id,
@@ -839,7 +846,7 @@ export function mapPendingComposerOutboundToInsert(
     failedReason: record.failedReason,
     orphanedAt: record.orphanedAt === null ? null : toDate(record.orphanedAt),
     createdAt: toDate(record.createdAt),
-    updatedAt: toDate(record.updatedAt)
+    updatedAt: toDate(record.updatedAt),
   };
 }
 
@@ -852,12 +859,12 @@ export function mapProjectAliasRow(row: ProjectAliasRow): ProjectAliasRecord {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     createdBy: row.createdBy,
-    updatedBy: row.updatedBy
+    updatedBy: row.updatedBy,
   };
 }
 
 export function mapProjectAliasToInsert(
-  record: ProjectAliasRecord
+  record: ProjectAliasRecord,
 ): typeof projectAliases.$inferInsert {
   return {
     id: record.id,
@@ -867,6 +874,6 @@ export function mapProjectAliasToInsert(
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     createdBy: record.createdBy,
-    updatedBy: record.updatedBy
+    updatedBy: record.updatedBy,
   };
 }

@@ -4,6 +4,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 Object.assign(globalThis, { React });
 
+vi.mock("../../app/inbox/actions", () => ({
+  updateNoteAction: vi.fn(),
+  deleteNoteAction: vi.fn(),
+}));
+
 vi.mock("@/components/ui/divider-label", () => ({
   DividerLabel: ({ children }: { readonly children?: React.ReactNode }) =>
     createElement("span", null, children),
@@ -65,6 +70,7 @@ describe("InboxTimeline", () => {
       createElement(InboxTimeline, {
         entries: [baseEntry],
         volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
       }),
     );
 
@@ -87,6 +93,7 @@ describe("InboxTimeline", () => {
           },
         ],
         volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
       }),
     );
 

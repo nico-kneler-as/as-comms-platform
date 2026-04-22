@@ -136,6 +136,7 @@ interface ManualNoteDetailRecord {
   readonly providerRecordId: string;
   readonly body: string;
   readonly authorDisplayName: string | null;
+  readonly authorId: string | null;
 }
 
 type SalesforceCommunicationDetailRow = SalesforceCommunicationDetailRecord;
@@ -244,6 +245,7 @@ function mapManualNoteDetailRowLocal(
     providerRecordId: row.providerRecordId,
     body: row.body,
     authorDisplayName: row.authorDisplayName,
+    authorId: row.authorId,
   };
 }
 
@@ -253,6 +255,7 @@ function mapManualNoteDetailToInsertLocal(record: ManualNoteDetailRecord) {
     providerRecordId: record.providerRecordId,
     body: record.body,
     authorDisplayName: record.authorDisplayName,
+    authorId: record.authorId,
   };
 }
 
@@ -803,13 +806,13 @@ function createStage1RepositoriesInternal(
           .where(
             or(
               sql`lower(${contacts.displayName}) like ${pattern}`,
-              sql`lower(coalesce(${contacts.primaryEmail}, '')) like ${pattern}`
-            )
+              sql`lower(coalesce(${contacts.primaryEmail}, '')) like ${pattern}`,
+            ),
           )
           .orderBy(
             sql`case when lower(${contacts.displayName}) like ${pattern} then 0 else 1 end`,
             asc(contacts.displayName),
-            asc(contacts.id)
+            asc(contacts.id),
           )
           .limit(limit);
 
@@ -1328,6 +1331,7 @@ function createStage1RepositoriesInternal(
               providerRecordId: values.providerRecordId,
               body: values.body,
               authorDisplayName: values.authorDisplayName,
+              authorId: values.authorId,
               updatedAt: new Date(),
             },
           })
@@ -1336,6 +1340,60 @@ function createStage1RepositoriesInternal(
         return mapManualNoteDetailRowLocal(
           requireRow(row, "Expected manual note detail row to be returned."),
         );
+      },
+
+      async updateBody(input) {
+        const [row] = (await db
+          .update(manualNoteDetails)
+          .set({
+            body: input.body,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(manualNoteDetails.sourceEvidenceId, input.sourceEvidenceId),
+              eq(manualNoteDetails.authorId, input.authorId),
+            ),
+          )
+          .returning()) as ManualNoteDetailRow[];
+
+        return row === undefined ? null : mapManualNoteDetailRowLocal(row);
+      },
+
+      async deleteByAuthor(input) {
+        return db.transaction(async (tx: Stage1Database) => {
+          const [matchingNote] = await tx
+            .select({
+              sourceEvidenceId: manualNoteDetails.sourceEvidenceId,
+            })
+            .from(manualNoteDetails)
+            .where(
+              and(
+                eq(manualNoteDetails.sourceEvidenceId, input.sourceEvidenceId),
+                eq(manualNoteDetails.authorId, input.authorId),
+              ),
+            )
+            .limit(1);
+
+          if (matchingNote === undefined) {
+            return 0;
+          }
+
+          await tx
+            .delete(canonicalEventLedger)
+            .where(
+              eq(canonicalEventLedger.sourceEvidenceId, input.sourceEvidenceId),
+            );
+
+          const deletedRows = await tx
+            .delete(sourceEvidenceLog)
+            .where(eq(sourceEvidenceLog.id, input.sourceEvidenceId))
+            .returning({
+              id: sourceEvidenceLog.id,
+            });
+
+          return deletedRows.length;
+        });
       },
     },
 
@@ -2160,7 +2218,7 @@ function createStage2RepositoriesInternal(
         id: aliasRow.id,
         address: aliasRow.alias,
         createdAt: aliasRow.createdAt,
-        signature: aliasRow.signature
+        signature: aliasRow.signature,
       });
       emailsByProjectId.set(aliasRow.projectId, projectEmails);
     }
@@ -2185,7 +2243,7 @@ function createStage2RepositoriesInternal(
           id: email.id,
           address: email.address,
           isPrimary: index === 0,
-          signature: email.signature
+          signature: email.signature,
         }));
 
       return {
@@ -2456,7 +2514,7 @@ function createStage2RepositoriesInternal(
             .from(projectAliases)
             .where(eq(projectAliases.projectId, input.projectId));
           const signatureByAlias = new Map(
-            existingRows.map((row) => [row.alias, row.signature] as const)
+            existingRows.map((row) => [row.alias, row.signature] as const),
           );
 
           await tx
@@ -2497,7 +2555,7 @@ function createStage2RepositoriesInternal(
           .set({
             signature: input.signature,
             updatedAt: new Date(),
-            updatedBy: input.actorId
+            updatedBy: input.actorId,
           })
           .where(eq(projectAliases.id, input.aliasId))
           .returning();

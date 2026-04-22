@@ -12,11 +12,14 @@
  * and related helpers.
  */
 import type { TestStage1Context } from "@as-comms/db/test-helpers";
-import { createStage1TimelinePresentationService } from "@as-comms/domain";
+import {
+  createStage1InternalNoteService,
+  createStage1TimelinePresentationService,
+} from "@as-comms/domain";
 
 import {
   setStage1WebRuntimeForTests,
-  type Stage1WebRuntime
+  type Stage1WebRuntime,
 } from "./stage1-runtime";
 
 export type { TestStage1Context } from "@as-comms/db/test-helpers";
@@ -36,8 +39,12 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
     settings: context.settings,
     normalization: context.normalization,
     timelinePresentation: createStage1TimelinePresentationService(
-      context.repositories
-    )
+      context.repositories,
+    ),
+    internalNotes: createStage1InternalNoteService({
+      persistence: context.persistence,
+      normalization: context.normalization,
+    }),
   };
   setStage1WebRuntimeForTests(runtime);
 
@@ -46,6 +53,6 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
     async dispose() {
       setStage1WebRuntimeForTests(null);
       await context.client.close();
-    }
+    },
   };
 }

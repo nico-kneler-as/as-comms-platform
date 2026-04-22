@@ -150,6 +150,8 @@ export interface InboxTimelineEntryViewModel {
   readonly inReplyToRfc822: string | null;
   readonly sendStatus: InboxTimelineEntrySendStatus;
   readonly attachmentCount: number;
+  readonly noteId?: string | null;
+  readonly authorId?: string | null;
 }
 
 export interface InboxComposerAliasOption {

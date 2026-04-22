@@ -160,6 +160,15 @@ export interface ManualNoteDetailRepository {
     sourceEvidenceIds: readonly string[],
   ): Promise<readonly ManualNoteDetailRecord[]>;
   upsert(record: ManualNoteDetailRecord): Promise<ManualNoteDetailRecord>;
+  updateBody(input: {
+    readonly sourceEvidenceId: string;
+    readonly authorId: string;
+    readonly body: string;
+  }): Promise<ManualNoteDetailRecord | null>;
+  deleteByAuthor(input: {
+    readonly sourceEvidenceId: string;
+    readonly authorId: string;
+  }): Promise<number>;
 }
 
 export interface PendingComposerOutboundRepository {

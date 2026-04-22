@@ -21,7 +21,7 @@ import {
   routingReviewReasonCodeSchema,
   syncScopeSchema,
   syncJobTypeSchema,
-  syncStatusSchema
+  syncStatusSchema,
 } from "./stage1-taxonomy.js";
 
 const idSchema = z.string().min(1);
@@ -35,7 +35,7 @@ const nullableStringSchema = z.string().min(1).nullable();
 export const communicationCampaignRefSchema = z.object({
   providerCampaignId: nullableStringSchema.default(null),
   providerAudienceId: nullableStringSchema.default(null),
-  providerMessageName: nullableStringSchema.default(null)
+  providerMessageName: nullableStringSchema.default(null),
 });
 export type CommunicationCampaignRef = z.infer<
   typeof communicationCampaignRefSchema
@@ -43,7 +43,7 @@ export type CommunicationCampaignRef = z.infer<
 
 export const communicationThreadRefSchema = z.object({
   crossProviderCollapseKey: nullableStringSchema.default(null),
-  providerThreadId: nullableStringSchema.default(null)
+  providerThreadId: nullableStringSchema.default(null),
 });
 export type CommunicationThreadRef = z.infer<
   typeof communicationThreadRefSchema
@@ -65,7 +65,7 @@ export const canonicalEventProvenanceSchema = z.object({
     .enum(["forwarded_chain"])
     .nullable()
     .optional(),
-  notes: z.string().min(1).nullable().optional()
+  notes: z.string().min(1).nullable().optional(),
 });
 export type CanonicalEventProvenance = z.infer<
   typeof canonicalEventProvenanceSchema
@@ -80,7 +80,7 @@ export const sourceEvidenceSchema = z.object({
   occurredAt: timestampSchema,
   payloadRef: z.string().min(1),
   idempotencyKey: z.string().min(1),
-  checksum: z.string().min(1)
+  checksum: z.string().min(1),
 });
 export type SourceEvidenceRecord = z.infer<typeof sourceEvidenceSchema>;
 
@@ -95,13 +95,13 @@ export const canonicalEventSchema = z
     sourceEvidenceId: idSchema,
     idempotencyKey: z.string().min(1),
     provenance: canonicalEventProvenanceSchema,
-    reviewState: reviewStateSchema
+    reviewState: reviewStateSchema,
   })
   .superRefine((value, context) => {
     if (value.channel !== resolveCanonicalChannel(value.eventType)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "channel must match the canonical event type"
+        message: "channel must match the canonical event type",
       });
     }
 
@@ -109,7 +109,7 @@ export const canonicalEventSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "sourceEvidenceId must match provenance.primarySourceEvidenceId"
+          "sourceEvidenceId must match provenance.primarySourceEvidenceId",
       });
     }
   });
@@ -122,7 +122,7 @@ export const contactSchema = z.object({
   primaryEmail: z.string().min(1).nullable(),
   primaryPhone: z.string().min(1).nullable(),
   createdAt: timestampSchema,
-  updatedAt: timestampSchema
+  updatedAt: timestampSchema,
 });
 export type ContactRecord = z.infer<typeof contactSchema>;
 
@@ -133,7 +133,7 @@ export const contactIdentitySchema = z.object({
   normalizedValue: z.string().min(1),
   isPrimary: z.boolean(),
   source: recordSourceSchema,
-  verifiedAt: optionalTimestampSchema
+  verifiedAt: optionalTimestampSchema,
 });
 export type ContactIdentityRecord = z.infer<typeof contactIdentitySchema>;
 
@@ -144,7 +144,7 @@ export const contactMembershipSchema = z.object({
   expeditionId: z.string().min(1).nullable(),
   role: z.string().min(1).nullable(),
   status: z.string().min(1).nullable(),
-  source: recordSourceSchema
+  source: recordSourceSchema,
 });
 export type ContactMembershipRecord = z.infer<typeof contactMembershipSchema>;
 
@@ -154,7 +154,7 @@ export const projectDimensionSchema = z.object({
   source: recordSourceSchema,
   isActive: z.boolean().optional(),
   aiKnowledgeUrl: nullableStringSchema.optional(),
-  aiKnowledgeSyncedAt: optionalTimestampSchema.optional()
+  aiKnowledgeSyncedAt: optionalTimestampSchema.optional(),
 });
 export type ProjectDimensionRecord = z.infer<typeof projectDimensionSchema>;
 
@@ -162,7 +162,7 @@ export const expeditionDimensionSchema = z.object({
   expeditionId: idSchema,
   projectId: nullableStringSchema,
   expeditionName: z.string().min(1),
-  source: recordSourceSchema
+  source: recordSourceSchema,
 });
 export type ExpeditionDimensionRecord = z.infer<
   typeof expeditionDimensionSchema
@@ -181,7 +181,7 @@ export const gmailMessageDetailSchema = z.object({
   snippetClean: z.string(),
   bodyTextPreview: z.string(),
   capturedMailbox: nullableStringSchema,
-  projectInboxAlias: nullableStringSchema
+  projectInboxAlias: nullableStringSchema,
 });
 export type GmailMessageDetailRecord = z.infer<typeof gmailMessageDetailSchema>;
 
@@ -190,7 +190,7 @@ export const salesforceEventContextSchema = z.object({
   salesforceContactId: nullableStringSchema,
   projectId: nullableStringSchema,
   expeditionId: nullableStringSchema,
-  sourceField: nullableStringSchema.default(null)
+  sourceField: nullableStringSchema.default(null),
 });
 export type SalesforceEventContextRecord = z.infer<
   typeof salesforceEventContextSchema
@@ -203,7 +203,7 @@ export const salesforceCommunicationDetailSchema = z.object({
   messageKind: communicationMessageKindSchema,
   subject: nullableStringSchema,
   snippet: z.string(),
-  sourceLabel: z.string().min(1)
+  sourceLabel: z.string().min(1),
 });
 export type SalesforceCommunicationDetailRecord = z.infer<
   typeof salesforceCommunicationDetailSchema
@@ -219,7 +219,7 @@ export const simpleTextingMessageDetailSchema = z.object({
   campaignId: nullableStringSchema,
   campaignName: nullableStringSchema,
   providerThreadId: nullableStringSchema,
-  threadKey: nullableStringSchema
+  threadKey: nullableStringSchema,
 });
 export type SimpleTextingMessageDetailRecord = z.infer<
   typeof simpleTextingMessageDetailSchema
@@ -233,7 +233,7 @@ export const mailchimpCampaignActivityDetailSchema = z.object({
   audienceId: nullableStringSchema,
   memberId: nullableStringSchema,
   campaignName: nullableStringSchema,
-  snippet: z.string()
+  snippet: z.string(),
 });
 export type MailchimpCampaignActivityDetailRecord = z.infer<
   typeof mailchimpCampaignActivityDetailSchema
@@ -243,7 +243,8 @@ export const manualNoteDetailSchema = z.object({
   sourceEvidenceId: idSchema,
   providerRecordId: z.string().min(1),
   body: z.string().min(1),
-  authorDisplayName: nullableStringSchema.default(null)
+  authorDisplayName: nullableStringSchema.default(null),
+  authorId: nullableStringSchema.default(null),
 });
 export type ManualNoteDetailRecord = z.infer<typeof manualNoteDetailSchema>;
 
@@ -258,13 +259,13 @@ export const identityResolutionSchema = z
     resolvedAt: optionalTimestampSchema,
     normalizedIdentityValues: stringArraySchema.default([]),
     anchoredContactId: optionalIdSchema,
-    explanation: z.string().min(1)
+    explanation: z.string().min(1),
   })
   .superRefine((value, context) => {
     if (value.status === "resolved" && value.resolvedAt === null) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "resolved identity cases must include resolvedAt"
+        message: "resolved identity cases must include resolvedAt",
       });
     }
   });
@@ -280,13 +281,13 @@ export const routingReviewSchema = z
     openedAt: timestampSchema,
     resolvedAt: optionalTimestampSchema,
     candidateMembershipIds: stringArraySchema.default([]),
-    explanation: z.string().min(1)
+    explanation: z.string().min(1),
   })
   .superRefine((value, context) => {
     if (value.status === "resolved" && value.resolvedAt === null) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "resolved routing cases must include resolvedAt"
+        message: "resolved routing cases must include resolvedAt",
       });
     }
   });
@@ -303,14 +304,14 @@ export const inboxProjectionSchema = z
     lastActivityAt: timestampSchema,
     snippet: z.string(),
     lastCanonicalEventId: idSchema,
-    lastEventType: inboxDrivingEventTypeSchema
+    lastEventType: inboxDrivingEventTypeSchema,
   })
   .superRefine((value, context) => {
     if (value.lastInboundAt === null && value.lastOutboundAt === null) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "an inbox projection must include at least one inbound or outbound timestamp"
+          "an inbox projection must include at least one inbound or outbound timestamp",
       });
     }
 
@@ -322,7 +323,7 @@ export const inboxProjectionSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "outbound-only inbox rows must set lastActivityAt to lastOutboundAt"
+          "outbound-only inbox rows must set lastActivityAt to lastOutboundAt",
       });
     }
 
@@ -333,7 +334,7 @@ export const inboxProjectionSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "lastActivityAt must be at least as recent as lastInboundAt when inbound history exists"
+          "lastActivityAt must be at least as recent as lastInboundAt when inbound history exists",
       });
     }
 
@@ -353,7 +354,7 @@ export const inboxProjectionSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "lastActivityAt must equal the newest inbound or outbound timestamp"
+          "lastActivityAt must equal the newest inbound or outbound timestamp",
       });
     }
   });
@@ -370,47 +371,49 @@ export const timelineProjectionSchema = z
     summary: z.string().min(1),
     channel: channelSchema,
     primaryProvider: providerSchema,
-    reviewState: reviewStateSchema
+    reviewState: reviewStateSchema,
   })
   .superRefine((value, context) => {
     if (value.channel !== resolveCanonicalChannel(value.eventType)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "timeline channel must match the canonical event type"
+        message: "timeline channel must match the canonical event type",
       });
     }
   });
 export type TimelineProjectionRow = z.infer<typeof timelineProjectionSchema>;
 
-export const syncStateSchema = z.object({
-  id: idSchema,
-  scope: syncScopeSchema,
-  provider: providerSchema.nullable(),
-  jobType: syncJobTypeSchema,
-  cursor: z.string().min(1).nullable(),
-  windowStart: optionalTimestampSchema,
-  windowEnd: optionalTimestampSchema,
-  status: syncStatusSchema,
-  parityPercent: z.number().min(0).max(100).nullable(),
-  freshnessP95Seconds: z.number().int().nonnegative().nullable(),
-  freshnessP99Seconds: z.number().int().nonnegative().nullable(),
-  lastSuccessfulAt: optionalTimestampSchema,
-  deadLetterCount: z.number().int().nonnegative()
-}).superRefine((value, context) => {
-  if (value.scope === "provider" && value.provider === null) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "provider-scoped sync state must include a provider"
-    });
-  }
+export const syncStateSchema = z
+  .object({
+    id: idSchema,
+    scope: syncScopeSchema,
+    provider: providerSchema.nullable(),
+    jobType: syncJobTypeSchema,
+    cursor: z.string().min(1).nullable(),
+    windowStart: optionalTimestampSchema,
+    windowEnd: optionalTimestampSchema,
+    status: syncStatusSchema,
+    parityPercent: z.number().min(0).max(100).nullable(),
+    freshnessP95Seconds: z.number().int().nonnegative().nullable(),
+    freshnessP99Seconds: z.number().int().nonnegative().nullable(),
+    lastSuccessfulAt: optionalTimestampSchema,
+    deadLetterCount: z.number().int().nonnegative(),
+  })
+  .superRefine((value, context) => {
+    if (value.scope === "provider" && value.provider === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "provider-scoped sync state must include a provider",
+      });
+    }
 
-  if (value.scope === "orchestration" && value.provider !== null) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "orchestration-scoped sync state must not include a provider"
-    });
-  }
-});
+    if (value.scope === "orchestration" && value.provider !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "orchestration-scoped sync state must not include a provider",
+      });
+    }
+  });
 export type SyncStateRecord = z.infer<typeof syncStateSchema>;
 
 export const auditEvidenceSchema = z.object({
@@ -423,6 +426,6 @@ export const auditEvidenceSchema = z.object({
   occurredAt: timestampSchema,
   result: auditResultSchema,
   policyCode: z.string().min(1),
-  metadataJson: metadataJsonSchema
+  metadataJson: metadataJsonSchema,
 });
 export type AuditEvidenceRecord = z.infer<typeof auditEvidenceSchema>;
