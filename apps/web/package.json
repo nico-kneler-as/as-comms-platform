@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "pnpm --dir ../.. --filter @as-comms/integrations build && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint app src tests next.config.ts tailwind.config.ts --max-warnings=0",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
