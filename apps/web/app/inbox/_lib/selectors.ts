@@ -32,6 +32,7 @@ import type {
   InboxTimelineEntryKind,
   InboxTimelineEntryViewModel,
   InboxVolunteerStage,
+  InboxWelcomeWorkloadViewModel,
 } from "./view-models";
 
 interface InboxListCacheRow {
@@ -86,6 +87,11 @@ interface InboxDetailCacheData {
     readonly timelineUpdatedAt: string | null;
     readonly timelineCount: number;
   };
+}
+
+interface InboxWelcomeWorkloadCacheData {
+  readonly projects: InboxWelcomeWorkloadViewModel["projects"];
+  readonly totals: InboxWelcomeWorkloadViewModel["totals"];
 }
 
 const DEFAULT_INBOX_LIST_PAGE_SIZE = 50;
@@ -2156,6 +2162,77 @@ function loadInboxDetailCacheData(
   )();
 }
 
+async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkloadCacheData> {
+  const runtime = await getStage1WebRuntime();
+  const activeProjects = await runtime.repositories.projectDimensions.listActive();
+  const activeProjectIds = new Set(
+    activeProjects.map((project) => project.projectId),
+  );
+  const projectCounts = await Promise.all(
+    activeProjects.map((project) =>
+      runtime.repositories.inboxProjection.countByFilters({
+        projectId: project.projectId,
+      }),
+    ),
+  );
+  const allInboxRows =
+    activeProjectIds.size === 0
+      ? []
+      : await runtime.repositories.inboxProjection.listAllOrderedByRecency();
+  const memberships =
+    allInboxRows.length === 0
+      ? []
+      : await runtime.repositories.contactMemberships.listByContactIds(
+          allInboxRows.map((row) => row.contactId),
+        );
+  const membershipsByContactId = groupMembershipsByContactId(memberships);
+  const activeWorkloadRows = allInboxRows.filter((row) =>
+    (membershipsByContactId.get(row.contactId) ?? []).some(
+      (membership) =>
+        membership.projectId !== null &&
+        activeProjectIds.has(membership.projectId),
+    ),
+  );
+
+  return {
+    projects: activeProjects.map((project, index) => {
+      const counts = projectCounts[index] ?? {
+        all: 0,
+        unread: 0,
+        followUp: 0,
+        unresolved: 0,
+      };
+
+      return {
+        projectId: project.projectId,
+        projectName: project.projectName,
+        unreadCount: counts.unread,
+        needsFollowUpCount: counts.followUp,
+      };
+    }),
+    totals: {
+      activeProjects: activeProjects.length,
+      unread: activeWorkloadRows.filter((row) => row.bucket === "New").length,
+      needsFollowUp: activeWorkloadRows.filter((row) => row.needsFollowUp)
+        .length,
+    },
+  };
+}
+
+function loadInboxWelcomeWorkloadCacheData() {
+  if (process.env.NODE_ENV !== "production") {
+    return readInboxWelcomeWorkloadCacheData();
+  }
+
+  return unstable_cache(
+    () => readInboxWelcomeWorkloadCacheData(),
+    ["inbox:welcome-workload"],
+    {
+      tags: ["inbox", "settings:projects"],
+    },
+  )();
+}
+
 function toListItemViewModel(
   row: InboxListCacheRow,
   projectNameById: Readonly<Record<string, string>>,
@@ -2307,6 +2384,15 @@ export async function getInboxList(
     selectedProjectId: projectId,
     page: cachedData.page,
     freshness: cachedData.freshness,
+  };
+}
+
+export async function getInboxWelcomeWorkload(): Promise<InboxWelcomeWorkloadViewModel> {
+  const cachedData = await loadInboxWelcomeWorkloadCacheData();
+
+  return {
+    projects: cachedData.projects,
+    totals: cachedData.totals,
   };
 }
 

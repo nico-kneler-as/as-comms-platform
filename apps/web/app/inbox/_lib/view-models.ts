@@ -216,6 +216,22 @@ export interface InboxActiveProjectOption {
   readonly name: string;
 }
 
+export interface InboxWelcomeProjectWorkloadViewModel {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly unreadCount: number;
+  readonly needsFollowUpCount: number;
+}
+
+export interface InboxWelcomeWorkloadViewModel {
+  readonly projects: readonly InboxWelcomeProjectWorkloadViewModel[];
+  readonly totals: {
+    readonly activeProjects: number;
+    readonly unread: number;
+    readonly needsFollowUp: number;
+  };
+}
+
 export interface InboxListViewModel {
   readonly items: readonly InboxListItemViewModel[];
   readonly filters: readonly InboxFilterViewModel[];

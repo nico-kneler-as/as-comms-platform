@@ -282,6 +282,18 @@ function normalizeDuplicateText(value: string | null | undefined): string | null
   return normalized.length === 0 ? null : normalized;
 }
 
+function firstNonEmptyDuplicateText(
+  values: readonly (string | null | undefined)[]
+): string {
+  for (const value of values) {
+    if (typeof value === "string" && normalizeDuplicateText(value) !== null) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
 function timelineCampaignEmailDuplicateKey(
   item: TimelineItem,
 ): string | null {
@@ -312,12 +324,11 @@ function timelineSameDayGmailOutboundDuplicateKey(
 
   const fingerprint = buildOutboundEmailDuplicateFingerprint({
     subject: entry.item.subject,
-    body:
-      entry.item.bodyPreview !== null && entry.item.bodyPreview.length > 0
-        ? entry.item.bodyPreview
-        : entry.item.snippet.length > 0
-          ? entry.item.snippet
-          : entry.item.summary,
+    body: firstNonEmptyDuplicateText([
+      entry.item.bodyPreview,
+      entry.item.snippet,
+      entry.item.summary,
+    ]),
   });
 
   if (fingerprint === null) {
