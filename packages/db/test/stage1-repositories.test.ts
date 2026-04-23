@@ -661,6 +661,66 @@ describe("Stage 1 DB repositories", () => {
     ).resolves.toEqual([auditRecord]);
   });
 
+  it("lists canonical events by content fingerprint window using an ISO timestamp parameter", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await repositories.contacts.upsert({
+      id: "contact_fp",
+      salesforceContactId: "003-fingerprint",
+      displayName: "Fingerprint Contact",
+      primaryEmail: "fingerprint@example.org",
+      primaryPhone: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await repositories.sourceEvidence.append({
+      id: "sev_fp",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-message-fingerprint",
+      receivedAt: "2026-03-30T01:29:24.000Z",
+      occurredAt: "2026-03-30T01:29:24.000Z",
+      payloadRef: "payloads/gmail/gmail-message-fingerprint.json",
+      idempotencyKey: "gmail:message:gmail-message-fingerprint",
+      checksum: "checksum-fingerprint",
+    });
+
+    const canonicalEvent = await repositories.canonicalEvents.upsert({
+      id: "evt_fp",
+      contactId: "contact_fp",
+      eventType: "communication.email.outbound",
+      channel: "email",
+      occurredAt: "2026-03-30T01:29:24.000Z",
+      contentFingerprint: "fp:stage1-fingerprint",
+      sourceEvidenceId: "sev_fp",
+      idempotencyKey: "canonical:gmail-message-fingerprint",
+      provenance: {
+        primaryProvider: "gmail",
+        primarySourceEvidenceId: "sev_fp",
+        supportingSourceEvidenceIds: [],
+        winnerReason: "single_source",
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-message-fingerprint",
+        messageKind: "one_to_one",
+        campaignRef: null,
+        threadRef: null,
+        direction: "outbound",
+        notes: null,
+      },
+      reviewState: "clear",
+    });
+
+    await expect(
+      repositories.canonicalEvents.listByContentFingerprintWindow({
+        contactId: "contact_fp",
+        channel: "email",
+        contentFingerprint: "fp:stage1-fingerprint",
+        occurredAt: "2026-03-30T01:31:24.000Z",
+        windowMinutes: 5,
+      }),
+    ).resolves.toEqual([canonicalEvent]);
+  });
+
   it("lists contacts whose inbox recency projection is still invalid", async () => {
     const { client, repositories } = await createTestStage1Context();
 
