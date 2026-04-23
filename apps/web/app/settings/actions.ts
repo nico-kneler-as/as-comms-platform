@@ -4,6 +4,10 @@ import { randomUUID } from "node:crypto";
 
 import {
   createProjectAliasSchema,
+  deactivateUserSchema,
+  demoteUserSchema,
+  promoteUserSchema,
+  reactivateUserSchema,
   type IntegrationHealthRecord
 } from "@as-comms/contracts";
 
@@ -14,6 +18,7 @@ import {
   refreshIntegrationHealthRecord
 } from "@/src/server/settings/integration-health";
 import {
+  revalidateAccessSettings,
   revalidateIntegrationHealth,
   revalidateProjectSettings
 } from "@/src/server/settings/revalidate";
@@ -24,6 +29,8 @@ import {
   getProjectAliasSignatureValidationError,
   normalizeProjectAliasSignature
 } from "./_lib/project-alias-signature";
+
+type SettingsRepositories = Awaited<ReturnType<typeof getSettingsRepositories>>;
 
 function newRequestId(): string {
   return randomUUID();
@@ -66,13 +73,10 @@ function errorResult(
 }
 
 function hasActivationRequirements(input: {
-  readonly aiKnowledgeUrl: string | null;
+  readonly aiKnowledgeSyncedAt: Date | null;
   readonly emails: readonly { readonly address: string; readonly isPrimary: boolean }[];
 }): boolean {
-  return (
-    input.emails.length >= 1 &&
-    (input.aiKnowledgeUrl?.trim().length ?? 0) > 0
-  );
+  return input.emails.length >= 1 && input.aiKnowledgeSyncedAt !== null;
 }
 
 function serializeProjectMutationData(input: {
@@ -95,7 +99,7 @@ function serializeProjectMutationData(input: {
     aiKnowledgeUrl: input.aiKnowledgeUrl,
     aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt?.toISOString() ?? null,
     activationRequirementsMet: hasActivationRequirements({
-      aiKnowledgeUrl: input.aiKnowledgeUrl,
+      aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt,
       emails: input.emails
     }),
     emails: input.emails.map((email) => ({
@@ -162,6 +166,54 @@ function notImplementedResult(message: string): UiError {
 
 function normalizeIncomingEmail(address: string): string {
   return address.trim().toLowerCase();
+}
+
+function readRequiredString(
+  formData: FormData,
+  name: string
+):
+  | {
+      readonly ok: true;
+      readonly value: string;
+    }
+  | {
+      readonly ok: false;
+      readonly error: UiError;
+    } {
+  const value = readOptionalString(formData, name);
+  if (value === undefined) {
+    return {
+      ok: false,
+      error: errorResult("validation_error", "Required information is missing.", {
+        fieldErrors: {
+          [name]: "This field is required."
+        }
+      })
+    };
+  }
+
+  return {
+    ok: true,
+    value
+  };
+}
+
+function isUniqueEmailViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const message =
+    "message" in error && typeof error.message === "string" ? error.message : "";
+  const code =
+    "code" in error && typeof error.code === "string" ? error.code : null;
+
+  return (
+    code === "23505" ||
+    /users_email_unique|duplicate key value violates unique constraint/iu.test(
+      message
+    )
+  );
 }
 
 function validateProjectEmails(
@@ -405,23 +457,22 @@ export async function activateProjectAction(
   if (project.emails.length < 1) {
     return errorResult(
       "requirements_not_met",
-      "Add at least one email and an AI knowledge URL to activate this project.",
+      "Add at least one project inbox alias before activating this project.",
       {
         fieldErrors: {
-          emails: "Add at least one email to activate this project."
+          emails: "Add at least one project inbox alias to activate this project."
         }
       }
     );
   }
 
-  if ((project.aiKnowledgeUrl?.trim().length ?? 0) === 0) {
+  if (project.aiKnowledgeSyncedAt === null) {
     return errorResult(
       "requirements_not_met",
-      "Add at least one email and an AI knowledge URL to activate this project.",
+      "AI knowledge must complete a sync before this project can be activated.",
       {
         fieldErrors: {
-          aiKnowledgeUrl:
-            "Add an AI knowledge URL to activate this project."
+          aiKnowledgeUrl: "Sync AI knowledge before activating this project."
         }
       }
     );
@@ -738,8 +789,91 @@ export async function deactivateProjectAction(
 // ─── Access (users) ─────────────────────────────────────────────────────────
 
 export interface InviteUserResult {
+  readonly user: UserMutationData;
+}
+
+export interface UserMutationData {
+  readonly userId: string;
+  readonly displayName: string;
   readonly email: string;
   readonly role: "admin" | "internal_user";
+  readonly status: "active" | "pending" | "deactivated";
+  readonly lastActiveAt: string | null;
+}
+
+function serializeUserMutationData(input: {
+  readonly id: string;
+  readonly name: string | null;
+  readonly email: string;
+  readonly role: "admin" | "operator";
+  readonly emailVerified: Date | null;
+  readonly deactivatedAt: Date | null;
+  readonly updatedAt: Date;
+}): UserMutationData {
+  const status =
+    input.deactivatedAt !== null
+      ? "deactivated"
+      : input.emailVerified === null
+        ? "pending"
+        : "active";
+
+  return {
+    userId: input.id,
+    displayName: input.name ?? input.email,
+    email: input.email,
+    role: input.role === "admin" ? "admin" : "internal_user",
+    status,
+    lastActiveAt:
+      status === "pending"
+        ? null
+        : (input.deactivatedAt ?? input.updatedAt).toISOString()
+  };
+}
+
+async function ensureManageableUser(input: {
+  readonly repositories: SettingsRepositories;
+  readonly targetUserId: string;
+  readonly actingUserId: string;
+})
+: Promise<
+  | {
+      readonly ok: true;
+      readonly user: NonNullable<Awaited<ReturnType<SettingsRepositories["users"]["findById"]>>>;
+      readonly activeAdminCount: number;
+    }
+  | {
+      readonly ok: false;
+      readonly error: UiError;
+    }
+> {
+  const user = await input.repositories.users.findById(input.targetUserId);
+  if (user === null) {
+    return {
+      ok: false,
+      error: errorResult("not_found", "That teammate no longer exists.")
+    };
+  }
+
+  if (user.id === input.actingUserId) {
+    return {
+      ok: false,
+      error: errorResult(
+        "invalid_operation",
+        "You can't change your own admin access from Settings."
+      )
+    };
+  }
+
+  const users = await input.repositories.users.listAll();
+  const activeAdminCount = users.filter(
+    (candidate) => candidate.role === "admin" && candidate.deactivatedAt === null
+  ).length;
+
+  return {
+    ok: true,
+    user,
+    activeAdminCount
+  };
 }
 
 export async function inviteUserAction(
@@ -753,18 +887,102 @@ export async function inviteUserAction(
     return admin.error;
   }
 
+  const emailValue = readRequiredString(formData, "email");
+  if (!emailValue.ok) {
+    return emailValue.error;
+  }
+
+  const normalizedEmail = normalizeIncomingEmail(emailValue.value);
+  const parsedEmail = createProjectAliasSchema.shape.alias.safeParse(normalizedEmail);
+  if (!parsedEmail.success) {
+    return errorResult("invalid_email", "Enter a valid teammate email.", {
+      fieldErrors: {
+        email: "Enter a valid teammate email."
+      }
+    });
+  }
+
+  if (!normalizedEmail.endsWith("@adventurescientists.org")) {
+    return errorResult(
+      "invalid_email_domain",
+      "Teammates must use an @adventurescientists.org email.",
+      {
+        fieldErrors: {
+          email: "Use an @adventurescientists.org email."
+        }
+      }
+    );
+  }
+
   const rawRole = readOptionalString(formData, "role") ?? "internal_user";
   const role: "admin" | "internal_user" =
     rawRole === "admin" ? "admin" : "internal_user";
+  const repositories = await getSettingsRepositories();
+  const existingUser = await repositories.users.findByEmail(normalizedEmail);
 
-  void role;
-  void formData;
+  if (existingUser !== null) {
+    if (existingUser.deactivatedAt !== null) {
+      return errorResult(
+        "already_exists",
+        "That teammate already exists and is currently deactivated. Reactivate them from the access list instead."
+      );
+    }
 
-  return notImplementedResult("User invites are intentionally stubbed in this brief.");
+    return errorResult(
+      existingUser.emailVerified === null ? "already_pending" : "already_exists",
+      existingUser.emailVerified === null
+        ? "An invite for that teammate is already pending."
+        : "That teammate already has access."
+    );
+  }
+
+  const now = new Date();
+
+  try {
+    const user = await repositories.users.upsert({
+      id: `user:${randomUUID()}`,
+      name: null,
+      email: normalizedEmail,
+      emailVerified: null,
+      image: null,
+      role: role === "admin" ? "admin" : "operator",
+      deactivatedAt: null,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    await appendSettingsAudit({
+      actorId: admin.userId,
+      action: "settings.user.invited",
+      entityType: "user",
+      entityId: user.id,
+      metadataJson: {
+        email: user.email,
+        role: user.role,
+        status: "pending"
+      }
+    });
+
+    revalidateAccessSettings();
+
+    return {
+      ok: true,
+      data: {
+        user: serializeUserMutationData(user)
+      },
+      requestId: newRequestId()
+    };
+  } catch (error) {
+    if (isUniqueEmailViolation(error)) {
+      return errorResult("already_exists", "That teammate already exists.");
+    }
+
+    throw error;
+  }
 }
 
 export interface UserIdResult {
-  readonly id: string;
+  readonly user: UserMutationData;
 }
 
 export async function promoteUserAction(
@@ -778,11 +996,58 @@ export async function promoteUserAction(
     return admin.error;
   }
 
-  void formData;
+  const idValue = readRequiredString(formData, "id");
+  if (!idValue.ok) {
+    return idValue.error;
+  }
 
-  return notImplementedResult(
-    "User promotion is intentionally stubbed in this brief."
-  );
+  const parsed = promoteUserSchema.safeParse({
+    id: idValue.value
+  });
+  if (!parsed.success) {
+    return errorResult("validation_error", "Choose a teammate to promote.");
+  }
+
+  const repositories = await getSettingsRepositories();
+  const manageable = await ensureManageableUser({
+    repositories,
+    targetUserId: parsed.data.id,
+    actingUserId: admin.userId
+  });
+  if (!manageable.ok) {
+    return manageable.error;
+  }
+
+  if (manageable.user.role === "admin") {
+    return errorResult("already_admin", "That teammate is already an admin.");
+  }
+
+  const updatedUser = await repositories.users.updateRole(parsed.data.id, "admin");
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.user.promoted",
+    entityType: "user",
+    entityId: updatedUser.id,
+    metadataJson: {
+      before: {
+        role: manageable.user.role
+      },
+      after: {
+        role: updatedUser.role
+      }
+    }
+  });
+
+  revalidateAccessSettings();
+
+  return {
+    ok: true,
+    data: {
+      user: serializeUserMutationData(updatedUser)
+    },
+    requestId: newRequestId()
+  };
 }
 
 export async function demoteUserAction(
@@ -796,11 +1061,62 @@ export async function demoteUserAction(
     return admin.error;
   }
 
-  void formData;
+  const idValue = readRequiredString(formData, "id");
+  if (!idValue.ok) {
+    return idValue.error;
+  }
 
-  return notImplementedResult(
-    "User demotion is intentionally stubbed in this brief."
-  );
+  const parsed = demoteUserSchema.safeParse({
+    id: idValue.value
+  });
+  if (!parsed.success) {
+    return errorResult("validation_error", "Choose a teammate to demote.");
+  }
+
+  const repositories = await getSettingsRepositories();
+  const manageable = await ensureManageableUser({
+    repositories,
+    targetUserId: parsed.data.id,
+    actingUserId: admin.userId
+  });
+  if (!manageable.ok) {
+    return manageable.error;
+  }
+
+  if (manageable.user.role !== "admin") {
+    return errorResult("already_operator", "That teammate is already an operator.");
+  }
+
+  if (manageable.activeAdminCount <= 1) {
+    return errorResult("last_admin", "Keep at least one active admin on the team.");
+  }
+
+  const updatedUser = await repositories.users.updateRole(parsed.data.id, "operator");
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.user.demoted",
+    entityType: "user",
+    entityId: updatedUser.id,
+    metadataJson: {
+      before: {
+        role: manageable.user.role
+      },
+      after: {
+        role: updatedUser.role
+      }
+    }
+  });
+
+  revalidateAccessSettings();
+
+  return {
+    ok: true,
+    data: {
+      user: serializeUserMutationData(updatedUser)
+    },
+    requestId: newRequestId()
+  };
 }
 
 export async function deactivateUserAction(
@@ -814,11 +1130,68 @@ export async function deactivateUserAction(
     return admin.error;
   }
 
-  void formData;
+  const idValue = readRequiredString(formData, "id");
+  if (!idValue.ok) {
+    return idValue.error;
+  }
 
-  return notImplementedResult(
-    "User deactivation is intentionally stubbed in this brief."
+  const parsed = deactivateUserSchema.safeParse({
+    id: idValue.value
+  });
+  if (!parsed.success) {
+    return errorResult("validation_error", "Choose a teammate to deactivate.");
+  }
+
+  const repositories = await getSettingsRepositories();
+  const manageable = await ensureManageableUser({
+    repositories,
+    targetUserId: parsed.data.id,
+    actingUserId: admin.userId
+  });
+  if (!manageable.ok) {
+    return manageable.error;
+  }
+
+  if (manageable.user.deactivatedAt !== null) {
+    return errorResult(
+      "already_deactivated",
+      "That teammate is already deactivated."
+    );
+  }
+
+  if (manageable.user.role === "admin" && manageable.activeAdminCount <= 1) {
+    return errorResult("last_admin", "Keep at least one active admin on the team.");
+  }
+
+  const updatedUser = await repositories.users.setDeactivated(
+    parsed.data.id,
+    new Date()
   );
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.user.deactivated",
+    entityType: "user",
+    entityId: updatedUser.id,
+    metadataJson: {
+      before: {
+        deactivatedAt: manageable.user.deactivatedAt?.toISOString() ?? null
+      },
+      after: {
+        deactivatedAt: updatedUser.deactivatedAt?.toISOString() ?? null
+      }
+    }
+  });
+
+  revalidateAccessSettings();
+
+  return {
+    ok: true,
+    data: {
+      user: serializeUserMutationData(updatedUser)
+    },
+    requestId: newRequestId()
+  };
 }
 
 export async function reactivateUserAction(
@@ -832,11 +1205,58 @@ export async function reactivateUserAction(
     return admin.error;
   }
 
-  void formData;
+  const idValue = readRequiredString(formData, "id");
+  if (!idValue.ok) {
+    return idValue.error;
+  }
 
-  return notImplementedResult(
-    "User reactivation is intentionally stubbed in this brief."
-  );
+  const parsed = reactivateUserSchema.safeParse({
+    id: idValue.value
+  });
+  if (!parsed.success) {
+    return errorResult("validation_error", "Choose a teammate to reactivate.");
+  }
+
+  const repositories = await getSettingsRepositories();
+  const manageable = await ensureManageableUser({
+    repositories,
+    targetUserId: parsed.data.id,
+    actingUserId: admin.userId
+  });
+  if (!manageable.ok) {
+    return manageable.error;
+  }
+
+  if (manageable.user.deactivatedAt === null) {
+    return errorResult("already_active", "That teammate is already active.");
+  }
+
+  const updatedUser = await repositories.users.setDeactivated(parsed.data.id, null);
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.user.reactivated",
+    entityType: "user",
+    entityId: updatedUser.id,
+    metadataJson: {
+      before: {
+        deactivatedAt: manageable.user.deactivatedAt?.toISOString() ?? null
+      },
+      after: {
+        deactivatedAt: updatedUser.deactivatedAt?.toISOString() ?? null
+      }
+    }
+  });
+
+  revalidateAccessSettings();
+
+  return {
+    ok: true,
+    data: {
+      user: serializeUserMutationData(updatedUser)
+    },
+    requestId: newRequestId()
+  };
 }
 
 // ─── Integrations ───────────────────────────────────────────────────────────

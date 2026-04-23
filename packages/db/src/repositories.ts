@@ -2295,6 +2295,7 @@ function createStage2RepositoriesInternal(
         isActive: row.isActive,
         aiKnowledgeUrl: row.aiKnowledgeUrl,
         aiKnowledgeSyncedAt: row.aiKnowledgeSyncedAt,
+        createdAt: row.createdAt,
         emails: orderedEmails,
         memberCount: memberCountByProjectId.get(row.projectId) ?? 0,
         updatedAt: row.updatedAt,

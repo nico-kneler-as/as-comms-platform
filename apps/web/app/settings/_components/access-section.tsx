@@ -1,10 +1,17 @@
+"use client";
+
+import { useState, useTransition } from "react";
+
 import {
   RADIUS,
   SHADOW,
   TEXT,
   TRANSITION
 } from "@/app/_lib/design-tokens";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ToneAvatar } from "@/components/ui/tone-avatar";
 import { cn } from "@/lib/utils";
 import type {
@@ -12,6 +19,14 @@ import type {
   UserRowViewModel
 } from "@/src/server/settings/selectors";
 
+import {
+  deactivateUserAction,
+  demoteUserAction,
+  inviteUserAction,
+  promoteUserAction,
+  reactivateUserAction,
+  type UserMutationData
+} from "../actions";
 import { SettingsSection } from "./settings-section";
 
 const AVATAR_TONES = [
@@ -25,6 +40,13 @@ const AVATAR_TONES = [
 ] as const;
 
 type AvatarTone = (typeof AVATAR_TONES)[number];
+type ManagedRole = "admin" | "internal_user";
+type PendingAction = "invite" | "promote" | "demote" | "deactivate" | "reactivate";
+
+interface FeedbackState {
+  readonly kind: "success" | "error";
+  readonly message: string;
+}
 
 function initialsFor(user: UserRowViewModel): string {
   const source = user.displayName || user.email;
@@ -91,129 +113,379 @@ function sortUsers(
   });
 }
 
+function mergeUserRow(
+  rows: readonly UserRowViewModel[],
+  nextUser: UserMutationData,
+  currentUserId: string | null
+): readonly UserRowViewModel[] {
+  const nextRow: UserRowViewModel = {
+    userId: nextUser.userId,
+    displayName: nextUser.displayName,
+    email: nextUser.email,
+    role: nextUser.role,
+    status: nextUser.status,
+    lastActiveAt: nextUser.lastActiveAt
+  };
+
+  const nextRows = rows.some((row) => row.userId === nextRow.userId)
+    ? rows.map((row) => (row.userId === nextRow.userId ? nextRow : row))
+    : [nextRow, ...rows];
+
+  return sortUsers(nextRows, currentUserId);
+}
+
+function buildIdFormData(id: string): FormData {
+  const formData = new FormData();
+  formData.set("id", id);
+  return formData;
+}
+
 export function AccessSection({ viewModel }: { readonly viewModel: AccessSettingsViewModel }) {
-  const rows = sortUsers(
-    [...viewModel.admins, ...viewModel.internalUsers],
-    viewModel.currentUserId
+  const [rows, setRows] = useState<readonly UserRowViewModel[]>(() =>
+    sortUsers([...viewModel.admins, ...viewModel.internalUsers], viewModel.currentUserId)
   );
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<ManagedRole>("internal_user");
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const activeAdminCount = rows.filter(
+    (user) => user.role === "admin" && user.status !== "deactivated"
+  ).length;
+
+  function announce(message: string, kind: FeedbackState["kind"] = "success") {
+    setFeedback({ kind, message });
+    window.setTimeout(() => {
+      setFeedback(null);
+    }, 3500);
+  }
+
+  function commitUser(user: UserMutationData) {
+    setRows((current) => mergeUserRow(current, user, viewModel.currentUserId));
+  }
+
+  function handleInvite() {
+    const normalizedEmail = inviteEmail.trim().toLowerCase();
+    if (normalizedEmail.length === 0) {
+      announce("Enter a teammate email to send an invite.", "error");
+      return;
+    }
+
+    startTransition(async () => {
+      setPendingKey("invite");
+      const formData = new FormData();
+      formData.set("email", normalizedEmail);
+      formData.set("role", inviteRole);
+      const result = await inviteUserAction(formData);
+      setPendingKey(null);
+
+      if (!result.ok) {
+        announce(result.message, "error");
+        return;
+      }
+
+      commitUser(result.data.user);
+      setInviteEmail("");
+      setInviteRole("internal_user");
+      announce(`Invited ${result.data.user.email}.`);
+    });
+  }
+
+  function handleUserAction(
+    action: PendingAction,
+    user: UserRowViewModel
+  ) {
+    startTransition(async () => {
+      setPendingKey(`${action}:${user.userId}`);
+
+      const result =
+        action === "promote"
+          ? await promoteUserAction(buildIdFormData(user.userId))
+          : action === "demote"
+            ? await demoteUserAction(buildIdFormData(user.userId))
+            : action === "deactivate"
+              ? await deactivateUserAction(buildIdFormData(user.userId))
+              : await reactivateUserAction(buildIdFormData(user.userId));
+
+      setPendingKey(null);
+
+      if (!result.ok) {
+        announce(result.message, "error");
+        return;
+      }
+
+      commitUser(result.data.user);
+      announce(
+        action === "promote"
+          ? `${result.data.user.email} is now an admin.`
+          : action === "demote"
+            ? `${result.data.user.email} is now an operator.`
+            : action === "deactivate"
+              ? `${result.data.user.email} has been deactivated.`
+              : `${result.data.user.email} has been reactivated.`
+      );
+    });
+  }
 
   return (
     <SettingsSection id="settings-access" title="Access">
-      <div
-        className={cn(
-          "overflow-hidden",
-          RADIUS.md,
-          "border border-slate-200 bg-white",
-          SHADOW.sm
-        )}
-      >
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50/80">
-            <tr>
-              <th
-                scope="col"
-                className={cn(
-                  "px-5 py-3 text-left",
-                  TEXT.label,
-                  "tracking-wider"
-                )}
-              >
-                Teammate
-              </th>
-              <th
-                scope="col"
-                className={cn(
-                  "px-5 py-3 text-left",
-                  TEXT.label,
-                  "tracking-wider"
-                )}
-              >
-                Role
-              </th>
-              <th
-                scope="col"
-                className={cn(
-                  "px-5 py-3 text-left",
-                  TEXT.label,
-                  "tracking-wider"
-                )}
-              >
-                Last active
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((user) => {
-              const isSelf = user.userId === viewModel.currentUserId;
+      <div className="flex flex-col gap-4">
+        {viewModel.isAdmin ? (
+          <section
+            aria-labelledby="invite-teammates-heading"
+            className={cn(
+              "flex flex-col gap-4 p-5",
+              RADIUS.md,
+              "border border-slate-200 bg-white",
+              SHADOW.sm
+            )}
+          >
+            <div className="flex flex-col gap-1">
+              <h3 id="invite-teammates-heading" className="text-sm font-semibold text-slate-900">
+                Invite teammates
+              </h3>
+              <p className={TEXT.caption}>
+                Invites create a pending teammate row that links automatically
+                when they sign in with Google.
+              </p>
+            </div>
 
-              return (
-                <tr
-                  key={user.userId}
-                  className={cn(
-                    TRANSITION.fast,
-                    "hover:bg-slate-50/80",
-                    user.status === "deactivated" && "bg-slate-50/60"
-                  )}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="flex-1">
+                <label htmlFor="teammate-email" className="sr-only">
+                  Teammate email
+                </label>
+                <Input
+                  id="teammate-email"
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(event) => {
+                    setInviteEmail(event.target.value);
+                  }}
+                  disabled={isPending && pendingKey === "invite"}
+                  placeholder="teammate@adventurescientists.org"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <span className={cn(TEXT.label, "text-slate-600")}>Role</span>
+                <ToggleGroup
+                  type="single"
+                  value={inviteRole}
+                  onValueChange={(value) => {
+                    if (value === "admin" || value === "internal_user") {
+                      setInviteRole(value);
+                    }
+                  }}
+                  variant="outline"
+                  size="sm"
+                  aria-label="Invite role"
+                  className="justify-start"
                 >
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-3">
-                      <ToneAvatar
-                        initials={initialsFor(user)}
-                        tone={toneFor(user)}
-                        size="sm"
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
+                  <ToggleGroupItem value="internal_user" aria-label="Operator role">
+                    Operator
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="admin" aria-label="Admin role">
+                    Admin
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+
+              <Button
+                type="button"
+                onClick={handleInvite}
+                disabled={isPending && pendingKey === "invite"}
+              >
+                Invite teammate
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
+        {feedback ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "rounded-md px-3 py-2 text-sm",
+              feedback.kind === "success"
+                ? "bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200"
+                : "bg-rose-50 text-rose-800 ring-1 ring-inset ring-rose-200"
+            )}
+          >
+            {feedback.message}
+          </div>
+        ) : null}
+
+        <div
+          className={cn(
+            "overflow-hidden",
+            RADIUS.md,
+            "border border-slate-200 bg-white",
+            SHADOW.sm
+          )}
+        >
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50/80">
+              <tr>
+                <th
+                  scope="col"
+                  className={cn("px-5 py-3 text-left", TEXT.label, "tracking-wider")}
+                >
+                  Teammate
+                </th>
+                <th
+                  scope="col"
+                  className={cn("px-5 py-3 text-left", TEXT.label, "tracking-wider")}
+                >
+                  Role
+                </th>
+                <th
+                  scope="col"
+                  className={cn("px-5 py-3 text-left", TEXT.label, "tracking-wider")}
+                >
+                  Last active
+                </th>
+                {viewModel.isAdmin ? (
+                  <th
+                    scope="col"
+                    className={cn("px-5 py-3 text-left", TEXT.label, "tracking-wider")}
+                  >
+                    Actions
+                  </th>
+                ) : null}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((user) => {
+                const isSelf = user.userId === viewModel.currentUserId;
+                const pendingActionKey = pendingKey?.endsWith(user.userId)
+                  ? pendingKey
+                  : null;
+                const isOnlyActiveAdmin =
+                  user.role === "admin" &&
+                  user.status !== "deactivated" &&
+                  activeAdminCount <= 1;
+
+                return (
+                  <tr
+                    key={user.userId}
+                    className={cn(
+                      TRANSITION.fast,
+                      "hover:bg-slate-50/80",
+                      user.status === "deactivated" && "bg-slate-50/60",
+                      pendingActionKey && "opacity-60"
+                    )}
+                  >
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <ToneAvatar
+                          initials={initialsFor(user)}
+                          tone={toneFor(user)}
+                          size="sm"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p
+                              className={cn(
+                                "truncate text-sm font-medium",
+                                user.status === "deactivated"
+                                  ? "text-slate-500"
+                                  : "text-slate-900"
+                              )}
+                            >
+                              {user.displayName}
+                            </p>
+                            {isSelf ? (
+                              <span className={cn(TEXT.micro, "text-slate-400")}>
+                                (you)
+                              </span>
+                            ) : null}
+                          </div>
                           <p
                             className={cn(
-                              "truncate text-sm font-medium",
-                              user.status === "deactivated"
-                                ? "text-slate-500"
-                                : "text-slate-900"
+                              "truncate",
+                              TEXT.caption,
+                              user.status === "deactivated" && "text-slate-400"
                             )}
                           >
-                            {user.displayName}
+                            {user.email}
                           </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 align-middle">
+                      <div className="flex items-center gap-2">
+                        <RoleBadge role={user.role} />
+                        <UserStatusBadge status={user.status} />
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 align-middle">
+                      <span
+                        className={cn("tabular-nums", TEXT.bodySm, "text-slate-600")}
+                      >
+                        {formatRelative(user.lastActiveAt)}
+                      </span>
+                    </td>
+                    {viewModel.isAdmin ? (
+                      <td className="px-5 py-3 align-middle">
+                        <div className="flex flex-wrap items-center gap-2">
                           {isSelf ? (
-                            <span className={cn(TEXT.micro, "text-slate-400")}>
-                              (you)
-                            </span>
+                            <span className={TEXT.caption}>Current session</span>
+                          ) : user.status === "deactivated" ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={pendingActionKey !== null}
+                              onClick={() => {
+                                handleUserAction("reactivate", user);
+                              }}
+                            >
+                              Reactivate
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={pendingActionKey !== null || isOnlyActiveAdmin}
+                                onClick={() => {
+                                  handleUserAction(
+                                    user.role === "admin" ? "demote" : "promote",
+                                    user
+                                  );
+                                }}
+                              >
+                                {user.role === "admin" ? "Make operator" : "Make admin"}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={pendingActionKey !== null || isOnlyActiveAdmin}
+                                onClick={() => {
+                                  handleUserAction("deactivate", user);
+                                }}
+                              >
+                                Deactivate
+                              </Button>
+                            </>
+                          )}
+                          {isOnlyActiveAdmin ? (
+                            <span className={TEXT.caption}>Keep one active admin</span>
                           ) : null}
                         </div>
-                        <p
-                          className={cn(
-                            "truncate",
-                            TEXT.caption,
-                            user.status === "deactivated" && "text-slate-400"
-                          )}
-                        >
-                          {user.email}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3 align-middle">
-                    <div className="flex items-center gap-2">
-                      <RoleBadge role={user.role} />
-                      <UserStatusBadge status={user.status} />
-                    </div>
-                  </td>
-                  <td className="px-5 py-3 align-middle">
-                    <span
-                      className={cn(
-                        "tabular-nums",
-                        TEXT.bodySm,
-                        "text-slate-600"
-                      )}
-                    >
-                      {formatRelative(user.lastActiveAt)}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </SettingsSection>
   );
@@ -235,7 +507,7 @@ function RoleBadge({
   }
   return (
     <StatusBadge
-      label="Internal user"
+      label="Operator"
       colorClasses="bg-slate-100 text-slate-700 ring-slate-200"
       variant="soft"
     />

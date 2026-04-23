@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const resolveAdminSession = vi.hoisted(() => vi.fn());
+const revalidateAccessSettings = vi.hoisted(() => vi.fn());
 const revalidateProjectSettings = vi.hoisted(() => vi.fn());
 const revalidateIntegrationHealth = vi.hoisted(() => vi.fn());
 
@@ -9,14 +10,19 @@ vi.mock("@/src/server/auth/api", () => ({
 }));
 
 vi.mock("@/src/server/settings/revalidate", () => ({
+  revalidateAccessSettings,
   revalidateProjectSettings,
   revalidateIntegrationHealth
 }));
 
 import {
   activateProjectAction,
+  deactivateUserAction,
   deactivateProjectAction,
+  demoteUserAction,
   inviteUserAction,
+  promoteUserAction,
+  reactivateUserAction,
   updateProjectAiKnowledgeAction,
   updateProjectEmailsAction
 } from "../../app/settings/actions";
@@ -41,6 +47,7 @@ async function seedProject(
     readonly projectName: string;
     readonly isActive: boolean;
     readonly aiKnowledgeUrl: string | null;
+    readonly aiKnowledgeSyncedAt?: string | null;
     readonly emails: readonly string[];
   }
 ): Promise<void> {
@@ -50,7 +57,7 @@ async function seedProject(
     source: "salesforce",
     isActive: input.isActive,
     aiKnowledgeUrl: input.aiKnowledgeUrl,
-    aiKnowledgeSyncedAt: null
+    aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt ?? null
   });
 
   for (const [index, email] of input.emails.entries()) {
@@ -67,26 +74,44 @@ async function seedProject(
   }
 }
 
+async function seedUser(
+  runtime: Stage1WebTestRuntime,
+  input: {
+    readonly id: string;
+    readonly email: string;
+    readonly role: "admin" | "operator";
+    readonly emailVerified?: Date | null;
+    readonly deactivatedAt?: Date | null;
+  }
+): Promise<void> {
+  const now = new Date("2026-04-20T15:00:00.000Z");
+  await runtime.context.settings.users.upsert({
+    id: input.id,
+    name: input.email.split("@")[0] ?? input.email,
+    email: input.email,
+    emailVerified: input.emailVerified ?? now,
+    image: null,
+    role: input.role,
+    deactivatedAt: input.deactivatedAt ?? null,
+    createdAt: now,
+    updatedAt: now
+  });
+}
+
 describe("settings project actions", () => {
   let runtime: Stage1WebTestRuntime | null = null;
 
   beforeEach(async () => {
     resolveAdminSession.mockReset();
+    revalidateAccessSettings.mockReset();
     revalidateProjectSettings.mockReset();
     revalidateIntegrationHealth.mockReset();
     resolveAdminSession.mockResolvedValue(adminSession());
     runtime = await createStage1WebTestRuntime();
-    const now = new Date("2026-04-20T15:00:00.000Z");
-    await runtime.context.settings.users.upsert({
+    await seedUser(runtime, {
       id: "user:admin",
-      name: "admin",
       email: "admin@adventurescientists.org",
-      emailVerified: now,
-      image: null,
-      role: "admin",
-      deactivatedAt: null,
-      createdAt: now,
-      updatedAt: now
+      role: "admin"
     });
   });
 
@@ -126,6 +151,7 @@ describe("settings project actions", () => {
       projectName: "Active Project",
       isActive: true,
       aiKnowledgeUrl: "https://docs.example.org/active",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: ["active@asc.internal"]
     });
 
@@ -145,6 +171,7 @@ describe("settings project actions", () => {
       projectName: "No Emails",
       isActive: false,
       aiKnowledgeUrl: "https://docs.example.org/no-emails",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: []
     });
 
@@ -154,19 +181,19 @@ describe("settings project actions", () => {
       ok: false,
       code: "requirements_not_met",
       fieldErrors: {
-        emails: "Add at least one email to activate this project."
+        emails: "Add at least one project inbox alias to activate this project."
       }
     });
   });
 
-  it("returns a requirements error when activateProjectAction is missing the AI knowledge URL", async () => {
+  it("returns a requirements error when activateProjectAction is missing AI knowledge sync", async () => {
     if (!runtime) throw new Error("runtime not initialized");
 
     await seedProject(runtime, {
       projectId: "project:no-url",
       projectName: "No URL",
       isActive: false,
-      aiKnowledgeUrl: null,
+      aiKnowledgeUrl: "https://docs.example.org/no-url",
       emails: ["ready@asc.internal"]
     });
 
@@ -176,7 +203,7 @@ describe("settings project actions", () => {
       ok: false,
       code: "requirements_not_met",
       fieldErrors: {
-        aiKnowledgeUrl: "Add an AI knowledge URL to activate this project."
+        aiKnowledgeUrl: "Sync AI knowledge before activating this project."
       }
     });
   });
@@ -189,6 +216,7 @@ describe("settings project actions", () => {
       projectName: "Ready Project",
       isActive: false,
       aiKnowledgeUrl: "https://docs.example.org/ready",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: ["ready@asc.internal"]
     });
 
@@ -228,6 +256,7 @@ describe("settings project actions", () => {
       projectName: "Deactivate Me",
       isActive: true,
       aiKnowledgeUrl: "https://docs.example.org/deactivate",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: ["deactivate@asc.internal"]
     });
 
@@ -254,6 +283,7 @@ describe("settings project actions", () => {
       projectName: "Already Inactive",
       isActive: false,
       aiKnowledgeUrl: "https://docs.example.org/inactive",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: ["inactive@asc.internal"]
     });
 
@@ -427,16 +457,129 @@ describe("settings project actions", () => {
     });
   });
 
-  it("keeps user invite actions stubbed behind a not_implemented envelope", async () => {
+  it("invites a teammate as a pending operator and revalidates access settings", async () => {
     const formData = new FormData();
-    formData.set("email", "operator@asc.internal");
+    formData.set("email", "operator@adventurescientists.org");
     formData.set("role", "internal_user");
+
+    const result = await inviteUserAction(formData);
+    if (!runtime) throw new Error("runtime not initialized");
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        user: {
+          email: "operator@adventurescientists.org",
+          role: "internal_user",
+          status: "pending"
+        }
+      }
+    });
+    expect(revalidateAccessSettings).toHaveBeenCalled();
+
+    const savedUser = await runtime.context.settings.users.findByEmail(
+      "operator@adventurescientists.org"
+    );
+    expect(savedUser).toMatchObject({
+      role: "operator",
+      emailVerified: null,
+      deactivatedAt: null
+    });
+  });
+
+  it("promotes, demotes, deactivates, and reactivates teammates with audit-safe mutations", async () => {
+    if (!runtime) throw new Error("runtime not initialized");
+
+    await seedUser(runtime, {
+      id: "user:operator",
+      email: "operator@adventurescientists.org",
+      role: "operator"
+    });
+    await seedUser(runtime, {
+      id: "user:second-admin",
+      email: "second.admin@adventurescientists.org",
+      role: "admin"
+    });
+
+    const promoteFormData = new FormData();
+    promoteFormData.set("id", "user:operator");
+    const promoted = await promoteUserAction(promoteFormData);
+
+    expect(promoted).toMatchObject({
+      ok: true,
+      data: {
+        user: {
+          userId: "user:operator",
+          role: "admin",
+          status: "active"
+        }
+      }
+    });
+
+    const demoteFormData = new FormData();
+    demoteFormData.set("id", "user:second-admin");
+    const demoted = await demoteUserAction(demoteFormData);
+
+    expect(demoted).toMatchObject({
+      ok: true,
+      data: {
+        user: {
+          userId: "user:second-admin",
+          role: "internal_user"
+        }
+      }
+    });
+
+    const deactivateFormData = new FormData();
+    deactivateFormData.set("id", "user:operator");
+    const deactivated = await deactivateUserAction(deactivateFormData);
+
+    expect(deactivated).toMatchObject({
+      ok: true,
+      data: {
+        user: {
+          userId: "user:operator",
+          status: "deactivated"
+        }
+      }
+    });
+
+    const reactivateFormData = new FormData();
+    reactivateFormData.set("id", "user:operator");
+    const reactivated = await reactivateUserAction(reactivateFormData);
+
+    expect(reactivated).toMatchObject({
+      ok: true,
+      data: {
+        user: {
+          userId: "user:operator",
+          status: "active"
+        }
+      }
+    });
+  });
+
+  it("blocks admins from changing their own access from settings", async () => {
+    const formData = new FormData();
+    formData.set("id", "user:admin");
+
+    const result = await deactivateUserAction(formData);
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "invalid_operation"
+    });
+  });
+
+  it("rejects inviting a teammate outside the workspace domain", async () => {
+    const formData = new FormData();
+    formData.set("email", "external@example.org");
 
     const result = await inviteUserAction(formData);
 
     expect(result).toMatchObject({
       ok: false,
-      code: "not_implemented"
+      code: "invalid_email_domain"
     });
   });
 });

@@ -1,6 +1,9 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { useDeferredValue, useState } from "react";
 import Link from "next/link";
-import { Pencil } from "lucide-react";
+import { Pencil, Search } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -11,6 +14,7 @@ import {
   TRANSITION
 } from "@/app/_lib/design-tokens";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import type {
@@ -25,8 +29,24 @@ export function ProjectsSection({
 }: {
   readonly viewModel: ProjectsSettingsViewModel;
 }) {
+  const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
+  const normalizedSearch = deferredSearch.trim().toLowerCase();
+  const filteredInactive =
+    normalizedSearch.length === 0
+      ? viewModel.inactive.slice(0, 3)
+      : viewModel.inactive.filter((project) => {
+          return (
+            project.projectName.toLowerCase().includes(normalizedSearch) ||
+            project.emailAliases.some((alias) =>
+              alias.toLowerCase().includes(normalizedSearch)
+            )
+          );
+        });
+  const isSearching = normalizedSearch.length > 0;
+
   return (
-    <SettingsSection id="settings-projects" title="Active Projects">
+    <SettingsSection id="settings-projects" title="Projects">
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
@@ -59,17 +79,46 @@ export function ProjectsSection({
         </div>
 
         <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-slate-900">
-              Inactive projects
-            </h3>
-            <span className={cn(TEXT.caption, "tabular-nums")}>
-              {String(viewModel.counts.inactive)} inactive
-            </span>
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div className="flex items-center justify-between gap-3 md:min-w-0">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Inactive projects
+                </h3>
+                <p className={cn("mt-0.5", TEXT.caption)}>
+                  {isSearching
+                    ? "Search results across inactive project names and inbox aliases."
+                    : "Showing the 3 most recently created inactive projects. Search to find older ones."}
+                </p>
+              </div>
+              <span className={cn(TEXT.caption, "tabular-nums")}>
+                {String(viewModel.counts.inactive)} inactive
+              </span>
+            </div>
+
+            <label className="relative block md:w-[320px]" htmlFor="inactive-project-search">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                aria-hidden="true"
+              />
+              <Input
+                id="inactive-project-search"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                }}
+                placeholder="Search inactive projects or aliases"
+                className="pl-9"
+              />
+            </label>
           </div>
           <ProjectList
-            projects={viewModel.inactive}
-            emptyMessage="No inactive projects."
+            projects={filteredInactive}
+            emptyMessage={
+              isSearching
+                ? "No inactive projects matched that search."
+                : "No inactive projects."
+            }
             renderMeta={(project) => (
               <StatusBadge
                 label={
@@ -89,7 +138,7 @@ export function ProjectsSection({
                   <Link
                     href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
                   >
-                    Activate
+                    Review
                   </Link>
                 </Button>
               ) : null
@@ -147,10 +196,11 @@ function ProjectList({
               {renderMeta ? renderMeta(project) : null}
             </div>
             <p className={cn(TEXT.caption, "truncate")}>
-              {project.primaryEmail ??
-                (project.aiKnowledgeUrl
-                  ? "AI knowledge source configured"
-                  : "No email aliases configured")}
+              {project.primaryEmail
+                ? project.additionalEmailCount > 0
+                  ? `${project.primaryEmail} + ${String(project.additionalEmailCount)} more alias${project.additionalEmailCount === 1 ? "" : "es"}`
+                  : project.primaryEmail
+                : "No project inbox aliases configured"}
             </p>
           </Link>
 

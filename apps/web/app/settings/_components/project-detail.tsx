@@ -48,13 +48,10 @@ interface FeedbackState {
 }
 
 function hasActivationRequirements(input: {
-  readonly aiKnowledgeUrl: string | null;
+  readonly aiKnowledgeSyncedAt: string | null;
   readonly emails: readonly ProjectEmailInput[];
 }): boolean {
-  return (
-    input.emails.length >= 1 &&
-    (input.aiKnowledgeUrl?.trim().length ?? 0) > 0
-  );
+  return input.emails.length >= 1 && input.aiKnowledgeSyncedAt !== null;
 }
 
 function buildProjectState(
@@ -91,7 +88,7 @@ function mergeProjectState(
   return {
     ...next,
     activationRequirementsMet: hasActivationRequirements({
-      aiKnowledgeUrl: next.aiKnowledgeUrl,
+      aiKnowledgeSyncedAt: next.aiKnowledgeSyncedAt,
       emails: next.emails
     })
   };
@@ -445,8 +442,10 @@ export function ProjectDetail({
   const inactiveActivationMessage =
     activationMessage ??
     (!optimisticProject.activationRequirementsMet
-      ? "Add at least one email and an AI knowledge URL to activate."
+      ? "Activation needs a project inbox alias and completed AI knowledge sync."
       : null);
+  const hasProjectAlias = optimisticProject.emails.length > 0;
+  const hasAiKnowledgeSync = optimisticProject.aiKnowledgeSyncedAt !== null;
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
@@ -480,10 +479,6 @@ export function ProjectDetail({
                 variant="soft"
               />
             </div>
-            <p className={TEXT.caption}>
-              Activation requires at least one connected inbox email and an AI
-              knowledge source.
-            </p>
           </div>
 
           {project.isAdmin ? (
@@ -677,6 +672,53 @@ export function ProjectDetail({
             }
             variant="soft"
           />
+          <StatusBadge
+            label={hasProjectAlias ? "Project alias connected" : "Project alias required"}
+            colorClasses={
+              hasProjectAlias
+                ? "bg-sky-50 text-sky-700 ring-sky-200"
+                : "bg-amber-50 text-amber-800 ring-amber-200"
+            }
+            variant="soft"
+          />
+          <StatusBadge
+            label={hasAiKnowledgeSync ? "AI knowledge synced" : "AI sync required"}
+            colorClasses={
+              hasAiKnowledgeSync
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                : "bg-amber-50 text-amber-800 ring-amber-200"
+            }
+            variant="soft"
+          />
+        </div>
+
+        <ul className="grid gap-2 md:grid-cols-2">
+          <li
+            className={cn(
+              "rounded-md border px-3 py-2 text-sm",
+              hasProjectAlias
+                ? "border-sky-200 bg-sky-50 text-sky-900"
+                : "border-amber-200 bg-amber-50 text-amber-900"
+            )}
+          >
+            {hasProjectAlias
+              ? "A project inbox alias is connected and ready to route mail."
+              : "Add a project inbox alias below before activation."}
+          </li>
+          <li
+            className={cn(
+              "rounded-md border px-3 py-2 text-sm",
+              hasAiKnowledgeSync
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-amber-200 bg-amber-50 text-amber-900"
+            )}
+          >
+            {hasAiKnowledgeSync
+              ? `AI knowledge last synced ${new Date(
+                  optimisticProject.aiKnowledgeSyncedAt ?? ""
+                ).toLocaleString()}.`
+              : "Run AI knowledge sync before activation."}
+          </li>
         </div>
       </section>
 
@@ -691,11 +733,11 @@ export function ProjectDetail({
       >
         <div>
           <h2 id="project-emails-heading" className={TEXT.headingSm}>
-            Connected email addresses
+            Project inbox aliases
           </h2>
           <p className={cn("mt-0.5", TEXT.caption)}>
-            Inbound mail to any of these addresses is routed to this
-            project&apos;s inbox.
+            Inbound mail to any alias listed here is routed to this project&apos;s
+            inbox.
           </p>
         </div>
 
@@ -831,7 +873,7 @@ export function ProjectDetail({
         {project.isAdmin ? (
           <div className="flex items-center gap-2">
             <label htmlFor="project-email-input" className="sr-only">
-              Add email
+              Add project inbox alias
             </label>
             <Input
               id="project-email-input"
@@ -842,7 +884,7 @@ export function ProjectDetail({
                 setActivationMessage(null);
               }}
               disabled={emailPending}
-              placeholder="inbox@asc.internal"
+              placeholder="project@asc.internal"
               className="max-w-sm font-mono text-[13px]"
             />
             <Button
@@ -852,7 +894,7 @@ export function ProjectDetail({
               onClick={handleAddEmail}
               disabled={emailPending || newEmail.trim().length === 0}
             >
-              Add email
+              Add alias
             </Button>
           </div>
         ) : null}

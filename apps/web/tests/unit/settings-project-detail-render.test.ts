@@ -93,6 +93,7 @@ describe("ProjectDetail role-aware rendering", () => {
           projectName: "Inactive Project",
           isActive: false,
           primaryEmail: "inactive@asc.internal",
+          emailAliases: ["inactive@asc.internal"],
           additionalEmailCount: 0,
           aiKnowledgeUrl: null,
           aiKnowledgeSyncedAt: null,
@@ -112,10 +113,10 @@ describe("ProjectDetail role-aware rendering", () => {
       })
     );
 
-    expect(html).toContain("Connected email addresses");
+    expect(html).toContain("Project inbox aliases");
     expect(html).not.toContain("Activate project");
     expect(html).not.toContain("Deactivate project");
-    expect(html).not.toContain("Add email");
+    expect(html).not.toContain("Add alias");
     expect(html).not.toContain("Save URL");
     expect(html).not.toContain("Sync");
     expect(html).not.toContain("Make primary");

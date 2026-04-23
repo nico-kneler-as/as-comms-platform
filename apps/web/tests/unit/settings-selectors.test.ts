@@ -172,7 +172,7 @@ describe("settings selectors", () => {
     });
   });
 
-  it("marks activation requirements met only when a project has email plus knowledge url", async () => {
+  it("marks activation requirements met only when a project has an alias plus AI knowledge sync", async () => {
     if (!runtime) {
       throw new Error("runtime not initialized");
     }
@@ -182,6 +182,7 @@ describe("settings selectors", () => {
       projectName: "Ready Project",
       isActive: true,
       aiKnowledgeUrl: "https://www.notion.so/ready",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: ["ready@asc.internal"],
       memberCount: 1
     });
@@ -189,7 +190,7 @@ describe("settings selectors", () => {
       projectId: "project:no-knowledge",
       projectName: "No Knowledge",
       isActive: true,
-      aiKnowledgeUrl: null,
+      aiKnowledgeUrl: "https://www.notion.so/no-knowledge",
       emails: ["knowledge-missing@asc.internal"],
       memberCount: 1
     });
@@ -198,6 +199,7 @@ describe("settings selectors", () => {
       projectName: "No Email",
       isActive: false,
       aiKnowledgeUrl: "https://www.notion.so/no-email",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: [],
       memberCount: 0
     });

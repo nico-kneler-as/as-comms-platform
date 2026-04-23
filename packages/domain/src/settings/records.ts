@@ -37,6 +37,7 @@ export interface SettingsProjectRecord {
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
+  readonly createdAt: Date;
   readonly emails: readonly SettingsProjectEmailRecord[];
   readonly memberCount: number;
   readonly updatedAt: Date;
