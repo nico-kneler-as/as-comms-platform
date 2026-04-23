@@ -161,8 +161,8 @@ function SenderPicker({
 
   return (
     <label className="flex items-start gap-3">
-      <span className="mt-3 w-10 text-sm font-medium text-slate-700">
-        From:
+      <span className="mt-3 w-20 text-sm font-medium text-slate-700">
+        Send from:
       </span>
       <div className="flex-1">
         <DropdownMenu>
