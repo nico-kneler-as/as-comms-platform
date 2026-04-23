@@ -133,8 +133,10 @@ describe("InboxTimeline", () => {
       }),
     );
 
-    expect(markup).toContain("Opened 1h ago");
-    expect(markup).toContain("Clicked 45m ago");
+    expect(markup).toContain("Opened");
+    expect(markup).toContain(">1h ago<");
+    expect(markup).toContain("Clicked");
+    expect(markup).toContain(">45m ago<");
   });
 
   it("only hides automated email body text while a subject-bearing row is collapsed", () => {
@@ -166,5 +168,38 @@ describe("InboxTimeline", () => {
         headline: null,
       }),
     ).toBe(false);
+  });
+
+  it("reveals an exact timestamp while keeping the relative label visible", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [baseEntry],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain(">2h ago<");
+    expect(markup).toContain('title="Apr 16, 2026, 12:30 PM UTC"');
+  });
+
+  it("adds wrap-anywhere behavior to expanded timeline copy", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            kind: "outbound-email" as const,
+            body: "https://example.org/really-long-link-without-natural-breakpoints",
+            sendStatus: null,
+            mailbox: "volunteers@example.org",
+          },
+        ],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("[overflow-wrap:anywhere]");
   });
 });
