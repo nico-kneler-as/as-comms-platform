@@ -289,7 +289,7 @@ function createSfCliQueryRunner(): SfQueryRunner {
         } catch (error) {
           const message =
             error instanceof Error && "stdout" in error
-              ? String((error as { stdout?: string }).stdout ?? error.message)
+              ? ((error as { stdout?: string }).stdout ?? error.message)
               : error instanceof Error
                 ? error.message
                 : String(error);

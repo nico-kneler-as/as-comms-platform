@@ -52,6 +52,7 @@ interface InboxListCacheData {
     readonly unread: number;
     readonly followUp: number;
     readonly unresolved: number;
+    readonly sent: number;
   };
   readonly activeProjects: readonly InboxActiveProjectOption[];
   readonly page: {
@@ -131,6 +132,29 @@ export const compareInboxRecency = (
     }
 
     return a.lastInboundAt < b.lastInboundAt ? 1 : -1;
+  }
+
+  if (a.lastActivityAt !== b.lastActivityAt) {
+    return a.lastActivityAt < b.lastActivityAt ? 1 : -1;
+  }
+
+  return a.contactId.localeCompare(b.contactId);
+};
+
+export const compareInboxOutboundRecency = (
+  a: InboxListItemViewModel,
+  b: InboxListItemViewModel,
+): number => {
+  if (a.lastOutboundAt !== b.lastOutboundAt) {
+    if (a.lastOutboundAt === null) {
+      return 1;
+    }
+
+    if (b.lastOutboundAt === null) {
+      return -1;
+    }
+
+    return a.lastOutboundAt < b.lastOutboundAt ? 1 : -1;
   }
 
   if (a.lastActivityAt !== b.lastActivityAt) {
@@ -241,6 +265,7 @@ async function loadCampaignActivitySummaryByCampaignId(input: {
 
 function encodeInboxListCursor(input: {
   readonly lastInboundAt: string | null;
+  readonly lastOutboundAt: string | null;
   readonly lastActivityAt: string;
   readonly contactId: string;
 }): string {
@@ -249,6 +274,7 @@ function encodeInboxListCursor(input: {
 
 function decodeInboxListCursor(cursor: string | null): {
   readonly lastInboundAt: string | null;
+  readonly lastOutboundAt: string | null;
   readonly lastActivityAt: string;
   readonly contactId: string;
 } | null {
@@ -259,20 +285,21 @@ function decodeInboxListCursor(cursor: string | null): {
   try {
     const parsed = JSON.parse(
       Buffer.from(cursor, "base64url").toString("utf8"),
-    ) as Partial<{
-      readonly lastInboundAt: string | null;
-      readonly lastActivityAt: string;
-      readonly contactId: string;
-    }>;
+    ) as Record<string, unknown>;
+    const lastInboundAt = parsed.lastInboundAt;
+    const lastOutboundAt = parsed.lastOutboundAt ?? null;
+    const lastActivityAt = parsed.lastActivityAt;
+    const contactId = parsed.contactId;
 
-    return (parsed.lastInboundAt === null ||
-      typeof parsed.lastInboundAt === "string") &&
-      typeof parsed.lastActivityAt === "string" &&
-      typeof parsed.contactId === "string"
+    return (lastInboundAt === null || typeof lastInboundAt === "string") &&
+      (lastOutboundAt === null || typeof lastOutboundAt === "string") &&
+      typeof lastActivityAt === "string" &&
+      typeof contactId === "string"
       ? {
-          lastInboundAt: parsed.lastInboundAt ?? null,
-          lastActivityAt: parsed.lastActivityAt,
-          contactId: parsed.contactId,
+          lastInboundAt: lastInboundAt ?? null,
+          lastOutboundAt,
+          lastActivityAt,
+          contactId,
         }
       : null;
   } catch {
@@ -1879,6 +1906,7 @@ function totalForFilter(
     readonly unread: number;
     readonly followUp: number;
     readonly unresolved: number;
+    readonly sent: number;
   },
   filterId: InboxFilterId,
 ): number {
@@ -1891,7 +1919,15 @@ function totalForFilter(
       return counts.followUp;
     case "unresolved":
       return counts.unresolved;
+    case "sent":
+      return counts.sent;
   }
+}
+
+function orderForInboxFilter(
+  filterId: InboxFilterId,
+): "last-inbound" | "last-outbound" {
+  return filterId === "sent" ? "last-outbound" : "last-inbound";
 }
 
 async function readInboxListCacheData(input: {
@@ -1904,12 +1940,14 @@ async function readInboxListCacheData(input: {
   const runtime = await getStage1WebRuntime();
   const decodedCursor = decodeInboxListCursor(input.cursor);
   const normalizedQuery = normalizeInlineText(input.query) ?? null;
+  const order = orderForInboxFilter(input.filterId);
   const [projectionPage, counts, freshness, activeProjectRecords] =
     await Promise.all([
       normalizedQuery === null
         ? runtime.repositories.inboxProjection
             .listPageOrderedByRecency({
               filter: input.filterId,
+              order,
               limit: input.limit + 1,
               cursor: decodedCursor,
               projectId: input.projectId,
@@ -1920,6 +1958,7 @@ async function readInboxListCacheData(input: {
             }))
         : runtime.repositories.inboxProjection.searchPageOrderedByRecency({
             filter: input.filterId,
+            order,
             limit: input.limit + 1,
             cursor: decodedCursor,
             query: normalizedQuery,
@@ -1989,6 +2028,9 @@ async function readInboxListCacheData(input: {
               lastInboundAt:
                 pageRows[pageRows.length - 1]?.inboxProjection.lastInboundAt ??
                 null,
+              lastOutboundAt:
+                pageRows[pageRows.length - 1]?.inboxProjection
+                  .lastOutboundAt ?? null,
               lastActivityAt:
                 pageRows[pageRows.length - 1]?.inboxProjection.lastActivityAt ??
                 "",
@@ -2154,6 +2196,7 @@ function toListItemViewModel(
     hasUnresolved: row.inboxProjection.hasUnresolved,
     unreadCount: row.inboxProjection.bucket === "New" ? 1 : 0,
     lastInboundAt: row.inboxProjection.lastInboundAt,
+    lastOutboundAt: row.inboxProjection.lastOutboundAt,
     lastActivityAt: row.inboxProjection.lastActivityAt,
     lastEventType: row.inboxProjection.lastEventType,
     lastActivityLabel: formatRelativeTimestamp(
@@ -2215,6 +2258,8 @@ function matchesServerFilter(
       return item.needsFollowUp;
     case "unresolved":
       return item.hasUnresolved;
+    case "sent":
+      return item.lastOutboundAt !== null;
   }
 }
 
@@ -2249,7 +2294,9 @@ export async function getInboxList(
         ? totals.followUp
         : filter.id === "unresolved"
           ? totals.unresolved
-          : totals[filter.id],
+          : filter.id === "sent"
+            ? totals.sent
+            : totals[filter.id],
   }));
 
   return {

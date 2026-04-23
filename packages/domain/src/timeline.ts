@@ -312,7 +312,12 @@ function timelineSameDayGmailOutboundDuplicateKey(
 
   const fingerprint = buildOutboundEmailDuplicateFingerprint({
     subject: entry.item.subject,
-    body: entry.item.bodyPreview || entry.item.snippet || entry.item.summary,
+    body:
+      entry.item.bodyPreview !== null && entry.item.bodyPreview.length > 0
+        ? entry.item.bodyPreview
+        : entry.item.snippet.length > 0
+          ? entry.item.snippet
+          : entry.item.summary,
   });
 
   if (fingerprint === null) {

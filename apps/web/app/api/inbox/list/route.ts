@@ -6,7 +6,13 @@ import { requireApiSession } from "../../../../src/server/auth/api";
 
 export const dynamic = "force-dynamic";
 
-const filterSchema = z.enum(["all", "unread", "follow-up", "unresolved"]);
+const filterSchema = z.enum([
+  "all",
+  "unread",
+  "follow-up",
+  "unresolved",
+  "sent",
+]);
 
 function parseLimit(raw: string | null): number | undefined {
   if (raw === null) {

@@ -134,6 +134,7 @@ describe("defineStage1RepositoryBundle", () => {
             unread: 0,
             followUp: 0,
             unresolved: 0,
+            sent: 0,
           }),
         getFreshness: () =>
           Promise.resolve({

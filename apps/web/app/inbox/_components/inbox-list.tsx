@@ -14,6 +14,7 @@ import {
 import type { InboxFilterId, InboxListViewModel } from "../_lib/view-models";
 import { fetchInboxListPage } from "../_lib/client-api";
 import { DISPLAY_INBOX_FILTERS } from "../_lib/filters";
+import { shouldApplyUrlSearchQuery } from "../_lib/search-sync";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
   DropdownMenu,
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
 import { extractInboxContactId } from "./inbox-keyboard-helpers";
@@ -41,6 +43,7 @@ import {
   ChevronDownIcon,
   FilterIcon,
   InboxIcon,
+  PencilIcon,
   SearchIcon,
   SearchXIcon,
   XIcon,
@@ -60,6 +63,10 @@ const DISPLAY_FILTER_IDS: readonly InboxFilterId[] = DISPLAY_INBOX_FILTERS.map(
 );
 
 const DEFAULT_TITLE = "Inbox";
+
+function isDisplayFilterId(value: string): value is InboxFilterId {
+  return DISPLAY_FILTER_IDS.includes(value as InboxFilterId);
+}
 
 export function InboxList({
   initialList,
@@ -96,6 +103,7 @@ export function InboxList({
   const pendingAppendCursorRef = useRef<string | null>(null);
   const previousFilterRef = useRef<InboxFilterId>(initialFilterId);
   const previousProjectIdRef = useRef<string | null>(null);
+  const previousUrlQueryRef = useRef(urlQuery);
   const latestShellStateRef = useRef({
     activeFilter: initialFilterId,
     selectedProjectId: initialList.selectedProjectId ?? null,
@@ -119,6 +127,17 @@ export function InboxList({
   }, [activeFilter, initialList, selectedProjectId]);
 
   useEffect(() => {
+    if (
+      !shouldApplyUrlSearchQuery({
+        urlQuery,
+        previousUrlQuery: previousUrlQueryRef.current,
+      })
+    ) {
+      return;
+    }
+
+    previousUrlQueryRef.current = urlQuery;
+
     if (search.query !== urlQuery) {
       setSearchQuery(urlQuery);
     }
@@ -145,6 +164,7 @@ export function InboxList({
         ? pathname
         : `${pathname}?${nextQueryString}`;
 
+    previousUrlQueryRef.current = normalizedQuery;
     router.replace(nextHref, { scroll: false });
   }, [normalizedQuery, pathname, router, searchParams, urlQuery]);
 
@@ -402,11 +422,15 @@ export function InboxList({
           </h1>
           <Button
             type="button"
-            size="sm"
+            variant="ghost"
+            size="icon"
+            aria-label="Compose"
             aria-keyshortcuts="c"
+            title="Compose"
             onClick={openNewDraft}
+            className="h-8 w-8 shrink-0 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
           >
-            Compose
+            <PencilIcon aria-hidden="true" data-icon="inline-start" />
           </Button>
           <button
             type="button"
@@ -472,57 +496,54 @@ export function InboxList({
             id="inbox-filter-panel"
             className="border-t border-slate-100 px-5 pb-3 pt-3"
           >
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <p className={TEXT.label}>Status</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {DISPLAY_FILTER_IDS.map((id) => {
-                    const isActive = activeFilter === id;
-                    const showCount = id !== "all";
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        aria-pressed={isActive}
-                        onClick={() => {
-                          startFilterTransition(() => {
-                            setActiveFilter(id);
-                          });
-                        }}
-                        className={cn(
-                          "rounded-full px-2.5 py-1 text-xs font-medium",
-                          "transition-[color,background-color,transform] duration-150 ease-out",
-                          "active:scale-[0.96]",
-                          TRANSITION.reduceMotion,
-                          FOCUS_RING,
-                          isActive
-                            ? "bg-slate-900 text-white"
-                            : "bg-slate-100 text-slate-600 hover:bg-slate-200",
-                        )}
-                      >
-                        {filterLabels.get(id) ?? id}
-                        {showCount ? (
-                          <span
-                            className={cn(
-                              "ml-1 tabular-nums",
-                              isActive ? "text-slate-300" : "text-slate-400",
-                            )}
-                          >
-                            {filterCounts[id]}
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            <div className="flex flex-col gap-3">
+              <ToggleGroup
+                type="single"
+                value={activeFilter}
+                aria-label="Inbox mode"
+                variant="outline"
+                size="sm"
+                onValueChange={(value) => {
+                  if (typeof value !== "string" || !isDisplayFilterId(value)) {
+                    return;
+                  }
 
-              <div className="flex flex-col gap-2">
-                <p className={TEXT.label}>Project</p>
+                  startFilterTransition(() => {
+                    setActiveFilter(value);
+                  });
+                }}
+                className="grid grid-cols-2 rounded-md border border-slate-200 bg-slate-50 p-1"
+              >
+                {DISPLAY_FILTER_IDS.map((id) => {
+                  const showCount = id !== "all";
+                  return (
+                    <ToggleGroupItem
+                      key={id}
+                      value={id}
+                      aria-label={`Show ${filterLabels.get(id) ?? id}`}
+                      className={cn(
+                        "justify-between border-0 bg-transparent px-2.5 text-xs shadow-none",
+                        "data-[state=on]:bg-white data-[state=on]:text-slate-900 data-[state=on]:shadow-sm",
+                        "text-slate-600 hover:bg-white/70 hover:text-slate-900",
+                      )}
+                    >
+                      <span className="truncate">{filterLabels.get(id) ?? id}</span>
+                      {showCount ? (
+                        <span className="ml-2 tabular-nums text-slate-400">
+                          {filterCounts[id]}
+                        </span>
+                      ) : null}
+                    </ToggleGroupItem>
+                  );
+                })}
+              </ToggleGroup>
+
+              <div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
+                      aria-label="Filter by project"
                       className={cn(
                         `flex w-full items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm}`,
                         "transition-[color,background-color,border-color,transform] duration-150 ease-out",
