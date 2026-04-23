@@ -545,6 +545,8 @@ describe("real inbox selectors", () => {
     expect(detail?.contact.activeProjects[0]).toMatchObject({
       projectName: "Amazon Basin Research",
       status: "in-training",
+      crmUrl:
+        "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/membership%3Asarah/view",
     });
     expect(detail?.timeline.map((entry) => entry.kind)).toEqual([
       "outbound-email",

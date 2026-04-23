@@ -62,6 +62,33 @@ export function InboxAppLoading() {
 }
 
 /**
+ * Detail-pane loading state for contact route transitions. Keeps the inbox
+ * shell stable and only placeholders the message-history workspace.
+ */
+export function InboxDetailLoading() {
+  return (
+    <div className="flex min-h-0 flex-1" role="status" aria-label="Loading conversation history">
+      <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
+        <header className={`flex ${LAYOUT.headerHeight} items-center gap-4 border-b border-slate-200 px-6`}>
+          <div className="min-w-0 flex-1">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="mt-2 h-3.5 w-56" />
+          </div>
+          <Skeleton className="h-8 w-28 rounded-md" />
+          <Skeleton className="h-8 w-8 rounded-md" />
+        </header>
+        <div className={`min-h-0 flex-1 overflow-y-auto ${TONE.slate.subtle} ${SPACING.container}`}>
+          <TimelineSkeleton />
+        </div>
+        <div className="border-t border-slate-200 px-5 py-4">
+          <Skeleton className="h-16 w-full rounded-lg" />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/**
  * Skeleton for a single queue row — avatar + 3 text lines.
  * Used inside both the full app loading state and the queue-only reload.
  */

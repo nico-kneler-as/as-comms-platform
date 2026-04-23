@@ -40,6 +40,17 @@ import {
   TRANSITION,
 } from "@/app/_lib/design-tokens";
 
+const WRAP_ANYWHERE = "break-words [overflow-wrap:anywhere]";
+const EXACT_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "UTC",
+  timeZoneName: "short",
+});
+
 interface TimelineProps {
   readonly entries: readonly InboxTimelineEntryViewModel[];
   readonly volunteerFirstName: string;
@@ -86,45 +97,153 @@ export function InboxTimeline({
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      {hasMore && onLoadOlder ? (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            disabled={isLoadingOlder}
-            onClick={onLoadOlder}
-            className={cn(
-              "rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600",
-              "transition-[color,background-color,transform] duration-150 ease-out",
-              "active:scale-[0.96] disabled:active:scale-100",
-              TRANSITION.reduceMotion,
-              "hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60",
-            )}
-          >
-            {isLoadingOlder
-              ? "Loading older activity..."
-              : "Load older activity"}
-          </button>
-        </div>
-      ) : null}
+    <TooltipProvider>
+      <div className="flex flex-col gap-4">
+        {hasMore && onLoadOlder ? (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              disabled={isLoadingOlder}
+              onClick={onLoadOlder}
+              className={cn(
+                "rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600",
+                "transition-[color,background-color,transform] duration-150 ease-out",
+                "active:scale-[0.96] disabled:active:scale-100",
+                TRANSITION.reduceMotion,
+                "hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60",
+              )}
+            >
+              {isLoadingOlder
+                ? "Loading older activity..."
+                : "Load older activity"}
+            </button>
+          </div>
+        ) : null}
 
-      <ol className="flex flex-col gap-4">
-        {entries.map((entry) => (
-          <TimelineEntry
-            key={entry.id}
-            entry={entry}
-            volunteerFirstName={volunteerFirstName}
-            currentOperatorUserId={currentOperatorUserId}
-            isExpanded={expanded.has(entry.id)}
-            retryingEntryId={retryingEntryId}
-            onRetryPending={onRetryPending}
-            onToggle={() => {
-              toggle(entry.id);
-            }}
-          />
-        ))}
-      </ol>
-    </div>
+        <ol className="flex flex-col gap-4">
+          {entries.map((entry) => (
+            <TimelineEntry
+              key={entry.id}
+              entry={entry}
+              volunteerFirstName={volunteerFirstName}
+              currentOperatorUserId={currentOperatorUserId}
+              isExpanded={expanded.has(entry.id)}
+              retryingEntryId={retryingEntryId}
+              onRetryPending={onRetryPending}
+              onToggle={() => {
+                toggle(entry.id);
+              }}
+            />
+          ))}
+        </ol>
+      </div>
+    </TooltipProvider>
+  );
+}
+
+function formatExactTimestamp(timestamp: string): string {
+  return EXACT_TIMESTAMP_FORMATTER.format(new Date(timestamp));
+}
+
+function RelativeTimestamp({
+  timestamp,
+  label,
+  className,
+  asSpan = false,
+  focusable = true,
+}: {
+  readonly timestamp: string;
+  readonly label: string;
+  readonly className?: string;
+  readonly asSpan?: boolean;
+  readonly focusable?: boolean;
+}) {
+  const exactLabel = formatExactTimestamp(timestamp);
+
+  const content = asSpan ? (
+    <span
+      title={exactLabel}
+      tabIndex={focusable ? 0 : undefined}
+      className={cn(
+        "cursor-help rounded-sm decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 hover:underline",
+        className,
+      )}
+    >
+      {label}
+    </span>
+  ) : (
+    <time
+      dateTime={timestamp}
+      title={exactLabel}
+      tabIndex={focusable ? 0 : undefined}
+      className={cn(
+        "cursor-help rounded-sm decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 hover:underline",
+        className,
+      )}
+    >
+      {label}
+    </time>
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{content}</TooltipTrigger>
+      <TooltipContent side="top">
+        <p>{exactLabel}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function CampaignActivityTimestamp({
+  label,
+  occurredAt,
+}: {
+  readonly label: string;
+  readonly occurredAt: string;
+}) {
+  const [activityLabel, relativeLabel] = label.split(/ (?=\S+ ago$|yesterday$)/);
+
+  if (relativeLabel === undefined) {
+    return (
+      <RelativeTimestamp
+        timestamp={occurredAt}
+        label={label}
+        asSpan
+        focusable={false}
+      />
+    );
+  }
+
+  return (
+    <>
+      {activityLabel}{" "}
+      <RelativeTimestamp
+        timestamp={occurredAt}
+        label={relativeLabel}
+        asSpan
+        focusable={false}
+      />
+    </>
+  );
+}
+
+function TimelineTimestamp({
+  entry,
+  className,
+  asSpan = false,
+}: {
+  readonly entry: InboxTimelineEntryViewModel;
+  readonly className?: string;
+  readonly asSpan?: boolean;
+}) {
+  return (
+    <RelativeTimestamp
+      timestamp={entry.occurredAt}
+      label={entry.occurredAtLabel}
+      asSpan={asSpan}
+      {...(className === undefined ? {} : { className })}
+    />
   );
 }
 
@@ -197,15 +316,25 @@ function InboundBubble({
   return (
     <li className="flex w-full flex-col items-start">
       <div
-        className={`w-full max-w-2xl ${RADIUS.bubble} rounded-bl-sm border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}
+        className={`min-w-0 w-full max-w-2xl ${RADIUS.bubble} rounded-bl-sm border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}
       >
         {isEmail && entry.subject ? (
-          <p className="mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-900">
+          <p
+            className={cn(
+              "mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-900",
+              WRAP_ANYWHERE,
+            )}
+          >
             {entry.subject}
           </p>
         ) : null}
         {body.length > 0 ? (
-          <p className={`whitespace-pre-wrap text-pretty ${TEXT.bodySm}`}>
+          <p
+            className={cn(
+              `whitespace-pre-wrap text-pretty ${TEXT.bodySm}`,
+              WRAP_ANYWHERE,
+            )}
+          >
             {autolinkText(body, "text-sky-600")}
           </p>
         ) : null}
@@ -214,7 +343,7 @@ function InboundBubble({
         <ChannelIcon className="h-3 w-3" />
         <span className="font-medium text-slate-500">{entry.actorLabel}</span>
         <span>·</span>
-        <span>{entry.occurredAtLabel}</span>
+        <TimelineTimestamp entry={entry} />
         {entry.isUnread ? (
           <span
             className="inline-flex h-1.5 w-1.5 rounded-full bg-sky-500"
@@ -250,7 +379,7 @@ function OutboundBubble({
   return (
     <li className="flex w-full flex-col items-end">
       <div
-        className={`w-full max-w-2xl ${RADIUS.bubble} rounded-br-sm bg-slate-800 px-4 py-3 ${SHADOW.sm}`}
+        className={`min-w-0 w-full max-w-2xl ${RADIUS.bubble} rounded-br-sm bg-slate-800 px-4 py-3 ${SHADOW.sm}`}
       >
         {entry.sendStatus === "pending" ? (
           <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-1 text-[11px] font-medium text-slate-100">
@@ -305,18 +434,28 @@ function OutboundBubble({
         ) : null}
 
         {isEmail && entry.subject ? (
-          <p className="mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-100">
+          <p
+            className={cn(
+              "mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-100",
+              WRAP_ANYWHERE,
+            )}
+          >
             {entry.subject}
           </p>
         ) : null}
         {body.length > 0 ? (
-          <p className="whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-slate-200">
+          <p
+            className={cn(
+              "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-slate-200",
+              WRAP_ANYWHERE,
+            )}
+          >
             {autolinkText(body, "text-sky-300")}
           </p>
         ) : null}
       </div>
       <div className={`mt-1.5 flex items-center gap-1.5 px-1 ${TEXT.micro}`}>
-        <span>{entry.occurredAtLabel}</span>
+        <TimelineTimestamp entry={entry} />
         <span>·</span>
         <ChannelIcon className="h-3 w-3" />
       </div>
@@ -364,59 +503,79 @@ function AutomatedRow({
       <div className="mb-1 flex w-full max-w-2xl items-center justify-between px-1">
         <span className={TEXT.micro}>{label}</span>
       </div>
-      <button
-        type="button"
-        aria-expanded={isExpanded}
-        onClick={onToggle}
-        className={cn(
-          `group flex w-full max-w-2xl items-center gap-3 ${RADIUS.md} border border-dashed border-slate-300 bg-white px-4 py-2.5 text-left`,
-          "transition-[color,background-color,transform] duration-150 ease-out",
-          "active:scale-[0.96]",
-          TRANSITION.reduceMotion,
-          "hover:bg-slate-50",
-        )}
-      >
-        <div className="min-w-0 flex-1">
-          {headline ? (
-            <p className="text-pretty text-[13px] font-medium leading-snug text-slate-700">
-              {headline}
-            </p>
-          ) : null}
-          {campaignActivity.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {campaignActivity.map((activity) => (
-                <span
-                  key={`${activity.activityType}:${activity.occurredAt}`}
-                  className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium leading-none text-emerald-700"
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-expanded={isExpanded}
+            title={formatExactTimestamp(entry.occurredAt)}
+            onClick={onToggle}
+            className={cn(
+              `group flex w-full max-w-2xl items-center gap-3 ${RADIUS.md} border border-dashed border-slate-300 bg-white px-4 py-2.5 text-left`,
+              "transition-[color,background-color,transform] duration-150 ease-out",
+              "active:scale-[0.96]",
+              TRANSITION.reduceMotion,
+              "hover:bg-slate-50",
+            )}
+          >
+            <div className="min-w-0 flex-1">
+              {headline ? (
+                <p
+                  className={cn(
+                    "text-pretty text-[13px] font-medium leading-snug text-slate-700",
+                    WRAP_ANYWHERE,
+                  )}
                 >
-                  {activity.label}
-                </span>
-              ))}
+                  {headline}
+                </p>
+              ) : null}
+              {campaignActivity.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {campaignActivity.map((activity) => (
+                    <span
+                      key={`${activity.activityType}:${activity.occurredAt}`}
+                      className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium leading-none text-emerald-700"
+                    >
+                      <CampaignActivityTimestamp
+                        label={activity.label}
+                        occurredAt={activity.occurredAt}
+                      />
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {!hideCollapsedBody && body.length > 0 ? (
+                <p
+                  className={cn(
+                    "text-[13px] leading-relaxed text-slate-600",
+                    WRAP_ANYWHERE,
+                    (headline !== null || campaignActivity.length > 0) &&
+                      "mt-1.5",
+                    isExpanded
+                      ? "whitespace-pre-wrap text-pretty"
+                      : "line-clamp-1",
+                  )}
+                >
+                  {isExpanded ? autolinkText(body, "text-sky-600") : body}
+                </p>
+              ) : null}
             </div>
-          ) : null}
-          {!hideCollapsedBody && body.length > 0 ? (
-            <p
-              className={cn(
-                "text-[13px] leading-relaxed text-slate-600",
-                (headline !== null || campaignActivity.length > 0) && "mt-1.5",
-                isExpanded ? "whitespace-pre-wrap text-pretty" : "line-clamp-1",
-              )}
-            >
-              {isExpanded ? autolinkText(body, "text-sky-600") : body}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="text-[11px] text-slate-400">
-            {entry.occurredAtLabel}
-          </span>
-          <ChevronRightIcon
-            className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${
-              isExpanded ? "rotate-90" : ""
-            }`}
-          />
-        </div>
-      </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="text-[11px] text-slate-400">
+                {entry.occurredAtLabel}
+              </span>
+              <ChevronRightIcon
+                className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${
+                  isExpanded ? "rotate-90" : ""
+                }`}
+              />
+            </div>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p>{formatExactTimestamp(entry.occurredAt)}</p>
+        </TooltipContent>
+      </Tooltip>
     </li>
   );
 }
@@ -524,7 +683,7 @@ function NoteEntry({
             <span className="text-amber-300">·</span>
             <span>{entry.actorLabel}</span>
             <span className="text-amber-300">·</span>
-            <span>{entry.occurredAtLabel}</span>
+            <TimelineTimestamp entry={entry} />
           </div>
           {canManageNote ? (
             <div className="flex items-center gap-2">
@@ -639,7 +798,12 @@ function NoteEntry({
           </div>
         ) : (
           <>
-            <p className="whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-amber-900">
+            <p
+              className={cn(
+                "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-amber-900",
+                WRAP_ANYWHERE,
+              )}
+            >
               {entry.body}
             </p>
             {inlineError ? (

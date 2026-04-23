@@ -63,6 +63,8 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const { contact } = detail;
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const activeTimelineRequestIdRef = useRef(0);
+  const shouldScrollToLatestRef = useRef(true);
+  const previousContactIdRef = useRef(detail.contact.contactId);
   const {
     reminders,
     setReminder,
@@ -87,6 +89,11 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     setTimelineLoading(false);
     setTimelineEntries(detail.timeline);
     setTimelinePage(detail.timelinePage);
+
+    if (previousContactIdRef.current !== detail.contact.contactId) {
+      shouldScrollToLatestRef.current = true;
+      previousContactIdRef.current = detail.contact.contactId;
+    }
   }, [
     detail.contact.contactId,
     detail.freshness.inboxUpdatedAt,
@@ -96,6 +103,27 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     detail.timelinePage,
     setTimelineLoading,
   ]);
+
+  useEffect(() => {
+    if (!shouldScrollToLatestRef.current) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const container = timelineScrollRef.current;
+
+      if (!container) {
+        return;
+      }
+
+      container.scrollTop = container.scrollHeight;
+      shouldScrollToLatestRef.current = false;
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [detail.contact.contactId, timelineEntries]);
 
   const loadOlderTimeline = useCallback(async () => {
     if (!timelinePage.hasMore || timelinePage.nextCursor === null) {

@@ -58,4 +58,21 @@ describe("autolinkText", () => {
       'href="https://docuseal.com/e/abc123?review=true#signature"',
     );
   });
+
+  it("keeps trailing punctuation outside the linked URL", () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        "p",
+        null,
+        autolinkText(
+          "Review https://example.org/forms). before you reply.",
+          "text-sky-600",
+        ),
+      ),
+    );
+
+    expect(markup).toContain('href="https://example.org/forms"');
+    expect(markup).toContain(">https://example.org/forms<");
+    expect(markup).toContain("</a>). before you reply.");
+  });
 });
