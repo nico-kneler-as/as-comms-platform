@@ -58,6 +58,7 @@ async function seedProject(
   input: {
     readonly projectId: string;
     readonly projectName: string;
+    readonly projectAlias?: string | null;
     readonly isActive: boolean;
     readonly aiKnowledgeUrl: string | null;
     readonly aiKnowledgeSyncedAt?: string | null;
@@ -68,6 +69,8 @@ async function seedProject(
   await runtime.context.repositories.projectDimensions.upsert({
     projectId: input.projectId,
     projectName: input.projectName,
+    projectAlias:
+      input.projectAlias === undefined ? input.projectName : input.projectAlias,
     source: "salesforce",
     isActive: input.isActive,
     aiKnowledgeUrl: input.aiKnowledgeUrl,
@@ -197,6 +200,7 @@ describe("settings selectors", () => {
     await seedProject(runtime, {
       projectId: "project:no-email",
       projectName: "No Email",
+      projectAlias: null,
       isActive: false,
       aiKnowledgeUrl: "https://www.notion.so/no-email",
       aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
@@ -214,6 +218,10 @@ describe("settings selectors", () => {
         ?.activationRequirementsMet
     ).toBe(true);
     expect(
+      projects.find((project) => project.projectId === "project:ready")
+        ?.projectAlias
+    ).toBe("Ready Project");
+    expect(
       projects.find((project) => project.projectId === "project:no-knowledge")
         ?.activationRequirementsMet
     ).toBe(false);
@@ -221,6 +229,32 @@ describe("settings selectors", () => {
       projects.find((project) => project.projectId === "project:no-email")
         ?.activationRequirementsMet
     ).toBe(false);
+  });
+
+  it("matches project searches on the short alias as well as the full project name", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    await seedProject(runtime, {
+      projectId: "project:alias-search",
+      projectName: "Searching For Killer Whales 2025/2026",
+      projectAlias: "SFKW",
+      isActive: true,
+      aiKnowledgeUrl: "https://www.notion.so/whales",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
+      emails: ["whales@asc.internal"],
+      memberCount: 1
+    });
+
+    const byAlias = await loadProjectsSettings({
+      filter: "all",
+      search: "sfkw"
+    });
+
+    expect(byAlias.active.map((project) => project.projectId)).toEqual([
+      "project:alias-search"
+    ]);
   });
 
   it("returns null when project detail is requested for an unknown id", async () => {

@@ -272,6 +272,7 @@ export function mapProjectDimensionRow(
   return projectDimensionSchema.parse({
     projectId: row.projectId,
     projectName: row.projectName,
+    projectAlias: row.projectAlias,
     source: row.source,
     isActive: row.isActive,
     aiKnowledgeUrl: row.aiKnowledgeUrl,
@@ -287,6 +288,7 @@ export function mapProjectDimensionToInsert(
   return {
     projectId: parsed.projectId,
     projectName: parsed.projectName,
+    projectAlias: parsed.projectAlias ?? null,
     isActive: parsed.isActive ?? false,
     aiKnowledgeUrl: parsed.aiKnowledgeUrl ?? null,
     aiKnowledgeSyncedAt:

@@ -4,6 +4,11 @@ const resolveAdminSession = vi.hoisted(() => vi.fn());
 const revalidateAccessSettings = vi.hoisted(() => vi.fn());
 const revalidateProjectSettings = vi.hoisted(() => vi.fn());
 const revalidateIntegrationHealth = vi.hoisted(() => vi.fn());
+const revalidateTag = vi.hoisted(() => vi.fn());
+
+vi.mock("next/cache", () => ({
+  revalidateTag
+}));
 
 vi.mock("@/src/server/auth/api", () => ({
   resolveAdminSession
@@ -23,6 +28,7 @@ import {
   inviteUserAction,
   promoteUserAction,
   reactivateUserAction,
+  updateProjectAliasAction,
   updateProjectAiKnowledgeAction,
   updateProjectEmailsAction
 } from "../../app/settings/actions";
@@ -45,6 +51,7 @@ async function seedProject(
   input: {
     readonly projectId: string;
     readonly projectName: string;
+    readonly projectAlias?: string | null;
     readonly isActive: boolean;
     readonly aiKnowledgeUrl: string | null;
     readonly aiKnowledgeSyncedAt?: string | null;
@@ -54,6 +61,8 @@ async function seedProject(
   await runtime.context.repositories.projectDimensions.upsert({
     projectId: input.projectId,
     projectName: input.projectName,
+    projectAlias:
+      input.projectAlias === undefined ? input.projectName : input.projectAlias,
     source: "salesforce",
     isActive: input.isActive,
     aiKnowledgeUrl: input.aiKnowledgeUrl,
@@ -106,6 +115,7 @@ describe("settings project actions", () => {
     revalidateAccessSettings.mockReset();
     revalidateProjectSettings.mockReset();
     revalidateIntegrationHealth.mockReset();
+    revalidateTag.mockReset();
     resolveAdminSession.mockResolvedValue(adminSession());
     runtime = await createStage1WebTestRuntime();
     await seedUser(runtime, {
@@ -204,6 +214,30 @@ describe("settings project actions", () => {
       code: "requirements_not_met",
       fieldErrors: {
         aiKnowledgeUrl: "Sync AI knowledge before activating this project."
+      }
+    });
+  });
+
+  it("returns a requirements error when activateProjectAction is missing a project alias", async () => {
+    if (!runtime) throw new Error("runtime not initialized");
+
+    await seedProject(runtime, {
+      projectId: "project:no-alias",
+      projectName: "No Alias",
+      projectAlias: null,
+      isActive: false,
+      aiKnowledgeUrl: "https://docs.example.org/no-alias",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
+      emails: ["ready@asc.internal"]
+    });
+
+    const result = await activateProjectAction("project:no-alias");
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "requirements_not_met",
+      fieldErrors: {
+        projectAlias: "Set a project alias before activating this project."
       }
     });
   });
@@ -453,6 +487,69 @@ describe("settings project actions", () => {
       ok: true,
       data: {
         aiKnowledgeUrl: null
+      }
+    });
+  });
+
+  it("updates the project alias, audits the mutation, and revalidates inbox data", async () => {
+    if (!runtime) throw new Error("runtime not initialized");
+
+    await seedProject(runtime, {
+      projectId: "project:alias",
+      projectName: "Alias Project",
+      projectAlias: "OLD",
+      isActive: false,
+      aiKnowledgeUrl: null,
+      emails: ["alias@asc.internal"]
+    });
+
+    const result = await updateProjectAliasAction("project:alias", " Field Ops ");
+    const updatedProject = await runtime.context.settings.projects.findById(
+      "project:alias"
+    );
+    const audits = await runtime.context.repositories.auditEvidence.listByEntity({
+      entityType: "project",
+      entityId: "project:alias"
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        projectAlias: "Field Ops"
+      }
+    });
+    expect(updatedProject?.projectAlias).toBe("Field Ops");
+    expect(audits.at(-1)).toMatchObject({
+      action: "settings.project.alias_updated",
+      entityType: "project",
+      entityId: "project:alias"
+    });
+    expect(revalidateProjectSettings).toHaveBeenCalledWith("project:alias");
+    expect(revalidateTag).toHaveBeenCalledWith("inbox");
+  });
+
+  it("rejects overly long project aliases", async () => {
+    if (!runtime) throw new Error("runtime not initialized");
+
+    await seedProject(runtime, {
+      projectId: "project:alias-length",
+      projectName: "Alias Length Project",
+      projectAlias: null,
+      isActive: false,
+      aiKnowledgeUrl: null,
+      emails: []
+    });
+
+    const result = await updateProjectAliasAction(
+      "project:alias-length",
+      "12345678901234567890123456789012345678901"
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "invalid_project_alias",
+      fieldErrors: {
+        projectAlias: "Project alias must be 40 characters or fewer."
       }
     });
   });

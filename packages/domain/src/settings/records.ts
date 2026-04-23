@@ -34,6 +34,7 @@ export interface SettingsProjectRecord {
   readonly projectId: string;
   readonly salesforceProjectId: string | null;
   readonly projectName: string;
+  readonly projectAlias: string | null;
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;

@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { revalidateTag } from "next/cache";
 
 import {
   createProjectAliasSchema,
@@ -73,15 +74,21 @@ function errorResult(
 }
 
 function hasActivationRequirements(input: {
+  readonly projectAlias: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
   readonly emails: readonly { readonly address: string; readonly isPrimary: boolean }[];
 }): boolean {
-  return input.emails.length >= 1 && input.aiKnowledgeSyncedAt !== null;
+  return (
+    input.emails.length >= 1 &&
+    input.aiKnowledgeSyncedAt !== null &&
+    (input.projectAlias?.trim().length ?? 0) > 0
+  );
 }
 
 function serializeProjectMutationData(input: {
   readonly projectId: string;
   readonly projectName: string;
+  readonly projectAlias: string | null;
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
@@ -95,10 +102,12 @@ function serializeProjectMutationData(input: {
   return {
     projectId: input.projectId,
     projectName: input.projectName,
+    projectAlias: input.projectAlias,
     isActive: input.isActive,
     aiKnowledgeUrl: input.aiKnowledgeUrl,
     aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt?.toISOString() ?? null,
     activationRequirementsMet: hasActivationRequirements({
+      projectAlias: input.projectAlias,
       aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt,
       emails: input.emails
     }),
@@ -160,12 +169,49 @@ async function appendSettingsAudit(input: {
   });
 }
 
-function notImplementedResult(message: string): UiError {
-  return errorResult("not_implemented", message);
-}
-
 function normalizeIncomingEmail(address: string): string {
   return address.trim().toLowerCase();
+}
+
+function normalizeProjectAliasValue(
+  rawAlias: string | null
+):
+  | {
+      readonly ok: true;
+      readonly projectAlias: string | null;
+    }
+  | {
+      readonly ok: false;
+      readonly error: UiError;
+    } {
+  const normalized = rawAlias?.trim().replace(/\s+/g, " ") ?? "";
+
+  if (normalized.length === 0) {
+    return {
+      ok: true,
+      projectAlias: null
+    };
+  }
+
+  if (normalized.length > 40) {
+    return {
+      ok: false,
+      error: errorResult(
+        "invalid_project_alias",
+        "Project alias must be 40 characters or fewer.",
+        {
+          fieldErrors: {
+            projectAlias: "Project alias must be 40 characters or fewer."
+          }
+        }
+      )
+    };
+  }
+
+  return {
+    ok: true,
+    projectAlias: normalized
+  };
 }
 
 function readRequiredString(
@@ -414,6 +460,7 @@ export interface ProjectEmailMutationData extends ProjectEmailInput {
 export interface ProjectMutationData {
   readonly projectId: string;
   readonly projectName: string;
+  readonly projectAlias: string | null;
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: string | null;
@@ -466,6 +513,18 @@ export async function activateProjectAction(
     );
   }
 
+  if ((project.projectAlias?.trim().length ?? 0) === 0) {
+    return errorResult(
+      "requirements_not_met",
+      "Set a project alias before activating this project.",
+      {
+        fieldErrors: {
+          projectAlias: "Set a project alias before activating this project."
+        }
+      }
+    );
+  }
+
   if (project.aiKnowledgeSyncedAt === null) {
     return errorResult(
       "requirements_not_met",
@@ -507,27 +566,56 @@ export async function activateProjectAction(
   };
 }
 
-export interface UpdateProjectAliasResult {
-  readonly id: string;
-  readonly alias: string;
-}
-
 export async function updateProjectAliasAction(
-  formData: FormData
-): Promise<UiResult<UpdateProjectAliasResult>> {
+  projectId: string,
+  projectAlias: string | null
+): Promise<UiResult<ProjectMutationData>> {
   const admin = await resolveSettingsAdmin({
-    unauthorizedMessage: "You must be signed in to update project aliases.",
-    forbiddenMessage: "Only admins can update project aliases."
+    unauthorizedMessage: "You must be signed in to update the project alias.",
+    forbiddenMessage: "Only admins can update the project alias."
   });
   if (!admin.ok) {
     return admin.error;
   }
 
-  void formData;
+  const repositories = await getSettingsRepositories();
+  const project = await repositories.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
 
-  return notImplementedResult(
-    "Project alias editing is not implemented in this brief."
+  const normalizedAlias = normalizeProjectAliasValue(projectAlias);
+  if (!normalizedAlias.ok) {
+    return normalizedAlias.error;
+  }
+
+  const updatedProject = await repositories.projects.setProjectAlias(
+    projectId,
+    normalizedAlias.projectAlias
   );
+  if (updatedProject === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.alias_updated",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      before: project.projectAlias,
+      after: updatedProject.projectAlias
+    }
+  });
+
+  revalidateProjectSettings(projectId);
+  revalidateTag("inbox");
+
+  return {
+    ok: true,
+    data: serializeProjectMutationData(updatedProject),
+    requestId: newRequestId()
+  };
 }
 
 export async function updateProjectEmailsAction(

@@ -38,6 +38,7 @@ export function ProjectsSection({
       : viewModel.inactive.filter((project) => {
           return (
             project.projectName.toLowerCase().includes(normalizedSearch) ||
+            (project.projectAlias?.toLowerCase().includes(normalizedSearch) ?? false) ||
             project.emailAliases.some((alias) =>
               alias.toLowerCase().includes(normalizedSearch)
             )
@@ -87,7 +88,7 @@ export function ProjectsSection({
                 </h3>
                 <p className={cn("mt-0.5", TEXT.caption)}>
                   {isSearching
-                    ? "Search results across inactive project names and inbox aliases."
+                    ? "Search results across inactive project names, project aliases, and inbox aliases."
                     : "Showing the 3 most recently created inactive projects. Search to find older ones."}
                 </p>
               </div>
@@ -107,7 +108,7 @@ export function ProjectsSection({
                 onChange={(event) => {
                   setSearch(event.target.value);
                 }}
-                placeholder="Search inactive projects or aliases"
+                placeholder="Search inactive projects, aliases"
                 className="pl-9"
               />
             </label>
@@ -195,6 +196,11 @@ function ProjectList({
               </p>
               {renderMeta ? renderMeta(project) : null}
             </div>
+            {project.projectAlias ? (
+              <p className={cn(TEXT.caption, "truncate text-slate-500")}>
+                Alias: {project.projectAlias}
+              </p>
+            ) : null}
             <p className={cn(TEXT.caption, "truncate")}>
               {project.primaryEmail
                 ? project.additionalEmailCount > 0

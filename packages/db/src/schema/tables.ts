@@ -175,6 +175,7 @@ export const contactMemberships = pgTable(
 export const projectDimensions = pgTable("project_dimensions", {
   projectId: text("project_id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectAlias: text("project_alias"),
   isActive: boolean("is_active").notNull().default(false),
   aiKnowledgeUrl: text("ai_knowledge_url"),
   aiKnowledgeSyncedAt: timestamp("ai_knowledge_synced_at", {

@@ -12,6 +12,7 @@ import { getStage1WebRuntime } from "../stage1-runtime";
 export interface ProjectRowViewModel {
   readonly projectId: string;
   readonly projectName: string;
+  readonly projectAlias: string | null;
   readonly isActive: boolean;
   readonly primaryEmail: string | null;
   readonly emailAliases: readonly string[];
@@ -145,15 +146,21 @@ function normalizeSearch(value: string | null | undefined): string | null {
 }
 
 function hasActivationRequirements(input: {
+  readonly projectAlias: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
   readonly emailCount: number;
 }): boolean {
-  return input.emailCount >= 1 && input.aiKnowledgeSyncedAt !== null;
+  return (
+    input.emailCount >= 1 &&
+    input.aiKnowledgeSyncedAt !== null &&
+    (input.projectAlias?.trim().length ?? 0) > 0
+  );
 }
 
 function toProjectRowViewModel(input: {
   readonly projectId: string;
   readonly projectName: string;
+  readonly projectAlias: string | null;
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
@@ -172,6 +179,7 @@ function toProjectRowViewModel(input: {
   return {
     projectId: input.projectId,
     projectName: input.projectName,
+    projectAlias: input.projectAlias,
     isActive: input.isActive,
     primaryEmail,
     emailAliases: input.emails.map((email) => email.address),
@@ -180,6 +188,7 @@ function toProjectRowViewModel(input: {
     aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt?.toISOString() ?? null,
     memberCount: input.memberCount,
     activationRequirementsMet: hasActivationRequirements({
+      projectAlias: input.projectAlias,
       aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt,
       emailCount: input.emails.length
     })
@@ -201,6 +210,7 @@ async function readProjectsSettings(input: {
 
     return (
       project.projectName.toLowerCase().includes(normalizedSearch) ||
+      (project.projectAlias?.toLowerCase().includes(normalizedSearch) ?? false) ||
       project.emails.some((email) =>
         email.address.toLowerCase().includes(normalizedSearch)
       )

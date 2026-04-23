@@ -19,6 +19,7 @@ export async function seedInboxContact(
     readonly primaryPhone: string | null;
     readonly projectId?: string;
     readonly projectName?: string;
+    readonly projectAlias?: string | null;
     readonly membershipId?: string;
     readonly membershipStatus?: string | null;
   },
@@ -37,6 +38,7 @@ export async function seedInboxContact(
     await context.repositories.projectDimensions.upsert({
       projectId: input.projectId,
       projectName: input.projectName ?? input.projectId,
+      projectAlias: input.projectAlias ?? null,
       source: "salesforce",
     });
   }
