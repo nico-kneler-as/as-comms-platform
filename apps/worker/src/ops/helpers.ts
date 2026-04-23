@@ -17,6 +17,15 @@ export function parseCliFlags(args: readonly string[]): CliFlags {
       continue;
     }
 
+    const inlineSeparatorIndex = token.indexOf("=");
+
+    if (inlineSeparatorIndex !== -1) {
+      const key = token.slice(2, inlineSeparatorIndex);
+      const value = token.slice(inlineSeparatorIndex + 1);
+      flags[key] = value;
+      continue;
+    }
+
     const key = token.slice(2);
     const nextToken = args[index + 1];
 
