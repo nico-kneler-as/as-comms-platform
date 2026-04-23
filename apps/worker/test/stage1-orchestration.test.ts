@@ -457,6 +457,7 @@ Alias drift outbound message.
         {
           projectId: "project-stage1",
           projectName: "Project Stage 1",
+          projectAlias: null,
           source: "salesforce",
           isActive: false,
           aiKnowledgeUrl: null,
