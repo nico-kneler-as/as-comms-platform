@@ -668,6 +668,8 @@ function createStage1RepositoriesInternal(
           return [];
         }
 
+        const occurredAtIso = occurredAt.toISOString();
+
         const rows = await db
           .select()
           .from(canonicalEventLedger)
@@ -679,7 +681,7 @@ function createStage1RepositoriesInternal(
                 canonicalEventLedger.contentFingerprint,
                 input.contentFingerprint,
               ),
-              sql`abs(extract(epoch from (${canonicalEventLedger.occurredAt} - cast(${occurredAt} as timestamptz)))) <= ${input.windowMinutes * 60}`,
+              sql`abs(extract(epoch from (${canonicalEventLedger.occurredAt} - cast(${occurredAtIso} as timestamptz)))) <= ${input.windowMinutes * 60}`,
             ),
           )
           .orderBy(
