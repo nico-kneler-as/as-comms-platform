@@ -231,11 +231,11 @@ describe("Stage 1 Gmail draft cleanup ops", () => {
         execute: true,
         orchestration: context.orchestration,
         writer: {
-          writeLine() {},
+          writeLine: () => undefined,
         },
         logger: {
-          log() {},
-          error() {},
+          log: () => undefined,
+          error: () => undefined,
         },
       });
 

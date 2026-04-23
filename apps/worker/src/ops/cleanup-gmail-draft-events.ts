@@ -33,7 +33,6 @@ import {
   closeDatabaseConnection,
   contactInboxProjection,
   createDatabaseConnection,
-  createStage1RepositoryBundle,
   createStage1RepositoryBundleFromConnection,
   gmailMessageDetails,
   identityResolutionQueue,
@@ -69,8 +68,6 @@ import {
 const labelLookupChunkSize = 25;
 const executeDeleteChunkSize = 500;
 const projectionRebuildChunkSize = 250;
-
-type Stage1Repositories = ReturnType<typeof createStage1RepositoryBundle>;
 
 interface Logger {
   log(...args: readonly unknown[]): void;
@@ -442,9 +439,6 @@ async function classifyDraftCandidates(input: {
     input.limit === null || input.limit === undefined
       ? auditLines
       : auditLines.slice(0, input.limit);
-  const targetCanonicalEventIds = new Set(
-    limitedAuditLines.map((line) => line.canonicalEventId),
-  );
   const affectedContactIds = uniqueSortedStrings(
     limitedAuditLines.map((line) => line.contactId),
   );
@@ -806,7 +800,7 @@ async function main(): Promise<void> {
   await runCleanupGmailDraftEventsCommand(process.argv.slice(2), process.env);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === `file://${process.argv[1] ?? ""}`) {
   main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
