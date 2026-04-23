@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { InboxComposerReplyContext } from "../../app/inbox/_lib/view-models";
 import {
+  formatContactRecipientLabel,
   reduceComposerPane,
   resolveTypedEmailRecipient,
   isComposerSendDisabled,
@@ -74,6 +75,22 @@ describe("stage3 composer ui helpers", () => {
         ]
       })
     ).toBeNull();
+  });
+
+  it("formats contact recipients with their email when available", () => {
+    expect(
+      formatContactRecipientLabel({
+        displayName: "Alice Smith",
+        primaryEmail: "alice@example.com"
+      })
+    ).toBe("Alice Smith (alice@example.com)");
+
+    expect(
+      formatContactRecipientLabel({
+        displayName: "Alice Smith",
+        primaryEmail: null
+      })
+    ).toBe("Alice Smith");
   });
 
   it("defaults aliases from the contact project and disables send for missing input", () => {

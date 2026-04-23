@@ -56,6 +56,17 @@ function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
+export function formatContactRecipientLabel(input: {
+  readonly displayName: string;
+  readonly primaryEmail: string | null;
+}): string {
+  if (input.primaryEmail === null) {
+    return input.displayName;
+  }
+
+  return `${input.displayName} (${input.primaryEmail})`;
+}
+
 export function resolveTypedEmailRecipient(input: {
   readonly query: string;
   readonly results: readonly {
