@@ -102,6 +102,9 @@ async function seedStoredGmailCase(
     rfc822MessageId: `<${input.recordId}@example.org>`,
     direction: "inbound",
     subject: input.subject,
+    fromHeader: "Volunteer <volunteer@example.org>",
+    toHeader: "volunteers@adventurescientists.org",
+    ccHeader: null,
     snippetClean: `snippet:${input.recordId}`,
     bodyTextPreview: `body:${input.recordId}`,
     capturedMailbox: "volunteers@adventurescientists.org",
@@ -111,8 +114,10 @@ async function seedStoredGmailCase(
     sourceEvidenceId,
     normalizedIdentityValues: input.normalizedIdentityValues,
     openedAt: input.receivedAt,
-    reasonCode: input.reasonCode,
-    candidateContactIds: input.candidateContactIds
+    ...(input.reasonCode === undefined ? {} : { reasonCode: input.reasonCode }),
+    ...(input.candidateContactIds === undefined
+      ? {}
+      : { candidateContactIds: input.candidateContactIds })
   });
 }
 

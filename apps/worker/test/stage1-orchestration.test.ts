@@ -955,6 +955,9 @@ Alias drift outbound message.
         rfc822MessageId: "<gmail-null-kind-1@example.org>",
         direction: "inbound",
         subject: "Re: Plan your Adventure Today!",
+        fromHeader: "Volunteer <volunteer@example.org>",
+        toHeader: "PNW Bio <pnwbio@adventurescientists.org>",
+        ccHeader: null,
         snippetClean: "Thanks for checking in. I'll claim some hexes soon.",
         bodyTextPreview:
           "Thanks for checking in. I'll claim some hexes soon. A piece of feedback on the web map...",
