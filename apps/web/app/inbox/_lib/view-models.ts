@@ -16,12 +16,18 @@ import type { InboxDrivingEventType } from "@as-comms/contracts";
  *   - campaign and automated sends are surfaced in the timeline as collapsed
  *     entries so 1:1 history stays readable (INBX-05)
  *   - default list order: lastInboundAt desc nulls last, then lastActivityAt desc
+ *   - sent mode order: lastOutboundAt desc, then lastActivityAt desc
  *   - toggling follow-up does NOT change row ordering
  */
 
 export type InboxBucket = "new" | "opened";
 
-export type InboxFilterId = "all" | "unread" | "follow-up" | "unresolved";
+export type InboxFilterId =
+  | "all"
+  | "unread"
+  | "follow-up"
+  | "unresolved"
+  | "sent";
 
 export type InboxChannel = "email" | "sms";
 
@@ -62,6 +68,7 @@ export interface InboxListItemViewModel {
 
   // ── Sort / display ──
   readonly lastInboundAt: string | null;
+  readonly lastOutboundAt: string | null;
   readonly lastActivityAt: string;
   readonly lastEventType: InboxDrivingEventType;
   readonly lastActivityLabel: string;
@@ -217,6 +224,7 @@ export interface InboxListViewModel {
     readonly unread: number;
     readonly followUp: number;
     readonly unresolved: number;
+    readonly sent: number;
   };
   readonly activeProjects: readonly InboxActiveProjectOption[];
   readonly selectedProjectId: string | null;

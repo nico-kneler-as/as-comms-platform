@@ -104,7 +104,8 @@ function matchesAnyPattern(
 }
 
 function normalizeSubject(value: string | null): string {
-  return value?.trim() || "(no subject)";
+  const trimmed = value?.trim();
+  return trimmed !== undefined && trimmed.length > 0 ? trimmed : "(no subject)";
 }
 
 function buildSubjectStats(

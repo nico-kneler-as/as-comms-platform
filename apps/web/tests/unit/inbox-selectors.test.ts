@@ -52,6 +52,7 @@ vi.mock("@/app/_lib/design-tokens", () => ({
 }));
 
 import {
+  compareInboxOutboundRecency,
   compareInboxRecency,
   getInboxDetail,
   getInboxList,
@@ -79,6 +80,7 @@ import {
 import {
   inboxRecencyExpectedOrder,
   inboxRecencyFixture,
+  inboxSentExpectedOrder,
 } from "./fixtures/inbox-recency-fixture.js";
 
 function buildItem(
@@ -99,6 +101,7 @@ function buildItem(
     hasUnresolved: overrides.hasUnresolved ?? false,
     unreadCount: overrides.unreadCount ?? 0,
     lastInboundAt: overrides.lastInboundAt ?? null,
+    lastOutboundAt: overrides.lastOutboundAt ?? null,
     lastActivityAt: overrides.lastActivityAt ?? "2026-04-14T14:00:00.000Z",
     lastEventType: overrides.lastEventType ?? "communication.email.outbound",
     lastActivityLabel: overrides.lastActivityLabel ?? "today",
@@ -335,6 +338,28 @@ describe("compareInboxRecency", () => {
       .map((item) => item.contactId);
 
     expect(orderedContactIds).toEqual(inboxRecencyExpectedOrder);
+  });
+
+  it("orders sent mode by last outbound activity", () => {
+    const orderedContactIds = inboxRecencyFixture
+      .map((row) =>
+        buildItem({
+          contactId: row.contactId,
+          displayName: row.displayName,
+          lastInboundAt: row.lastInboundAt,
+          lastOutboundAt: row.lastOutboundAt,
+          lastActivityAt: row.lastActivityAt,
+          lastEventType:
+            row.lastActivityAt === row.lastInboundAt
+              ? "communication.email.inbound"
+              : "communication.email.outbound",
+        }),
+      )
+      .filter((item) => item.lastOutboundAt !== null)
+      .sort(compareInboxOutboundRecency)
+      .map((item) => item.contactId);
+
+    expect(orderedContactIds).toEqual(inboxSentExpectedOrder);
   });
 });
 
@@ -2020,5 +2045,96 @@ describe("real inbox selectors", () => {
     ).toHaveLength(inboxRecencyExpectedOrder.length);
     expect(secondPage.page.hasMore).toBe(false);
     expect(secondPage.page.nextCursor).toBeNull();
+  });
+
+  it("orders and paginates sent mode by last outbound 1:1 message", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.dispose();
+    runtime = await createInboxTestRuntime();
+    await seedSharedInboxRecencyFixture(runtime);
+
+    const firstPage = await getInboxList("sent", {
+      limit: 2,
+    });
+
+    expect(firstPage.items.map((item) => item.contactId)).toEqual(
+      inboxSentExpectedOrder.slice(0, 2),
+    );
+    expect(firstPage.page.total).toBe(inboxSentExpectedOrder.length);
+    expect(firstPage.page.hasMore).toBe(true);
+    expect(firstPage.page.nextCursor).not.toBeNull();
+
+    const secondPage = await getInboxList("sent", {
+      limit: 2,
+      cursor: firstPage.page.nextCursor,
+    });
+
+    expect(secondPage.items.map((item) => item.contactId)).toEqual(
+      inboxSentExpectedOrder.slice(2),
+    );
+    expect(secondPage.page.hasMore).toBe(false);
+    expect(secondPage.page.nextCursor).toBeNull();
+  });
+
+  it("excludes campaign and automated outbound activity from sent mode", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:campaign-only-outbound",
+      salesforceContactId: "003-campaign-only-outbound",
+      displayName: "Campaign Only Outbound",
+      primaryEmail: "campaign-only@example.org",
+      primaryPhone: null,
+    });
+
+    const inbound = await seedInboxEmailEvent(runtime.context, {
+      id: "campaign-only-inbound",
+      contactId: "contact:campaign-only-outbound",
+      occurredAt: "2026-04-16T09:00:00.000Z",
+      direction: "inbound",
+      subject: "Checking in",
+      snippet: "I had one inbound note before campaign activity.",
+    });
+
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:campaign-only-outbound",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-16T09:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-16T09:00:00.000Z",
+      snippet: "I had one inbound note before campaign activity.",
+      lastCanonicalEventId: inbound.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "campaign-only-campaign",
+      contactId: "contact:campaign-only-outbound",
+      occurredAt: "2026-04-16T12:00:00.000Z",
+      activityType: "sent",
+      campaignName: "Spring Check-In",
+      snippet: "Campaign send should not make this contact appear in Sent.",
+    });
+
+    await seedInboxAutoEmailEvent(runtime.context, {
+      id: "campaign-only-auto",
+      contactId: "contact:campaign-only-outbound",
+      occurredAt: "2026-04-16T13:00:00.000Z",
+      subject: "Automated follow-up",
+      snippet: "Automated outreach should not count as sent mode activity.",
+    });
+
+    const sentList = await getInboxList("sent");
+
+    expect(sentList.items.map((item) => item.contactId)).not.toContain(
+      "contact:campaign-only-outbound",
+    );
   });
 });

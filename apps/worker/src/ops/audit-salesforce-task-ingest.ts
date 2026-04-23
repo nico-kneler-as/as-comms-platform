@@ -254,7 +254,7 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch((error) => {
+void main().catch((error: unknown) => {
   console.error(error);
   process.exitCode = 1;
 });

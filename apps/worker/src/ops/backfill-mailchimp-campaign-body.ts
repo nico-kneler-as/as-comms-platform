@@ -531,7 +531,7 @@ async function countSkippedClickedRows(
       ),
     );
 
-  return Number(rows[0]?.value ?? 0);
+  return rows[0]?.value ?? 0;
 }
 
 function groupCandidatesByCampaignId(

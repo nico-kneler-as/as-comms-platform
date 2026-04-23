@@ -6,6 +6,7 @@ import {
   desc,
   eq,
   inArray,
+  isNotNull,
   isNull,
   lt,
   or,
@@ -326,20 +327,35 @@ const DEFAULT_INTEGRATION_HEALTH_SEED = [
   },
 ] as const;
 
-type InboxProjectionFilter = "all" | "unread" | "follow-up" | "unresolved";
+type InboxProjectionFilter =
+  | "all"
+  | "unread"
+  | "follow-up"
+  | "unresolved"
+  | "sent";
+type InboxProjectionOrder = "last-inbound" | "last-outbound";
 
 interface InboxRecencyCursor {
   readonly lastInboundAt: string | null;
+  readonly lastOutboundAt: string | null;
   readonly lastActivityAt: string;
   readonly contactId: string;
 }
 
-function buildInboxRecencyOrderBy(): [SQL, SQL, SQL] {
-  return [
-    sql`${contactInboxProjection.lastInboundAt} desc nulls last`,
-    desc(contactInboxProjection.lastActivityAt),
-    asc(contactInboxProjection.contactId),
-  ];
+function buildInboxRecencyOrderBy(
+  order: InboxProjectionOrder,
+): [SQL, SQL, SQL] {
+  return order === "last-outbound"
+    ? [
+        sql`${contactInboxProjection.lastOutboundAt} desc nulls last`,
+        desc(contactInboxProjection.lastActivityAt),
+        asc(contactInboxProjection.contactId),
+      ]
+    : [
+        sql`${contactInboxProjection.lastInboundAt} desc nulls last`,
+        desc(contactInboxProjection.lastActivityAt),
+        asc(contactInboxProjection.contactId),
+      ];
 }
 
 function buildInboxFilterPredicate(
@@ -351,6 +367,8 @@ function buildInboxFilterPredicate(
       ? eq(contactInboxProjection.isStarred, true)
       : filter === "unresolved"
         ? eq(contactInboxProjection.hasUnresolved, true)
+        : filter === "sent"
+          ? isNotNull(contactInboxProjection.lastOutboundAt)
         : undefined;
 }
 
@@ -370,9 +388,29 @@ function buildInboxProjectPredicate(
 
 function buildInboxCursorPredicate(input: {
   readonly cursor: InboxRecencyCursor | null;
+  readonly order: InboxProjectionOrder;
 }): SQL | undefined {
   if (input.cursor === null) {
     return undefined;
+  }
+
+  if (input.order === "last-outbound") {
+    if (input.cursor.lastOutboundAt === null) {
+      return undefined;
+    }
+
+    return sql`(
+      ${contactInboxProjection.lastOutboundAt} < ${new Date(input.cursor.lastOutboundAt)}
+      or (
+        ${contactInboxProjection.lastOutboundAt} = ${new Date(input.cursor.lastOutboundAt)}
+        and ${contactInboxProjection.lastActivityAt} < ${new Date(input.cursor.lastActivityAt)}
+      )
+      or (
+        ${contactInboxProjection.lastOutboundAt} = ${new Date(input.cursor.lastOutboundAt)}
+        and ${contactInboxProjection.lastActivityAt} = ${new Date(input.cursor.lastActivityAt)}
+        and ${contactInboxProjection.contactId} > ${input.cursor.contactId}
+      )
+    )`;
   }
 
   if (input.cursor.lastInboundAt === null) {
@@ -1750,7 +1788,7 @@ function createStage1RepositoriesInternal(
         const rows = await db
           .select()
           .from(contactInboxProjection)
-          .orderBy(...buildInboxRecencyOrderBy());
+          .orderBy(...buildInboxRecencyOrderBy("last-inbound"));
 
         return rows.map(mapInboxProjectionRow);
       },
@@ -1761,13 +1799,14 @@ function createStage1RepositoriesInternal(
           buildInboxProjectPredicate(input.projectId),
           buildInboxCursorPredicate({
             cursor: input.cursor,
+            order: input.order,
           }),
         );
         const baseQuery = db.select().from(contactInboxProjection);
         const filteredQuery =
           whereClause === undefined ? baseQuery : baseQuery.where(whereClause);
         const rows = await filteredQuery
-          .orderBy(...buildInboxRecencyOrderBy())
+          .orderBy(...buildInboxRecencyOrderBy(input.order))
           .limit(input.limit);
 
         return rows.map(mapInboxProjectionRow);
@@ -1779,6 +1818,7 @@ function createStage1RepositoriesInternal(
           buildInboxProjectPredicate(input.projectId),
           buildInboxCursorPredicate({
             cursor: input.cursor,
+            order: input.order,
           }),
           buildInboxSearchPredicate(input.query),
         );
@@ -1788,7 +1828,7 @@ function createStage1RepositoriesInternal(
           .where(whereClause);
         const [rows, totalRow] = await Promise.all([
           filteredQuery
-            .orderBy(...buildInboxRecencyOrderBy())
+            .orderBy(...buildInboxRecencyOrderBy(input.order))
             .limit(input.limit),
           db
             .select({
@@ -1819,6 +1859,7 @@ function createStage1RepositoriesInternal(
             unread: sql<number>`coalesce(sum(case when ${contactInboxProjection.bucket} = 'New' then 1 else 0 end), 0)`,
             followUp: sql<number>`coalesce(sum(case when ${contactInboxProjection.isStarred} then 1 else 0 end), 0)`,
             unresolved: sql<number>`coalesce(sum(case when ${contactInboxProjection.hasUnresolved} then 1 else 0 end), 0)`,
+            sent: sql<number>`coalesce(sum(case when ${contactInboxProjection.lastOutboundAt} is not null then 1 else 0 end), 0)`,
           })
           .from(contactInboxProjection);
         const [row] = await (projectPredicate === undefined
@@ -1830,6 +1871,7 @@ function createStage1RepositoriesInternal(
           unread: row?.unread ?? 0,
           followUp: row?.followUp ?? 0,
           unresolved: row?.unresolved ?? 0,
+          sent: row?.sent ?? 0,
         };
       },
 

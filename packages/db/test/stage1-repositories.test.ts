@@ -4,6 +4,7 @@ import { createTestStage1Context } from "./helpers.js";
 import {
   inboxRecencyExpectedOrder,
   inboxRecencyFixture,
+  inboxSentExpectedOrder,
 } from "./fixtures/inbox-recency-fixture.js";
 
 interface SalesforceCommunicationDetailRecord {
@@ -752,6 +753,7 @@ describe("Stage 1 DB repositories", () => {
     const firstPage =
       await repositories.inboxProjection.listPageOrderedByRecency({
         filter: "all",
+        order: "last-inbound",
         limit: 4,
         cursor: null,
       });
@@ -763,9 +765,12 @@ describe("Stage 1 DB repositories", () => {
     const secondPage =
       await repositories.inboxProjection.listPageOrderedByRecency({
         filter: "all",
+        order: "last-inbound",
         limit: 4,
         cursor: {
           lastInboundAt: firstPage[firstPage.length - 1]?.lastInboundAt ?? null,
+          lastOutboundAt:
+            firstPage[firstPage.length - 1]?.lastOutboundAt ?? null,
           lastActivityAt: firstPage[firstPage.length - 1]?.lastActivityAt ?? "",
           contactId: firstPage[firstPage.length - 1]?.contactId ?? "",
         },
@@ -773,6 +778,40 @@ describe("Stage 1 DB repositories", () => {
 
     expect(secondPage.map((row) => row.contactId)).toEqual(
       inboxRecencyExpectedOrder.slice(4),
+    );
+  });
+
+  it("orders and paginates sent inbox rows by last outbound timestamps", async () => {
+    const { repositories } = await seedSharedInboxRecencyFixture();
+
+    const firstPage =
+      await repositories.inboxProjection.listPageOrderedByRecency({
+        filter: "sent",
+        order: "last-outbound",
+        limit: 2,
+        cursor: null,
+      });
+
+    expect(firstPage.map((row) => row.contactId)).toEqual(
+      inboxSentExpectedOrder.slice(0, 2),
+    );
+
+    const secondPage =
+      await repositories.inboxProjection.listPageOrderedByRecency({
+        filter: "sent",
+        order: "last-outbound",
+        limit: 2,
+        cursor: {
+          lastInboundAt: firstPage[firstPage.length - 1]?.lastInboundAt ?? null,
+          lastOutboundAt:
+            firstPage[firstPage.length - 1]?.lastOutboundAt ?? null,
+          lastActivityAt: firstPage[firstPage.length - 1]?.lastActivityAt ?? "",
+          contactId: firstPage[firstPage.length - 1]?.contactId ?? "",
+        },
+      });
+
+    expect(secondPage.map((row) => row.contactId)).toEqual(
+      inboxSentExpectedOrder.slice(2),
     );
   });
 });

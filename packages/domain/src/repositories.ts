@@ -231,12 +231,14 @@ export interface InboxProjectionRepository {
   listInvalidRecencyContactIds(): Promise<readonly string[]>;
   listAllOrderedByRecency(): Promise<readonly InboxProjectionRow[]>;
   searchPageOrderedByRecency(input: {
-    readonly filter: "all" | "unread" | "follow-up" | "unresolved";
+    readonly filter: "all" | "unread" | "follow-up" | "unresolved" | "sent";
+    readonly order: "last-inbound" | "last-outbound";
     readonly limit: number;
     readonly query: string;
     readonly projectId?: string | null;
     readonly cursor: {
       readonly lastInboundAt: string | null;
+      readonly lastOutboundAt: string | null;
       readonly lastActivityAt: string;
       readonly contactId: string;
     } | null;
@@ -245,11 +247,13 @@ export interface InboxProjectionRepository {
     readonly total: number;
   }>;
   listPageOrderedByRecency(input: {
-    readonly filter: "all" | "unread" | "follow-up" | "unresolved";
+    readonly filter: "all" | "unread" | "follow-up" | "unresolved" | "sent";
+    readonly order: "last-inbound" | "last-outbound";
     readonly limit: number;
     readonly projectId?: string | null;
     readonly cursor: {
       readonly lastInboundAt: string | null;
+      readonly lastOutboundAt: string | null;
       readonly lastActivityAt: string;
       readonly contactId: string;
     } | null;
@@ -259,6 +263,7 @@ export interface InboxProjectionRepository {
     readonly unread: number;
     readonly followUp: number;
     readonly unresolved: number;
+    readonly sent: number;
   }>;
   getFreshness(): Promise<{
     readonly total: number;
