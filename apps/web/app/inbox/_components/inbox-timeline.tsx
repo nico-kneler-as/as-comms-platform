@@ -30,7 +30,6 @@ import {
   NoteIcon,
   PhoneIcon,
   RefreshCwIcon,
-  SendIcon,
   SparkleIcon,
   WandIcon,
   XIcon,
@@ -465,7 +464,6 @@ function AutomatedRow({
   const descriptor = describeEventRow({
     role,
     isEmail,
-    campaignActivity,
   });
   const headline = entry.subject;
   const body = bodyTextForEntry(entry);
@@ -500,21 +498,29 @@ function AutomatedRow({
                 descriptor.iconClassName,
               )}
             >
-              <descriptor.Icon className="size-4" />
+              {role === "campaign" ? (
+                <CampaignStateIcon state={campaignState ?? "sent"} />
+              ) : (
+                <descriptor.Icon className="size-4" />
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={cn(
-                    "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]",
-                    descriptor.badgeClassName,
+                    "text-[11px] font-semibold uppercase tracking-[0.18em]",
+                    descriptor.labelClassName,
                   )}
                 >
                   {descriptor.label}
                 </span>
-                <span className="text-[11px] text-slate-500">
-                  {entry.occurredAtLabel}
-                </span>
+                <RelativeTimestamp
+                  timestamp={entry.occurredAt}
+                  label={entry.occurredAtLabel}
+                  asSpan
+                  focusable={false}
+                  className="text-[11px] text-slate-500"
+                />
               </div>
               {headline ? (
                 <p
@@ -526,17 +532,12 @@ function AutomatedRow({
                   {headline}
                 </p>
               ) : null}
-              <EventStateChips
-                entry={entry}
-                role={role}
-                campaignActivity={campaignActivity}
-              />
               {!hideCollapsedBody && body.length > 0 ? (
                 <p
                   className={cn(
                     "text-[13px] leading-relaxed text-slate-700",
                     WRAP_ANYWHERE,
-                    (headline !== null || campaignActivity.length > 0) && "mt-1.5",
+                    (headline !== null || role === "campaign") && "mt-1.5",
                     isExpanded
                       ? "whitespace-pre-wrap text-pretty"
                       : "line-clamp-1",
@@ -830,8 +831,8 @@ function SystemDivider({
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={cn(
-                "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]",
-                descriptor.badgeClassName,
+                "text-[11px] font-semibold uppercase tracking-[0.18em]",
+                descriptor.labelClassName,
               )}
             >
               {descriptor.label}
@@ -855,52 +856,21 @@ interface EventRowDescriptor {
   readonly label: string;
   readonly Icon: ComponentType<{ className?: string }>;
   readonly shellClassName: string;
-  readonly badgeClassName: string;
   readonly iconClassName: string;
+  readonly labelClassName: string;
 }
 
 function describeEventRow(input: {
   readonly role: "automated" | "campaign" | "activity";
   readonly isEmail: boolean;
-  readonly campaignActivity: readonly {
-    readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
-  }[];
 }): EventRowDescriptor {
   if (input.role === "campaign") {
-    const state = describeCampaignVisualState(input.campaignActivity);
-
     return {
       label: input.isEmail ? "Campaign" : "Campaign SMS",
-      ...(state === "clicked"
-        ? {
-            Icon: MousePointerClickIcon,
-            shellClassName:
-              "border-violet-200 bg-violet-50/75 hover:bg-violet-50",
-            badgeClassName: "border-violet-200 bg-white text-violet-700",
-            iconClassName: "border-violet-200 text-violet-700",
-          }
-        : state === "opened"
-          ? {
-              Icon: EyeIcon,
-              shellClassName: "border-sky-200 bg-sky-50/75 hover:bg-sky-50",
-              badgeClassName: "border-sky-200 bg-white text-sky-700",
-              iconClassName: "border-sky-200 text-sky-700",
-            }
-          : state === "unsubscribed"
-            ? {
-                Icon: XIcon,
-                shellClassName:
-                  "border-rose-200 bg-rose-50/75 hover:bg-rose-50",
-                badgeClassName: "border-rose-200 bg-white text-rose-700",
-                iconClassName: "border-rose-200 text-rose-700",
-              }
-            : {
-                Icon: MegaphoneIcon,
-                shellClassName:
-                  "border-emerald-200 bg-emerald-50/75 hover:bg-emerald-50",
-                badgeClassName: "border-emerald-200 bg-white text-emerald-700",
-                iconClassName: "border-emerald-200 text-emerald-700",
-              }),
+      Icon: MegaphoneIcon,
+      shellClassName: "border-violet-200 bg-violet-50/75 hover:bg-violet-50",
+      iconClassName: "border-violet-200 text-violet-700",
+      labelClassName: "text-violet-700",
     };
   }
 
@@ -909,8 +879,8 @@ function describeEventRow(input: {
       label: input.isEmail ? "Activity" : "SMS Activity",
       Icon: input.isEmail ? MailIcon : PhoneIcon,
       shellClassName: "border-violet-200 bg-violet-50/75 hover:bg-violet-50",
-      badgeClassName: "border-violet-200 bg-white text-violet-700",
       iconClassName: "border-violet-200 text-violet-700",
+      labelClassName: "text-violet-700",
     };
   }
 
@@ -918,92 +888,9 @@ function describeEventRow(input: {
     label: input.isEmail ? "Automated" : "Automated SMS",
     Icon: input.isEmail ? BotIcon : WandIcon,
     shellClassName: "border-sky-200 bg-sky-50/75 hover:bg-sky-50",
-    badgeClassName: "border-sky-200 bg-white text-sky-700",
     iconClassName: "border-sky-200 text-sky-700",
+    labelClassName: "text-sky-700",
   };
-}
-
-function EventStateChips({
-  entry,
-  role,
-  campaignActivity,
-}: {
-  readonly entry: InboxTimelineEntryViewModel;
-  readonly role: "automated" | "campaign" | "activity";
-  readonly campaignActivity: readonly {
-    readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
-    readonly occurredAt: string;
-    readonly occurredAtLabel: string;
-    readonly label: string;
-  }[];
-}) {
-  const states = [
-    ...(role === "activity"
-      ? []
-      : [
-          {
-            key: `sent:${entry.occurredAt}`,
-            label: "Sent",
-            occurredAt: entry.occurredAt,
-            occurredAtLabel: entry.occurredAtLabel,
-            Icon: SendIcon,
-            className: "border-slate-200 bg-white text-slate-600",
-          },
-        ]),
-    ...(role !== "campaign"
-      ? []
-      : campaignActivity.map((activity) => ({
-          key: `${activity.activityType}:${activity.occurredAt}`,
-          label:
-            activity.activityType === "opened"
-              ? "Opened"
-              : activity.activityType === "clicked"
-                ? "Clicked"
-                : "Unsubscribed",
-          occurredAt: activity.occurredAt,
-          occurredAtLabel: activity.occurredAtLabel,
-          Icon:
-            activity.activityType === "opened"
-              ? EyeIcon
-              : activity.activityType === "clicked"
-                ? MousePointerClickIcon
-                : XIcon,
-          className:
-            activity.activityType === "opened"
-              ? "border-sky-200 bg-sky-100/80 text-sky-700"
-              : activity.activityType === "clicked"
-                ? "border-violet-200 bg-violet-100/80 text-violet-700"
-                : "border-rose-200 bg-rose-100/80 text-rose-700",
-        }))),
-  ];
-
-  if (states.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {states.map((state) => (
-        <span
-          key={state.key}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-medium leading-none",
-            state.className,
-          )}
-        >
-          <state.Icon className="size-3" />
-          <span>{state.label}</span>
-          <span className="text-current/60">·</span>
-          <RelativeTimestamp
-            timestamp={state.occurredAt}
-            label={state.occurredAtLabel}
-            asSpan
-            focusable={false}
-          />
-        </span>
-      ))}
-    </div>
-  );
 }
 
 function describeCampaignVisualState(
@@ -1026,6 +913,34 @@ function describeCampaignVisualState(
   return "sent";
 }
 
+function CampaignStateIcon({
+  state,
+}: {
+  readonly state: ReturnType<typeof describeCampaignVisualState>;
+}) {
+  const AccentIcon =
+    state === "clicked"
+      ? MousePointerClickIcon
+      : state === "opened"
+        ? EyeIcon
+        : state === "unsubscribed"
+          ? XIcon
+          : null;
+
+  return (
+    <span className="relative inline-flex">
+      <MegaphoneIcon className="size-4" />
+      {AccentIcon ? (
+        <span className="absolute -right-1 -top-1 inline-flex size-3.5 items-center justify-center rounded-full border border-violet-200 bg-white text-violet-700 shadow-sm">
+          <AccentIcon className="size-2" />
+        </span>
+      ) : (
+        <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-violet-500 ring-2 ring-white" />
+      )}
+    </span>
+  );
+}
+
 function describeLifecycleEvent(body: string): Omit<
   EventRowDescriptor,
   "shellClassName"
@@ -1036,8 +951,8 @@ function describeLifecycleEvent(body: string): Omit<
     return {
       label: "Training",
       Icon: WandIcon,
-      badgeClassName: "border-sky-200 bg-white text-sky-700",
       iconClassName: "border-sky-200 text-sky-700",
+      labelClassName: "text-sky-700",
     };
   }
 
@@ -1045,8 +960,8 @@ function describeLifecycleEvent(body: string): Omit<
     return {
       label: "In Field",
       Icon: MapPinIcon,
-      badgeClassName: "border-emerald-200 bg-white text-emerald-700",
       iconClassName: "border-emerald-200 text-emerald-700",
+      labelClassName: "text-emerald-700",
     };
   }
 
@@ -1054,8 +969,8 @@ function describeLifecycleEvent(body: string): Omit<
     return {
       label: "Completed",
       Icon: CheckCircleIcon,
-      badgeClassName: "border-emerald-200 bg-white text-emerald-700",
       iconClassName: "border-emerald-200 text-emerald-700",
+      labelClassName: "text-emerald-700",
     };
   }
 
@@ -1063,16 +978,16 @@ function describeLifecycleEvent(body: string): Omit<
     return {
       label: "Applied",
       Icon: SparkleIcon,
-      badgeClassName: "border-violet-200 bg-white text-violet-700",
       iconClassName: "border-violet-200 text-violet-700",
+      labelClassName: "text-violet-700",
     };
   }
 
   return {
     label: "Lifecycle",
     Icon: CalendarIcon,
-    badgeClassName: "border-amber-200 bg-white text-amber-700",
     iconClassName: "border-amber-200 text-amber-700",
+    labelClassName: "text-amber-700",
   };
 }
 
