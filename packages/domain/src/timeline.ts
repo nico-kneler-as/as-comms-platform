@@ -9,6 +9,7 @@ import {
   type TimelineProjectionRow,
 } from "@as-comms/contracts";
 
+import { buildOutboundEmailDuplicateFingerprint } from "./outbound-email-dedup.js";
 import type { Stage1RepositoryBundle } from "./repositories.js";
 import type { PendingComposerOutboundRecord } from "./pending-outbounds.js";
 
@@ -291,6 +292,43 @@ function timelineCampaignEmailDuplicateKey(
   return normalizeDuplicateText(item.campaignId);
 }
 
+function timelineSameDayGmailOutboundDuplicateKey(
+  entry: CanonicalTimelineItemWithEvent,
+): string | null {
+  if (
+    entry.item.family !== "one_to_one_email" ||
+    entry.item.direction !== "outbound" ||
+    entry.canonicalEvent.provenance.primaryProvider !== "gmail"
+  ) {
+    return null;
+  }
+
+  const threadId = normalizeDuplicateText(entry.item.threadId);
+  const mailbox = normalizeDuplicateText(entry.item.mailbox);
+
+  if (threadId === null || mailbox === null) {
+    return null;
+  }
+
+  const fingerprint = buildOutboundEmailDuplicateFingerprint({
+    subject: entry.item.subject,
+    body: entry.item.bodyPreview || entry.item.snippet || entry.item.summary,
+  });
+
+  if (fingerprint === null) {
+    return null;
+  }
+
+  return [
+    "gmail-same-day",
+    entry.canonicalEvent.contactId,
+    threadId,
+    mailbox,
+    entry.canonicalEvent.occurredAt.slice(0, 10),
+    fingerprint,
+  ].join(":");
+}
+
 function isSameCampaignEmailDuplicate(
   left: CanonicalTimelineItemWithEvent,
   right: CanonicalTimelineItemWithEvent,
@@ -358,18 +396,21 @@ function buildTimelineDuplicateSignature(item: TimelineItem): string | null {
   return parts.join("|");
 }
 
-function buildTimelineDuplicateKey(
+function buildTimelineDuplicateKeys(
   entry: CanonicalTimelineItemWithEvent,
-): string | null {
+): readonly string[] {
+  const keys: string[] = [];
   const campaignDuplicateKey = timelineCampaignEmailDuplicateKey(entry.item);
 
   if (campaignDuplicateKey !== null) {
-    return [
-      "campaign",
-      entry.canonicalEvent.contactId,
-      entry.canonicalEvent.channel,
-      campaignDuplicateKey,
-    ].join(":");
+    keys.push(
+      [
+        "campaign",
+        entry.canonicalEvent.contactId,
+        entry.canonicalEvent.channel,
+        campaignDuplicateKey,
+      ].join(":"),
+    );
   }
 
   const fingerprint = normalizeDuplicateText(
@@ -377,28 +418,32 @@ function buildTimelineDuplicateKey(
   );
 
   if (fingerprint !== null) {
-    return [
-      "fingerprint",
-      entry.canonicalEvent.contactId,
-      entry.canonicalEvent.eventType,
-      entry.canonicalEvent.channel,
-      fingerprint,
-    ].join(":");
+    keys.push(
+      [
+        "fingerprint",
+        entry.canonicalEvent.contactId,
+        entry.canonicalEvent.eventType,
+        entry.canonicalEvent.channel,
+        fingerprint,
+      ].join(":"),
+    );
   }
 
   const signature = buildTimelineDuplicateSignature(entry.item);
 
-  if (signature === null) {
-    return null;
+  if (signature !== null) {
+    keys.push(
+      [
+        "signature",
+        entry.canonicalEvent.contactId,
+        entry.canonicalEvent.eventType,
+        entry.canonicalEvent.channel,
+        signature,
+      ].join(":"),
+    );
   }
 
-  return [
-    "signature",
-    entry.canonicalEvent.contactId,
-    entry.canonicalEvent.eventType,
-    entry.canonicalEvent.channel,
-    signature,
-  ].join(":");
+  return keys;
 }
 
 function timelineOccurredAtMs(value: string): number {
@@ -418,6 +463,16 @@ function isTimelinePresentationDuplicate(
   }
 
   if (isSameCampaignEmailDuplicate(left, right)) {
+    return true;
+  }
+
+  const leftSameDayGmailKey = timelineSameDayGmailOutboundDuplicateKey(left);
+  const rightSameDayGmailKey = timelineSameDayGmailOutboundDuplicateKey(right);
+
+  if (
+    leftSameDayGmailKey !== null &&
+    leftSameDayGmailKey === rightSameDayGmailKey
+  ) {
     return true;
   }
 
@@ -505,6 +560,16 @@ function preferTimelineDuplicate(
   existing: CanonicalTimelineItemWithEvent,
   candidate: CanonicalTimelineItemWithEvent,
 ): CanonicalTimelineItemWithEvent {
+  const existingSameDayGmailKey =
+    timelineSameDayGmailOutboundDuplicateKey(existing);
+
+  if (
+    existingSameDayGmailKey !== null &&
+    existingSameDayGmailKey === timelineSameDayGmailOutboundDuplicateKey(candidate)
+  ) {
+    return existing;
+  }
+
   const familyDelta =
     timelineFamilyPriority(candidate.item) -
     timelineFamilyPriority(existing.item);
@@ -576,23 +641,24 @@ function collapseDuplicateTimelineItems(input: {
       item,
       canonicalEvent,
     } satisfies CanonicalTimelineItemWithEvent;
-    const key = buildTimelineDuplicateKey(candidate);
+    const keys = buildTimelineDuplicateKeys(candidate);
+    const existingIndex = keys
+      .map((key) => lastIndexByKey.get(key))
+      .find((value): value is number => value !== undefined);
 
-    if (key !== null) {
-      const existingIndex = lastIndexByKey.get(key);
+    if (existingIndex !== undefined) {
+      const existing = deduped[existingIndex];
 
-      if (existingIndex !== undefined) {
-        const existing = deduped[existingIndex];
-
-        if (
-          existing !== undefined &&
-          isTimelinePresentationDuplicate(existing, candidate)
-        ) {
-          deduped[existingIndex] = preferTimelineDuplicate(existing, candidate);
-          continue;
-        }
+      if (
+        existing !== undefined &&
+        isTimelinePresentationDuplicate(existing, candidate)
+      ) {
+        deduped[existingIndex] = preferTimelineDuplicate(existing, candidate);
+        continue;
       }
+    }
 
+    for (const key of keys) {
       lastIndexByKey.set(key, deduped.length);
     }
 

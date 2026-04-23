@@ -641,8 +641,30 @@ const STRUCTURED_EMAIL_PARAGRAPH_STARTERS = [
 ] as const;
 const SIGNATURE_SEPARATOR_PATTERN = /^(?:---|--\s)$/;
 const SENT_WITH_SIGNATURE_PATTERN = /^Sent with\b/i;
-const SIGN_OFF_LINE_PATTERN =
-  /^(?:Best,|Thanks,|Warmly,|Cheers,|Sincerely,|Saludos,)(?:\s.*)?$/i;
+const SIGN_OFF_PREFIX_PATTERN =
+  /^(?:Best|Thanks|Warmly|Cheers|Sincerely|Saludos),/i;
+
+function isStandaloneSignOffLine(value: string): boolean {
+  const trimmed = value.trim();
+
+  if (!SIGN_OFF_PREFIX_PATTERN.test(trimmed)) {
+    return false;
+  }
+
+  const remainder = trimmed.replace(SIGN_OFF_PREFIX_PATTERN, "").trim();
+
+  if (remainder.length === 0) {
+    return true;
+  }
+
+  if (/[.!?]/.test(remainder)) {
+    return false;
+  }
+
+  return /^[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*){0,4}$/u.test(
+    remainder,
+  );
+}
 
 function restoreStructuredEmailParagraphs(value: string): string {
   const normalized = value.trim();
@@ -883,7 +905,7 @@ export function stripSignature(body: string): string {
     const trimmed = (lines[index] ?? "").trim();
 
     if (
-      SIGN_OFF_LINE_PATTERN.test(trimmed) &&
+      isStandaloneSignOffLine(trimmed) &&
       signatureLooksLikeClosing(lines, index)
     ) {
       return lines.slice(0, index).join("\n").trim();
@@ -891,7 +913,7 @@ export function stripSignature(body: string): string {
   }
 
   const inlineClosingMatch =
-    /([.!?])\s*(?:Best,|Thanks,|Warmly,|Cheers,|Sincerely,|Saludos,).*/i.exec(
+    /([.!?])\s*(?:Best|Thanks|Warmly|Cheers|Sincerely|Saludos),\s*(?:[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*){0,4})?\s*$/iu.exec(
       normalized,
     );
 
@@ -903,7 +925,7 @@ export function stripSignature(body: string): string {
   }
 
   const trailingSignatureMatch =
-    /\n+\s*(?:Best,|Thanks,|Warmly,|Cheers,|Sincerely,|Saludos,).*/i.exec(
+    /\n+\s*(?:Best|Thanks|Warmly|Cheers|Sincerely|Saludos),\s*(?:[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*){0,4})?\s*$/iu.exec(
       normalized,
     );
 

@@ -1784,6 +1784,60 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("preserves inbound Salesforce bodies that begin with 'Thanks,'", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:shaina-dotson",
+      salesforceContactId: "003-shaina-dotson",
+      displayName: "Shaina Dotson",
+      primaryEmail: "shaina.dotson@gmail.com",
+      primaryPhone: null,
+    });
+    const latestSalesforceEvent = await seedInboxSalesforceOutboundEmailEvent(
+      runtime.context,
+      {
+        id: "shaina-thanks-body",
+        contactId: "contact:shaina-dotson",
+        occurredAt: "2026-04-21T00:38:00.000Z",
+        direction: "inbound",
+        subject: "Re: Update on Hex 43191",
+        snippet: [
+          "Thanks, Ricky & Samantha! I didn't realize that all ARUs need to be placed by the end of June! Glad I'll still be able to claim a hex to retrieve later this summer. Thanks for all your help!",
+          "",
+          "Shaina",
+        ].join("\n"),
+        messageKind: "one_to_one",
+      },
+    );
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:shaina-dotson",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-21T00:38:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-21T00:38:00.000Z",
+      snippet: "Shaina thanks-body preview",
+      lastCanonicalEventId: latestSalesforceEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:shaina-dotson");
+    const latestEntry = detail?.timeline.at(-1);
+
+    expect(latestEntry).toMatchObject({
+      kind: "inbound-email",
+      body: [
+        "Thanks, Ricky & Samantha! I didn't realize that all ARUs need to be placed by the end of June! Glad I'll still be able to claim a hex to retrieve later this summer. Thanks for all your help!",
+        "",
+        "Shaina",
+      ].join("\n"),
+    });
+  });
+
   it("strips signature fixtures without stripping inline closing phrases", () => {
     expect(
       stripSignature(
@@ -1845,6 +1899,22 @@ describe("real inbox selectors", () => {
       ),
     ).toBe(
       "Best regards, Samantha mentioned the confirmation timing in the paragraph above.",
+    );
+
+    expect(
+      stripSignature(
+        [
+          "Thanks, Ricky & Samantha! I didn't realize that all ARUs need to be placed by the end of June! Glad I'll still be able to claim a hex to retrieve later this summer. Thanks for all your help!",
+          "",
+          "Shaina",
+        ].join("\n"),
+      ),
+    ).toBe(
+      [
+        "Thanks, Ricky & Samantha! I didn't realize that all ARUs need to be placed by the end of June! Glad I'll still be able to claim a hex to retrieve later this summer. Thanks for all your help!",
+        "",
+        "Shaina",
+      ].join("\n"),
     );
   });
 

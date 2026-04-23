@@ -394,12 +394,18 @@ function buildGmailOutboundEmailEvent(input: {
   readonly subject: string;
   readonly snippet: string;
   readonly bodyPreview: string;
-  readonly contentFingerprint: string;
+  readonly contentFingerprint?: string | null;
+  readonly threadId?: string;
+  readonly capturedMailbox?: string;
+  readonly projectInboxAlias?: string;
 }): {
   readonly canonicalEvent: CanonicalEventRecord;
   readonly detail: GmailMessageDetailRecord;
   readonly timelineRow: TimelineProjectionRow;
 } {
+  const threadId = input.threadId ?? `thread:${input.id}`;
+  const capturedMailbox = input.capturedMailbox ?? "pnw@example.org";
+
   return {
     canonicalEvent: {
       id: input.id,
@@ -407,7 +413,7 @@ function buildGmailOutboundEmailEvent(input: {
       eventType: "communication.email.outbound",
       channel: "email",
       occurredAt: input.occurredAt,
-      contentFingerprint: input.contentFingerprint,
+      contentFingerprint: input.contentFingerprint ?? null,
       sourceEvidenceId: input.sourceEvidenceId,
       idempotencyKey: `canonical:${input.id}`,
       provenance: {
@@ -420,7 +426,7 @@ function buildGmailOutboundEmailEvent(input: {
         messageKind: "one_to_one",
         campaignRef: null,
         threadRef: {
-          providerThreadId: `thread:${input.id}`,
+          providerThreadId: threadId,
           crossProviderCollapseKey: null,
         },
         direction: "outbound",
@@ -431,14 +437,14 @@ function buildGmailOutboundEmailEvent(input: {
     detail: {
       sourceEvidenceId: input.sourceEvidenceId,
       providerRecordId: input.id,
-      gmailThreadId: `thread:${input.id}`,
+      gmailThreadId: threadId,
       rfc822MessageId: `<${input.id}@example.org>`,
       direction: "outbound",
       subject: input.subject,
       snippetClean: input.snippet,
       bodyTextPreview: input.bodyPreview,
-      capturedMailbox: "pnw@example.org",
-      projectInboxAlias: "pnw@example.org",
+      capturedMailbox,
+      projectInboxAlias: input.projectInboxAlias ?? capturedMailbox,
     },
     timelineRow: {
       id: `timeline:${input.id}`,
@@ -793,6 +799,73 @@ describe("Stage 1 timeline presenter", () => {
       primaryProvider: "gmail",
       subject: "Re: Confirmed: Hex 13174",
       bodyPreview: "No problem at all! I will plan to retrieve the ARUs.",
+    });
+  });
+
+  it("collapses same-day identical Gmail outbound resends on the same thread and keeps the first message", async () => {
+    const firstGmail = buildGmailOutboundEmailEvent({
+      id: "evt_gmail_same_day_first",
+      sourceEvidenceId: "sev_gmail_same_day_first",
+      occurredAt: "2026-04-20T18:02:51.000Z",
+      subject: "Re: Update on Hex 43191",
+      snippet:
+        "Hi Shaina,\n\nThanks so much for reaching out! Just to confirm you are planning to head out later in the summer, around 8/24?",
+      bodyPreview:
+        "Hi Shaina,\n\nThanks so much for reaching out! Just to confirm you are planning to head out later in the summer, around 8/24?",
+      contentFingerprint: "fp:gmail-same-day-first",
+      threadId: "thread:shaina-dotson",
+      capturedMailbox: "volunteers@adventurescientists.org",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    const secondGmail = buildGmailOutboundEmailEvent({
+      id: "evt_gmail_same_day_second",
+      sourceEvidenceId: "sev_gmail_same_day_second",
+      occurredAt: "2026-04-20T21:26:25.000Z",
+      subject: "Re: Update on Hex 43191",
+      snippet:
+        "Hi Shaina,\n\nThanks so much for reaching out! Just to confirm you are planning to head out later in the summer, around 8/24?",
+      bodyPreview:
+        "Hi Shaina,\n\nThanks so much for reaching out! Just to confirm you are planning to head out later in the summer, around 8/24?",
+      contentFingerprint: "fp:gmail-same-day-second",
+      threadId: "thread:shaina-dotson",
+      capturedMailbox: "volunteers@adventurescientists.org",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [
+        firstGmail.canonicalEvent,
+        secondGmail.canonicalEvent,
+      ],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_gmail_same_day_first",
+          provider: "gmail",
+          providerRecordType: "gmail_message",
+          providerRecordId: "gmail-same-day-first",
+        }),
+        buildSourceEvidence({
+          id: "sev_gmail_same_day_second",
+          provider: "gmail",
+          providerRecordType: "gmail_message",
+          providerRecordId: "gmail-same-day-second",
+        }),
+      ],
+      salesforceCommunicationDetails: [],
+      gmailMessageDetails: [firstGmail.detail, secondGmail.detail],
+      timelineRows: [firstGmail.timelineRow, secondGmail.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      canonicalEventId: "evt_gmail_same_day_first",
+      family: "one_to_one_email",
+      primaryProvider: "gmail",
+      threadId: "thread:shaina-dotson",
+      mailbox: "pnwbio@adventurescientists.org",
+      subject: "Re: Update on Hex 43191",
     });
   });
 
