@@ -1703,6 +1703,18 @@ function buildTimelineEntry(input: {
     channel: timelineChannel(input.item),
     isUnread,
     isPreview: isPreviewTimelineItem(input.item),
+    fromHeader:
+      input.item.family === "one_to_one_email"
+        ? (input.item.fromHeader ?? null)
+        : null,
+    toHeader:
+      input.item.family === "one_to_one_email"
+        ? (input.item.toHeader ?? null)
+        : null,
+    ccHeader:
+      input.item.family === "one_to_one_email"
+        ? (input.item.ccHeader ?? null)
+        : null,
     mailbox:
       input.item.family === "one_to_one_email"
         ? (input.item.mailbox ?? null)

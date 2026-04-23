@@ -14,6 +14,7 @@ import type { Stage1RepositoryBundle } from "@as-comms/domain";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 const SALESFORCE_CONTACT_ID_PATTERN = /^003[\w-]+$/u;
 const NORMALIZED_PHONE_PATTERN = /^\+[1-9]\d{6,}$/u;
+const ADVENTURE_SCIENTISTS_DOMAIN = "@adventurescientists.org";
 
 function encodeIdPart(value: string): string {
   return encodeURIComponent(value);
@@ -59,8 +60,38 @@ function uniqueStrings(values: readonly string[]): string[] {
   ).sort((left, right) => left.localeCompare(right));
 }
 
+function isAdventureScientistsEmail(value: string): boolean {
+  return (
+    EMAIL_PATTERN.test(value) &&
+    value.toLowerCase().endsWith(ADVENTURE_SCIENTISTS_DOMAIN)
+  );
+}
+
+function filterReplayIdentityValues(input: {
+  readonly provider: SourceEvidenceRecord["provider"];
+  readonly normalizedIdentityValues: readonly string[];
+}): string[] {
+  const values = uniqueStrings(input.normalizedIdentityValues);
+
+  if (input.provider !== "gmail") {
+    return values;
+  }
+
+  const emailValues = values.filter((value) => EMAIL_PATTERN.test(value));
+  const externalEmails = emailValues.filter(
+    (value) => !isAdventureScientistsEmail(value)
+  );
+
+  if (externalEmails.length !== 1 || externalEmails.length === emailValues.length) {
+    return values;
+  }
+
+  return values.filter((value) => !isAdventureScientistsEmail(value));
+}
+
 function buildIdentityFromCase(input: {
   readonly caseRecord: IdentityResolutionCase;
+  readonly provider: SourceEvidenceRecord["provider"];
   readonly preferredSalesforceContactId?: string | null;
 }): NormalizedCanonicalEventIntake["identity"] {
   const normalizedEmails: string[] = [];
@@ -68,7 +99,10 @@ function buildIdentityFromCase(input: {
   const volunteerIdPlainValues: string[] = [];
   let salesforceContactId = input.preferredSalesforceContactId ?? null;
 
-  for (const value of uniqueStrings(input.caseRecord.normalizedIdentityValues)) {
+  for (const value of filterReplayIdentityValues({
+    provider: input.provider,
+    normalizedIdentityValues: input.caseRecord.normalizedIdentityValues
+  })) {
     if (salesforceContactId !== null && value === salesforceContactId) {
       continue;
     }
@@ -297,7 +331,8 @@ export async function buildEventFromStoredData(input: {
           snippet
         },
         identity: buildIdentityFromCase({
-          caseRecord: input.caseRecord
+          caseRecord: input.caseRecord,
+          provider: input.sourceEvidence.provider
         }),
         supportingSources: [],
         communicationClassification: {
@@ -386,6 +421,7 @@ export async function buildEventFromStoredData(input: {
         },
         identity: buildIdentityFromCase({
           caseRecord: input.caseRecord,
+          provider: input.sourceEvidence.provider,
           preferredSalesforceContactId: context?.salesforceContactId ?? null
         }),
         ...(routing === undefined ? {} : { routing }),
@@ -466,7 +502,8 @@ export async function buildEventFromStoredData(input: {
           snippet: detail.messageTextPreview
         },
         identity: buildIdentityFromCase({
-          caseRecord: input.caseRecord
+          caseRecord: input.caseRecord,
+          provider: input.sourceEvidence.provider
         }),
         supportingSources: [],
         communicationClassification: {
@@ -538,7 +575,8 @@ export async function buildEventFromStoredData(input: {
           snippet: detail.snippet
         },
         identity: buildIdentityFromCase({
-          caseRecord: input.caseRecord
+          caseRecord: input.caseRecord,
+          provider: input.sourceEvidence.provider
         }),
         supportingSources: [],
         mailchimpCampaignActivityDetail: detail

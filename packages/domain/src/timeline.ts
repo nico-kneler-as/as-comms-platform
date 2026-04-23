@@ -249,6 +249,9 @@ function buildPendingTimelineItems(
         row.subject.trim().length > 0 ? row.subject : "Outbound email pending",
       direction: "outbound" as const,
       subject: row.subject,
+      fromHeader: null,
+      toHeader: null,
+      ccHeader: null,
       snippet: row.bodyPlaintext,
       bodyPreview: row.bodyPlaintext,
       mailbox: row.fromAlias,
@@ -429,6 +432,13 @@ function buildTimelineDuplicateKeys(
     );
   }
 
+  const sameDayGmailDuplicateKey =
+    timelineSameDayGmailOutboundDuplicateKey(entry);
+
+  if (sameDayGmailDuplicateKey !== null) {
+    keys.push(sameDayGmailDuplicateKey);
+  }
+
   const fingerprint = normalizeDuplicateText(
     entry.canonicalEvent.contentFingerprint,
   );
@@ -576,16 +586,6 @@ function preferTimelineDuplicate(
   existing: CanonicalTimelineItemWithEvent,
   candidate: CanonicalTimelineItemWithEvent,
 ): CanonicalTimelineItemWithEvent {
-  const existingSameDayGmailKey =
-    timelineSameDayGmailOutboundDuplicateKey(existing);
-
-  if (
-    existingSameDayGmailKey !== null &&
-    existingSameDayGmailKey === timelineSameDayGmailOutboundDuplicateKey(candidate)
-  ) {
-    return existing;
-  }
-
   const familyDelta =
     timelineFamilyPriority(candidate.item) -
     timelineFamilyPriority(existing.item);
@@ -658,11 +658,15 @@ function collapseDuplicateTimelineItems(input: {
       canonicalEvent,
     } satisfies CanonicalTimelineItemWithEvent;
     const keys = buildTimelineDuplicateKeys(candidate);
-    const existingIndex = keys
-      .map((key) => lastIndexByKey.get(key))
-      .find((value): value is number => value !== undefined);
+    let merged = false;
 
-    if (existingIndex !== undefined) {
+    for (const key of keys) {
+      const existingIndex = lastIndexByKey.get(key);
+
+      if (existingIndex === undefined) {
+        continue;
+      }
+
       const existing = deduped[existingIndex];
 
       if (
@@ -670,8 +674,18 @@ function collapseDuplicateTimelineItems(input: {
         isTimelinePresentationDuplicate(existing, candidate)
       ) {
         deduped[existingIndex] = preferTimelineDuplicate(existing, candidate);
-        continue;
+
+        for (const candidateKey of keys) {
+          lastIndexByKey.set(candidateKey, existingIndex);
+        }
+
+        merged = true;
+        break;
       }
+    }
+
+    if (merged) {
+      continue;
     }
 
     for (const key of keys) {
@@ -947,6 +961,9 @@ function buildTimelineItemsFromRows(input: {
             gmailDetail?.subject ??
             salesforceCommunicationDetail?.subject ??
             null,
+          fromHeader: gmailDetail?.fromHeader ?? null,
+          toHeader: gmailDetail?.toHeader ?? null,
+          ccHeader: gmailDetail?.ccHeader ?? null,
           snippet:
             gmailDetail?.snippetClean ??
             salesforceCommunicationDetail?.snippet ??

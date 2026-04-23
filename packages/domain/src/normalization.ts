@@ -1425,6 +1425,22 @@ async function resolveIdentityDecision(
     };
   }
 
+  if (identity.normalizedEmails.length > 1) {
+    return {
+      outcome: "needs_identity_review",
+      reviewInput: identityAmbiguityInputSchema.parse({
+        sourceEvidenceId,
+        candidateContactIds: [],
+        reasonCode: "identity_multi_candidate",
+        openedAt,
+        normalizedIdentityValues,
+        anchoredContactId: null,
+        explanation:
+          "More than one external email participant was present and no safe canonical contact could be selected."
+      })
+    };
+  }
+
   const fallbackNormalizedEmail = identity.normalizedEmails[0] ?? null;
   const fallbackNormalizedPhone = identity.normalizedPhones[0] ?? null;
 

@@ -40,6 +40,10 @@ async function seedSuspiciousGmailDetail(input: {
   readonly sourceEvidenceId: string;
   readonly context: Awaited<ReturnType<typeof createTestWorkerContext>>;
   readonly bodyTextPreview: string;
+  readonly snippetClean?: string;
+  readonly fromHeader?: string | null;
+  readonly toHeader?: string | null;
+  readonly ccHeader?: string | null;
 }): Promise<void> {
   await input.context.repositories.sourceEvidence.append({
     id: input.sourceEvidenceId,
@@ -60,7 +64,10 @@ async function seedSuspiciousGmailDetail(input: {
     rfc822MessageId: `<${input.providerRecordId}@example.org>`,
     direction: "outbound",
     subject: "Re: Last Call: PNW Training",
-    snippetClean: "Short Gmail snippet",
+    fromHeader: input.fromHeader ?? "PNW Forest Biodiversity <pnw@example.org>",
+    toHeader: input.toHeader ?? "Silvia Maldonado <silvia@example.org>",
+    ccHeader: input.ccHeader ?? null,
+    snippetClean: input.snippetClean ?? "Short Gmail snippet",
     bodyTextPreview: input.bodyTextPreview,
     capturedMailbox: "volunteers@example.org",
     projectInboxAlias: "pnw@example.org"
@@ -199,6 +206,83 @@ describe("Stage 1 Gmail body backfill ops", () => {
         skippedHistoricalCount: 1,
         updatedCount: 0
       });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("backfills clipped live Gmail bodies when the stored body is much shorter than the Gmail snippet", async () => {
+    const context = await createTestWorkerContext();
+    const sourceEvidenceId = "source-evidence:gmail:message:gmail-live-3";
+    const fullBody =
+      "Hi Heidi,\n\nThank you so much for your email! If you can place E & G on April 23 or 24 that is absolutely wonderful. You can just use the remaining two ARUs originally dedicated to this hex.\n\nThen we can separately coordinate the return of the ARUs.\n\nThank you again!!";
+
+    try {
+      await seedSuspiciousGmailDetail({
+        context,
+        sourceEvidenceId,
+        providerRecordId: "gmail-live-3",
+        snippetClean:
+          "Hi Heidi, Thank you so much for your email! If you can place E & G on April 23 or 24 that is absolutely wonderful. On Mon, Apr 20, 2026 at 12:54 PM Heidi Gill <heidi@example.org> wrote:",
+        bodyTextPreview:
+          "Hi Heidi,\n\nThank you so much for your email! If you can place E & G",
+        fromHeader: "Adventure Scientists <pnw@example.org>",
+        toHeader: "Heidi Gill <heidi@example.org>"
+      });
+
+      const result = await backfillGmailMessageBodies({
+        db: context.db,
+        repositories: context.repositories,
+        capture: {
+          captureLiveBatch: () =>
+            Promise.resolve({
+              records: [
+                buildGmailMessageRecord({
+                  recordId: "gmail-live-3",
+                  threadId: "thread-live-3",
+                  snippet:
+                    "Hi Heidi, Thank you so much for your email! If you can place E & G on April 23 or 24 that is absolutely wonderful.",
+                  snippetClean:
+                    "Hi Heidi, Thank you so much for your email! If you can place E & G on April 23 or 24 that is absolutely wonderful.",
+                  bodyTextPreview: fullBody,
+                  internalDate: "2026-03-26T10:15:00.000Z",
+                  headers: {
+                    Date: "Thu, 26 Mar 2026 10:15:00 +0000",
+                    From: "Adventure Scientists <pnw@example.org>",
+                    To: "Heidi Gill <heidi@example.org>",
+                    Subject: "Re: Confirmed: Hex 08456",
+                    "Message-ID": "<gmail-live-3@example.org>"
+                  },
+                  payloadRef: "gmail://volunteers%40example.org/messages/gmail-live-3",
+                  checksum: "checksum:gmail-live-3",
+                  capturedMailbox: "volunteers@example.org",
+                  receivedAt: "2026-03-26T10:16:00.000Z",
+                  internalAddresses: ["volunteers@example.org", "pnw@example.org"],
+                  projectInboxAliases: ["pnw@example.org"]
+                })
+              ],
+              nextCursor: null,
+              checkpoint: null
+            })
+        }
+      });
+
+      expect(result).toMatchObject({
+        scannedCount: 1,
+        eligibleCount: 1,
+        wouldUpdateCount: 1,
+        updatedCount: 1
+      });
+
+      const persisted = await context.repositories.gmailMessageDetails.listBySourceEvidenceIds([
+        sourceEvidenceId
+      ]);
+
+      expect(persisted[0]?.bodyTextPreview).toBe(fullBody);
+      expect(persisted[0]?.snippetClean).toContain("April 23 or 24");
+      expect(persisted[0]?.fromHeader).toBe(
+        "Adventure Scientists <pnw@example.org>"
+      );
     } finally {
       await context.dispose();
     }
