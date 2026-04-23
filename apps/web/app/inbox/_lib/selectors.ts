@@ -1452,7 +1452,7 @@ function participantHeaderLabel(headerValue: string | null): string | null {
     return name;
   }
 
-  const emailMatch = trimmed.match(PARTICIPANT_HEADER_EMAIL_PATTERN)?.[0]?.trim();
+  const emailMatch = PARTICIPANT_HEADER_EMAIL_PATTERN.exec(trimmed)?.[0]?.trim();
 
   if (emailMatch !== undefined && emailMatch.length > 0) {
     return emailMatch;
