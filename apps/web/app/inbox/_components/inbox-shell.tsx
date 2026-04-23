@@ -17,6 +17,11 @@ interface ShellProps {
   readonly initialList: InboxListViewModel;
   readonly initialFilterId: InboxFilterId;
   readonly composerAliases: readonly InboxComposerAliasOption[];
+  readonly operator: {
+    readonly initials: string;
+    readonly displayName: string;
+    readonly email: string;
+  };
   readonly children: ReactNode;
 }
 
@@ -33,13 +38,14 @@ export function InboxShell({
   initialList,
   initialFilterId,
   composerAliases,
+  operator,
   children
 }: ShellProps) {
   return (
     <InboxClientProvider composerAliases={composerAliases}>
       <InboxKeyboardProvider>
         <InboxFreshnessPoller listFreshness={initialList.freshness} />
-        <PrimaryIconRail />
+        <PrimaryIconRail operator={operator} />
 
         <InboxList
           initialList={initialList}

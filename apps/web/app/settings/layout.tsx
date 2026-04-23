@@ -31,22 +31,42 @@ export default async function SettingsLayout({
 }: {
   readonly children: ReactNode;
 }) {
-  try {
-    await requireSession();
-  } catch (error) {
+  const currentUser = await requireSession().catch((error: unknown) => {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       redirect("/auth/sign-in");
     }
     throw error;
-  }
+  });
 
   return (
     <div className="flex min-h-screen w-full bg-slate-100 text-slate-900 antialiased">
-      <PrimaryIconRail />
+      <PrimaryIconRail
+        operator={{
+          initials: getInitials(currentUser.name ?? currentUser.email),
+          displayName: currentUser.name ?? currentUser.email,
+          email: currentUser.email
+        }}
+      />
       <SettingsSectionNav />
       <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
         {children}
       </main>
     </div>
   );
+}
+
+function getInitials(value: string): string {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return "?";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
