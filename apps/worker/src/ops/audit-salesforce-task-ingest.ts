@@ -3,7 +3,8 @@ import process from "node:process";
 
 import {
   closeDatabaseConnection,
-  createDatabaseConnection
+  createDatabaseConnection,
+  type PostgresClient
 } from "@as-comms/db";
 
 import {
@@ -16,10 +17,6 @@ import {
   readOptionalBooleanFlag,
   readOptionalIntegerFlag
 } from "./helpers.js";
-
-interface SqlRunner {
-  unsafe<T extends readonly object[]>(query: string): Promise<T>;
-}
 
 interface SalesforceTaskAuditRowRaw {
   readonly canonical_event_id: string;
@@ -53,9 +50,9 @@ function readConnectionString(env: NodeJS.ProcessEnv): string {
 }
 
 async function loadSalesforceTaskAuditRows(
-  sql: SqlRunner
+  sql: PostgresClient
 ): Promise<readonly SalesforceTaskAuditRow[]> {
-  const rows = await sql.unsafe<readonly SalesforceTaskAuditRowRaw[]>(`
+  const rows = await sql.unsafe<SalesforceTaskAuditRowRaw[]>(`
     with membership_projects as (
       select
         cm.contact_id,

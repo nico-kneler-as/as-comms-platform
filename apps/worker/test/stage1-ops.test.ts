@@ -7,6 +7,7 @@ import {
 } from "@as-comms/contracts";
 
 import { buildStage1EnqueueRequest } from "../src/ops/enqueue.js";
+import { parseCliFlags } from "../src/ops/helpers.js";
 import {
   inspectLatestSyncState,
   inspectSourceEvidenceForProviderRecord,
@@ -154,6 +155,21 @@ async function seedInspectableContact(context: TestWorkerContext): Promise<void>
 }
 
 describe("Stage 1 ops helpers", () => {
+  it("parses both split and equals-style CLI flags", () => {
+    expect(
+      parseCliFlags([
+        "--campaign-id=abc123",
+        "--dry-run",
+        "--limit",
+        "5",
+      ]),
+    ).toEqual({
+      "campaign-id": "abc123",
+      "dry-run": true,
+      limit: "5",
+    });
+  });
+
   it("builds launch-scope parity and capture job payloads with explicit defaults", () => {
     const parityRequest = buildStage1EnqueueRequest("parity-check", {});
     const gmailLiveRequest = buildStage1EnqueueRequest("gmail-live", {
