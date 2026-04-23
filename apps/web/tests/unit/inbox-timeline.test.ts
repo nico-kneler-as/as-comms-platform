@@ -84,7 +84,7 @@ describe("InboxTimeline", () => {
     );
   });
 
-  it("keeps campaign email body text visible when the row is collapsed", () => {
+  it("keeps campaign email rows collapsed to the resolved headline only", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -92,7 +92,7 @@ describe("InboxTimeline", () => {
             ...baseEntry,
             id: "timeline:campaign-email-1",
             kind: "outbound-campaign-email" as const,
-            subject: null,
+            subject: "Your Adventure Awaits",
             body: "Please review the latest field update.",
           },
         ],
@@ -102,7 +102,8 @@ describe("InboxTimeline", () => {
     );
 
     expect(markup).toContain("Campaign");
-    expect(markup).toContain("Please review the latest field update.");
+    expect(markup).toContain("Your Adventure Awaits");
+    expect(markup).not.toContain("Please review the latest field update.");
     expect(markup).not.toContain("rounded-full border px-2 py-1");
   });
 
@@ -189,7 +190,7 @@ describe("InboxTimeline", () => {
         kind: "outbound-campaign-email",
         headline: "April field update",
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldHideAutomatedRowBody({
         isExpanded: false,

@@ -629,8 +629,8 @@ export function shouldHideAutomatedRowBody(input: {
 }): boolean {
   return (
     !input.isExpanded &&
-    input.kind === "outbound-auto-email" &&
-    input.headline !== null
+    ((input.kind === "outbound-auto-email" && input.headline !== null) ||
+      input.kind === "outbound-campaign-email")
   );
 }
 
