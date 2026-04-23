@@ -99,7 +99,6 @@ describe("InboxTimeline", () => {
     );
 
     expect(markup).toContain("Campaign");
-    expect(markup).toContain("Sent");
     expect(markup).toContain("Please review the latest field update.");
     expect(markup).not.toContain("rounded-full border px-2 py-1");
   });
@@ -136,10 +135,11 @@ describe("InboxTimeline", () => {
     );
 
     expect(markup).toContain('data-campaign-state="clicked"');
-    expect(markup).toContain("Clicked");
     expect(markup).toContain("border-violet-200 bg-violet-50/75");
     expect(markup).not.toContain("Opened 1h ago");
     expect(markup).not.toContain("45m ago");
+    expect(markup).not.toContain(">Sent<");
+    expect(markup).not.toContain(">Clicked<");
   });
 
   it("renders lifecycle events as volunteer-side context rows with an icon-led label", () => {

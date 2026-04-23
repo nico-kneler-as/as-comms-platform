@@ -521,14 +521,6 @@ function AutomatedRow({
                   focusable={false}
                   className="text-[11px] text-slate-500"
                 />
-                {role === "campaign" ? (
-                  <>
-                    <span className="text-slate-300">·</span>
-                    <span className="text-[11px] font-medium text-violet-700/80">
-                      {campaignStateLabel(campaignState ?? "sent")}
-                    </span>
-                  </>
-                ) : null}
               </div>
               {headline ? (
                 <p
@@ -919,21 +911,6 @@ function describeCampaignVisualState(
   }
 
   return "sent";
-}
-
-function campaignStateLabel(
-  state: ReturnType<typeof describeCampaignVisualState>,
-): string {
-  switch (state) {
-    case "opened":
-      return "Opened";
-    case "clicked":
-      return "Clicked";
-    case "unsubscribed":
-      return "Unsubscribed";
-    case "sent":
-      return "Sent";
-  }
 }
 
 function CampaignStateIcon({
