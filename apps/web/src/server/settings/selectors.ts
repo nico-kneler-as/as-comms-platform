@@ -65,7 +65,6 @@ export interface IntegrationHealthViewModel {
   readonly serviceName: string;
   readonly displayName: string;
   readonly description: string;
-  readonly logo: string;
   readonly category: IntegrationHealthCategory;
   readonly status: IntegrationHealthStatus;
   readonly lastCheckedAt: string | null;
@@ -90,44 +89,32 @@ const INTEGRATION_ORDER = [
 const INTEGRATION_META = {
   salesforce: {
     displayName: "Salesforce",
-    description:
-      "Source of truth for volunteer contacts, projects, and participation history.",
-    logo: "SF",
+    description: "Contacts and project records",
     supportsRefresh: true
   },
   gmail: {
     displayName: "Gmail",
-    description:
-      "Routes incoming mail to project inboxes and sends replies on behalf of operators.",
-    logo: "G",
+    description: "Inbound and outbound email",
     supportsRefresh: true
   },
   simpletexting: {
     displayName: "SimpleTexting",
-    description:
-      "Two-way SMS channel for volunteer check-ins and field-support threads.",
-    logo: "ST",
+    description: "Volunteer SMS delivery",
     supportsRefresh: false
   },
   mailchimp: {
     displayName: "Mailchimp",
-    description:
-      "Legacy campaign-delivery provider kept for historical compatibility.",
-    logo: "MC",
+    description: "Historical campaign records",
     supportsRefresh: false
   },
   notion: {
     displayName: "Notion",
-    description:
-      "Knowledge source backing grounded AI context once Stage 4 sync lands.",
-    logo: "N",
+    description: "Knowledge sync source",
     supportsRefresh: false
   },
   openai: {
-    displayName: "OpenAI",
-    description:
-      "Draft-generation model provider used by the future AI assistant stage.",
-    logo: "OA",
+    displayName: "Anthropic",
+    description: "AI draft provider",
     supportsRefresh: false
   }
 } as const satisfies Record<
@@ -135,7 +122,6 @@ const INTEGRATION_META = {
   {
     readonly displayName: string;
     readonly description: string;
-    readonly logo: string;
     readonly supportsRefresh: boolean;
   }
 >;
@@ -354,7 +340,6 @@ async function readIntegrationHealth() {
         serviceName: record.serviceName,
         displayName: meta.displayName,
         description: meta.description,
-        logo: meta.logo,
         category: record.category,
         status: record.status,
         lastCheckedAt: record.lastCheckedAt,

@@ -7,11 +7,12 @@ import {
   RADIUS,
   SHADOW,
   TEXT,
+  TONE,
   TRANSITION
 } from "@/app/_lib/design-tokens";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { ToneAvatar } from "@/components/ui/tone-avatar";
 import {
   Tooltip,
   TooltipContent,
@@ -145,6 +146,7 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((integration) => {
             const statusMeta = STATUS_META[integration.status];
+            const categoryTone = TONE[CATEGORY_TONE[integration.category]];
             const isRowPending =
               pending && pendingId === integration.serviceName;
             const isSyncDisabled =
@@ -154,50 +156,70 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
               <li
                 key={integration.serviceName}
                 className={cn(
-                  "flex min-h-full flex-col gap-4 p-5",
+                  "flex min-h-full flex-col gap-4 border border-slate-200 bg-white p-4",
                   RADIUS.md,
-                  "border border-slate-200 bg-white",
                   SHADOW.sm,
-                  TRANSITION.fast,
+                  TRANSITION.layout,
+                  TRANSITION.reduceMotion,
+                  "hover:-translate-y-0.5 hover:border-slate-300",
                   isRowPending && "opacity-60"
                 )}
               >
-                <div className="flex items-start gap-3">
-                  <ToneAvatar
-                    initials={integration.logo}
-                    tone={CATEGORY_TONE[integration.category]}
-                    size="md"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <p className="truncate text-sm font-semibold text-slate-900">
-                        {integration.displayName}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <IntegrationLogoMark integration={integration} />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">
+                          {integration.displayName}
+                        </p>
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]",
+                            categoryTone.subtle,
+                            categoryTone.text
+                          )}
+                        >
+                          {CATEGORY_LABEL[integration.category]}
+                        </span>
+                      </div>
+                      <p className={cn("mt-1", TEXT.caption, "text-slate-600")}>
+                        {integration.description}
                       </p>
-                      <span className={cn(TEXT.caption, "text-slate-500")}>
-                        {CATEGORY_LABEL[integration.category]}
-                      </span>
                     </div>
-                    <p
-                      className={cn(
-                        "mt-1 line-clamp-2",
-                        TEXT.bodySm,
-                        "text-slate-600"
-                      )}
-                    >
-                      {integration.detail ?? integration.description}
-                    </p>
                   </div>
+
+                  <StatusBadge
+                    label={statusMeta.label}
+                    colorClasses={statusMeta.colorClasses}
+                    variant="soft"
+                    className="shrink-0"
+                  />
+                </div>
+
+                <div
+                  className={cn(
+                    "flex min-h-16 items-center rounded-xl px-3 py-2.5",
+                    categoryTone.subtle
+                  )}
+                >
+                  <p
+                    className={cn(
+                      "line-clamp-2",
+                      TEXT.bodySm,
+                      integration.detail ? "text-slate-700" : "text-slate-500"
+                    )}
+                  >
+                    {integration.detail ?? "Waiting for the next health check."}
+                  </p>
                 </div>
 
                 <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
                   <div className="flex min-w-0 flex-col gap-1">
-                    <StatusBadge
-                      label={statusMeta.label}
-                      colorClasses={statusMeta.colorClasses}
-                      variant="soft"
-                      className="self-start"
-                    />
-                    <span className={cn(TEXT.micro, "tabular-nums")}>
+                    <span className={cn(TEXT.label, "text-slate-400")}>
+                      Last checked
+                    </span>
+                    <span className={cn(TEXT.micro, "tabular-nums text-slate-500")}>
                       {formatRelative(integration.lastCheckedAt)}
                     </span>
                   </div>
@@ -221,6 +243,178 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
       </SettingsSection>
     </TooltipProvider>
   );
+}
+
+function IntegrationLogoMark({
+  integration
+}: {
+  readonly integration: IntegrationHealthViewModel;
+}) {
+  return (
+    <Avatar className="size-11 rounded-2xl border border-slate-200 bg-transparent">
+      <AvatarFallback
+        delayMs={0}
+        className="rounded-2xl bg-transparent text-slate-900"
+      >
+        <span className="sr-only">{integration.displayName}</span>
+        <BrandMark serviceName={integration.serviceName} />
+      </AvatarFallback>
+    </Avatar>
+  );
+}
+
+function BrandMark({
+  serviceName
+}: {
+  readonly serviceName: IntegrationHealthViewModel["serviceName"];
+}) {
+  switch (serviceName) {
+    case "salesforce":
+      return (
+        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+          <path
+            d="M16.6 31.9c-4.1 0-7.4-3-7.4-6.8 0-3.5 2.8-6.4 6.5-6.8.8-4.1 4.6-7.2 9.2-7.2 5.1 0 9.3 3.9 9.5 8.8 3 .8 5.2 3.4 5.2 6.5 0 3.8-3.2 6.8-7.2 6.8H16.6Z"
+            fill="#00A1E0"
+          />
+          <text
+            x="24"
+            y="29"
+            textAnchor="middle"
+            className="fill-white text-[11px] font-bold"
+          >
+            sf
+          </text>
+        </svg>
+      );
+    case "gmail":
+      return (
+        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+          <path
+            d="M9 14.5 24 26l15-11.5"
+            fill="none"
+            stroke="#EA4335"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M9 14.5v19h8.5V22.3L24 27l6.5-4.7v11.2H39v-19"
+            fill="none"
+            stroke="#34A853"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M9 14.5 24 26l15-11.5"
+            fill="none"
+            stroke="#4285F4"
+            strokeWidth="2"
+            opacity="0.65"
+          />
+          <path
+            d="M9 14.5v19"
+            fill="none"
+            stroke="#FBBC05"
+            strokeWidth="4"
+            strokeLinecap="round"
+          />
+        </svg>
+      );
+    case "simpletexting":
+      return (
+        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+          <rect x="8" y="10" width="25" height="18" rx="8" fill="#1D4ED8" />
+          <path d="M18 28h8l6 8v-8" fill="#1D4ED8" />
+          <rect x="16" y="16" width="10" height="3" rx="1.5" fill="white" />
+          <rect
+            x="16"
+            y="22"
+            width="14"
+            height="3"
+            rx="1.5"
+            fill="white"
+            opacity="0.78"
+          />
+        </svg>
+      );
+    case "mailchimp":
+      return (
+        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+          <circle cx="24" cy="24" r="12" fill="#FACC15" />
+          <path
+            d="M18 28c1.8 2.3 4 3.5 6 3.5s4.2-1.2 6-3.5"
+            fill="none"
+            stroke="#111827"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+          <circle cx="20" cy="21" r="1.8" fill="#111827" />
+          <circle cx="28" cy="21" r="1.8" fill="#111827" />
+          <path
+            d="M30.8 15.3c2.4-.4 4.7.9 5.8 3"
+            fill="none"
+            stroke="#111827"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+      );
+    case "notion":
+      return (
+        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+          <rect
+            x="11"
+            y="11"
+            width="26"
+            height="26"
+            rx="3"
+            fill="white"
+            stroke="#111827"
+            strokeWidth="2.5"
+          />
+          <path
+            d="M18 31V18l12 13V18"
+            fill="none"
+            stroke="#111827"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+    case "openai":
+      return (
+        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+          <g
+            fill="none"
+            stroke="#111827"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M24 11c3.6 0 6.6 2.9 6.6 6.5v2.1" />
+            <path d="M35.1 18.7c1.8 3.2.8 7.3-2.3 9.1L31 28.9" />
+            <path d="M33 31.5c-1.8 3.2-5.9 4.3-9.1 2.5L22 32.9" />
+            <path d="M18 34c-3.6 0-6.6-2.9-6.6-6.5v-2.1" />
+            <path d="M12.9 29.3c-1.8-3.2-.8-7.3 2.3-9.1L17 19.1" />
+            <path d="M15 16.5c1.8-3.2 5.9-4.3 9.1-2.5L26 15.1" />
+          </g>
+          <path
+            d="M18.5 18.5 29.5 29.5"
+            stroke="#D97706"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+          />
+        </svg>
+      );
+    default:
+      return (
+        <span className="text-xs font-semibold">
+          {serviceName.slice(0, 2).toUpperCase()}
+        </span>
+      );
+  }
 }
 
 interface SyncButtonProps {

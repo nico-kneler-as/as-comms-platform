@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Inbox as InboxIcon,
@@ -13,7 +14,6 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger
@@ -31,27 +31,25 @@ import {
   SHADOW,
   TRANSITION
 } from "@/app/_lib/design-tokens";
+import { cn } from "@/lib/utils";
 
 import { AdventureScientistsLogo } from "./adventure-scientists-logo";
+import { signOutOperatorAction } from "./operator-menu-actions";
 
 interface RailItem {
   readonly id: string;
   readonly label: string;
   readonly Icon: LucideIcon;
-  /** Route the item links to, or `null` for not-yet-implemented destinations. */
   readonly href: string | null;
-  /** Pathname prefixes that mark this item active, e.g. ["/inbox"]. */
   readonly activePrefixes: readonly string[];
 }
 
-/**
- * Prototype left nav shared between `/inbox` and `/settings`. Kept to three
- * destinations per product brief — Inbox, Campaigns, Settings — so the icon
- * strip doesn't drift into speculative sections. The active state is driven
- * by `usePathname()` so the same component renders correctly on either
- * surface. The bottom slot hosts a user circle that reveals the operator's
- * name and a Log out affordance on hover.
- */
+export interface PrimaryRailOperator {
+  readonly initials: string;
+  readonly displayName: string;
+  readonly email: string;
+}
+
 const ITEMS: readonly RailItem[] = [
   {
     id: "inbox",
@@ -61,9 +59,6 @@ const ITEMS: readonly RailItem[] = [
     activePrefixes: ["/inbox"]
   },
   {
-    // Campaigns is deferred (see `project_campaigns_deferred` memory); rendered
-    // as a non-interactive disc so operators can see the future destination
-    // without being able to route to a stub route.
     id: "campaigns",
     label: "Campaigns",
     Icon: MegaphoneIcon,
@@ -79,19 +74,17 @@ const ITEMS: readonly RailItem[] = [
   }
 ];
 
-const OPERATOR = {
-  initials: "JC",
-  displayName: "Jordan Cole",
-  email: "jordan@adventurescientists.org"
-};
-
 function isActive(pathname: string, prefixes: readonly string[]): boolean {
   return prefixes.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
 }
 
-export function PrimaryIconRail() {
+export function PrimaryIconRail({
+  operator
+}: {
+  readonly operator: PrimaryRailOperator;
+}) {
   const pathname = usePathname();
 
   return (
@@ -153,45 +146,78 @@ export function PrimaryIconRail() {
           })}
         </div>
 
-        <OperatorMenu />
+        <OperatorMenu operator={operator} />
       </nav>
     </TooltipProvider>
   );
 }
 
-function OperatorMenu() {
+function OperatorMenu({
+  operator
+}: {
+  readonly operator: PrimaryRailOperator;
+}) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={`${OPERATOR.displayName} · account menu`}
-          className={`mt-2 flex h-9 w-9 items-center justify-center ${RADIUS.full} bg-slate-900 text-[11px] font-semibold text-white ${SHADOW.sm} ${TRANSITION.fast} hover:bg-slate-800 ${FOCUS_RING}`}
+          aria-label={`${operator.displayName} · account menu`}
+          className={cn(
+            "group mt-2 flex h-10 items-center gap-2 overflow-hidden border border-slate-200 bg-white pl-0.5 pr-2 text-left text-slate-700",
+            RADIUS.full,
+            SHADOW.sm,
+            TRANSITION.layout,
+            TRANSITION.reduceMotion,
+            FOCUS_RING,
+            open
+              ? "w-44 border-slate-300 shadow-md"
+              : "w-10 hover:w-44 hover:border-slate-300 hover:shadow-md focus-visible:w-44"
+          )}
         >
-          {OPERATOR.initials}
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
+            {operator.initials}
+          </span>
+          <span
+            className={cn(
+              "min-w-0 overflow-hidden whitespace-nowrap text-xs font-medium transition-all duration-200 ease-out motion-reduce:transition-none",
+              open
+                ? "max-w-24 opacity-100"
+                : "max-w-0 opacity-0 group-hover:max-w-24 group-hover:opacity-100 group-focus-visible:max-w-24 group-focus-visible:opacity-100"
+            )}
+          >
+            {operator.displayName}
+          </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="end" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
-              {OPERATOR.initials}
+              {operator.initials}
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-slate-900">
-                {OPERATOR.displayName}
+                {operator.displayName}
               </p>
               <p className="truncate text-[11px] text-slate-500">
-                {OPERATOR.email}
+                {operator.email}
               </p>
             </div>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem className="gap-2 text-xs font-medium">
-          <LogOutIcon className="h-3.5 w-3.5" />
-          Log out
-        </DropdownMenuItem>
+        <form action={signOutOperatorAction}>
+          <button
+            type="submit"
+            className="relative flex w-full select-none items-center gap-2 rounded-sm px-2 py-1.5 text-xs font-medium outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+          >
+            <LogOutIcon className="h-3.5 w-3.5" />
+            Log out
+          </button>
+        </form>
       </DropdownMenuContent>
     </DropdownMenu>
   );

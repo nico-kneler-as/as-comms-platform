@@ -36,14 +36,12 @@ export default async function InboxLayout({
 }: {
   readonly children: ReactNode;
 }) {
-  try {
-    await requireSession();
-  } catch (error) {
+  const currentUser = await requireSession().catch((error: unknown) => {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       redirect("/auth/sign-in");
     }
     throw error;
-  }
+  });
 
   const [list, composerAliases] = await Promise.all([
     getInboxList("all"),
@@ -55,8 +53,29 @@ export default async function InboxLayout({
       initialList={list}
       initialFilterId="all"
       composerAliases={composerAliases}
+      operator={{
+        initials: getInitials(currentUser.name ?? currentUser.email),
+        displayName: currentUser.name ?? currentUser.email,
+        email: currentUser.email
+      }}
     >
       {children}
     </InboxShell>
   );
+}
+
+function getInitials(value: string): string {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return "?";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
