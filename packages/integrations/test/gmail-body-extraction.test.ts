@@ -69,6 +69,7 @@ describe("Gmail body extraction", () => {
       message: {
         id: fixture.id,
         threadId: fixture.threadId ?? null,
+        labelIds: fixture.labelIds,
         snippet: fixture.snippet,
         internalDate: fixture.internalDate,
         payload: fixture.payload

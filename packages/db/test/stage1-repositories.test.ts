@@ -293,6 +293,7 @@ describe("Stage 1 DB repositories", () => {
       fromHeader: "Volunteer <volunteer@example.org>",
       toHeader: "Project Antarctica <project-antarctica@example.org>",
       ccHeader: null,
+      labelIds: ["INBOX"],
       snippetClean: "Hello there",
       bodyTextPreview: "Hello there from the volunteer mailbox.",
       capturedMailbox: "volunteers@example.org",

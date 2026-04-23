@@ -49,6 +49,7 @@ interface BackfillCandidateRow {
   readonly fromHeader: string | null;
   readonly toHeader: string | null;
   readonly ccHeader: string | null;
+  readonly labelIds: readonly string[] | null;
   readonly snippetClean: string;
   readonly bodyTextPreview: string;
   readonly capturedMailbox: string | null;
@@ -111,6 +112,7 @@ async function loadCandidateBatch(input: {
       fromHeader: gmailMessageDetails.fromHeader,
       toHeader: gmailMessageDetails.toHeader,
       ccHeader: gmailMessageDetails.ccHeader,
+      labelIds: gmailMessageDetails.labelIds,
       snippetClean: gmailMessageDetails.snippetClean,
       bodyTextPreview: gmailMessageDetails.bodyTextPreview,
       capturedMailbox: gmailMessageDetails.capturedMailbox,
@@ -158,6 +160,7 @@ function mapLiveRecordToDetailRow(input: {
     fromHeader: input.record.fromHeader,
     toHeader: input.record.toHeader,
     ccHeader: input.record.ccHeader,
+    labelIds: input.record.labelIds ?? null,
     snippetClean: input.record.snippetClean,
     bodyTextPreview: input.record.bodyTextPreview,
     capturedMailbox: input.record.capturedMailbox,
@@ -178,6 +181,7 @@ function hasDetailChanged(
     current.fromHeader !== next.fromHeader ||
     current.toHeader !== next.toHeader ||
     current.ccHeader !== next.ccHeader ||
+    JSON.stringify(current.labelIds) !== JSON.stringify(next.labelIds ?? null) ||
     current.snippetClean !== next.snippetClean ||
     current.bodyTextPreview !== next.bodyTextPreview ||
     current.capturedMailbox !== next.capturedMailbox ||

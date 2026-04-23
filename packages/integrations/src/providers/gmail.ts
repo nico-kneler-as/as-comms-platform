@@ -24,6 +24,7 @@ import {
 const nullableStringSchema = z.string().min(1).nullable();
 const stringArraySchema = z.array(z.string().min(1));
 const timestampSchema = z.string().datetime();
+const nullableStringArraySchema = z.array(z.string().min(1)).nullable();
 
 export const gmailMessageRecordSchema = z.object({
   recordType: z.literal("message"),
@@ -38,6 +39,7 @@ export const gmailMessageRecordSchema = z.object({
   fromHeader: nullableStringSchema.default(null),
   toHeader: nullableStringSchema.default(null),
   ccHeader: nullableStringSchema.default(null),
+  labelIds: nullableStringArraySchema.optional(),
   snippetClean: z.string().default(""),
   bodyTextPreview: z.string().default(""),
   threadId: nullableStringSchema.default(null),
@@ -170,6 +172,7 @@ function mapGmailMessageRecord(
       fromHeader: record.fromHeader,
       toHeader: record.toHeader,
       ccHeader: record.ccHeader,
+      labelIds: record.labelIds,
       snippetClean: cleanSnippet,
       bodyTextPreview,
       capturedMailbox: record.capturedMailbox,
@@ -182,6 +185,18 @@ export function mapGmailRecord(rawRecord: GmailRecord): ProviderMappingResult {
   const supportedRecord = gmailMessageRecordSchema.safeParse(rawRecord);
 
   if (supportedRecord.success) {
+    const labelIds = supportedRecord.data.labelIds ?? [];
+
+    if (labelIds.includes("DRAFT") && !labelIds.includes("SENT")) {
+      return createDeferredMappingResult({
+        provider: "gmail",
+        sourceRecordType: supportedRecord.data.recordType,
+        sourceRecordId: supportedRecord.data.recordId,
+        reason: "skipped_by_policy",
+        detail: "Gmail draft-only messages are skipped before canonical ingest."
+      });
+    }
+
     return createCommandMappingResult({
       provider: "gmail",
       sourceRecordType: supportedRecord.data.recordType,
