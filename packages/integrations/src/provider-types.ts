@@ -22,7 +22,8 @@ export type SupportingProviderRecord = z.infer<
 
 export const providerMappingDeferredReasonValues = [
   "unsupported_record_type",
-  "deferred_record_family"
+  "deferred_record_family",
+  "skipped_by_policy"
 ] as const;
 export const providerMappingDeferredReasonSchema = z.enum(
   providerMappingDeferredReasonValues

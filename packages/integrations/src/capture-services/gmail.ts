@@ -104,6 +104,7 @@ const gmailApiMessagePartSchema: GmailApiMessagePartSchema = z.lazy(
 export const gmailMessageFullResponseSchema = z.object({
   id: z.string().min(1),
   threadId: z.string().min(1).optional(),
+  labelIds: z.array(z.string().min(1)).default([]),
   snippet: z.string().default(""),
   internalDate: z.string().min(1),
   payload: gmailApiMessagePartSchema
@@ -111,6 +112,7 @@ export const gmailMessageFullResponseSchema = z.object({
 export interface GmailMessageMetadata {
   readonly id: string;
   readonly threadId: string | null;
+  readonly labelIds: readonly string[];
   readonly snippet: string;
   readonly internalDate: string;
   readonly payload: GmailApiMessagePart;
@@ -370,6 +372,7 @@ export function createGmailMailboxApiClient(
         return {
           id: response.id,
           threadId: response.threadId ?? null,
+          labelIds: response.labelIds,
           snippet: response.snippet,
           internalDate: response.internalDate,
           payload: response.payload
@@ -400,7 +403,7 @@ function buildGmailListQuery(input: {
   const afterEpochSeconds = Math.floor(new Date(input.windowStart).getTime() / 1000);
   const beforeEpochSeconds = Math.floor(new Date(input.windowEnd).getTime() / 1000);
 
-  return `after:${String(afterEpochSeconds)} before:${String(beforeEpochSeconds)} -in:chats`;
+  return `after:${String(afterEpochSeconds)} before:${String(beforeEpochSeconds)} -in:chats -in:drafts -label:DRAFT`;
 }
 
 export async function mapLiveGmailMessageToRecord(input: {
@@ -414,6 +417,7 @@ export async function mapLiveGmailMessageToRecord(input: {
   const builderInput: GmailProviderCloseMessageInput = {
     recordId: input.message.id,
     threadId: input.message.threadId,
+    labelIds: input.message.labelIds,
     snippet: input.message.snippet,
     snippetClean: input.message.snippet,
     bodyTextPreview: await extractGmailBodyPreviewFromPayload(

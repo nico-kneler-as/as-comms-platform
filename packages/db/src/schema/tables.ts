@@ -214,6 +214,7 @@ export const gmailMessageDetails = pgTable(
     fromHeader: text("from_header"),
     toHeader: text("to_header"),
     ccHeader: text("cc_header"),
+    labelIds: text("label_ids").array(),
     snippetClean: text("snippet_clean").notNull().default(""),
     bodyTextPreview: text("body_text_preview").notNull().default(""),
     capturedMailbox: text("captured_mailbox"),

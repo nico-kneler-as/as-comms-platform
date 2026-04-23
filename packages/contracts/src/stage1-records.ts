@@ -182,6 +182,7 @@ export const gmailMessageDetailSchema = z.object({
   fromHeader: nullableStringSchema.default(null),
   toHeader: nullableStringSchema.default(null),
   ccHeader: nullableStringSchema.default(null),
+  labelIds: stringArraySchema.nullable().optional(),
   snippetClean: z.string(),
   bodyTextPreview: z.string(),
   capturedMailbox: nullableStringSchema,

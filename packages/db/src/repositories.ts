@@ -1129,6 +1129,7 @@ function createStage1RepositoriesInternal(
               fromHeader: values.fromHeader,
               toHeader: values.toHeader,
               ccHeader: values.ccHeader,
+              labelIds: values.labelIds,
               snippetClean: values.snippetClean,
               bodyTextPreview: values.bodyTextPreview,
               capturedMailbox: values.capturedMailbox,

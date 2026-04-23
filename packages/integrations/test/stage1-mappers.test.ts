@@ -73,6 +73,7 @@ describe("Stage 1 provider-close mappers", () => {
       subject: "Checking in",
       snippetClean: "Following up by email",
       bodyTextPreview: "Following up by email with more context.",
+      labelIds: ["SENT"],
       capturedMailbox: "volunteers@example.org",
       projectInboxAlias: "project-antarctica@example.org",
       normalizedParticipantEmails: ["volunteer@example.org"],
@@ -122,11 +123,114 @@ describe("Stage 1 provider-close mappers", () => {
         });
         expect(result.command.input.gmailMessageDetail).toMatchObject({
           subject: "Checking in",
+          labelIds: ["SENT"],
           snippetClean: "Following up by email",
           bodyTextPreview: "Following up by email with more context."
         });
       }
     }
+  });
+
+  it("skips Gmail draft-only messages before canonical ingest", () => {
+    expect(
+      mapGmailRecord({
+        recordType: "message",
+        recordId: "gmail-draft-1",
+        direction: "outbound",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        receivedAt: "2026-01-01T00:01:00.000Z",
+        payloadRef: "payloads/gmail/gmail-draft-1.json",
+        checksum: "checksum-draft-1",
+        snippet: "Drafting a reply",
+        subject: "Checking in",
+        fromHeader: null,
+        toHeader: null,
+        ccHeader: null,
+        labelIds: ["DRAFT"],
+        snippetClean: "Drafting a reply",
+        bodyTextPreview: "Drafting a reply",
+        capturedMailbox: "volunteers@example.org",
+        projectInboxAlias: null,
+        normalizedParticipantEmails: ["volunteer@example.org"],
+        salesforceContactId: null,
+        volunteerIdPlainValues: [],
+        normalizedPhones: [],
+        supportingRecords: [],
+        crossProviderCollapseKey: null,
+        threadId: "thread-draft-1",
+        rfc822MessageId: "<draft-1@example.org>"
+      })
+    ).toEqual({
+      outcome: "deferred",
+      provider: "gmail",
+      sourceRecordType: "message",
+      sourceRecordId: "gmail-draft-1",
+      reason: "skipped_by_policy",
+      detail: "Gmail draft-only messages are skipped before canonical ingest."
+    });
+  });
+
+  it("keeps Gmail messages that already have SENT even if DRAFT is still present", () => {
+    const result = mapGmailRecord({
+      recordType: "message",
+      recordId: "gmail-sent-1",
+      direction: "outbound",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      receivedAt: "2026-01-01T00:01:00.000Z",
+      payloadRef: "payloads/gmail/gmail-sent-1.json",
+      checksum: "checksum-sent-1",
+      snippet: "Sent reply",
+      subject: "Checking in",
+      fromHeader: "Project <project@example.org>",
+      toHeader: "Volunteer <volunteer@example.org>",
+      ccHeader: null,
+      labelIds: ["DRAFT", "SENT"],
+      snippetClean: "Sent reply",
+      bodyTextPreview: "Sent reply with final text.",
+      capturedMailbox: "volunteers@example.org",
+      projectInboxAlias: null,
+      normalizedParticipantEmails: ["volunteer@example.org"],
+      salesforceContactId: null,
+      volunteerIdPlainValues: [],
+      normalizedPhones: [],
+      supportingRecords: [],
+      crossProviderCollapseKey: null,
+      threadId: "thread-sent-1",
+      rfc822MessageId: "<sent-1@example.org>"
+    });
+
+    expect(result.outcome).toBe("command");
+  });
+
+  it("keeps Gmail inbound messages whose labels are absent", () => {
+    const result = mapGmailRecord({
+      recordType: "message",
+      recordId: "gmail-inbound-1",
+      direction: "inbound",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      receivedAt: "2026-01-01T00:01:00.000Z",
+      payloadRef: "payloads/gmail/gmail-inbound-1.json",
+      checksum: "checksum-inbound-1",
+      snippet: "Inbound question",
+      subject: "Question",
+      fromHeader: "Volunteer <volunteer@example.org>",
+      toHeader: "Project <project@example.org>",
+      ccHeader: null,
+      snippetClean: "Inbound question",
+      bodyTextPreview: "Inbound question with more detail.",
+      capturedMailbox: "volunteers@example.org",
+      projectInboxAlias: null,
+      normalizedParticipantEmails: ["volunteer@example.org"],
+      salesforceContactId: null,
+      volunteerIdPlainValues: [],
+      normalizedPhones: [],
+      supportingRecords: [],
+      crossProviderCollapseKey: null,
+      threadId: "thread-inbound-1",
+      rfc822MessageId: "<inbound-1@example.org>"
+    });
+
+    expect(result.outcome).toBe("command");
   });
 
   it("maps Salesforce contact snapshots into contact graph upserts", () => {

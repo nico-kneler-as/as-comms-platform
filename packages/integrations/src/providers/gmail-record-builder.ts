@@ -10,6 +10,7 @@ import {
 export interface GmailProviderCloseMessageInput {
   readonly recordId: string;
   readonly threadId: string | null;
+  readonly labelIds?: readonly string[] | null;
   readonly snippet: string;
   readonly snippetClean?: string;
   readonly bodyTextPreview?: string | null;
@@ -42,6 +43,16 @@ function uniqueEmails(values: readonly string[]): string[] {
       values
         .map((value) => normalizeEmail(value))
         .filter((value): value is string => value !== null)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+}
+
+function uniqueLabelIds(values: readonly string[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
     )
   ).sort((left, right) => left.localeCompare(right));
 }
@@ -209,6 +220,10 @@ export function buildGmailMessageRecord(
   )
     ? "outbound"
     : "inbound";
+  const labelIds =
+    input.labelIds === undefined || input.labelIds === null
+      ? null
+      : uniqueLabelIds(input.labelIds);
   const rfc822MessageId = input.headers["Message-ID"]?.trim() ?? null;
   const subject = normalizeGmailSubject(input.headers.Subject);
   const occurredAt =
@@ -233,6 +248,7 @@ export function buildGmailMessageRecord(
     fromHeader,
     toHeader,
     ccHeader,
+    labelIds,
     snippetClean,
     bodyTextPreview,
     threadId: input.threadId,

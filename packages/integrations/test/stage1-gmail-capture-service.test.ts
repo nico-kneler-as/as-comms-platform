@@ -216,6 +216,7 @@ describe("Gmail capture service", () => {
 
   it("keeps live Gmail polling on volunteers@... while preserving alias context", async () => {
     const queriedMailboxes: string[] = [];
+    const observedQueries: string[] = [];
     const service = createGmailCaptureService(
       {
         bearerToken: "gmail-token",
@@ -230,14 +231,18 @@ describe("Gmail capture service", () => {
       },
       {
         apiClient: {
-          listMessageIds: ({ mailbox }) => {
+          listMessageIds: ({ mailbox, query }) => {
             queriedMailboxes.push(mailbox);
+            if (query !== null) {
+              observedQueries.push(query);
+            }
             return Promise.resolve(["gmail-live-1"]);
           },
           getMessage: ({ messageId }) =>
             Promise.resolve({
               id: messageId,
               threadId: "thread-live-1",
+              labelIds: ["SENT"],
               snippet: "Outbound follow-up from volunteers",
               internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
               payload: buildFullMessagePayload({
@@ -279,10 +284,14 @@ describe("Gmail capture service", () => {
     });
 
     expect(queriedMailboxes).toEqual(["volunteers@example.org"]);
+    expect(observedQueries).toEqual([
+      "after:1767571200 before:1767571500 -in:chats -in:drafts -label:DRAFT"
+    ]);
     expect(result.records[0]).toMatchObject({
       recordType: "message",
       direction: "outbound",
       subject: "Checking in",
+      labelIds: ["SENT"],
       bodyTextPreview:
         "Checking in with the full body.\n\nCan you confirm your availability?",
       capturedMailbox: "volunteers@example.org",
@@ -307,6 +316,7 @@ describe("Gmail capture service", () => {
             Promise.resolve({
               id: messageId,
               threadId: "thread-live-1",
+              labelIds: ["SENT"],
               snippet: "Outbound follow-up from volunteers",
               internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
               payload: buildFullMessagePayload({
@@ -386,6 +396,7 @@ describe("Gmail capture service", () => {
             Promise.resolve({
               id: messageId,
               threadId: "thread-live-long-1",
+              labelIds: ["INBOX"],
               snippet: "Long inbound field update",
               internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
               payload: buildFullMessagePayload({
