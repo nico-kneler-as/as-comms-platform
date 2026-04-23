@@ -1267,10 +1267,7 @@ export async function deactivateUserAction(
     entityId: updatedUser.id,
     metadataJson: {
       before: {
-        deactivatedAt:
-          manageable.user.deactivatedAt === null
-            ? null
-            : manageable.user.deactivatedAt.toISOString()
+        deactivatedAt: null
       },
       after: {
         deactivatedAt: updatedUser.deactivatedAt?.toISOString() ?? null
@@ -1335,10 +1332,7 @@ export async function reactivateUserAction(
     entityId: updatedUser.id,
     metadataJson: {
       before: {
-        deactivatedAt:
-          manageable.user.deactivatedAt === null
-            ? null
-            : manageable.user.deactivatedAt.toISOString()
+        deactivatedAt: manageable.user.deactivatedAt.toISOString()
       },
       after: {
         deactivatedAt: updatedUser.deactivatedAt?.toISOString() ?? null

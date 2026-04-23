@@ -486,11 +486,11 @@ export function ProjectDetail({
     ? `Short alias set to ${optimisticProject.projectAlias ?? ""}.`
     : "Set a short project alias before activation.";
   const aiKnowledgeStatusLabel =
-    hasAiKnowledgeSync && optimisticProject.aiKnowledgeSyncedAt !== null
-      ? `AI knowledge last synced ${new Date(
+    optimisticProject.aiKnowledgeSyncedAt === null
+      ? "Run AI knowledge sync before activation."
+      : `AI knowledge last synced ${new Date(
           optimisticProject.aiKnowledgeSyncedAt
-        ).toLocaleString()}.`
-      : "Run AI knowledge sync before activation.";
+        ).toLocaleString()}.`;
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
