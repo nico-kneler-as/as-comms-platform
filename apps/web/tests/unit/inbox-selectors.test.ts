@@ -57,6 +57,7 @@ import {
   getInboxDetail,
   getInboxList,
   getInboxTimelinePage,
+  getInboxWelcomeWorkload,
   stripSignature,
 } from "../../app/inbox/_lib/selectors";
 import { InboxContactRail } from "../../app/inbox/_components/inbox-contact-rail";
@@ -411,6 +412,120 @@ describe("real inbox selectors", () => {
     expect(unresolved.items.map((item) => item.contactId)).toEqual([
       "contact:alex-thompson",
     ]);
+  });
+
+  it("builds welcome workload counts from active project projections only", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:amazon-basin",
+      projectName: "Amazon Basin Research",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:whitebark-pine",
+      projectName: "Tracking Whitebark Pine",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:river-cleanup",
+      projectName: "River Cleanup",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:killer-whales",
+      projectName: "Searching for Killer Whales",
+      source: "salesforce",
+      isActive: false,
+    });
+
+    const workload = await getInboxWelcomeWorkload();
+
+    expect(workload.projects).toEqual([
+      {
+        projectId: "project:amazon-basin",
+        projectName: "Amazon Basin Research",
+        unreadCount: 1,
+        needsFollowUpCount: 1,
+      },
+      {
+        projectId: "project:river-cleanup",
+        projectName: "River Cleanup",
+        unreadCount: 0,
+        needsFollowUpCount: 0,
+      },
+      {
+        projectId: "project:whitebark-pine",
+        projectName: "Tracking Whitebark Pine",
+        unreadCount: 0,
+        needsFollowUpCount: 0,
+      },
+    ]);
+    expect(
+      workload.projects.some(
+        (project) => project.projectId === "project:killer-whales",
+      ),
+    ).toBe(false);
+    expect(workload.totals).toEqual({
+      activeProjects: 3,
+      unread: 1,
+      needsFollowUp: 1,
+    });
+  });
+
+  it("keeps per-project welcome counts while deduplicating top-level totals across active projects", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:amazon-basin",
+      projectName: "Amazon Basin Research",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:whitebark-pine",
+      projectName: "Tracking Whitebark Pine",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.repositories.contactMemberships.upsert({
+      id: "membership:sarah:whitebark",
+      contactId: "contact:sarah-martinez",
+      projectId: "project:whitebark-pine",
+      expeditionId: null,
+      role: "volunteer",
+      status: "trip_planning",
+      source: "salesforce",
+    });
+
+    const workload = await getInboxWelcomeWorkload();
+
+    expect(workload.projects).toEqual([
+      {
+        projectId: "project:amazon-basin",
+        projectName: "Amazon Basin Research",
+        unreadCount: 1,
+        needsFollowUpCount: 1,
+      },
+      {
+        projectId: "project:whitebark-pine",
+        projectName: "Tracking Whitebark Pine",
+        unreadCount: 1,
+        needsFollowUpCount: 1,
+      },
+    ]);
+    expect(workload.totals).toEqual({
+      activeProjects: 2,
+      unread: 1,
+      needsFollowUp: 1,
+    });
   });
 
   it("assembles selected-contact detail from real contact, membership, timeline, and projection data", async () => {
