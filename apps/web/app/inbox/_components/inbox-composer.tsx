@@ -10,6 +10,15 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -30,9 +39,11 @@ import {
   type ComposerSendActionInput,
 } from "../actions";
 import {
+  formatContactRecipientLabel,
   isComposerSendDisabled,
   resolveDefaultAlias,
 } from "../_lib/composer-ui";
+import type { InboxComposerAliasOption } from "../_lib/view-models";
 import {
   ComposerRecipientPicker,
   type ComposerContactRecipient,
@@ -44,6 +55,7 @@ import {
 } from "./inbox-client-provider";
 import {
   AlertCircleIcon,
+  ChevronDownIcon,
   ImageIcon,
   LoaderIcon,
   MailIcon,
@@ -68,6 +80,13 @@ interface InlineComposerError {
   readonly retryable: boolean;
 }
 
+interface SenderPickerProps {
+  readonly aliases: readonly InboxComposerAliasOption[];
+  readonly selectedAlias: string | null;
+  readonly errorMessage: string | undefined;
+  readonly onAliasChange: (alias: string | null) => void;
+}
+
 type ComposerFieldErrors = readonly ComposerValidationError[];
 
 function formatBytes(bytes: number): string {
@@ -84,7 +103,10 @@ function formatBytes(bytes: number): string {
 
 function resolveRecipientLabel(recipient: ComposerRecipientValue): string {
   return recipient.kind === "contact"
-    ? recipient.displayName
+    ? formatContactRecipientLabel({
+        displayName: recipient.displayName,
+        primaryEmail: recipient.primaryEmail,
+      })
     : recipient.emailAddress;
 }
 
@@ -126,6 +148,101 @@ function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.height = "auto";
   const lineHeight = 24;
   textarea.style.height = `${String(Math.min(textarea.scrollHeight, lineHeight * 20))}px`;
+}
+
+function SenderPicker({
+  aliases,
+  selectedAlias,
+  errorMessage,
+  onAliasChange,
+}: SenderPickerProps) {
+  const selectedOption =
+    aliases.find((alias) => alias.alias === selectedAlias) ?? null;
+
+  return (
+    <label className="flex items-start gap-3">
+      <span className="mt-3 w-10 text-sm font-medium text-slate-700">
+        From:
+      </span>
+      <div className="flex-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-invalid={errorMessage ? true : undefined}
+              className={cn(
+                "flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left shadow-sm transition-colors hover:border-slate-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-300",
+                errorMessage ? "border-rose-300 ring-1 ring-rose-200" : "",
+              )}
+            >
+              <span className="min-w-0">
+                {selectedOption ? (
+                  <span className="block min-w-0">
+                    <span className="block truncate text-sm font-medium text-slate-900">
+                      {selectedOption.alias}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-slate-500">
+                      {selectedOption.projectName}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-sm text-slate-500">
+                    Choose a sender alias
+                  </span>
+                )}
+              </span>
+              <ChevronDownIcon className="size-4 shrink-0 text-slate-400" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[20rem] rounded-xl p-2"
+          >
+            <DropdownMenuLabel className="px-2 pb-2 pt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
+              Send from
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup
+              value={selectedAlias ?? ""}
+              onValueChange={(value) => {
+                onAliasChange(value.length > 0 ? value : null);
+              }}
+            >
+              <DropdownMenuRadioItem value="" className="rounded-lg">
+                <div className="flex min-w-0 flex-col">
+                  <span className="text-sm font-medium text-slate-700">
+                    No alias selected
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    Pick a sender before sending
+                  </span>
+                </div>
+              </DropdownMenuRadioItem>
+              {aliases.map((alias) => (
+                <DropdownMenuRadioItem
+                  key={alias.id}
+                  value={alias.alias}
+                  className="rounded-lg"
+                >
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm font-medium text-slate-900">
+                      {alias.alias}
+                    </span>
+                    <span className="truncate text-xs text-slate-500">
+                      {alias.projectName}
+                    </span>
+                  </div>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {errorMessage ? (
+          <p className="mt-1 text-xs text-rose-700">{errorMessage}</p>
+        ) : null}
+      </div>
+    </label>
+  );
 }
 
 async function readFileAsAttachment(file: File): Promise<AttachmentDraft> {
@@ -561,41 +678,15 @@ export function InboxComposerDetailPane() {
                   </p>
                 ) : null}
 
-                <label className="flex items-start gap-3">
-                  <span className="mt-2 w-10 text-sm font-medium text-slate-700">
-                    From:
-                  </span>
-                  <div className="flex-1">
-                    <select
-                      value={selectedAlias ?? ""}
-                      onChange={(event) => {
-                        const nextAlias = event.currentTarget.value;
-                        setSelectedAlias(
-                          nextAlias.length > 0 ? nextAlias : null,
-                        );
-                        clearComposerErrors();
-                      }}
-                      className={cn(
-                        "flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300",
-                        aliasError
-                          ? "border-rose-300 ring-1 ring-rose-200"
-                          : "",
-                      )}
-                    >
-                      <option value="">Choose an alias</option>
-                      {composerAliases.map((alias) => (
-                        <option key={alias.id} value={alias.alias}>
-                          {alias.alias} · {alias.projectName}
-                        </option>
-                      ))}
-                    </select>
-                    {aliasError ? (
-                      <p className="mt-1 text-xs text-rose-700">
-                        {aliasError.message}
-                      </p>
-                    ) : null}
-                  </div>
-                </label>
+                <SenderPicker
+                  aliases={composerAliases}
+                  selectedAlias={selectedAlias}
+                  errorMessage={aliasError?.message}
+                  onAliasChange={(nextAlias) => {
+                    setSelectedAlias(nextAlias);
+                    clearComposerErrors();
+                  }}
+                />
 
                 <label className="flex items-start gap-3">
                   <span className="mt-2 w-10 text-sm font-medium text-slate-700">
@@ -716,10 +807,6 @@ export function InboxComposerDetailPane() {
 
               {activeTab === "email" ? (
                 <>
-                  <p className="text-xs text-slate-500">
-                    {formatBytes(attachmentBytes)} of{" "}
-                    {formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)} used
-                  </p>
                   {attachmentError ? (
                     <p className="text-xs text-rose-700">
                       {attachmentError.message}
