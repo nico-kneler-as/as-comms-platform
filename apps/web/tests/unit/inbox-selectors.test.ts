@@ -585,6 +585,56 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("threads Gmail From, To, and Cc headers into the timeline detail view model", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:shaina-participants",
+      salesforceContactId: "003-shaina-participants",
+      displayName: "Shaina Dotson",
+      primaryEmail: "shaina.dotson@gmail.com",
+      primaryPhone: null,
+    });
+    const latestShainaEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "shaina-participants-latest",
+      contactId: "contact:shaina-participants",
+      occurredAt: "2026-04-22T01:41:44.000Z",
+      direction: "outbound",
+      subject: "Re: Update on Hex 43191",
+      snippet: "Looping Samantha in here as well.",
+      bodyTextPreview: "Looping Samantha in here as well.",
+      fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
+      toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+      ccHeader:
+        "Ricky Jones <ricky@adventurescientists.org>, Samantha Doe <samantha@adventurescientists.org>",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:shaina-participants",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-22T01:41:44.000Z",
+      lastActivityAt: "2026-04-22T01:41:44.000Z",
+      snippet: "Looping Samantha in here as well.",
+      lastCanonicalEventId: latestShainaEvent.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:shaina-participants");
+    const latestEntry = detail?.timeline.at(-1);
+
+    expect(latestEntry).toMatchObject({
+      kind: "outbound-email",
+      fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
+      toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+      ccHeader:
+        "Ricky Jones <ricky@adventurescientists.org>, Samantha Doe <samantha@adventurescientists.org>",
+    });
+  });
+
   it("preserves Stage 1 timeline families instead of flattening them into generic system events", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");

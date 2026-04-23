@@ -295,6 +295,7 @@ function InboundBubble({
       <div
         className={`min-w-0 w-full max-w-2xl ${RADIUS.bubble} rounded-bl-sm border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}
       >
+        <EmailParticipantHeaders entry={entry} tone="inbound" />
         {isEmail && entry.subject ? (
           <p
             className={cn(
@@ -413,6 +414,7 @@ function OutboundBubble({
           </div>
         ) : null}
 
+        <EmailParticipantHeaders entry={entry} tone="outbound" />
         {isEmail && entry.subject ? (
           <p
             className={cn(
@@ -440,6 +442,62 @@ function OutboundBubble({
         <ChannelIcon className="h-3 w-3" />
       </div>
     </li>
+  );
+}
+
+function EmailParticipantHeaders({
+  entry,
+  tone,
+}: {
+  readonly entry: InboxTimelineEntryViewModel;
+  readonly tone: "inbound" | "outbound";
+}) {
+  if (
+    entry.channel !== "email" ||
+    (entry.fromHeader === null &&
+      entry.toHeader === null &&
+      entry.ccHeader === null)
+  ) {
+    return null;
+  }
+
+  const borderClass =
+    tone === "inbound" ? "border-slate-200" : "border-sky-100";
+  const rows = [
+    { label: "From", value: entry.fromHeader },
+    { label: "To", value: entry.toHeader },
+    { label: "Cc", value: entry.ccHeader },
+  ].filter(
+    (
+      row,
+    ): row is {
+      readonly label: "From" | "To" | "Cc";
+      readonly value: string;
+    } => row.value !== null,
+  );
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <dl
+      className={`mb-2.5 space-y-1 border-b pb-2.5 text-[11px] leading-relaxed ${borderClass}`}
+    >
+      {rows.map((row) => (
+        <div
+          key={row.label}
+          className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2"
+        >
+          <dt className="font-medium uppercase tracking-[0.08em] text-slate-500">
+            {row.label}
+          </dt>
+          <dd className={cn("min-w-0 break-words text-slate-700", WRAP_ANYWHERE)}>
+            {row.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

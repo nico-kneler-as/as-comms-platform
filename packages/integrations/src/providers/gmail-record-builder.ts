@@ -25,6 +25,8 @@ export interface GmailProviderCloseMessageInput {
   readonly treatCapturedMailboxAsProjectInbox?: boolean;
 }
 
+const ADVENTURE_SCIENTISTS_DOMAIN = "@adventurescientists.org";
+
 function normalizeEmail(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
     return null;
@@ -42,6 +44,31 @@ function uniqueEmails(values: readonly string[]): string[] {
         .filter((value): value is string => value !== null)
     )
   ).sort((left, right) => left.localeCompare(right));
+}
+
+function normalizeHeaderValue(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value
+    .replace(/\r\n?[\t ]+/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+
+  return normalized.length === 0 ? null : normalized;
+}
+
+function isInternalEmail(
+  email: string,
+  internalAddresses: ReadonlySet<string>
+): boolean {
+  const normalized = email.toLowerCase();
+
+  return (
+    internalAddresses.has(normalized) ||
+    normalized.endsWith(ADVENTURE_SCIENTISTS_DOMAIN)
+  );
 }
 
 export function parseHeaderEmailList(value: string | undefined): string[] {
@@ -142,6 +169,9 @@ export function normalizeGmailSubject(
 export function buildGmailMessageRecord(
   input: GmailProviderCloseMessageInput
 ): GmailRecord {
+  const fromHeader = normalizeHeaderValue(input.headers.From);
+  const toHeader = normalizeHeaderValue(input.headers.To);
+  const ccHeader = normalizeHeaderValue(input.headers.Cc);
   const fromEmails = parseHeaderEmailList(input.headers.From);
   const toEmails = parseHeaderEmailList(input.headers.To);
   const ccEmails = parseHeaderEmailList(input.headers.Cc);
@@ -163,7 +193,7 @@ export function buildGmailMessageRecord(
   });
   const externalParticipantEmails = uniqueEmails(
     [...fromEmails, ...toEmails, ...ccEmails, ...bccEmails].filter(
-      (email) => !internalAddresses.has(email.toLowerCase())
+      (email) => !isInternalEmail(email, internalAddresses)
     )
   );
 
@@ -174,7 +204,9 @@ export function buildGmailMessageRecord(
     };
   }
 
-  const direction = fromEmails.some((email) => internalAddresses.has(email.toLowerCase()))
+  const direction = fromEmails.some((email) =>
+    isInternalEmail(email, internalAddresses)
+  )
     ? "outbound"
     : "inbound";
   const rfc822MessageId = input.headers["Message-ID"]?.trim() ?? null;
@@ -198,6 +230,9 @@ export function buildGmailMessageRecord(
     checksum: input.checksum,
     snippet: input.snippet,
     subject,
+    fromHeader,
+    toHeader,
+    ccHeader,
     snippetClean,
     bodyTextPreview,
     threadId: input.threadId,

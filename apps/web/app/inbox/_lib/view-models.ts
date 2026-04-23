@@ -158,6 +158,9 @@ export interface InboxTimelineEntryViewModel {
   readonly channel: InboxChannel | null;
   readonly isUnread: boolean;
   readonly isPreview: boolean;
+  readonly fromHeader: string | null;
+  readonly toHeader: string | null;
+  readonly ccHeader: string | null;
   readonly mailbox: string | null;
   readonly threadId: string | null;
   readonly rfc822MessageId: string | null;

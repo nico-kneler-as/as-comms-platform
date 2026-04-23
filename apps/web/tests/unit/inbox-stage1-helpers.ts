@@ -67,6 +67,9 @@ export async function seedInboxEmailEvent(
     readonly snippet: string;
     readonly snippetClean?: string;
     readonly bodyTextPreview?: string;
+    readonly fromHeader?: string | null;
+    readonly toHeader?: string | null;
+    readonly ccHeader?: string | null;
   },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
@@ -119,6 +122,9 @@ export async function seedInboxEmailEvent(
     rfc822MessageId: `<${input.id}@example.org>`,
     direction: input.direction,
     subject: input.subject,
+    fromHeader: input.fromHeader ?? null,
+    toHeader: input.toHeader ?? null,
+    ccHeader: input.ccHeader ?? null,
     snippetClean: input.snippetClean ?? input.snippet,
     bodyTextPreview: input.bodyTextPreview ?? input.snippet,
     capturedMailbox: "volunteers@example.org",

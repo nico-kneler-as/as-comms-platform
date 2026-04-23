@@ -46,6 +46,9 @@ interface BackfillCandidateRow {
   readonly rfc822MessageId: string | null;
   readonly direction: "inbound" | "outbound";
   readonly subject: string | null;
+  readonly fromHeader: string | null;
+  readonly toHeader: string | null;
+  readonly ccHeader: string | null;
   readonly snippetClean: string;
   readonly bodyTextPreview: string;
   readonly capturedMailbox: string | null;
@@ -84,6 +87,11 @@ function buildSuspiciousBodyPredicate() {
     or ${gmailMessageDetails.bodyTextPreview} ~* ${"Content-Transfer-Encoding:"}
     or ${gmailMessageDetails.bodyTextPreview} ~ ${"--[0-9A-Za-z][0-9A-Za-z._:-]{8,}"}
     or ${gmailMessageDetails.bodyTextPreview} ~ ${"=[0-9A-F]{2}"}
+    or (
+      length(${gmailMessageDetails.snippetClean}) >=
+        length(${gmailMessageDetails.bodyTextPreview}) + 80
+      and ${gmailMessageDetails.snippetClean} ~* ${"On .+ wrote:"}
+    )
   )`;
 }
 
@@ -100,6 +108,9 @@ async function loadCandidateBatch(input: {
       rfc822MessageId: gmailMessageDetails.rfc822MessageId,
       direction: gmailMessageDetails.direction,
       subject: gmailMessageDetails.subject,
+      fromHeader: gmailMessageDetails.fromHeader,
+      toHeader: gmailMessageDetails.toHeader,
+      ccHeader: gmailMessageDetails.ccHeader,
       snippetClean: gmailMessageDetails.snippetClean,
       bodyTextPreview: gmailMessageDetails.bodyTextPreview,
       capturedMailbox: gmailMessageDetails.capturedMailbox,
@@ -144,6 +155,9 @@ function mapLiveRecordToDetailRow(input: {
     rfc822MessageId: input.record.rfc822MessageId,
     direction: input.record.direction,
     subject: input.record.subject,
+    fromHeader: input.record.fromHeader,
+    toHeader: input.record.toHeader,
+    ccHeader: input.record.ccHeader,
     snippetClean: input.record.snippetClean,
     bodyTextPreview: input.record.bodyTextPreview,
     capturedMailbox: input.record.capturedMailbox,
@@ -161,6 +175,9 @@ function hasDetailChanged(
     current.rfc822MessageId !== next.rfc822MessageId ||
     current.direction !== next.direction ||
     current.subject !== next.subject ||
+    current.fromHeader !== next.fromHeader ||
+    current.toHeader !== next.toHeader ||
+    current.ccHeader !== next.ccHeader ||
     current.snippetClean !== next.snippetClean ||
     current.bodyTextPreview !== next.bodyTextPreview ||
     current.capturedMailbox !== next.capturedMailbox ||

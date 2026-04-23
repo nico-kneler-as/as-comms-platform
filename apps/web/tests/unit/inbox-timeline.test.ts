@@ -52,6 +52,9 @@ const baseEntry = {
   channel: "email" as const,
   isUnread: false,
   isPreview: true,
+  fromHeader: null,
+  toHeader: null,
+  ccHeader: null,
   mailbox: null,
   threadId: null,
   rfc822MessageId: null,
@@ -227,5 +230,41 @@ describe("InboxTimeline", () => {
     );
 
     expect(markup).toContain("[overflow-wrap:anywhere]");
+  });
+
+  it("renders From, To, and Cc metadata for one-to-one email entries", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            id: "timeline:email-with-participants",
+            kind: "outbound-email" as const,
+            actorLabel: "You",
+            subject: "Re: Update on Hex 43191",
+            body: "Looping Samantha in here for coverage.",
+            fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
+            toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+            ccHeader:
+              "Ricky Jones <ricky@adventurescientists.org>, Samantha Doe <samantha@adventurescientists.org>",
+          },
+        ],
+        volunteerFirstName: "Shaina",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("From");
+    expect(markup).toContain(
+      "PNW Project &lt;pnwbio@adventurescientists.org&gt;",
+    );
+    expect(markup).toContain("To");
+    expect(markup).toContain(
+      "Shaina Dotson &lt;shaina.dotson@gmail.com&gt;",
+    );
+    expect(markup).toContain("Cc");
+    expect(markup).toContain(
+      "Samantha Doe &lt;samantha@adventurescientists.org&gt;",
+    );
   });
 });

@@ -18,6 +18,8 @@ import type { Stage1ProviderCapturePorts } from "../orchestration/index.js";
 import { buildEventFromStoredData } from "./_reconcile-from-stored-evidence.js";
 
 const DEFAULT_BATCH_SIZE = 100;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+const ADVENTURE_SCIENTISTS_DOMAIN = "@adventurescientists.org";
 
 interface GmailHistoricalReplayConfig {
   readonly liveAccount: string;
@@ -92,25 +94,81 @@ function chunkValues<TValue>(
   return chunks;
 }
 
-async function loadOpenIdentityMissingAnchorTargets(input: {
+function isAdventureScientistsEmail(value: string): boolean {
+  return (
+    EMAIL_PATTERN.test(value) &&
+    value.toLowerCase().endsWith(ADVENTURE_SCIENTISTS_DOMAIN)
+  );
+}
+
+function isReplayEligibleGmailMultiCandidateCase(
+  caseRecord: IdentityResolutionCase
+): boolean {
+  const normalizedEmails = uniqueStrings(caseRecord.normalizedIdentityValues).filter(
+    (value) => EMAIL_PATTERN.test(value)
+  );
+  const internalEmails = normalizedEmails.filter(isAdventureScientistsEmail);
+  const externalEmails = normalizedEmails.filter(
+    (value) => !isAdventureScientistsEmail(value)
+  );
+
+  return internalEmails.length > 0 && externalEmails.length === 1;
+}
+
+function isSupportedReconcileCase(input: {
+  readonly caseRecord: IdentityResolutionCase;
+  readonly sourceEvidence: SourceEvidenceRecord;
+}): boolean {
+  if (input.caseRecord.reasonCode === "identity_missing_anchor") {
+    return true;
+  }
+
+  return (
+    input.caseRecord.reasonCode === "identity_multi_candidate" &&
+    input.sourceEvidence.provider === "gmail" &&
+    isReplayEligibleGmailMultiCandidateCase(input.caseRecord)
+  );
+}
+
+async function loadOpenIdentityReconcileTargets(input: {
   readonly repositories: Stage1RepositoryBundle;
   readonly limit?: number;
 }): Promise<{
   readonly targets: readonly ReconcileTarget[];
   readonly errors: readonly ReconcileError[];
 }> {
-  const cases = await input.repositories.identityResolutionQueue.listOpenByReasonCode(
-    "identity_missing_anchor"
+  const [missingAnchorCases, multiCandidateCases] = await Promise.all([
+    input.repositories.identityResolutionQueue.listOpenByReasonCode(
+      "identity_missing_anchor"
+    ),
+    input.repositories.identityResolutionQueue.listOpenByReasonCode(
+      "identity_multi_candidate"
+    )
+  ]);
+  const cases = [...missingAnchorCases, ...multiCandidateCases];
+  const dedupedCases = Array.from(
+    new Map(cases.map((caseRecord) => [caseRecord.id, caseRecord] as const)).values()
   );
-  const selectedCases =
-    input.limit === undefined ? cases : cases.slice(0, input.limit);
   const sourceEvidenceById = new Map(
     (
       await input.repositories.sourceEvidence.listByIds(
-        uniqueStrings(selectedCases.map((caseRecord) => caseRecord.sourceEvidenceId))
+        uniqueStrings(dedupedCases.map((caseRecord) => caseRecord.sourceEvidenceId))
       )
     ).map((record) => [record.id, record] as const)
   );
+  const eligibleCases = dedupedCases.filter((caseRecord) => {
+    const sourceEvidence = sourceEvidenceById.get(caseRecord.sourceEvidenceId);
+
+    return (
+      sourceEvidence !== undefined &&
+      isSupportedReconcileCase({
+        caseRecord,
+        sourceEvidence
+      })
+    );
+  });
+  const selectedCases =
+    input.limit === undefined ? eligibleCases : eligibleCases.slice(0, input.limit);
   const targets: ReconcileTarget[] = [];
   const errors: ReconcileError[] = [];
 
@@ -138,7 +196,12 @@ async function loadOpenIdentityMissingAnchorTargets(input: {
   };
 }
 
-function shouldCloseOriginalCase(result: NormalizedCanonicalEventResult): boolean {
+function shouldCloseOriginalCase(input: {
+  readonly currentReasonCode: IdentityResolutionCase["reasonCode"];
+  readonly result: NormalizedCanonicalEventResult;
+}): boolean {
+  const { currentReasonCode, result } = input;
+
   if (result.outcome === "applied" || result.outcome === "duplicate") {
     return true;
   }
@@ -147,7 +210,7 @@ function shouldCloseOriginalCase(result: NormalizedCanonicalEventResult): boolea
     return false;
   }
 
-  return result.identityCase.reasonCode !== "identity_missing_anchor";
+  return result.identityCase.reasonCode !== currentReasonCode;
 }
 
 async function markIdentityCaseResolved(input: {
@@ -211,7 +274,10 @@ async function executeTarget(input: {
 
     if (
       currentCase?.status !== "open" ||
-      currentCase.reasonCode !== "identity_missing_anchor"
+      !isSupportedReconcileCase({
+        caseRecord: currentCase,
+        sourceEvidence: input.target.sourceEvidence
+      })
     ) {
       execution = {
         kind: "skipped"
@@ -234,7 +300,12 @@ async function executeTarget(input: {
       await normalization.applyNormalizedCanonicalEvent(normalizedIntake);
     const afterContactCount = (await repositories.contacts.listAll()).length;
 
-    if (shouldCloseOriginalCase(normalizationResult)) {
+    if (
+      shouldCloseOriginalCase({
+        currentReasonCode: currentCase.reasonCode,
+        result: normalizationResult
+      })
+    ) {
       await markIdentityCaseResolved({
         repositories,
         caseRecord: currentCase,
@@ -281,7 +352,7 @@ export async function reconcileIdentityQueue(
   input: ReconcileIdentityQueueInput
 ): Promise<ReconcileReport> {
   const logger = input.logger ?? console;
-  const initialTargets = await loadOpenIdentityMissingAnchorTargets({
+  const initialTargets = await loadOpenIdentityReconcileTargets({
     repositories: input.repositories,
     ...(input.limit === undefined ? {} : { limit: input.limit })
   });

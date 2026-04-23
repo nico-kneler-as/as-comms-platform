@@ -144,6 +144,9 @@ function buildGmailOutboundEmailFixture(input: {
       rfc822MessageId: `<${input.key}@example.org>`,
       direction: "outbound" as const,
       subject: input.subject,
+      fromHeader: "volunteers@example.org",
+      toHeader: input.email,
+      ccHeader: null,
       snippetClean: input.snippetClean ?? input.bodyTextPreview,
       bodyTextPreview: input.bodyTextPreview,
       capturedMailbox: "volunteers@example.org",
@@ -344,6 +347,9 @@ describe("Stage 1 normalization service", () => {
         rfc822MessageId: "<gmail-unknown-email-1@example.org>",
         direction: "inbound",
         subject: "New partner outreach",
+        fromHeader: "fresh-partner@example.org",
+        toHeader: "volunteers@adventurescientists.org",
+        ccHeader: null,
         snippetClean: "Hello from a new external partner",
         bodyTextPreview: "Hello from a new external partner",
         capturedMailbox: "volunteers@adventurescientists.org",
@@ -467,6 +473,76 @@ describe("Stage 1 normalization service", () => {
         source: "simpletexting"
       })
     ]);
+  });
+
+  it("opens identity review instead of inventing a contact when multiple unmatched external Gmail participants are present", async () => {
+    const context = await createTestStage1Context();
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_multi_external_1",
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-multi-external-1",
+        receivedAt: "2026-01-01T00:05:00.000Z",
+        occurredAt: "2026-01-01T00:04:00.000Z",
+        payloadRef: "payloads/gmail/gmail-multi-external-1.json",
+        idempotencyKey: "gmail:message:gmail-multi-external-1",
+        checksum: "checksum-multi-external-1"
+      },
+      canonicalEvent: {
+        id: "evt_multi_external_1",
+        eventType: "communication.email.inbound",
+        occurredAt: "2026-01-01T00:04:00.000Z",
+        idempotencyKey: "canonical:gmail-multi-external-1",
+        summary: "Inbound email received",
+        snippet: "Two external people are on this email."
+      },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-multi-external-1",
+        direction: "inbound"
+      }),
+      identity: {
+        salesforceContactId: null,
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["partner-one@example.org", "partner-two@example.org"],
+        normalizedPhones: []
+      },
+      supportingSources: [],
+      gmailMessageDetail: {
+        sourceEvidenceId: "sev_multi_external_1",
+        providerRecordId: "gmail-multi-external-1",
+        gmailThreadId: "thread-multi-external-1",
+        rfc822MessageId: "<gmail-multi-external-1@example.org>",
+        direction: "inbound",
+        subject: "Can you help both of us?",
+        fromHeader: "Partner One <partner-one@example.org>",
+        toHeader: "volunteers@adventurescientists.org",
+        ccHeader: "Partner Two <partner-two@example.org>",
+        snippetClean: "Two external people are on this email.",
+        bodyTextPreview: "Two external people are on this email.",
+        capturedMailbox: "volunteers@adventurescientists.org",
+        projectInboxAlias: null
+      }
+    });
+
+    expect(result.outcome).toBe("needs_identity_review");
+    if (result.outcome === "needs_identity_review") {
+      expect(result.identityCase.reasonCode).toBe("identity_multi_candidate");
+      expect(result.identityCase.candidateContactIds).toEqual([]);
+    }
+
+    await expect(
+      context.repositories.contacts.findById(
+        "contact:email:partner-one@example.org"
+      )
+    ).resolves.toBeNull();
+    await expect(
+      context.repositories.contacts.findById(
+        "contact:email:partner-two@example.org"
+      )
+    ).resolves.toBeNull();
   });
 
   it("resolves an unmatched Salesforce-less email to the existing canonical contact when the identity already exists", async () => {

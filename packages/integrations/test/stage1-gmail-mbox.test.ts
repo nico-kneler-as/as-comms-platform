@@ -133,6 +133,52 @@ Hello from an exported mailbox.
     ]);
   });
 
+  it("keeps From, To, and Cc headers for display while excluding Adventure Scientists recipients from contact matching", () => {
+    const record = buildGmailMessageRecord({
+      recordId: "gmail-third-party-1",
+      threadId: "thread-third-party-1",
+      snippet: "Looping in Samantha on this thread.",
+      internalDate: "2026-04-22T00:00:00.000Z",
+      headers: {
+        Date: "Wed, 22 Apr 2026 00:00:00 +0000",
+        From: "PNW Project <pnwbio@adventurescientists.org>",
+        To: "Shaina Dotson <shaina.dotson@gmail.com>",
+        Cc: [
+          "Ricky Jones <ricky@adventurescientists.org>",
+          "Samantha Doe <samantha@adventurescientists.org>",
+          "Outside Partner <partner@example.org>"
+        ].join(", "),
+        Subject: "Re: Update on Hex 43191",
+        "Message-ID": "<gmail-third-party-1@example.org>"
+      },
+      payloadRef:
+        "gmail://volunteers@adventurescientists.org/messages/gmail-third-party-1",
+      checksum: "checksum-third-party-1",
+      capturedMailbox: "volunteers@adventurescientists.org",
+      receivedAt: "2026-04-22T00:01:00.000Z",
+      internalAddresses: [
+        "volunteers@adventurescientists.org",
+        "pnwbio@adventurescientists.org"
+      ],
+      projectInboxAliases: ["pnwbio@adventurescientists.org"]
+    });
+
+    expect(record).toMatchObject({
+      recordType: "message",
+      fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
+      toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+      ccHeader: [
+        "Ricky Jones <ricky@adventurescientists.org>",
+        "Samantha Doe <samantha@adventurescientists.org>",
+        "Outside Partner <partner@example.org>"
+      ].join(", "),
+      normalizedParticipantEmails: [
+        "partner@example.org",
+        "shaina.dotson@gmail.com"
+      ]
+    });
+  });
+
   it("decodes RFC 2047 subjects during mbox import", async () => {
     const cases = [
       {

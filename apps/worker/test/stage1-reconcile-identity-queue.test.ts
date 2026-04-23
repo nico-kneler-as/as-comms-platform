@@ -39,19 +39,25 @@ async function seedExistingEmailContact(
   });
 }
 
-async function seedOpenIdentityMissingAnchorCase(
+async function seedOpenIdentityCase(
   context: TestWorkerContext,
   input: {
     readonly sourceEvidenceId: string;
     readonly normalizedIdentityValues: readonly string[];
     readonly openedAt: string;
+    readonly reasonCode?:
+      | "identity_missing_anchor"
+      | "identity_multi_candidate";
+    readonly candidateContactIds?: readonly string[];
   }
 ): Promise<void> {
+  const reasonCode = input.reasonCode ?? "identity_missing_anchor";
+
   await context.repositories.identityResolutionQueue.upsert({
-    id: `identity-review:${input.sourceEvidenceId}:identity_missing_anchor`,
+    id: `identity-review:${input.sourceEvidenceId}:${reasonCode}`,
     sourceEvidenceId: input.sourceEvidenceId,
-    candidateContactIds: [],
-    reasonCode: "identity_missing_anchor",
+    candidateContactIds: [...(input.candidateContactIds ?? [])],
+    reasonCode,
     status: "open",
     openedAt: input.openedAt,
     resolvedAt: null,
@@ -70,6 +76,10 @@ async function seedStoredGmailCase(
     readonly subject: string;
     readonly occurredAt: string;
     readonly receivedAt: string;
+    readonly reasonCode?:
+      | "identity_missing_anchor"
+      | "identity_multi_candidate";
+    readonly candidateContactIds?: readonly string[];
   }
 ): Promise<void> {
   const sourceEvidenceId = `source-evidence:gmail:message:${input.recordId}`;
@@ -97,10 +107,12 @@ async function seedStoredGmailCase(
     capturedMailbox: "volunteers@adventurescientists.org",
     projectInboxAlias: null
   });
-  await seedOpenIdentityMissingAnchorCase(context, {
+  await seedOpenIdentityCase(context, {
     sourceEvidenceId,
     normalizedIdentityValues: input.normalizedIdentityValues,
-    openedAt: input.receivedAt
+    openedAt: input.receivedAt,
+    reasonCode: input.reasonCode,
+    candidateContactIds: input.candidateContactIds
   });
 }
 
@@ -144,7 +156,7 @@ async function seedStoredSalesforceCase(
     expeditionId: null,
     sourceField: null
   });
-  await seedOpenIdentityMissingAnchorCase(context, {
+  await seedOpenIdentityCase(context, {
     sourceEvidenceId,
     normalizedIdentityValues: input.normalizedIdentityValues,
     openedAt: input.receivedAt
@@ -364,6 +376,85 @@ describe("reconcileIdentityQueue", () => {
       await expect(
         context.repositories.canonicalEvents.countAll()
       ).resolves.toBe(4);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("reconciles eligible Gmail multi-candidate cases once internal AS participants are filtered out", async () => {
+    const context = await createTestWorkerContext();
+    const sourceEvidenceId =
+      "source-evidence:gmail:message:gmail-third-party-resolved-1";
+
+    try {
+      await seedExistingEmailContact(context, {
+        contactId: "contact_external_volunteer",
+        email: "shaina.dotson@gmail.com",
+        displayName: "Shaina Dotson"
+      });
+      await seedExistingEmailContact(context, {
+        contactId: "contact_internal_staff",
+        email: "ricky@adventurescientists.org",
+        displayName: "Ricky Jones"
+      });
+      await seedStoredGmailCase(context, {
+        recordId: "gmail-third-party-resolved-1",
+        payloadRef: "capture://gmail/gmail-third-party-resolved-1",
+        normalizedIdentityValues: [
+          "ricky@adventurescientists.org",
+          "shaina.dotson@gmail.com"
+        ],
+        subject: "Re: Update on Hex 43191",
+        occurredAt: "2026-01-01T00:06:00.000Z",
+        receivedAt: "2026-01-01T00:06:00.000Z",
+        reasonCode: "identity_multi_candidate",
+        candidateContactIds: [
+          "contact_external_volunteer",
+          "contact_internal_staff"
+        ]
+      });
+
+      const report = await reconcileIdentityQueue({
+        db: context.db,
+        repositories: context.repositories,
+        capture: context.capture,
+        gmailHistoricalReplay: {
+          liveAccount: "volunteers@adventurescientists.org",
+          projectInboxAliases: ["pnwbio@adventurescientists.org"]
+        },
+        dryRun: false,
+        logger: {
+          log: () => undefined
+        }
+      });
+
+      expect(report).toMatchObject({
+        dryRun: false,
+        scanned: 1,
+        resolved: 1,
+        created: 0,
+        skipped: 0
+      });
+      await expect(
+        context.repositories.canonicalEvents.countAll()
+      ).resolves.toBe(1);
+      await expect(
+        context.repositories.canonicalEvents.listByContactId(
+          "contact_external_volunteer"
+        )
+      ).resolves.toHaveLength(1);
+      await expect(
+        context.repositories.identityResolutionQueue.findById(
+          `identity-review:${sourceEvidenceId}:identity_multi_candidate`
+        )
+      ).resolves.toMatchObject({
+        status: "resolved"
+      });
+      await expect(
+        context.repositories.identityResolutionQueue.listOpenByReasonCode(
+          "identity_multi_candidate"
+        )
+      ).resolves.toHaveLength(0);
     } finally {
       await context.dispose();
     }
