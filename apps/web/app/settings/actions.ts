@@ -173,6 +173,10 @@ function normalizeIncomingEmail(address: string): string {
   return address.trim().toLowerCase();
 }
 
+function notImplementedResult(message: string): UiError {
+  return errorResult("not_implemented", message);
+}
+
 function normalizeProjectAliasValue(
   rawAlias: string | null
 ):
@@ -1263,7 +1267,10 @@ export async function deactivateUserAction(
     entityId: updatedUser.id,
     metadataJson: {
       before: {
-        deactivatedAt: manageable.user.deactivatedAt?.toISOString() ?? null
+        deactivatedAt:
+          manageable.user.deactivatedAt === null
+            ? null
+            : manageable.user.deactivatedAt.toISOString()
       },
       after: {
         deactivatedAt: updatedUser.deactivatedAt?.toISOString() ?? null
@@ -1328,7 +1335,10 @@ export async function reactivateUserAction(
     entityId: updatedUser.id,
     metadataJson: {
       before: {
-        deactivatedAt: manageable.user.deactivatedAt?.toISOString() ?? null
+        deactivatedAt:
+          manageable.user.deactivatedAt === null
+            ? null
+            : manageable.user.deactivatedAt.toISOString()
       },
       after: {
         deactivatedAt: updatedUser.deactivatedAt?.toISOString() ?? null

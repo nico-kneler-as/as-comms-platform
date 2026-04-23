@@ -482,6 +482,15 @@ export function ProjectDetail({
   const hasProjectAlias = (optimisticProject.projectAlias?.trim().length ?? 0) > 0;
   const hasProjectInboxAlias = optimisticProject.emails.length > 0;
   const hasAiKnowledgeSync = optimisticProject.aiKnowledgeSyncedAt !== null;
+  const projectAliasStatusLabel = hasProjectAlias
+    ? `Short alias set to ${optimisticProject.projectAlias ?? ""}.`
+    : "Set a short project alias before activation.";
+  const aiKnowledgeStatusLabel =
+    hasAiKnowledgeSync && optimisticProject.aiKnowledgeSyncedAt !== null
+      ? `AI knowledge last synced ${new Date(
+          optimisticProject.aiKnowledgeSyncedAt
+        ).toLocaleString()}.`
+      : "Run AI knowledge sync before activation.";
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
@@ -789,9 +798,7 @@ export function ProjectDetail({
                 : "border-amber-200 bg-amber-50 text-amber-900"
             )}
           >
-            {hasProjectAlias
-              ? `Short alias set to ${optimisticProject.projectAlias}.`
-              : "Set a short project alias before activation."}
+            {projectAliasStatusLabel}
           </li>
           <li
             className={cn(
@@ -813,11 +820,7 @@ export function ProjectDetail({
                 : "border-amber-200 bg-amber-50 text-amber-900"
             )}
           >
-            {hasAiKnowledgeSync
-              ? `AI knowledge last synced ${new Date(
-                  optimisticProject.aiKnowledgeSyncedAt ?? ""
-                ).toLocaleString()}.`
-              : "Run AI knowledge sync before activation."}
+            {aiKnowledgeStatusLabel}
           </li>
         </ul>
       </section>
