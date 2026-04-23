@@ -1140,10 +1140,13 @@ function campaignHeadlineAndBody(
 } {
   if (item.family === "campaign_email") {
     const parsedPreview = parseCommunicationPreview(item.snippet);
+    const headline =
+      normalizeInlineText(item.campaignName) ??
+      resolveDisplayableOutboundSubject(parsedPreview.subject);
 
     if (parsedPreview.subject !== null) {
       return {
-        headline: parsedPreview.subject,
+        headline,
         body:
           resolveDisplayableOutboundSubject(parsedPreview.subject) === null
             ? parsedPreview.body
@@ -1159,13 +1162,8 @@ function campaignHeadlineAndBody(
         ? parsedPreview.body
         : (normalizeInlineText(item.summary) ?? "");
 
-    const split = splitHeadlineAndBody(cleaned);
-
     return {
-      headline:
-        split.headline ??
-        normalizeInlineText(item.campaignName) ??
-        normalizeInlineText(item.summary),
+      headline,
       body: cleaned,
     };
   }
@@ -1507,9 +1505,7 @@ function timelineSubject(item: TimelineItem): string | null {
     case "auto_sms":
       return null;
     case "campaign_email":
-      return resolveDisplayableOutboundSubject(
-        parseCommunicationPreview(item.snippet).subject,
-      );
+      return campaignHeadlineAndBody(item).headline;
     case "campaign_sms":
       return campaignHeadlineAndBody(item).headline;
     case "one_to_one_sms":

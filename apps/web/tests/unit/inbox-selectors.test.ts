@@ -748,7 +748,7 @@ describe("real inbox selectors", () => {
     ]);
     expect(detail?.timeline[1]).toMatchObject({
       kind: "outbound-campaign-email",
-      subject: null,
+      subject: "Spring Kickoff",
       body: "Welcome to the new field season.",
     });
     expect(detail?.timeline[2]).toMatchObject({
@@ -1487,7 +1487,7 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("uses the best available current headline for campaign email rows and shows the sanitized body when expanded", async () => {
+  it("prefers campaign name for campaign email headlines while keeping the expanded body", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -1519,7 +1519,7 @@ describe("real inbox selectors", () => {
 
     expect(campaignEntry).toMatchObject({
       kind: "outbound-campaign-email",
-      subject: "April field update",
+      subject: "April Volunteer Update",
       body: "Hi Sarah,\nPlease bring your field notebook.",
       isPreview: true,
       campaignActivity: [],
@@ -1572,13 +1572,13 @@ describe("real inbox selectors", () => {
       detail?.timeline.filter(
         (entry) =>
           entry.kind === "outbound-campaign-email" &&
-          entry.subject === "April field update",
+          entry.subject === "April Volunteer Update",
       ) ?? [];
 
     expect(campaignEntries).toHaveLength(1);
     expect(campaignEntries[0]).toMatchObject({
       kind: "outbound-campaign-email",
-      subject: "April field update",
+      subject: "April Volunteer Update",
       body: "Hi Sarah,\nPlease bring your field notebook.",
     });
     expect(campaignEntries[0]?.campaignActivity.map((activity) => activity.activityType)).toEqual([
@@ -1587,7 +1587,7 @@ describe("real inbox selectors", () => {
     ]);
   });
 
-  it("strips outbound email prefixes from automated and campaign email subjects before display", async () => {
+  it("falls back to stripped campaign subjects when no campaign name exists", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -1604,7 +1604,7 @@ describe("real inbox selectors", () => {
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-12T15:45:00.000Z",
       activityType: "sent",
-      campaignName: "PNW Training",
+      campaignName: null,
       snippet: [
         "From: volunteers@example.org",
         "To: sarah@example.org",
@@ -1619,7 +1619,7 @@ describe("real inbox selectors", () => {
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-12T15:50:00.000Z",
       activityType: "sent",
-      campaignName: "Weekly Digest",
+      campaignName: null,
       snippet: [
         "From: volunteers@example.org",
         "To: sarah@example.org",
@@ -1670,7 +1670,7 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("hides unusable automated and campaign email subjects while keeping meaningful body and embedded URLs", async () => {
+  it("hides unusable automated and campaign email fallback subjects while keeping meaningful body and embedded URLs", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -1704,7 +1704,7 @@ describe("real inbox selectors", () => {
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-12T16:20:00.000Z",
       activityType: "sent",
-      campaignName: "Webinar Push",
+      campaignName: null,
       snippet: [
         "From: volunteers@example.org",
         "To: sarah@example.org",
@@ -1719,7 +1719,7 @@ describe("real inbox selectors", () => {
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-12T16:25:00.000Z",
       activityType: "sent",
-      campaignName: "Field Update",
+      campaignName: null,
       snippet: "Welcome to the new field season.",
     });
 
@@ -1792,9 +1792,35 @@ describe("real inbox selectors", () => {
 
     expect(campaignEntry).toMatchObject({
       kind: "outbound-campaign-email",
-      subject: "April field update",
+      subject: "April Volunteer Update",
       body: "",
       isPreview: true,
+    });
+  });
+
+  it("returns null for campaign email headlines when both campaign name and usable subject are missing", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxCampaignEmailEvent(runtime.context, {
+      id: "sarah-campaign-email-empty-fallback",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-12T16:30:00.000Z",
+      activityType: "sent",
+      campaignName: null,
+      snippet: "Body:\nNo explicit subject here, only body copy.",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+    const campaignEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-campaign-email-empty-fallback",
+    );
+
+    expect(campaignEntry).toMatchObject({
+      kind: "outbound-campaign-email",
+      subject: null,
+      body: "No explicit subject here, only body copy.",
     });
   });
 

@@ -546,7 +546,7 @@ export async function seedInboxCampaignEmailEvent(
     readonly contactId: string;
     readonly occurredAt: string;
     readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
-    readonly campaignName: string;
+    readonly campaignName: string | null;
     readonly campaignId?: string;
     readonly snippet: string;
   },
@@ -615,7 +615,7 @@ export async function seedInboxCampaignEmailEvent(
     occurredAt: input.occurredAt,
     sortKey: `${input.occurredAt}::${canonicalEventId}`,
     eventType,
-    summary: input.campaignName,
+    summary: input.campaignName ?? input.campaignId ?? "Campaign email",
     channel: "campaign_email",
     primaryProvider: "mailchimp",
     reviewState: "clear",
