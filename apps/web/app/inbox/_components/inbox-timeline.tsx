@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import type { ComponentType } from "react";
 import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -17,14 +18,24 @@ import { autolinkText } from "./_autolink";
 import { deleteNoteAction, updateNoteAction } from "../actions";
 import { getInternalNoteValidationError } from "@/src/lib/internal-note-validation";
 import {
+  BotIcon,
+  CalendarIcon,
+  CheckCircleIcon,
   ChevronRightIcon,
+  EyeIcon,
   LoaderIcon,
   MailIcon,
+  MegaphoneIcon,
+  MousePointerClickIcon,
   NoteIcon,
   PhoneIcon,
   RefreshCwIcon,
+  SendIcon,
+  SparkleIcon,
+  WandIcon,
+  XIcon,
+  MapPinIcon,
 } from "./icons";
-import { DividerLabel } from "@/components/ui/divider-label";
 import {
   Tooltip,
   TooltipContent,
@@ -195,39 +206,6 @@ function RelativeTimestamp({
   );
 }
 
-function CampaignActivityTimestamp({
-  label,
-  occurredAt,
-}: {
-  readonly label: string;
-  readonly occurredAt: string;
-}) {
-  const [activityLabel, relativeLabel] = label.split(/ (?=\S+ ago$|yesterday$)/);
-
-  if (relativeLabel === undefined) {
-    return (
-      <RelativeTimestamp
-        timestamp={occurredAt}
-        label={label}
-        asSpan
-        focusable={false}
-      />
-    );
-  }
-
-  return (
-    <>
-      {activityLabel}{" "}
-      <RelativeTimestamp
-        timestamp={occurredAt}
-        label={relativeLabel}
-        asSpan
-        focusable={false}
-      />
-    </>
-  );
-}
-
 function TimelineTimestamp({
   entry,
   className,
@@ -379,10 +357,13 @@ function OutboundBubble({
   return (
     <li className="flex w-full flex-col items-end">
       <div
-        className={`min-w-0 w-full max-w-2xl ${RADIUS.bubble} rounded-br-sm bg-slate-800 px-4 py-3 ${SHADOW.sm}`}
+        className={cn(
+          `min-w-0 w-full max-w-2xl ${RADIUS.bubble} rounded-br-sm border border-sky-100 bg-sky-50/80 px-4 py-3 ${SHADOW.sm}`,
+          "backdrop-blur-[1px]",
+        )}
       >
         {entry.sendStatus === "pending" ? (
-          <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-1 text-[11px] font-medium text-slate-100">
+          <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-white px-2 py-1 text-[11px] font-medium text-sky-700">
             <LoaderIcon className="size-3 animate-spin" />
             Sending...
           </div>
@@ -436,7 +417,7 @@ function OutboundBubble({
         {isEmail && entry.subject ? (
           <p
             className={cn(
-              "mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-100",
+              "mb-1.5 text-balance text-[13px] font-semibold leading-snug text-slate-900",
               WRAP_ANYWHERE,
             )}
           >
@@ -446,11 +427,11 @@ function OutboundBubble({
         {body.length > 0 ? (
           <p
             className={cn(
-              "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-slate-200",
+              "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-slate-700",
               WRAP_ANYWHERE,
             )}
           >
-            {autolinkText(body, "text-sky-300")}
+            {autolinkText(body, "text-sky-700")}
           </p>
         ) : null}
       </div>
@@ -475,23 +456,19 @@ function AutomatedRow({
   readonly onToggle: () => void;
 }) {
   const isEmail = entry.channel === "email";
-  const label =
-    role === "activity"
-      ? isEmail
-        ? "Email Activity"
-        : "SMS Activity"
-      : role === "automated"
-        ? isEmail
-          ? "Automated Email"
-          : "Automated SMS"
-        : isEmail
-          ? "Campaign Email"
-          : "Campaign SMS";
+  const campaignActivity =
+    entry.kind === "outbound-campaign-email" ? entry.campaignActivity : [];
+  const campaignState =
+    role === "campaign"
+      ? describeCampaignVisualState(campaignActivity)
+      : undefined;
+  const descriptor = describeEventRow({
+    role,
+    isEmail,
+    campaignActivity,
+  });
   const headline = entry.subject;
   const body = bodyTextForEntry(entry);
-  const campaignActivity = entry.kind === "outbound-campaign-email"
-    ? entry.campaignActivity
-    : [];
   const hideCollapsedBody = shouldHideAutomatedRowBody({
     isExpanded,
     kind: entry.kind,
@@ -500,9 +477,6 @@ function AutomatedRow({
 
   return (
     <li className="flex w-full flex-col items-end">
-      <div className="mb-1 flex w-full max-w-2xl items-center justify-between px-1">
-        <span className={TEXT.micro}>{label}</span>
-      </div>
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -510,47 +484,59 @@ function AutomatedRow({
             aria-expanded={isExpanded}
             title={formatExactTimestamp(entry.occurredAt)}
             onClick={onToggle}
+            data-event-role={role}
+            data-campaign-state={campaignState}
             className={cn(
-              `group flex w-full max-w-2xl items-center gap-3 ${RADIUS.md} border border-dashed border-slate-300 bg-white px-4 py-2.5 text-left`,
+              `group flex w-full max-w-2xl items-start gap-3 ${RADIUS.md} border px-4 py-3 text-left`,
               "transition-[color,background-color,transform] duration-150 ease-out",
               "active:scale-[0.96]",
               TRANSITION.reduceMotion,
-              "hover:bg-slate-50",
+              descriptor.shellClassName,
             )}
           >
+            <div
+              className={cn(
+                "mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-full border bg-white/90",
+                descriptor.iconClassName,
+              )}
+            >
+              <descriptor.Icon className="size-4" />
+            </div>
             <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]",
+                    descriptor.badgeClassName,
+                  )}
+                >
+                  {descriptor.label}
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  {entry.occurredAtLabel}
+                </span>
+              </div>
               {headline ? (
                 <p
                   className={cn(
-                    "text-pretty text-[13px] font-medium leading-snug text-slate-700",
+                    "mt-2 text-pretty text-[13px] font-semibold leading-snug text-slate-900",
                     WRAP_ANYWHERE,
                   )}
                 >
                   {headline}
                 </p>
               ) : null}
-              {campaignActivity.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {campaignActivity.map((activity) => (
-                    <span
-                      key={`${activity.activityType}:${activity.occurredAt}`}
-                      className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium leading-none text-emerald-700"
-                    >
-                      <CampaignActivityTimestamp
-                        label={activity.label}
-                        occurredAt={activity.occurredAt}
-                      />
-                    </span>
-                  ))}
-                </div>
-              ) : null}
+              <EventStateChips
+                entry={entry}
+                role={role}
+                campaignActivity={campaignActivity}
+              />
               {!hideCollapsedBody && body.length > 0 ? (
                 <p
                   className={cn(
-                    "text-[13px] leading-relaxed text-slate-600",
+                    "text-[13px] leading-relaxed text-slate-700",
                     WRAP_ANYWHERE,
-                    (headline !== null || campaignActivity.length > 0) &&
-                      "mt-1.5",
+                    (headline !== null || campaignActivity.length > 0) && "mt-1.5",
                     isExpanded
                       ? "whitespace-pre-wrap text-pretty"
                       : "line-clamp-1",
@@ -560,12 +546,9 @@ function AutomatedRow({
                 </p>
               ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <span className="text-[11px] text-slate-400">
-                {entry.occurredAtLabel}
-              </span>
+            <div className="flex shrink-0 items-center gap-2 pt-1">
               <ChevronRightIcon
-                className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${
+                className={`h-3.5 w-3.5 text-slate-500 transition-transform duration-150 ${
                   isExpanded ? "rotate-90" : ""
                 }`}
               />
@@ -823,13 +806,274 @@ function SystemDivider({
   readonly entry: InboxTimelineEntryViewModel;
   readonly volunteerFirstName: string;
 }) {
+  const descriptor = describeLifecycleEvent(
+    personalizeSystemBody(entry.body, volunteerFirstName),
+  );
+
   return (
-    <li>
-      <DividerLabel>
-        {personalizeSystemBody(entry.body, volunteerFirstName)}
-      </DividerLabel>
+    <li className="flex w-full justify-start">
+      <div
+        className={cn(
+          `flex w-full max-w-2xl items-start gap-3 ${RADIUS.md} border px-4 py-3`,
+          "border-amber-200 bg-amber-50/80",
+        )}
+      >
+        <div
+          className={cn(
+            "mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-full border bg-white/90",
+            descriptor.iconClassName,
+          )}
+        >
+          <descriptor.Icon className="size-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]",
+                descriptor.badgeClassName,
+              )}
+            >
+              {descriptor.label}
+            </span>
+            <TimelineTimestamp
+              entry={entry}
+              className="text-[11px] text-slate-500"
+              asSpan
+            />
+          </div>
+          <p className="mt-2 text-pretty text-[13px] font-medium leading-relaxed text-slate-800">
+            {personalizeSystemBody(entry.body, volunteerFirstName)}
+          </p>
+        </div>
+      </div>
     </li>
   );
+}
+
+interface EventRowDescriptor {
+  readonly label: string;
+  readonly Icon: ComponentType<{ className?: string }>;
+  readonly shellClassName: string;
+  readonly badgeClassName: string;
+  readonly iconClassName: string;
+}
+
+function describeEventRow(input: {
+  readonly role: "automated" | "campaign" | "activity";
+  readonly isEmail: boolean;
+  readonly campaignActivity: readonly {
+    readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
+  }[];
+}): EventRowDescriptor {
+  if (input.role === "campaign") {
+    const state = describeCampaignVisualState(input.campaignActivity);
+
+    return {
+      label: input.isEmail ? "Campaign" : "Campaign SMS",
+      ...(state === "clicked"
+        ? {
+            Icon: MousePointerClickIcon,
+            shellClassName:
+              "border-violet-200 bg-violet-50/75 hover:bg-violet-50",
+            badgeClassName: "border-violet-200 bg-white text-violet-700",
+            iconClassName: "border-violet-200 text-violet-700",
+          }
+        : state === "opened"
+          ? {
+              Icon: EyeIcon,
+              shellClassName: "border-sky-200 bg-sky-50/75 hover:bg-sky-50",
+              badgeClassName: "border-sky-200 bg-white text-sky-700",
+              iconClassName: "border-sky-200 text-sky-700",
+            }
+          : state === "unsubscribed"
+            ? {
+                Icon: XIcon,
+                shellClassName:
+                  "border-rose-200 bg-rose-50/75 hover:bg-rose-50",
+                badgeClassName: "border-rose-200 bg-white text-rose-700",
+                iconClassName: "border-rose-200 text-rose-700",
+              }
+            : {
+                Icon: MegaphoneIcon,
+                shellClassName:
+                  "border-emerald-200 bg-emerald-50/75 hover:bg-emerald-50",
+                badgeClassName: "border-emerald-200 bg-white text-emerald-700",
+                iconClassName: "border-emerald-200 text-emerald-700",
+              }),
+    };
+  }
+
+  if (input.role === "activity") {
+    return {
+      label: input.isEmail ? "Activity" : "SMS Activity",
+      Icon: input.isEmail ? MailIcon : PhoneIcon,
+      shellClassName: "border-violet-200 bg-violet-50/75 hover:bg-violet-50",
+      badgeClassName: "border-violet-200 bg-white text-violet-700",
+      iconClassName: "border-violet-200 text-violet-700",
+    };
+  }
+
+  return {
+    label: input.isEmail ? "Automated" : "Automated SMS",
+    Icon: input.isEmail ? BotIcon : WandIcon,
+    shellClassName: "border-sky-200 bg-sky-50/75 hover:bg-sky-50",
+    badgeClassName: "border-sky-200 bg-white text-sky-700",
+    iconClassName: "border-sky-200 text-sky-700",
+  };
+}
+
+function EventStateChips({
+  entry,
+  role,
+  campaignActivity,
+}: {
+  readonly entry: InboxTimelineEntryViewModel;
+  readonly role: "automated" | "campaign" | "activity";
+  readonly campaignActivity: readonly {
+    readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
+    readonly occurredAt: string;
+    readonly occurredAtLabel: string;
+    readonly label: string;
+  }[];
+}) {
+  const states = [
+    ...(role === "activity"
+      ? []
+      : [
+          {
+            key: `sent:${entry.occurredAt}`,
+            label: "Sent",
+            occurredAt: entry.occurredAt,
+            occurredAtLabel: entry.occurredAtLabel,
+            Icon: SendIcon,
+            className: "border-slate-200 bg-white text-slate-600",
+          },
+        ]),
+    ...(role !== "campaign"
+      ? []
+      : campaignActivity.map((activity) => ({
+          key: `${activity.activityType}:${activity.occurredAt}`,
+          label:
+            activity.activityType === "opened"
+              ? "Opened"
+              : activity.activityType === "clicked"
+                ? "Clicked"
+                : "Unsubscribed",
+          occurredAt: activity.occurredAt,
+          occurredAtLabel: activity.occurredAtLabel,
+          Icon:
+            activity.activityType === "opened"
+              ? EyeIcon
+              : activity.activityType === "clicked"
+                ? MousePointerClickIcon
+                : XIcon,
+          className:
+            activity.activityType === "opened"
+              ? "border-sky-200 bg-sky-100/80 text-sky-700"
+              : activity.activityType === "clicked"
+                ? "border-violet-200 bg-violet-100/80 text-violet-700"
+                : "border-rose-200 bg-rose-100/80 text-rose-700",
+        }))),
+  ];
+
+  if (states.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {states.map((state) => (
+        <span
+          key={state.key}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-medium leading-none",
+            state.className,
+          )}
+        >
+          <state.Icon className="size-3" />
+          <span>{state.label}</span>
+          <span className="text-current/60">·</span>
+          <RelativeTimestamp
+            timestamp={state.occurredAt}
+            label={state.occurredAtLabel}
+            asSpan
+            focusable={false}
+          />
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function describeCampaignVisualState(
+  activities: readonly {
+    readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
+  }[],
+): "sent" | "opened" | "clicked" | "unsubscribed" {
+  if (activities.some((activity) => activity.activityType === "unsubscribed")) {
+    return "unsubscribed";
+  }
+
+  if (activities.some((activity) => activity.activityType === "clicked")) {
+    return "clicked";
+  }
+
+  if (activities.some((activity) => activity.activityType === "opened")) {
+    return "opened";
+  }
+
+  return "sent";
+}
+
+function describeLifecycleEvent(body: string): Omit<
+  EventRowDescriptor,
+  "shellClassName"
+> {
+  const normalized = body.toLowerCase();
+
+  if (normalized.includes("training")) {
+    return {
+      label: "Training",
+      Icon: WandIcon,
+      badgeClassName: "border-sky-200 bg-white text-sky-700",
+      iconClassName: "border-sky-200 text-sky-700",
+    };
+  }
+
+  if (normalized.includes("field")) {
+    return {
+      label: "In Field",
+      Icon: MapPinIcon,
+      badgeClassName: "border-emerald-200 bg-white text-emerald-700",
+      iconClassName: "border-emerald-200 text-emerald-700",
+    };
+  }
+
+  if (normalized.includes("successful") || normalized.includes("complete")) {
+    return {
+      label: "Completed",
+      Icon: CheckCircleIcon,
+      badgeClassName: "border-emerald-200 bg-white text-emerald-700",
+      iconClassName: "border-emerald-200 text-emerald-700",
+    };
+  }
+
+  if (normalized.includes("applied")) {
+    return {
+      label: "Applied",
+      Icon: SparkleIcon,
+      badgeClassName: "border-violet-200 bg-white text-violet-700",
+      iconClassName: "border-violet-200 text-violet-700",
+    };
+  }
+
+  return {
+    label: "Lifecycle",
+    Icon: CalendarIcon,
+    badgeClassName: "border-amber-200 bg-white text-amber-700",
+    iconClassName: "border-amber-200 text-amber-700",
+  };
 }
 
 function bodyTextForEntry(entry: InboxTimelineEntryViewModel): string {
