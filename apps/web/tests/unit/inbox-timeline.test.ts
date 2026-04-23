@@ -98,11 +98,12 @@ describe("InboxTimeline", () => {
       }),
     );
 
-    expect(markup).toContain("Campaign Email");
+    expect(markup).toContain("Campaign");
+    expect(markup).toContain("Sent");
     expect(markup).toContain("Please review the latest field update.");
   });
 
-  it("shows consolidated campaign activity badges inside the bubble", () => {
+  it("shows consolidated campaign activity state inside the bubble and on the row shell", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -133,10 +134,35 @@ describe("InboxTimeline", () => {
       }),
     );
 
+    expect(markup).toContain('data-campaign-state="clicked"');
+    expect(markup).toContain("Sent");
     expect(markup).toContain("Opened");
     expect(markup).toContain(">1h ago<");
     expect(markup).toContain("Clicked");
     expect(markup).toContain(">45m ago<");
+  });
+
+  it("renders lifecycle events as volunteer-side context rows with an icon-led label", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            id: "timeline:lifecycle-applied",
+            kind: "system-event" as const,
+            actorLabel: "System",
+            subject: null,
+            body: "Applied to the Pacific Northwest expedition.",
+            channel: null,
+          },
+        ],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("Applied");
+    expect(markup).toContain("Alice applied to the Pacific Northwest expedition.");
   });
 
   it("only hides automated email body text while a subject-bearing row is collapsed", () => {

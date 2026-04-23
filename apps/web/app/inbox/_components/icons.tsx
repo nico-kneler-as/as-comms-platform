@@ -55,6 +55,7 @@ export {
   List as ListIcon,
   ListOrdered as ListOrderedIcon,
   Upload as UploadIcon,
-  FileIcon as FileDocIcon
-
+  FileIcon as FileDocIcon,
+  Eye as EyeIcon,
+  MousePointerClick as MousePointerClickIcon,
 } from "lucide-react";
