@@ -384,6 +384,7 @@ export async function seedInboxSalesforceOutboundEmailEvent(
     readonly subject: string;
     readonly snippet: string;
     readonly messageKind: "one_to_one" | null;
+    readonly direction?: "inbound" | "outbound";
     readonly sourceRecordType?: string;
     readonly sourceLabel?: string;
   },
@@ -391,6 +392,7 @@ export async function seedInboxSalesforceOutboundEmailEvent(
   const sourceEvidenceId = `source:${input.id}`;
   const canonicalEventId = `event:${input.id}`;
   const sourceRecordType = input.sourceRecordType ?? "task_communication";
+  const direction = input.direction ?? "outbound";
 
   await context.repositories.sourceEvidence.append({
     id: sourceEvidenceId,
@@ -407,7 +409,7 @@ export async function seedInboxSalesforceOutboundEmailEvent(
   await context.repositories.canonicalEvents.upsert({
     id: canonicalEventId,
     contactId: input.contactId,
-    eventType: "communication.email.outbound",
+    eventType: `communication.email.${direction}`,
     channel: "email",
     occurredAt: input.occurredAt,
     sourceEvidenceId,
@@ -423,7 +425,7 @@ export async function seedInboxSalesforceOutboundEmailEvent(
       messageKind: input.messageKind,
       campaignRef: null,
       threadRef: null,
-      direction: "outbound",
+      direction,
       notes: null,
     },
     reviewState: "clear",
@@ -447,7 +449,7 @@ export async function seedInboxSalesforceOutboundEmailEvent(
     canonicalEventId,
     occurredAt: input.occurredAt,
     sortKey: `${input.occurredAt}::${canonicalEventId}`,
-    eventType: "communication.email.outbound",
+    eventType: `communication.email.${direction}`,
     summary: input.subject,
     channel: "email",
     primaryProvider: "salesforce",
