@@ -1389,7 +1389,19 @@ function timelineActorLabel(
   contactDisplayName: string,
   kind: InboxTimelineEntryKind,
 ): string {
-  if (kind === "inbound-email" || kind === "inbound-sms") {
+  if (kind === "inbound-email") {
+    if (item.family === "one_to_one_email") {
+      const senderLabel = participantHeaderLabel(item.fromHeader ?? null);
+
+      if (senderLabel !== null) {
+        return senderLabel;
+      }
+    }
+
+    return contactDisplayName;
+  }
+
+  if (kind === "inbound-sms") {
     return contactDisplayName;
   }
 
@@ -1416,6 +1428,37 @@ function timelineActorLabel(
     case "salesforce_event":
       return "System";
   }
+}
+
+const PARTICIPANT_HEADER_NAME_PATTERN = /^\s*"?([^"<]+?)"?\s*<[^>]+>\s*$/u;
+const PARTICIPANT_HEADER_EMAIL_PATTERN =
+  /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu;
+
+function participantHeaderLabel(headerValue: string | null): string | null {
+  if (headerValue === null) {
+    return null;
+  }
+
+  const trimmed = headerValue.trim();
+
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const nameMatch = PARTICIPANT_HEADER_NAME_PATTERN.exec(trimmed);
+  const name = nameMatch?.[1]?.trim();
+
+  if (name !== undefined && name.length > 0) {
+    return name;
+  }
+
+  const emailMatch = PARTICIPANT_HEADER_EMAIL_PATTERN.exec(trimmed)?.[0]?.trim();
+
+  if (emailMatch !== undefined && emailMatch.length > 0) {
+    return emailMatch;
+  }
+
+  return trimmed;
 }
 
 const OUTBOUND_SUBJECT_PREFIX_PATTERN =

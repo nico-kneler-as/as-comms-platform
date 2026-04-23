@@ -7,9 +7,9 @@
  *   pnpm --filter @as-comms/worker ops cleanup-salesforce-owner-scope --execute
  *
  * Dry-run by default. Looks up the current Salesforce Task owner for every
- * Salesforce outbound email canonical event in the DB and removes the rows
- * whose Task owner is explicitly not Nim Admin. Tasks that Salesforce does not
- * currently resolve are skipped and reported rather than deleted.
+ * Salesforce email canonical event in the DB and removes the rows whose Task
+ * owner is explicitly not Nim Admin. Tasks that Salesforce does not currently
+ * resolve are skipped and reported rather than deleted.
  */
 import { execFile } from "node:child_process";
 import process from "node:process";
@@ -330,7 +330,10 @@ async function loadCleanupCandidates(
       on source_evidence_log.id = canonical_event_ledger.source_evidence_id
     left join salesforce_communication_details
       on salesforce_communication_details.source_evidence_id = canonical_event_ledger.source_evidence_id
-    where canonical_event_ledger.event_type = 'communication.email.outbound'
+    where canonical_event_ledger.event_type in (
+      'communication.email.inbound',
+      'communication.email.outbound'
+    )
       and canonical_event_ledger.provenance ->> 'primaryProvider' = 'salesforce'
       and source_evidence_log.provider = 'salesforce'
       and source_evidence_log.provider_record_type = 'task_communication'
@@ -450,9 +453,7 @@ function printPlanSummary(
   console.log("cleanup-salesforce-owner-scope");
   console.log(`Mode: ${input.dryRun ? "dry-run" : "execute"}`);
   console.log(`- Salesforce target org: ${input.targetOrg}`);
-  console.log(
-    `- scanned Salesforce outbound email rows: ${String(plan.scannedCount)}`,
-  );
+  console.log(`- scanned Salesforce email rows: ${String(plan.scannedCount)}`);
   console.log(`- owner-resolved Task ids: ${String(plan.resolvedCount)}`);
   console.log(`- Nim Admin rows kept: ${String(plan.keepCount)}`);
   console.log(`- non-Nim Admin rows to remove: ${String(plan.removeCount)}`);

@@ -635,6 +635,55 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("uses the Gmail From header as the inbound actor label when present", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:shaina-ricky",
+      salesforceContactId: "003-shaina-ricky",
+      displayName: "Shaina Dotson",
+      primaryEmail: "shaina.dotson@gmail.com",
+      primaryPhone: null,
+    });
+    const latestEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "shaina-ricky-latest",
+      contactId: "contact:shaina-ricky",
+      occurredAt: "2026-04-21T15:47:27.000Z",
+      direction: "inbound",
+      subject: "Re: Update on Hex 43191",
+      snippet: "Hi Shaina, Sorry for the delay.",
+      bodyTextPreview: "Hi Shaina, Sorry for the delay.",
+      fromHeader: "Ricky Jones <ricky@adventurescientists.org>",
+      toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+      ccHeader: "PNW Forest Biodiversity <pnwbio@adventurescientists.org>",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:shaina-ricky",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-21T15:47:27.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-21T15:47:27.000Z",
+      snippet: "Hi Shaina, Sorry for the delay.",
+      lastCanonicalEventId: latestEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:shaina-ricky");
+    const latestEntry = detail?.timeline.at(-1);
+
+    expect(latestEntry).toMatchObject({
+      kind: "inbound-email",
+      actorLabel: "Ricky Jones",
+      fromHeader: "Ricky Jones <ricky@adventurescientists.org>",
+      toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+      ccHeader: "PNW Forest Biodiversity <pnwbio@adventurescientists.org>",
+    });
+  });
+
   it("preserves Stage 1 timeline families instead of flattening them into generic system events", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
