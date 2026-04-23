@@ -719,7 +719,7 @@ export function ProjectDetail({
                 ).toLocaleString()}.`
               : "Run AI knowledge sync before activation."}
           </li>
-        </div>
+        </ul>
       </section>
 
       <section
