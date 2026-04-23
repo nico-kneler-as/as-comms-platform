@@ -101,9 +101,10 @@ describe("InboxTimeline", () => {
     expect(markup).toContain("Campaign");
     expect(markup).toContain("Sent");
     expect(markup).toContain("Please review the latest field update.");
+    expect(markup).not.toContain("rounded-full border px-2 py-1");
   });
 
-  it("shows consolidated campaign activity state inside the bubble and on the row shell", () => {
+  it("shows one consolidated campaign state while keeping the row in the purple campaign treatment", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -135,11 +136,10 @@ describe("InboxTimeline", () => {
     );
 
     expect(markup).toContain('data-campaign-state="clicked"');
-    expect(markup).toContain("Sent");
-    expect(markup).toContain("Opened");
-    expect(markup).toContain(">1h ago<");
     expect(markup).toContain("Clicked");
-    expect(markup).toContain(">45m ago<");
+    expect(markup).toContain("border-violet-200 bg-violet-50/75");
+    expect(markup).not.toContain("Opened 1h ago");
+    expect(markup).not.toContain("45m ago");
   });
 
   it("renders lifecycle events as volunteer-side context rows with an icon-led label", () => {
