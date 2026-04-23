@@ -237,9 +237,7 @@ async function main(): Promise<void> {
   });
 
   try {
-    const rows = await loadSalesforceTaskAuditRows(
-      connection.sql as unknown as SqlRunner
-    );
+    const rows = await loadSalesforceTaskAuditRows(connection.sql);
     const report = buildSalesforceTaskAuditReport(rows, {
       sampleLimit,
       topSubjectLimit
