@@ -130,11 +130,11 @@ describe("Stage 1 Mailchimp campaign body backfill ops", () => {
       const dryRun = await backfillMailchimpCampaignBodies({
         db: context.db,
         repositories: context.repositories,
-        fetchCampaignContent: async (campaignId) => {
+        fetchCampaignContent: (campaignId) => {
           expect(campaignId).toBe("campaign-1");
-          return {
+          return Promise.resolve({
             html: "<p>Campaign body line one.</p><p>Campaign body line two.</p>",
-          };
+          });
         },
         dryRun: true,
         options: {
@@ -157,9 +157,11 @@ describe("Stage 1 Mailchimp campaign body backfill ops", () => {
       const confirm = await backfillMailchimpCampaignBodies({
         db: context.db,
         repositories: context.repositories,
-        fetchCampaignContent: async () => ({
-          html: "<p>Campaign body line one.</p><p>Campaign body line two.</p>",
-        }),
+        fetchCampaignContent: () =>
+          Promise.resolve({
+            html:
+              "<p>Campaign body line one.</p><p>Campaign body line two.</p>",
+          }),
         dryRun: false,
         options: {
           progressInterval: null,
@@ -226,20 +228,21 @@ describe("Stage 1 Mailchimp campaign body backfill ops", () => {
       const result = await backfillMailchimpCampaignBodies({
         db: context.db,
         repositories: context.repositories,
-        fetchCampaignContent: async () => ({
-          plain_text: [
-            "*|MC_PREVIEW_TEXT|*",
-            "",
-            "Field update headline",
-            "",
-            "Bring your field notebook.",
-            "",
-            "============================================================",
-            "** Facebook (https://example.org)",
-            "Copyright © 2026 Adventure Scientists",
-            "Want to change how you receive these emails?",
-          ].join("\n"),
-        }),
+        fetchCampaignContent: () =>
+          Promise.resolve({
+            plain_text: [
+              "*|MC_PREVIEW_TEXT|*",
+              "",
+              "Field update headline",
+              "",
+              "Bring your field notebook.",
+              "",
+              "============================================================",
+              "** Facebook (https://example.org)",
+              "Copyright © 2026 Adventure Scientists",
+              "Want to change how you receive these emails?",
+            ].join("\n"),
+          }),
         dryRun: false,
         options: {
           campaignId: "campaign-plain",
@@ -299,11 +302,11 @@ describe("Stage 1 Mailchimp campaign body backfill ops", () => {
       const result = await backfillMailchimpCampaignBodies({
         db: context.db,
         repositories: context.repositories,
-        fetchCampaignContent: async (campaignId) => {
+        fetchCampaignContent: (campaignId) => {
           fetchedCampaignIds.push(campaignId);
-          return {
+          return Promise.resolve({
             plain_text: `Full body for ${campaignId}`,
-          };
+          });
         },
         dryRun: true,
         options: {
