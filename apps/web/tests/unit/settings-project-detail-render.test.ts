@@ -77,6 +77,7 @@ vi.mock("@/components/ui/status-badge", () => ({
 vi.mock("../../app/settings/actions", () => ({
   activateProjectAction: vi.fn(),
   deactivateProjectAction: vi.fn(),
+  updateProjectAliasAction: vi.fn(),
   updateProjectAliasSignatureAction: vi.fn(),
   updateProjectAiKnowledgeAction: vi.fn(),
   updateProjectEmailsAction: vi.fn()
@@ -91,8 +92,10 @@ describe("ProjectDetail role-aware rendering", () => {
         project: {
           projectId: "project:inactive",
           projectName: "Inactive Project",
+          projectAlias: null,
           isActive: false,
           primaryEmail: "inactive@asc.internal",
+          emailAliases: ["inactive@asc.internal"],
           additionalEmailCount: 0,
           aiKnowledgeUrl: null,
           aiKnowledgeSyncedAt: null,
@@ -112,10 +115,11 @@ describe("ProjectDetail role-aware rendering", () => {
       })
     );
 
-    expect(html).toContain("Connected email addresses");
+    expect(html).toContain("Project inbox aliases");
     expect(html).not.toContain("Activate project");
     expect(html).not.toContain("Deactivate project");
-    expect(html).not.toContain("Add email");
+    expect(html).not.toContain("Add alias");
+    expect(html).not.toContain("Save alias");
     expect(html).not.toContain("Save URL");
     expect(html).not.toContain("Sync");
     expect(html).not.toContain("Make primary");

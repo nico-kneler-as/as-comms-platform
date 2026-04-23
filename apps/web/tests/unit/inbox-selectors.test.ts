@@ -398,6 +398,27 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("prefers the short project alias for inbox row tags", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:amazon-basin",
+      projectName: "Amazon Basin Research",
+      projectAlias: "Amazon Basin",
+      source: "salesforce",
+      isActive: true,
+    });
+
+    const list = await getInboxList();
+
+    expect(
+      list.items.find((item) => item.contactId === "contact:sarah-martinez")
+        ?.projectLabel,
+    ).toBe("Amazon Basin");
+  });
+
   it("uses bucket, needsFollowUp, and hasUnresolved for the secondary filters", async () => {
     const unread = await getInboxList("unread");
     const followUp = await getInboxList("follow-up");

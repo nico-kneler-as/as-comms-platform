@@ -33,6 +33,7 @@ import {
   type ProjectEmailInput,
   type ProjectEmailMutationData,
   type ProjectMutationData,
+  updateProjectAliasAction,
   updateProjectAiKnowledgeAction,
   updateProjectAliasSignatureAction,
   updateProjectEmailsAction
@@ -48,12 +49,14 @@ interface FeedbackState {
 }
 
 function hasActivationRequirements(input: {
-  readonly aiKnowledgeUrl: string | null;
+  readonly projectAlias: string | null;
+  readonly aiKnowledgeSyncedAt: string | null;
   readonly emails: readonly ProjectEmailInput[];
 }): boolean {
   return (
     input.emails.length >= 1 &&
-    (input.aiKnowledgeUrl?.trim().length ?? 0) > 0
+    input.aiKnowledgeSyncedAt !== null &&
+    (input.projectAlias?.trim().length ?? 0) > 0
   );
 }
 
@@ -63,6 +66,7 @@ function buildProjectState(
   return {
     projectId: project.projectId,
     projectName: project.projectName,
+    projectAlias: project.projectAlias,
     isActive: project.isActive,
     aiKnowledgeUrl: project.aiKnowledgeUrl,
     aiKnowledgeSyncedAt: project.aiKnowledgeSyncedAt,
@@ -91,7 +95,8 @@ function mergeProjectState(
   return {
     ...next,
     activationRequirementsMet: hasActivationRequirements({
-      aiKnowledgeUrl: next.aiKnowledgeUrl,
+      projectAlias: next.projectAlias,
+      aiKnowledgeSyncedAt: next.aiKnowledgeSyncedAt,
       emails: next.emails
     })
   };
@@ -171,6 +176,7 @@ export function ProjectDetail({
     mergeProjectState
   );
   const [knowledgeDraft, setKnowledgeDraft] = useState(project.aiKnowledgeUrl ?? "");
+  const [projectAliasDraft, setProjectAliasDraft] = useState(project.projectAlias ?? "");
   const [signatureDrafts, setSignatureDrafts] = useState(() =>
     buildSignatureDrafts(project.emails)
   );
@@ -183,6 +189,7 @@ export function ProjectDetail({
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [pendingSignatureId, setPendingSignatureId] = useState<string | null>(null);
   const [knowledgePending, startKnowledgeTransition] = useTransition();
+  const [projectAliasPending, startProjectAliasTransition] = useTransition();
   const [emailPending, startEmailTransition] = useTransition();
   const [signaturePending, startSignatureTransition] = useTransition();
   const [activationPending, startActivationTransition] = useTransition();
@@ -198,6 +205,7 @@ export function ProjectDetail({
   function commitProject(nextProject: ProjectMutationData) {
     setProjectState(nextProject);
     setKnowledgeDraft(nextProject.aiKnowledgeUrl ?? "");
+    setProjectAliasDraft(nextProject.projectAlias ?? "");
     setSignatureDrafts((current) =>
       Object.fromEntries(
         nextProject.emails.map((email) => [
@@ -408,6 +416,28 @@ export function ProjectDetail({
     });
   }
 
+  function handleSaveProjectAlias() {
+    const nextAlias =
+      projectAliasDraft.trim().length === 0 ? null : projectAliasDraft.trim();
+
+    startProjectAliasTransition(async () => {
+      applyOptimisticProject({ projectAlias: nextAlias });
+      const result = await updateProjectAliasAction(project.projectId, nextAlias);
+
+      if (!result.ok) {
+        announce(result.message, "error");
+        return;
+      }
+
+      commitProject(result.data);
+      announce(
+        nextAlias === null
+          ? "Cleared the project alias."
+          : "Updated the project alias."
+      );
+    });
+  }
+
   function handleActivate() {
     startActivationTransition(async () => {
       applyOptimisticProject({ isActive: true });
@@ -442,11 +472,25 @@ export function ProjectDetail({
 
   const knowledgeDirty =
     knowledgeDraft.trim() !== (optimisticProject.aiKnowledgeUrl ?? "");
+  const projectAliasDirty =
+    projectAliasDraft.trim() !== (optimisticProject.projectAlias ?? "");
   const inactiveActivationMessage =
     activationMessage ??
     (!optimisticProject.activationRequirementsMet
-      ? "Add at least one email and an AI knowledge URL to activate."
+      ? "Activation needs a short project alias, a project inbox alias, and completed AI knowledge sync."
       : null);
+  const hasProjectAlias = (optimisticProject.projectAlias?.trim().length ?? 0) > 0;
+  const hasProjectInboxAlias = optimisticProject.emails.length > 0;
+  const hasAiKnowledgeSync = optimisticProject.aiKnowledgeSyncedAt !== null;
+  const projectAliasStatusLabel = hasProjectAlias
+    ? `Short alias set to ${optimisticProject.projectAlias ?? ""}.`
+    : "Set a short project alias before activation.";
+  const aiKnowledgeStatusLabel =
+    optimisticProject.aiKnowledgeSyncedAt === null
+      ? "Run AI knowledge sync before activation."
+      : `AI knowledge last synced ${new Date(
+          optimisticProject.aiKnowledgeSyncedAt
+        ).toLocaleString()}.`;
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
@@ -480,10 +524,6 @@ export function ProjectDetail({
                 variant="soft"
               />
             </div>
-            <p className={TEXT.caption}>
-              Activation requires at least one connected inbox email and an AI
-              knowledge source.
-            </p>
           </div>
 
           {project.isAdmin ? (
@@ -611,6 +651,45 @@ export function ProjectDetail({
 
           <div className="flex flex-col gap-2">
             <label
+              htmlFor="project-short-alias"
+              className={cn(TEXT.label, "text-slate-600")}
+            >
+              Project alias
+            </label>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <Input
+                  id="project-short-alias"
+                  value={projectAliasDraft}
+                  onChange={(event) => {
+                    setProjectAliasDraft(event.target.value);
+                    setActivationMessage(null);
+                  }}
+                  disabled={!project.isAdmin || projectAliasPending}
+                  readOnly={!project.isAdmin}
+                  placeholder="Short internal project name"
+                  className="font-mono text-[13px]"
+                />
+                {project.isAdmin ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSaveProjectAlias}
+                    disabled={projectAliasPending || !projectAliasDirty}
+                  >
+                    Save alias
+                  </Button>
+                ) : null}
+              </div>
+              <span className={TEXT.caption}>
+                Short name used in inbox tags and internal UI labels.
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 md:col-span-2">
+            <label
               htmlFor="project-ai-knowledge-url"
               className={cn(TEXT.label, "text-slate-600")}
             >
@@ -677,7 +756,73 @@ export function ProjectDetail({
             }
             variant="soft"
           />
+          <StatusBadge
+            label={hasProjectAlias ? "Project alias set" : "Project alias required"}
+            colorClasses={
+              hasProjectAlias
+                ? "bg-sky-50 text-sky-700 ring-sky-200"
+                : "bg-amber-50 text-amber-800 ring-amber-200"
+            }
+            variant="soft"
+          />
+          <StatusBadge
+            label={
+              hasProjectInboxAlias
+                ? "Project inbox alias connected"
+                : "Project inbox alias required"
+            }
+            colorClasses={
+              hasProjectInboxAlias
+                ? "bg-sky-50 text-sky-700 ring-sky-200"
+                : "bg-amber-50 text-amber-800 ring-amber-200"
+            }
+            variant="soft"
+          />
+          <StatusBadge
+            label={hasAiKnowledgeSync ? "AI knowledge synced" : "AI sync required"}
+            colorClasses={
+              hasAiKnowledgeSync
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                : "bg-amber-50 text-amber-800 ring-amber-200"
+            }
+            variant="soft"
+          />
         </div>
+
+        <ul className="grid gap-2 md:grid-cols-2">
+          <li
+            className={cn(
+              "rounded-md border px-3 py-2 text-sm",
+              hasProjectAlias
+                ? "border-sky-200 bg-sky-50 text-sky-900"
+                : "border-amber-200 bg-amber-50 text-amber-900"
+            )}
+          >
+            {projectAliasStatusLabel}
+          </li>
+          <li
+            className={cn(
+              "rounded-md border px-3 py-2 text-sm",
+              hasProjectInboxAlias
+                ? "border-sky-200 bg-sky-50 text-sky-900"
+                : "border-amber-200 bg-amber-50 text-amber-900"
+            )}
+          >
+            {hasProjectInboxAlias
+              ? "A project inbox alias is connected and ready to route mail."
+              : "Add a project inbox alias below before activation."}
+          </li>
+          <li
+            className={cn(
+              "rounded-md border px-3 py-2 text-sm md:col-span-2",
+              hasAiKnowledgeSync
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-amber-200 bg-amber-50 text-amber-900"
+            )}
+          >
+            {aiKnowledgeStatusLabel}
+          </li>
+        </ul>
       </section>
 
       <section
@@ -691,11 +836,11 @@ export function ProjectDetail({
       >
         <div>
           <h2 id="project-emails-heading" className={TEXT.headingSm}>
-            Connected email addresses
+            Project inbox aliases
           </h2>
           <p className={cn("mt-0.5", TEXT.caption)}>
-            Inbound mail to any of these addresses is routed to this
-            project&apos;s inbox.
+            Inbound mail to any alias listed here is routed to this project&apos;s
+            inbox.
           </p>
         </div>
 
@@ -831,7 +976,7 @@ export function ProjectDetail({
         {project.isAdmin ? (
           <div className="flex items-center gap-2">
             <label htmlFor="project-email-input" className="sr-only">
-              Add email
+              Add project inbox alias
             </label>
             <Input
               id="project-email-input"
@@ -842,7 +987,7 @@ export function ProjectDetail({
                 setActivationMessage(null);
               }}
               disabled={emailPending}
-              placeholder="inbox@asc.internal"
+              placeholder="project@asc.internal"
               className="max-w-sm font-mono text-[13px]"
             />
             <Button
@@ -852,7 +997,7 @@ export function ProjectDetail({
               onClick={handleAddEmail}
               disabled={emailPending || newEmail.trim().length === 0}
             >
-              Add email
+              Add alias
             </Button>
           </div>
         ) : null}

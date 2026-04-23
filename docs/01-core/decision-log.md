@@ -236,6 +236,14 @@ These entries were recorded on `2026-04-05` from the current repo canon and the 
 - Impact: supersedes the 2026-04-20 D-037 entry. Settings UI "AI knowledge URL" input becomes optional / cosmetic — repurpose as a read-only "Notion link" that surfaces the synced row's URL, or remove entirely in a later pass. Admin-mutation enforcement for `is_active` flips from `ai_knowledge_url IS NOT NULL` to `ai_knowledge_synced_at IS NOT NULL`. The Notion sync job (per brief `.codex-stage4-notion-knowledge-sync-2026-04-21.md`) is the first Stage 4 code to ship and has no dependency on Composer.
 - Related refs: [decision-core.md](./decision-core.md), [../02-bundles/settings-bundle.md](../02-bundles/settings-bundle.md), [../04-implementation-specs/stage-4-ai-pipeline.md](../04-implementation-specs/stage-4-ai-pipeline.md), `../../.codex-stage4-notion-knowledge-sync-2026-04-21.md`
 
+### 2026-04-23 - Project activation also requires a short admin-owned alias
+
+- Status: `locked`
+- Decision: `project_dimensions.project_alias` is an admin-owned short internal label used for inbox tags and compact operator-facing labels. A project cannot transition to `is_active = true` unless `project_alias` is non-empty, at least one project inbox alias exists, and `ai_knowledge_synced_at IS NOT NULL`.
+- Why: full Salesforce project names are often too long for inbox chips and compact settings surfaces. A short alias gives operators a stable concise label without renaming the canonical project title, and making it part of the activation gate ensures active projects always have usable compact labeling in the inbox.
+- Impact: Settings must let admins view and edit the short alias on project detail. Inbox row tags should prefer `project_alias` when present while keeping full project names in detail views and other canonical contexts unless explicitly shortened. Cache invalidation for inbox/settings must refresh when aliases change. This narrows the Stage 2 activation gate beyond the previous `emails + ai_knowledge_synced_at` rule.
+- Related refs: [decision-core.md](./decision-core.md), [../02-bundles/settings-bundle.md](../02-bundles/settings-bundle.md), [../../packages/db/src/schema/tables.ts](../../packages/db/src/schema/tables.ts), [../../apps/web/app/settings/actions.ts](../../apps/web/app/settings/actions.ts), [../../apps/web/app/inbox/_lib/selectors.ts](../../apps/web/app/inbox/_lib/selectors.ts)
+
 ### 2026-04-21 - Stage 4 AI product decisions locked for provider, cost, context, memory, and failure-mode envelope
 
 - Status: `locked`

@@ -32,6 +32,7 @@ Make routing, access, integration health, timezone, and AI knowledge configurati
 - admin mutations must be auditable via `audit_policy_evidence`
 - Settings blocks Composer stage (per `D-026`); Composer builds on real Stage 2 auth
 - Composer depends on DB-backed project-inbox aliases (`project_aliases` table replacing the `GMAIL_PROJECT_INBOX_ALIASES` env var; worker reads DB first, env as fallback during cutover)
+- project activation requires a short project alias, at least one project-inbox alias, and synced AI knowledge
 
 ## Required Interfaces / Concepts
 
@@ -39,6 +40,7 @@ Make routing, access, integration health, timezone, and AI knowledge configurati
 
 - Google SSO sign-in + session middleware gating `/inbox/*` and `/settings/*`
 - project-inbox alias admin CRUD (replaces `GMAIL_PROJECT_INBOX_ALIASES` env var)
+- short project alias admin editing on active/inactive projects
 - users + roles admin (list users, promote/demote admin, deactivate)
 
 ### MVP scope (ship thin)

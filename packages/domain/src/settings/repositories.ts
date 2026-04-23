@@ -47,6 +47,10 @@ export interface SettingsProjectsRepository {
     projectId: string,
     aiKnowledgeUrl: string | null
   ): Promise<SettingsProjectRecord | null>;
+  setProjectAlias(
+    projectId: string,
+    projectAlias: string | null
+  ): Promise<SettingsProjectRecord | null>;
 }
 
 export interface IntegrationHealthRepository {

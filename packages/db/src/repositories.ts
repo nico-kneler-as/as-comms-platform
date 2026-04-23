@@ -1039,6 +1039,7 @@ function createStage1RepositoriesInternal(
             target: projectDimensions.projectId,
             set: {
               projectName: values.projectName,
+              projectAlias: values.projectAlias,
               isActive: values.isActive,
               aiKnowledgeUrl: values.aiKnowledgeUrl,
               aiKnowledgeSyncedAt: values.aiKnowledgeSyncedAt,
@@ -2292,9 +2293,11 @@ function createStage2RepositoriesInternal(
         projectId: row.projectId,
         salesforceProjectId: row.projectId,
         projectName: row.projectName,
+        projectAlias: row.projectAlias,
         isActive: row.isActive,
         aiKnowledgeUrl: row.aiKnowledgeUrl,
         aiKnowledgeSyncedAt: row.aiKnowledgeSyncedAt,
+        createdAt: row.createdAt,
         emails: orderedEmails,
         memberCount: memberCountByProjectId.get(row.projectId) ?? 0,
         updatedAt: row.updatedAt,
@@ -2404,6 +2407,29 @@ function createStage2RepositoriesInternal(
           .update(projectDimensions)
           .set({
             aiKnowledgeUrl,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectDimensions.projectId, projectId))
+          .returning({
+            projectId: projectDimensions.projectId,
+          });
+
+        if (row === undefined) {
+          return null;
+        }
+
+        const [project] = await loadSettingsProjects([row.projectId]);
+        return project ?? null;
+      },
+
+      async setProjectAlias(
+        projectId: string,
+        projectAlias: string | null,
+      ) {
+        const [row] = await db
+          .update(projectDimensions)
+          .set({
+            projectAlias,
             updatedAt: new Date(),
           })
           .where(eq(projectDimensions.projectId, projectId))
