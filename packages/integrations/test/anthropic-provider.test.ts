@@ -62,7 +62,7 @@ describe("Anthropic provider", () => {
       baseInput,
     );
 
-    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.runAllTimersAsync();
 
     await expect(promise).rejects.toMatchObject({
       code: "provider_rate_limited",
@@ -79,7 +79,7 @@ describe("Anthropic provider", () => {
       baseInput,
     );
 
-    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.runAllTimersAsync();
 
     await expect(promise).rejects.toMatchObject({
       code: "provider_unavailable",
@@ -132,7 +132,7 @@ describe("Anthropic provider", () => {
       baseInput,
     );
 
-    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.runAllTimersAsync();
 
     await expect(promise).resolves.toMatchObject({
       text: "Final draft",
