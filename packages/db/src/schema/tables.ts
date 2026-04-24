@@ -926,6 +926,14 @@ export const integrationHealth = pgTable(
       mode: "date",
       withTimezone: true,
     }),
+    degradedSinceAt: timestamp("degraded_since_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    lastAlertSentAt: timestamp("last_alert_sent_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
     detail: text("detail"),
     metadataJson: jsonb("metadata_json")
       .$type<Record<string, unknown>>()

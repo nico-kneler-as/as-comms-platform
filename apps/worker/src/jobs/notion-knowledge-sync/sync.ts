@@ -306,6 +306,8 @@ function buildIntegrationHealthRecord(input: {
     category: "knowledge",
     status: input.status,
     lastCheckedAt: input.checkedAt,
+    degradedSinceAt: input.baseRecord?.degradedSinceAt ?? null,
+    lastAlertSentAt: input.baseRecord?.lastAlertSentAt ?? null,
     detail: input.detail,
     metadataJson,
     createdAt: input.baseRecord?.createdAt ?? input.checkedAt,

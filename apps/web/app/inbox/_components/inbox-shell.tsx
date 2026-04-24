@@ -5,8 +5,10 @@ import type {
   InboxListViewModel,
   InboxComposerAliasOption
 } from "../_lib/view-models";
+import type { InboxIntegrationHealthBannerViewModel } from "../_lib/integration-health";
 import { PrimaryIconRail } from "@/app/_components/primary-icon-rail";
 
+import { IntegrationHealthBanner } from "./integration-health-banner";
 import { InboxClientProvider } from "./inbox-client-provider";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import { InboxKeyboardProvider } from "./inbox-keyboard-provider";
@@ -17,6 +19,7 @@ interface ShellProps {
   readonly initialList: InboxListViewModel;
   readonly initialFilterId: InboxFilterId;
   readonly composerAliases: readonly InboxComposerAliasOption[];
+  readonly healthBanner: InboxIntegrationHealthBannerViewModel | null;
   readonly operator: {
     readonly initials: string;
     readonly displayName: string;
@@ -38,6 +41,7 @@ export function InboxShell({
   initialList,
   initialFilterId,
   composerAliases,
+  healthBanner,
   operator,
   children
 }: ShellProps) {
@@ -47,12 +51,18 @@ export function InboxShell({
         <InboxFreshnessPoller listFreshness={initialList.freshness} />
         <PrimaryIconRail operator={operator} />
 
-        <InboxList
-          initialList={initialList}
-          initialFilterId={initialFilterId}
-        />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <IntegrationHealthBanner banner={healthBanner} />
 
-        <InboxWorkspace>{children}</InboxWorkspace>
+          <div className="flex min-h-0 flex-1">
+            <InboxList
+              initialList={initialList}
+              initialFilterId={initialFilterId}
+            />
+
+            <InboxWorkspace>{children}</InboxWorkspace>
+          </div>
+        </div>
       </InboxKeyboardProvider>
     </InboxClientProvider>
   );

@@ -485,6 +485,8 @@ export function mapIntegrationHealthRow(
     category: row.category,
     status: row.status,
     lastCheckedAt: fromDate(row.lastCheckedAt),
+    degradedSinceAt: fromDate(row.degradedSinceAt),
+    lastAlertSentAt: fromDate(row.lastAlertSentAt),
     detail: row.detail,
     metadataJson: row.metadataJson,
     createdAt: row.createdAt.toISOString(),
@@ -504,6 +506,10 @@ export function mapIntegrationHealthToInsert(
     status: parsed.status,
     lastCheckedAt:
       parsed.lastCheckedAt === null ? null : toDate(parsed.lastCheckedAt),
+    degradedSinceAt:
+      parsed.degradedSinceAt === null ? null : toDate(parsed.degradedSinceAt),
+    lastAlertSentAt:
+      parsed.lastAlertSentAt === null ? null : toDate(parsed.lastAlertSentAt),
     detail: parsed.detail,
     metadataJson: parsed.metadataJson,
     createdAt: toDate(parsed.createdAt),

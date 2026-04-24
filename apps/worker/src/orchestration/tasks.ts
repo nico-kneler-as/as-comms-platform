@@ -30,6 +30,10 @@ import {
 } from "@as-comms/contracts";
 import type { IntegrationHealthRepository } from "@as-comms/domain";
 
+import {
+  createIntegrationHealthAlertSender,
+  type IntegrationHealthAlertSender
+} from "../jobs/integration-health/email.js";
 import type { Stage1WorkerOrchestrationService } from "./types.js";
 
 export const pollGmailLiveJobName = "poll-gmail-live" as const;
@@ -39,6 +43,7 @@ const polledIntegrationServices = [
   "salesforce",
   "gmail"
 ] as const satisfies readonly IntegrationHealthRecord["id"][];
+const integrationHealthAlertCooldownMs = 60 * 60 * 1000;
 
 export interface IntegrationHealthTaskDependencies {
   readonly integrationHealth: IntegrationHealthRepository;
@@ -47,7 +52,9 @@ export interface IntegrationHealthTaskDependencies {
     readonly salesforce: string;
   };
   readonly fetchImplementation?: typeof fetch;
-  readonly logger?: Pick<Console, "error" | "warn">;
+  readonly alertSender?: IntegrationHealthAlertSender;
+  readonly now?: () => Date;
+  readonly logger?: Pick<Console, "error" | "warn" | "info">;
 }
 
 function isFailedStage1TaskOutcome(
@@ -173,6 +180,74 @@ function buildUpdatedIntegrationHealthRecord(
   };
 }
 
+function isHealthyStatus(status: IntegrationHealthRecord["status"]): boolean {
+  return status === "healthy";
+}
+
+function shouldSendIntegrationHealthAlert(input: {
+  readonly previous: IntegrationHealthRecord;
+  readonly next: IntegrationHealthRecord;
+  readonly occurredAt: Date;
+}): boolean {
+  if (isHealthyStatus(input.next.status)) {
+    return false;
+  }
+
+  if (!isHealthyStatus(input.previous.status)) {
+    return (
+      input.previous.degradedSinceAt !== null &&
+      input.previous.lastAlertSentAt === null
+    );
+  }
+
+  if (input.previous.lastAlertSentAt === null) {
+    return true;
+  }
+
+  const lastAlertSentAt = Date.parse(input.previous.lastAlertSentAt);
+
+  return (
+    Number.isFinite(lastAlertSentAt) &&
+    input.occurredAt.getTime() - lastAlertSentAt >=
+      integrationHealthAlertCooldownMs
+  );
+}
+
+function applyIntegrationHealthAlertState(
+  previous: IntegrationHealthRecord,
+  next: IntegrationHealthRecord,
+  input: {
+    readonly occurredAt: string;
+    readonly alertSent: boolean;
+  }
+): IntegrationHealthRecord {
+  if (isHealthyStatus(next.status)) {
+    return {
+      ...next,
+      degradedSinceAt: null,
+      lastAlertSentAt: null
+    };
+  }
+
+  const degradedSinceAt = isHealthyStatus(previous.status)
+    ? input.occurredAt
+    : previous.degradedSinceAt ?? input.occurredAt;
+
+  return {
+    ...next,
+    degradedSinceAt,
+    lastAlertSentAt: input.alertSent
+      ? input.occurredAt
+      : previous.lastAlertSentAt
+  };
+}
+
+function isSuccessfulGmailSendResult(
+  result: Awaited<ReturnType<IntegrationHealthAlertSender["send"]>>
+): boolean {
+  return result.kind === "success";
+}
+
 async function pollIntegrationHealthRecord(
   record: IntegrationHealthRecord,
   input: {
@@ -244,6 +319,10 @@ function createPollIntegrationHealthTask(
   dependencies: IntegrationHealthTaskDependencies
 ): Task {
   const fetchImplementation = dependencies.fetchImplementation ?? globalThis.fetch;
+  const now = dependencies.now ?? (() => new Date());
+  const alertSender =
+    dependencies.alertSender ??
+    createIntegrationHealthAlertSender(process.env, fetchImplementation);
   const logger = dependencies.logger ?? console;
 
   return async () => {
@@ -295,9 +374,62 @@ function createPollIntegrationHealthTask(
         continue;
       }
 
-      const nextRecord = await pollIntegrationHealthRecord(record, {
+      const polledRecord = await pollIntegrationHealthRecord(record, {
         captureBaseUrls: dependencies.captureBaseUrls,
         fetchImplementation
+      });
+      const occurredAt = now();
+      const occurredAtIso = occurredAt.toISOString();
+      const shouldAlert = shouldSendIntegrationHealthAlert({
+        previous: record,
+        next: polledRecord,
+        occurredAt
+      });
+      let alertSent = false;
+
+      if (shouldAlert) {
+        try {
+          const sendResult = await alertSender.send({
+            service,
+            fromStatus: record.status,
+            record: polledRecord,
+            occurredAt: occurredAtIso
+          });
+
+          if (isSuccessfulGmailSendResult(sendResult)) {
+            alertSent = true;
+            const configuredRecipient =
+              process.env.INTEGRATION_HEALTH_ALERT_RECIPIENT?.trim();
+            logger.info(
+              JSON.stringify({
+                event: "integration_health.alert_sent",
+                service,
+                fromStatus: record.status,
+                toStatus: polledRecord.status,
+                recipient:
+                  configuredRecipient && configuredRecipient.length > 0
+                    ? configuredRecipient
+                    : "nico@adventurescientists.org",
+                occurredAt: occurredAtIso
+              })
+            );
+          } else {
+            logger.error(
+              `Integration health alert email failed for ${service}: ${sendResult.kind}`
+            );
+          }
+        } catch (error) {
+          logger.error(
+            `Integration health alert email failed for ${service}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+
+      const nextRecord = applyIntegrationHealthAlertState(record, polledRecord, {
+        occurredAt: occurredAtIso,
+        alertSent
       });
 
       try {

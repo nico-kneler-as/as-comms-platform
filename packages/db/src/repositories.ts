@@ -2708,6 +2708,8 @@ function createStage2RepositoriesInternal(
               category: values.category,
               status: values.status,
               lastCheckedAt: values.lastCheckedAt,
+              degradedSinceAt: values.degradedSinceAt,
+              lastAlertSentAt: values.lastAlertSentAt,
               detail: values.detail,
               metadataJson: values.metadataJson,
               updatedAt: new Date(),

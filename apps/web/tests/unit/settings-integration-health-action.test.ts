@@ -70,6 +70,8 @@ describe("refreshIntegrationHealthAction", () => {
       category: "messaging",
       status: "healthy",
       lastCheckedAt: "2026-04-20T18:00:00.000Z",
+      degradedSinceAt: null,
+      lastAlertSentAt: null,
       detail: "Healthy",
       metadataJson: {},
       createdAt: "2026-04-20T18:00:00.000Z",
