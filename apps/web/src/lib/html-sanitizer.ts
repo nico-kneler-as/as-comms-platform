@@ -12,7 +12,7 @@ const VOID_TAGS = new Set(["br"]);
 const STRIP_WITH_CONTENT_TAGS = new Set(["script", "style"]);
 const TAG_PATTERN = /<\/?[^>]+>/gu;
 const TAG_NAME_PATTERN = /^<\/?\s*([a-zA-Z0-9:-]+)/u;
-const HREF_PATTERN = /\s href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/iu;
+const HREF_PATTERN = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/iu;
 
 function escapeHtml(value: string): string {
   return value
