@@ -5,6 +5,7 @@ import { requireSession } from "@/src/server/auth/session";
 
 import { InboxShell } from "./_components/inbox-shell";
 import { getInboxComposerAliases } from "./_lib/composer-data";
+import { getInboxIntegrationHealthBanner } from "./_lib/integration-health";
 import { getInboxList } from "./_lib/selectors";
 
 export const metadata = {
@@ -43,9 +44,10 @@ export default async function InboxLayout({
     throw error;
   });
 
-  const [list, composerAliases] = await Promise.all([
+  const [list, composerAliases, healthBanner] = await Promise.all([
     getInboxList("all"),
     getInboxComposerAliases(),
+    getInboxIntegrationHealthBanner(),
   ]);
 
   return (
@@ -53,6 +55,7 @@ export default async function InboxLayout({
       initialList={list}
       initialFilterId="all"
       composerAliases={composerAliases}
+      healthBanner={healthBanner}
       operator={{
         initials: getInitials(currentUser.name ?? currentUser.email),
         displayName: currentUser.name ?? currentUser.email,

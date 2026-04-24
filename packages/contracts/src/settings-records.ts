@@ -39,6 +39,8 @@ export const integrationHealthSchema = z.object({
   category: integrationHealthCategorySchema,
   status: integrationHealthStatusSchema,
   lastCheckedAt: nullableTimestampSchema,
+  degradedSinceAt: nullableTimestampSchema,
+  lastAlertSentAt: nullableTimestampSchema,
   detail: nullableStringSchema,
   metadataJson: metadataJsonSchema.default({}),
   createdAt: timestampSchema,
