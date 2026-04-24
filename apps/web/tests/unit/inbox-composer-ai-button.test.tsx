@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveAiButtonState } from "../../app/inbox/_components/inbox-composer";
+import { resolveAiButtonState } from "../../app/inbox/_lib/composer-ai";
 
 describe("inbox composer AI button", () => {
   it('uses "Draft with AI" when the body is empty', () => {

@@ -153,18 +153,7 @@ function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.height = `${String(Math.min(textarea.scrollHeight, lineHeight * 20))}px`;
 }
 
-export function resolveAiButtonState(input: {
-  readonly body: string;
-  readonly isGenerating: boolean;
-}) {
-  const mode = input.body.trim().length === 0 ? "draft" : "fill";
-
-  return {
-    mode,
-    label: mode === "draft" ? "Draft with AI" : "Fill with AI",
-    disabled: input.isGenerating,
-  } as const;
-}
+import { resolveAiButtonState } from "../_lib/composer-ai";
 
 function resolveAiWarningMessage(
   aiDraft: ReturnType<typeof useInboxClient>["aiDraft"],
@@ -885,22 +874,24 @@ export function InboxComposerDetailPane() {
                 </span>
                 {activeTab === "email" ? (
                   <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={aiButton.disabled}
-                      onClick={() => {
-                        runAiDraft();
-                      }}
-                    >
-                      {isGeneratingAi ? (
-                        <LoaderIcon className="size-4 animate-spin" />
-                      ) : (
-                        <SparkleIcon className="size-4" />
-                      )}
-                      {aiButton.label}
-                    </Button>
+                    {selectedAliasRecord?.isAiReady ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={aiButton.disabled}
+                        onClick={() => {
+                          runAiDraft();
+                        }}
+                      >
+                        {isGeneratingAi ? (
+                          <LoaderIcon className="size-4 animate-spin" />
+                        ) : (
+                          <SparkleIcon className="size-4" />
+                        )}
+                        {aiButton.label}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="outline"

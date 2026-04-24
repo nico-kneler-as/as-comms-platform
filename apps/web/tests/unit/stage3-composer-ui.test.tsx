@@ -106,7 +106,8 @@ describe("stage3 composer ui helpers", () => {
             id: "alias-1",
             alias: "coastal@adventuresci.org",
             projectId: "project-1",
-            projectName: "Coastal Survey"
+            projectName: "Coastal Survey",
+            isAiReady: true
           }
         ]
       })

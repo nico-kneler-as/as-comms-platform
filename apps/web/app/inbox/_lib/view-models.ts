@@ -177,6 +177,12 @@ export interface InboxComposerAliasOption {
   readonly alias: string;
   readonly projectId: string;
   readonly projectName: string;
+  /**
+   * D-037 gate: true only when the project is active AND Notion knowledge has
+   * synced at least once. Used to hide the "Draft with AI" button on projects
+   * that have no grounding context yet.
+   */
+  readonly isAiReady: boolean;
 }
 
 export interface InboxComposerReplyContext {

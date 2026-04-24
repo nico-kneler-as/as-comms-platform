@@ -15,8 +15,8 @@ export async function getInboxComposerAliases(): Promise<
   );
   const projectDimensions =
     await runtime.repositories.projectDimensions.listByIds(projectIds);
-  const projectNameById = new Map(
-    projectDimensions.map((project) => [project.projectId, project.projectName])
+  const projectById = new Map(
+    projectDimensions.map((project) => [project.projectId, project])
   );
 
   return aliases.flatMap((alias): readonly InboxComposerAliasOption[] => {
@@ -24,9 +24,9 @@ export async function getInboxComposerAliases(): Promise<
       return [];
     }
 
-    const projectName = projectNameById.get(alias.projectId);
+    const project = projectById.get(alias.projectId);
 
-    if (projectName === undefined) {
+    if (project === undefined) {
       return [];
     }
 
@@ -35,7 +35,9 @@ export async function getInboxComposerAliases(): Promise<
         id: alias.id,
         alias: alias.alias,
         projectId: alias.projectId,
-        projectName,
+        projectName: project.projectName,
+        isAiReady:
+          project.isActive === true && project.aiKnowledgeSyncedAt !== null,
       },
     ];
   });
