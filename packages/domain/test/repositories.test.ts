@@ -44,6 +44,13 @@ describe("defineStage1RepositoryBundle", () => {
         findByScope: () => Promise.resolve(null),
         upsert: (record) => Promise.resolve(record),
       },
+      projectKnowledge: {
+        list: () => Promise.resolve([]),
+        upsert: (record) => Promise.resolve(record),
+        setApproved: () => Promise.resolve(),
+        deleteById: () => Promise.resolve(),
+        getForRetrieval: () => Promise.resolve([]),
+      },
       contacts: {
         findById: () => Promise.resolve(contact),
         findBySalesforceContactId: () => Promise.resolve(contact),

@@ -28,6 +28,7 @@ export interface GenerateAiDraftDeps {
   readonly repositories: Pick<
     Stage1RepositoryBundle,
     | "aiKnowledge"
+    | "projectKnowledge"
     | "canonicalEvents"
     | "contacts"
     | "gmailMessageDetails"
@@ -295,4 +296,3 @@ export async function generateAiDraft(
     });
   }
 }
-

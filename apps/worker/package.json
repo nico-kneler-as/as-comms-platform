@@ -19,6 +19,7 @@
     "ops:audit-salesforce-task-ingest": "tsx src/ops/audit-salesforce-task-ingest.ts",
     "ops:cleanup-salesforce-owner-scope": "tsx src/ops/cleanup-salesforce-owner-scope.ts",
     "ops:dedup-historical-ledger": "tsx src/ops/dedup-historical-ledger.ts",
+    "ops:migrate-notion-child-dbs-to-project-knowledge": "tsx src/ops/migrate-notion-child-dbs-to-project-knowledge.ts",
     "ops:enqueue": "tsx src/ops/cli.ts enqueue",
     "ops:import-gmail-mbox": "tsx src/ops/cli.ts import-gmail-mbox",
     "ops:reclassify-sf-direction": "tsx src/ops/cli.ts reclassify-sf-direction",

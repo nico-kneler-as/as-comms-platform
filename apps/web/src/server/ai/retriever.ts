@@ -10,12 +10,55 @@ import type {
 type AiRetrieverRepositories = Pick<
   Stage1RepositoryBundle,
   | "aiKnowledge"
+  | "projectKnowledge"
   | "canonicalEvents"
   | "contacts"
   | "gmailMessageDetails"
   | "salesforceCommunicationDetails"
   | "simpleTextingMessageDetails"
 >;
+
+const ISSUE_TYPE_HINTS: readonly {
+  readonly issueType: string;
+  readonly keywords: readonly string[];
+}[] = [
+  {
+    issueType: "Getting started",
+    keywords: ["getting started", "start", "apply", "application", "new"],
+  },
+  {
+    issueType: "Training",
+    keywords: ["training", "train", "course", "onboarding", "checklist"],
+  },
+  {
+    issueType: "Trip planning",
+    keywords: ["trip", "travel", "field", "packing", "logistics"],
+  },
+  {
+    issueType: "Data collection",
+    keywords: ["data", "protocol", "survey", "sample", "collection"],
+  },
+  {
+    issueType: "Scheduling",
+    keywords: ["schedule", "availability", "date", "time", "calendar"],
+  },
+];
+
+const STOP_WORDS = new Set([
+  "about",
+  "after",
+  "again",
+  "because",
+  "before",
+  "could",
+  "email",
+  "hello",
+  "please",
+  "thanks",
+  "there",
+  "their",
+  "would",
+]);
 
 function isCommunicationEvent(eventType: string): boolean {
   return (
@@ -33,6 +76,35 @@ function truncate(value: string, maxLength: number): string {
   }
 
   return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function deriveIssueTypeHint(input: AiThreadContextEvent | null): string | null {
+  if (input === null) {
+    return null;
+  }
+
+  const haystack = `${input.subject ?? ""} ${input.body}`.toLowerCase();
+  for (const hint of ISSUE_TYPE_HINTS) {
+    if (hint.keywords.some((keyword) => haystack.includes(keyword))) {
+      return hint.issueType;
+    }
+  }
+
+  return null;
+}
+
+function deriveKeywordsLower(input: AiThreadContextEvent | null): readonly string[] {
+  if (input === null) {
+    return [];
+  }
+
+  const candidates = `${input.subject ?? ""} ${input.body}`
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/giu, " ")
+    .split(/\s+/u)
+    .filter((token) => token.length > 4 && !STOP_WORDS.has(token));
+
+  return Array.from(new Set(candidates)).slice(0, 12);
 }
 
 function buildTierFourGrounding(
@@ -189,6 +261,16 @@ export async function retrieveGrounding(
             body: truncate(event.body, 500),
           }));
 
+  const tier3Entries =
+    input.projectId === null || targetInbound === null
+      ? []
+      : await repositories.projectKnowledge.getForRetrieval({
+          projectId: input.projectId,
+          issueTypeHint: deriveIssueTypeHint(targetInbound),
+          keywordsLower: deriveKeywordsLower(targetInbound),
+          limitPerKind: 3,
+        });
+
   const grounding: AiDraftGrounding[] = [];
 
   if (generalTraining !== null) {
@@ -211,6 +293,16 @@ export async function retrieveGrounding(
     });
   }
 
+  grounding.push(
+    ...tier3Entries.map((entry): AiDraftGrounding => ({
+      tier: 3,
+      sourceProvider: "platform",
+      sourceId: entry.id,
+      sourceUrl: null,
+      title: entry.questionSummary,
+    })),
+  );
+
   if (targetInbound !== null) {
     grounding.push(buildTierFourGrounding(targetInbound, 0));
     grounding.push(
@@ -222,6 +314,7 @@ export async function retrieveGrounding(
     contact,
     generalTraining,
     projectContext,
+    tier3Entries: [...tier3Entries],
     targetInbound:
       targetInbound === null
         ? null
@@ -233,4 +326,3 @@ export async function retrieveGrounding(
     grounding,
   };
 }
-

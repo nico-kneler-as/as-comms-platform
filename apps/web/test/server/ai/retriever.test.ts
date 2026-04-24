@@ -5,7 +5,12 @@ import {
   type Stage1WebTestRuntime,
 } from "../../../src/server/stage1-runtime.test-support";
 import { retrieveGrounding } from "../../../src/server/ai/retriever";
-import { seedAiContact, seedAiKnowledge, seedAiThread } from "./test-helpers";
+import {
+  seedAiContact,
+  seedAiKnowledge,
+  seedAiThread,
+  seedProjectKnowledge,
+} from "./test-helpers";
 
 describe("retrieveGrounding", () => {
   let runtime: Stage1WebTestRuntime | null = null;
@@ -67,6 +72,33 @@ describe("retrieveGrounding", () => {
     expect(bundle.grounding.some((entry) => entry.tier === 2)).toBe(true);
   });
 
+  it("retrieves approved tier-3 project knowledge", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedProjectKnowledge(runtime, {
+      questionSummary: "Current field kit list",
+      issueType: "Trip planning",
+    });
+    await seedProjectKnowledge(runtime, {
+      id: "knowledge:whitebark:hidden",
+      questionSummary: "Hidden field kit answer",
+      approvedForAi: false,
+    });
+
+    const bundle = await retrieveGrounding(runtime.context.repositories, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      threadCursor: null,
+    });
+
+    expect(bundle.tier3Entries.map((entry) => entry.id)).toEqual([
+      "knowledge:whitebark:field-kit",
+    ]);
+    expect(bundle.grounding.some((entry) => entry.tier === 3)).toBe(true);
+  });
+
   it("returns a null-safe bundle when the project entry is missing", async () => {
     if (!runtime) {
       throw new Error("Expected runtime.");
@@ -96,6 +128,7 @@ describe("retrieveGrounding", () => {
         contact: null,
         generalTraining: null,
         projectContext: null,
+        tier3Entries: [],
         targetInbound: null,
         recentEvents: [],
         grounding: [],

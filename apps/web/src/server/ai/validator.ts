@@ -74,9 +74,28 @@ export function validateDraft(
     }
   }
 
+  for (const entry of bundle.tier3Entries) {
+    if (entry.maskedExample === null) {
+      continue;
+    }
+
+    const exampleTokens = tokenize(entry.maskedExample);
+    if (draftTokens.length === 0 || exampleTokens.length === 0) {
+      continue;
+    }
+
+    const overlapRatio =
+      longestCommonTokenRun(draftTokens, exampleTokens) / exampleTokens.length;
+    if (overlapRatio >= 0.4) {
+      reasons.push(
+        "Draft output copies too much language from a tier-3 canonical example.",
+      );
+      break;
+    }
+  }
+
   return {
     ok: reasons.length === 0,
     reasons,
   };
 }
-

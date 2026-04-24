@@ -15,6 +15,7 @@ import {
   contactInboxProjection,
   contactTimelineProjection,
   databaseSchema,
+  projectKnowledgeEntries,
   sourceEvidenceLog
 } from "../src/index.js";
 
@@ -40,6 +41,7 @@ describe("Stage 1 DB schema", () => {
       "pendingComposerOutbounds",
       "projectAliases",
       "projectDimensions",
+      "projectKnowledgeEntries",
       "routingReviewQueue",
       "salesforceCommunicationDetails",
       "salesforceEventContext",
@@ -54,6 +56,9 @@ describe("Stage 1 DB schema", () => {
 
   it("keeps canonical table names stable", () => {
     expect(getTableName(aiKnowledgeEntries)).toBe("ai_knowledge_entries");
+    expect(getTableName(projectKnowledgeEntries)).toBe(
+      "project_knowledge_entries"
+    );
     expect(getTableName(sourceEvidenceLog)).toBe("source_evidence_log");
     expect(getTableName(canonicalEventLedger)).toBe("canonical_event_ledger");
     expect(getTableName(contactInboxProjection)).toBe(

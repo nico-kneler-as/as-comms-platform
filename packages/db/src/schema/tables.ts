@@ -811,6 +811,47 @@ export const aiKnowledgeEntries = pgTable(
   ]
 );
 
+export const projectKnowledgeEntries = pgTable(
+  "project_knowledge_entries",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    kind: text("kind")
+      .$type<"canonical_reply" | "snippet" | "pattern">()
+      .notNull(),
+    issueType: text("issue_type"),
+    volunteerStage: text("volunteer_stage"),
+    questionSummary: text("question_summary").notNull(),
+    replyStrategy: text("reply_strategy"),
+    maskedExample: text("masked_example"),
+    sourceKind: text("source_kind")
+      .$type<"hand_authored" | "captured_from_send" | "bootstrap_synthesized">()
+      .notNull(),
+    approvedForAi: boolean("approved_for_ai").notNull().default(false),
+    sourceEventId: text("source_event_id"),
+    metadataJson: jsonb("metadata_json")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    lastReviewedAt: timestamp("last_reviewed_at", {
+      mode: "date",
+      withTimezone: true
+    }),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn
+  },
+  (table) => [
+    index("project_knowledge_entries_project_id_idx").on(table.projectId),
+    index("project_knowledge_entries_approved_idx").on(
+      table.projectId,
+      table.approvedForAi
+    ),
+    index("project_knowledge_entries_issue_type_idx")
+      .on(table.projectId, table.issueType)
+      .where(sql`${table.approvedForAi} = true`)
+  ]
+);
+
 export const integrationHealth = pgTable(
   "integration_health",
   {

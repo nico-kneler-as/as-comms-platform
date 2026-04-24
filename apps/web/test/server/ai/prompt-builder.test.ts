@@ -37,6 +37,7 @@ const baseBundle: GroundingBundle = {
     createdAt: "2026-04-24T12:00:00.000Z",
     updatedAt: "2026-04-24T12:00:00.000Z",
   },
+  tier3Entries: [],
   targetInbound: {
     canonicalEventId: "event:inbound-1",
     occurredAt: "2026-04-24T09:15:00.000Z",
@@ -94,6 +95,11 @@ describe("prompt builder", () => {
       [Tier 2 Project Context]
       Whitebark volunteers should get the latest field kit guidance.
       
+      [Tier 3 Canonical Examples]
+      (No approved canonical examples are available.)
+      
+      The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
+      
       You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
       }
     `);
@@ -135,6 +141,11 @@ describe("prompt builder", () => {
       
       [Tier 2 Project Context]
       Whitebark volunteers should get the latest field kit guidance.
+      
+      [Tier 3 Canonical Examples]
+      (No approved canonical examples are available.)
+      
+      The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
       
       You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
       }
@@ -182,6 +193,11 @@ describe("prompt builder", () => {
       [Tier 2 Project Context]
       Whitebark volunteers should get the latest field kit guidance.
       
+      [Tier 3 Canonical Examples]
+      (No approved canonical examples are available.)
+      
+      The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
+      
       You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
       }
     `);
@@ -225,8 +241,52 @@ describe("prompt builder", () => {
       [Tier 2 Project Context]
       (No project-specific context is available.)
       
+      [Tier 3 Canonical Examples]
+      (No approved canonical examples are available.)
+      
+      The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
+      
       You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
       }
     `);
+  });
+
+  it("renders tier-3 examples between project context and the inbound", () => {
+    expect(
+      buildDraftPrompt(
+        {
+          ...baseBundle,
+          tier3Entries: [
+            {
+              id: "knowledge:field-kit",
+              projectId: "project:whitebark",
+              kind: "canonical_reply",
+              issueType: "Trip planning",
+              volunteerStage: null,
+              questionSummary: "Current field kit list",
+              replyStrategy: "Confirm the latest kit source and invite follow-up.",
+              maskedExample:
+                "Hi {NAME}, the latest kit list is in the volunteer portal.",
+              sourceKind: "hand_authored",
+              approvedForAi: true,
+              sourceEventId: null,
+              metadataJson: {},
+              lastReviewedAt: null,
+              createdAt: "2026-04-24T12:00:00.000Z",
+              updatedAt: "2026-04-24T12:00:00.000Z",
+            },
+          ],
+        },
+        {
+          contactId: "contact:maya",
+          projectId: "project:whitebark",
+          threadCursor: "event:inbound-1",
+          repromptIndex: 0,
+          mode: "draft",
+        },
+      ).system,
+    ).toContain(
+      "[Tier 3 Canonical Examples]\n• [Issue: Trip planning] Q: Current field kit list\n  Strategy: Confirm the latest kit source and invite follow-up.\n  Example: Hi {NAME}, the latest kit list is in the volunteer portal.",
+    );
   });
 });

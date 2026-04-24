@@ -14,6 +14,7 @@ import type {
   InboxProjectionRow,
   MailchimpCampaignActivityDetailRecord,
   ManualNoteDetailRecord,
+  ProjectKnowledgeEntryRecord,
   ProjectDimensionRecord,
   Provider,
   RoutingReviewCase,
@@ -71,6 +72,28 @@ export interface AiKnowledgeRepository {
     readonly scopeKey: string | null;
   }): Promise<AiKnowledgeEntryRecord | null>;
   upsert(record: AiKnowledgeEntryRecord): Promise<AiKnowledgeEntryRecord>;
+}
+
+export interface ProjectKnowledgeRepository {
+  list(input: {
+    readonly projectId: string;
+    readonly approvedOnly?: boolean;
+  }): Promise<readonly ProjectKnowledgeEntryRecord[]>;
+  upsert(
+    record: ProjectKnowledgeEntryRecord,
+  ): Promise<ProjectKnowledgeEntryRecord>;
+  setApproved(input: {
+    readonly id: string;
+    readonly approved: boolean;
+    readonly reviewedAt: Date;
+  }): Promise<void>;
+  deleteById(id: string): Promise<void>;
+  getForRetrieval(input: {
+    readonly projectId: string;
+    readonly issueTypeHint: string | null;
+    readonly keywordsLower: readonly string[];
+    readonly limitPerKind: number;
+  }): Promise<readonly ProjectKnowledgeEntryRecord[]>;
 }
 
 export interface ContactRepository {
@@ -339,6 +362,7 @@ export interface Stage1RepositoryBundle {
   readonly sourceEvidence: SourceEvidenceRepository;
   readonly canonicalEvents: CanonicalEventRepository;
   readonly aiKnowledge: AiKnowledgeRepository;
+  readonly projectKnowledge: ProjectKnowledgeRepository;
   readonly contacts: ContactRepository;
   readonly contactIdentities: ContactIdentityRepository;
   readonly contactMemberships: ContactMembershipRepository;

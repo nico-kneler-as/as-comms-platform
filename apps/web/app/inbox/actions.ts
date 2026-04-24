@@ -61,6 +61,7 @@ const composerSendActionInputSchema = z.object({
   threadId: z.string().min(1).optional(),
   inReplyToRfc822: z.string().min(1).optional(),
   supersedesPendingId: z.string().min(1).optional(),
+  captureAsKnowledge: z.boolean().optional().default(false),
 });
 
 type ComposerSendActionParsedInput = z.output<
@@ -138,6 +139,118 @@ function getAiDraftConcurrencyState(): AiDraftConcurrencyState {
   };
 
   return globalThis.__AS_COMMS_AI_DRAFT_CONCURRENCY__;
+}
+
+function maskKnowledgeExample(value: string): string {
+  return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, "{EMAIL}")
+    .replace(/\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/gu, "{PHONE}")
+    .replace(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b/gu, "{NAME}");
+}
+
+function firstNonEmptyText(values: readonly (string | null | undefined)[]): string {
+  for (const value of values) {
+    const trimmed = value?.trim() ?? "";
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+
+  return "Captured reply";
+}
+
+function truncateKnowledgeSummary(value: string): string {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (normalized.length <= 50) {
+    return normalized;
+  }
+
+  return normalized.slice(0, 50).trimEnd();
+}
+
+async function resolveLastInboundSummary(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly contactId: string;
+}): Promise<string> {
+  const events = await input.runtime.repositories.canonicalEvents.listByContactId(
+    input.contactId,
+  );
+  const inbound = events
+    .filter((event) => event.eventType.endsWith(".inbound"))
+    .at(-1);
+
+  if (inbound === undefined) {
+    return "Captured reply";
+  }
+
+  const [gmailDetails, salesforceDetails, simpleTextingDetails] =
+    await Promise.all([
+      input.runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds([
+        inbound.sourceEvidenceId,
+      ]),
+      input.runtime.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds(
+        [inbound.sourceEvidenceId],
+      ),
+      input.runtime.repositories.simpleTextingMessageDetails.listBySourceEvidenceIds(
+        [inbound.sourceEvidenceId],
+      ),
+    ]);
+
+  const gmailDetail = gmailDetails[0];
+  const salesforceDetail = salesforceDetails[0];
+  const simpleTextingDetail = simpleTextingDetails[0];
+
+  return truncateKnowledgeSummary(
+    firstNonEmptyText([
+      gmailDetail?.subject,
+      salesforceDetail?.subject,
+      gmailDetail?.bodyTextPreview,
+      gmailDetail?.snippetClean,
+      simpleTextingDetail?.messageTextPreview,
+      salesforceDetail?.snippet,
+    ]),
+  );
+}
+
+async function captureKnowledgeFromSend(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly projectId: string;
+  readonly contactId: string;
+  readonly bodyPlaintext: string;
+  readonly pendingOutboundId: string;
+  readonly gmailMessageId: string;
+  readonly gmailThreadId: string | null;
+  readonly rfc822MessageId: string | null;
+  readonly createdAt: Date;
+}): Promise<void> {
+  const questionSummary = await resolveLastInboundSummary({
+    runtime: input.runtime,
+    contactId: input.contactId,
+  });
+  const nowIso = input.createdAt.toISOString();
+
+  await input.runtime.repositories.projectKnowledge.upsert({
+    id: `project_knowledge:captured:${input.pendingOutboundId}`,
+    projectId: input.projectId,
+    kind: "canonical_reply",
+    issueType: null,
+    volunteerStage: null,
+    questionSummary,
+    replyStrategy: null,
+    maskedExample: maskKnowledgeExample(input.bodyPlaintext),
+    sourceKind: "captured_from_send",
+    approvedForAi: false,
+    sourceEventId: null,
+    metadataJson: {
+      pendingOutboundId: input.pendingOutboundId,
+      gmailMessageId: input.gmailMessageId,
+      gmailThreadId: input.gmailThreadId,
+      rfc822MessageId: input.rfc822MessageId,
+    },
+    lastReviewedAt: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  });
 }
 
 function beginAiDraftRequest(userId: string): boolean {
@@ -1307,6 +1420,28 @@ export async function sendComposerAction(
         await runtime.repositories.pendingOutbounds.markSuperseded(
           parsedInput.data.supersedesPendingId,
         );
+      }
+
+      if (parsedInput.data.captureAsKnowledge && alias.projectId !== null) {
+        try {
+          await captureKnowledgeFromSend({
+            runtime,
+            projectId: alias.projectId,
+            contactId: canonicalContactId,
+            bodyPlaintext,
+            pendingOutboundId,
+            gmailMessageId: sendResult.gmailMessageId,
+            gmailThreadId: sendResult.gmailThreadId,
+            rfc822MessageId: sendResult.rfc822MessageId,
+            createdAt: sentAt,
+          });
+        } catch (error) {
+          console.warn("Composer send succeeded but knowledge capture failed.", {
+            pendingOutboundId,
+            projectId: alias.projectId,
+            error,
+          });
+        }
       }
 
       revalidateInboxContact(canonicalContactId);

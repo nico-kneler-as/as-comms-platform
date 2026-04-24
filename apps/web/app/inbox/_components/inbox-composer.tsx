@@ -363,6 +363,7 @@ export function InboxComposerDetailPane() {
   const [attachments, setAttachments] = useState<readonly AttachmentDraft[]>(
     [],
   );
+  const [captureAsKnowledge, setCaptureAsKnowledge] = useState(false);
   const [repromptText, setRepromptText] = useState("");
   const [inlineError, setInlineError] = useState<InlineComposerError | null>(
     null,
@@ -400,6 +401,7 @@ export function InboxComposerDetailPane() {
     setSubject(replyContext?.subject ?? "");
     setBody("");
     setAttachments([]);
+    setCaptureAsKnowledge(false);
     setRepromptText("");
     setInlineError(null);
     setComposerStatus("idle");
@@ -440,6 +442,8 @@ export function InboxComposerDetailPane() {
     isGenerating: isGeneratingAi,
   });
   const aiWarningMessage = resolveAiWarningMessage(aiDraft);
+  const showKnowledgeCapture =
+    activeTab === "email" && selectedAliasRecord?.isAiReady === true;
   const isSendDisabled = isComposerSendDisabled({
     activeTab,
     recipient,
@@ -645,6 +649,7 @@ export function InboxComposerDetailPane() {
         contentType: attachment.contentType,
         contentBase64: attachment.contentBase64,
       })),
+      captureAsKnowledge,
       ...(replyContext?.threadId === null || replyContext === null
         ? {}
         : { threadId: replyContext.threadId }),
@@ -1047,6 +1052,23 @@ export function InboxComposerDetailPane() {
                 </Button>
               ) : null}
             </div>
+          ) : null}
+
+          {showKnowledgeCapture ? (
+            <label className="mb-3 flex items-start gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={captureAsKnowledge}
+                onChange={(event) => {
+                  setCaptureAsKnowledge(event.currentTarget.checked);
+                }}
+                className="mt-0.5 size-4 rounded border-slate-300"
+              />
+              <span>
+                Save this reply as a canonical for{" "}
+                {selectedAliasRecord.projectName}
+              </span>
+            </label>
           ) : null}
 
           <div className="flex items-center justify-between">
