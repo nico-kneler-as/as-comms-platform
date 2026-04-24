@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -20,6 +21,8 @@ import { cn } from "@/lib/utils";
 import {
   clearInboxNeedsFollowUpAction,
   markInboxNeedsFollowUpAction,
+  markInboxOpenedAction,
+  markInboxUnreadAction,
   sendComposerAction,
 } from "../actions";
 import { fetchInboxTimelinePage } from "../_lib/client-api";
@@ -47,7 +50,8 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ClockIcon,
-  CornerUpLeftIcon,
+  FlagIcon,
+  MailOpenIcon,
   PanelRightOpenIcon,
   XIcon,
 } from "./icons";
@@ -190,6 +194,40 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
       [contact.contactId],
     ),
   });
+  const router = useRouter();
+  const [isMarkUnreadPending, startMarkUnreadTransition] = useTransition();
+  const markOpenedRef = useRef(false);
+
+  // Flip bucket to "Opened" on first mount of a detail view whose server-
+  // state is still "New". The ref prevents re-firing if the effect re-runs
+  // (e.g., router.refresh swapping the detail prop). User-initiated
+  // "Mark as unread" goes through `handleMarkUnread` below, which also
+  // closes the detail, so we won't immediately re-mark as opened.
+  useEffect(() => {
+    if (markOpenedRef.current || detail.bucket !== "new") {
+      return;
+    }
+    markOpenedRef.current = true;
+    const formData = new FormData();
+    formData.set("contactId", contact.contactId);
+    void markInboxOpenedAction(formData).then((result) => {
+      if (result.ok) {
+        router.refresh();
+      }
+    });
+  }, [contact.contactId, detail.bucket, router]);
+
+  const handleMarkUnread = useCallback(() => {
+    startMarkUnreadTransition(async () => {
+      const formData = new FormData();
+      formData.set("contactId", contact.contactId);
+      const result = await markInboxUnreadAction(formData);
+      if (result.ok) {
+        router.push("/inbox");
+      }
+    });
+  }, [contact.contactId, router]);
+
   const activeProject = contact.activeProjects[0] ?? null;
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
   const isFollowUp = followUpToggle.value;
@@ -317,6 +355,20 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
               error={followUpToggle.error}
               onToggle={followUpToggle.toggle}
             />
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isMarkUnreadPending}
+              onClick={handleMarkUnread}
+              aria-label="Mark as unread"
+              className="gap-1.5"
+              data-inbox-mark-unread="true"
+            >
+              <MailOpenIcon className="h-3.5 w-3.5" />
+              Mark as unread
+            </Button>
 
             <Popover open={reminderOpen} onOpenChange={setReminderOpen}>
               <PopoverTrigger asChild>
@@ -487,7 +539,7 @@ function FollowUpToggleButton({
           "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800",
       )}
     >
-      <CornerUpLeftIcon className="h-3.5 w-3.5" />
+      <FlagIcon className="h-3.5 w-3.5" />
       Needs Follow-Up
     </Button>
   );
@@ -502,6 +554,7 @@ function useOptimisticBooleanToggle({
   readonly value: boolean;
   readonly perform: (nextValue: boolean) => Promise<UiResult<unknown>>;
 }) {
+  const router = useRouter();
   const serverValueRef = useRef(value);
   const [committedValue, setCommittedValue] = useState(value);
   const [error, setError] = useState<UiError | null>(null);
@@ -528,13 +581,17 @@ function useOptimisticBooleanToggle({
       if (result.ok) {
         serverValueRef.current = nextValue;
         setCommittedValue(nextValue);
+        // Re-render the RSC tree so the inbox list row reflects the new
+        // value. Layout is `force-dynamic` (D-040), so this is a real
+        // refetch, not a cache hit.
+        router.refresh();
         return;
       }
 
       setCommittedValue(serverValueRef.current);
       setError(result);
     });
-  }, [optimisticValue, perform, setOptimisticValue]);
+  }, [optimisticValue, perform, router, setOptimisticValue]);
 
   return {
     value: optimisticValue,

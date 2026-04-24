@@ -9,6 +9,7 @@ import type {
   GmailMessageDetailRecord,
   IdentityResolutionCase,
   IdentityResolutionReasonCode,
+  InboxBucket,
   InboxProjectionRow,
   MailchimpCampaignActivityDetailRecord,
   ManualNoteDetailRecord,
@@ -277,6 +278,10 @@ export interface InboxProjectionRepository {
   setNeedsFollowUp(input: {
     readonly contactId: string;
     readonly needsFollowUp: boolean;
+  }): Promise<InboxProjectionRow | null>;
+  setBucket(input: {
+    readonly contactId: string;
+    readonly bucket: InboxBucket;
   }): Promise<InboxProjectionRow | null>;
   upsert(record: InboxProjectionRow): Promise<InboxProjectionRow>;
 }
