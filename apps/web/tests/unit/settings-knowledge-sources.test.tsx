@@ -1,9 +1,9 @@
 import React, { createElement, type ButtonHTMLAttributes } from "react";
 
 // Compiled JSX in imported components uses React.createElement under the
-// classic runtime, so keep React in scope even though this test uses
-// createElement directly.
-void React;
+// classic runtime; expose React on globalThis before any app-module
+// imports run so the imported component can find it at render time.
+Object.assign(globalThis, { React });
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
