@@ -58,10 +58,14 @@ import {
   getInboxList,
   getInboxTimelinePage,
   getInboxWelcomeWorkload,
+  groupInboxTimelineSystemMessages,
   stripSignature,
 } from "../../app/inbox/_lib/selectors";
 import { InboxContactRail } from "../../app/inbox/_components/inbox-contact-rail";
-import type { InboxListItemViewModel } from "../../app/inbox/_lib/view-models";
+import type {
+  InboxListItemViewModel,
+  InboxTimelineEntryViewModel,
+} from "../../app/inbox/_lib/view-models";
 import {
   createInboxTestRuntime,
   seedInboxAutoEmailEvent,
@@ -107,6 +111,34 @@ function buildItem(
     lastActivityAt: overrides.lastActivityAt ?? "2026-04-14T14:00:00.000Z",
     lastEventType: overrides.lastEventType ?? "communication.email.outbound",
     lastActivityLabel: overrides.lastActivityLabel ?? "today",
+  };
+}
+
+function buildTimelineEntry(
+  overrides: Partial<InboxTimelineEntryViewModel>,
+): InboxTimelineEntryViewModel {
+  return {
+    id: "timeline:entry",
+    kind: "inbound-email",
+    occurredAt: "2026-04-16T12:00:00.000Z",
+    occurredAtLabel: "2h ago",
+    actorLabel: "Sarah Martinez",
+    subject: "Question",
+    body: "Can you send the field packet?",
+    channel: "email",
+    isUnread: false,
+    isPreview: true,
+    fromHeader: null,
+    toHeader: null,
+    ccHeader: null,
+    mailbox: null,
+    threadId: null,
+    rfc822MessageId: null,
+    inReplyToRfc822: null,
+    sendStatus: null,
+    attachmentCount: 0,
+    campaignActivity: [],
+    ...overrides,
   };
 }
 
@@ -362,6 +394,137 @@ describe("compareInboxRecency", () => {
       .map((item) => item.contactId);
 
     expect(orderedContactIds).toEqual(inboxSentExpectedOrder);
+  });
+});
+
+describe("groupInboxTimelineSystemMessages", () => {
+  it("leaves non-system timelines unchanged", () => {
+    const inbound = buildTimelineEntry({ id: "timeline:inbound-1" });
+    const note = buildTimelineEntry({
+      id: "timeline:note-1",
+      kind: "internal-note",
+      channel: null,
+    });
+
+    expect(groupInboxTimelineSystemMessages([inbound, note])).toEqual([
+      inbound,
+      note,
+    ]);
+  });
+
+  it("collapses three consecutive automated entries into one group", () => {
+    const grouped = groupInboxTimelineSystemMessages([
+      buildTimelineEntry({
+        id: "timeline:auto-1",
+        kind: "outbound-auto-email",
+      }),
+      buildTimelineEntry({
+        id: "timeline:auto-2",
+        kind: "outbound-auto-email",
+      }),
+      buildTimelineEntry({
+        id: "timeline:auto-3",
+        kind: "outbound-auto-sms",
+        channel: "sms",
+      }),
+    ]);
+
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]).toMatchObject({
+      kind: "system-message-group",
+      automatedCount: 3,
+      campaignCount: 0,
+    });
+  });
+
+  it("collapses mixed consecutive automated and campaign entries with separate counts", () => {
+    const grouped = groupInboxTimelineSystemMessages([
+      buildTimelineEntry({
+        id: "timeline:auto-1",
+        kind: "outbound-auto-email",
+      }),
+      buildTimelineEntry({
+        id: "timeline:auto-2",
+        kind: "outbound-auto-email",
+      }),
+      buildTimelineEntry({
+        id: "timeline:campaign-1",
+        kind: "outbound-campaign-email",
+      }),
+    ]);
+
+    expect(grouped[0]).toMatchObject({
+      kind: "system-message-group",
+      automatedCount: 2,
+      campaignCount: 1,
+    });
+  });
+
+  it("does not group non-consecutive automated entries across a 1:1 entry", () => {
+    const autoOne = buildTimelineEntry({
+      id: "timeline:auto-1",
+      kind: "outbound-auto-email",
+    });
+    const inbound = buildTimelineEntry({ id: "timeline:inbound-1" });
+    const autoTwo = buildTimelineEntry({
+      id: "timeline:auto-2",
+      kind: "outbound-auto-email",
+    });
+
+    expect(
+      groupInboxTimelineSystemMessages([autoOne, inbound, autoTwo]),
+    ).toEqual([autoOne, inbound, autoTwo]);
+  });
+
+  it("renders a single automated entry inline instead of wrapping it in a group", () => {
+    const auto = buildTimelineEntry({
+      id: "timeline:auto-1",
+      kind: "outbound-auto-email",
+    });
+
+    expect(groupInboxTimelineSystemMessages([auto])).toEqual([auto]);
+  });
+
+  it("preserves child ordering and content inside grouped entries", () => {
+    const autoOne = buildTimelineEntry({
+      id: "timeline:auto-1",
+      kind: "outbound-auto-email",
+      body: "First automation body",
+    });
+    const campaign = buildTimelineEntry({
+      id: "timeline:campaign-1",
+      kind: "outbound-campaign-email",
+      body: "Campaign body",
+    });
+    const autoTwo = buildTimelineEntry({
+      id: "timeline:auto-2",
+      kind: "outbound-auto-sms",
+      channel: "sms",
+      body: "Second automation body",
+    });
+
+    const grouped = groupInboxTimelineSystemMessages([
+      autoOne,
+      campaign,
+      autoTwo,
+    ]);
+
+    expect(grouped[0]?.kind).toBe("system-message-group");
+
+    if (grouped[0]?.kind !== "system-message-group") {
+      throw new Error("Expected a grouped system message");
+    }
+
+    expect(grouped[0].entries.map((entry) => entry.id)).toEqual([
+      "timeline:auto-1",
+      "timeline:campaign-1",
+      "timeline:auto-2",
+    ]);
+    expect(grouped[0].entries.map((entry) => entry.body)).toEqual([
+      "First automation body",
+      "Campaign body",
+      "Second automation body",
+    ]);
   });
 });
 

@@ -1021,11 +1021,16 @@ async function rebuildInboxProjectionForContact(
     return null;
   }
 
+  const hasNewerInbound =
+    lastInboundAt !== null &&
+    (existing?.lastInboundAt == null || lastInboundAt > existing.lastInboundAt);
+
   return persistence.saveInboxProjection({
     contactId,
-    bucket:
-      existing?.bucket ??
-      (isInboundEvent(latestEvent.eventType) ? "New" : "Opened"),
+    bucket: hasNewerInbound
+      ? "New"
+      : existing?.bucket ??
+        (isInboundEvent(latestEvent.eventType) ? "New" : "Opened"),
     needsFollowUp: existing?.needsFollowUp ?? false,
     hasUnresolved: await contactHasUnresolved(persistence, contactId),
     lastInboundAt,

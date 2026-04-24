@@ -25,6 +25,7 @@ export interface PendingComposerOutboundRecord {
   readonly toEmailNormalized: string;
   readonly subject: string;
   readonly bodyPlaintext: string;
+  readonly bodyHtml: string | null;
   readonly bodySha256: string;
   readonly attachmentMetadata: readonly PendingComposerOutboundAttachmentMetadata[];
   readonly gmailThreadId: string | null;

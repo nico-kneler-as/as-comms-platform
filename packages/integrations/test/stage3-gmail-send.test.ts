@@ -128,6 +128,8 @@ describe("Stage 3 Gmail send client", () => {
         to: "volunteer@example.org",
         subject: "Re: Field update",
         bodyPlaintext: "Thanks for the update.\nWe are reviewing it now.",
+        bodyHtml:
+          "<p><strong>Thanks</strong> for the update.</p><p>We are reviewing it now.</p>",
         attachments: [],
         threadId: "gmail-thread-parent-1",
         inReplyToRfc822MessageId: "<parent-message@example.org>",
@@ -162,9 +164,12 @@ describe("Stage 3 Gmail send client", () => {
     expect(rawMessage).toContain(
       "References: <grandparent-message@example.org> <parent-message@example.org>"
     );
+    expect(rawMessage).toContain("Content-Type: multipart/alternative; boundary=");
     expect(rawMessage).toContain("Content-Type: text/plain; charset=UTF-8");
+    expect(rawMessage).toContain("Content-Type: text/html; charset=UTF-8");
     expect(rawMessage).not.toContain("multipart/mixed");
     expect(rawMessage).toContain("Thanks for the update.\r\nWe are reviewing it now.");
+    expect(rawMessage).toContain("<p><strong>Thanks</strong> for the update.</p>");
     expect(rawMessage).toMatch(/Message-ID: <[^>]+>/u);
     expect(result.kind === "success" ? result.rfc822MessageId : "").toMatch(
       /^<[^>]+>$/u
@@ -179,6 +184,7 @@ describe("Stage 3 Gmail send client", () => {
         to: "new-contact@example.org",
         subject: "Proyecto Ártico",
         bodyPlaintext: "Hello from Adventure Scientists.",
+        bodyHtml: "<p>Hello from Adventure Scientists.</p>",
         attachments: []
       },
       {
@@ -200,7 +206,9 @@ describe("Stage 3 Gmail send client", () => {
     expect(rawMessage).toContain("Subject: =?UTF-8?B?UHJveWVjdG8gw4FydGljbw==?=");
     expect(rawMessage).not.toContain("In-Reply-To:");
     expect(rawMessage).not.toContain("References:");
+    expect(rawMessage).toContain("Content-Type: multipart/alternative; boundary=");
     expect(rawMessage).toContain("Content-Type: text/plain; charset=UTF-8");
+    expect(rawMessage).toContain("Content-Type: text/html; charset=UTF-8");
   });
 
   it("builds a multipart message when attachments are present", async () => {
@@ -211,6 +219,7 @@ describe("Stage 3 Gmail send client", () => {
         to: "volunteer@example.org",
         subject: "Field kit files",
         bodyPlaintext: "Attached are the kit files.",
+        bodyHtml: "<p>Attached are the <em>kit</em> files.</p>",
         attachments: [
           {
             filename: "briefing.txt",
@@ -238,7 +247,9 @@ describe("Stage 3 Gmail send client", () => {
     );
 
     expect(rawMessage).toContain("Content-Type: multipart/mixed; boundary=");
+    expect(rawMessage).toContain("Content-Type: multipart/alternative; boundary=");
     expect(rawMessage).toContain("Content-Type: text/plain; charset=UTF-8");
+    expect(rawMessage).toContain("Content-Type: text/html; charset=UTF-8");
     expect(rawMessage).toContain('Content-Disposition: attachment; filename="briefing.txt"');
     expect(rawMessage).toContain('Content-Disposition: attachment; filename="checklist.csv"');
     expect(rawMessage).toContain(
@@ -432,6 +443,7 @@ describe("Stage 3 Gmail send client", () => {
           to: "volunteer@example.org",
           subject: `Case ${testCase.name}`,
           bodyPlaintext: "Test body",
+          bodyHtml: "<p>Test body</p>",
           attachments: []
         },
         {
@@ -454,6 +466,7 @@ describe("Stage 3 Gmail send client", () => {
         to: "volunteer@example.org",
         subject: "Too large",
         bodyPlaintext: "See attachment.",
+        bodyHtml: "<p>See attachment.</p>",
         attachments: [
           {
             filename: "oversized.bin",

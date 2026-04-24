@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { z } from "zod";
 
+import { composerSendInputSchema } from "@as-comms/contracts";
 import { computePendingComposerOutboundFingerprint } from "@as-comms/domain";
 import { requireSession } from "@/src/server/auth/session";
 import { sendComposerGmailMessage } from "@/src/server/composer/gmail-send";
@@ -23,44 +24,14 @@ import {
   getInternalNoteValidationError,
   normalizeInternalNoteBody,
 } from "@/src/lib/internal-note-validation";
+import { appendComposerHtmlSignature } from "@/src/lib/html-sanitizer";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 import { appendSecurityAudit } from "@/src/server/security/audit";
 import { enforceRateLimit } from "@/src/server/security/rate-limit";
 
 import type { UiResult } from "../../src/server/ui-result";
 
-const composerRecipientSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("contact"),
-    contactId: z.string().min(1),
-  }),
-  z.object({
-    kind: z.literal("email"),
-    emailAddress: z.string().email(),
-  }),
-]);
-
-const composerAttachmentSchema = z.object({
-  filename: z.string().min(1),
-  contentType: z.string().min(1),
-  contentBase64: z.string().min(1),
-});
-
-const composerBodyPlaintextSchema = z
-  .string()
-  .refine((value) => value.trim().length > 0, {
-    message: "Body is required.",
-  });
-
-const composerSendActionInputSchema = z.object({
-  recipient: composerRecipientSchema,
-  alias: z.string().email(),
-  subject: z.string().trim().min(1),
-  bodyPlaintext: composerBodyPlaintextSchema,
-  attachments: z.array(composerAttachmentSchema),
-  threadId: z.string().min(1).optional(),
-  inReplyToRfc822: z.string().min(1).optional(),
-  supersedesPendingId: z.string().min(1).optional(),
+const composerSendActionInputSchema = composerSendInputSchema.extend({
   captureAsKnowledge: z.boolean().optional().default(false),
 });
 
@@ -1326,6 +1297,11 @@ export async function sendComposerAction(
     parsedInput.data.bodyPlaintext,
     signature,
   );
+  const bodyHtml = appendComposerHtmlSignature({
+    bodyHtml: parsedInput.data.bodyHtml,
+    bodyPlaintext: parsedInput.data.bodyPlaintext,
+    signaturePlaintext: signature,
+  });
   const fingerprint = computePendingComposerOutboundFingerprint({
     contactId: canonicalContactId,
     subject: parsedInput.data.subject,
@@ -1353,6 +1329,7 @@ export async function sendComposerAction(
     toEmailNormalized,
     subject: parsedInput.data.subject,
     bodyPlaintext,
+    bodyHtml,
     bodySha256: sha256Text(bodyPlaintext),
     attachmentMetadata: buildAttachmentMetadata(parsedInput.data.attachments),
     gmailThreadId: parsedInput.data.threadId ?? null,
@@ -1385,6 +1362,7 @@ export async function sendComposerAction(
       to: toEmailNormalized,
       subject: parsedInput.data.subject,
       bodyPlaintext,
+      bodyHtml,
       attachments: parsedInput.data.attachments,
       ...(parsedInput.data.threadId === undefined
         ? {}

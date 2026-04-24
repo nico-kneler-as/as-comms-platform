@@ -739,6 +739,7 @@ export const pendingComposerOutbounds = pgTable(
     toEmailNormalized: text("to_email_normalized").notNull(),
     subject: text("subject").notNull(),
     bodyPlaintext: text("body_plaintext").notNull(),
+    bodyHtml: text("body_html"),
     bodySha256: text("body_sha256").notNull(),
     attachmentMetadataJson: jsonb("attachment_metadata_json")
       .$type<readonly PendingComposerOutboundAttachmentMetadata[]>()

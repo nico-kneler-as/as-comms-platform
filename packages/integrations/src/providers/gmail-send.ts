@@ -24,6 +24,7 @@ const gmailSendParamsSchema = z.object({
   to: emailSchema,
   subject: z.string(),
   bodyPlaintext: z.string(),
+  bodyHtml: z.string(),
   attachments: z.array(gmailAttachmentSchema),
   threadId: z.string().min(1).optional(),
   inReplyToRfc822MessageId: z.string().min(1).optional(),
@@ -82,6 +83,7 @@ export interface GmailSendParams {
   readonly to: string;
   readonly subject: string;
   readonly bodyPlaintext: string;
+  readonly bodyHtml: string;
   readonly attachments: readonly GmailAttachment[];
   readonly threadId?: string;
   readonly inReplyToRfc822MessageId?: string;
@@ -190,6 +192,30 @@ function buildTextPart(bodyPlaintext: string): string {
   ].join("\r\n");
 }
 
+function buildHtmlPart(bodyHtml: string): string {
+  return [
+    "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    normalizeBody(bodyHtml)
+  ].join("\r\n");
+}
+
+function buildAlternativePart(input: {
+  readonly bodyPlaintext: string;
+  readonly bodyHtml: string;
+  readonly boundary: string;
+}): string {
+  return [
+    `--${input.boundary}`,
+    buildTextPart(input.bodyPlaintext),
+    `--${input.boundary}`,
+    buildHtmlPart(input.bodyHtml),
+    `--${input.boundary}--`,
+    ""
+  ].join("\r\n");
+}
+
 function buildAttachmentPart(attachment: GmailAttachment): string {
   return [
     `Content-Type: ${normalizeHeaderWhitespace(attachment.contentType)}; name="${escapeQuotedHeaderValue(attachment.filename)}"`,
@@ -233,13 +259,19 @@ function buildMimeMessage(
     );
   }
 
+  const alternativeBoundary = buildBoundary();
+  const alternativePart = buildAlternativePart({
+    bodyPlaintext: params.bodyPlaintext,
+    bodyHtml: params.bodyHtml,
+    boundary: alternativeBoundary
+  });
+
   if (params.attachments.length === 0) {
     const message = [
       ...headers,
-      "Content-Type: text/plain; charset=UTF-8",
-      "Content-Transfer-Encoding: 8bit",
+      `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`,
       "",
-      normalizeBody(params.bodyPlaintext)
+      alternativePart
     ].join("\r\n");
 
     return {
@@ -251,7 +283,9 @@ function buildMimeMessage(
   const boundary = buildBoundary();
   const parts = [
     `--${boundary}`,
-    buildTextPart(params.bodyPlaintext),
+    `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`,
+    "",
+    alternativePart,
     ...params.attachments.flatMap((attachment) => [
       `--${boundary}`,
       buildAttachmentPart(attachment)
