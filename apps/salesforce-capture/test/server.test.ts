@@ -5,24 +5,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as IntegrationsModule from "@as-comms/integrations";
 
 const { createSalesforceCaptureServiceMock } = vi.hoisted(() => ({
-  createSalesforceCaptureServiceMock: vi.fn()
+  createSalesforceCaptureServiceMock: vi.fn(),
 }));
 
 vi.mock("@as-comms/integrations", async () => {
-  const actual =
-    await vi.importActual<typeof IntegrationsModule>(
-      "@as-comms/integrations"
-    );
+  const actual = await vi.importActual<typeof IntegrationsModule>(
+    "@as-comms/integrations",
+  );
 
   return {
     ...actual,
-    createSalesforceCaptureService: createSalesforceCaptureServiceMock
+    createSalesforceCaptureService: createSalesforceCaptureServiceMock,
   };
 });
 
 import {
   readSalesforceCaptureRuntimeConfig,
-  startSalesforceCaptureServer
+  startSalesforceCaptureServer,
 } from "../src/index.js";
 
 function createConfig(port: number) {
@@ -50,7 +49,7 @@ PZpRE1PvSL887gSHwWFelB7BlDbijc2M5fKrPC2KO/hJhg0wgnzVE1/UGwKWSSDX
 ZsMs9ff6x7BET58=
 -----END PRIVATE KEY-----`,
     SALESFORCE_CONTACT_CAPTURE_MODE: "cdc_compatible",
-    SALESFORCE_MEMBERSHIP_CAPTURE_MODE: "delta_polling"
+    SALESFORCE_MEMBERSHIP_CAPTURE_MODE: "delta_polling",
   });
 }
 
@@ -85,7 +84,7 @@ afterEach(() => {
 });
 
 describe("Salesforce capture server", () => {
-  it("logs structured details and returns diagnostic 500 bodies for live request failures", async () => {
+  it("logs safe structured details and returns generic 500 bodies for live request failures", async () => {
     const port = await getAvailablePort();
     const serviceError = new TypeError("Salesforce live failure");
     const consoleErrorSpy = vi
@@ -95,7 +94,7 @@ describe("Salesforce capture server", () => {
     createSalesforceCaptureServiceMock.mockReturnValue({
       handleHttpRequest: vi.fn(() => {
         throw serviceError;
-      })
+      }),
     });
 
     const server = await startSalesforceCaptureServer(createConfig(port));
@@ -105,40 +104,78 @@ describe("Salesforce capture server", () => {
         method: "POST",
         headers: {
           authorization: "Bearer salesforce-token",
-          "content-type": "application/json"
+          "content-type": "application/json",
         },
         body: JSON.stringify({
-          jobId: "job:salesforce:live:1"
-        })
+          jobId: "job:salesforce:live:1",
+        }),
       });
 
       expect(response.status).toBe(500);
-      await expect(response.json()).resolves.toEqual({
+      const responseBody = (await response.json()) as Record<string, unknown>;
+      expect(responseBody).toMatchObject({
         ok: false,
-        error: {
-          name: "TypeError",
-          message: "Salesforce live failure"
-        }
+        error: "internal_error",
       });
+      expect(typeof responseBody.requestId).toBe("string");
 
       expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
 
       const loggedError = JSON.parse(
-        String(consoleErrorSpy.mock.calls[0]?.[0] ?? "")
+        String(consoleErrorSpy.mock.calls[0]?.[0] ?? ""),
       ) as Record<string, unknown>;
 
       expect(loggedError).toMatchObject({
         event: "salesforce_capture.live.error",
+        requestId: responseBody.requestId,
         errorName: "TypeError",
-        errorMessage: "Salesforce live failure",
         requestMethod: "POST",
         requestPath: "/live",
-        requestBody: {
-          jobId: "job:salesforce:live:1"
-        }
       });
-      expect(loggedError.errorStack).toBe(serviceError.stack);
+      expect(loggedError).not.toHaveProperty("errorMessage");
+      expect(loggedError).not.toHaveProperty("errorStack");
+      expect(loggedError).not.toHaveProperty("requestBody");
       expect(typeof loggedError.occurredAt).toBe("string");
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
+    }
+  });
+
+  it("rejects oversized request bodies before invoking the capture service", async () => {
+    const port = await getAvailablePort();
+    const handleHttpRequest = vi.fn();
+
+    createSalesforceCaptureServiceMock.mockReturnValue({
+      handleHttpRequest,
+    });
+
+    const server = await startSalesforceCaptureServer(createConfig(port));
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${String(port)}/live`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer salesforce-token",
+          "content-type": "application/json",
+        },
+        body: "x".repeat(1_000_001),
+      });
+
+      expect(response.status).toBe(413);
+      await expect(response.json()).resolves.toEqual({
+        ok: false,
+        error: "payload_too_large",
+      });
+      expect(handleHttpRequest).not.toHaveBeenCalled();
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {

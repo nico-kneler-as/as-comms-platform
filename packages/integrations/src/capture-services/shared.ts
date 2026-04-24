@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 import { z, type ZodType } from "zod";
 
@@ -31,27 +31,27 @@ export interface CursorMarker {
 const cursorMarkerSchema = z.object({
   occurredAt: z.string().datetime(),
   recordType: z.string().min(1),
-  recordId: z.string().min(1)
+  recordId: z.string().min(1),
 });
 
 const timestampSchema = z.string().datetime();
 
 export function jsonResponse(
   status: number,
-  body: unknown
+  body: unknown,
 ): CaptureServiceHttpResponse {
   return {
     status,
     headers: {
-      "content-type": "application/json; charset=utf-8"
+      "content-type": "application/json; charset=utf-8",
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   };
 }
 
 export function readHeader(
   headers: CaptureServiceHttpRequest["headers"],
-  name: string
+  name: string,
 ): string | null {
   const lowerName = name.toLowerCase();
 
@@ -76,16 +76,23 @@ export function readHeader(
 
 export function hasBearerToken(
   request: CaptureServiceHttpRequest,
-  expectedBearerToken: string
+  expectedBearerToken: string,
 ): boolean {
   const authorizationHeader = readHeader(request.headers, "authorization");
 
-  return authorizationHeader === `Bearer ${expectedBearerToken}`;
+  if (authorizationHeader === null) {
+    return false;
+  }
+
+  const actual = Buffer.from(authorizationHeader, "utf8");
+  const expected = Buffer.from(`Bearer ${expectedBearerToken}`, "utf8");
+
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 export function parseJsonRequestBody<TSchema extends ZodType<unknown>>(
   request: CaptureServiceHttpRequest,
-  schema: TSchema
+  schema: TSchema,
 ): z.output<TSchema> {
   let parsedJson: unknown;
 
@@ -99,12 +106,12 @@ export function parseJsonRequestBody<TSchema extends ZodType<unknown>>(
 }
 
 export function sha256Json(value: unknown): string {
-  return createHash("sha256")
-    .update(JSON.stringify(value))
-    .digest("hex");
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-export function normalizeEmail(value: string | null | undefined): string | null {
+export function normalizeEmail(
+  value: string | null | undefined,
+): string | null {
   if (typeof value !== "string") {
     return null;
   }
@@ -113,7 +120,9 @@ export function normalizeEmail(value: string | null | undefined): string | null 
   return normalized.length === 0 ? null : normalized;
 }
 
-export function normalizePhone(value: string | null | undefined): string | null {
+export function normalizePhone(
+  value: string | null | undefined,
+): string | null {
   if (typeof value !== "string") {
     return null;
   }
@@ -128,18 +137,22 @@ export function normalizePhone(value: string | null | undefined): string | null 
 }
 
 export function uniqueValues(
-  values: readonly (string | null | undefined)[]
+  values: readonly (string | null | undefined)[],
 ): string[] {
   return Array.from(
     new Set(
       values
         .map((value) => value?.trim())
-        .filter((value): value is string => value !== undefined && value.length > 0)
-    )
+        .filter(
+          (value): value is string => value !== undefined && value.length > 0,
+        ),
+    ),
   ).sort((left, right) => left.localeCompare(right));
 }
 
-export function toIsoTimestamp(value: string | number | Date | null): string | null {
+export function toIsoTimestamp(
+  value: string | number | Date | null,
+): string | null {
   if (value === null) {
     return null;
   }
@@ -154,9 +167,10 @@ export function toIsoTimestamp(value: string | number | Date | null): string | n
 }
 
 export function encodeOpaqueCursor(value: CursorMarker): string {
-  return Buffer.from(JSON.stringify(cursorMarkerSchema.parse(value)), "utf8").toString(
-    "base64url"
-  );
+  return Buffer.from(
+    JSON.stringify(cursorMarkerSchema.parse(value)),
+    "utf8",
+  ).toString("base64url");
 }
 
 export function decodeOpaqueCursor(cursor: string | null): CursorMarker | null {
@@ -166,7 +180,7 @@ export function decodeOpaqueCursor(cursor: string | null): CursorMarker | null {
 
   try {
     const parsed = JSON.parse(
-      Buffer.from(cursor, "base64url").toString("utf8")
+      Buffer.from(cursor, "base64url").toString("utf8"),
     ) as unknown;
     return cursorMarkerSchema.parse(parsed);
   } catch {
@@ -192,7 +206,7 @@ export function paginateCapturedRecords<TRecord>(
     readonly cursor: string | null;
     readonly maxRecords: number;
     readonly getMarker: (record: TRecord) => CursorMarker;
-  }
+  },
 ): {
   readonly records: readonly TRecord[];
   readonly nextCursor: string | null;
@@ -202,7 +216,8 @@ export function paginateCapturedRecords<TRecord>(
     afterMarker === null
       ? records
       : records.filter(
-          (record) => compareCursorMarkers(input.getMarker(record), afterMarker) > 0
+          (record) =>
+            compareCursorMarkers(input.getMarker(record), afterMarker) > 0,
         );
   const page = filteredRecords.slice(0, input.maxRecords);
   const hasMore = filteredRecords.length > page.length;
@@ -213,7 +228,7 @@ export function paginateCapturedRecords<TRecord>(
 
   return {
     records: page,
-    nextCursor
+    nextCursor,
   };
 }
 
@@ -228,13 +243,13 @@ export function parseIsoWindow(input: {
   if (input.recordIds.length > 0) {
     return {
       windowStart: input.windowStart,
-      windowEnd: input.windowEnd
+      windowEnd: input.windowEnd,
     };
   }
 
   if (input.windowStart === null || input.windowEnd === null) {
     throw new CaptureServiceBadRequestError(
-      "windowStart and windowEnd are required when recordIds are not provided."
+      "windowStart and windowEnd are required when recordIds are not provided.",
     );
   }
 
@@ -243,13 +258,13 @@ export function parseIsoWindow(input: {
 
   if (start >= end) {
     throw new CaptureServiceBadRequestError(
-      "windowStart must be earlier than windowEnd."
+      "windowStart must be earlier than windowEnd.",
     );
   }
 
   return {
     windowStart: start,
-    windowEnd: end
+    windowEnd: end,
   };
 }
 
@@ -258,7 +273,7 @@ export function isTimestampWithinWindow(
   input: {
     readonly windowStart: string | null;
     readonly windowEnd: string | null;
-  }
+  },
 ): boolean {
   if (input.windowStart !== null && timestamp < input.windowStart) {
     return false;
