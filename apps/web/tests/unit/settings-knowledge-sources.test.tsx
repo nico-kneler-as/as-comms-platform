@@ -1,4 +1,9 @@
-import { createElement, type ButtonHTMLAttributes } from "react";
+import React, { createElement, type ButtonHTMLAttributes } from "react";
+
+// Compiled JSX in imported components uses React.createElement under the
+// classic runtime, so keep React in scope even though this test uses
+// createElement directly.
+void React;
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
