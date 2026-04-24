@@ -1,34 +1,17 @@
-import { revalidatePath, revalidateTag } from "next/cache";
-
-function uniqueContactIds(contactIds: readonly string[]): string[] {
-  return Array.from(
-    new Set(contactIds.filter((contactId) => contactId.trim().length > 0))
-  );
-}
-
 export function revalidateInboxViews(input?: {
   readonly contactIds?: readonly string[];
 }): {
   readonly contactIds: readonly string[];
 } {
-  const contactIds = uniqueContactIds(input?.contactIds ?? []);
-
-  revalidateTag("inbox");
-  revalidatePath("/inbox");
-
-  for (const contactId of contactIds) {
-    revalidateTag(`inbox:contact:${contactId}`);
-    revalidateTag(`timeline:contact:${contactId}`);
-    revalidatePath(`/inbox/${encodeURIComponent(contactId)}`);
-  }
-
-  return {
-    contactIds
-  };
+  const contactIds = Array.from(
+    new Set((input?.contactIds ?? []).filter((id) => id.trim().length > 0))
+  );
+  // No-op under D-040: inbox pages are `force-dynamic`, so there is no
+  // server cache to invalidate. Kept as the integration point for a
+  // future event-driven invalidation upgrade if/when scale demands it.
+  return { contactIds };
 }
 
 export function revalidateInboxContact(contactId: string): void {
-  revalidateInboxViews({
-    contactIds: [contactId]
-  });
+  revalidateInboxViews({ contactIds: [contactId] });
 }

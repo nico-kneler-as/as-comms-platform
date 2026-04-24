@@ -1,5 +1,3 @@
-import { unstable_cache } from "next/cache";
-
 import type {
   CanonicalEventRecord,
   ContactMembershipRecord,
@@ -2202,19 +2200,7 @@ function loadInboxListCacheData(input: {
   readonly query: string | null;
   readonly projectId: string | null;
 }) {
-  if (process.env.NODE_ENV !== "production") {
-    return readInboxListCacheData(input);
-  }
-
-  return unstable_cache(
-    () => readInboxListCacheData(input),
-    [
-      `inbox:list:data:${input.filterId}:${input.cursor ?? "first"}:${input.limit.toString()}:${input.query ?? "none"}:${input.projectId ?? "none"}`,
-    ],
-    {
-      tags: ["inbox"],
-    },
-  )();
+  return readInboxListCacheData(input);
 }
 
 function loadInboxDetailCacheData(
@@ -2224,23 +2210,7 @@ function loadInboxDetailCacheData(
     readonly timelineCursor: string | null;
   },
 ) {
-  if (process.env.NODE_ENV !== "production") {
-    return readInboxDetailCacheData(contactId, input);
-  }
-
-  return unstable_cache(
-    () => readInboxDetailCacheData(contactId, input),
-    [
-      `inbox:detail:data:${contactId}:${input.timelineCursor ?? "latest"}:${input.timelineLimit.toString()}`,
-    ],
-    {
-      tags: [
-        "inbox",
-        `inbox:contact:${contactId}`,
-        `timeline:contact:${contactId}`,
-      ],
-    },
-  )();
+  return readInboxDetailCacheData(contactId, input);
 }
 
 async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkloadCacheData> {
@@ -2301,17 +2271,7 @@ async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkload
 }
 
 function loadInboxWelcomeWorkloadCacheData() {
-  if (process.env.NODE_ENV !== "production") {
-    return readInboxWelcomeWorkloadCacheData();
-  }
-
-  return unstable_cache(
-    () => readInboxWelcomeWorkloadCacheData(),
-    ["inbox:welcome-workload"],
-    {
-      tags: ["inbox", "settings:projects"],
-    },
-  )();
+  return readInboxWelcomeWorkloadCacheData();
 }
 
 function toListItemViewModel(
