@@ -25,6 +25,7 @@ import {
   markInboxUnreadAction,
   sendComposerAction,
 } from "../actions";
+import { plaintextToComposerHtml } from "@/src/lib/html-sanitizer";
 import { fetchInboxTimelinePage } from "../_lib/client-api";
 import type { InboxDetailViewModel } from "../_lib/view-models";
 import type { UiError, UiResult } from "@/src/server/ui-result";
@@ -282,6 +283,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
             alias: mailbox,
             subject: entry.subject ?? "",
             bodyPlaintext: entry.body,
+            bodyHtml: plaintextToComposerHtml(entry.body),
             attachments: [],
             ...(entry.threadId === null ? {} : { threadId: entry.threadId }),
             ...(entry.inReplyToRfc822 === null

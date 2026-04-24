@@ -91,6 +91,7 @@ function buildInput(
     alias: "antarctica@example.org",
     subject: "Field logistics",
     bodyPlaintext: "Thanks again for confirming the field logistics.",
+    bodyHtml: "<p>Thanks again for confirming the field logistics.</p>",
     attachments: [
       {
         filename: "checklist.txt",
@@ -163,6 +164,7 @@ describe("sendComposerAction", () => {
       fromAlias: "antarctica@example.org",
       toEmailNormalized: "new-volunteer@example.org",
       subject: "Field logistics",
+      bodyHtml: "<p>Thanks again for confirming the field logistics.</p>",
       attachmentMetadata: [
         {
           filename: "checklist.txt",
@@ -175,6 +177,12 @@ describe("sendComposerAction", () => {
       "composer.send_attempted",
       "composer.send_succeeded",
     ]);
+    expect(sendComposerGmailMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyPlaintext: "Thanks again for confirming the field logistics.",
+        bodyHtml: "<p>Thanks again for confirming the field logistics.</p>",
+      }),
+    );
   });
 
   it("maps all typed Gmail send errors into the FP-07 envelope and marks the row failed", async () => {
@@ -289,6 +297,7 @@ describe("sendComposerAction", () => {
       toEmailNormalized: "existing@example.org",
       subject: "Old failed send",
       bodyPlaintext: "Old body",
+      bodyHtml: "<p>Old body</p>",
       bodySha256: "sha256:old",
       attachmentMetadata: [],
       gmailThreadId: null,

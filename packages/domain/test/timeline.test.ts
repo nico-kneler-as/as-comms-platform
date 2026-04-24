@@ -723,6 +723,7 @@ describe("Stage 1 timeline presenter", () => {
           toEmailNormalized: "volunteer@example.org",
           subject: "Pending outbound",
           bodyPlaintext: "Pending outbound body",
+          bodyHtml: "<p>Pending outbound body</p>",
           bodySha256: "sha256:pending",
           attachmentMetadata: [],
           gmailThreadId: null,
