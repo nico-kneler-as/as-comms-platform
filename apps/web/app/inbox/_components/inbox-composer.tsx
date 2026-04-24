@@ -1,12 +1,17 @@
 "use client";
 
+import Link from "@tiptap/extension-link";
+import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
 import { useRouter } from "next/navigation";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
   useTransition,
   type ChangeEvent,
+  type KeyboardEvent,
 } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +36,7 @@ import {
   getInternalNoteValidationError,
   normalizeInternalNoteBody,
 } from "@/src/lib/internal-note-validation";
+import { sanitizeComposerHtml } from "@/src/lib/html-sanitizer";
 import type { UiError } from "@/src/server/ui-result";
 
 import {
@@ -46,6 +52,10 @@ import {
 } from "../_lib/composer-ui";
 import type { InboxComposerAliasOption } from "../_lib/view-models";
 import {
+  ComposerToolbar,
+  type ComposerToolbarCommand,
+} from "./composer-toolbar";
+import {
   ComposerRecipientPicker,
   type ComposerContactRecipient,
   type ComposerRecipientValue,
@@ -58,7 +68,6 @@ import { AiDraftReprompt } from "./ai-draft-reprompt";
 import {
   AlertCircleIcon,
   ChevronDownIcon,
-  ImageIcon,
   LoaderIcon,
   MailIcon,
   NoteIcon,
@@ -135,6 +144,7 @@ function mapFieldErrors(
         break;
       case "body":
       case "bodyPlaintext":
+      case "bodyHtml":
         mappedErrors.push({ field: "body", message });
         break;
       default:
@@ -181,6 +191,153 @@ function resolveAiWarningMessage(
   }
 
   return null;
+}
+
+function promptForLinkUrl(): string | null {
+  const url = window.prompt("Link URL");
+
+  if (url === null) {
+    return null;
+  }
+
+  const trimmed = url.trim();
+  return /^(https?:\/\/|mailto:)/iu.test(trimmed) ? trimmed : null;
+}
+
+interface RichTextComposerEditorProps {
+  readonly bodyPlaintext: string;
+  readonly errorMessage: string | undefined;
+  readonly onChange: (value: {
+    readonly bodyPlaintext: string;
+    readonly bodyHtml: string;
+  }) => void;
+  readonly onClearErrors: () => void;
+}
+
+function RichTextComposerEditor({
+  bodyPlaintext,
+  errorMessage,
+  onChange,
+  onClearErrors,
+}: RichTextComposerEditorProps) {
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        // Whitelist: bold, italic, bulletList, orderedList, listItem, paragraph
+        // via defaults; strip everything else.
+        heading: false,
+        blockquote: false,
+        codeBlock: false,
+        horizontalRule: false,
+        strike: false,
+        code: false,
+      }),
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          rel: "noopener noreferrer",
+          target: "_blank",
+        },
+      }),
+    ],
+    content: "",
+    immediatelyRender: false,
+    editorProps: {
+      attributes: {
+        role: "textbox",
+        "aria-label": "Message",
+        "aria-multiline": "true",
+        ...(errorMessage ? { "aria-invalid": "true" } : {}),
+        class: cn(
+          "min-h-36 w-full rounded-md border border-slate-200 px-3 py-2 text-sm leading-6 text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300 [&_a]:text-sky-700 [&_a]:underline [&_ol]:ml-5 [&_ol]:list-decimal [&_ul]:ml-5 [&_ul]:list-disc",
+          errorMessage ? "border-rose-300 ring-1 ring-rose-200" : "",
+        ),
+      },
+    },
+    onUpdate: ({ editor: instance }) => {
+      onChange({
+        bodyPlaintext: instance.getText().trim(),
+        bodyHtml: sanitizeComposerHtml(instance.getHTML()),
+      });
+      onClearErrors();
+    },
+  });
+
+  const activeCommands = new Set<ComposerToolbarCommand>();
+  if (editor?.isActive("bold") === true) activeCommands.add("bold");
+  if (editor?.isActive("italic") === true) activeCommands.add("italic");
+  if (editor?.isActive("bulletList") === true) activeCommands.add("bulletList");
+  if (editor?.isActive("orderedList") === true)
+    activeCommands.add("orderedList");
+  if (editor?.isActive("link") === true) activeCommands.add("link");
+
+  const runCommand = useCallback(
+    (command: ComposerToolbarCommand) => {
+      if (editor === null) {
+        return;
+      }
+
+      const chain = editor.chain().focus();
+
+      switch (command) {
+        case "bold":
+          chain.toggleBold().run();
+          break;
+        case "italic":
+          chain.toggleItalic().run();
+          break;
+        case "bulletList":
+          chain.toggleBulletList().run();
+          break;
+        case "orderedList":
+          chain.toggleOrderedList().run();
+          break;
+        case "link": {
+          const url = promptForLinkUrl();
+          if (url === null) {
+            chain.unsetLink().run();
+            break;
+          }
+          chain.setLink({ href: url }).run();
+          break;
+        }
+      }
+    },
+    [editor],
+  );
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      runCommand("link");
+    }
+  };
+
+  useEffect(() => {
+    if (editor === null) {
+      return;
+    }
+
+    if (bodyPlaintext.length === 0 && editor.getText().length > 0) {
+      editor.commands.clearContent();
+    }
+  }, [bodyPlaintext, editor]);
+
+  const showPlaceholder = bodyPlaintext.length === 0;
+
+  return (
+    <div className="space-y-2">
+      <ComposerToolbar activeCommands={activeCommands} onCommand={runCommand} />
+      <div className="relative" onKeyDown={handleKeyDown}>
+        <EditorContent editor={editor} />
+        {showPlaceholder ? (
+          <span className="pointer-events-none absolute left-3 top-2 text-sm leading-6 text-slate-400">
+            Write your message
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function SenderPicker({
@@ -360,6 +517,7 @@ export function InboxComposerDetailPane() {
   const [selectedAlias, setSelectedAlias] = useState<string | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [bodyHtml, setBodyHtml] = useState("");
   const [attachments, setAttachments] = useState<readonly AttachmentDraft[]>(
     [],
   );
@@ -372,7 +530,6 @@ export function InboxComposerDetailPane() {
   const [isGeneratingAi, startAiTransition] = useTransition();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const replyContext =
     composerPane.mode === "replying" ? composerPane.replyContext : null;
@@ -399,6 +556,7 @@ export function InboxComposerDetailPane() {
     setSelectedAlias(replyContext?.defaultAlias ?? null);
     setSubject(replyContext?.subject ?? "");
     setBody("");
+    setBodyHtml("");
     setAttachments([]);
     setRepromptText("");
     setInlineError(null);
@@ -414,12 +572,12 @@ export function InboxComposerDetailPane() {
   ]);
 
   useEffect(() => {
-    if (!bodyRef.current) {
+    if (activeTab !== "note" || !bodyRef.current) {
       return;
     }
 
     autoResizeTextarea(bodyRef.current);
-  }, [body]);
+  }, [activeTab, body]);
 
   if (composerPane.mode === "closed") {
     return null;
@@ -640,6 +798,7 @@ export function InboxComposerDetailPane() {
       alias: selectedAlias,
       subject: subject.trim(),
       bodyPlaintext: body.trim(),
+      bodyHtml,
       attachments: attachments.map((attachment) => ({
         filename: attachment.filename,
         contentType: attachment.contentType,
@@ -717,6 +876,7 @@ export function InboxComposerDetailPane() {
       if (result.ok) {
         setComposerStatus("draft-saved");
         setBody("");
+        setBodyHtml("");
         closeComposer();
         router.refresh();
         showToast("Note saved.", "success");
@@ -745,7 +905,7 @@ export function InboxComposerDetailPane() {
             <p className="mt-1 text-sm text-slate-500">
               {activeTab === "note"
                 ? "Internal note for the team timeline."
-                : "Plain-text email with file attachments."}
+                : "Rich-text email with file attachments."}
             </p>
           </div>
 
@@ -903,46 +1063,43 @@ export function InboxComposerDetailPane() {
                       <PaperclipIcon className="size-4" />
                       Attach file
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        imageInputRef.current?.click();
-                      }}
-                    >
-                      <ImageIcon className="size-4" />
-                      Embed image
-                    </Button>
                   </div>
                 ) : null}
               </div>
 
-              <textarea
-                ref={bodyRef}
-                rows={6}
-                value={body}
-                onChange={(event) => {
-                  setBody(event.currentTarget.value);
-                  if (aiDraft.status === "inserted") {
-                    markAiDraftEdited();
-                  }
-                  clearComposerErrors();
-                }}
-                onInput={(event) => {
-                  autoResizeTextarea(event.currentTarget);
-                }}
-                placeholder={
-                  activeTab === "note"
-                    ? "Write a team-visible note"
-                    : "Write your message"
-                }
-                className={cn(
-                  "max-h-[30rem] min-h-36 w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm leading-6 text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300",
-                  bodyError ? "border-rose-300 ring-1 ring-rose-200" : "",
-                )}
-              />
-              {aiWarningMessage ? (
+              {activeTab === "email" ? (
+                <RichTextComposerEditor
+                  bodyPlaintext={body}
+                  errorMessage={bodyError?.message}
+                  onChange={(nextBody) => {
+                    setBody(nextBody.bodyPlaintext);
+                    setBodyHtml(nextBody.bodyHtml);
+                    if (aiDraft.status === "inserted") {
+                      markAiDraftEdited();
+                    }
+                  }}
+                  onClearErrors={clearComposerErrors}
+                />
+              ) : (
+                <textarea
+                  ref={bodyRef}
+                  rows={6}
+                  value={body}
+                  onChange={(event) => {
+                    setBody(event.currentTarget.value);
+                    clearComposerErrors();
+                  }}
+                  onInput={(event) => {
+                    autoResizeTextarea(event.currentTarget);
+                  }}
+                  placeholder="Write a team-visible note"
+                  className={cn(
+                    "max-h-[30rem] min-h-36 w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm leading-6 text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300",
+                    bodyError ? "border-rose-300 ring-1 ring-rose-200" : "",
+                  )}
+                />
+              )}
+              {aiWarningMessage && activeTab === "email" ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                   {aiWarningMessage}
                 </div>
@@ -1008,14 +1165,6 @@ export function InboxComposerDetailPane() {
               <input
                 ref={attachmentInputRef}
                 type="file"
-                multiple
-                className="hidden"
-                onChange={handleFilesSelected}
-              />
-              <input
-                ref={imageInputRef}
-                type="file"
-                accept="image/*"
                 multiple
                 className="hidden"
                 onChange={handleFilesSelected}

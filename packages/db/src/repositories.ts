@@ -1508,6 +1508,7 @@ function createStage1RepositoriesInternal(
           toEmailNormalized: input.toEmailNormalized,
           subject: input.subject,
           bodyPlaintext: input.bodyPlaintext,
+          bodyHtml: input.bodyHtml ?? null,
           bodySha256: input.bodySha256,
           attachmentMetadata: input.attachmentMetadata,
           gmailThreadId: input.gmailThreadId,

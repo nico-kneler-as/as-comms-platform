@@ -2,6 +2,7 @@ export * from "./health.js";
 export * from "./jobs.js";
 export * from "./settings.js";
 export * from "./settings-records.js";
+export * from "./stage3-composer.js";
 export * from "./stage1-normalization.js";
 export * from "./stage1-records.js";
 export * from "./stage1-timeline.js";
