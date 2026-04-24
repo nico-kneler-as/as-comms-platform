@@ -24,6 +24,10 @@ export function InboxRow({ item, isActive }: RowProps) {
   const router = useRouter();
   const prefetchedRef = useRef(false);
   const isUnread = item.bucket === "new";
+  // Dot appears when the thread needs operator attention: either unread
+  // (border line also appears) or opened-but-unanswered (only the dot).
+  // When both apply (fresh inbound, not yet opened), both show.
+  const showAttentionDot = isUnread || item.isUnanswered;
   const ChannelIcon = item.latestChannel === "email" ? MailIcon : PhoneIcon;
   const href = `/inbox/${encodeURIComponent(item.contactId)}`;
 
@@ -31,7 +35,7 @@ export function InboxRow({ item, isActive }: RowProps) {
     Boolean(item.projectLabel) ||
     item.needsFollowUp ||
     item.hasUnresolved ||
-    item.unreadCount > 0;
+    showAttentionDot;
 
   const prefetchDetail = useCallback(() => {
     if (prefetchedRef.current) {
@@ -125,10 +129,11 @@ export function InboxRow({ item, isActive }: RowProps) {
                   Review
                 </span>
               ) : null}
-              {item.unreadCount > 0 ? (
-                <span className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold text-white tabular-nums">
-                  {item.unreadCount}
-                </span>
+              {showAttentionDot ? (
+                <span
+                  aria-label={isUnread ? "Unread" : "Unanswered"}
+                  className="ml-auto inline-block h-2 w-2 rounded-full bg-sky-600"
+                />
               ) : null}
             </div>
           ) : null}

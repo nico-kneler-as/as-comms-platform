@@ -250,6 +250,7 @@ function createRepositoryBundle(input: {
       getFreshnessByContactId: () => Promise.resolve(null),
       deleteByContactId: () => Promise.resolve(),
       setNeedsFollowUp: () => Promise.resolve(null),
+      setBucket: () => Promise.resolve(null),
       upsert: (record: InboxProjectionRow) => Promise.resolve(record),
     },
     timelineProjection: {

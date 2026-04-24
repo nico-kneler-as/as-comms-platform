@@ -163,6 +163,7 @@ function buildRepositoryBundle(input: {
       getFreshnessByContactId: () => Promise.resolve(null),
       deleteByContactId: () => Promise.resolve(),
       setNeedsFollowUp: () => Promise.resolve(null),
+      setBucket: () => Promise.resolve(null),
       upsert: (record) => Promise.resolve(record),
     },
     timelineProjection: {

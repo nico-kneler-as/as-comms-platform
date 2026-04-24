@@ -58,4 +58,6 @@ export {
   FileIcon as FileDocIcon,
   Eye as EyeIcon,
   MousePointerClick as MousePointerClickIcon,
+  Flag as FlagIcon,
+  MailOpen as MailOpenIcon,
 } from "lucide-react";
