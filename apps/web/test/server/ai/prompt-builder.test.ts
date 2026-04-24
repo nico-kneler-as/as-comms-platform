@@ -120,8 +120,7 @@ describe("prompt builder", () => {
       - 2026-04-23T08:00:00.000Z | outbound email
       Subject: Re: Whitebark kit
       Body: Happy to help with the kit list.
-      
-      
+
       Operator directive:
       Tell her the revised field kit will ship tomorrow.
       
@@ -164,8 +163,7 @@ describe("prompt builder", () => {
       - 2026-04-23T08:00:00.000Z | outbound email
       Subject: Re: Whitebark kit
       Body: Happy to help with the kit list.
-      
-      
+
       Previous draft:
       Thanks for checking in.
       
