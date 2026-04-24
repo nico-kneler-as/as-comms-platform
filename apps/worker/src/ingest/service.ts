@@ -310,6 +310,9 @@ export function createStage1IngestService(
         ingestMode: "live",
         mapper: mapGmailRecord,
         record,
+        options: {
+          overwriteDuplicateGmailMessageDetail: false,
+        },
       });
     },
 

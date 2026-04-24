@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   cutoverCheckpointBatchPayloadSchema,
@@ -795,6 +795,105 @@ Alias drift outbound message.
       expect(result.syncState.provider).toBe("gmail");
       expect(result.syncState.freshnessP95Seconds).toBe(60);
       expect(result.syncState.freshnessP99Seconds).toBe(60);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("skips already-ingested Gmail live messages without duplicating events or projections", async () => {
+    const gmailRecord = buildGmailMessageRecord({
+      recordId: "gmail-live-duplicate-1",
+      direction: "inbound",
+      occurredAt: "2026-01-02T00:00:30.000Z",
+      receivedAt: "2026-01-02T00:01:00.000Z",
+      payloadRef:
+        "gmail://volunteers@adventurescientists.org/messages/gmail-live-duplicate-1",
+      checksum: "checksum:gmail-live-duplicate-1",
+      snippet: "Live reply from volunteer",
+      snippetClean: "Live reply from volunteer",
+      bodyTextPreview: "Live reply from volunteer",
+      threadId: "thread-live-duplicate-1",
+      rfc822MessageId: "<gmail-live-duplicate-1@example.org>",
+      supportingRecords: [],
+      crossProviderCollapseKey: null
+    });
+    const capture = createEmptyCapturePorts();
+    capture.gmail.captureLiveBatch = () =>
+      Promise.resolve(buildCapturedBatch([gmailRecord]));
+    const logger = {
+      info: vi.fn()
+    };
+
+    const context = await createTestWorkerContext({ capture, logger });
+
+    try {
+      await seedContact(context);
+
+      const payload = {
+        version: 1 as const,
+        jobId: "job:gmail:live:duplicate",
+        correlationId: "corr:gmail:live:duplicate",
+        traceId: null,
+        batchId: "batch:gmail:live:duplicate",
+        syncStateId: "sync:gmail:live:duplicate:first",
+        attempt: 1,
+        maxAttempts: 3,
+        provider: "gmail" as const,
+        mode: "live" as const,
+        jobType: "live_ingest" as const,
+        cursor: null,
+        checkpoint: null,
+        windowStart: "2026-01-01T23:52:00.000Z",
+        windowEnd: "2026-01-02T00:02:00.000Z",
+        recordIds: ["gmail-live-duplicate-1"],
+        maxRecords: 10
+      };
+
+      const first = await context.orchestration.runGmailLiveCaptureBatch(payload);
+
+      expect(first.outcome).toBe("succeeded");
+      if (first.outcome !== "succeeded") {
+        throw new Error("Expected initial Gmail live batch to succeed.");
+      }
+      expect(first.summary.normalized).toBe(1);
+      expect(first.summary.duplicate).toBe(0);
+      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(1);
+      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(1);
+      await expect(context.repositories.inboxProjection.countAll()).resolves.toBe(1);
+      await expect(
+        context.repositories.identityResolutionQueue.listOpenByContactId(contactId)
+      ).resolves.toEqual([]);
+      await expect(
+        context.repositories.routingReviewQueue.listOpenByContactId(contactId)
+      ).resolves.toEqual([]);
+
+      const second = await context.orchestration.runGmailLiveCaptureBatch({
+        ...payload,
+        syncStateId: "sync:gmail:live:duplicate:second"
+      });
+
+      expect(second.outcome).toBe("succeeded");
+      if (second.outcome !== "succeeded") {
+        throw new Error("Expected duplicate Gmail live batch to succeed.");
+      }
+      expect(second.summary.normalized).toBe(0);
+      expect(second.summary.duplicate).toBe(1);
+      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(1);
+      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(1);
+      await expect(context.repositories.inboxProjection.countAll()).resolves.toBe(1);
+      await expect(
+        context.repositories.identityResolutionQueue.listOpenByContactId(contactId)
+      ).resolves.toEqual([]);
+      await expect(
+        context.repositories.routingReviewQueue.listOpenByContactId(contactId)
+      ).resolves.toEqual([]);
+      expect(logger.info).toHaveBeenCalledTimes(1);
+      expect(logger.info).toHaveBeenCalledWith({
+        event: "gmail_live.duplicate_skip",
+        messageId: "gmail-live-duplicate-1",
+        windowStart: "2026-01-01T23:52:00.000Z",
+        windowEnd: "2026-01-02T00:02:00.000Z"
+      });
     } finally {
       await context.dispose();
     }
