@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { aiKnowledgeEntrySchema, contactSchema } from "@as-comms/contracts";
+import {
+  aiKnowledgeEntrySchema,
+  contactSchema,
+  projectKnowledgeEntrySchema,
+} from "@as-comms/contracts";
 
 export const aiDraftRequestModeSchema = z.enum(["draft", "fill", "reprompt"]);
 export type AiDraftRequestMode = z.infer<typeof aiDraftRequestModeSchema>;
@@ -24,7 +28,7 @@ export const aiDraftWarningSchema = z.object({
 export type AiDraftWarning = z.infer<typeof aiDraftWarningSchema>;
 
 export const aiDraftGroundingSchema = z.object({
-  tier: z.union([z.literal(1), z.literal(2), z.literal(4)]),
+  tier: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   sourceProvider: z.string().min(1),
   sourceId: z.string().min(1),
   sourceUrl: z.string().nullable(),
@@ -98,6 +102,7 @@ export const groundingBundleSchema = z.object({
   contact: contactSchema.nullable(),
   generalTraining: aiKnowledgeEntrySchema.nullable(),
   projectContext: aiKnowledgeEntrySchema.nullable(),
+  tier3Entries: z.array(projectKnowledgeEntrySchema),
   targetInbound: aiThreadContextEventSchema.nullable(),
   recentEvents: z.array(aiThreadContextEventSchema),
   grounding: z.array(aiDraftGroundingSchema),
@@ -118,4 +123,3 @@ export const aiDraftResponseSchema = z.object({
   model: aiDraftModelParamsSchema,
 });
 export type AiDraftResponse = z.infer<typeof aiDraftResponseSchema>;
-

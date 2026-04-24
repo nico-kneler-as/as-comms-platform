@@ -177,6 +177,31 @@ export const aiKnowledgeEntrySchema = z.object({
 });
 export type AiKnowledgeEntryRecord = z.infer<typeof aiKnowledgeEntrySchema>;
 
+export const projectKnowledgeEntrySchema = z.object({
+  id: idSchema,
+  projectId: z.string().min(1),
+  kind: z.enum(["canonical_reply", "snippet", "pattern"]),
+  issueType: nullableStringSchema.default(null),
+  volunteerStage: nullableStringSchema.default(null),
+  questionSummary: z.string().min(1),
+  replyStrategy: nullableStringSchema.default(null),
+  maskedExample: nullableStringSchema.default(null),
+  sourceKind: z.enum([
+    "hand_authored",
+    "captured_from_send",
+    "bootstrap_synthesized",
+  ]),
+  approvedForAi: z.boolean().default(false),
+  sourceEventId: nullableStringSchema.default(null),
+  metadataJson: metadataJsonSchema.default({}),
+  lastReviewedAt: optionalTimestampSchema.default(null),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+export type ProjectKnowledgeEntryRecord = z.infer<
+  typeof projectKnowledgeEntrySchema
+>;
+
 export const expeditionDimensionSchema = z.object({
   expeditionId: idSchema,
   projectId: nullableStringSchema,

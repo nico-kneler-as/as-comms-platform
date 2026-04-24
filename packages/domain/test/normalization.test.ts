@@ -281,6 +281,13 @@ function buildContext(input: {
       findByScope: () => Promise.resolve(null),
       upsert: (record) => Promise.resolve(record),
     },
+    projectKnowledge: {
+      list: () => Promise.resolve([]),
+      upsert: (record) => Promise.resolve(record),
+      setApproved: () => Promise.resolve(),
+      deleteById: () => Promise.resolve(),
+      getForRetrieval: () => Promise.resolve([]),
+    },
     contacts: {
       findById: (id) => Promise.resolve(id === contact.id ? contact : null),
       findBySalesforceContactId: () => Promise.resolve(null),

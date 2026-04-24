@@ -12,6 +12,7 @@ import {
   inboxProjectionSchema,
   mailchimpCampaignActivityDetailSchema,
   manualNoteDetailSchema,
+  projectKnowledgeEntrySchema,
   projectDimensionSchema,
   routingReviewSchema,
   salesforceCommunicationDetailSchema,
@@ -33,6 +34,7 @@ import {
   type InboxProjectionRow,
   type MailchimpCampaignActivityDetailRecord,
   type ManualNoteDetailRecord,
+  type ProjectKnowledgeEntryRecord,
   type ProjectDimensionRecord,
   type RoutingReviewCase,
   type SalesforceCommunicationDetailRecord,
@@ -66,6 +68,7 @@ import type {
   manualNoteDetails,
   pendingComposerOutbounds,
   projectAliases,
+  projectKnowledgeEntries,
   projectDimensions,
   routingReviewQueue,
   salesforceCommunicationDetails,
@@ -78,6 +81,7 @@ import type {
 
 type SourceEvidenceRow = typeof sourceEvidenceLog.$inferSelect;
 type AiKnowledgeEntryRow = typeof aiKnowledgeEntries.$inferSelect;
+type ProjectKnowledgeEntryRow = typeof projectKnowledgeEntries.$inferSelect;
 type CanonicalEventRow = typeof canonicalEventLedger.$inferSelect;
 type ContactRow = typeof contacts.$inferSelect;
 type ContactIdentityRow = typeof contactIdentities.$inferSelect;
@@ -168,6 +172,53 @@ export function mapAiKnowledgeEntryToInsert(
     sourceLastEditedAt:
       parsed.sourceLastEditedAt === null ? null : toDate(parsed.sourceLastEditedAt),
     syncedAt: toDate(parsed.syncedAt),
+    createdAt: toDate(parsed.createdAt),
+    updatedAt: toDate(parsed.updatedAt),
+  };
+}
+
+export function mapProjectKnowledgeEntryRow(
+  row: ProjectKnowledgeEntryRow,
+): ProjectKnowledgeEntryRecord {
+  return projectKnowledgeEntrySchema.parse({
+    id: row.id,
+    projectId: row.projectId,
+    kind: row.kind,
+    issueType: row.issueType,
+    volunteerStage: row.volunteerStage,
+    questionSummary: row.questionSummary,
+    replyStrategy: row.replyStrategy,
+    maskedExample: row.maskedExample,
+    sourceKind: row.sourceKind,
+    approvedForAi: row.approvedForAi,
+    sourceEventId: row.sourceEventId,
+    metadataJson: row.metadataJson,
+    lastReviewedAt: fromDate(row.lastReviewedAt),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  });
+}
+
+export function mapProjectKnowledgeEntryToInsert(
+  record: ProjectKnowledgeEntryRecord,
+): typeof projectKnowledgeEntries.$inferInsert {
+  const parsed = projectKnowledgeEntrySchema.parse(record);
+
+  return {
+    id: parsed.id,
+    projectId: parsed.projectId,
+    kind: parsed.kind,
+    issueType: parsed.issueType,
+    volunteerStage: parsed.volunteerStage,
+    questionSummary: parsed.questionSummary,
+    replyStrategy: parsed.replyStrategy,
+    maskedExample: parsed.maskedExample,
+    sourceKind: parsed.sourceKind,
+    approvedForAi: parsed.approvedForAi,
+    sourceEventId: parsed.sourceEventId,
+    metadataJson: parsed.metadataJson,
+    lastReviewedAt:
+      parsed.lastReviewedAt === null ? null : toDate(parsed.lastReviewedAt),
     createdAt: toDate(parsed.createdAt),
     updatedAt: toDate(parsed.updatedAt),
   };

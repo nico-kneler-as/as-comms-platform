@@ -36,6 +36,28 @@ function renderRecentEvents(bundle: GroundingBundle): string {
     .join("\n\n");
 }
 
+function renderTier3Entries(bundle: GroundingBundle): string {
+  if (bundle.tier3Entries.length === 0) {
+    return "(No approved canonical examples are available.)";
+  }
+
+  return bundle.tier3Entries
+    .map((entry) => {
+      const headingParts = [
+        entry.issueType === null ? null : `[Issue: ${entry.issueType}]`,
+        `Q: ${entry.questionSummary}`,
+      ].filter((value): value is string => value !== null);
+      const detailParts = [
+        headingParts.join(" "),
+        entry.replyStrategy === null ? null : `  Strategy: ${entry.replyStrategy}`,
+        entry.maskedExample === null ? null : `  Example: ${entry.maskedExample}`,
+      ].filter((value): value is string => value !== null);
+
+      return `• ${detailParts.join("\n")}`;
+    })
+    .join("\n\n");
+}
+
 function buildSystemPrompt(bundle: GroundingBundle): string {
   return [
     renderContextSection(
@@ -49,6 +71,14 @@ function buildSystemPrompt(bundle: GroundingBundle): string {
       bundle.projectContext?.content ?? null,
       "(No project-specific context is available.)",
     ),
+    "",
+    renderContextSection(
+      "Tier 3 Canonical Examples",
+      renderTier3Entries(bundle),
+      "(No approved canonical examples are available.)",
+    ),
+    "",
+    "The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.",
     "",
     "You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
   ].join("\n");
@@ -156,4 +186,3 @@ export function buildPromptPreview(prompt: BuiltPrompt): string {
 
   return [`[SYSTEM]`, prompt.system, "", messageBody].join("\n");
 }
-

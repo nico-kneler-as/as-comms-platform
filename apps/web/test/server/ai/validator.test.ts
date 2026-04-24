@@ -23,6 +23,7 @@ const bundle: GroundingBundle = {
     updatedAt: "2026-04-24T12:00:00.000Z",
   },
   projectContext: null,
+  tier3Entries: [],
   targetInbound: null,
   recentEvents: [],
   grounding: [],
@@ -66,5 +67,39 @@ describe("validateDraft", () => {
       ok: true,
       reasons: [],
     });
+  });
+
+  it("rejects drafts that copy a tier-3 masked example", () => {
+    const result = validateDraft(
+      "Hi Maya, the latest kit list is in the volunteer portal and you can check it today.",
+      {
+        ...bundle,
+        tier3Entries: [
+          {
+            id: "knowledge:kit",
+            projectId: "project:whitebark",
+            kind: "canonical_reply",
+            issueType: "Trip planning",
+            volunteerStage: null,
+            questionSummary: "Current kit list",
+            replyStrategy: null,
+            maskedExample:
+              "Hi {NAME}, the latest kit list is in the volunteer portal.",
+            sourceKind: "hand_authored",
+            approvedForAi: true,
+            sourceEventId: null,
+            metadataJson: {},
+            lastReviewedAt: null,
+            createdAt: "2026-04-24T12:00:00.000Z",
+            updatedAt: "2026-04-24T12:00:00.000Z",
+          },
+        ],
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain(
+      "Draft output copies too much language from a tier-3 canonical example.",
+    );
   });
 });

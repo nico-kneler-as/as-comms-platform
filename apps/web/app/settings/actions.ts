@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { revalidateTag } from "next/cache";
+import { z } from "zod";
 
 import {
   createProjectAliasSchema,
@@ -23,7 +24,10 @@ import {
   revalidateIntegrationHealth,
   revalidateProjectSettings
 } from "@/src/server/settings/revalidate";
-import { getSettingsRepositories } from "@/src/server/stage1-runtime";
+import {
+  getSettingsRepositories,
+  getStage1WebRuntime
+} from "@/src/server/stage1-runtime";
 import type { UiError, UiResult } from "@/src/server/ui-result";
 
 import {
@@ -32,6 +36,30 @@ import {
 } from "./_lib/project-alias-signature";
 
 type SettingsRepositories = Awaited<ReturnType<typeof getSettingsRepositories>>;
+
+const projectKnowledgeUpdateSchema = z.object({
+  id: z.string().min(1),
+  projectId: z.string().min(1),
+  kind: z.enum(["canonical_reply", "snippet", "pattern"]),
+  issueType: z.string().trim().min(1).nullable(),
+  volunteerStage: z.string().trim().min(1).nullable(),
+  questionSummary: z.string().trim().min(1),
+  replyStrategy: z.string().trim().min(1).nullable(),
+  maskedExample: z.string().trim().min(1).nullable()
+});
+
+const projectKnowledgeIdSchema = z.object({
+  id: z.string().min(1),
+  projectId: z.string().min(1)
+});
+
+const projectKnowledgeApprovedSchema = projectKnowledgeIdSchema.extend({
+  approved: z.boolean()
+});
+
+export interface ProjectKnowledgeMutationData {
+  readonly id: string;
+}
 
 function newRequestId(): string {
   return randomUUID();
@@ -824,6 +852,155 @@ export async function updateProjectAiKnowledgeAction(
   return {
     ok: true,
     data: serializeProjectMutationData(updatedProject),
+    requestId: newRequestId()
+  };
+}
+
+export async function updateProjectKnowledgeAction(
+  rawInput: z.input<typeof projectKnowledgeUpdateSchema>
+): Promise<UiResult<ProjectKnowledgeMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update project knowledge.",
+    forbiddenMessage: "Only admins can update project knowledge."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = projectKnowledgeUpdateSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return errorResult("validation_error", "Project knowledge input is invalid.", {
+      fieldErrors: Object.fromEntries(
+        parsed.error.issues.map((issue) => [
+          issue.path.join("."),
+          issue.message
+        ])
+      )
+    });
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const entries = await runtime.repositories.projectKnowledge.list({
+    projectId: parsed.data.projectId
+  });
+  const existing = entries.find((entry) => entry.id === parsed.data.id);
+  if (existing === undefined) {
+    return errorResult("not_found", "That knowledge entry no longer exists.");
+  }
+
+  await runtime.repositories.projectKnowledge.upsert({
+    ...existing,
+    kind: parsed.data.kind,
+    issueType: parsed.data.issueType,
+    volunteerStage: parsed.data.volunteerStage,
+    questionSummary: parsed.data.questionSummary,
+    replyStrategy: parsed.data.replyStrategy,
+    maskedExample: parsed.data.maskedExample,
+    updatedAt: new Date().toISOString()
+  });
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project_knowledge.updated",
+    entityType: "project_knowledge_entry",
+    entityId: parsed.data.id,
+    metadataJson: {
+      projectId: parsed.data.projectId
+    }
+  });
+
+  revalidateProjectSettings(parsed.data.projectId);
+
+  return {
+    ok: true,
+    data: {
+      id: parsed.data.id
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function setProjectKnowledgeApprovedAction(
+  rawInput: z.input<typeof projectKnowledgeApprovedSchema>
+): Promise<UiResult<ProjectKnowledgeMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to approve project knowledge.",
+    forbiddenMessage: "Only admins can approve project knowledge."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = projectKnowledgeApprovedSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return errorResult("validation_error", "Approval input is invalid.");
+  }
+
+  const runtime = await getStage1WebRuntime();
+  await runtime.repositories.projectKnowledge.setApproved({
+    id: parsed.data.id,
+    approved: parsed.data.approved,
+    reviewedAt: new Date()
+  });
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project_knowledge.approval_updated",
+    entityType: "project_knowledge_entry",
+    entityId: parsed.data.id,
+    metadataJson: {
+      projectId: parsed.data.projectId,
+      approved: parsed.data.approved
+    }
+  });
+
+  revalidateProjectSettings(parsed.data.projectId);
+
+  return {
+    ok: true,
+    data: {
+      id: parsed.data.id
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function deleteProjectKnowledgeAction(
+  rawInput: z.input<typeof projectKnowledgeIdSchema>
+): Promise<UiResult<ProjectKnowledgeMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to delete project knowledge.",
+    forbiddenMessage: "Only admins can delete project knowledge."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = projectKnowledgeIdSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return errorResult("validation_error", "Delete input is invalid.");
+  }
+
+  const runtime = await getStage1WebRuntime();
+  await runtime.repositories.projectKnowledge.deleteById(parsed.data.id);
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project_knowledge.deleted",
+    entityType: "project_knowledge_entry",
+    entityId: parsed.data.id,
+    metadataJson: {
+      projectId: parsed.data.projectId
+    }
+  });
+
+  revalidateProjectSettings(parsed.data.projectId);
+
+  return {
+    ok: true,
+    data: {
+      id: parsed.data.id
+    },
     requestId: newRequestId()
   };
 }

@@ -528,6 +528,13 @@ export function ProjectDetail({
 
           {project.isAdmin ? (
             <div className="flex min-w-[240px] flex-col items-start gap-2">
+              <Button type="button" variant="outline" asChild>
+                <Link
+                  href={`/settings/projects/${encodeURIComponent(project.projectId)}/knowledge`}
+                >
+                  Knowledge
+                </Link>
+              </Button>
               {optimisticProject.isActive ? (
                 <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
                   <DialogTrigger asChild>

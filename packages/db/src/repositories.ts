@@ -56,6 +56,8 @@ import {
   mapPendingComposerOutboundToInsert,
   mapProjectAliasRow,
   mapProjectAliasToInsert,
+  mapProjectKnowledgeEntryRow,
+  mapProjectKnowledgeEntryToInsert,
   mapProjectDimensionRow,
   mapProjectDimensionToInsert,
   mapRoutingReviewRow,
@@ -89,6 +91,7 @@ import {
   manualNoteDetails,
   pendingComposerOutbounds,
   projectAliases,
+  projectKnowledgeEntries,
   projectDimensions,
   routingReviewQueue,
   salesforceCommunicationDetails,
@@ -122,6 +125,47 @@ interface SimpleTextingMessageDetailRecord {
   readonly campaignName: string | null;
   readonly providerThreadId: string | null;
   readonly threadKey: string | null;
+}
+
+const PROJECT_KNOWLEDGE_KINDS = [
+  "canonical_reply",
+  "snippet",
+  "pattern",
+] as const;
+
+function normalizeKnowledgeSearchText(value: string): string {
+  return value.toLowerCase();
+}
+
+function scoreProjectKnowledgeEntry(input: {
+  readonly row: ReturnType<typeof mapProjectKnowledgeEntryRow>;
+  readonly issueTypeHint: string | null;
+  readonly keywordsLower: readonly string[];
+}): number {
+  let score = 0;
+
+  if (
+    input.issueTypeHint !== null &&
+    input.row.issueType?.toLowerCase() === input.issueTypeHint.toLowerCase()
+  ) {
+    score += 100;
+  }
+
+  const haystack = normalizeKnowledgeSearchText(
+    [
+      input.row.questionSummary,
+      input.row.replyStrategy ?? "",
+      input.row.maskedExample ?? "",
+    ].join(" "),
+  );
+
+  for (const keyword of new Set(input.keywordsLower)) {
+    if (keyword.length > 0 && haystack.includes(keyword)) {
+      score += 1;
+    }
+  }
+
+  return score;
 }
 
 interface MailchimpCampaignActivityDetailRecord {
@@ -838,6 +882,126 @@ function createStage1RepositoriesInternal(
 
         return mapAiKnowledgeEntryRow(
           requireRow(row, "Expected AI knowledge row to be returned."),
+        );
+      },
+    },
+
+    projectKnowledge: {
+      async list(input) {
+        const predicates = [
+          eq(projectKnowledgeEntries.projectId, input.projectId),
+        ];
+
+        if (input.approvedOnly === true) {
+          predicates.push(eq(projectKnowledgeEntries.approvedForAi, true));
+        }
+
+        const rows = await db
+          .select()
+          .from(projectKnowledgeEntries)
+          .where(and(...predicates))
+          .orderBy(
+            desc(projectKnowledgeEntries.updatedAt),
+            asc(projectKnowledgeEntries.kind),
+            asc(projectKnowledgeEntries.questionSummary),
+          );
+
+        return rows.map(mapProjectKnowledgeEntryRow);
+      },
+
+      async upsert(record) {
+        const values = mapProjectKnowledgeEntryToInsert(record);
+        const [row] = await db
+          .insert(projectKnowledgeEntries)
+          .values(values)
+          .onConflictDoUpdate({
+            target: projectKnowledgeEntries.id,
+            set: {
+              projectId: values.projectId,
+              kind: values.kind,
+              issueType: values.issueType,
+              volunteerStage: values.volunteerStage,
+              questionSummary: values.questionSummary,
+              replyStrategy: values.replyStrategy,
+              maskedExample: values.maskedExample,
+              sourceKind: values.sourceKind,
+              approvedForAi: values.approvedForAi,
+              sourceEventId: values.sourceEventId,
+              metadataJson: values.metadataJson,
+              lastReviewedAt: values.lastReviewedAt,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+
+        return mapProjectKnowledgeEntryRow(
+          requireRow(row, "Expected project knowledge row to be returned."),
+        );
+      },
+
+      async setApproved(input) {
+        await db
+          .update(projectKnowledgeEntries)
+          .set({
+            approvedForAi: input.approved,
+            lastReviewedAt: input.reviewedAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectKnowledgeEntries.id, input.id));
+      },
+
+      async deleteById(id) {
+        await db
+          .delete(projectKnowledgeEntries)
+          .where(eq(projectKnowledgeEntries.id, id));
+      },
+
+      async getForRetrieval(input) {
+        const rows = await db
+          .select()
+          .from(projectKnowledgeEntries)
+          .where(
+            and(
+              eq(projectKnowledgeEntries.projectId, input.projectId),
+              eq(projectKnowledgeEntries.approvedForAi, true),
+            ),
+          )
+          .orderBy(desc(projectKnowledgeEntries.updatedAt));
+
+        const records = rows.map(mapProjectKnowledgeEntryRow);
+        const rankedByKind = new Map<
+          (typeof PROJECT_KNOWLEDGE_KINDS)[number],
+          readonly (typeof records)[number][]
+        >();
+
+        for (const kind of PROJECT_KNOWLEDGE_KINDS) {
+          rankedByKind.set(
+            kind,
+            records
+              .filter((record) => record.kind === kind)
+              .map((record) => ({
+                record,
+                score: scoreProjectKnowledgeEntry({
+                  row: record,
+                  issueTypeHint: input.issueTypeHint,
+                  keywordsLower: input.keywordsLower,
+                }),
+              }))
+              .sort(
+                (left, right) =>
+                  right.score - left.score ||
+                  right.record.updatedAt.localeCompare(left.record.updatedAt) ||
+                  left.record.questionSummary.localeCompare(
+                    right.record.questionSummary,
+                  ),
+              )
+              .slice(0, input.limitPerKind)
+              .map((entry) => entry.record),
+          );
+        }
+
+        return PROJECT_KNOWLEDGE_KINDS.flatMap(
+          (kind) => rankedByKind.get(kind) ?? [],
         );
       },
     },

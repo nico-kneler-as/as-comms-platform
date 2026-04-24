@@ -35,6 +35,11 @@
 
 The worker cron is the only current consumer. The web service may carry the same env values in shared deployment config, but it does not call Notion directly in this brief.
 
+The one-time `migrate-notion-child-dbs-to-project-knowledge` ops script reuses
+`NOTION_API_KEY` and `NOTION_PROJECT_TRAINING_DATABASE_ID`. It also requires
+`DATABASE_URL` or `WORKER_DATABASE_URL` and accepts `--slug-map <file.json>` for
+mapping Notion project slugs to Salesforce project ids.
+
 ## Stage 4 AI Drafting
 
 | Env var | Runtime | Required | Notes |
