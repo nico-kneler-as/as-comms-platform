@@ -17,7 +17,9 @@
  * and `contact_inbox_projection` also carries denormalized recency/snippet
  * fields that must stay consistent with canonical truth.
  */
+import { realpathSync } from "node:fs";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import {
   and,
@@ -105,6 +107,7 @@ export interface GmailDraftCleanupSummary {
   readonly draftCandidateCount: number;
   readonly apiConfirmedCount: number;
   readonly storedFallbackCount: number;
+  readonly apiGoneCount: number;
   readonly unknownCount: number;
   readonly affectedContactCount: number;
   readonly inboxProjectionContactCount: number;
@@ -139,10 +142,15 @@ interface DeleteCounts {
   readonly deletedRoutingReviewCount: number;
 }
 
+export type GmailLabelLookupResult =
+  | { readonly status: "found"; readonly labels: readonly string[] }
+  | { readonly status: "not_found" }
+  | { readonly status: "unknown" };
+
 type GmailLabelLookup = (input: {
   readonly mailbox: string;
   readonly providerRecordId: string;
-}) => Promise<readonly string[] | null>;
+}) => Promise<GmailLabelLookupResult>;
 
 function readConnectionString(env: NodeJS.ProcessEnv): string {
   const connectionString = env.WORKER_DATABASE_URL ?? env.DATABASE_URL;
@@ -295,7 +303,7 @@ function isDraftOnlyLabelSet(labelIds: readonly string[]): boolean {
 async function loadCleanupSeedRows(input: {
   readonly db: Stage1Database;
 }): Promise<readonly GmailDraftCleanupSeedRow[]> {
-  const labelIdsColumnRows = (await input.db.execute(sql<{
+  const labelIdsColumnResult: unknown = await input.db.execute(sql<{
     readonly exists: boolean;
   }>`
     select exists (
@@ -305,12 +313,11 @@ async function loadCleanupSeedRows(input: {
         and table_name = 'gmail_message_details'
         and column_name = 'label_ids'
     ) as "exists"
-  `)) as {
-    readonly rows: readonly {
-      readonly exists: boolean;
-    }[];
-  };
-  const hasPersistedLabelIds = labelIdsColumnRows.rows[0]?.exists === true;
+  `);
+  const labelIdsColumnRows = Array.isArray(labelIdsColumnResult)
+    ? (labelIdsColumnResult as readonly { readonly exists: boolean }[])
+    : ((labelIdsColumnResult as { readonly rows: readonly { readonly exists: boolean }[] }).rows);
+  const hasPersistedLabelIds = labelIdsColumnRows[0]?.exists === true;
   const persistedLabelIdsSelection = hasPersistedLabelIds
     ? gmailMessageDetails.labelIds
     : sql<readonly string[] | null>`null`;
@@ -370,69 +377,128 @@ async function classifyDraftCandidates(input: {
   const auditLines: GmailDraftCleanupAuditLine[] = [];
   let apiConfirmedCount = 0;
   let storedFallbackCount = 0;
+  let apiGoneCount = 0;
   let unknownCount = 0;
+  const threadsWithLiveSent = new Set<string>();
+
+  type ResolvedRow =
+    | {
+        readonly row: GmailDraftCleanupSeedRow;
+        readonly kind: "labels";
+        readonly labels: readonly string[];
+        readonly labelSource: "gmail_api" | "stored_detail";
+      }
+    | {
+        readonly row: GmailDraftCleanupSeedRow;
+        readonly kind: "not_found";
+      }
+    | {
+        readonly row: GmailDraftCleanupSeedRow;
+        readonly kind: "unknown";
+      };
+
+  const resolved: ResolvedRow[] = [];
 
   for (const chunk of chunkValues(input.rows, labelLookupChunkSize)) {
     const resolvedChunk = await Promise.all(
-      chunk.map(async (row) => {
-        const apiLabels = normalizeLabelIds(
-          await input.labelLookup({
-            mailbox: input.mailbox,
-            providerRecordId: row.providerRecordId,
-          }),
-        );
+      chunk.map(async (row): Promise<ResolvedRow> => {
+        const apiResult = await input.labelLookup({
+          mailbox: input.mailbox,
+          providerRecordId: row.providerRecordId,
+        });
 
-        if (apiLabels !== null) {
-          return {
-            row,
-            labels: apiLabels,
-            labelSource: "gmail_api" as const,
-          };
+        if (apiResult.status === "found") {
+          const labels = normalizeLabelIds(apiResult.labels);
+          if (labels !== null) {
+            return { row, kind: "labels", labels, labelSource: "gmail_api" };
+          }
+        }
+
+        if (apiResult.status === "not_found") {
+          return { row, kind: "not_found" };
         }
 
         if (row.persistedLabelIds !== null) {
           return {
             row,
+            kind: "labels",
             labels: row.persistedLabelIds,
-            labelSource: "stored_detail" as const,
+            labelSource: "stored_detail",
           };
         }
 
-        return {
-          row,
-          labels: null,
-          labelSource: null,
-        };
+        return { row, kind: "unknown" };
       }),
     );
 
-    for (const resolved of resolvedChunk) {
-      if (resolved.labels === null) {
-        unknownCount += 1;
+    for (const item of resolvedChunk) {
+      if (
+        item.kind === "labels" &&
+        item.labels.includes("SENT") &&
+        !item.labels.includes("DRAFT") &&
+        item.row.gmailThreadId !== null
+      ) {
+        threadsWithLiveSent.add(item.row.gmailThreadId);
+      }
+    }
+
+    resolved.push(...resolvedChunk);
+  }
+
+  for (const item of resolved) {
+    if (item.kind === "unknown") {
+      unknownCount += 1;
+      continue;
+    }
+
+    if (item.kind === "labels") {
+      if (!isDraftOnlyLabelSet(item.labels)) {
         continue;
       }
 
-      if (!isDraftOnlyLabelSet(resolved.labels)) {
-        continue;
-      }
-
-      if (resolved.labelSource === "gmail_api") {
+      if (item.labelSource === "gmail_api") {
         apiConfirmedCount += 1;
       } else {
         storedFallbackCount += 1;
       }
 
       auditLines.push({
-        sourceEvidenceId: resolved.row.sourceEvidenceId,
-        canonicalEventId: resolved.row.canonicalEventId,
-        contactId: resolved.row.contactId,
-        gmailThreadId: resolved.row.gmailThreadId,
-        subject: resolved.row.subject,
-        occurredAt: resolved.row.occurredAt,
-        labels: resolved.labels,
-        labelSource: resolved.labelSource,
+        sourceEvidenceId: item.row.sourceEvidenceId,
+        canonicalEventId: item.row.canonicalEventId,
+        contactId: item.row.contactId,
+        gmailThreadId: item.row.gmailThreadId,
+        subject: item.row.subject,
+        occurredAt: item.row.occurredAt,
+        labels: item.labels,
+        labelSource: item.labelSource,
       });
+      continue;
     }
+
+    // item.kind === "not_found"
+    // Option B: only treat 404'd rows as drafts if the same thread
+    // has at least one live SENT message. Isolated 404s stay as
+    // "unknown/keep" so we never delete a legitimately-deleted email
+    // that was the only member of its thread.
+    if (
+      item.row.gmailThreadId !== null &&
+      threadsWithLiveSent.has(item.row.gmailThreadId)
+    ) {
+      apiGoneCount += 1;
+      auditLines.push({
+        sourceEvidenceId: item.row.sourceEvidenceId,
+        canonicalEventId: item.row.canonicalEventId,
+        contactId: item.row.contactId,
+        gmailThreadId: item.row.gmailThreadId,
+        subject: item.row.subject,
+        occurredAt: item.row.occurredAt,
+        labels: ["__GMAIL_404__"],
+        labelSource: "gmail_api",
+      });
+      continue;
+    }
+
+    unknownCount += 1;
   }
 
   const limitedAuditLines =
@@ -468,6 +534,7 @@ async function classifyDraftCandidates(input: {
       draftCandidateCount: limitedAuditLines.length,
       apiConfirmedCount,
       storedFallbackCount,
+      apiGoneCount,
       unknownCount,
       affectedContactCount: affectedContactIds.length,
       inboxProjectionContactCount: affectedContactIds.length,
@@ -639,12 +706,24 @@ function createStdoutAuditWriter(): AuditWriter {
 
 function createGmailApiLabelLookup(client: GmailMailboxApiClient): GmailLabelLookup {
   return async (input) => {
-    const message = await client.getMessage({
-      mailbox: input.mailbox,
-      messageId: input.providerRecordId,
-    });
+    if (input.providerRecordId.startsWith("mbox:")) {
+      return { status: "unknown" };
+    }
 
-    return message?.labelIds ?? null;
+    try {
+      const message = await client.getMessage({
+        mailbox: input.mailbox,
+        messageId: input.providerRecordId,
+      });
+
+      if (message === null) {
+        return { status: "not_found" };
+      }
+
+      return { status: "found", labels: message.labelIds };
+    } catch {
+      return { status: "unknown" };
+    }
   };
 }
 
@@ -723,8 +802,9 @@ function printSummary(result: GmailDraftCleanupResult): void {
   console.error(`Mode: ${result.dryRun ? "dry-run" : "execute"}`);
   console.error(`- scanned outbound Gmail canonical rows: ${String(result.scannedCount)}`);
   console.error(`- draft-only candidates: ${String(result.draftCandidateCount)}`);
-  console.error(`- Gmail API confirmed: ${String(result.apiConfirmedCount)}`);
-  console.error(`- stored-label fallback: ${String(result.storedFallbackCount)}`);
+  console.error(`- Gmail API confirmed DRAFT: ${String(result.apiConfirmedCount)}`);
+  console.error(`- stored-label fallback DRAFT: ${String(result.storedFallbackCount)}`);
+  console.error(`- Gmail 404'd in SENT thread: ${String(result.apiGoneCount)}`);
   console.error(`- unknown/kept rows: ${String(result.unknownCount)}`);
   console.error(`- affected contacts: ${String(result.affectedContactCount)}`);
   console.error(
@@ -796,12 +876,26 @@ export async function runCleanupGmailDraftEventsCommand(
   }
 }
 
-async function main(): Promise<void> {
-  await runCleanupGmailDraftEventsCommand(process.argv.slice(2), process.env);
+function wasInvokedAsCli(): boolean {
+  const invokedPath = process.argv[1];
+  if (invokedPath === undefined) {
+    return false;
+  }
+
+  try {
+    const moduleRealPath = realpathSync(fileURLToPath(import.meta.url));
+    const invokedRealPath = realpathSync(invokedPath);
+    return moduleRealPath === invokedRealPath;
+  } catch {
+    return false;
+  }
 }
 
-if (import.meta.url === `file://${process.argv[1] ?? ""}`) {
-  main().catch((error: unknown) => {
+if (wasInvokedAsCli()) {
+  runCleanupGmailDraftEventsCommand(
+    process.argv.slice(2),
+    process.env,
+  ).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);
     process.exitCode = 1;

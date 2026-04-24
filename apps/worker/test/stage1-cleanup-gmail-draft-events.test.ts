@@ -181,9 +181,11 @@ describe("Stage 1 Gmail draft cleanup ops", () => {
         db: context.db,
         mailbox: "volunteers@example.org",
         labelLookup: ({ providerRecordId }) =>
-          Promise.resolve(
-            providerRecordId === "gmail-draft-1" ? ["DRAFT"] : ["SENT"],
-          ),
+          Promise.resolve({
+            status: "found" as const,
+            labels:
+              providerRecordId === "gmail-draft-1" ? ["DRAFT"] : ["SENT"],
+          }),
         writer: {
           writeLine(line) {
             auditLines.push(line);
@@ -197,6 +199,7 @@ describe("Stage 1 Gmail draft cleanup ops", () => {
         draftCandidateCount: 1,
         apiConfirmedCount: 1,
         storedFallbackCount: 0,
+        apiGoneCount: 0,
         unknownCount: 0,
         affectedContactCount: 1,
         timelineProjectionDeleteCount: 1,
@@ -225,9 +228,11 @@ describe("Stage 1 Gmail draft cleanup ops", () => {
         db: context.db,
         mailbox: "volunteers@example.org",
         labelLookup: ({ providerRecordId }) =>
-          Promise.resolve(
-            providerRecordId === "gmail-draft-1" ? ["DRAFT"] : ["SENT"],
-          ),
+          Promise.resolve({
+            status: "found" as const,
+            labels:
+              providerRecordId === "gmail-draft-1" ? ["DRAFT"] : ["SENT"],
+          }),
         execute: true,
         orchestration: context.orchestration,
         writer: {
