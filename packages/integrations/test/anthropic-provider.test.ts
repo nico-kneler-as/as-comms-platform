@@ -57,16 +57,19 @@ describe("Anthropic provider", () => {
     const rateLimitError = Object.assign(new Error("Rate limited"), {
       status: 429,
     });
-    const promise = generateDraft(
-      createClient(() => Promise.reject(rateLimitError)),
-      baseInput,
-    );
-
-    await vi.runAllTimersAsync();
-
-    await expect(promise).rejects.toMatchObject({
+    // Attach rejection expectation BEFORE advancing timers so the promise
+    // has a handler when it rejects mid-timer-drain.
+    const rejection = expect(
+      generateDraft(
+        createClient(() => Promise.reject(rateLimitError)),
+        baseInput,
+      ),
+    ).rejects.toMatchObject({
       code: "provider_rate_limited",
     } satisfies Partial<AnthropicProviderError>);
+
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it("maps 500 responses into provider_unavailable", async () => {
@@ -74,16 +77,17 @@ describe("Anthropic provider", () => {
     const serverError = Object.assign(new Error("Server error"), {
       status: 500,
     });
-    const promise = generateDraft(
-      createClient(() => Promise.reject(serverError)),
-      baseInput,
-    );
-
-    await vi.runAllTimersAsync();
-
-    await expect(promise).rejects.toMatchObject({
+    const rejection = expect(
+      generateDraft(
+        createClient(() => Promise.reject(serverError)),
+        baseInput,
+      ),
+    ).rejects.toMatchObject({
       code: "provider_unavailable",
     } satisfies Partial<AnthropicProviderError>);
+
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it("maps bad credentials into provider_config_error", async () => {
