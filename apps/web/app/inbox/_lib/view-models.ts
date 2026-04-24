@@ -204,8 +204,10 @@ function isSystemGroupCandidate(entry: InboxTimelineEntryViewModel): boolean {
 function buildSystemMessageGroup(
   entries: readonly InboxTimelineEntryViewModel[],
 ): InboxTimelineSystemGroupViewModel | InboxTimelineEntryViewModel {
-  if (entries.length === 1) {
-    return entries[0]!;
+  const firstEntry = entries[0];
+
+  if (entries.length === 1 && firstEntry !== undefined) {
+    return firstEntry;
   }
 
   const mostRecent = entries.reduce((latest, entry) =>

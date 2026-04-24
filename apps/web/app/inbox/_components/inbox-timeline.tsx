@@ -440,12 +440,12 @@ function formatSystemGroupSummary(
   const parts: string[] = [];
 
   if (group.automatedCount > 0) {
-    parts.push(`${group.automatedCount} automated`);
+    parts.push(`${String(group.automatedCount)} automated`);
   }
 
   if (group.campaignCount > 0) {
     parts.push(
-      `${group.campaignCount} campaign${group.campaignCount === 1 ? "" : "s"}`,
+      `${String(group.campaignCount)} campaign${group.campaignCount === 1 ? "" : "s"}`,
     );
   }
 
