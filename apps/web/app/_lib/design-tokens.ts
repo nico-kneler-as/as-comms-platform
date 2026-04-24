@@ -144,6 +144,8 @@ export const TEXT = {
   bodyMd: "text-sm text-slate-700",
   /** Message body, descriptions — `text-[13px] leading-relaxed text-slate-700` */
   bodySm: "text-[13px] leading-relaxed text-slate-700",
+  /** Long-form message body — Source Serif 4, slightly larger for reading */
+  bodySerifSm: "text-[13.5px] leading-relaxed text-slate-700",
   /** Secondary info, snippets — `text-xs text-slate-500` */
   caption: "text-xs text-slate-500",
   /** Section labels — `text-[10px] font-semibold uppercase tracking-wider text-slate-500` */

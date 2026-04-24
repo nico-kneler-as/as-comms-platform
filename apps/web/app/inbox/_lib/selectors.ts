@@ -32,6 +32,7 @@ import type {
   InboxVolunteerStage,
   InboxWelcomeWorkloadViewModel,
 } from "./view-models";
+export { groupInboxTimelineSystemMessages } from "./view-models";
 
 interface InboxListCacheRow {
   readonly contact: ContactRecord;
