@@ -35,6 +35,7 @@ import type { UiError } from "@/src/server/ui-result";
 
 import {
   createNoteAction,
+  draftWithAiAction,
   sendComposerAction,
   type ComposerSendActionInput,
 } from "../actions";
@@ -53,6 +54,7 @@ import {
   useInboxClient,
   type ComposerValidationError,
 } from "./inbox-client-provider";
+import { AiDraftReprompt } from "./ai-draft-reprompt";
 import {
   AlertCircleIcon,
   ChevronDownIcon,
@@ -62,6 +64,7 @@ import {
   NoteIcon,
   PaperclipIcon,
   SendIcon,
+  SparkleIcon,
   XIcon,
 } from "./icons";
 
@@ -148,6 +151,47 @@ function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.height = "auto";
   const lineHeight = 24;
   textarea.style.height = `${String(Math.min(textarea.scrollHeight, lineHeight * 20))}px`;
+}
+
+export function resolveAiButtonState(input: {
+  readonly body: string;
+  readonly isGenerating: boolean;
+}) {
+  const mode = input.body.trim().length === 0 ? "draft" : "fill";
+
+  return {
+    mode,
+    label: mode === "draft" ? "Draft with AI" : "Fill with AI",
+    disabled: input.isGenerating,
+  } as const;
+}
+
+function resolveAiWarningMessage(
+  aiDraft: ReturnType<typeof useInboxClient>["aiDraft"],
+): string | null {
+  const contradiction = aiDraft.warnings.find(
+    (warning) => warning.code === "grounding_contradiction",
+  );
+
+  if (contradiction) {
+    return `Your directive appears to contradict the project context. ${contradiction.message}`;
+  }
+
+  if (aiDraft.responseMode === "deterministic_fallback") {
+    return (
+      aiDraft.warnings[0]?.message ??
+      "AI drafting returned a fallback skeleton. Fill in the project-specific answer before sending."
+    );
+  }
+
+  const grounding = aiDraft.warnings.find(
+    (warning) => warning.code === "grounding_empty",
+  );
+  if (grounding) {
+    return grounding.message;
+  }
+
+  return null;
 }
 
 function SenderPicker({
@@ -307,11 +351,18 @@ export function InboxComposerDetailPane() {
   const {
     composerAliases,
     composerPane,
+    aiDraft,
     closeComposer,
     showToast,
     composerErrors,
     setComposerErrors,
     setComposerStatus,
+    startAiGeneration,
+    insertAiDraft,
+    markAiDraftEdited,
+    repromptAi,
+    resetAiDraft,
+    setAiError,
   } = useInboxClient();
   const [activeTab, setActiveTab] = useState<"email" | "note">("email");
   const [recipient, setRecipient] = useState<ComposerRecipientValue | null>(
@@ -323,11 +374,13 @@ export function InboxComposerDetailPane() {
   const [attachments, setAttachments] = useState<readonly AttachmentDraft[]>(
     [],
   );
+  const [repromptText, setRepromptText] = useState("");
   const [inlineError, setInlineError] = useState<InlineComposerError | null>(
     null,
   );
   const [isSending, startSendTransition] = useTransition();
   const [isSavingNote, startSaveNoteTransition] = useTransition();
+  const [isGeneratingAi, startAiTransition] = useTransition();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -358,10 +411,18 @@ export function InboxComposerDetailPane() {
     setSubject(replyContext?.subject ?? "");
     setBody("");
     setAttachments([]);
+    setRepromptText("");
     setInlineError(null);
     setComposerStatus("idle");
     setComposerErrors([]);
-  }, [composerPane.mode, replyContext, setComposerErrors, setComposerStatus]);
+    resetAiDraft();
+  }, [
+    composerPane.mode,
+    replyContext,
+    resetAiDraft,
+    setComposerErrors,
+    setComposerStatus,
+  ]);
 
   useEffect(() => {
     if (!bodyRef.current) {
@@ -381,6 +442,15 @@ export function InboxComposerDetailPane() {
   );
   const isReplying = composerPane.mode === "replying";
   const canUseNoteTab = isReplying && replyContext !== null;
+  const selectedAliasRecord =
+    selectedAlias === null
+      ? null
+      : composerAliases.find((alias) => alias.alias === selectedAlias) ?? null;
+  const aiButton = resolveAiButtonState({
+    body,
+    isGenerating: isGeneratingAi,
+  });
+  const aiWarningMessage = resolveAiWarningMessage(aiDraft);
   const isSendDisabled = isComposerSendDisabled({
     activeTab,
     recipient,
@@ -468,6 +538,98 @@ export function InboxComposerDetailPane() {
         retryable: true,
       });
     }
+  };
+
+  const runAiDraft = (requestOverride?: {
+    readonly mode: "draft" | "fill" | "reprompt";
+    readonly repromptDirection?: string;
+  }) => {
+    if (activeTab !== "email") {
+      return;
+    }
+
+    clearComposerErrors();
+
+    if (recipient?.kind !== "contact") {
+      setInlineError({
+        message: "AI drafting is available only when replying to a contact.",
+        retryable: false,
+      });
+      return;
+    }
+
+    const baseRequest = {
+      contactId: recipient.contactId,
+      projectId: selectedAliasRecord?.projectId ?? null,
+      threadCursor: replyContext?.threadCursor ?? null,
+    } as const;
+
+    const request =
+      requestOverride?.mode === "reprompt"
+        ? {
+            ...baseRequest,
+            mode: "reprompt" as const,
+            previousDraft: body.trim(),
+            repromptDirection: requestOverride.repromptDirection ?? "",
+            repromptIndex: aiDraft.repromptChain.length + 1,
+          }
+        : aiButton.mode === "draft"
+          ? {
+              ...baseRequest,
+              mode: "draft" as const,
+            }
+          : {
+              ...baseRequest,
+              mode: "fill" as const,
+              operatorPrompt: body.trim(),
+            };
+
+    const prompt =
+      request.mode === "reprompt"
+        ? request.repromptDirection
+        : request.mode === "draft"
+          ? "Draft with AI"
+          : request.operatorPrompt;
+
+    if (request.mode === "reprompt") {
+      repromptAi({
+        request,
+        prompt,
+      });
+    } else {
+      startAiGeneration({
+        request,
+        prompt,
+      });
+    }
+
+    startAiTransition(async () => {
+      const result = await draftWithAiAction(request);
+
+      if (!result.ok) {
+        setAiError(result.message);
+        setInlineError({
+          message: result.message,
+          retryable: false,
+        });
+        return;
+      }
+
+      clearComposerErrors();
+      setInlineError(null);
+      setBody(result.data.draft);
+      setRepromptText("");
+      insertAiDraft({
+        request,
+        response: result.data,
+        prompt,
+        ...(request.mode === "reprompt"
+          ? {
+              repromptDirection: request.repromptDirection,
+            }
+          : {}),
+      });
+    });
   };
 
   const submit = () => {
@@ -727,6 +889,22 @@ export function InboxComposerDetailPane() {
                       type="button"
                       variant="outline"
                       size="sm"
+                      disabled={aiButton.disabled}
+                      onClick={() => {
+                        runAiDraft();
+                      }}
+                    >
+                      {isGeneratingAi ? (
+                        <LoaderIcon className="size-4 animate-spin" />
+                      ) : (
+                        <SparkleIcon className="size-4" />
+                      )}
+                      {aiButton.label}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         attachmentInputRef.current?.click();
                       }}
@@ -755,6 +933,9 @@ export function InboxComposerDetailPane() {
                 value={body}
                 onChange={(event) => {
                   setBody(event.currentTarget.value);
+                  if (aiDraft.status === "inserted") {
+                    markAiDraftEdited();
+                  }
                   clearComposerErrors();
                 }}
                 onInput={(event) => {
@@ -770,9 +951,27 @@ export function InboxComposerDetailPane() {
                   bodyError ? "border-rose-300 ring-1 ring-rose-200" : "",
                 )}
               />
+              {aiWarningMessage ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {aiWarningMessage}
+                </div>
+              ) : null}
               {bodyError ? (
                 <p className="text-xs text-rose-700">{bodyError.message}</p>
               ) : null}
+
+              <AiDraftReprompt
+                aiDraft={aiDraft}
+                value={repromptText}
+                onValueChange={setRepromptText}
+                onReprompt={() => {
+                  runAiDraft({
+                    mode: "reprompt",
+                    repromptDirection: repromptText.trim(),
+                  });
+                }}
+                disabled={isGeneratingAi}
+              />
 
               {activeTab === "email" && attachments.length > 0 ? (
                 <div className="flex flex-wrap gap-2">

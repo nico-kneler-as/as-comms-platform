@@ -159,6 +159,24 @@ export const projectDimensionSchema = z.object({
 });
 export type ProjectDimensionRecord = z.infer<typeof projectDimensionSchema>;
 
+export const aiKnowledgeEntrySchema = z.object({
+  id: idSchema,
+  scope: z.enum(["global", "project"]),
+  scopeKey: nullableStringSchema.default(null),
+  sourceProvider: z.string().min(1),
+  sourceId: z.string().min(1),
+  sourceUrl: nullableStringSchema.default(null),
+  title: nullableStringSchema.default(null),
+  content: z.string(),
+  contentHash: z.string().min(1),
+  metadataJson: metadataJsonSchema.default({}),
+  sourceLastEditedAt: optionalTimestampSchema.default(null),
+  syncedAt: timestampSchema,
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+export type AiKnowledgeEntryRecord = z.infer<typeof aiKnowledgeEntrySchema>;
+
 export const expeditionDimensionSchema = z.object({
   expeditionId: idSchema,
   projectId: nullableStringSchema,

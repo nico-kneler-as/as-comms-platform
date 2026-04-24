@@ -14,6 +14,7 @@ const replyContext: InboxComposerReplyContext = {
   contactId: "contact-1",
   contactDisplayName: "Alice Smith",
   subject: "Re: Trip logistics",
+  threadCursor: "event-1",
   threadId: "thread-1",
   inReplyToRfc822: "message-1",
   defaultAlias: "field@adventuresci.org"

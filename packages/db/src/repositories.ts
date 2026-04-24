@@ -30,6 +30,8 @@ import {
 
 import type { DatabaseConnection } from "./client.js";
 import {
+  mapAiKnowledgeEntryRow,
+  mapAiKnowledgeEntryToInsert,
   mapAuditEvidenceRow,
   mapAuditEvidenceToInsert,
   mapCanonicalEventRow,
@@ -71,6 +73,7 @@ import {
 } from "./mappers.js";
 import type { DatabaseSchema } from "./schema/index.js";
 import {
+  aiKnowledgeEntries,
   auditPolicyEvidence,
   canonicalEventLedger,
   contactIdentities,
@@ -786,6 +789,55 @@ function createStage1RepositoriesInternal(
 
         return mapCanonicalEventRow(
           requireRow(row, "Expected canonical event row to be returned."),
+        );
+      },
+    },
+
+    aiKnowledge: {
+      async findByScope(input) {
+        const scopeKeyPredicate =
+          input.scopeKey === null
+            ? isNull(aiKnowledgeEntries.scopeKey)
+            : eq(aiKnowledgeEntries.scopeKey, input.scopeKey);
+
+        const [row] = await db
+          .select()
+          .from(aiKnowledgeEntries)
+          .where(
+            and(eq(aiKnowledgeEntries.scope, input.scope), scopeKeyPredicate),
+          )
+          .orderBy(desc(aiKnowledgeEntries.syncedAt), asc(aiKnowledgeEntries.id))
+          .limit(1);
+
+        return row === undefined ? null : mapAiKnowledgeEntryRow(row);
+      },
+
+      async upsert(record) {
+        const values = mapAiKnowledgeEntryToInsert(record);
+        const [row] = await db
+          .insert(aiKnowledgeEntries)
+          .values(values)
+          .onConflictDoUpdate({
+            target: aiKnowledgeEntries.id,
+            set: {
+              scope: values.scope,
+              scopeKey: values.scopeKey,
+              sourceProvider: values.sourceProvider,
+              sourceId: values.sourceId,
+              sourceUrl: values.sourceUrl,
+              title: values.title,
+              content: values.content,
+              contentHash: values.contentHash,
+              metadataJson: values.metadataJson,
+              sourceLastEditedAt: values.sourceLastEditedAt,
+              syncedAt: values.syncedAt,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+
+        return mapAiKnowledgeEntryRow(
+          requireRow(row, "Expected AI knowledge row to be returned."),
         );
       },
     },

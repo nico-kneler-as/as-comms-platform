@@ -24,7 +24,7 @@
 | `INBOX_REVALIDATE_TOKEN`   | `worker`, `web`                             | Railway service variables           | Internal-only shared secret for inbox revalidation calls.                 |
 | `MAILCHIMP_CAPTURE_TOKEN`  | future `worker` + Mailchimp capture service | Railway service variables           | Deferred until Mailchimp capture resumes.                                 |
 | `SENDGRID_API_KEY`         | future campaigns service                    | Railway service variables           | Deferred until Campaigns Email lands.                                     |
-| `OPENAI_API_KEY`           | future AI service(s)                        | Railway service variables           | Deferred until Stage 4 AI ships.                                          |
+| `ANTHROPIC_API_KEY`        | `web`                                       | Railway service variables           | Powers Stage 4 AI drafting in the web service only.                       |
 
 Current provider-facing secrets that also need the same treatment:
 

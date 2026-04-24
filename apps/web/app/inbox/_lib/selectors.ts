@@ -1803,6 +1803,7 @@ function buildComposerReplyContext(input: {
     contactId: input.contact.id,
     contactDisplayName: input.contact.displayName,
     subject: buildReplySubject(latestInboundEmail.subject),
+    threadCursor: latestInboundEmail.canonicalEventId,
     threadId: latestInboundEmail.threadId ?? null,
     inReplyToRfc822: latestInboundEmail.rfc822MessageId ?? null,
     defaultAlias: input.defaultAlias,

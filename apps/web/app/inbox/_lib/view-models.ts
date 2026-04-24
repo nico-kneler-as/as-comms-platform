@@ -183,6 +183,7 @@ export interface InboxComposerReplyContext {
   readonly contactId: string;
   readonly contactDisplayName: string;
   readonly subject: string;
+  readonly threadCursor: string | null;
   readonly threadId: string | null;
   readonly inReplyToRfc822: string | null;
   readonly defaultAlias: string | null;
