@@ -2314,12 +2314,17 @@ function toListItemViewModel(
     needsFollowUp: row.inboxProjection.needsFollowUp,
     hasUnresolved: row.inboxProjection.hasUnresolved,
     unreadCount: row.inboxProjection.bucket === "New" ? 1 : 0,
+    isUnanswered:
+      row.inboxProjection.lastInboundAt !== null &&
+      (row.inboxProjection.lastOutboundAt === null ||
+        row.inboxProjection.lastInboundAt >
+          row.inboxProjection.lastOutboundAt),
     lastInboundAt: row.inboxProjection.lastInboundAt,
     lastOutboundAt: row.inboxProjection.lastOutboundAt,
     lastActivityAt: row.inboxProjection.lastActivityAt,
     lastEventType: row.inboxProjection.lastEventType,
     lastActivityLabel: formatRelativeTimestamp(
-      row.inboxProjection.lastActivityAt,
+      row.inboxProjection.lastInboundAt ?? row.inboxProjection.lastActivityAt,
       referenceNowIso,
     ),
   };

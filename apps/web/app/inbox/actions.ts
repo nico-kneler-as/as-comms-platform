@@ -13,9 +13,10 @@ import {
   type AiDraftRequestPayload,
   type AiDraftResponse,
 } from "@/src/server/ai";
+import { getAiProviderConfig } from "@/src/server/ai/provider";
+import { setInboxBucket } from "@/src/server/inbox/bucket";
 
 export type { AiDraftRequestPayload } from "@/src/server/ai";
-import { getAiProviderConfig } from "@/src/server/ai/provider";
 import { setInboxNeedsFollowUp } from "@/src/server/inbox/follow-up";
 import { revalidateInboxContact } from "@/src/server/inbox/revalidate";
 import {
@@ -73,6 +74,14 @@ export type FollowUpActionData = {
 };
 
 export type FollowUpActionResult = UiResult<FollowUpActionData>;
+
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+export type InboxBucketActionData = {
+  readonly contactId: string;
+  readonly bucket: "New" | "Opened";
+};
+
+export type InboxBucketActionResult = UiResult<InboxBucketActionData>;
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
 export type ComposerSendActionData = {
@@ -169,6 +178,16 @@ function followUpRateLimitError(requestId: string): FollowUpActionResult {
     ok: false,
     code: "rate_limit_exceeded",
     message: "Too many follow-up updates. Please wait a minute and try again.",
+    requestId,
+    retryable: true,
+  };
+}
+
+function bucketRateLimitError(requestId: string): InboxBucketActionResult {
+  return {
+    ok: false,
+    code: "rate_limit_exceeded",
+    message: "Too many read-state changes. Please wait a minute and try again.",
     requestId,
     retryable: true,
   };
@@ -1355,4 +1374,85 @@ export async function clearInboxNeedsFollowUpAction(
   formData: FormData,
 ): Promise<FollowUpActionResult> {
   return updateNeedsFollowUp(formData, false);
+}
+
+async function updateInboxBucket(
+  formData: FormData,
+  bucket: "New" | "Opened",
+): Promise<InboxBucketActionResult> {
+  const requestId = randomUUID();
+  const contactId = readContactId(formData);
+
+  let currentUser;
+  try {
+    currentUser = await requireSession();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return unauthorizedError(requestId);
+    }
+    throw error;
+  }
+
+  if (contactId === null) {
+    return {
+      ok: false,
+      code: "validation_error",
+      message: "Missing contactId",
+      requestId,
+      fieldErrors: { contactId: "required" },
+    };
+  }
+
+  const decision = await enforceRateLimit({
+    scope: "server-action:inbox-bucket",
+    identifier: currentUser.id,
+    limit: 60,
+    audit: {
+      actorType: "user",
+      actorId: currentUser.id,
+      action: "inbox.bucket.rate_limited",
+      entityType: "server_action",
+      entityId: "inbox.bucket",
+      metadataJson: {
+        contactId,
+        bucket,
+      },
+    },
+  });
+
+  if (!decision.allowed) {
+    return bucketRateLimitError(requestId);
+  }
+
+  const result = await setInboxBucket({ contactId, bucket });
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      code: "inbox_contact_not_found",
+      message: "No inbox row for that contact",
+      requestId,
+      retryable: false,
+    };
+  }
+
+  revalidateInboxContact(contactId);
+
+  return {
+    ok: true,
+    data: { contactId, bucket },
+    requestId,
+  };
+}
+
+export async function markInboxOpenedAction(
+  formData: FormData,
+): Promise<InboxBucketActionResult> {
+  return updateInboxBucket(formData, "Opened");
+}
+
+export async function markInboxUnreadAction(
+  formData: FormData,
+): Promise<InboxBucketActionResult> {
+  return updateInboxBucket(formData, "New");
 }

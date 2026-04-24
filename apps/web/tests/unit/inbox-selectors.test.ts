@@ -101,6 +101,7 @@ function buildItem(
     needsFollowUp: overrides.needsFollowUp ?? false,
     hasUnresolved: overrides.hasUnresolved ?? false,
     unreadCount: overrides.unreadCount ?? 0,
+    isUnanswered: overrides.isUnanswered ?? false,
     lastInboundAt: overrides.lastInboundAt ?? null,
     lastOutboundAt: overrides.lastOutboundAt ?? null,
     lastActivityAt: overrides.lastActivityAt ?? "2026-04-14T14:00:00.000Z",

@@ -1990,6 +1990,19 @@ function createStage1RepositoriesInternal(
         return row === undefined ? null : mapInboxProjectionRow(row);
       },
 
+      async setBucket(input) {
+        const [row] = await db
+          .update(contactInboxProjection)
+          .set({
+            bucket: input.bucket,
+            updatedAt: new Date(),
+          })
+          .where(eq(contactInboxProjection.contactId, input.contactId))
+          .returning();
+
+        return row === undefined ? null : mapInboxProjectionRow(row);
+      },
+
       async upsert(record) {
         const values = mapInboxProjectionToInsert(record);
         const [row] = await db

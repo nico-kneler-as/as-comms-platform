@@ -771,17 +771,22 @@ function buildVolunteerScopedTaskWhere(
   return `${baseWhere} AND ${config.taskContactField} IN (SELECT ${config.membershipContactField} FROM ${config.membershipObjectName} WHERE ${config.membershipContactField} != null)`;
 }
 
-function buildEmailLikeTaskWhere(
+function buildNotEmailLikeTaskWhere(
   config: ResolvedSalesforceCaptureServiceConfig,
 ): string {
-  const emailChannelClauses = config.taskEmailChannelValues.map(
-    (value) => `${config.taskChannelField} = ${quoteSoqlString(value)}`,
+  // De Morgan's: NOT (subtype='Email' OR (subtype='Task' AND subject LIKE '%Email:%'))
+  // = (subtype != 'Email') AND (subtype != 'Task' OR NOT subject LIKE '%Email:%')
+  // Pushing NOT down to leaves avoids SOQL's rejection of NOT applied to a
+  // parenthesized OR group (MALFORMED_QUERY at runtime, confirmed via live
+  // probes 2026-04-24).
+  const notChannelEmailClauses = config.taskEmailChannelValues.map(
+    (value) => `${config.taskChannelField} != ${quoteSoqlString(value)}`,
   );
-  const subjectDerivedEmailClause = `${config.taskChannelField} = ${quoteSoqlString("Task")} AND Subject LIKE '%Email:%'`;
+  const notSubjectDerivedEmailClause = `(${config.taskChannelField} != ${quoteSoqlString("Task")} OR (NOT Subject LIKE '%Email:%'))`;
 
-  return [...emailChannelClauses, subjectDerivedEmailClause]
-    .map((clause) => `(${clause})`)
-    .join(" OR ");
+  return [...notChannelEmailClauses, notSubjectDerivedEmailClause].join(
+    " AND ",
+  );
 }
 
 function buildLaunchScopeEmailTaskOwnerWhere(): string {
@@ -795,17 +800,15 @@ function buildLaunchScopedTaskWhere(
   config: ResolvedSalesforceCaptureServiceConfig,
 ): string {
   const volunteerScopedWhere = buildVolunteerScopedTaskWhere(baseWhere, config);
-  const emailLikeTaskWhere = buildEmailLikeTaskWhere(config);
+  const notEmailLikeTaskWhere = buildNotEmailLikeTaskWhere(config);
   const ownerIsLaunchScope = buildLaunchScopeEmailTaskOwnerWhere();
 
   // D-039: volunteer-linked Salesforce email Tasks are captured only when they
   // come from the Nim Admin automation owner. Non-email Task shapes keep the
-  // prior launch-scope behavior. Logic: include a Task if it is NOT
-  // email-like, OR it is email-like AND owned by an automation owner. That
-  // simplifies to `NOT emailLike OR ownerIsLaunchScope`, which avoids the
-  // redundant paren nesting that tripped SOQL's WHERE-clause depth limit
-  // (MALFORMED_QUERY observed 2026-04-22 onward).
-  return `${volunteerScopedWhere} AND (NOT (${emailLikeTaskWhere}) OR ${ownerIsLaunchScope})`;
+  // prior launch-scope behavior. Expressed as (NOT emailLike) OR ownerMatch,
+  // with the NOT expanded via De Morgan into positive leaf predicates so
+  // SOQL accepts it.
+  return `${volunteerScopedWhere} AND ((${notEmailLikeTaskWhere}) OR ${ownerIsLaunchScope})`;
 }
 
 function buildTaskWindowWhere(
