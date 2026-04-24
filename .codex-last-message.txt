@@ -1,27 +1,13 @@
-Implemented the composer rich-text and HTML send pipeline changes in the worktree.
+Implemented Stage 4 bootstrap synthesis work on `feat/stage-4-bootstrap-synthesis`.
 
-What changed:
-- Added rich-text composer UI with toolbar: bold, italic, bullet list, numbered list, link.
-- Added HTML + plaintext send contract via `packages/contracts/src/stage3-composer.ts`.
-- Added server-side HTML sanitizer at `apps/web/src/lib/html-sanitizer.ts`.
-- Updated `sendComposerAction` to sanitize HTML, append signature to plaintext and HTML, persist `body_html`, and pass HTML to Gmail.
-- Updated Gmail MIME assembly to emit `multipart/alternative` with `text/plain` and `text/html`, nested under `multipart/mixed` when attachments exist.
-- Added `body_html` DB schema field and migration:
-  `packages/db/drizzle/0022_pending_composer_outbounds_body_html.sql`
-- Added/updated focused sanitizer, send action, pending outbound, and Gmail MIME tests.
+Key pieces completed:
+- Added migration/schema/contracts/repositories for `project_knowledge_source_links` and `project_knowledge_bootstrap_runs`.
+- Added worker bootstrap job with HTML extraction, Gmail alias-history digesting, synthesis orchestration, run status updates, budget warning, and safety rails.
+- Wired Settings Knowledge UI for source CRUD, generate button, confirmation gate, recent run polling/status.
+- Added focused tests for HTML fetcher, Gmail digest masking, synthesis parsing, run safety rails, repository round trips, and Settings source rendering.
+- Updated `docs/03-reference/reference-env.md` for worker-side bootstrap usage and `@mozilla/readability`/`jsdom`.
 
-Migration command for PR body:
-```bash
-psql -f packages/db/drizzle/0022_pending_composer_outbounds_body_html.sql "$DATABASE_URL"
-```
-
-Blocked items:
-- Tiptap install failed because the sandbox cannot resolve `registry.npmjs.org`, so I implemented the editor with native `contenteditable` instead.
-- `pnpm test:unit`, `pnpm lint`, and `pnpm typecheck` could not run because this worktree has no `node_modules`, and offline install is missing tarballs from the pnpm store.
-- Because tests/lint/typecheck did not pass locally, I did not commit, push, or open the PR.
-
-Verification attempted:
-- `gh pr list --search "feat/composer-rich-text"` succeeded with no output.
-- `pnpm install --offline` failed missing `zod` tarball.
-- `pnpm test:unit`, `pnpm lint`, `pnpm typecheck` failed at `turbo: command not found`.
-- `git diff --check` passed.
+Validation:
+- `pnpm typecheck` passed.
+- `pnpm lint` passed.
+- `pnpm test:unit` is blocked by the macOS Rollup native optional dependency/signing issue before tests execute: `@rollup/rollup-darwin-arm64 ... not valid for use in process: mapping process and mapped file ... have different Team IDs`. I tried ad-hoc re-signing the native module, but Node still rejects it.

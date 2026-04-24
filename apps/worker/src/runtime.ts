@@ -321,6 +321,12 @@ export async function createStage1WorkerRuntimeServices(
         integrationHealth: settings.integrationHealth,
         notion: notionKnowledgeSync
       },
+      bootstrapProjectKnowledge: {
+        db: connection.db,
+        repositories,
+        settings,
+        env: input?.env ?? process.env
+      },
       pendingOutboundSweep: {
         pendingOutbounds: repositories.pendingOutbounds
       }

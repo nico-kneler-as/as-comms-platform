@@ -33,10 +33,14 @@ export default async function SettingsProjectKnowledgePage({ params }: PageProps
     redirect("/settings/projects");
   }
 
-  const entries = await runtime.repositories.projectKnowledge.list({
-    projectId: decoded,
-    approvedOnly: false
-  });
+  const [entries, sourceLinks, runs] = await Promise.all([
+    runtime.repositories.projectKnowledge.list({
+      projectId: decoded,
+      approvedOnly: false
+    }),
+    runtime.repositories.projectKnowledgeSourceLinks.list(decoded),
+    runtime.repositories.projectKnowledgeBootstrapRuns.listByProject(decoded, 10)
+  ]);
 
   return (
     <SettingsContent>
@@ -56,6 +60,41 @@ export default async function SettingsProjectKnowledgePage({ params }: PageProps
           lastReviewedAt: entry.lastReviewedAt,
           createdAt: entry.createdAt,
           updatedAt: entry.updatedAt
+        }))}
+        sourceLinks={sourceLinks.map((source) => ({
+          id: source.id,
+          kind: source.kind,
+          label: source.label,
+          url: source.url,
+          createdAt: source.createdAt,
+          updatedAt: source.updatedAt
+        }))}
+        runs={runs.map((run) => ({
+          id: run.id,
+          status: run.status,
+          force: run.force,
+          startedAt: run.startedAt,
+          completedAt: run.completedAt,
+          stats: {
+            sourcesFetched:
+              typeof run.statsJson.sourcesFetched === "number"
+                ? run.statsJson.sourcesFetched
+                : null,
+            topicsFound:
+              typeof run.statsJson.topicsFound === "number"
+                ? run.statsJson.topicsFound
+                : null,
+            candidatesWritten:
+              typeof run.statsJson.candidatesWritten === "number"
+                ? run.statsJson.candidatesWritten
+                : null,
+            costEstimateUsd:
+              typeof run.statsJson.costEstimateUsd === "number"
+                ? run.statsJson.costEstimateUsd
+                : null,
+            budgetWarn: run.statsJson.budgetWarn === true
+          },
+          errorDetail: run.errorDetail
         }))}
       />
     </SettingsContent>

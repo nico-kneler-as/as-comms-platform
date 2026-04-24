@@ -40,13 +40,18 @@ The one-time `migrate-notion-child-dbs-to-project-knowledge` ops script reuses
 `DATABASE_URL` or `WORKER_DATABASE_URL` and accepts `--slug-map <file.json>` for
 mapping Notion project slugs to Salesforce project ids.
 
-## Stage 4 AI Drafting
+## Stage 4 AI Drafting And Bootstrap
 
 | Env var | Runtime | Required | Notes |
 | --- | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | `web` | yes | Anthropic API key for Stage 4 draft generation. Missing config downgrades requests into `deterministic_fallback` with `provider_not_configured`. |
-| `AI_DAILY_CAP_USD` | `web` | no | Soft daily spend cap for AI drafts. Default `20`. Over-budget emits `budget_warn`; it does not hard-block drafting. |
-| `ANTHROPIC_MODEL` | `web` | no | Default draft model. Current default is `claude-sonnet-4-6`. |
+| `ANTHROPIC_API_KEY` | `web`, `worker` | yes | Anthropic API key for Stage 4 draft generation and the `bootstrap-project-knowledge` synthesis job. Missing web config downgrades draft requests into `deterministic_fallback` with `provider_not_configured`; missing worker config marks bootstrap runs as `error`. |
+| `AI_DAILY_CAP_USD` | `web`, `worker` | no | Soft daily spend cap for AI drafts and bootstrap synthesis. Default `20`. Over-budget emits `budget_warn`; it does not hard-block drafting or bootstrap runs. |
+| `ANTHROPIC_MODEL` | `web`, `worker` | no | Default draft and bootstrap synthesis model. Current default is `claude-sonnet-4-6`. |
+
+The bootstrap worker fetches configured project source links, extracts readable HTML
+with `@mozilla/readability` + `jsdom`, optionally digests bounded Gmail alias
+history, and writes unapproved `bootstrap_synthesized` candidates for admin
+review in Settings.
 
 ## Deep References
 

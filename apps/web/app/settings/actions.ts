@@ -5,6 +5,8 @@ import { revalidateTag } from "next/cache";
 import { z } from "zod";
 
 import {
+  bootstrapProjectKnowledgeJobName,
+  bootstrapProjectKnowledgePayloadSchema,
   createProjectAliasSchema,
   deactivateUserSchema,
   demoteUserSchema,
@@ -57,8 +59,38 @@ const projectKnowledgeApprovedSchema = projectKnowledgeIdSchema.extend({
   approved: z.boolean()
 });
 
+const projectKnowledgeSourceKindSchema = z.enum([
+  "public_project_page",
+  "volunteer_homepage",
+  "training_site",
+  "gmail_alias_history",
+  "other"
+]);
+
+const projectKnowledgeSourceLinkSchema = z.object({
+  id: z.string().min(1).optional(),
+  projectId: z.string().min(1),
+  kind: projectKnowledgeSourceKindSchema,
+  label: z.string().trim().min(1).nullable(),
+  url: z.string().trim().min(1)
+});
+
+const projectKnowledgeSourceLinkIdSchema = z.object({
+  id: z.string().min(1),
+  projectId: z.string().min(1)
+});
+
+const triggerBootstrapSchema = z.object({
+  projectId: z.string().min(1),
+  force: z.boolean().default(false)
+});
+
 export interface ProjectKnowledgeMutationData {
   readonly id: string;
+}
+
+export interface ProjectKnowledgeBootstrapMutationData {
+  readonly runId: string;
 }
 
 function newRequestId(): string {
@@ -461,6 +493,55 @@ function normalizeAiKnowledgeUrl(
   }
 }
 
+function normalizeKnowledgeSourceUrl(input: {
+  readonly kind: z.infer<typeof projectKnowledgeSourceKindSchema>;
+  readonly url: string;
+}):
+  | {
+      readonly ok: true;
+      readonly url: string;
+    }
+  | {
+      readonly ok: false;
+      readonly error: UiError;
+    } {
+  const trimmed = input.url.trim();
+  if (input.kind === "gmail_alias_history") {
+    return {
+      ok: true,
+      url: trimmed
+    };
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return {
+        ok: false,
+        error: errorResult("invalid_source_url", "Source URL must use http or https.", {
+          fieldErrors: {
+            url: "Source URL must use http or https."
+          }
+        })
+      };
+    }
+
+    return {
+      ok: true,
+      url: parsed.toString()
+    };
+  } catch {
+    return {
+      ok: false,
+      error: errorResult("invalid_source_url", "Enter a valid source URL.", {
+        fieldErrors: {
+          url: "Enter a valid source URL."
+        }
+      })
+    };
+  }
+}
+
 function isProjectAliasConflictError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
     return false;
@@ -508,6 +589,31 @@ export interface ProjectAliasSignatureMutationData {
   readonly id: string;
   readonly alias: string;
   readonly signature: string;
+}
+
+async function enqueueBootstrapWorkerJob(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly runId: string;
+  readonly projectId: string;
+  readonly force: boolean;
+}): Promise<void> {
+  if (input.runtime.connection === null) {
+    return;
+  }
+
+  const payload = bootstrapProjectKnowledgePayloadSchema.parse({
+    runId: input.runId,
+    projectId: input.projectId,
+    force: input.force
+  });
+
+  await input.runtime.connection.sql`
+    select graphile_worker.add_job(
+      identifier => ${bootstrapProjectKnowledgeJobName},
+      payload => ${JSON.stringify(payload)}::json,
+      max_attempts => 1
+    )
+  `;
 }
 
 // ─── Projects ───────────────────────────────────────────────────────────────
@@ -1000,6 +1106,236 @@ export async function deleteProjectKnowledgeAction(
     ok: true,
     data: {
       id: parsed.data.id
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function upsertProjectKnowledgeSourceLinkAction(
+  rawInput: z.input<typeof projectKnowledgeSourceLinkSchema>
+): Promise<UiResult<ProjectKnowledgeMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update knowledge sources.",
+    forbiddenMessage: "Only admins can update knowledge sources."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = projectKnowledgeSourceLinkSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return errorResult("validation_error", "Knowledge source input is invalid.", {
+      fieldErrors: Object.fromEntries(
+        parsed.error.issues.map((issue) => [
+          issue.path.join("."),
+          issue.message
+        ])
+      )
+    });
+  }
+
+  const normalizedUrl = normalizeKnowledgeSourceUrl({
+    kind: parsed.data.kind,
+    url: parsed.data.url
+  });
+  if (!normalizedUrl.ok) {
+    return normalizedUrl.error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const existingSources =
+    await runtime.repositories.projectKnowledgeSourceLinks.list(
+      parsed.data.projectId
+    );
+  const nowIso = new Date().toISOString();
+  const existing =
+    parsed.data.id === undefined
+      ? undefined
+      : existingSources.find((source) => source.id === parsed.data.id);
+  const id = parsed.data.id ?? randomUUID();
+
+  await runtime.repositories.projectKnowledgeSourceLinks.upsert({
+    id,
+    projectId: parsed.data.projectId,
+    kind: parsed.data.kind,
+    label: parsed.data.label,
+    url: normalizedUrl.url,
+    createdAt: existing?.createdAt ?? nowIso,
+    updatedAt: nowIso
+  });
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action:
+      existing === undefined
+        ? "settings.project_knowledge_source.created"
+        : "settings.project_knowledge_source.updated",
+    entityType: "project_knowledge_source_link",
+    entityId: id,
+    metadataJson: {
+      projectId: parsed.data.projectId,
+      kind: parsed.data.kind
+    }
+  });
+
+  revalidateProjectSettings(parsed.data.projectId);
+
+  return {
+    ok: true,
+    data: {
+      id
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function deleteProjectKnowledgeSourceLinkAction(
+  rawInput: z.input<typeof projectKnowledgeSourceLinkIdSchema>
+): Promise<UiResult<ProjectKnowledgeMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to delete knowledge sources.",
+    forbiddenMessage: "Only admins can delete knowledge sources."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = projectKnowledgeSourceLinkIdSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return errorResult("validation_error", "Knowledge source delete input is invalid.");
+  }
+
+  const runtime = await getStage1WebRuntime();
+  await runtime.repositories.projectKnowledgeSourceLinks.deleteById(parsed.data.id);
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project_knowledge_source.deleted",
+    entityType: "project_knowledge_source_link",
+    entityId: parsed.data.id,
+    metadataJson: {
+      projectId: parsed.data.projectId
+    }
+  });
+
+  revalidateProjectSettings(parsed.data.projectId);
+
+  return {
+    ok: true,
+    data: {
+      id: parsed.data.id
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function triggerBootstrapAction(
+  rawInput: z.input<typeof triggerBootstrapSchema>
+): Promise<UiResult<ProjectKnowledgeBootstrapMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to generate baseline knowledge.",
+    forbiddenMessage: "Only admins can generate baseline knowledge."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = triggerBootstrapSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return errorResult("validation_error", "Bootstrap input is invalid.");
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const [sources, entries] = await Promise.all([
+    runtime.repositories.projectKnowledgeSourceLinks.list(parsed.data.projectId),
+    runtime.repositories.projectKnowledge.list({
+      projectId: parsed.data.projectId
+    })
+  ]);
+
+  if (sources.length === 0) {
+    return errorResult(
+      "no_sources",
+      "Add at least one knowledge source before generating baseline knowledge."
+    );
+  }
+
+  if (entries.length > 50 && !parsed.data.force) {
+    return errorResult(
+      "confirmation_required",
+      "This project already has more than 50 knowledge entries. Confirm generation to continue.",
+      {
+        retryable: false
+      }
+    );
+  }
+
+  const nowIso = new Date().toISOString();
+  const runId = randomUUID();
+  await runtime.repositories.projectKnowledgeBootstrapRuns.create({
+    id: runId,
+    projectId: parsed.data.projectId,
+    status: "queued",
+    force: parsed.data.force,
+    startedAt: nowIso,
+    completedAt: null,
+    statsJson: {
+      sourcesConfigured: sources.length
+    },
+    errorDetail: null,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  });
+
+  try {
+    await enqueueBootstrapWorkerJob({
+      runtime,
+      runId,
+      projectId: parsed.data.projectId,
+      force: parsed.data.force
+    });
+  } catch (error) {
+    await runtime.repositories.projectKnowledgeBootstrapRuns.update({
+      id: runId,
+      status: "error",
+      completedAt: new Date().toISOString(),
+      errorDetail:
+        error instanceof Error
+          ? error.message
+          : "Failed to enqueue bootstrap job.",
+      statsJson: {
+        sourcesConfigured: sources.length
+      }
+    });
+
+    return errorResult(
+      "enqueue_failed",
+      "The bootstrap job could not be queued. Try again after checking the worker.",
+      {
+        retryable: true
+      }
+    );
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project_knowledge_bootstrap.triggered",
+    entityType: "project_knowledge_bootstrap_run",
+    entityId: runId,
+    metadataJson: {
+      projectId: parsed.data.projectId,
+      force: parsed.data.force,
+      sourceCount: sources.length
+    }
+  });
+
+  revalidateProjectSettings(parsed.data.projectId);
+
+  return {
+    ok: true,
+    data: {
+      runId
     },
     requestId: newRequestId()
   };

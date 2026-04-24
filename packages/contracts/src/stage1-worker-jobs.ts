@@ -78,6 +78,8 @@ export const projectionRebuildBatchJobName =
 export const parityCheckBatchJobName = "stage1.parity.check" as const;
 export const cutoverCheckpointBatchJobName =
   "stage1.cutover.checkpoint" as const;
+export const bootstrapProjectKnowledgeJobName =
+  "bootstrap-project-knowledge" as const;
 
 export const stage1WorkerJobNames = [
   gmailHistoricalCaptureBatchJobName,
@@ -273,4 +275,13 @@ export const cutoverCheckpointBatchPayloadSchema = z.object({
 });
 export type CutoverCheckpointBatchPayload = z.infer<
   typeof cutoverCheckpointBatchPayloadSchema
+>;
+
+export const bootstrapProjectKnowledgePayloadSchema = z.object({
+  runId: idSchema,
+  projectId: idSchema,
+  force: z.boolean().default(false),
+});
+export type BootstrapProjectKnowledgePayload = z.infer<
+  typeof bootstrapProjectKnowledgePayloadSchema
 >;
