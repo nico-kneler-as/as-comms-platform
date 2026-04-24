@@ -56,8 +56,12 @@ import {
   mapPendingComposerOutboundToInsert,
   mapProjectAliasRow,
   mapProjectAliasToInsert,
+  mapProjectKnowledgeBootstrapRunRow,
+  mapProjectKnowledgeBootstrapRunToInsert,
   mapProjectKnowledgeEntryRow,
   mapProjectKnowledgeEntryToInsert,
+  mapProjectKnowledgeSourceLinkRow,
+  mapProjectKnowledgeSourceLinkToInsert,
   mapProjectDimensionRow,
   mapProjectDimensionToInsert,
   mapRoutingReviewRow,
@@ -91,7 +95,9 @@ import {
   manualNoteDetails,
   pendingComposerOutbounds,
   projectAliases,
+  projectKnowledgeBootstrapRuns,
   projectKnowledgeEntries,
+  projectKnowledgeSourceLinks,
   projectDimensions,
   routingReviewQueue,
   salesforceCommunicationDetails,
@@ -1003,6 +1009,119 @@ function createStage1RepositoriesInternal(
         return PROJECT_KNOWLEDGE_KINDS.flatMap(
           (kind) => rankedByKind.get(kind) ?? [],
         );
+      },
+    },
+
+    projectKnowledgeSourceLinks: {
+      async list(projectId) {
+        const rows = await db
+          .select()
+          .from(projectKnowledgeSourceLinks)
+          .where(eq(projectKnowledgeSourceLinks.projectId, projectId))
+          .orderBy(
+            asc(projectKnowledgeSourceLinks.kind),
+            asc(projectKnowledgeSourceLinks.createdAt),
+            asc(projectKnowledgeSourceLinks.url),
+          );
+
+        return rows.map(mapProjectKnowledgeSourceLinkRow);
+      },
+
+      async upsert(record) {
+        const values = mapProjectKnowledgeSourceLinkToInsert(record);
+        const [row] = await db
+          .insert(projectKnowledgeSourceLinks)
+          .values(values)
+          .onConflictDoUpdate({
+            target: projectKnowledgeSourceLinks.id,
+            set: {
+              projectId: values.projectId,
+              kind: values.kind,
+              label: values.label,
+              url: values.url,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+
+        return mapProjectKnowledgeSourceLinkRow(
+          requireRow(row, "Expected project knowledge source link row."),
+        );
+      },
+
+      async deleteById(id) {
+        await db
+          .delete(projectKnowledgeSourceLinks)
+          .where(eq(projectKnowledgeSourceLinks.id, id));
+      },
+    },
+
+    projectKnowledgeBootstrapRuns: {
+      async create(record) {
+        const values = mapProjectKnowledgeBootstrapRunToInsert(record);
+        const [row] = await db
+          .insert(projectKnowledgeBootstrapRuns)
+          .values(values)
+          .returning();
+
+        return mapProjectKnowledgeBootstrapRunRow(
+          requireRow(row, "Expected project knowledge bootstrap run row."),
+        );
+      },
+
+      async findById(id) {
+        const [row] = await db
+          .select()
+          .from(projectKnowledgeBootstrapRuns)
+          .where(eq(projectKnowledgeBootstrapRuns.id, id))
+          .limit(1);
+
+        return row === undefined
+          ? null
+          : mapProjectKnowledgeBootstrapRunRow(row);
+      },
+
+      async listByProject(projectId, limit) {
+        const rows = await db
+          .select()
+          .from(projectKnowledgeBootstrapRuns)
+          .where(eq(projectKnowledgeBootstrapRuns.projectId, projectId))
+          .orderBy(desc(projectKnowledgeBootstrapRuns.startedAt))
+          .limit(limit);
+
+        return rows.map(mapProjectKnowledgeBootstrapRunRow);
+      },
+
+      async update(input) {
+        const updatedAt =
+          input.updatedAt === undefined ? new Date() : new Date(input.updatedAt);
+        const values: Partial<typeof projectKnowledgeBootstrapRuns.$inferInsert> = {
+          updatedAt,
+        };
+
+        if (input.status !== undefined) {
+          values.status = input.status;
+        }
+        if (input.completedAt !== undefined) {
+          values.completedAt =
+            input.completedAt === null ? null : new Date(input.completedAt);
+        }
+        if (input.statsJson !== undefined) {
+          values.statsJson = input.statsJson;
+        }
+        if (input.errorDetail !== undefined) {
+          values.errorDetail = input.errorDetail;
+        }
+
+        const [row] = await db
+          .update(projectKnowledgeBootstrapRuns)
+          .set(values)
+          .where(eq(projectKnowledgeBootstrapRuns.id, input.id))
+          .returning();
+
+        return row === undefined
+          ? null
+          : mapProjectKnowledgeBootstrapRunRow(row);
       },
     },
 

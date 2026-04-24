@@ -202,6 +202,58 @@ export type ProjectKnowledgeEntryRecord = z.infer<
   typeof projectKnowledgeEntrySchema
 >;
 
+export const projectKnowledgeSourceKindSchema = z.enum([
+  "public_project_page",
+  "volunteer_homepage",
+  "training_site",
+  "gmail_alias_history",
+  "other",
+]);
+export type ProjectKnowledgeSourceKind = z.infer<
+  typeof projectKnowledgeSourceKindSchema
+>;
+
+export const projectKnowledgeSourceLinkSchema = z.object({
+  id: idSchema,
+  projectId: z.string().min(1),
+  kind: projectKnowledgeSourceKindSchema,
+  label: nullableStringSchema.default(null),
+  url: z.string().min(1),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+export type ProjectKnowledgeSourceLinkRecord = z.infer<
+  typeof projectKnowledgeSourceLinkSchema
+>;
+
+export const projectKnowledgeBootstrapRunStatusSchema = z.enum([
+  "queued",
+  "fetching",
+  "synthesizing",
+  "writing",
+  "done",
+  "error",
+]);
+export type ProjectKnowledgeBootstrapRunStatus = z.infer<
+  typeof projectKnowledgeBootstrapRunStatusSchema
+>;
+
+export const projectKnowledgeBootstrapRunSchema = z.object({
+  id: idSchema,
+  projectId: z.string().min(1),
+  status: projectKnowledgeBootstrapRunStatusSchema,
+  force: z.boolean().default(false),
+  startedAt: timestampSchema,
+  completedAt: optionalTimestampSchema.default(null),
+  statsJson: metadataJsonSchema.default({}),
+  errorDetail: z.string().min(1).nullable().default(null),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+export type ProjectKnowledgeBootstrapRunRecord = z.infer<
+  typeof projectKnowledgeBootstrapRunSchema
+>;
+
 export const expeditionDimensionSchema = z.object({
   expeditionId: idSchema,
   projectId: nullableStringSchema,

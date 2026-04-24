@@ -12,6 +12,11 @@ import {
   notionKnowledgeSyncJobName,
   type NotionKnowledgeSyncDependencies
 } from "./jobs/notion-knowledge-sync/index.js";
+import {
+  bootstrapProjectKnowledgeJobName,
+  createBootstrapProjectKnowledgeTask,
+  type BootstrapProjectKnowledgeDependencies
+} from "./jobs/bootstrap-project-knowledge/run.js";
 import { runStage0NoopJob } from "./jobs/noop.js";
 import {
   createStage1TaskList,
@@ -23,6 +28,7 @@ export function createTaskList(
   orchestration?: Stage1WorkerOrchestrationService,
   input?: {
     readonly integrationHealth?: IntegrationHealthTaskDependencies;
+    readonly bootstrapProjectKnowledge?: BootstrapProjectKnowledgeDependencies;
     readonly notionKnowledgeSync?: NotionKnowledgeSyncDependencies;
     readonly pendingOutboundSweep?: PendingOutboundSweepTaskDependencies;
   }
@@ -41,6 +47,13 @@ export function createTaskList(
       : {
           [notionKnowledgeSyncJobName]: createNotionKnowledgeSyncTask(
             input.notionKnowledgeSync
+          )
+        }),
+    ...(input?.bootstrapProjectKnowledge === undefined
+      ? {}
+      : {
+          [bootstrapProjectKnowledgeJobName]: createBootstrapProjectKnowledgeTask(
+            input.bootstrapProjectKnowledge
           )
         }),
     ...(orchestration ? createStage1TaskList(orchestration, input) : {})

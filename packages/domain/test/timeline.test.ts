@@ -124,6 +124,17 @@ function createRepositoryBundle(input: {
       deleteById: () => Promise.resolve(),
       getForRetrieval: () => Promise.resolve([]),
     },
+    projectKnowledgeSourceLinks: {
+      list: () => Promise.resolve([]),
+      upsert: (record) => Promise.resolve(record),
+      deleteById: () => Promise.resolve(),
+    },
+    projectKnowledgeBootstrapRuns: {
+      create: (record) => Promise.resolve(record),
+      findById: () => Promise.resolve(null),
+      listByProject: () => Promise.resolve([]),
+      update: () => Promise.resolve(null),
+    },
     contacts: {
       findById: () => Promise.resolve(contact),
       findBySalesforceContactId: () => Promise.resolve(contact),

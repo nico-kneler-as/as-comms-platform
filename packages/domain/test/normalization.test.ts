@@ -288,6 +288,17 @@ function buildContext(input: {
       deleteById: () => Promise.resolve(),
       getForRetrieval: () => Promise.resolve([]),
     },
+    projectKnowledgeSourceLinks: {
+      list: () => Promise.resolve([]),
+      upsert: (record) => Promise.resolve(record),
+      deleteById: () => Promise.resolve(),
+    },
+    projectKnowledgeBootstrapRuns: {
+      create: (record) => Promise.resolve(record),
+      findById: () => Promise.resolve(null),
+      listByProject: () => Promise.resolve([]),
+      update: () => Promise.resolve(null),
+    },
     contacts: {
       findById: (id) => Promise.resolve(id === contact.id ? contact : null),
       findBySalesforceContactId: () => Promise.resolve(null),

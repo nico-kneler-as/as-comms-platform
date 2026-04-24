@@ -34,8 +34,13 @@
     "@as-comms/db": "workspace:*",
     "@as-comms/domain": "workspace:*",
     "@as-comms/integrations": "workspace:*",
+    "@mozilla/readability": "^0.6.0",
     "drizzle-orm": "^0.45.2",
     "graphile-worker": "^0.16.6",
+    "jsdom": "^29.0.2",
     "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^28.0.1"
   }
 }
