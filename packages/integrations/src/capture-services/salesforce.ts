@@ -662,8 +662,10 @@ export function createSalesforceApiClient(
         });
 
         if (!response.ok) {
+          const errorBodyText = await response.text();
+          const errorBodyPreview = errorBodyText.slice(0, 1000);
           throw new Error(
-            `Salesforce query failed with status ${String(response.status)}.`,
+            `Salesforce query failed with status ${String(response.status)}. Body: ${errorBodyPreview}. SOQL: ${soql.slice(0, 500)}`,
           );
         }
 
