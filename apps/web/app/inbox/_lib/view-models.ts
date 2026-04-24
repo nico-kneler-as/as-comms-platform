@@ -178,6 +178,91 @@ export interface InboxTimelineEntryViewModel {
   readonly authorId?: string | null;
 }
 
+export interface InboxTimelineSystemGroupViewModel {
+  readonly id: string;
+  readonly kind: "system-message-group";
+  readonly entries: readonly InboxTimelineEntryViewModel[];
+  readonly automatedCount: number;
+  readonly campaignCount: number;
+  readonly occurredAt: string;
+  readonly occurredAtLabel: string;
+}
+
+export type InboxTimelinePresentationItem =
+  | InboxTimelineEntryViewModel
+  | InboxTimelineSystemGroupViewModel;
+
+function isSystemGroupCandidate(entry: InboxTimelineEntryViewModel): boolean {
+  return (
+    entry.kind === "outbound-auto-email" ||
+    entry.kind === "outbound-auto-sms" ||
+    entry.kind === "outbound-campaign-email" ||
+    entry.kind === "outbound-campaign-sms"
+  );
+}
+
+function buildSystemMessageGroup(
+  entries: readonly InboxTimelineEntryViewModel[],
+): InboxTimelineSystemGroupViewModel | InboxTimelineEntryViewModel {
+  if (entries.length === 1) {
+    return entries[0]!;
+  }
+
+  const mostRecent = entries.reduce((latest, entry) =>
+    entry.occurredAt > latest.occurredAt ? entry : latest,
+  );
+  const automatedCount = entries.filter(
+    (entry) =>
+      entry.kind === "outbound-auto-email" ||
+      entry.kind === "outbound-auto-sms",
+  ).length;
+  const campaignCount = entries.filter(
+    (entry) =>
+      entry.kind === "outbound-campaign-email" ||
+      entry.kind === "outbound-campaign-sms",
+  ).length;
+
+  return {
+    id: `system-message-group:${entries.map((entry) => entry.id).join("+")}`,
+    kind: "system-message-group",
+    entries,
+    automatedCount,
+    campaignCount,
+    occurredAt: mostRecent.occurredAt,
+    occurredAtLabel: mostRecent.occurredAtLabel,
+  };
+}
+
+export function groupInboxTimelineSystemMessages(
+  entries: readonly InboxTimelineEntryViewModel[],
+): readonly InboxTimelinePresentationItem[] {
+  const grouped: InboxTimelinePresentationItem[] = [];
+  let pendingSystemEntries: InboxTimelineEntryViewModel[] = [];
+
+  const flushPendingSystemEntries = () => {
+    if (pendingSystemEntries.length === 0) {
+      return;
+    }
+
+    grouped.push(buildSystemMessageGroup(pendingSystemEntries));
+    pendingSystemEntries = [];
+  };
+
+  for (const entry of entries) {
+    if (isSystemGroupCandidate(entry)) {
+      pendingSystemEntries.push(entry);
+      continue;
+    }
+
+    flushPendingSystemEntries();
+    grouped.push(entry);
+  }
+
+  flushPendingSystemEntries();
+
+  return grouped;
+}
+
 export interface InboxComposerAliasOption {
   readonly id: string;
   readonly alias: string;

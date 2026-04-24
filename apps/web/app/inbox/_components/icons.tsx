@@ -41,6 +41,7 @@ export {
   Trash2 as TrashIcon,
   Wand2 as WandIcon,
   Bot as BotIcon,
+  Zap as ZapIcon,
   WifiOff as WifiOffIcon,
   Save as SaveIcon,
   RotateCcw as RotateCcwIcon,

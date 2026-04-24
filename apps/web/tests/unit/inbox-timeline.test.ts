@@ -24,6 +24,7 @@ vi.mock("@/app/_lib/design-tokens", () => ({
   },
   TEXT: {
     bodySm: "text-sm",
+    bodySerifSm: "text-[13.5px]",
     micro: "text-xs",
   },
   TONE: {
@@ -107,6 +108,49 @@ describe("InboxTimeline", () => {
     expect(markup).not.toContain("rounded-full border px-2 py-1");
   });
 
+  it("collapses consecutive automated and campaign rows into a count summary", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          baseEntry,
+          {
+            ...baseEntry,
+            id: "timeline:auto-email-2",
+            occurredAtLabel: "90m ago",
+            subject: "Reminder details",
+          },
+          {
+            ...baseEntry,
+            id: "timeline:campaign-email-1",
+            kind: "outbound-campaign-email" as const,
+            occurredAtLabel: "1h ago",
+            subject: "April field update",
+          },
+        ],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("2 automated · 1 campaign");
+    expect(markup).not.toContain("Training details");
+    expect(markup).not.toContain("Reminder details");
+    expect(markup).not.toContain("April field update");
+  });
+
+  it("does not collapse a single automated row", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [baseEntry],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("Training details");
+    expect(markup).not.toContain("1 automated");
+  });
+
   it("shows one consolidated campaign state while keeping the row in the purple campaign treatment", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
@@ -139,11 +183,11 @@ describe("InboxTimeline", () => {
     );
 
     expect(markup).toContain('data-campaign-state="clicked"');
-    expect(markup).toContain("border-violet-200 bg-violet-50/75");
+    expect(markup).toContain("border-violet-200/70 bg-violet-50/30");
     expect(markup).not.toContain("Opened 1h ago");
     expect(markup).not.toContain("45m ago");
     expect(markup).not.toContain(">Sent<");
-    expect(markup).not.toContain(">Clicked<");
+    expect(markup).toContain(">Clicked<");
   });
 
   it("renders lifecycle events as volunteer-side context rows with an icon-led label", () => {

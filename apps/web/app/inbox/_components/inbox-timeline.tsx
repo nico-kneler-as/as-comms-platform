@@ -12,13 +12,15 @@ import {
 } from "@/components/ui/popover";
 import type {
   InboxTimelineEntryKind,
+  InboxTimelinePresentationItem,
+  InboxTimelineSystemGroupViewModel,
   InboxTimelineEntryViewModel,
 } from "../_lib/view-models";
+import { groupInboxTimelineSystemMessages } from "../_lib/view-models";
 import { autolinkText } from "./_autolink";
 import { deleteNoteAction, updateNoteAction } from "../actions";
 import { getInternalNoteValidationError } from "@/src/lib/internal-note-validation";
 import {
-  BotIcon,
   CalendarIcon,
   CheckCircleIcon,
   ChevronRightIcon,
@@ -33,6 +35,7 @@ import {
   SparkleIcon,
   WandIcon,
   XIcon,
+  ZapIcon,
   MapPinIcon,
 } from "./icons";
 import {
@@ -43,10 +46,8 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
-  RADIUS,
   SHADOW,
   TEXT,
-  TONE,
   TRANSITION,
 } from "@/app/_lib/design-tokens";
 
@@ -85,6 +86,7 @@ export function InboxTimeline({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   );
+  const presentationItems = groupInboxTimelineSystemMessages(entries);
 
   if (entries.length === 0) {
     return (
@@ -130,24 +132,77 @@ export function InboxTimeline({
           </div>
         ) : null}
 
-        <ol className="flex flex-col gap-4">
-          {entries.map((entry) => (
-            <TimelineEntry
-              key={entry.id}
-              entry={entry}
+        <ol className="mx-auto flex w-full max-w-[840px] flex-col gap-3">
+          {presentationItems.map((item) => (
+            <TimelinePresentationItem
+              key={item.id}
+              item={item}
               volunteerFirstName={volunteerFirstName}
               currentOperatorUserId={currentOperatorUserId}
-              isExpanded={expanded.has(entry.id)}
+              isExpanded={expanded.has(item.id)}
               retryingEntryId={retryingEntryId}
               onRetryPending={onRetryPending}
               onToggle={() => {
-                toggle(entry.id);
+                toggle(item.id);
               }}
+              isChildExpanded={(entryId) => expanded.has(entryId)}
+              onToggleChild={toggle}
             />
           ))}
         </ol>
       </div>
     </TooltipProvider>
+  );
+}
+
+interface PresentationItemProps {
+  readonly item: InboxTimelinePresentationItem;
+  readonly volunteerFirstName: string;
+  readonly currentOperatorUserId: string;
+  readonly isExpanded: boolean;
+  readonly retryingEntryId: string | null;
+  readonly onRetryPending: ((entryId: string) => void) | undefined;
+  readonly onToggle: () => void;
+  readonly isChildExpanded: (entryId: string) => boolean;
+  readonly onToggleChild: (entryId: string) => void;
+}
+
+function TimelinePresentationItem({
+  item,
+  volunteerFirstName,
+  currentOperatorUserId,
+  isExpanded,
+  retryingEntryId,
+  onRetryPending,
+  onToggle,
+  isChildExpanded,
+  onToggleChild,
+}: PresentationItemProps) {
+  if (item.kind === "system-message-group") {
+    return (
+      <SystemMessageGroup
+        group={item}
+        isExpanded={isExpanded}
+        currentOperatorUserId={currentOperatorUserId}
+        retryingEntryId={retryingEntryId}
+        onRetryPending={onRetryPending}
+        onToggle={onToggle}
+        isChildExpanded={isChildExpanded}
+        onToggleChild={onToggleChild}
+      />
+    );
+  }
+
+  return (
+    <TimelineEntry
+      entry={item}
+      volunteerFirstName={volunteerFirstName}
+      currentOperatorUserId={currentOperatorUserId}
+      isExpanded={isExpanded}
+      retryingEntryId={retryingEntryId}
+      onRetryPending={onRetryPending}
+      onToggle={onToggle}
+    />
   );
 }
 
@@ -281,6 +336,122 @@ function TimelineEntry({
   }
 }
 
+function SystemMessageGroup({
+  group,
+  currentOperatorUserId,
+  isExpanded,
+  retryingEntryId,
+  onRetryPending,
+  onToggle,
+  isChildExpanded,
+  onToggleChild,
+}: {
+  readonly group: InboxTimelineSystemGroupViewModel;
+  readonly currentOperatorUserId: string;
+  readonly isExpanded: boolean;
+  readonly retryingEntryId: string | null;
+  readonly onRetryPending: ((entryId: string) => void) | undefined;
+  readonly onToggle: () => void;
+  readonly isChildExpanded: (entryId: string) => boolean;
+  readonly onToggleChild: (entryId: string) => void;
+}) {
+  const summary = formatSystemGroupSummary(group);
+
+  return (
+    <li className="flex w-full justify-end pl-16">
+      <div className="w-full max-w-[560px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          onClick={onToggle}
+          className={cn(
+            "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-slate-50/60",
+            "transition-[background-color,transform] duration-150 ease-out active:scale-[0.99]",
+            TRANSITION.reduceMotion,
+          )}
+        >
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="-space-x-1 flex shrink-0 items-center">
+              {group.entries.slice(0, 3).map((entry) => (
+                <span
+                  key={entry.id}
+                  className={cn(
+                    "inline-flex size-5 items-center justify-center rounded-full ring-2 ring-white",
+                    roleForKind(entry.kind) === "campaign"
+                      ? "bg-violet-100 text-violet-700"
+                      : "bg-slate-100 text-slate-600",
+                  )}
+                >
+                  {roleForKind(entry.kind) === "campaign" ? (
+                    <MegaphoneIcon className="size-2.5" />
+                  ) : (
+                    <ZapIcon className="size-2.5" />
+                  )}
+                </span>
+              ))}
+            </div>
+            <div className="min-w-0">
+              <div className="text-[12.5px] font-medium text-slate-800">
+                {summary}
+              </div>
+              <RelativeTimestamp
+                timestamp={group.occurredAt}
+                label={group.occurredAtLabel}
+                asSpan
+                focusable={false}
+                className="text-[11px] text-slate-400"
+              />
+            </div>
+          </div>
+          <ChevronRightIcon
+            className={cn(
+              "size-3.5 shrink-0 text-slate-400 transition-transform duration-150",
+              isExpanded && "rotate-90",
+              TRANSITION.reduceMotion,
+            )}
+          />
+        </button>
+        {isExpanded ? (
+          <ol className="space-y-2 border-t border-slate-100 bg-slate-50/30 p-3">
+            {group.entries.map((entry) => (
+              <TimelineEntry
+                key={entry.id}
+                entry={entry}
+                volunteerFirstName=""
+                currentOperatorUserId={currentOperatorUserId}
+                isExpanded={isChildExpanded(entry.id)}
+                retryingEntryId={retryingEntryId}
+                onRetryPending={onRetryPending}
+                onToggle={() => {
+                  onToggleChild(entry.id);
+                }}
+              />
+            ))}
+          </ol>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function formatSystemGroupSummary(
+  group: InboxTimelineSystemGroupViewModel,
+): string {
+  const parts: string[] = [];
+
+  if (group.automatedCount > 0) {
+    parts.push(`${group.automatedCount} automated`);
+  }
+
+  if (group.campaignCount > 0) {
+    parts.push(
+      `${group.campaignCount} campaign${group.campaignCount === 1 ? "" : "s"}`,
+    );
+  }
+
+  return parts.join(" · ");
+}
+
 function InboundBubble({
   entry,
 }: {
@@ -291,9 +462,9 @@ function InboundBubble({
   const body = bodyTextForEntry(entry);
 
   return (
-    <li className="flex w-full flex-col items-start">
+    <li className="flex w-full flex-col items-start pr-16">
       <div
-        className={`min-w-0 w-full max-w-2xl ${RADIUS.bubble} rounded-bl-sm border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}
+        className={`min-w-0 w-full max-w-[640px] overflow-hidden rounded-xl border border-slate-200 bg-white px-4 py-3 ${SHADOW.sm}`}
       >
         <EmailParticipantHeaders entry={entry} tone="inbound" />
         {isEmail && entry.subject ? (
@@ -309,7 +480,7 @@ function InboundBubble({
         {body.length > 0 ? (
           <p
             className={cn(
-              `whitespace-pre-wrap text-pretty ${TEXT.bodySm}`,
+              `font-message-body whitespace-pre-wrap text-pretty ${TEXT.bodySerifSm}`,
               WRAP_ANYWHERE,
             )}
           >
@@ -355,10 +526,10 @@ function OutboundBubble({
       : null;
 
   return (
-    <li className="flex w-full flex-col items-end">
+    <li className="flex w-full flex-col items-end pl-16">
       <div
         className={cn(
-          `min-w-0 w-full max-w-2xl ${RADIUS.bubble} rounded-br-sm border border-sky-100 bg-sky-50/80 px-4 py-3 ${SHADOW.sm}`,
+          `min-w-0 w-full max-w-[640px] overflow-hidden rounded-xl border border-sky-200 bg-sky-50/40 px-4 py-3 ${SHADOW.sm}`,
           "backdrop-blur-[1px]",
         )}
       >
@@ -428,7 +599,7 @@ function OutboundBubble({
         {body.length > 0 ? (
           <p
             className={cn(
-              "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-slate-700",
+              "font-message-body whitespace-pre-wrap text-pretty text-[13.5px] leading-relaxed text-slate-700",
               WRAP_ANYWHERE,
             )}
           >
@@ -482,17 +653,20 @@ function EmailParticipantHeaders({
 
   return (
     <dl
-      className={`mb-2.5 space-y-1 border-b pb-2.5 text-[11px] leading-relaxed ${borderClass}`}
+      className={`mb-2.5 space-y-1 border-b pb-2.5 text-[11.5px] leading-relaxed ${borderClass}`}
     >
       {rows.map((row) => (
         <div
           key={row.label}
           className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2"
         >
-          <dt className="font-medium uppercase tracking-[0.08em] text-slate-500">
-            {row.label}
-          </dt>
-          <dd className={cn("min-w-0 break-words text-slate-700", WRAP_ANYWHERE)}>
+          <dt className="font-medium text-slate-400">{row.label}</dt>
+          <dd
+            className={cn(
+              "min-w-0 break-words text-slate-700",
+              WRAP_ANYWHERE,
+            )}
+          >
             {row.value}
           </dd>
         </div>
@@ -532,7 +706,7 @@ function AutomatedRow({
   });
 
   return (
-    <li className="flex w-full flex-col items-end">
+    <li className="flex w-full flex-col items-end pl-16">
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -543,7 +717,7 @@ function AutomatedRow({
             data-event-role={role}
             data-campaign-state={campaignState}
             className={cn(
-              `group flex w-full max-w-2xl items-start gap-3 ${RADIUS.md} border px-4 py-3 text-left`,
+              "group flex w-full max-w-[560px] items-start gap-2.5 rounded-xl border px-4 py-2.5 text-left",
               "transition-[color,background-color,transform] duration-150 ease-out",
               "active:scale-[0.96]",
               TRANSITION.reduceMotion,
@@ -552,7 +726,7 @@ function AutomatedRow({
           >
             <div
               className={cn(
-                "mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-full border bg-white/90",
+                "mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md border bg-white/90",
                 descriptor.iconClassName,
               )}
             >
@@ -566,7 +740,7 @@ function AutomatedRow({
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={cn(
-                    "text-[11px] font-semibold uppercase tracking-[0.18em]",
+                    "text-[9.5px] font-semibold uppercase tracking-wider",
                     descriptor.labelClassName,
                   )}
                 >
@@ -583,7 +757,7 @@ function AutomatedRow({
               {headline ? (
                 <p
                   className={cn(
-                    "mt-2 text-pretty text-[13px] font-semibold leading-snug text-slate-900",
+                    "mt-0.5 text-pretty text-[12.5px] font-medium leading-snug text-slate-800",
                     WRAP_ANYWHERE,
                   )}
                 >
@@ -593,7 +767,7 @@ function AutomatedRow({
               {!hideCollapsedBody && body.length > 0 ? (
                 <p
                   className={cn(
-                    "text-[13px] leading-relaxed text-slate-700",
+                    "font-message-body text-[13.5px] leading-relaxed text-slate-700",
                     WRAP_ANYWHERE,
                     (headline !== null || role === "campaign") && "mt-1.5",
                     isExpanded
@@ -606,6 +780,9 @@ function AutomatedRow({
               ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-2 pt-1">
+              {role === "campaign" && campaignState !== undefined ? (
+                <CampaignStateBadge state={campaignState} />
+              ) : null}
               <ChevronRightIcon
                 className={`h-3.5 w-3.5 text-slate-500 transition-transform duration-150 ${
                   isExpanded ? "rotate-90" : ""
@@ -714,9 +891,9 @@ function NoteEntry({
   };
 
   return (
-    <li className="flex w-full flex-col items-end">
+    <li className="flex w-full flex-col items-end pl-16">
       <div
-        className={`w-full max-w-2xl ${RADIUS.md} border-l-2 border-amber-400 ${TONE.amber.subtle} px-4 py-2.5`}
+        className="w-full max-w-[640px] rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2.5 shadow-sm"
       >
         <div className="mb-1 flex items-center justify-between gap-3 text-[11px] text-amber-700">
           <div className="flex items-center gap-1.5">
@@ -842,7 +1019,7 @@ function NoteEntry({
           <>
             <p
               className={cn(
-                "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed text-amber-900",
+                "font-message-body whitespace-pre-wrap text-pretty text-[13.5px] leading-relaxed text-amber-900",
                 WRAP_ANYWHERE,
               )}
             >
@@ -870,42 +1047,39 @@ function SystemDivider({
   );
 
   return (
-    <li className="flex w-full justify-start">
+    <li className="flex w-full items-center justify-center gap-3 py-1.5">
+      <div className="h-px flex-1 bg-slate-200" />
       <div
         className={cn(
-          `flex w-full max-w-2xl items-start gap-3 ${RADIUS.md} border px-4 py-3`,
-          "border-amber-200 bg-amber-50/80",
+          "inline-flex max-w-[720px] items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 shadow-sm",
         )}
       >
         <div
           className={cn(
-            "mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-full border bg-white/90",
+            "inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-white",
             descriptor.iconClassName,
           )}
         >
-          <descriptor.Icon className="size-4" />
+          <descriptor.Icon className="size-3" />
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                "text-[11px] font-semibold uppercase tracking-[0.18em]",
-                descriptor.labelClassName,
-              )}
-            >
-              {descriptor.label}
-            </span>
-            <TimelineTimestamp
-              entry={entry}
-              className="text-[11px] text-slate-500"
-              asSpan
-            />
-          </div>
-          <p className="mt-2 text-pretty text-[13px] font-medium leading-relaxed text-slate-800">
-            {personalizeSystemBody(entry.body, volunteerFirstName)}
-          </p>
-        </div>
+        <span
+          className={cn(
+            "text-[10px] font-semibold uppercase tracking-wider",
+            descriptor.labelClassName,
+          )}
+        >
+          {descriptor.label}
+        </span>
+        <span className="text-[11.5px] text-slate-600">
+          {personalizeSystemBody(entry.body, volunteerFirstName)}
+        </span>
+        <TimelineTimestamp
+          entry={entry}
+          className="text-[11px] text-slate-400"
+          asSpan
+        />
       </div>
+      <div className="h-px flex-1 bg-slate-200" />
     </li>
   );
 }
@@ -926,8 +1100,9 @@ function describeEventRow(input: {
     return {
       label: input.isEmail ? "Campaign" : "Campaign SMS",
       Icon: MegaphoneIcon,
-      shellClassName: "border-violet-200 bg-violet-50/75 hover:bg-violet-50",
-      iconClassName: "border-violet-200 text-violet-700",
+      shellClassName:
+        "border-violet-200/70 bg-violet-50/30 hover:bg-violet-50/60",
+      iconClassName: "border-violet-100 bg-violet-100 text-violet-700",
       labelClassName: "text-violet-700",
     };
   }
@@ -944,10 +1119,10 @@ function describeEventRow(input: {
 
   return {
     label: input.isEmail ? "Automated" : "Automated SMS",
-    Icon: input.isEmail ? BotIcon : WandIcon,
-    shellClassName: "border-sky-200 bg-sky-50/75 hover:bg-sky-50",
-    iconClassName: "border-sky-200 text-sky-700",
-    labelClassName: "text-sky-700",
+    Icon: input.isEmail ? ZapIcon : WandIcon,
+    shellClassName: "border-slate-200 bg-slate-50/40 hover:bg-slate-100/60",
+    iconClassName: "border-slate-100 bg-slate-100 text-slate-600",
+    labelClassName: "text-slate-500",
   };
 }
 
@@ -995,6 +1170,49 @@ function CampaignStateIcon({
       ) : (
         <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-violet-500 ring-2 ring-white" />
       )}
+    </span>
+  );
+}
+
+function CampaignStateBadge({
+  state,
+}: {
+  readonly state: ReturnType<typeof describeCampaignVisualState>;
+}) {
+  const label =
+    state === "clicked"
+      ? "Clicked"
+      : state === "opened"
+        ? "Opened"
+        : state === "unsubscribed"
+          ? "Unsubscribed"
+          : "Sent";
+  const Icon =
+    state === "clicked"
+      ? MousePointerClickIcon
+      : state === "opened"
+        ? EyeIcon
+        : state === "unsubscribed"
+          ? XIcon
+          : CheckCircleIcon;
+  const className =
+    state === "clicked"
+      ? "bg-emerald-50 text-emerald-700"
+      : state === "opened"
+        ? "bg-indigo-50 text-indigo-700"
+        : state === "unsubscribed"
+          ? "bg-rose-50 text-rose-700"
+          : "bg-slate-50 text-slate-700";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+        className,
+      )}
+    >
+      <Icon className="size-2.5" />
+      {label}
     </span>
   );
 }
