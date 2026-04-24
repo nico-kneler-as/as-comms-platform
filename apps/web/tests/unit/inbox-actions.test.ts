@@ -1,13 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const revalidateTag = vi.hoisted(() => vi.fn());
-const revalidatePath = vi.hoisted(() => vi.fn());
 const requireSession = vi.hoisted(() => vi.fn());
 
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
-  revalidateTag,
-  revalidatePath,
 }));
 
 vi.mock("@/src/server/auth/session", () => ({
@@ -117,8 +113,6 @@ describe("server-backed follow-up actions", () => {
   let runtime: InboxTestRuntime | null = null;
 
   beforeEach(async () => {
-    revalidateTag.mockReset();
-    revalidatePath.mockReset();
     resetSecurityRateLimiterForTests();
     requireSession.mockReset();
     requireSession.mockResolvedValue(buildCurrentUser());
@@ -176,23 +170,12 @@ describe("server-backed follow-up actions", () => {
       needsFollowUp: true,
       bucket: "new",
     });
-    expect(revalidateTag).toHaveBeenCalledTimes(3);
-    expect(revalidateTag).toHaveBeenNthCalledWith(1, "inbox");
-    expect(revalidateTag).toHaveBeenNthCalledWith(
-      2,
-      "inbox:contact:contact:michael-chen",
-    );
-    expect(revalidateTag).toHaveBeenNthCalledWith(
-      3,
-      "timeline:contact:contact:michael-chen",
-    );
   });
 
   it("clears needsFollowUp without mutating unread state", async () => {
     const formData = new FormData();
     formData.set("contactId", "contact:michael-chen");
     await markInboxNeedsFollowUpAction(formData);
-    revalidateTag.mockReset();
 
     const result = await clearInboxNeedsFollowUpAction(formData);
     if (!runtime) throw new Error("runtime not initialized");
@@ -215,7 +198,6 @@ describe("server-backed follow-up actions", () => {
       bucket: "New",
     });
     expect(followUpList.items).toHaveLength(0);
-    expect(revalidateTag).toHaveBeenCalledTimes(3);
   });
 
   it("does not clobber fresher projection state when follow-up is toggled", async () => {

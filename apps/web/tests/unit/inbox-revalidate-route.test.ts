@@ -1,20 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const revalidatePath = vi.hoisted(() => vi.fn());
-const revalidateTag = vi.hoisted(() => vi.fn());
-
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
-  revalidatePath,
-  revalidateTag
 }));
 
 import { POST } from "../../app/api/internal/revalidate/route";
 
 describe("internal inbox revalidation route", () => {
   beforeEach(() => {
-    revalidatePath.mockReset();
-    revalidateTag.mockReset();
     process.env.INBOX_REVALIDATE_TOKEN = "test-token";
   });
 
@@ -41,14 +34,6 @@ describe("internal inbox revalidation route", () => {
       ok: true,
       contactIds: ["contact:one", "contact:two"]
     });
-    expect(revalidateTag).toHaveBeenCalledWith("inbox");
-    expect(revalidatePath).toHaveBeenCalledWith("/inbox");
-    expect(revalidateTag).toHaveBeenCalledWith("inbox:contact:contact:one");
-    expect(revalidateTag).toHaveBeenCalledWith("timeline:contact:contact:one");
-    expect(revalidatePath).toHaveBeenCalledWith("/inbox/contact%3Aone");
-    expect(revalidateTag).toHaveBeenCalledWith("inbox:contact:contact:two");
-    expect(revalidateTag).toHaveBeenCalledWith("timeline:contact:contact:two");
-    expect(revalidatePath).toHaveBeenCalledWith("/inbox/contact%3Atwo");
   });
 
   it("rejects unauthorized requests", async () => {
@@ -70,7 +55,5 @@ describe("internal inbox revalidation route", () => {
       ok: false,
       code: "unauthorized"
     });
-    expect(revalidateTag).not.toHaveBeenCalled();
-    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

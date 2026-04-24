@@ -2,14 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createStage1InternalNoteService } from "@as-comms/domain";
 
-const revalidateTag = vi.hoisted(() => vi.fn());
-const revalidatePath = vi.hoisted(() => vi.fn());
 const requireSession = vi.hoisted(() => vi.fn());
 
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
-  revalidateTag,
-  revalidatePath,
 }));
 
 vi.mock("@/src/server/auth/session", () => ({
@@ -70,8 +66,6 @@ describe("note server actions", () => {
   let runtime: Stage1WebTestRuntime | null = null;
 
   beforeEach(async () => {
-    revalidateTag.mockReset();
-    revalidatePath.mockReset();
     requireSession.mockReset();
     resetSecurityRateLimiterForTests();
     requireSession.mockResolvedValue(buildCurrentUser());
@@ -123,16 +117,6 @@ describe("note server actions", () => {
       }),
     ]);
     expect(audits.map((audit) => audit.action)).toEqual(["inbox.note_created"]);
-    expect(revalidateTag).toHaveBeenCalledTimes(3);
-    expect(revalidateTag).toHaveBeenNthCalledWith(1, "inbox");
-    expect(revalidateTag).toHaveBeenNthCalledWith(
-      2,
-      "inbox:contact:contact:existing",
-    );
-    expect(revalidateTag).toHaveBeenNthCalledWith(
-      3,
-      "timeline:contact:contact:existing",
-    );
   });
 
   it("rejects invalid note bodies", async () => {

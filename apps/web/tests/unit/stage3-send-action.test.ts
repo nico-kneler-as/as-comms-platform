@@ -1,14 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const revalidateTag = vi.hoisted(() => vi.fn());
-const revalidatePath = vi.hoisted(() => vi.fn());
 const requireSession = vi.hoisted(() => vi.fn());
 const sendComposerGmailMessage = vi.hoisted(() => vi.fn());
 
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
-  revalidateTag,
-  revalidatePath,
 }));
 
 vi.mock("@/src/server/auth/session", () => ({
@@ -110,8 +106,6 @@ describe("sendComposerAction", () => {
   let runtime: Stage1WebTestRuntime | null = null;
 
   beforeEach(async () => {
-    revalidateTag.mockReset();
-    revalidatePath.mockReset();
     requireSession.mockReset();
     sendComposerGmailMessage.mockReset();
     resetSecurityRateLimiterForTests();
@@ -181,16 +175,6 @@ describe("sendComposerAction", () => {
       "composer.send_attempted",
       "composer.send_succeeded",
     ]);
-    expect(revalidateTag).toHaveBeenCalledTimes(3);
-    expect(revalidateTag).toHaveBeenNthCalledWith(1, "inbox");
-    expect(revalidateTag).toHaveBeenNthCalledWith(
-      2,
-      `inbox:contact:${result.data.canonicalContactId}`
-    );
-    expect(revalidateTag).toHaveBeenNthCalledWith(
-      3,
-      `timeline:contact:${result.data.canonicalContactId}`
-    );
   });
 
   it("maps all typed Gmail send errors into the FP-07 envelope and marks the row failed", async () => {
