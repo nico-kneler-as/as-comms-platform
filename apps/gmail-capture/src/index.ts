@@ -1,14 +1,19 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 
 import {
   checkGmailCaptureServiceHealth,
   createGmailCaptureService,
   type CaptureServiceHttpRequest,
-  type GmailCaptureServiceConfig
+  type GmailCaptureServiceConfig,
 } from "@as-comms/integrations";
 import {
   integrationHealthCheckResponseSchema,
-  type IntegrationHealthCheckResponse
+  type IntegrationHealthCheckResponse,
 } from "@as-comms/contracts";
 import { z } from "zod";
 
@@ -16,8 +21,8 @@ const emailSchema = z.string().email();
 const volunteersEmailSchema = emailSchema.refine(
   (value) => value.toLowerCase().startsWith("volunteers@"),
   {
-    message: "GMAIL_LIVE_ACCOUNT must be a volunteers@... address."
-  }
+    message: "GMAIL_LIVE_ACCOUNT must be a volunteers@... address.",
+  },
 );
 
 export const gmailCaptureRuntimeConfigSchema = z.object({
@@ -31,14 +36,26 @@ export const gmailCaptureRuntimeConfigSchema = z.object({
     oauthClientSecret: z.string().min(1),
     oauthRefreshToken: z.string().min(1),
     tokenUri: z.string().url().default("https://oauth2.googleapis.com/token"),
-    timeoutMs: z.number().int().positive().default(15_000)
-  })
+    timeoutMs: z.number().int().positive().default(15_000),
+  }),
 });
 export type GmailCaptureRuntimeConfig = z.infer<
   typeof gmailCaptureRuntimeConfigSchema
 >;
 
-function parseEmailCsvEnv(envValue: string | undefined, envName: string): string[] {
+const MAX_REQUEST_BODY_BYTES = 1_000_000;
+
+class RequestBodyTooLargeError extends Error {
+  constructor() {
+    super("Request body is too large.");
+    this.name = "RequestBodyTooLargeError";
+  }
+}
+
+function parseEmailCsvEnv(
+  envValue: string | undefined,
+  envName: string,
+): string[] {
   if (envValue === undefined || envValue.trim().length === 0) {
     throw new Error(`${envName} is required.`);
   }
@@ -53,7 +70,7 @@ function parseEmailCsvEnv(envValue: string | undefined, envName: string): string
 
 function parseRequiredStringEnv(
   envValue: string | undefined,
-  envName: string
+  envName: string,
 ): string {
   if (envValue === undefined || envValue.trim().length === 0) {
     throw new Error(`${envName} is required.`);
@@ -65,80 +82,105 @@ function parseRequiredStringEnv(
 function parseOptionalPositiveIntEnv(
   envValue: string | undefined,
   defaultValue: number,
-  envName: string
+  envName: string,
 ): number {
   if (envValue === undefined || envValue.trim().length === 0) {
     return defaultValue;
   }
 
-  return z.coerce.number().int().positive().parse(envValue, {
-    errorMap: () => ({
-      message: `${envName} must be a positive integer.`
-    })
-  });
+  return z.coerce
+    .number()
+    .int()
+    .positive()
+    .parse(envValue, {
+      errorMap: () => ({
+        message: `${envName} must be a positive integer.`,
+      }),
+    });
 }
 
 export function readGmailCaptureRuntimeConfig(
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
 ): GmailCaptureRuntimeConfig {
   return gmailCaptureRuntimeConfigSchema.parse({
     host: env.HOST ?? "0.0.0.0",
     port: parseOptionalPositiveIntEnv(env.PORT, 3001, "PORT"),
     service: {
-      bearerToken: parseRequiredStringEnv(env.GMAIL_CAPTURE_TOKEN, "GMAIL_CAPTURE_TOKEN"),
+      bearerToken: parseRequiredStringEnv(
+        env.GMAIL_CAPTURE_TOKEN,
+        "GMAIL_CAPTURE_TOKEN",
+      ),
       liveAccount: parseRequiredStringEnv(
         env.GMAIL_LIVE_ACCOUNT,
-        "GMAIL_LIVE_ACCOUNT"
+        "GMAIL_LIVE_ACCOUNT",
       ),
       projectInboxAliases: parseEmailCsvEnv(
         env.GMAIL_PROJECT_INBOX_ALIASES,
-        "GMAIL_PROJECT_INBOX_ALIASES"
+        "GMAIL_PROJECT_INBOX_ALIASES",
       ),
       oauthClientId: parseRequiredStringEnv(
         env.GMAIL_GOOGLE_OAUTH_CLIENT_ID,
-        "GMAIL_GOOGLE_OAUTH_CLIENT_ID"
+        "GMAIL_GOOGLE_OAUTH_CLIENT_ID",
       ),
       oauthClientSecret: parseRequiredStringEnv(
         env.GMAIL_GOOGLE_OAUTH_CLIENT_SECRET,
-        "GMAIL_GOOGLE_OAUTH_CLIENT_SECRET"
+        "GMAIL_GOOGLE_OAUTH_CLIENT_SECRET",
       ),
       oauthRefreshToken: parseRequiredStringEnv(
         env.GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN,
-        "GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN"
+        "GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN",
       ),
-      tokenUri:
-        env.GMAIL_GOOGLE_TOKEN_URI?.trim().length
-          ? env.GMAIL_GOOGLE_TOKEN_URI.trim()
-          : "https://oauth2.googleapis.com/token",
+      tokenUri: env.GMAIL_GOOGLE_TOKEN_URI?.trim().length
+        ? env.GMAIL_GOOGLE_TOKEN_URI.trim()
+        : "https://oauth2.googleapis.com/token",
       timeoutMs: parseOptionalPositiveIntEnv(
         env.GMAIL_CAPTURE_TIMEOUT_MS,
         15_000,
-        "GMAIL_CAPTURE_TIMEOUT_MS"
-      )
-    }
+        "GMAIL_CAPTURE_TIMEOUT_MS",
+      ),
+    },
   });
 }
 
 function createHttpRequest(
   request: IncomingMessage,
-  bodyText: string
+  bodyText: string,
 ): CaptureServiceHttpRequest {
   return {
     method: request.method ?? "GET",
     path: new URL(request.url ?? "/", "http://gmail-capture.local").pathname,
     headers: request.headers,
-    bodyText
+    bodyText,
   };
 }
 
 function readRequestBody(request: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let rejected = false;
 
     request.on("data", (chunk: Buffer | string) => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      if (rejected) {
+        return;
+      }
+
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buffer.length;
+
+      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+        rejected = true;
+        reject(new RequestBodyTooLargeError());
+        return;
+      }
+
+      chunks.push(buffer);
     });
     request.on("end", () => {
+      if (rejected) {
+        return;
+      }
+
       resolve(Buffer.concat(chunks).toString("utf8"));
     });
     request.on("error", reject);
@@ -151,7 +193,7 @@ function writeResponse(
     readonly status: number;
     readonly headers: Record<string, string>;
     readonly body: string;
-  }
+  },
 ): void {
   response.writeHead(input.status, input.headers);
   response.end(input.body);
@@ -173,7 +215,7 @@ export async function handleGmailHealthRequest(
     readonly fetchImplementation?: typeof fetch;
     readonly now?: () => Date;
     readonly version?: string | null;
-  }
+  },
 ): Promise<IntegrationHealthCheckResponse> {
   const health = await checkGmailCaptureServiceHealth(config.service, {
     timeoutMs: 5_000,
@@ -181,57 +223,69 @@ export async function handleGmailHealthRequest(
     ...(input?.fetchImplementation === undefined
       ? {}
       : { fetchImplementation: input.fetchImplementation }),
-    ...(input?.now === undefined ? {} : { now: input.now })
+    ...(input?.now === undefined ? {} : { now: input.now }),
   });
 
   return integrationHealthCheckResponseSchema.parse(health);
 }
 
 export async function startGmailCaptureServer(
-  config: GmailCaptureRuntimeConfig
+  config: GmailCaptureRuntimeConfig,
 ): Promise<Server> {
   const service = createGmailCaptureService(
-    config.service satisfies GmailCaptureServiceConfig
+    config.service satisfies GmailCaptureServiceConfig,
   );
 
   async function handleRequest(
     request: IncomingMessage,
-    response: ServerResponse
+    response: ServerResponse,
   ): Promise<void> {
     try {
-      const path = new URL(
-        request.url ?? "/",
-        "http://gmail-capture.local"
-      ).pathname;
+      const path = new URL(request.url ?? "/", "http://gmail-capture.local")
+        .pathname;
 
       if (request.method === "GET" && path === "/health") {
         const health = await handleGmailHealthRequest(config);
         writeResponse(response, {
           status: 200,
           headers: {
-            "content-type": "application/json; charset=utf-8"
+            "content-type": "application/json; charset=utf-8",
           },
-          body: JSON.stringify(health)
+          body: JSON.stringify(health),
         });
         return;
       }
 
       const bodyText = await readRequestBody(request);
       const serviceResponse = await service.handleHttpRequest(
-        createHttpRequest(request, bodyText)
+        createHttpRequest(request, bodyText),
       );
       writeResponse(response, serviceResponse);
     } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        writeResponse(response, {
+          status: 413,
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify({
+            ok: false,
+            error: "payload_too_large",
+          }),
+        });
+        return;
+      }
+
       console.error("Gmail capture request failed.");
       console.error(error instanceof Error ? error.message : String(error));
       writeResponse(response, {
         status: 500,
         headers: {
-          "content-type": "application/json; charset=utf-8"
+          "content-type": "application/json; charset=utf-8",
         },
         body: JSON.stringify({
-          error: "internal_error"
-        })
+          error: "internal_error",
+        }),
       });
     }
   }
@@ -253,7 +307,7 @@ async function main(): Promise<void> {
   const config = readGmailCaptureRuntimeConfig(process.env);
   await startGmailCaptureServer(config);
   console.info(
-    `Gmail capture service is listening on http://${config.host}:${String(config.port)}`
+    `Gmail capture service is listening on http://${config.host}:${String(config.port)}`,
   );
 }
 

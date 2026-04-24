@@ -1,14 +1,20 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
+import { randomUUID } from "node:crypto";
 
 import {
   checkSalesforceCaptureServiceHealth,
   createSalesforceCaptureService,
   type CaptureServiceHttpRequest,
-  type SalesforceCaptureServiceConfig
+  type SalesforceCaptureServiceConfig,
 } from "@as-comms/integrations";
 import {
   integrationHealthCheckResponseSchema,
-  type IntegrationHealthCheckResponse
+  type IntegrationHealthCheckResponse,
 } from "@as-comms/contracts";
 import { z } from "zod";
 
@@ -33,21 +39,36 @@ export const salesforceCaptureRuntimeConfigSchema = z.object({
     membershipStatusField: z.string().min(1).default("Status__c"),
     taskContactField: z.string().min(1).default("WhoId"),
     taskChannelField: z.string().min(1).default("TaskSubtype"),
-    taskEmailChannelValues: z.array(z.string().min(1)).min(1).default(["Email"]),
-    taskSmsChannelValues: z.array(z.string().min(1)).min(1).default(["SMS", "Text"]),
+    taskEmailChannelValues: z
+      .array(z.string().min(1))
+      .min(1)
+      .default(["Email"]),
+    taskSmsChannelValues: z
+      .array(z.string().min(1))
+      .min(1)
+      .default(["SMS", "Text"]),
     taskSnippetField: z.string().min(1).default("Description"),
     taskOccurredAtField: z.string().min(1).default("CreatedDate"),
     taskCrossProviderKeyField: z.string().min(1).nullable().default(null),
-    timeoutMs: z.number().int().positive().default(15_000)
-  })
+    timeoutMs: z.number().int().positive().default(15_000),
+  }),
 });
 export type SalesforceCaptureRuntimeConfig = z.infer<
   typeof salesforceCaptureRuntimeConfigSchema
 >;
 
+const MAX_REQUEST_BODY_BYTES = 1_000_000;
+
+class RequestBodyTooLargeError extends Error {
+  constructor() {
+    super("Request body is too large.");
+    this.name = "RequestBodyTooLargeError";
+  }
+}
+
 function parseRequiredStringEnv(
   envValue: string | undefined,
-  envName: string
+  envName: string,
 ): string {
   if (envValue === undefined || envValue.trim().length === 0) {
     throw new Error(`${envName} is required.`);
@@ -59,22 +80,26 @@ function parseRequiredStringEnv(
 function parseOptionalPositiveIntEnv(
   envValue: string | undefined,
   defaultValue: number,
-  envName: string
+  envName: string,
 ): number {
   if (envValue === undefined || envValue.trim().length === 0) {
     return defaultValue;
   }
 
-  return z.coerce.number().int().positive().parse(envValue, {
-    errorMap: () => ({
-      message: `${envName} must be a positive integer.`
-    })
-  });
+  return z.coerce
+    .number()
+    .int()
+    .positive()
+    .parse(envValue, {
+      errorMap: () => ({
+        message: `${envName} must be a positive integer.`,
+      }),
+    });
 }
 
 function parseCsvEnv(
   envValue: string | undefined,
-  defaultValues: readonly string[]
+  defaultValues: readonly string[],
 ): string[] {
   if (envValue === undefined || envValue.trim().length === 0) {
     return [...defaultValues];
@@ -88,7 +113,7 @@ function parseCsvEnv(
 
 function parseOptionalStringEnv(
   envValue: string | undefined,
-  defaultValue: string
+  defaultValue: string,
 ): string {
   const normalizedValue = envValue?.trim();
   return normalizedValue && normalizedValue.length > 0
@@ -97,16 +122,14 @@ function parseOptionalStringEnv(
 }
 
 function parseOptionalNullableStringEnv(
-  envValue: string | undefined
+  envValue: string | undefined,
 ): string | null {
   const normalizedValue = envValue?.trim();
-  return normalizedValue && normalizedValue.length > 0
-    ? normalizedValue
-    : null;
+  return normalizedValue && normalizedValue.length > 0 ? normalizedValue : null;
 }
 
 export function readSalesforceCaptureRuntimeConfig(
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
 ): SalesforceCaptureRuntimeConfig {
   return salesforceCaptureRuntimeConfigSchema.parse({
     host: env.HOST ?? "0.0.0.0",
@@ -114,117 +137,137 @@ export function readSalesforceCaptureRuntimeConfig(
     service: {
       bearerToken: parseRequiredStringEnv(
         env.SALESFORCE_CAPTURE_TOKEN,
-        "SALESFORCE_CAPTURE_TOKEN"
+        "SALESFORCE_CAPTURE_TOKEN",
       ),
       loginUrl: parseRequiredStringEnv(
         env.SALESFORCE_LOGIN_URL,
-        "SALESFORCE_LOGIN_URL"
+        "SALESFORCE_LOGIN_URL",
       ),
       clientId: parseRequiredStringEnv(
         env.SALESFORCE_CLIENT_ID,
-        "SALESFORCE_CLIENT_ID"
+        "SALESFORCE_CLIENT_ID",
       ),
       username: parseRequiredStringEnv(
         env.SALESFORCE_USERNAME,
-        "SALESFORCE_USERNAME"
+        "SALESFORCE_USERNAME",
       ),
       jwtPrivateKey: parseRequiredStringEnv(
         env.SALESFORCE_JWT_PRIVATE_KEY,
-        "SALESFORCE_JWT_PRIVATE_KEY"
+        "SALESFORCE_JWT_PRIVATE_KEY",
       ),
       jwtExpirationSeconds: parseOptionalPositiveIntEnv(
         env.SALESFORCE_JWT_EXPIRATION_SECONDS,
         180,
-        "SALESFORCE_JWT_EXPIRATION_SECONDS"
+        "SALESFORCE_JWT_EXPIRATION_SECONDS",
       ),
       apiVersion: parseOptionalStringEnv(env.SALESFORCE_API_VERSION, "61.0"),
       contactCaptureMode: parseRequiredStringEnv(
         env.SALESFORCE_CONTACT_CAPTURE_MODE,
-        "SALESFORCE_CONTACT_CAPTURE_MODE"
+        "SALESFORCE_CONTACT_CAPTURE_MODE",
       ),
       membershipCaptureMode: parseRequiredStringEnv(
         env.SALESFORCE_MEMBERSHIP_CAPTURE_MODE,
-        "SALESFORCE_MEMBERSHIP_CAPTURE_MODE"
+        "SALESFORCE_MEMBERSHIP_CAPTURE_MODE",
       ),
       membershipObjectName: parseOptionalStringEnv(
         env.SALESFORCE_EXPEDITION_MEMBER_OBJECT,
-        "Expedition_Members__c"
+        "Expedition_Members__c",
       ),
       membershipContactField: parseOptionalStringEnv(
         env.SALESFORCE_EXPEDITION_MEMBER_CONTACT_FIELD,
-        "Contact__c"
+        "Contact__c",
       ),
       membershipProjectField: parseOptionalStringEnv(
         env.SALESFORCE_EXPEDITION_MEMBER_PROJECT_FIELD,
-        "Project__c"
+        "Project__c",
       ),
       membershipExpeditionField: parseOptionalStringEnv(
         env.SALESFORCE_EXPEDITION_MEMBER_EXPEDITION_FIELD,
-        "Expedition__c"
+        "Expedition__c",
       ),
       membershipRoleField: parseOptionalNullableStringEnv(
-        env.SALESFORCE_EXPEDITION_MEMBER_ROLE_FIELD
+        env.SALESFORCE_EXPEDITION_MEMBER_ROLE_FIELD,
       ),
       membershipStatusField: parseOptionalStringEnv(
         env.SALESFORCE_EXPEDITION_MEMBER_STATUS_FIELD,
-        "Status__c"
+        "Status__c",
       ),
       taskContactField: parseOptionalStringEnv(
         env.SALESFORCE_TASK_CONTACT_FIELD,
-        "WhoId"
+        "WhoId",
       ),
       taskChannelField: parseOptionalStringEnv(
         env.SALESFORCE_TASK_CHANNEL_FIELD,
-        "TaskSubtype"
+        "TaskSubtype",
       ),
       taskEmailChannelValues: parseCsvEnv(
         env.SALESFORCE_TASK_EMAIL_CHANNEL_VALUES,
-        ["Email"]
+        ["Email"],
       ),
       taskSmsChannelValues: parseCsvEnv(
         env.SALESFORCE_TASK_SMS_CHANNEL_VALUES,
-        ["SMS", "Text"]
+        ["SMS", "Text"],
       ),
       taskSnippetField: parseOptionalStringEnv(
         env.SALESFORCE_TASK_SNIPPET_FIELD,
-        "Description"
+        "Description",
       ),
       taskOccurredAtField: parseOptionalStringEnv(
         env.SALESFORCE_TASK_OCCURRED_AT_FIELD,
-        "CreatedDate"
+        "CreatedDate",
       ),
       taskCrossProviderKeyField: parseOptionalNullableStringEnv(
-        env.SALESFORCE_TASK_CROSS_PROVIDER_KEY_FIELD
+        env.SALESFORCE_TASK_CROSS_PROVIDER_KEY_FIELD,
       ),
       timeoutMs: parseOptionalPositiveIntEnv(
         env.SALESFORCE_CAPTURE_TIMEOUT_MS,
         15_000,
-        "SALESFORCE_CAPTURE_TIMEOUT_MS"
-      )
-    }
+        "SALESFORCE_CAPTURE_TIMEOUT_MS",
+      ),
+    },
   });
 }
 
 function createHttpRequest(
   request: IncomingMessage,
-  bodyText: string
+  bodyText: string,
 ): CaptureServiceHttpRequest {
   return {
     method: request.method ?? "GET",
-    path: new URL(request.url ?? "/", "http://salesforce-capture.local").pathname,
+    path: new URL(request.url ?? "/", "http://salesforce-capture.local")
+      .pathname,
     headers: request.headers,
-    bodyText
+    bodyText,
   };
 }
 
 function readRequestBody(request: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let rejected = false;
 
     request.on("data", (chunk: Buffer | string) => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      if (rejected) {
+        return;
+      }
+
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buffer.length;
+
+      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+        rejected = true;
+        reject(new RequestBodyTooLargeError());
+        return;
+      }
+
+      chunks.push(buffer);
     });
     request.on("end", () => {
+      if (rejected) {
+        return;
+      }
+
       resolve(Buffer.concat(chunks).toString("utf8"));
     });
     request.on("error", reject);
@@ -237,7 +280,7 @@ function writeResponse(
     readonly status: number;
     readonly headers: Record<string, string>;
     readonly body: string;
-  }
+  },
 ): void {
   response.writeHead(input.status, input.headers);
   response.end(input.body);
@@ -253,28 +296,11 @@ function readServiceVersion(env: NodeJS.ProcessEnv): string | null {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
-function parseRequestBodyForLogging(bodyText: string): unknown {
-  if (bodyText.trim().length === 0) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(bodyText) as unknown;
-  } catch {
-    return bodyText;
-  }
-}
-
 function getErrorDetails(error: unknown): {
   readonly errorName: string;
-  readonly errorMessage: string;
-  readonly errorStack: string | null;
 } {
   return {
-    errorName:
-      error instanceof Error ? error.constructor.name : typeof error,
-    errorMessage: error instanceof Error ? error.message : String(error),
-    errorStack: error instanceof Error ? (error.stack ?? null) : null
+    errorName: error instanceof Error ? error.constructor.name : typeof error,
   };
 }
 
@@ -295,29 +321,25 @@ function logSalesforceCaptureRequestError(input: {
   readonly error: unknown;
   readonly method: string;
   readonly path: string;
-  readonly requestBody: unknown;
 }): {
-  readonly errorName: string;
-  readonly errorMessage: string;
+  readonly requestId: string;
 } {
-  const { errorName, errorMessage, errorStack } = getErrorDetails(input.error);
+  const { errorName } = getErrorDetails(input.error);
+  const requestId = randomUUID();
 
   console.error(
     JSON.stringify({
       event: getSalesforceCaptureErrorEvent(input.path),
+      requestId,
       errorName,
-      errorMessage,
-      errorStack,
       requestMethod: input.method,
       requestPath: input.path,
-      requestBody: input.requestBody,
-      occurredAt: new Date().toISOString()
-    })
+      occurredAt: new Date().toISOString(),
+    }),
   );
 
   return {
-    errorName,
-    errorMessage
+    requestId,
   };
 }
 
@@ -327,7 +349,7 @@ export async function handleSalesforceHealthRequest(
     readonly fetchImplementation?: typeof fetch;
     readonly now?: () => Date;
     readonly version?: string | null;
-  }
+  },
 ): Promise<IntegrationHealthCheckResponse> {
   const health = await checkSalesforceCaptureServiceHealth(config.service, {
     timeoutMs: 5_000,
@@ -335,70 +357,77 @@ export async function handleSalesforceHealthRequest(
     ...(input?.fetchImplementation === undefined
       ? {}
       : { fetchImplementation: input.fetchImplementation }),
-    ...(input?.now === undefined ? {} : { now: input.now })
+    ...(input?.now === undefined ? {} : { now: input.now }),
   });
 
   return integrationHealthCheckResponseSchema.parse(health);
 }
 
 export async function startSalesforceCaptureServer(
-  config: SalesforceCaptureRuntimeConfig
+  config: SalesforceCaptureRuntimeConfig,
 ): Promise<Server> {
   const service = createSalesforceCaptureService(
-    config.service satisfies SalesforceCaptureServiceConfig
+    config.service satisfies SalesforceCaptureServiceConfig,
   );
 
   async function handleRequest(
     request: IncomingMessage,
-    response: ServerResponse
+    response: ServerResponse,
   ): Promise<void> {
     let path = "/";
-    let requestBody: unknown = null;
 
     try {
-      path = new URL(
-        request.url ?? "/",
-        "http://salesforce-capture.local"
-      ).pathname;
+      path = new URL(request.url ?? "/", "http://salesforce-capture.local")
+        .pathname;
 
       if (request.method === "GET" && path === "/health") {
         const health = await handleSalesforceHealthRequest(config);
         writeResponse(response, {
           status: 200,
           headers: {
-            "content-type": "application/json; charset=utf-8"
+            "content-type": "application/json; charset=utf-8",
           },
-          body: JSON.stringify(health)
+          body: JSON.stringify(health),
         });
         return;
       }
 
       const bodyText = await readRequestBody(request);
-      requestBody = parseRequestBodyForLogging(bodyText);
       const serviceResponse = await service.handleHttpRequest(
-        createHttpRequest(request, bodyText)
+        createHttpRequest(request, bodyText),
       );
       writeResponse(response, serviceResponse);
     } catch (error) {
-      const { errorName, errorMessage } = logSalesforceCaptureRequestError({
+      if (error instanceof RequestBodyTooLargeError) {
+        writeResponse(response, {
+          status: 413,
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify({
+            ok: false,
+            error: "payload_too_large",
+          }),
+        });
+        return;
+      }
+
+      const { requestId } = logSalesforceCaptureRequestError({
         error,
         method: request.method ?? "GET",
         path,
-        requestBody
       });
 
       writeResponse(response, {
         status: 500,
         headers: {
-          "content-type": "application/json; charset=utf-8"
+          "content-type": "application/json; charset=utf-8",
         },
         body: JSON.stringify({
           ok: false,
-          error: {
-            name: errorName,
-            message: errorMessage
-          }
-        })
+          error: "internal_error",
+          requestId,
+        }),
       });
     }
   }
@@ -420,7 +449,7 @@ async function main(): Promise<void> {
   const config = readSalesforceCaptureRuntimeConfig(process.env);
   await startSalesforceCaptureServer(config);
   console.info(
-    `Salesforce capture service is listening on http://${config.host}:${String(config.port)}`
+    `Salesforce capture service is listening on http://${config.host}:${String(config.port)}`,
   );
 }
 

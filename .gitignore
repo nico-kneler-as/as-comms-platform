@@ -14,6 +14,7 @@ test-results
 .DS_Store
 .playwright-cli
 output
+mbox files/
 .claude/settings.local.json
 .design-handoff/
 .codex-worktrees/*/.design-handoff/
