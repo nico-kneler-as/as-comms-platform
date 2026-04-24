@@ -25,7 +25,7 @@ Build the one-to-one operator workspace on top of canonical projections.
 
 - one row per person, not one row per thread
 - one mixed contact list sorted by most recent inbound message
-- `New` and `Opened` remain projection-driven bucket states, but they are row states and filters rather than the primary Inbox partition
+- `New` and `Opened` are projection-driven by default, with operator-explicit overrides: opening a thread marks it `Opened` and the "Mark as unread" action flips it back to `New`. Shared across operators (single stored `bucket` column, no per-user read state). A new inbound with `occurredAt > existingLastInboundAt` resets the contact bucket to `New` regardless of prior state; out-of-order or historical-replay ingests do not disturb operator bucket state.
 - unread comes from bucket state
 - `needsFollowUp` is an explicit operator-controlled follow-up flag, not a bucket synonym (pure toggle, no auto-clear on inbound/reply/bucket transitions)
 - unresolved review layers on top of the row state model
@@ -59,13 +59,16 @@ Build the one-to-one operator workspace on top of canonical projections.
 
 ## Acceptance
 
-- queue bucket changes are projection-driven
+- queue bucket transitions are driven by a mix of projection rebuilds (on new inbound) and operator-explicit overrides (mark-opened on thread open, mark-unread via the detail-pane button)
 - default Inbox ordering is `lastInboundAt desc`, with `lastActivityAt desc` fallback when `lastInboundAt` is missing
+- inbox row label matches the sort key: uses `lastInboundAt ?? lastActivityAt` so the list is visually monotonic
 - unread filter keys off bucket state, follow-up filter keys off `needsFollowUp`, and unresolved filter keys off `hasUnresolved`
+- read state is shared across operators (single stored `bucket` column, no per-user read state)
 - timeline remains correct for volunteers and non-volunteer contacts
 - unresolved/manual-link flows refresh context without duplicate history
 - opening, replying, new inbound resets, and follow-up toggles stay consistent without collapsing bucket and follow-up semantics
 - campaign events do not mutate Inbox bucket state
+- inbox server views render dynamically (D-040): `revalidateInboxContact` is preserved as an integration point but currently a no-op; interactive actions call `router.refresh()` to re-read fresh server-rendered state without disturbing client editor / composer state
 
 ## Common Failure Modes
 
