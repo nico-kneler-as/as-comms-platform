@@ -1657,9 +1657,7 @@ export function createSalesforceCaptureService(
           });
         }
 
-        return jsonResponse(500, {
-          error: "internal_error",
-        });
+        throw error;
       }
     },
   };

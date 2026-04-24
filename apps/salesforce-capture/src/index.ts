@@ -253,6 +253,74 @@ function readServiceVersion(env: NodeJS.ProcessEnv): string | null {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
+function parseRequestBodyForLogging(bodyText: string): unknown {
+  if (bodyText.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(bodyText) as unknown;
+  } catch {
+    return bodyText;
+  }
+}
+
+function getErrorDetails(error: unknown): {
+  readonly errorName: string;
+  readonly errorMessage: string;
+  readonly errorStack: string | null;
+} {
+  return {
+    errorName:
+      error instanceof Error ? error.constructor.name : typeof error,
+    errorMessage: error instanceof Error ? error.message : String(error),
+    errorStack: error instanceof Error ? (error.stack ?? null) : null
+  };
+}
+
+function getSalesforceCaptureErrorEvent(path: string): string {
+  switch (path) {
+    case "/live":
+      return "salesforce_capture.live.error";
+    case "/historical":
+      return "salesforce_capture.historical.error";
+    case "/health":
+      return "salesforce_capture.health.error";
+    default:
+      return "salesforce_capture.request.error";
+  }
+}
+
+function logSalesforceCaptureRequestError(input: {
+  readonly error: unknown;
+  readonly method: string;
+  readonly path: string;
+  readonly requestBody: unknown;
+}): {
+  readonly errorName: string;
+  readonly errorMessage: string;
+} {
+  const { errorName, errorMessage, errorStack } = getErrorDetails(input.error);
+
+  console.error(
+    JSON.stringify({
+      event: getSalesforceCaptureErrorEvent(input.path),
+      errorName,
+      errorMessage,
+      errorStack,
+      requestMethod: input.method,
+      requestPath: input.path,
+      requestBody: input.requestBody,
+      occurredAt: new Date().toISOString()
+    })
+  );
+
+  return {
+    errorName,
+    errorMessage
+  };
+}
+
 export async function handleSalesforceHealthRequest(
   config: SalesforceCaptureRuntimeConfig,
   input?: {
@@ -284,8 +352,11 @@ export async function startSalesforceCaptureServer(
     request: IncomingMessage,
     response: ServerResponse
   ): Promise<void> {
+    let path = "/";
+    let requestBody: unknown = null;
+
     try {
-      const path = new URL(
+      path = new URL(
         request.url ?? "/",
         "http://salesforce-capture.local"
       ).pathname;
@@ -303,20 +374,30 @@ export async function startSalesforceCaptureServer(
       }
 
       const bodyText = await readRequestBody(request);
+      requestBody = parseRequestBodyForLogging(bodyText);
       const serviceResponse = await service.handleHttpRequest(
         createHttpRequest(request, bodyText)
       );
       writeResponse(response, serviceResponse);
     } catch (error) {
-      console.error("Salesforce capture request failed.");
-      console.error(error instanceof Error ? error.message : String(error));
+      const { errorName, errorMessage } = logSalesforceCaptureRequestError({
+        error,
+        method: request.method ?? "GET",
+        path,
+        requestBody
+      });
+
       writeResponse(response, {
         status: 500,
         headers: {
           "content-type": "application/json; charset=utf-8"
         },
         body: JSON.stringify({
-          error: "internal_error"
+          ok: false,
+          error: {
+            name: errorName,
+            message: errorMessage
+          }
         })
       });
     }

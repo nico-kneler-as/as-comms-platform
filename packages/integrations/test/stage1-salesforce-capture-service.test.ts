@@ -268,6 +268,48 @@ describe("Salesforce capture service", () => {
     expect(queryCount).toBe(0);
   });
 
+  it("rethrows unknown live request failures for caller-level logging", async () => {
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: {
+          queryAll: () => {
+            throw new Error("Salesforce query failed");
+          },
+        },
+      },
+    );
+
+    await expect(
+      service.handleHttpRequest({
+        method: "POST",
+        path: "/live",
+        headers: {
+          authorization: "Bearer salesforce-token",
+        },
+        bodyText: JSON.stringify({
+          version: 1,
+          jobId: "job:salesforce:live:1",
+          correlationId: "corr:salesforce:live:1",
+          traceId: null,
+          batchId: "batch:salesforce:live:1",
+          syncStateId: "sync:salesforce:live:1",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "salesforce",
+          mode: "live",
+          jobType: "live_ingest",
+          cursor: null,
+          checkpoint: null,
+          windowStart: "2026-01-01T00:00:00.000Z",
+          windowEnd: "2026-01-06T00:00:00.000Z",
+          recordIds: [],
+          maxRecords: 25,
+        }),
+      }),
+    ).rejects.toThrow("Salesforce query failed");
+  });
+
   it("returns launch-scope Salesforce Contact, Expedition_Members__c, and Task records in the worker-facing provider-close shape", async () => {
     const queries: string[] = [];
     const baseApiClient = createFakeSalesforceApiClient();
