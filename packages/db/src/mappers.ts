@@ -1,4 +1,5 @@
 import {
+  aiKnowledgeEntrySchema,
   auditEvidenceSchema,
   canonicalEventSchema,
   contactIdentitySchema,
@@ -20,6 +21,7 @@ import {
   syncStateSchema,
   timelineProjectionSchema,
   type AuditEvidenceRecord,
+  type AiKnowledgeEntryRecord,
   type CanonicalEventRecord,
   type ContactIdentityRecord,
   type ContactMembershipRecord,
@@ -48,6 +50,7 @@ import type {
 } from "@as-comms/domain";
 
 import type {
+  aiKnowledgeEntries,
   auditPolicyEvidence,
   canonicalEventLedger,
   contactIdentities,
@@ -74,6 +77,7 @@ import type {
 } from "./schema/index.js";
 
 type SourceEvidenceRow = typeof sourceEvidenceLog.$inferSelect;
+type AiKnowledgeEntryRow = typeof aiKnowledgeEntries.$inferSelect;
 type CanonicalEventRow = typeof canonicalEventLedger.$inferSelect;
 type ContactRow = typeof contacts.$inferSelect;
 type ContactIdentityRow = typeof contactIdentities.$inferSelect;
@@ -122,6 +126,51 @@ export function mapSourceEvidenceRow(
     idempotencyKey: row.idempotencyKey,
     checksum: row.checksum,
   });
+}
+
+export function mapAiKnowledgeEntryRow(
+  row: AiKnowledgeEntryRow,
+): AiKnowledgeEntryRecord {
+  return aiKnowledgeEntrySchema.parse({
+    id: row.id,
+    scope: row.scope,
+    scopeKey: row.scopeKey,
+    sourceProvider: row.sourceProvider,
+    sourceId: row.sourceId,
+    sourceUrl: row.sourceUrl,
+    title: row.title,
+    content: row.content,
+    contentHash: row.contentHash,
+    metadataJson: row.metadataJson,
+    sourceLastEditedAt: fromDate(row.sourceLastEditedAt),
+    syncedAt: row.syncedAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  });
+}
+
+export function mapAiKnowledgeEntryToInsert(
+  record: AiKnowledgeEntryRecord,
+): typeof aiKnowledgeEntries.$inferInsert {
+  const parsed = aiKnowledgeEntrySchema.parse(record);
+
+  return {
+    id: parsed.id,
+    scope: parsed.scope,
+    scopeKey: parsed.scopeKey,
+    sourceProvider: parsed.sourceProvider,
+    sourceId: parsed.sourceId,
+    sourceUrl: parsed.sourceUrl,
+    title: parsed.title,
+    content: parsed.content,
+    contentHash: parsed.contentHash,
+    metadataJson: parsed.metadataJson,
+    sourceLastEditedAt:
+      parsed.sourceLastEditedAt === null ? null : toDate(parsed.sourceLastEditedAt),
+    syncedAt: toDate(parsed.syncedAt),
+    createdAt: toDate(parsed.createdAt),
+    updatedAt: toDate(parsed.updatedAt),
+  };
 }
 
 export function mapSourceEvidenceToInsert(

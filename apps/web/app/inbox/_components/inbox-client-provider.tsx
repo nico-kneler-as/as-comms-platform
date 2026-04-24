@@ -10,6 +10,10 @@ import {
 } from "react";
 
 import type {
+  AiDraftRequestPayload,
+  AiDraftResponseVm,
+} from "../actions";
+import type {
   InboxComposerAliasOption,
   InboxComposerReplyContext
 } from "../_lib/view-models";
@@ -55,16 +59,41 @@ export type AiDraftStatus =
 
 export interface AiDraftState {
   readonly status: AiDraftStatus;
+  readonly mode: AiDraftRequestPayload["mode"] | null;
+  readonly responseMode: AiDraftResponseVm["mode"] | null;
   readonly prompt: string;
   readonly generatedText: string;
   readonly errorMessage: string | null;
+  readonly grounding: AiDraftResponseVm["grounding"];
+  readonly warnings: AiDraftResponseVm["warnings"];
+  readonly costEstimateUsd: number | null;
+  readonly draftId: string | null;
+  readonly repromptIndex: number;
+  readonly repromptChain: readonly {
+    readonly direction: string;
+    readonly draft: string;
+  }[];
+  readonly promptPreview: string;
+  readonly model: AiDraftResponseVm["model"] | null;
+  readonly lastRequest: AiDraftRequestPayload | null;
 }
 
 const INITIAL_AI_DRAFT: AiDraftState = {
   status: "idle",
+  mode: null,
+  responseMode: null,
   prompt: "",
   generatedText: "",
-  errorMessage: null
+  errorMessage: null,
+  grounding: [],
+  warnings: [],
+  costEstimateUsd: null,
+  draftId: null,
+  repromptIndex: 0,
+  repromptChain: [],
+  promptPreview: "",
+  model: null,
+  lastRequest: null,
 };
 
 export interface SearchState {
@@ -119,11 +148,22 @@ interface InboxClientState {
   readonly clearToast: () => void;
 
   readonly aiDraft: AiDraftState;
-  readonly startAiGeneration: (prompt: string) => void;
-  readonly insertAiDraft: (text: string) => void;
+  readonly startAiGeneration: (input: {
+    readonly request: AiDraftRequestPayload;
+    readonly prompt: string;
+  }) => void;
+  readonly insertAiDraft: (input: {
+    readonly request: AiDraftRequestPayload;
+    readonly response: AiDraftResponseVm;
+    readonly prompt: string;
+    readonly repromptDirection?: string;
+  }) => void;
   readonly markAiDraftEdited: () => void;
   readonly discardAiDraft: () => void;
-  readonly repromptAi: (prompt: string) => void;
+  readonly repromptAi: (input: {
+    readonly request: AiDraftRequestPayload;
+    readonly prompt: string;
+  }) => void;
   readonly setAiUnavailable: () => void;
   readonly setAiError: (message: string) => void;
   readonly resetAiDraft: () => void;
@@ -242,20 +282,61 @@ export function InboxClientProvider({
     setToast(null);
   }, []);
 
-  const startAiGeneration = useCallback((prompt: string) => {
+  const startAiGeneration = useCallback((input: {
+    readonly request: AiDraftRequestPayload;
+    readonly prompt: string;
+  }) => {
     setAiDraft({
       status: "generating",
-      prompt,
+      mode: input.request.mode,
+      responseMode: null,
+      prompt: input.prompt,
       generatedText: "",
-      errorMessage: null
+      errorMessage: null,
+      grounding: [],
+      warnings: [],
+      costEstimateUsd: null,
+      draftId: null,
+      repromptIndex: input.request.repromptIndex ?? 0,
+      repromptChain: [],
+      promptPreview: "",
+      model: null,
+      lastRequest: input.request,
     });
   }, []);
 
-  const insertAiDraft = useCallback((text: string) => {
+  const insertAiDraft = useCallback((input: {
+    readonly request: AiDraftRequestPayload;
+    readonly response: AiDraftResponseVm;
+    readonly prompt: string;
+    readonly repromptDirection?: string;
+  }) => {
     setAiDraft((previous) => ({
       ...previous,
       status: "inserted",
-      generatedText: text
+      mode: input.request.mode,
+      responseMode: input.response.mode,
+      prompt: input.prompt,
+      generatedText: input.response.draft,
+      errorMessage: null,
+      grounding: input.response.grounding,
+      warnings: input.response.warnings,
+      costEstimateUsd: input.response.costEstimateUsd,
+      draftId: input.response.draftId,
+      repromptIndex: input.response.repromptIndex,
+      repromptChain:
+        input.request.mode === "reprompt" && input.repromptDirection
+          ? [
+              ...previous.repromptChain,
+              {
+                direction: input.repromptDirection,
+                draft: input.response.draft,
+              },
+            ]
+          : previous.repromptChain,
+      promptPreview: input.response.promptPreview,
+      model: input.response.model,
+      lastRequest: input.request,
     }));
   }, []);
 
@@ -274,13 +355,19 @@ export function InboxClientProvider({
     }));
   }, []);
 
-  const repromptAi = useCallback((prompt: string) => {
-    setAiDraft({
+  const repromptAi = useCallback((input: {
+    readonly request: AiDraftRequestPayload;
+    readonly prompt: string;
+  }) => {
+    setAiDraft((previous) => ({
+      ...previous,
       status: "reprompting",
-      prompt,
-      generatedText: "",
-      errorMessage: null
-    });
+      mode: "reprompt",
+      prompt: input.prompt,
+      errorMessage: null,
+      lastRequest: input.request,
+      repromptIndex: input.request.repromptIndex ?? previous.repromptIndex,
+    }));
   }, []);
 
   const setAiUnavailable = useCallback(() => {

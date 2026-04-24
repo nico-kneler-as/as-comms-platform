@@ -1,4 +1,5 @@
 import type {
+  AiKnowledgeEntryRecord,
   AuditEvidenceRecord,
   CanonicalEventRecord,
   ContactIdentityKind,
@@ -62,6 +63,14 @@ export interface CanonicalEventRepository {
   listByIds(ids: readonly string[]): Promise<readonly CanonicalEventRecord[]>;
   listByContactId(contactId: string): Promise<readonly CanonicalEventRecord[]>;
   upsert(record: CanonicalEventRecord): Promise<CanonicalEventRecord>;
+}
+
+export interface AiKnowledgeRepository {
+  findByScope(input: {
+    readonly scope: "global" | "project";
+    readonly scopeKey: string | null;
+  }): Promise<AiKnowledgeEntryRecord | null>;
+  upsert(record: AiKnowledgeEntryRecord): Promise<AiKnowledgeEntryRecord>;
 }
 
 export interface ContactRepository {
@@ -329,6 +338,7 @@ export interface AuditEvidenceRepository {
 export interface Stage1RepositoryBundle {
   readonly sourceEvidence: SourceEvidenceRepository;
   readonly canonicalEvents: CanonicalEventRepository;
+  readonly aiKnowledge: AiKnowledgeRepository;
   readonly contacts: ContactRepository;
   readonly contactIdentities: ContactIdentityRepository;
   readonly contactMemberships: ContactMembershipRepository;

@@ -54,6 +54,10 @@ function buildRepositoryBundle(input: {
         ),
       upsert: (record) => Promise.resolve(record),
     },
+    aiKnowledge: {
+      findByScope: () => Promise.resolve(null),
+      upsert: (record) => Promise.resolve(record),
+    },
     contacts: {
       findById: () => Promise.resolve(contact),
       findBySalesforceContactId: () => Promise.resolve(contact),

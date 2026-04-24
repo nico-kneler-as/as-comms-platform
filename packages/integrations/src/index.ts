@@ -25,6 +25,7 @@ export * from "./providers/gmail-mbox.js";
 export * from "./providers/gmail-send.js";
 export * from "./providers/gmail-record-builder.js";
 export * from "./providers/mailchimp.js";
+export * from "./providers/anthropic.js";
 export * from "./providers/notion.js";
 export * from "./providers/salesforce.js";
 export * from "./providers/simpletexting.js";

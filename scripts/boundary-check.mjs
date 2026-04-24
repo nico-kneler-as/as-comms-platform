@@ -70,6 +70,16 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
     return true;
   }
 
+  if (
+    relativeFile === "apps/web/src/server/ai/provider.ts" &&
+    specifier === "@as-comms/integrations"
+  ) {
+    // Composition root for Stage 4 AI draft generation. This file owns the
+    // env-based Anthropic client wiring so the rest of apps/web only depends
+    // on domain-facing orchestration code.
+    return true;
+  }
+
   return false;
 }
 

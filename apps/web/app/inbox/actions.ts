@@ -7,7 +7,16 @@ import { z } from "zod";
 import { computePendingComposerOutboundFingerprint } from "@as-comms/domain";
 import { requireSession } from "@/src/server/auth/session";
 import { sendComposerGmailMessage } from "@/src/server/composer/gmail-send";
+import {
+  aiDraftRequestSchema,
+  generateAiDraft,
+  type AiDraftRequestPayload,
+  type AiDraftResponse,
+} from "@/src/server/ai";
+import { getAiProviderConfig } from "@/src/server/ai/provider";
 import { setInboxBucket } from "@/src/server/inbox/bucket";
+
+export type { AiDraftRequestPayload } from "@/src/server/ai";
 import { setInboxNeedsFollowUp } from "@/src/server/inbox/follow-up";
 import { revalidateInboxContact } from "@/src/server/inbox/revalidate";
 import {
@@ -112,6 +121,48 @@ export type ContactSearchResult = {
 export type ContactSearchActionResult = UiResult<
   readonly ContactSearchResult[]
 >;
+export type AiDraftResponseVm = AiDraftResponse;
+export type DraftWithAiActionResult = UiResult<AiDraftResponseVm>;
+
+interface AiDraftConcurrencyState {
+  readonly counts: Map<string, number>;
+}
+
+declare global {
+  var __AS_COMMS_AI_DRAFT_CONCURRENCY__: AiDraftConcurrencyState | undefined;
+}
+
+function getAiDraftConcurrencyState(): AiDraftConcurrencyState {
+  globalThis.__AS_COMMS_AI_DRAFT_CONCURRENCY__ ??= {
+    counts: new Map<string, number>(),
+  };
+
+  return globalThis.__AS_COMMS_AI_DRAFT_CONCURRENCY__;
+}
+
+function beginAiDraftRequest(userId: string): boolean {
+  const state = getAiDraftConcurrencyState();
+  const current = state.counts.get(userId) ?? 0;
+
+  if (current >= 3) {
+    return false;
+  }
+
+  state.counts.set(userId, current + 1);
+  return true;
+}
+
+function endAiDraftRequest(userId: string): void {
+  const state = getAiDraftConcurrencyState();
+  const current = state.counts.get(userId);
+
+  if (current === undefined || current <= 1) {
+    state.counts.delete(userId);
+    return;
+  }
+
+  state.counts.set(userId, current - 1);
+}
 
 function unauthorizedError(requestId: string): UiResult<never> {
   return {
@@ -201,6 +252,25 @@ function composerValidationError(
     readonly fieldErrors?: Record<string, string>;
   },
 ): ComposerSendActionResult {
+  return {
+    ok: false,
+    code: "validation_error",
+    message: input.message,
+    requestId,
+    retryable: false,
+    ...(input.fieldErrors === undefined
+      ? {}
+      : { fieldErrors: input.fieldErrors }),
+  };
+}
+
+function aiDraftValidationError(
+  requestId: string,
+  input: {
+    readonly message: string;
+    readonly fieldErrors?: Record<string, string>;
+  },
+): DraftWithAiActionResult {
   return {
     ok: false,
     code: "validation_error",
@@ -666,6 +736,77 @@ async function updateNeedsFollowUp(
     data: { contactId, needsFollowUp },
     requestId,
   };
+}
+
+export async function draftWithAiAction(
+  rawInput: AiDraftRequestPayload,
+): Promise<DraftWithAiActionResult> {
+  const requestId = randomUUID();
+  const parsedInput = aiDraftRequestSchema.safeParse(rawInput);
+
+  if (!parsedInput.success) {
+    return aiDraftValidationError(requestId, {
+      message: "AI draft input is invalid.",
+      fieldErrors: Object.fromEntries(
+        parsedInput.error.issues.map((issue) => [issue.path.join("."), issue.message]),
+      ),
+    });
+  }
+
+  let currentUser;
+  try {
+    currentUser = await requireSession();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return unauthorizedError(requestId);
+    }
+
+    throw error;
+  }
+
+  if (!beginAiDraftRequest(currentUser.id)) {
+    return {
+      ok: false,
+      code: "rate_limit_exceeded",
+      message: "Too many AI draft requests are already running. Please wait a moment and try again.",
+      requestId,
+      retryable: true,
+    };
+  }
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const provider = getAiProviderConfig();
+    const response = await generateAiDraft(
+      {
+        repositories: runtime.repositories,
+        invokeModel: provider.invokeModel,
+        estimateCostUsd: provider.estimateCostUsd,
+        model: provider.model,
+        temperature: provider.temperature,
+        maxTokens: provider.maxTokens,
+        dailyCapUsd: provider.dailyCapUsd,
+      },
+      parsedInput.data,
+    );
+
+    return {
+      ok: true,
+      data: response,
+      requestId,
+    };
+  } catch (error) {
+    console.error("AI draft generation failed unexpectedly.", error);
+    return {
+      ok: false,
+      code: "ai_draft_failed",
+      message: "We could not generate an AI draft right now. Please try again.",
+      requestId,
+      retryable: true,
+    };
+  } finally {
+    endAiDraftRequest(currentUser.id);
+  }
 }
 
 export async function createNoteAction(rawInput: {

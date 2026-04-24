@@ -55,6 +55,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import type { AiDraftRequestPayload } from "../actions";
 import type { ComposerStatus } from "../_components/inbox-client-provider";
 import { useInboxClient } from "../_components/inbox-client-provider";
 import { InboxAppLoading, QueueLoadingSkeleton, TimelineSkeleton } from "../_components/inbox-loading";
@@ -78,6 +79,59 @@ import {
   XCircleIcon,
   XIcon
 } from "../_components/icons";
+
+function buildAiRequest(
+  mode: "draft" | "fill" | "reprompt",
+  overrides?: Record<string, unknown>,
+): AiDraftRequestPayload {
+  return {
+    contactId: "contact:maya",
+    projectId: "project:whitebark",
+    threadCursor: "event:inbound-1",
+    mode,
+    ...overrides,
+  } as AiDraftRequestPayload;
+}
+
+function buildAiResponse(overrides?: Record<string, unknown>) {
+  return {
+    draft:
+      "Hi Maya,\n\nThanks for confirming. The kit list is attached — see you on the 22nd.\n\nBest,\nJordan",
+    requestMode: "draft" as const,
+    mode: "generated" as const,
+    grounding: [
+      {
+        tier: 1 as const,
+        sourceProvider: "notion",
+        sourceId: "voice-1",
+        sourceUrl: "https://www.notion.so/voice-1",
+        title: "General Training",
+      },
+      {
+        tier: 2 as const,
+        sourceProvider: "notion",
+        sourceId: "project-1",
+        sourceUrl: "https://www.notion.so/project-1",
+        title: "Whitebark Pines",
+      },
+    ],
+    warnings: [],
+    costEstimateUsd: 0.0123,
+    providerStatus: "ready" as const,
+    draftId: "8d4c5d25-8799-4b4d-9626-a6aa17a0ab18",
+    repromptIndex: 0,
+    promptPreview: "[SYSTEM]\nVoice guidance",
+    model: {
+      name: "claude-sonnet-4-6",
+      temperature: 0.3,
+      maxTokens: 1200,
+      inputTokens: 1234,
+      outputTokens: 210,
+      stopReason: "end_turn",
+    },
+    ...overrides,
+  };
+}
 
 // ---------- Section wrapper ----------
 
@@ -142,40 +196,140 @@ function LiveControls() {
     "send-failure"
   ];
 
-  const aiStates: { label: string; action: () => void }[] = [
-    { label: "Idle", action: resetAiDraft },
+  const aiStates: {
+    label: string;
+    active: boolean;
+    action: () => void;
+  }[] = [
+    { label: "Idle", active: aiDraft.status === "idle", action: resetAiDraft },
     {
       label: "Generating",
+      active: aiDraft.status === "generating",
       action: () => {
-        startAiGeneration("Draft a helpful reply");
+        startAiGeneration({
+          request: buildAiRequest("draft"),
+          prompt: "Draft a helpful reply",
+        });
       }
     },
     {
       label: "Inserted",
+      active:
+        aiDraft.status === "inserted" &&
+        aiDraft.warnings.length === 0 &&
+        aiDraft.responseMode === "generated",
       action: () => {
-        startAiGeneration("Draft a helpful reply");
+        startAiGeneration({
+          request: buildAiRequest("draft"),
+          prompt: "Draft a helpful reply",
+        });
         setTimeout(() => {
-          insertAiDraft(
-            "Hi Maya,\n\nThanks for confirming. The kit list is attached — see you on the 22nd.\n\nBest,\nJordan"
-          );
+          insertAiDraft({
+            request: buildAiRequest("draft"),
+            response: buildAiResponse(),
+            prompt: "Draft a helpful reply",
+          });
         }, 100);
       }
     },
     {
-      label: "Reprompting",
+      label: "Grounding Empty",
+      active:
+        aiDraft.status === "inserted" &&
+        aiDraft.warnings.some((warning) => warning.code === "grounding_empty"),
       action: () => {
-        repromptAi("Make it shorter");
+        startAiGeneration({
+          request: buildAiRequest("draft"),
+          prompt: "Draft a helpful reply",
+        });
+        setTimeout(() => {
+          insertAiDraft({
+            request: buildAiRequest("draft"),
+            response: buildAiResponse({
+              mode: "deterministic_fallback",
+              providerStatus: "validation_blocked",
+              warnings: [
+                {
+                  code: "grounding_empty",
+                  message: "Project-specific AI grounding is missing for this contact.",
+                },
+              ],
+            }),
+            prompt: "Draft a helpful reply",
+          });
+        }, 100);
+      },
+    },
+    {
+      label: "Contradiction",
+      active:
+        aiDraft.status === "inserted" &&
+        aiDraft.warnings.some(
+          (warning) => warning.code === "grounding_contradiction",
+        ),
+      action: () => {
+        startAiGeneration({
+          request: buildAiRequest("fill", {
+            operatorPrompt: "Tell them the deadline is next week",
+          }),
+          prompt: "Tell them the deadline is next week",
+        });
+        setTimeout(() => {
+          insertAiDraft({
+            request: buildAiRequest("fill", {
+              operatorPrompt: "Tell them the deadline is next week",
+            }),
+            response: buildAiResponse({
+              requestMode: "fill",
+              warnings: [
+                {
+                  code: "grounding_contradiction",
+                  message:
+                    "directive may conflict with project context — please verify the deadline",
+                },
+              ],
+            }),
+            prompt: "Tell them the deadline is next week",
+          });
+        }, 100);
+      },
+    },
+    {
+      label: "Reprompting",
+      active: aiDraft.status === "reprompting",
+      action: () => {
+        repromptAi({
+          request: buildAiRequest("reprompt", {
+            previousDraft: "Original draft",
+            repromptDirection: "Make it shorter",
+            repromptIndex: 1,
+          }),
+          prompt: "Make it shorter",
+        });
       }
     },
-    { label: "Unavailable", action: setAiUnavailable },
+    {
+      label: "Unavailable",
+      active: aiDraft.status === "unavailable",
+      action: setAiUnavailable,
+    },
     {
       label: "Error",
+      active: aiDraft.status === "error",
       action: () => {
         setAiError("AI service timed out. Please try again.");
       }
     },
-    { label: "Edited", action: markAiDraftEdited },
-    { label: "Discarded", action: discardAiDraft }
+    {
+      label: "Edited",
+      active: aiDraft.status === "edited-after-generation",
+      action: markAiDraftEdited,
+    },
+    {
+      label: "Discarded",
+      active: aiDraft.status === "discarded",
+      action: discardAiDraft,
+    }
   ];
 
   return (
@@ -249,10 +403,7 @@ function LiveControls() {
             {aiStates.map((s) => (
               <ToggleChip
                 key={s.label}
-                active={
-                  aiDraft.status ===
-                  s.label.toLowerCase().replace(/ /g, "-")
-                }
+                active={s.active}
                 onClick={s.action}
               >
                 {s.label}

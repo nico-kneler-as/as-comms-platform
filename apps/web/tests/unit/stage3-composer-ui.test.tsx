@@ -14,6 +14,7 @@ const replyContext: InboxComposerReplyContext = {
   contactId: "contact-1",
   contactDisplayName: "Alice Smith",
   subject: "Re: Trip logistics",
+  threadCursor: "event-1",
   threadId: "thread-1",
   inReplyToRfc822: "message-1",
   defaultAlias: "field@adventuresci.org"
@@ -105,7 +106,8 @@ describe("stage3 composer ui helpers", () => {
             id: "alias-1",
             alias: "coastal@adventuresci.org",
             projectId: "project-1",
-            projectName: "Coastal Survey"
+            projectName: "Coastal Survey",
+            isAiReady: true
           }
         ]
       })

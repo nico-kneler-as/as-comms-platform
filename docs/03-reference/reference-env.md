@@ -17,7 +17,7 @@
 - provider API credentials
 - webhook verification secrets
 - database and service-role credentials
-- OpenAI credentials
+- Anthropic credentials
 
 ## Runtime Rules
 
@@ -34,6 +34,14 @@
 | `NOTION_PROJECT_TRAINING_DATABASE_ID` | `worker` | yes | Default local/example value: `3278a91292118095b86aff5836821428`. Read at worker startup; missing config surfaces `integration_health.notion = not_configured`. |
 
 The worker cron is the only current consumer. The web service may carry the same env values in shared deployment config, but it does not call Notion directly in this brief.
+
+## Stage 4 AI Drafting
+
+| Env var | Runtime | Required | Notes |
+| --- | --- | --- | --- |
+| `ANTHROPIC_API_KEY` | `web` | yes | Anthropic API key for Stage 4 draft generation. Missing config downgrades requests into `deterministic_fallback` with `provider_not_configured`. |
+| `AI_DAILY_CAP_USD` | `web` | no | Soft daily spend cap for AI drafts. Default `20`. Over-budget emits `budget_warn`; it does not hard-block drafting. |
+| `ANTHROPIC_MODEL` | `web` | no | Default draft model. Current default is `claude-sonnet-4-6`. |
 
 ## Deep References
 
