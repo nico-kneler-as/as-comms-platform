@@ -83,6 +83,7 @@ const gmailAndSimpleTextingP99ThresholdSeconds = 300;
 const salesforceLifecycleP95ThresholdSeconds = 600;
 const defaultGmailLivePollIntervalSeconds = 60;
 const defaultSalesforceLivePollIntervalSeconds = 300;
+export const gmailLiveWindowLookbackMs = 10 * 60 * 1000;
 const livePollMaxRecords = 1000;
 
 type CapturedProviderRecord =
@@ -863,8 +864,10 @@ export function createStage1WorkerOrchestrationService(input: {
   readonly revalidateInboxViews?: (input: {
     readonly contactIds: readonly string[];
   }) => Promise<void>;
+  readonly logger?: Pick<Console, "info">;
 }): Stage1WorkerOrchestrationService {
   const syncState = createStage1SyncStateService(input.persistence);
+  const logger = input.logger ?? console;
   const livePolling: Stage1LivePollingConfig = {
     gmailPollIntervalSeconds:
       input.livePolling?.gmailPollIntervalSeconds ??
@@ -888,13 +891,16 @@ export function createStage1WorkerOrchestrationService(input: {
     }
 
     const windowEnd = now.toISOString();
-    const windowStart = resolveLivePollCheckpoint({
+    const checkpoint = resolveLivePollCheckpoint({
       syncState: latestSyncState,
       fallbackWindowStart: subtractSeconds(
         now,
         livePolling.gmailPollIntervalSeconds
       )
     });
+    const windowStart = new Date(
+      now.getTime() - gmailLiveWindowLookbackMs
+    ).toISOString();
 
     return gmailLiveCaptureBatchPayloadSchema.parse({
       version: stage1JobVersion,
@@ -905,7 +911,7 @@ export function createStage1WorkerOrchestrationService(input: {
       provider: "gmail",
       mode: "live",
       jobType: "live_ingest",
-      checkpoint: windowStart,
+      checkpoint,
       windowStart,
       windowEnd,
       maxRecords: livePollMaxRecords
@@ -998,6 +1004,19 @@ export function createStage1WorkerOrchestrationService(input: {
       for (const { record, mapped } of prioritizedRecords) {
         const ingestResult = await params.ingestRecord(record);
         ingestResults.push(ingestResult);
+
+        if (
+          payload.provider === "gmail" &&
+          payload.jobType === "live_ingest" &&
+          ingestResult.outcome === "duplicate"
+        ) {
+          logger.info({
+            event: "gmail_live.duplicate_skip",
+            messageId: ingestResult.sourceRecordId,
+            windowStart: payload.windowStart,
+            windowEnd: payload.windowEnd
+          });
+        }
 
         if (
           ingestResult.outcome !== "deferred" &&

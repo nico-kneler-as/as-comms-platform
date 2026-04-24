@@ -2176,6 +2176,55 @@ export function createStage1NormalizationService(
         };
       }
 
+      if (
+        sourceEvidenceResult.outcome === "duplicate" &&
+        options?.overwriteDuplicateGmailMessageDetail === false
+      ) {
+        const existingCanonicalEvent =
+          await persistence.findCanonicalEventByIdempotencyKey(
+            parsed.canonicalEvent.idempotencyKey
+          );
+
+        if (
+          existingCanonicalEvent !== null &&
+          findCanonicalEventForSourceEvidence(
+            [existingCanonicalEvent],
+            sourceEvidenceResult.record.id
+          ) !== null
+        ) {
+          const existingTimelineProjection =
+            await persistence.repositories.timelineProjection.findByCanonicalEventId(
+              existingCanonicalEvent.id
+            );
+          const timelineProjection =
+            existingTimelineProjection ??
+            (await service.applyTimelineProjection({
+              canonicalEvent: existingCanonicalEvent,
+              summary: parsed.canonicalEvent.summary
+            }));
+          const inboxProjection = isInboxDrivingCanonicalEvent(
+            existingCanonicalEvent
+          )
+            ? await persistence.repositories.inboxProjection.findByContactId(
+                existingCanonicalEvent.contactId
+              )
+            : await service.refreshInboxReviewOverlay({
+                contactId: existingCanonicalEvent.contactId
+              });
+
+          return {
+            outcome: "duplicate",
+            sourceEvidence: sourceEvidenceResult.record,
+            canonicalEvent: existingCanonicalEvent,
+            timelineProjection,
+            inboxProjection,
+            identityCase: null,
+            routingCase: null,
+            auditEvidence: null
+          };
+        }
+      }
+
       const nonVolunteerTaskDecision =
         await resolveNonVolunteerSalesforceTaskSkip(
           persistence,

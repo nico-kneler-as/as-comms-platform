@@ -46,7 +46,7 @@ async function saveLiveSyncState(
 }
 
 describe("Stage 1 live polling scheduler tasks", () => {
-  it("enqueues a Gmail live capture batch from the latest checkpoint", async () => {
+  it("enqueues a Gmail live capture batch with a 10-minute sliding window", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-05T00:06:00.000Z"));
 
@@ -81,7 +81,7 @@ describe("Stage 1 live polling scheduler tasks", () => {
           mode: "live",
           jobType: "live_ingest",
           checkpoint: "2026-01-05T00:05:00.000Z",
-          windowStart: "2026-01-05T00:05:00.000Z",
+          windowStart: "2026-01-04T23:56:00.000Z",
           windowEnd: "2026-01-05T00:06:00.000Z",
           attempt: 1,
           maxAttempts: 3,

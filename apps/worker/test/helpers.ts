@@ -119,6 +119,7 @@ export async function createTestWorkerContext(input?: {
   readonly revalidateInboxViews?: (input: {
     readonly contactIds: readonly string[];
   }) => Promise<void>;
+  readonly logger?: Pick<Console, "info">;
 }): Promise<TestWorkerContext> {
   const baseContext = await createTestStage1Context();
   const { normalization, persistence } = baseContext;
@@ -143,6 +144,11 @@ export async function createTestWorkerContext(input?: {
       ? {}
       : {
           revalidateInboxViews: input.revalidateInboxViews
+        }),
+    ...(input?.logger === undefined
+      ? {}
+      : {
+          logger: input.logger
         })
   });
 
