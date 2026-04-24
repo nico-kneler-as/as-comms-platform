@@ -11,7 +11,9 @@ test("health and readiness surfaces respond", async ({ request }) => {
 
   const readinessResponse = await request.get("/api/readiness");
   expect(readinessResponse.ok()).toBeTruthy();
+  // TSR-005: readiness returns { ok: true } only for unauthenticated callers.
+  // Full deployment posture is admin-session gated.
   await expect(readinessResponse.json()).resolves.toMatchObject({
-    stage: 0
+    ok: true
   });
 });

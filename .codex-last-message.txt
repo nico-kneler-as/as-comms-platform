@@ -1,13 +1,16 @@
-Implemented Stage 4 bootstrap synthesis work on `feat/stage-4-bootstrap-synthesis`.
+Implemented and pushed branch `fix/readiness-admin-only`.
 
-Key pieces completed:
-- Added migration/schema/contracts/repositories for `project_knowledge_source_links` and `project_knowledge_bootstrap_runs`.
-- Added worker bootstrap job with HTML extraction, Gmail alias-history digesting, synthesis orchestration, run status updates, budget warning, and safety rails.
-- Wired Settings Knowledge UI for source CRUD, generate button, confirmation gate, recent run polling/status.
-- Added focused tests for HTML fetcher, Gmail digest masking, synthesis parsing, run safety rails, repository round trips, and Settings source rendering.
-- Updated `docs/03-reference/reference-env.md` for worker-side bootstrap usage and `@mozilla/readability`/`jsdom`.
+PR opened: https://github.com/nico-kneler-as/as-comms-platform/pull/125  
+Commit: `c122eb9`
 
-Validation:
-- `pnpm typecheck` passed.
-- `pnpm lint` passed.
-- `pnpm test:unit` is blocked by the macOS Rollup native optional dependency/signing issue before tests execute: `@rollup/rollup-darwin-arm64 ... not valid for use in process: mapping process and mapped file ... have different Team IDs`. I tried ad-hoc re-signing the native module, but Node still rejects it.
+Changes:
+- `/api/readiness` now returns `{ ok: true }` for unauthenticated or non-admin callers.
+- Admin sessions still receive the full readiness posture.
+- Added unit coverage for unauthenticated, admin, and non-admin paths.
+
+Verification:
+- `pnpm --filter @as-comms/web test:unit` passed: 33 files, 185 tests.
+- `lint` and `typecheck` could not complete locally because this sandbox’s available dependency cache is missing TipTap packages used by existing `inbox-composer.tsx` imports.
+- I could not query remote PR checks after opening the PR because `gh pr checks` failed connecting to `api.github.com`.
+
+Unrelated existing worktree metadata changes remain uncommitted: `.codex-exec.log`, `.codex-last-message.txt`.
