@@ -20,7 +20,7 @@ import {
   type GmailProviderCloseMessageInput
 } from "../providers/gmail-record-builder.js";
 import {
-  extractGmailBodyPreviewFromPayload,
+  extractGmailBodyPreviewFromPayloadResult,
   type GmailApiMessagePart
 } from "../providers/gmail-body.js";
 import {
@@ -420,9 +420,7 @@ export async function mapLiveGmailMessageToRecord(input: {
     labelIds: input.message.labelIds,
     snippet: input.message.snippet,
     snippetClean: input.message.snippet,
-    bodyTextPreview: await extractGmailBodyPreviewFromPayload(
-      input.message.payload
-    ),
+    ...(await extractGmailBodyPreviewFromPayloadResult(input.message.payload)),
     internalDate: input.message.internalDate,
     headers,
     payloadRef: `gmail://${encodeURIComponent(input.capturedMailbox)}/messages/${encodeURIComponent(input.message.id)}`,

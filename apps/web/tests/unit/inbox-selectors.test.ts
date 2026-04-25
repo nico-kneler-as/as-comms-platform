@@ -1783,6 +1783,64 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("skips encrypted placeholder bodies when deriving composer reply context", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:encrypted-reply",
+      salesforceContactId: "003-encrypted-reply",
+      displayName: "Steve Negri",
+      primaryEmail: "steve.negri@tetratech.com",
+      primaryPhone: null,
+    });
+
+    await seedInboxEmailEvent(runtime.context, {
+      id: "encrypted-reply-older",
+      contactId: "contact:encrypted-reply",
+      occurredAt: "2026-04-16T10:00:00.000Z",
+      direction: "inbound",
+      subject: "Re: Project check-in",
+      snippet: "Older plaintext inbound",
+      bodyTextPreview: "Here are the field updates you asked for.",
+    });
+    const latestEncryptedEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "encrypted-reply-latest",
+      contactId: "contact:encrypted-reply",
+      occurredAt: "2026-04-16T11:00:00.000Z",
+      direction: "inbound",
+      subject: "Re: Project check-in",
+      snippet: "[Encrypted message — open in Gmail to read]",
+      bodyTextPreview: "[Encrypted message — open in Gmail to read]",
+      bodyKind: "encrypted_placeholder",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:encrypted-reply",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-16T11:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-16T11:00:00.000Z",
+      snippet: "[Encrypted message — open in Gmail to read]",
+      lastCanonicalEventId: latestEncryptedEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:encrypted-reply");
+
+    expect(detail?.timeline.at(-1)).toMatchObject({
+      kind: "inbound-email",
+      body: "[Encrypted message — open in Gmail to read]",
+    });
+    expect(detail?.composerReplyContext).toMatchObject({
+      subject: "Re: Project check-in",
+      threadCursor: "event:encrypted-reply-older",
+      inReplyToRfc822: "<encrypted-reply-latest@example.org>",
+    });
+  });
+
   it("falls back to provider communication details before projection snippets for Salesforce-backed latest rows", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");

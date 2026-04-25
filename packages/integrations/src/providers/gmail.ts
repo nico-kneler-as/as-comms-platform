@@ -42,6 +42,10 @@ export const gmailMessageRecordSchema = z.object({
   labelIds: nullableStringArraySchema.optional(),
   snippetClean: z.string().default(""),
   bodyTextPreview: z.string().default(""),
+  bodyKind: z
+    .enum(["plaintext", "encrypted_placeholder", "binary_fallback"])
+    .nullable()
+    .optional(),
   threadId: nullableStringSchema.default(null),
   rfc822MessageId: nullableStringSchema.default(null),
   capturedMailbox: nullableStringSchema.default(null),
@@ -175,6 +179,7 @@ function mapGmailMessageRecord(
       labelIds: record.labelIds,
       snippetClean: cleanSnippet,
       bodyTextPreview,
+      bodyKind: record.bodyKind ?? "plaintext",
       capturedMailbox: record.capturedMailbox,
       projectInboxAlias: record.projectInboxAlias
     }

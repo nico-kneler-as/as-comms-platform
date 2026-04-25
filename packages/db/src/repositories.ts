@@ -1513,6 +1513,7 @@ function createStage1RepositoriesInternal(
               labelIds: values.labelIds,
               snippetClean: values.snippetClean,
               bodyTextPreview: values.bodyTextPreview,
+              bodyKind: values.bodyKind,
               capturedMailbox: values.capturedMailbox,
               projectInboxAlias: values.projectInboxAlias,
               updatedAt: new Date(),

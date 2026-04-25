@@ -70,6 +70,10 @@ export async function seedInboxEmailEvent(
     readonly snippet: string;
     readonly snippetClean?: string;
     readonly bodyTextPreview?: string;
+    readonly bodyKind?:
+      | "plaintext"
+      | "encrypted_placeholder"
+      | "binary_fallback";
     readonly fromHeader?: string | null;
     readonly toHeader?: string | null;
     readonly ccHeader?: string | null;
@@ -131,6 +135,7 @@ export async function seedInboxEmailEvent(
     ccHeader: input.ccHeader ?? null,
     snippetClean: input.snippetClean ?? input.snippet,
     bodyTextPreview: input.bodyTextPreview ?? input.snippet,
+    bodyKind: input.bodyKind ?? "plaintext",
     capturedMailbox: "volunteers@example.org",
     projectInboxAlias: input.projectInboxAlias ?? "volunteers@example.org",
   });

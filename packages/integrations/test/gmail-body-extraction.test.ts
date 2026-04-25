@@ -4,10 +4,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   cleanGmailBodyPreviewText,
+  extractGmailBodyPreviewFromMimeMessageResult,
+  extractGmailBodyPreviewFromPayloadResult,
   extractGmailBodyPreviewFromMimeMessage,
   gmailMessageRecordSchema,
   gmailMessageFullResponseSchema,
   mapLiveGmailMessageToRecord,
+  type GmailApiMessagePart,
   trimQuotedReplyContent
 } from "../src/index.js";
 
@@ -15,6 +18,10 @@ const fixturesDirectory = new URL("./fixtures/gmail/", import.meta.url);
 
 async function readFixtureText(name: string): Promise<string> {
   return readFile(new URL(name, fixturesDirectory), "utf8");
+}
+
+async function readFixtureJson<T>(name: string): Promise<T> {
+  return JSON.parse(await readFixtureText(name)) as T;
 }
 
 describe("Gmail body extraction", () => {
@@ -49,6 +56,45 @@ describe("Gmail body extraction", () => {
         "Could you clarify why I need to do this again?",
         "I'm even accepted in Strava."
       ].join("\n")
+    );
+  });
+
+  it("stores an encrypted placeholder for application/pkcs7-mime payloads", async () => {
+    const payload = await readFixtureJson<GmailApiMessagePart>(
+      "encrypted-pkcs7-payload.json"
+    );
+
+    await expect(extractGmailBodyPreviewFromPayloadResult(payload)).resolves.toEqual(
+      {
+        bodyTextPreview: "[Encrypted message — open in Gmail to read]",
+        bodyKind: "encrypted_placeholder",
+      }
+    );
+  });
+
+  it("stores an encrypted placeholder for multipart/encrypted MIME messages", async () => {
+    const rawMessage = await readFixtureText("encrypted-multipart.mbox");
+    const parsed = await extractGmailBodyPreviewFromMimeMessageResult({
+      rawMessage: rawMessage.replace(/^From .+\n/u, ""),
+    });
+
+    expect(parsed).toEqual({
+      bodyTextPreview: "[Encrypted message — open in Gmail to read]",
+      bodyKind: "encrypted_placeholder",
+    });
+  });
+
+  it("stores a binary fallback placeholder when a multipart payload has no text parts", async () => {
+    const payload = await readFixtureJson<GmailApiMessagePart>(
+      "binary-only-payload.json"
+    );
+
+    await expect(extractGmailBodyPreviewFromPayloadResult(payload)).resolves.toEqual(
+      {
+        bodyTextPreview:
+          "[Message body could not be extracted — open in Gmail]",
+        bodyKind: "binary_fallback",
+      }
     );
   });
 

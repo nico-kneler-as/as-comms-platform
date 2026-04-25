@@ -1,0 +1,18 @@
+From sender@example.org Fri Apr 17 10:00:00 2026
+MIME-Version: 1.0
+Date: Fri, 17 Apr 2026 10:00:00 +0000
+From: Steve Negri <steve.negri@tetratech.com>
+To: volunteers@example.org
+Subject: Secure message
+Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; boundary="encrypted-boundary"
+
+--encrypted-boundary
+Content-Type: application/pgp-encrypted
+
+Version: 1
+--encrypted-boundary
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: base64
+
+hQEMA4a7T1I0L2YZAQf/X9n0mC8iN0V0V1BnaX5Xb1JXV1BTV1lBQUFBQUFBQUFB
+--encrypted-boundary--

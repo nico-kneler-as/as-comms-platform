@@ -14,6 +14,11 @@ export interface GmailProviderCloseMessageInput {
   readonly snippet: string;
   readonly snippetClean?: string;
   readonly bodyTextPreview?: string | null;
+  readonly bodyKind?:
+    | "plaintext"
+    | "encrypted_placeholder"
+    | "binary_fallback"
+    | null;
   readonly internalDate: string | null;
   readonly headers: Readonly<Record<string, string>>;
   readonly payloadRef: string;
@@ -251,6 +256,7 @@ export function buildGmailMessageRecord(
     labelIds,
     snippetClean,
     bodyTextPreview,
+    bodyKind: input.bodyKind ?? "plaintext",
     threadId: input.threadId,
     rfc822MessageId,
     capturedMailbox: input.capturedMailbox,

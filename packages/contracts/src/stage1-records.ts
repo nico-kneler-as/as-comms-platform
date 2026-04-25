@@ -268,6 +268,13 @@ export type ExpeditionDimensionRecord = z.infer<
 export const gmailMessageDirectionSchema = z.enum(["inbound", "outbound"]);
 export type GmailMessageDirection = z.infer<typeof gmailMessageDirectionSchema>;
 
+export const gmailMessageBodyKindSchema = z.enum([
+  "plaintext",
+  "encrypted_placeholder",
+  "binary_fallback",
+]);
+export type GmailMessageBodyKind = z.infer<typeof gmailMessageBodyKindSchema>;
+
 export const gmailMessageDetailSchema = z.object({
   sourceEvidenceId: idSchema,
   providerRecordId: z.string().min(1),
@@ -281,6 +288,7 @@ export const gmailMessageDetailSchema = z.object({
   labelIds: stringArraySchema.nullable().optional(),
   snippetClean: z.string(),
   bodyTextPreview: z.string(),
+  bodyKind: gmailMessageBodyKindSchema.nullable().optional(),
   capturedMailbox: nullableStringSchema,
   projectInboxAlias: nullableStringSchema,
 });

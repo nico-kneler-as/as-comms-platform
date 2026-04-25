@@ -1463,6 +1463,10 @@ function timelineActorLabel(
 const PARTICIPANT_HEADER_NAME_PATTERN = /^\s*"?([^"<]+?)"?\s*<[^>]+>\s*$/u;
 const PARTICIPANT_HEADER_EMAIL_PATTERN =
   /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu;
+const PLACEHOLDER_BODY_PREVIEWS = new Set([
+  "[Encrypted message — open in Gmail to read]",
+  "[Message body could not be extracted — open in Gmail]",
+]);
 
 function participantHeaderLabel(headerValue: string | null): string | null {
   if (headerValue === null) {
@@ -1822,12 +1826,16 @@ function buildComposerReplyContext(input: {
   readonly timelineItems: readonly TimelineItem[];
   readonly defaultAlias: string | null;
 }): InboxComposerReplyContext | null {
-  const latestInboundEmail = [...input.timelineItems]
+  const inboundEmails = [...input.timelineItems]
     .reverse()
-    .find(
+    .filter(
       (item): item is Extract<TimelineItem, { family: "one_to_one_email" }> =>
         item.family === "one_to_one_email" && item.direction === "inbound",
     );
+  const latestInboundEmail = inboundEmails[0];
+  const latestQuotableInboundEmail = inboundEmails.find(
+    (item) => !PLACEHOLDER_BODY_PREVIEWS.has((item.bodyPreview ?? "").trim()),
+  );
 
   if (latestInboundEmail === undefined) {
     return null;
@@ -1837,7 +1845,7 @@ function buildComposerReplyContext(input: {
     contactId: input.contact.id,
     contactDisplayName: input.contact.displayName,
     subject: buildReplySubject(latestInboundEmail.subject),
-    threadCursor: latestInboundEmail.canonicalEventId,
+    threadCursor: latestQuotableInboundEmail?.canonicalEventId ?? null,
     threadId: latestInboundEmail.threadId ?? null,
     inReplyToRfc822: latestInboundEmail.rfc822MessageId ?? null,
     defaultAlias: input.defaultAlias,
