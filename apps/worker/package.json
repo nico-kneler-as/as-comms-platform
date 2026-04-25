@@ -13,6 +13,7 @@
     "ops:backfill-content-fingerprint": "tsx src/ops/backfill-content-fingerprint.ts",
     "ops:check-config": "tsx src/ops/cli.ts check-config",
     "ops:backfill-gmail-message-bodies": "tsx src/ops/backfill-gmail-message-bodies.ts",
+    "ops:backfill-gmail-mbox-bodies": "tsx src/ops/cli.ts backfill-gmail-mbox-bodies",
     "ops:cleanup-gmail-draft-events": "tsx src/ops/cleanup-gmail-draft-events.ts",
     "ops:backfill-mailchimp-campaign-body": "tsx src/ops/backfill-mailchimp-campaign-body.ts",
     "ops:backfill-salesforce-communication-details": "tsx src/ops/backfill-salesforce-communication-details.ts",

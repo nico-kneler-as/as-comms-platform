@@ -29,6 +29,7 @@ import {
   inspectStage1Contact,
 } from "./inspect.js";
 import { runBackfillSalesforceCommunicationDetailsCommand } from "./backfill-salesforce-communication-details.js";
+import { runBackfillGmailMboxBodiesCommand } from "./backfill-gmail-mbox-bodies.js";
 import { runBackfillContentFingerprintCommand } from "./backfill-content-fingerprint.js";
 import { runBackfillMailchimpCampaignBodyCommand } from "./backfill-mailchimp-campaign-body.js";
 import { runCleanupGmailDraftEventsCommand } from "./cleanup-gmail-draft-events.js";
@@ -345,6 +346,9 @@ async function main(): Promise<void> {
     case "backfill-salesforce-communication-details":
       await runBackfillSalesforceCommunicationDetailsCommand(rest, process.env);
       return;
+    case "backfill-gmail-mbox-bodies":
+      await runBackfillGmailMboxBodiesCommand(rest, process.env);
+      return;
     case "backfill-content-fingerprint":
       await runBackfillContentFingerprintCommand(rest, process.env);
       return;
@@ -368,7 +372,7 @@ async function main(): Promise<void> {
       return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-content-fingerprint, backfill-mailchimp-campaign-body, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, dedup-historical-ledger, reconcile-identity-queue, reclassify-sf-direction.",
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-mailchimp-campaign-body, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, dedup-historical-ledger, reconcile-identity-queue, reclassify-sf-direction.",
       );
   }
 }
