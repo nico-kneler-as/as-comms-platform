@@ -1377,7 +1377,8 @@ function createStage1RepositoriesInternal(
             set: {
               projectName: values.projectName,
               projectAlias: values.projectAlias,
-              isActive: values.isActive,
+              // isActive intentionally NOT updated: admins manage it in Settings,
+              // and Salesforce capture must not overwrite that app-owned state.
               aiKnowledgeUrl: values.aiKnowledgeUrl,
               aiKnowledgeSyncedAt: values.aiKnowledgeSyncedAt,
               source: values.source,
