@@ -1460,6 +1460,10 @@ export async function sendComposerAction(
     const sendResult = await sendComposerGmailMessage(sendParams);
 
     if (sendResult.kind === "success") {
+      await runtime.repositories.pendingOutbounds.markConfirmed(pendingOutboundId, {
+        reconciledEventId: null,
+      });
+
       await appendSecurityAudit({
         actorType: "user",
         actorId: currentUser.id,

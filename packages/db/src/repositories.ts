@@ -1873,7 +1873,13 @@ function createStage1RepositoriesInternal(
           .where(
             and(
               eq(pendingComposerOutbounds.id, id),
-              eq(pendingComposerOutbounds.status, "pending"),
+              or(
+                eq(pendingComposerOutbounds.status, "pending"),
+                and(
+                  eq(pendingComposerOutbounds.status, "confirmed"),
+                  isNull(pendingComposerOutbounds.reconciledEventId),
+                ),
+              ),
             ),
           );
       },
