@@ -776,6 +776,23 @@ export async function seedInboxInternalNoteEvent(
     reviewState: "clear",
   });
 
+  // FK from manual_note_details.author_id → users.id requires the user to exist
+  // before we can insert a note that references it. Upsert a minimal user row
+  // when authorId is provided.
+  if (input.authorId) {
+    await context.settings.users.upsert({
+      id: input.authorId,
+      email: `${input.authorId.replace(/[^a-zA-Z0-9]/g, "-")}@test.local`,
+      name: input.authorDisplayName,
+      emailVerified: null,
+      image: null,
+      role: "operator",
+      deactivatedAt: null,
+      createdAt: new Date(input.occurredAt),
+      updatedAt: new Date(input.occurredAt),
+    });
+  }
+
   await context.repositories.manualNoteDetails.upsert({
     sourceEvidenceId,
     providerRecordId: input.id,
