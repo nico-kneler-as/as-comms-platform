@@ -41,6 +41,11 @@ export async function seedInboxContact(
       projectName: input.projectName ?? input.projectId,
       projectAlias: input.projectAlias ?? null,
       source: "salesforce",
+      // Default fixture projects to active so tests don't have to opt in. Tests
+      // that need a specific project to be inactive should call setActive(id,false)
+      // explicitly — the upsert won't toggle isActive on conflict-update because
+      // PR #141 protects admin-managed state from being overwritten by SF capture.
+      isActive: true,
     });
   }
 
