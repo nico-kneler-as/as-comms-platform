@@ -157,7 +157,9 @@ describe("Stage 3 Gmail send client", () => {
 
     const rawMessage = decodeRawMessage(String(requestBody.raw));
 
-    expect(rawMessage).toContain("From: <pnwbio@adventurescientists.org>");
+    expect(rawMessage).toContain(
+      "From: \"Adventure Scientists\" <pnwbio@adventurescientists.org>"
+    );
     expect(rawMessage).toContain("To: <volunteer@example.org>");
     expect(rawMessage).toContain("Subject: Re: Field update");
     expect(rawMessage).toContain("In-Reply-To: <parent-message@example.org>");
