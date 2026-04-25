@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireSession = vi.hoisted(() => vi.fn());
+const generateAiDraft = vi.hoisted(() => vi.fn());
 
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
@@ -10,8 +11,18 @@ vi.mock("@/src/server/auth/session", () => ({
   requireSession,
 }));
 
+vi.mock("@/src/server/ai", async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...(actual as object),
+    generateAiDraft,
+  };
+});
+
 import {
   clearInboxNeedsFollowUpAction,
+  draftWithAiAction,
   markInboxNeedsFollowUpAction,
 } from "../../app/inbox/actions";
 import { resetSecurityRateLimiterForTests } from "../../src/server/security/rate-limit";
@@ -116,6 +127,7 @@ describe("server-backed follow-up actions", () => {
     resetSecurityRateLimiterForTests();
     requireSession.mockReset();
     requireSession.mockResolvedValue(buildCurrentUser());
+    generateAiDraft.mockReset();
     runtime = await createInboxTestRuntime();
     await seedActionFixture(runtime);
   });
@@ -327,5 +339,62 @@ describe("server-backed follow-up actions", () => {
       contactId: "contact:michael-chen",
       limit: 30,
     });
+  });
+
+  it("returns a non-retryable AI misconfiguration result for missing schema errors", async () => {
+    const error = new Error("relation project_knowledge_entries does not exist");
+    (
+      error as Error & {
+        cause: { code: string };
+      }
+    ).cause = { code: "42P01" };
+    generateAiDraft.mockRejectedValueOnce(error);
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    const result = await draftWithAiAction({
+      mode: "draft",
+      contactId: "contact:sarah-martinez",
+      projectId: "project:amazon-basin",
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "ai_draft_misconfigured",
+      retryable: false,
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      "AI draft generation is not fully configured.",
+      expect.objectContaining({
+        code: "42P01",
+        name: "Error",
+      }),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("keeps generic AI draft failures retryable", async () => {
+    generateAiDraft.mockRejectedValueOnce(new Error("boom"));
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    const result = await draftWithAiAction({
+      mode: "draft",
+      contactId: "contact:sarah-martinez",
+      projectId: "project:amazon-basin",
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "ai_draft_failed",
+      retryable: true,
+    });
+    expect(errorSpy).toHaveBeenCalledWith(
+      "AI draft generation failed unexpectedly.",
+      expect.any(Error),
+    );
+    errorSpy.mockRestore();
   });
 });
