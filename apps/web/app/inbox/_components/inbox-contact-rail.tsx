@@ -6,13 +6,14 @@ import type {
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { PROJECT_STATUS_BADGE } from "@/app/_lib/design-tokens";
 import {
   LAYOUT,
-  PROJECT_STATUS_BADGE,
-  TEXT,
-  TONE,
   SPACING,
-} from "@/app/_lib/design-tokens";
+  TONE_CLASSES,
+  TYPE,
+  type ToneNameV2,
+} from "@/app/_lib/design-tokens-v2";
 
 import {
   CalendarIcon,
@@ -30,25 +31,25 @@ interface RailProps {
 /**
  * Server component: renders contact reference data for the detail workspace.
  *
- * Starts with a minimal name + record ID header (no avatar placeholder,
- * no stage badge), then contact details, active and past project
- * participations, and milestone activity. Visibility is controlled by the
- * parent detail component via conditional render.
+ * Header: name + record ID (mono, dim). Then contact details (with phone
+ * fallback), active and past project participations (status-tone dots), and
+ * milestone activity. Visibility is controlled by the parent detail
+ * component via conditional render.
  */
 export function InboxContactRail({ contact, onClose }: RailProps) {
   return (
     <aside
       id="inbox-contact-rail"
-      className={`flex min-h-0 ${LAYOUT.railWidth} shrink-0 flex-col ${TONE.slate.subtle}`}
+      className={`flex min-h-0 ${LAYOUT.railWidth} shrink-0 flex-col ${TONE_CLASSES.slate.subtle}`}
       aria-label="Contact details"
     >
       <header className={`flex ${LAYOUT.headerHeight} shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-5`}>
         <div className="min-w-0 flex-1">
-          <h2 className={`truncate ${TEXT.headingSm}`}>
+          <h2 className={`truncate ${TYPE.headingSm}`}>
             {contact.displayName}
           </h2>
-          <p className={`mt-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-500`}>
-            Record ID · {contact.volunteerId}
+          <p className="mt-0.5 truncate font-mono text-[11px] text-slate-400">
+            {contact.volunteerId}
           </p>
         </div>
         {onClose ? (
@@ -66,7 +67,7 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
       <section className={`border-b border-slate-200 ${SPACING.section}`}>
-        <SectionLabel>
+        <SectionLabel as="h3">
           Contact
         </SectionLabel>
         <dl className="mt-2 space-y-1.5 text-[13px]">
@@ -79,7 +80,14 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
             <ContactLine icon={<PhoneIcon className="h-3.5 w-3.5" />}>
               {contact.primaryPhone}
             </ContactLine>
-          ) : null}
+          ) : (
+            <ContactLine
+              icon={<PhoneIcon className="h-3.5 w-3.5" />}
+              muted
+            >
+              No phone on file
+            </ContactLine>
+          )}
           <ContactLine icon={<CalendarIcon className="h-3.5 w-3.5" />}>
             {contact.joinedAtLabel}
           </ContactLine>
@@ -98,7 +106,7 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
       />
 
       <section className={SPACING.section}>
-        <SectionLabel>
+        <SectionLabel as="h3">
           Project activity
         </SectionLabel>
         {contact.recentActivity.length === 0 ? (
@@ -106,20 +114,20 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
             No project activity recorded.
           </p>
         ) : (
-          <ul className="mt-3 space-y-0">
+          <ul className="mt-3 space-y-3">
             {contact.recentActivity.map((entry, index) => (
               <li
                 key={entry.id}
-                className="relative flex gap-3 pb-4 last:pb-0"
+                className="relative flex gap-3 pb-1 last:pb-0"
               >
-                {/* Vertical connector line */}
+                {/* Vertical connector line — passes through dot center (5px) */}
                 {index < contact.recentActivity.length - 1 ? (
                   <div className="absolute left-[5px] top-3 h-full w-px bg-slate-200" />
                 ) : null}
-                {/* Dot */}
-                <div className="relative mt-1.5 h-[11px] w-[11px] shrink-0 rounded-full border-2 border-slate-300 bg-white" />
+                {/* Dot — h-[10px] w-[10px] centers at 5px to match line */}
+                <div className="relative mt-1.5 h-[10px] w-[10px] shrink-0 rounded-full border-2 border-slate-300 bg-white" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] leading-snug text-slate-700">
+                  <p className="text-[12.5px] leading-snug text-slate-700">
                     {entry.label}
                   </p>
                   <p className="text-[11px] text-slate-400">
@@ -145,37 +153,46 @@ interface ProjectsSectionProps {
 function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) {
   return (
     <section className={`border-b border-slate-200 ${SPACING.section}`}>
-      <h3 className={TEXT.label}>
+      <SectionLabel as="h3">
         {title}
-      </h3>
+      </SectionLabel>
       {projects.length === 0 ? (
         <p className="mt-2 text-[12px] text-slate-400">{emptyLabel}</p>
       ) : (
         <ul className="mt-2 space-y-1">
-          {projects.map((project) => (
-            <li key={project.membershipId}>
-              <a
-                href={project.crmUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white hover:ring-1 hover:ring-slate-200"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium text-slate-800 group-hover:text-slate-900">
-                    {project.projectName}
-                  </p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-                    <span className="tabular-nums">
-                      {project.year.toString()}
-                    </span>
-                    <span className="text-slate-300">·</span>
-                    <InboxProjectStatusBadge status={project.status} />
-                  </p>
-                </div>
-                <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-slate-500" />
-              </a>
-            </li>
-          ))}
+          {projects.map((project) => {
+            // TODO(B1): swap primary click target to expeditionMemberUrl;
+            // keep crmUrl as secondary "↗ project" link.
+            const tone = STATUS_TONE[project.status];
+            return (
+              <li key={project.membershipId}>
+                <a
+                  href={project.crmUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white hover:ring-1 hover:ring-slate-200"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${TONE_CLASSES[tone].dot}`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-slate-800 group-hover:text-slate-900">
+                      {project.projectName}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+                      <span className="tabular-nums">
+                        {project.year.toString()}
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <InboxProjectStatusBadge status={project.status} />
+                    </p>
+                  </div>
+                  <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-slate-500" />
+                </a>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
@@ -189,6 +206,15 @@ const PROJECT_STATUS_LABEL: Record<InboxProjectStatus, string> = {
   "trip-planning": "Trip Planning",
   "in-field": "In the Field",
   successful: "Successful"
+};
+
+const STATUS_TONE: Record<InboxProjectStatus, ToneNameV2> = {
+  lead: "slate",
+  applied: "sky",
+  "in-training": "indigo",
+  "trip-planning": "amber",
+  "in-field": "emerald",
+  successful: "violet"
 };
 
 export function InboxProjectStatusBadge({
@@ -207,14 +233,18 @@ export function InboxProjectStatusBadge({
 
 function ContactLine({
   icon,
-  children
+  children,
+  muted = false
 }: {
   readonly icon: React.ReactNode;
   readonly children: React.ReactNode;
+  readonly muted?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-2 text-slate-700">
-      <span className="text-slate-400">{icon}</span>
+    <div
+      className={`flex items-center gap-2 ${muted ? "italic text-slate-400" : "text-slate-700"}`}
+    >
+      <span className={muted ? "text-slate-300" : "text-slate-300"}>{icon}</span>
       <span className="truncate">{children}</span>
     </div>
   );
