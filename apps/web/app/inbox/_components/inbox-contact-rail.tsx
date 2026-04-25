@@ -154,26 +154,43 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
         <ul className="mt-2 space-y-1">
           {projects.map((project) => (
             <li key={project.membershipId}>
-              <a
-                href={project.crmUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white hover:ring-1 hover:ring-slate-200"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium text-slate-800 group-hover:text-slate-900">
-                    {project.projectName}
-                  </p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-                    <span className="tabular-nums">
-                      {project.year.toString()}
-                    </span>
-                    <span className="text-slate-300">·</span>
-                    <InboxProjectStatusBadge status={project.status} />
-                  </p>
+              {project.crmUrl != null ? (
+                <a
+                  href={project.crmUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white hover:ring-1 hover:ring-slate-200"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-slate-800 group-hover:text-slate-900">
+                      {project.projectName}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+                      <span className="tabular-nums">
+                        {project.year.toString()}
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <InboxProjectStatusBadge status={project.status} />
+                    </p>
+                  </div>
+                  <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-slate-500" />
+                </a>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-slate-800">
+                      {project.projectName}
+                    </p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+                      <span className="tabular-nums">
+                        {project.year.toString()}
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <InboxProjectStatusBadge status={project.status} />
+                    </p>
+                  </div>
                 </div>
-                <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-slate-500" />
-              </a>
+              )}
             </li>
           ))}
         </ul>

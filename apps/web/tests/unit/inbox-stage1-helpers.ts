@@ -23,6 +23,7 @@ export async function seedInboxContact(
     readonly membershipId?: string;
     readonly membershipStatus?: string | null;
     readonly membershipCreatedAt?: string;
+    readonly salesforceMembershipId?: string | null;
   },
 ): Promise<void> {
   await context.repositories.contacts.upsert({
@@ -55,6 +56,7 @@ export async function seedInboxContact(
       source: "salesforce",
       createdAt:
         input.membershipCreatedAt ?? new Date().toISOString(),
+      salesforceMembershipId: input.salesforceMembershipId ?? null,
     });
   }
 }

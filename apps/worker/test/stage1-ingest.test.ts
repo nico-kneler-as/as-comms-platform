@@ -193,6 +193,7 @@ describe("Stage 1 worker ingest service", () => {
       updatedAt: "2026-01-02T00:00:00.000Z",
       memberships: [
         {
+          salesforceId: "a15VK00000AUcRtYAL",
           projectId: "project_1",
           projectName: "Project Antarctica",
           expeditionId: "expedition_1",

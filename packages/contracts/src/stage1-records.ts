@@ -146,6 +146,7 @@ export const contactMembershipSchema = z.object({
   status: z.string().min(1).nullable(),
   source: recordSourceSchema,
   createdAt: timestampSchema,
+  salesforceMembershipId: nullableStringSchema.optional(),
 });
 export type ContactMembershipRecord = z.infer<typeof contactMembershipSchema>;
 

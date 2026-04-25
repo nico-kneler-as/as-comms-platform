@@ -424,6 +424,7 @@ export function mapContactMembershipRow(
     status: row.status,
     source: row.source,
     createdAt: row.createdAt.toISOString(),
+    salesforceMembershipId: row.salesforceMembershipId ?? null,
   });
 }
 
@@ -440,6 +441,7 @@ export function mapContactMembershipToInsert(
     role: parsed.role,
     status: parsed.status,
     source: parsed.source,
+    salesforceMembershipId: parsed.salesforceMembershipId ?? null,
     createdAt: toDate(parsed.createdAt),
   };
 }

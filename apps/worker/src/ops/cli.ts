@@ -37,6 +37,7 @@ import { runCleanupSalesforceOwnerScopeCommand } from "./cleanup-salesforce-owne
 import { reconcileIdentityQueue } from "./reconcile-identity-queue.js";
 import { runDedupHistoricalLedgerCommand } from "./dedup-historical-ledger.js";
 import { runReclassifySfDirectionCommand } from "./reclassify-sf-direction.js";
+import { runBackfillMembershipSfIdsCommand } from "./backfill-membership-sf-ids.js";
 import {
   buildOperationId,
   parseCliFlags,
@@ -370,9 +371,12 @@ async function main(): Promise<void> {
     case "reclassify-sf-direction":
       await runReclassifySfDirectionCommand(rest, process.env);
       return;
+    case "backfill-membership-sf-ids":
+      await runBackfillMembershipSfIdsCommand(rest, process.env);
+      return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-mailchimp-campaign-body, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, dedup-historical-ledger, reconcile-identity-queue, reclassify-sf-direction.",
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-mailchimp-campaign-body, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, dedup-historical-ledger, reconcile-identity-queue, reclassify-sf-direction, backfill-membership-sf-ids.",
       );
   }
 }

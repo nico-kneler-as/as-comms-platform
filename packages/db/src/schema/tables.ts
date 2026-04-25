@@ -160,6 +160,7 @@ export const contactMemberships = pgTable(
     role: text("role"),
     status: text("status"),
     source: recordSourceEnum("source").notNull(),
+    salesforceMembershipId: text("salesforce_membership_id"),
     createdAt: createdAtColumn,
     updatedAt: updatedAtColumn,
   },

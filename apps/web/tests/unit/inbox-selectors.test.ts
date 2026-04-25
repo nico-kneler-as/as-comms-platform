@@ -207,6 +207,7 @@ async function seedInboxFixture(runtime: InboxTestRuntime): Promise<void> {
     projectName: "Amazon Basin Research",
     membershipId: "membership:sarah",
     membershipStatus: "in_training",
+    salesforceMembershipId: "a15VK00000AUcRtYAL",
   });
   await seedInboxEmailEvent(runtime.context, {
     id: "sarah-outbound-1",
@@ -916,7 +917,7 @@ describe("real inbox selectors", () => {
       projectName: "Amazon Basin Research",
       status: "in-training",
       crmUrl:
-        "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/membership%3Asarah/view",
+        "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/a15VK00000AUcRtYAL/view",
     });
     expect(detail?.timeline.map((entry) => entry.kind)).toEqual([
       "outbound-email",

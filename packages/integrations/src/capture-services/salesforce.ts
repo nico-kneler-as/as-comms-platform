@@ -908,6 +908,7 @@ function buildContactSnapshotRecordWithConfig(input: {
     createdAt,
     updatedAt,
     memberships: input.memberships.map((membership) => ({
+      salesforceId: getStringField(membership, "Id"),
       projectId: getStringField(
         membership,
         input.config.membershipProjectField,
