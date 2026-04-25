@@ -15,6 +15,17 @@ vi.mock("@/components/ui/divider-label", () => ({
 }));
 
 vi.mock("@/app/_lib/design-tokens-v2", () => ({
+  FOCUS_RING:
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300",
+  RADIUS: {
+    sm: "rounded-sm",
+    md: "rounded-md",
+    lg: "rounded-lg",
+    xl: "rounded-xl",
+  },
+  SPACING: {
+    section: "px-5 py-4",
+  },
   SHADOW: {
     sm: "shadow-sm",
   },
