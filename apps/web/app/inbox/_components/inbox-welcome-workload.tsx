@@ -8,7 +8,6 @@ import {
   LAYOUT,
   TONE_CLASSES,
   TYPE,
-  type ToneNameV2,
 } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
 
@@ -17,38 +16,12 @@ import type {
   InboxWelcomeWorkloadViewModel,
 } from "../_lib/view-models";
 import { FIELD_QUOTES } from "../_lib/field-quotes";
+import { projectToneFromName } from "../_lib/project-tone";
 import { ArrowUpRightIcon, QuoteIcon, RefreshCwIcon } from "./icons";
 
 interface InboxWelcomeWorkloadProps {
   readonly workload: InboxWelcomeWorkloadViewModel;
   readonly firstName: string;
-}
-
-const PROJECT_TONE_PALETTE: readonly ToneNameV2[] = [
-  "sky",
-  "indigo",
-  "emerald",
-  "amber",
-  "rose",
-  "violet",
-  "teal",
-  "slate",
-];
-
-/**
- * Pure deterministic project tone derived from projectId so the same project
- * always gets the same color across surfaces (welcome screen, sidebar list,
- * contact rail). Until the view model exposes a real `tone` field this acts
- * as a stable proxy.
- */
-function projectTone(projectId: string): ToneNameV2 {
-  let hash = 0;
-  for (let i = 0; i < projectId.length; i += 1) {
-    hash = (hash * 31 + projectId.charCodeAt(i)) >>> 0;
-  }
-  return (
-    PROJECT_TONE_PALETTE[hash % PROJECT_TONE_PALETTE.length] ?? "slate"
-  );
 }
 
 function formatDay(date: Date): string {
@@ -180,7 +153,7 @@ function ProjectMiniDashboard({
       <SectionLabel as="h2">Active project workload</SectionLabel>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {projects.map((project) => {
-          const tone = projectTone(project.projectId);
+          const tone = projectToneFromName(project.projectName);
           const t = TONE_CLASSES[tone];
           return (
             <button
