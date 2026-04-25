@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React, { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ContactMembershipRecord } from "@as-comms/contracts";
 
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
@@ -59,6 +60,8 @@ import {
   getInboxTimelinePage,
   getInboxWelcomeWorkload,
   groupInboxTimelineSystemMessages,
+  resolvePrimaryMembership,
+  sortMembershipsByCreatedAt,
   stripSignature,
 } from "../../app/inbox/_lib/selectors";
 import { InboxContactRail } from "../../app/inbox/_components/inbox-contact-rail";
@@ -139,6 +142,25 @@ function buildTimelineEntry(
     attachmentCount: 0,
     campaignActivity: [],
     ...overrides,
+  };
+}
+
+function buildMembership(
+  overrides: Partial<ContactMembershipRecord> & {
+    readonly id: string;
+    readonly projectId: string | null;
+    readonly createdAt: string;
+  },
+): ContactMembershipRecord {
+  return {
+    id: overrides.id,
+    contactId: overrides.contactId ?? "contact:test",
+    projectId: overrides.projectId,
+    expeditionId: overrides.expeditionId ?? null,
+    role: overrides.role ?? "volunteer",
+    status: overrides.status ?? "active",
+    source: overrides.source ?? "salesforce",
+    createdAt: overrides.createdAt,
   };
 }
 
@@ -528,6 +550,97 @@ describe("groupInboxTimelineSystemMessages", () => {
   });
 });
 
+describe("sortMembershipsByCreatedAt", () => {
+  it("sorts memberships by createdAt descending", () => {
+    const memberships = [
+      buildMembership({
+        id: "membership:1",
+        projectId: "project:illegal-timber",
+        createdAt: "2026-04-04T23:52:53.343Z",
+      }),
+      buildMembership({
+        id: "membership:2",
+        projectId: "project:passive-acoustic",
+        createdAt: "2026-04-04T23:52:53.368Z",
+      }),
+      buildMembership({
+        id: "membership:3",
+        projectId: "project:whitebark-pine",
+        createdAt: "2026-04-04T23:52:53.349Z",
+      }),
+    ];
+
+    expect(sortMembershipsByCreatedAt(memberships).map((membership) => membership.id)).toEqual([
+      "membership:2",
+      "membership:3",
+      "membership:1",
+    ]);
+  });
+});
+
+describe("resolvePrimaryMembership", () => {
+  const memberships = [
+    buildMembership({
+      id: "membership:older",
+      projectId: "project:illegal-timber",
+      createdAt: "2026-04-01T10:00:00.000Z",
+      status: "lead",
+    }),
+    buildMembership({
+      id: "membership:newest",
+      projectId: "project:passive-acoustic",
+      createdAt: "2026-04-03T10:00:00.000Z",
+      status: "active",
+    }),
+  ];
+
+  it("returns the membership whose project matches the last-inbound alias", () => {
+    const primaryMembership = resolvePrimaryMembership({
+      memberships,
+      lastInboundAlias: "pnwbio@adventurescientists.org",
+      aliasToProjectId: new Map([
+        ["pnwbio@adventurescientists.org", "project:passive-acoustic"],
+      ]),
+    });
+
+    expect(primaryMembership?.id).toBe("membership:newest");
+  });
+
+  it("falls back to newest-by-createdAt when alias maps to a different project", () => {
+    const primaryMembership = resolvePrimaryMembership({
+      memberships,
+      lastInboundAlias: "whitebark@adventurescientists.org",
+      aliasToProjectId: new Map([
+        ["whitebark@adventurescientists.org", "project:whitebark-pine"],
+      ]),
+    });
+
+    expect(primaryMembership?.id).toBe("membership:newest");
+  });
+
+  it("falls back to newest-by-createdAt when no inbound alias exists", () => {
+    const primaryMembership = resolvePrimaryMembership({
+      memberships,
+      lastInboundAlias: null,
+      aliasToProjectId: new Map(),
+    });
+
+    expect(primaryMembership?.id).toBe("membership:newest");
+  });
+
+  it("returns null when memberships is empty", () => {
+    expect(
+      resolvePrimaryMembership({
+        memberships: [],
+        lastInboundAlias: "pnwbio@adventurescientists.org",
+        aliasToProjectId: new Map([
+          ["pnwbio@adventurescientists.org", "project:passive-acoustic"],
+        ]),
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("real inbox selectors", () => {
   let runtime: InboxTestRuntime | null = null;
 
@@ -581,6 +694,77 @@ describe("real inbox selectors", () => {
       list.items.find((item) => item.contactId === "contact:sarah-martinez")
         ?.projectLabel,
     ).toBe("Amazon Basin");
+  });
+
+  it("uses the last inbound alias project for inbox row tags before rank sorting", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:steve-herman",
+      salesforceContactId: "003-steve",
+      displayName: "Steve Herman",
+      primaryEmail: "steve@example.org",
+      primaryPhone: null,
+      projectId: "project:illegal-timber",
+      projectName: "Illegal Timber Tracking",
+      projectAlias: "Illegal Timber",
+      membershipId: "membership:steve:illegal-timber",
+      membershipStatus: "lead",
+      membershipCreatedAt: "2026-04-01T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:steve-herman",
+      salesforceContactId: "003-steve",
+      displayName: "Steve Herman",
+      primaryEmail: "steve@example.org",
+      primaryPhone: null,
+      projectId: "project:passive-acoustic",
+      projectName: "Passive Acoustic Monitoring of Pacific Northwest Forests",
+      projectAlias: "Passive Acoustic",
+      membershipId: "membership:steve:passive-acoustic",
+      membershipStatus: "active",
+      membershipCreatedAt: "2026-04-03T10:00:00.000Z",
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:pnwbio",
+      alias: "pnwbio@adventurescientists.org",
+      signature: "",
+      projectId: "project:passive-acoustic",
+      createdAt: new Date("2026-04-20T12:00:00.000Z"),
+      updatedAt: new Date("2026-04-20T12:00:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "steve-inbound-1",
+      contactId: "contact:steve-herman",
+      occurredAt: "2026-04-20T12:30:00.000Z",
+      direction: "inbound",
+      subject: "Re: Field logistics",
+      snippet: "Replying from the PNW project alias.",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:steve-herman",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-20T12:30:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-20T12:30:00.000Z",
+      snippet: "Replying from the PNW project alias.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const list = await getInboxList();
+
+    expect(
+      list.items.find((item) => item.contactId === "contact:steve-herman")
+        ?.projectLabel,
+    ).toBe("Passive Acoustic");
   });
 
   it("uses bucket, needsFollowUp, and hasUnresolved for the secondary filters", async () => {
@@ -688,6 +872,7 @@ describe("real inbox selectors", () => {
       role: "volunteer",
       status: "trip_planning",
       source: "salesforce",
+      createdAt: "2026-04-14T12:00:00.000Z",
     });
 
     const workload = await getInboxWelcomeWorkload();
@@ -747,6 +932,91 @@ describe("real inbox selectors", () => {
       nextCursor: null,
       total: 2,
     });
+  });
+
+  it("orders contact rail active projects newest-first by membership createdAt and uses short aliases", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:steve-herman",
+      salesforceContactId: "003-steve",
+      displayName: "Steve Herman",
+      primaryEmail: "steve@example.org",
+      primaryPhone: null,
+      projectId: "project:illegal-timber",
+      projectName: "Illegal Timber Tracking",
+      projectAlias: "Illegal Timber",
+      membershipId: "membership:steve:illegal-timber",
+      membershipStatus: "lead",
+      membershipCreatedAt: "2026-04-01T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:steve-herman",
+      salesforceContactId: "003-steve",
+      displayName: "Steve Herman",
+      primaryEmail: "steve@example.org",
+      primaryPhone: null,
+      projectId: "project:whitebark-pine",
+      projectName: "WPEF Tracking Whitebark Pine OR WA 2025-2026 2026",
+      projectAlias: "Whitebark Pine",
+      membershipId: "membership:steve:whitebark",
+      membershipStatus: "applied",
+      membershipCreatedAt: "2026-04-02T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:steve-herman",
+      salesforceContactId: "003-steve",
+      displayName: "Steve Herman",
+      primaryEmail: "steve@example.org",
+      primaryPhone: null,
+      projectId: "project:passive-acoustic",
+      projectName: "Passive Acoustic Monitoring of Pacific Northwest Forests",
+      projectAlias: "Passive Acoustic",
+      membershipId: "membership:steve:passive-acoustic",
+      membershipStatus: "active",
+      membershipCreatedAt: "2026-04-03T10:00:00.000Z",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "steve-detail-inbound-1",
+      contactId: "contact:steve-herman",
+      occurredAt: "2026-04-20T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Re: Project recap",
+      snippet: "Here is the latest project update.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:steve-herman",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-20T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-20T13:00:00.000Z",
+      snippet: "Here is the latest project update.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:steve-herman");
+
+    if (detail === null) {
+      throw new Error("Expected inbox detail for Steve Herman");
+    }
+
+    expect(detail.contact.activeProjects.map((project) => project.projectName)).toEqual([
+      "Passive Acoustic",
+      "Whitebark Pine",
+      "Illegal Timber",
+    ]);
+    expect(
+      renderToStaticMarkup(
+        createElement(InboxContactRail, {
+          contact: detail.contact,
+        }),
+      ),
+    ).not.toContain("WPEF Tracking Whitebark Pine OR WA 2025-2026 2026");
   });
 
   it("threads Gmail From, To, and Cc headers into the timeline detail view model", async () => {
@@ -946,6 +1216,42 @@ describe("real inbox selectors", () => {
     expect(detail?.contact.recentActivity[0]?.occurredAtLabel).toEqual(
       expect.any(String),
     );
+  });
+
+  it("uses short project aliases in lifecycle timeline bodies and project activity labels", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:amazon-basin",
+      projectName: "Amazon Basin Research",
+      projectAlias: "Amazon Basin",
+      source: "salesforce",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "sarah-lifecycle-alias",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-09T09:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training materials",
+      projectId: "project:amazon-basin",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+    const lifecycleEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:sarah-lifecycle-alias",
+    );
+
+    expect(lifecycleEntry).toMatchObject({
+      kind: "system-event",
+      body: "Received training for Amazon Basin",
+    });
+    expect(detail?.contact.recentActivity).toMatchObject([
+      {
+        label: "Received training - Amazon Basin",
+      },
+    ]);
   });
 
   it("builds right-rail lifecycle activity for all four locked milestones in newest-first order", async () => {
@@ -2112,6 +2418,7 @@ describe("real inbox selectors", () => {
       role: "volunteer",
       status: "active",
       source: "salesforce",
+      createdAt: "2026-04-15T12:00:00.000Z",
     });
 
     const latest = await seedInboxEmailEvent(runtime.context, {

@@ -111,6 +111,7 @@ function buildRepositoryBundle(input: {
             sourceEvidenceIds.includes(detail.sourceEvidenceId),
           ),
         ),
+      listLastInboundAliasByContactIds: () => Promise.resolve(new Map()),
       upsert: (record) => Promise.resolve(record),
     },
     salesforceEventContext: {

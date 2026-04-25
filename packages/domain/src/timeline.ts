@@ -823,7 +823,7 @@ async function loadTimelinePresentationContext(
     projectNameById: new Map(
       projectDimensions.map((dimension) => [
         dimension.projectId,
-        dimension.projectName,
+        dimension.projectAlias ?? dimension.projectName,
       ]),
     ),
     expeditionNameById: new Map(

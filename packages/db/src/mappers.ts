@@ -423,6 +423,7 @@ export function mapContactMembershipRow(
     role: row.role,
     status: row.status,
     source: row.source,
+    createdAt: row.createdAt.toISOString(),
   });
 }
 
@@ -439,6 +440,7 @@ export function mapContactMembershipToInsert(
     role: parsed.role,
     status: parsed.status,
     source: parsed.source,
+    createdAt: toDate(parsed.createdAt),
   };
 }
 

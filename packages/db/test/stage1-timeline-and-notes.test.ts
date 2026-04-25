@@ -66,7 +66,8 @@ async function seedVolunteerContact(input: {
         expeditionId: "expedition-stage1-seed",
         role: null,
         status: "applied",
-        source: "salesforce"
+        source: "salesforce",
+        createdAt: "2026-01-01T00:00:00.000Z"
       }
     ]
   });

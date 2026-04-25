@@ -22,6 +22,7 @@ export async function seedInboxContact(
     readonly projectAlias?: string | null;
     readonly membershipId?: string;
     readonly membershipStatus?: string | null;
+    readonly membershipCreatedAt?: string;
   },
 ): Promise<void> {
   await context.repositories.contacts.upsert({
@@ -52,6 +53,8 @@ export async function seedInboxContact(
       role: "volunteer",
       status: input.membershipStatus ?? null,
       source: "salesforce",
+      createdAt:
+        input.membershipCreatedAt ?? new Date().toISOString(),
     });
   }
 }
@@ -70,6 +73,7 @@ export async function seedInboxEmailEvent(
     readonly fromHeader?: string | null;
     readonly toHeader?: string | null;
     readonly ccHeader?: string | null;
+    readonly projectInboxAlias?: string | null;
   },
 ): Promise<{ readonly canonicalEventId: string }> {
   const sourceEvidenceId = `source:${input.id}`;
@@ -128,7 +132,7 @@ export async function seedInboxEmailEvent(
     snippetClean: input.snippetClean ?? input.snippet,
     bodyTextPreview: input.bodyTextPreview ?? input.snippet,
     capturedMailbox: "volunteers@example.org",
-    projectInboxAlias: "volunteers@example.org",
+    projectInboxAlias: input.projectInboxAlias ?? "volunteers@example.org",
   });
 
   await context.repositories.timelineProjection.upsert({

@@ -27,7 +27,8 @@ async function seedContactWithEmail(
             expeditionId: "expedition_default",
             role: "volunteer",
             status: "active",
-            source: "salesforce" as const
+            source: "salesforce" as const,
+            createdAt: "2026-01-01T00:00:00.000Z",
           }
         ];
 
@@ -50,7 +51,7 @@ async function seedContactWithEmail(
         isPrimary: true,
         source: "salesforce",
         verifiedAt: "2026-01-01T00:00:00.000Z"
-        }
+      }
       ],
     memberships
   });
@@ -292,7 +293,8 @@ describe("Stage 1 normalization service", () => {
           expeditionId: "expedition_1",
           role: "volunteer",
           status: "active",
-          source: "salesforce"
+          source: "salesforce",
+          createdAt: "2026-01-01T00:00:00.000Z"
         }
       ]
     });
@@ -1588,7 +1590,8 @@ describe("Stage 1 normalization service", () => {
           expeditionId: null,
           role: "volunteer",
           status: "active",
-          source: "salesforce"
+          source: "salesforce",
+          createdAt: "2026-01-01T00:00:00.000Z"
         },
         {
           id: "membership_2",
@@ -1597,7 +1600,8 @@ describe("Stage 1 normalization service", () => {
           expeditionId: null,
           role: "volunteer",
           status: "active",
-          source: "salesforce"
+          source: "salesforce",
+          createdAt: "2026-01-02T00:00:00.000Z"
         }
       ]
     });
@@ -1684,7 +1688,8 @@ describe("Stage 1 normalization service", () => {
           expeditionId: "expedition_anchor",
           role: "volunteer",
           status: "active",
-          source: "salesforce"
+          source: "salesforce",
+          createdAt: "2026-01-01T00:00:00.000Z"
         }
       ]
     });
@@ -1797,7 +1802,8 @@ describe("Stage 1 normalization service", () => {
           expeditionId: "expedition_cached",
           role: "volunteer",
           status: "active",
-          source: "salesforce"
+          source: "salesforce",
+          createdAt: "2026-01-01T00:00:00.000Z"
         }
       ]
     });

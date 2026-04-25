@@ -179,6 +179,9 @@ export interface GmailMessageDetailRepository {
   listBySourceEvidenceIds(
     sourceEvidenceIds: readonly string[],
   ): Promise<readonly GmailMessageDetailRecord[]>;
+  listLastInboundAliasByContactIds(
+    contactIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>>;
   upsert(record: GmailMessageDetailRecord): Promise<GmailMessageDetailRecord>;
 }
 

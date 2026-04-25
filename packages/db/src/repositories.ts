@@ -1448,6 +1448,35 @@ function createStage1RepositoriesInternal(
         return rows.map(mapGmailMessageDetailRow);
       },
 
+      async listLastInboundAliasByContactIds(contactIds) {
+        if (contactIds.length === 0) {
+          return new Map();
+        }
+
+        const result = (await db.execute(
+          sql`
+            select distinct on (${canonicalEventLedger.contactId})
+              ${canonicalEventLedger.contactId} as "contactId",
+              ${gmailMessageDetails.projectInboxAlias} as "projectInboxAlias"
+            from ${canonicalEventLedger}
+            inner join ${gmailMessageDetails}
+              on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+            where ${inArray(canonicalEventLedger.contactId, [...contactIds])}
+              and ${gmailMessageDetails.direction} = 'inbound'
+              and ${gmailMessageDetails.projectInboxAlias} is not null
+            order by
+              ${canonicalEventLedger.contactId},
+              ${canonicalEventLedger.occurredAt} desc
+          `,
+        )) as {
+          rows: { contactId: string; projectInboxAlias: string }[];
+        };
+
+        return new Map(
+          result.rows.map((row) => [row.contactId, row.projectInboxAlias]),
+        );
+      },
+
       async upsert(record) {
         const values = mapGmailMessageDetailToInsert(record);
         const [row] = await db

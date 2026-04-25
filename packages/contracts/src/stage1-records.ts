@@ -145,6 +145,7 @@ export const contactMembershipSchema = z.object({
   role: z.string().min(1).nullable(),
   status: z.string().min(1).nullable(),
   source: recordSourceSchema,
+  createdAt: timestampSchema,
 });
 export type ContactMembershipRecord = z.infer<typeof contactMembershipSchema>;
 

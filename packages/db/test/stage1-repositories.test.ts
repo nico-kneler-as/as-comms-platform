@@ -254,6 +254,7 @@ describe("Stage 1 DB repositories", () => {
       role: "volunteer",
       status: "active",
       source: "salesforce",
+      createdAt: "2026-01-02T00:00:00.000Z",
     });
 
     await expect(
