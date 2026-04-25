@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { InboxComposerReplyContext } from "../../app/inbox/_lib/view-models";
-import { _test_only } from "../../app/inbox/_components/inbox-composer";
+import { plaintextToComposerHtml } from "../../app/inbox/_components/composer-html";
 import {
   formatContactRecipientLabel,
   reduceComposerPane,
@@ -141,7 +141,7 @@ describe("stage3 composer ui helpers", () => {
 
   it("converts AI draft plaintext into safe composer HTML paragraphs and line breaks", () => {
     expect(
-      _test_only.plaintextToComposerHtml(
+      plaintextToComposerHtml(
         `Hi Lily,\n\nThanks for reaching out.\nSecond line\n\n<script>alert("xss")</script>\n`,
       ),
     ).toBe(

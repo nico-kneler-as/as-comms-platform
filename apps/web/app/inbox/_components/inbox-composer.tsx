@@ -51,6 +51,7 @@ import {
   resolveDefaultAlias,
 } from "../_lib/composer-ui";
 import type { InboxComposerAliasOption } from "../_lib/view-models";
+import { plaintextToComposerHtml } from "./composer-html";
 import {
   ComposerToolbar,
   type ComposerToolbarCommand,
@@ -100,31 +101,6 @@ interface SenderPickerProps {
 }
 
 type ComposerFieldErrors = readonly ComposerValidationError[];
-
-function escapeComposerHtmlSegment(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function plaintextToComposerHtml(value: string): string {
-  return value
-    .split(/\n\s*\n+/u)
-    .map((paragraph) => paragraph.trim())
-    .filter((paragraph) => paragraph.length > 0)
-    .map((paragraph) => {
-      const html = paragraph
-        .split("\n")
-        .map((segment) => escapeComposerHtmlSegment(segment))
-        .join("<br>");
-
-      return `<p>${html}</p>`;
-    })
-    .join("");
-}
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) {
@@ -1303,6 +1279,3 @@ export function InboxComposerDetailPane() {
   );
 }
 
-export const _test_only = {
-  plaintextToComposerHtml,
-};
