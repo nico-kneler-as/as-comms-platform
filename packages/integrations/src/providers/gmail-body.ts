@@ -32,6 +32,27 @@ interface CandidateBodyPart {
   readonly part: GmailApiMessagePart;
 }
 
+export type GmailBodyKind =
+  | "plaintext"
+  | "encrypted_placeholder"
+  | "binary_fallback";
+
+export interface GmailBodyPreviewResult {
+  readonly bodyTextPreview: string;
+  readonly bodyKind: GmailBodyKind;
+}
+
+const ENCRYPTED_MESSAGE_PLACEHOLDER =
+  "[Encrypted message — open in Gmail to read]";
+const BINARY_FALLBACK_PLACEHOLDER =
+  "[Message body could not be extracted — open in Gmail]";
+const ENCRYPTED_MIME_TYPES = new Set([
+  "application/pkcs7-mime",
+  "application/x-pkcs7-mime",
+  "multipart/encrypted",
+  "application/pgp-encrypted"
+]);
+
 function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n/gu, "\n").replace(/\r/gu, "\n");
 }
@@ -202,6 +223,40 @@ function getPartHeader(
   return header?.value ?? null;
 }
 
+function normalizeMimeType(value: string | null | undefined): string {
+  return value?.split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
+function buildBodyPreviewResult(
+  bodyTextPreview: string,
+  bodyKind: GmailBodyKind
+): GmailBodyPreviewResult {
+  return {
+    bodyTextPreview,
+    bodyKind
+  };
+}
+
+export function extractBodyKind(part: GmailApiMessagePart): GmailBodyKind {
+  const contentType = normalizeMimeType(
+    getPartHeader(part, "Content-Type") ?? part.mimeType ?? null
+  );
+
+  return ENCRYPTED_MIME_TYPES.has(contentType)
+    ? "encrypted_placeholder"
+    : "plaintext";
+}
+
+function containsEncryptedBodyPart(part: GmailApiMessagePart): boolean {
+  if (extractBodyKind(part) === "encrypted_placeholder") {
+    return true;
+  }
+
+  return (part.parts ?? []).some((childPart) =>
+    containsEncryptedBodyPart(childPart)
+  );
+}
+
 function isAttachmentPart(part: GmailApiMessagePart): boolean {
   if ((part.filename?.trim().length ?? 0) > 0) {
     return true;
@@ -293,9 +348,16 @@ async function extractTextFromMimePart(part: GmailApiMessagePart): Promise<strin
   }
 }
 
-export async function extractGmailBodyPreviewFromPayload(
+export async function extractGmailBodyPreviewFromPayloadResult(
   payload: GmailApiMessagePart
-): Promise<string> {
+): Promise<GmailBodyPreviewResult> {
+  if (containsEncryptedBodyPart(payload)) {
+    return buildBodyPreviewResult(
+      ENCRYPTED_MESSAGE_PLACEHOLDER,
+      "encrypted_placeholder"
+    );
+  }
+
   const candidates = collectCandidateBodyParts(payload);
 
   for (const kind of ["plain", "html"] as const) {
@@ -303,34 +365,78 @@ export async function extractGmailBodyPreviewFromPayload(
       const bodyPreview = await extractTextFromMimePart(candidate.part);
 
       if (bodyPreview.length > 0) {
-        return bodyPreview;
+        return buildBodyPreviewResult(bodyPreview, "plaintext");
       }
     }
+  }
+
+  if ((payload.parts?.length ?? 0) > 0) {
+    return buildBodyPreviewResult(
+      BINARY_FALLBACK_PLACEHOLDER,
+      "binary_fallback"
+    );
   }
 
   const fallbackBodyPreview = await extractTextFromMimePart(payload);
 
   return fallbackBodyPreview.length > 0
-    ? fallbackBodyPreview
-    : cleanGmailBodyPreviewText("");
+    ? buildBodyPreviewResult(fallbackBodyPreview, "plaintext")
+    : buildBodyPreviewResult(cleanGmailBodyPreviewText(""), "plaintext");
+}
+
+export async function extractGmailBodyPreviewFromPayload(
+  payload: GmailApiMessagePart
+): Promise<string> {
+  const result = await extractGmailBodyPreviewFromPayloadResult(payload);
+  return result.bodyTextPreview;
+}
+
+function extractTopLevelContentType(rawMessage: string): string {
+  const normalized = rawMessage.replace(/\r\n/gu, "\n");
+  const headerBlock = normalized.split(/\n\n/u, 1)[0] ?? "";
+  const match = /(?:^|\n)Content-Type:\s*([^\n]+)/iu.exec(headerBlock);
+
+  return normalizeMimeType(match?.[1] ?? null);
+}
+
+export async function extractGmailBodyPreviewFromMimeMessageResult(input: {
+  readonly rawMessage: string;
+  readonly fallbackBodyText?: string | null;
+}): Promise<GmailBodyPreviewResult> {
+  if (ENCRYPTED_MIME_TYPES.has(extractTopLevelContentType(input.rawMessage))) {
+    return buildBodyPreviewResult(
+      ENCRYPTED_MESSAGE_PLACEHOLDER,
+      "encrypted_placeholder"
+    );
+  }
+
+  try {
+    const extractedText = await extractTextFromMimeDocument(input.rawMessage);
+    const cleaned = cleanGmailBodyPreviewText(extractedText);
+
+    if (cleaned.length > 0) {
+      return buildBodyPreviewResult(cleaned, "plaintext");
+    }
+  } catch {
+    // Fall back to a conservative text clean-up below.
+  }
+
+  const fallbackBodyPreview = cleanGmailBodyPreviewText(
+    normalizeLineEndings(input.fallbackBodyText ?? "")
+  );
+
+  return fallbackBodyPreview.length > 0
+    ? buildBodyPreviewResult(fallbackBodyPreview, "plaintext")
+    : buildBodyPreviewResult(
+        BINARY_FALLBACK_PLACEHOLDER,
+        "binary_fallback"
+      );
 }
 
 export async function extractGmailBodyPreviewFromMimeMessage(input: {
   readonly rawMessage: string;
   readonly fallbackBodyText?: string | null;
 }): Promise<string> {
-  try {
-    const extractedText = await extractTextFromMimeDocument(input.rawMessage);
-    const cleaned = cleanGmailBodyPreviewText(extractedText);
-
-    if (cleaned.length > 0) {
-      return cleaned;
-    }
-  } catch {
-    // Fall back to a conservative text clean-up below.
-  }
-
-  return cleanGmailBodyPreviewText(
-    normalizeLineEndings(input.fallbackBodyText ?? "")
-  );
+  const result = await extractGmailBodyPreviewFromMimeMessageResult(input);
+  return result.bodyTextPreview;
 }

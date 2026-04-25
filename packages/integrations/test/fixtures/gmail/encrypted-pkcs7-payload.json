@@ -1,0 +1,18 @@
+{
+  "mimeType": "application/pkcs7-mime",
+  "filename": "smime.p7m",
+  "headers": [
+    {
+      "name": "Content-Type",
+      "value": "application/pkcs7-mime; smime-type=enveloped-data; name=\"smime.p7m\""
+    },
+    {
+      "name": "Content-Transfer-Encoding",
+      "value": "base64"
+    }
+  ],
+  "body": {
+    "data": "MIAGCSqGSIb3DQEHA6CAMIACAQAxggFfMIIBWwIBADBFMD0xCzAJBgNVBAYTAlVTMQ8wDQYDVQQKDAZUZXN0Q28xHTAbBgNVBAMMFFRlc3QgUy9NSU1FIFJlY2lwaWVudAIBADANBgkqhkiG9w0BAQEFAASCAQBm"
+  },
+  "parts": []
+}

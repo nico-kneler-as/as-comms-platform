@@ -559,6 +559,7 @@ export function mapGmailMessageDetailRow(
     labelIds: row.labelIds,
     snippetClean: row.snippetClean,
     bodyTextPreview: row.bodyTextPreview,
+    bodyKind: row.bodyKind,
     capturedMailbox: row.capturedMailbox,
     projectInboxAlias: row.projectInboxAlias,
   });
@@ -582,6 +583,7 @@ export function mapGmailMessageDetailToInsert(
     labelIds: parsed.labelIds,
     snippetClean: parsed.snippetClean,
     bodyTextPreview: parsed.bodyTextPreview,
+    bodyKind: parsed.bodyKind ?? null,
     capturedMailbox: parsed.capturedMailbox,
     projectInboxAlias: parsed.projectInboxAlias,
   };

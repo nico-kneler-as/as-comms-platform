@@ -6,7 +6,7 @@ import {
   type GmailProviderCloseMessageInput
 } from "./gmail-record-builder.js";
 import {
-  extractGmailBodyPreviewFromMimeMessage
+  extractGmailBodyPreviewFromMimeMessageResult
 } from "./gmail-body.js";
 import { gmailRecordSchema, type GmailRecord } from "./gmail.js";
 
@@ -269,10 +269,11 @@ export async function importGmailMboxRecords(
       })) ?? preferredRecordId;
     const internalDate =
       toSafeIsoTimestamp(message.headers.Date) ?? parsedInput.receivedAt;
-    const bodyTextPreview = await extractGmailBodyPreviewFromMimeMessage({
+    const extractedBody = await extractGmailBodyPreviewFromMimeMessageResult({
       rawMessage: message.rawMessage,
       fallbackBodyText: message.bodyText
     });
+    const bodyTextPreview = extractedBody.bodyTextPreview;
     const snippetClean = buildSnippet(bodyTextPreview, message.headers.Subject);
     const recordInput: GmailProviderCloseMessageInput = {
       recordId,
@@ -280,6 +281,7 @@ export async function importGmailMboxRecords(
       snippet: snippetClean,
       snippetClean,
       bodyTextPreview,
+      bodyKind: extractedBody.bodyKind,
       internalDate,
       headers: message.headers,
       payloadRef,
