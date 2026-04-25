@@ -44,7 +44,8 @@ export async function sendComposerGmailMessage(
 
   try {
     config = readComposerGmailSendConfig(process.env);
-  } catch {
+  } catch (error) {
+    console.error("[composer/gmail-send] Config parse failed — check GMAIL_* env vars on web service.", error);
     return {
       kind: "auth_error",
       detail: "Composer Gmail send is not configured."
