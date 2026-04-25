@@ -1,16 +1,8 @@
-Implemented and pushed branch `fix/readiness-admin-only`.
+Implemented the inbox/project surfacing fixes end to end.
 
-PR opened: https://github.com/nico-kneler-as/as-comms-platform/pull/125  
-Commit: `c122eb9`
+- `ContactMembershipRecord` now carries `createdAt`, and the DB mapper/repository path exposes it in both directions so memberships can be ordered deterministically and seeded in tests: [stage1-records.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/packages/contracts/src/stage1-records.ts:140), [mappers.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/packages/db/src/mappers.ts:418).
+- The inbox selectors now use `sortMembershipsByCreatedAt` for contact rail project ordering, resolve the list bubble tag from the last inbound Gmail alias with newest-membership fallback, and use short project labels in detail rail data: [selectors.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/apps/web/app/inbox/_lib/selectors.ts:407), [selectors.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/apps/web/app/inbox/_lib/selectors.ts:2119), [selectors.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/apps/web/app/inbox/_lib/selectors.ts:2239), [selectors.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/apps/web/app/inbox/_lib/selectors.ts:2343), [selectors.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/apps/web/app/inbox/_lib/selectors.ts:2404).
+- Added the batch repository lookup for last inbound aliases and switched timeline lifecycle labels to prefer `projectAlias ?? projectName`: [repositories.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/packages/db/src/repositories.ts:1451), [timeline.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/packages/domain/src/timeline.ts:826).
+- Added helper/integration tests for createdAt sorting, alias-based primary membership resolution, newest-first rail ordering, and short lifecycle labels, and updated shared fixtures plus the Salesforce provider mapping for the new required membership field: [inbox-stage1-helpers.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/apps/web/tests/unit/inbox-stage1-helpers.ts:25), [inbox-selectors.test.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/apps/web/tests/unit/inbox-selectors.test.ts:553), [salesforce.ts](/Users/nicolas/Downloads/AS%20Comms%20Platform/.codex-worktrees/contact-rail-sort-and-bubble-tag/packages/integrations/src/providers/salesforce.ts:549).
 
-Changes:
-- `/api/readiness` now returns `{ ok: true }` for unauthenticated or non-admin callers.
-- Admin sessions still receive the full readiness posture.
-- Added unit coverage for unauthenticated, admin, and non-admin paths.
-
-Verification:
-- `pnpm --filter @as-comms/web test:unit` passed: 33 files, 185 tests.
-- `lint` and `typecheck` could not complete locally because this sandbox’s available dependency cache is missing TipTap packages used by existing `inbox-composer.tsx` imports.
-- I could not query remote PR checks after opening the PR because `gh pr checks` failed connecting to `api.github.com`.
-
-Unrelated existing worktree metadata changes remain uncommitted: `.codex-exec.log`, `.codex-last-message.txt`.
+Verification: `pnpm typecheck` passed, `pnpm lint` passed, and I also ran `pnpm install --prefer-offline`. `pnpm test:unit` is still blocked locally by the known Rollup `@rollup/rollup-darwin-arm64` native-module/code-signing failure after reinstall, so I could not get a local unit run past that environmental issue.

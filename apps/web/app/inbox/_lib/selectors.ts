@@ -42,12 +42,14 @@ interface InboxListCacheRow {
     readonly subject: string | null;
     readonly body: string;
   } | null;
+  readonly lastInboundAlias: string | null;
 }
 
 interface InboxListCacheData {
   readonly rows: readonly InboxListCacheRow[];
   readonly projectNameById: Readonly<Record<string, string>>;
   readonly projectLabelById: Readonly<Record<string, string>>;
+  readonly aliasToProjectId: ReadonlyMap<string, string>;
   readonly counts: {
     readonly all: number;
     readonly unread: number;
@@ -402,6 +404,14 @@ function sortMemberships(
   });
 }
 
+export function sortMembershipsByCreatedAt(
+  memberships: readonly ContactMembershipRecord[],
+): readonly ContactMembershipRecord[] {
+  return [...memberships].sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt),
+  );
+}
+
 function mapVolunteerStage(
   memberships: readonly ContactMembershipRecord[],
 ): InboxVolunteerStage {
@@ -428,6 +438,29 @@ function mapVolunteerStage(
     default:
       return "non-volunteer";
   }
+}
+
+export function resolvePrimaryMembership(input: {
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly lastInboundAlias: string | null;
+  readonly aliasToProjectId: ReadonlyMap<string, string>;
+}): ContactMembershipRecord | null {
+  if (input.lastInboundAlias !== null) {
+    const projectId = input.aliasToProjectId.get(input.lastInboundAlias);
+
+    if (projectId !== undefined) {
+      const match =
+        sortMembershipsByCreatedAt(input.memberships).find(
+          (membership) => membership.projectId === projectId,
+        ) ?? null;
+
+      if (match !== null) {
+        return match;
+      }
+    }
+  }
+
+  return sortMembershipsByCreatedAt(input.memberships)[0] ?? null;
 }
 
 function mapProjectStatus(status: string | null): InboxProjectStatus {
@@ -2024,7 +2057,13 @@ async function readInboxListCacheData(input: {
   const decodedCursor = decodeInboxListCursor(input.cursor);
   const normalizedQuery = normalizeInlineText(input.query) ?? null;
   const order = orderForInboxFilter(input.filterId);
-  const [projectionPage, counts, freshness, activeProjectRecords] =
+  const [
+    projectionPage,
+    counts,
+    freshness,
+    activeProjectRecords,
+    projectAliasRecords,
+  ] =
     await Promise.all([
       normalizedQuery === null
         ? runtime.repositories.inboxProjection
@@ -2052,6 +2091,7 @@ async function readInboxListCacheData(input: {
       }),
       runtime.repositories.inboxProjection.getFreshness(),
       runtime.repositories.projectDimensions.listActive(),
+      runtime.settings.aliases.listAll(),
     ]);
   const activeProjects: readonly InboxActiveProjectOption[] =
     activeProjectRecords.map((record) => ({
@@ -2065,20 +2105,35 @@ async function readInboxListCacheData(input: {
   const candidateContactIds = pageProjections.map(
     (projection) => projection.contactId,
   );
-  const [contacts, memberships, latestMessagePreviewByCanonicalEventId] =
-    await Promise.all([
-      runtime.repositories.contacts.listByIds(candidateContactIds),
-      runtime.repositories.contactMemberships.listByContactIds(
-        candidateContactIds,
-      ),
-      loadLatestSubjectByCanonicalEventId(pageProjections),
-    ]);
+  const [
+    contacts,
+    memberships,
+    latestMessagePreviewByCanonicalEventId,
+    lastInboundAliasByContactId,
+  ] = await Promise.all([
+    runtime.repositories.contacts.listByIds(candidateContactIds),
+    runtime.repositories.contactMemberships.listByContactIds(
+      candidateContactIds,
+    ),
+    loadLatestSubjectByCanonicalEventId(pageProjections),
+    runtime.repositories.gmailMessageDetails.listLastInboundAliasByContactIds(
+      candidateContactIds,
+    ),
+  ]);
   const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
   const membershipsByContactId = groupMembershipsByContactId(memberships);
   const [projectNameById, projectLabelById] = await Promise.all([
     loadProjectNameById(memberships),
     loadProjectLabelById(memberships),
   ]);
+  const aliasToProjectId = new Map<string, string>();
+
+  for (const aliasRecord of projectAliasRecords) {
+    if (aliasRecord.projectId !== null) {
+      aliasToProjectId.set(aliasRecord.alias, aliasRecord.projectId);
+    }
+  }
+
   const pageRows = pageProjections.flatMap((inboxProjection) => {
     const contact = contactById.get(inboxProjection.contactId);
 
@@ -2096,6 +2151,8 @@ async function readInboxListCacheData(input: {
           latestMessagePreviewByCanonicalEventId[
             inboxProjection.lastCanonicalEventId
           ] ?? null,
+        lastInboundAlias:
+          lastInboundAliasByContactId.get(inboxProjection.contactId) ?? null,
       } satisfies InboxListCacheRow,
     ];
   });
@@ -2104,6 +2161,7 @@ async function readInboxListCacheData(input: {
     rows: pageRows,
     projectNameById,
     projectLabelById,
+    aliasToProjectId,
     counts,
     activeProjects,
     page: {
@@ -2178,7 +2236,7 @@ async function readInboxDetailCacheData(
         runtime,
         canonicalEvents,
       }),
-    projectNameById: await loadProjectNameById(memberships),
+    projectNameById: await loadProjectLabelById(memberships),
     timelinePage: {
       hasMore: timelinePage.hasMore,
       nextCursor: timelinePage.hasMore ? timelinePage.nextBeforeSortKey : null,
@@ -2278,11 +2336,15 @@ function loadInboxWelcomeWorkloadCacheData() {
 
 function toListItemViewModel(
   row: InboxListCacheRow,
-  projectLabelById: Readonly<Record<string, string>>,
+  cacheData: Pick<InboxListCacheData, "projectLabelById" | "aliasToProjectId">,
   referenceNowIso: string,
 ): InboxListItemViewModel {
   const sortedMemberships = sortMemberships(row.memberships);
-  const primaryMembership = sortedMemberships[0] ?? null;
+  const primaryMembership = resolvePrimaryMembership({
+    memberships: row.memberships,
+    lastInboundAlias: row.lastInboundAlias,
+    aliasToProjectId: cacheData.aliasToProjectId,
+  });
   const preview = resolvePreferredMessagePreview({
     explicitSubjects: [row.latestMessagePreview?.subject],
     rawCandidates: [
@@ -2309,7 +2371,7 @@ function toListItemViewModel(
     projectLabel:
       primaryMembership === null
         ? null
-        : resolveProjectName(primaryMembership, projectLabelById),
+        : resolveProjectName(primaryMembership, cacheData.projectLabelById),
     volunteerStage: mapVolunteerStage(sortedMemberships),
     bucket: mapBucket(row.inboxProjection.bucket),
     needsFollowUp: row.inboxProjection.needsFollowUp,
@@ -2339,7 +2401,7 @@ function buildContactSummary(input: {
   readonly projectNameById: Readonly<Record<string, string>>;
   readonly referenceNowIso: string;
 }): InboxContactSummaryViewModel {
-  const memberships = sortMemberships(input.memberships);
+  const memberships = sortMembershipsByCreatedAt(input.memberships);
   const projectMemberships = memberships
     .map((membership) =>
       buildProjectMembershipViewModel(membership, input.projectNameById),
@@ -2407,7 +2469,14 @@ export async function getInboxList(
   });
   const referenceNowIso = new Date().toISOString();
   const items = cachedData.rows.map((row) =>
-    toListItemViewModel(row, cachedData.projectLabelById, referenceNowIso),
+    toListItemViewModel(
+      row,
+      {
+        projectLabelById: cachedData.projectLabelById,
+        aliasToProjectId: cachedData.aliasToProjectId,
+      },
+      referenceNowIso,
+    ),
   );
   const totals = cachedData.counts;
   const filters: InboxFilterViewModel[] = INBOX_FILTERS.map((filter) => ({

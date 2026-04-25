@@ -108,7 +108,8 @@ async function seedProject(
       expeditionId: null,
       role: "volunteer",
       status: "active",
-      source: "salesforce"
+      source: "salesforce",
+      createdAt: `2026-04-20T15:${String(index).padStart(2, "0")}:00.000Z`,
     });
   }
 }

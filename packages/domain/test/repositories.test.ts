@@ -92,6 +92,7 @@ describe("defineStage1RepositoryBundle", () => {
       },
       gmailMessageDetails: {
         listBySourceEvidenceIds: () => Promise.resolve([]),
+        listLastInboundAliasByContactIds: () => Promise.resolve(new Map()),
         upsert: (record) => Promise.resolve(record),
       },
       salesforceEventContext: {

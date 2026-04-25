@@ -559,6 +559,7 @@ function mapSalesforceContactSnapshot(
       role: membership.role,
       status: membership.status,
       source: "salesforce",
+      createdAt: record.createdAt,
     })),
     projectDimensions: Array.from(projectDimensionsById.values()),
     expeditionDimensions: Array.from(expeditionDimensionsById.values()),

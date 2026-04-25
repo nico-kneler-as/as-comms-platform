@@ -172,6 +172,7 @@ function createRepositoryBundle(input: {
             return detail === undefined ? [] : [detail];
           }),
         ),
+      listLastInboundAliasByContactIds: () => Promise.resolve(new Map()),
       upsert: (record) => Promise.resolve(record),
     },
     salesforceEventContext: {

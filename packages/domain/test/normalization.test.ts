@@ -340,6 +340,7 @@ function buildContext(input: {
               (record): record is GmailMessageDetailRecord => record !== undefined,
             ),
         ),
+      listLastInboundAliasByContactIds: () => Promise.resolve(new Map()),
       upsert: (record) => {
         gmailDetailsBySourceEvidenceId.set(record.sourceEvidenceId, record);
         return Promise.resolve(record);
