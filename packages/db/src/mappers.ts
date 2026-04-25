@@ -422,6 +422,7 @@ export function mapContactMembershipRow(
     expeditionId: row.expeditionId,
     role: row.role,
     status: row.status,
+    salesforceMembershipId: row.salesforceMembershipId ?? undefined,
     source: row.source,
     createdAt: row.createdAt.toISOString(),
   });
@@ -439,6 +440,7 @@ export function mapContactMembershipToInsert(
     expeditionId: parsed.expeditionId,
     role: parsed.role,
     status: parsed.status,
+    salesforceMembershipId: parsed.salesforceMembershipId ?? null,
     source: parsed.source,
     createdAt: toDate(parsed.createdAt),
   };

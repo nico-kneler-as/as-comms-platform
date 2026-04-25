@@ -517,9 +517,12 @@ function buildProjectMembershipViewModel(
     status: mapProjectStatus(membership.status),
     // Right-rail links must target the volunteer's Salesforce membership
     // record for that specific project context.
-    crmUrl: `https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/${encodeURIComponent(
-      membership.id,
-    )}/view`,
+    crmUrl:
+      membership.salesforceMembershipId != null
+        ? `https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/${encodeURIComponent(
+            membership.salesforceMembershipId,
+          )}/view`
+        : null,
   };
 }
 
