@@ -150,6 +150,21 @@ describe("Gmail body extraction", () => {
     );
   });
 
+  it("does not truncate Spark-style replies at the casual word 'on' before the quoted-reply marker", async () => {
+    const mboxMessage = await readFixtureText("spark-casual-on.mbox");
+    const rawMessage = mboxMessage.replace(/^From .+\n/u, "");
+    const bodyPreview = await extractGmailBodyPreviewFromMimeMessage({
+      rawMessage
+    });
+
+    expect(bodyPreview).toContain("Thank you for these directions");
+    expect(bodyPreview).toContain("I am planning on picking up my ARUs");
+    expect(bodyPreview).toContain("Have a great week");
+    expect(bodyPreview).toContain("Volunteer Name");
+    expect(bodyPreview).not.toContain("On Mon, Apr 6, 2026");
+    expect(bodyPreview).not.toContain("> Hi Volunteer");
+  });
+
   it("preserves bodies longer than 2000 characters", () => {
     const longBody = `Hello Samantha,\n\n${"A".repeat(2_600)}`;
 
