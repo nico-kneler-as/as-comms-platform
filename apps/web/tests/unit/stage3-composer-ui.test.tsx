@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { InboxComposerReplyContext } from "../../app/inbox/_lib/view-models";
+import { _test_only } from "../../app/inbox/_components/inbox-composer";
 import {
   formatContactRecipientLabel,
   reduceComposerPane,
@@ -136,5 +137,15 @@ describe("stage3 composer ui helpers", () => {
         isSending: false
       })
     ).toBe(true);
+  });
+
+  it("converts AI draft plaintext into safe composer HTML paragraphs and line breaks", () => {
+    expect(
+      _test_only.plaintextToComposerHtml(
+        `Hi Lily,\n\nThanks for reaching out.\nSecond line\n\n<script>alert("xss")</script>\n`,
+      ),
+    ).toBe(
+      "<p>Hi Lily,</p><p>Thanks for reaching out.<br>Second line</p><p>&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</p>",
+    );
   });
 });

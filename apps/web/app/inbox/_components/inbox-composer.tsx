@@ -101,6 +101,31 @@ interface SenderPickerProps {
 
 type ComposerFieldErrors = readonly ComposerValidationError[];
 
+function escapeComposerHtmlSegment(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function plaintextToComposerHtml(value: string): string {
+  return value
+    .split(/\n\s*\n+/u)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0)
+    .map((paragraph) => {
+      const html = paragraph
+        .split("\n")
+        .map((segment) => escapeComposerHtmlSegment(segment))
+        .join("<br>");
+
+      return `<p>${html}</p>`;
+    })
+    .join("");
+}
+
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -318,8 +343,22 @@ function RichTextComposerEditor({
       return;
     }
 
-    if (bodyPlaintext.length === 0 && editor.getText().length > 0) {
+    const trimmedBodyPlaintext = bodyPlaintext.trim();
+    const trimmedEditorText = editor.getText().trim();
+
+    if (trimmedBodyPlaintext.length === 0 && trimmedEditorText.length > 0) {
       editor.commands.clearContent();
+      return;
+    }
+
+    if (
+      trimmedBodyPlaintext.length > 0 &&
+      trimmedBodyPlaintext !== trimmedEditorText
+    ) {
+      editor.commands.setContent(
+        plaintextToComposerHtml(bodyPlaintext),
+        { emitUpdate: false },
+      );
     }
   }, [bodyPlaintext, editor]);
 
@@ -769,6 +808,7 @@ export function InboxComposerDetailPane() {
       clearComposerErrors();
       setInlineError(null);
       setBody(result.data.draft);
+      setBodyHtml(plaintextToComposerHtml(result.data.draft));
       setRepromptText("");
       insertAiDraft({
         request,
@@ -1262,3 +1302,7 @@ export function InboxComposerDetailPane() {
     </TooltipProvider>
   );
 }
+
+export const _test_only = {
+  plaintextToComposerHtml,
+};
