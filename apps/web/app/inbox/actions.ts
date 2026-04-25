@@ -96,6 +96,10 @@ export type ContactSearchActionResult = UiResult<
 export type AiDraftResponseVm = AiDraftResponse;
 export type DraftWithAiActionResult = UiResult<AiDraftResponseVm>;
 
+type AiDraftFailureClassification =
+  | { readonly kind: "misconfigured" }
+  | { readonly kind: "unexpected" };
+
 interface AiDraftConcurrencyState {
   readonly counts: Map<string, number>;
 }
@@ -246,6 +250,67 @@ function endAiDraftRequest(userId: string): void {
   }
 
   state.counts.set(userId, current - 1);
+}
+
+function readErrorProperty(
+  error: unknown,
+  property: "cause" | "code" | "message" | "name",
+): unknown {
+  if (typeof error !== "object" || error === null || !(property in error)) {
+    return undefined;
+  }
+
+  return (error as Record<typeof property, unknown>)[property];
+}
+
+function readErrorCode(error: unknown): string | undefined {
+  const code = readErrorProperty(error, "code");
+
+  return typeof code === "string" ? code : undefined;
+}
+
+function readErrorStringProperty(
+  error: unknown,
+  property: "message" | "name",
+): string | undefined {
+  const value = readErrorProperty(error, property);
+
+  return typeof value === "string" ? value : undefined;
+}
+
+function classifyAiDraftFailure(error: unknown): AiDraftFailureClassification {
+  const cause = readErrorProperty(error, "cause");
+  const code = readErrorCode(cause) ?? readErrorCode(error);
+  const name = readErrorStringProperty(error, "name");
+  const message = readErrorStringProperty(error, "message") ?? "";
+  const lowerMessage = message.toLowerCase();
+
+  if (
+    code === "42P01" ||
+    code === "42703" ||
+    code === "3F000" ||
+    name === "AiProviderNotConfiguredError" ||
+    lowerMessage.includes("anthropic_api_key") ||
+    lowerMessage.includes("ai provider")
+  ) {
+    return { kind: "misconfigured" };
+  }
+
+  return { kind: "unexpected" };
+}
+
+function buildAiDraftFailureLogFields(error: unknown, requestId: string) {
+  const cause = readErrorProperty(error, "cause");
+  const code = readErrorCode(error) ?? readErrorCode(cause);
+  const name = readErrorStringProperty(error, "name");
+  const message = readErrorStringProperty(error, "message");
+
+  return {
+    requestId,
+    code,
+    name,
+    message: message === undefined ? undefined : message.slice(0, 200),
+  };
 }
 
 function unauthorizedError(requestId: string): UiResult<never> {
@@ -880,6 +945,24 @@ export async function draftWithAiAction(
       requestId,
     };
   } catch (error) {
+    const classification = classifyAiDraftFailure(error);
+
+    if (classification.kind === "misconfigured") {
+      console.warn(
+        "AI draft generation is not fully configured.",
+        buildAiDraftFailureLogFields(error, requestId),
+      );
+
+      return {
+        ok: false,
+        code: "ai_draft_misconfigured",
+        message:
+          "AI drafting isn't fully set up for this workspace yet. Please contact an admin.",
+        requestId,
+        retryable: false,
+      };
+    }
+
     console.error("AI draft generation failed unexpectedly.", error);
     return {
       ok: false,
