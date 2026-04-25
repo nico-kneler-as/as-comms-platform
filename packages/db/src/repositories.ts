@@ -1957,6 +1957,10 @@ function createStage1RepositoriesInternal(
       },
 
       async findForContact(contactId, input) {
+        // Includes "confirmed" because PR #143 (immediate-confirm on Gmail send)
+        // transitions rows to confirmed immediately, and the UI still needs to
+        // surface them as recent outbound activity. "superseded" is excluded by
+        // design (replaced rows are not user-visible).
         const rows = (await db
           .select()
           .from(pendingComposerOutbounds)
@@ -1965,6 +1969,7 @@ function createStage1RepositoriesInternal(
               eq(pendingComposerOutbounds.canonicalContactId, contactId),
               inArray(pendingComposerOutbounds.status, [
                 "pending",
+                "confirmed",
                 "failed",
                 "orphaned",
               ]),
