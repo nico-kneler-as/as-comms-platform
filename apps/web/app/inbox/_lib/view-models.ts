@@ -101,6 +101,7 @@ export interface InboxProjectMembershipViewModel {
   readonly year: number;
   readonly status: InboxProjectStatus;
   readonly crmUrl: string;
+  readonly expeditionMemberUrl: string | null;
 }
 
 export interface InboxRecentActivityViewModel {

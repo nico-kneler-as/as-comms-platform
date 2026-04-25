@@ -157,6 +157,7 @@ export const contactMemberships = pgTable(
       .references(() => contacts.id, { onDelete: "cascade" }),
     projectId: text("project_id"),
     expeditionId: text("expedition_id"),
+    salesforceMembershipId: text("salesforce_membership_id"),
     role: text("role"),
     status: text("status"),
     source: recordSourceEnum("source").notNull(),
