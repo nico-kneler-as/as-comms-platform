@@ -1,43 +1,19 @@
 "use client";
 
-import Link from "@tiptap/extension-link";
-import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import { useRouter } from "next/navigation";
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
   useTransition,
   type ChangeEvent,
-  type KeyboardEvent,
 } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
+import { RADIUS, SHADOW } from "@/app/_lib/design-tokens-v2";
 import {
   getInternalNoteValidationError,
   normalizeInternalNoteBody,
 } from "@/src/lib/internal-note-validation";
-import { sanitizeComposerHtml } from "@/src/lib/html-sanitizer";
-import type { UiError } from "@/src/server/ui-result";
 
 import {
   createNoteAction,
@@ -45,8 +21,8 @@ import {
   sendComposerAction,
   type ComposerSendActionInput,
 } from "../actions";
+import { resolveAiButtonState } from "../_lib/composer-ai";
 import {
-  formatContactRecipientLabel,
   isComposerSendDisabled,
   resolveDefaultAlias,
 } from "../_lib/composer-ui";
@@ -55,483 +31,50 @@ import {
   loadDraft,
   saveDraft,
 } from "../_lib/composer-draft-storage";
-import type { InboxComposerAliasOption } from "../_lib/view-models";
 import { plaintextToComposerHtml } from "./composer-html";
+import { ComposerCollapsedPill } from "./composer-collapsed-pill";
 import {
-  ComposerToolbar,
-  type ComposerToolbarCommand,
-} from "./composer-toolbar";
+  ComposerEmailSurface,
+  ComposerNoteSurface,
+  ComposerPaneChrome,
+} from "./composer-detail-surfaces";
 import {
-  ComposerRecipientPicker,
   type ComposerContactRecipient,
   type ComposerRecipientValue,
 } from "./composer-recipient-picker";
 import {
-  useInboxClient,
-  type ComposerValidationError,
-} from "./inbox-client-provider";
-import { AiDraftReprompt } from "./ai-draft-reprompt";
+  autoResizeTextarea,
+  mapFieldErrors,
+  readFileAsAttachment,
+  resolveAiWarningMessage,
+  resolveComposerDraftKey,
+  resolveRecipientLabel,
+  type AttachmentDraft,
+  type InlineComposerError,
+} from "./composer-shared";
 import {
-  AlertCircleIcon,
-  ChevronDownIcon,
-  LoaderIcon,
-  MailIcon,
-  NoteIcon,
-  PaperclipIcon,
-  SendIcon,
-  SparkleIcon,
-  XIcon,
+  useInboxClient,
+} from "./inbox-client-provider";
+import {
 } from "./icons";
 
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
-interface AttachmentDraft {
-  readonly id: string;
-  readonly filename: string;
-  readonly size: number;
-  readonly contentType: string;
-  readonly contentBase64: string | null;
-}
-
-interface InlineComposerError {
-  readonly message: string;
-  readonly retryable: boolean;
-}
-
-interface SenderPickerProps {
-  readonly aliases: readonly InboxComposerAliasOption[];
-  readonly selectedAlias: string | null;
-  readonly errorMessage: string | undefined;
-  readonly onAliasChange: (alias: string | null) => void;
-}
-
-type ComposerFieldErrors = readonly ComposerValidationError[];
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  if (bytes >= 1024) {
-    return `${String(Math.round(bytes / 1024))} KB`;
-  }
-
-  return `${bytes.toString()} B`;
-}
-
-function resolveRecipientLabel(recipient: ComposerRecipientValue): string {
-  return recipient.kind === "contact"
-    ? formatContactRecipientLabel({
-        displayName: recipient.displayName,
-        primaryEmail: recipient.primaryEmail,
-      })
-    : recipient.emailAddress;
-}
-
-function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function resolveComposerDraftKey(input: {
-  readonly actorId: string;
-  readonly recipient: ComposerRecipientValue | null;
-}): string | null {
-  const recipient = input.recipient;
-
-  if (recipient === null) {
-    return null;
-  }
-
-  if (recipient.kind === "contact") {
-    return `composer-draft:v1:${input.actorId}:${recipient.contactId}:contact`;
-  }
-
-  return `composer-draft:v1:${input.actorId}:email:${normalizeEmail(
-    recipient.emailAddress,
-  )}`;
-}
-
-function mapFieldErrors(
-  result: Pick<UiError, "fieldErrors">,
-): ComposerFieldErrors {
-  if (result.fieldErrors === undefined) {
-    return [];
-  }
-
-  const mappedErrors: ComposerValidationError[] = [];
-
-  for (const [field, message] of Object.entries(result.fieldErrors)) {
-    switch (field) {
-      case "alias":
-        mappedErrors.push({ field: "alias", message });
-        break;
-      case "subject":
-        mappedErrors.push({ field: "subject", message });
-        break;
-      case "attachments":
-        mappedErrors.push({ field: "attachments", message });
-        break;
-      case "body":
-      case "bodyPlaintext":
-      case "bodyHtml":
-        mappedErrors.push({ field: "body", message });
-        break;
-      default:
-        if (field.startsWith("recipient")) {
-          mappedErrors.push({ field: "recipient", message });
-        }
-    }
-  }
-
-  return mappedErrors;
-}
-
-function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
-  textarea.style.height = "auto";
-  const lineHeight = 24;
-  textarea.style.height = `${String(Math.min(textarea.scrollHeight, lineHeight * 20))}px`;
-}
-
-import { resolveAiButtonState } from "../_lib/composer-ai";
-
-function resolveAiWarningMessage(
-  aiDraft: ReturnType<typeof useInboxClient>["aiDraft"],
-): string | null {
-  const contradiction = aiDraft.warnings.find(
-    (warning) => warning.code === "grounding_contradiction",
-  );
-
-  if (contradiction) {
-    return `Your directive appears to contradict the project context. ${contradiction.message}`;
-  }
-
-  if (aiDraft.responseMode === "deterministic_fallback") {
-    return (
-      aiDraft.warnings[0]?.message ??
-      "AI drafting returned a fallback skeleton. Fill in the project-specific answer before sending."
-    );
-  }
-
-  const grounding = aiDraft.warnings.find(
-    (warning) => warning.code === "grounding_empty",
-  );
-  if (grounding) {
-    return grounding.message;
-  }
-
-  return null;
-}
-
-function promptForLinkUrl(): string | null {
-  const url = window.prompt("Link URL");
-
-  if (url === null) {
-    return null;
-  }
-
-  const trimmed = url.trim();
-  return /^(https?:\/\/|mailto:)/iu.test(trimmed) ? trimmed : null;
-}
-
-interface RichTextComposerEditorProps {
-  readonly bodyPlaintext: string;
-  readonly errorMessage: string | undefined;
-  readonly onChange: (value: {
-    readonly bodyPlaintext: string;
-    readonly bodyHtml: string;
-  }) => void;
-  readonly onClearErrors: () => void;
-}
-
-function RichTextComposerEditor({
-  bodyPlaintext,
-  errorMessage,
-  onChange,
-  onClearErrors,
-}: RichTextComposerEditorProps) {
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        // Whitelist: bold, italic, bulletList, orderedList, listItem, paragraph
-        // via defaults; strip everything else.
-        heading: false,
-        blockquote: false,
-        codeBlock: false,
-        horizontalRule: false,
-        strike: false,
-        code: false,
-      }),
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: {
-          rel: "noopener noreferrer",
-          target: "_blank",
-        },
-      }),
-    ],
-    content: "",
-    immediatelyRender: false,
-    editorProps: {
-      attributes: {
-        role: "textbox",
-        "aria-label": "Message",
-        "aria-multiline": "true",
-        ...(errorMessage ? { "aria-invalid": "true" } : {}),
-        class: cn(
-          "min-h-36 w-full rounded-md border border-slate-200 px-3 py-2 text-sm leading-6 text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300 [&_a]:text-sky-700 [&_a]:underline [&_ol]:ml-5 [&_ol]:list-decimal [&_ul]:ml-5 [&_ul]:list-disc",
-          errorMessage ? "border-rose-300 ring-1 ring-rose-200" : "",
-        ),
-      },
-    },
-    onUpdate: ({ editor: instance }) => {
-      onChange({
-        bodyPlaintext: instance.getText().trim(),
-        bodyHtml: sanitizeComposerHtml(instance.getHTML()),
-      });
-      onClearErrors();
-    },
-  });
-
-  const activeCommands = new Set<ComposerToolbarCommand>();
-  if (editor?.isActive("bold") === true) activeCommands.add("bold");
-  if (editor?.isActive("italic") === true) activeCommands.add("italic");
-  if (editor?.isActive("bulletList") === true) activeCommands.add("bulletList");
-  if (editor?.isActive("orderedList") === true)
-    activeCommands.add("orderedList");
-  if (editor?.isActive("link") === true) activeCommands.add("link");
-
-  const runCommand = useCallback(
-    (command: ComposerToolbarCommand) => {
-      if (editor === null) {
-        return;
-      }
-
-      const chain = editor.chain().focus();
-
-      switch (command) {
-        case "bold":
-          chain.toggleBold().run();
-          break;
-        case "italic":
-          chain.toggleItalic().run();
-          break;
-        case "bulletList":
-          chain.toggleBulletList().run();
-          break;
-        case "orderedList":
-          chain.toggleOrderedList().run();
-          break;
-        case "link": {
-          const url = promptForLinkUrl();
-          if (url === null) {
-            chain.unsetLink().run();
-            break;
-          }
-          chain.setLink({ href: url }).run();
-          break;
-        }
-      }
-    },
-    [editor],
-  );
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-      event.preventDefault();
-      runCommand("link");
-    }
-  };
-
-  useEffect(() => {
-    if (editor === null) {
-      return;
-    }
-
-    const trimmedBodyPlaintext = bodyPlaintext.trim();
-    const trimmedEditorText = editor.getText().trim();
-
-    if (trimmedBodyPlaintext.length === 0 && trimmedEditorText.length > 0) {
-      editor.commands.clearContent();
-      return;
-    }
-
-    if (
-      trimmedBodyPlaintext.length > 0 &&
-      trimmedBodyPlaintext !== trimmedEditorText
-    ) {
-      editor.commands.setContent(
-        plaintextToComposerHtml(bodyPlaintext),
-        { emitUpdate: false },
-      );
-    }
-  }, [bodyPlaintext, editor]);
-
-  const showPlaceholder = bodyPlaintext.length === 0;
-
-  return (
-    <div className="space-y-2">
-      <ComposerToolbar activeCommands={activeCommands} onCommand={runCommand} />
-      <div className="relative" onKeyDown={handleKeyDown}>
-        <EditorContent editor={editor} />
-        {showPlaceholder ? (
-          <span className="pointer-events-none absolute left-3 top-2 text-sm leading-6 text-slate-400">
-            Write your message
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function SenderPicker({
-  aliases,
-  selectedAlias,
-  errorMessage,
-  onAliasChange,
-}: SenderPickerProps) {
-  const selectedOption =
-    aliases.find((alias) => alias.alias === selectedAlias) ?? null;
-
-  return (
-    <label className="flex items-start gap-3">
-      <span className="mt-3 w-20 text-sm font-medium text-slate-700">
-        Send from:
-      </span>
-      <div className="flex-1">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-invalid={errorMessage ? true : undefined}
-              className={cn(
-                "flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left shadow-sm transition-colors hover:border-slate-300 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-300",
-                errorMessage ? "border-rose-300 ring-1 ring-rose-200" : "",
-              )}
-            >
-              <span className="min-w-0">
-                {selectedOption ? (
-                  <span className="block min-w-0">
-                    <span className="block truncate text-sm font-medium text-slate-900">
-                      {selectedOption.alias}
-                    </span>
-                    <span className="mt-0.5 block truncate text-xs text-slate-500">
-                      {selectedOption.projectName}
-                    </span>
-                  </span>
-                ) : (
-                  <span className="text-sm text-slate-500">
-                    Choose a sender alias
-                  </span>
-                )}
-              </span>
-              <ChevronDownIcon className="size-4 shrink-0 text-slate-400" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[20rem] rounded-xl p-2"
-          >
-            <DropdownMenuLabel className="px-2 pb-2 pt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
-              Send from
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuRadioGroup
-              value={selectedAlias ?? ""}
-              onValueChange={(value) => {
-                onAliasChange(value.length > 0 ? value : null);
-              }}
-            >
-              <DropdownMenuRadioItem value="" className="rounded-lg">
-                <div className="flex min-w-0 flex-col">
-                  <span className="text-sm font-medium text-slate-700">
-                    No alias selected
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    Pick a sender before sending
-                  </span>
-                </div>
-              </DropdownMenuRadioItem>
-              {aliases.map((alias) => (
-                <DropdownMenuRadioItem
-                  key={alias.id}
-                  value={alias.alias}
-                  className="rounded-lg"
-                >
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm font-medium text-slate-900">
-                      {alias.alias}
-                    </span>
-                    <span className="truncate text-xs text-slate-500">
-                      {alias.projectName}
-                    </span>
-                  </div>
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {errorMessage ? (
-          <p className="mt-1 text-xs text-rose-700">{errorMessage}</p>
-        ) : null}
-      </div>
-    </label>
-  );
-}
-
-async function readFileAsAttachment(file: File): Promise<AttachmentDraft> {
-  const contentBase64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      const result = reader.result;
-
-      if (typeof result !== "string") {
-        reject(new Error("Failed to read file."));
-        return;
-      }
-
-      const [, base64] = result.split(",", 2);
-
-      if (!base64) {
-        reject(new Error("Failed to encode file."));
-        return;
-      }
-
-      resolve(base64);
-    };
-    reader.onerror = () => {
-      reject(reader.error ?? new Error("Failed to read file."));
-    };
-    reader.readAsDataURL(file);
-  });
-
-  return {
-    id: `${file.name}:${file.lastModified.toString()}:${file.size.toString()}`,
-    filename: file.name,
-    size: file.size,
-    contentType: file.type || "application/octet-stream",
-    contentBase64,
-  };
-}
-
 export function InboxComposerReplyBar({
   contactDisplayName,
   onReply,
+  onNote,
 }: {
   readonly contactDisplayName: string;
   readonly onReply: () => void;
+  readonly onNote?: () => void;
 }) {
   return (
-    <div className="border-t border-slate-200 bg-white">
-      <button
-        type="button"
-        onClick={onReply}
-        className="flex w-full items-center gap-2.5 px-5 py-3 text-left text-sm text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-      >
-        <MailIcon className="size-4 shrink-0" />
-        <span className="truncate">Reply to {contactDisplayName}…</span>
-      </button>
-    </div>
+    <ComposerCollapsedPill
+      personName={contactDisplayName}
+      onExpand={onReply}
+      onNote={onNote ?? onReply}
+    />
   );
 }
 
@@ -550,26 +93,23 @@ export function InboxComposerDetailPane() {
     startAiGeneration,
     insertAiDraft,
     markAiDraftEdited,
+    restoreAiDraft,
+    discardAiDraft,
     repromptAi,
     resetAiDraft,
     setAiError,
   } = useInboxClient();
   const [activeTab, setActiveTab] = useState<"email" | "note">("email");
-  const [recipient, setRecipient] = useState<ComposerRecipientValue | null>(
-    null,
-  );
+  const [recipient, setRecipient] = useState<ComposerRecipientValue | null>(null);
   const [selectedAlias, setSelectedAlias] = useState<string | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [bodyHtml, setBodyHtml] = useState("");
-  const [attachments, setAttachments] = useState<readonly AttachmentDraft[]>(
-    [],
-  );
+  const [attachments, setAttachments] = useState<readonly AttachmentDraft[]>([]);
   const [captureAsKnowledge, setCaptureAsKnowledge] = useState(false);
   const [repromptText, setRepromptText] = useState("");
-  const [inlineError, setInlineError] = useState<InlineComposerError | null>(
-    null,
-  );
+  const [inlineError, setInlineError] = useState<InlineComposerError | null>(null);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isSending, startSendTransition] = useTransition();
   const [isSavingNote, startSaveNoteTransition] = useTransition();
   const [isGeneratingAi, startAiTransition] = useTransition();
@@ -580,6 +120,7 @@ export function InboxComposerDetailPane() {
   const replyContext =
     composerPane.mode === "replying" ? composerPane.replyContext : null;
   const isReplying = composerPane.mode === "replying";
+  const canUseNoteTab = isReplying && replyContext !== null;
 
   useEffect(() => {
     if (composerPane.mode === "closed") {
@@ -599,7 +140,11 @@ export function InboxComposerDetailPane() {
             salesforceContactId: null,
           };
 
-    setActiveTab("email");
+    setActiveTab(
+      composerPane.mode === "replying" && composerPane.initialTab === "note"
+        ? "note"
+        : "email",
+    );
     setRecipient(replyRecipient);
     setSelectedAlias(replyContext?.defaultAlias ?? null);
     setSubject(replyContext?.subject ?? "");
@@ -609,11 +154,12 @@ export function InboxComposerDetailPane() {
     setCaptureAsKnowledge(false);
     setRepromptText("");
     setInlineError(null);
+    setIsAboutOpen(false);
     setComposerStatus("idle");
     setComposerErrors([]);
     resetAiDraft();
   }, [
-    composerPane.mode,
+    composerPane,
     replyContext,
     resetAiDraft,
     setComposerErrors,
@@ -667,7 +213,7 @@ export function InboxComposerDetailPane() {
     setSelectedAlias(draft.selectedAlias);
     setAttachments(
       draft.attachments.map((attachment, index) => ({
-        id: `draft:${attachment.filename}:${attachment.size.toString()}:${index.toString()}`,
+        id: `draft:${attachment.filename}:${String(attachment.size)}:${String(index)}`,
         filename: attachment.filename,
         size: attachment.size,
         contentType: attachment.contentType,
@@ -678,11 +224,11 @@ export function InboxComposerDetailPane() {
     activeTab,
     attachments.length,
     baselineAlias,
+    baselineSubject,
     body,
     bodyHtml,
     composerPane.mode,
     draftKey,
-    replyContext,
     selectedAlias,
     subject,
   ]);
@@ -754,7 +300,6 @@ export function InboxComposerDetailPane() {
     (total, attachment) => total + attachment.size,
     0,
   );
-  const canUseNoteTab = isReplying && replyContext !== null;
   const selectedAliasRecord =
     selectedAlias === null
       ? null
@@ -780,9 +325,7 @@ export function InboxComposerDetailPane() {
     body.trim().length === 0 ||
     isSavingNote;
   const aliasError = composerErrors.find((error) => error.field === "alias");
-  const subjectError = composerErrors.find(
-    (error) => error.field === "subject",
-  );
+  const subjectError = composerErrors.find((error) => error.field === "subject");
   const bodyError = composerErrors.find((error) => error.field === "body");
   const recipientError = composerErrors.find(
     (error) => error.field === "recipient",
@@ -790,27 +333,97 @@ export function InboxComposerDetailPane() {
   const attachmentError = composerErrors.find(
     (error) => error.field === "attachments",
   );
+
   const clearComposerErrors = () => {
     setInlineError(null);
     setComposerErrors([]);
   };
 
-  const handleRecipientChange = (
-    nextRecipient: ComposerRecipientValue | null,
-  ) => {
-    setRecipient(nextRecipient);
-    clearComposerErrors();
-
-    if (isReplying) {
+  const runAiDraft = (requestOverride?: {
+    readonly mode: "reprompt";
+    readonly repromptDirection: string;
+  }) => {
+    if (activeTab !== "email") {
       return;
     }
 
-    setSelectedAlias(
-      resolveDefaultAlias({
-        recipient: nextRecipient,
-        aliases: composerAliases,
-      }),
-    );
+    clearComposerErrors();
+
+    if (recipient?.kind !== "contact") {
+      setInlineError({
+        message: "AI drafting is available only when replying to a contact.",
+        retryable: false,
+      });
+      return;
+    }
+
+    const baseRequest = {
+      contactId: recipient.contactId,
+      projectId: selectedAliasRecord?.projectId ?? null,
+      threadCursor: replyContext?.threadCursor ?? null,
+    } as const;
+
+    const request =
+      requestOverride?.mode === "reprompt"
+        ? {
+            ...baseRequest,
+            mode: "reprompt" as const,
+            previousDraft: body.trim(),
+            repromptDirection: requestOverride.repromptDirection,
+            repromptIndex: aiDraft.repromptChain.length + 1,
+          }
+        : aiButton.mode === "draft"
+          ? {
+              ...baseRequest,
+              mode: "draft" as const,
+            }
+          : {
+              ...baseRequest,
+              mode: "fill" as const,
+              operatorPrompt: body.trim(),
+            };
+
+    const prompt =
+      request.mode === "reprompt"
+        ? request.repromptDirection
+        : request.mode === "draft"
+          ? "Draft with AI"
+          : request.operatorPrompt;
+
+    if (request.mode === "reprompt") {
+      repromptAi({ request, prompt });
+    } else {
+      startAiGeneration({ request, prompt });
+    }
+
+    startAiTransition(async () => {
+      const result = await draftWithAiAction(request);
+
+      if (!result.ok) {
+        setAiError(result.message);
+        setInlineError({
+          message: result.message,
+          retryable: false,
+        });
+        return;
+      }
+
+      clearComposerErrors();
+      setInlineError(null);
+      setBody(result.data.draft);
+      setBodyHtml(plaintextToComposerHtml(result.data.draft));
+      setRepromptText("");
+      insertAiDraft({
+        request,
+        response: result.data,
+        prompt,
+        ...(request.mode === "reprompt"
+          ? {
+              repromptDirection: request.repromptDirection,
+            }
+          : {}),
+      });
+    });
   };
 
   const handleFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -844,7 +457,6 @@ export function InboxComposerDetailPane() {
       const nextAttachments = await Promise.all(
         selectedFiles.map((file) => readFileAsAttachment(file)),
       );
-
       setAttachments((previous) => [...previous, ...nextAttachments]);
       clearComposerErrors();
     } catch {
@@ -855,96 +467,22 @@ export function InboxComposerDetailPane() {
     }
   };
 
-  const runAiDraft = (requestOverride?: {
-    readonly mode: "draft" | "fill" | "reprompt";
-    readonly repromptDirection?: string;
-  }) => {
-    if (activeTab !== "email") {
-      return;
-    }
-
-    clearComposerErrors();
-
-    if (recipient?.kind !== "contact") {
-      setInlineError({
-        message: "AI drafting is available only when replying to a contact.",
-        retryable: false,
-      });
-      return;
-    }
-
-    const baseRequest = {
-      contactId: recipient.contactId,
-      projectId: selectedAliasRecord?.projectId ?? null,
-      threadCursor: replyContext?.threadCursor ?? null,
-    } as const;
-
-    const request =
-      requestOverride?.mode === "reprompt"
-        ? {
-            ...baseRequest,
-            mode: "reprompt" as const,
-            previousDraft: body.trim(),
-            repromptDirection: requestOverride.repromptDirection ?? "",
-            repromptIndex: aiDraft.repromptChain.length + 1,
-          }
-        : aiButton.mode === "draft"
-          ? {
-              ...baseRequest,
-              mode: "draft" as const,
-            }
-          : {
-              ...baseRequest,
-              mode: "fill" as const,
-              operatorPrompt: body.trim(),
-            };
-
-    const prompt =
-      request.mode === "reprompt"
-        ? request.repromptDirection
-        : request.mode === "draft"
-          ? "Draft with AI"
-          : request.operatorPrompt;
-
-    if (request.mode === "reprompt") {
-      repromptAi({
-        request,
-        prompt,
-      });
-    } else {
-      startAiGeneration({
-        request,
-        prompt,
-      });
-    }
-
-    startAiTransition(async () => {
-      const result = await draftWithAiAction(request);
-
-      if (!result.ok) {
-        setAiError(result.message);
-        setInlineError({
-          message: result.message,
-          retryable: false,
-        });
-        return;
-      }
-
-      clearComposerErrors();
-      setInlineError(null);
-      setBody(result.data.draft);
-      setBodyHtml(plaintextToComposerHtml(result.data.draft));
+  const handleDiscardAi = () => {
+    if (aiDraft.status === "edited-after-generation") {
+      setBody(aiDraft.generatedText);
+      setBodyHtml(plaintextToComposerHtml(aiDraft.generatedText));
+      restoreAiDraft();
       setRepromptText("");
-      insertAiDraft({
-        request,
-        response: result.data,
-        prompt,
-        ...(request.mode === "reprompt"
-          ? {
-              repromptDirection: request.repromptDirection,
-            }
-          : {}),
-      });
+      return;
+    }
+
+    discardAiDraft();
+  };
+
+  const handleRegenerateAi = () => {
+    runAiDraft({
+      mode: "reprompt",
+      repromptDirection: repromptText.trim() || "Regenerate this draft",
     });
   };
 
@@ -967,43 +505,31 @@ export function InboxComposerDetailPane() {
       return;
     }
 
-    const serializedAttachments = attachments.flatMap((attachment) =>
-      attachment.contentBase64 === null
-        ? []
-        : [
-            {
-              filename: attachment.filename,
-              contentType: attachment.contentType,
-              contentBase64: attachment.contentBase64,
-            },
-          ],
-    );
-
     const payload: ComposerSendActionInput = {
       recipient:
         recipient.kind === "contact"
-          ? {
-              kind: "contact",
-              contactId: recipient.contactId,
-            }
-          : {
-              kind: "email",
-              emailAddress: recipient.emailAddress,
-            },
+          ? { kind: "contact", contactId: recipient.contactId }
+          : { kind: "email", emailAddress: recipient.emailAddress },
       alias: selectedAlias,
       subject: subject.trim(),
       bodyPlaintext: body.trim(),
       bodyHtml,
-      attachments: serializedAttachments,
+      attachments: attachments.flatMap((attachment) =>
+        attachment.contentBase64 === null
+          ? []
+          : [
+              {
+                filename: attachment.filename,
+                contentType: attachment.contentType,
+                contentBase64: attachment.contentBase64,
+              },
+            ],
+      ),
       captureAsKnowledge,
-      ...(replyContext?.threadId === null || replyContext === null
-        ? {}
-        : { threadId: replyContext.threadId }),
-      ...(replyContext?.inReplyToRfc822 === null || replyContext === null
-        ? {}
-        : {
-            inReplyToRfc822: replyContext.inReplyToRfc822,
-          }),
+      ...(replyContext?.threadId ? { threadId: replyContext.threadId } : {}),
+      ...(replyContext?.inReplyToRfc822
+        ? { inReplyToRfc822: replyContext.inReplyToRfc822 }
+        : {}),
     };
 
     setInlineError(null);
@@ -1049,12 +575,7 @@ export function InboxComposerDetailPane() {
         message: validationError,
         retryable: false,
       });
-      setComposerErrors([
-        {
-          field: "body",
-          message: validationError,
-        },
-      ]);
+      setComposerErrors([{ field: "body", message: validationError }]);
       return;
     }
 
@@ -1096,367 +617,142 @@ export function InboxComposerDetailPane() {
   };
 
   return (
-    <TooltipProvider>
+    <>
       <section className="flex min-h-0 flex-1 flex-col bg-white">
-        <header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <div>
-            <p className="text-lg font-semibold text-slate-900">
-              {isReplying && recipient?.kind === "contact"
-                ? `Reply to ${recipient.displayName}`
-                : "New draft"}
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              {activeTab === "note"
-                ? "Internal note for the team timeline."
-                : "Rich-text email with file attachments."}
-            </p>
-          </div>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Close composer"
-            className="size-8"
-            onClick={closeComposer}
-          >
-            <XIcon className="size-4" />
-          </Button>
-        </header>
-
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5">
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-4">
-            <button
-              type="button"
-              onClick={() => {
+        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/40 px-5 py-5">
+          <div className={`mx-auto w-full max-w-4xl overflow-hidden border border-slate-200 bg-white ${RADIUS.lg} ${SHADOW.sm}`}>
+            <ComposerPaneChrome
+              title={
+                isReplying && recipient?.kind === "contact"
+                  ? `Reply to ${recipient.displayName}`
+                  : "New message"
+              }
+              description={
+                activeTab === "note"
+                  ? "Internal note for the team timeline."
+                  : "Production send, autosave, attachments, and AI draft flow preserved."
+              }
+              activeTab={activeTab}
+              canUseNoteTab={canUseNoteTab}
+              onEmail={() => {
                 setActiveTab("email");
+                clearComposerErrors();
               }}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium",
-                activeTab === "email"
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-100 text-slate-600",
-              )}
-            >
-              <MailIcon className="size-4" />
-              Email
-            </button>
+              onNote={() => {
+                setActiveTab("note");
+                clearComposerErrors();
+              }}
+              onClose={closeComposer}
+            />
 
-            {canUseNoteTab ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab("note");
+            {activeTab === "email" ? (
+              <ComposerEmailSurface
+                composerAliases={composerAliases}
+                selectedAlias={selectedAlias}
+                recipient={recipient}
+                isReplying={isReplying}
+                subject={subject}
+                body={body}
+                attachments={attachments}
+                aiDraft={aiDraft}
+                repromptText={repromptText}
+                isGeneratingAi={isGeneratingAi}
+                aiButtonLabel={aiButton.label}
+                selectedAliasAiReady={selectedAliasRecord?.isAiReady === true}
+                aiWarningMessage={aiWarningMessage}
+                inlineError={inlineError}
+                showKnowledgeCapture={showKnowledgeCapture}
+                captureAsKnowledge={captureAsKnowledge}
+                isSendDisabled={isSendDisabled}
+                isSending={isSending}
+                isAboutOpen={isAboutOpen}
+                onAboutOpenChange={setIsAboutOpen}
+                onAliasChange={(nextAlias) => {
+                  setSelectedAlias(nextAlias);
                   clearComposerErrors();
                 }}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium",
-                  activeTab === "note"
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-100 text-slate-600",
-                )}
-              >
-                <NoteIcon className="size-4" />
-                Note
-              </button>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    disabled
-                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-400"
-                  >
-                    <NoteIcon className="size-4" />
-                    Note
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  Notes are available when replying to a contact.
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-
-          <div className="mt-5 space-y-5">
-            {activeTab === "email" ? (
-              <>
-                <ComposerRecipientPicker
-                  recipient={recipient}
-                  locked={isReplying}
-                  onRecipientChange={handleRecipientChange}
-                />
-                {recipientError ? (
-                  <p className="-mt-3 text-xs text-rose-700">
-                    {recipientError.message}
-                  </p>
-                ) : null}
-
-                <SenderPicker
-                  aliases={composerAliases}
-                  selectedAlias={selectedAlias}
-                  errorMessage={aliasError?.message}
-                  onAliasChange={(nextAlias) => {
-                    setSelectedAlias(nextAlias);
-                    clearComposerErrors();
-                  }}
-                />
-
-                <label className="flex items-start gap-3">
-                  <span className="mt-2 w-10 text-sm font-medium text-slate-700">
-                    Subject:
-                  </span>
-                  <div className="flex-1">
-                    <Input
-                      value={subject}
-                      onChange={(event) => {
-                        setSubject(event.currentTarget.value);
-                        clearComposerErrors();
-                      }}
-                      placeholder="Subject"
-                      className={cn(
-                        subjectError
-                          ? "border-rose-300 ring-1 ring-rose-200"
-                          : "",
-                      )}
-                    />
-                    {subjectError ? (
-                      <p className="mt-1 text-xs text-rose-700">
-                        {subjectError.message}
-                      </p>
-                    ) : null}
-                  </div>
-                </label>
-              </>
-            ) : null}
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700">
-                  {activeTab === "note" ? "Note" : "Message"}
-                </span>
-                {activeTab === "email" ? (
-                  <div className="flex items-center gap-2">
-                    {selectedAliasRecord?.isAiReady ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={aiButton.disabled}
-                        onClick={() => {
-                          runAiDraft();
-                        }}
-                      >
-                        {isGeneratingAi ? (
-                          <LoaderIcon className="size-4 animate-spin" />
-                        ) : (
-                          <SparkleIcon className="size-4" />
-                        )}
-                        {aiButton.label}
-                      </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        attachmentInputRef.current?.click();
-                      }}
-                    >
-                      <PaperclipIcon className="size-4" />
-                      Attach file
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-
-              {activeTab === "email" ? (
-                <RichTextComposerEditor
-                  bodyPlaintext={body}
-                  errorMessage={bodyError?.message}
-                  onChange={(nextBody) => {
-                    setBody(nextBody.bodyPlaintext);
-                    setBodyHtml(nextBody.bodyHtml);
-                    if (aiDraft.status === "inserted") {
-                      markAiDraftEdited();
-                    }
-                  }}
-                  onClearErrors={clearComposerErrors}
-                />
-              ) : (
-                <textarea
-                  ref={bodyRef}
-                  rows={6}
-                  value={body}
-                  onChange={(event) => {
-                    setBody(event.currentTarget.value);
-                    clearComposerErrors();
-                  }}
-                  onInput={(event) => {
-                    autoResizeTextarea(event.currentTarget);
-                  }}
-                  placeholder="Write a team-visible note"
-                  className={cn(
-                    "max-h-[30rem] min-h-36 w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-sm leading-6 text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-300",
-                    bodyError ? "border-rose-300 ring-1 ring-rose-200" : "",
-                  )}
-                />
-              )}
-              {aiWarningMessage && activeTab === "email" ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  {aiWarningMessage}
-                </div>
-              ) : null}
-              {bodyError ? (
-                <p className="text-xs text-rose-700">{bodyError.message}</p>
-              ) : null}
-
-              <AiDraftReprompt
-                aiDraft={aiDraft}
-                value={repromptText}
-                onValueChange={setRepromptText}
-                onReprompt={() => {
+                onRecipientChange={(nextRecipient) => {
+                  setRecipient(nextRecipient);
+                  clearComposerErrors();
+                  if (!isReplying) {
+                    setSelectedAlias(
+                      resolveDefaultAlias({
+                        recipient: nextRecipient,
+                        aliases: composerAliases,
+                      }),
+                    );
+                  }
+                }}
+                onSubjectChange={(value) => {
+                  setSubject(value);
+                  clearComposerErrors();
+                }}
+                onBodyChange={(nextBody) => {
+                  setBody(nextBody.bodyPlaintext);
+                  setBodyHtml(nextBody.bodyHtml);
+                }}
+                onClearErrors={clearComposerErrors}
+                onAiEdited={markAiDraftEdited}
+                onDiscardAi={handleDiscardAi}
+                onRegenerateAi={handleRegenerateAi}
+                onRunAiDraft={() => {
+                  runAiDraft();
+                }}
+                onRepromptTextChange={setRepromptText}
+                onReprompt={handleRegenerateAi}
+                onSuggestion={(value) => {
+                  setRepromptText(value);
                   runAiDraft({
                     mode: "reprompt",
-                    repromptDirection: repromptText.trim(),
+                    repromptDirection: value,
                   });
                 }}
-                disabled={isGeneratingAi}
+                onAttachmentClick={() => {
+                  attachmentInputRef.current?.click();
+                }}
+                onAttachmentRemove={(id) => {
+                  clearComposerErrors();
+                  setAttachments((previous) =>
+                    previous.filter((attachment) => attachment.id !== id),
+                  );
+                }}
+                onKnowledgeCaptureChange={setCaptureAsKnowledge}
+                onSend={submit}
+                onCancel={handleCancel}
+                {...(aliasError ? { aliasError } : {})}
+                {...(recipientError ? { recipientError } : {})}
+                {...(subjectError ? { subjectError } : {})}
+                {...(bodyError ? { bodyError } : {})}
+                {...(attachmentError ? { attachmentError } : {})}
               />
-
-              {activeTab === "email" && attachments.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {attachments.map((attachment) => (
-                    <span
-                      key={attachment.id}
-                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700"
-                    >
-                      <span className="font-medium">{attachment.filename}</span>
-                      <span className="text-slate-500">
-                        {formatBytes(attachment.size)}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${attachment.filename}`}
-                        onClick={() => {
-                          clearComposerErrors();
-                          setAttachments((previous) =>
-                            previous.filter(
-                              (item) => item.id !== attachment.id,
-                            ),
-                          );
-                        }}
-                        className="text-slate-400 hover:text-slate-700"
-                      >
-                        <XIcon className="size-3.5" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-
-              {activeTab === "email" ? (
-                <>
-                  {attachmentError ? (
-                    <p className="text-xs text-rose-700">
-                      {attachmentError.message}
-                    </p>
-                  ) : null}
-                </>
-              ) : null}
-
-              <input
-                ref={attachmentInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={handleFilesSelected}
+            ) : (
+              <ComposerNoteSurface
+                body={body}
+                isSavingNote={isSavingNote}
+                isSaveNoteDisabled={isSaveNoteDisabled}
+                inlineError={inlineError}
+                textareaRef={bodyRef}
+                onBodyChange={(value) => {
+                  setBody(value);
+                  clearComposerErrors();
+                }}
+                onTextareaInput={autoResizeTextarea}
+                onSaveNote={saveNote}
+                onCancel={handleCancel}
+                {...(bodyError ? { bodyError } : {})}
               />
-            </div>
+            )}
+
+            <input
+              ref={attachmentInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={handleFilesSelected}
+            />
           </div>
         </div>
-
-        <footer className="border-t border-slate-200 px-6 py-4">
-          {inlineError || recipientError || attachmentError ? (
-            <div className="mb-3 flex items-start justify-between gap-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
-              <div className="flex items-start gap-2">
-                <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
-                <span>
-                  {inlineError?.message ??
-                    recipientError?.message ??
-                    attachmentError?.message}
-                </span>
-              </div>
-              {inlineError?.retryable ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="border-rose-200 bg-white text-rose-900 hover:bg-rose-100"
-                  onClick={submit}
-                >
-                  Retry
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-
-          {showKnowledgeCapture ? (
-            <label className="mb-3 flex items-start gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={captureAsKnowledge}
-                onChange={(event) => {
-                  setCaptureAsKnowledge(event.currentTarget.checked);
-                }}
-                className="mt-0.5 size-4 rounded border-slate-300"
-              />
-              <span>
-                Save this reply as a canonical for{" "}
-                {selectedAliasRecord.projectName}
-              </span>
-            </label>
-          ) : null}
-
-          <div className="flex items-center justify-between">
-            <Button type="button" variant="ghost" onClick={handleCancel}>
-              Cancel
-            </Button>
-
-            <Button
-              type="button"
-              disabled={
-                activeTab === "note" ? isSaveNoteDisabled : isSendDisabled
-              }
-              onClick={activeTab === "note" ? saveNote : submit}
-            >
-              {activeTab === "note" ? (
-                isSavingNote ? (
-                  <>
-                    <LoaderIcon className="size-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <NoteIcon className="size-4" />
-                    Save note
-                  </>
-                )
-              ) : isSending ? (
-                <>
-                  <LoaderIcon className="size-4 animate-spin" />
-                  Sending...
-                </>
-              ) : (
-                <>
-                  <SendIcon className="size-4" />
-                  Send
-                </>
-              )}
-            </Button>
-          </div>
-        </footer>
       </section>
-    </TooltipProvider>
+    </>
   );
 }

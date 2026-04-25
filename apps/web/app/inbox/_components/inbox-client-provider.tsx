@@ -133,7 +133,10 @@ interface InboxClientState {
   readonly composerAliases: readonly InboxComposerAliasOption[];
   readonly composerPane: ComposerPaneState;
   readonly openNewDraft: () => void;
-  readonly openReplyDraft: (replyContext: InboxComposerReplyContext) => void;
+  readonly openReplyDraft: (
+    replyContext: InboxComposerReplyContext,
+    initialTab?: "email" | "note",
+  ) => void;
   readonly closeComposer: () => void;
 
   readonly composerStatus: ComposerStatus;
@@ -160,6 +163,7 @@ interface InboxClientState {
     readonly repromptDirection?: string;
   }) => void;
   readonly markAiDraftEdited: () => void;
+  readonly restoreAiDraft: () => void;
   readonly discardAiDraft: () => void;
   readonly repromptAi: (input: {
     readonly request: AiDraftRequestPayload;
@@ -247,11 +251,15 @@ export function InboxClientProvider({
   }, []);
 
   const openReplyDraft = useCallback(
-    (replyContext: InboxComposerReplyContext) => {
+    (
+      replyContext: InboxComposerReplyContext,
+      initialTab: "email" | "note" = "email",
+    ) => {
       setComposerPane((previous) =>
         reduceComposerPane(previous, {
           type: "open-reply",
-          replyContext
+          replyContext,
+          initialTab,
         })
       );
       setComposerStatus("idle");
@@ -350,6 +358,13 @@ export function InboxClientProvider({
     }));
   }, []);
 
+  const restoreAiDraft = useCallback(() => {
+    setAiDraft((previous) => ({
+      ...previous,
+      status: "inserted",
+    }));
+  }, []);
+
   const discardAiDraft = useCallback(() => {
     setAiDraft((previous) => ({
       ...previous,
@@ -423,6 +438,7 @@ export function InboxClientProvider({
       startAiGeneration,
       insertAiDraft,
       markAiDraftEdited,
+      restoreAiDraft,
       discardAiDraft,
       repromptAi,
       setAiUnavailable,
@@ -454,6 +470,7 @@ export function InboxClientProvider({
       startAiGeneration,
       insertAiDraft,
       markAiDraftEdited,
+      restoreAiDraft,
       discardAiDraft,
       repromptAi,
       setAiUnavailable,

@@ -459,6 +459,9 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
               onReply={() => {
                 openReplyDraft(composerReplyContext);
               }}
+              onNote={() => {
+                openReplyDraft(composerReplyContext, "note");
+              }}
             />
           ) : null}
         </div>
