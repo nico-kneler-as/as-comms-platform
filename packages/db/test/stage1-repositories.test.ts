@@ -604,6 +604,41 @@ describe("Stage 1 DB repositories", () => {
     ).resolves.toEqual([timelineProjection]);
   });
 
+  it("preserves admin-managed project active state across project dimension upserts", async () => {
+    const { repositories, settings } = await createTestStage1Context();
+
+    await repositories.projectDimensions.upsert({
+      projectId: "project_1",
+      projectName: "Project Antarctica",
+      isActive: false,
+      source: "salesforce",
+    });
+
+    const activatedProject = await settings.projects.setActive("project_1", true);
+
+    expect(activatedProject).toMatchObject({
+      projectId: "project_1",
+      isActive: true,
+    });
+
+    await repositories.projectDimensions.upsert({
+      projectId: "project_1",
+      projectName: "Project Antarctica Resynced",
+      isActive: false,
+      source: "salesforce",
+    });
+
+    await expect(
+      repositories.projectDimensions.listByIds(["project_1"]),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        projectId: "project_1",
+        projectName: "Project Antarctica Resynced",
+        isActive: true,
+      }),
+    ]);
+  });
+
   it("persists sync state and audit evidence with contract-shaped results", async () => {
     const { repositories } = await createTestStage1Context();
 
