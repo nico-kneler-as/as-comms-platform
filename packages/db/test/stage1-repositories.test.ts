@@ -251,6 +251,7 @@ describe("Stage 1 DB repositories", () => {
       contactId: contact.id,
       projectId: "project_1",
       expeditionId: "expedition_1",
+      salesforceMembershipId: "a0B-membership-1",
       role: "volunteer",
       status: "active",
       source: "salesforce",

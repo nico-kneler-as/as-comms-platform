@@ -21,6 +21,7 @@ export async function seedInboxContact(
     readonly projectName?: string;
     readonly projectAlias?: string | null;
     readonly membershipId?: string;
+    readonly salesforceMembershipId?: string | null;
     readonly membershipStatus?: string | null;
     readonly membershipCreatedAt?: string;
   },
@@ -55,6 +56,7 @@ export async function seedInboxContact(
       contactId: input.contactId,
       projectId: input.projectId ?? null,
       expeditionId: null,
+      salesforceMembershipId: input.salesforceMembershipId ?? undefined,
       role: "volunteer",
       status: input.membershipStatus ?? null,
       source: "salesforce",

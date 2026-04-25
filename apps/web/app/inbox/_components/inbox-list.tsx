@@ -13,19 +13,9 @@ import {
 
 import type { InboxFilterId, InboxListViewModel } from "../_lib/view-models";
 import { fetchInboxListPage } from "../_lib/client-api";
-import { DISPLAY_INBOX_FILTERS } from "../_lib/filters";
 import { shouldApplyUrlSearchQuery } from "../_lib/search-sync";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
 import { extractInboxContactId } from "./inbox-keyboard-helpers";
@@ -36,20 +26,17 @@ import {
   LAYOUT,
   RADIUS,
   SHADOW,
-  TEXT,
   TRANSITION,
-} from "@/app/_lib/design-tokens";
+  TYPE,
+} from "@/app/_lib/design-tokens-v2";
 import {
-  ChevronDownIcon,
-  FilterIcon,
   InboxIcon,
   PencilIcon,
   SearchIcon,
   SearchXIcon,
   XIcon,
 } from "./icons";
-
-const ALL_PROJECTS_VALUE = "__all__";
+import { InboxFilterList } from "./inbox-filter-list";
 import { QueueLoadingSkeleton } from "./inbox-loading";
 import { InboxRow } from "./inbox-row";
 
@@ -58,15 +45,7 @@ interface ListColumnProps {
   readonly initialFilterId?: InboxFilterId;
 }
 
-const DISPLAY_FILTER_IDS: readonly InboxFilterId[] = DISPLAY_INBOX_FILTERS.map(
-  (filter) => filter.id,
-);
-
-const DEFAULT_TITLE = "Inbox";
-
-function isDisplayFilterId(value: string): value is InboxFilterId {
-  return DISPLAY_FILTER_IDS.includes(value as InboxFilterId);
-}
+const TITLE = "Inbox";
 
 export function InboxList({
   initialList,
@@ -85,28 +64,30 @@ export function InboxList({
     openNewDraft,
   } = useInboxClient();
   const urlQuery = searchParams.get("q") ?? "";
+  const urlProjectId = searchParams.get("projectId");
   const deferredQuery = useDeferredValue(search.query);
   const normalizedQuery = deferredQuery.trim();
   const isServerSearchActive = normalizedQuery.length > 0;
-  const [activeFilter, setActiveFilter] =
-    useState<InboxFilterId>(initialFilterId);
+  const [activeFilter, setActiveFilter] = useState(initialFilterId);
   const [selectedProjectId, setSelectedProjectId] = useState(
-    initialList.selectedProjectId ?? null,
+    urlProjectId ?? initialList.selectedProjectId ?? null,
   );
   const [currentList, setCurrentList] = useState(initialList);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [isFilterTransitionPending, startFilterTransition] = useTransition();
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const activeRequestIdRef = useRef(0);
   const listViewportRef = useRef<HTMLDivElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const pendingAppendCursorRef = useRef<string | null>(null);
-  const previousFilterRef = useRef<InboxFilterId>(initialFilterId);
-  const previousProjectIdRef = useRef<string | null>(null);
+  const previousFilterRef = useRef(initialFilterId);
+  const previousProjectIdRef = useRef(
+    urlProjectId ?? initialList.selectedProjectId ?? null,
+  );
   const previousUrlQueryRef = useRef(urlQuery);
+  const previousUrlProjectIdRef = useRef(urlProjectId);
   const latestShellStateRef = useRef({
     activeFilter: initialFilterId,
-    selectedProjectId: initialList.selectedProjectId ?? null,
+    selectedProjectId: urlProjectId ?? initialList.selectedProjectId ?? null,
     initialList,
   });
   const listFreshnessKey = `${initialList.freshness.latestUpdatedAt ?? "none"}:${initialList.freshness.total.toString()}`;
@@ -142,6 +123,16 @@ export function InboxList({
       setSearchQuery(urlQuery);
     }
   }, [search.query, setSearchQuery, urlQuery]);
+
+  // Sync URL projectId → state on external URL changes (e.g. welcome card click)
+  useEffect(() => {
+    if (urlProjectId === previousUrlProjectIdRef.current) {
+      return;
+    }
+
+    previousUrlProjectIdRef.current = urlProjectId;
+    setSelectedProjectId(urlProjectId);
+  }, [urlProjectId]);
 
   useEffect(() => {
     const currentUrlQuery = urlQuery.trim();
@@ -317,22 +308,6 @@ export function InboxList({
     });
   }, [isServerSearchActive, listFreshnessKey, loadFilterPage, normalizedQuery]);
 
-  const filterLabels = useMemo(
-    () =>
-      new Map(
-        currentList.filters.map((filter) => [filter.id, filter.label] as const),
-      ),
-    [currentList.filters],
-  );
-
-  const filterCounts = useMemo(
-    () =>
-      Object.fromEntries(
-        currentList.filters.map((filter) => [filter.id, filter.count] as const),
-      ) as Record<InboxFilterId, number>,
-    [currentList.filters],
-  );
-
   const displayItems = currentList.items;
 
   const shouldShowInitialSkeleton =
@@ -342,19 +317,38 @@ export function InboxList({
   const isLoadingMore =
     isQueueLoading && pendingAppendCursorRef.current !== null;
   const activeProjects = currentList.activeProjects;
-  const selectedProjectName =
-    selectedProjectId === null
-      ? null
-      : (activeProjects.find((project) => project.id === selectedProjectId)
-          ?.name ?? null);
-  const filterLabel =
-    filterLabels.get(activeFilter) ??
-    DISPLAY_INBOX_FILTERS.find((filter) => filter.id === activeFilter)?.label ??
-    DEFAULT_TITLE;
-  const titleLabel =
-    selectedProjectName === null
-      ? filterLabel
-      : `${filterLabel} · ${selectedProjectName}`;
+
+  const handleFilterChange = useCallback(
+    (id: InboxFilterId) => {
+      startFilterTransition(() => {
+        setActiveFilter(id);
+      });
+    },
+    [startFilterTransition],
+  );
+
+  const handleProjectChange = useCallback(
+    (id: string | null) => {
+      startFilterTransition(() => {
+        setSelectedProjectId(id);
+      });
+
+      const nextParams = new URLSearchParams(searchParams.toString());
+      if (id === null) {
+        nextParams.delete("projectId");
+      } else {
+        nextParams.set("projectId", id);
+      }
+
+      const nextQueryString = nextParams.toString();
+      const nextHref =
+        nextQueryString.length === 0 ? pathname : `${pathname}?${nextQueryString}`;
+
+      previousUrlProjectIdRef.current = id;
+      router.replace(nextHref, { scroll: false });
+    },
+    [pathname, router, searchParams, startFilterTransition],
+  );
 
   useEffect(() => {
     const root = listViewportRef.current;
@@ -423,8 +417,8 @@ export function InboxList({
         <div
           className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-5`}
         >
-          <h1 className={`min-w-0 flex-1 truncate ${TEXT.headingLg}`}>
-            {titleLabel}
+          <h1 className={`min-w-0 flex-1 truncate ${TYPE.headingLg}`}>
+            {TITLE}
           </h1>
           <Button
             type="button"
@@ -438,28 +432,6 @@ export function InboxList({
           >
             <PencilIcon aria-hidden="true" data-icon="inline-start" />
           </Button>
-          <button
-            type="button"
-            aria-label={filterPanelOpen ? "Close filters" : "Open filters"}
-            aria-expanded={filterPanelOpen}
-            aria-controls="inbox-filter-panel"
-            onClick={() => {
-              setFilterPanelOpen((open) => !open);
-            }}
-            className={cn(
-              `relative inline-flex h-8 w-8 shrink-0 items-center justify-center ${RADIUS.md} border`,
-              "transition-[color,background-color,transform] duration-150 ease-out",
-              "active:scale-[0.96]",
-              "after:absolute after:-inset-1 after:content-['']",
-              TRANSITION.reduceMotion,
-              FOCUS_RING,
-              filterPanelOpen
-                ? "border-slate-300 bg-slate-100 text-slate-900"
-                : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900",
-            )}
-          >
-            <FilterIcon className="h-4 w-4" />
-          </button>
         </div>
 
         <div className="px-5 pb-3 pt-3">
@@ -489,6 +461,7 @@ export function InboxList({
                   "transition-[color,transform] duration-150 ease-out active:scale-[0.96]",
                   "after:absolute after:-inset-2.5 after:content-['']",
                   TRANSITION.reduceMotion,
+                  FOCUS_RING,
                 )}
               >
                 <XIcon className="h-3.5 w-3.5" />
@@ -497,106 +470,16 @@ export function InboxList({
           </label>
         </div>
 
-        <Collapsible open={filterPanelOpen} onOpenChange={setFilterPanelOpen}>
-          <CollapsibleContent
-            id="inbox-filter-panel"
-            className="border-t border-slate-100 px-5 pb-3 pt-3"
-          >
-            <div className="flex flex-col gap-3">
-              <ToggleGroup
-                type="single"
-                value={activeFilter}
-                aria-label="Inbox mode"
-                variant="outline"
-                size="sm"
-                onValueChange={(value) => {
-                  if (typeof value !== "string" || !isDisplayFilterId(value)) {
-                    return;
-                  }
-
-                  startFilterTransition(() => {
-                    setActiveFilter(value);
-                  });
-                }}
-                className="grid grid-cols-2 rounded-md border border-slate-200 bg-slate-50 p-1"
-              >
-                {DISPLAY_FILTER_IDS.map((id) => {
-                  const showCount = id !== "all";
-                  return (
-                    <ToggleGroupItem
-                      key={id}
-                      value={id}
-                      aria-label={`Show ${filterLabels.get(id) ?? id}`}
-                      className={cn(
-                        "justify-between border-0 bg-transparent px-2.5 text-xs shadow-none",
-                        "data-[state=on]:bg-white data-[state=on]:text-slate-900 data-[state=on]:shadow-sm",
-                        "text-slate-600 hover:bg-white/70 hover:text-slate-900",
-                      )}
-                    >
-                      <span className="truncate">{filterLabels.get(id) ?? id}</span>
-                      {showCount ? (
-                        <span className="ml-2 tabular-nums text-slate-400">
-                          {filterCounts[id]}
-                        </span>
-                      ) : null}
-                    </ToggleGroupItem>
-                  );
-                })}
-              </ToggleGroup>
-
-              <div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label="Filter by project"
-                      className={cn(
-                        `flex w-full items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm}`,
-                        "transition-[color,background-color,border-color,transform] duration-150 ease-out",
-                        "active:scale-[0.96]",
-                        TRANSITION.reduceMotion,
-                        FOCUS_RING,
-                        "hover:border-slate-300 hover:bg-slate-50",
-                      )}
-                    >
-                      <span className="flex-1 truncate text-left text-slate-900">
-                        {selectedProjectName ?? "All projects"}
-                      </span>
-                      <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    className="max-h-64 w-[18rem] overflow-y-auto"
-                  >
-                    <DropdownMenuRadioGroup
-                      value={selectedProjectId ?? ALL_PROJECTS_VALUE}
-                      onValueChange={(value) => {
-                        startFilterTransition(() => {
-                          setSelectedProjectId(
-                            value === ALL_PROJECTS_VALUE ? null : value,
-                          );
-                        });
-                      }}
-                    >
-                      <DropdownMenuRadioItem value={ALL_PROJECTS_VALUE}>
-                        All projects
-                      </DropdownMenuRadioItem>
-                      {activeProjects.map((project) => (
-                        <DropdownMenuRadioItem
-                          key={project.id}
-                          value={project.id}
-                        >
-                          <span className="truncate">{project.name}</span>
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
+        <div className="border-t border-slate-100">
+          <InboxFilterList
+            filters={currentList.filters}
+            activeFilter={activeFilter}
+            onFilterChange={handleFilterChange}
+            projects={activeProjects}
+            selectedProjectId={selectedProjectId}
+            onProjectChange={handleProjectChange}
+          />
+        </div>
 
         {queueError ? (
           <div className="border-t border-rose-100 bg-rose-50 px-5 py-2 text-xs text-rose-700">

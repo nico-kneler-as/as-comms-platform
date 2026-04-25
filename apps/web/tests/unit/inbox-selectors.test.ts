@@ -206,6 +206,7 @@ async function seedInboxFixture(runtime: InboxTestRuntime): Promise<void> {
     projectId: "project:amazon-basin",
     projectName: "Amazon Basin Research",
     membershipId: "membership:sarah",
+    salesforceMembershipId: "a0B-sarah-membership",
     membershipStatus: "in_training",
   });
   await seedInboxEmailEvent(runtime.context, {
@@ -925,7 +926,9 @@ describe("real inbox selectors", () => {
       projectName: "Amazon Basin Research",
       status: "in-training",
       crmUrl:
-        "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/membership%3Asarah/view",
+        "https://adventurescientists.lightning.force.com/lightning/r/Project__c/project%3Aamazon-basin/view",
+      expeditionMemberUrl:
+        "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/a0B-sarah-membership/view",
     });
     expect(detail?.timeline.map((entry) => entry.kind)).toEqual([
       "outbound-email",
@@ -1063,6 +1066,17 @@ describe("real inbox selectors", () => {
         }),
       ),
     ).not.toContain("WPEF Tracking Whitebark Pine OR WA 2025-2026 2026");
+  });
+
+  it("sets expeditionMemberUrl to null when the membership has no Salesforce membership id", async () => {
+    const detail = await getInboxDetail("contact:lisa-zhang");
+
+    expect(detail).not.toBeNull();
+    expect(detail?.contact.pastProjects[0]).toMatchObject({
+      crmUrl:
+        "https://adventurescientists.lightning.force.com/lightning/r/Project__c/project%3Akiller-whales/view",
+      expeditionMemberUrl: null,
+    });
   });
 
   it("threads Gmail From, To, and Cc headers into the timeline detail view model", async () => {
