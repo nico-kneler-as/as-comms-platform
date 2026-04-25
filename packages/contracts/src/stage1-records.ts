@@ -419,12 +419,12 @@ export const inboxProjectionSchema = z
     if (
       value.lastInboundAt === null &&
       value.lastOutboundAt !== null &&
-      value.lastActivityAt !== value.lastOutboundAt
+      value.lastActivityAt < value.lastOutboundAt
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "outbound-only inbox rows must set lastActivityAt to lastOutboundAt",
+          "outbound-only inbox rows must set lastActivityAt at or after lastOutboundAt",
       });
     }
 
@@ -450,12 +450,12 @@ export const inboxProjectionSchema = z
 
     if (
       expectedLastActivityAt !== null &&
-      value.lastActivityAt !== expectedLastActivityAt
+      value.lastActivityAt < expectedLastActivityAt
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          "lastActivityAt must equal the newest inbound or outbound timestamp",
+          "lastActivityAt must be at least as recent as the newest inbound or outbound timestamp",
       });
     }
   });
