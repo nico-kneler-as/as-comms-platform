@@ -253,7 +253,8 @@ describe("Stage 1 provider-close mappers", () => {
           expeditionId: "expedition_1",
           expeditionName: "Expedition Antarctica",
           role: "volunteer",
-          status: "active"
+          status: "active",
+          salesforceId: "a15VK00000AUcRtYAL"
         }
       ]
     });

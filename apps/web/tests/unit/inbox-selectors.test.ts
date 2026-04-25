@@ -207,6 +207,7 @@ async function seedInboxFixture(runtime: InboxTestRuntime): Promise<void> {
     projectName: "Amazon Basin Research",
     membershipId: "membership:sarah",
     membershipStatus: "in_training",
+    salesforceMembershipId: "a15VK00000AUcRtYAL",
   });
   await seedInboxEmailEvent(runtime.context, {
     id: "sarah-outbound-1",
@@ -916,7 +917,7 @@ describe("real inbox selectors", () => {
       projectName: "Amazon Basin Research",
       status: "in-training",
       crmUrl:
-        "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/membership%3Asarah/view",
+        "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/a15VK00000AUcRtYAL/view",
     });
     expect(detail?.timeline.map((entry) => entry.kind)).toEqual([
       "outbound-email",
@@ -1017,6 +1018,73 @@ describe("real inbox selectors", () => {
         }),
       ),
     ).not.toContain("WPEF Tracking Whitebark Pine OR WA 2025-2026 2026");
+  });
+
+  describe("contact rail crmUrl", () => {
+    it("uses the Salesforce membership Id when present", async () => {
+      const detail = await getInboxDetail("contact:sarah-martinez");
+
+      expect(detail?.contact.activeProjects[0]?.crmUrl).toBe(
+        "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/a15VK00000AUcRtYAL/view",
+      );
+    });
+
+    it("suppresses the CRM link for legacy memberships without a Salesforce Id", async () => {
+      if (runtime === null) {
+        throw new Error("Expected inbox test runtime");
+      }
+
+      await seedInboxContact(runtime.context, {
+        contactId: "contact:legacy-membership",
+        salesforceContactId: "003-legacy",
+        displayName: "Legacy Membership",
+        primaryEmail: "legacy@example.org",
+        primaryPhone: null,
+        projectId: "project:legacy",
+        projectName: "Legacy Project",
+        membershipId: "membership:legacy",
+        membershipStatus: "active",
+      });
+      const latest = await seedInboxEmailEvent(runtime.context, {
+        id: "legacy-membership-email-1",
+        contactId: "contact:legacy-membership",
+        occurredAt: "2026-04-16T13:00:00.000Z",
+        direction: "inbound",
+        subject: "Legacy membership",
+        snippet: "This membership predates the Salesforce backfill.",
+      });
+      await seedInboxProjection(runtime.context, {
+        contactId: "contact:legacy-membership",
+        bucket: "New",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt: "2026-04-16T13:00:00.000Z",
+        lastOutboundAt: null,
+        lastActivityAt: "2026-04-16T13:00:00.000Z",
+        snippet: "This membership predates the Salesforce backfill.",
+        lastCanonicalEventId: latest.canonicalEventId,
+        lastEventType: "communication.email.inbound",
+      });
+
+      const detail = await getInboxDetail("contact:legacy-membership");
+
+      if (detail === null) {
+        throw new Error("Expected inbox detail for legacy-membership contact");
+      }
+
+      expect(detail.contact.activeProjects[0]?.crmUrl).toBeNull();
+
+      const markup = renderToStaticMarkup(
+        createElement(InboxContactRail, {
+          contact: detail.contact,
+        }),
+      );
+
+      expect(markup).toContain("Legacy Project");
+      expect(markup).not.toContain(
+        "lightning/r/Expedition_Members__c/",
+      );
+    });
   });
 
   it("threads Gmail From, To, and Cc headers into the timeline detail view model", async () => {

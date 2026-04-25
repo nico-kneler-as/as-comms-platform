@@ -52,6 +52,7 @@ const salesforceRoutingContextSchema = z.object({
 });
 
 const salesforceMembershipSchema = z.object({
+  salesforceId: nullableStringSchema.default(null),
   projectId: nullableStringSchema.default(null),
   projectName: nullableStringSchema.default(null),
   expeditionId: nullableStringSchema.default(null),
@@ -558,6 +559,7 @@ function mapSalesforceContactSnapshot(
       expeditionId: membership.expeditionId,
       role: membership.role,
       status: membership.status,
+      salesforceMembershipId: membership.salesforceId ?? undefined,
       source: "salesforce",
       createdAt: record.createdAt,
     })),

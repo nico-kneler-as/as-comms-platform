@@ -152,14 +152,9 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
         <p className="mt-2 text-[12px] text-slate-400">{emptyLabel}</p>
       ) : (
         <ul className="mt-2 space-y-1">
-          {projects.map((project) => (
-            <li key={project.membershipId}>
-              <a
-                href={project.crmUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white hover:ring-1 hover:ring-slate-200"
-              >
+          {projects.map((project) => {
+            const content = (
+              <>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-medium text-slate-800 group-hover:text-slate-900">
                     {project.projectName}
@@ -173,9 +168,28 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
                   </p>
                 </div>
                 <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-slate-500" />
-              </a>
-            </li>
-          ))}
+              </>
+            );
+
+            return (
+              <li key={project.membershipId}>
+                {project.crmUrl != null ? (
+                  <a
+                    href={project.crmUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white hover:ring-1 hover:ring-slate-200"
+                  >
+                    {content}
+                  </a>
+                ) : (
+                  <div className="group flex items-center gap-2 rounded-lg px-2 py-1.5">
+                    {content}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

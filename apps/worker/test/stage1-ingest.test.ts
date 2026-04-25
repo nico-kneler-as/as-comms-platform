@@ -198,7 +198,8 @@ describe("Stage 1 worker ingest service", () => {
           expeditionId: "expedition_1",
           expeditionName: "Expedition Antarctica",
           role: "volunteer",
-          status: "active"
+          status: "active",
+          salesforceId: "a15VK00000AUcRtYAL"
         }
       ]
     });
