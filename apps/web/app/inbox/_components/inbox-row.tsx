@@ -7,7 +7,8 @@ import { useCallback, useRef } from "react";
 import type { InboxListItemViewModel } from "../_lib/view-models";
 import { InboxAvatar } from "./inbox-avatar";
 import { MailIcon, PhoneIcon } from "./icons";
-import { FOCUS_RING, SPACING, TEXT, TRANSITION } from "@/app/_lib/design-tokens";
+import { FOCUS_RING, SPACING, TRANSITION, TYPE, TONE_CLASSES } from "@/app/_lib/design-tokens-v2";
+import { projectToneFromName } from "../_lib/project-tone";
 
 interface RowProps {
   readonly item: InboxListItemViewModel;
@@ -108,16 +109,28 @@ export function InboxRow({ item, isActive }: RowProps) {
             </p>
           </div>
 
-          <p className={`mt-0.5 line-clamp-1 ${TEXT.caption}`}>
+          <p className={`mt-0.5 line-clamp-1 ${TYPE.caption}`}>
             {item.snippet}
           </p>
 
           {showBadges ? (
             <div className="mt-1.5 flex items-center gap-1.5">
               {item.projectLabel ? (
-                <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                  {item.projectLabel}
-                </span>
+                (() => {
+                  const tone = projectToneFromName(item.projectLabel);
+                  const t = TONE_CLASSES[tone];
+                  return (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${t.subtle} ${t.subtleText}`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`h-1 w-1 rounded-full ${t.dot}`}
+                      />
+                      {item.projectLabel}
+                    </span>
+                  );
+                })()
               ) : null}
               {item.needsFollowUp ? (
                 <span className="inline-flex items-center rounded-md bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-700">
