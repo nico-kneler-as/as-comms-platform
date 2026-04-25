@@ -468,7 +468,12 @@ async function reconcilePendingComposerOutbound(
     fingerprint
   );
 
-  if (pending !== null && pending.status === "pending") {
+  if (
+    pending !== null &&
+    (pending.status === "pending" ||
+      (pending.status === "confirmed" && pending.reconciledEventId === null))
+  ) {
+    const via = pending.status === "pending" ? "fingerprint" : "event_link";
     await persistence.repositories.pendingOutbounds.markConfirmed(pending.id, {
       reconciledEventId: input.canonicalEvent.id
     });
@@ -479,7 +484,8 @@ async function reconcilePendingComposerOutbound(
         fingerprint,
         canonicalEventId: input.canonicalEvent.id,
         sourceEvidenceId: input.sourceEvidence.id,
-        providerRecordId: input.sourceEvidence.providerRecordId
+        providerRecordId: input.sourceEvidence.providerRecordId,
+        via
       }
     });
     return;

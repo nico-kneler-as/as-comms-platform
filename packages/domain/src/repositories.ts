@@ -260,7 +260,7 @@ export interface PendingComposerOutboundRepository {
   ): Promise<PendingComposerOutboundRecord | null>;
   markConfirmed(
     id: string,
-    input: { readonly reconciledEventId: string },
+    input: { readonly reconciledEventId: string | null },
   ): Promise<void>;
   markFailed(id: string, input: { readonly reason: string }): Promise<void>;
   markSuperseded(id: string): Promise<void>;
