@@ -967,11 +967,17 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:sarah-martinez");
 
-    expect(detail?.contact.pinnedNote).toEqual({
+    // manual_note_details.created_at defaults to now() at insert time (not the
+    // fixture's occurredAt), so the relative label is computed from real elapsed
+    // time during the test run. Assert structure + content; don't pin the exact
+    // relative label.
+    expect(detail?.contact.pinnedNote).toMatchObject({
       body: "Latest note body",
       authorLabel: "Sam Bowes",
-      createdAtLabel: "1h ago",
     });
+    expect(detail?.contact.pinnedNote?.createdAtLabel).toMatch(
+      /^(?:Just now|\d+[smhdw] ago)$/u,
+    );
   });
 
   it("orders contact rail active projects newest-first by membership createdAt and uses short aliases", async () => {
