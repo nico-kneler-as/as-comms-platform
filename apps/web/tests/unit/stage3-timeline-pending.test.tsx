@@ -16,26 +16,40 @@ vi.mock("@/components/ui/divider-label", () => ({
     createElement("span", null, children),
 }));
 
-vi.mock("@/app/_lib/design-tokens", () => ({
-  RADIUS: {
-    bubble: "rounded-2xl",
-    md: "rounded-xl",
-  },
+vi.mock("@/app/_lib/design-tokens-v2", () => ({
   SHADOW: {
     sm: "shadow-sm",
   },
-  TEXT: {
-    bodySm: "text-sm",
+  TYPE: {
     micro: "text-xs",
-  },
-  TONE: {
-    amber: {
-      subtle: "bg-amber-50",
-    },
+    bodySerifSm: "text-[13.5px]",
+    label: "text-[10px]",
   },
   TRANSITION: {
     fast: "transition-colors",
     reduceMotion: "motion-reduce:transition-none",
+  },
+  TONE_CLASSES: {
+    amber: {
+      subtle: "bg-amber-50",
+      text: "text-amber-700",
+    },
+    emerald: {
+      subtle: "bg-emerald-50",
+      text: "text-emerald-700",
+    },
+    sky: {
+      subtle: "bg-sky-50",
+      text: "text-sky-700",
+    },
+    slate: {
+      subtle: "bg-slate-50",
+      text: "text-slate-700",
+    },
+    violet: {
+      subtle: "bg-violet-50",
+      text: "text-violet-700",
+    },
   },
 }));
 
