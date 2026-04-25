@@ -1453,7 +1453,7 @@ function createStage1RepositoriesInternal(
           return new Map();
         }
 
-        const result = (await db.execute(
+        const result = await db.execute(
           sql`
             select distinct on (${canonicalEventLedger.contactId})
               ${canonicalEventLedger.contactId} as "contactId",
@@ -1468,12 +1468,28 @@ function createStage1RepositoriesInternal(
               ${canonicalEventLedger.contactId},
               ${canonicalEventLedger.occurredAt} desc
           `,
-        )) as {
-          rows: { contactId: string; projectInboxAlias: string }[];
-        };
+        );
+
+        // drizzle-orm/postgres-js returns rows as a top-level iterable;
+        // drizzle-orm/pglite (used in tests) returns { rows: [...] }.
+        // Normalize to a plain array of rows.
+        const rows: readonly {
+          readonly contactId: string;
+          readonly projectInboxAlias: string;
+        }[] = Array.isArray(result)
+          ? (result as readonly {
+              readonly contactId: string;
+              readonly projectInboxAlias: string;
+            }[])
+          : ((result as {
+              readonly rows?: readonly {
+                readonly contactId: string;
+                readonly projectInboxAlias: string;
+              }[];
+            }).rows ?? []);
 
         return new Map(
-          result.rows.map((row) => [row.contactId, row.projectInboxAlias]),
+          rows.map((row) => [row.contactId, row.projectInboxAlias]),
         );
       },
 
