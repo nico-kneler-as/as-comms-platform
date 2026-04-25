@@ -115,6 +115,7 @@ export interface InboxToastState {
 }
 
 interface InboxClientState {
+  readonly currentActorId: string;
   readonly reminders: ReadonlyMap<string, Reminder>;
   readonly setReminder: (contactId: string, reminder: Reminder) => void;
   readonly clearReminder: (contactId: string) => void;
@@ -173,10 +174,12 @@ const InboxClientContext = createContext<InboxClientState | null>(null);
 
 export function InboxClientProvider({
   children,
-  composerAliases
+  composerAliases,
+  currentActorId,
 }: {
   readonly children: ReactNode;
   readonly composerAliases: readonly InboxComposerAliasOption[];
+  readonly currentActorId: string;
 }) {
   const [reminders, setReminders] = useState<ReadonlyMap<string, Reminder>>(
     () => new Map<string, Reminder>()
@@ -392,6 +395,7 @@ export function InboxClientProvider({
 
   const value = useMemo<InboxClientState>(
     () => ({
+      currentActorId,
       reminders,
       setReminder,
       clearReminder,
@@ -426,6 +430,7 @@ export function InboxClientProvider({
       resetAiDraft
     }),
     [
+      currentActorId,
       reminders,
       setReminder,
       clearReminder,
