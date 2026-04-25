@@ -150,22 +150,28 @@ export function InboxList({
       return;
     }
 
-    const nextParams = new URLSearchParams(searchParams.toString());
+    const handle = window.setTimeout(() => {
+      const nextParams = new URLSearchParams(searchParams.toString());
 
-    if (normalizedQuery.length === 0) {
-      nextParams.delete("q");
-    } else {
-      nextParams.set("q", normalizedQuery);
-    }
+      if (normalizedQuery.length === 0) {
+        nextParams.delete("q");
+      } else {
+        nextParams.set("q", normalizedQuery);
+      }
 
-    const nextQueryString = nextParams.toString();
-    const nextHref =
-      nextQueryString.length === 0
-        ? pathname
-        : `${pathname}?${nextQueryString}`;
+      const nextQueryString = nextParams.toString();
+      const nextHref =
+        nextQueryString.length === 0
+          ? pathname
+          : `${pathname}?${nextQueryString}`;
 
-    previousUrlQueryRef.current = normalizedQuery;
-    router.replace(nextHref, { scroll: false });
+      previousUrlQueryRef.current = normalizedQuery;
+      router.replace(nextHref, { scroll: false });
+    }, 400);
+
+    return () => {
+      window.clearTimeout(handle);
+    };
   }, [normalizedQuery, pathname, router, searchParams, urlQuery]);
 
   const loadFilterPage = useCallback(
