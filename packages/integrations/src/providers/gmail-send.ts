@@ -235,7 +235,7 @@ function buildMimeMessage(
   const rfc822MessageId = buildMessageId(params.fromAlias, now);
   const headers = [
     `Date: ${now.toUTCString()}`,
-    `From: <${params.fromAlias}>`,
+    `From: "Adventure Scientists" <${params.fromAlias}>`,
     `To: <${params.to}>`,
     `Subject: ${encodeHeaderWordUtf8(params.subject)}`,
     `Message-ID: ${rfc822MessageId}`,

@@ -25,10 +25,14 @@
 | `MAILCHIMP_CAPTURE_TOKEN`  | future `worker` + Mailchimp capture service | Railway service variables           | Deferred until Mailchimp capture resumes.                                 |
 | `SENDGRID_API_KEY`         | future campaigns service                    | Railway service variables           | Deferred until Campaigns Email lands.                                     |
 | `ANTHROPIC_API_KEY`        | `web`                                       | Railway service variables           | Powers Stage 4 AI drafting in the web service only.                       |
+| `GMAIL_LIVE_ACCOUNT`       | `web`, `worker`, `gmail-capture`            | Railway service variables           | `web` uses it for composer sends; `worker`/`gmail-capture` for ingestion. |
+| `GMAIL_GOOGLE_OAUTH_CLIENT_ID` | `web`, `worker`, `gmail-capture`        | Railway service variables           | Same OAuth app; rotate the client ID across all three services together.  |
+| `GMAIL_GOOGLE_OAUTH_CLIENT_SECRET` | `web`, `worker`, `gmail-capture`    | Railway service variables           | Same OAuth app; rotate the client secret across all three services.       |
+| `GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN` | `web`, `worker`, `gmail-capture`    | Railway service variables           | If revoked, re-mint via the Google OAuth flow and update all three.       |
 
 Current provider-facing secrets that also need the same treatment:
 
-- Gmail capture OAuth credentials in `gmail-capture`: `GMAIL_GOOGLE_OAUTH_CLIENT_SECRET`, `GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN`
+- Gmail OAuth credentials (`GMAIL_GOOGLE_OAUTH_CLIENT_SECRET`, `GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN`): required on **`web`** (composer sends), **`worker`**, and **`gmail-capture`**
 - Salesforce capture credentials in `salesforce-capture`: `SALESFORCE_CLIENT_ID`, `SALESFORCE_JWT_PRIVATE_KEY`
 
 ## Railway Rotation Commands
