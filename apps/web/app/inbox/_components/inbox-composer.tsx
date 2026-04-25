@@ -51,6 +51,7 @@ import {
   resolveDefaultAlias,
 } from "../_lib/composer-ui";
 import type { InboxComposerAliasOption } from "../_lib/view-models";
+import { plaintextToComposerHtml } from "./composer-html";
 import {
   ComposerToolbar,
   type ComposerToolbarCommand,
@@ -318,8 +319,22 @@ function RichTextComposerEditor({
       return;
     }
 
-    if (bodyPlaintext.length === 0 && editor.getText().length > 0) {
+    const trimmedBodyPlaintext = bodyPlaintext.trim();
+    const trimmedEditorText = editor.getText().trim();
+
+    if (trimmedBodyPlaintext.length === 0 && trimmedEditorText.length > 0) {
       editor.commands.clearContent();
+      return;
+    }
+
+    if (
+      trimmedBodyPlaintext.length > 0 &&
+      trimmedBodyPlaintext !== trimmedEditorText
+    ) {
+      editor.commands.setContent(
+        plaintextToComposerHtml(bodyPlaintext),
+        { emitUpdate: false },
+      );
     }
   }, [bodyPlaintext, editor]);
 
@@ -769,6 +784,7 @@ export function InboxComposerDetailPane() {
       clearComposerErrors();
       setInlineError(null);
       setBody(result.data.draft);
+      setBodyHtml(plaintextToComposerHtml(result.data.draft));
       setRepromptText("");
       insertAiDraft({
         request,
@@ -1262,3 +1278,4 @@ export function InboxComposerDetailPane() {
     </TooltipProvider>
   );
 }
+
