@@ -1453,7 +1453,7 @@ function createStage1RepositoriesInternal(
           return new Map();
         }
 
-        const result = (await db.execute(
+        const rows = (await db.execute(
           sql`
             select distinct on (${canonicalEventLedger.contactId})
               ${canonicalEventLedger.contactId} as "contactId",
@@ -1468,12 +1468,13 @@ function createStage1RepositoriesInternal(
               ${canonicalEventLedger.contactId},
               ${canonicalEventLedger.occurredAt} desc
           `,
-        )) as {
-          rows: { contactId: string; projectInboxAlias: string }[];
-        };
+        )) as readonly {
+          readonly contactId: string;
+          readonly projectInboxAlias: string;
+        }[];
 
         return new Map(
-          result.rows.map((row) => [row.contactId, row.projectInboxAlias]),
+          rows.map((row) => [row.contactId, row.projectInboxAlias]),
         );
       },
 
