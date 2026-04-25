@@ -1319,6 +1319,7 @@ function createStage1RepositoriesInternal(
               contactId: values.contactId,
               projectId: values.projectId,
               expeditionId: values.expeditionId,
+              salesforceMembershipId: values.salesforceMembershipId,
               role: values.role,
               status: values.status,
               source: values.source,
