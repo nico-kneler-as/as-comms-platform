@@ -42,6 +42,7 @@ describe("Stage1InternalNoteService", () => {
           },
           manualNoteDetails: {
             listBySourceEvidenceIds: vi.fn(() => Promise.resolve([])),
+            findLatestForContact: vi.fn(() => Promise.resolve(null)),
             updateBody: vi.fn(() => Promise.resolve(null)),
             deleteByAuthor: vi.fn(() => Promise.resolve(0)),
           },
@@ -136,6 +137,7 @@ describe("Stage1InternalNoteService", () => {
                   },
                 ] satisfies ManualNoteDetailRecord[],
             ),
+            findLatestForContact: vi.fn(() => Promise.resolve(null)),
             updateBody: vi.fn(() => Promise.resolve(null)),
             deleteByAuthor: vi.fn(() => Promise.resolve(0)),
           },
@@ -224,6 +226,7 @@ describe("Stage1InternalNoteService", () => {
                   },
                 ] satisfies ManualNoteDetailRecord[],
             ),
+            findLatestForContact: vi.fn(() => Promise.resolve(null)),
             updateBody: vi.fn(() => Promise.resolve(null)),
             deleteByAuthor: vi.fn(() => Promise.resolve(0)),
           },

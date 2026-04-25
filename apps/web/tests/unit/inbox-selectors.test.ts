@@ -920,6 +920,7 @@ describe("real inbox selectors", () => {
       contactId: "contact:sarah-martinez",
       displayName: "Sarah Martinez",
       volunteerId: "003-sarah",
+      pinnedNote: null,
     });
     expect(detail?.contact.activeProjects[0]).toMatchObject({
       projectName: "Amazon Basin Research",
@@ -943,6 +944,43 @@ describe("real inbox selectors", () => {
       nextCursor: null,
       total: 2,
     });
+  });
+
+  it("uses the most recent internal note as the pinned note proxy", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxInternalNoteEvent(runtime.context, {
+      id: "sarah-note-older",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-15T09:00:00.000Z",
+      body: "Older note body",
+      authorDisplayName: "Jordan",
+      authorId: "user:jordan",
+    });
+    await seedInboxInternalNoteEvent(runtime.context, {
+      id: "sarah-note-latest",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-15T11:30:00.000Z",
+      body: "Latest note body",
+      authorDisplayName: "Sam Bowes",
+      authorId: "user:sam",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    // manual_note_details.created_at defaults to now() at insert time (not the
+    // fixture's occurredAt), so the relative label is computed from real elapsed
+    // time during the test run. Assert structure + content; don't pin the exact
+    // relative label.
+    expect(detail?.contact.pinnedNote).toMatchObject({
+      body: "Latest note body",
+      authorLabel: "Sam Bowes",
+    });
+    expect(detail?.contact.pinnedNote?.createdAtLabel).toMatch(
+      /^(?:Just now|\d+[smhdw] ago)$/u,
+    );
   });
 
   it("orders contact rail active projects newest-first by membership createdAt and uses short aliases", async () => {

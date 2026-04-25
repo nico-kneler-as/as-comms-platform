@@ -225,6 +225,12 @@ export interface ManualNoteDetailRepository {
   listBySourceEvidenceIds(
     sourceEvidenceIds: readonly string[],
   ): Promise<readonly ManualNoteDetailRecord[]>;
+  findLatestForContact(contactId: string): Promise<{
+    readonly body: string;
+    readonly authorDisplayName: string | null;
+    readonly authorId: string | null;
+    readonly createdAt: string;
+  } | null>;
   upsert(record: ManualNoteDetailRecord): Promise<ManualNoteDetailRecord>;
   updateBody(input: {
     readonly sourceEvidenceId: string;
