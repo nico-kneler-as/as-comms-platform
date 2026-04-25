@@ -425,12 +425,11 @@ export async function extractGmailBodyPreviewFromMimeMessageResult(input: {
     normalizeLineEndings(input.fallbackBodyText ?? "")
   );
 
-  return fallbackBodyPreview.length > 0
-    ? buildBodyPreviewResult(fallbackBodyPreview, "plaintext")
-    : buildBodyPreviewResult(
-        BINARY_FALLBACK_PLACEHOLDER,
-        "binary_fallback"
-      );
+  // Raw-message extraction can legitimately return empty (e.g. mbox messages
+  // with subject + headers but no body). Treat that as empty plaintext, not
+  // a binary-extraction failure — the binary_fallback placeholder is reserved
+  // for the parts-based path where we can actually detect binary-only content.
+  return buildBodyPreviewResult(fallbackBodyPreview, "plaintext");
 }
 
 export async function extractGmailBodyPreviewFromMimeMessage(input: {
