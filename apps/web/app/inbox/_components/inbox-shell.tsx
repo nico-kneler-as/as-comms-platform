@@ -20,6 +20,7 @@ interface ShellProps {
   readonly initialFilterId: InboxFilterId;
   readonly composerAliases: readonly InboxComposerAliasOption[];
   readonly healthBanner: InboxIntegrationHealthBannerViewModel | null;
+  readonly currentActorId: string;
   readonly operator: {
     readonly initials: string;
     readonly displayName: string;
@@ -42,11 +43,15 @@ export function InboxShell({
   initialFilterId,
   composerAliases,
   healthBanner,
+  currentActorId,
   operator,
   children
 }: ShellProps) {
   return (
-    <InboxClientProvider composerAliases={composerAliases}>
+    <InboxClientProvider
+      composerAliases={composerAliases}
+      currentActorId={currentActorId}
+    >
       <InboxKeyboardProvider>
         <InboxFreshnessPoller listFreshness={initialList.freshness} />
         <PrimaryIconRail operator={operator} />

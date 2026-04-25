@@ -50,6 +50,11 @@ import {
   isComposerSendDisabled,
   resolveDefaultAlias,
 } from "../_lib/composer-ui";
+import {
+  clearDraft,
+  loadDraft,
+  saveDraft,
+} from "../_lib/composer-draft-storage";
 import type { InboxComposerAliasOption } from "../_lib/view-models";
 import { plaintextToComposerHtml } from "./composer-html";
 import {
@@ -85,7 +90,7 @@ interface AttachmentDraft {
   readonly filename: string;
   readonly size: number;
   readonly contentType: string;
-  readonly contentBase64: string;
+  readonly contentBase64: string | null;
 }
 
 interface InlineComposerError {
@@ -121,6 +126,29 @@ function resolveRecipientLabel(recipient: ComposerRecipientValue): string {
         primaryEmail: recipient.primaryEmail,
       })
     : recipient.emailAddress;
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function resolveComposerDraftKey(input: {
+  readonly actorId: string;
+  readonly recipient: ComposerRecipientValue | null;
+}): string | null {
+  const recipient = input.recipient;
+
+  if (recipient === null) {
+    return null;
+  }
+
+  if (recipient.kind === "contact") {
+    return `composer-draft:v1:${input.actorId}:${recipient.contactId}:contact`;
+  }
+
+  return `composer-draft:v1:${input.actorId}:email:${normalizeEmail(
+    recipient.emailAddress,
+  )}`;
 }
 
 function mapFieldErrors(
@@ -510,6 +538,7 @@ export function InboxComposerReplyBar({
 export function InboxComposerDetailPane() {
   const router = useRouter();
   const {
+    currentActorId,
     composerAliases,
     composerPane,
     aiDraft,
@@ -546,12 +575,15 @@ export function InboxComposerDetailPane() {
   const [isGeneratingAi, startAiTransition] = useTransition();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const hydratedDraftKeyRef = useRef<string | null>(null);
 
   const replyContext =
     composerPane.mode === "replying" ? composerPane.replyContext : null;
+  const isReplying = composerPane.mode === "replying";
 
   useEffect(() => {
     if (composerPane.mode === "closed") {
+      hydratedDraftKeyRef.current = null;
       return;
     }
 
@@ -588,6 +620,124 @@ export function InboxComposerDetailPane() {
     setComposerStatus,
   ]);
 
+  const baselineSubject = replyContext?.subject ?? "";
+  const baselineAlias = isReplying
+    ? replyContext?.defaultAlias ?? null
+    : resolveDefaultAlias({
+        recipient,
+        aliases: composerAliases,
+      });
+  const draftKey = resolveComposerDraftKey({
+    actorId: currentActorId,
+    recipient,
+  });
+
+  useEffect(() => {
+    if (
+      composerPane.mode === "closed" ||
+      activeTab !== "email" ||
+      draftKey === null ||
+      hydratedDraftKeyRef.current === draftKey
+    ) {
+      return;
+    }
+
+    const isUntouchedComposer =
+      subject.trim() === baselineSubject.trim() &&
+      body.trim().length === 0 &&
+      bodyHtml.trim().length === 0 &&
+      attachments.length === 0 &&
+      selectedAlias === baselineAlias;
+
+    if (!isUntouchedComposer) {
+      hydratedDraftKeyRef.current = draftKey;
+      return;
+    }
+
+    const draft = loadDraft(draftKey);
+    hydratedDraftKeyRef.current = draftKey;
+
+    if (draft === null) {
+      return;
+    }
+
+    setSubject(draft.subject);
+    setBody(draft.bodyPlaintext);
+    setBodyHtml(draft.bodyHtml);
+    setSelectedAlias(draft.selectedAlias);
+    setAttachments(
+      draft.attachments.map((attachment, index) => ({
+        id: `draft:${attachment.filename}:${attachment.size.toString()}:${index.toString()}`,
+        filename: attachment.filename,
+        size: attachment.size,
+        contentType: attachment.contentType,
+        contentBase64: null,
+      })),
+    );
+  }, [
+    activeTab,
+    attachments.length,
+    baselineAlias,
+    body,
+    bodyHtml,
+    composerPane.mode,
+    draftKey,
+    replyContext,
+    selectedAlias,
+    subject,
+  ]);
+
+  useEffect(() => {
+    if (
+      composerPane.mode === "closed" ||
+      activeTab !== "email" ||
+      draftKey === null
+    ) {
+      return;
+    }
+
+    const hasPersistableContent =
+      subject.trim() !== baselineSubject.trim() ||
+      body.trim().length > 0 ||
+      bodyHtml.trim().length > 0 ||
+      selectedAlias !== baselineAlias ||
+      attachments.length > 0;
+
+    const timeoutId = window.setTimeout(() => {
+      if (!hasPersistableContent) {
+        clearDraft(draftKey);
+        return;
+      }
+
+      saveDraft(draftKey, {
+        subject,
+        bodyPlaintext: body,
+        bodyHtml,
+        selectedAlias,
+        attachments: attachments.map((attachment) => ({
+          filename: attachment.filename,
+          size: attachment.size,
+          contentType: attachment.contentType,
+        })),
+      });
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    activeTab,
+    attachments,
+    baselineAlias,
+    baselineSubject,
+    body,
+    bodyHtml,
+    composerPane.mode,
+    draftKey,
+    selectedAlias,
+    subject,
+  ]);
+
   useEffect(() => {
     if (activeTab !== "note" || !bodyRef.current) {
       return;
@@ -604,7 +754,6 @@ export function InboxComposerDetailPane() {
     (total, attachment) => total + attachment.size,
     0,
   );
-  const isReplying = composerPane.mode === "replying";
   const canUseNoteTab = isReplying && replyContext !== null;
   const selectedAliasRecord =
     selectedAlias === null
@@ -804,6 +953,32 @@ export function InboxComposerDetailPane() {
       return;
     }
 
+    if (attachments.some((attachment) => attachment.contentBase64 === null)) {
+      setInlineError({
+        message: "Please reattach files added before refresh before sending.",
+        retryable: false,
+      });
+      setComposerErrors([
+        {
+          field: "attachments",
+          message: "Please reattach files added before refresh before sending.",
+        },
+      ]);
+      return;
+    }
+
+    const serializedAttachments = attachments.flatMap((attachment) =>
+      attachment.contentBase64 === null
+        ? []
+        : [
+            {
+              filename: attachment.filename,
+              contentType: attachment.contentType,
+              contentBase64: attachment.contentBase64,
+            },
+          ],
+    );
+
     const payload: ComposerSendActionInput = {
       recipient:
         recipient.kind === "contact"
@@ -819,11 +994,7 @@ export function InboxComposerDetailPane() {
       subject: subject.trim(),
       bodyPlaintext: body.trim(),
       bodyHtml,
-      attachments: attachments.map((attachment) => ({
-        filename: attachment.filename,
-        contentType: attachment.contentType,
-        contentBase64: attachment.contentBase64,
-      })),
+      attachments: serializedAttachments,
       captureAsKnowledge,
       ...(replyContext?.threadId === null || replyContext === null
         ? {}
@@ -843,6 +1014,9 @@ export function InboxComposerDetailPane() {
       const result = await sendComposerAction(payload);
 
       if (result.ok) {
+        if (draftKey !== null) {
+          clearDraft(draftKey);
+        }
         setComposerStatus("sent-success");
         showToast(`Sent to ${resolveRecipientLabel(recipient)}`, "success");
         closeComposer();
@@ -911,6 +1085,14 @@ export function InboxComposerDetailPane() {
         retryable: result.retryable === true,
       });
     });
+  };
+
+  const handleCancel = () => {
+    if (draftKey !== null) {
+      clearDraft(draftKey);
+    }
+
+    closeComposer();
   };
 
   return (
@@ -1237,7 +1419,7 @@ export function InboxComposerDetailPane() {
           ) : null}
 
           <div className="flex items-center justify-between">
-            <Button type="button" variant="ghost" onClick={closeComposer}>
+            <Button type="button" variant="ghost" onClick={handleCancel}>
               Cancel
             </Button>
 
@@ -1278,4 +1460,3 @@ export function InboxComposerDetailPane() {
     </TooltipProvider>
   );
 }
-

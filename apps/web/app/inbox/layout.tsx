@@ -56,6 +56,7 @@ export default async function InboxLayout({
       initialFilterId="all"
       composerAliases={composerAliases}
       healthBanner={healthBanner}
+      currentActorId={currentUser.id}
       operator={{
         initials: getInitials(currentUser.name ?? currentUser.email),
         displayName: currentUser.name ?? currentUser.email,
