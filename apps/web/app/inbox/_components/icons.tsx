@@ -61,4 +61,6 @@ export {
   MousePointerClick as MousePointerClickIcon,
   Flag as FlagIcon,
   MailOpen as MailOpenIcon,
+  ArrowUpRight as ArrowUpRightIcon,
+  Quote as QuoteIcon,
 } from "lucide-react";
