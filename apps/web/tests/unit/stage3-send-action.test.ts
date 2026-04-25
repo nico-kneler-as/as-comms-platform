@@ -160,7 +160,9 @@ describe("sendComposerAction", () => {
     });
     expect(pendingRows[0]).toMatchObject({
       id: result.data.pendingOutboundId,
-      status: "pending",
+      // PR #143 immediately confirms on successful Gmail send instead of waiting
+      // for inbound reconciliation to fire (which never fires for internal sends).
+      status: "confirmed",
       fromAlias: "antarctica@example.org",
       toEmailNormalized: "new-volunteer@example.org",
       subject: "Field logistics",

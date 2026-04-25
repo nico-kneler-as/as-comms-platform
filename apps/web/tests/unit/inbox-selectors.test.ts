@@ -806,12 +806,13 @@ describe("real inbox selectors", () => {
       source: "salesforce",
       isActive: true,
     });
-    await runtime.context.repositories.projectDimensions.upsert({
-      projectId: "project:killer-whales",
-      projectName: "Searching for Killer Whales",
-      source: "salesforce",
-      isActive: false,
-    });
+    // killer-whales was seeded by the fixture with isActive=true (default).
+    // Use the Settings projects repo to flip it — upsert no longer toggles
+    // isActive on conflict-update (PR #141 protects admin-managed state).
+    await runtime.context.settings.projects.setActive(
+      "project:killer-whales",
+      false,
+    );
 
     const workload = await getInboxWelcomeWorkload();
 
@@ -864,6 +865,13 @@ describe("real inbox selectors", () => {
       source: "salesforce",
       isActive: true,
     });
+    // killer-whales is seeded by the fixture with isActive=true (default) but
+    // this test only wants the two projects above as "active". Use setActive()
+    // since upsert no longer toggles isActive on conflict-update (PR #141).
+    await runtime.context.settings.projects.setActive(
+      "project:killer-whales",
+      false,
+    );
     await runtime.context.repositories.contactMemberships.upsert({
       id: "membership:sarah:whitebark",
       contactId: "contact:sarah-martinez",
