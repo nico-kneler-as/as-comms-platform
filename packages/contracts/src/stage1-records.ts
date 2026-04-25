@@ -144,7 +144,6 @@ export const contactMembershipSchema = z.object({
   expeditionId: z.string().min(1).nullable(),
   role: z.string().min(1).nullable(),
   status: z.string().min(1).nullable(),
-  salesforceMembershipId: nullableStringSchema.optional(),
   source: recordSourceSchema,
   createdAt: timestampSchema,
 });
