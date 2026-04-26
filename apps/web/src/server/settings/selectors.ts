@@ -12,6 +12,7 @@ import { getStage1WebRuntime } from "../stage1-runtime";
 export interface ProjectRowViewModel {
   readonly projectId: string;
   readonly projectName: string;
+  readonly suggestedAlias: string;
   readonly projectAlias: string | null;
   readonly isActive: boolean;
   readonly primaryEmail: string | null;
@@ -143,6 +144,31 @@ function hasActivationRequirements(input: {
   );
 }
 
+function deriveSuggestedAlias(projectName: string): string {
+  const collapsedName = projectName.trim().replace(/\s+/g, " ");
+  const afterColon = collapsedName.includes(":")
+    ? collapsedName.slice(collapsedName.lastIndexOf(":") + 1).trim()
+    : collapsedName;
+  const withoutCommonPrefix = afterColon.replace(
+    /^(WPEF|Searching For|Restoring)\s+/i,
+    ""
+  );
+  const meaningfulWords = withoutCommonPrefix
+    .split(" ")
+    .filter((word) => word.length > 0)
+    .slice(0, 3)
+    .join(" ")
+    .trim();
+  const fallback = withoutCommonPrefix.trim().slice(0, 32);
+  const candidate = meaningfulWords.length > 0 ? meaningfulWords : fallback;
+
+  if (candidate.length === 0) {
+    return collapsedName.slice(0, 32);
+  }
+
+  return candidate.slice(0, 32);
+}
+
 function toProjectRowViewModel(input: {
   readonly projectId: string;
   readonly projectName: string;
@@ -165,6 +191,7 @@ function toProjectRowViewModel(input: {
   return {
     projectId: input.projectId,
     projectName: input.projectName,
+    suggestedAlias: deriveSuggestedAlias(input.projectName),
     projectAlias: input.projectAlias,
     isActive: input.isActive,
     primaryEmail,

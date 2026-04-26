@@ -223,6 +223,10 @@ describe("settings selectors", () => {
         ?.projectAlias
     ).toBe("Ready Project");
     expect(
+      projects.find((project) => project.projectId === "project:ready")
+        ?.suggestedAlias
+    ).toBe("Ready Project");
+    expect(
       projects.find((project) => project.projectId === "project:no-knowledge")
         ?.activationRequirementsMet
     ).toBe(false);
@@ -256,6 +260,43 @@ describe("settings selectors", () => {
     expect(byAlias.active.map((project) => project.projectId)).toEqual([
       "project:alias-search"
     ]);
+  });
+
+  it("derives a suggested alias from the project name for active and inactive rows", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    await seedProject(runtime, {
+      projectId: "project:colon",
+      projectName: "Habitat Recovery: Restoring White Oak Savanna",
+      isActive: true,
+      aiKnowledgeUrl: "https://www.notion.so/white-oak",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
+      emails: ["white-oak@asc.internal"],
+      memberCount: 1
+    });
+    await seedProject(runtime, {
+      projectId: "project:prefix",
+      projectName: "Searching For Killer Whales 2025/2026",
+      isActive: false,
+      aiKnowledgeUrl: "https://www.notion.so/whales",
+      emails: ["whales@asc.internal"],
+      memberCount: 0
+    });
+
+    const viewModel = await loadProjectsSettings({
+      filter: "all"
+    });
+
+    expect(
+      viewModel.active.find((project) => project.projectId === "project:colon")
+        ?.suggestedAlias
+    ).toBe("White Oak Savanna");
+    expect(
+      viewModel.inactive.find((project) => project.projectId === "project:prefix")
+        ?.suggestedAlias
+    ).toBe("Killer Whales 2025/2026");
   });
 
   it("returns null when project detail is requested for an unknown id", async () => {

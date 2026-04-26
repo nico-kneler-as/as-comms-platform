@@ -94,6 +94,7 @@ describe("ProjectDetail role-aware rendering", () => {
         project: {
           projectId: "project:inactive",
           projectName: "Inactive Project",
+          suggestedAlias: "Inactive Project",
           projectAlias: null,
           isActive: false,
           primaryEmail: "inactive@asc.internal",
