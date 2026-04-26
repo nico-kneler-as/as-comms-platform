@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { UserPlus } from "lucide-react";
 
 import {
   RADIUS,
@@ -236,22 +237,22 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
             aria-labelledby="invite-teammates-heading"
             className={cn(
               "flex flex-col gap-4 p-5",
-              RADIUS.md,
+              RADIUS.lg,
               "border border-slate-200 bg-white",
               SHADOW.sm
             )}
           >
             <div className="flex flex-col gap-1">
-              <h3 id="invite-teammates-heading" className="text-sm font-semibold text-slate-900">
+              <h3 id="invite-teammates-heading" className={TYPE.headingSm}>
                 Invite teammates
               </h3>
-              <p className={TYPE.caption}>
+              <p className={cn("mt-1", TYPE.caption)}>
                 Invites create a pending teammate row that links automatically
                 when they sign in with Google.
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
               <div className="flex-1">
                 <label htmlFor="teammate-email" className="sr-only">
                   Teammate email
@@ -297,6 +298,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                 onClick={handleInvite}
                 disabled={isPending && pendingKey === "invite"}
               >
+                <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
                 Invite teammate
               </Button>
             </div>
@@ -321,7 +323,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
         <div
           className={cn(
             "overflow-hidden",
-            RADIUS.md,
+            RADIUS.lg,
             "border border-slate-200 bg-white",
             SHADOW.sm
           )}
@@ -389,7 +391,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                           <div className="flex items-center gap-1.5">
                             <p
                               className={cn(
-                                "truncate text-sm font-medium",
+                                "truncate text-[13px] font-medium",
                                 user.status === "deactivated"
                                   ? "text-slate-500"
                                   : "text-slate-900"
@@ -519,6 +521,17 @@ function UserStatusBadge({
 }: {
   readonly status: UserRowViewModel["status"];
 }) {
+  if (status === "active") {
+    return (
+      <StatusBadge
+        label="Active"
+        colorClasses="bg-emerald-50 text-emerald-700 ring-emerald-200"
+        variant="soft"
+        className="inline-flex items-center gap-1.5 before:inline-block before:size-1.5 before:rounded-full before:bg-emerald-500 before:content-['']"
+      />
+    );
+  }
+
   if (status === "pending") {
     return (
       <StatusBadge
@@ -529,15 +542,11 @@ function UserStatusBadge({
     );
   }
 
-  if (status === "deactivated") {
-    return (
-      <StatusBadge
-        label="Deactivated"
-        colorClasses="bg-slate-100 text-slate-600 ring-slate-200"
-        variant="soft"
-      />
-    );
-  }
-
-  return null;
+  return (
+    <StatusBadge
+      label="Deactivated"
+      colorClasses="bg-slate-100 text-slate-600 ring-slate-200"
+      variant="soft"
+    />
+  );
 }

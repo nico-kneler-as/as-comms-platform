@@ -27,6 +27,7 @@ vi.mock("lucide-react", () => ({
   Plus: () => null,
   RefreshCw: () => null,
   Trash2: () => null,
+  UserPlus: () => null,
 }));
 
 vi.mock("@/components/ui/button", () => ({

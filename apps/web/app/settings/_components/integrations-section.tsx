@@ -5,12 +5,8 @@ import { RefreshCw } from "lucide-react";
 
 import {
   RADIUS,
-  SHADOW,
-  TONE_CLASSES,
-  TRANSITION,
-  TYPE
+  SHADOW
 } from "@/app/_lib/design-tokens-v2";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
@@ -36,16 +32,6 @@ interface FeedbackState {
   readonly kind: "success" | "error";
   readonly message: string;
 }
-
-const CATEGORY_TONE: Record<
-  IntegrationHealthViewModel["category"],
-  "indigo" | "emerald" | "amber" | "sky" | "violet" | "teal"
-> = {
-  crm: "sky",
-  messaging: "indigo",
-  knowledge: "violet",
-  ai: "emerald"
-};
 
 const CATEGORY_LABEL: Record<IntegrationHealthViewModel["category"], string> = {
   crm: "CRM",
@@ -88,12 +74,16 @@ function formatRelative(iso: string | null): string {
   const diffMs = now - then;
   if (diffMs < 0) return "Just now";
   const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "Checked just now";
-  if (minutes < 60) return `Checked ${String(minutes)}m ago`;
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${String(minutes)}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Checked ${String(hours)}h ago`;
+  if (hours < 24) return `${String(hours)}h ago`;
   const days = Math.floor(hours / 24);
-  return `Checked ${String(days)}d ago`;
+  if (days < 30) return `${String(days)}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${String(months)}mo ago`;
+  const years = Math.floor(days / 365);
+  return `${String(years)}y ago`;
 }
 
 export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
@@ -143,48 +133,44 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
         title="Integrations"
         feedback={feedback}
       >
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {items.map((integration) => {
             const statusMeta = STATUS_META[integration.status];
-            const categoryTone = TONE_CLASSES[CATEGORY_TONE[integration.category]];
             const isRowPending =
               pending && pendingId === integration.serviceName;
             const isSyncDisabled =
               !integration.supportsRefresh || isRowPending;
+            const descriptionTerminator = /[.!?]$/.test(integration.description)
+              ? ""
+              : ".";
+            const summary = integration.detail
+              ? `${integration.description}${descriptionTerminator} ${integration.detail}`
+              : integration.description;
 
             return (
               <li
                 key={integration.serviceName}
                 className={cn(
-                  "flex min-h-full flex-col gap-4 border border-slate-200 bg-white p-4",
-                  RADIUS.md,
+                  "flex min-h-full flex-col gap-3 border border-slate-200 bg-white p-4",
+                  RADIUS.lg,
                   SHADOW.sm,
-                  TRANSITION.layout,
-                  TRANSITION.reduceMotion,
-                  "hover:-translate-y-0.5 hover:border-slate-300",
                   isRowPending && "opacity-60"
                 )}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
                     <IntegrationLogoMark integration={integration} />
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <p className="truncate text-sm font-semibold text-slate-900">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="truncate text-[13.5px] font-semibold text-slate-900">
                           {integration.displayName}
-                        </p>
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]",
-                            categoryTone.subtle,
-                            categoryTone.text
-                          )}
-                        >
+                        </span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                           {CATEGORY_LABEL[integration.category]}
                         </span>
                       </div>
-                      <p className={cn("mt-1", TYPE.caption, "text-slate-600")}>
-                        {integration.description}
+                      <p className="mt-1 line-clamp-2 text-[12px] text-slate-500">
+                        {summary}
                       </p>
                     </div>
                   </div>
@@ -197,32 +183,10 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
                   />
                 </div>
 
-                <div
-                  className={cn(
-                    "flex min-h-16 items-center rounded-xl px-3 py-2.5",
-                    categoryTone.subtle
-                  )}
-                >
-                  <p
-                    className={cn(
-                      "line-clamp-2",
-                      TYPE.bodySm,
-                      integration.detail ? "text-slate-700" : "text-slate-500"
-                    )}
-                  >
-                    {integration.detail ?? "Waiting for the next health check."}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <span className={cn(TYPE.label, "text-slate-400")}>
-                      Last checked
-                    </span>
-                    <span className={cn(TYPE.micro, "tabular-nums text-slate-500")}>
-                      {formatRelative(integration.lastCheckedAt)}
-                    </span>
-                  </div>
+                <div className="flex items-center justify-between gap-3 text-[11.5px] text-slate-500">
+                  <span className="min-w-0 truncate tabular-nums">
+                    Last checked · {formatRelative(integration.lastCheckedAt)}
+                  </span>
 
                   {viewModel.isAdmin && (
                     <SyncButton
@@ -251,27 +215,27 @@ function IntegrationLogoMark({
   readonly integration: IntegrationHealthViewModel;
 }) {
   return (
-    <Avatar className="size-11 rounded-2xl border border-slate-200 bg-transparent">
-      <AvatarFallback
-        delayMs={0}
-        className="rounded-2xl bg-transparent text-slate-900"
-      >
-        <span className="sr-only">{integration.displayName}</span>
-        <BrandMark serviceName={integration.serviceName} />
-      </AvatarFallback>
-    </Avatar>
+    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-700 ring-1 ring-inset ring-slate-200/70">
+      <span className="sr-only">{integration.displayName}</span>
+      <BrandMark
+        serviceName={integration.serviceName}
+        className="size-5"
+      />
+    </div>
   );
 }
 
 function BrandMark({
-  serviceName
+  serviceName,
+  className
 }: {
   readonly serviceName: IntegrationHealthViewModel["serviceName"];
+  readonly className?: string;
 }) {
   switch (serviceName) {
     case "salesforce":
       return (
-        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
           <path
             d="M16.6 31.9c-4.1 0-7.4-3-7.4-6.8 0-3.5 2.8-6.4 6.5-6.8.8-4.1 4.6-7.2 9.2-7.2 5.1 0 9.3 3.9 9.5 8.8 3 .8 5.2 3.4 5.2 6.5 0 3.8-3.2 6.8-7.2 6.8H16.6Z"
             fill="#00A1E0"
@@ -288,7 +252,7 @@ function BrandMark({
       );
     case "gmail":
       return (
-        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
           <path
             d="M9 14.5 24 26l15-11.5"
             fill="none"
@@ -323,7 +287,7 @@ function BrandMark({
       );
     case "simpletexting":
       return (
-        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
           <rect x="8" y="10" width="25" height="18" rx="8" fill="#1D4ED8" />
           <path d="M18 28h8l6 8v-8" fill="#1D4ED8" />
           <rect x="16" y="16" width="10" height="3" rx="1.5" fill="white" />
@@ -340,7 +304,7 @@ function BrandMark({
       );
     case "mailchimp":
       return (
-        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
           <circle cx="24" cy="24" r="12" fill="#FACC15" />
           <path
             d="M18 28c1.8 2.3 4 3.5 6 3.5s4.2-1.2 6-3.5"
@@ -362,7 +326,7 @@ function BrandMark({
       );
     case "notion":
       return (
-        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
           <rect
             x="11"
             y="11"
@@ -385,7 +349,7 @@ function BrandMark({
       );
     case "openai":
       return (
-        <svg viewBox="0 0 48 48" className="size-8" aria-hidden="true">
+        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
           <g
             fill="none"
             stroke="#111827"
@@ -410,7 +374,12 @@ function BrandMark({
       );
     default:
       return (
-        <span className="text-xs font-semibold">
+        <span
+          className={cn(
+            "inline-flex items-center justify-center text-[10px] font-semibold uppercase",
+            className
+          )}
+        >
           {serviceName.slice(0, 2).toUpperCase()}
         </span>
       );
@@ -436,12 +405,13 @@ function SyncButton({
     <Button
       type="button"
       size="sm"
+      variant="outline"
       onClick={onSync}
       disabled={disabled}
       aria-label={`Refresh ${integrationName}`}
     >
       <RefreshCw
-        className={cn("mr-1.5 h-3.5 w-3.5", pending && "animate-spin")}
+        className={cn("h-3 w-3", pending && "animate-spin")}
         aria-hidden="true"
       />
       Refresh
