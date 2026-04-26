@@ -589,7 +589,11 @@ export async function runBackfillMembershipSfIdsCommand(
     connectionString,
     env,
     dryRun: !executeRequested,
-    limit: readOptionalIntegerFlag(flags, "limit", Number.MAX_SAFE_INTEGER),
+    // Postgres int4 max is 2_147_483_647. Number.MAX_SAFE_INTEGER (2^53-1)
+    // overflows the limit parameter on the wire, so use a large-but-int4-safe
+    // default. The fleet has ~10k memberships at most, so 1B is effectively
+    // "no limit".
+    limit: readOptionalIntegerFlag(flags, "limit", 1_000_000_000),
   });
 }
 
@@ -600,11 +604,13 @@ const isDirectExecution =
 if (isDirectExecution) {
   void runBackfillMembershipSfIdsCommand(process.argv.slice(2), process.env).catch(
     (error: unknown) => {
-      console.error(
-        error instanceof Error
-          ? error.message
-          : "backfill-membership-sf-ids failed.",
-      );
+      if (error instanceof Error) {
+        console.error("backfill-membership-sf-ids failed:", error.message);
+        if (error.stack) console.error(error.stack);
+        if ("cause" in error && error.cause) console.error("cause:", error.cause);
+      } else {
+        console.error("backfill-membership-sf-ids failed:", error);
+      }
       process.exitCode = 1;
     },
   );
