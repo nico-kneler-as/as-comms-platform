@@ -86,8 +86,12 @@ function buildGmailMessageRecord(
     readonly checksum: string;
     readonly snippet: string;
     readonly subject: string | null;
+    readonly fromHeader: string | null;
+    readonly toHeader: string | null;
+    readonly ccHeader: string | null;
     readonly snippetClean: string;
     readonly bodyTextPreview: string;
+    readonly dsnOriginalMessageId: string | null;
     readonly threadId: string | null;
     readonly rfc822MessageId: string | null;
     readonly normalizedParticipantEmails: readonly string[];
@@ -112,8 +116,12 @@ function buildGmailMessageRecord(
     checksum: "checksum-1",
     snippet: "Following up by email",
     subject: null,
+    fromHeader: "Project Team <orcas@adventurescientists.org>",
+    toHeader: "Volunteer <volunteer@example.org>",
+    ccHeader: null,
     snippetClean: "Following up by email",
     bodyTextPreview: "Following up by email",
+    dsnOriginalMessageId: null,
     threadId: "thread-1",
     rfc822MessageId: "<message-1@example.org>",
     normalizedParticipantEmails: ["volunteer@example.org"],
@@ -894,6 +902,192 @@ Alias drift outbound message.
         messageId: "gmail-live-duplicate-1",
         windowStart: "2026-01-01T23:52:00.000Z",
         windowEnd: "2026-01-02T00:02:00.000Z"
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("writes Gmail DSN evidence and marks the matched pending outbound failed", async () => {
+    const dsnRecord = buildGmailMessageRecord({
+      recordId: "gmail-dsn-match-1",
+      direction: "inbound",
+      occurredAt: "2026-01-02T00:02:00.000Z",
+      receivedAt: "2026-01-02T00:02:30.000Z",
+      payloadRef:
+        "gmail://volunteers@adventurescientists.org/messages/gmail-dsn-match-1",
+      checksum: "checksum:gmail-dsn-match-1",
+      snippet: "Delivery Status Notification (Failure)",
+      subject: "Delivery Status Notification (Failure)",
+      fromHeader: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>",
+      toHeader: "Project <orcas@adventurescientists.org>",
+      snippetClean: "Delivery Status Notification (Failure)",
+      bodyTextPreview:
+        "550 5.1.1 The email account that you tried to reach does not exist.",
+      dsnOriginalMessageId: "<sent-match-1@example.org>",
+      threadId: "thread-dsn-match-1",
+      rfc822MessageId: "<gmail-dsn-match-1@example.org>",
+      supportingRecords: [],
+      crossProviderCollapseKey: null
+    });
+    const capture = createEmptyCapturePorts();
+    capture.gmail.captureLiveBatch = () =>
+      Promise.resolve(buildCapturedBatch([dsnRecord]));
+    const logger = { info: vi.fn() };
+    const context = await createTestWorkerContext({ capture, logger });
+
+    try {
+      await seedContact(context);
+      await context.settings.users.upsert({
+        id: "user:operator",
+        name: "Operator",
+        email: "operator@example.org",
+        emailVerified: new Date("2026-01-01T00:00:00.000Z"),
+        image: null,
+        role: "operator",
+        deactivatedAt: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      });
+      await context.repositories.pendingOutbounds.insert({
+        id: "pending:dsn-match",
+        fingerprint: "fp:dsn-match",
+        actorId: "user:operator",
+        canonicalContactId: contactId,
+        projectId: null,
+        fromAlias: "orcas@adventurescientists.org",
+        toEmailNormalized: "volunteer@example.org",
+        subject: "Prior send",
+        bodyPlaintext: "Prior send body",
+        bodySha256: "sha256:dsn-match",
+        attachmentMetadata: [],
+        gmailThreadId: null,
+        inReplyToRfc822: null,
+        sentAt: "2026-01-02T00:01:00.000Z"
+      });
+      await context.repositories.pendingOutbounds.markSentRfc822(
+        "pending:dsn-match",
+        "<sent-match-1@example.org>"
+      );
+
+      const result = await context.orchestration.runGmailLiveCaptureBatch({
+        version: 1,
+        jobId: "job:gmail:dsn:match",
+        correlationId: "corr:gmail:dsn:match",
+        traceId: null,
+        batchId: "batch:gmail:dsn:match",
+        syncStateId: "sync:gmail:dsn:match",
+        attempt: 1,
+        maxAttempts: 3,
+        provider: "gmail",
+        mode: "live",
+        jobType: "live_ingest",
+        cursor: null,
+        checkpoint: null,
+        windowStart: "2026-01-02T00:00:00.000Z",
+        windowEnd: "2026-01-02T00:03:00.000Z",
+        recordIds: ["gmail-dsn-match-1"],
+        maxRecords: 10
+      });
+
+      expect(result.outcome).toBe("succeeded");
+      if (result.outcome !== "succeeded") {
+        throw new Error("Expected Gmail DSN batch to succeed.");
+      }
+      expect(result.summary.deferred).toBe(1);
+      await expect(
+        context.repositories.canonicalEvents.countAll()
+      ).resolves.toBe(0);
+      await expect(
+        context.repositories.sourceEvidence.findById(
+          "source-evidence:gmail:gmail.dsn:gmail-dsn-match-1"
+        )
+      ).resolves.toMatchObject({
+        providerRecordType: "gmail.dsn",
+        providerRecordId: "gmail-dsn-match-1"
+      });
+      await expect(
+        context.repositories.pendingOutbounds.findByFingerprint("fp:dsn-match")
+      ).resolves.toMatchObject({
+        id: "pending:dsn-match",
+        status: "failed",
+        failedReason: "bounce",
+        failedDetail:
+          "550 5.1.1 The email account that you tried to reach does not exist."
+      });
+      expect(logger.info).toHaveBeenCalledWith({
+        event: "composer.bounce.matched",
+        pendingOutboundId: "pending:dsn-match",
+        dsnOriginalMessageId: "<sent-match-1@example.org>",
+        dsnGmailMessageId: "gmail-dsn-match-1"
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("logs unmatched Gmail DSNs without throwing or writing canonical events", async () => {
+    const dsnRecord = buildGmailMessageRecord({
+      recordId: "gmail-dsn-unmatched-1",
+      direction: "inbound",
+      occurredAt: "2026-01-02T00:04:00.000Z",
+      receivedAt: "2026-01-02T00:04:30.000Z",
+      payloadRef:
+        "gmail://volunteers@adventurescientists.org/messages/gmail-dsn-unmatched-1",
+      checksum: "checksum:gmail-dsn-unmatched-1",
+      snippet: "Undelivered Mail Returned to Sender",
+      subject: "Undelivered Mail Returned to Sender",
+      fromHeader: "mailer-daemon@googlemail.com",
+      toHeader: "Project <orcas@adventurescientists.org>",
+      snippetClean: "Undelivered Mail Returned to Sender",
+      bodyTextPreview: "550 5.1.1 user unknown",
+      dsnOriginalMessageId: "<missing-match@example.org>",
+      threadId: "thread-dsn-unmatched-1",
+      rfc822MessageId: "<gmail-dsn-unmatched-1@example.org>",
+      supportingRecords: [],
+      crossProviderCollapseKey: null
+    });
+    const capture = createEmptyCapturePorts();
+    capture.gmail.captureLiveBatch = () =>
+      Promise.resolve(buildCapturedBatch([dsnRecord]));
+    const logger = { info: vi.fn() };
+    const context = await createTestWorkerContext({ capture, logger });
+
+    try {
+      await seedContact(context);
+
+      const result = await context.orchestration.runGmailLiveCaptureBatch({
+        version: 1,
+        jobId: "job:gmail:dsn:unmatched",
+        correlationId: "corr:gmail:dsn:unmatched",
+        traceId: null,
+        batchId: "batch:gmail:dsn:unmatched",
+        syncStateId: "sync:gmail:dsn:unmatched",
+        attempt: 1,
+        maxAttempts: 3,
+        provider: "gmail",
+        mode: "live",
+        jobType: "live_ingest",
+        cursor: null,
+        checkpoint: null,
+        windowStart: "2026-01-02T00:03:00.000Z",
+        windowEnd: "2026-01-02T00:05:00.000Z",
+        recordIds: ["gmail-dsn-unmatched-1"],
+        maxRecords: 10
+      });
+
+      expect(result.outcome).toBe("succeeded");
+      if (result.outcome !== "succeeded") {
+        throw new Error("Expected unmatched Gmail DSN batch to succeed.");
+      }
+      expect(result.summary.deferred).toBe(1);
+      await expect(
+        context.repositories.canonicalEvents.countAll()
+      ).resolves.toBe(0);
+      expect(logger.info).toHaveBeenCalledWith({
+        event: "composer.bounce.unmatched",
+        dsnOriginalMessageId: "<missing-match@example.org>",
+        dsnGmailMessageId: "gmail-dsn-unmatched-1"
       });
     } finally {
       await context.dispose();

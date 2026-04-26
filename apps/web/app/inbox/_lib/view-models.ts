@@ -178,6 +178,8 @@ export interface InboxTimelineEntryViewModel {
   readonly rfc822MessageId: string | null;
   readonly inReplyToRfc822: string | null;
   readonly sendStatus: InboxTimelineEntrySendStatus;
+  readonly failedReason: string | null;
+  readonly failedDetail: string | null;
   readonly attachmentCount: number;
   readonly campaignActivity: readonly InboxTimelineCampaignActivityViewModel[];
   readonly noteId?: string | null;

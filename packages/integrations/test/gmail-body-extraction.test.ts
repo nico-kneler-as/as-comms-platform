@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   cleanGmailBodyPreviewText,
+  extractDsnOriginalMessageId,
   extractGmailBodyPreviewFromMimeMessageResult,
   extractGmailBodyPreviewFromPayloadResult,
   extractGmailBodyPreviewFromMimeMessage,
@@ -215,5 +216,54 @@ describe("Gmail body extraction", () => {
     const longBody = `Hello Samantha,\n\n${"A".repeat(2_600)}`;
 
     expect(cleanGmailBodyPreviewText(longBody)).toBe(longBody);
+  });
+
+  it("extracts the original message id from a delivery-status MIME part", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/report",
+      parts: [
+        {
+          mimeType: "message/delivery-status",
+          body: {
+            data: Buffer.from(
+              [
+                "Reporting-MTA: dns; googlemail.com",
+                "Final-Recipient: rfc822; volunteer@example.org",
+                "Original-Message-ID: <123.abcde-67890@example.org>",
+              ].join("\r\n"),
+              "utf8",
+            )
+              .toString("base64")
+              .replace(/\+/g, "-")
+              .replace(/\//g, "_")
+              .replace(/=+$/u, ""),
+          },
+        },
+      ],
+    };
+
+    expect(extractDsnOriginalMessageId(payload)).toBe(
+      "<123.abcde-67890@example.org>",
+    );
+  });
+
+  it("returns null when no DSN-bearing MIME parts exist", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/plain",
+          body: {
+            data: Buffer.from("Normal body", "utf8")
+              .toString("base64")
+              .replace(/\+/g, "-")
+              .replace(/\//g, "_")
+              .replace(/=+$/u, ""),
+          },
+        },
+      ],
+    };
+
+    expect(extractDsnOriginalMessageId(payload)).toBeNull();
   });
 });

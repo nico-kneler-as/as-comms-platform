@@ -233,6 +233,80 @@ describe("Stage 1 provider-close mappers", () => {
     expect(result.outcome).toBe("command");
   });
 
+  it("defers Gmail DSNs detected from a mailer-daemon from-header", () => {
+    const result = mapGmailRecord({
+      recordType: "message",
+      recordId: "gmail-dsn-1",
+      direction: "inbound",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      receivedAt: "2026-01-01T00:01:00.000Z",
+      payloadRef: "payloads/gmail/gmail-dsn-1.json",
+      checksum: "checksum-dsn-1",
+      snippet: "Delivery failed",
+      subject: "Re: prior message",
+      fromHeader: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>",
+      toHeader: "Project <project@example.org>",
+      ccHeader: null,
+      snippetClean: "Delivery failed",
+      bodyTextPreview: "Original-Message-ID: <123.abc@example.org>",
+      dsnOriginalMessageId: "<123.abc@example.org>",
+      capturedMailbox: "volunteers@example.org",
+      projectInboxAlias: null,
+      normalizedParticipantEmails: ["volunteer@example.org"],
+      salesforceContactId: null,
+      volunteerIdPlainValues: [],
+      normalizedPhones: [],
+      supportingRecords: [],
+      crossProviderCollapseKey: null,
+      threadId: "thread-dsn-1",
+      rfc822MessageId: "<dsn-1@example.org>"
+    });
+
+    expect(result).toEqual({
+      outcome: "deferred",
+      provider: "gmail",
+      sourceRecordType: "message",
+      sourceRecordId: "gmail-dsn-1",
+      reason: "gmail_dsn",
+      detail: "<123.abc@example.org>"
+    });
+  });
+
+  it("defers Gmail DSNs detected from a delivery-status subject prefix", () => {
+    const result = mapGmailRecord({
+      recordType: "message",
+      recordId: "gmail-dsn-2",
+      direction: "inbound",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      receivedAt: "2026-01-01T00:01:00.000Z",
+      payloadRef: "payloads/gmail/gmail-dsn-2.json",
+      checksum: "checksum-dsn-2",
+      snippet: "Delivery status notification",
+      subject: "  Delivery Status Notification (Failure)",
+      fromHeader: "postmaster@example.org",
+      toHeader: "Project <project@example.org>",
+      ccHeader: null,
+      snippetClean: "Delivery status notification",
+      bodyTextPreview: "Bounce body",
+      dsnOriginalMessageId: null,
+      capturedMailbox: "volunteers@example.org",
+      projectInboxAlias: null,
+      normalizedParticipantEmails: ["volunteer@example.org"],
+      salesforceContactId: null,
+      volunteerIdPlainValues: [],
+      normalizedPhones: [],
+      supportingRecords: [],
+      crossProviderCollapseKey: null,
+      threadId: "thread-dsn-2",
+      rfc822MessageId: "<dsn-2@example.org>"
+    });
+
+    expect(result).toMatchObject({
+      outcome: "deferred",
+      reason: "gmail_dsn"
+    });
+  });
+
   it("maps Salesforce contact snapshots into contact graph upserts", () => {
     const result = mapSalesforceRecord({
       recordType: "contact_snapshot",

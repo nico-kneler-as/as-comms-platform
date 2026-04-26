@@ -141,6 +141,9 @@ function buildRepositoryBundle(input: {
       insert: ({ id }) => Promise.resolve(id),
       findByFingerprint: () =>
         Promise.resolve<PendingComposerOutboundRecord | null>(null),
+      markSentRfc822: () => Promise.resolve(),
+      findBySentRfc822MessageId: () =>
+        Promise.resolve<PendingComposerOutboundRecord | null>(null),
       markConfirmed: () => Promise.resolve(),
       markFailed: () => Promise.resolve(),
       markSuperseded: () => Promise.resolve(),

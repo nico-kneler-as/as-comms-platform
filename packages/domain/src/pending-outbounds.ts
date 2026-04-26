@@ -34,6 +34,8 @@ export interface PendingComposerOutboundRecord {
   readonly reconciledEventId: string | null;
   readonly reconciledAt: string | null;
   readonly failedReason: string | null;
+  readonly sentRfc822MessageId: string | null;
+  readonly failedDetail: string | null;
   readonly orphanedAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;

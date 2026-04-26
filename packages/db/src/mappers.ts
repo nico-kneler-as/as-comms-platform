@@ -1014,6 +1014,8 @@ export function mapPendingComposerOutboundRow(
     reconciledEventId: row.reconciledEventId,
     reconciledAt: fromDate(row.reconciledAt),
     failedReason: row.failedReason,
+    sentRfc822MessageId: row.sentRfc822MessageId,
+    failedDetail: row.failedDetail,
     orphanedAt: fromDate(row.orphanedAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -1044,6 +1046,8 @@ export function mapPendingComposerOutboundToInsert(
     reconciledAt:
       record.reconciledAt === null ? null : toDate(record.reconciledAt),
     failedReason: record.failedReason,
+    sentRfc822MessageId: record.sentRfc822MessageId,
+    failedDetail: record.failedDetail,
     orphanedAt: record.orphanedAt === null ? null : toDate(record.orphanedAt),
     createdAt: toDate(record.createdAt),
     updatedAt: toDate(record.updatedAt),

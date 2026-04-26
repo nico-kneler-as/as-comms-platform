@@ -759,6 +759,8 @@ export const pendingComposerOutbounds = pgTable(
       withTimezone: true,
     }),
     failedReason: text("failed_reason"),
+    sentRfc822MessageId: text("sent_rfc822_message_id"),
+    failedDetail: text("failed_detail"),
     orphanedAt: timestamp("orphaned_at", {
       mode: "date",
       withTimezone: true,
@@ -772,6 +774,9 @@ export const pendingComposerOutbounds = pgTable(
       table.canonicalContactId,
       table.status,
     ),
+    index("pending_composer_outbounds_sent_rfc822_idx")
+      .on(table.sentRfc822MessageId)
+      .where(sql`${table.sentRfc822MessageId} is not null`),
     index("pending_composer_outbounds_pending_sweep_idx")
       .on(table.status, table.sentAt)
       .where(sql`${table.status} = 'pending'`),

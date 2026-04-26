@@ -87,6 +87,8 @@ const baseEntry = {
   rfc822MessageId: null,
   inReplyToRfc822: null,
   sendStatus: null,
+  failedReason: null,
+  failedDetail: null,
   attachmentCount: 0,
   campaignActivity: [],
 };

@@ -31,6 +31,7 @@ import {
 } from "@as-comms/contracts";
 import {
   ProviderCaptureError,
+  gmailMessageRecordSchema,
   importGmailMboxRecords,
   mapGmailRecord,
   mapMailchimpRecord,
@@ -1016,6 +1017,67 @@ export function createStage1WorkerOrchestrationService(input: {
             windowStart: payload.windowStart,
             windowEnd: payload.windowEnd
           });
+        }
+
+        if (
+          payload.provider === "gmail" &&
+          ingestResult.outcome === "deferred" &&
+          ingestResult.reason === "gmail_dsn"
+        ) {
+          const gmailRecord = gmailMessageRecordSchema.safeParse(record);
+
+          if (gmailRecord.success) {
+            try {
+              const evidenceId = `source-evidence:gmail:gmail.dsn:${gmailRecord.data.recordId}`;
+              await input.persistence.repositories.sourceEvidence.append({
+                id: evidenceId,
+                provider: "gmail",
+                providerRecordType: "gmail.dsn",
+                providerRecordId: gmailRecord.data.recordId,
+                receivedAt: gmailRecord.data.receivedAt,
+                occurredAt: gmailRecord.data.occurredAt,
+                payloadRef: gmailRecord.data.payloadRef,
+                idempotencyKey: `gmail:gmail.dsn:${gmailRecord.data.recordId}`,
+                checksum: gmailRecord.data.checksum
+              });
+            } catch {
+              // Replay-safe duplicate evidence writes can be ignored.
+            }
+
+            const dsnOriginalMessageId = gmailRecord.data.dsnOriginalMessageId;
+
+            if (
+              dsnOriginalMessageId !== null &&
+              dsnOriginalMessageId.length > 0
+            ) {
+              const pending =
+                await input.persistence.repositories.pendingOutbounds.findBySentRfc822MessageId(
+                  dsnOriginalMessageId
+                );
+
+              if (pending !== null && pending.status === "pending") {
+                await input.persistence.repositories.pendingOutbounds.markFailed(
+                  pending.id,
+                  {
+                    reason: "bounce",
+                    detail: gmailRecord.data.bodyTextPreview.slice(0, 500)
+                  }
+                );
+                logger.info({
+                  event: "composer.bounce.matched",
+                  pendingOutboundId: pending.id,
+                  dsnOriginalMessageId,
+                  dsnGmailMessageId: gmailRecord.data.recordId
+                });
+              } else if (pending === null) {
+                logger.info({
+                  event: "composer.bounce.unmatched",
+                  dsnOriginalMessageId,
+                  dsnGmailMessageId: gmailRecord.data.recordId
+                });
+              }
+            }
+          }
         }
 
         if (

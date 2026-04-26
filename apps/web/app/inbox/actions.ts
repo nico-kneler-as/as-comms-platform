@@ -1481,6 +1481,11 @@ export async function sendComposerAction(
         },
       });
 
+      await runtime.repositories.pendingOutbounds.markSentRfc822(
+        pendingOutboundId,
+        sendResult.rfc822MessageId,
+      );
+
       if (parsedInput.data.supersedesPendingId !== undefined) {
         await runtime.repositories.pendingOutbounds.markSuperseded(
           parsedInput.data.supersedesPendingId,

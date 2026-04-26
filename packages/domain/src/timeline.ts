@@ -264,6 +264,8 @@ function buildPendingTimelineItems(
         row.status === "orphaned"
           ? row.status
           : null,
+      failedReason: row.failedReason,
+      failedDetail: row.failedDetail,
       attachmentCount: row.attachmentMetadata.length,
     })),
   );
