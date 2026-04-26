@@ -322,6 +322,9 @@ describe("InboxTimeline", () => {
         ],
         volunteerFirstName: "Shaina",
         currentOperatorUserId: "user:operator",
+        // Reply button only renders when onReply is provided; supply a no-op
+        // so the markup contains it for the assertion below.
+        onReply: () => {},
       }),
     );
 
