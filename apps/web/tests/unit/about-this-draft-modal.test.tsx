@@ -66,7 +66,8 @@ describe("about this draft modal", () => {
       }),
     );
 
-    expect(markup).toContain("Grounding Sources");
+    // S5 redesign renames the section heading from "Grounding Sources" to "Sources".
+    expect(markup).toContain("Sources");
     expect(markup).toContain("General Training");
     expect(markup).toContain("grounding_empty");
     expect(markup).toContain("$0.0123");
