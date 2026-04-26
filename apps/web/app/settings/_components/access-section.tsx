@@ -5,9 +5,9 @@ import { useState, useTransition } from "react";
 import {
   RADIUS,
   SHADOW,
-  TEXT,
+  TYPE,
   TRANSITION
-} from "@/app/_lib/design-tokens";
+} from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -245,7 +245,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
               <h3 id="invite-teammates-heading" className="text-sm font-semibold text-slate-900">
                 Invite teammates
               </h3>
-              <p className={TEXT.caption}>
+              <p className={TYPE.caption}>
                 Invites create a pending teammate row that links automatically
                 when they sign in with Google.
               </p>
@@ -269,7 +269,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
               </div>
 
               <div className="flex flex-col gap-2">
-                <span className={cn(TEXT.label, "text-slate-600")}>Role</span>
+                <span className={cn(TYPE.label, "text-slate-600")}>Role</span>
                 <ToggleGroup
                   type="single"
                   value={inviteRole}
@@ -331,26 +331,26 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
               <tr>
                 <th
                   scope="col"
-                  className={cn("px-5 py-3 text-left", TEXT.label, "tracking-wider")}
+                  className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
                 >
                   Teammate
                 </th>
                 <th
                   scope="col"
-                  className={cn("px-5 py-3 text-left", TEXT.label, "tracking-wider")}
+                  className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
                 >
                   Role
                 </th>
                 <th
                   scope="col"
-                  className={cn("px-5 py-3 text-left", TEXT.label, "tracking-wider")}
+                  className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
                 >
                   Last active
                 </th>
                 {viewModel.isAdmin ? (
                   <th
                     scope="col"
-                    className={cn("px-5 py-3 text-left", TEXT.label, "tracking-wider")}
+                    className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
                   >
                     Actions
                   </th>
@@ -398,7 +398,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                               {user.displayName}
                             </p>
                             {isSelf ? (
-                              <span className={cn(TEXT.micro, "text-slate-400")}>
+                              <span className={cn(TYPE.micro, "text-slate-400")}>
                                 (you)
                               </span>
                             ) : null}
@@ -406,7 +406,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                           <p
                             className={cn(
                               "truncate",
-                              TEXT.caption,
+                              TYPE.caption,
                               user.status === "deactivated" && "text-slate-400"
                             )}
                           >
@@ -423,7 +423,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                     </td>
                     <td className="px-5 py-3 align-middle">
                       <span
-                        className={cn("tabular-nums", TEXT.bodySm, "text-slate-600")}
+                        className={cn("tabular-nums", TYPE.bodySm, "text-slate-600")}
                       >
                         {formatRelative(user.lastActiveAt)}
                       </span>
@@ -432,7 +432,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                       <td className="px-5 py-3 align-middle">
                         <div className="flex flex-wrap items-center gap-2">
                           {isSelf ? (
-                            <span className={TEXT.caption}>Current session</span>
+                            <span className={TYPE.caption}>Current session</span>
                           ) : user.status === "deactivated" ? (
                             <Button
                               type="button"
@@ -475,7 +475,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                             </>
                           )}
                           {isOnlyActiveAdmin ? (
-                            <span className={TEXT.caption}>Keep one active admin</span>
+                            <span className={TYPE.caption}>Keep one active admin</span>
                           ) : null}
                         </div>
                       </td>

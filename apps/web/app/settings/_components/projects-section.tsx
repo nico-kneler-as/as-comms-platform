@@ -10,9 +10,9 @@ import {
   RADIUS,
   SHADOW,
   SPACING,
-  TEXT,
+  TYPE,
   TRANSITION
-} from "@/app/_lib/design-tokens";
+} from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -54,7 +54,7 @@ export function ProjectsSection({
             <h3 className="text-sm font-semibold text-slate-900">
               Currently active
             </h3>
-            <span className={cn(TEXT.caption, "tabular-nums")}>
+            <span className={cn(TYPE.caption, "tabular-nums")}>
               {String(viewModel.counts.active)} active
             </span>
           </div>
@@ -86,13 +86,13 @@ export function ProjectsSection({
                 <h3 className="text-sm font-semibold text-slate-900">
                   Inactive projects
                 </h3>
-                <p className={cn("mt-0.5", TEXT.caption)}>
+                <p className={cn("mt-0.5", TYPE.caption)}>
                   {isSearching
                     ? "Search results across inactive project names, project aliases, and inbox aliases."
                     : "Showing the 3 most recently created inactive projects. Search to find older ones."}
                 </p>
               </div>
-              <span className={cn(TEXT.caption, "tabular-nums")}>
+              <span className={cn(TYPE.caption, "tabular-nums")}>
                 {String(viewModel.counts.inactive)} inactive
               </span>
             </div>
@@ -166,7 +166,7 @@ function ProjectList({
     <ul
       className={cn(
         "divide-y divide-slate-100",
-        RADIUS.md,
+        RADIUS.lg,
         "border border-slate-200 bg-white",
         SHADOW.sm
       )}
@@ -197,11 +197,11 @@ function ProjectList({
               {renderMeta ? renderMeta(project) : null}
             </div>
             {project.projectAlias ? (
-              <p className={cn(TEXT.caption, "truncate text-slate-500")}>
+              <p className={cn(TYPE.caption, "truncate text-slate-500")}>
                 Alias: {project.projectAlias}
               </p>
             ) : null}
-            <p className={cn(TEXT.caption, "truncate")}>
+            <p className={cn(TYPE.caption, "truncate")}>
               {project.primaryEmail
                 ? project.additionalEmailCount > 0
                   ? `${project.primaryEmail} + ${String(project.additionalEmailCount)} more alias${project.additionalEmailCount === 1 ? "" : "es"}`
@@ -216,7 +216,7 @@ function ProjectList({
 
       {projects.length === 0 ? (
         <li className="px-5 py-10 text-center">
-          <p className={TEXT.caption}>{emptyMessage}</p>
+          <p className={TYPE.caption}>{emptyMessage}</p>
         </li>
       ) : null}
     </ul>
