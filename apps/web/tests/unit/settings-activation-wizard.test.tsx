@@ -407,9 +407,18 @@ function exactTextCount(container: HTMLElement, text: string): number {
 }
 
 function findButton(container: HTMLElement, text: string): HTMLButtonElement {
-  const button = Array.from(container.querySelectorAll("button")).find(
+  // Some buttons render extra text inside (e.g. project-pick row shows
+  // {projectName} + {projectId}). Prefer exact textContent match; fall back
+  // to a substring match so callers can target by the human-readable label.
+  const buttons = Array.from(container.querySelectorAll("button"));
+  const exact = buttons.find(
     (element) => normalizeText(element.textContent) === text
   );
+  const button =
+    exact ??
+    buttons.find((element) =>
+      normalizeText(element.textContent).includes(text)
+    );
 
   if (!(button instanceof HTMLButtonElement)) {
     throw new Error(`Button not found: ${text}`);
