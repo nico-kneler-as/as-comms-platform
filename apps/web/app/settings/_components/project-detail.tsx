@@ -3,7 +3,7 @@
 import Link from "next/link";
 import * as React from "react";
 import { useOptimistic, useState, useTransition } from "react";
-import { ArrowLeft, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Mail, Trash2 } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -194,6 +194,9 @@ export function ProjectDetail({
   const [signaturePending, startSignatureTransition] = useTransition();
   const [activationPending, startActivationTransition] = useTransition();
   const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [knowledgeEditorOpen, setKnowledgeEditorOpen] = useState(
+    project.aiKnowledgeUrl === null
+  );
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
     setFeedback({ kind, message });
@@ -392,8 +395,8 @@ export function ProjectDetail({
     });
   }
 
-  function handleSaveKnowledgeUrl() {
-    const nextUrl = knowledgeDraft.trim().length === 0 ? null : knowledgeDraft.trim();
+  function handleSaveKnowledgeUrl(nextDraft = knowledgeDraft) {
+    const nextUrl = nextDraft.trim().length === 0 ? null : nextDraft.trim();
 
     startKnowledgeTransition(async () => {
       applyOptimisticProject({ aiKnowledgeUrl: nextUrl });
@@ -408,12 +411,18 @@ export function ProjectDetail({
       }
 
       commitProject(result.data);
+      setKnowledgeEditorOpen(nextUrl === null);
       announce(
         nextUrl === null
           ? "Cleared the AI knowledge URL."
           : "Updated the AI knowledge URL."
       );
     });
+  }
+
+  function handleUnlinkKnowledgeUrl() {
+    setKnowledgeDraft("");
+    handleSaveKnowledgeUrl("");
   }
 
   function handleSaveProjectAlias() {
@@ -479,21 +488,21 @@ export function ProjectDetail({
     (!optimisticProject.activationRequirementsMet
       ? "Activation needs a short project alias, a project inbox alias, and completed AI knowledge sync."
       : null);
-  const hasProjectAlias = (optimisticProject.projectAlias?.trim().length ?? 0) > 0;
-  const hasProjectInboxAlias = optimisticProject.emails.length > 0;
-  const hasAiKnowledgeSync = optimisticProject.aiKnowledgeSyncedAt !== null;
-  const projectAliasStatusLabel = hasProjectAlias
-    ? `Short alias set to ${optimisticProject.projectAlias ?? ""}.`
-    : "Set a short project alias before activation.";
-  const aiKnowledgeStatusLabel =
-    optimisticProject.aiKnowledgeSyncedAt === null
-      ? "Run AI knowledge sync before activation."
-      : `AI knowledge last synced ${new Date(
-          optimisticProject.aiKnowledgeSyncedAt
-        ).toLocaleString()}.`;
+  const signatureEmails = [...optimisticProject.emails].sort((left, right) => {
+    if (left.isPrimary !== right.isPrimary) {
+      return left.isPrimary ? -1 : 1;
+    }
+
+    return left.address.localeCompare(right.address);
+  });
+  const signaturePlaceholderProjectName =
+    optimisticProject.projectAlias ?? optimisticProject.projectName;
+  const showKnowledgeEditor =
+    project.isAdmin &&
+    (knowledgeEditorOpen || optimisticProject.aiKnowledgeUrl === null);
 
   return (
-    <div className="flex max-w-3xl flex-col gap-8">
+    <div className="flex max-w-3xl flex-col gap-6">
       <div className="flex flex-col gap-4">
         <Link
           href="/settings/projects"
@@ -511,7 +520,7 @@ export function ProjectDetail({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-lg font-semibold tracking-tight text-slate-950">
+              <h1 className={cn(TYPE.headingLg, "text-balance text-slate-950")}>
                 {project.projectName}
               </h1>
               <StatusBadge
@@ -527,7 +536,7 @@ export function ProjectDetail({
           </div>
 
           {project.isAdmin ? (
-            <div className="flex min-w-[240px] flex-col items-start gap-2">
+            <div className="flex min-w-[240px] justify-end">
               <Button type="button" variant="outline" asChild>
                 <Link
                   href={`/settings/projects/${encodeURIComponent(project.projectId)}/knowledge`}
@@ -535,78 +544,35 @@ export function ProjectDetail({
                   Knowledge
                 </Link>
               </Button>
-              {optimisticProject.isActive ? (
-                <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
-                  <DialogTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={activationPending}
-                    >
-                      Deactivate project
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>
-                        Deactivate {project.projectName}?
-                      </DialogTitle>
-                      <DialogDescription>
-                        This will hide the project from the active list.
-                        Continue?
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="mt-4">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setDeactivateOpen(false);
-                        }}
-                        disabled={activationPending}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        onClick={handleDeactivate}
-                        disabled={activationPending}
-                      >
-                        Deactivate project
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={handleActivate}
-                  disabled={
-                    activationPending ||
-                    !optimisticProject.activationRequirementsMet
-                  }
-                >
-                  Activate project
-                </Button>
-              )}
-
-              {!optimisticProject.isActive && inactiveActivationMessage ? (
-                <p
-                  className={cn(
-                    "max-w-[240px]",
-                    TYPE.caption,
-                    "text-slate-600"
-                  )}
-                >
-                  {inactiveActivationMessage}
-                </p>
-              ) : null}
             </div>
           ) : null}
         </div>
+
+        {!optimisticProject.isActive && project.isAdmin ? (
+          <div className="rounded-xl border border-amber-200/70 bg-amber-50/40 px-4 py-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 flex-col gap-1">
+                <p className="text-sm font-medium text-amber-900">
+                  Activation
+                </p>
+                {inactiveActivationMessage ? (
+                  <p className={cn(TYPE.caption, "max-w-2xl text-amber-800")}>
+                    {inactiveActivationMessage}
+                  </p>
+                ) : null}
+              </div>
+              <Button
+                type="button"
+                onClick={handleActivate}
+                disabled={
+                  activationPending || !optimisticProject.activationRequirementsMet
+                }
+              >
+                Activate project
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {feedback ? (
@@ -625,27 +591,58 @@ export function ProjectDetail({
       ) : null}
 
       <section
-        aria-labelledby="project-details-heading"
+        aria-label="Project details"
         className={cn(
-          "flex flex-col gap-4 p-5",
+          "flex flex-col gap-5 p-5",
           RADIUS.md,
           "border border-slate-200 bg-white",
           SHADOW.sm
         )}
       >
-        <div>
-          <h2 id="project-details-heading" className={TYPE.headingSm}>
-            Project details
-          </h2>
-        </div>
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="project-short-alias"
+              className={cn(TYPE.label, "text-slate-600")}
+            >
+              Project alias
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                id="project-short-alias"
+                value={projectAliasDraft}
+                onChange={(event) => {
+                  setProjectAliasDraft(event.target.value);
+                  setActivationMessage(null);
+                }}
+                disabled={!project.isAdmin || projectAliasPending}
+                readOnly={!project.isAdmin}
+                placeholder="Short internal project name"
+                className="font-mono text-[13px]"
+              />
+              {project.isAdmin ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSaveProjectAlias}
+                  disabled={projectAliasPending || !projectAliasDirty}
+                >
+                  Save alias
+                </Button>
+              ) : null}
+            </div>
+            <span className={cn(TYPE.caption, "text-slate-500")}>
+              Short internal name used in inbox tags.
+            </span>
+          </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             <label
               htmlFor="project-salesforce-id"
               className={cn(TYPE.label, "text-slate-600")}
             >
-              Salesforce project ID
+              Salesforce ID
             </label>
             <Input
               id="project-salesforce-id"
@@ -654,228 +651,31 @@ export function ProjectDetail({
               readOnly
               className="font-mono text-[13px]"
             />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label
-              htmlFor="project-short-alias"
-              className={cn(TYPE.label, "text-slate-600")}
-            >
-              Project alias
-            </label>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <Input
-                  id="project-short-alias"
-                  value={projectAliasDraft}
-                  onChange={(event) => {
-                    setProjectAliasDraft(event.target.value);
-                    setActivationMessage(null);
-                  }}
-                  disabled={!project.isAdmin || projectAliasPending}
-                  readOnly={!project.isAdmin}
-                  placeholder="Short internal project name"
-                  className="font-mono text-[13px]"
-                />
-                {project.isAdmin ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleSaveProjectAlias}
-                    disabled={projectAliasPending || !projectAliasDirty}
-                  >
-                    Save alias
-                  </Button>
-                ) : null}
-              </div>
-              <span className={TYPE.caption}>
-                Short name used in inbox tags and internal UI labels.
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2 md:col-span-2">
-            <label
-              htmlFor="project-ai-knowledge-url"
-              className={cn(TYPE.label, "text-slate-600")}
-            >
-              AI knowledge source
-            </label>
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <Input
-                  id="project-ai-knowledge-url"
-                  value={knowledgeDraft}
-                  onChange={(event) => {
-                    setKnowledgeDraft(event.target.value);
-                    setActivationMessage(null);
-                  }}
-                  disabled={!project.isAdmin || knowledgePending}
-                  readOnly={!project.isAdmin}
-                  placeholder="https://..."
-                  className="font-mono text-[13px]"
-                />
-                {project.isAdmin ? (
-                  <>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleSaveKnowledgeUrl}
-                      disabled={knowledgePending || !knowledgeDirty}
-                    >
-                      Save URL
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleKnowledgeSync}
-                    >
-                      <RefreshCw
-                        className="mr-1.5 h-3.5 w-3.5"
-                        aria-hidden="true"
-                      />
-                      Sync
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-              <span className={TYPE.caption}>
-                {formatLastSynced(optimisticProject.aiKnowledgeSyncedAt)}
-              </span>
-            </div>
+            <span className={cn(TYPE.caption, "text-slate-500")}>
+              Read-only, linked via CRM sync.
+            </span>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge
-            label={
-              optimisticProject.activationRequirementsMet
-                ? "Activation ready"
-                : "Needs setup"
-            }
-            colorClasses={
-              optimisticProject.activationRequirementsMet
-                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                : "bg-amber-50 text-amber-800 ring-amber-200"
-            }
-            variant="soft"
-          />
-          <StatusBadge
-            label={hasProjectAlias ? "Project alias set" : "Project alias required"}
-            colorClasses={
-              hasProjectAlias
-                ? "bg-sky-50 text-sky-700 ring-sky-200"
-                : "bg-amber-50 text-amber-800 ring-amber-200"
-            }
-            variant="soft"
-          />
-          <StatusBadge
-            label={
-              hasProjectInboxAlias
-                ? "Project inbox alias connected"
-                : "Project inbox alias required"
-            }
-            colorClasses={
-              hasProjectInboxAlias
-                ? "bg-sky-50 text-sky-700 ring-sky-200"
-                : "bg-amber-50 text-amber-800 ring-amber-200"
-            }
-            variant="soft"
-          />
-          <StatusBadge
-            label={hasAiKnowledgeSync ? "AI knowledge synced" : "AI sync required"}
-            colorClasses={
-              hasAiKnowledgeSync
-                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                : "bg-amber-50 text-amber-800 ring-amber-200"
-            }
-            variant="soft"
-          />
-        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className={TYPE.label}>Inbox aliases</span>
+          <div className="flex flex-col gap-1.5">
+            {optimisticProject.emails.map((email) => {
+              const isRowPending = emailPending && pendingEmail === email.address;
 
-        <ul className="grid gap-2 md:grid-cols-2">
-          <li
-            className={cn(
-              "rounded-md border px-3 py-2 text-sm",
-              hasProjectAlias
-                ? "border-sky-200 bg-sky-50 text-sky-900"
-                : "border-amber-200 bg-amber-50 text-amber-900"
-            )}
-          >
-            {projectAliasStatusLabel}
-          </li>
-          <li
-            className={cn(
-              "rounded-md border px-3 py-2 text-sm",
-              hasProjectInboxAlias
-                ? "border-sky-200 bg-sky-50 text-sky-900"
-                : "border-amber-200 bg-amber-50 text-amber-900"
-            )}
-          >
-            {hasProjectInboxAlias
-              ? "A project inbox alias is connected and ready to route mail."
-              : "Add a project inbox alias below before activation."}
-          </li>
-          <li
-            className={cn(
-              "rounded-md border px-3 py-2 text-sm md:col-span-2",
-              hasAiKnowledgeSync
-                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                : "border-amber-200 bg-amber-50 text-amber-900"
-            )}
-          >
-            {aiKnowledgeStatusLabel}
-          </li>
-        </ul>
-      </section>
-
-      <section
-        aria-labelledby="project-emails-heading"
-        className={cn(
-          "flex flex-col gap-3 p-5",
-          RADIUS.md,
-          "border border-slate-200 bg-white",
-          SHADOW.sm
-        )}
-      >
-        <div>
-          <h2 id="project-emails-heading" className={TYPE.headingSm}>
-            Project inbox aliases
-          </h2>
-          <p className={cn("mt-0.5", TYPE.caption)}>
-            Inbound mail to any alias listed here is routed to this project&apos;s
-            inbox.
-          </p>
-        </div>
-
-        <ul
-          className={cn(
-            "divide-y divide-slate-100 overflow-hidden",
-            RADIUS.sm,
-            "border border-slate-100"
-          )}
-        >
-          {optimisticProject.emails.map((email) => {
-            const isRowPending = emailPending && pendingEmail === email.address;
-            const isSignaturePending =
-              signaturePending && pendingSignatureId === email.id;
-            const signatureDraft = signatureDrafts[email.id] ?? email.signature;
-            const signatureError = signatureErrors[email.id];
-            const signatureDirty =
-              normalizeProjectAliasSignature(signatureDraft) !== email.signature;
-            return (
-              <li
-                key={email.id}
-                className={cn(
-                  "flex flex-col gap-3 px-3 py-3",
-                  isRowPending && "opacity-60"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-slate-700">
+              return (
+                <div
+                  key={email.id}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2",
+                    isRowPending && "opacity-60"
+                  )}
+                >
+                  <Mail
+                    className="h-3.5 w-3.5 shrink-0 text-slate-400"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-slate-800">
                     {email.address}
                   </span>
                   {email.isPrimary ? (
@@ -886,17 +686,22 @@ export function ProjectDetail({
                     />
                   ) : null}
                   {project.isAdmin && !email.isPrimary ? (
-                    <Button
+                    <button
                       type="button"
-                      size="sm"
-                      variant="outline"
                       disabled={emailPending}
                       onClick={() => {
                         handleMakePrimary(email.address);
                       }}
+                      className={cn(
+                        "min-h-10 shrink-0 px-2 text-[11.5px] font-medium text-slate-500 hover:text-slate-900",
+                        TRANSITION.fast,
+                        FOCUS_RING,
+                        RADIUS.sm,
+                        "disabled:cursor-not-allowed disabled:opacity-40"
+                      )}
                     >
                       Make primary
-                    </Button>
+                    </button>
                   ) : null}
                   {project.isAdmin ? (
                     <button
@@ -907,10 +712,10 @@ export function ProjectDetail({
                         handleRemoveEmail(email.address);
                       }}
                       className={cn(
-                        "flex h-7 w-7 items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-700",
-                        RADIUS.sm,
+                        "flex size-10 shrink-0 items-center justify-center text-slate-400 hover:text-rose-600",
                         TRANSITION.fast,
                         FOCUS_RING,
+                        RADIUS.sm,
                         "disabled:cursor-not-allowed disabled:opacity-40"
                       )}
                     >
@@ -918,13 +723,156 @@ export function ProjectDetail({
                     </button>
                   ) : null}
                 </div>
+              );
+            })}
 
-                <div className="flex flex-col gap-2">
+            {optimisticProject.emails.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-200 bg-slate-50/60 px-3 py-3">
+                <p className={TYPE.caption}>No connected addresses yet.</p>
+              </div>
+            ) : null}
+
+            {project.isAdmin ? (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <label htmlFor="project-email-input" className="sr-only">
+                  Add project inbox alias
+                </label>
+                <Input
+                  id="project-email-input"
+                  type="email"
+                  value={newEmail}
+                  onChange={(event) => {
+                    setNewEmail(event.target.value);
+                    setActivationMessage(null);
+                  }}
+                  disabled={emailPending}
+                  placeholder="project@asc.internal"
+                  className="font-mono text-[13px]"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleAddEmail}
+                  disabled={emailPending || newEmail.trim().length === 0}
+                >
+                  + Add alias
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <span className={TYPE.label}>AI knowledge source</span>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 sm:flex-row sm:items-center">
+              <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-white text-[10px] font-semibold text-slate-900 ring-1 ring-slate-200">
+                N
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[12.5px] font-medium text-slate-800">
+                  {optimisticProject.aiKnowledgeUrl ?? "No knowledge source linked"}
+                </div>
+                <div className={cn(TYPE.micro, "truncate text-slate-500")}>
+                  {formatLastSynced(optimisticProject.aiKnowledgeSyncedAt)}
+                </div>
+              </div>
+              {project.isAdmin ? (
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleKnowledgeSync}
+                  >
+                    Resync
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleUnlinkKnowledgeUrl}
+                    disabled={
+                      knowledgePending || optimisticProject.aiKnowledgeUrl === null
+                    }
+                  >
+                    Unlink
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            {project.isAdmin ? (
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-fit px-0 text-slate-600 hover:bg-transparent hover:text-slate-900"
+                  onClick={() => {
+                    setKnowledgeEditorOpen((current) => !current);
+                  }}
+                >
+                  {showKnowledgeEditor ? "Hide URL editor" : "Edit URL"}
+                </Button>
+                {showKnowledgeEditor ? (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <label htmlFor="project-ai-knowledge-url" className="sr-only">
+                      AI knowledge URL
+                    </label>
+                    <Input
+                      id="project-ai-knowledge-url"
+                      value={knowledgeDraft}
+                      onChange={(event) => {
+                        setKnowledgeDraft(event.target.value);
+                        setActivationMessage(null);
+                      }}
+                      disabled={knowledgePending}
+                      placeholder="https://..."
+                      className="font-mono text-[13px]"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        handleSaveKnowledgeUrl();
+                      }}
+                      disabled={knowledgePending || !knowledgeDirty}
+                    >
+                      Save URL
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <span className={TYPE.label}>Email signatures</span>
+          {signatureEmails.length > 0 ? (
+            signatureEmails.map((email, index) => {
+              const isSignaturePending =
+                signaturePending && pendingSignatureId === email.id;
+              const signatureDraft = signatureDrafts[email.id] ?? email.signature;
+              const signatureError = signatureErrors[email.id];
+              const signatureDirty =
+                normalizeProjectAliasSignature(signatureDraft) !== email.signature;
+
+              return (
+                <div
+                  key={email.id}
+                  className={cn(
+                    "flex flex-col gap-1.5",
+                    index > 0 && "border-t border-slate-100 pt-4"
+                  )}
+                >
                   <label
                     htmlFor={`project-email-signature-${email.id}`}
                     className={cn(TYPE.label, "text-slate-600")}
                   >
-                    Signature
+                    Email signature - {email.address}
                   </label>
                   <textarea
                     id={`project-email-signature-${email.id}`}
@@ -934,19 +882,17 @@ export function ProjectDetail({
                     }}
                     disabled={!project.isAdmin || isSignaturePending}
                     readOnly={!project.isAdmin}
-                    rows={4}
+                    rows={5}
                     className={cn(
-                      "w-full resize-y border border-slate-200 bg-white px-3 py-2 font-mono text-[13px] text-slate-900 outline-none",
-                      RADIUS.sm,
-                      FOCUS_RING,
+                      "w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200",
                       signatureError &&
                         "border-rose-300 bg-rose-50/40 text-rose-900"
                     )}
-                    placeholder="Plain-text signature..."
+                    placeholder={`Warmly,\nThe ${signaturePlaceholderProjectName} Team\nAdventure Scientists`}
                   />
-                  <div className="flex items-center justify-between gap-3">
-                    <span className={cn(TYPE.caption, "tabular-nums")}>
-                      {String(normalizeProjectAliasSignature(signatureDraft).length)}/2000
+                  <div className="mt-1 flex items-center justify-between gap-3">
+                    <span className={cn(TYPE.caption, "text-slate-500")}>
+                      Appended to every outbound email from this alias.
                     </span>
                     {project.isAdmin ? (
                       <Button
@@ -963,50 +909,77 @@ export function ProjectDetail({
                     ) : null}
                   </div>
                   {signatureError ? (
-                    <p className={cn(TYPE.caption, "text-rose-700")}>
+                    <p className="mt-1 text-[11.5px] text-rose-600">
                       {signatureError}
                     </p>
                   ) : null}
                 </div>
-              </li>
-            );
-          })}
-          {optimisticProject.emails.length === 0 ? (
-            <li className="px-3 py-4 text-center">
-              <p className={TYPE.caption}>
-                No connected addresses yet.
-              </p>
-            </li>
-          ) : null}
-        </ul>
+              );
+            })
+          ) : (
+            <p className={TYPE.caption}>
+              Add an inbox alias to configure per-alias signatures.
+            </p>
+          )}
+        </div>
 
-        {project.isAdmin ? (
-          <div className="flex items-center gap-2">
-            <label htmlFor="project-email-input" className="sr-only">
-              Add project inbox alias
-            </label>
-            <Input
-              id="project-email-input"
-              type="email"
-              value={newEmail}
-              onChange={(event) => {
-                setNewEmail(event.target.value);
-                setActivationMessage(null);
-              }}
-              disabled={emailPending}
-              placeholder="project@asc.internal"
-              className="max-w-sm font-mono text-[13px]"
-            />
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleAddEmail}
-              disabled={emailPending || newEmail.trim().length === 0}
-            >
-              Add alias
-            </Button>
-          </div>
+        {project.isAdmin && optimisticProject.isActive ? (
+          <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
+            <div className="mt-1">
+              <div className="flex items-center justify-between rounded-md border border-rose-200/70 bg-rose-50/40 px-3 py-2">
+                <div className="text-[12px]">
+                  <span className="font-medium text-rose-700">
+                    Deactivate project
+                  </span>
+                  <span className="ml-1.5 text-rose-600/80">
+                    Stops routing mail. Existing threads stay searchable.
+                  </span>
+                </div>
+                <DialogTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "min-h-10 shrink-0 px-2 text-[12px] font-medium text-rose-700 hover:underline",
+                      FOCUS_RING,
+                      RADIUS.sm
+                    )}
+                  >
+                    Deactivate
+                  </button>
+                </DialogTrigger>
+              </div>
+            </div>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Deactivate {project.projectName}?</DialogTitle>
+                <DialogDescription>
+                  This will hide the project from the active list. Continue?
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="mt-4">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setDeactivateOpen(false);
+                  }}
+                  disabled={activationPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  onClick={handleDeactivate}
+                  disabled={activationPending}
+                >
+                  Deactivate project
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         ) : null}
       </section>
     </div>

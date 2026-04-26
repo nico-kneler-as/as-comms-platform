@@ -12,6 +12,7 @@ vi.mock("next/link", () => ({
 
 vi.mock("lucide-react", () => ({
   ArrowLeft: () => null,
+  Mail: () => null,
   RefreshCw: () => null,
   Trash2: () => null
 }));
@@ -115,7 +116,7 @@ describe("ProjectDetail role-aware rendering", () => {
       })
     );
 
-    expect(html).toContain("Project inbox aliases");
+    expect(html).toContain("Inbox aliases");
     expect(html).not.toContain("Activate project");
     expect(html).not.toContain("Deactivate project");
     expect(html).not.toContain("Add alias");
