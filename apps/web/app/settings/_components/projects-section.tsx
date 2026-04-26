@@ -3,7 +3,8 @@
 import type { ReactNode } from "react";
 import { useDeferredValue, useState } from "react";
 import Link from "next/link";
-import { FolderOpen, Pencil, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FolderOpen, Pencil, Plus, Search } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -22,6 +23,7 @@ import type {
   ProjectsSettingsViewModel
 } from "@/src/server/settings/selectors";
 
+import { ActivationWizard } from "./activation-wizard";
 import { SettingsSection } from "./settings-section";
 
 export function ProjectsSection({
@@ -29,7 +31,11 @@ export function ProjectsSection({
 }: {
   readonly viewModel: ProjectsSettingsViewModel;
 }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
+  const [wizardRequest, setWizardRequest] = useState<{
+    readonly initialProjectId?: string;
+  } | null>(null);
   const deferredSearch = useDeferredValue(search);
   const normalizedSearch = deferredSearch.trim().toLowerCase();
   const filteredInactive =
@@ -46,120 +52,178 @@ export function ProjectsSection({
         });
   const isSearching = normalizedSearch.length > 0;
 
+  function openWizard(initialProjectId?: string) {
+    setWizardRequest(
+      initialProjectId === undefined ? {} : { initialProjectId }
+    );
+  }
+
+  function closeWizard() {
+    setWizardRequest(null);
+    router.refresh();
+  }
+
   return (
-    <SettingsSection id="settings-projects" title="Projects">
-      <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-slate-900">
-              Currently active
-            </h3>
-            <span className={cn(TYPE.caption, "tabular-nums")}>
-              {String(viewModel.counts.active)} active
-            </span>
-          </div>
-          <ProjectList
-            projects={viewModel.active}
-            emptyMessage="No active projects yet."
-            renderLeading={() => (
-              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/60">
-                <FolderOpen className="h-4 w-4" aria-hidden="true" />
-              </span>
-            )}
-            renderMeta={() => (
-              <StatusBadge
-                label="Active"
-                colorClasses="bg-emerald-50 text-emerald-700 ring-emerald-200"
-                variant="soft"
-              />
-            )}
-            renderAction={(project) => (
-              <Link
-                href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
-                aria-label={`Open ${project.projectName}`}
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center",
-                  RADIUS.sm,
-                  "text-slate-400 hover:bg-slate-100 hover:text-slate-700",
-                  TRANSITION.fast,
-                  FOCUS_RING
-                )}
-              >
-                <Pencil className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            )}
-          />
-        </div>
-
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div className="flex items-center justify-between gap-3 md:min-w-0">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Inactive projects
-                </h3>
-                <p className={cn("mt-0.5", TYPE.caption)}>
-                  {isSearching
-                    ? "Search results across inactive project names, project aliases, and inbox aliases."
-                    : "Showing the 3 most recently created inactive projects. Search to find older ones."}
-                </p>
-              </div>
-              <span className={cn(TYPE.caption, "tabular-nums")}>
-                {String(viewModel.counts.inactive)} inactive
-              </span>
-            </div>
-
-            <label className="relative block md:w-[320px]" htmlFor="inactive-project-search">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                aria-hidden="true"
-              />
-              <Input
-                id="inactive-project-search"
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                }}
-                placeholder="Search inactive projects, aliases"
-                className="pl-9"
-              />
-            </label>
-          </div>
-          <ProjectList
-            projects={filteredInactive}
-            emptyMessage={
-              isSearching
-                ? "No inactive projects matched that search."
-                : "No inactive projects."
-            }
-            renderMeta={(project) => (
-              <StatusBadge
-                label={
-                  project.activationRequirementsMet ? "Activation ready" : "Needs setup"
-                }
-                colorClasses={
-                  project.activationRequirementsMet
-                    ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                    : "bg-amber-50 text-amber-800 ring-amber-200"
-                }
-                variant="soft"
-              />
-            )}
-            renderAction={(project) =>
-              viewModel.isAdmin ? (
-                <Button asChild size="sm" variant="outline">
-                  <Link
-                    href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
+    <>
+      <SettingsSection id="settings-projects" title="Projects">
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-900">
+                Currently active
+              </h3>
+              <div className="flex items-center gap-2">
+                <span className={cn(TYPE.caption, "tabular-nums")}>
+                  {String(viewModel.counts.active)} active
+                </span>
+                {viewModel.isAdmin ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      openWizard();
+                    }}
                   >
-                    Review
-                  </Link>
-                </Button>
-              ) : null
-            }
-          />
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    Activate a project
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <ProjectList
+              projects={viewModel.active}
+              emptyMessage="No active projects yet."
+              renderLeading={() => (
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/60">
+                  <FolderOpen className="h-4 w-4" aria-hidden="true" />
+                </span>
+              )}
+              renderMeta={() => (
+                <StatusBadge
+                  label="Active"
+                  colorClasses="bg-emerald-50 text-emerald-700 ring-emerald-200"
+                  variant="soft"
+                />
+              )}
+              renderAction={(project) => (
+                <Link
+                  href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
+                  aria-label={`Open ${project.projectName}`}
+                  className={cn(
+                    "flex h-8 w-8 shrink-0 items-center justify-center",
+                    RADIUS.sm,
+                    "text-slate-400 hover:bg-slate-100 hover:text-slate-700",
+                    TRANSITION.fast,
+                    FOCUS_RING
+                  )}
+                >
+                  <Pencil className="h-4 w-4" aria-hidden="true" />
+                </Link>
+              )}
+            />
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div className="flex items-center justify-between gap-3 md:min-w-0">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    Inactive projects
+                  </h3>
+                  <p className={cn("mt-0.5", TYPE.caption)}>
+                    {isSearching
+                      ? "Search results across inactive project names, project aliases, and inbox aliases."
+                      : "Showing the 3 most recently created inactive projects. Search to find older ones."}
+                  </p>
+                </div>
+                <span className={cn(TYPE.caption, "tabular-nums")}>
+                  {String(viewModel.counts.inactive)} inactive
+                </span>
+              </div>
+
+              <label className="relative block md:w-[320px]" htmlFor="inactive-project-search">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  aria-hidden="true"
+                />
+                <Input
+                  id="inactive-project-search"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                  }}
+                  placeholder="Search inactive projects, aliases"
+                  className="pl-9"
+                />
+              </label>
+            </div>
+            <ProjectList
+              projects={filteredInactive}
+              emptyMessage={
+                isSearching
+                  ? "No inactive projects matched that search."
+                  : "No inactive projects."
+              }
+              renderMeta={(project) => (
+                <StatusBadge
+                  label={
+                    project.activationRequirementsMet ? "Activation ready" : "Needs setup"
+                  }
+                  colorClasses={
+                    project.activationRequirementsMet
+                      ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                      : "bg-amber-50 text-amber-800 ring-amber-200"
+                  }
+                  variant="soft"
+                />
+              )}
+              renderAction={(project) =>
+                viewModel.isAdmin ? (
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        openWizard(project.projectId);
+                      }}
+                    >
+                      Activate →
+                    </Button>
+                    <Button asChild size="sm" variant="ghost" className="px-2">
+                      <Link
+                        href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
+                      >
+                        View
+                      </Link>
+                    </Button>
+                  </div>
+                ) : (
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
+                    >
+                      Review
+                    </Link>
+                  </Button>
+                )
+              }
+            />
+          </div>
         </div>
-      </div>
-    </SettingsSection>
+      </SettingsSection>
+
+      {wizardRequest !== null ? (
+        <ActivationWizard
+          open
+          onClose={closeWizard}
+          inactiveProjects={viewModel.inactive}
+          {...(wizardRequest.initialProjectId === undefined
+            ? {}
+            : { initialProjectId: wizardRequest.initialProjectId })}
+        />
+      ) : null}
+    </>
   );
 }
 

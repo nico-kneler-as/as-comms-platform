@@ -23,11 +23,19 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("lucide-react", () => ({
   ArrowLeft: () => null,
+  Check: () => null,
+  ChevronRight: () => null,
+  Circle: () => null,
+  FolderOpen: () => null,
+  Mail: () => null,
   Pencil: () => null,
   Plus: () => null,
   RefreshCw: () => null,
+  Search: () => null,
+  Sparkles: () => null,
   Trash2: () => null,
   UserPlus: () => null,
+  X: () => null,
 }));
 
 vi.mock("@/components/ui/button", () => ({
