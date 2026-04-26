@@ -144,12 +144,14 @@ function OutboundStatusBanner({
       : null;
 
   return (
-    <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-900">
-      <span>
-        {entry.sendStatus === "failed"
-          ? "Send failed."
-          : "Send stalled before confirmation."}
-      </span>
+      <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+        <span>
+          {entry.failedReason === "bounce"
+            ? "Your last reply to this contact bounced — recipient address may be invalid."
+            : entry.sendStatus === "failed"
+              ? "Send failed."
+              : "Send stalled before confirmation."}
+        </span>
       {retryDisabledReason ? (
         <TooltipProvider>
           <Tooltip>

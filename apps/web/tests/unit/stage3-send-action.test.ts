@@ -122,6 +122,14 @@ describe("sendComposerAction", () => {
   });
 
   it("writes a durable pending row first, creates a contact for a naked email, and returns the FP-07 success envelope", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    const markSentRfc822Spy = vi.spyOn(
+      runtime.context.repositories.pendingOutbounds,
+      "markSentRfc822",
+    );
     sendComposerGmailMessage.mockResolvedValue({
       kind: "success",
       gmailMessageId: "gmail-message-1",
@@ -138,8 +146,8 @@ describe("sendComposerAction", () => {
       },
     });
 
-    if (!runtime || !result.ok) {
-      throw new Error("Expected runtime and success result.");
+    if (!result.ok) {
+      throw new Error("Expected success result.");
     }
 
     const contact = await runtime.context.repositories.contacts.findById(
@@ -174,6 +182,7 @@ describe("sendComposerAction", () => {
           contentType: "text/plain",
         },
       ],
+      sentRfc822MessageId: "<gmail-message-1@example.org>",
     });
     expect(audits.map((audit) => audit.action)).toEqual([
       "composer.send_attempted",
@@ -184,6 +193,10 @@ describe("sendComposerAction", () => {
         bodyPlaintext: "Thanks again for confirming the field logistics.",
         bodyHtml: "<p>Thanks again for confirming the field logistics.</p>",
       }),
+    );
+    expect(markSentRfc822Spy).toHaveBeenCalledWith(
+      result.data.pendingOutboundId,
+      "<gmail-message-1@example.org>",
     );
   });
 

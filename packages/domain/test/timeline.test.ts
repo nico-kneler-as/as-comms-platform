@@ -223,6 +223,8 @@ function createRepositoryBundle(input: {
     pendingOutbounds: {
       insert: ({ id }) => Promise.resolve(id),
       findByFingerprint: () => Promise.resolve(null),
+      markSentRfc822: () => Promise.resolve(),
+      findBySentRfc822MessageId: () => Promise.resolve(null),
       markConfirmed: () => Promise.resolve(),
       markFailed: () => Promise.resolve(),
       markSuperseded: () => Promise.resolve(),
@@ -752,6 +754,8 @@ describe("Stage 1 timeline presenter", () => {
           reconciledEventId: null,
           reconciledAt: null,
           failedReason: null,
+          sentRfc822MessageId: null,
+          failedDetail: null,
           orphanedAt: null,
           createdAt: "2026-01-01T00:02:00.000Z",
           updatedAt: "2026-01-01T00:02:00.000Z",

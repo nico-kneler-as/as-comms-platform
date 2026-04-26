@@ -81,11 +81,18 @@ describe("pending composer outbound repositories", () => {
           },
         ],
         sentAt,
+        sentRfc822MessageId: null,
+        failedDetail: null,
       });
 
       await context.repositories.pendingOutbounds.markFailed("pending:1", {
         reason: "provider_transient",
+        detail: "Temporary provider failure",
       });
+      await context.repositories.pendingOutbounds.markSentRfc822(
+        "pending:1",
+        "<pending-1@example.org>",
+      );
       await context.repositories.pendingOutbounds.insert({
         id: "pending:2",
         fingerprint: "fp:pending:2",
@@ -127,8 +134,21 @@ describe("pending composer outbound repositories", () => {
         ),
       ).resolves.toMatchObject([
         { id: "pending:3", status: "pending" },
-        { id: "pending:1", status: "failed", failedReason: "provider_transient" },
+        {
+          id: "pending:1",
+          status: "failed",
+          failedReason: "provider_transient",
+          failedDetail: "Temporary provider failure",
+          sentRfc822MessageId: "<pending-1@example.org>",
+        },
       ]);
+      await expect(
+        context.repositories.pendingOutbounds.findBySentRfc822MessageId(
+          "<pending-1@example.org>",
+        ),
+      ).resolves.toMatchObject({
+        id: "pending:1",
+      });
     } finally {
       await context.client.close();
     }

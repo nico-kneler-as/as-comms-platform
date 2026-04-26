@@ -69,7 +69,8 @@ export interface Stage1DeferredIngestResult extends Stage1IngestResultBase {
   readonly reason:
     | "unsupported_record_type"
     | "deferred_record_family"
-    | "skipped_by_policy";
+    | "skipped_by_policy"
+    | "gmail_dsn";
   readonly detail: string;
 }
 

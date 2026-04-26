@@ -20,6 +20,7 @@ import {
   type GmailProviderCloseMessageInput
 } from "../providers/gmail-record-builder.js";
 import {
+  extractDsnOriginalMessageId,
   extractGmailBodyPreviewFromPayloadResult,
   type GmailApiMessagePart
 } from "../providers/gmail-body.js";
@@ -414,19 +415,44 @@ export async function mapLiveGmailMessageToRecord(input: {
   readonly receivedAt: string;
 }): Promise<GmailRecord> {
   const headers = buildHeaderRecord(input.message.payload.headers ?? []);
+  const topLevelMimeType = (headers["Content-Type"] ?? "").toLowerCase();
+  const fromHeader = headers.From ?? "";
+  const subjectHeader = (headers.Subject ?? "").toLowerCase().trimStart();
+  const isPossiblyDsn =
+    fromHeader.toLowerCase().includes("mailer-daemon") ||
+    fromHeader.toLowerCase().includes("mail delivery subsystem") ||
+    subjectHeader.startsWith("delivery status notification") ||
+    subjectHeader.startsWith("undelivered mail") ||
+    subjectHeader.startsWith("returned mail") ||
+    subjectHeader.startsWith("mail delivery failed") ||
+    topLevelMimeType.includes("multipart/report");
+  const bodyPreviewResult = await extractGmailBodyPreviewFromPayloadResult(
+    input.message.payload
+  );
+  const previewMessageIdPattern =
+    /Message-ID:\s*(<\d+\.[a-f0-9-]+@[a-z.]+>)/iu;
+  const dsnOriginalMessageIdFromParts = isPossiblyDsn
+    ? extractDsnOriginalMessageId(input.message.payload)
+    : null;
+  const dsnOriginalMessageIdFromPreview = isPossiblyDsn
+    ? (previewMessageIdPattern.exec(bodyPreviewResult.bodyTextPreview)?.[1] ??
+      null)
+    : null;
   const builderInput: GmailProviderCloseMessageInput = {
     recordId: input.message.id,
     threadId: input.message.threadId,
     labelIds: input.message.labelIds,
     snippet: input.message.snippet,
     snippetClean: input.message.snippet,
-    ...(await extractGmailBodyPreviewFromPayloadResult(input.message.payload)),
+    ...bodyPreviewResult,
     internalDate: input.message.internalDate,
     headers,
     payloadRef: `gmail://${encodeURIComponent(input.capturedMailbox)}/messages/${encodeURIComponent(input.message.id)}`,
     checksum: buildLiveGmailChecksum(input.message),
     capturedMailbox: input.capturedMailbox,
     receivedAt: input.receivedAt,
+    dsnOriginalMessageId:
+      dsnOriginalMessageIdFromParts ?? dsnOriginalMessageIdFromPreview,
     internalAddresses: uniqueValues([
       input.liveAccount,
       ...input.projectInboxAliases

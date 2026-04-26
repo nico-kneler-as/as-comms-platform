@@ -212,6 +212,20 @@ function decodeBase64Url(value: string): Buffer {
   return Buffer.from(paddedValue, "base64");
 }
 
+function decodePartBodyToString(part: GmailApiMessagePart): string | null {
+  const bodyData = part.body?.data;
+
+  if (typeof bodyData !== "string" || bodyData.length === 0) {
+    return null;
+  }
+
+  try {
+    return decodeBase64Url(bodyData).toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
 function getPartHeader(
   part: GmailApiMessagePart,
   headerName: string
@@ -225,6 +239,78 @@ function getPartHeader(
 
 function normalizeMimeType(value: string | null | undefined): string {
   return value?.split(";")[0]?.trim().toLowerCase() ?? "";
+}
+
+function extractHeaderValue(
+  value: string,
+  patterns: readonly RegExp[]
+): string | null {
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+
+    if (match?.[1] !== undefined) {
+      const extracted = match[1].trim();
+
+      if (extracted.length > 0) {
+        return extracted;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function extractDsnOriginalMessageId(
+  payload: GmailApiMessagePart
+): string | null {
+  const mimeType = normalizeMimeType(payload.mimeType);
+
+  if (mimeType === "message/delivery-status") {
+    const decoded = decodePartBodyToString(payload);
+
+    if (decoded !== null) {
+      const originalMessageId = extractHeaderValue(decoded, [
+        /^Original-Message-ID:\s*(.+)$/imu,
+        /^Message-ID:\s*(.+)$/imu
+      ]);
+
+      if (originalMessageId !== null) {
+        return originalMessageId;
+      }
+
+      const finalRecipient = extractHeaderValue(decoded, [
+        /^Final-Recipient:\s*(.+)$/imu
+      ]);
+
+      if (finalRecipient !== null) {
+        return finalRecipient;
+      }
+    }
+  }
+
+  if (mimeType === "message/rfc822") {
+    const decoded = decodePartBodyToString(payload);
+
+    if (decoded !== null) {
+      const embeddedMessageId = extractHeaderValue(decoded, [
+        /^Message-ID:\s*(.+)$/imu
+      ]);
+
+      if (embeddedMessageId !== null) {
+        return embeddedMessageId;
+      }
+    }
+  }
+
+  for (const childPart of payload.parts ?? []) {
+    const nestedMatch = extractDsnOriginalMessageId(childPart);
+
+    if (nestedMatch !== null) {
+      return nestedMatch;
+    }
+  }
+
+  return null;
 }
 
 function buildBodyPreviewResult(

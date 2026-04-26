@@ -1819,6 +1819,14 @@ function buildTimelineEntry(input: {
       input.item.family === "one_to_one_email"
         ? (input.item.sendStatus ?? null)
         : null,
+    failedReason:
+      input.item.family === "one_to_one_email"
+        ? (input.item.failedReason ?? null)
+        : null,
+    failedDetail:
+      input.item.family === "one_to_one_email"
+        ? (input.item.failedDetail ?? null)
+        : null,
     attachmentCount:
       input.item.family === "one_to_one_email"
         ? (input.item.attachmentCount ?? 0)

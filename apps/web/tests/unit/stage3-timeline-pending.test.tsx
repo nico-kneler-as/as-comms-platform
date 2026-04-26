@@ -88,6 +88,8 @@ function buildEntry(
     rfc822MessageId: null,
     inReplyToRfc822: "parent-message-id",
     sendStatus: "pending",
+    failedReason: null,
+    failedDetail: null,
     attachmentCount: 0,
     campaignActivity: [],
     ...overrides,
@@ -124,6 +126,27 @@ describe("stage3 pending timeline rendering", () => {
 
     expect(markup).toContain("Send failed.");
     expect(markup).toContain("Retry");
+  });
+
+  it("renders the bounce-specific failure banner for bounced replies", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          buildEntry({
+            sendStatus: "failed",
+            failedReason: "bounce",
+            failedDetail: "550 5.1.1 user unknown",
+          }),
+        ],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+        onRetryPending: vi.fn(),
+      }),
+    );
+
+    expect(markup).toContain(
+      "Your last reply to this contact bounced"
+    );
   });
 
   it("disables retry when the failed row had attachments", () => {

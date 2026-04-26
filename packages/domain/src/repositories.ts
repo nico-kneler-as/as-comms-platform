@@ -264,11 +264,18 @@ export interface PendingComposerOutboundRepository {
   findByFingerprint(
     fingerprint: string,
   ): Promise<PendingComposerOutboundRecord | null>;
+  markSentRfc822(id: string, sentRfc822MessageId: string): Promise<void>;
+  findBySentRfc822MessageId(
+    messageId: string,
+  ): Promise<PendingComposerOutboundRecord | null>;
   markConfirmed(
     id: string,
     input: { readonly reconciledEventId: string | null },
   ): Promise<void>;
-  markFailed(id: string, input: { readonly reason: string }): Promise<void>;
+  markFailed(
+    id: string,
+    input: { readonly reason: string; readonly detail?: string | null },
+  ): Promise<void>;
   markSuperseded(id: string): Promise<void>;
   sweepOrphans(input: { readonly olderThan: Date }): Promise<number>;
   findForContact(

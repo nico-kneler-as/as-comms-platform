@@ -1882,6 +1882,8 @@ function createStage1RepositoriesInternal(
           reconciledEventId: null,
           reconciledAt: null,
           failedReason: null,
+          sentRfc822MessageId: null,
+          failedDetail: null,
           orphanedAt: null,
           createdAt: now.toISOString(),
           updatedAt: now.toISOString(),
@@ -1912,6 +1914,23 @@ function createStage1RepositoriesInternal(
         return row === undefined ? null : mapPendingComposerOutboundRow(row);
       },
 
+      async markSentRfc822(id, sentRfc822MessageId) {
+        await db
+          .update(pendingComposerOutbounds)
+          .set({ sentRfc822MessageId, updatedAt: new Date() })
+          .where(eq(pendingComposerOutbounds.id, id));
+      },
+
+      async findBySentRfc822MessageId(messageId) {
+        const [row] = (await db
+          .select()
+          .from(pendingComposerOutbounds)
+          .where(eq(pendingComposerOutbounds.sentRfc822MessageId, messageId))
+          .orderBy(desc(pendingComposerOutbounds.sentAt))
+          .limit(1)) as PendingComposerOutboundRow[];
+        return row === undefined ? null : mapPendingComposerOutboundRow(row);
+      },
+
       async markConfirmed(id, input) {
         await db
           .update(pendingComposerOutbounds)
@@ -1920,6 +1939,7 @@ function createStage1RepositoriesInternal(
             reconciledEventId: input.reconciledEventId,
             reconciledAt: new Date(),
             failedReason: null,
+            failedDetail: null,
             orphanedAt: null,
             updatedAt: new Date(),
           })
@@ -1943,6 +1963,7 @@ function createStage1RepositoriesInternal(
           .set({
             status: "failed",
             failedReason: input.reason,
+            failedDetail: input.detail ?? null,
             updatedAt: new Date(),
           })
           .where(

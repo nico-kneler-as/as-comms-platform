@@ -46,6 +46,7 @@ export const gmailMessageRecordSchema = z.object({
     .enum(["plaintext", "encrypted_placeholder", "binary_fallback"])
     .nullable()
     .optional(),
+  dsnOriginalMessageId: z.string().nullable().default(null),
   threadId: nullableStringSchema.default(null),
   rfc822MessageId: nullableStringSchema.default(null),
   capturedMailbox: nullableStringSchema.default(null),
@@ -190,13 +191,41 @@ export function mapGmailRecord(rawRecord: GmailRecord): ProviderMappingResult {
   const supportedRecord = gmailMessageRecordSchema.safeParse(rawRecord);
 
   if (supportedRecord.success) {
-    const labelIds = supportedRecord.data.labelIds ?? [];
+    const rec = supportedRecord.data;
+    const fromLower = (rec.fromHeader ?? "").toLowerCase();
+    const subjectLower = (rec.subject ?? "").toLowerCase().trimStart();
+    const isDsn =
+      fromLower.includes("mailer-daemon@") ||
+      fromLower.includes("mail delivery subsystem") ||
+      subjectLower.startsWith("delivery status notification") ||
+      subjectLower.startsWith("undelivered mail") ||
+      subjectLower.startsWith("returned mail") ||
+      subjectLower.startsWith("mail delivery failed");
+
+    if (isDsn) {
+      // detail is required (z.string().min(1)). When the DSN payload didn't
+      // expose an Original-Message-ID (e.g. detected only by subject prefix),
+      // fall back to a descriptive marker so the audit trail still has a value.
+      const dsnDetail =
+        rec.dsnOriginalMessageId !== null && rec.dsnOriginalMessageId.length > 0
+          ? `original_message_id=${rec.dsnOriginalMessageId}`
+          : "no original_message_id in dsn body";
+      return createDeferredMappingResult({
+        provider: "gmail",
+        sourceRecordType: rec.recordType,
+        sourceRecordId: rec.recordId,
+        reason: "gmail_dsn",
+        detail: dsnDetail
+      });
+    }
+
+    const labelIds = rec.labelIds ?? [];
 
     if (labelIds.includes("DRAFT") && !labelIds.includes("SENT")) {
       return createDeferredMappingResult({
         provider: "gmail",
-        sourceRecordType: supportedRecord.data.recordType,
-        sourceRecordId: supportedRecord.data.recordId,
+        sourceRecordType: rec.recordType,
+        sourceRecordId: rec.recordId,
         reason: "skipped_by_policy",
         detail: "Gmail draft-only messages are skipped before canonical ingest."
       });
@@ -204,11 +233,9 @@ export function mapGmailRecord(rawRecord: GmailRecord): ProviderMappingResult {
 
     return createCommandMappingResult({
       provider: "gmail",
-      sourceRecordType: supportedRecord.data.recordType,
-      sourceRecordId: supportedRecord.data.recordId,
-      command: createCanonicalEventCommand(
-        mapGmailMessageRecord(supportedRecord.data)
-      )
+      sourceRecordType: rec.recordType,
+      sourceRecordId: rec.recordId,
+      command: createCanonicalEventCommand(mapGmailMessageRecord(rec))
     });
   }
 
