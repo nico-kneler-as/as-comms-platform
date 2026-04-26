@@ -6,10 +6,10 @@ import { RefreshCw } from "lucide-react";
 import {
   RADIUS,
   SHADOW,
-  TEXT,
-  TONE,
-  TRANSITION
-} from "@/app/_lib/design-tokens";
+  TONE_CLASSES,
+  TRANSITION,
+  TYPE
+} from "@/app/_lib/design-tokens-v2";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -146,7 +146,7 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((integration) => {
             const statusMeta = STATUS_META[integration.status];
-            const categoryTone = TONE[CATEGORY_TONE[integration.category]];
+            const categoryTone = TONE_CLASSES[CATEGORY_TONE[integration.category]];
             const isRowPending =
               pending && pendingId === integration.serviceName;
             const isSyncDisabled =
@@ -183,7 +183,7 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
                           {CATEGORY_LABEL[integration.category]}
                         </span>
                       </div>
-                      <p className={cn("mt-1", TEXT.caption, "text-slate-600")}>
+                      <p className={cn("mt-1", TYPE.caption, "text-slate-600")}>
                         {integration.description}
                       </p>
                     </div>
@@ -206,7 +206,7 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
                   <p
                     className={cn(
                       "line-clamp-2",
-                      TEXT.bodySm,
+                      TYPE.bodySm,
                       integration.detail ? "text-slate-700" : "text-slate-500"
                     )}
                   >
@@ -216,10 +216,10 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
 
                 <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
                   <div className="flex min-w-0 flex-col gap-1">
-                    <span className={cn(TEXT.label, "text-slate-400")}>
+                    <span className={cn(TYPE.label, "text-slate-400")}>
                       Last checked
                     </span>
-                    <span className={cn(TEXT.micro, "tabular-nums text-slate-500")}>
+                    <span className={cn(TYPE.micro, "tabular-nums text-slate-500")}>
                       {formatRelative(integration.lastCheckedAt)}
                     </span>
                   </div>

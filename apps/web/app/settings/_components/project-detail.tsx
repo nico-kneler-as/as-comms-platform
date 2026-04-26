@@ -9,9 +9,9 @@ import {
   FOCUS_RING,
   RADIUS,
   SHADOW,
-  TEXT,
+  TYPE,
   TRANSITION
-} from "@/app/_lib/design-tokens";
+} from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -597,7 +597,7 @@ export function ProjectDetail({
                 <p
                   className={cn(
                     "max-w-[240px]",
-                    TEXT.caption,
+                    TYPE.caption,
                     "text-slate-600"
                   )}
                 >
@@ -634,7 +634,7 @@ export function ProjectDetail({
         )}
       >
         <div>
-          <h2 id="project-details-heading" className={TEXT.headingSm}>
+          <h2 id="project-details-heading" className={TYPE.headingSm}>
             Project details
           </h2>
         </div>
@@ -643,7 +643,7 @@ export function ProjectDetail({
           <div className="flex flex-col gap-2">
             <label
               htmlFor="project-salesforce-id"
-              className={cn(TEXT.label, "text-slate-600")}
+              className={cn(TYPE.label, "text-slate-600")}
             >
               Salesforce project ID
             </label>
@@ -659,7 +659,7 @@ export function ProjectDetail({
           <div className="flex flex-col gap-2">
             <label
               htmlFor="project-short-alias"
-              className={cn(TEXT.label, "text-slate-600")}
+              className={cn(TYPE.label, "text-slate-600")}
             >
               Project alias
             </label>
@@ -689,7 +689,7 @@ export function ProjectDetail({
                   </Button>
                 ) : null}
               </div>
-              <span className={TEXT.caption}>
+              <span className={TYPE.caption}>
                 Short name used in inbox tags and internal UI labels.
               </span>
             </div>
@@ -698,7 +698,7 @@ export function ProjectDetail({
           <div className="flex flex-col gap-2 md:col-span-2">
             <label
               htmlFor="project-ai-knowledge-url"
-              className={cn(TEXT.label, "text-slate-600")}
+              className={cn(TYPE.label, "text-slate-600")}
             >
               AI knowledge source
             </label>
@@ -742,7 +742,7 @@ export function ProjectDetail({
                   </>
                 ) : null}
               </div>
-              <span className={TEXT.caption}>
+              <span className={TYPE.caption}>
                 {formatLastSynced(optimisticProject.aiKnowledgeSyncedAt)}
               </span>
             </div>
@@ -842,10 +842,10 @@ export function ProjectDetail({
         )}
       >
         <div>
-          <h2 id="project-emails-heading" className={TEXT.headingSm}>
+          <h2 id="project-emails-heading" className={TYPE.headingSm}>
             Project inbox aliases
           </h2>
-          <p className={cn("mt-0.5", TEXT.caption)}>
+          <p className={cn("mt-0.5", TYPE.caption)}>
             Inbound mail to any alias listed here is routed to this project&apos;s
             inbox.
           </p>
@@ -922,7 +922,7 @@ export function ProjectDetail({
                 <div className="flex flex-col gap-2">
                   <label
                     htmlFor={`project-email-signature-${email.id}`}
-                    className={cn(TEXT.label, "text-slate-600")}
+                    className={cn(TYPE.label, "text-slate-600")}
                   >
                     Signature
                   </label>
@@ -945,7 +945,7 @@ export function ProjectDetail({
                     placeholder="Plain-text signature..."
                   />
                   <div className="flex items-center justify-between gap-3">
-                    <span className={cn(TEXT.caption, "tabular-nums")}>
+                    <span className={cn(TYPE.caption, "tabular-nums")}>
                       {String(normalizeProjectAliasSignature(signatureDraft).length)}/2000
                     </span>
                     {project.isAdmin ? (
@@ -963,7 +963,7 @@ export function ProjectDetail({
                     ) : null}
                   </div>
                   {signatureError ? (
-                    <p className={cn(TEXT.caption, "text-rose-700")}>
+                    <p className={cn(TYPE.caption, "text-rose-700")}>
                       {signatureError}
                     </p>
                   ) : null}
@@ -973,7 +973,7 @@ export function ProjectDetail({
           })}
           {optimisticProject.emails.length === 0 ? (
             <li className="px-3 py-4 text-center">
-              <p className={TEXT.caption}>
+              <p className={TYPE.caption}>
                 No connected addresses yet.
               </p>
             </li>

@@ -10,9 +10,9 @@ import {
   LAYOUT,
   RADIUS,
   SPACING,
-  TEXT,
+  TYPE,
   TRANSITION
-} from "@/app/_lib/design-tokens";
+} from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
 
 interface SectionItem {
@@ -75,7 +75,7 @@ export function SettingsSectionNav() {
           SPACING.section
         )}
       >
-        <h2 className={TEXT.headingSm}>Settings</h2>
+        <h2 className={TYPE.headingSm}>Settings</h2>
       </div>
 
       <nav className="flex flex-col gap-0.5 p-2">
@@ -101,7 +101,7 @@ export function SettingsSectionNav() {
             >
               <span
                 className={cn(
-                  "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center",
+                  "mt-0.5 flex size-7 shrink-0 items-center justify-center",
                   RADIUS.md,
                   active
                     ? "bg-white text-sky-700 ring-1 ring-sky-200"
@@ -115,12 +115,12 @@ export function SettingsSectionNav() {
                 <span
                   className={cn(
                     "block truncate",
-                    active ? TEXT.headingSm : "text-sm font-medium text-slate-800"
+                    active ? TYPE.headingSm : "text-sm font-medium text-slate-800"
                   )}
                 >
                   {item.label}
                 </span>
-                <span className={cn("mt-0.5 block truncate", TEXT.caption)}>
+                <span className={cn("mt-0.5 block truncate", TYPE.caption)}>
                   {item.description}
                 </span>
               </span>
