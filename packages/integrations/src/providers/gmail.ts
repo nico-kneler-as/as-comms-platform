@@ -203,12 +203,19 @@ export function mapGmailRecord(rawRecord: GmailRecord): ProviderMappingResult {
       subjectLower.startsWith("mail delivery failed");
 
     if (isDsn) {
+      // detail is required (z.string().min(1)). When the DSN payload didn't
+      // expose an Original-Message-ID (e.g. detected only by subject prefix),
+      // fall back to a descriptive marker so the audit trail still has a value.
+      const dsnDetail =
+        rec.dsnOriginalMessageId !== null && rec.dsnOriginalMessageId.length > 0
+          ? `original_message_id=${rec.dsnOriginalMessageId}`
+          : "no original_message_id in dsn body";
       return createDeferredMappingResult({
         provider: "gmail",
         sourceRecordType: rec.recordType,
         sourceRecordId: rec.recordId,
         reason: "gmail_dsn",
-        detail: rec.dsnOriginalMessageId ?? ""
+        detail: dsnDetail
       });
     }
 
