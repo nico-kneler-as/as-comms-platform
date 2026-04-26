@@ -50,6 +50,10 @@ interface SalesforceMembershipRow {
   readonly projectId: string | null;
   readonly expeditionId: string | null;
   readonly role: string | null;
+  // Tie-breaker for ambiguous matches: when multiple Expedition_Members__c
+  // records share the same (contact, project, expedition, role) key, the
+  // newest LastModifiedDate wins. Format is the SF-native ISO 8601 string.
+  readonly lastModifiedDate: string | null;
 }
 
 interface MembershipUpdate {
@@ -317,6 +321,37 @@ async function loadCandidates(input: {
   }
 }
 
+function pickNewestMembershipMatch(
+  matches: readonly SalesforceMembershipRow[],
+): SalesforceMembershipRow | null {
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0] ?? null;
+
+  let best: SalesforceMembershipRow | null = null;
+  let bestTimestamp = Number.NEGATIVE_INFINITY;
+
+  for (const candidate of matches) {
+    const timestamp = candidate.lastModifiedDate
+      ? Date.parse(candidate.lastModifiedDate)
+      : Number.NaN;
+
+    if (Number.isFinite(timestamp) && timestamp > bestTimestamp) {
+      best = candidate;
+      bestTimestamp = timestamp;
+    }
+  }
+
+  // Final fallback: if every candidate has a missing/unparseable
+  // LastModifiedDate, pick the lexicographically smallest id so the choice is
+  // at least deterministic across runs.
+  if (best === null) {
+    const sortedById = [...matches].sort((a, b) => a.id.localeCompare(b.id));
+    return sortedById[0] ?? null;
+  }
+
+  return best;
+}
+
 async function loadSalesforceMembershipRows(input: {
   readonly candidates: readonly MembershipCandidate[];
   readonly env: NodeJS.ProcessEnv;
@@ -334,7 +369,7 @@ async function loadSalesforceMembershipRows(input: {
   const contactIds = uniqueSortedStrings(
     input.candidates.map((candidate) => candidate.salesforceContactId),
   );
-  const membershipFields: string[] = ["Id"];
+  const membershipFields: string[] = ["Id", "LastModifiedDate"];
   membershipFields.push(membershipContactField);
   membershipFields.push(membershipProjectField);
   membershipFields.push(membershipExpeditionField);
@@ -369,6 +404,7 @@ async function loadSalesforceMembershipRows(input: {
           readRowStringField(row, membershipRoleField) !== null
             ? readRowStringField(row, membershipRoleField)
             : null,
+        lastModifiedDate: readRowStringField(row, "LastModifiedDate"),
       });
     }
   }
@@ -407,21 +443,24 @@ export function planMembershipSalesforceIdBackfill(input: {
       continue;
     }
 
-    if (matches.length > 1) {
+    // When multiple Expedition_Members__c records share the same
+    // (contact, project, expedition, role) key, default to the one with the
+    // most recent LastModifiedDate. This handles the long tail of historical
+    // duplicates that SF accumulates (re-applications, role changes, etc.) —
+    // the newest record is almost always the operative one. Records with no
+    // LastModifiedDate (defensive: should never happen given the SOQL select)
+    // sort to the bottom.
+    const winner = pickNewestMembershipMatch(matches);
+    if (winner === null) {
+      // Pathological: matches array is non-empty but pickNewestMembershipMatch
+      // couldn't return one. Treat as ambiguous to keep the operator informed.
       ambiguousMembershipIds.push(candidate.membershipId);
       continue;
     }
 
-    const match = matches[0];
-    if (match === undefined) {
-      throw new Error(
-        `Expected a matched Salesforce membership row for ${candidate.membershipId}.`,
-      );
-    }
-
     updates.push({
       membershipId: candidate.membershipId,
-      salesforceMembershipId: match.id,
+      salesforceMembershipId: winner.id,
     });
   }
 
