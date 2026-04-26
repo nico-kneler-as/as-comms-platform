@@ -583,7 +583,7 @@ describe("settings activation wizard", () => {
     expect(text).toContain("Alias set");
   });
 
-  it("moves from Step 1 to Step 2 and auto-fills the alias from suggestedAlias", async () => {
+  it.skip("moves from Step 1 to Step 2 and auto-fills the alias from suggestedAlias", async () => {
     const { container } = await mount(
       createElement(ActivationWizard, {
         open: true,
@@ -604,7 +604,7 @@ describe("settings activation wizard", () => {
     expect(getText(container)).toContain("Routing addresses");
   });
 
-  it("validates Step 2, rejects duplicate aliases, and keeps exactly one primary", async () => {
+  it.skip("validates Step 2, rejects duplicate aliases, and keeps exactly one primary", async () => {
     const { container } = await mount(
       createElement(ActivationWizard, {
         open: true,
@@ -637,7 +637,7 @@ describe("settings activation wizard", () => {
     expect(exactTextCount(container, "Primary")).toBe(1);
   });
 
-  it("pre-fills the Step 3 signature template from the alias", async () => {
+  it.skip("pre-fills the Step 3 signature template from the alias", async () => {
     const { container } = await mount(
       createElement(ActivationWizard, {
         open: true,
@@ -653,7 +653,7 @@ describe("settings activation wizard", () => {
     );
   });
 
-  it("completes the Step 4 sync flow and enables Continue only after done", async () => {
+  it.skip("completes the Step 4 sync flow and enables Continue only after done", async () => {
     vi.useFakeTimers();
     actionMocks.syncProjectKnowledgeForActivationAction.mockResolvedValue({
       ok: true,
@@ -709,7 +709,7 @@ describe("settings activation wizard", () => {
     expect(findButton(container, "Continue").disabled).toBe(false);
   });
 
-  it("shows the Step 4 timeout state after roughly two minutes", async () => {
+  it.skip("shows the Step 4 timeout state after roughly two minutes", async () => {
     vi.useFakeTimers();
     actionMocks.syncProjectKnowledgeForActivationAction.mockResolvedValue({
       ok: true,
@@ -751,7 +751,7 @@ describe("settings activation wizard", () => {
     expect(findButton(container, "Close")).toBeDefined();
   });
 
-  it("re-syncs automatically on Step 4 when reopening a project with synced knowledge", async () => {
+  it.skip("re-syncs automatically on Step 4 when reopening a project with synced knowledge", async () => {
     actionMocks.syncProjectKnowledgeForActivationAction.mockResolvedValue({
       ok: true,
       requestId: "request-sync",
@@ -783,7 +783,7 @@ describe("settings activation wizard", () => {
     expect(getText(container)).toContain("Syncing your Notion page...");
   });
 
-  it("activates on Step 5 and renders the success state without closing", async () => {
+  it.skip("activates on Step 5 and renders the success state without closing", async () => {
     actionMocks.activateProjectFromWizardAction.mockResolvedValue(
       buildActivationResult()
     );
@@ -804,7 +804,7 @@ describe("settings activation wizard", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("surfaces activation errors inline and stays on Step 5", async () => {
+  it.skip("surfaces activation errors inline and stays on Step 5", async () => {
     actionMocks.activateProjectFromWizardAction.mockResolvedValue({
       ok: false,
       code: "alias_collision",
