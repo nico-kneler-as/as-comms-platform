@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { useDeferredValue, useState } from "react";
 import Link from "next/link";
-import { Pencil, Search } from "lucide-react";
+import { FolderOpen, Pencil, Search } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -61,6 +61,18 @@ export function ProjectsSection({
           <ProjectList
             projects={viewModel.active}
             emptyMessage="No active projects yet."
+            renderLeading={() => (
+              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/60">
+                <FolderOpen className="h-4 w-4" aria-hidden="true" />
+              </span>
+            )}
+            renderMeta={() => (
+              <StatusBadge
+                label="Active"
+                colorClasses="bg-emerald-50 text-emerald-700 ring-emerald-200"
+                variant="soft"
+              />
+            )}
             renderAction={(project) => (
               <Link
                 href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
@@ -154,11 +166,13 @@ export function ProjectsSection({
 function ProjectList({
   projects,
   emptyMessage,
+  renderLeading,
   renderMeta,
   renderAction
 }: {
   readonly projects: readonly ProjectRowViewModel[];
   readonly emptyMessage: string;
+  readonly renderLeading?: (project: ProjectRowViewModel) => ReactNode;
   readonly renderMeta?: (project: ProjectRowViewModel) => ReactNode;
   readonly renderAction?: (project: ProjectRowViewModel) => ReactNode;
 }) {
@@ -184,30 +198,54 @@ function ProjectList({
           <Link
             href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
             className={cn(
-              "flex min-w-0 flex-1 flex-col gap-1",
+              renderLeading
+                ? "flex min-w-0 flex-1 items-start gap-4"
+                : "flex min-w-0 flex-1 flex-col gap-1",
               FOCUS_RING,
               RADIUS.sm
             )}
             aria-label={`Open ${project.projectName}`}
           >
-            <div className="flex min-w-0 items-center gap-2">
-              <p className="truncate text-sm font-medium text-slate-900">
-                {project.projectName}
-              </p>
-              {renderMeta ? renderMeta(project) : null}
+            {renderLeading ? renderLeading(project) : null}
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <p
+                  className={
+                    renderLeading
+                      ? "truncate text-[14.5px] font-semibold text-slate-900"
+                      : "truncate text-sm font-medium text-slate-900"
+                  }
+                >
+                  {project.projectName}
+                </p>
+                {renderMeta ? renderMeta(project) : null}
+              </div>
+              {renderLeading ? (
+                project.projectAlias ? (
+                  <p className="mt-1 truncate text-[12.5px] text-slate-600">
+                    <span className="text-slate-400">Alias</span> ·{" "}
+                    <span className="font-medium text-slate-800">
+                      {project.projectAlias}
+                    </span>
+                  </p>
+                ) : (
+                  <p className={cn("mt-1 truncate text-slate-500", TYPE.caption)}>
+                    {getProjectAliasSummary(project)}
+                  </p>
+                )
+              ) : (
+                <>
+                  {project.projectAlias ? (
+                    <p className={cn(TYPE.caption, "truncate text-slate-500")}>
+                      Alias: {project.projectAlias}
+                    </p>
+                  ) : null}
+                  <p className={cn(TYPE.caption, "truncate")}>
+                    {getProjectAliasSummary(project)}
+                  </p>
+                </>
+              )}
             </div>
-            {project.projectAlias ? (
-              <p className={cn(TYPE.caption, "truncate text-slate-500")}>
-                Alias: {project.projectAlias}
-              </p>
-            ) : null}
-            <p className={cn(TYPE.caption, "truncate")}>
-              {project.primaryEmail
-                ? project.additionalEmailCount > 0
-                  ? `${project.primaryEmail} + ${String(project.additionalEmailCount)} more alias${project.additionalEmailCount === 1 ? "" : "es"}`
-                  : project.primaryEmail
-                : "No project inbox aliases configured"}
-            </p>
           </Link>
 
           {renderAction ? renderAction(project) : null}
@@ -221,4 +259,16 @@ function ProjectList({
       ) : null}
     </ul>
   );
+}
+
+function getProjectAliasSummary(project: ProjectRowViewModel) {
+  if (!project.primaryEmail) {
+    return "No project inbox aliases configured";
+  }
+
+  if (project.additionalEmailCount > 0) {
+    return `${project.primaryEmail} + ${String(project.additionalEmailCount)} more alias${project.additionalEmailCount === 1 ? "" : "es"}`;
+  }
+
+  return project.primaryEmail;
 }
