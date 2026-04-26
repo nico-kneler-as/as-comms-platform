@@ -14,26 +14,51 @@ vi.mock("@/components/ui/divider-label", () => ({
     createElement("span", null, children),
 }));
 
-vi.mock("@/app/_lib/design-tokens", () => ({
+vi.mock("@/app/_lib/design-tokens-v2", () => ({
+  FOCUS_RING:
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300",
   RADIUS: {
-    bubble: "rounded-2xl",
-    md: "rounded-xl",
+    sm: "rounded-sm",
+    md: "rounded-md",
+    lg: "rounded-lg",
+    xl: "rounded-xl",
+  },
+  SPACING: {
+    section: "px-5 py-4",
   },
   SHADOW: {
     sm: "shadow-sm",
   },
-  TEXT: {
-    bodySm: "text-sm",
+  TYPE: {
     bodySerifSm: "text-[13.5px]",
     micro: "text-xs",
-  },
-  TONE: {
-    amber: {
-      subtle: "bg-amber-50",
-    },
+    label: "text-[10px]",
   },
   TRANSITION: {
     fast: "transition-colors",
+    reduceMotion: "motion-reduce:transition-none",
+  },
+  TONE_CLASSES: {
+    amber: {
+      subtle: "bg-amber-50",
+      text: "text-amber-700",
+    },
+    emerald: {
+      subtle: "bg-emerald-50",
+      text: "text-emerald-700",
+    },
+    sky: {
+      subtle: "bg-sky-50",
+      text: "text-sky-700",
+    },
+    slate: {
+      subtle: "bg-slate-50",
+      text: "text-slate-700",
+    },
+    violet: {
+      subtle: "bg-violet-50",
+      text: "text-violet-700",
+    },
   },
 }));
 
@@ -41,6 +66,7 @@ import {
   InboxTimeline,
   shouldHideAutomatedRowBody,
 } from "../../app/inbox/_components/inbox-timeline";
+import { classifySystemDivider } from "../../app/inbox/_components/inbox-timeline-system-divider";
 
 const baseEntry = {
   id: "timeline:auto-email-1",
@@ -209,7 +235,7 @@ describe("InboxTimeline", () => {
       }),
     );
 
-    expect(markup).toContain("Applied");
+    expect(markup).toContain("APPLIED");
     expect(markup).toContain("Alice applied to the Pacific Northwest expedition.");
   });
 
@@ -277,7 +303,7 @@ describe("InboxTimeline", () => {
     expect(markup).toContain("[overflow-wrap:anywhere]");
   });
 
-  it("renders From, To, and Cc metadata for one-to-one email entries", () => {
+  it("renders the compact participant header for one-to-one email entries", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -296,20 +322,24 @@ describe("InboxTimeline", () => {
         ],
         volunteerFirstName: "Shaina",
         currentOperatorUserId: "user:operator",
+        // Reply button only renders when onReply is provided; supply a no-op
+        // so the markup contains it for the assertion below.
+        onReply: vi.fn(),
       }),
     );
 
-    expect(markup).toContain("From");
-    expect(markup).toContain(
-      "PNW Project &lt;pnwbio@adventurescientists.org&gt;",
-    );
-    expect(markup).toContain("To");
-    expect(markup).toContain(
-      "Shaina Dotson &lt;shaina.dotson@gmail.com&gt;",
-    );
-    expect(markup).toContain("Cc");
-    expect(markup).toContain(
-      "Samantha Doe &lt;samantha@adventurescientists.org&gt;",
-    );
+    expect(markup).toContain("PNW Project");
+    expect(markup).toContain("Shaina Dotson");
+    expect(markup).toContain("+cc");
+    expect(markup).toContain("Reply");
+  });
+
+  it("classifies first-data system dividers into the emerald data category", () => {
+    expect(
+      classifySystemDivider("Submitted first batch from the field."),
+    ).toMatchObject({
+      label: "FIRST DATA",
+      tone: "emerald",
+    });
   });
 });

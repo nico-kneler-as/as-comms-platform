@@ -29,6 +29,7 @@ export {
   PanelRightOpen as PanelRightOpenIcon,
   PanelRightClose as PanelRightCloseIcon,
   CornerUpLeft as CornerUpLeftIcon,
+  ArrowRight as ArrowRightIcon,
   X as XIcon,
   LogOut as LogOutIcon,
   Loader2 as LoaderIcon,
@@ -63,4 +64,5 @@ export {
   MailOpen as MailOpenIcon,
   ArrowUpRight as ArrowUpRightIcon,
   Quote as QuoteIcon,
+  Database as DatabaseIcon,
 } from "lucide-react";
