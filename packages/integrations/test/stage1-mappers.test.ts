@@ -268,7 +268,7 @@ describe("Stage 1 provider-close mappers", () => {
       sourceRecordType: "message",
       sourceRecordId: "gmail-dsn-1",
       reason: "gmail_dsn",
-      detail: "<123.abc@example.org>"
+      detail: "original_message_id=<123.abc@example.org>"
     });
   });
 
