@@ -85,12 +85,111 @@ const triggerBootstrapSchema = z.object({
   force: z.boolean().default(false)
 });
 
+const activationWizardAliasSchema = z.object({
+  address: z.string().trim().min(1, "Alias address is required."),
+  isPrimary: z.boolean()
+});
+
+const activationWizardInputSchema = z
+  .object({
+    projectId: z.string().trim().min(1, "Project is required."),
+    projectAlias: z
+      .string()
+      .trim()
+      .min(2, "Project alias must be at least 2 characters.")
+      .max(80, "Project alias must be 80 characters or fewer."),
+    aliases: z
+      .array(activationWizardAliasSchema)
+      .min(1, "Add at least one inbox alias.")
+      .max(20, "Add no more than 20 inbox aliases."),
+    signature: z.string(),
+    aiKnowledgeRunId: z.string().trim().min(1, "AI knowledge sync is required.")
+  })
+  .superRefine((input, ctx) => {
+    const normalizedSignature = normalizeActivationWizardSignature(
+      input.signature
+    );
+    if (normalizedSignature.length < 4) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["signature"],
+        message: "Signature must be at least 4 characters."
+      });
+    }
+
+    const signatureValidationError =
+      getProjectAliasSignatureValidationError(normalizedSignature);
+    if (signatureValidationError !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["signature"],
+        message: signatureValidationError
+      });
+    }
+
+    const primaryCount = input.aliases.filter((alias) => alias.isPrimary).length;
+    if (primaryCount === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["aliases"],
+        message: "Choose one primary inbox alias."
+      });
+    }
+    if (primaryCount > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["aliases"],
+        message: "Choose exactly one primary inbox alias."
+      });
+    }
+
+    const seenAliases = new Set<string>();
+    for (const [index, alias] of input.aliases.entries()) {
+      const normalizedAddress = normalizeIncomingEmail(alias.address);
+      const parsed = createProjectAliasSchema.shape.alias.safeParse(
+        normalizedAddress
+      );
+      if (!parsed.success) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["aliases", index, "address"],
+          message: "Enter a valid inbox alias."
+        });
+      }
+
+      if (seenAliases.has(normalizedAddress)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["aliases"],
+          message: "Each inbox alias must be unique."
+        });
+      }
+      seenAliases.add(normalizedAddress);
+    }
+  });
+
 export interface ProjectKnowledgeMutationData {
   readonly id: string;
 }
 
 export interface ProjectKnowledgeBootstrapMutationData {
   readonly runId: string;
+}
+
+export interface ActivationWizardInput {
+  readonly projectId: string;
+  readonly projectAlias: string;
+  readonly aliases: readonly {
+    readonly address: string;
+    readonly isPrimary: boolean;
+  }[];
+  readonly signature: string;
+  readonly aiKnowledgeRunId: string;
+}
+
+interface ProjectKnowledgeBootstrapPollData {
+  readonly status: "queued" | "running" | "done" | "error";
+  readonly errorMessage: string | null;
 }
 
 function newRequestId(): string {
@@ -276,6 +375,47 @@ function normalizeProjectAliasValue(
     ok: true,
     projectAlias: normalized
   };
+}
+
+function normalizeActivationWizardProjectAlias(projectAlias: string): string {
+  return projectAlias.trim().replace(/\s+/g, " ");
+}
+
+function normalizeActivationWizardSignature(signature: string): string {
+  return normalizeProjectAliasSignature(signature).trim();
+}
+
+function orderActivationWizardAliases(
+  aliases: readonly {
+    readonly address: string;
+    readonly isPrimary: boolean;
+  }[]
+): readonly {
+  readonly address: string;
+  readonly isPrimary: boolean;
+}[] {
+  const normalizedAliases = aliases.map((alias) => ({
+    address: normalizeIncomingEmail(alias.address),
+    isPrimary: alias.isPrimary
+  }));
+  const primaryAlias = normalizedAliases.find((alias) => alias.isPrimary);
+  const secondaryAliases = normalizedAliases.filter((alias) => !alias.isPrimary);
+
+  return primaryAlias === undefined
+    ? secondaryAliases
+    : [primaryAlias, ...secondaryAliases];
+}
+
+function flattenZodFieldErrors(error: z.ZodError): Record<string, string> {
+  const fieldErrors: Record<string, string> = {};
+
+  for (const issue of error.issues) {
+    const path = issue.path.join(".");
+    const key = path.length === 0 ? "form" : path;
+    fieldErrors[key] ??= issue.message;
+  }
+
+  return fieldErrors;
 }
 
 function readRequiredString(
@@ -1337,6 +1477,380 @@ export async function triggerBootstrapAction(
     data: {
       runId
     },
+    requestId: newRequestId()
+  };
+}
+
+export async function syncProjectKnowledgeForActivationAction(
+  projectId: string,
+  notionUrl: string
+): Promise<UiResult<{ runId: string }>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to generate baseline knowledge.",
+    forbiddenMessage: "Only admins can generate baseline knowledge."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  if (project.isActive) {
+    return errorResult("already_active", "This project is already active.");
+  }
+
+  const normalizedUrl = normalizeAiKnowledgeUrl(notionUrl);
+  if (!normalizedUrl.ok) {
+    return normalizedUrl.error;
+  }
+  if (normalizedUrl.url === null) {
+    return errorResult("invalid_url", "Enter a valid AI knowledge URL.", {
+      fieldErrors: {
+        aiKnowledgeUrl: "Enter a valid AI knowledge URL."
+      }
+    });
+  }
+
+  const existingSources =
+    await runtime.repositories.projectKnowledgeSourceLinks.list(projectId);
+  const matchingSource =
+    existingSources.find((source) => source.url === normalizedUrl.url) ??
+    existingSources.find(
+      (source) => source.id === `project:${projectId}:activation-wizard:notion`
+    );
+  const nowIso = new Date().toISOString();
+
+  const updatedProject = await runtime.settings.projects.setAiKnowledgeUrl(
+    projectId,
+    normalizedUrl.url
+  );
+  if (updatedProject === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  await runtime.repositories.projectKnowledgeSourceLinks.upsert({
+    id: matchingSource?.id ?? `project:${projectId}:activation-wizard:notion`,
+    projectId,
+    kind: "training_site",
+    label: "Notion",
+    url: normalizedUrl.url,
+    createdAt: matchingSource?.createdAt ?? nowIso,
+    updatedAt: nowIso
+  });
+
+  const runId = randomUUID();
+  const sourceCount = new Set([
+    ...existingSources.map((source) => source.id),
+    matchingSource?.id ?? `project:${projectId}:activation-wizard:notion`
+  ]).size;
+
+  await runtime.repositories.projectKnowledgeBootstrapRuns.create({
+    id: runId,
+    projectId,
+    status: "queued",
+    force: false,
+    startedAt: nowIso,
+    completedAt: null,
+    statsJson: {
+      sourcesConfigured: sourceCount
+    },
+    errorDetail: null,
+    createdAt: nowIso,
+    updatedAt: nowIso
+  });
+
+  try {
+    await enqueueBootstrapWorkerJob({
+      runtime,
+      runId,
+      projectId,
+      force: false
+    });
+  } catch (error) {
+    await runtime.repositories.projectKnowledgeBootstrapRuns.update({
+      id: runId,
+      status: "error",
+      completedAt: new Date().toISOString(),
+      errorDetail:
+        error instanceof Error
+          ? error.message
+          : "Failed to enqueue bootstrap job.",
+      statsJson: {
+        sourcesConfigured: sourceCount
+      }
+    });
+
+    return errorResult(
+      "enqueue_failed",
+      "The bootstrap job could not be queued. Try again after checking the worker.",
+      {
+        retryable: true
+      }
+    );
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.activation_knowledge_sync_started",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      projectId,
+      notionUrl: normalizedUrl.url,
+      runId
+    }
+  });
+
+  revalidateProjectSettings(updatedProject.projectId);
+
+  return {
+    ok: true,
+    data: {
+      runId
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function pollProjectKnowledgeBootstrapAction(
+  projectId: string,
+  runId: string
+): Promise<UiResult<ProjectKnowledgeBootstrapPollData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to check bootstrap status.",
+    forbiddenMessage: "Only admins can check bootstrap status."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const run = await runtime.repositories.projectKnowledgeBootstrapRuns.findById(
+    runId
+  );
+  if (run === null) {
+    return errorResult("not_found", "That bootstrap run no longer exists.");
+  }
+
+  if (run.projectId !== projectId) {
+    return errorResult(
+      "mismatched_project",
+      "That bootstrap run does not belong to this project."
+    );
+  }
+
+  if (run.status === "queued") {
+    return {
+      ok: true,
+      data: {
+        status: "queued",
+        errorMessage: null
+      },
+      requestId: newRequestId()
+    };
+  }
+
+  if (
+    run.status === "fetching" ||
+    run.status === "synthesizing" ||
+    run.status === "writing"
+  ) {
+    return {
+      ok: true,
+      data: {
+        status: "running",
+        errorMessage: null
+      },
+      requestId: newRequestId()
+    };
+  }
+
+  if (run.status === "done") {
+    const project = await runtime.settings.projects.findById(projectId);
+    if (project?.aiKnowledgeSyncedAt === null || project === null) {
+      return {
+        ok: true,
+        data: {
+          status: "error",
+          errorMessage:
+            "Bootstrap completed but project sync timestamp was not written."
+        },
+        requestId: newRequestId()
+      };
+    }
+
+    return {
+      ok: true,
+      data: {
+        status: "done",
+        errorMessage: null
+      },
+      requestId: newRequestId()
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      status: "error",
+      errorMessage: run.errorDetail ?? "Bootstrap failed."
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function activateProjectFromWizardAction(
+  input: ActivationWizardInput
+): Promise<UiResult<ProjectMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to activate a project.",
+    forbiddenMessage: "Only admins can activate projects."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = activationWizardInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return errorResult("validation_error", "Activation input is invalid.", {
+      fieldErrors: flattenZodFieldErrors(parsed.error)
+    });
+  }
+
+  const normalizedProjectAlias = normalizeActivationWizardProjectAlias(
+    parsed.data.projectAlias
+  );
+  const normalizedSignature = normalizeActivationWizardSignature(
+    parsed.data.signature
+  );
+  const orderedAliases = orderActivationWizardAliases(parsed.data.aliases);
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(parsed.data.projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  if (project.isActive) {
+    return errorResult("already_active", "This project is already active.");
+  }
+
+  const run = await runtime.repositories.projectKnowledgeBootstrapRuns.findById(
+    parsed.data.aiKnowledgeRunId
+  );
+  if (run === null) {
+    return errorResult(
+      "requirements_not_met",
+      "AI knowledge sync did not complete. Re-run the sync."
+    );
+  }
+
+  if (run.projectId !== parsed.data.projectId || run.status !== "done") {
+    return errorResult(
+      "requirements_not_met",
+      "AI knowledge sync did not complete. Re-run the sync."
+    );
+  }
+
+  if (project.aiKnowledgeSyncedAt === null) {
+    return errorResult(
+      "requirements_not_met",
+      "AI knowledge sync did not complete. Re-run the sync."
+    );
+  }
+
+  for (const alias of orderedAliases) {
+    const existingAlias = await runtime.settings.aliases.findByAlias(alias.address);
+    if (
+      existingAlias !== null &&
+      existingAlias.projectId !== null &&
+      existingAlias.projectId !== parsed.data.projectId
+    ) {
+      return errorResult(
+        "alias_collision",
+        "An inbox alias is already taken by another project.",
+        {
+          fieldErrors: {
+            aliases: "An inbox alias is already taken by another project."
+          }
+        }
+      );
+    }
+  }
+
+  try {
+    const aliasedProject = await runtime.settings.projects.setProjectAlias(
+      parsed.data.projectId,
+      normalizedProjectAlias
+    );
+    if (aliasedProject === null) {
+      return errorResult("not_found", "That project no longer exists.");
+    }
+
+    const replacedAliases = await runtime.settings.aliases.replaceForProject({
+      projectId: parsed.data.projectId,
+      aliases: orderedAliases.map((alias) => alias.address),
+      actorId: admin.userId
+    });
+
+    for (const alias of replacedAliases) {
+      const updatedAlias = await runtime.settings.aliases.updateSignature({
+        aliasId: alias.id,
+        signature: normalizedSignature,
+        actorId: admin.userId
+      });
+      if (updatedAlias === null) {
+        return errorResult("not_found", "That project email no longer exists.");
+      }
+    }
+  } catch (error) {
+    if (isProjectAliasConflictError(error)) {
+      return errorResult(
+        "alias_collision",
+        "An inbox alias is already taken by another project.",
+        {
+          fieldErrors: {
+            aliases: "An inbox alias is already taken by another project."
+          }
+        }
+      );
+    }
+
+    throw error;
+  }
+
+  const updatedProject = await runtime.settings.projects.setActive(
+    parsed.data.projectId,
+    true
+  );
+  if (updatedProject === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.activated_via_wizard",
+    entityType: "project",
+    entityId: parsed.data.projectId,
+    metadataJson: {
+      projectId: parsed.data.projectId,
+      projectAlias: normalizedProjectAlias,
+      aliasCount: orderedAliases.length,
+      primaryAlias: orderedAliases.find((alias) => alias.isPrimary)?.address,
+      runId: parsed.data.aiKnowledgeRunId
+    }
+  });
+
+  revalidateProjectSettings(parsed.data.projectId);
+
+  return {
+    ok: true,
+    data: serializeProjectMutationData(updatedProject),
     requestId: newRequestId()
   };
 }
