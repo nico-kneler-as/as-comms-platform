@@ -1745,6 +1745,40 @@ function createStage1RepositoriesInternal(
         return rows.map(mapManualNoteDetailRowLocal);
       },
 
+      async findLatestForContact(contactId) {
+        const [row] = await db
+          .select({
+            body: manualNoteDetails.body,
+            authorDisplayName: manualNoteDetails.authorDisplayName,
+            authorId: manualNoteDetails.authorId,
+            createdAt: manualNoteDetails.createdAt,
+          })
+          .from(manualNoteDetails)
+          .innerJoin(
+            canonicalEventLedger,
+            eq(
+              canonicalEventLedger.sourceEvidenceId,
+              manualNoteDetails.sourceEvidenceId,
+            ),
+          )
+          .where(eq(canonicalEventLedger.contactId, contactId))
+          .orderBy(
+            desc(manualNoteDetails.createdAt),
+            desc(canonicalEventLedger.occurredAt),
+            desc(manualNoteDetails.sourceEvidenceId),
+          )
+          .limit(1);
+
+        return row === undefined
+          ? null
+          : {
+              body: row.body,
+              authorDisplayName: row.authorDisplayName,
+              authorId: row.authorId,
+              createdAt: row.createdAt.toISOString(),
+            };
+      },
+
       async upsert(record) {
         const sourceEvidenceIdColumn = manualNoteDetailsTable.sourceEvidenceId;
         const values = mapManualNoteDetailToInsertLocal(

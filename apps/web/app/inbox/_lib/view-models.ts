@@ -118,6 +118,11 @@ export interface InboxContactSummaryViewModel {
   readonly primaryPhone: string | null;
   readonly joinedAtLabel: string;
   readonly hasUnresolved: boolean;
+  readonly pinnedNote: {
+    readonly body: string;
+    readonly authorLabel: string;
+    readonly createdAtLabel: string;
+  } | null;
   readonly activeProjects: readonly InboxProjectMembershipViewModel[];
   readonly pastProjects: readonly InboxProjectMembershipViewModel[];
   readonly recentActivity: readonly InboxRecentActivityViewModel[];

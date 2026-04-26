@@ -132,6 +132,7 @@ function buildRepositoryBundle(input: {
     },
     manualNoteDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
+      findLatestForContact: () => Promise.resolve(null),
       upsert: (record) => Promise.resolve(record),
       updateBody: () => Promise.resolve(null),
       deleteByAuthor: () => Promise.resolve(0),

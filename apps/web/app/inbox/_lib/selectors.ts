@@ -73,6 +73,12 @@ interface InboxDetailCacheData {
   readonly contact: ContactRecord;
   readonly inboxProjection: InboxProjectionRow;
   readonly memberships: readonly ContactMembershipRecord[];
+  readonly latestNote: {
+    readonly body: string;
+    readonly authorDisplayName: string | null;
+    readonly authorId: string | null;
+    readonly createdAt: string;
+  } | null;
   readonly activityTimelineItems: readonly TimelineItem[];
   readonly timelineItems: readonly TimelineItem[];
   readonly campaignActivitySummaryByCampaignId: Readonly<
@@ -2213,6 +2219,7 @@ async function readInboxDetailCacheData(
     contact,
     inboxProjection,
     memberships,
+    latestNote,
     activityTimelineItems,
     timelinePage,
     inboxFreshness,
@@ -2222,6 +2229,7 @@ async function readInboxDetailCacheData(
     runtime.repositories.contacts.findById(contactId),
     runtime.repositories.inboxProjection.findByContactId(contactId),
     runtime.repositories.contactMemberships.listByContactId(contactId),
+    runtime.repositories.manualNoteDetails.findLatestForContact(contactId),
     runtime.timelinePresentation.listTimelineItemsByContactId(contactId),
     runtime.timelinePresentation.listTimelineItemsPageByContactId(contactId, {
       limit: input.timelineLimit,
@@ -2240,6 +2248,7 @@ async function readInboxDetailCacheData(
     contact,
     inboxProjection,
     memberships,
+    latestNote,
     activityTimelineItems,
     timelineItems: timelinePage.items,
     campaignActivitySummaryByCampaignId:
@@ -2408,6 +2417,12 @@ function buildContactSummary(input: {
   readonly contact: ContactRecord;
   readonly inboxProjection: InboxProjectionRow;
   readonly memberships: readonly ContactMembershipRecord[];
+  readonly latestNote: {
+    readonly body: string;
+    readonly authorDisplayName: string | null;
+    readonly authorId: string | null;
+    readonly createdAt: string;
+  } | null;
   readonly activityTimelineItems: readonly TimelineItem[];
   readonly projectNameById: Readonly<Record<string, string>>;
   readonly referenceNowIso: string;
@@ -2430,6 +2445,17 @@ function buildContactSummary(input: {
     primaryPhone: input.contact.primaryPhone,
     joinedAtLabel: formatJoinedAtLabel(input.contact.createdAt),
     hasUnresolved: input.inboxProjection.hasUnresolved,
+    pinnedNote:
+      input.latestNote === null
+        ? null
+        : {
+            body: input.latestNote.body,
+            authorLabel: input.latestNote.authorDisplayName ?? "Internal note",
+            createdAtLabel: formatRelativeTimestamp(
+              input.latestNote.createdAt,
+              input.referenceNowIso,
+            ),
+          },
     activeProjects: projectMemberships.filter(
       (membership) => !isPastProject(membership.status),
     ),
@@ -2642,6 +2668,7 @@ export async function getInboxDetail(
       contact: cachedData.contact,
       inboxProjection: cachedData.inboxProjection,
       memberships: cachedData.memberships,
+      latestNote: cachedData.latestNote,
       activityTimelineItems: cachedData.activityTimelineItems,
       projectNameById: cachedData.projectNameById,
       referenceNowIso,

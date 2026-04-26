@@ -27,18 +27,22 @@ import {
 } from "../actions";
 import { plaintextToComposerHtml } from "@/src/lib/html-sanitizer";
 import { fetchInboxTimelinePage } from "../_lib/client-api";
-import type { InboxDetailViewModel } from "../_lib/view-models";
+import type {
+  InboxComposerReplyContext,
+  InboxDetailViewModel,
+  InboxTimelineEntryViewModel,
+} from "../_lib/view-models";
 import type { UiError, UiResult } from "@/src/server/ui-result";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import { useInboxClient, type Reminder } from "./inbox-client-provider";
 import { SectionLabel } from "@/components/ui/section-label";
 import {
   LAYOUT,
-  TEXT,
-  TONE,
-  TRANSITION,
   SPACING,
-} from "@/app/_lib/design-tokens";
+  TONE_CLASSES,
+  TRANSITION,
+  TYPE,
+} from "@/app/_lib/design-tokens-v2";
 import { InboxComposerReplyBar } from "./inbox-composer";
 import {
   InboxContactRail,
@@ -63,6 +67,47 @@ interface DetailProps {
 }
 
 type ReminderUnit = "hours" | "days" | "weeks";
+
+const REPLY_SUBJECT_PREFIX_PATTERN = /^\s*(?:(?:re|fwd?)\s*:\s*)+/i;
+
+function buildReplySubject(subject: string | null): string {
+  const normalizedSubject = subject?.trim() ?? "";
+
+  if (normalizedSubject.length === 0) {
+    return "";
+  }
+
+  const trimmedSubject = normalizedSubject
+    .replace(REPLY_SUBJECT_PREFIX_PATTERN, "")
+    .trim();
+
+  return trimmedSubject.length === 0 ? "" : `Re: ${trimmedSubject}`;
+}
+
+function buildTimelineReplyContext(input: {
+  readonly contactId: string;
+  readonly contactDisplayName: string;
+  readonly entry: InboxTimelineEntryViewModel;
+  readonly defaultAlias: string | null;
+}): InboxComposerReplyContext | null {
+  if (input.entry.channel !== "email") {
+    return null;
+  }
+
+  return {
+    contactId: input.contactId,
+    contactDisplayName: input.contactDisplayName,
+    subject: buildReplySubject(input.entry.subject),
+    threadCursor:
+      input.entry.kind === "inbound-email" ? input.entry.id : null,
+    threadId: input.entry.threadId,
+    inReplyToRfc822:
+      input.entry.kind === "inbound-email"
+        ? input.entry.rfc822MessageId
+        : input.entry.inReplyToRfc822,
+    defaultAlias: input.defaultAlias,
+  };
+}
 
 export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const { contact } = detail;
@@ -234,6 +279,37 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const isFollowUp = followUpToggle.value;
   const existingReminder = reminders.get(contact.contactId) ?? null;
   const composerReplyContext = detail.composerReplyContext;
+  const handleReply = useCallback(
+    (entryId: string) => {
+      const entry = timelineEntries.find((item) => item.id === entryId);
+
+      if (entry === undefined) {
+        if (composerReplyContext !== null) {
+          openReplyDraft(composerReplyContext);
+        }
+        return;
+      }
+
+      const replyContext =
+        buildTimelineReplyContext({
+          contactId: contact.contactId,
+          contactDisplayName: contact.displayName,
+          entry,
+          defaultAlias: composerReplyContext?.defaultAlias ?? null,
+        }) ?? composerReplyContext;
+
+      if (replyContext !== null) {
+        openReplyDraft(replyContext);
+      }
+    },
+    [
+      composerReplyContext,
+      contact.contactId,
+      contact.displayName,
+      openReplyDraft,
+      timelineEntries,
+    ],
+  );
 
   const handleSetReminder = () => {
     const numeric = Number(reminderValue);
@@ -318,7 +394,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
           className={`flex ${LAYOUT.headerHeight} items-center justify-between gap-4 border-b border-slate-200 px-6`}
         >
           <div className="flex min-w-0 items-center gap-4">
-            <h1 className={`truncate ${TEXT.headingLg}`}>
+            <h1 className={`truncate ${TYPE.headingLg}`}>
               {contact.displayName}
             </h1>
             <div className="hidden h-5 w-px bg-slate-200 sm:block" />
@@ -432,7 +508,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
 
         <div
           ref={timelineScrollRef}
-          className={`min-h-0 flex-1 overflow-y-auto ${TONE.slate.subtle} ${SPACING.container}`}
+          className={`min-h-0 flex-1 overflow-y-auto ${TONE_CLASSES.slate.subtle} ${SPACING.container}`}
         >
           {isTimelineLoading && timelineEntries.length === 0 ? (
             <TimelineSkeleton />
@@ -445,6 +521,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
               isLoadingOlder={isTimelineLoading}
               retryingEntryId={isRetryPending ? retryingEntryId : null}
               onRetryPending={handleRetryPending}
+              onReply={handleReply}
               onLoadOlder={() => {
                 void loadOlderTimeline();
               }}
@@ -609,7 +686,7 @@ function useOptimisticBooleanToggle({
 function UnresolvedBanner() {
   return (
     <div
-      className={`flex items-center gap-2 border-b border-amber-200 px-6 py-2.5 ${TONE.amber.subtle}`}
+      className={`flex items-center gap-2 border-b border-amber-200 px-6 py-2.5 ${TONE_CLASSES.amber.subtle}`}
       role="status"
     >
       <AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-600" />
