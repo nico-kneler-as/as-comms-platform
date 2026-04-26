@@ -12,6 +12,7 @@ vi.mock("next/link", () => ({
 
 vi.mock("lucide-react", () => ({
   ArrowLeft: () => null,
+  Mail: () => null,
   RefreshCw: () => null,
   Trash2: () => null
 }));
