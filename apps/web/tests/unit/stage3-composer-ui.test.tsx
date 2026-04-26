@@ -34,7 +34,8 @@ describe("stage3 composer ui helpers", () => {
     });
 
     expect(opened).toEqual({
-      mode: "new-draft"
+      mode: "new-draft",
+      initialTab: "email"
     } satisfies ComposerPaneState);
     expect(closed).toEqual({
       mode: "closed"
@@ -52,7 +53,8 @@ describe("stage3 composer ui helpers", () => {
 
     expect(replying).toEqual({
       mode: "replying",
-      replyContext
+      replyContext,
+      initialTab: "email"
     } satisfies ComposerPaneState);
   });
 

@@ -13,10 +13,12 @@ export type ComposerPaneState =
     }
   | {
       readonly mode: "new-draft";
+      readonly initialTab?: "email";
     }
   | {
       readonly mode: "replying";
       readonly replyContext: InboxComposerReplyContext;
+      readonly initialTab?: "email" | "note";
     };
 
 export type ComposerPaneAction =
@@ -26,6 +28,7 @@ export type ComposerPaneAction =
   | {
       readonly type: "open-reply";
       readonly replyContext: InboxComposerReplyContext;
+      readonly initialTab?: "email" | "note";
     }
   | {
       readonly type: "close";
@@ -38,12 +41,14 @@ export function reduceComposerPane(
   switch (action.type) {
     case "open-new-draft":
       return {
-        mode: "new-draft"
+        mode: "new-draft",
+        initialTab: "email",
       };
     case "open-reply":
       return {
         mode: "replying",
-        replyContext: action.replyContext
+        replyContext: action.replyContext,
+        initialTab: action.initialTab ?? "email",
       };
     case "close":
       return {

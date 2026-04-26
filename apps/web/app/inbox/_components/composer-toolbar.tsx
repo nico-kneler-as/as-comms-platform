@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { FOCUS_RING, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
 
 import {
@@ -29,16 +30,8 @@ const TOOLBAR_ITEMS: readonly {
   readonly label: string;
   readonly icon: ReactNode;
 }[] = [
-  {
-    command: "bold",
-    label: "Bold",
-    icon: <BoldIcon className="size-4" />,
-  },
-  {
-    command: "italic",
-    label: "Italic",
-    icon: <ItalicIcon className="size-4" />,
-  },
+  { command: "bold", label: "Bold", icon: <BoldIcon className="size-4" /> },
+  { command: "italic", label: "Italic", icon: <ItalicIcon className="size-4" /> },
   {
     command: "bulletList",
     label: "Bulleted list",
@@ -49,11 +42,7 @@ const TOOLBAR_ITEMS: readonly {
     label: "Numbered list",
     icon: <ListOrderedIcon className="size-4" />,
   },
-  {
-    command: "link",
-    label: "Link",
-    icon: <LinkIcon className="size-4" />,
-  },
+  { command: "link", label: "Link", icon: <LinkIcon className="size-4" /> },
 ];
 
 export function ComposerToolbar({
@@ -61,7 +50,7 @@ export function ComposerToolbar({
   onCommand,
 }: ComposerToolbarProps) {
   return (
-    <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-white p-1 shadow-sm">
+    <div className="flex items-center gap-1 border-b border-slate-200 bg-white px-4 py-2">
       {TOOLBAR_ITEMS.map((item) => {
         const active = activeCommands.has(item.command);
 
@@ -79,10 +68,8 @@ export function ComposerToolbar({
               onCommand(item.command);
             }}
             className={cn(
-              "inline-flex size-8 items-center justify-center rounded text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-300",
-              active
-                ? "bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
-                : "",
+              `inline-flex size-8 items-center justify-center rounded text-slate-600 ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:bg-slate-100 hover:text-slate-900`,
+              active ? "bg-slate-200 text-slate-900" : "",
             )}
           >
             {item.icon}
