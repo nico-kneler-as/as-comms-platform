@@ -35,7 +35,7 @@ beforeAll(() => {
     url: "http://localhost/",
   });
   const w = dom.window;
-  Object.assign(globalThis, {
+  const entries = {
     document: w.document,
     Element: w.Element,
     Event: w.Event,
@@ -45,10 +45,23 @@ beforeAll(() => {
     HTMLTextAreaElement: w.HTMLTextAreaElement,
     KeyboardEvent: w.KeyboardEvent,
     MouseEvent: w.MouseEvent,
+    MutationObserver: w.MutationObserver,
     Node: w.Node,
     navigator: w.navigator,
-    window: w,
     self: w,
+    window: w,
+  } as const;
+  for (const [key, value] of Object.entries(entries)) {
+    Object.defineProperty(globalThis, key, {
+      configurable: true,
+      value,
+      writable: true,
+    });
+  }
+  Object.defineProperty(globalThis, "getComputedStyle", {
+    configurable: true,
+    value: w.getComputedStyle.bind(w),
+    writable: true,
   });
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
