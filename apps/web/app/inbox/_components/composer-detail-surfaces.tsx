@@ -3,6 +3,12 @@
 import type { RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -28,6 +34,7 @@ import {
 } from "./composer-editor-surface";
 import {
   AlertCircleIcon,
+  ChevronDownIcon,
   LoaderIcon,
   MailIcon,
   NoteIcon,
@@ -36,6 +43,7 @@ import {
   XIcon,
 } from "./icons";
 import type { AttachmentDraft, InlineComposerError } from "./composer-shared";
+import type { ComposerSendKind } from "../_lib/composer-ui";
 import type { InboxComposerAliasOption } from "../_lib/view-models";
 import type {
   AiDraftState,
@@ -58,6 +66,53 @@ function WarningKnowledgeIndicator({
       <TooltipContent side="top" className="max-w-64 text-pretty">
         {tooltipMessage}
       </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SendAndSaveMenuItem({
+  disabled,
+  tooltipMessage,
+  onSelect,
+}: {
+  readonly disabled: boolean;
+  readonly tooltipMessage: string | null;
+  readonly onSelect: () => void;
+}) {
+  const item = (
+    <DropdownMenuItem
+      aria-disabled={disabled ? true : undefined}
+      className={cn("rounded-md", disabled ? "opacity-50" : "")}
+      onSelect={(event) => {
+        if (disabled) {
+          event.preventDefault();
+          return;
+        }
+
+        onSelect();
+      }}
+    >
+      <div className="flex min-w-0 flex-col">
+        <span className="text-sm font-medium text-slate-900">
+          Send and save for AI
+        </span>
+        <span className={TYPE.caption}>
+          Save this sent reply for later approval in project knowledge
+        </span>
+      </div>
+    </DropdownMenuItem>
+  );
+
+  if (tooltipMessage === null) {
+    return item;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div>{item}</div>
+      </TooltipTrigger>
+      <TooltipContent side="left">{tooltipMessage}</TooltipContent>
     </Tooltip>
   );
 }
@@ -165,8 +220,8 @@ export function ComposerEmailSurface({
   selectedAliasProjectName,
   aiWarningMessage,
   inlineError,
-  showKnowledgeCapture,
-  captureAsKnowledge,
+  canSendAndSaveForAi,
+  sendAndSaveDisabledReason,
   isSendDisabled,
   isSending,
   isAboutOpen,
@@ -191,7 +246,7 @@ export function ComposerEmailSurface({
   onReprompt,
   onAttachmentClick,
   onAttachmentRemove,
-  onKnowledgeCaptureChange,
+  onSaveDraft,
   onSend,
   onCancel,
 }: {
@@ -223,8 +278,8 @@ export function ComposerEmailSurface({
   readonly selectedAliasProjectName: string | null;
   readonly aiWarningMessage: string | null;
   readonly inlineError: InlineComposerError | null;
-  readonly showKnowledgeCapture: boolean;
-  readonly captureAsKnowledge: boolean;
+  readonly canSendAndSaveForAi: boolean;
+  readonly sendAndSaveDisabledReason: string | null;
   readonly isSendDisabled: boolean;
   readonly isSending: boolean;
   readonly isAboutOpen: boolean;
@@ -258,12 +313,17 @@ export function ComposerEmailSurface({
   readonly onReprompt: () => void;
   readonly onAttachmentClick: () => void;
   readonly onAttachmentRemove: (id: string) => void;
-  readonly onKnowledgeCaptureChange: (value: boolean) => void;
-  readonly onSend: () => void;
+  readonly onSaveDraft: () => void;
+  readonly onSend: (sendKind: ComposerSendKind) => void;
   readonly onCancel: () => void;
 }) {
   const knowledgeTooltip =
     "Set up Anthropic integration in Settings → Integrations to enable AI drafting.";
+  const sendAndSaveDisabled = isSendDisabled || !canSendAndSaveForAi;
+  const sendAndSaveTooltipMessage =
+    canSendAndSaveForAi || sendAndSaveDisabledReason === null
+      ? null
+      : sendAndSaveDisabledReason;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -448,22 +508,10 @@ export function ComposerEmailSurface({
               "Something went wrong."
             }
             retryable={inlineError?.retryable === true}
-            onRetry={onSend}
+            onRetry={() => {
+              onSend("send");
+            }}
           />
-        ) : null}
-
-        {showKnowledgeCapture ? (
-          <label className="mb-3 flex items-start gap-2 px-1 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={captureAsKnowledge}
-              onChange={(event) => {
-                onKnowledgeCaptureChange(event.currentTarget.checked);
-              }}
-              className="mt-0.5 size-4 rounded border-slate-300"
-            />
-            <span>Save this reply as a canonical for the selected project</span>
-          </label>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
@@ -496,24 +544,64 @@ export function ComposerEmailSurface({
             >
               Cancel
             </Button>
-            <Button
-              type="button"
-              disabled={isSendDisabled}
-              className="h-9 rounded-md bg-slate-900 px-3 text-[12.5px] font-medium text-white shadow-sm hover:bg-slate-800"
-              onClick={onSend}
-            >
-              {isSending ? (
-                <>
-                  <LoaderIcon className="size-4 animate-spin" />
-                  Sending...
-                </>
-              ) : (
-                <>
-                  <SendIcon className="size-4" />
-                  Send
-                </>
-              )}
-            </Button>
+            <div className="inline-flex items-stretch overflow-hidden rounded-md shadow-sm">
+              <Button
+                type="button"
+                disabled={isSendDisabled}
+                className="h-9 rounded-none rounded-l-md bg-slate-900 px-3 text-[12.5px] font-medium text-white shadow-none hover:bg-slate-800"
+                onClick={() => {
+                  onSend("send");
+                }}
+              >
+                {isSending ? (
+                  <>
+                    <LoaderIcon className="size-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <SendIcon className="size-4" />
+                    Send
+                  </>
+                )}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    aria-label="Send options"
+                    disabled={isSending}
+                    className="h-9 rounded-none rounded-r-md border-l border-slate-700 bg-slate-900 px-2 text-white shadow-none hover:bg-slate-800"
+                  >
+                    <ChevronDownIcon className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-72 rounded-xl p-1.5">
+                  <SendAndSaveMenuItem
+                    disabled={sendAndSaveDisabled}
+                    tooltipMessage={sendAndSaveTooltipMessage}
+                    onSelect={() => {
+                      onSend("send-and-save");
+                    }}
+                  />
+                  <DropdownMenuItem
+                    className="rounded-md"
+                    onSelect={() => {
+                      onSaveDraft();
+                    }}
+                  >
+                    <div className="flex min-w-0 flex-col">
+                      <span className="text-sm font-medium text-slate-900">
+                        Save draft
+                      </span>
+                      <span className={TYPE.caption}>
+                        Collapse this draft to the floating pill without sending
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
 

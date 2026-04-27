@@ -29,7 +29,10 @@ import {
 } from "../actions";
 import {
   isComposerSendDisabled,
+  resolveComposerSendActionFlags,
   resolveDefaultAlias,
+  resolveSendAndSaveForAiAvailability,
+  type ComposerSendKind,
 } from "../_lib/composer-ui";
 import {
   clearDraft,
@@ -221,7 +224,6 @@ export function InboxComposerDetailPane() {
   const [attachments, setAttachments] = useState<readonly AttachmentDraft[]>(
     [],
   );
-  const [captureAsKnowledge, setCaptureAsKnowledge] = useState(false);
   const [aiDirective, setAiDirective] = useState("");
   const [repromptText, setRepromptText] = useState("");
   const [inlineError, setInlineError] = useState<InlineComposerError | null>(
@@ -281,7 +283,6 @@ export function InboxComposerDetailPane() {
     setBody("");
     setBodyHtml("");
     setAttachments([]);
-    setCaptureAsKnowledge(false);
     setAiDirective("");
     setRepromptText("");
     setInlineError(null);
@@ -478,8 +479,10 @@ export function InboxComposerDetailPane() {
         ? "AI is not configured for this project. Set it up in Settings → Integrations."
         : null;
   const aiWarningMessage = resolveAiWarningMessage(aiDraft);
-  const showKnowledgeCapture =
-    activeTab === "email" && selectedAliasRecord?.isAiReady === true;
+  const sendAndSaveAvailability = resolveSendAndSaveForAiAvailability({
+    selectedAlias,
+    aliases: composerAliases,
+  });
   const isSendDisabled = isComposerSendDisabled({
     activeTab,
     recipient,
@@ -687,7 +690,7 @@ export function InboxComposerDetailPane() {
     approveAiDraft();
   };
 
-  const submit = () => {
+  const submit = (sendKind: ComposerSendKind) => {
     if (recipient === null || selectedAlias === null || activeTab !== "email") {
       return;
     }
@@ -754,7 +757,9 @@ export function InboxComposerDetailPane() {
               },
             ],
       ),
-      captureAsKnowledge,
+      ...resolveComposerSendActionFlags({
+        sendKind,
+      }),
       ...(replyContext?.threadId ? { threadId: replyContext.threadId } : {}),
       ...(replyContext?.inReplyToRfc822
         ? { inReplyToRfc822: replyContext.inReplyToRfc822 }
@@ -926,8 +931,10 @@ export function InboxComposerDetailPane() {
               }
               aiWarningMessage={aiWarningMessage}
               inlineError={inlineError}
-              showKnowledgeCapture={showKnowledgeCapture}
-              captureAsKnowledge={captureAsKnowledge}
+              canSendAndSaveForAi={sendAndSaveAvailability.enabled}
+              sendAndSaveDisabledReason={
+                sendAndSaveAvailability.disabledReason
+              }
               isSendDisabled={isSendDisabled}
               isSending={isSending}
               isAboutOpen={isAboutOpen}
@@ -999,7 +1006,7 @@ export function InboxComposerDetailPane() {
                   previous.filter((attachment) => attachment.id !== id),
                 );
               }}
-              onKnowledgeCaptureChange={setCaptureAsKnowledge}
+              onSaveDraft={minimizeComposer}
               onSend={submit}
               onCancel={handleCancel}
               {...(aliasError ? { aliasError } : {})}
