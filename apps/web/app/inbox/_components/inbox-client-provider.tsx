@@ -42,7 +42,14 @@ export type ComposerStatus =
 export type ComposerViewState = "closed" | "modal" | "pill";
 
 export interface ComposerValidationError {
-  readonly field: "subject" | "body" | "recipient" | "alias" | "attachments";
+  readonly field:
+    | "subject"
+    | "body"
+    | "recipient"
+    | "cc"
+    | "bcc"
+    | "alias"
+    | "attachments";
   readonly message: string;
 }
 

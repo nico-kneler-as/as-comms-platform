@@ -6,6 +6,8 @@ export interface StoredComposerDraft {
   readonly bodyPlaintext: string;
   readonly bodyHtml: string;
   readonly selectedAlias: string | null;
+  readonly cc: readonly string[];
+  readonly bcc: readonly string[];
   readonly attachments: readonly {
     readonly filename: string;
     readonly size: number;

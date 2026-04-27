@@ -22,6 +22,8 @@ const gmailAttachmentSchema = z.object({
 const gmailSendParamsSchema = z.object({
   fromAlias: emailSchema,
   to: emailSchema,
+  cc: z.array(emailSchema).optional(),
+  bcc: z.array(emailSchema).optional(),
   subject: z.string(),
   bodyPlaintext: z.string(),
   bodyHtml: z.string(),
@@ -81,6 +83,8 @@ const gmailApiErrorSchema = z
 export interface GmailSendParams {
   readonly fromAlias: string;
   readonly to: string;
+  readonly cc?: readonly string[];
+  readonly bcc?: readonly string[];
   readonly subject: string;
   readonly bodyPlaintext: string;
   readonly bodyHtml: string;
@@ -228,6 +232,10 @@ function buildAttachmentPart(attachment: GmailAttachment): string {
   ].join("\r\n");
 }
 
+function formatAddressHeader(addresses: readonly string[]): string {
+  return addresses.map((address) => `<${address}>`).join(", ");
+}
+
 function buildMimeMessage(
   params: z.output<typeof gmailSendParamsSchema>,
   now: Date
@@ -241,6 +249,14 @@ function buildMimeMessage(
     `Message-ID: ${rfc822MessageId}`,
     "MIME-Version: 1.0"
   ];
+
+  if (params.cc !== undefined && params.cc.length > 0) {
+    headers.push(`Cc: ${formatAddressHeader(params.cc)}`);
+  }
+
+  if (params.bcc !== undefined && params.bcc.length > 0) {
+    headers.push(`Bcc: ${formatAddressHeader(params.bcc)}`);
+  }
 
   if (params.inReplyToRfc822MessageId !== undefined) {
     headers.push(

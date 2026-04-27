@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { Chip } from "@/components/ui/chip";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { FOCUS_RING, RADIUS, SHADOW, TRANSITION } from "@/app/_lib/design-tokens-v2";
+import {
+  FOCUS_RING,
+  RADIUS,
+  SHADOW,
+  TRANSITION,
+} from "@/app/_lib/design-tokens-v2";
 
 import {
   formatContactRecipientLabel,
@@ -48,14 +53,41 @@ function toContactRecipient(
   };
 }
 
+function isSameRecipient(
+  left: ComposerRecipientValue,
+  right: ComposerRecipientValue,
+): boolean {
+  if (left.kind !== right.kind) {
+    return false;
+  }
+
+  if (left.kind === "contact" && right.kind === "contact") {
+    return left.contactId === right.contactId;
+  }
+
+  if (left.kind === "email" && right.kind === "email") {
+    return left.emailAddress === right.emailAddress;
+  }
+
+  return false;
+}
+
 export function ComposerRecipientPicker({
-  recipient,
+  recipients,
   locked = false,
-  onRecipientChange,
+  single = false,
+  placeholder = "Search Salesforce contacts or type an email",
+  rightSlot,
+  onRecipientsChange,
 }: {
-  readonly recipient: ComposerRecipientValue | null;
+  readonly recipients: readonly ComposerRecipientValue[];
   readonly locked?: boolean;
-  readonly onRecipientChange: (recipient: ComposerRecipientValue | null) => void;
+  readonly single?: boolean;
+  readonly placeholder?: string;
+  readonly rightSlot?: ReactNode;
+  readonly onRecipientsChange: (
+    recipients: readonly ComposerRecipientValue[],
+  ) => void;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<readonly ContactSearchResult[]>([]);
@@ -64,7 +96,7 @@ export function ComposerRecipientPicker({
   const listboxId = useId();
 
   useEffect(() => {
-    if (recipient !== null) {
+    if (locked || (single && recipients.length > 0)) {
       activeSearchIdRef.current += 1;
       setQuery("");
       setResults([]);
@@ -106,64 +138,109 @@ export function ComposerRecipientPicker({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [query, recipient]);
+  }, [locked, query, recipients.length, single]);
 
+  const shouldShowInput = !locked && (!single || recipients.length === 0);
   const shouldShowResults =
-    recipient === null &&
+    shouldShowInput &&
     (isSearching || results.length > 0 || query.trim().length >= 2);
+
+  const commitRecipient = (recipient: ComposerRecipientValue) => {
+    if (single) {
+      onRecipientsChange([recipient]);
+      return;
+    }
+
+    if (recipients.some((existing) => isSameRecipient(existing, recipient))) {
+      return;
+    }
+
+    onRecipientsChange([...recipients, recipient]);
+  };
 
   return (
     <div className="relative">
-      {recipient ? (
-        <RecipientChip
-          recipient={recipient}
-          locked={locked}
-          onClear={() => {
-            if (!locked) {
-              onRecipientChange(null);
+      <div
+        className={cn(
+          `flex min-h-9 flex-wrap items-center gap-1.5 rounded-md px-0 py-0.5`,
+          !shouldShowInput && recipients.length > 0 ? "" : "pr-2",
+        )}
+      >
+        {recipients.map((recipient, index) => (
+          <RecipientChip
+            key={
+              recipient.kind === "contact"
+                ? `contact:${recipient.contactId}`
+                : `email:${recipient.emailAddress}`
             }
-          }}
-        />
-      ) : (
-        <>
-          <SearchIcon className="pointer-events-none absolute left-3 top-3.5 size-4 text-slate-400" />
-          <Input
-            value={query}
-            onChange={(event) => {
-              setQuery(event.currentTarget.value);
+            recipient={recipient}
+            locked={locked}
+            onClear={() => {
+              if (locked) {
+                return;
+              }
+
+              onRecipientsChange(
+                recipients.filter((_, candidateIndex) => candidateIndex !== index),
+              );
             }}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") {
-                return;
-              }
-
-              const trimmedQuery = query.trim();
-
-              if (trimmedQuery.length === 0) {
-                event.preventDefault();
-                return;
-              }
-
-              const typedEmailRecipient = resolveTypedEmailRecipient({
-                query: trimmedQuery,
-                results,
-              });
-
-              if (typedEmailRecipient === null) {
-                return;
-              }
-
-              event.preventDefault();
-              onRecipientChange(typedEmailRecipient);
-            }}
-            placeholder="Search Salesforce contacts or type an email"
-            aria-expanded={shouldShowResults}
-            aria-controls={shouldShowResults ? listboxId : undefined}
-            aria-autocomplete="list"
-            className={`h-11 border-0 bg-transparent pl-10 shadow-none ${FOCUS_RING}`}
           />
-        </>
-      )}
+        ))}
+
+        {shouldShowInput ? (
+          <div className="flex min-w-[14rem] flex-1 items-center">
+            {recipients.length === 0 ? (
+              <SearchIcon className="pointer-events-none mr-2 size-4 shrink-0 text-slate-400" />
+            ) : null}
+            <Input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") {
+                  return;
+                }
+
+                const trimmedQuery = query.trim();
+
+                if (trimmedQuery.length === 0) {
+                  event.preventDefault();
+                  return;
+                }
+
+                const typedEmailRecipient = resolveTypedEmailRecipient({
+                  query: trimmedQuery,
+                  results,
+                });
+
+                if (typedEmailRecipient === null) {
+                  return;
+                }
+
+                event.preventDefault();
+                commitRecipient(typedEmailRecipient);
+                setQuery("");
+                setResults([]);
+              }}
+              placeholder={recipients.length === 0 ? placeholder : ""}
+              aria-expanded={shouldShowResults}
+              aria-controls={shouldShowResults ? listboxId : undefined}
+              aria-autocomplete="list"
+              className={cn(
+                `h-8 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none ${FOCUS_RING}`,
+                recipients.length === 0 ? "pl-0" : "",
+              )}
+            />
+          </div>
+        ) : null}
+
+        {rightSlot ? (
+          <div className="ml-auto flex items-center self-start pt-1">
+            {rightSlot}
+          </div>
+        ) : null}
+      </div>
 
       {shouldShowResults ? (
         <div
@@ -184,7 +261,9 @@ export function ComposerRecipientPicker({
                   <button
                     type="button"
                     onClick={() => {
-                      onRecipientChange(toContactRecipient(result));
+                      commitRecipient(toContactRecipient(result));
+                      setQuery("");
+                      setResults([]);
                     }}
                     className={`flex w-full items-start justify-between gap-3 px-3 py-3 text-left ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:bg-slate-50`}
                   >
@@ -229,7 +308,7 @@ function RecipientChip({
   readonly onClear: () => void;
 }) {
   return (
-    <span className="inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2 pr-1.5 text-[12px] text-slate-700">
       <span className="min-w-0">
         {recipient.kind === "contact" ? (
           <span className="block truncate font-medium text-slate-900">
@@ -252,11 +331,11 @@ function RecipientChip({
           type="button"
           aria-label="Clear recipient"
           className={cn(
-            `inline-flex size-7 items-center justify-center rounded-full text-slate-400 ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:bg-slate-200 hover:text-slate-700`,
+            `inline-flex size-5 items-center justify-center rounded-full text-slate-400 ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:bg-slate-200 hover:text-slate-700`,
           )}
           onClick={onClear}
         >
-          <XIcon className="size-4" />
+          <XIcon className="size-3" />
         </button>
       ) : null}
     </span>

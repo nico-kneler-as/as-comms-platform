@@ -1939,6 +1939,7 @@ function buildComposerReplyContext(input: {
     threadId: latestInboundEmail.threadId ?? null,
     inReplyToRfc822: latestInboundEmail.rfc822MessageId ?? null,
     defaultAlias: input.defaultAlias,
+    cc: extractEmailAddresses(latestInboundEmail.ccHeader),
   };
 }
 

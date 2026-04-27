@@ -11,15 +11,36 @@ function iconMock(name: string) {
 }
 
 vi.mock("lucide-react", () => ({
+  AlertCircle: iconMock("AlertCircle"),
   Check: iconMock("Check"),
   Flag: iconMock("Flag"),
   Inbox: iconMock("Inbox"),
+  Loader2: iconMock("Loader2"),
   MailOpen: iconMock("MailOpen"),
   RotateCcw: iconMock("RotateCcw"),
   RotateCw: iconMock("RotateCw"),
   Send: iconMock("Send"),
   Sparkles: iconMock("Sparkles"),
   Trash2: iconMock("Trash2"),
+}));
+
+vi.mock("@/components/ui/button", () => ({
+  Button: ({
+    children,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement>) =>
+    createElement("button", props, children),
+}));
+
+vi.mock("@/components/ui/tooltip", () => ({
+  TooltipProvider: ({ children }: { readonly children: React.ReactNode }) =>
+    createElement(React.Fragment, null, children),
+  Tooltip: ({ children }: { readonly children: React.ReactNode }) =>
+    createElement("div", null, children),
+  TooltipTrigger: ({ children }: { readonly children: React.ReactNode }) =>
+    createElement(React.Fragment, null, children),
+  TooltipContent: ({ children }: { readonly children: React.ReactNode }) =>
+    createElement("div", null, children),
 }));
 
 vi.mock("@/app/_components/adventure-scientists-logo", () => ({
@@ -195,6 +216,7 @@ function getButton(name: string): HTMLButtonElement {
 
 function DraftHarness() {
   const [aiDraft, setAiDraft] = useState(initialAiDraft);
+  const [directiveText, setDirectiveText] = useState("");
   const [repromptText, setRepromptText] = useState("");
   const [body, setBody] = useState("");
 
@@ -207,14 +229,6 @@ function DraftHarness() {
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => {
-          setStatus("generating");
-        }}
-      >
-        Draft with AI
-      </button>
       <button
         type="button"
         onClick={() => {
@@ -232,9 +246,16 @@ function DraftHarness() {
       <output data-testid="body">{body}</output>
       <ComposerAiDraftWindow
         aiDraft={aiDraft}
+        directiveText={directiveText}
         repromptText={repromptText}
-        isGeneratingAi={false}
+        isGeneratingAi={aiDraft.status === "generating"}
+        runDraftDisabled={aiDraft.status === "generating"}
+        runDraftDisabledReason={null}
+        onDirectiveTextChange={setDirectiveText}
         onRepromptTextChange={setRepromptText}
+        onRunDraft={() => {
+          setStatus("generating");
+        }}
         onOpenReprompt={() => {
           setRepromptText("");
           setStatus("reprompting");
@@ -277,6 +298,9 @@ describe("AI draft preview approval panel", () => {
   it("keeps generated text out of the body until approval", async () => {
     await mount(createElement(DraftHarness));
 
+    expect(document.body.textContent).toContain("AI draft");
+    expect(document.querySelector('[data-testid="body"]')?.textContent).toBe("");
+
     await click(getButton("Draft with AI"));
     expect(document.body.textContent).toContain("AI draft");
     expect(document.body.textContent).not.toContain("Approve");
@@ -292,7 +316,7 @@ describe("AI draft preview approval panel", () => {
     expect(document.querySelector('[data-testid="body"]')?.textContent).toBe(
       "Hi Maya,\n\nThanks for checking in.",
     );
-    expect(document.body.textContent).not.toContain("AI draft");
+    expect(document.body.textContent).toContain("AI draft");
   });
 
   // TODO: re-enable after JSDOM event handler shim is added — Radix DismissableLayer
@@ -319,7 +343,7 @@ describe("AI draft preview approval panel", () => {
     expect(document.body.textContent).not.toContain("Cancel reprompt");
 
     await click(getButton("Discard"));
-    expect(document.body.textContent).not.toContain("AI draft");
+    expect(document.body.textContent).toContain("AI draft");
     expect(document.querySelector('[data-testid="body"]')?.textContent).toBe("");
   });
 });

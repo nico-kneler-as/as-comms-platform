@@ -166,21 +166,55 @@ vi.mock("../../app/inbox/actions", () => ({
 vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
   ComposerEmailSurface: ({
     attachments,
+    aiDirective,
     body,
+    bccRecipients,
+    ccRecipients,
     onBodyChange,
     onCancel,
+    onAiDirectiveChange,
+    onBccChange,
+    onCcChange,
     onRecipientChange,
     onSubjectChange,
+    onToggleBcc,
+    onToggleCc,
     recipient,
+    runAiDraftDisabled,
+    runAiDraftDisabledReason,
+    showBcc,
+    showCc,
     subject,
   }: {
     readonly attachments: readonly { readonly filename: string }[];
+    readonly aiDirective: string;
     readonly body: string;
+    readonly bccRecipients: readonly {
+      readonly kind: "email";
+      readonly emailAddress: string;
+    }[];
+    readonly ccRecipients: readonly {
+      readonly kind: "email";
+      readonly emailAddress: string;
+    }[];
     readonly onBodyChange: (value: {
       readonly bodyPlaintext: string;
       readonly bodyHtml: string;
     }) => void;
     readonly onCancel: () => void;
+    readonly onAiDirectiveChange: (value: string) => void;
+    readonly onBccChange: (
+      recipients: readonly {
+        readonly kind: "email";
+        readonly emailAddress: string;
+      }[],
+    ) => void;
+    readonly onCcChange: (
+      recipients: readonly {
+        readonly kind: "email";
+        readonly emailAddress: string;
+      }[],
+    ) => void;
     readonly onRecipientChange: (
       recipient: {
         readonly kind: "email";
@@ -188,10 +222,16 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
       } | null,
     ) => void;
     readonly onSubjectChange: (value: string) => void;
+    readonly onToggleBcc: (open: boolean) => void;
+    readonly onToggleCc: (open: boolean) => void;
     readonly recipient:
       | { readonly kind: "email"; readonly emailAddress: string }
       | { readonly kind: "contact"; readonly displayName: string }
       | null;
+    readonly runAiDraftDisabled: boolean;
+    readonly runAiDraftDisabledReason: string | null;
+    readonly showBcc: boolean;
+    readonly showCc: boolean;
     readonly subject: string;
   }) =>
     createElement(
@@ -246,6 +286,109 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
         },
         value: body,
       } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
+      createElement("textarea", {
+        "aria-label": "AI directive",
+        onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
+          onAiDirectiveChange(event.currentTarget.value);
+        },
+        onInput: (event: ReactInputEvent<HTMLTextAreaElement>) => {
+          onAiDirectiveChange(event.currentTarget.value);
+        },
+        value: aiDirective,
+      } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
+      createElement(
+        "button",
+        {
+          type: "button",
+          disabled: runAiDraftDisabled,
+          title: runAiDraftDisabledReason ?? undefined,
+        },
+        "Draft with AI",
+      ),
+      !showCc
+        ? createElement(
+            "button",
+            {
+              type: "button",
+              onClick: () => {
+                onToggleCc(true);
+              },
+            },
+            "Show Cc",
+          )
+        : null,
+      showCc
+        ? createElement("input", {
+            "aria-label": "Cc",
+            onChange: (event: ChangeEvent<HTMLInputElement>) => {
+              onCcChange(
+                event.currentTarget.value
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter((value) => value.length > 0)
+                  .map((emailAddress) => ({
+                    kind: "email" as const,
+                    emailAddress,
+                  })),
+              );
+            },
+            onInput: (event: ReactInputEvent<HTMLInputElement>) => {
+              onCcChange(
+                event.currentTarget.value
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter((value) => value.length > 0)
+                  .map((emailAddress) => ({
+                    kind: "email" as const,
+                    emailAddress,
+                  })),
+              );
+            },
+            value: ccRecipients.map((recipient) => recipient.emailAddress).join(", "),
+          } satisfies InputHTMLAttributes<HTMLInputElement>)
+        : null,
+      !showBcc
+        ? createElement(
+            "button",
+            {
+              type: "button",
+              onClick: () => {
+                onToggleBcc(true);
+              },
+            },
+            "Show Bcc",
+          )
+        : null,
+      showBcc
+        ? createElement("input", {
+            "aria-label": "Bcc",
+            onChange: (event: ChangeEvent<HTMLInputElement>) => {
+              onBccChange(
+                event.currentTarget.value
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter((value) => value.length > 0)
+                  .map((emailAddress) => ({
+                    kind: "email" as const,
+                    emailAddress,
+                  })),
+              );
+            },
+            onInput: (event: ReactInputEvent<HTMLInputElement>) => {
+              onBccChange(
+                event.currentTarget.value
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter((value) => value.length > 0)
+                  .map((emailAddress) => ({
+                    kind: "email" as const,
+                    emailAddress,
+                  })),
+              );
+            },
+            value: bccRecipients.map((recipient) => recipient.emailAddress).join(", "),
+          } satisfies InputHTMLAttributes<HTMLInputElement>)
+        : null,
       createElement(
         "ul",
         { "aria-label": "Attachments" },
@@ -692,6 +835,29 @@ describe("composer canonical modal", () => {
     expect(getInput("Subject").value).toBe("Field kit");
     expect(getTextarea("Message body").value).toBe("Please bring the kit.");
     expect(document.body.textContent).toContain("field-kit.txt");
+  });
+
+  it("shows the AI prompt by default and preserves Cc/Bcc drafts across minimize", async () => {
+    await mount(<TestApp />);
+
+    await click(getByText("Open new draft"));
+
+    expect(getTextarea("AI directive").value).toBe("");
+    expect(getByText("Draft with AI")).not.toBeNull();
+
+    await click(getByText("Show Cc"));
+    await changeValue(getInput("Cc"), "partner@example.org");
+    await click(getByText("Show Bcc"));
+    await changeValue(getInput("Bcc"), "archive@example.org");
+    await flushReact();
+
+    await click(
+      document.querySelector("button[aria-label='Minimize composer']"),
+    );
+    await click(document.querySelector("button[aria-label='Expand composer']"));
+
+    expect(getInput("Cc").value).toBe("partner@example.org");
+    expect(getInput("Bcc").value).toBe("archive@example.org");
   });
 
   it("closes from the modal header and from the minimized pill", async () => {

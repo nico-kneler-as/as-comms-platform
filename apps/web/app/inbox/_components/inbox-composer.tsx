@@ -11,7 +11,6 @@ import {
 
 import {
   FOCUS_RING,
-  RADIUS,
   TRANSITION,
   TYPE,
 } from "@/app/_lib/design-tokens-v2";
@@ -28,7 +27,6 @@ import {
   sendComposerAction,
   type ComposerSendActionInput,
 } from "../actions";
-import { resolveAiButtonState } from "../_lib/composer-ai";
 import {
   isComposerSendDisabled,
   resolveDefaultAlias,
@@ -54,6 +52,7 @@ import {
   readFileAsAttachment,
   resolveAiWarningMessage,
   resolveComposerDraftKey,
+  resolveRecipientEmailAddress,
   resolveRecipientLabel,
   type AttachmentDraft,
   type InlineComposerError,
@@ -62,6 +61,47 @@ import { useInboxClient } from "./inbox-client-provider";
 import { ChevronDownIcon, MailIcon, NoteIcon, XIcon } from "./icons";
 
 const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+function toEmailRecipients(
+  emails: readonly string[] | undefined,
+): readonly ComposerRecipientValue[] {
+  return (emails ?? []).map((emailAddress) => ({
+    kind: "email",
+    emailAddress,
+  }));
+}
+
+function resolveSupplementaryRecipientEmails(input: {
+  readonly recipients: readonly ComposerRecipientValue[];
+}):
+  | {
+      readonly ok: true;
+      readonly emails: readonly string[];
+    }
+  | {
+      readonly ok: false;
+      readonly message: string;
+    } {
+  const emails: string[] = [];
+
+  for (const recipient of input.recipients) {
+    const email = resolveRecipientEmailAddress(recipient);
+
+    if (email === null) {
+      return {
+        ok: false,
+        message: "Every selected recipient needs a valid email address.",
+      };
+    }
+
+    emails.push(email);
+  }
+
+  return {
+    ok: true,
+    emails,
+  };
+}
 
 export function InboxComposerReplyBar({
   contactDisplayName,
@@ -166,6 +206,14 @@ export function InboxComposerDetailPane() {
   const [recipient, setRecipient] = useState<ComposerRecipientValue | null>(
     null,
   );
+  const [ccRecipients, setCcRecipients] = useState<
+    readonly ComposerRecipientValue[]
+  >([]);
+  const [bccRecipients, setBccRecipients] = useState<
+    readonly ComposerRecipientValue[]
+  >([]);
+  const [showCc, setShowCc] = useState(false);
+  const [showBcc, setShowBcc] = useState(false);
   const [selectedAlias, setSelectedAlias] = useState<string | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -174,6 +222,7 @@ export function InboxComposerDetailPane() {
     [],
   );
   const [captureAsKnowledge, setCaptureAsKnowledge] = useState(false);
+  const [aiDirective, setAiDirective] = useState("");
   const [repromptText, setRepromptText] = useState("");
   const [inlineError, setInlineError] = useState<InlineComposerError | null>(
     null,
@@ -215,12 +264,25 @@ export function InboxComposerDetailPane() {
         : "email",
     );
     setRecipient(replyRecipient);
+    setCcRecipients(
+      toEmailRecipients(replyContext?.cc).filter((candidate) => {
+        if (candidate.kind !== "email") {
+          return true;
+        }
+
+        return candidate.emailAddress !== replyContext?.defaultAlias;
+      }),
+    );
+    setBccRecipients([]);
+    setShowCc((replyContext?.cc?.length ?? 0) > 0);
+    setShowBcc(false);
     setSelectedAlias(replyContext?.defaultAlias ?? null);
     setSubject(replyContext?.subject ?? "");
     setBody("");
     setBodyHtml("");
     setAttachments([]);
     setCaptureAsKnowledge(false);
+    setAiDirective("");
     setRepromptText("");
     setInlineError(null);
     setIsAboutOpen(false);
@@ -261,6 +323,8 @@ export function InboxComposerDetailPane() {
       subject.trim() === baselineSubject.trim() &&
       body.trim().length === 0 &&
       bodyHtml.trim().length === 0 &&
+      ccRecipients.length === 0 &&
+      bccRecipients.length === 0 &&
       attachments.length === 0 &&
       selectedAlias === baselineAlias;
 
@@ -279,6 +343,16 @@ export function InboxComposerDetailPane() {
     setSubject(draft.subject);
     setBody(draft.bodyPlaintext);
     setBodyHtml(draft.bodyHtml);
+    const draftCc = Array.isArray((draft as { readonly cc?: unknown }).cc)
+      ? ((draft as { readonly cc?: readonly string[] }).cc ?? [])
+      : [];
+    const draftBcc = Array.isArray((draft as { readonly bcc?: unknown }).bcc)
+      ? ((draft as { readonly bcc?: readonly string[] }).bcc ?? [])
+      : [];
+    setCcRecipients(toEmailRecipients(draftCc));
+    setBccRecipients(toEmailRecipients(draftBcc));
+    setShowCc(draftCc.length > 0);
+    setShowBcc(draftBcc.length > 0);
     setSelectedAlias(draft.selectedAlias);
     setAttachments(
       draft.attachments.map((attachment, index) => ({
@@ -296,6 +370,8 @@ export function InboxComposerDetailPane() {
     baselineSubject,
     body,
     bodyHtml,
+    bccRecipients.length,
+    ccRecipients.length,
     composerPane.mode,
     draftKey,
     selectedAlias,
@@ -315,6 +391,8 @@ export function InboxComposerDetailPane() {
       subject.trim() !== baselineSubject.trim() ||
       body.trim().length > 0 ||
       bodyHtml.trim().length > 0 ||
+      ccRecipients.length > 0 ||
+      bccRecipients.length > 0 ||
       selectedAlias !== baselineAlias ||
       attachments.length > 0;
 
@@ -329,6 +407,14 @@ export function InboxComposerDetailPane() {
         bodyPlaintext: body,
         bodyHtml,
         selectedAlias,
+        cc: ccRecipients.flatMap((recipient) => {
+          const email = resolveRecipientEmailAddress(recipient);
+          return email === null ? [] : [email];
+        }),
+        bcc: bccRecipients.flatMap((recipient) => {
+          const email = resolveRecipientEmailAddress(recipient);
+          return email === null ? [] : [email];
+        }),
         attachments: attachments.map((attachment) => ({
           filename: attachment.filename,
           size: attachment.size,
@@ -347,6 +433,8 @@ export function InboxComposerDetailPane() {
     baselineSubject,
     body,
     bodyHtml,
+    bccRecipients,
+    ccRecipients,
     composerPane.mode,
     draftKey,
     selectedAlias,
@@ -374,11 +462,21 @@ export function InboxComposerDetailPane() {
       ? null
       : (composerAliases.find((alias) => alias.alias === selectedAlias) ??
         null);
-  const aiButton = resolveAiButtonState({
-    body,
-    isGenerating: isGeneratingAi,
-    aiDraftStatus: aiDraft.status,
-  });
+  const selectedAliasAiConfigured =
+    selectedAliasRecord?.isAiConfigured ?? selectedAliasRecord?.isAiReady ?? false;
+  const runAiDraftDisabled =
+    selectedAliasRecord === null ||
+    !selectedAliasAiConfigured ||
+    isGeneratingAi ||
+    aiDraft.status === "generating" ||
+    aiDraft.status === "reviewable" ||
+    aiDraft.status === "reprompting";
+  const runAiDraftDisabledReason =
+    selectedAliasRecord === null
+      ? "Choose a sender alias first."
+      : !selectedAliasAiConfigured
+        ? "AI is not configured for this project. Set it up in Settings → Integrations."
+        : null;
   const aiWarningMessage = resolveAiWarningMessage(aiDraft);
   const showKnowledgeCapture =
     activeTab === "email" && selectedAliasRecord?.isAiReady === true;
@@ -403,6 +501,8 @@ export function InboxComposerDetailPane() {
   const recipientError = composerErrors.find(
     (error) => error.field === "recipient",
   );
+  const ccError = composerErrors.find((error) => error.field === "cc");
+  const bccError = composerErrors.find((error) => error.field === "bcc");
   const attachmentError = composerErrors.find(
     (error) => error.field === "attachments",
   );
@@ -426,6 +526,10 @@ export function InboxComposerDetailPane() {
     readonly repromptDirection: string;
   }) => {
     if (activeTab !== "email") {
+      return;
+    }
+
+    if (!selectedAliasAiConfigured) {
       return;
     }
 
@@ -454,7 +558,7 @@ export function InboxComposerDetailPane() {
             repromptDirection: requestOverride.repromptDirection,
             repromptIndex: aiDraft.repromptChain.length + 1,
           }
-        : aiButton.mode === "draft"
+        : aiDirective.trim().length === 0
           ? {
               ...baseRequest,
               mode: "draft" as const,
@@ -462,7 +566,7 @@ export function InboxComposerDetailPane() {
           : {
               ...baseRequest,
               mode: "fill" as const,
-              operatorPrompt: body.trim(),
+              operatorPrompt: aiDirective.trim(),
             };
 
     const prompt =
@@ -549,6 +653,7 @@ export function InboxComposerDetailPane() {
 
   const handleDiscardAi = () => {
     discardAiDraft();
+    setAiDirective("");
     setRepromptText("");
   };
 
@@ -577,12 +682,37 @@ export function InboxComposerDetailPane() {
     const approvedText = aiDraft.generatedText;
     setBody(approvedText);
     setBodyHtml(plaintextToComposerHtml(approvedText));
+    setAiDirective("");
     setRepromptText("");
     approveAiDraft();
   };
 
   const submit = () => {
     if (recipient === null || selectedAlias === null || activeTab !== "email") {
+      return;
+    }
+
+    const resolvedCc = resolveSupplementaryRecipientEmails({
+      recipients: ccRecipients,
+    });
+    if (!resolvedCc.ok) {
+      setInlineError({
+        message: resolvedCc.message,
+        retryable: false,
+      });
+      setComposerErrors([{ field: "cc", message: resolvedCc.message }]);
+      return;
+    }
+
+    const resolvedBcc = resolveSupplementaryRecipientEmails({
+      recipients: bccRecipients,
+    });
+    if (!resolvedBcc.ok) {
+      setInlineError({
+        message: resolvedBcc.message,
+        retryable: false,
+      });
+      setComposerErrors([{ field: "bcc", message: resolvedBcc.message }]);
       return;
     }
 
@@ -609,6 +739,10 @@ export function InboxComposerDetailPane() {
       subject: subject.trim(),
       bodyPlaintext: body.trim(),
       bodyHtml,
+      ...(resolvedCc.emails.length > 0 ? { cc: [...resolvedCc.emails] } : {}),
+      ...(resolvedBcc.emails.length > 0
+        ? { bcc: [...resolvedBcc.emails] }
+        : {}),
       attachments: attachments.flatMap((attachment) =>
         attachment.contentBase64 === null
           ? []
@@ -722,11 +856,11 @@ export function InboxComposerDetailPane() {
     >
       <DialogContent
         className={cn(
-          `flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-[760px] flex-col gap-0 overflow-hidden border-slate-200 bg-white p-0 ${RADIUS.lg} shadow-lg [&>button:last-child]:hidden`,
+          `flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-[820px] flex-col gap-0 overflow-hidden border-slate-200 bg-white p-0 shadow-2xl ring-1 ring-slate-900/5 sm:rounded-xl [&>button:last-child]:hidden`,
         )}
       >
         <DialogTitle className="sr-only">{modalTitle}</DialogTitle>
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
+        <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <span
               aria-hidden="true"
@@ -772,15 +906,20 @@ export function InboxComposerDetailPane() {
               composerAliases={composerAliases}
               selectedAlias={selectedAlias}
               recipient={recipient}
+              ccRecipients={ccRecipients}
+              bccRecipients={bccRecipients}
+              showCc={showCc}
+              showBcc={showBcc}
               isReplying={isReplying}
               subject={subject}
               body={body}
               attachments={attachments}
               aiDraft={aiDraft}
+              aiDirective={aiDirective}
               repromptText={repromptText}
               isGeneratingAi={isGeneratingAi}
-              aiButtonLabel={aiButton.label}
-              aiButtonDisabled={aiButton.disabled}
+              runAiDraftDisabled={runAiDraftDisabled}
+              runAiDraftDisabledReason={runAiDraftDisabledReason}
               selectedAliasAiReady={selectedAliasRecord?.isAiReady === true}
               selectedAliasProjectName={
                 selectedAliasRecord?.projectName ?? null
@@ -809,6 +948,28 @@ export function InboxComposerDetailPane() {
                   );
                 }
               }}
+              onCcChange={(nextRecipients) => {
+                setCcRecipients(nextRecipients);
+                clearComposerErrors();
+              }}
+              onBccChange={(nextRecipients) => {
+                setBccRecipients(nextRecipients);
+                clearComposerErrors();
+              }}
+              onToggleCc={(open) => {
+                setShowCc(open);
+                if (!open) {
+                  setCcRecipients([]);
+                }
+                clearComposerErrors();
+              }}
+              onToggleBcc={(open) => {
+                setShowBcc(open);
+                if (!open) {
+                  setBccRecipients([]);
+                }
+                clearComposerErrors();
+              }}
               onSubjectChange={(value) => {
                 setSubject(value);
                 clearComposerErrors();
@@ -818,6 +979,7 @@ export function InboxComposerDetailPane() {
                 setBodyHtml(nextBody.bodyHtml);
               }}
               onClearErrors={clearComposerErrors}
+              onAiDirectiveChange={setAiDirective}
               onAiEdited={markAiDraftEdited}
               onDiscardAi={handleDiscardAi}
               onOpenReprompt={handleOpenReprompt}
@@ -842,6 +1004,8 @@ export function InboxComposerDetailPane() {
               onCancel={handleCancel}
               {...(aliasError ? { aliasError } : {})}
               {...(recipientError ? { recipientError } : {})}
+              {...(ccError ? { ccError } : {})}
+              {...(bccError ? { bccError } : {})}
               {...(subjectError ? { subjectError } : {})}
               {...(bodyError ? { bodyError } : {})}
               {...(attachmentError ? { attachmentError } : {})}

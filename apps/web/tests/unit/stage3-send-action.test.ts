@@ -200,6 +200,34 @@ describe("sendComposerAction", () => {
     );
   });
 
+  it("passes cc and bcc arrays through to the Gmail send client", async () => {
+    sendComposerGmailMessage.mockResolvedValue({
+      kind: "success",
+      gmailMessageId: "gmail-message-2",
+      gmailThreadId: "gmail-thread-2",
+      rfc822MessageId: "<gmail-message-2@example.org>",
+    });
+
+    const result = await sendComposerAction({
+      ...buildInput({
+        recipient: {
+          kind: "contact",
+          contactId: "contact:existing",
+        },
+      }),
+      cc: ["partner@example.org"],
+      bcc: ["archive@example.org"],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(sendComposerGmailMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cc: ["partner@example.org"],
+        bcc: ["archive@example.org"],
+      }),
+    );
+  });
+
   it("maps all typed Gmail send errors into the FP-07 envelope and marks the row failed", async () => {
     const cases = [
       ["auth_error", "composer_unavailable", false],

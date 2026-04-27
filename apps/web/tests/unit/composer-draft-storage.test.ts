@@ -57,6 +57,8 @@ describe("composer draft storage", () => {
       bodyPlaintext: "Hello there",
       bodyHtml: "<p>Hello there</p>",
       selectedAlias: "field@adventuresci.org",
+      cc: ["partner@example.org"],
+      bcc: [],
       attachments: [
         {
           filename: "itinerary.pdf",
@@ -73,6 +75,8 @@ describe("composer draft storage", () => {
       bodyPlaintext: "Hello there",
       bodyHtml: "<p>Hello there</p>",
       selectedAlias: "field@adventuresci.org",
+      cc: ["partner@example.org"],
+      bcc: [],
       attachments: [
         {
           filename: "itinerary.pdf",
@@ -90,6 +94,8 @@ describe("composer draft storage", () => {
       bodyPlaintext: "Body",
       bodyHtml: "<p>Body</p>",
       selectedAlias: null,
+      cc: [],
+      bcc: [],
       attachments: [],
     });
 
@@ -109,6 +115,8 @@ describe("composer draft storage", () => {
       bodyPlaintext: "a".repeat(5_000),
       bodyHtml: `<p>${"a".repeat(5_000)}</p>`,
       selectedAlias: null,
+      cc: [],
+      bcc: [],
       attachments: [],
     });
     saveDraft("composer-draft:v1:actor-1:contact-2:contact", {
@@ -116,6 +124,8 @@ describe("composer draft storage", () => {
       bodyPlaintext: "b".repeat(5_000),
       bodyHtml: `<p>${"b".repeat(5_000)}</p>`,
       selectedAlias: null,
+      cc: [],
+      bcc: [],
       attachments: [],
     });
 

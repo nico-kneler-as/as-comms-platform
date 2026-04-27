@@ -22,6 +22,20 @@ function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
+export function resolveRecipientEmailAddress(
+  recipient: ComposerRecipientValue,
+): string | null {
+  if (recipient.kind === "email") {
+    return normalizeEmail(recipient.emailAddress);
+  }
+
+  if (recipient.primaryEmail === null) {
+    return null;
+  }
+
+  return normalizeEmail(recipient.primaryEmail);
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -90,6 +104,10 @@ export function mapFieldErrors(
       default:
         if (field.startsWith("recipient")) {
           mappedErrors.push({ field: "recipient", message });
+        } else if (field.startsWith("cc")) {
+          mappedErrors.push({ field: "cc", message });
+        } else if (field.startsWith("bcc")) {
+          mappedErrors.push({ field: "bcc", message });
         }
     }
   }
