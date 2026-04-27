@@ -11,8 +11,49 @@ import React, {
 
 Object.assign(globalThis, { React });
 
+import { createRequire } from "node:module";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+const workerRequire = createRequire(
+  new URL("../../../worker/package.json", import.meta.url),
+);
+const { JSDOM } = workerRequire("jsdom") as {
+  readonly JSDOM: new (
+    html: string,
+    options: { readonly url: string },
+  ) => {
+    readonly window: Window &
+      typeof globalThis & {
+        close: () => void;
+      };
+  };
+};
+
+beforeAll(() => {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    url: "http://localhost/",
+  });
+  const w = dom.window;
+  Object.assign(globalThis, {
+    document: w.document,
+    Element: w.Element,
+    Event: w.Event,
+    HTMLElement: w.HTMLElement,
+    HTMLButtonElement: w.HTMLButtonElement,
+    HTMLInputElement: w.HTMLInputElement,
+    HTMLTextAreaElement: w.HTMLTextAreaElement,
+    KeyboardEvent: w.KeyboardEvent,
+    MouseEvent: w.MouseEvent,
+    Node: w.Node,
+    navigator: w.navigator,
+    window: w,
+    self: w,
+  });
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
+});
 
 const DropdownMenuContext = React.createContext<{
   readonly open: boolean;
