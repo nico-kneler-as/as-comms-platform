@@ -2,16 +2,16 @@
 
 import { useId, useState } from "react";
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING, TRANSITION, TYPE } from "@/app/_lib/design-tokens-v2";
 
 import type { InboxTimelineEntryViewModel } from "../_lib/view-models";
-import {
-  ArrowRightIcon,
-  ChevronDownIcon,
-  MailIcon,
-} from "./icons";
+import { ArrowRightIcon, ChevronDownIcon, MailIcon } from "./icons";
 
 const WRAP_ANYWHERE = "break-words [overflow-wrap:anywhere]";
 const EXACT_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
@@ -28,13 +28,24 @@ function formatExactTimestamp(timestamp: string): string {
   return EXACT_TIMESTAMP_FORMATTER.format(new Date(timestamp));
 }
 
-function extractDisplayName(value: string | null): string | null {
+function normalizeHeaderValue(value: string | null): string | null {
   if (value === null) {
     return null;
   }
 
-  const stripped = value.replace(/\s*<[^>]+>\s*/g, "").trim();
-  return stripped.length === 0 ? value.trim() : stripped;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function extractDisplayName(value: string | null): string | null {
+  const normalized = normalizeHeaderValue(value);
+
+  if (normalized === null) {
+    return null;
+  }
+
+  const stripped = normalized.replace(/\s*<[^>]+>\s*/g, "").trim();
+  return stripped.length === 0 ? normalized : stripped;
 }
 
 function RelativeTimestamp({
@@ -77,9 +88,16 @@ export function EmailParticipantHeader({
     return null;
   }
 
+  const recipient =
+    entry.recipientLabel ??
+    extractDisplayName(entry.toHeader) ??
+    normalizeHeaderValue(entry.toHeader);
   const rows = [
-    { label: "From", value: entry.fromHeader ?? entry.actorLabel },
-    { label: "To", value: entry.toHeader ?? "Unknown recipient" },
+    {
+      label: "From",
+      value: normalizeHeaderValue(entry.fromHeader) ?? entry.actorLabel,
+    },
+    { label: "To", value: normalizeHeaderValue(entry.toHeader) ?? recipient },
     { label: "Cc", value: entry.ccHeader },
   ].filter(
     (
@@ -91,7 +109,6 @@ export function EmailParticipantHeader({
   );
 
   const sender = extractDisplayName(entry.fromHeader) ?? entry.actorLabel;
-  const recipient = extractDisplayName(entry.toHeader) ?? "Unknown recipient";
   const hasCc = entry.ccHeader !== null && entry.ccHeader.trim().length > 0;
   const headerBorderClass =
     tone === "sky" ? "border-sky-100/60" : "border-slate-100";
@@ -100,7 +117,9 @@ export function EmailParticipantHeader({
       ? "border-sky-100/60 bg-sky-50/40"
       : "border-slate-100 bg-slate-50/40";
   const ccClass =
-    tone === "sky" ? "bg-sky-100/70 text-sky-700" : "bg-slate-100 text-slate-500";
+    tone === "sky"
+      ? "bg-sky-100/70 text-sky-700"
+      : "bg-slate-100 text-slate-500";
 
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
@@ -114,7 +133,9 @@ export function EmailParticipantHeader({
           <button
             type="button"
             aria-controls={contentId}
-            aria-label={expanded ? "Hide full email headers" : "Show full email headers"}
+            aria-label={
+              expanded ? "Hide full email headers" : "Show full email headers"
+            }
             className={cn(
               "flex min-w-0 flex-1 items-center gap-1.5 text-left text-[12px]",
               FOCUS_RING,

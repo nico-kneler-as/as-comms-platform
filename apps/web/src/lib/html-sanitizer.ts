@@ -1,15 +1,54 @@
 const ALLOWED_CONTAINER_TAGS = new Set([
+  "blockquote",
+  "code",
+  "div",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "li",
+  "ol",
   "p",
+  "pre",
+  "span",
   "strong",
+  "table",
+  "tbody",
+  "td",
+  "th",
+  "thead",
+  "tr",
   "em",
   "b",
   "i",
   "ul",
-  "ol",
-  "li",
 ]);
-const VOID_TAGS = new Set(["br"]);
-const STRIP_WITH_CONTENT_TAGS = new Set(["script", "style"]);
+const VOID_TAGS = new Set(["br", "hr"]);
+const DROP_TAGS = new Set([
+  "embed",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+]);
+const STRIP_WITH_CONTENT_TAGS = new Set([
+  "applet",
+  "audio",
+  "button",
+  "form",
+  "iframe",
+  "math",
+  "object",
+  "picture",
+  "script",
+  "style",
+  "svg",
+  "video",
+]);
 const TAG_PATTERN = /<\/?[^>]+>/gu;
 const TAG_NAME_PATTERN = /^<\/?\s*([a-zA-Z0-9:-]+)/u;
 const HREF_PATTERN = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/iu;
@@ -76,6 +115,10 @@ export function sanitizeComposerHtml(input: string): string {
       continue;
     }
 
+    if (DROP_TAGS.has(tagName)) {
+      continue;
+    }
+
     if (STRIP_WITH_CONTENT_TAGS.has(tagName) && !rawTag.startsWith("</")) {
       strippedContentTag = tagName;
       continue;
@@ -94,7 +137,7 @@ export function sanitizeComposerHtml(input: string): string {
     }
 
     if (VOID_TAGS.has(tagName)) {
-      output += "<br>";
+      output += `<${tagName}>`;
       continue;
     }
 
@@ -157,7 +200,5 @@ export function appendComposerHtmlSignature(input: {
     plaintextToComposerHtml(input.signaturePlaintext),
   );
 
-  return signatureHtml.length > 0
-    ? `${bodyHtml}${signatureHtml}`
-    : bodyHtml;
+  return signatureHtml.length > 0 ? `${bodyHtml}${signatureHtml}` : bodyHtml;
 }

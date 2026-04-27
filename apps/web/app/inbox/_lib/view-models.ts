@@ -172,6 +172,7 @@ export interface InboxTimelineEntryViewModel {
   readonly isPreview: boolean;
   readonly fromHeader: string | null;
   readonly toHeader: string | null;
+  readonly recipientLabel?: string | null;
   readonly ccHeader: string | null;
   readonly mailbox: string | null;
   readonly threadId: string | null;

@@ -85,6 +85,7 @@ interface InboxDetailCacheData {
     Record<string, CampaignActivitySummary>
   >;
   readonly projectNameById: Readonly<Record<string, string>>;
+  readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly timelinePage: {
     readonly hasMore: boolean;
     readonly nextCursor: string | null;
@@ -817,6 +818,13 @@ function extractEmailAddresses(value: string | null | undefined): string[] {
   );
 }
 
+function normalizeEmailAddress(
+  value: string | null | undefined,
+): string | null {
+  const email = extractEmailAddresses(value)[0];
+  return email ?? null;
+}
+
 function firstNonEmptyNormalized(
   values: readonly (string | null | undefined)[],
 ): string | null {
@@ -887,7 +895,12 @@ function trimQuotedReplyContent(value: string): string {
   }
 
   const boundaries = [
+    // Keep quoted-reply cropping consistent for common email-client markers.
+    // This intentionally keys off the marker line itself, not provider classes
+    // that are frequently missing from plaintext fallbacks.
     /(?:\n|^)\s*On .+ wrote:\s*$/im,
+    /(?:\n|^)\s*On .+? wrote:\s*(?=\n|>)/is,
+    /(?:\n|^)\s*El .+ escribi[oó]:\s*(?=\n|>)/is,
     /(?:\n|^)\s*From:\s.+?(?:Date:|Sent:)\s.+/is,
     /(?:\n|^)\s*-{2,}\s*Original Message\s*-{2,}/im,
     /(?:\n|^)\s*Begin forwarded message:/im,
@@ -1603,6 +1616,60 @@ function timelineBody(item: TimelineItem): string {
   }
 }
 
+function projectLabelForAlias(input: {
+  readonly alias: string | null | undefined;
+  readonly projectLabelByAlias: ReadonlyMap<string, string>;
+}): string | null {
+  const normalizedAlias = normalizeEmailAddress(input.alias);
+
+  if (normalizedAlias === null) {
+    return null;
+  }
+
+  return input.projectLabelByAlias.get(normalizedAlias) ?? null;
+}
+
+function hasDisplayNameHeader(value: string | null | undefined): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  return PARTICIPANT_HEADER_NAME_PATTERN.test(value.trim());
+}
+
+function resolveRecipientLabel(input: {
+  readonly item: TimelineItem;
+  readonly contactPrimaryEmail: string | null;
+  readonly projectLabelByAlias: ReadonlyMap<string, string>;
+}): string | null {
+  if (input.item.family !== "one_to_one_email") {
+    return null;
+  }
+
+  const toHeader = normalizeInlineText(input.item.toHeader);
+
+  if (hasDisplayNameHeader(toHeader)) {
+    return participantHeaderLabel(toHeader);
+  }
+
+  const toEmail = normalizeEmailAddress(toHeader);
+
+  if (toEmail !== null) {
+    return input.item.direction === "inbound"
+      ? (input.projectLabelByAlias.get(toEmail) ?? toEmail)
+      : toEmail;
+  }
+
+  if (input.item.direction === "inbound") {
+    return projectLabelForAlias({
+      alias: input.item.mailbox,
+      projectLabelByAlias: input.projectLabelByAlias,
+    });
+  }
+
+  return normalizeEmailAddress(input.contactPrimaryEmail);
+}
+
 function formatCampaignActivityLabel(
   activityType: Exclude<CampaignActivityType, "sent">,
   occurredAtLabel: string,
@@ -1693,6 +1760,7 @@ function buildTimelineEntry(input: {
   readonly campaignActivitySummaryByCampaignId: Readonly<
     Record<string, CampaignActivitySummary>
   >;
+  readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly referenceNowIso: string;
 }): InboxTimelineEntryViewModel {
   const latestProjectionSnippet =
@@ -1795,6 +1863,11 @@ function buildTimelineEntry(input: {
       input.item.family === "one_to_one_email"
         ? (input.item.toHeader ?? null)
         : null,
+    recipientLabel: resolveRecipientLabel({
+      item: input.item,
+      contactPrimaryEmail: input.contactPrimaryEmail,
+      projectLabelByAlias: input.projectLabelByAlias,
+    }),
     ccHeader:
       input.item.family === "one_to_one_email"
         ? (input.item.ccHeader ?? null)
@@ -1931,6 +2004,52 @@ async function loadProjectLabelById(
         : dimension.projectName,
     ]),
   );
+}
+
+async function loadProjectLabelByAlias(
+  aliases: readonly {
+    readonly alias: string;
+    readonly projectId: string | null;
+  }[],
+): Promise<ReadonlyMap<string, string>> {
+  const projectIds = uniqueStrings(aliases.map((alias) => alias.projectId));
+
+  if (projectIds.length === 0) {
+    return new Map();
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const dimensions =
+    await runtime.repositories.projectDimensions.listByIds(projectIds);
+  const projectLabelById = new Map(
+    dimensions.map((dimension) => [
+      dimension.projectId,
+      dimension.projectAlias?.trim().length
+        ? dimension.projectAlias
+        : dimension.projectName,
+    ]),
+  );
+  const projectLabelByAlias = new Map<string, string>();
+
+  for (const alias of aliases) {
+    if (alias.projectId === null) {
+      continue;
+    }
+
+    const projectLabel = projectLabelById.get(alias.projectId);
+
+    if (projectLabel === undefined) {
+      continue;
+    }
+
+    const normalizedAlias = normalizeEmailAddress(alias.alias);
+
+    if (normalizedAlias !== null) {
+      projectLabelByAlias.set(normalizedAlias, projectLabel);
+    }
+  }
+
+  return projectLabelByAlias;
 }
 
 async function loadLatestSubjectByCanonicalEventId(
@@ -2233,6 +2352,7 @@ async function readInboxDetailCacheData(
     inboxFreshness,
     timelineFreshness,
     canonicalEvents,
+    projectAliasRecords,
   ] = await Promise.all([
     runtime.repositories.contacts.findById(contactId),
     runtime.repositories.inboxProjection.findByContactId(contactId),
@@ -2246,6 +2366,7 @@ async function readInboxDetailCacheData(
     runtime.repositories.inboxProjection.getFreshnessByContactId(contactId),
     runtime.repositories.timelineProjection.getFreshnessByContactId(contactId),
     runtime.repositories.canonicalEvents.listByContactId(contactId),
+    runtime.settings.aliases.listAssigned(),
   ]);
 
   if (contact === null || inboxProjection === null) {
@@ -2265,6 +2386,7 @@ async function readInboxDetailCacheData(
         canonicalEvents,
       }),
     projectNameById: await loadProjectLabelById(memberships),
+    projectLabelByAlias: await loadProjectLabelByAlias(projectAliasRecords),
     timelinePage: {
       hasMore: timelinePage.hasMore,
       nextCursor: timelinePage.hasMore ? timelinePage.nextBeforeSortKey : null,
@@ -2592,6 +2714,7 @@ export async function getInboxTimelinePage(
         item,
         campaignActivitySummaryByCampaignId:
           cachedData.campaignActivitySummaryByCampaignId,
+        projectLabelByAlias: cachedData.projectLabelByAlias,
         referenceNowIso,
       }),
     ),
@@ -2689,6 +2812,7 @@ export async function getInboxDetail(
         item,
         campaignActivitySummaryByCampaignId:
           cachedData.campaignActivitySummaryByCampaignId,
+        projectLabelByAlias: cachedData.projectLabelByAlias,
         referenceNowIso,
       }),
     ),

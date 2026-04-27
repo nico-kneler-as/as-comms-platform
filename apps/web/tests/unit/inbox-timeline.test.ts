@@ -336,6 +336,89 @@ describe("InboxTimeline", () => {
     expect(markup).toContain("Reply");
   });
 
+  it("renders sanitized rich html bodies for email timeline entries", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            id: "timeline:rich-email",
+            kind: "inbound-email" as const,
+            actorLabel: "Shaina Dotson",
+            subject: "Rich update",
+            body: '<h2>Heading</h2><p>Hello <strong>bold</strong> 🎉 <a href="https://example.org">link</a></p><blockquote>quoted</blockquote><img src="x" onerror="alert(1)"><script>alert(1)</script>',
+            fromHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+            toHeader: "pnwbio@adventurescientists.org",
+          },
+        ],
+        volunteerFirstName: "Shaina",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("<h2>Heading</h2>");
+    expect(markup).toContain("<strong>bold</strong>");
+    expect(markup).toContain("🎉");
+    expect(markup).toContain("<blockquote>quoted</blockquote>");
+    expect(markup).toContain('href="https://example.org"');
+    expect(markup).not.toContain("<script>");
+    expect(markup).not.toContain("<img");
+    expect(markup).not.toContain("alert(1)");
+  });
+
+  it("uses recipient labels without falling back to unknown recipient", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            id: "timeline:display-recipient",
+            kind: "outbound-email" as const,
+            actorLabel: "You",
+            subject: "Display recipient",
+            fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
+            toHeader: "Display Name <email@example.com>",
+          },
+          {
+            ...baseEntry,
+            id: "timeline:bare-recipient",
+            kind: "outbound-email" as const,
+            actorLabel: "You",
+            subject: "Bare recipient",
+            fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
+            toHeader: "email@example.com",
+          },
+          {
+            ...baseEntry,
+            id: "timeline:project-recipient",
+            kind: "inbound-email" as const,
+            actorLabel: "Volunteer",
+            subject: "Project recipient",
+            fromHeader: "Volunteer <volunteer@example.com>",
+            toHeader: "",
+            recipientLabel: "PNW Forest Biodiversity",
+          },
+          {
+            ...baseEntry,
+            id: "timeline:no-recipient",
+            kind: "inbound-email" as const,
+            actorLabel: "Volunteer",
+            subject: "No recipient",
+            fromHeader: "Volunteer <volunteer@example.com>",
+            toHeader: null,
+          },
+        ],
+        volunteerFirstName: "Volunteer",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("Display Name");
+    expect(markup).toContain("email@example.com");
+    expect(markup).toContain("PNW Forest Biodiversity");
+    expect(markup).not.toContain("Unknown recipient");
+  });
+
   it("renders a header toggle for every one-to-one email bubble", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
