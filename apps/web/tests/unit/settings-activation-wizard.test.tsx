@@ -846,4 +846,24 @@ describe("settings activation wizard", () => {
     expect(getText(container)).not.toContain("Activate a project");
     expect(getText(container)).not.toContain("Activate ->");
   });
+
+  it("renders active projects only until the activation wizard opens", async () => {
+    const { container } = await mount(
+      createElement(ProjectsSection, {
+        viewModel: buildProjectsViewModel(true)
+      })
+    );
+
+    const initialText = getText(container);
+    expect(initialText).toContain("Currently active");
+    expect(initialText).toContain("Activate a project");
+    expect(initialText).not.toContain("Inactive projects");
+    expect(initialText).not.toContain("River Cleanup");
+
+    await click(findButton(container, "Activate a project"));
+
+    const wizardText = getText(container);
+    expect(wizardText).toContain("Pick project");
+    expect(wizardText).toContain("River Cleanup");
+  });
 });

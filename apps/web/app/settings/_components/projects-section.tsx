@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useDeferredValue, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderOpen, Pencil, Plus, Search } from "lucide-react";
+import { FolderOpen, Pencil, Plus } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -15,7 +15,6 @@ import {
   TRANSITION
 } from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import type {
@@ -32,25 +31,9 @@ export function ProjectsSection({
   readonly viewModel: ProjectsSettingsViewModel;
 }) {
   const router = useRouter();
-  const [search, setSearch] = useState("");
   const [wizardRequest, setWizardRequest] = useState<{
     readonly initialProjectId?: string;
   } | null>(null);
-  const deferredSearch = useDeferredValue(search);
-  const normalizedSearch = deferredSearch.trim().toLowerCase();
-  const filteredInactive =
-    normalizedSearch.length === 0
-      ? viewModel.inactive.slice(0, 3)
-      : viewModel.inactive.filter((project) => {
-          return (
-            project.projectName.toLowerCase().includes(normalizedSearch) ||
-            (project.projectAlias?.toLowerCase().includes(normalizedSearch) ?? false) ||
-            project.emailAliases.some((alias) =>
-              alias.toLowerCase().includes(normalizedSearch)
-            )
-          );
-        });
-  const isSearching = normalizedSearch.length > 0;
 
   function openWizard(initialProjectId?: string) {
     setWizardRequest(
@@ -120,94 +103,6 @@ export function ProjectsSection({
                   <Pencil className="h-4 w-4" aria-hidden="true" />
                 </Link>
               )}
-            />
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div className="flex items-center justify-between gap-3 md:min-w-0">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    Inactive projects
-                  </h3>
-                  <p className={cn("mt-0.5", TYPE.caption)}>
-                    {isSearching
-                      ? "Search results across inactive project names, project aliases, and inbox aliases."
-                      : "Showing the 3 most recently created inactive projects. Search to find older ones."}
-                  </p>
-                </div>
-                <span className={cn(TYPE.caption, "tabular-nums")}>
-                  {String(viewModel.counts.inactive)} inactive
-                </span>
-              </div>
-
-              <label className="relative block md:w-[320px]" htmlFor="inactive-project-search">
-                <Search
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                  aria-hidden="true"
-                />
-                <Input
-                  id="inactive-project-search"
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                  }}
-                  placeholder="Search inactive projects, aliases"
-                  className="pl-9"
-                />
-              </label>
-            </div>
-            <ProjectList
-              projects={filteredInactive}
-              emptyMessage={
-                isSearching
-                  ? "No inactive projects matched that search."
-                  : "No inactive projects."
-              }
-              renderMeta={(project) => (
-                <StatusBadge
-                  label={
-                    project.activationRequirementsMet ? "Activation ready" : "Needs setup"
-                  }
-                  colorClasses={
-                    project.activationRequirementsMet
-                      ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                      : "bg-amber-50 text-amber-800 ring-amber-200"
-                  }
-                  variant="soft"
-                />
-              )}
-              renderAction={(project) =>
-                viewModel.isAdmin ? (
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        openWizard(project.projectId);
-                      }}
-                    >
-                      Activate →
-                    </Button>
-                    <Button asChild size="sm" variant="ghost" className="px-2">
-                      <Link
-                        href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
-                      >
-                        View
-                      </Link>
-                    </Button>
-                  </div>
-                ) : (
-                  <Button asChild size="sm" variant="outline">
-                    <Link
-                      href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
-                    >
-                      Review
-                    </Link>
-                  </Button>
-                )
-              }
             />
           </div>
         </div>
