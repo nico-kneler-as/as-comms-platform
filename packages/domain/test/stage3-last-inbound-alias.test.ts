@@ -58,6 +58,7 @@ function buildRepositoryBundle(input: {
       findByScope: () => Promise.resolve(null),
       findProjectNotionContent: () => Promise.resolve(null),
       hasProjectNotionContent: () => Promise.resolve(false),
+      findProjectIdsWithNotionContent: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record),
     },
     projectKnowledge: {

@@ -892,6 +892,27 @@ function createStage1RepositoriesInternal(
         return row !== undefined;
       },
 
+      async findProjectIdsWithNotionContent(projectIds) {
+        if (projectIds.length === 0) {
+          return [];
+        }
+        const rows = await db
+          .selectDistinct({ scopeKey: aiKnowledgeEntries.scopeKey })
+          .from(aiKnowledgeEntries)
+          .where(
+            and(
+              eq(aiKnowledgeEntries.scope, "project"),
+              eq(aiKnowledgeEntries.sourceProvider, "notion"),
+              inArray(aiKnowledgeEntries.scopeKey, projectIds as string[]),
+              sql`length(btrim(${aiKnowledgeEntries.content})) > 0`,
+            ),
+          );
+
+        return rows
+          .map((row) => row.scopeKey)
+          .filter((key): key is string => key !== null);
+      },
+
       async upsert(record) {
         const values = mapAiKnowledgeEntryToInsert(record);
         const [row] = await db
