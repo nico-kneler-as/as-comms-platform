@@ -948,7 +948,7 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("currently renders the contact rail project card to the project crmUrl instead of expeditionMemberUrl", async () => {
+  it("renders the contact rail project card with expeditionMemberUrl as primary and crmUrl as secondary", async () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     if (detail === null) {
@@ -961,11 +961,29 @@ describe("real inbox selectors", () => {
     );
 
     expect(markup).toContain(
-      'href="https://adventurescientists.lightning.force.com/lightning/r/Project__c/project%3Aamazon-basin/view"',
-    );
-    expect(markup).not.toContain(
       'href="https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/a0B-sarah-membership/view"',
     );
+    expect(markup).toContain(
+      'href="https://adventurescientists.lightning.force.com/lightning/r/Project__c/project%3Aamazon-basin/view"',
+    );
+  });
+
+  it("falls back to crmUrl as the primary project link when expeditionMemberUrl is null", async () => {
+    const detail = await getInboxDetail("contact:lisa-zhang");
+
+    if (detail === null) {
+      throw new Error("Expected inbox detail for Lisa Zhang");
+    }
+    const markup = renderToStaticMarkup(
+      createElement(InboxContactRail, {
+        contact: detail.contact,
+      }),
+    );
+
+    expect(markup).toContain(
+      'href="https://adventurescientists.lightning.force.com/lightning/r/Project__c/project%3Akiller-whales/view"',
+    );
+    expect(markup).not.toContain("Expedition_Members__c");
   });
 
   it("uses the most recent internal note as the pinned note proxy", async () => {
