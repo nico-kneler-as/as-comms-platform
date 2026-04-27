@@ -64,6 +64,7 @@ export interface InboxListItemViewModel {
   readonly bucket: InboxBucket;
   readonly needsFollowUp: boolean;
   readonly hasUnresolved: boolean;
+  readonly isUnread: boolean;
   readonly unreadCount: number;
   /**
    * True when the last inbound is newer than the last outbound (or no outbound
@@ -74,6 +75,7 @@ export interface InboxListItemViewModel {
 
   // ── Sort / display ──
   readonly lastInboundAt: string | null;
+  readonly lastNonAliasMessageAt: string | null;
   readonly lastOutboundAt: string | null;
   readonly lastActivityAt: string;
   readonly lastEventType: InboxDrivingEventType;
@@ -304,6 +306,7 @@ export interface InboxDetailViewModel {
   readonly timeline: readonly InboxTimelineEntryViewModel[];
   readonly bucket: InboxBucket;
   readonly needsFollowUp: boolean;
+  readonly isUnread: boolean;
   readonly smsEligible: boolean;
   readonly composerReplyContext: InboxComposerReplyContext | null;
   readonly timelinePage: {

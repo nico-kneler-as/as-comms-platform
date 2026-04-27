@@ -1,5 +1,3 @@
-import { createServer } from "node:net";
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type * as IntegrationsModule from "@as-comms/integrations";
@@ -20,14 +18,14 @@ vi.mock("@as-comms/integrations", async () => {
 });
 
 import {
+  handleSalesforceCaptureHttpRequest,
   readSalesforceCaptureRuntimeConfig,
-  startSalesforceCaptureServer,
 } from "../src/index.js";
 
-function createConfig(port: number) {
+function createConfig() {
   return readSalesforceCaptureRuntimeConfig({
     HOST: "127.0.0.1",
-    PORT: String(port),
+    PORT: "3002",
     SALESFORCE_CAPTURE_TOKEN: "salesforce-token",
     SALESFORCE_LOGIN_URL: "https://test.salesforce.com",
     SALESFORCE_CLIENT_ID: "salesforce-client-id",
@@ -53,31 +51,6 @@ ZsMs9ff6x7BET58=
   });
 }
 
-async function getAvailablePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-
-      if (address === null || typeof address === "string") {
-        reject(new Error("Failed to resolve an available port."));
-        return;
-      }
-
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(address.port);
-      });
-    });
-  });
-}
-
 afterEach(() => {
   createSalesforceCaptureServiceMock.mockReset();
   vi.restoreAllMocks();
@@ -85,7 +58,6 @@ afterEach(() => {
 
 describe("Salesforce capture server", () => {
   it("logs safe structured details and returns generic 500 bodies for live request failures", async () => {
-    const port = await getAvailablePort();
     const serviceError = new TypeError("Salesforce live failure");
     const consoleErrorSpy = vi
       .spyOn(console, "error")
@@ -97,96 +69,67 @@ describe("Salesforce capture server", () => {
       }),
     });
 
-    const server = await startSalesforceCaptureServer(createConfig(port));
+    const response = await handleSalesforceCaptureHttpRequest(createConfig(), {
+      method: "POST",
+      path: "/live",
+      headers: {
+        authorization: "Bearer salesforce-token",
+        "content-type": "application/json",
+      },
+      bodyText: JSON.stringify({
+        jobId: "job:salesforce:live:1",
+      }),
+    });
 
-    try {
-      const response = await fetch(`http://127.0.0.1:${String(port)}/live`, {
-        method: "POST",
-        headers: {
-          authorization: "Bearer salesforce-token",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          jobId: "job:salesforce:live:1",
-        }),
-      });
+    expect(response.status).toBe(500);
+    const responseBody = JSON.parse(response.body) as Record<string, unknown>;
+    expect(responseBody).toMatchObject({
+      ok: false,
+      error: "internal_error",
+    });
+    expect(typeof responseBody.requestId).toBe("string");
 
-      expect(response.status).toBe(500);
-      const responseBody = (await response.json()) as Record<string, unknown>;
-      expect(responseBody).toMatchObject({
-        ok: false,
-        error: "internal_error",
-      });
-      expect(typeof responseBody.requestId).toBe("string");
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
 
-      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+    const loggedError = JSON.parse(
+      String(consoleErrorSpy.mock.calls[0]?.[0] ?? ""),
+    ) as Record<string, unknown>;
 
-      const loggedError = JSON.parse(
-        String(consoleErrorSpy.mock.calls[0]?.[0] ?? ""),
-      ) as Record<string, unknown>;
-
-      expect(loggedError).toMatchObject({
-        event: "salesforce_capture.live.error",
-        requestId: responseBody.requestId,
-        errorName: "TypeError",
-        requestMethod: "POST",
-        requestPath: "/live",
-      });
-      expect(loggedError).not.toHaveProperty("errorMessage");
-      expect(loggedError).not.toHaveProperty("errorStack");
-      expect(loggedError).not.toHaveProperty("requestBody");
-      expect(typeof loggedError.occurredAt).toBe("string");
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
-        });
-      });
-    }
+    expect(loggedError).toMatchObject({
+      event: "salesforce_capture.live.error",
+      requestId: responseBody.requestId,
+      errorName: "TypeError",
+      requestMethod: "POST",
+      requestPath: "/live",
+    });
+    expect(loggedError).not.toHaveProperty("errorMessage");
+    expect(loggedError).not.toHaveProperty("errorStack");
+    expect(loggedError).not.toHaveProperty("requestBody");
+    expect(typeof loggedError.occurredAt).toBe("string");
   });
 
   it("rejects oversized request bodies before invoking the capture service", async () => {
-    const port = await getAvailablePort();
     const handleHttpRequest = vi.fn();
 
     createSalesforceCaptureServiceMock.mockReturnValue({
       handleHttpRequest,
     });
 
-    const server = await startSalesforceCaptureServer(createConfig(port));
+    const response = await handleSalesforceCaptureHttpRequest(createConfig(), {
+      method: "POST",
+      path: "/live",
+      headers: {
+        authorization: "Bearer salesforce-token",
+        "content-type": "application/json",
+      },
+      bodyText: "x".repeat(1_000_001),
+    });
 
-    try {
-      const response = await fetch(`http://127.0.0.1:${String(port)}/live`, {
-        method: "POST",
-        headers: {
-          authorization: "Bearer salesforce-token",
-          "content-type": "application/json",
-        },
-        body: "x".repeat(1_000_001),
-      });
-
-      expect(response.status).toBe(413);
-      await expect(response.json()).resolves.toEqual({
-        ok: false,
-        error: "payload_too_large",
-      });
-      expect(handleHttpRequest).not.toHaveBeenCalled();
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
-        });
-      });
-    }
+    expect(response.status).toBe(413);
+    expect(JSON.parse(response.body)).toEqual({
+      ok: false,
+      error: "payload_too_large",
+    });
+    expect(handleHttpRequest).not.toHaveBeenCalled();
   });
 });

@@ -259,13 +259,11 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const [isMarkUnreadPending, startMarkUnreadTransition] = useTransition();
   const markOpenedRef = useRef(false);
 
-  // Flip bucket to "Opened" on first mount of a detail view whose server-
-  // state is still "New". The ref prevents re-firing if the effect re-runs
-  // (e.g., router.refresh swapping the detail prop). User-initiated
-  // "Mark as unread" goes through `handleMarkUnread` below, which also
-  // closes the detail, so we won't immediately re-mark as opened.
+  // Acknowledging an unread conversation uses the same open path whether the
+  // unread state came from an inbound volunteer message or a non-alias
+  // teammate reply. The ref prevents re-firing if the effect re-runs.
   useEffect(() => {
-    if (markOpenedRef.current || detail.bucket !== "new") {
+    if (markOpenedRef.current || !detail.isUnread) {
       return;
     }
     markOpenedRef.current = true;
@@ -276,7 +274,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
         router.refresh();
       }
     });
-  }, [contact.contactId, detail.bucket, router]);
+  }, [contact.contactId, detail.isUnread, router]);
 
   const handleMarkUnread = useCallback(() => {
     startMarkUnreadTransition(async () => {

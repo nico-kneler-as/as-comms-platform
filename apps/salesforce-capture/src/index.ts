@@ -343,6 +343,91 @@ function logSalesforceCaptureRequestError(input: {
   };
 }
 
+interface CaptureHttpResponse {
+  readonly status: number;
+  readonly headers: Record<string, string>;
+  readonly body: string;
+}
+
+async function handleSalesforceCaptureHttpRequestInternal(input: {
+  readonly config: SalesforceCaptureRuntimeConfig;
+  readonly service: ReturnType<typeof createSalesforceCaptureService>;
+  readonly request: CaptureServiceHttpRequest;
+}): Promise<CaptureHttpResponse> {
+  let path = "/";
+
+  try {
+    path = new URL(input.request.path, "http://salesforce-capture.local")
+      .pathname;
+
+    if (input.request.method === "GET" && path === "/health") {
+      return {
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify(
+          await handleSalesforceHealthRequest(input.config),
+        ),
+      };
+    }
+
+    if (
+      Buffer.byteLength(input.request.bodyText, "utf8") >
+      MAX_REQUEST_BODY_BYTES
+    ) {
+      return {
+        status: 413,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({
+          ok: false,
+          error: "payload_too_large",
+        }),
+      };
+    }
+
+    return await input.service.handleHttpRequest({
+      ...input.request,
+      path,
+    });
+  } catch (error) {
+    const { requestId } = logSalesforceCaptureRequestError({
+      error,
+      method: input.request.method,
+      path,
+    });
+
+    return {
+      status: 500,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({
+        ok: false,
+        error: "internal_error",
+        requestId,
+      }),
+    };
+  }
+}
+
+export async function handleSalesforceCaptureHttpRequest(
+  config: SalesforceCaptureRuntimeConfig,
+  request: CaptureServiceHttpRequest,
+): Promise<CaptureHttpResponse> {
+  const service = createSalesforceCaptureService(
+    config.service satisfies SalesforceCaptureServiceConfig,
+  );
+
+  return handleSalesforceCaptureHttpRequestInternal({
+    config,
+    service,
+    request,
+  });
+}
+
 export async function handleSalesforceHealthRequest(
   config: SalesforceCaptureRuntimeConfig,
   input?: {
@@ -374,28 +459,13 @@ export async function startSalesforceCaptureServer(
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> {
-    let path = "/";
-
     try {
-      path = new URL(request.url ?? "/", "http://salesforce-capture.local")
-        .pathname;
-
-      if (request.method === "GET" && path === "/health") {
-        const health = await handleSalesforceHealthRequest(config);
-        writeResponse(response, {
-          status: 200,
-          headers: {
-            "content-type": "application/json; charset=utf-8",
-          },
-          body: JSON.stringify(health),
-        });
-        return;
-      }
-
       const bodyText = await readRequestBody(request);
-      const serviceResponse = await service.handleHttpRequest(
-        createHttpRequest(request, bodyText),
-      );
+      const serviceResponse = await handleSalesforceCaptureHttpRequestInternal({
+        config,
+        service,
+        request: createHttpRequest(request, bodyText),
+      });
       writeResponse(response, serviceResponse);
     } catch (error) {
       if (error instanceof RequestBodyTooLargeError) {
@@ -415,7 +485,10 @@ export async function startSalesforceCaptureServer(
       const { requestId } = logSalesforceCaptureRequestError({
         error,
         method: request.method ?? "GET",
-        path,
+        path: new URL(
+          request.url ?? "/",
+          "http://salesforce-capture.local",
+        ).pathname,
       });
 
       writeResponse(response, {

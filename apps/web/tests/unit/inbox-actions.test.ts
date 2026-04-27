@@ -23,6 +23,7 @@ vi.mock("@/src/server/ai", async (importOriginal) => {
 import {
   clearInboxNeedsFollowUpAction,
   draftWithAiAction,
+  markInboxOpenedAction,
   markInboxNeedsFollowUpAction,
 } from "../../app/inbox/actions";
 import { resetSecurityRateLimiterForTests } from "../../src/server/security/rate-limit";
@@ -210,6 +211,85 @@ describe("server-backed follow-up actions", () => {
       bucket: "New",
     });
     expect(followUpList.items).toHaveLength(0);
+  });
+
+  it("clears alias-aware unread state through the same open action path", async () => {
+    if (runtime === null) {
+      throw new Error("runtime not initialized");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:pnw-bio",
+      projectName: "Passive Acoustic Monitoring of Pacific Northwest Forests",
+      projectAlias: "PNW Bio",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:pnw-primary",
+      alias: "pnwbio@adventurescientists.org",
+      signature: "",
+      projectId: "project:pnw-bio",
+      createdAt: new Date("2026-04-20T08:00:00.000Z"),
+      updatedAt: new Date("2026-04-20T08:00:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:cross-dept",
+      salesforceContactId: "003-cross",
+      displayName: "Cross Dept Reply",
+      primaryEmail: "cross@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-bio",
+      projectName: "Passive Acoustic Monitoring of Pacific Northwest Forests",
+      projectAlias: "PNW Bio",
+      membershipId: "membership:cross-dept",
+      membershipStatus: "active",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "cross-dept-outbound-1",
+      contactId: "contact:cross-dept",
+      occurredAt: "2026-04-27T12:00:00.000Z",
+      direction: "outbound",
+      subject: "Re: PNW logistics",
+      snippet: "Jumping in from my org Gmail with field coordination details.",
+      fromHeader: "Pat Jones <pj@adventurescientists.org>",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:cross-dept",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-25T10:00:00.000Z",
+      lastOutboundAt: "2026-04-27T12:00:00.000Z",
+      lastActivityAt: "2026-04-27T12:00:00.000Z",
+      snippet: "Jumping in from my org Gmail with field coordination details.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const before = await getInboxList("unread");
+    const formData = new FormData();
+    formData.set("contactId", "contact:cross-dept");
+
+    const result = await markInboxOpenedAction(formData);
+    const after = await getInboxList("unread");
+
+    expect(before.items.map((item) => item.contactId)).toContain(
+      "contact:cross-dept",
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        contactId: "contact:cross-dept",
+        bucket: "Opened",
+      },
+    });
+    expect(after.items.map((item) => item.contactId)).not.toContain(
+      "contact:cross-dept",
+    );
   });
 
   it("does not clobber fresher projection state when follow-up is toggled", async () => {
