@@ -1393,6 +1393,10 @@ function createStage1RepositoriesInternal(
           return new Map();
         }
 
+        // Date-bound the scan to avoid an open-ended walk back through history
+        // when a contact's most recent activity is non-Gmail (e.g. SF Tasks).
+        // 180 days is well past any realistic window in which an inbound
+        // project-alias could be assumed stable for membership resolution.
         const result = await db.execute(
           sql`
             select distinct on (${canonicalEventLedger.contactId})
@@ -1404,6 +1408,7 @@ function createStage1RepositoriesInternal(
             where ${inArray(canonicalEventLedger.contactId, [...contactIds])}
               and ${gmailMessageDetails.direction} = 'inbound'
               and ${gmailMessageDetails.projectInboxAlias} is not null
+              and ${canonicalEventLedger.occurredAt} > now() - interval '180 days'
             order by
               ${canonicalEventLedger.contactId},
               ${canonicalEventLedger.occurredAt} desc
