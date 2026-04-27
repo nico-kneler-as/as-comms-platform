@@ -9,6 +9,7 @@ import { autolinkText } from "./_autolink";
 import { EmailParticipantHeader } from "./email-participant-header";
 import { InboxAvatar } from "./inbox-avatar";
 import {
+  AdventureScientistsLogo,
   CornerUpLeftIcon,
   LoaderIcon,
   MailIcon,
@@ -36,7 +37,7 @@ function bodyTextForEntry(entry: InboxTimelineEntryViewModel): string {
   return entry.body.trim();
 }
 
-function ReplyButton({
+function ReplyFooter({
   entryId,
   tone,
   onReply,
@@ -50,25 +51,34 @@ function ReplyButton({
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => {
-        onReply(entryId);
-      }}
+    <div
       className={cn(
-        "mt-3 ml-auto inline-flex items-center gap-1 text-[11.5px]",
-        TRANSITION.fast,
-        TRANSITION.reduceMotion,
+        "flex items-center justify-end border-t px-4 py-2",
         tone === "sky-inverse"
-          ? "text-sky-100 hover:text-white"
+          ? "border-sky-500/40"
           : tone === "sky"
-            ? "text-sky-700 hover:text-sky-900"
-            : "text-slate-500 hover:text-slate-900",
+            ? "border-sky-100/60"
+            : "border-slate-100",
       )}
     >
-      <CornerUpLeftIcon className="h-3.5 w-3.5" />
-      <span>Reply</span>
-    </button>
+      <button
+        type="button"
+        onClick={() => {
+          onReply(entryId);
+        }}
+        className={cn(
+          "inline-flex items-center gap-1 text-[12px]",
+          TRANSITION.fast,
+          TRANSITION.reduceMotion,
+          tone === "sky-inverse"
+            ? "text-sky-100 hover:text-white hover:underline"
+            : "text-sky-700 hover:underline",
+        )}
+      >
+        <CornerUpLeftIcon className="h-3 w-3" />
+        <span>Reply</span>
+      </button>
+    </div>
   );
 }
 
@@ -144,14 +154,14 @@ function OutboundStatusBanner({
       : null;
 
   return (
-      <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-900">
-        <span>
-          {entry.failedReason === "bounce"
-            ? "Your last reply to this contact bounced — recipient address may be invalid."
-            : entry.sendStatus === "failed"
-              ? "Send failed."
-              : "Send stalled before confirmation."}
-        </span>
+    <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+      <span>
+        {entry.failedReason === "bounce"
+          ? "Your last reply to this contact bounced — recipient address may be invalid."
+          : entry.sendStatus === "failed"
+            ? "Send failed."
+            : "Send stalled before confirmation."}
+      </span>
       {retryDisabledReason ? (
         <TooltipProvider>
           <Tooltip>
@@ -191,6 +201,17 @@ function OutboundStatusBanner({
   );
 }
 
+function OutboundBrandAvatar() {
+  return (
+    <span
+      aria-label="Adventure Scientists"
+      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white ring-1 ring-slate-900/10"
+    >
+      <AdventureScientistsLogo className="size-6" />
+    </span>
+  );
+}
+
 export function MessageBubble({
   entry,
   direction,
@@ -207,21 +228,22 @@ export function MessageBubble({
   const isEmail = entry.channel === "email";
   const isOutbound = direction === "outbound";
   const body = bodyTextForEntry(entry);
-  const avatar = (
+  const inboundAvatar = (
     <InboxAvatar
       initials={initialsForLabel(entry.actorLabel)}
       tone="slate"
-      size="md"
+      size="sm"
     />
   );
 
   const bubbleClassName = isEmail
     ? isOutbound
-      ? "border border-sky-200 bg-sky-50/40 px-4 py-3"
-      : "border border-slate-200 bg-white px-4 py-3"
+      ? "border border-sky-100 bg-sky-50"
+      : "border border-slate-200 bg-white"
     : isOutbound
-      ? "bg-sky-600 px-4 py-2.5 text-white"
-      : "bg-slate-100 px-4 py-2.5 text-slate-900";
+      ? "border border-sky-600 bg-sky-600 text-white"
+      : "border border-slate-200 bg-white";
+  const replyTone = isOutbound ? (isEmail ? "sky" : "sky-inverse") : "slate";
 
   return (
     <li
@@ -238,25 +260,17 @@ export function MessageBubble({
           isOutbound ? "justify-end" : "justify-start",
         )}
       >
-        {!isOutbound ? <div className="shrink-0 pt-1">{avatar}</div> : null}
+        {!isOutbound ? (
+          <div className="mt-2 shrink-0">{inboundAvatar}</div>
+        ) : null}
 
         <div
           className={cn(
-            "min-w-0 w-full max-w-[640px] rounded-2xl",
+            "min-w-0 w-full max-w-[640px] overflow-hidden rounded-xl",
             SHADOW.sm,
             bubbleClassName,
           )}
         >
-          {isOutbound ? (
-            <OutboundStatusBanner
-              entry={entry}
-              isRetrying={isRetrying}
-              {...(onRetryPending === undefined
-                ? {}
-                : { onRetryPending })}
-            />
-          ) : null}
-
           {isEmail ? (
             <EmailParticipantHeader
               entry={entry}
@@ -264,46 +278,51 @@ export function MessageBubble({
             />
           ) : null}
 
-          {isEmail && entry.subject ? (
-            <p
-              className={cn(
-                "mb-1.5 mt-2 text-balance text-[13px] font-semibold text-slate-900",
-                WRAP_ANYWHERE,
-              )}
-            >
-              {entry.subject}
-            </p>
-          ) : null}
+          <div className={cn("px-4", isEmail ? "py-3" : "py-2.5")}>
+            {isOutbound ? (
+              <OutboundStatusBanner
+                entry={entry}
+                isRetrying={isRetrying}
+                {...(onRetryPending === undefined ? {} : { onRetryPending })}
+              />
+            ) : null}
 
-          {body.length > 0 ? (
-            <p
-              className={cn(
-                isEmail
-                  ? `font-message-body whitespace-pre-wrap text-pretty ${TYPE.bodySerifSm}`
-                  : "whitespace-pre-wrap text-[13px] leading-relaxed",
-                isOutbound && !isEmail ? "text-white" : undefined,
-                WRAP_ANYWHERE,
-              )}
-            >
-              {autolinkText(
-                body,
-                isOutbound && !isEmail
-                  ? "text-white underline decoration-white/40"
-                  : isOutbound
-                    ? "text-sky-700"
-                    : "text-sky-600",
-              )}
-            </p>
-          ) : null}
+            {isEmail && entry.subject ? (
+              <p
+                className={cn(
+                  "mb-1.5 text-balance text-[14px] font-semibold text-slate-900",
+                  WRAP_ANYWHERE,
+                )}
+              >
+                {entry.subject}
+              </p>
+            ) : null}
 
-          <ReplyButton
+            {body.length > 0 ? (
+              <p
+                className={cn(
+                  "whitespace-pre-wrap text-pretty text-[14px] leading-relaxed",
+                  isOutbound && !isEmail ? "text-white" : "text-slate-700",
+                  WRAP_ANYWHERE,
+                )}
+              >
+                {autolinkText(body)}
+              </p>
+            ) : null}
+          </div>
+
+          <ReplyFooter
             entryId={entry.id}
-            tone={isOutbound ? (isEmail ? "sky" : "sky-inverse") : "slate"}
+            tone={replyTone}
             {...(onReply === undefined ? {} : { onReply })}
           />
         </div>
 
-        {isOutbound ? <div className="shrink-0 pt-1">{avatar}</div> : null}
+        {isOutbound ? (
+          <div className="mt-2 shrink-0">
+            <OutboundBrandAvatar />
+          </div>
+        ) : null}
       </div>
 
       {!isOutbound ? <InboundMetadataRow entry={entry} /> : null}

@@ -13,7 +13,7 @@ describe("composer html sanitizer", () => {
         '<p class="x">Hello <strong data-x="1">bold</strong> <em>italic</em> <a id="bad" href="https://example.org/path">link</a></p><script>alert(1)</script><style>p{color:red}</style><img src="x"><table><tr><td>cell</td></tr></table>',
       ),
     ).toBe(
-      '<p>Hello <strong>bold</strong> <em>italic</em> <a href="https://example.org/path">link</a></p>cell',
+      '<p>Hello <strong>bold</strong> <em>italic</em> <a href="https://example.org/path" class="text-sky-700 hover:underline" target="_blank" rel="noopener noreferrer">link</a></p>cell',
     );
   });
 
@@ -33,11 +33,21 @@ describe("composer html sanitizer", () => {
         signaturePlaintext: "Adventure Scientists\nhttps://example.org",
       }),
     ).toBe(
-      '<p>Body copy</p><p>Adventure Scientists<br><a href="https://example.org">https://example.org</a></p>',
+      '<p>Body copy</p><p>Adventure Scientists<br><a href="https://example.org" class="text-sky-700 hover:underline" target="_blank" rel="noopener noreferrer">https://example.org</a></p>',
     );
 
     expect(plaintextToComposerHtml("One\nTwo\n\nThree")).toBe(
       "<p>One<br>Two</p><p>Three</p>",
+    );
+  });
+
+  it("keeps safe link attributes while rejecting scripts", () => {
+    expect(
+      sanitizeComposerHtml(
+        '<p><a href="https://example.org" target="_self" rel="bad" onclick="alert(1)">Example</a><script>alert(1)</script></p>',
+      ),
+    ).toBe(
+      '<p><a href="https://example.org" class="text-sky-700 hover:underline" target="_blank" rel="noopener noreferrer">Example</a></p>',
     );
   });
 });
