@@ -17,7 +17,6 @@ import {
 
 import {
   CalendarIcon,
-  ChevronRightIcon,
   MailIcon,
   PanelRightCloseIcon,
   PhoneIcon
@@ -161,16 +160,17 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
       ) : (
         <ul className="mt-2 space-y-1">
           {projects.map((project) => {
-            // TODO(B1): swap primary click target to expeditionMemberUrl;
-            // keep crmUrl as secondary "↗ project" link.
             const tone = STATUS_TONE[project.status];
             return (
-              <li key={project.membershipId}>
+              <li
+                key={project.membershipId}
+                className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white hover:ring-1 hover:ring-slate-200"
+              >
                 <a
-                  href={project.crmUrl}
+                  href={project.expeditionMemberUrl ?? project.crmUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white hover:ring-1 hover:ring-slate-200"
+                  className="flex min-w-0 flex-1 items-center gap-2"
                 >
                   <span
                     aria-hidden="true"
@@ -188,7 +188,15 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
                       <InboxProjectStatusBadge status={project.status} />
                     </p>
                   </div>
-                  <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-slate-500" />
+                </a>
+                <a
+                  href={project.crmUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`Open ${project.projectName} project page in Salesforce`}
+                  className="shrink-0 rounded text-[11px] text-slate-400 transition hover:text-slate-600"
+                >
+                  ↗ Project
                 </a>
               </li>
             );
