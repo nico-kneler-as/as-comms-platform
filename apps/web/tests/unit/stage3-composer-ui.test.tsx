@@ -8,7 +8,9 @@ import {
   reduceComposerPane,
   resolveTypedEmailRecipient,
   isComposerSendDisabled,
+  resolveComposerSendActionFlags,
   resolveDefaultAlias,
+  resolveSendAndSaveForAiAvailability,
   type ComposerPaneState,
 } from "../../app/inbox/_lib/composer-ui";
 
@@ -165,6 +167,67 @@ describe("stage3 composer ui helpers", () => {
         isSending: false,
       }),
     ).toBe(true);
+
+    expect(
+      resolveComposerSendActionFlags({
+        sendKind: "send",
+      }),
+    ).toEqual({
+      saveAsKnowledge: false,
+    });
+
+    expect(
+      resolveComposerSendActionFlags({
+        sendKind: "send-and-save",
+      }),
+    ).toEqual({
+      saveAsKnowledge: true,
+    });
+  });
+
+  it("gates send-and-save availability by the selected alias project", () => {
+    expect(
+      resolveSendAndSaveForAiAvailability({
+        selectedAlias: "coastal@adventuresci.org",
+        aliases: [
+          {
+            id: "alias-1",
+            alias: "coastal@adventuresci.org",
+            projectId: "project-1",
+            projectName: "Coastal Survey",
+            isAiReady: false,
+          },
+        ],
+      }),
+    ).toEqual({
+      enabled: false,
+      disabledReason: "AI is not configured for this project.",
+    });
+
+    expect(
+      resolveSendAndSaveForAiAvailability({
+        selectedAlias: "coastal@adventuresci.org",
+        aliases: [
+          {
+            id: "alias-1",
+            alias: "coastal@adventuresci.org",
+            projectId: "project-1",
+            projectName: "Coastal Survey",
+            isAiReady: false,
+          },
+          {
+            id: "alias-2",
+            alias: "backup@adventuresci.org",
+            projectId: "project-1",
+            projectName: "Coastal Survey",
+            isAiReady: true,
+          },
+        ],
+      }),
+    ).toEqual({
+      enabled: true,
+      disabledReason: null,
+    });
   });
 
   it("converts AI draft plaintext into safe composer HTML paragraphs and line breaks", () => {

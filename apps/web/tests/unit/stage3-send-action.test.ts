@@ -228,6 +228,98 @@ describe("sendComposerAction", () => {
     );
   });
 
+  it("does not create a project knowledge entry when saveAsKnowledge is false", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    sendComposerGmailMessage.mockResolvedValue({
+      kind: "success",
+      gmailMessageId: "gmail-message-no-knowledge",
+      gmailThreadId: "gmail-thread-no-knowledge",
+      rfc822MessageId: "<gmail-message-no-knowledge@example.org>",
+    });
+
+    const result = await sendComposerAction({
+      ...buildInput(),
+      saveAsKnowledge: false,
+    });
+
+    expect(result.ok).toBe(true);
+    await expect(
+      runtime.context.repositories.projectKnowledge.list({
+        projectId: "project:antarctica",
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it("creates a pending-review project knowledge entry when saveAsKnowledge is true", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    sendComposerGmailMessage.mockResolvedValue({
+      kind: "success",
+      gmailMessageId: "gmail-message-knowledge",
+      gmailThreadId: "gmail-thread-knowledge",
+      rfc822MessageId: "<gmail-message-knowledge@example.org>",
+    });
+
+    const result = await sendComposerAction({
+      ...buildInput(),
+      saveAsKnowledge: true,
+    });
+
+    expect(result.ok).toBe(true);
+
+    const entries = await runtime.context.repositories.projectKnowledge.list({
+      projectId: "project:antarctica",
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "canonical_reply",
+      sourceKind: "captured_from_send",
+      approvedForAi: false,
+      questionSummary: "Field logistics",
+      maskedExample: "Thanks again for confirming the field logistics.",
+    });
+    expect(entries[0]?.metadataJson).toMatchObject({
+      subject: "Field logistics",
+      bodyPlaintext: "Thanks again for confirming the field logistics.",
+      createdByUserId: "user:operator",
+      gmailMessageId: "gmail-message-knowledge",
+      gmailThreadId: "gmail-thread-knowledge",
+      rfc822MessageId: "<gmail-message-knowledge@example.org>",
+    });
+  });
+
+  it("does not create a project knowledge entry when the send fails", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    sendComposerGmailMessage.mockResolvedValue({
+      kind: "permanent",
+      detail: "Gmail rejected the send request.",
+    });
+
+    const result = await sendComposerAction({
+      ...buildInput(),
+      saveAsKnowledge: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "send_failed",
+    });
+    await expect(
+      runtime.context.repositories.projectKnowledge.list({
+        projectId: "project:antarctica",
+      }),
+    ).resolves.toEqual([]);
+  });
+
   it("maps all typed Gmail send errors into the FP-07 envelope and marks the row failed", async () => {
     const cases = [
       ["auth_error", "composer_unavailable", false],

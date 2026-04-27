@@ -32,6 +32,7 @@ import { enforceRateLimit } from "@/src/server/security/rate-limit";
 import type { UiResult } from "../../src/server/ui-result";
 
 const composerSendActionInputSchema = composerSendInputSchema.extend({
+  saveAsKnowledge: z.boolean().optional(),
   captureAsKnowledge: z.boolean().optional().default(false),
 });
 
@@ -123,85 +124,18 @@ function maskKnowledgeExample(value: string): string {
     .replace(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b/gu, "{NAME}");
 }
 
-function firstNonEmptyText(values: readonly (string | null | undefined)[]): string {
-  for (const value of values) {
-    const trimmed = value?.trim() ?? "";
-    if (trimmed.length > 0) {
-      return trimmed;
-    }
-  }
-
-  return "Captured reply";
-}
-
-function truncateKnowledgeSummary(value: string): string {
-  const normalized = value.replace(/\s+/gu, " ").trim();
-  if (normalized.length <= 50) {
-    return normalized;
-  }
-
-  return normalized.slice(0, 50).trimEnd();
-}
-
-async function resolveLastInboundSummary(input: {
-  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
-  readonly contactId: string;
-}): Promise<string> {
-  const events = await input.runtime.repositories.canonicalEvents.listByContactId(
-    input.contactId,
-  );
-  const inbound = events
-    .filter((event) => event.eventType.endsWith(".inbound"))
-    .at(-1);
-
-  if (inbound === undefined) {
-    return "Captured reply";
-  }
-
-  const [gmailDetails, salesforceDetails, simpleTextingDetails] =
-    await Promise.all([
-      input.runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds([
-        inbound.sourceEvidenceId,
-      ]),
-      input.runtime.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds(
-        [inbound.sourceEvidenceId],
-      ),
-      input.runtime.repositories.simpleTextingMessageDetails.listBySourceEvidenceIds(
-        [inbound.sourceEvidenceId],
-      ),
-    ]);
-
-  const gmailDetail = gmailDetails[0];
-  const salesforceDetail = salesforceDetails[0];
-  const simpleTextingDetail = simpleTextingDetails[0];
-
-  return truncateKnowledgeSummary(
-    firstNonEmptyText([
-      gmailDetail?.subject,
-      salesforceDetail?.subject,
-      gmailDetail?.bodyTextPreview,
-      gmailDetail?.snippetClean,
-      simpleTextingDetail?.messageTextPreview,
-      salesforceDetail?.snippet,
-    ]),
-  );
-}
-
 async function captureKnowledgeFromSend(input: {
   readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
   readonly projectId: string;
-  readonly contactId: string;
+  readonly subject: string;
   readonly bodyPlaintext: string;
   readonly pendingOutboundId: string;
   readonly gmailMessageId: string;
   readonly gmailThreadId: string | null;
   readonly rfc822MessageId: string | null;
   readonly createdAt: Date;
+  readonly createdByUserId: string;
 }): Promise<void> {
-  const questionSummary = await resolveLastInboundSummary({
-    runtime: input.runtime,
-    contactId: input.contactId,
-  });
   const nowIso = input.createdAt.toISOString();
 
   await input.runtime.repositories.projectKnowledge.upsert({
@@ -210,22 +144,32 @@ async function captureKnowledgeFromSend(input: {
     kind: "canonical_reply",
     issueType: null,
     volunteerStage: null,
-    questionSummary,
+    questionSummary: input.subject,
     replyStrategy: null,
-    maskedExample: maskKnowledgeExample(input.bodyPlaintext),
+    maskedExample: input.bodyPlaintext,
     sourceKind: "captured_from_send",
     approvedForAi: false,
     sourceEventId: null,
     metadataJson: {
+      subject: input.subject,
+      bodyPlaintext: input.bodyPlaintext,
+      createdByUserId: input.createdByUserId,
       pendingOutboundId: input.pendingOutboundId,
       gmailMessageId: input.gmailMessageId,
       gmailThreadId: input.gmailThreadId,
       rfc822MessageId: input.rfc822MessageId,
+      maskedExample: maskKnowledgeExample(input.bodyPlaintext),
     },
     lastReviewedAt: null,
     createdAt: nowIso,
     updatedAt: nowIso,
   });
+}
+
+function readSaveAsKnowledgeFlag(
+  input: ComposerSendActionParsedInput,
+): boolean {
+  return input.saveAsKnowledge ?? input.captureAsKnowledge;
 }
 
 function beginAiDraftRequest(userId: string): boolean {
@@ -1293,6 +1237,7 @@ export async function sendComposerAction(
       ),
     });
   }
+  const saveAsKnowledge = readSaveAsKnowledgeFlag(parsedInput.data);
 
   let currentUser;
   try {
@@ -1505,18 +1450,19 @@ export async function sendComposerAction(
         );
       }
 
-      if (parsedInput.data.captureAsKnowledge && alias.projectId !== null) {
+      if (saveAsKnowledge && alias.projectId !== null) {
         try {
           await captureKnowledgeFromSend({
             runtime,
             projectId: alias.projectId,
-            contactId: canonicalContactId,
+            subject: parsedInput.data.subject,
             bodyPlaintext,
             pendingOutboundId,
             gmailMessageId: sendResult.gmailMessageId,
             gmailThreadId: sendResult.gmailThreadId,
             rfc822MessageId: sendResult.rfc822MessageId,
             createdAt: sentAt,
+            createdByUserId: currentUser.id,
           });
         } catch (error) {
           console.warn("Composer send succeeded but knowledge capture failed.", {

@@ -21,6 +21,8 @@ export type ComposerPaneState =
       readonly initialTab?: "email" | "note";
     };
 
+export type ComposerSendKind = "send" | "send-and-save";
+
 export type ComposerPaneAction =
   | {
       readonly type: "open-new-draft";
@@ -149,4 +151,51 @@ export function isComposerSendDisabled(input: {
     input.body.trim().length === 0 ||
     input.isSending
   );
+}
+
+export function resolveComposerSendActionFlags(input: {
+  readonly sendKind: ComposerSendKind;
+}): {
+  readonly saveAsKnowledge: boolean;
+} {
+  return {
+    saveAsKnowledge: input.sendKind === "send-and-save",
+  };
+}
+
+export function resolveSendAndSaveForAiAvailability(input: {
+  readonly selectedAlias: string | null;
+  readonly aliases: readonly InboxComposerAliasOption[];
+}): {
+  readonly enabled: boolean;
+  readonly disabledReason: string | null;
+} {
+  if (input.selectedAlias === null) {
+    return {
+      enabled: false,
+      disabledReason: null,
+    };
+  }
+
+  const selectedAliasRecord =
+    input.aliases.find((alias) => alias.alias === input.selectedAlias) ?? null;
+
+  if (selectedAliasRecord === null) {
+    return {
+      enabled: false,
+      disabledReason: "AI is not configured for this project.",
+    };
+  }
+
+  const hasAiReadyAlias = input.aliases.some(
+    (alias) =>
+      alias.projectId === selectedAliasRecord.projectId && alias.isAiReady,
+  );
+
+  return {
+    enabled: hasAiReadyAlias,
+    disabledReason: hasAiReadyAlias
+      ? null
+      : "AI is not configured for this project.",
+  };
 }
