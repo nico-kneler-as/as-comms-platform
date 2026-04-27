@@ -49,6 +49,7 @@ export interface ComposerValidationError {
 export type AiDraftStatus =
   | "idle"
   | "generating"
+  | "reviewable"
   | "inserted"
   | "reprompting"
   | "edited-after-generation"
@@ -157,6 +158,14 @@ interface InboxClientState {
     readonly request: AiDraftRequestPayload;
     readonly prompt: string;
   }) => void;
+  readonly markAiDraftReviewable: (input: {
+    readonly request: AiDraftRequestPayload;
+    readonly response: AiDraftResponseVm;
+    readonly prompt: string;
+    readonly repromptDirection?: string;
+  }) => void;
+  readonly approveAiDraft: () => void;
+  readonly cancelReprompt: () => void;
   readonly insertAiDraft: (input: {
     readonly request: AiDraftRequestPayload;
     readonly response: AiDraftResponseVm;
@@ -166,6 +175,7 @@ interface InboxClientState {
   readonly markAiDraftEdited: () => void;
   readonly restoreAiDraft: () => void;
   readonly discardAiDraft: () => void;
+  readonly markAiDraftReprompting: () => void;
   readonly repromptAi: (input: {
     readonly request: AiDraftRequestPayload;
     readonly prompt: string;
@@ -332,6 +342,59 @@ export function InboxClientProvider({
     [],
   );
 
+  const markAiDraftReviewable = useCallback(
+    (input: {
+      readonly request: AiDraftRequestPayload;
+      readonly response: AiDraftResponseVm;
+      readonly prompt: string;
+      readonly repromptDirection?: string;
+    }) => {
+      setAiDraft((previous) => ({
+        ...previous,
+        status: "reviewable",
+        mode: input.request.mode,
+        responseMode: input.response.mode,
+        prompt: input.prompt,
+        generatedText: input.response.draft,
+        errorMessage: null,
+        grounding: input.response.grounding,
+        warnings: input.response.warnings,
+        costEstimateUsd: input.response.costEstimateUsd,
+        draftId: input.response.draftId,
+        repromptIndex: input.response.repromptIndex,
+        repromptChain:
+          input.request.mode === "reprompt" && input.repromptDirection
+            ? [
+                ...previous.repromptChain,
+                {
+                  direction: input.repromptDirection,
+                  draft: input.response.draft,
+                },
+              ]
+            : previous.repromptChain,
+        promptPreview: input.response.promptPreview,
+        model: input.response.model,
+        lastRequest: input.request,
+      }));
+    },
+    [],
+  );
+
+  const approveAiDraft = useCallback(() => {
+    setAiDraft((previous) => ({
+      ...previous,
+      status: "inserted",
+    }));
+  }, []);
+
+  const cancelReprompt = useCallback(() => {
+    setAiDraft((previous) => ({
+      ...previous,
+      status: previous.generatedText.trim().length > 0 ? "reviewable" : "idle",
+      errorMessage: null,
+    }));
+  }, []);
+
   const insertAiDraft = useCallback(
     (input: {
       readonly request: AiDraftRequestPayload;
@@ -385,10 +448,14 @@ export function InboxClientProvider({
   }, []);
 
   const discardAiDraft = useCallback(() => {
+    setAiDraft(INITIAL_AI_DRAFT);
+  }, []);
+
+  const markAiDraftReprompting = useCallback(() => {
     setAiDraft((previous) => ({
       ...previous,
-      status: "discarded",
-      generatedText: "",
+      status: "reprompting",
+      errorMessage: null,
     }));
   }, []);
 
@@ -461,10 +528,14 @@ export function InboxClientProvider({
       clearToast,
       aiDraft,
       startAiGeneration,
+      markAiDraftReviewable,
+      approveAiDraft,
+      cancelReprompt,
       insertAiDraft,
       markAiDraftEdited,
       restoreAiDraft,
       discardAiDraft,
+      markAiDraftReprompting,
       repromptAi,
       setAiUnavailable,
       setAiError,
@@ -496,10 +567,14 @@ export function InboxClientProvider({
       clearToast,
       aiDraft,
       startAiGeneration,
+      markAiDraftReviewable,
+      approveAiDraft,
+      cancelReprompt,
       insertAiDraft,
       markAiDraftEdited,
       restoreAiDraft,
       discardAiDraft,
+      markAiDraftReprompting,
       repromptAi,
       setAiUnavailable,
       setAiError,

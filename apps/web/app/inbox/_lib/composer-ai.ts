@@ -1,6 +1,9 @@
+import type { AiDraftStatus } from "../_components/inbox-client-provider";
+
 export interface ResolveAiButtonStateInput {
   readonly body: string;
   readonly isGenerating: boolean;
+  readonly aiDraftStatus?: AiDraftStatus;
 }
 
 export interface AiButtonState {
@@ -12,11 +15,26 @@ export interface AiButtonState {
 export function resolveAiButtonState(
   input: ResolveAiButtonStateInput,
 ): AiButtonState {
-  const mode = input.body.trim().length === 0 ? "draft" : "fill";
+  const status = input.aiDraftStatus ?? "idle";
+  const mode =
+    status === "idle" || status === "inserted"
+      ? "draft"
+      : input.body.trim().length === 0
+        ? "draft"
+        : "fill";
 
   return {
     mode,
-    label: mode === "draft" ? "Draft with AI" : "Fill with AI",
-    disabled: input.isGenerating,
+    label:
+      status === "idle" || status === "inserted"
+        ? "Draft with AI"
+        : mode === "draft"
+          ? "Draft with AI"
+          : "Fill with AI",
+    disabled:
+      input.isGenerating ||
+      status === "generating" ||
+      status === "reviewable" ||
+      status === "reprompting",
   };
 }
