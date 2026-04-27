@@ -183,6 +183,8 @@ export const SHADOW = {
   sm: "shadow-sm",
   /** Popovers, dropdowns */
   md: "shadow-md",
+  /** Modal dialogs */
+  lg: "shadow-lg",
 } as const;
 
 export const TRANSITION = {
