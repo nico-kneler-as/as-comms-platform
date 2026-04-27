@@ -7,7 +7,12 @@ import { useCallback, useRef } from "react";
 import type { InboxListItemViewModel } from "../_lib/view-models";
 import { InboxAvatar } from "./inbox-avatar";
 import { MailIcon, PhoneIcon } from "./icons";
-import { FOCUS_RING, SPACING, TRANSITION, TYPE, TONE_CLASSES } from "@/app/_lib/design-tokens-v2";
+import {
+  FOCUS_RING,
+  SPACING,
+  TRANSITION,
+  TONE_CLASSES,
+} from "@/app/_lib/design-tokens-v2";
 import { projectToneFromName } from "../_lib/project-tone";
 
 interface RowProps {
@@ -59,7 +64,7 @@ export function InboxRow({ item, isActive }: RowProps) {
         aria-keyshortcuts="Enter"
         onMouseEnter={prefetchDetail}
         onFocus={prefetchDetail}
-        className={`relative flex gap-3 border-b border-slate-100 ${SPACING.listItem} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
+        className={`relative flex gap-2.5 border-b border-slate-100 ${SPACING.listItem} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
           isActive
             ? "bg-sky-50/60 ring-1 ring-inset ring-sky-200"
             : "hover:bg-slate-50/80"
@@ -76,9 +81,7 @@ export function InboxRow({ item, isActive }: RowProps) {
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
             <p
-              className={`truncate text-sm ${
-                isUnread ? "font-semibold text-slate-900" : "text-slate-800"
-              }`}
+              className="truncate text-[13.5px] font-medium text-slate-900"
             >
               {item.displayName}
             </p>
@@ -109,7 +112,7 @@ export function InboxRow({ item, isActive }: RowProps) {
             </p>
           </div>
 
-          <p className={`mt-0.5 line-clamp-1 ${TYPE.caption}`}>
+          <p className="mt-0.5 line-clamp-1 text-[12.5px] text-slate-500">
             {item.snippet}
           </p>
 
@@ -121,11 +124,11 @@ export function InboxRow({ item, isActive }: RowProps) {
                   const t = TONE_CLASSES[tone];
                   return (
                     <span
-                      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${t.subtle} ${t.subtleText}`}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-600 ring-1 ring-inset ring-slate-200/70"
                     >
                       <span
                         aria-hidden="true"
-                        className={`h-1 w-1 rounded-full ${t.dot}`}
+                        className={`h-1.5 w-1.5 rounded-full ${t.dot}`}
                       />
                       {item.projectLabel}
                     </span>

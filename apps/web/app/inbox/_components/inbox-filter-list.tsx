@@ -1,6 +1,6 @@
 "use client";
 
-import { TONE_CLASSES } from "@/app/_lib/design-tokens-v2";
+import { TONE_CLASSES, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -20,6 +20,7 @@ const FILTER_TONE: Record<InboxFilterId, "slate" | "sky" | "amber" | "rose"> = {
 };
 
 interface InboxFilterListProps {
+  readonly id?: string;
   readonly filters: readonly InboxFilterViewModel[];
   readonly activeFilter: InboxFilterId;
   readonly onFilterChange: (id: InboxFilterId) => void;
@@ -29,6 +30,7 @@ interface InboxFilterListProps {
 }
 
 export function InboxFilterList({
+  id,
   filters,
   activeFilter,
   onFilterChange,
@@ -37,11 +39,21 @@ export function InboxFilterList({
   onProjectChange,
 }: InboxFilterListProps) {
   return (
-    <div className="px-3 pb-3 pt-2">
-      <SectionLabel as="h2" className="px-1 pb-1.5">
+    <div
+      id={id}
+      className={cn(
+        "animate-in slide-in-from-top-1 border-t border-slate-100 pb-3 duration-150 fade-in",
+        "motion-reduce:animate-none",
+        TRANSITION.reduceMotion,
+      )}
+    >
+      <SectionLabel
+        as="h2"
+        className="px-5 pb-2 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-400"
+      >
         State
       </SectionLabel>
-      <ul className="flex flex-col gap-0.5">
+      <ul className="flex flex-col gap-0.5 px-3">
         {filters.map((filter) => {
           const tone = FILTER_TONE[filter.id];
           const isActive = filter.id === activeFilter;
@@ -93,10 +105,13 @@ export function InboxFilterList({
 
       {projects.length > 0 ? (
         <>
-          <SectionLabel as="h2" className="mt-3 border-t border-slate-100 px-1 pb-1.5 pt-3">
+          <SectionLabel
+            as="h2"
+            className="mt-3 border-t border-slate-100 px-5 pb-2 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-400"
+          >
             Project
           </SectionLabel>
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-0.5 px-3">
             <li>
               <button
                 type="button"
