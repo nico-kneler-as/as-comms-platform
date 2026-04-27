@@ -107,9 +107,12 @@ function buildItem(
     bucket: overrides.bucket ?? "opened",
     needsFollowUp: overrides.needsFollowUp ?? false,
     hasUnresolved: overrides.hasUnresolved ?? false,
+    isUnread: overrides.isUnread ?? false,
     unreadCount: overrides.unreadCount ?? 0,
     isUnanswered: overrides.isUnanswered ?? false,
     lastInboundAt: overrides.lastInboundAt ?? null,
+    lastNonAliasMessageAt:
+      overrides.lastNonAliasMessageAt ?? overrides.lastInboundAt ?? null,
     lastOutboundAt: overrides.lastOutboundAt ?? null,
     lastActivityAt: overrides.lastActivityAt ?? "2026-04-14T14:00:00.000Z",
     lastEventType: overrides.lastEventType ?? "communication.email.outbound",
@@ -784,6 +787,174 @@ describe("real inbox selectors", () => {
     expect(unresolved.items.map((item) => item.contactId)).toEqual([
       "contact:alex-thompson",
     ]);
+  });
+
+  it("treats non-alias teammate replies as inbox attention while preserving alias replies as handled", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:pnw-bio",
+      projectName: "Passive Acoustic Monitoring of Pacific Northwest Forests",
+      projectAlias: "PNW Bio",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:pnw-primary",
+      alias: "pnwbio@adventurescientists.org",
+      signature: "",
+      projectId: "project:pnw-bio",
+      createdAt: new Date("2026-04-20T08:00:00.000Z"),
+      updatedAt: new Date("2026-04-20T08:00:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:pnw-secondary",
+      alias: "field-coordinator@adventurescientists.org",
+      signature: "",
+      projectId: "project:pnw-bio",
+      createdAt: new Date("2026-04-20T08:01:00.000Z"),
+      updatedAt: new Date("2026-04-20T08:01:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
+    });
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:primary-alias",
+      salesforceContactId: "003-primary",
+      displayName: "Primary Alias Reply",
+      primaryEmail: "primary@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-bio",
+      projectName: "Passive Acoustic Monitoring of Pacific Northwest Forests",
+      projectAlias: "PNW Bio",
+      membershipId: "membership:primary-alias",
+      membershipStatus: "active",
+    });
+    const primaryOutbound = await seedInboxEmailEvent(runtime.context, {
+      id: "primary-alias-outbound-1",
+      contactId: "contact:primary-alias",
+      occurredAt: "2026-04-26T11:00:00.000Z",
+      direction: "outbound",
+      subject: "Re: PNW logistics",
+      snippet: "Replying from the primary project alias.",
+      fromHeader: "PNW Bio <pnwbio@adventurescientists.org>",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:primary-alias",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-25T09:00:00.000Z",
+      lastOutboundAt: "2026-04-26T11:00:00.000Z",
+      lastActivityAt: "2026-04-26T11:00:00.000Z",
+      snippet: "Replying from the primary project alias.",
+      lastCanonicalEventId: primaryOutbound.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:cross-dept",
+      salesforceContactId: "003-cross",
+      displayName: "Cross Dept Reply",
+      primaryEmail: "cross@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-bio",
+      projectName: "Passive Acoustic Monitoring of Pacific Northwest Forests",
+      projectAlias: "PNW Bio",
+      membershipId: "membership:cross-dept",
+      membershipStatus: "active",
+    });
+    const crossDeptOutbound = await seedInboxEmailEvent(runtime.context, {
+      id: "cross-dept-outbound-1",
+      contactId: "contact:cross-dept",
+      occurredAt: "2026-04-27T12:00:00.000Z",
+      direction: "outbound",
+      subject: "Re: PNW logistics",
+      snippet: "Jumping in from my org Gmail with field coordination details.",
+      fromHeader: "Pat Jones <pj@adventurescientists.org>",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:cross-dept",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-25T10:00:00.000Z",
+      lastOutboundAt: "2026-04-27T12:00:00.000Z",
+      lastActivityAt: "2026-04-27T12:00:00.000Z",
+      snippet: "Jumping in from my org Gmail with field coordination details.",
+      lastCanonicalEventId: crossDeptOutbound.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:secondary-alias",
+      salesforceContactId: "003-secondary",
+      displayName: "Secondary Alias Reply",
+      primaryEmail: "secondary@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-bio",
+      projectName: "Passive Acoustic Monitoring of Pacific Northwest Forests",
+      projectAlias: "PNW Bio",
+      membershipId: "membership:secondary-alias",
+      membershipStatus: "active",
+    });
+    const secondaryOutbound = await seedInboxEmailEvent(runtime.context, {
+      id: "secondary-alias-outbound-1",
+      contactId: "contact:secondary-alias",
+      occurredAt: "2026-04-26T13:00:00.000Z",
+      direction: "outbound",
+      subject: "Re: PNW logistics",
+      snippet: "Replying from the secondary project alias.",
+      fromHeader:
+        "Field Coordinator <field-coordinator@adventurescientists.org>",
+      projectInboxAlias: "field-coordinator@adventurescientists.org",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:secondary-alias",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-25T11:00:00.000Z",
+      lastOutboundAt: "2026-04-26T13:00:00.000Z",
+      lastActivityAt: "2026-04-26T13:00:00.000Z",
+      snippet: "Replying from the secondary project alias.",
+      lastCanonicalEventId: secondaryOutbound.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const list = await getInboxList();
+    const unread = await getInboxList("unread");
+    const primaryAlias = list.items.find(
+      (item) => item.contactId === "contact:primary-alias",
+    );
+    const crossDept = list.items.find(
+      (item) => item.contactId === "contact:cross-dept",
+    );
+    const secondaryAlias = list.items.find(
+      (item) => item.contactId === "contact:secondary-alias",
+    );
+    const volunteerInbound = list.items.find(
+      (item) => item.contactId === "contact:sarah-martinez",
+    );
+    const crossDeptDetail = await getInboxDetail("contact:cross-dept");
+
+    expect(list.items[0]?.contactId).toBe("contact:cross-dept");
+    expect(volunteerInbound?.isUnread).toBe(true);
+    expect(primaryAlias?.isUnread).toBe(false);
+    expect(crossDept?.isUnread).toBe(true);
+    expect(secondaryAlias?.isUnread).toBe(false);
+    expect(unread.items.map((item) => item.contactId)).toEqual([
+      "contact:cross-dept",
+      "contact:sarah-martinez",
+    ]);
+    expect(crossDeptDetail?.isUnread).toBe(true);
+    expect(crossDeptDetail?.bucket).toBe("opened");
   });
 
   it("builds welcome workload counts from active project projections only", async () => {

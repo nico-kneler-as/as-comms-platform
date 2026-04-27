@@ -43,6 +43,8 @@ interface InboxListCacheRow {
     readonly body: string;
   } | null;
   readonly lastInboundAlias: string | null;
+  readonly lastNonAliasMessageAt: string | null;
+  readonly isUnread: boolean;
 }
 
 interface InboxListCacheData {
@@ -72,6 +74,7 @@ interface InboxListCacheData {
 interface InboxDetailCacheData {
   readonly contact: ContactRecord;
   readonly inboxProjection: InboxProjectionRow;
+  readonly isUnread: boolean;
   readonly memberships: readonly ContactMembershipRecord[];
   readonly latestNote: {
     readonly body: string;
@@ -105,6 +108,7 @@ interface InboxWelcomeWorkloadCacheData {
 
 const DEFAULT_INBOX_LIST_PAGE_SIZE = 50;
 const DEFAULT_INBOX_TIMELINE_PAGE_SIZE = 40;
+const INBOX_LIST_SCAN_LIMIT = 5_000;
 
 type CampaignActivityType = Extract<
   TimelineItem,
@@ -137,16 +141,16 @@ export const compareInboxRecency = (
   a: InboxListItemViewModel,
   b: InboxListItemViewModel,
 ): number => {
-  if (a.lastInboundAt !== b.lastInboundAt) {
-    if (a.lastInboundAt === null) {
+  if (a.lastNonAliasMessageAt !== b.lastNonAliasMessageAt) {
+    if (a.lastNonAliasMessageAt === null) {
       return 1;
     }
 
-    if (b.lastInboundAt === null) {
+    if (b.lastNonAliasMessageAt === null) {
       return -1;
     }
 
-    return a.lastInboundAt < b.lastInboundAt ? 1 : -1;
+    return a.lastNonAliasMessageAt < b.lastNonAliasMessageAt ? 1 : -1;
   }
 
   if (a.lastActivityAt !== b.lastActivityAt) {
@@ -187,6 +191,150 @@ function uniqueStrings(
       values.filter((value): value is string => typeof value === "string"),
     ),
   );
+}
+
+function isInboundInboxEvent(
+  eventType: CanonicalEventRecord["eventType"],
+): boolean {
+  return (
+    eventType === "communication.email.inbound" ||
+    eventType === "communication.sms.inbound"
+  );
+}
+
+function buildAliasSetForMemberships(input: {
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly aliasesByProjectId: ReadonlyMap<string, readonly string[]>;
+}): ReadonlySet<string> {
+  const aliases = new Set<string>();
+
+  for (const membership of input.memberships) {
+    if (membership.projectId === null) {
+      continue;
+    }
+
+    for (const alias of input.aliasesByProjectId.get(membership.projectId) ?? []) {
+      aliases.add(alias);
+    }
+  }
+
+  return aliases;
+}
+
+function findLastNonAliasMessageAt(input: {
+  readonly events: readonly CanonicalEventRecord[];
+  readonly aliasSet: ReadonlySet<string>;
+  readonly gmailDetailBySourceEvidenceId: ReadonlyMap<
+    string,
+    {
+      readonly fromHeader: string | null;
+    }
+  >;
+  readonly fallbackLastInboundAt: string | null;
+}): string | null {
+  if (input.aliasSet.size === 0) {
+    return input.fallbackLastInboundAt;
+  }
+
+  let lastNonAliasMessageAt: string | null = null;
+
+  for (const event of input.events) {
+    if (isInboundInboxEvent(event.eventType)) {
+      lastNonAliasMessageAt = keepMostRecentTimestamp(
+        lastNonAliasMessageAt,
+        event.occurredAt,
+      );
+      continue;
+    }
+
+    if (event.eventType !== "communication.email.outbound") {
+      continue;
+    }
+
+    const fromAddresses = extractEmailAddresses(
+      input.gmailDetailBySourceEvidenceId.get(event.sourceEvidenceId)?.fromHeader,
+    );
+
+    if (fromAddresses.length === 0) {
+      continue;
+    }
+
+    const sentFromAlias = fromAddresses.some((address) =>
+      input.aliasSet.has(address),
+    );
+
+    if (!sentFromAlias) {
+      lastNonAliasMessageAt = keepMostRecentTimestamp(
+        lastNonAliasMessageAt,
+        event.occurredAt,
+      );
+    }
+  }
+
+  return lastNonAliasMessageAt;
+}
+
+function findLastNonAliasOutboundAt(input: {
+  readonly events: readonly CanonicalEventRecord[];
+  readonly aliasSet: ReadonlySet<string>;
+  readonly gmailDetailBySourceEvidenceId: ReadonlyMap<
+    string,
+    {
+      readonly fromHeader: string | null;
+    }
+  >;
+}): string | null {
+  if (input.aliasSet.size === 0) {
+    return null;
+  }
+
+  let lastNonAliasOutboundAt: string | null = null;
+
+  for (const event of input.events) {
+    if (event.eventType !== "communication.email.outbound") {
+      continue;
+    }
+
+    const fromAddresses = extractEmailAddresses(
+      input.gmailDetailBySourceEvidenceId.get(event.sourceEvidenceId)?.fromHeader,
+    );
+
+    if (fromAddresses.length === 0) {
+      continue;
+    }
+
+    const sentFromAlias = fromAddresses.some((address) =>
+      input.aliasSet.has(address),
+    );
+
+    if (!sentFromAlias) {
+      lastNonAliasOutboundAt = keepMostRecentTimestamp(
+        lastNonAliasOutboundAt,
+        event.occurredAt,
+      );
+    }
+  }
+
+  return lastNonAliasOutboundAt;
+}
+
+function latestAttentionReadAt(
+  audits: readonly {
+    readonly action: string;
+    readonly occurredAt: string;
+  }[],
+): string | null {
+  let latest: string | null = null;
+
+  for (const audit of audits) {
+    if (audit.action !== "inbox.attention.read") {
+      continue;
+    }
+
+    latest = keepMostRecentTimestamp(latest, audit.occurredAt);
+  }
+
+  return latest;
 }
 
 function emptyCampaignActivitySummary(): CampaignActivitySummary {
@@ -279,7 +427,7 @@ async function loadCampaignActivitySummaryByCampaignId(input: {
 }
 
 function encodeInboxListCursor(input: {
-  readonly lastInboundAt: string | null;
+  readonly lastNonAliasMessageAt: string | null;
   readonly lastOutboundAt: string | null;
   readonly lastActivityAt: string;
   readonly contactId: string;
@@ -288,7 +436,7 @@ function encodeInboxListCursor(input: {
 }
 
 function decodeInboxListCursor(cursor: string | null): {
-  readonly lastInboundAt: string | null;
+  readonly lastNonAliasMessageAt: string | null;
   readonly lastOutboundAt: string | null;
   readonly lastActivityAt: string;
   readonly contactId: string;
@@ -301,17 +449,21 @@ function decodeInboxListCursor(cursor: string | null): {
     const parsed = JSON.parse(
       Buffer.from(cursor, "base64url").toString("utf8"),
     ) as Record<string, unknown>;
-    const lastInboundAt = parsed.lastInboundAt;
+    const lastNonAliasMessageAt =
+      parsed.lastNonAliasMessageAt ?? parsed.lastInboundAt;
     const lastOutboundAt = parsed.lastOutboundAt ?? null;
     const lastActivityAt = parsed.lastActivityAt;
     const contactId = parsed.contactId;
 
-    return (lastInboundAt === null || typeof lastInboundAt === "string") &&
+    return (
+      lastNonAliasMessageAt === null ||
+      typeof lastNonAliasMessageAt === "string"
+    ) &&
       (lastOutboundAt === null || typeof lastOutboundAt === "string") &&
       typeof lastActivityAt === "string" &&
       typeof contactId === "string"
       ? {
-          lastInboundAt: lastInboundAt ?? null,
+          lastNonAliasMessageAt: lastNonAliasMessageAt ?? null,
           lastOutboundAt,
           lastActivityAt,
           contactId,
@@ -2161,30 +2313,6 @@ async function loadLatestSubjectByCanonicalEventId(
   );
 }
 
-function totalForFilter(
-  counts: {
-    readonly all: number;
-    readonly unread: number;
-    readonly followUp: number;
-    readonly unresolved: number;
-    readonly sent: number;
-  },
-  filterId: InboxFilterId,
-): number {
-  switch (filterId) {
-    case "all":
-      return counts.all;
-    case "unread":
-      return counts.unread;
-    case "follow-up":
-      return counts.followUp;
-    case "unresolved":
-      return counts.unresolved;
-    case "sent":
-      return counts.sent;
-  }
-}
-
 function orderForInboxFilter(
   filterId: InboxFilterId,
 ): "last-inbound" | "last-outbound" {
@@ -2202,38 +2330,26 @@ async function readInboxListCacheData(input: {
   const decodedCursor = decodeInboxListCursor(input.cursor);
   const normalizedQuery = normalizeInlineText(input.query) ?? null;
   const order = orderForInboxFilter(input.filterId);
-  const [
-    projectionPage,
-    counts,
-    freshness,
-    activeProjectRecords,
-    projectAliasRecords,
-  ] =
+  const [matchedProjections, freshness, activeProjectRecords, projectAliasRecords] =
     await Promise.all([
       normalizedQuery === null
-        ? runtime.repositories.inboxProjection
-            .listPageOrderedByRecency({
-              filter: input.filterId,
+        ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
+            filter: "all",
+            order,
+            limit: INBOX_LIST_SCAN_LIMIT,
+            cursor: null,
+            projectId: input.projectId,
+          })
+        : runtime.repositories.inboxProjection
+            .searchPageOrderedByRecency({
+              filter: "all",
               order,
-              limit: input.limit + 1,
-              cursor: decodedCursor,
+              limit: INBOX_LIST_SCAN_LIMIT,
+              cursor: null,
+              query: normalizedQuery,
               projectId: input.projectId,
             })
-            .then((rows) => ({
-              rows,
-              total: 0,
-            }))
-        : runtime.repositories.inboxProjection.searchPageOrderedByRecency({
-            filter: input.filterId,
-            order,
-            limit: input.limit + 1,
-            cursor: decodedCursor,
-            query: normalizedQuery,
-            projectId: input.projectId,
-          }),
-      runtime.repositories.inboxProjection.countByFilters({
-        projectId: input.projectId,
-      }),
+            .then((result) => result.rows),
       runtime.repositories.inboxProjection.getFreshness(),
       runtime.repositories.projectDimensions.listActive(),
       runtime.settings.aliases.listAll(),
@@ -2243,11 +2359,7 @@ async function readInboxListCacheData(input: {
       id: record.projectId,
       name: record.projectName,
     }));
-  const hasMore = projectionPage.rows.length > input.limit;
-  const pageProjections = hasMore
-    ? projectionPage.rows.slice(0, input.limit)
-    : projectionPage.rows;
-  const candidateContactIds = pageProjections.map(
+  const candidateContactIds = matchedProjections.map(
     (projection) => projection.contactId,
   );
   const [
@@ -2255,14 +2367,31 @@ async function readInboxListCacheData(input: {
     memberships,
     latestMessagePreviewByCanonicalEventId,
     lastInboundAliasByContactId,
+    canonicalEventsByContactIdEntries,
+    auditEntriesByContactIdEntries,
   ] = await Promise.all([
     runtime.repositories.contacts.listByIds(candidateContactIds),
     runtime.repositories.contactMemberships.listByContactIds(
       candidateContactIds,
     ),
-    loadLatestSubjectByCanonicalEventId(pageProjections),
+    loadLatestSubjectByCanonicalEventId(matchedProjections),
     runtime.repositories.gmailMessageDetails.listLastInboundAliasByContactIds(
       candidateContactIds,
+    ),
+    Promise.all(
+      candidateContactIds.map(async (contactId) => [
+        contactId,
+        await runtime.repositories.canonicalEvents.listByContactId(contactId),
+      ] as const),
+    ),
+    Promise.all(
+      candidateContactIds.map(async (contactId) => [
+        contactId,
+        await runtime.repositories.auditEvidence.listByEntity({
+          entityType: "contact",
+          entityId: contactId,
+        }),
+      ] as const),
     ),
   ]);
   const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
@@ -2278,29 +2407,138 @@ async function readInboxListCacheData(input: {
       aliasToProjectId.set(aliasRecord.alias, aliasRecord.projectId);
     }
   }
+  const aliasesByProjectId = new Map<string, string[]>();
 
-  const pageRows = pageProjections.flatMap((inboxProjection) => {
+  for (const aliasRecord of projectAliasRecords) {
+    if (aliasRecord.projectId === null) {
+      continue;
+    }
+
+    const normalizedAlias = normalizeEmailAddress(aliasRecord.alias);
+
+    if (normalizedAlias === null) {
+      continue;
+    }
+
+    const aliases = aliasesByProjectId.get(aliasRecord.projectId) ?? [];
+    aliases.push(normalizedAlias);
+    aliasesByProjectId.set(aliasRecord.projectId, aliases);
+  }
+
+  const canonicalEventsByContactId = new Map(canonicalEventsByContactIdEntries);
+  const auditEntriesByContactId = new Map(auditEntriesByContactIdEntries);
+  const gmailSourceEvidenceIds = uniqueStrings(
+    canonicalEventsByContactIdEntries.flatMap(([, events]) =>
+      events
+        .filter((event) => event.eventType === "communication.email.outbound")
+        .map((event) => event.sourceEvidenceId),
+    ),
+  );
+  const gmailDetails =
+    gmailSourceEvidenceIds.length === 0
+      ? []
+      : await runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
+          gmailSourceEvidenceIds,
+        );
+  const gmailDetailBySourceEvidenceId = new Map(
+    gmailDetails.map((detail) => [detail.sourceEvidenceId, detail]),
+  );
+  const allRows = matchedProjections.flatMap((inboxProjection) => {
     const contact = contactById.get(inboxProjection.contactId);
 
     if (contact === undefined) {
       return [];
     }
 
+    const rowMemberships =
+      membershipsByContactId.get(inboxProjection.contactId) ?? [];
+    const aliasSet = buildAliasSetForMemberships({
+      memberships: rowMemberships,
+      aliasesByProjectId,
+    });
+    const lastNonAliasMessageAt = findLastNonAliasMessageAt({
+      events: canonicalEventsByContactId.get(inboxProjection.contactId) ?? [],
+      aliasSet,
+      gmailDetailBySourceEvidenceId,
+      fallbackLastInboundAt: inboxProjection.lastInboundAt,
+    });
+    const lastNonAliasOutboundAt = findLastNonAliasOutboundAt({
+      events: canonicalEventsByContactId.get(inboxProjection.contactId) ?? [],
+      aliasSet,
+      gmailDetailBySourceEvidenceId,
+    });
+    const latestReadAt = latestAttentionReadAt(
+      auditEntriesByContactId.get(inboxProjection.contactId) ?? [],
+    );
+    const isUnread =
+      inboxProjection.bucket === "New" ||
+      (lastNonAliasOutboundAt !== null &&
+        (latestReadAt === null || lastNonAliasOutboundAt > latestReadAt));
+
     return [
       {
         contact,
         inboxProjection,
-        memberships:
-          membershipsByContactId.get(inboxProjection.contactId) ?? [],
+        memberships: rowMemberships,
         latestMessagePreview:
           latestMessagePreviewByCanonicalEventId[
             inboxProjection.lastCanonicalEventId
           ] ?? null,
         lastInboundAlias:
           lastInboundAliasByContactId.get(inboxProjection.contactId) ?? null,
+        lastNonAliasMessageAt,
+        isUnread,
       } satisfies InboxListCacheRow,
     ];
   });
+  const referenceNowIso = new Date().toISOString();
+  const allItems = allRows
+    .map((row) =>
+      toListItemViewModel(
+        row,
+        {
+          projectLabelById,
+          aliasToProjectId,
+        },
+        referenceNowIso,
+      ),
+    )
+    .filter((item) => matchesServerFilter(item, input.filterId))
+    .sort(
+      input.filterId === "sent"
+        ? compareInboxOutboundRecency
+        : compareInboxRecency,
+    );
+  const cursorIndex =
+    decodedCursor === null
+      ? -1
+      : allItems.findIndex(
+          (item) =>
+            item.contactId === decodedCursor.contactId &&
+            item.lastNonAliasMessageAt === decodedCursor.lastNonAliasMessageAt &&
+            item.lastOutboundAt === decodedCursor.lastOutboundAt &&
+            item.lastActivityAt === decodedCursor.lastActivityAt,
+        );
+  const itemsAfterCursor =
+    cursorIndex < 0 ? allItems : allItems.slice(cursorIndex + 1);
+  const hasMore = itemsAfterCursor.length > input.limit;
+  const pageItems = hasMore
+    ? itemsAfterCursor.slice(0, input.limit)
+    : itemsAfterCursor;
+  const rowByContactId = new Map(allRows.map((row) => [row.contact.id, row]));
+  const pageRows = pageItems.flatMap((item) => {
+    const row = rowByContactId.get(item.contactId);
+    return row === undefined ? [] : [row];
+  });
+  const counts = {
+    all: allRows.length,
+    unread: allRows.filter((row) => row.isUnread).length,
+    followUp: allRows.filter((row) => row.inboxProjection.needsFollowUp).length,
+    unresolved: allRows.filter((row) => row.inboxProjection.hasUnresolved)
+      .length,
+    sent: allRows.filter((row) => row.inboxProjection.lastOutboundAt !== null)
+      .length,
+  };
 
   return {
     rows: pageRows,
@@ -2315,9 +2553,8 @@ async function readInboxListCacheData(input: {
         !hasMore || pageRows.length === 0
           ? null
           : encodeInboxListCursor({
-              lastInboundAt:
-                pageRows[pageRows.length - 1]?.inboxProjection.lastInboundAt ??
-                null,
+              lastNonAliasMessageAt:
+                pageRows[pageRows.length - 1]?.lastNonAliasMessageAt ?? null,
               lastOutboundAt:
                 pageRows[pageRows.length - 1]?.inboxProjection
                   .lastOutboundAt ?? null,
@@ -2326,10 +2563,7 @@ async function readInboxListCacheData(input: {
                 "",
               contactId: pageRows[pageRows.length - 1]?.contact.id ?? "",
             }),
-      total:
-        normalizedQuery === null
-          ? totalForFilter(counts, input.filterId)
-          : projectionPage.total,
+      total: allItems.length,
     },
     freshness,
   };
@@ -2354,6 +2588,7 @@ async function readInboxDetailCacheData(
     timelineFreshness,
     canonicalEvents,
     projectAliasRecords,
+    attentionReadAudits,
   ] = await Promise.all([
     runtime.repositories.contacts.findById(contactId),
     runtime.repositories.inboxProjection.findByContactId(contactId),
@@ -2368,15 +2603,66 @@ async function readInboxDetailCacheData(
     runtime.repositories.timelineProjection.getFreshnessByContactId(contactId),
     runtime.repositories.canonicalEvents.listByContactId(contactId),
     runtime.settings.aliases.listAssigned(),
+    runtime.repositories.auditEvidence.listByEntity({
+      entityType: "contact",
+      entityId: contactId,
+    }),
   ]);
 
   if (contact === null || inboxProjection === null) {
     return null;
   }
 
+  const aliasesByProjectId = new Map<string, string[]>();
+
+  for (const aliasRecord of projectAliasRecords) {
+    if (aliasRecord.projectId === null) {
+      continue;
+    }
+
+    const normalizedAlias = normalizeEmailAddress(aliasRecord.alias);
+
+    if (normalizedAlias === null) {
+      continue;
+    }
+
+    const aliases = aliasesByProjectId.get(aliasRecord.projectId) ?? [];
+    aliases.push(normalizedAlias);
+    aliasesByProjectId.set(aliasRecord.projectId, aliases);
+  }
+
+  const gmailSourceEvidenceIds = uniqueStrings(
+    canonicalEvents
+      .filter((event) => event.eventType === "communication.email.outbound")
+      .map((event) => event.sourceEvidenceId),
+  );
+  const gmailDetails =
+    gmailSourceEvidenceIds.length === 0
+      ? []
+      : await runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
+          gmailSourceEvidenceIds,
+        );
+  const gmailDetailBySourceEvidenceId = new Map(
+    gmailDetails.map((detail) => [detail.sourceEvidenceId, detail]),
+  );
+  const lastNonAliasOutboundAt = findLastNonAliasOutboundAt({
+    events: canonicalEvents,
+    aliasSet: buildAliasSetForMemberships({
+      memberships,
+      aliasesByProjectId,
+    }),
+    gmailDetailBySourceEvidenceId,
+  });
+  const latestReadAt = latestAttentionReadAt(attentionReadAudits);
+  const isUnread =
+    inboxProjection.bucket === "New" ||
+    (lastNonAliasOutboundAt !== null &&
+      (latestReadAt === null || lastNonAliasOutboundAt > latestReadAt));
+
   return {
     contact,
     inboxProjection,
+    isUnread,
     memberships,
     latestNote,
     activityTimelineItems,
@@ -2527,18 +2813,20 @@ function toListItemViewModel(
     bucket: mapBucket(row.inboxProjection.bucket),
     needsFollowUp: row.inboxProjection.needsFollowUp,
     hasUnresolved: row.inboxProjection.hasUnresolved,
-    unreadCount: row.inboxProjection.bucket === "New" ? 1 : 0,
+    isUnread: row.isUnread,
+    unreadCount: row.isUnread ? 1 : 0,
     isUnanswered:
       row.inboxProjection.lastInboundAt !== null &&
       (row.inboxProjection.lastOutboundAt === null ||
         row.inboxProjection.lastInboundAt >
           row.inboxProjection.lastOutboundAt),
     lastInboundAt: row.inboxProjection.lastInboundAt,
+    lastNonAliasMessageAt: row.lastNonAliasMessageAt,
     lastOutboundAt: row.inboxProjection.lastOutboundAt,
     lastActivityAt: row.inboxProjection.lastActivityAt,
     lastEventType: row.inboxProjection.lastEventType,
     lastActivityLabel: formatRelativeTimestamp(
-      row.inboxProjection.lastInboundAt ?? row.inboxProjection.lastActivityAt,
+      row.lastNonAliasMessageAt ?? row.inboxProjection.lastActivityAt,
       referenceNowIso,
     ),
   };
@@ -2608,7 +2896,7 @@ function matchesServerFilter(
     case "all":
       return true;
     case "unread":
-      return item.bucket === "new";
+      return item.isUnread;
     case "follow-up":
       return item.needsFollowUp;
     case "unresolved":
@@ -2819,6 +3107,7 @@ export async function getInboxDetail(
     ),
     bucket: mapBucket(cachedData.inboxProjection.bucket),
     needsFollowUp: cachedData.inboxProjection.needsFollowUp,
+    isUnread: cachedData.isUnread,
     smsEligible: cachedData.contact.primaryPhone !== null,
     composerReplyContext,
     timelinePage: cachedData.timelinePage,
