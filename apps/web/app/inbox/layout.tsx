@@ -44,22 +44,11 @@ export default async function InboxLayout({
     throw error;
   });
 
-  const __t0 = Date.now();
-  async function __timed<T>(label: string, p: Promise<T>): Promise<T> {
-    const s = Date.now();
-    try {
-      return await p;
-    } finally {
-      console.log(`[ibx-perf] ${label}=${String(Date.now() - s)}ms`);
-    }
-  }
-  console.log(`[ibx-perf] start session=${currentUser.id}`);
   const [list, composerAliases, healthBanner] = await Promise.all([
-    __timed("getInboxList", getInboxList("all")),
-    __timed("getInboxComposerAliases", getInboxComposerAliases()),
-    __timed("getInboxIntegrationHealthBanner", getInboxIntegrationHealthBanner()),
+    getInboxList("all"),
+    getInboxComposerAliases(),
+    getInboxIntegrationHealthBanner(),
   ]);
-  console.log(`[ibx-perf] total=${String(Date.now() - __t0)}ms`);
 
   return (
     <InboxShell
