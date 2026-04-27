@@ -336,6 +336,62 @@ describe("InboxTimeline", () => {
     expect(markup).toContain("Reply");
   });
 
+  it("renders a header toggle for every one-to-one email bubble", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            id: "timeline:older-email",
+            kind: "inbound-email" as const,
+            actorLabel: "Shaina Dotson",
+            subject: "Older message",
+            body: "Older body.",
+            fromHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+            toHeader: "PNW Project <pnwbio@adventurescientists.org>",
+          },
+          {
+            ...baseEntry,
+            id: "timeline:newer-email",
+            kind: "outbound-email" as const,
+            actorLabel: "You",
+            subject: "Newer message",
+            body: "Newer body.",
+            fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
+            toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+          },
+        ],
+        volunteerFirstName: "Shaina",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup.match(/Show full email headers/g)).toHaveLength(2);
+    expect(markup).toContain("Older message");
+    expect(markup).toContain("Newer message");
+  });
+
+  it("uses the Adventure Scientists mark for outbound message avatars", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            kind: "outbound-email" as const,
+            actorLabel: "Your Operator",
+            fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
+            toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+          },
+        ],
+        volunteerFirstName: "Shaina",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain('aria-label="Adventure Scientists"');
+    expect(markup).not.toContain(">YO<");
+  });
+
   it("classifies first-data system dividers into the emerald data category", () => {
     expect(
       classifySystemDivider("Submitted first batch from the field."),
