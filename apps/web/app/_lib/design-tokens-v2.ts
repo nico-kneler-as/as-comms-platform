@@ -138,6 +138,8 @@ export type ToneNameV2 = keyof typeof TONE_CLASSES;
 export const TYPE = {
   /** Page / detail titles — `text-lg font-semibold text-slate-900` */
   headingLg: "text-lg font-semibold text-slate-900",
+  /** Modal / panel titles — `text-base font-semibold text-slate-900` */
+  headingMd: "text-base font-semibold text-slate-900",
   /** Section / rail headers — `text-sm font-semibold text-slate-900` */
   headingSm: "text-sm font-semibold text-slate-900",
   /** Default body text — `text-sm text-slate-700` */

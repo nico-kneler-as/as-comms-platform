@@ -5,13 +5,21 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useCallback, useEffect, type KeyboardEvent } from "react";
 
-import { FOCUS_RING, SHADOW, TRANSITION } from "@/app/_lib/design-tokens-v2";
+import {
+  FOCUS_RING,
+  SHADOW,
+  TRANSITION,
+  TYPE,
+} from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { sanitizeComposerHtml } from "@/src/lib/html-sanitizer";
 
 import { plaintextToComposerHtml } from "./composer-html";
-import { ComposerToolbar, type ComposerToolbarCommand } from "./composer-toolbar";
+import {
+  ComposerToolbar,
+  type ComposerToolbarCommand,
+} from "./composer-toolbar";
 import { AlertCircleIcon, XIcon } from "./icons";
 import { formatBytes, type AttachmentDraft } from "./composer-shared";
 
@@ -35,9 +43,7 @@ export function ComposerField({
 }) {
   return (
     <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-2.5">
-      <span className="mt-1 w-16 shrink-0 text-[11px] font-semibold uppercase text-slate-400">
-        {label}
-      </span>
+      <span className={`mt-1 w-10 shrink-0 ${TYPE.label}`}>{label}</span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
@@ -63,7 +69,9 @@ export function AttachmentRow({
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700"
           >
             <span className="font-medium">{attachment.filename}</span>
-            <span className="text-slate-500">{formatBytes(attachment.size)}</span>
+            <span className="text-slate-500">
+              {formatBytes(attachment.size)}
+            </span>
             <button
               type="button"
               aria-label={`Remove ${attachment.filename}`}
@@ -174,7 +182,8 @@ export function RichTextComposerEditor({
   if (editor?.isActive("bold") === true) activeCommands.add("bold");
   if (editor?.isActive("italic") === true) activeCommands.add("italic");
   if (editor?.isActive("bulletList") === true) activeCommands.add("bulletList");
-  if (editor?.isActive("orderedList") === true) activeCommands.add("orderedList");
+  if (editor?.isActive("orderedList") === true)
+    activeCommands.add("orderedList");
   if (editor?.isActive("link") === true) activeCommands.add("link");
 
   const runCommand = useCallback(
