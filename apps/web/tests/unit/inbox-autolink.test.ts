@@ -25,6 +25,35 @@ describe("autolinkText", () => {
     expect(markup).toContain(">https://example.org/forms<");
   });
 
+  it("renders markdown-style links with only the label visible", () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        "p",
+        null,
+        autolinkText("Open [Field packet](https://example.org/forms)."),
+      ),
+    );
+
+    expect(markup).toContain('href="https://example.org/forms"');
+    expect(markup).toContain(">Field packet<");
+    expect(markup).not.toContain("[Field packet]");
+    expect(markup).not.toContain("(https://example.org/forms)");
+  });
+
+  it("renders parenthesized URLs as inline links when link text is present", () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        "p",
+        null,
+        autolinkText("Field packet (https://example.org/forms)"),
+      ),
+    );
+
+    expect(markup).toContain('href="https://example.org/forms"');
+    expect(markup).toContain(">Field packet<");
+    expect(markup).not.toContain("(https://example.org/forms)");
+  });
+
   it("links multiple URLs in one body", () => {
     const markup = renderToStaticMarkup(
       createElement(
