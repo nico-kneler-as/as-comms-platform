@@ -77,6 +77,29 @@ async function seedProject(
     aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt ?? null
   });
 
+  if (
+    input.aiKnowledgeUrl !== null &&
+    (input.aiKnowledgeSyncedAt ?? null) !== null
+  ) {
+    await runtime.context.repositories.aiKnowledge.upsert({
+      id: `ai_knowledge:notion:${input.projectId}`,
+      scope: "project",
+      scopeKey: input.projectId,
+      sourceProvider: "notion",
+      sourceId: `${input.projectId}-page`,
+      sourceUrl: input.aiKnowledgeUrl,
+      title: "Project context",
+      content: "Grounding",
+      contentHash: "hash",
+      metadataJson: {},
+      sourceLastEditedAt: null,
+      syncedAt:
+        input.aiKnowledgeSyncedAt ?? "2026-04-20T15:00:00.000Z",
+      createdAt: "2026-04-20T15:00:00.000Z",
+      updatedAt: "2026-04-20T15:00:00.000Z"
+    });
+  }
+
   for (const [index, email] of input.emails.entries()) {
     await runtime.context.settings.aliases.create({
       id: `${input.projectId}:alias:${String(index)}`,

@@ -47,6 +47,21 @@ async function seedProject(runtime: Stage1WebTestRuntime, url: string | null) {
   });
 }
 
+async function seedAdminUser(runtime: Stage1WebTestRuntime): Promise<void> {
+  const now = new Date("2026-04-20T15:00:00.000Z");
+  await runtime.context.settings.users.upsert({
+    id: "user:admin",
+    name: "admin",
+    email: "admin@adventurescientists.org",
+    emailVerified: now,
+    image: null,
+    role: "admin",
+    deactivatedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 describe("activateProjectFromWizardAction", () => {
   let runtime: Stage1WebTestRuntime | null = null;
 
@@ -58,6 +73,7 @@ describe("activateProjectFromWizardAction", () => {
     revalidateTag.mockReset();
     resolveAdminSession.mockResolvedValue(adminSession());
     runtime = await createStage1WebTestRuntime();
+    await seedAdminUser(runtime);
   });
 
   afterEach(async () => {

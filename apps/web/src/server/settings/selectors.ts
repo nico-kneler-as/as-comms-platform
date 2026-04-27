@@ -135,12 +135,12 @@ function normalizeSearch(value: string | null | undefined): string | null {
 
 function hasActivationRequirements(input: {
   readonly projectAlias: string | null;
-  readonly aiKnowledgeUrl: string | null;
+  readonly hasCachedAiKnowledge: boolean;
   readonly emailCount: number;
 }): boolean {
   return (
     input.emailCount >= 1 &&
-    input.aiKnowledgeUrl !== null &&
+    input.hasCachedAiKnowledge &&
     (input.projectAlias?.trim().length ?? 0) > 0
   );
 }
@@ -205,7 +205,7 @@ function toProjectRowViewModel(input: {
     memberCount: input.memberCount,
     activationRequirementsMet: hasActivationRequirements({
       projectAlias: input.projectAlias,
-      aiKnowledgeUrl: input.aiKnowledgeUrl,
+      hasCachedAiKnowledge: input.hasCachedAiKnowledge,
       emailCount: input.emails.length
     })
   };
