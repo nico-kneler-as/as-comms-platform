@@ -860,65 +860,6 @@ export const projectKnowledgeEntries = pgTable(
   ]
 );
 
-export const projectKnowledgeSourceLinks = pgTable(
-  "project_knowledge_source_links",
-  {
-    id: text("id").primaryKey(),
-    projectId: text("project_id").notNull(),
-    kind: text("kind")
-      .$type<
-        | "public_project_page"
-        | "volunteer_homepage"
-        | "training_site"
-        | "gmail_alias_history"
-        | "other"
-      >()
-      .notNull(),
-    label: text("label"),
-    url: text("url").notNull(),
-    createdAt: createdAtColumn,
-    updatedAt: updatedAtColumn
-  },
-  (table) => [
-    index("project_knowledge_source_links_project_idx").on(table.projectId)
-  ]
-);
-
-export const projectKnowledgeBootstrapRuns = pgTable(
-  "project_knowledge_bootstrap_runs",
-  {
-    id: text("id").primaryKey(),
-    projectId: text("project_id").notNull(),
-    status: text("status")
-      .$type<"queued" | "fetching" | "synthesizing" | "writing" | "done" | "error">()
-      .notNull(),
-    force: boolean("force").notNull().default(false),
-    startedAt: timestamp("started_at", {
-      mode: "date",
-      withTimezone: true
-    })
-      .notNull()
-      .defaultNow(),
-    completedAt: timestamp("completed_at", {
-      mode: "date",
-      withTimezone: true
-    }),
-    statsJson: jsonb("stats_json")
-      .$type<Record<string, unknown>>()
-      .notNull()
-      .default({}),
-    errorDetail: text("error_detail"),
-    createdAt: createdAtColumn,
-    updatedAt: updatedAtColumn
-  },
-  (table) => [
-    index("project_knowledge_bootstrap_runs_project_idx").on(
-      table.projectId,
-      table.startedAt
-    )
-  ]
-);
-
 export const integrationHealth = pgTable(
   "integration_health",
   {

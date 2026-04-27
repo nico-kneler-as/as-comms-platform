@@ -38,6 +38,7 @@ export interface SettingsProjectRecord {
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
+  readonly hasCachedAiKnowledge: boolean;
   readonly createdAt: Date;
   readonly emails: readonly SettingsProjectEmailRecord[];
   readonly memberCount: number;

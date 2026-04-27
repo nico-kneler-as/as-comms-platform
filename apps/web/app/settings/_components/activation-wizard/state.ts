@@ -5,12 +5,11 @@ import {
   type AliasDraft,
   buildDefaultSignature,
   buildInitialAliasDraft,
-  buildInitialAliases,
-  hasSyncedKnowledge
+  buildInitialAliases
 } from "./shared";
 
 export type StepIndex = 0 | 1 | 2 | 3 | 4;
-export type KnowledgeStatus = "idle" | "syncing" | "done" | "error" | "timeout";
+export type KnowledgeStatus = "idle" | "syncing" | "done" | "error";
 
 export interface WizardState {
   readonly step: StepIndex;
@@ -20,11 +19,7 @@ export interface WizardState {
   readonly signatureDraft: string;
   readonly notionUrl: string;
   readonly knowledgeStatus: KnowledgeStatus;
-  readonly knowledgeRunId: string | null;
   readonly knowledgeMessage: string | null;
-  readonly knowledgePollAttempt: number;
-  readonly knowledgeStartedAt: number | null;
-  readonly knowledgeUsesExistingPage: boolean;
   readonly activationStatus: "idle" | "pending" | "error";
   readonly activationMessage: string | null;
   readonly activatedProject: ProjectMutationData | null;
@@ -41,16 +36,9 @@ export type WizardAction =
   | { readonly type: "make-primary"; readonly address: string }
   | { readonly type: "set-signature"; readonly signatureDraft: string }
   | { readonly type: "set-notion-url"; readonly notionUrl: string }
-  | {
-      readonly type: "sync-start";
-      readonly runId: string;
-      readonly startedAt: number;
-    }
-  | { readonly type: "sync-await-next" }
+  | { readonly type: "sync-start" }
   | { readonly type: "sync-done" }
   | { readonly type: "sync-error"; readonly message: string }
-  | { readonly type: "sync-timeout"; readonly message: string }
-  | { readonly type: "use-different-page" }
   | { readonly type: "activation-start" }
   | { readonly type: "activation-error"; readonly message: string }
   | { readonly type: "activation-success"; readonly project: ProjectMutationData };
@@ -70,11 +58,7 @@ export function createInitialState(
     signatureDraft: "",
     notionUrl: initialProject?.aiKnowledgeUrl ?? "",
     knowledgeStatus: "idle",
-    knowledgeRunId: null,
     knowledgeMessage: null,
-    knowledgePollAttempt: 0,
-    knowledgeStartedAt: null,
-    knowledgeUsesExistingPage: hasSyncedKnowledge(initialProject),
     activationStatus: "idle",
     activationMessage: null,
     activatedProject: null
@@ -85,10 +69,7 @@ function resetKnowledgeState(state: WizardState): WizardState {
   return {
     ...state,
     knowledgeStatus: "idle",
-    knowledgeRunId: null,
     knowledgeMessage: null,
-    knowledgePollAttempt: 0,
-    knowledgeStartedAt: null
   };
 }
 
@@ -148,11 +129,7 @@ export function activationWizardReducer(
         signatureDraft: "",
         notionUrl: action.project.aiKnowledgeUrl ?? "",
         knowledgeStatus: "idle",
-        knowledgeRunId: null,
         knowledgeMessage: null,
-        knowledgePollAttempt: 0,
-        knowledgeStartedAt: null,
-        knowledgeUsesExistingPage: hasSyncedKnowledge(action.project),
         activationStatus: "idle",
         activationMessage: null,
         activatedProject: null
@@ -228,7 +205,6 @@ export function activationWizardReducer(
       return {
         ...resetKnowledgeState(state),
         notionUrl: action.notionUrl,
-        knowledgeUsesExistingPage: false,
         activationMessage: null,
         activationStatus: "idle"
       };
@@ -236,15 +212,9 @@ export function activationWizardReducer(
       return {
         ...state,
         knowledgeStatus: "syncing",
-        knowledgeRunId: action.runId,
         knowledgeMessage: null,
-        knowledgePollAttempt: 0,
-        knowledgeStartedAt: action.startedAt
-      };
-    case "sync-await-next":
-      return {
-        ...state,
-        knowledgePollAttempt: state.knowledgePollAttempt + 1
+        activationMessage: null,
+        activationStatus: "idle"
       };
     case "sync-done":
       return {
@@ -257,17 +227,6 @@ export function activationWizardReducer(
         ...state,
         knowledgeStatus: "error",
         knowledgeMessage: action.message
-      };
-    case "sync-timeout":
-      return {
-        ...state,
-        knowledgeStatus: "timeout",
-        knowledgeMessage: action.message
-      };
-    case "use-different-page":
-      return {
-        ...resetKnowledgeState(state),
-        knowledgeUsesExistingPage: false
       };
     case "activation-start":
       return {

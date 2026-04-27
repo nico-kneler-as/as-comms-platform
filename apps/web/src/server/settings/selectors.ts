@@ -20,6 +20,7 @@ export interface ProjectRowViewModel {
   readonly additionalEmailCount: number;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: string | null;
+  readonly hasCachedAiKnowledge: boolean;
   readonly memberCount: number;
   readonly activationRequirementsMet: boolean;
 }
@@ -134,12 +135,12 @@ function normalizeSearch(value: string | null | undefined): string | null {
 
 function hasActivationRequirements(input: {
   readonly projectAlias: string | null;
-  readonly aiKnowledgeSyncedAt: Date | null;
+  readonly aiKnowledgeUrl: string | null;
   readonly emailCount: number;
 }): boolean {
   return (
     input.emailCount >= 1 &&
-    input.aiKnowledgeSyncedAt !== null &&
+    input.aiKnowledgeUrl !== null &&
     (input.projectAlias?.trim().length ?? 0) > 0
   );
 }
@@ -176,6 +177,7 @@ function toProjectRowViewModel(input: {
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
+  readonly hasCachedAiKnowledge: boolean;
   readonly emails: readonly {
     readonly id: string;
     readonly address: string;
@@ -199,10 +201,11 @@ function toProjectRowViewModel(input: {
     additionalEmailCount,
     aiKnowledgeUrl: input.aiKnowledgeUrl,
     aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt?.toISOString() ?? null,
+    hasCachedAiKnowledge: input.hasCachedAiKnowledge,
     memberCount: input.memberCount,
     activationRequirementsMet: hasActivationRequirements({
       projectAlias: input.projectAlias,
-      aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt,
+      aiKnowledgeUrl: input.aiKnowledgeUrl,
       emailCount: input.emails.length
     })
   };

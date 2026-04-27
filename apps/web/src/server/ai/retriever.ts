@@ -137,10 +137,7 @@ export async function retrieveGrounding(
       }),
       input.projectId === null
         ? Promise.resolve(null)
-        : repositories.aiKnowledge.findByScope({
-            scope: "project",
-            scopeKey: input.projectId,
-          }),
+        : repositories.aiKnowledge.findProjectNotionContent(input.projectId),
       repositories.canonicalEvents.listByContactId(input.contactId),
     ]);
 
