@@ -14,7 +14,6 @@ import {
 } from "./composer-recipient-picker";
 import { ComposerSendFromChip } from "./composer-send-from-chip";
 import { AboutThisDraft } from "./about-this-draft";
-import { AiDraftReprompt } from "./ai-draft-reprompt";
 import {
   AttachmentRow,
   ComposerField,
@@ -34,7 +33,6 @@ import type { AttachmentDraft, InlineComposerError } from "./composer-shared";
 import type { InboxComposerAliasOption } from "../_lib/view-models";
 import type {
   AiDraftState,
-  AiDraftStatus,
   ComposerValidationError,
 } from "./inbox-client-provider";
 
@@ -129,6 +127,7 @@ export function ComposerEmailSurface({
   repromptText,
   isGeneratingAi,
   aiButtonLabel,
+  aiButtonDisabled,
   selectedAliasAiReady,
   selectedAliasProjectName,
   aiWarningMessage,
@@ -146,11 +145,12 @@ export function ComposerEmailSurface({
   onClearErrors,
   onAiEdited,
   onDiscardAi,
-  onRegenerateAi,
+  onOpenReprompt,
+  onCancelReprompt,
+  onApproveAi,
   onRunAiDraft,
   onRepromptTextChange,
   onReprompt,
-  onSuggestion,
   onAttachmentClick,
   onAttachmentRemove,
   onKnowledgeCaptureChange,
@@ -169,13 +169,11 @@ export function ComposerEmailSurface({
   readonly bodyError?: ComposerValidationError;
   readonly attachments: readonly AttachmentDraft[];
   readonly attachmentError?: ComposerValidationError;
-  readonly aiDraft: {
-    readonly status: AiDraftStatus;
-    readonly grounding: AiDraftState["grounding"];
-  } & Pick<AiDraftState, "warnings" | "responseMode">;
+  readonly aiDraft: AiDraftState;
   readonly repromptText: string;
   readonly isGeneratingAi: boolean;
   readonly aiButtonLabel: string;
+  readonly aiButtonDisabled: boolean;
   readonly selectedAliasAiReady: boolean;
   readonly selectedAliasProjectName: string | null;
   readonly aiWarningMessage: string | null;
@@ -198,11 +196,12 @@ export function ComposerEmailSurface({
   readonly onClearErrors: () => void;
   readonly onAiEdited: () => void;
   readonly onDiscardAi: () => void;
-  readonly onRegenerateAi: () => void;
+  readonly onOpenReprompt: () => void;
+  readonly onCancelReprompt: () => void;
+  readonly onApproveAi: () => void;
   readonly onRunAiDraft: () => void;
   readonly onRepromptTextChange: (value: string) => void;
   readonly onReprompt: () => void;
-  readonly onSuggestion: (value: string) => void;
   readonly onAttachmentClick: () => void;
   readonly onAttachmentRemove: (id: string) => void;
   readonly onKnowledgeCaptureChange: (value: boolean) => void;
@@ -269,22 +268,18 @@ export function ComposerEmailSurface({
         onClearErrors={onClearErrors}
         topSlot={
           <ComposerAiDraftWindow
-            lifecycle={aiDraft.status}
+            aiDraft={aiDraft}
+            repromptText={repromptText}
+            isGeneratingAi={isGeneratingAi}
+            onRepromptTextChange={onRepromptTextChange}
+            onOpenReprompt={onOpenReprompt}
+            onSubmitReprompt={onReprompt}
+            onCancelReprompt={onCancelReprompt}
             onDiscard={onDiscardAi}
-            onRegenerate={onRegenerateAi}
+            onApprove={onApproveAi}
             onAbout={() => {
               onAboutOpenChange(true);
             }}
-          />
-        }
-        bottomSlot={
-          <AiDraftReprompt
-            aiDraft={aiDraft as AiDraftState}
-            value={repromptText}
-            onValueChange={onRepromptTextChange}
-            onReprompt={onReprompt}
-            onSuggestion={onSuggestion}
-            disabled={isGeneratingAi}
           />
         }
       />
@@ -344,7 +339,7 @@ export function ComposerEmailSurface({
             <Button
               type="button"
               variant="outline"
-              disabled={isGeneratingAi}
+              disabled={aiButtonDisabled}
               onClick={onRunAiDraft}
             >
               {isGeneratingAi ? (
@@ -383,7 +378,7 @@ export function ComposerEmailSurface({
       </div>
 
       <AboutThisDraft
-        aiDraft={aiDraft as AiDraftState}
+        aiDraft={aiDraft}
         open={isAboutOpen}
         onOpenChange={onAboutOpenChange}
       />

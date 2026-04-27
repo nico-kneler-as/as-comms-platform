@@ -31,6 +31,7 @@ vi.mock("lucide-react", () => ({
   Pencil: () => null,
   Plus: () => null,
   RefreshCw: () => null,
+  RotateCw: () => null,
   Search: () => null,
   Sparkles: () => null,
   Trash2: () => null,

@@ -8,6 +8,7 @@ describe("inbox composer AI button", () => {
       resolveAiButtonState({
         body: "   ",
         isGenerating: false,
+        aiDraftStatus: "idle",
       }),
     ).toEqual({
       mode: "draft",
@@ -16,15 +17,15 @@ describe("inbox composer AI button", () => {
     });
   });
 
-  it('uses "Fill with AI" when the body has content', () => {
+  it('uses "Draft with AI" while idle even when the body has content', () => {
     expect(
       resolveAiButtonState({
         body: "Turn this into a full reply",
         isGenerating: false,
       }),
     ).toEqual({
-      mode: "fill",
-      label: "Fill with AI",
+      mode: "draft",
+      label: "Draft with AI",
       disabled: false,
     });
   });
@@ -34,6 +35,34 @@ describe("inbox composer AI button", () => {
       resolveAiButtonState({
         body: "",
         isGenerating: true,
+      }),
+    ).toEqual({
+      mode: "draft",
+      label: "Draft with AI",
+      disabled: true,
+    });
+  });
+
+  it('shows "Draft with AI" after approval even when the body has content', () => {
+    expect(
+      resolveAiButtonState({
+        body: "Approved generated text",
+        isGenerating: false,
+        aiDraftStatus: "inserted",
+      }),
+    ).toEqual({
+      mode: "draft",
+      label: "Draft with AI",
+      disabled: false,
+    });
+  });
+
+  it("disables the footer button while an AI preview is active", () => {
+    expect(
+      resolveAiButtonState({
+        body: "",
+        isGenerating: false,
+        aiDraftStatus: "reviewable",
       }),
     ).toEqual({
       mode: "draft",

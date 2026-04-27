@@ -1,144 +1,194 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import type { ReactNode } from "react";
+
+import { FOCUS_RING, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
-import { RADIUS, SHADOW, TRANSITION } from "@/app/_lib/design-tokens-v2";
 
 import {
-  BotIcon,
-  LoaderIcon,
+  CheckIcon,
   RotateCcwIcon,
+  RotateCwIcon,
   SparkleIcon,
-  XIcon,
+  Trash2Icon,
 } from "./icons";
-import type { AiDraftStatus } from "./inbox-client-provider";
+import type { AiDraftState } from "./inbox-client-provider";
 
 function DraftSkeleton() {
   return (
-    <div className={`border border-violet-200 bg-violet-50/40 p-4 ${RADIUS.md}`}>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {["Tier 1", "Tier 2", "Tier 3", "Tier 4"].map((label) => (
-          <span
-            key={label}
-            className="inline-flex items-center rounded-full border border-violet-200 bg-white px-2 py-1 text-[11px] text-violet-700"
-          >
-            <LoaderIcon className="mr-1 h-3 w-3 animate-spin" />
-            {label}
-          </span>
-        ))}
-      </div>
-      <div className="space-y-2">
-        <div className="h-3 w-[88%] animate-pulse rounded bg-violet-100" />
-        <div className="h-3 w-[72%] animate-pulse rounded bg-violet-100" />
-        <div className="h-3 w-[81%] animate-pulse rounded bg-violet-100" />
-        <div className="h-3 w-[64%] animate-pulse rounded bg-violet-100" />
-      </div>
+    <div className="mt-3 space-y-2" aria-label="AI draft is generating">
+      <div className="h-3 w-[88%] animate-pulse rounded bg-violet-100" />
+      <div className="h-3 w-[72%] animate-pulse rounded bg-violet-100" />
+      <div className="h-3 w-[81%] animate-pulse rounded bg-violet-100" />
+      <div className="h-3 w-[64%] animate-pulse rounded bg-violet-100" />
     </div>
   );
 }
 
-function LifecycleBanner({
-  status,
-  onDiscard,
-  onRegenerate,
-  onAbout,
+function AiDraftActionButton({
+  children,
+  disabled = false,
+  onClick,
+  tone = "ghost",
 }: {
-  readonly status: Extract<AiDraftStatus, "inserted" | "edited-after-generation">;
-  readonly onDiscard: () => void;
-  readonly onRegenerate: () => void;
-  readonly onAbout: () => void;
+  readonly children: ReactNode;
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
+  readonly tone?: "ghost" | "danger" | "primary";
 }) {
-  const edited = status === "edited-after-generation";
-
   return (
-    <div
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
       className={cn(
-        `flex flex-col gap-3 border px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${RADIUS.md} ${SHADOW.sm}`,
-        edited
-          ? "border-amber-200 bg-amber-50/70"
-          : "border-emerald-200 bg-emerald-50/70",
+        `inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion}`,
+        tone === "primary"
+          ? "bg-violet-600 text-white hover:bg-violet-700 disabled:bg-violet-300 disabled:text-white"
+          : tone === "danger"
+            ? "text-rose-600 hover:bg-rose-50 disabled:text-rose-300"
+            : "text-slate-600 hover:bg-white/80 hover:text-slate-900 disabled:text-slate-300",
+        disabled ? "cursor-not-allowed" : "",
       )}
     >
-      <div className="flex min-w-0 items-start gap-2">
-        <div
-          className={cn(
-            "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md",
-            edited ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700",
-          )}
-        >
-          {edited ? <BotIcon className="size-4" /> : <SparkleIcon className="size-4" />}
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-900">
-            {edited ? "You've edited this draft" : "AI draft inserted"}
-          </p>
-          <p className="text-xs text-slate-600">
-            {edited
-              ? "Regenerate to replace your edits, or discard the AI state and keep writing."
-              : "Review and keep editing before you send."}
-          </p>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="ghost" size="sm" onClick={onAbout}>
-          About this draft
-        </Button>
-        {edited ? (
-          <>
-            <Button type="button" variant="outline" size="sm" onClick={onRegenerate}>
-              <RotateCcwIcon className="size-4" />
-              Regenerate
-            </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={onDiscard}>
-              Discard changes
-            </Button>
-          </>
-        ) : (
-          <Button type="button" variant="ghost" size="sm" onClick={onDiscard}>
-            <XIcon className="size-4" />
-            Dismiss
-          </Button>
-        )}
-      </div>
+      {children}
+    </button>
+  );
+}
+
+function DraftPreview({ text }: { readonly text: string }) {
+  return (
+    <div className="whitespace-pre-wrap rounded-md border border-violet-100 bg-white px-3 py-2.5 text-[13px] italic leading-relaxed text-slate-600">
+      {text}
     </div>
   );
 }
 
 export function ComposerAiDraftWindow({
-  lifecycle,
+  aiDraft,
+  repromptText,
+  isGeneratingAi,
+  onRepromptTextChange,
+  onOpenReprompt,
+  onSubmitReprompt,
+  onCancelReprompt,
   onDiscard,
-  onRegenerate,
+  onApprove,
   onAbout,
 }: {
-  readonly lifecycle: AiDraftStatus;
+  readonly aiDraft: AiDraftState;
+  readonly repromptText: string;
+  readonly isGeneratingAi: boolean;
+  readonly onRepromptTextChange: (value: string) => void;
+  readonly onOpenReprompt: () => void;
+  readonly onSubmitReprompt: () => void;
+  readonly onCancelReprompt: () => void;
   readonly onDiscard: () => void;
-  readonly onRegenerate: () => void;
+  readonly onApprove: () => void;
   readonly onAbout: () => void;
 }) {
-  if (lifecycle === "idle" || lifecycle === "discarded") {
+  const status = aiDraft.status;
+
+  if (
+    status !== "generating" &&
+    status !== "reviewable" &&
+    status !== "reprompting"
+  ) {
     return null;
   }
 
-  if (lifecycle === "generating" || lifecycle === "reprompting") {
-    return (
-      <div className={`mx-5 border-x border-slate-200 bg-white px-4 py-4 ${TRANSITION.reduceMotion}`}>
-        <DraftSkeleton />
-      </div>
-    );
-  }
+  const isReprompting = status === "reprompting";
+  const trimmedReprompt = repromptText.trim();
+  const canSubmitReprompt = trimmedReprompt.length > 0 && !isGeneratingAi;
+  const canApprove = !isGeneratingAi && (!isReprompting || trimmedReprompt.length === 0);
+  const canUseDraftActions = !isGeneratingAi;
 
-  if (lifecycle === "inserted" || lifecycle === "edited-after-generation") {
-    return (
-      <div className={`mx-5 border-x border-slate-200 bg-white px-4 py-4 ${TRANSITION.reduceMotion}`}>
-        <LifecycleBanner
-          status={lifecycle}
-          onDiscard={onDiscard}
-          onRegenerate={onRegenerate}
-          onAbout={onAbout}
-        />
+  return (
+    <section className="mx-5 mb-3 rounded-lg border border-violet-200 bg-violet-50/40 p-4">
+      <div className="flex items-center gap-2">
+        <SparkleIcon className="size-3.5 text-violet-700" />
+        <p className="text-[12px] font-semibold text-slate-800">AI draft</p>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={onAbout}
+          className={`rounded px-1.5 py-1 text-[11px] text-violet-700 hover:underline ${FOCUS_RING}`}
+        >
+          About
+        </button>
       </div>
-    );
-  }
 
-  return null;
+      {status === "generating" ? <DraftSkeleton /> : null}
+
+      {status === "reviewable" || isReprompting ? (
+        <div className="mt-3">
+          <DraftPreview text={aiDraft.generatedText} />
+
+          {isReprompting ? (
+            <div className="mt-3 flex items-start gap-2">
+              <textarea
+                autoFocus
+                value={repromptText}
+                onChange={(event) => {
+                  onRepromptTextChange(event.currentTarget.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    onCancelReprompt();
+                    return;
+                  }
+
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    if (canSubmitReprompt) {
+                      onSubmitReprompt();
+                    }
+                  }
+                }}
+                placeholder="Type instructions..."
+                disabled={isGeneratingAi}
+                className={`min-h-[64px] flex-1 resize-none rounded-lg border border-violet-200 bg-white px-3 py-2.5 text-[13px] leading-relaxed text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-200 disabled:opacity-60 ${TRANSITION.reduceMotion}`}
+              />
+              <button
+                type="button"
+                aria-label="Regenerate AI draft"
+                disabled={!canSubmitReprompt}
+                onClick={onSubmitReprompt}
+                className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-violet-600 p-2 text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING} ${TRANSITION.fast} ${TRANSITION.reduceMotion}`}
+              >
+                <RotateCwIcon className="size-4" />
+              </button>
+            </div>
+          ) : null}
+
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <AiDraftActionButton
+              onClick={isReprompting ? onCancelReprompt : onOpenReprompt}
+              disabled={!canUseDraftActions}
+            >
+              <RotateCcwIcon className="size-3.5" />
+              {isReprompting ? "Cancel reprompt" : "Reprompt"}
+            </AiDraftActionButton>
+            <AiDraftActionButton
+              tone="danger"
+              onClick={onDiscard}
+              disabled={!canUseDraftActions}
+            >
+              <Trash2Icon className="size-3.5" />
+              Discard
+            </AiDraftActionButton>
+            <AiDraftActionButton
+              tone="primary"
+              onClick={onApprove}
+              disabled={!canApprove}
+            >
+              <CheckIcon className="size-3.5" />
+              Approve
+            </AiDraftActionButton>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
 }

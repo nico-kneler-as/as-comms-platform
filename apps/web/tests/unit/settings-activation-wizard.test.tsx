@@ -55,6 +55,7 @@ vi.mock("lucide-react", () => ({
   Pencil: iconMock("Pencil"),
   Plus: iconMock("Plus"),
   RefreshCw: iconMock("RefreshCw"),
+  RotateCw: iconMock("RotateCw"),
   Search: iconMock("Search"),
   Sparkles: iconMock("Sparkles"),
   Trash2: iconMock("Trash2"),

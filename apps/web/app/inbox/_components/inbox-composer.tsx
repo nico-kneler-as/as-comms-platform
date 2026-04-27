@@ -152,11 +152,13 @@ export function InboxComposerDetailPane() {
     setComposerErrors,
     setComposerStatus,
     startAiGeneration,
-    insertAiDraft,
+    markAiDraftReviewable,
+    approveAiDraft,
     markAiDraftEdited,
-    restoreAiDraft,
     discardAiDraft,
+    markAiDraftReprompting,
     repromptAi,
+    cancelReprompt,
     resetAiDraft,
     setAiError,
   } = useInboxClient();
@@ -375,6 +377,7 @@ export function InboxComposerDetailPane() {
   const aiButton = resolveAiButtonState({
     body,
     isGenerating: isGeneratingAi,
+    aiDraftStatus: aiDraft.status,
   });
   const aiWarningMessage = resolveAiWarningMessage(aiDraft);
   const showKnowledgeCapture =
@@ -447,7 +450,7 @@ export function InboxComposerDetailPane() {
         ? {
             ...baseRequest,
             mode: "reprompt" as const,
-            previousDraft: body.trim(),
+            previousDraft: aiDraft.generatedText.trim(),
             repromptDirection: requestOverride.repromptDirection,
             repromptIndex: aiDraft.repromptChain.length + 1,
           }
@@ -489,10 +492,8 @@ export function InboxComposerDetailPane() {
 
       clearComposerErrors();
       setInlineError(null);
-      setBody(result.data.draft);
-      setBodyHtml(plaintextToComposerHtml(result.data.draft));
       setRepromptText("");
-      insertAiDraft({
+      markAiDraftReviewable({
         request,
         response: result.data,
         prompt,
@@ -547,22 +548,37 @@ export function InboxComposerDetailPane() {
   };
 
   const handleDiscardAi = () => {
-    if (aiDraft.status === "edited-after-generation") {
-      setBody(aiDraft.generatedText);
-      setBodyHtml(plaintextToComposerHtml(aiDraft.generatedText));
-      restoreAiDraft();
-      setRepromptText("");
-      return;
-    }
-
     discardAiDraft();
+    setRepromptText("");
   };
 
   const handleRegenerateAi = () => {
+    if (repromptText.trim().length === 0) {
+      return;
+    }
+
     runAiDraft({
       mode: "reprompt",
-      repromptDirection: repromptText.trim() || "Regenerate this draft",
+      repromptDirection: repromptText.trim(),
     });
+  };
+
+  const handleOpenReprompt = () => {
+    setRepromptText("");
+    markAiDraftReprompting();
+  };
+
+  const handleCancelReprompt = () => {
+    setRepromptText("");
+    cancelReprompt();
+  };
+
+  const handleApproveAi = () => {
+    const approvedText = aiDraft.generatedText;
+    setBody(approvedText);
+    setBodyHtml(plaintextToComposerHtml(approvedText));
+    setRepromptText("");
+    approveAiDraft();
   };
 
   const submit = () => {
@@ -764,6 +780,7 @@ export function InboxComposerDetailPane() {
               repromptText={repromptText}
               isGeneratingAi={isGeneratingAi}
               aiButtonLabel={aiButton.label}
+              aiButtonDisabled={aiButton.disabled}
               selectedAliasAiReady={selectedAliasRecord?.isAiReady === true}
               selectedAliasProjectName={
                 selectedAliasRecord?.projectName ?? null
@@ -803,19 +820,14 @@ export function InboxComposerDetailPane() {
               onClearErrors={clearComposerErrors}
               onAiEdited={markAiDraftEdited}
               onDiscardAi={handleDiscardAi}
-              onRegenerateAi={handleRegenerateAi}
+              onOpenReprompt={handleOpenReprompt}
+              onCancelReprompt={handleCancelReprompt}
+              onApproveAi={handleApproveAi}
               onRunAiDraft={() => {
                 runAiDraft();
               }}
               onRepromptTextChange={setRepromptText}
               onReprompt={handleRegenerateAi}
-              onSuggestion={(value) => {
-                setRepromptText(value);
-                runAiDraft({
-                  mode: "reprompt",
-                  repromptDirection: value,
-                });
-              }}
               onAttachmentClick={() => {
                 attachmentInputRef.current?.click();
               }}
