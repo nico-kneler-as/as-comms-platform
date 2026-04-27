@@ -47,6 +47,7 @@ export interface SettingsProjectsRepository {
     projectId: string,
     aiKnowledgeUrl: string | null
   ): Promise<SettingsProjectRecord | null>;
+  unlinkAiKnowledge(projectId: string): Promise<SettingsProjectRecord | null>;
   setProjectAlias(
     projectId: string,
     projectAlias: string | null

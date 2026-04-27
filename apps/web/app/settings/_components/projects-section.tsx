@@ -180,27 +180,13 @@ function ProjectList({
                 {renderMeta ? renderMeta(project) : null}
               </div>
               {renderLeading ? (
-                project.projectAlias ? (
-                  <p className="mt-1 truncate text-[12.5px] text-slate-600">
-                    <span className="text-slate-400">Alias</span> ·{" "}
-                    <span className="font-medium text-slate-800">
-                      {project.projectAlias}
-                    </span>
-                  </p>
-                ) : (
-                  <p className={cn("mt-1 truncate text-slate-500", TYPE.caption)}>
-                    {getProjectAliasSummary(project)}
-                  </p>
-                )
+                <p className={cn("mt-1 truncate text-slate-500", TYPE.caption)}>
+                  {getProjectSecondaryLabel(project)}
+                </p>
               ) : (
                 <>
-                  {project.projectAlias ? (
-                    <p className={cn(TYPE.caption, "truncate text-slate-500")}>
-                      Alias: {project.projectAlias}
-                    </p>
-                  ) : null}
-                  <p className={cn(TYPE.caption, "truncate")}>
-                    {getProjectAliasSummary(project)}
+                  <p className={cn(TYPE.caption, "truncate text-slate-500")}>
+                    {getProjectSecondaryLabel(project)}
                   </p>
                 </>
               )}
@@ -220,7 +206,11 @@ function ProjectList({
   );
 }
 
-function getProjectAliasSummary(project: ProjectRowViewModel) {
+function getProjectSecondaryLabel(project: ProjectRowViewModel) {
+  if (project.projectAlias) {
+    return `Alias · ${project.projectAlias}`;
+  }
+
   if (!project.primaryEmail) {
     return "No project inbox aliases configured";
   }

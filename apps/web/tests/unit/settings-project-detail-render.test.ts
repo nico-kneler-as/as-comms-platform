@@ -95,6 +95,7 @@ vi.mock("@/components/ui/status-badge", () => ({
 vi.mock("../../app/settings/actions", () => ({
   activateProjectAction: vi.fn(),
   deactivateProjectAction: vi.fn(),
+  syncProjectAiKnowledgeAction: vi.fn(),
   updateProjectAliasAction: vi.fn(),
   updateProjectAliasSignatureAction: vi.fn(),
   updateProjectAiKnowledgeAction: vi.fn(),
@@ -118,6 +119,7 @@ describe("ProjectDetail role-aware rendering", () => {
           additionalEmailCount: 0,
           aiKnowledgeUrl: null,
           aiKnowledgeSyncedAt: null,
+          hasCachedAiKnowledge: false,
           memberCount: 0,
           activationRequirementsMet: false,
           isAdmin: false,

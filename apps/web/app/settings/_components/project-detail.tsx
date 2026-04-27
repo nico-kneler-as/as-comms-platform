@@ -33,6 +33,7 @@ import {
   type ProjectEmailInput,
   type ProjectEmailMutationData,
   type ProjectMutationData,
+  syncProjectAiKnowledgeAction,
   updateProjectAliasAction,
   updateProjectAiKnowledgeAction,
   updateProjectAliasSignatureAction,
@@ -50,12 +51,12 @@ interface FeedbackState {
 
 function hasActivationRequirements(input: {
   readonly projectAlias: string | null;
-  readonly aiKnowledgeSyncedAt: string | null;
+  readonly aiKnowledgeUrl: string | null;
   readonly emails: readonly ProjectEmailInput[];
 }): boolean {
   return (
     input.emails.length >= 1 &&
-    input.aiKnowledgeSyncedAt !== null &&
+    input.aiKnowledgeUrl !== null &&
     (input.projectAlias?.trim().length ?? 0) > 0
   );
 }
@@ -70,6 +71,7 @@ function buildProjectState(
     isActive: project.isActive,
     aiKnowledgeUrl: project.aiKnowledgeUrl,
     aiKnowledgeSyncedAt: project.aiKnowledgeSyncedAt,
+    hasCachedAiKnowledge: project.hasCachedAiKnowledge,
     activationRequirementsMet: project.activationRequirementsMet,
     emails: project.emails
   };
@@ -96,7 +98,7 @@ function mergeProjectState(
     ...next,
     activationRequirementsMet: hasActivationRequirements({
       projectAlias: next.projectAlias,
-      aiKnowledgeSyncedAt: next.aiKnowledgeSyncedAt,
+      aiKnowledgeUrl: next.aiKnowledgeUrl,
       emails: next.emails
     })
   };
@@ -165,6 +167,19 @@ function formatLastSynced(iso: string | null): string {
     : "Knowledge has not been synced yet.";
 }
 
+function getStalenessDays(iso: string | null): number | null {
+  if (iso === null) {
+    return null;
+  }
+
+  const elapsedMs = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
+    return null;
+  }
+
+  return Math.floor(elapsedMs / (24 * 60 * 60 * 1000));
+}
+
 export function ProjectDetail({
   project
 }: {
@@ -228,7 +243,16 @@ export function ProjectDetail({
   }
 
   function handleKnowledgeSync() {
-    announce("Knowledge sync stays stubbed in this brief.", "error");
+    startKnowledgeTransition(async () => {
+      const result = await syncProjectAiKnowledgeAction(project.projectId);
+
+      if (!result.ok) {
+        announce(result.message, "error");
+        return;
+      }
+
+      announce("Queued a fresh Notion sync.");
+    });
   }
 
   function handleAddEmail() {
@@ -415,7 +439,7 @@ export function ProjectDetail({
       announce(
         nextUrl === null
           ? "Cleared the AI knowledge URL."
-          : "Updated the AI knowledge URL."
+          : "Saved the Notion URL and queued a sync."
       );
     });
   }
@@ -486,7 +510,7 @@ export function ProjectDetail({
   const inactiveActivationMessage =
     activationMessage ??
     (!optimisticProject.activationRequirementsMet
-      ? "Activation needs a short project alias, a project inbox alias, and completed AI knowledge sync."
+      ? "Activation needs a short project alias, a project inbox alias, and a Notion page URL."
       : null);
   const signatureEmails = [...optimisticProject.emails].sort((left, right) => {
     if (left.isPrimary !== right.isPrimary) {
@@ -500,6 +524,11 @@ export function ProjectDetail({
   const showKnowledgeEditor =
     project.isAdmin &&
     (knowledgeEditorOpen || optimisticProject.aiKnowledgeUrl === null);
+  const staleDays = getStalenessDays(optimisticProject.aiKnowledgeSyncedAt);
+  const showKnowledgeStalenessWarning =
+    optimisticProject.aiKnowledgeUrl !== null &&
+    staleDays !== null &&
+    staleDays > 30;
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
@@ -535,17 +564,6 @@ export function ProjectDetail({
             </div>
           </div>
 
-          {project.isAdmin ? (
-            <div className="flex min-w-[240px] justify-end">
-              <Button type="button" variant="outline" asChild>
-                <Link
-                  href={`/settings/projects/${encodeURIComponent(project.projectId)}/knowledge`}
-                >
-                  Knowledge
-                </Link>
-              </Button>
-            </div>
-          ) : null}
         </div>
 
         {!optimisticProject.isActive && project.isAdmin ? (
@@ -784,6 +802,9 @@ export function ProjectDetail({
                     size="sm"
                     variant="outline"
                     onClick={handleKnowledgeSync}
+                    disabled={
+                      knowledgePending || optimisticProject.aiKnowledgeUrl === null
+                    }
                   >
                     Resync
                   </Button>
@@ -844,6 +865,20 @@ export function ProjectDetail({
                     </Button>
                   </div>
                 ) : null}
+              </div>
+            ) : null}
+            {showKnowledgeStalenessWarning ? (
+              <div className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+                <span>Knowledge synced {String(staleDays)} days ago. Resync?</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleKnowledgeSync}
+                  disabled={knowledgePending}
+                >
+                  Resync
+                </Button>
               </div>
             ) : null}
           </div>

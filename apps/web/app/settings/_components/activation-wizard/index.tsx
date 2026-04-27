@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useReducer } from "react";
+import { useReducer } from "react";
 import { ArrowLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 
 import {
   type ActivationWizardInput,
   activateProjectFromWizardAction,
-  pollProjectKnowledgeBootstrapAction,
-  syncProjectKnowledgeForActivationAction
+  updateProjectAiKnowledgeAction
 } from "@/app/settings/actions";
 import {
   Dialog,
@@ -22,13 +21,11 @@ import { SidebarChecklist } from "./sidebar-checklist";
 import {
   ACTIVATION_WIZARD_STEPS,
   getAliasValidationError,
-  getBackoffDelayMs,
   getPrimaryAlias,
   getSignatureValidationError,
   getStepOneValid,
   getStepThreeValid,
   getStepTwoValid,
-  hasSyncedKnowledge,
   isNotionUrlLike,
   normalizeSignatureDraft
 } from "./shared";
@@ -96,96 +93,6 @@ export function ActivationWizard({
     ? "Your project is live."
     : ACTIVATION_WIZARD_STEPS[state.step].subtitle;
 
-  useEffect(() => {
-    if (
-      state.step !== 3 ||
-      state.knowledgeStatus !== "idle" ||
-      !state.knowledgeUsesExistingPage ||
-      selectedProject === null ||
-      !hasSyncedKnowledge(selectedProject)
-    ) {
-      return;
-    }
-
-    void handleSync();
-  }, [
-    selectedProject,
-    state.knowledgeStatus,
-    state.knowledgeUsesExistingPage,
-    state.step
-  ]);
-
-  useEffect(() => {
-    if (
-      state.knowledgeStatus !== "syncing" ||
-      selectedProject === null ||
-      state.knowledgeRunId === null
-    ) {
-      return;
-    }
-
-    const runId = state.knowledgeRunId;
-    const delayMs = getBackoffDelayMs(state.knowledgePollAttempt);
-    let cancelled = false;
-
-    const timeoutId = window.setTimeout(() => {
-      void (async () => {
-        const result = await pollProjectKnowledgeBootstrapAction(
-          selectedProject.projectId,
-          runId
-        );
-        if (cancelled) {
-          return;
-        }
-
-        if (!result.ok) {
-          dispatch({
-            type: "sync-error",
-            message: result.message
-          });
-          return;
-        }
-
-        if (result.data.status === "done") {
-          dispatch({ type: "sync-done" });
-          return;
-        }
-
-        if (result.data.status === "error") {
-          dispatch({
-            type: "sync-error",
-            message: result.data.errorMessage ?? "Bootstrap failed."
-          });
-          return;
-        }
-
-        const elapsedMs =
-          Date.now() - (state.knowledgeStartedAt ?? Date.now());
-        if (elapsedMs >= 120_000) {
-          dispatch({
-            type: "sync-timeout",
-            message:
-              "Sync is still running - we'll mark this project ready when it finishes. You can close this and come back."
-          });
-          return;
-        }
-
-        dispatch({ type: "sync-await-next" });
-      })();
-    }, delayMs);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-    };
-  }, [
-    selectedProject,
-    state.knowledgePollAttempt,
-    state.knowledgeRunId,
-    state.knowledgeStartedAt,
-    state.knowledgeStatus
-  ]);
-
   async function handleSync() {
     if (selectedProject === null || !isNotionUrlLike(state.notionUrl)) {
       dispatch({
@@ -195,7 +102,9 @@ export function ActivationWizard({
       return;
     }
 
-    const result = await syncProjectKnowledgeForActivationAction(
+    dispatch({ type: "sync-start" });
+
+    const result = await updateProjectAiKnowledgeAction(
       selectedProject.projectId,
       state.notionUrl
     );
@@ -207,17 +116,12 @@ export function ActivationWizard({
       return;
     }
 
-    dispatch({
-      type: "sync-start",
-      runId: result.data.runId,
-      startedAt: Date.now()
-    });
+    dispatch({ type: "sync-done" });
   }
 
   async function handleActivate() {
     if (
       selectedProject === null ||
-      state.knowledgeRunId === null ||
       getAliasValidationError(state.aliases) !== null ||
       getSignatureValidationError(state.signatureDraft) !== null
     ) {
@@ -230,8 +134,7 @@ export function ActivationWizard({
       projectId: selectedProject.projectId,
       projectAlias: state.aliasDraft.trim(),
       aliases: state.aliases,
-      signature: normalizeSignatureDraft(state.signatureDraft),
-      aiKnowledgeRunId: state.knowledgeRunId
+      signature: normalizeSignatureDraft(state.signatureDraft)
     };
 
     const result = await activateProjectFromWizardAction(input);
@@ -374,15 +277,11 @@ export function ActivationWizard({
                   notionUrl={state.notionUrl}
                   knowledgeStatus={state.knowledgeStatus}
                   knowledgeMessage={state.knowledgeMessage}
-                  knowledgeUsesExistingPage={state.knowledgeUsesExistingPage}
                   onNotionUrlChange={(nextValue) => {
                     dispatch({ type: "set-notion-url", notionUrl: nextValue });
                   }}
                   onSync={() => {
                     void handleSync();
-                  }}
-                  onUseDifferentPage={() => {
-                    dispatch({ type: "use-different-page" });
                   }}
                 />
               ) : null}
@@ -405,7 +304,7 @@ export function ActivationWizard({
                 onClick={() => {
                   dispatch({ type: "go-back" });
                 }}
-                disabled={state.step === 0 || isActivated || isPending || state.knowledgeStatus === "timeout"}
+                disabled={state.step === 0 || isActivated || isPending}
                 className="inline-flex items-center gap-1.5 text-[12.5px] text-slate-600 transition-colors hover:text-slate-900 disabled:invisible"
               >
                 <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
@@ -415,10 +314,6 @@ export function ActivationWizard({
               {isActivated ? (
                 <Button type="button" onClick={handleClose}>
                   Done
-                </Button>
-              ) : state.knowledgeStatus === "timeout" ? (
-                <Button type="button" onClick={handleClose}>
-                  Close
                 </Button>
               ) : state.step === 4 ? (
                 <Button

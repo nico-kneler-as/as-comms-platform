@@ -115,6 +115,8 @@ function createRepositoryBundle(input: {
     },
     aiKnowledge: {
       findByScope: () => Promise.resolve(null),
+      findProjectNotionContent: () => Promise.resolve(null),
+      hasProjectNotionContent: () => Promise.resolve(false),
       upsert: (record) => Promise.resolve(record),
     },
     projectKnowledge: {
@@ -123,17 +125,6 @@ function createRepositoryBundle(input: {
       setApproved: () => Promise.resolve(),
       deleteById: () => Promise.resolve(),
       getForRetrieval: () => Promise.resolve([]),
-    },
-    projectKnowledgeSourceLinks: {
-      list: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record),
-      deleteById: () => Promise.resolve(),
-    },
-    projectKnowledgeBootstrapRuns: {
-      create: (record) => Promise.resolve(record),
-      findById: () => Promise.resolve(null),
-      listByProject: () => Promise.resolve([]),
-      update: () => Promise.resolve(null),
     },
     contacts: {
       findById: () => Promise.resolve(contact),

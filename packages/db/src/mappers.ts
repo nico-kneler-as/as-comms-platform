@@ -12,9 +12,7 @@ import {
   inboxProjectionSchema,
   mailchimpCampaignActivityDetailSchema,
   manualNoteDetailSchema,
-  projectKnowledgeBootstrapRunSchema,
   projectKnowledgeEntrySchema,
-  projectKnowledgeSourceLinkSchema,
   projectDimensionSchema,
   routingReviewSchema,
   salesforceCommunicationDetailSchema,
@@ -36,9 +34,7 @@ import {
   type InboxProjectionRow,
   type MailchimpCampaignActivityDetailRecord,
   type ManualNoteDetailRecord,
-  type ProjectKnowledgeBootstrapRunRecord,
   type ProjectKnowledgeEntryRecord,
-  type ProjectKnowledgeSourceLinkRecord,
   type ProjectDimensionRecord,
   type RoutingReviewCase,
   type SalesforceCommunicationDetailRecord,
@@ -72,9 +68,7 @@ import type {
   manualNoteDetails,
   pendingComposerOutbounds,
   projectAliases,
-  projectKnowledgeBootstrapRuns,
   projectKnowledgeEntries,
-  projectKnowledgeSourceLinks,
   projectDimensions,
   routingReviewQueue,
   salesforceCommunicationDetails,
@@ -88,10 +82,6 @@ import type {
 type SourceEvidenceRow = typeof sourceEvidenceLog.$inferSelect;
 type AiKnowledgeEntryRow = typeof aiKnowledgeEntries.$inferSelect;
 type ProjectKnowledgeEntryRow = typeof projectKnowledgeEntries.$inferSelect;
-type ProjectKnowledgeSourceLinkRow =
-  typeof projectKnowledgeSourceLinks.$inferSelect;
-type ProjectKnowledgeBootstrapRunRow =
-  typeof projectKnowledgeBootstrapRuns.$inferSelect;
 type CanonicalEventRow = typeof canonicalEventLedger.$inferSelect;
 type ContactRow = typeof contacts.$inferSelect;
 type ContactIdentityRow = typeof contactIdentities.$inferSelect;
@@ -229,72 +219,6 @@ export function mapProjectKnowledgeEntryToInsert(
     metadataJson: parsed.metadataJson,
     lastReviewedAt:
       parsed.lastReviewedAt === null ? null : toDate(parsed.lastReviewedAt),
-    createdAt: toDate(parsed.createdAt),
-    updatedAt: toDate(parsed.updatedAt),
-  };
-}
-
-export function mapProjectKnowledgeSourceLinkRow(
-  row: ProjectKnowledgeSourceLinkRow,
-): ProjectKnowledgeSourceLinkRecord {
-  return projectKnowledgeSourceLinkSchema.parse({
-    id: row.id,
-    projectId: row.projectId,
-    kind: row.kind,
-    label: row.label,
-    url: row.url,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  });
-}
-
-export function mapProjectKnowledgeSourceLinkToInsert(
-  record: ProjectKnowledgeSourceLinkRecord,
-): typeof projectKnowledgeSourceLinks.$inferInsert {
-  const parsed = projectKnowledgeSourceLinkSchema.parse(record);
-
-  return {
-    id: parsed.id,
-    projectId: parsed.projectId,
-    kind: parsed.kind,
-    label: parsed.label,
-    url: parsed.url,
-    createdAt: toDate(parsed.createdAt),
-    updatedAt: toDate(parsed.updatedAt),
-  };
-}
-
-export function mapProjectKnowledgeBootstrapRunRow(
-  row: ProjectKnowledgeBootstrapRunRow,
-): ProjectKnowledgeBootstrapRunRecord {
-  return projectKnowledgeBootstrapRunSchema.parse({
-    id: row.id,
-    projectId: row.projectId,
-    status: row.status,
-    force: row.force,
-    startedAt: row.startedAt.toISOString(),
-    completedAt: fromDate(row.completedAt),
-    statsJson: row.statsJson,
-    errorDetail: row.errorDetail,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  });
-}
-
-export function mapProjectKnowledgeBootstrapRunToInsert(
-  record: ProjectKnowledgeBootstrapRunRecord,
-): typeof projectKnowledgeBootstrapRuns.$inferInsert {
-  const parsed = projectKnowledgeBootstrapRunSchema.parse(record);
-
-  return {
-    id: parsed.id,
-    projectId: parsed.projectId,
-    status: parsed.status,
-    force: parsed.force,
-    startedAt: toDate(parsed.startedAt),
-    completedAt: parsed.completedAt === null ? null : toDate(parsed.completedAt),
-    statsJson: parsed.statsJson,
-    errorDetail: parsed.errorDetail,
     createdAt: toDate(parsed.createdAt),
     updatedAt: toDate(parsed.updatedAt),
   };

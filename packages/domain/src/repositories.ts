@@ -14,11 +14,8 @@ import type {
   InboxProjectionRow,
   MailchimpCampaignActivityDetailRecord,
   ManualNoteDetailRecord,
-  ProjectKnowledgeBootstrapRunRecord,
   ProjectKnowledgeEntryRecord,
-  ProjectKnowledgeSourceLinkRecord,
   ProjectDimensionRecord,
-  ProjectKnowledgeBootstrapRunStatus,
   Provider,
   RoutingReviewCase,
   RoutingReviewReasonCode,
@@ -74,6 +71,8 @@ export interface AiKnowledgeRepository {
     readonly scope: "global" | "project";
     readonly scopeKey: string | null;
   }): Promise<AiKnowledgeEntryRecord | null>;
+  findProjectNotionContent(projectId: string): Promise<AiKnowledgeEntryRecord | null>;
+  hasProjectNotionContent(projectId: string): Promise<boolean>;
   upsert(record: AiKnowledgeEntryRecord): Promise<AiKnowledgeEntryRecord>;
 }
 
@@ -97,33 +96,6 @@ export interface ProjectKnowledgeRepository {
     readonly keywordsLower: readonly string[];
     readonly limitPerKind: number;
   }): Promise<readonly ProjectKnowledgeEntryRecord[]>;
-}
-
-export interface ProjectKnowledgeSourceLinkRepository {
-  list(projectId: string): Promise<readonly ProjectKnowledgeSourceLinkRecord[]>;
-  upsert(
-    record: ProjectKnowledgeSourceLinkRecord,
-  ): Promise<ProjectKnowledgeSourceLinkRecord>;
-  deleteById(id: string): Promise<void>;
-}
-
-export interface ProjectKnowledgeBootstrapRunRepository {
-  create(
-    record: ProjectKnowledgeBootstrapRunRecord,
-  ): Promise<ProjectKnowledgeBootstrapRunRecord>;
-  findById(id: string): Promise<ProjectKnowledgeBootstrapRunRecord | null>;
-  listByProject(
-    projectId: string,
-    limit: number,
-  ): Promise<readonly ProjectKnowledgeBootstrapRunRecord[]>;
-  update(input: {
-    readonly id: string;
-    readonly status?: ProjectKnowledgeBootstrapRunStatus;
-    readonly completedAt?: string | null;
-    readonly statsJson?: Record<string, unknown>;
-    readonly errorDetail?: string | null;
-    readonly updatedAt?: string;
-  }): Promise<ProjectKnowledgeBootstrapRunRecord | null>;
 }
 
 export interface ContactRepository {
@@ -410,8 +382,6 @@ export interface Stage1RepositoryBundle {
   readonly canonicalEvents: CanonicalEventRepository;
   readonly aiKnowledge: AiKnowledgeRepository;
   readonly projectKnowledge: ProjectKnowledgeRepository;
-  readonly projectKnowledgeSourceLinks: ProjectKnowledgeSourceLinkRepository;
-  readonly projectKnowledgeBootstrapRuns: ProjectKnowledgeBootstrapRunRepository;
   readonly contacts: ContactRepository;
   readonly contactIdentities: ContactIdentityRepository;
   readonly contactMemberships: ContactMembershipRepository;

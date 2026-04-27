@@ -1,22 +1,28 @@
 import type { Task } from "graphile-worker";
 
 import {
+  notionKnowledgeSyncJobName,
+  notionKnowledgeSyncPayloadSchema,
+} from "@as-comms/contracts";
+
+import {
   readNotionKnowledgeSyncConfig,
   runNotionKnowledgeSync,
   type NotionKnowledgeSyncConfig,
-  type NotionKnowledgeSyncDependencies
+  type NotionKnowledgeSyncDependencies,
 } from "./sync.js";
 
-export const notionKnowledgeSyncJobName = "notion-knowledge-sync" as const;
-
+export { notionKnowledgeSyncJobName, notionKnowledgeSyncPayloadSchema };
 export type { NotionKnowledgeSyncConfig, NotionKnowledgeSyncDependencies };
-
 export { readNotionKnowledgeSyncConfig };
 
 export function createNotionKnowledgeSyncTask(
-  dependencies: NotionKnowledgeSyncDependencies
+  dependencies: NotionKnowledgeSyncDependencies,
 ): Task {
-  return async () => {
-    await runNotionKnowledgeSync(dependencies);
+  return async (payload) => {
+    await runNotionKnowledgeSync(
+      dependencies,
+      notionKnowledgeSyncPayloadSchema.parse(payload),
+    );
   };
 }

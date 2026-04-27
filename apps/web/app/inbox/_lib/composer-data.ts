@@ -18,20 +18,18 @@ export async function getInboxComposerAliases(): Promise<
   );
   const projectDimensions =
     await runtime.repositories.projectDimensions.listByIds(projectIds);
-  const approvedKnowledgeEntries = await Promise.all(
+  const cachedContentEntries = await Promise.all(
     projectIds.map(async (projectId) => {
-      const entries = await runtime.repositories.projectKnowledge.list({
+      return [
         projectId,
-        approvedOnly: true,
-      });
-
-      return [projectId, entries.length > 0] as const;
+        await runtime.repositories.aiKnowledge.hasProjectNotionContent(projectId),
+      ] as const;
     }),
   );
   const projectById = new Map(
     projectDimensions.map((project) => [project.projectId, project])
   );
-  const hasApprovedKnowledgeByProjectId = new Map(approvedKnowledgeEntries);
+  const hasCachedContentByProjectId = new Map(cachedContentEntries);
 
   return aliases.flatMap((alias): readonly InboxComposerAliasOption[] => {
     if (alias.projectId === null) {
@@ -51,12 +49,11 @@ export async function getInboxComposerAliases(): Promise<
         projectId: alias.projectId,
         projectName: project.projectName,
         isAiConfigured,
-        hasApprovedKnowledge:
-          hasApprovedKnowledgeByProjectId.get(alias.projectId) === true,
+        hasCachedContent: hasCachedContentByProjectId.get(alias.projectId) === true,
         isAiReady:
           project.isActive === true &&
           isAiConfigured &&
-          hasApprovedKnowledgeByProjectId.get(alias.projectId) === true,
+          hasCachedContentByProjectId.get(alias.projectId) === true,
       },
     ];
   });

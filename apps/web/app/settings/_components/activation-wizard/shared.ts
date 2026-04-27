@@ -96,20 +96,6 @@ export function buildSuggestedAliasAddresses(
   });
 }
 
-export function getBackoffDelayMs(attempt: number): number {
-  switch (attempt) {
-    case 0:
-    case 1:
-      return 1_000;
-    case 2:
-      return 2_000;
-    case 3:
-      return 3_000;
-    default:
-      return 5_000;
-  }
-}
-
 export function getPrimaryAlias(
   aliases: readonly AliasDraft[]
 ): AliasDraft | null {
@@ -156,13 +142,6 @@ export function getSignatureValidationError(signatureDraft: string): string | nu
   }
 
   return getProjectAliasSignatureValidationError(normalizedSignature);
-}
-
-export function hasSyncedKnowledge(project: ProjectRowViewModel | null): boolean {
-  return (
-    (project?.aiKnowledgeUrl ?? null) !== null &&
-    (project?.aiKnowledgeSyncedAt ?? null) !== null
-  );
 }
 
 export function isBasicEmailAddress(value: string): boolean {

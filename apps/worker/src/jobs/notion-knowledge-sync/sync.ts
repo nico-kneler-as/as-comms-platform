@@ -1,36 +1,32 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 
 import {
   aiKnowledgeEntries,
   projectDimensions,
-  type Stage1Database
+  type Stage1Database,
 } from "@as-comms/db";
-import type { IntegrationHealthRecord } from "@as-comms/contracts";
+import { notionKnowledgeSyncPayloadSchema } from "@as-comms/contracts";
 import type { IntegrationHealthRepository } from "@as-comms/domain";
 import {
+  NotionProviderError,
   createNotionClient,
   describeNotionError,
   fetchPageContent,
-  healthCheck,
   normalizeNotionId,
-  queryDatabase,
-  type DatabaseRow,
-  type NotionClient
+  type NotionClient,
 } from "@as-comms/integrations";
 
 import {
   upsertAiKnowledgeEntry,
   type UpsertAiKnowledgeEntryInput,
-  type UpsertAiKnowledgeEntryResult
+  type UpsertAiKnowledgeEntryResult,
 } from "./upsert.js";
 
 const NOTION_SERVICE_ID = "notion";
-const PAGE_FETCH_DELAY_MS = 500;
 
 export interface NotionKnowledgeSyncConfig {
   readonly apiKey: string | null;
   readonly generalTrainingPageId: string | null;
-  readonly projectTrainingDatabaseId: string | null;
 }
 
 export interface NotionKnowledgeSyncDependencies {
@@ -40,30 +36,36 @@ export interface NotionKnowledgeSyncDependencies {
   readonly createClient?: (env: { readonly NOTION_API_KEY: string }) => NotionClient;
   readonly logger?: Pick<Console, "error" | "info" | "warn">;
   readonly now?: () => Date;
-  readonly sleep?: (ms: number) => Promise<void>;
   readonly upsertEntry?: (
     db: Stage1Database,
-    input: UpsertAiKnowledgeEntryInput
+    input: UpsertAiKnowledgeEntryInput,
   ) => Promise<UpsertAiKnowledgeEntryResult>;
 }
 
+export type NotionKnowledgeSyncErrorCode =
+  | "not_configured"
+  | "invalid_source"
+  | "project_missing"
+  | "notion_stale"
+  | "provider_timeout"
+  | "provider_rate_limited"
+  | "provider_unauthorized"
+  | "provider_unavailable";
+
 export type NotionKnowledgeSyncResult =
   | {
-      readonly status: "not_configured";
+      readonly ok: true;
+      readonly projectId: string;
+      readonly sourceId: string;
+      readonly syncedAt: string;
+      readonly generalTrainingUpdated: boolean;
     }
   | {
-      readonly status: "error";
-      readonly projectsSyncedCount: number;
-      readonly seenSourceIds: readonly string[];
-      readonly errorDetail: string;
-    }
-  | {
-      readonly status: "healthy";
-      readonly knowledgeEntriesTotal: number;
-      readonly projectsSyncedCount: number;
-      readonly orphanRowsCount: number;
-      readonly deletedSourceIds: readonly string[];
-      readonly seenSourceIds: readonly string[];
+      readonly ok: false;
+      readonly projectId: string;
+      readonly code: NotionKnowledgeSyncErrorCode;
+      readonly message: string;
+      readonly retryable: boolean;
     };
 
 function readOptionalEnvValue(value: string | undefined): string | null {
@@ -76,557 +78,356 @@ function readOptionalEnvValue(value: string | undefined): string | null {
 }
 
 export function readNotionKnowledgeSyncConfig(
-  env: NodeJS.ProcessEnv
+  env: NodeJS.ProcessEnv,
 ): NotionKnowledgeSyncConfig {
   return {
     apiKey: readOptionalEnvValue(env.NOTION_API_KEY),
     generalTrainingPageId: readOptionalEnvValue(
-      env.NOTION_GENERAL_TRAINING_PAGE_ID
+      env.NOTION_GENERAL_TRAINING_PAGE_ID,
     ),
-    projectTrainingDatabaseId: readOptionalEnvValue(
-      env.NOTION_PROJECT_TRAINING_DATABASE_ID
-    )
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
+function parseNotionPageId(url: string): string | null {
+  const match =
+    /([0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/iu.exec(url);
 
-function isUnknownArray(value: unknown): value is readonly unknown[] {
-  return Array.isArray(value);
-}
-
-function extractRichText(value: unknown): string | null {
-  if (!isUnknownArray(value)) {
+  if (match === null) {
     return null;
   }
 
-  const text = value
-    .map((item) => {
-      if (!isRecord(item)) {
-        return "";
-      }
-
-      const plainText = item.plain_text;
-      if (typeof plainText === "string") {
-        return plainText;
-      }
-
-      return "";
-    })
-    .join("")
-    .trim();
-
-  return text.length > 0 ? text : null;
-}
-
-function extractPlainTextProperty(
-  properties: Record<string, unknown>,
-  propertyName: string
-): string | null {
-  const property = properties[propertyName];
-  if (typeof property !== "object" || property === null || !("type" in property)) {
+  try {
+    const pageId = match[1];
+    return pageId === undefined ? null : normalizeNotionId(pageId);
+  } catch {
     return null;
   }
-
-  const propertyRecord = property as Record<string, unknown>;
-
-  switch (propertyRecord.type) {
-    case "title":
-      return extractRichText(propertyRecord.title);
-    case "rich_text":
-      return extractRichText(propertyRecord.rich_text);
-    case "select":
-      if (
-        typeof propertyRecord.select === "object" &&
-        propertyRecord.select !== null &&
-        "name" in propertyRecord.select &&
-        typeof propertyRecord.select.name === "string"
-      ) {
-        const name = propertyRecord.select.name.trim();
-        return name.length > 0 ? name : null;
-      }
-
-      return null;
-    default:
-      return null;
-  }
 }
 
-function extractUrlProperty(
-  properties: Record<string, unknown>,
-  propertyName: string
-): string | null {
-  const property = properties[propertyName];
-  if (!isRecord(property)) {
-    return null;
-  }
-
-  const propertyType = property.type;
-  const url = property.url;
-  if (
-    propertyType === "url" &&
-    typeof url === "string" &&
-    url.trim().length > 0
-  ) {
-    return url.trim();
-  }
-
-  return null;
-}
-
-function extractMultiSelectProperty(
-  properties: Record<string, unknown>,
-  propertyName: string
-): readonly string[] {
-  const property = properties[propertyName];
-  if (!isRecord(property) || property.type !== "multi_select") {
-    return [];
-  }
-
-  const multiSelect = property.multi_select;
-  if (!isUnknownArray(multiSelect)) {
-    return [];
-  }
-
-  return multiSelect.flatMap((item) => {
-    if (!isRecord(item)) {
-      return [];
-    }
-
-    const name = item.name;
-    return typeof name === "string" && name.trim().length > 0
-      ? [name.trim()]
-      : [];
-  });
-}
-
-function extractCreatedTimeProperty(
-  properties: Record<string, unknown>,
-  propertyName: string
-): string | null {
-  const property = properties[propertyName];
-  if (!isRecord(property)) {
-    return null;
-  }
-
-  const propertyType = property.type;
-  const createdTime = property.created_time;
-  if (
-    propertyType === "created_time" &&
-    typeof createdTime === "string" &&
-    createdTime.trim().length > 0
-  ) {
-    return createdTime;
-  }
-
-  return null;
-}
-
-function compactMetadata(
-  metadata: Record<string, unknown>
-): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(metadata).filter(([, value]) => {
-      if (value === null || value === undefined) {
-        return false;
-      }
-
-      if (Array.isArray(value)) {
-        return value.length > 0;
-      }
-
-      if (typeof value === "string") {
-        return value.trim().length > 0;
-      }
-
-      return true;
-    })
-  );
-}
-
-function buildProjectKnowledgeMetadata(
-  row: DatabaseRow
-): Record<string, unknown> {
-  return compactMetadata({
-    training_url: extractUrlProperty(row.properties, "Training URL"),
-    internal_source_url: extractUrlProperty(
-      row.properties,
-      "Internal Source URL"
-    ),
-    public_project_url: extractUrlProperty(row.properties, "Public Project URL"),
-    volunteer_homepage_url: extractUrlProperty(
-      row.properties,
-      "Volunteer Homepage URL"
-    ),
-    training_notes: extractPlainTextProperty(row.properties, "Training Notes"),
-    season: extractPlainTextProperty(row.properties, "Season"),
-    tags: extractMultiSelectProperty(row.properties, "Tags"),
-    created_at: extractCreatedTimeProperty(row.properties, "Created")
-  });
-}
-
-function compareIsoTimestamps(left: string, right: string): number {
-  return left.localeCompare(right);
-}
-
-function isNotionSyncConfigured(
-  config: NotionKnowledgeSyncConfig
-): config is {
-  readonly apiKey: string;
-  readonly generalTrainingPageId: string;
-  readonly projectTrainingDatabaseId: string;
-} {
-  return (
-    config.apiKey !== null &&
-    config.generalTrainingPageId !== null &&
-    config.projectTrainingDatabaseId !== null
-  );
-}
-
-function buildIntegrationHealthRecord(input: {
-  readonly baseRecord: IntegrationHealthRecord | null;
-  readonly checkedAt: string;
-  readonly status: IntegrationHealthRecord["status"];
-  readonly detail: string | null;
-  readonly metadataJson?: Record<string, unknown>;
-}): IntegrationHealthRecord {
-  const metadataJson =
-    input.metadataJson === undefined
-      ? input.baseRecord?.metadataJson ?? {}
-      : {
-          ...(input.baseRecord?.metadataJson ?? {}),
-          ...input.metadataJson
-        };
-
-  return {
-    id: NOTION_SERVICE_ID,
-    serviceName: "notion",
-    category: "knowledge",
-    status: input.status,
-    lastCheckedAt: input.checkedAt,
-    degradedSinceAt: input.baseRecord?.degradedSinceAt ?? null,
-    lastAlertSentAt: input.baseRecord?.lastAlertSentAt ?? null,
-    detail: input.detail,
-    metadataJson,
-    createdAt: input.baseRecord?.createdAt ?? input.checkedAt,
-    updatedAt: input.checkedAt
-  };
-}
-
-async function writeIntegrationHealth(
-  repository: IntegrationHealthRepository,
-  input: {
-    readonly now: Date;
-    readonly status: IntegrationHealthRecord["status"];
-    readonly detail: string | null;
-    readonly metadataJson?: Record<string, unknown>;
-  }
-): Promise<void> {
-  await repository.seedDefaults();
-  const existingRecord = await repository.findById(NOTION_SERVICE_ID);
-  const recordInput = {
-    baseRecord: existingRecord,
-    checkedAt: input.now.toISOString(),
-    status: input.status,
-    detail: input.detail,
-    ...(input.metadataJson === undefined
-      ? {}
-      : { metadataJson: input.metadataJson })
-  };
-
-  await repository.upsert(buildIntegrationHealthRecord(recordInput));
-}
-
-async function listKnownProjectIds(db: Stage1Database): Promise<Set<string>> {
-  const rows = await db
-    .select({
-      projectId: projectDimensions.projectId
-    })
-    .from(projectDimensions);
-
-  return new Set(rows.map((row) => row.projectId));
-}
-
-async function collectProjectRows(input: {
-  readonly client: NotionClient;
-  readonly databaseId: string;
-  readonly knownProjectIds: ReadonlySet<string>;
-  readonly logger: Pick<Console, "warn">;
-}): Promise<{
-  readonly rowsByProjectId: ReadonlyMap<string, DatabaseRow>;
-  readonly orphanRowsCount: number;
-}> {
-  const rowsByProjectId = new Map<string, DatabaseRow>();
-  let orphanRowsCount = 0;
-
-  for await (const row of queryDatabase(input.client, input.databaseId)) {
-    const projectId = extractPlainTextProperty(row.properties, "Project ID")?.trim();
-
-    if (projectId === undefined || projectId.length === 0) {
-      input.logger.warn(
-        `Skipping Notion Project Training row ${row.id} because Project ID is empty.`
-      );
-      continue;
-    }
-
-    if (!input.knownProjectIds.has(projectId)) {
-      orphanRowsCount += 1;
-      input.logger.warn(
-        `Skipping Notion Project Training row ${row.id} because Project ID ${projectId} does not match any project_dimensions row.`
-      );
-      continue;
-    }
-
-    const existingRow = rowsByProjectId.get(projectId);
-    if (existingRow === undefined) {
-      rowsByProjectId.set(projectId, row);
-      continue;
-    }
-
-    if (compareIsoTimestamps(row.lastEditedTime, existingRow.lastEditedTime) > 0) {
-      input.logger.warn(
-        `Duplicate Notion Project Training rows found for project ${projectId}; using ${row.id} and skipping ${existingRow.id}.`
-      );
-      rowsByProjectId.set(projectId, row);
-      continue;
-    }
-
-    input.logger.warn(
-      `Duplicate Notion Project Training rows found for project ${projectId}; using ${existingRow.id} and skipping ${row.id}.`
-    );
-  }
-
-  return {
-    rowsByProjectId,
-    orphanRowsCount
-  };
-}
-
-function buildProjectKnowledgeInput(input: {
+async function loadProjectRecord(
+  db: Stage1Database,
+  projectId: string,
+): Promise<{
   readonly projectId: string;
-  readonly row: DatabaseRow;
-  readonly pageContent: Awaited<ReturnType<typeof fetchPageContent>>;
-  readonly syncedAt: Date;
-}): UpsertAiKnowledgeEntryInput {
-  return {
-    scope: "project",
-    scopeKey: input.projectId,
-    sourceProvider: "notion",
-    sourceId: normalizeNotionId(input.row.id),
-    sourceUrl: input.pageContent.url,
-    title:
-      input.pageContent.title ??
-      extractPlainTextProperty(input.row.properties, "Name"),
-    content: input.pageContent.markdown,
-    metadata: buildProjectKnowledgeMetadata(input.row),
-    sourceLastEditedAt: new Date(input.pageContent.lastEditedTime),
-    syncedAt: input.syncedAt
-  };
-}
-
-function buildGlobalKnowledgeInput(input: {
-  readonly pageId: string;
-  readonly pageContent: Awaited<ReturnType<typeof fetchPageContent>>;
-  readonly syncedAt: Date;
-}): UpsertAiKnowledgeEntryInput {
-  return {
-    scope: "global",
-    scopeKey: null,
-    sourceProvider: "notion",
-    sourceId: normalizeNotionId(input.pageId),
-    sourceUrl: input.pageContent.url,
-    title: null,
-    content: input.pageContent.markdown,
-    metadata: {},
-    sourceLastEditedAt: new Date(input.pageContent.lastEditedTime),
-    syncedAt: input.syncedAt
-  };
-}
-
-async function reconcileRemovedKnowledgeEntries(input: {
-  readonly db: Stage1Database;
-  readonly seenSourceIds: ReadonlySet<string>;
-}): Promise<readonly string[]> {
-  const currentRows = await input.db
+  readonly projectName: string;
+  readonly aiKnowledgeUrl: string | null;
+} | null> {
+  const [row] = await db
     .select({
-      sourceId: aiKnowledgeEntries.sourceId
+      projectId: projectDimensions.projectId,
+      projectName: projectDimensions.projectName,
+      aiKnowledgeUrl: projectDimensions.aiKnowledgeUrl,
     })
-    .from(aiKnowledgeEntries)
-    .where(eq(aiKnowledgeEntries.sourceProvider, "notion"));
+    .from(projectDimensions)
+    .where(eq(projectDimensions.projectId, projectId))
+    .limit(1);
 
-  const staleSourceIds = currentRows.flatMap((row) =>
-    input.seenSourceIds.has(row.sourceId) ? [] : [row.sourceId]
-  );
+  return row ?? null;
+}
 
-  if (staleSourceIds.length === 0) {
-    return [];
+function mapSyncError(
+  projectId: string,
+  error: unknown,
+): Extract<NotionKnowledgeSyncResult, { ok: false }> {
+  const classified =
+    error instanceof NotionProviderError
+      ? error
+      : error instanceof Error
+        ? new NotionProviderError({
+            code: "unexpected",
+            message: error.message,
+            retryable: false,
+          })
+        : new NotionProviderError({
+            code: "unexpected",
+            message: "Notion sync failed with an unknown error.",
+            retryable: false,
+          });
+
+  switch (classified.code) {
+    case "timeout":
+      return {
+        ok: false,
+        projectId,
+        code: "provider_timeout",
+        message: "The Notion sync timed out. Try again.",
+        retryable: true,
+      };
+    case "rate_limited":
+      return {
+        ok: false,
+        projectId,
+        code: "provider_rate_limited",
+        message: "Notion rate-limited this sync. Try again shortly.",
+        retryable: true,
+      };
+    case "unauthorized":
+      return {
+        ok: false,
+        projectId,
+        code: "provider_unauthorized",
+        message: "The Notion integration is not authorized for this page.",
+        retryable: false,
+      };
+    case "not_found":
+      return {
+        ok: false,
+        projectId,
+        code: "notion_stale",
+        message: "The configured Notion page could not be found.",
+        retryable: false,
+      };
+    default:
+      return {
+        ok: false,
+        projectId,
+        code: "provider_unavailable",
+        message: describeNotionError(classified),
+        retryable: classified.retryable,
+      };
+  }
+}
+
+async function upsertGeneralTraining(input: {
+  readonly client: NotionClient;
+  readonly config: NotionKnowledgeSyncConfig;
+  readonly db: Stage1Database;
+  readonly now: Date;
+  readonly upsertEntry: (
+    db: Stage1Database,
+    payload: UpsertAiKnowledgeEntryInput,
+  ) => Promise<UpsertAiKnowledgeEntryResult>;
+  readonly logger: Pick<Console, "warn">;
+}): Promise<boolean> {
+  if (input.config.generalTrainingPageId === null) {
+    return false;
   }
 
-  await input.db
-    .delete(aiKnowledgeEntries)
-    .where(
-      and(
-        eq(aiKnowledgeEntries.sourceProvider, "notion"),
-        inArray(aiKnowledgeEntries.sourceId, staleSourceIds)
-      )
+  try {
+    const generalPage = await fetchPageContent(
+      input.client,
+      input.config.generalTrainingPageId,
     );
 
-  return staleSourceIds;
+    await input.upsertEntry(input.db, {
+      scope: "global",
+      scopeKey: null,
+      sourceProvider: "notion",
+      sourceId: normalizeNotionId(input.config.generalTrainingPageId),
+      sourceUrl: generalPage.url,
+      title: generalPage.title,
+      content: generalPage.markdown,
+      metadata: {},
+      sourceLastEditedAt: new Date(generalPage.lastEditedTime),
+      syncedAt: input.now,
+    });
+
+    return true;
+  } catch (error) {
+    input.logger.warn(
+      `General Notion training refresh failed: ${describeNotionError(error)}`,
+    );
+    return false;
+  }
+}
+
+async function markIntegrationHealth(input: {
+  readonly integrationHealth: IntegrationHealthRepository;
+  readonly status:
+    | "healthy"
+    | "needs_attention"
+    | "disconnected"
+    | "not_configured";
+  readonly detail: string | null;
+  readonly now: Date;
+}): Promise<void> {
+  await input.integrationHealth.seedDefaults();
+  const existing =
+    (await input.integrationHealth.findById(NOTION_SERVICE_ID)) ?? {
+      id: NOTION_SERVICE_ID,
+      serviceName: NOTION_SERVICE_ID,
+      category: "knowledge" as const,
+      status: "not_checked" as const,
+      lastCheckedAt: null,
+      degradedSinceAt: null,
+      lastAlertSentAt: null,
+      detail: null,
+      metadataJson: {},
+      createdAt: input.now.toISOString(),
+      updatedAt: input.now.toISOString(),
+    };
+
+  const checkedAt = input.now.toISOString();
+  await input.integrationHealth.upsert({
+    ...existing,
+    status: input.status,
+    lastCheckedAt: checkedAt,
+    degradedSinceAt:
+      input.status === "healthy"
+        ? null
+        : existing.degradedSinceAt ?? checkedAt,
+    detail: input.detail,
+    updatedAt: checkedAt,
+  });
 }
 
 export async function runNotionKnowledgeSync(
-  input: NotionKnowledgeSyncDependencies
+  dependencies: NotionKnowledgeSyncDependencies,
+  rawPayload: unknown,
 ): Promise<NotionKnowledgeSyncResult> {
-  const logger = input.logger ?? console;
-  const now = input.now ?? (() => new Date());
-  const sleep =
-    input.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const upsertEntry = input.upsertEntry ?? upsertAiKnowledgeEntry;
-  const checkedAt = now();
+  const logger = dependencies.logger ?? console;
+  const now = dependencies.now?.() ?? new Date();
+  const upsertEntry = dependencies.upsertEntry ?? upsertAiKnowledgeEntry;
+  const payload = notionKnowledgeSyncPayloadSchema.parse(rawPayload);
 
-  if (!isNotionSyncConfigured(input.notion)) {
-    await writeIntegrationHealth(input.integrationHealth, {
-      now: checkedAt,
+  if (dependencies.notion.apiKey === null) {
+    await markIntegrationHealth({
+      integrationHealth: dependencies.integrationHealth,
       status: "not_configured",
-      detail:
-        "Set NOTION_API_KEY, NOTION_GENERAL_TRAINING_PAGE_ID, and NOTION_PROJECT_TRAINING_DATABASE_ID to enable Notion knowledge sync."
+      detail: "NOTION_API_KEY is not configured.",
+      now,
     });
-
     return {
-      status: "not_configured"
+      ok: false,
+      projectId: payload.projectId,
+      code: "not_configured",
+      message: "Notion sync is not configured.",
+      retryable: false,
     };
   }
 
-  const createClient = input.createClient ?? createNotionClient;
-  const seenSourceIds = new Set<string>();
-  let projectsSyncedCount = 0;
+  const project = await loadProjectRecord(dependencies.db, payload.projectId);
+  if (project === null) {
+    return {
+      ok: false,
+      projectId: payload.projectId,
+      code: "project_missing",
+      message: "The project could not be found.",
+      retryable: false,
+    };
+  }
+
+  if (project.aiKnowledgeUrl === null) {
+    return {
+      ok: false,
+      projectId: payload.projectId,
+      code: "invalid_source",
+      message: "Set a Notion page URL before syncing AI knowledge.",
+      retryable: false,
+    };
+  }
+
+  const notionPageId = parseNotionPageId(project.aiKnowledgeUrl);
+  if (notionPageId === null) {
+    return {
+      ok: false,
+      projectId: payload.projectId,
+      code: "invalid_source",
+      message: "The configured URL does not contain a valid Notion page ID.",
+      retryable: false,
+    };
+  }
+
+  const client = (dependencies.createClient ?? createNotionClient)({
+    NOTION_API_KEY: dependencies.notion.apiKey,
+  });
 
   try {
-    const client = createClient({
-      NOTION_API_KEY: input.notion.apiKey
+    const page = await fetchPageContent(client, notionPageId);
+
+    await upsertEntry(dependencies.db, {
+      scope: "project",
+      scopeKey: payload.projectId,
+      sourceProvider: "notion",
+      sourceId: notionPageId,
+      sourceUrl: page.url ?? project.aiKnowledgeUrl,
+      title: page.title ?? project.projectName,
+      content: page.markdown,
+      metadata: {
+        projectId: payload.projectId,
+        trigger: payload.trigger,
+      },
+      sourceLastEditedAt: new Date(page.lastEditedTime),
+      syncedAt: now,
     });
-    const health = await healthCheck(client, {
-      generalTrainingPageId: input.notion.generalTrainingPageId,
-      projectTrainingDatabaseId: input.notion.projectTrainingDatabaseId
-    });
 
-    if (health.status === "error") {
-      await writeIntegrationHealth(input.integrationHealth, {
-        now: checkedAt,
-        status: "needs_attention",
-        detail: health.errorDetail
-      });
+    await dependencies.db
+      .delete(aiKnowledgeEntries)
+      .where(
+        and(
+          eq(aiKnowledgeEntries.scope, "project"),
+          eq(aiKnowledgeEntries.scopeKey, payload.projectId),
+          eq(aiKnowledgeEntries.sourceProvider, "notion"),
+          ne(aiKnowledgeEntries.sourceId, notionPageId),
+        ),
+      );
 
-      return {
-        status: "error",
-        projectsSyncedCount,
-        seenSourceIds: [],
-        errorDetail: health.errorDetail
-      };
-    }
-
-    const globalSyncedAt = now();
-    const generalPageContent = await fetchPageContent(
-      client,
-      input.notion.generalTrainingPageId
-    );
-    const generalResult = await upsertEntry(
-      input.db,
-      buildGlobalKnowledgeInput({
-        pageId: input.notion.generalTrainingPageId,
-        pageContent: generalPageContent,
-        syncedAt: globalSyncedAt
+    await dependencies.db
+      .update(projectDimensions)
+      .set({
+        aiKnowledgeSyncedAt: now,
+        updatedAt: now,
       })
-    );
-    seenSourceIds.add(generalResult.row.sourceId);
+      .where(eq(projectDimensions.projectId, payload.projectId));
 
-    const knownProjectIds = await listKnownProjectIds(input.db);
-    const { rowsByProjectId, orphanRowsCount } = await collectProjectRows({
+    const generalTrainingUpdated = await upsertGeneralTraining({
       client,
-      databaseId: input.notion.projectTrainingDatabaseId,
-      knownProjectIds,
-      logger
+      config: dependencies.notion,
+      db: dependencies.db,
+      now,
+      upsertEntry,
+      logger,
     });
 
-    let projectIndex = 0;
-
-    for (const [projectId, row] of rowsByProjectId.entries()) {
-      if (projectIndex > 0) {
-        await sleep(PAGE_FETCH_DELAY_MS);
-      }
-
-      const syncedAt = now();
-      const pageContent = await fetchPageContent(client, row.id);
-
-      await input.db.transaction(async (tx: Stage1Database) => {
-        const result = await upsertEntry(
-          tx,
-          buildProjectKnowledgeInput({
-            projectId,
-            row,
-            pageContent,
-            syncedAt
-          })
-        );
-
-        seenSourceIds.add(result.row.sourceId);
-
-        await tx
-          .update(projectDimensions)
-          .set({
-            aiKnowledgeSyncedAt: syncedAt,
-            updatedAt: syncedAt
-          })
-          .where(eq(projectDimensions.projectId, projectId));
-      });
-
-      projectIndex += 1;
-      projectsSyncedCount += 1;
-    }
-
-    const deletedSourceIds = await reconcileRemovedKnowledgeEntries({
-      db: input.db,
-      seenSourceIds
-    });
-    const successNow = now();
-
-    await writeIntegrationHealth(input.integrationHealth, {
-      now: successNow,
+    await markIntegrationHealth({
+      integrationHealth: dependencies.integrationHealth,
       status: "healthy",
       detail: null,
-      metadataJson: {
-        knowledgeEntriesTotal: seenSourceIds.size,
-        projectsSyncedCount,
-        orphanRowsCount,
-        lastSuccessAt: successNow.toISOString()
-      }
+      now,
     });
 
+    logger.info(
+      JSON.stringify({
+        event: "notion_knowledge_sync.completed",
+        projectId: payload.projectId,
+        trigger: payload.trigger,
+        sourceId: notionPageId,
+        generalTrainingUpdated,
+        syncedAt: now.toISOString(),
+      }),
+    );
+
     return {
-      status: "healthy",
-      knowledgeEntriesTotal: seenSourceIds.size,
-      projectsSyncedCount,
-      orphanRowsCount,
-      deletedSourceIds,
-      seenSourceIds: [...seenSourceIds]
+      ok: true,
+      projectId: payload.projectId,
+      sourceId: notionPageId,
+      syncedAt: now.toISOString(),
+      generalTrainingUpdated,
     };
   } catch (error) {
-    const errorDetail = describeNotionError(error);
-    logger.error(`Notion knowledge sync failed: ${errorDetail}`);
+    const result = mapSyncError(payload.projectId, error);
 
-    await writeIntegrationHealth(input.integrationHealth, {
-      now: now(),
-      status: "needs_attention",
-      detail: errorDetail
+    await markIntegrationHealth({
+      integrationHealth: dependencies.integrationHealth,
+      status:
+        result.code === "provider_unauthorized" ||
+        result.code === "notion_stale"
+          ? "disconnected"
+          : "needs_attention",
+      detail: result.message,
+      now,
     });
 
-    return {
-      status: "error",
-      projectsSyncedCount,
-      seenSourceIds: [...seenSourceIds],
-      errorDetail
-    };
+    logger.error(
+      JSON.stringify({
+        event: "notion_knowledge_sync.failed",
+        projectId: payload.projectId,
+        trigger: payload.trigger,
+        code: result.code,
+        detail: result.message,
+      }),
+    );
+
+    return result;
   }
 }
