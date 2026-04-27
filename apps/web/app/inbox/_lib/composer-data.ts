@@ -16,20 +16,14 @@ export async function getInboxComposerAliases(): Promise<
         .filter((projectId): projectId is string => projectId !== null)
     )
   );
-  const projectDimensions =
-    await runtime.repositories.projectDimensions.listByIds(projectIds);
-  const cachedContentEntries = await Promise.all(
-    projectIds.map(async (projectId) => {
-      return [
-        projectId,
-        await runtime.repositories.aiKnowledge.hasProjectNotionContent(projectId),
-      ] as const;
-    }),
-  );
+  const [projectDimensions, projectIdsWithCachedContent] = await Promise.all([
+    runtime.repositories.projectDimensions.listByIds(projectIds),
+    runtime.repositories.aiKnowledge.findProjectIdsWithNotionContent(projectIds),
+  ]);
   const projectById = new Map(
     projectDimensions.map((project) => [project.projectId, project])
   );
-  const hasCachedContentByProjectId = new Map(cachedContentEntries);
+  const hasCachedContentByProjectId = new Set(projectIdsWithCachedContent);
 
   return aliases.flatMap((alias): readonly InboxComposerAliasOption[] => {
     if (alias.projectId === null) {
@@ -49,11 +43,11 @@ export async function getInboxComposerAliases(): Promise<
         projectId: alias.projectId,
         projectName: project.projectName,
         isAiConfigured,
-        hasCachedContent: hasCachedContentByProjectId.get(alias.projectId) === true,
+        hasCachedContent: hasCachedContentByProjectId.has(alias.projectId),
         isAiReady:
           project.isActive === true &&
           isAiConfigured &&
-          hasCachedContentByProjectId.get(alias.projectId) === true,
+          hasCachedContentByProjectId.has(alias.projectId),
       },
     ];
   });

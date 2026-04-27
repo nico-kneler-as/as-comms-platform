@@ -73,6 +73,9 @@ export interface AiKnowledgeRepository {
   }): Promise<AiKnowledgeEntryRecord | null>;
   findProjectNotionContent(projectId: string): Promise<AiKnowledgeEntryRecord | null>;
   hasProjectNotionContent(projectId: string): Promise<boolean>;
+  findProjectIdsWithNotionContent(
+    projectIds: readonly string[],
+  ): Promise<readonly string[]>;
   upsert(record: AiKnowledgeEntryRecord): Promise<AiKnowledgeEntryRecord>;
 }
 
