@@ -20,7 +20,6 @@ export const INBOX_FILTERS: readonly FilterDefinition[] = [
   { id: "unread", label: "Unread", hint: "New inbound message" },
   { id: "follow-up", label: "Needs Follow-Up", hint: "Flagged by you" },
   { id: "sent", label: "Sent", hint: "Last outbound 1:1 message" },
-  { id: "unresolved", label: "Unresolved", hint: "Has pending review items" }
 ];
 
 /**
@@ -29,4 +28,4 @@ export const INBOX_FILTERS: readonly FilterDefinition[] = [
  * top-level filter — operators triage it per row.
  */
 export const DISPLAY_INBOX_FILTERS: readonly FilterDefinition[] =
-  INBOX_FILTERS.filter((filter) => filter.id !== "unresolved");
+  INBOX_FILTERS;

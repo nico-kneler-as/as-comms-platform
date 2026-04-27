@@ -24,13 +24,14 @@ test("inbox shell renders with empty live data", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Inbox", exact: true })
   ).toBeVisible();
+  await page.getByRole("button", { name: "Filters" }).click();
   await expect(page.getByRole("button", { name: /Unread/i })).toBeVisible();
   await expect(
     page.getByRole("button", { name: /Needs Follow-Up/i })
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: /Unresolved/i })
-  ).toBeVisible();
+  ).toHaveCount(0);
 
   await expect(
     page.getByRole("button", { name: /^Opened$/i })

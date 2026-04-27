@@ -67,9 +67,15 @@ export function InboxList({
   } = useInboxClient();
   const urlQuery = searchParams.get("q") ?? "";
   const urlProjectId = searchParams.get("projectId");
+  const rawSearchQuery = search.query.trim();
   const deferredQuery = useDeferredValue(search.query);
   const normalizedQuery = deferredQuery.trim();
-  const isServerSearchActive = normalizedQuery.length > 0;
+  const isSearchThresholdMet = rawSearchQuery.length >= 3;
+  const isDeferredSearchPending =
+    isSearchThresholdMet && rawSearchQuery !== normalizedQuery;
+  const isServerSearchActive =
+    isSearchThresholdMet && normalizedQuery.length >= 3;
+  const serverQuery = isServerSearchActive ? normalizedQuery : null;
   const [activeFilter, setActiveFilter] = useState(initialFilterId);
   const [selectedProjectId, setSelectedProjectId] = useState(
     urlProjectId ?? initialList.selectedProjectId ?? null,
@@ -277,7 +283,7 @@ export function InboxList({
     void loadFilterPage({
       filterId: activeFilter,
       append: false,
-      query: normalizedQuery,
+      query: serverQuery,
       projectId: selectedProjectId,
     });
   }, [
@@ -285,8 +291,8 @@ export function InboxList({
     initialFilterCountById,
     isServerSearchActive,
     loadFilterPage,
-    normalizedQuery,
     selectedProjectId,
+    serverQuery,
     setQueueLoading,
   ]);
 
@@ -306,23 +312,28 @@ export function InboxList({
     void loadFilterPage({
       filterId: latestShellState.activeFilter,
       append: false,
-      query: normalizedQuery,
+      query: serverQuery,
       projectId: latestShellState.selectedProjectId,
     });
-  }, [isServerSearchActive, listFreshnessKey, loadFilterPage, normalizedQuery]);
+  }, [isServerSearchActive, listFreshnessKey, loadFilterPage, serverQuery]);
 
   const displayItems = currentList.items;
 
+  const isSearchInFlight =
+    isServerSearchActive &&
+    isQueueLoading &&
+    pendingAppendCursorRef.current === null;
+  const shouldShowSearchSkeleton =
+    isSearchThresholdMet && (isDeferredSearchPending || isSearchInFlight);
   const shouldShowInitialSkeleton =
-    isQueueLoading && currentList.items.length === 0;
+    isQueueLoading && currentList.items.length === 0 && !shouldShowSearchSkeleton;
   const canLoadMore =
     currentList.page.hasMore && currentList.page.nextCursor !== null;
   const isLoadingMore =
     isQueueLoading && pendingAppendCursorRef.current !== null;
   const activeProjects = currentList.activeProjects;
   const hasActiveFilters = activeFilter !== "all" || selectedProjectId !== null;
-  const isSearchInFlight =
-    search.isActive && isQueueLoading && normalizedQuery.length > 0;
+  const shouldShowSearchSummary = search.isActive && isSearchThresholdMet;
 
   const handleFilterChange = useCallback(
     (id: InboxFilterId) => {
@@ -391,7 +402,7 @@ export function InboxList({
           filterId: activeFilter,
           cursor: nextCursor,
           append: true,
-          query: normalizedQuery,
+          query: serverQuery,
           projectId: selectedProjectId,
         });
       },
@@ -414,8 +425,8 @@ export function InboxList({
     isFilterTransitionPending,
     isQueueLoading,
     loadFilterPage,
-    normalizedQuery,
     selectedProjectId,
+    serverQuery,
   ]);
 
   return (
@@ -491,7 +502,7 @@ export function InboxList({
               }}
               className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
             />
-            {isSearchInFlight ? (
+            {shouldShowSearchSkeleton ? (
               <span
                 role="status"
                 aria-label="Search loading"
@@ -539,10 +550,14 @@ export function InboxList({
           </div>
         ) : null}
 
-        {search.isActive ? (
+        {shouldShowSearchSummary ? (
           <div className="border-t border-slate-100 px-5 py-2">
             <p className="text-xs text-slate-500">
-              {displayItems.length === 0 ? (
+              {shouldShowSearchSkeleton ? (
+                <span className="text-slate-400">
+                  Searching for &ldquo;{search.query}&rdquo;
+                </span>
+              ) : displayItems.length === 0 ? (
                 <span className="text-slate-400">
                   No results for &ldquo;{search.query}&rdquo;
                 </span>
@@ -561,9 +576,11 @@ export function InboxList({
       </div>
 
       <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto">
-        {shouldShowInitialSkeleton ? (
+        {shouldShowSearchSkeleton ? (
+          <QueueLoadingSkeleton rowCount={3} label="Searching inbox" />
+        ) : shouldShowInitialSkeleton ? (
           <QueueLoadingSkeleton />
-        ) : search.isActive && displayItems.length === 0 ? (
+        ) : shouldShowSearchSummary && displayItems.length === 0 ? (
           <SearchEmptyState query={search.query} />
         ) : displayItems.length === 0 ? (
           <QueueEmptyState />

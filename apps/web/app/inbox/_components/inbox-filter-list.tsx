@@ -1,22 +1,28 @@
 "use client";
 
-import { TONE_CLASSES, TRANSITION } from "@/app/_lib/design-tokens-v2";
+import { SHADOW, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/ui/section-label";
+import type { LucideIcon } from "lucide-react";
 
 import type {
   InboxActiveProjectOption,
   InboxFilterId,
   InboxFilterViewModel,
 } from "../_lib/view-models";
-import { projectToneFromName } from "../_lib/project-tone";
+import {
+  FlagIcon,
+  InboxIcon,
+  MailOpenIcon,
+  SendIcon,
+} from "./icons";
 
-const FILTER_TONE: Record<InboxFilterId, "slate" | "sky" | "amber" | "rose"> = {
-  all: "slate",
-  unread: "sky",
-  "follow-up": "amber",
-  unresolved: "rose",
-  sent: "slate",
+const FILTER_ICON: Record<InboxFilterId, LucideIcon | null> = {
+  all: InboxIcon,
+  unread: MailOpenIcon,
+  "follow-up": FlagIcon,
+  sent: SendIcon,
+  unresolved: null,
 };
 
 interface InboxFilterListProps {
@@ -42,8 +48,9 @@ export function InboxFilterList({
     <div
       id={id}
       className={cn(
-        "animate-in slide-in-from-top-1 border-t border-slate-100 pb-3 duration-150 fade-in",
+        "animate-in slide-in-from-top-1 border-t border-slate-100 bg-white pb-3 duration-150 fade-in",
         "motion-reduce:animate-none",
+        SHADOW.md,
         TRANSITION.reduceMotion,
       )}
     >
@@ -55,9 +62,13 @@ export function InboxFilterList({
       </SectionLabel>
       <ul className="flex flex-col gap-0.5 px-3">
         {filters.map((filter) => {
-          const tone = FILTER_TONE[filter.id];
           const isActive = filter.id === activeFilter;
-          const showDot = !isActive && tone !== "slate";
+          const Icon = FILTER_ICON[filter.id];
+
+          if (Icon === null) {
+            return null;
+          }
+
           return (
             <li key={filter.id}>
               <button
@@ -73,14 +84,7 @@ export function InboxFilterList({
                     : "text-slate-700 hover:bg-slate-50",
                 )}
               >
-                {showDot ? (
-                  <span
-                    aria-hidden="true"
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_CLASSES[tone].dot}`}
-                  />
-                ) : (
-                  <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0" />
-                )}
+                <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                 <span
                   className={cn(
                     "flex-1 truncate",
@@ -126,12 +130,10 @@ export function InboxFilterList({
                     : "text-slate-700 hover:bg-slate-50",
                 )}
               >
-                <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0" />
                 <span className="flex-1 truncate">All projects</span>
               </button>
             </li>
             {projects.map((project) => {
-              const tone = projectToneFromName(project.name);
               const isActive = selectedProjectId === project.id;
               return (
                 <li key={project.id}>
@@ -148,10 +150,6 @@ export function InboxFilterList({
                         : "text-slate-700 hover:bg-slate-50",
                     )}
                   >
-                    <span
-                      aria-hidden="true"
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_CLASSES[tone].dot}`}
-                    />
                     <span className="flex-1 truncate">{project.name}</span>
                   </button>
                 </li>
