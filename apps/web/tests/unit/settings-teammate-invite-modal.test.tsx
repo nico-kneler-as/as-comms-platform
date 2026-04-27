@@ -324,6 +324,20 @@ async function typeValue(
     throw new Error("Element is detached from a document");
   }
 
+  // React 18 controlled-input pattern under JSDOM:
+  // React patches the value setter on the input instance and tracks "last value"
+  // via element._valueTracker. To make React's onChange fire, we must (a) clear
+  // the tracker so React detects a change, then (b) set the value via the
+  // PROTOTYPE setter (bypassing React's instance-level wrapper), then dispatch
+  // a native input event. Without the tracker reset, React compares the new
+  // value to the cached one and skips the onChange handler in some scenarios.
+  const tracker = (
+    element as HTMLInputElement & { _valueTracker?: { setValue(v: string): void } }
+  )._valueTracker;
+  if (tracker) {
+    tracker.setValue("");
+  }
+
   const descriptor = Object.getOwnPropertyDescriptor(
     view.HTMLInputElement.prototype,
     "value",
@@ -335,6 +349,7 @@ async function typeValue(
   await act(async () => {
     element.dispatchEvent(new view.Event("input", { bubbles: true }));
     element.dispatchEvent(new view.Event("change", { bubbles: true }));
+    await Promise.resolve();
     await Promise.resolve();
   });
 }
