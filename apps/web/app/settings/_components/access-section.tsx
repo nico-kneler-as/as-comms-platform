@@ -3,32 +3,25 @@
 import { useState, useTransition } from "react";
 import { UserPlus } from "lucide-react";
 
-import {
-  RADIUS,
-  SHADOW,
-  TYPE,
-  TRANSITION
-} from "@/app/_lib/design-tokens-v2";
+import { RADIUS, SHADOW, TYPE, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ToneAvatar } from "@/components/ui/tone-avatar";
 import { cn } from "@/lib/utils";
 import type {
   AccessSettingsViewModel,
-  UserRowViewModel
+  UserRowViewModel,
 } from "@/src/server/settings/selectors";
 
 import {
   deactivateUserAction,
   demoteUserAction,
-  inviteUserAction,
   promoteUserAction,
   reactivateUserAction,
-  type UserMutationData
+  type UserMutationData,
 } from "../actions";
 import { SettingsSection } from "./settings-section";
+import { TeammateInviteModal } from "./teammate-invite-modal";
 
 const AVATAR_TONES = [
   "indigo",
@@ -37,12 +30,11 @@ const AVATAR_TONES = [
   "rose",
   "sky",
   "violet",
-  "teal"
+  "teal",
 ] as const;
 
 type AvatarTone = (typeof AVATAR_TONES)[number];
-type ManagedRole = "admin" | "internal_user";
-type PendingAction = "invite" | "promote" | "demote" | "deactivate" | "reactivate";
+type PendingAction = "promote" | "demote" | "deactivate" | "reactivate";
 
 interface FeedbackState {
   readonly kind: "success" | "error";
@@ -93,12 +85,12 @@ function formatRelative(iso: string | null): string {
 
 function sortUsers(
   rows: readonly UserRowViewModel[],
-  currentUserId: string | null
+  currentUserId: string | null,
 ): readonly UserRowViewModel[] {
   const statusRank = {
     active: 0,
     pending: 1,
-    deactivated: 2
+    deactivated: 2,
   } as const;
 
   return [...rows].sort((left, right) => {
@@ -117,7 +109,7 @@ function sortUsers(
 function mergeUserRow(
   rows: readonly UserRowViewModel[],
   nextUser: UserMutationData,
-  currentUserId: string | null
+  currentUserId: string | null,
 ): readonly UserRowViewModel[] {
   const nextRow: UserRowViewModel = {
     userId: nextUser.userId,
@@ -125,7 +117,7 @@ function mergeUserRow(
     email: nextUser.email,
     role: nextUser.role,
     status: nextUser.status,
-    lastActiveAt: nextUser.lastActiveAt
+    lastActiveAt: nextUser.lastActiveAt,
   };
 
   const nextRows = rows.some((row) => row.userId === nextRow.userId)
@@ -141,18 +133,24 @@ function buildIdFormData(id: string): FormData {
   return formData;
 }
 
-export function AccessSection({ viewModel }: { readonly viewModel: AccessSettingsViewModel }) {
+export function AccessSection({
+  viewModel,
+}: {
+  readonly viewModel: AccessSettingsViewModel;
+}) {
   const [rows, setRows] = useState<readonly UserRowViewModel[]>(() =>
-    sortUsers([...viewModel.admins, ...viewModel.internalUsers], viewModel.currentUserId)
+    sortUsers(
+      [...viewModel.admins, ...viewModel.internalUsers],
+      viewModel.currentUserId,
+    ),
   );
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<ManagedRole>("internal_user");
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   const activeAdminCount = rows.filter(
-    (user) => user.role === "admin" && user.status !== "deactivated"
+    (user) => user.role === "admin" && user.status !== "deactivated",
   ).length;
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
@@ -166,37 +164,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
     setRows((current) => mergeUserRow(current, user, viewModel.currentUserId));
   }
 
-  function handleInvite() {
-    const normalizedEmail = inviteEmail.trim().toLowerCase();
-    if (normalizedEmail.length === 0) {
-      announce("Enter a teammate email to send an invite.", "error");
-      return;
-    }
-
-    startTransition(async () => {
-      setPendingKey("invite");
-      const formData = new FormData();
-      formData.set("email", normalizedEmail);
-      formData.set("role", inviteRole);
-      const result = await inviteUserAction(formData);
-      setPendingKey(null);
-
-      if (!result.ok) {
-        announce(result.message, "error");
-        return;
-      }
-
-      commitUser(result.data.user);
-      setInviteEmail("");
-      setInviteRole("internal_user");
-      announce(`Invited ${result.data.user.email}.`);
-    });
-  }
-
-  function handleUserAction(
-    action: PendingAction,
-    user: UserRowViewModel
-  ) {
+  function handleUserAction(action: PendingAction, user: UserRowViewModel) {
     startTransition(async () => {
       setPendingKey(`${action}:${user.userId}`);
 
@@ -224,7 +192,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
             ? `${result.data.user.email} is now an operator.`
             : action === "deactivate"
               ? `${result.data.user.email} has been deactivated.`
-              : `${result.data.user.email} has been reactivated.`
+              : `${result.data.user.email} has been reactivated.`,
       );
     });
   }
@@ -233,76 +201,23 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
     <SettingsSection id="settings-access" title="Access">
       <div className="flex flex-col gap-4">
         {viewModel.isAdmin ? (
-          <section
-            aria-labelledby="invite-teammates-heading"
-            className={cn(
-              "flex flex-col gap-4 p-5",
-              RADIUS.lg,
-              "border border-slate-200 bg-white",
-              SHADOW.sm
-            )}
-          >
-            <div className="flex flex-col gap-1">
-              <h3 id="invite-teammates-heading" className={TYPE.headingSm}>
-                Invite teammates
-              </h3>
-              <p className={cn("mt-1", TYPE.caption)}>
-                Invites create a pending teammate row that links automatically
-                when they sign in with Google.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-              <div className="flex-1">
-                <label htmlFor="teammate-email" className="sr-only">
-                  Teammate email
-                </label>
-                <Input
-                  id="teammate-email"
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(event) => {
-                    setInviteEmail(event.target.value);
-                  }}
-                  disabled={isPending && pendingKey === "invite"}
-                  placeholder="teammate@adventurescientists.org"
-                />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <span className={cn(TYPE.label, "text-slate-600")}>Role</span>
-                <ToggleGroup
-                  type="single"
-                  value={inviteRole}
-                  onValueChange={(value) => {
-                    if (value === "admin" || value === "internal_user") {
-                      setInviteRole(value);
-                    }
-                  }}
-                  variant="outline"
-                  size="sm"
-                  aria-label="Invite role"
-                  className="justify-start"
-                >
-                  <ToggleGroupItem value="internal_user" aria-label="Operator role">
-                    Operator
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="admin" aria-label="Admin role">
-                    Admin
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
-
-              <Button
-                type="button"
-                onClick={handleInvite}
-                disabled={isPending && pendingKey === "invite"}
-              >
-                <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                Invite teammate
-              </Button>
-            </div>
-          </section>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={() => {
+                setInviteModalOpen(true);
+              }}
+            >
+              <UserPlus data-icon="inline-start" aria-hidden="true" />
+              Invite teammate
+            </Button>
+            <TeammateInviteModal
+              open={inviteModalOpen}
+              onClose={() => {
+                setInviteModalOpen(false);
+              }}
+            />
+          </div>
         ) : null}
 
         {feedback ? (
@@ -313,7 +228,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
               "rounded-md px-3 py-2 text-sm",
               feedback.kind === "success"
                 ? "bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200"
-                : "bg-rose-50 text-rose-800 ring-1 ring-inset ring-rose-200"
+                : "bg-rose-50 text-rose-800 ring-1 ring-inset ring-rose-200",
             )}
           >
             {feedback.message}
@@ -325,7 +240,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
             "overflow-hidden",
             RADIUS.lg,
             "border border-slate-200 bg-white",
-            SHADOW.sm
+            SHADOW.sm,
           )}
         >
           <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -333,26 +248,42 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
               <tr>
                 <th
                   scope="col"
-                  className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
+                  className={cn(
+                    "px-5 py-3 text-left",
+                    TYPE.label,
+                    "tracking-wider",
+                  )}
                 >
                   Teammate
                 </th>
                 <th
                   scope="col"
-                  className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
+                  className={cn(
+                    "px-5 py-3 text-left",
+                    TYPE.label,
+                    "tracking-wider",
+                  )}
                 >
                   Role
                 </th>
                 <th
                   scope="col"
-                  className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
+                  className={cn(
+                    "px-5 py-3 text-left",
+                    TYPE.label,
+                    "tracking-wider",
+                  )}
                 >
                   Last active
                 </th>
                 {viewModel.isAdmin ? (
                   <th
                     scope="col"
-                    className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
+                    className={cn(
+                      "px-5 py-3 text-left",
+                      TYPE.label,
+                      "tracking-wider",
+                    )}
                   >
                     Actions
                   </th>
@@ -377,7 +308,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                       TRANSITION.fast,
                       "hover:bg-slate-50/80",
                       user.status === "deactivated" && "bg-slate-50/60",
-                      pendingActionKey && "opacity-60"
+                      pendingActionKey && "opacity-60",
                     )}
                   >
                     <td className="px-5 py-3">
@@ -394,13 +325,15 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                                 "truncate text-[13px] font-medium",
                                 user.status === "deactivated"
                                   ? "text-slate-500"
-                                  : "text-slate-900"
+                                  : "text-slate-900",
                               )}
                             >
                               {user.displayName}
                             </p>
                             {isSelf ? (
-                              <span className={cn(TYPE.micro, "text-slate-400")}>
+                              <span
+                                className={cn(TYPE.micro, "text-slate-400")}
+                              >
                                 (you)
                               </span>
                             ) : null}
@@ -409,7 +342,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                             className={cn(
                               "truncate",
                               TYPE.caption,
-                              user.status === "deactivated" && "text-slate-400"
+                              user.status === "deactivated" && "text-slate-400",
                             )}
                           >
                             {user.email}
@@ -425,7 +358,11 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                     </td>
                     <td className="px-5 py-3 align-middle">
                       <span
-                        className={cn("tabular-nums", TYPE.bodySm, "text-slate-600")}
+                        className={cn(
+                          "tabular-nums",
+                          TYPE.bodySm,
+                          "text-slate-600",
+                        )}
                       >
                         {formatRelative(user.lastActiveAt)}
                       </span>
@@ -434,7 +371,9 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                       <td className="px-5 py-3 align-middle">
                         <div className="flex flex-wrap items-center gap-2">
                           {isSelf ? (
-                            <span className={TYPE.caption}>Current session</span>
+                            <span className={TYPE.caption}>
+                              Current session
+                            </span>
                           ) : user.status === "deactivated" ? (
                             <Button
                               type="button"
@@ -453,21 +392,29 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                disabled={pendingActionKey !== null || isOnlyActiveAdmin}
+                                disabled={
+                                  pendingActionKey !== null || isOnlyActiveAdmin
+                                }
                                 onClick={() => {
                                   handleUserAction(
-                                    user.role === "admin" ? "demote" : "promote",
-                                    user
+                                    user.role === "admin"
+                                      ? "demote"
+                                      : "promote",
+                                    user,
                                   );
                                 }}
                               >
-                                {user.role === "admin" ? "Make operator" : "Make admin"}
+                                {user.role === "admin"
+                                  ? "Make operator"
+                                  : "Make admin"}
                               </Button>
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                disabled={pendingActionKey !== null || isOnlyActiveAdmin}
+                                disabled={
+                                  pendingActionKey !== null || isOnlyActiveAdmin
+                                }
                                 onClick={() => {
                                   handleUserAction("deactivate", user);
                                 }}
@@ -477,7 +424,9 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
                             </>
                           )}
                           {isOnlyActiveAdmin ? (
-                            <span className={TYPE.caption}>Keep one active admin</span>
+                            <span className={TYPE.caption}>
+                              Keep one active admin
+                            </span>
                           ) : null}
                         </div>
                       </td>
@@ -493,11 +442,7 @@ export function AccessSection({ viewModel }: { readonly viewModel: AccessSetting
   );
 }
 
-function RoleBadge({
-  role
-}: {
-  readonly role: "admin" | "internal_user";
-}) {
+function RoleBadge({ role }: { readonly role: "admin" | "internal_user" }) {
   if (role === "admin") {
     return (
       <StatusBadge
@@ -517,7 +462,7 @@ function RoleBadge({
 }
 
 function UserStatusBadge({
-  status
+  status,
 }: {
   readonly status: UserRowViewModel["status"];
 }) {
