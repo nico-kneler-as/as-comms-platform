@@ -13,6 +13,8 @@ const STRIP_WITH_CONTENT_TAGS = new Set(["script", "style"]);
 const TAG_PATTERN = /<\/?[^>]+>/gu;
 const TAG_NAME_PATTERN = /^<\/?\s*([a-zA-Z0-9:-]+)/u;
 const HREF_PATTERN = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/iu;
+const SAFE_LINK_ATTRIBUTES =
+  'class="text-sky-700 hover:underline" target="_blank" rel="noopener noreferrer"';
 
 function escapeHtml(value: string): string {
   return value
@@ -106,7 +108,7 @@ export function sanitizeComposerHtml(input: string): string {
       if (href === null) {
         skippedAnchorDepth += 1;
       } else {
-        output += `<a href="${href}">`;
+        output += `<a href="${href}" ${SAFE_LINK_ATTRIBUTES}>`;
       }
     }
   }
@@ -121,7 +123,7 @@ export function sanitizeComposerHtml(input: string): string {
 function linkifyEscapedLine(line: string): string {
   return line.replace(/https?:\/\/[^\s<]+/gu, (url) => {
     const escapedUrl = escapeHtml(url);
-    return `<a href="${escapedUrl}">${escapedUrl}</a>`;
+    return `<a href="${escapedUrl}" ${SAFE_LINK_ATTRIBUTES}>${escapedUrl}</a>`;
   });
 }
 

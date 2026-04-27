@@ -6,20 +6,17 @@ import {
   useContext,
   useMemo,
   useState,
-  type ReactNode
+  type ReactNode,
 } from "react";
 
-import type {
-  AiDraftRequestPayload,
-  AiDraftResponseVm,
-} from "../actions";
+import type { AiDraftRequestPayload, AiDraftResponseVm } from "../actions";
 import type {
   InboxComposerAliasOption,
-  InboxComposerReplyContext
+  InboxComposerReplyContext,
 } from "../_lib/view-models";
 import {
   reduceComposerPane,
-  type ComposerPaneState
+  type ComposerPaneState,
 } from "../_lib/composer-ui";
 
 /**
@@ -41,6 +38,8 @@ export type ComposerStatus =
   | "sending"
   | "sent-success"
   | "send-failure";
+
+export type ComposerViewState = "closed" | "modal" | "pill";
 
 export interface ComposerValidationError {
   readonly field: "subject" | "body" | "recipient" | "alias" | "attachments";
@@ -105,7 +104,7 @@ export interface SearchState {
 const INITIAL_SEARCH: SearchState = {
   query: "",
   isActive: false,
-  resultContactIds: []
+  resultContactIds: [],
 };
 
 export interface InboxToastState {
@@ -132,23 +131,25 @@ interface InboxClientState {
 
   readonly composerAliases: readonly InboxComposerAliasOption[];
   readonly composerPane: ComposerPaneState;
+  readonly composerView: ComposerViewState;
   readonly openNewDraft: () => void;
   readonly openReplyDraft: (
     replyContext: InboxComposerReplyContext,
     initialTab?: "email" | "note",
   ) => void;
   readonly closeComposer: () => void;
+  readonly minimizeComposer: () => void;
+  readonly expandComposer: () => void;
 
   readonly composerStatus: ComposerStatus;
   readonly composerErrors: readonly ComposerValidationError[];
   readonly setComposerStatus: (status: ComposerStatus) => void;
-  readonly setComposerErrors: (errors: readonly ComposerValidationError[]) => void;
+  readonly setComposerErrors: (
+    errors: readonly ComposerValidationError[],
+  ) => void;
 
   readonly toast: InboxToastState | null;
-  readonly showToast: (
-    message: string,
-    tone?: InboxToastState["tone"]
-  ) => void;
+  readonly showToast: (message: string, tone?: InboxToastState["tone"]) => void;
   readonly clearToast: () => void;
 
   readonly aiDraft: AiDraftState;
@@ -186,14 +187,15 @@ export function InboxClientProvider({
   readonly currentActorId: string;
 }) {
   const [reminders, setReminders] = useState<ReadonlyMap<string, Reminder>>(
-    () => new Map<string, Reminder>()
+    () => new Map<string, Reminder>(),
   );
   const [search, setSearch] = useState(INITIAL_SEARCH);
   const [isQueueLoading, setQueueLoading] = useState(false);
   const [isTimelineLoading, setTimelineLoading] = useState(false);
   const [composerPane, setComposerPane] = useState<ComposerPaneState>({
-    mode: "closed"
+    mode: "closed",
   });
+  const [composerView, setComposerView] = useState<ComposerViewState>("closed");
   const [composerStatus, setComposerStatus] = useState<ComposerStatus>("idle");
   const [composerErrors, setComposerErrors] = useState<
     readonly ComposerValidationError[]
@@ -225,14 +227,14 @@ export function InboxClientProvider({
     setSearch((previous) => ({
       ...previous,
       query,
-      isActive: query.length > 0
+      isActive: query.length > 0,
     }));
   }, []);
 
   const setSearchResults = useCallback((contactIds: readonly string[]) => {
     setSearch((previous) => ({
       ...previous,
-      resultContactIds: contactIds
+      resultContactIds: contactIds,
     }));
   }, []);
 
@@ -243,9 +245,10 @@ export function InboxClientProvider({
   const openNewDraft = useCallback(() => {
     setComposerPane((previous) =>
       reduceComposerPane(previous, {
-        type: "open-new-draft"
-      })
+        type: "open-new-draft",
+      }),
     );
+    setComposerView("modal");
     setComposerStatus("idle");
     setComposerErrors([]);
   }, []);
@@ -260,22 +263,32 @@ export function InboxClientProvider({
           type: "open-reply",
           replyContext,
           initialTab,
-        })
+        }),
       );
+      setComposerView("modal");
       setComposerStatus("idle");
       setComposerErrors([]);
     },
-    []
+    [],
   );
 
   const closeComposer = useCallback(() => {
+    setComposerView("closed");
     setComposerPane((previous) =>
       reduceComposerPane(previous, {
-        type: "close"
-      })
+        type: "close",
+      }),
     );
     setComposerStatus("idle");
     setComposerErrors([]);
+  }, []);
+
+  const minimizeComposer = useCallback(() => {
+    setComposerView("pill");
+  }, []);
+
+  const expandComposer = useCallback(() => {
+    setComposerView("modal");
   }, []);
 
   const showToast = useCallback(
@@ -283,78 +296,84 @@ export function InboxClientProvider({
       setToast({
         id: Date.now(),
         message,
-        tone
+        tone,
       });
     },
-    []
+    [],
   );
 
   const clearToast = useCallback(() => {
     setToast(null);
   }, []);
 
-  const startAiGeneration = useCallback((input: {
-    readonly request: AiDraftRequestPayload;
-    readonly prompt: string;
-  }) => {
-    setAiDraft({
-      status: "generating",
-      mode: input.request.mode,
-      responseMode: null,
-      prompt: input.prompt,
-      generatedText: "",
-      errorMessage: null,
-      grounding: [],
-      warnings: [],
-      costEstimateUsd: null,
-      draftId: null,
-      repromptIndex: input.request.repromptIndex ?? 0,
-      repromptChain: [],
-      promptPreview: "",
-      model: null,
-      lastRequest: input.request,
-    });
-  }, []);
+  const startAiGeneration = useCallback(
+    (input: {
+      readonly request: AiDraftRequestPayload;
+      readonly prompt: string;
+    }) => {
+      setAiDraft({
+        status: "generating",
+        mode: input.request.mode,
+        responseMode: null,
+        prompt: input.prompt,
+        generatedText: "",
+        errorMessage: null,
+        grounding: [],
+        warnings: [],
+        costEstimateUsd: null,
+        draftId: null,
+        repromptIndex: input.request.repromptIndex ?? 0,
+        repromptChain: [],
+        promptPreview: "",
+        model: null,
+        lastRequest: input.request,
+      });
+    },
+    [],
+  );
 
-  const insertAiDraft = useCallback((input: {
-    readonly request: AiDraftRequestPayload;
-    readonly response: AiDraftResponseVm;
-    readonly prompt: string;
-    readonly repromptDirection?: string;
-  }) => {
-    setAiDraft((previous) => ({
-      ...previous,
-      status: "inserted",
-      mode: input.request.mode,
-      responseMode: input.response.mode,
-      prompt: input.prompt,
-      generatedText: input.response.draft,
-      errorMessage: null,
-      grounding: input.response.grounding,
-      warnings: input.response.warnings,
-      costEstimateUsd: input.response.costEstimateUsd,
-      draftId: input.response.draftId,
-      repromptIndex: input.response.repromptIndex,
-      repromptChain:
-        input.request.mode === "reprompt" && input.repromptDirection
-          ? [
-              ...previous.repromptChain,
-              {
-                direction: input.repromptDirection,
-                draft: input.response.draft,
-              },
-            ]
-          : previous.repromptChain,
-      promptPreview: input.response.promptPreview,
-      model: input.response.model,
-      lastRequest: input.request,
-    }));
-  }, []);
+  const insertAiDraft = useCallback(
+    (input: {
+      readonly request: AiDraftRequestPayload;
+      readonly response: AiDraftResponseVm;
+      readonly prompt: string;
+      readonly repromptDirection?: string;
+    }) => {
+      setAiDraft((previous) => ({
+        ...previous,
+        status: "inserted",
+        mode: input.request.mode,
+        responseMode: input.response.mode,
+        prompt: input.prompt,
+        generatedText: input.response.draft,
+        errorMessage: null,
+        grounding: input.response.grounding,
+        warnings: input.response.warnings,
+        costEstimateUsd: input.response.costEstimateUsd,
+        draftId: input.response.draftId,
+        repromptIndex: input.response.repromptIndex,
+        repromptChain:
+          input.request.mode === "reprompt" && input.repromptDirection
+            ? [
+                ...previous.repromptChain,
+                {
+                  direction: input.repromptDirection,
+                  draft: input.response.draft,
+                },
+              ]
+            : previous.repromptChain,
+        promptPreview: input.response.promptPreview,
+        model: input.response.model,
+        lastRequest: input.request,
+      }));
+    },
+    [],
+  );
 
   const markAiDraftEdited = useCallback(() => {
     setAiDraft((previous) => ({
       ...previous,
-      status: "edited-after-generation"
+      status: "edited-after-generation",
     }));
   }, []);
 
@@ -369,30 +388,33 @@ export function InboxClientProvider({
     setAiDraft((previous) => ({
       ...previous,
       status: "discarded",
-      generatedText: ""
+      generatedText: "",
     }));
   }, []);
 
-  const repromptAi = useCallback((input: {
-    readonly request: AiDraftRequestPayload;
-    readonly prompt: string;
-  }) => {
-    setAiDraft((previous) => ({
-      ...previous,
-      status: "reprompting",
-      mode: "reprompt",
-      prompt: input.prompt,
-      errorMessage: null,
-      lastRequest: input.request,
-      repromptIndex: input.request.repromptIndex ?? previous.repromptIndex,
-    }));
-  }, []);
+  const repromptAi = useCallback(
+    (input: {
+      readonly request: AiDraftRequestPayload;
+      readonly prompt: string;
+    }) => {
+      setAiDraft((previous) => ({
+        ...previous,
+        status: "reprompting",
+        mode: "reprompt",
+        prompt: input.prompt,
+        errorMessage: null,
+        lastRequest: input.request,
+        repromptIndex: input.request.repromptIndex ?? previous.repromptIndex,
+      }));
+    },
+    [],
+  );
 
   const setAiUnavailable = useCallback(() => {
     setAiDraft((previous) => ({
       ...previous,
       status: "unavailable",
-      errorMessage: "AI drafting is currently unavailable."
+      errorMessage: "AI drafting is currently unavailable.",
     }));
   }, []);
 
@@ -400,7 +422,7 @@ export function InboxClientProvider({
     setAiDraft((previous) => ({
       ...previous,
       status: "error",
-      errorMessage: message
+      errorMessage: message,
     }));
   }, []);
 
@@ -424,9 +446,12 @@ export function InboxClientProvider({
       setTimelineLoading,
       composerAliases,
       composerPane,
+      composerView,
       openNewDraft,
       openReplyDraft,
       closeComposer,
+      minimizeComposer,
+      expandComposer,
       composerStatus,
       composerErrors,
       setComposerStatus,
@@ -443,7 +468,7 @@ export function InboxClientProvider({
       repromptAi,
       setAiUnavailable,
       setAiError,
-      resetAiDraft
+      resetAiDraft,
     }),
     [
       currentActorId,
@@ -458,9 +483,12 @@ export function InboxClientProvider({
       isTimelineLoading,
       composerAliases,
       composerPane,
+      composerView,
       openNewDraft,
       openReplyDraft,
       closeComposer,
+      minimizeComposer,
+      expandComposer,
       composerStatus,
       composerErrors,
       toast,
@@ -475,8 +503,8 @@ export function InboxClientProvider({
       repromptAi,
       setAiUnavailable,
       setAiError,
-      resetAiDraft
-    ]
+      resetAiDraft,
+    ],
   );
 
   return (

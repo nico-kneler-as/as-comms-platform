@@ -8,12 +8,28 @@ import { cn } from "@/lib/utils";
 import { RADIUS, SHADOW, TYPE } from "@/app/_lib/design-tokens-v2";
 
 import { ComposerAiDraftWindow } from "./composer-ai-draft-window";
-import { ComposerRecipientPicker, type ComposerRecipientValue } from "./composer-recipient-picker";
+import {
+  ComposerRecipientPicker,
+  type ComposerRecipientValue,
+} from "./composer-recipient-picker";
 import { ComposerSendFromChip } from "./composer-send-from-chip";
 import { AboutThisDraft } from "./about-this-draft";
 import { AiDraftReprompt } from "./ai-draft-reprompt";
-import { AttachmentRow, ComposerField, InlineErrorBanner, RichTextComposerEditor } from "./composer-editor-surface";
-import { LoaderIcon, MailIcon, NoteIcon, PaperclipIcon, SendIcon, SparkleIcon, XIcon } from "./icons";
+import {
+  AttachmentRow,
+  ComposerField,
+  InlineErrorBanner,
+  RichTextComposerEditor,
+} from "./composer-editor-surface";
+import {
+  LoaderIcon,
+  MailIcon,
+  NoteIcon,
+  PaperclipIcon,
+  SendIcon,
+  SparkleIcon,
+  XIcon,
+} from "./icons";
 import type { AttachmentDraft, InlineComposerError } from "./composer-shared";
 import type { InboxComposerAliasOption } from "../_lib/view-models";
 import type {
@@ -114,6 +130,7 @@ export function ComposerEmailSurface({
   isGeneratingAi,
   aiButtonLabel,
   selectedAliasAiReady,
+  selectedAliasProjectName,
   aiWarningMessage,
   inlineError,
   showKnowledgeCapture,
@@ -160,6 +177,7 @@ export function ComposerEmailSurface({
   readonly isGeneratingAi: boolean;
   readonly aiButtonLabel: string;
   readonly selectedAliasAiReady: boolean;
+  readonly selectedAliasProjectName: string | null;
   readonly aiWarningMessage: string | null;
   readonly inlineError: InlineComposerError | null;
   readonly showKnowledgeCapture: boolean;
@@ -169,9 +187,14 @@ export function ComposerEmailSurface({
   readonly isAboutOpen: boolean;
   readonly onAboutOpenChange: (open: boolean) => void;
   readonly onAliasChange: (value: string | null) => void;
-  readonly onRecipientChange: (recipient: ComposerRecipientValue | null) => void;
+  readonly onRecipientChange: (
+    recipient: ComposerRecipientValue | null,
+  ) => void;
   readonly onSubjectChange: (value: string) => void;
-  readonly onBodyChange: (value: { readonly bodyPlaintext: string; readonly bodyHtml: string }) => void;
+  readonly onBodyChange: (value: {
+    readonly bodyPlaintext: string;
+    readonly bodyHtml: string;
+  }) => void;
   readonly onClearErrors: () => void;
   readonly onAiEdited: () => void;
   readonly onDiscardAi: () => void;
@@ -188,7 +211,7 @@ export function ComposerEmailSurface({
 }) {
   return (
     <>
-      <ComposerField label="Send from">
+      <ComposerField label="FROM">
         <ComposerSendFromChip
           value={selectedAlias}
           aliases={composerAliases}
@@ -197,7 +220,7 @@ export function ComposerEmailSurface({
         />
       </ComposerField>
 
-      <ComposerField label="To">
+      <ComposerField label="TO">
         <div className="rounded-lg bg-slate-50">
           <ComposerRecipientPicker
             recipient={recipient}
@@ -210,14 +233,14 @@ export function ComposerEmailSurface({
         ) : null}
       </ComposerField>
 
-      <ComposerField label="Cc">
+      <ComposerField label="CC">
         <div className="flex min-h-11 items-center justify-between rounded-lg border border-dashed border-slate-200 px-3 text-sm text-slate-400">
           <span>Not available in this production flow yet</span>
           <span className="text-xs">Placeholder</span>
         </div>
       </ComposerField>
 
-      <ComposerField label="Subject">
+      <ComposerField label="SUBJ">
         <Input
           value={subject}
           onChange={(event) => {
@@ -272,7 +295,9 @@ export function ComposerEmailSurface({
         </div>
       ) : null}
       {bodyError ? (
-        <div className="px-4 py-2 text-xs text-rose-700">{bodyError.message}</div>
+        <div className="px-4 py-2 text-xs text-rose-700">
+          {bodyError.message}
+        </div>
       ) : null}
 
       <AttachmentRow attachments={attachments} onRemove={onAttachmentRemove} />
@@ -316,7 +341,12 @@ export function ComposerEmailSurface({
             Attach
           </Button>
           {selectedAliasAiReady ? (
-            <Button type="button" variant="outline" disabled={isGeneratingAi} onClick={onRunAiDraft}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isGeneratingAi}
+              onClick={onRunAiDraft}
+            >
               {isGeneratingAi ? (
                 <LoaderIcon className="size-4 animate-spin" />
               ) : (
@@ -327,6 +357,11 @@ export function ComposerEmailSurface({
           ) : null}
 
           <div className="ml-auto flex items-center gap-2">
+            {selectedAliasAiReady && selectedAliasProjectName !== null ? (
+              <span className={`hidden ${TYPE.caption} md:inline`}>
+                Uses {selectedAliasProjectName} knowledge
+              </span>
+            ) : null}
             <Button type="button" variant="ghost" onClick={onCancel}>
               Cancel
             </Button>
@@ -381,10 +416,14 @@ export function ComposerNoteSurface({
 }) {
   return (
     <>
-      <div className={`border-l-4 border-amber-300 bg-amber-50/50 px-4 py-4 ${SHADOW.sm}`}>
+      <div
+        className={`border-l-4 border-amber-300 bg-amber-50/50 px-4 py-4 ${SHADOW.sm}`}
+      >
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-amber-900">Internal note</p>
+            <p className="text-sm font-semibold text-amber-900">
+              Internal note
+            </p>
             <p className={`mt-1 ${TYPE.caption} text-amber-800`}>
               Team-visible note only. This will not be sent to the contact.
             </p>
@@ -441,7 +480,11 @@ export function ComposerNoteSurface({
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="button" disabled={isSaveNoteDisabled} onClick={onSaveNote}>
+          <Button
+            type="button"
+            disabled={isSaveNoteDisabled}
+            onClick={onSaveNote}
+          >
             {isSavingNote ? (
               <>
                 <LoaderIcon className="size-4 animate-spin" />

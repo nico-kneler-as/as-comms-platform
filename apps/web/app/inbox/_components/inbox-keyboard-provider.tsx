@@ -6,14 +6,14 @@ import {
   useEffect,
   useRef,
   useState,
-  type ReactNode
+  type ReactNode,
 } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverAnchor,
-  PopoverContent
+  PopoverContent,
 } from "@/components/ui/popover";
 
 import {
@@ -25,7 +25,7 @@ import {
   INBOX_ROW_SELECTOR,
   INBOX_SEARCH_INPUT_SELECTOR,
   isEditableShortcutTarget,
-  isInboxKeyboardPath
+  isInboxKeyboardPath,
 } from "./inbox-keyboard-helpers";
 import { useInboxClient } from "./inbox-client-provider";
 import { XIcon } from "./icons";
@@ -47,18 +47,18 @@ const SHORTCUTS = [
   { key: "Esc", description: "Return to the inbox list" },
   { key: "F", description: "Toggle Needs Follow-Up" },
   { key: "/", description: "Focus search" },
-  { key: "?", description: "Show this shortcuts list" }
+  { key: "?", description: "Show this shortcuts list" },
 ] as const;
 
 export function InboxKeyboardProvider({
-  children
+  children,
 }: InboxKeyboardProviderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const lastFocusedContactIdRef = useRef<string | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const { composerPane, closeComposer, openNewDraft } = useInboxClient();
+  const { composerView, minimizeComposer, openNewDraft } = useInboxClient();
 
   const getRowTargets = useCallback((): readonly RowTarget[] => {
     const root = rootRef.current;
@@ -70,7 +70,7 @@ export function InboxKeyboardProvider({
     return Array.from(root.querySelectorAll<HTMLElement>(INBOX_ROW_SELECTOR))
       .map((element) => ({
         element,
-        contactId: element.dataset.contactId ?? ""
+        contactId: element.dataset.contactId ?? "",
       }))
       .filter((target) => target.contactId.length > 0);
   }, []);
@@ -100,7 +100,7 @@ export function InboxKeyboardProvider({
         rowContactIds: rows.map((row) => row.contactId),
         currentFocusedContactId: getCurrentFocusedContactId(),
         activeContactId: extractInboxContactId(pathname),
-        direction
+        direction,
       });
 
       if (nextContactId === null) {
@@ -117,10 +117,10 @@ export function InboxKeyboardProvider({
       nextRow.element.focus();
       nextRow.element.scrollIntoView({
         block: "nearest",
-        inline: "nearest"
+        inline: "nearest",
       });
     },
-    [getCurrentFocusedContactId, getRowTargets, pathname]
+    [getCurrentFocusedContactId, getRowTargets, pathname],
   );
 
   const openFocusedRow = useCallback(() => {
@@ -128,7 +128,7 @@ export function InboxKeyboardProvider({
     const contactId = getPreferredFocusedRowContactId({
       rowContactIds: rows.map((row) => row.contactId),
       currentFocusedContactId: getCurrentFocusedContactId(),
-      activeContactId: extractInboxContactId(pathname)
+      activeContactId: extractInboxContactId(pathname),
     });
 
     if (contactId === null) {
@@ -136,14 +136,14 @@ export function InboxKeyboardProvider({
     }
 
     router.push(`/inbox/${encodeURIComponent(contactId)}`, {
-      scroll: false
+      scroll: false,
     });
   }, [getCurrentFocusedContactId, getRowTargets, pathname, router]);
 
   const focusSearch = useCallback(() => {
     const root = rootRef.current;
     const input = root?.querySelector<HTMLInputElement>(
-      INBOX_SEARCH_INPUT_SELECTOR
+      INBOX_SEARCH_INPUT_SELECTOR,
     );
 
     if (!input) {
@@ -157,7 +157,7 @@ export function InboxKeyboardProvider({
   const triggerFollowUpToggle = useCallback(() => {
     const root = rootRef.current;
     const button = root?.querySelector<HTMLButtonElement>(
-      INBOX_FOLLOW_UP_TOGGLE_SELECTOR
+      INBOX_FOLLOW_UP_TOGGLE_SELECTOR,
     );
 
     if (!button || button.disabled) {
@@ -220,15 +220,15 @@ export function InboxKeyboardProvider({
         return;
       }
 
-      const target =
-        event.target instanceof HTMLElement ? event.target : null;
+      const target = event.target instanceof HTMLElement ? event.target : null;
       const targetMeta = {
-        tagName: target?.closest("input, textarea, select")?.tagName ??
+        tagName:
+          target?.closest("input, textarea, select")?.tagName ??
           target?.tagName ??
           null,
         isContentEditable:
           target?.isContentEditable === true ||
-          target?.closest("[contenteditable='true']") !== null
+          target?.closest("[contenteditable='true']") !== null,
       };
       const isEditable = isEditableShortcutTarget(targetMeta);
 
@@ -248,9 +248,9 @@ export function InboxKeyboardProvider({
           setShortcutsOpen(false);
         }
 
-        if (composerPane.mode !== "closed") {
+        if (composerView === "modal") {
           event.preventDefault();
-          closeComposer();
+          minimizeComposer();
           return;
         }
 
@@ -327,10 +327,10 @@ export function InboxKeyboardProvider({
     router,
     shortcutsOpen,
     triggerFollowUpToggle,
-    composerPane.mode,
-    closeComposer,
+    composerView,
     isListFocused,
-    openNewDraft
+    minimizeComposer,
+    openNewDraft,
   ]);
 
   return (
