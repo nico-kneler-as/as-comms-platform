@@ -48,14 +48,17 @@ function iconMock(name: string) {
 }
 
 vi.mock("../../app/inbox/_components/icons", () => ({
+  FlagIcon: iconMock("FlagIcon"),
   FilterIcon: iconMock("FilterIcon"),
   InboxIcon: iconMock("InboxIcon"),
   LoaderIcon: iconMock("LoaderIcon"),
   MailIcon: iconMock("MailIcon"),
+  MailOpenIcon: iconMock("MailOpenIcon"),
   PencilIcon: iconMock("PencilIcon"),
   PhoneIcon: iconMock("PhoneIcon"),
   SearchIcon: iconMock("SearchIcon"),
   SearchXIcon: iconMock("SearchXIcon"),
+  SendIcon: iconMock("SendIcon"),
   XIcon: iconMock("XIcon"),
 }));
 
@@ -310,6 +313,19 @@ describe("Inbox list shell", () => {
     expect(filterButton.className).toContain("bg-slate-900");
     expect(session.container.textContent).toContain("State");
     expect(session.container.textContent).toContain("Project");
+    expect(session.container.textContent).not.toContain("Unresolved");
+    expect(
+      session.container.querySelector("[data-icon='InboxIcon']"),
+    ).not.toBeNull();
+    expect(
+      session.container.querySelector("[data-icon='MailOpenIcon']"),
+    ).not.toBeNull();
+    expect(
+      session.container.querySelector("[data-icon='FlagIcon']"),
+    ).not.toBeNull();
+    expect(
+      session.container.querySelector("[data-icon='SendIcon']"),
+    ).not.toBeNull();
 
     await act(async () => {
       findButtonByText(session.container, "Unread").click();
@@ -360,5 +376,47 @@ describe("Inbox list shell", () => {
     expect(
       activeSession.container.querySelector("button[aria-label='Clear search']"),
     ).not.toBeNull();
+  });
+
+  it("shows search skeleton rows only once the query reaches three characters", async () => {
+    fetchInboxListPageMock.mockReturnValue(new Promise(() => undefined));
+    activeSession = await mountInboxList(buildList(), {
+      query: "am",
+      isQueueLoading: true,
+    });
+    await flushReact();
+
+    expect(
+      activeSession.container.querySelector(
+        "[role='status'][aria-label='Searching inbox']",
+      ),
+    ).toBeNull();
+    expect(activeSession.container.textContent).toContain("Riley Carter");
+
+    await activeSession.rerender({
+      query: "ama",
+      isQueueLoading: true,
+    });
+    await flushReact();
+
+    expect(
+      activeSession.container.querySelector(
+        "[role='status'][aria-label='Searching inbox']",
+      ),
+    ).not.toBeNull();
+    expect(activeSession.container.textContent).not.toContain("Riley Carter");
+
+    await activeSession.rerender({
+      query: "",
+      isQueueLoading: false,
+    });
+    await flushReact();
+
+    expect(
+      activeSession.container.querySelector(
+        "[role='status'][aria-label='Searching inbox']",
+      ),
+    ).toBeNull();
+    expect(activeSession.container.textContent).toContain("Riley Carter");
   });
 });

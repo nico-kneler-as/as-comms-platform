@@ -112,10 +112,16 @@ export function QueueRowSkeleton() {
  * Queue loading state: renders 5 skeleton rows inside the existing list
  * column chrome (header stays real, only rows pulse).
  */
-export function QueueLoadingSkeleton() {
+export function QueueLoadingSkeleton({
+  rowCount = 5,
+  label = "Loading inbox conversations",
+}: {
+  readonly rowCount?: number;
+  readonly label?: string;
+}) {
   return (
-    <div className="min-h-0 flex-1 overflow-hidden">
-      {Array.from({ length: 5 }).map((_, i) => (
+    <div className="min-h-0 flex-1 overflow-hidden" role="status" aria-label={label}>
+      {Array.from({ length: rowCount }).map((_, i) => (
         <QueueRowSkeleton key={i} />
       ))}
     </div>
