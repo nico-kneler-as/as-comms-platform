@@ -1126,9 +1126,112 @@ describe("real inbox selectors", () => {
       kind: "outbound-email",
       fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
       toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+      recipientLabel: "Shaina Dotson",
       ccHeader:
         "Ricky Jones <ricky@adventurescientists.org>, Samantha Doe <samantha@adventurescientists.org>",
     });
+  });
+
+  it("infers timeline recipient labels from display names, bare emails, and project aliases", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:recipient-labels",
+      salesforceContactId: "003-recipient-labels",
+      displayName: "Recipient Label",
+      primaryEmail: "recipient@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-forest",
+      projectName: "Pacific Northwest Forest Biodiversity",
+      projectAlias: "PNW Forest Biodiversity",
+      membershipId: "membership:recipient-labels",
+      membershipStatus: "active",
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:pnw-forest",
+      alias: "pnwbio@adventurescientists.org",
+      signature: "",
+      projectId: "project:pnw-forest",
+      createdAt: new Date("2026-04-20T12:00:00.000Z"),
+      updatedAt: new Date("2026-04-20T12:00:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
+    });
+    const displayNameEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "recipient-label-display",
+      contactId: "contact:recipient-labels",
+      occurredAt: "2026-04-22T01:00:00.000Z",
+      direction: "outbound",
+      subject: "Display recipient",
+      snippet: "Display recipient body.",
+      bodyTextPreview: "Display recipient body.",
+      toHeader: "Display Name <email@example.com>",
+    });
+    const bareEmailEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "recipient-label-bare",
+      contactId: "contact:recipient-labels",
+      occurredAt: "2026-04-22T01:01:00.000Z",
+      direction: "outbound",
+      subject: "Bare recipient",
+      snippet: "Bare recipient body.",
+      bodyTextPreview: "Bare recipient body.",
+      toHeader: "email@example.com",
+    });
+    const projectAliasEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "recipient-label-project",
+      contactId: "contact:recipient-labels",
+      occurredAt: "2026-04-22T01:02:00.000Z",
+      direction: "inbound",
+      subject: "Project recipient",
+      snippet: "Project recipient body.",
+      bodyTextPreview: "Project recipient body.",
+      fromHeader: "Volunteer <recipient@example.org>",
+      toHeader: "pnwbio@adventurescientists.org",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    const missingHeaderEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "recipient-label-missing",
+      contactId: "contact:recipient-labels",
+      occurredAt: "2026-04-22T01:03:00.000Z",
+      direction: "inbound",
+      subject: "Missing recipient",
+      snippet: "Missing recipient body.",
+      bodyTextPreview: "Missing recipient body.",
+      fromHeader: "Volunteer <recipient@example.org>",
+      toHeader: null,
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:recipient-labels",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-22T01:03:00.000Z",
+      lastOutboundAt: "2026-04-22T01:01:00.000Z",
+      lastActivityAt: "2026-04-22T01:03:00.000Z",
+      snippet: "Missing recipient body.",
+      lastCanonicalEventId: missingHeaderEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:recipient-labels");
+    const labelBySubject = new Map(
+      detail?.timeline.map((entry) => [entry.subject, entry.recipientLabel]),
+    );
+
+    expect(displayNameEvent.canonicalEventId).toBeTruthy();
+    expect(bareEmailEvent.canonicalEventId).toBeTruthy();
+    expect(projectAliasEvent.canonicalEventId).toBeTruthy();
+    expect(labelBySubject.get("Display recipient")).toBe("Display Name");
+    expect(labelBySubject.get("Bare recipient")).toBe("email@example.com");
+    expect(labelBySubject.get("Project recipient")).toBe(
+      "PNW Forest Biodiversity",
+    );
+    expect(labelBySubject.get("Missing recipient")).toBe(
+      "PNW Forest Biodiversity",
+    );
   });
 
   it("uses the Gmail From header as the inbound actor label when present", async () => {
@@ -1845,6 +1948,54 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("consistently crops inline quoted-reply markers in timeline email bodies", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:inline-quote",
+      salesforceContactId: "003-inline-quote",
+      displayName: "Inline Quote",
+      primaryEmail: "inline.quote@example.org",
+      primaryPhone: null,
+    });
+    const latestEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "inline-quote-latest",
+      contactId: "contact:inline-quote",
+      occurredAt: "2026-04-25T16:30:00.000Z",
+      direction: "inbound",
+      subject: "Re: Field packet",
+      snippet: "Thanks for sending this.",
+      bodyTextPreview: [
+        "Thanks for sending this.",
+        "",
+        "On 2026-04-25 at 10:00 AM, Alison Example wrote:",
+        "> Original field packet details",
+      ].join("\n"),
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:inline-quote",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-25T16:30:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-25T16:30:00.000Z",
+      snippet: "Thanks for sending this.",
+      lastCanonicalEventId: latestEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:inline-quote");
+    const latestEntry = detail?.timeline.at(-1);
+
+    expect(latestEntry).toMatchObject({
+      kind: "inbound-email",
+      body: "Thanks for sending this.",
+    });
+  });
+
   it("skips encrypted placeholder bodies when deriving composer reply context", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
@@ -2171,10 +2322,11 @@ describe("real inbox selectors", () => {
       subject: "April Volunteer Update",
       body: "Hi Sarah,\nPlease bring your field notebook.",
     });
-    expect(campaignEntries[0]?.campaignActivity.map((activity) => activity.activityType)).toEqual([
-      "opened",
-      "clicked",
-    ]);
+    expect(
+      campaignEntries[0]?.campaignActivity.map(
+        (activity) => activity.activityType,
+      ),
+    ).toEqual(["opened", "clicked"]);
   });
 
   it("falls back to stripped campaign subjects when no campaign name exists", async () => {
@@ -2223,7 +2375,8 @@ describe("real inbox selectors", () => {
       id: "sarah-auto-email-bare-prefix",
       contactId: "contact:sarah-martinez",
       occurredAt: "2026-04-12T15:55:00.000Z",
-      subject: "Email: Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral",
+      subject:
+        "Email: Aplicacion en Revision: Monitoreo y Restauracion de Arrecifes de Coral",
       snippet: "Coral project review workflow.",
     });
 
