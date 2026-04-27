@@ -70,6 +70,20 @@ type ReminderUnit = "hours" | "days" | "weeks";
 
 const REPLY_SUBJECT_PREFIX_PATTERN = /^\s*(?:(?:re|fwd?)\s*:\s*)+/i;
 
+function extractEmailAddresses(value: string | null | undefined): string[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      Array.from(value.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)).map(
+        (match) => match[0].toLowerCase(),
+      ),
+    ),
+  );
+}
+
 function buildReplySubject(subject: string | null): string {
   const normalizedSubject = subject?.trim() ?? "";
 
@@ -106,6 +120,7 @@ function buildTimelineReplyContext(input: {
         ? input.entry.rfc822MessageId
         : input.entry.inReplyToRfc822,
     defaultAlias: input.defaultAlias,
+    cc: extractEmailAddresses(input.entry.ccHeader),
   };
 }
 

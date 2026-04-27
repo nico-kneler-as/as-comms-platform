@@ -566,6 +566,13 @@ function normalizeEmailAddress(value: string): string | null {
   return normalized.length === 0 ? null : normalized;
 }
 
+function normalizeEmailAddresses(values: readonly string[] | undefined): string[] {
+  return (values ?? []).flatMap((value) => {
+    const normalized = normalizeEmailAddress(value);
+    return normalized === null ? [] : [normalized];
+  });
+}
+
 function resolveCurrentUserDisplayName(input: {
   readonly name: string | null | undefined;
   readonly email: string | null | undefined;
@@ -1376,6 +1383,8 @@ export async function sendComposerAction(
   const signature = readAliasSignature(
     alias as unknown as Record<string, unknown>,
   );
+  const cc = normalizeEmailAddresses(parsedInput.data.cc);
+  const bcc = normalizeEmailAddresses(parsedInput.data.bcc);
   const bodyPlaintext = appendSignature(
     parsedInput.data.bodyPlaintext,
     signature,
@@ -1435,6 +1444,8 @@ export async function sendComposerAction(
       toEmailNormalized,
       subject: parsedInput.data.subject,
       attachmentCount: parsedInput.data.attachments.length,
+      ccCount: cc.length,
+      bccCount: bcc.length,
       supersedesPendingId: parsedInput.data.supersedesPendingId ?? null,
     },
   });
@@ -1443,6 +1454,8 @@ export async function sendComposerAction(
     const sendParams = {
       fromAlias: alias.alias,
       to: toEmailNormalized,
+      ...(cc.length > 0 ? { cc } : {}),
+      ...(bcc.length > 0 ? { bcc } : {}),
       subject: parsedInput.data.subject,
       bodyPlaintext,
       bodyHtml,

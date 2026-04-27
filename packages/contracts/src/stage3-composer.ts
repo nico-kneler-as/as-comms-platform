@@ -17,6 +17,8 @@ export const composerAttachmentSchema = z.object({
   contentBase64: z.string().min(1),
 });
 
+const composerEmailAddressSchema = z.string().trim().email();
+
 const composerBodyPlaintextSchema = z
   .string()
   .refine((value) => value.trim().length > 0, {
@@ -36,6 +38,8 @@ export const composerSendInputSchema = z.object({
   bodyPlaintext: composerBodyPlaintextSchema,
   bodyHtml: composerBodyHtmlSchema,
   attachments: z.array(composerAttachmentSchema),
+  cc: z.array(composerEmailAddressSchema).optional(),
+  bcc: z.array(composerEmailAddressSchema).optional(),
   threadId: z.string().min(1).optional(),
   inReplyToRfc822: z.string().min(1).optional(),
   supersedesPendingId: z.string().min(1).optional(),

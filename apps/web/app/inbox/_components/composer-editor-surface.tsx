@@ -42,8 +42,8 @@ export function ComposerField({
   readonly children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-2.5">
-      <span className={`mt-1 w-10 shrink-0 ${TYPE.label}`}>{label}</span>
+    <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-1.5">
+      <span className={`mt-1 w-8 shrink-0 ${TYPE.label}`}>{label}</span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
@@ -141,7 +141,6 @@ export function RichTextComposerEditor({
     extensions: [
       StarterKit.configure({
         heading: false,
-        blockquote: false,
         codeBlock: false,
         horizontalRule: false,
         strike: false,
@@ -164,7 +163,7 @@ export function RichTextComposerEditor({
         "aria-multiline": "true",
         ...(errorMessage ? { "aria-invalid": "true" } : {}),
         class: cn(
-          "min-h-48 w-full px-4 py-4 text-sm leading-6 text-slate-900 focus:outline-none [&_a]:text-sky-700 [&_a]:underline [&_ol]:ml-5 [&_ol]:list-decimal [&_ul]:ml-5 [&_ul]:list-disc",
+          "min-h-48 w-full px-4 py-4 text-sm leading-6 text-slate-900 focus:outline-none [&_a]:text-sky-700 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_ol]:ml-5 [&_ol]:list-decimal [&_ul]:ml-5 [&_ul]:list-disc",
           errorMessage ? "bg-rose-50/40" : "",
         ),
       },
@@ -185,6 +184,7 @@ export function RichTextComposerEditor({
   if (editor?.isActive("orderedList") === true)
     activeCommands.add("orderedList");
   if (editor?.isActive("link") === true) activeCommands.add("link");
+  if (editor?.isActive("blockquote") === true) activeCommands.add("blockquote");
 
   const runCommand = useCallback(
     (command: ComposerToolbarCommand) => {
@@ -216,6 +216,9 @@ export function RichTextComposerEditor({
           chain.setLink({ href: url }).run();
           break;
         }
+        case "blockquote":
+          chain.toggleBlockquote().run();
+          break;
       }
     },
     [editor],

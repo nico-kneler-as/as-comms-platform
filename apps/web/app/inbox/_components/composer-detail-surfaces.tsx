@@ -4,6 +4,12 @@ import type { RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { RADIUS, SHADOW, TYPE } from "@/app/_lib/design-tokens-v2";
 
@@ -21,12 +27,12 @@ import {
   RichTextComposerEditor,
 } from "./composer-editor-surface";
 import {
+  AlertCircleIcon,
   LoaderIcon,
   MailIcon,
   NoteIcon,
   PaperclipIcon,
   SendIcon,
-  SparkleIcon,
   XIcon,
 } from "./icons";
 import type { AttachmentDraft, InlineComposerError } from "./composer-shared";
@@ -35,6 +41,26 @@ import type {
   AiDraftState,
   ComposerValidationError,
 } from "./inbox-client-provider";
+
+function WarningKnowledgeIndicator({
+  tooltipMessage,
+}: {
+  readonly tooltipMessage: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600">
+          <AlertCircleIcon className="size-3.5" />
+          AI grounding unavailable for this project
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-64 text-pretty">
+        {tooltipMessage}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function ComposerPaneChrome({
   title,
@@ -115,8 +141,14 @@ export function ComposerEmailSurface({
   selectedAlias,
   aliasError,
   recipient,
+  ccRecipients,
+  bccRecipients,
+  showCc,
+  showBcc,
   isReplying,
   recipientError,
+  ccError,
+  bccError,
   subject,
   subjectError,
   body,
@@ -124,10 +156,11 @@ export function ComposerEmailSurface({
   attachments,
   attachmentError,
   aiDraft,
+  aiDirective,
   repromptText,
   isGeneratingAi,
-  aiButtonLabel,
-  aiButtonDisabled,
+  runAiDraftDisabled,
+  runAiDraftDisabledReason,
   selectedAliasAiReady,
   selectedAliasProjectName,
   aiWarningMessage,
@@ -140,9 +173,14 @@ export function ComposerEmailSurface({
   onAboutOpenChange,
   onAliasChange,
   onRecipientChange,
+  onCcChange,
+  onBccChange,
+  onToggleCc,
+  onToggleBcc,
   onSubjectChange,
   onBodyChange,
   onClearErrors,
+  onAiDirectiveChange,
   onAiEdited,
   onDiscardAi,
   onOpenReprompt,
@@ -161,8 +199,14 @@ export function ComposerEmailSurface({
   readonly selectedAlias: string | null;
   readonly aliasError?: ComposerValidationError;
   readonly recipient: ComposerRecipientValue | null;
+  readonly ccRecipients: readonly ComposerRecipientValue[];
+  readonly bccRecipients: readonly ComposerRecipientValue[];
+  readonly showCc: boolean;
+  readonly showBcc: boolean;
   readonly isReplying: boolean;
   readonly recipientError?: ComposerValidationError;
+  readonly ccError?: ComposerValidationError;
+  readonly bccError?: ComposerValidationError;
   readonly subject: string;
   readonly subjectError?: ComposerValidationError;
   readonly body: string;
@@ -170,10 +214,11 @@ export function ComposerEmailSurface({
   readonly attachments: readonly AttachmentDraft[];
   readonly attachmentError?: ComposerValidationError;
   readonly aiDraft: AiDraftState;
+  readonly aiDirective: string;
   readonly repromptText: string;
   readonly isGeneratingAi: boolean;
-  readonly aiButtonLabel: string;
-  readonly aiButtonDisabled: boolean;
+  readonly runAiDraftDisabled: boolean;
+  readonly runAiDraftDisabledReason: string | null;
   readonly selectedAliasAiReady: boolean;
   readonly selectedAliasProjectName: string | null;
   readonly aiWarningMessage: string | null;
@@ -188,12 +233,21 @@ export function ComposerEmailSurface({
   readonly onRecipientChange: (
     recipient: ComposerRecipientValue | null,
   ) => void;
+  readonly onCcChange: (
+    recipients: readonly ComposerRecipientValue[],
+  ) => void;
+  readonly onBccChange: (
+    recipients: readonly ComposerRecipientValue[],
+  ) => void;
+  readonly onToggleCc: (open: boolean) => void;
+  readonly onToggleBcc: (open: boolean) => void;
   readonly onSubjectChange: (value: string) => void;
   readonly onBodyChange: (value: {
     readonly bodyPlaintext: string;
     readonly bodyHtml: string;
   }) => void;
   readonly onClearErrors: () => void;
+  readonly onAiDirectiveChange: (value: string) => void;
   readonly onAiEdited: () => void;
   readonly onDiscardAi: () => void;
   readonly onOpenReprompt: () => void;
@@ -208,8 +262,11 @@ export function ComposerEmailSurface({
   readonly onSend: () => void;
   readonly onCancel: () => void;
 }) {
+  const knowledgeTooltip =
+    "Set up Anthropic integration in Settings → Integrations to enable AI drafting.";
+
   return (
-    <>
+    <TooltipProvider delayDuration={200}>
       <ComposerField label="FROM">
         <ComposerSendFromChip
           value={selectedAlias}
@@ -220,11 +277,42 @@ export function ComposerEmailSurface({
       </ComposerField>
 
       <ComposerField label="TO">
-        <div className="rounded-lg bg-slate-50">
+        <div className="rounded-md bg-white">
           <ComposerRecipientPicker
-            recipient={recipient}
+            recipients={recipient === null ? [] : [recipient]}
             locked={isReplying}
-            onRecipientChange={onRecipientChange}
+            single
+            rightSlot={
+              !showCc || !showBcc ? (
+                <div className="flex items-center gap-1 pt-0.5 text-[11.5px]">
+                  {!showCc ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onToggleCc(true);
+                      }}
+                      className="rounded px-1.5 py-0.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      Cc
+                    </button>
+                  ) : null}
+                  {!showBcc ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onToggleBcc(true);
+                      }}
+                      className="rounded px-1.5 py-0.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      Bcc
+                    </button>
+                  ) : null}
+                </div>
+              ) : null
+            }
+            onRecipientsChange={(nextRecipients) => {
+              onRecipientChange(nextRecipients[0] ?? null);
+            }}
           />
         </div>
         {recipientError ? (
@@ -232,12 +320,53 @@ export function ComposerEmailSurface({
         ) : null}
       </ComposerField>
 
-      <ComposerField label="CC">
-        <div className="flex min-h-11 items-center justify-between rounded-lg border border-dashed border-slate-200 px-3 text-sm text-slate-400">
-          <span>Not available in this production flow yet</span>
-          <span className="text-xs">Placeholder</span>
-        </div>
-      </ComposerField>
+      {showCc ? (
+        <ComposerField label="CC">
+          <ComposerRecipientPicker
+            recipients={ccRecipients}
+            rightSlot={
+              <button
+                type="button"
+                aria-label="Hide Cc field"
+                onClick={() => {
+                  onToggleCc(false);
+                }}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <XIcon className="size-3.5" />
+              </button>
+            }
+            onRecipientsChange={onCcChange}
+          />
+          {ccError ? (
+            <p className="mt-1 text-xs text-rose-700">{ccError.message}</p>
+          ) : null}
+        </ComposerField>
+      ) : null}
+
+      {showBcc ? (
+        <ComposerField label="BCC">
+          <ComposerRecipientPicker
+            recipients={bccRecipients}
+            rightSlot={
+              <button
+                type="button"
+                aria-label="Hide Bcc field"
+                onClick={() => {
+                  onToggleBcc(false);
+                }}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <XIcon className="size-3.5" />
+              </button>
+            }
+            onRecipientsChange={onBccChange}
+          />
+          {bccError ? (
+            <p className="mt-1 text-xs text-rose-700">{bccError.message}</p>
+          ) : null}
+        </ComposerField>
+      ) : null}
 
       <ComposerField label="SUBJ">
         <Input
@@ -247,7 +376,7 @@ export function ComposerEmailSurface({
           }}
           placeholder="Subject"
           className={cn(
-            "h-11 border-0 px-0 text-[15px] font-medium shadow-none focus-visible:ring-0",
+            "h-9 border-0 px-0 text-[13.5px] font-medium shadow-none focus-visible:ring-0",
             subjectError ? "text-rose-900" : "",
           )}
         />
@@ -269,9 +398,14 @@ export function ComposerEmailSurface({
         topSlot={
           <ComposerAiDraftWindow
             aiDraft={aiDraft}
+            directiveText={aiDirective}
             repromptText={repromptText}
             isGeneratingAi={isGeneratingAi}
+            runDraftDisabled={runAiDraftDisabled}
+            runDraftDisabledReason={runAiDraftDisabledReason}
+            onDirectiveTextChange={onAiDirectiveChange}
             onRepromptTextChange={onRepromptTextChange}
+            onRunDraft={onRunAiDraft}
             onOpenReprompt={onOpenReprompt}
             onSubmitReprompt={onReprompt}
             onCancelReprompt={onCancelReprompt}
@@ -302,12 +436,14 @@ export function ComposerEmailSurface({
         </div>
       ) : null}
 
-      <div className="border-t border-slate-200 px-4 py-4">
-        {inlineError || recipientError || attachmentError ? (
+      <div className="border-t border-slate-100 bg-slate-50/40 px-3 py-2">
+        {inlineError || recipientError || ccError || bccError || attachmentError ? (
           <InlineErrorBanner
             message={
               inlineError?.message ??
               recipientError?.message ??
+              ccError?.message ??
+              bccError?.message ??
               attachmentError?.message ??
               "Something went wrong."
             }
@@ -317,7 +453,7 @@ export function ComposerEmailSurface({
         ) : null}
 
         {showKnowledgeCapture ? (
-          <label className="mb-3 flex items-start gap-2 text-sm text-slate-700">
+          <label className="mb-3 flex items-start gap-2 px-1 text-sm text-slate-700">
             <input
               type="checkbox"
               checked={captureAsKnowledge}
@@ -331,36 +467,41 @@ export function ComposerEmailSurface({
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="ghost" onClick={onAttachmentClick}>
-            <PaperclipIcon className="size-4" />
+          <Button
+            type="button"
+            variant="ghost"
+            className="gap-1.5 border-l border-slate-200 pl-3 text-[11.5px] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            onClick={onAttachmentClick}
+          >
+            <PaperclipIcon className="size-3.5" />
             Attach
           </Button>
-          {selectedAliasAiReady ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={aiButtonDisabled}
-              onClick={onRunAiDraft}
-            >
-              {isGeneratingAi ? (
-                <LoaderIcon className="size-4 animate-spin" />
-              ) : (
-                <SparkleIcon className="size-4" />
-              )}
-              {aiButtonLabel}
-            </Button>
-          ) : null}
 
           <div className="ml-auto flex items-center gap-2">
             {selectedAliasAiReady && selectedAliasProjectName !== null ? (
-              <span className={`hidden ${TYPE.caption} md:inline`}>
+              <span className={`hidden items-center ${TYPE.caption} md:inline-flex`}>
                 Uses {selectedAliasProjectName} knowledge
               </span>
+            ) : selectedAliasProjectName !== null ? (
+              <div className="hidden md:block">
+                <WarningKnowledgeIndicator tooltipMessage={knowledgeTooltip} />
+              </div>
             ) : null}
-            <Button type="button" variant="ghost" onClick={onCancel}>
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-[12px] text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              onClick={onCancel}
+            >
               Cancel
             </Button>
-            <Button type="button" disabled={isSendDisabled} onClick={onSend}>
+            <Button
+              type="button"
+              disabled={isSendDisabled}
+              className="h-9 rounded-md bg-slate-900 px-3 text-[12.5px] font-medium text-white shadow-sm hover:bg-slate-800"
+              onClick={onSend}
+            >
               {isSending ? (
                 <>
                   <LoaderIcon className="size-4 animate-spin" />
@@ -375,6 +516,12 @@ export function ComposerEmailSurface({
             </Button>
           </div>
         </div>
+
+        {!selectedAliasAiReady && selectedAliasProjectName !== null ? (
+          <div className="mt-2 md:hidden">
+            <WarningKnowledgeIndicator tooltipMessage={knowledgeTooltip} />
+          </div>
+        ) : null}
       </div>
 
       <AboutThisDraft
@@ -382,7 +529,7 @@ export function ComposerEmailSurface({
         open={isAboutOpen}
         onOpenChange={onAboutOpenChange}
       />
-    </>
+    </TooltipProvider>
   );
 }
 

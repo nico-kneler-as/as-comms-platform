@@ -11,6 +11,7 @@ import {
   LinkIcon,
   ListIcon,
   ListOrderedIcon,
+  QuoteIcon,
 } from "./icons";
 
 export type ComposerToolbarCommand =
@@ -18,7 +19,8 @@ export type ComposerToolbarCommand =
   | "italic"
   | "bulletList"
   | "orderedList"
-  | "link";
+  | "link"
+  | "blockquote";
 
 interface ComposerToolbarProps {
   readonly activeCommands: ReadonlySet<ComposerToolbarCommand>;
@@ -43,6 +45,11 @@ const TOOLBAR_ITEMS: readonly {
     icon: <ListOrderedIcon className="size-4" />,
   },
   { command: "link", label: "Link", icon: <LinkIcon className="size-4" /> },
+  {
+    command: "blockquote",
+    label: "Quote",
+    icon: <QuoteIcon className="size-4" />,
+  },
 ];
 
 export function ComposerToolbar({
@@ -50,7 +57,7 @@ export function ComposerToolbar({
   onCommand,
 }: ComposerToolbarProps) {
   return (
-    <div className="flex items-center gap-1 border-b border-slate-200 bg-white px-4 py-2">
+    <div className="flex items-center gap-0.5 border-b border-slate-100 bg-white px-3 py-1.5">
       {TOOLBAR_ITEMS.map((item) => {
         const active = activeCommands.has(item.command);
 

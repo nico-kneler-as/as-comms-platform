@@ -262,6 +262,38 @@ describe("Stage 3 Gmail send client", () => {
     );
   });
 
+  it("includes Cc and Bcc headers when supplementary recipients are provided", async () => {
+    const fetchImplementation = createFetchMock();
+    const result = await sendGmailMessage(
+      {
+        fromAlias: "pnwbio@adventurescientists.org",
+        to: "volunteer@example.org",
+        cc: ["partner@example.org", "guide@example.org"],
+        bcc: ["archive@example.org"],
+        subject: "Field update",
+        bodyPlaintext: "Thanks for the update.",
+        bodyHtml: "<p>Thanks for the update.</p>",
+        attachments: [],
+      },
+      {
+        ...baseConfig,
+        fetchImplementation,
+      },
+    );
+
+    expect(result.kind).toBe("success");
+
+    const sendCall = getFetchCall(fetchImplementation, 1);
+    const rawMessage = decodeRawMessage(
+      String(parseSendRequestBody(sendCall).raw),
+    );
+
+    expect(rawMessage).toContain(
+      "Cc: <partner@example.org>, <guide@example.org>",
+    );
+    expect(rawMessage).toContain("Bcc: <archive@example.org>");
+  });
+
   it("maps Gmail and OAuth failures into the typed error variants", async () => {
     const cases = [
       {
