@@ -4,15 +4,12 @@ import { useEffect, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 
+import { ComposerFloatingPill } from "./composer-floating-pill";
 import { useInboxClient } from "./inbox-client-provider";
 import { InboxComposerDetailPane } from "./inbox-composer";
 import { XIcon } from "./icons";
 
-export function InboxWorkspace({
-  children
-}: {
-  readonly children: ReactNode;
-}) {
+export function InboxWorkspace({ children }: { readonly children: ReactNode }) {
   const { composerPane, toast, clearToast } = useInboxClient();
 
   useEffect(() => {
@@ -31,7 +28,9 @@ export function InboxWorkspace({
 
   return (
     <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-      {composerPane.mode === "closed" ? children : <InboxComposerDetailPane />}
+      {children}
+      {composerPane.mode === "closed" ? null : <InboxComposerDetailPane />}
+      <ComposerFloatingPill />
 
       {toast ? (
         <div className="pointer-events-none absolute right-5 top-5 z-50 flex justify-end">

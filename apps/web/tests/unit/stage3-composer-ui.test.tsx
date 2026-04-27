@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { InboxComposerReplyContext } from "../../app/inbox/_lib/view-models";
+import { resolveFloatingComposerLabel } from "../../app/inbox/_components/composer-floating-pill";
 import { plaintextToComposerHtml } from "../../app/inbox/_components/composer-html";
 import {
   formatContactRecipientLabel,
@@ -8,7 +9,7 @@ import {
   resolveTypedEmailRecipient,
   isComposerSendDisabled,
   resolveDefaultAlias,
-  type ComposerPaneState
+  type ComposerPaneState,
 } from "../../app/inbox/_lib/composer-ui";
 
 const replyContext: InboxComposerReplyContext = {
@@ -18,7 +19,7 @@ const replyContext: InboxComposerReplyContext = {
   threadCursor: "event-1",
   threadId: "thread-1",
   inReplyToRfc822: "message-1",
-  defaultAlias: "field@adventuresci.org"
+  defaultAlias: "field@adventuresci.org",
 };
 
 describe("stage3 composer ui helpers", () => {
@@ -26,19 +27,19 @@ describe("stage3 composer ui helpers", () => {
     const opened = reduceComposerPane(
       { mode: "closed" },
       {
-        type: "open-new-draft"
-      }
+        type: "open-new-draft",
+      },
     );
     const closed = reduceComposerPane(opened, {
-      type: "close"
+      type: "close",
     });
 
     expect(opened).toEqual({
       mode: "new-draft",
-      initialTab: "email"
+      initialTab: "email",
     } satisfies ComposerPaneState);
     expect(closed).toEqual({
-      mode: "closed"
+      mode: "closed",
     } satisfies ComposerPaneState);
   });
 
@@ -47,26 +48,51 @@ describe("stage3 composer ui helpers", () => {
       { mode: "closed" },
       {
         type: "open-reply",
-        replyContext
-      }
+        replyContext,
+      },
     );
 
     expect(replying).toEqual({
       mode: "replying",
       replyContext,
-      initialTab: "email"
+      initialTab: "email",
     } satisfies ComposerPaneState);
+  });
+
+  it("derives minimized composer labels from the active composer pane", () => {
+    expect(
+      resolveFloatingComposerLabel({
+        mode: "new-draft",
+        initialTab: "email",
+      }),
+    ).toBe("New message");
+
+    expect(
+      resolveFloatingComposerLabel({
+        mode: "replying",
+        replyContext,
+        initialTab: "email",
+      }),
+    ).toBe("Re: Trip logistics");
+
+    expect(
+      resolveFloatingComposerLabel({
+        mode: "replying",
+        replyContext,
+        initialTab: "note",
+      }),
+    ).toBe("Note about Alice Smith");
   });
 
   it("accepts an unmatched valid email as an external recipient", () => {
     expect(
       resolveTypedEmailRecipient({
         query: "outside@example.com",
-        results: []
-      })
+        results: [],
+      }),
     ).toEqual({
       kind: "email",
-      emailAddress: "outside@example.com"
+      emailAddress: "outside@example.com",
     });
 
     expect(
@@ -74,10 +100,10 @@ describe("stage3 composer ui helpers", () => {
         query: "alice@example.com",
         results: [
           {
-            primaryEmail: "alice@example.com"
-          }
-        ]
-      })
+            primaryEmail: "alice@example.com",
+          },
+        ],
+      }),
     ).toBeNull();
   });
 
@@ -85,15 +111,15 @@ describe("stage3 composer ui helpers", () => {
     expect(
       formatContactRecipientLabel({
         displayName: "Alice Smith",
-        primaryEmail: "alice@example.com"
-      })
+        primaryEmail: "alice@example.com",
+      }),
     ).toBe("Alice Smith (alice@example.com)");
 
     expect(
       formatContactRecipientLabel({
         displayName: "Alice Smith",
-        primaryEmail: null
-      })
+        primaryEmail: null,
+      }),
     ).toBe("Alice Smith");
   });
 
@@ -102,7 +128,7 @@ describe("stage3 composer ui helpers", () => {
       resolveDefaultAlias({
         recipient: {
           kind: "contact",
-          primaryProjectName: "Coastal Survey"
+          primaryProjectName: "Coastal Survey",
         },
         aliases: [
           {
@@ -110,10 +136,10 @@ describe("stage3 composer ui helpers", () => {
             alias: "coastal@adventuresci.org",
             projectId: "project-1",
             projectName: "Coastal Survey",
-            isAiReady: true
-          }
-        ]
-      })
+            isAiReady: true,
+          },
+        ],
+      }),
     ).toBe("coastal@adventuresci.org");
 
     expect(
@@ -123,21 +149,21 @@ describe("stage3 composer ui helpers", () => {
         selectedAlias: "coastal@adventuresci.org",
         subject: "Hello",
         body: "Body",
-        isSending: false
-      })
+        isSending: false,
+      }),
     ).toBe(true);
 
     expect(
       isComposerSendDisabled({
         activeTab: "email",
         recipient: {
-          kind: "email"
+          kind: "email",
         },
         selectedAlias: "coastal@adventuresci.org",
         subject: "Hello",
         body: "",
-        isSending: false
-      })
+        isSending: false,
+      }),
     ).toBe(true);
   });
 
