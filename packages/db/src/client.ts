@@ -42,3 +42,31 @@ export function createDatabaseConnection(rawConfig: DatabaseConfig): DatabaseCon
 export async function closeDatabaseConnection(connection: DatabaseConnection): Promise<void> {
   await connection.sql.end({ timeout: 5 });
 }
+
+/**
+ * Eagerly opens N connections in the pool by issuing N parallel trivial
+ * queries. Use at server boot (e.g. via Next.js instrumentation.ts) so the
+ * first user request doesn't pay the connection-handshake cost.
+ *
+ * Errors are swallowed and logged — DB warm-up failure should never crash
+ * the server. The next real query will retry the connection naturally.
+ */
+export async function warmConnectionPool(
+  connection: Pick<DatabaseConnection, "sql">,
+  count: number,
+): Promise<void> {
+  if (count <= 0) {
+    return;
+  }
+  const probes = Array.from({ length: count }, async (_, index) => {
+    try {
+      await connection.sql`select 1`;
+    } catch (error) {
+      console.warn(
+        `[db] warm-up probe ${String(index + 1)}/${String(count)} failed:`,
+        error,
+      );
+    }
+  });
+  await Promise.all(probes);
+}
