@@ -30,7 +30,9 @@ import {
   TYPE,
 } from "@/app/_lib/design-tokens-v2";
 import {
+  FilterIcon,
   InboxIcon,
+  LoaderIcon,
   PencilIcon,
   SearchIcon,
   SearchXIcon,
@@ -74,6 +76,7 @@ export function InboxList({
   );
   const [currentList, setCurrentList] = useState(initialList);
   const [queueError, setQueueError] = useState<string | null>(null);
+  const [isFilterPaneOpen, setFilterPaneOpen] = useState(false);
   const [isFilterTransitionPending, startFilterTransition] = useTransition();
   const activeRequestIdRef = useRef(0);
   const listViewportRef = useRef<HTMLDivElement | null>(null);
@@ -317,6 +320,9 @@ export function InboxList({
   const isLoadingMore =
     isQueueLoading && pendingAppendCursorRef.current !== null;
   const activeProjects = currentList.activeProjects;
+  const hasActiveFilters = activeFilter !== "all" || selectedProjectId !== null;
+  const isSearchInFlight =
+    search.isActive && isQueueLoading && normalizedQuery.length > 0;
 
   const handleFilterChange = useCallback(
     (id: InboxFilterId) => {
@@ -349,6 +355,10 @@ export function InboxList({
     },
     [pathname, router, searchParams, startFilterTransition],
   );
+
+  const toggleFilterPane = useCallback(() => {
+    setFilterPaneOpen((isOpen) => !isOpen);
+  }, []);
 
   useEffect(() => {
     const root = listViewportRef.current;
@@ -432,6 +442,36 @@ export function InboxList({
           >
             <PencilIcon aria-hidden="true" data-icon="inline-start" />
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Filters"
+            aria-controls="inbox-filter-list"
+            aria-expanded={isFilterPaneOpen}
+            title="Filters"
+            onClick={toggleFilterPane}
+            className={cn(
+              "relative h-8 w-8 shrink-0",
+              isFilterPaneOpen
+                ? "bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+                : hasActiveFilters
+                  ? "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+            )}
+          >
+            <FilterIcon aria-hidden="true" data-icon="inline-start" />
+            {hasActiveFilters ? (
+              <span
+                aria-hidden="true"
+                data-filter-active-indicator="true"
+                className={cn(
+                  "absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-sky-500 ring-2",
+                  isFilterPaneOpen ? "ring-slate-900" : "ring-white",
+                )}
+              />
+            ) : null}
+          </Button>
         </div>
 
         <div className="px-5 pb-3 pt-3">
@@ -451,7 +491,18 @@ export function InboxList({
               }}
               className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
             />
-            {search.isActive ? (
+            {isSearchInFlight ? (
+              <span
+                role="status"
+                aria-label="Search loading"
+                className="inline-flex h-4 w-4 items-center justify-center"
+              >
+                <LoaderIcon
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 animate-spin text-slate-400"
+                />
+              </span>
+            ) : search.isActive ? (
               <button
                 type="button"
                 aria-label="Clear search"
@@ -470,8 +521,9 @@ export function InboxList({
           </label>
         </div>
 
-        <div className="border-t border-slate-100">
+        {isFilterPaneOpen ? (
           <InboxFilterList
+            id="inbox-filter-list"
             filters={currentList.filters}
             activeFilter={activeFilter}
             onFilterChange={handleFilterChange}
@@ -479,7 +531,7 @@ export function InboxList({
             selectedProjectId={selectedProjectId}
             onProjectChange={handleProjectChange}
           />
-        </div>
+        ) : null}
 
         {queueError ? (
           <div className="border-t border-rose-100 bg-rose-50 px-5 py-2 text-xs text-rose-700">
