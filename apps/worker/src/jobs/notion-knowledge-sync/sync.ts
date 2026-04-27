@@ -89,9 +89,8 @@ export function readNotionKnowledgeSyncConfig(
 }
 
 function parseNotionPageId(url: string): string | null {
-  const match = url.match(
-    /([0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/iu,
-  );
+  const match =
+    /([0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/iu.exec(url);
 
   if (match === null) {
     return null;
