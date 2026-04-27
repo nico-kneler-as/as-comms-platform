@@ -29,7 +29,7 @@ interface RowProps {
 export function InboxRow({ item, isActive }: RowProps) {
   const router = useRouter();
   const prefetchedRef = useRef(false);
-  const isUnread = item.bucket === "new";
+  const isUnread = item.isUnread;
   // Dot appears when the thread needs operator attention: either unread
   // (border line also appears) or opened-but-unanswered (only the dot).
   // When both apply (fresh inbound, not yet opened), both show.

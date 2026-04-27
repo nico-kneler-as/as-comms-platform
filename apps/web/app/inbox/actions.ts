@@ -1600,6 +1600,19 @@ async function updateInboxBucket(
     };
   }
 
+  if (bucket === "Opened") {
+    await appendSecurityAudit({
+      actorType: "user",
+      actorId: currentUser.id,
+      action: "inbox.attention.read",
+      entityType: "contact",
+      entityId: contactId,
+      result: "recorded",
+      policyCode: "inbox.shared_read_state",
+      metadataJson: {},
+    });
+  }
+
   revalidateInboxContact(contactId);
 
   return {
