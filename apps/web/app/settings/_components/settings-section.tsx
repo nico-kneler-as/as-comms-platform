@@ -10,6 +10,7 @@ interface FeedbackState {
 interface SettingsSectionProps {
   readonly id: string;
   readonly title: string;
+  readonly description?: string;
   readonly action?: ReactNode;
   readonly feedback?: FeedbackState | null;
   readonly children: ReactNode;
@@ -25,6 +26,7 @@ interface SettingsSectionProps {
 export function SettingsSection({
   id,
   title,
+  description,
   action,
   feedback,
   children
@@ -38,12 +40,17 @@ export function SettingsSection({
       className="flex min-w-0 flex-col gap-4"
     >
       <header className="flex flex-wrap items-center justify-between gap-4">
-        <h2
-          id={headingId}
-          className="text-lg font-semibold tracking-tight text-slate-950"
-        >
-          {title}
-        </h2>
+        <div className="min-w-0">
+          <h2
+            id={headingId}
+            className="text-lg font-semibold tracking-tight text-slate-950"
+          >
+            {title}
+          </h2>
+          {description ? (
+            <p className="mt-0.5 text-sm text-slate-500">{description}</p>
+          ) : null}
+        </div>
         {action ? (
           <div className="flex shrink-0 items-center gap-2">{action}</div>
         ) : null}

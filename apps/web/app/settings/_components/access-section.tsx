@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { UserPlus } from "lucide-react";
+import { Fragment, useState, useTransition } from "react";
+import { Pencil, UserPlus } from "lucide-react";
 
-import { RADIUS, SHADOW, TYPE, TRANSITION } from "@/app/_lib/design-tokens-v2";
+import { RADIUS, SHADOW, TRANSITION, TYPE } from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { ToneAvatar } from "@/components/ui/tone-avatar";
 import { cn } from "@/lib/utils";
 import type {
@@ -34,7 +33,8 @@ const AVATAR_TONES = [
 ] as const;
 
 type AvatarTone = (typeof AVATAR_TONES)[number];
-type PendingAction = "promote" | "demote" | "deactivate" | "reactivate";
+type ManagedRole = "admin" | "internal_user";
+type EditStatus = "active" | "pending" | "inactive";
 
 interface FeedbackState {
   readonly kind: "success" | "error";
@@ -63,45 +63,16 @@ function toneFor(user: UserRowViewModel): AvatarTone {
   return tone ?? ("slate" as AvatarTone);
 }
 
-function formatRelative(iso: string | null): string {
-  if (iso === null) return "Never";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "—";
-  const now = Date.now();
-  const diffMs = now - then;
-  if (diffMs < 0) return "Just now";
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${String(minutes)}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${String(hours)}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${String(days)}d ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${String(months)}mo ago`;
-  const years = Math.floor(days / 365);
-  return `${String(years)}y ago`;
-}
-
 function sortUsers(
   rows: readonly UserRowViewModel[],
   currentUserId: string | null,
 ): readonly UserRowViewModel[] {
-  const statusRank = {
-    active: 0,
-    pending: 1,
-    deactivated: 2,
-  } as const;
-
+  const statusRank = { active: 0, pending: 1, deactivated: 2 } as const;
   return [...rows].sort((left, right) => {
     if (left.userId === currentUserId) return -1;
     if (right.userId === currentUserId) return 1;
-
     const statusDelta = statusRank[left.status] - statusRank[right.status];
-    if (statusDelta !== 0) {
-      return statusDelta;
-    }
-
+    if (statusDelta !== 0) return statusDelta;
     return left.displayName.localeCompare(right.displayName);
   });
 }
@@ -119,18 +90,22 @@ function mergeUserRow(
     status: nextUser.status,
     lastActiveAt: nextUser.lastActiveAt,
   };
-
   const nextRows = rows.some((row) => row.userId === nextRow.userId)
     ? rows.map((row) => (row.userId === nextRow.userId ? nextRow : row))
     : [nextRow, ...rows];
-
   return sortUsers(nextRows, currentUserId);
 }
 
 function buildIdFormData(id: string): FormData {
-  const formData = new FormData();
-  formData.set("id", id);
-  return formData;
+  const fd = new FormData();
+  fd.set("id", id);
+  return fd;
+}
+
+function userStatusToEditStatus(status: UserRowViewModel["status"]): EditStatus {
+  if (status === "deactivated") return "inactive";
+  if (status === "pending") return "pending";
+  return "active";
 }
 
 export function AccessSection({
@@ -146,11 +121,12 @@ export function AccessSection({
   );
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
-  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   const activeAdminCount = rows.filter(
-    (user) => user.role === "admin" && user.status !== "deactivated",
+    (u) => u.role === "admin" && u.status !== "deactivated",
   ).length;
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
@@ -164,44 +140,76 @@ export function AccessSection({
     setRows((current) => mergeUserRow(current, user, viewModel.currentUserId));
   }
 
-  function handleUserAction(action: PendingAction, user: UserRowViewModel) {
+  function handleSaveEdit(
+    user: UserRowViewModel,
+    nextRole: ManagedRole,
+    nextStatus: EditStatus,
+  ) {
+    const roleChanged = nextRole !== user.role;
+    const currentStatus = userStatusToEditStatus(user.status);
+    const statusChanged = nextStatus !== currentStatus && user.status !== "pending";
+
+    if (!roleChanged && !statusChanged) {
+      setEditingUserId(null);
+      return;
+    }
+
     startTransition(async () => {
-      setPendingKey(`${action}:${user.userId}`);
+      setSavingUserId(user.userId);
 
-      const result =
-        action === "promote"
-          ? await promoteUserAction(buildIdFormData(user.userId))
-          : action === "demote"
-            ? await demoteUserAction(buildIdFormData(user.userId))
-            : action === "deactivate"
-              ? await deactivateUserAction(buildIdFormData(user.userId))
-              : await reactivateUserAction(buildIdFormData(user.userId));
-
-      setPendingKey(null);
-
-      if (!result.ok) {
-        announce(result.message, "error");
-        return;
+      if (roleChanged) {
+        const result =
+          nextRole === "admin"
+            ? await promoteUserAction(buildIdFormData(user.userId))
+            : await demoteUserAction(buildIdFormData(user.userId));
+        if (!result.ok) {
+          announce(result.message, "error");
+          setSavingUserId(null);
+          return;
+        }
+        commitUser(result.data.user);
       }
 
-      commitUser(result.data.user);
+      if (statusChanged) {
+        const result =
+          nextStatus === "inactive"
+            ? await deactivateUserAction(buildIdFormData(user.userId))
+            : await reactivateUserAction(buildIdFormData(user.userId));
+        if (!result.ok) {
+          announce(result.message, "error");
+          setSavingUserId(null);
+          return;
+        }
+        commitUser(result.data.user);
+      }
+
       announce(
-        action === "promote"
-          ? `${result.data.user.email} is now an admin.`
-          : action === "demote"
-            ? `${result.data.user.email} is now an operator.`
-            : action === "deactivate"
-              ? `${result.data.user.email} has been deactivated.`
-              : `${result.data.user.email} has been reactivated.`,
+        roleChanged && statusChanged
+          ? `${user.email} updated.`
+          : roleChanged
+            ? nextRole === "admin"
+              ? `${user.email} is now an admin.`
+              : `${user.email} is now an operator.`
+            : nextStatus === "inactive"
+              ? `${user.email} has been deactivated.`
+              : `${user.email} has been reactivated.`,
       );
+      setSavingUserId(null);
+      setEditingUserId(null);
     });
   }
 
+  const colCount = viewModel.isAdmin ? 4 : 3;
+
   return (
-    <SettingsSection id="settings-access" title="Access">
-      <div className="flex flex-col gap-4">
-        {viewModel.isAdmin ? (
-          <div className="flex justify-end">
+    <SettingsSection
+      id="settings-access"
+      title="Access"
+      description="Teammates, roles, and deactivated accounts"
+      feedback={feedback}
+      action={
+        viewModel.isAdmin ? (
+          <>
             <Button
               type="button"
               onClick={() => {
@@ -217,98 +225,67 @@ export function AccessSection({
                 setInviteModalOpen(false);
               }}
             />
-          </div>
-        ) : null}
-
-        {feedback ? (
-          <div
-            role="status"
-            aria-live="polite"
-            className={cn(
-              "rounded-md px-3 py-2 text-sm",
-              feedback.kind === "success"
-                ? "bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200"
-                : "bg-rose-50 text-rose-800 ring-1 ring-inset ring-rose-200",
-            )}
-          >
-            {feedback.message}
-          </div>
-        ) : null}
-
-        <div
-          className={cn(
-            "overflow-hidden",
-            RADIUS.lg,
-            "border border-slate-200 bg-white",
-            SHADOW.sm,
-          )}
-        >
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50/80">
-              <tr>
+          </>
+        ) : null
+      }
+    >
+      <div
+        className={cn(
+          "overflow-hidden",
+          RADIUS.lg,
+          "border border-slate-200 bg-white",
+          SHADOW.sm,
+        )}
+      >
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50/80">
+            <tr>
+              <th
+                scope="col"
+                className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
+              >
+                Teammate
+              </th>
+              <th
+                scope="col"
+                className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
+              >
+                Role
+              </th>
+              <th
+                scope="col"
+                className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
+              >
+                Status
+              </th>
+              {viewModel.isAdmin ? (
                 <th
                   scope="col"
-                  className={cn(
-                    "px-5 py-3 text-left",
-                    TYPE.label,
-                    "tracking-wider",
-                  )}
+                  className={cn("w-14 px-5 py-3 text-left", TYPE.label, "tracking-wider")}
                 >
-                  Teammate
+                  Edit
                 </th>
-                <th
-                  scope="col"
-                  className={cn(
-                    "px-5 py-3 text-left",
-                    TYPE.label,
-                    "tracking-wider",
-                  )}
-                >
-                  Role
-                </th>
-                <th
-                  scope="col"
-                  className={cn(
-                    "px-5 py-3 text-left",
-                    TYPE.label,
-                    "tracking-wider",
-                  )}
-                >
-                  Last active
-                </th>
-                {viewModel.isAdmin ? (
-                  <th
-                    scope="col"
-                    className={cn(
-                      "px-5 py-3 text-left",
-                      TYPE.label,
-                      "tracking-wider",
-                    )}
-                  >
-                    Actions
-                  </th>
-                ) : null}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((user) => {
-                const isSelf = user.userId === viewModel.currentUserId;
-                const pendingActionKey = pendingKey?.endsWith(user.userId)
-                  ? pendingKey
-                  : null;
-                const isOnlyActiveAdmin =
-                  user.role === "admin" &&
-                  user.status !== "deactivated" &&
-                  activeAdminCount <= 1;
+              ) : null}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((user) => {
+              const isSelf = user.userId === viewModel.currentUserId;
+              const isEditing = editingUserId === user.userId;
+              const isSaving = savingUserId === user.userId;
+              const isOnlyActiveAdmin =
+                user.role === "admin" &&
+                user.status !== "deactivated" &&
+                activeAdminCount <= 1;
 
-                return (
+              return (
+                <Fragment key={user.userId}>
                   <tr
-                    key={user.userId}
                     className={cn(
                       TRANSITION.fast,
-                      "hover:bg-slate-50/80",
-                      user.status === "deactivated" && "bg-slate-50/60",
-                      pendingActionKey && "opacity-60",
+                      !isEditing && "hover:bg-slate-50/80",
+                      user.status === "deactivated" && "bg-slate-50/40",
+                      isSaving && "opacity-60",
                     )}
                   >
                     <td className="px-5 py-3">
@@ -331,9 +308,7 @@ export function AccessSection({
                               {user.displayName}
                             </p>
                             {isSelf ? (
-                              <span
-                                className={cn(TYPE.micro, "text-slate-400")}
-                              >
+                              <span className={cn(TYPE.micro, "text-slate-400")}>
                                 (you)
                               </span>
                             ) : null}
@@ -351,147 +326,323 @@ export function AccessSection({
                       </div>
                     </td>
                     <td className="px-5 py-3 align-middle">
-                      <div className="flex items-center gap-2">
-                        <RoleBadge role={user.role} />
-                        <UserStatusBadge status={user.status} />
-                      </div>
+                      <RoleBadge role={user.role} />
                     </td>
                     <td className="px-5 py-3 align-middle">
-                      <span
-                        className={cn(
-                          "tabular-nums",
-                          TYPE.bodySm,
-                          "text-slate-600",
-                        )}
-                      >
-                        {formatRelative(user.lastActiveAt)}
-                      </span>
+                      <StatusDot status={user.status} />
                     </td>
                     {viewModel.isAdmin ? (
                       <td className="px-5 py-3 align-middle">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {isSelf ? (
-                            <span className={TYPE.caption}>
-                              Current session
-                            </span>
-                          ) : user.status === "deactivated" ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={pendingActionKey !== null}
-                              onClick={() => {
-                                handleUserAction("reactivate", user);
-                              }}
-                            >
-                              Reactivate
-                            </Button>
-                          ) : (
-                            <>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                disabled={
-                                  pendingActionKey !== null || isOnlyActiveAdmin
-                                }
-                                onClick={() => {
-                                  handleUserAction(
-                                    user.role === "admin"
-                                      ? "demote"
-                                      : "promote",
-                                    user,
-                                  );
-                                }}
-                              >
-                                {user.role === "admin"
-                                  ? "Make operator"
-                                  : "Make admin"}
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                disabled={
-                                  pendingActionKey !== null || isOnlyActiveAdmin
-                                }
-                                onClick={() => {
-                                  handleUserAction("deactivate", user);
-                                }}
-                              >
-                                Deactivate
-                              </Button>
-                            </>
-                          )}
-                          {isOnlyActiveAdmin ? (
-                            <span className={TYPE.caption}>
-                              Keep one active admin
-                            </span>
-                          ) : null}
-                        </div>
+                        {!isSelf ? (
+                          <button
+                            type="button"
+                            aria-label={`Edit ${user.displayName}`}
+                            aria-expanded={isEditing}
+                            disabled={isSaving}
+                            onClick={() => {
+                              setEditingUserId(isEditing ? null : user.userId);
+                            }}
+                            className={cn(
+                              "rounded p-1.5 transition-colors duration-100",
+                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1",
+                              "disabled:cursor-not-allowed disabled:opacity-40",
+                              isEditing
+                                ? "bg-slate-900 text-white"
+                                : "text-slate-400 hover:bg-slate-100 hover:text-slate-700",
+                            )}
+                          >
+                            <Pencil className="size-3.5" aria-hidden="true" />
+                          </button>
+                        ) : (
+                          <span className={cn(TYPE.micro, "text-slate-300")}>—</span>
+                        )}
                       </td>
                     ) : null}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                  {isEditing ? (
+                    <tr>
+                      <td
+                        colSpan={colCount}
+                        className="border-t border-slate-100 bg-slate-50/60 px-5 py-5"
+                      >
+                        <RowEditPanel
+                          user={user}
+                          isOnlyActiveAdmin={isOnlyActiveAdmin}
+                          isSaving={isSaving}
+                          onCancel={() => {
+                            setEditingUserId(null);
+                          }}
+                          onSave={(nextRole, nextStatus) => {
+                            handleSaveEdit(user, nextRole, nextStatus);
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </SettingsSection>
   );
 }
 
+// ---- Role badge ----
+
 function RoleBadge({ role }: { readonly role: "admin" | "internal_user" }) {
-  if (role === "admin") {
-    return (
-      <StatusBadge
-        label="Admin"
-        colorClasses="bg-indigo-50 text-indigo-700 ring-indigo-200"
-        variant="soft"
-      />
-    );
-  }
+  const isAdmin = role === "admin";
   return (
-    <StatusBadge
-      label="Operator"
-      colorClasses="bg-slate-100 text-slate-700 ring-slate-200"
-      variant="soft"
-    />
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+        isAdmin
+          ? "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200"
+          : "bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200",
+      )}
+    >
+      {isAdmin ? "Admin" : "Operator"}
+    </span>
   );
 }
 
-function UserStatusBadge({
-  status,
-}: {
-  readonly status: UserRowViewModel["status"];
-}) {
-  if (status === "active") {
-    return (
-      <StatusBadge
-        label="Active"
-        colorClasses="bg-emerald-50 text-emerald-700 ring-emerald-200"
-        variant="soft"
-        className="inline-flex items-center gap-1.5 before:inline-block before:size-1.5 before:rounded-full before:bg-emerald-500 before:content-['']"
-      />
-    );
-  }
+// ---- Status dot ----
 
-  if (status === "pending") {
-    return (
-      <StatusBadge
-        label="Pending"
-        colorClasses="bg-amber-50 text-amber-800 ring-amber-200"
-        variant="soft"
-      />
-    );
-  }
+function StatusDot({ status }: { readonly status: UserRowViewModel["status"] }) {
+  const config =
+    status === "active"
+      ? { dot: "bg-emerald-500", text: "text-emerald-700", label: "Active" }
+      : status === "pending"
+        ? { dot: "bg-amber-400", text: "text-amber-700", label: "Pending" }
+        : { dot: "bg-slate-300", text: "text-slate-500", label: "Inactive" };
 
   return (
-    <StatusBadge
-      label="Deactivated"
-      colorClasses="bg-slate-100 text-slate-600 ring-slate-200"
-      variant="soft"
-    />
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        aria-hidden="true"
+        className={cn("size-1.5 rounded-full", config.dot)}
+      />
+      <span
+        className={cn(
+          "text-[12px] font-medium uppercase tracking-wide",
+          config.text,
+        )}
+      >
+        {config.label}
+      </span>
+    </span>
+  );
+}
+
+// ---- Inline row edit panel ----
+
+interface RoleOption {
+  readonly value: ManagedRole;
+  readonly label: string;
+  readonly description: string;
+}
+
+interface StatusOption {
+  readonly value: EditStatus;
+  readonly label: string;
+  readonly description: string;
+  readonly dotClass: string;
+}
+
+const ROLE_OPTIONS: readonly RoleOption[] = [
+  {
+    value: "admin",
+    label: "Admin",
+    description: "Full access — manage projects, teammates, and integrations.",
+  },
+  {
+    value: "internal_user",
+    label: "Operator",
+    description: "Read, reply, and manage conversations. Cannot change settings.",
+  },
+];
+
+const STATUS_OPTIONS: readonly StatusOption[] = [
+  {
+    value: "active",
+    label: "Active",
+    description: "Can sign in and use the workspace.",
+    dotClass: "bg-emerald-500",
+  },
+  {
+    value: "pending",
+    label: "Pending",
+    description: "Invite sent; linking on first Google sign-in.",
+    dotClass: "bg-amber-400",
+  },
+  {
+    value: "inactive",
+    label: "Inactive",
+    description: "Signed out; history preserved, no new access.",
+    dotClass: "bg-slate-300",
+  },
+];
+
+interface RowEditPanelProps {
+  readonly user: UserRowViewModel;
+  readonly isOnlyActiveAdmin: boolean;
+  readonly isSaving: boolean;
+  readonly onCancel: () => void;
+  readonly onSave: (role: ManagedRole, status: EditStatus) => void;
+}
+
+function RowEditPanel({
+  user,
+  isOnlyActiveAdmin,
+  isSaving,
+  onCancel,
+  onSave,
+}: RowEditPanelProps) {
+  const [selectedRole, setSelectedRole] = useState<ManagedRole>(user.role);
+  const [selectedStatus, setSelectedStatus] = useState<EditStatus>(
+    userStatusToEditStatus(user.status),
+  );
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-2 gap-5">
+        {/* Role picker */}
+        <div className="flex flex-col gap-2.5">
+          <p className={cn(TYPE.label, "uppercase tracking-wider text-slate-500")}>
+            Role
+          </p>
+          <div className="flex flex-col gap-2" role="radiogroup" aria-label="Role">
+            {ROLE_OPTIONS.map((option) => {
+              const isSelected = selectedRole === option.value;
+              const disabled =
+                isSaving ||
+                (option.value === "internal_user" && isOnlyActiveAdmin);
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  disabled={disabled}
+                  onClick={() => {
+                    setSelectedRole(option.value);
+                  }}
+                  className={cn(
+                    "flex items-start gap-3 rounded-lg border bg-white p-3 text-left text-sm",
+                    "transition-colors duration-100",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1",
+                    "disabled:cursor-not-allowed disabled:opacity-50",
+                    isSelected
+                      ? "border-slate-900 ring-1 ring-slate-900"
+                      : "border-slate-200 hover:border-slate-300",
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+                      isSelected ? "border-slate-900" : "border-slate-300",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "size-2 rounded-full",
+                        isSelected ? "bg-slate-900" : "bg-transparent",
+                      )}
+                    />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block font-semibold text-slate-900">
+                      {option.label}
+                    </span>
+                    <span className={cn("mt-0.5 block", TYPE.caption)}>
+                      {option.description}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Status picker */}
+        <div className="flex flex-col gap-2.5">
+          <p className={cn(TYPE.label, "uppercase tracking-wider text-slate-500")}>
+            Status
+          </p>
+          <div className="flex flex-col gap-2" role="radiogroup" aria-label="Status">
+            {STATUS_OPTIONS.map((option) => {
+              const isSelected = selectedStatus === option.value;
+              const isPendingOption = option.value === "pending";
+              const disabled =
+                isSaving ||
+                isPendingOption; // Pending can't be set manually — it clears on first sign-in
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  disabled={disabled}
+                  onClick={() => {
+                    if (!isPendingOption) {
+                      setSelectedStatus(option.value);
+                    }
+                  }}
+                  className={cn(
+                    "flex items-start gap-3 rounded-lg border bg-white p-3 text-left text-sm",
+                    "transition-colors duration-100",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1",
+                    "disabled:cursor-not-allowed disabled:opacity-50",
+                    isSelected
+                      ? "border-slate-900 ring-1 ring-slate-900"
+                      : "border-slate-200 hover:border-slate-300",
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "mt-1 size-2 shrink-0 rounded-full",
+                      option.dotClass,
+                    )}
+                  />
+                  <span className="min-w-0">
+                    <span className="block font-semibold text-slate-900">
+                      {option.label}
+                    </span>
+                    <span className={cn("mt-0.5 block", TYPE.caption)}>
+                      {option.description}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={isSaving}
+          onClick={onCancel}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={isSaving}
+          onClick={() => {
+            onSave(selectedRole, selectedStatus);
+          }}
+        >
+          {isSaving ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
+    </div>
   );
 }
