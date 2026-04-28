@@ -385,6 +385,7 @@ export const identityResolutionSchema = z
     status: reviewCaseStatusSchema,
     openedAt: timestampSchema,
     resolvedAt: optionalTimestampSchema,
+    lastAttemptedAt: optionalTimestampSchema.optional(),
     normalizedIdentityValues: stringArraySchema.default([]),
     anchoredContactId: optionalIdSchema,
     explanation: z.string().min(1),

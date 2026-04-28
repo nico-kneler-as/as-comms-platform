@@ -2061,7 +2061,11 @@ function createStage1RepositoriesInternal(
               eq(identityResolutionQueue.status, "open"),
             ),
           )
-          .orderBy(asc(identityResolutionQueue.openedAt));
+          .orderBy(
+            sql`${identityResolutionQueue.lastAttemptedAt} nulls first`,
+            asc(identityResolutionQueue.openedAt),
+            asc(identityResolutionQueue.id),
+          );
 
         return rows.map(mapIdentityResolutionRow);
       },
@@ -2101,6 +2105,7 @@ function createStage1RepositoriesInternal(
               status: values.status,
               openedAt: values.openedAt,
               resolvedAt: values.resolvedAt,
+              lastAttemptedAt: values.lastAttemptedAt,
               normalizedIdentityValues: values.normalizedIdentityValues,
               anchoredContactId: values.anchoredContactId,
               explanation: values.explanation,

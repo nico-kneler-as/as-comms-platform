@@ -714,6 +714,7 @@ export function mapIdentityResolutionRow(
     status: row.status,
     openedAt: row.openedAt.toISOString(),
     resolvedAt: fromDate(row.resolvedAt),
+    lastAttemptedAt: fromDate(row.lastAttemptedAt),
     normalizedIdentityValues: row.normalizedIdentityValues,
     anchoredContactId: row.anchoredContactId,
     explanation: row.explanation,
@@ -733,6 +734,8 @@ export function mapIdentityResolutionToInsert(
     status: parsed.status,
     openedAt: toDate(parsed.openedAt),
     resolvedAt: parsed.resolvedAt === null ? null : toDate(parsed.resolvedAt),
+    lastAttemptedAt:
+      parsed.lastAttemptedAt == null ? null : toDate(parsed.lastAttemptedAt),
     normalizedIdentityValues: [...parsed.normalizedIdentityValues],
     anchoredContactId: parsed.anchoredContactId,
     explanation: parsed.explanation,

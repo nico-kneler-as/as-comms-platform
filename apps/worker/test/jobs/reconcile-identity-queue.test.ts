@@ -61,6 +61,42 @@ async function seedStoredGmailCase(
   return caseId;
 }
 
+async function seedBrokenStoredGmailCase(
+  context: TestWorkerContext,
+  input: {
+    readonly recordId: string;
+    readonly email: string;
+    readonly occurredAt: string;
+    readonly receivedAt: string;
+  }
+): Promise<void> {
+  const sourceEvidenceId = `source-evidence:gmail:message:${input.recordId}`;
+
+  await context.repositories.sourceEvidence.append({
+    id: sourceEvidenceId,
+    provider: "gmail",
+    providerRecordType: "message",
+    providerRecordId: input.recordId,
+    receivedAt: input.receivedAt,
+    occurredAt: input.occurredAt,
+    payloadRef: `capture://gmail/${input.recordId}`,
+    idempotencyKey: `source-evidence:gmail:message:${input.recordId}`,
+    checksum: `checksum:${input.recordId}`
+  });
+  await context.repositories.identityResolutionQueue.upsert({
+    id: `identity-review:${sourceEvidenceId}:identity_missing_anchor`,
+    sourceEvidenceId,
+    candidateContactIds: [],
+    reasonCode: "identity_missing_anchor",
+    status: "open",
+    openedAt: input.receivedAt,
+    resolvedAt: null,
+    normalizedIdentityValues: [input.email],
+    anchoredContactId: null,
+    explanation: "Seeded broken scheduled reconcile case."
+  });
+}
+
 describe("reconcile identity queue task", () => {
   it("reconciles open cases up to the configured limit and logs the report", async () => {
     const context = await createTestWorkerContext();
@@ -122,6 +158,80 @@ describe("reconcile identity queue task", () => {
           errors: 0,
           dryRun: false
         })
+      );
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("throws on systemic per-target failure", async () => {
+    const context = await createTestWorkerContext();
+    const logger = { log: vi.fn() };
+
+    try {
+      await Promise.all([
+        seedBrokenStoredGmailCase(context, {
+          recordId: "gmail-broken-1",
+          email: "broken-1@example.org",
+          occurredAt: "2026-04-28T12:10:00.000Z",
+          receivedAt: "2026-04-28T12:10:00.000Z"
+        }),
+        seedBrokenStoredGmailCase(context, {
+          recordId: "gmail-broken-2",
+          email: "broken-2@example.org",
+          occurredAt: "2026-04-28T12:11:00.000Z",
+          receivedAt: "2026-04-28T12:11:00.000Z"
+        }),
+        seedBrokenStoredGmailCase(context, {
+          recordId: "gmail-broken-3",
+          email: "broken-3@example.org",
+          occurredAt: "2026-04-28T12:12:00.000Z",
+          receivedAt: "2026-04-28T12:12:00.000Z"
+        })
+      ]);
+
+      const taskList = createTaskList(undefined, {
+        reconcileIdentityQueue: {
+          db: context.db,
+          repositories: context.repositories,
+          capture: context.capture,
+          gmailHistoricalReplay: {
+            liveAccount: "volunteers@adventurescientists.org",
+            projectInboxAliases: ["orcas@adventurescientists.org"]
+          },
+          logger
+        }
+      });
+      const task = taskList[reconcileIdentityQueueJobName];
+
+      if (task === undefined) {
+        throw new Error("Expected reconcile identity queue task to be registered.");
+      }
+
+      await expect(task({}, {} as never)).rejects.toThrow(
+        "Identity queue reconcile made no progress and produced 3 errors."
+      );
+
+      const loggedEntries: Record<string, unknown>[] =
+        logger.log.mock.calls.map(
+          ([entry]) => JSON.parse(entry as string) as Record<string, unknown>
+        );
+
+      expect(loggedEntries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "identity_queue.reconcile.errors"
+          }),
+          expect.objectContaining({
+            event: "identity_queue.reconcile.completed",
+            scanned: 3,
+            resolved: 0,
+            created: 0,
+            skipped: 0,
+            errors: 3,
+            dryRun: false
+          })
+        ])
       );
     } finally {
       await context.dispose();

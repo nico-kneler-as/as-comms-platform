@@ -430,6 +430,10 @@ export const identityResolutionQueue = pgTable(
       mode: "date",
       withTimezone: true,
     }),
+    lastAttemptedAt: timestamp("last_attempted_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
     normalizedIdentityValues: text("normalized_identity_values")
       .array()
       .notNull()
@@ -452,6 +456,9 @@ export const identityResolutionQueue = pgTable(
       table.status,
       table.reasonCode,
     ),
+    index("identity_resolution_queue_last_attempted_idx")
+      .on(table.lastAttemptedAt, table.openedAt)
+      .where(sql`${table.status} = 'open'`),
   ],
 );
 
