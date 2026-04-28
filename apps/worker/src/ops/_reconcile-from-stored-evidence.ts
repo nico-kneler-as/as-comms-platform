@@ -1,4 +1,5 @@
 import type {
+  ContactIdentityKind,
   ExpeditionDimensionRecord,
   GmailMessageDetailRecord,
   IdentityResolutionCase,
@@ -131,6 +132,61 @@ function buildIdentityFromCase(input: {
     normalizedEmails: uniqueStrings(normalizedEmails),
     normalizedPhones: uniqueStrings(normalizedPhones)
   };
+}
+
+async function resolvePreferredSalesforceContactId(input: {
+  readonly repositories: Stage1RepositoryBundle;
+  readonly caseRecord: IdentityResolutionCase;
+  readonly provider: SourceEvidenceRecord["provider"];
+}): Promise<string | null> {
+  const identity = buildIdentityFromCase({
+    caseRecord: input.caseRecord,
+    provider: input.provider
+  });
+  const lookups: readonly {
+    readonly kind: ContactIdentityKind;
+    readonly values: readonly string[];
+  }[] = [
+    {
+      kind: "email",
+      values: identity.normalizedEmails ?? []
+    },
+    {
+      kind: "phone",
+      values: identity.normalizedPhones ?? []
+    },
+    {
+      kind: "volunteer_id_plain",
+      values: identity.volunteerIdPlainValues ?? []
+    }
+  ];
+  const matchingIdentities = (
+    await Promise.all(
+      lookups.map(({ kind, values }) =>
+        Promise.all(
+          uniqueStrings(values).map((normalizedValue) =>
+            input.repositories.contactIdentities.listByNormalizedValue({
+              kind,
+              normalizedValue
+            })
+          )
+        )
+      )
+    )
+  ).flat(2);
+  const uniqueContactIds = uniqueStrings(
+    matchingIdentities.map((identityRecord) => identityRecord.contactId)
+  );
+
+  if (uniqueContactIds.length !== 1) {
+    return null;
+  }
+
+  const [matchedContact] = await input.repositories.contacts.listByIds(
+    uniqueContactIds
+  );
+
+  return matchedContact?.salesforceContactId ?? null;
 }
 
 function requireSingleDetail<TDetail>(
@@ -287,6 +343,12 @@ export async function buildEventFromStoredData(input: {
 
   switch (input.sourceEvidence.provider) {
     case "gmail": {
+      const preferredSalesforceContactId =
+        await resolvePreferredSalesforceContactId({
+          repositories: input.repositories,
+          caseRecord: input.caseRecord,
+          provider: input.sourceEvidence.provider
+        });
       const detail = requireSingleDetail(
         (
           await input.repositories.gmailMessageDetails.listBySourceEvidenceIds([
@@ -332,7 +394,8 @@ export async function buildEventFromStoredData(input: {
         },
         identity: buildIdentityFromCase({
           caseRecord: input.caseRecord,
-          provider: input.sourceEvidence.provider
+          provider: input.sourceEvidence.provider,
+          preferredSalesforceContactId
         }),
         supportingSources: [],
         communicationClassification: {
@@ -466,6 +529,12 @@ export async function buildEventFromStoredData(input: {
       };
     }
     case "simpletexting": {
+      const preferredSalesforceContactId =
+        await resolvePreferredSalesforceContactId({
+          repositories: input.repositories,
+          caseRecord: input.caseRecord,
+          provider: input.sourceEvidence.provider
+        });
       const detail = requireSingleDetail(
         (
           await input.repositories.simpleTextingMessageDetails.listBySourceEvidenceIds([
@@ -503,7 +572,8 @@ export async function buildEventFromStoredData(input: {
         },
         identity: buildIdentityFromCase({
           caseRecord: input.caseRecord,
-          provider: input.sourceEvidence.provider
+          provider: input.sourceEvidence.provider,
+          preferredSalesforceContactId
         }),
         supportingSources: [],
         communicationClassification: {
@@ -528,6 +598,12 @@ export async function buildEventFromStoredData(input: {
       };
     }
     case "mailchimp": {
+      const preferredSalesforceContactId =
+        await resolvePreferredSalesforceContactId({
+          repositories: input.repositories,
+          caseRecord: input.caseRecord,
+          provider: input.sourceEvidence.provider
+        });
       const detail = requireSingleDetail(
         (
           await input.repositories.mailchimpCampaignActivityDetails.listBySourceEvidenceIds(
@@ -576,7 +652,8 @@ export async function buildEventFromStoredData(input: {
         },
         identity: buildIdentityFromCase({
           caseRecord: input.caseRecord,
-          provider: input.sourceEvidence.provider
+          provider: input.sourceEvidence.provider,
+          preferredSalesforceContactId
         }),
         supportingSources: [],
         mailchimpCampaignActivityDetail: detail

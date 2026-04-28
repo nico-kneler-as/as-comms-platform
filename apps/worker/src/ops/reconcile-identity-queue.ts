@@ -37,6 +37,7 @@ export interface ReconcileError {
   readonly provider?: Provider;
   readonly providerRecordType?: string;
   readonly providerRecordId?: string;
+  readonly reason: "source_evidence_missing" | "target_execution_failed";
   readonly message: string;
 }
 
@@ -156,31 +157,35 @@ async function loadOpenIdentityReconcileTargets(input: {
       )
     ).map((record) => [record.id, record] as const)
   );
-  const eligibleCases = dedupedCases.filter((caseRecord) => {
-    const sourceEvidence = sourceEvidenceById.get(caseRecord.sourceEvidenceId);
-
-    return (
-      sourceEvidence !== undefined &&
-      isSupportedReconcileCase({
-        caseRecord,
-        sourceEvidence
-      })
-    );
-  });
-  const selectedCases =
-    input.limit === undefined ? eligibleCases : eligibleCases.slice(0, input.limit);
   const targets: ReconcileTarget[] = [];
   const errors: ReconcileError[] = [];
+  const limit = input.limit ?? Number.POSITIVE_INFINITY;
+  let selectedCount = 0;
 
-  for (const caseRecord of selectedCases) {
+  for (const caseRecord of dedupedCases) {
+    if (selectedCount >= limit) {
+      break;
+    }
+
     const sourceEvidence = sourceEvidenceById.get(caseRecord.sourceEvidenceId);
 
     if (sourceEvidence === undefined) {
       errors.push({
         caseId: caseRecord.id,
         sourceEvidenceId: caseRecord.sourceEvidenceId,
+        reason: "source_evidence_missing",
         message: `Missing source evidence ${caseRecord.sourceEvidenceId} for open identity review case.`
       });
+      selectedCount += 1;
+      continue;
+    }
+
+    if (
+      !isSupportedReconcileCase({
+        caseRecord,
+        sourceEvidence
+      })
+    ) {
       continue;
     }
 
@@ -188,6 +193,7 @@ async function loadOpenIdentityReconcileTargets(input: {
       caseRecord,
       sourceEvidence
     });
+    selectedCount += 1;
   }
 
   return {
@@ -196,33 +202,68 @@ async function loadOpenIdentityReconcileTargets(input: {
   };
 }
 
-function shouldCloseOriginalCase(input: {
+function resolveOriginalCaseClosure(input: {
   readonly currentReasonCode: IdentityResolutionCase["reasonCode"];
   readonly result: NormalizedCanonicalEventResult;
-}): boolean {
+}): { readonly explanation: string } | null {
   const { currentReasonCode, result } = input;
 
   if (result.outcome === "applied" || result.outcome === "duplicate") {
-    return true;
+    return {
+      explanation: "Reconciled from stored evidence."
+    };
+  }
+
+  if (result.outcome === "skipped") {
+    return {
+      explanation:
+        "Reconciled from stored evidence; task is outside volunteer scope (no memberships for anchored contact)."
+    };
   }
 
   if (result.outcome !== "needs_identity_review") {
-    return false;
+    return null;
   }
 
-  return result.identityCase.reasonCode !== currentReasonCode;
+  if (result.identityCase.reasonCode === currentReasonCode) {
+    return null;
+  }
+
+  return {
+    explanation: "Reconciled from stored evidence."
+  };
 }
 
 async function markIdentityCaseResolved(input: {
   readonly repositories: Stage1RepositoryBundle;
   readonly caseRecord: IdentityResolutionCase;
   readonly resolvedAt: string;
+  readonly explanation: string;
 }): Promise<void> {
   await input.repositories.identityResolutionQueue.upsert({
     ...input.caseRecord,
     status: "resolved",
     resolvedAt: input.resolvedAt,
-    explanation: `${input.caseRecord.explanation} Reconciled from stored evidence.`
+    explanation: `${input.caseRecord.explanation} ${input.explanation}`
+  });
+}
+
+async function markIdentityCaseAttempted(input: {
+  readonly repositories: Stage1RepositoryBundle;
+  readonly caseId: string;
+  readonly attemptedAt: string;
+}): Promise<void> {
+  const currentCase = await input.repositories.identityResolutionQueue.findById(
+    input.caseId
+  );
+
+  if (currentCase === null) {
+    return;
+  }
+
+  await input.repositories.identityResolutionQueue.upsert({
+    ...currentCase,
+    lastAttemptedAt: input.attemptedAt
   });
 }
 
@@ -300,16 +341,17 @@ async function executeTarget(input: {
       await normalization.applyNormalizedCanonicalEvent(normalizedIntake);
     const afterContactCount = (await repositories.contacts.listAll()).length;
 
-    if (
-      shouldCloseOriginalCase({
-        currentReasonCode: currentCase.reasonCode,
-        result: normalizationResult
-      })
-    ) {
+    const closure = resolveOriginalCaseClosure({
+      currentReasonCode: currentCase.reasonCode,
+      result: normalizationResult
+    });
+
+    if (closure !== null) {
       await markIdentityCaseResolved({
         repositories,
         caseRecord: currentCase,
-        resolvedAt: processedAt
+        resolvedAt: processedAt,
+        explanation: closure.explanation
       });
     }
 
@@ -356,9 +398,22 @@ export async function reconcileIdentityQueue(
     repositories: input.repositories,
     ...(input.limit === undefined ? {} : { limit: input.limit })
   });
+
+  if (!input.dryRun) {
+    const attemptedAt = new Date().toISOString();
+
+    for (const error of initialTargets.errors) {
+      await markIdentityCaseAttempted({
+        repositories: input.repositories,
+        caseId: error.caseId,
+        attemptedAt
+      });
+    }
+  }
+
   let report: ReconcileReport = {
     dryRun: input.dryRun,
-    scanned: initialTargets.targets.length,
+    scanned: initialTargets.targets.length + initialTargets.errors.length,
     resolved: 0,
     created: 0,
     skipped: 0,
@@ -369,6 +424,14 @@ export async function reconcileIdentityQueue(
   for (const [batchIndex, batch] of batches.entries()) {
     for (const target of batch) {
       try {
+        if (!input.dryRun) {
+          await markIdentityCaseAttempted({
+            repositories: input.repositories,
+            caseId: target.caseRecord.id,
+            attemptedAt: new Date().toISOString()
+          });
+        }
+
         const execution = await executeTarget({
           db: input.db,
           target,
@@ -390,6 +453,7 @@ export async function reconcileIdentityQueue(
               provider: target.sourceEvidence.provider,
               providerRecordType: target.sourceEvidence.providerRecordType,
               providerRecordId: target.sourceEvidence.providerRecordId,
+              reason: "target_execution_failed",
               message: error instanceof Error ? error.message : String(error)
             }
           ]

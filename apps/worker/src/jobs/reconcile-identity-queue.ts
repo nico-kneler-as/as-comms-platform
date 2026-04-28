@@ -27,19 +27,24 @@ export function createReconcileIdentityQueueTask(
   const logger = dependencies.logger ?? console;
 
   return () =>
-    Promise.resolve(
-      reconcileIdentityQueue({
-        db: dependencies.db,
-        repositories: dependencies.repositories,
-        capture: dependencies.capture,
-        gmailHistoricalReplay: dependencies.gmailHistoricalReplay,
-        dryRun: false,
-        limit: 200,
-        logger: {
-          log: () => undefined
-        }
-      })
-    ).then((report) => {
+    reconcileIdentityQueue({
+      db: dependencies.db,
+      repositories: dependencies.repositories,
+      capture: dependencies.capture,
+      gmailHistoricalReplay: dependencies.gmailHistoricalReplay,
+      dryRun: false,
+      limit: 200,
+      logger
+    }).then((report) => {
+      if (report.errors.length > 0) {
+        logger.log(
+          JSON.stringify({
+            event: "identity_queue.reconcile.errors",
+            sample: report.errors.slice(0, 5)
+          })
+        );
+      }
+
       logger.log(
         JSON.stringify({
           event: "identity_queue.reconcile.completed",
@@ -51,5 +56,14 @@ export function createReconcileIdentityQueueTask(
           dryRun: report.dryRun
         })
       );
+
+      if (
+        report.errors.length > 0 &&
+        report.resolved + report.created + report.skipped === 0
+      ) {
+        throw new Error(
+          `Identity queue reconcile made no progress and produced ${report.errors.length.toString()} errors.`
+        );
+      }
     });
 }

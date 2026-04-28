@@ -39,12 +39,54 @@ async function seedExistingEmailContact(
   });
 }
 
+async function seedDurableEmailContact(
+  context: TestWorkerContext,
+  input: {
+    readonly contactId: string;
+    readonly email: string;
+    readonly displayName: string;
+    readonly salesforceContactId: string | null;
+  }
+): Promise<void> {
+  await context.repositories.contacts.upsert({
+    id: input.contactId,
+    salesforceContactId: input.salesforceContactId,
+    displayName: input.displayName,
+    primaryEmail: input.email,
+    primaryPhone: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z"
+  });
+  await context.repositories.contactIdentities.upsert({
+    id: `identity:${input.contactId}:email`,
+    contactId: input.contactId,
+    kind: "email",
+    normalizedValue: input.email,
+    isPrimary: true,
+    source: input.salesforceContactId === null ? "gmail" : "salesforce",
+    verifiedAt: "2026-01-01T00:00:00.000Z"
+  });
+
+  if (input.salesforceContactId !== null) {
+    await context.repositories.contactIdentities.upsert({
+      id: `identity:${input.contactId}:salesforce`,
+      contactId: input.contactId,
+      kind: "salesforce_contact_id",
+      normalizedValue: input.salesforceContactId,
+      isPrimary: true,
+      source: "salesforce",
+      verifiedAt: "2026-01-01T00:00:00.000Z"
+    });
+  }
+}
+
 async function seedOpenIdentityCase(
   context: TestWorkerContext,
   input: {
     readonly sourceEvidenceId: string;
     readonly normalizedIdentityValues: readonly string[];
     readonly openedAt: string;
+    readonly lastAttemptedAt?: string | null;
     readonly reasonCode?:
       | "identity_missing_anchor"
       | "identity_multi_candidate";
@@ -61,6 +103,7 @@ async function seedOpenIdentityCase(
     status: "open",
     openedAt: input.openedAt,
     resolvedAt: null,
+    lastAttemptedAt: input.lastAttemptedAt ?? null,
     normalizedIdentityValues: [...input.normalizedIdentityValues],
     anchoredContactId: null,
     explanation: "Seeded stuck identity review case for reconciliation."
@@ -76,6 +119,7 @@ async function seedStoredGmailCase(
     readonly subject: string;
     readonly occurredAt: string;
     readonly receivedAt: string;
+    readonly lastAttemptedAt?: string | null;
     readonly reasonCode?:
       | "identity_missing_anchor"
       | "identity_multi_candidate";
@@ -114,6 +158,9 @@ async function seedStoredGmailCase(
     sourceEvidenceId,
     normalizedIdentityValues: input.normalizedIdentityValues,
     openedAt: input.receivedAt,
+    ...(input.lastAttemptedAt === undefined
+      ? {}
+      : { lastAttemptedAt: input.lastAttemptedAt }),
     ...(input.reasonCode === undefined ? {} : { reasonCode: input.reasonCode }),
     ...(input.candidateContactIds === undefined
       ? {}
@@ -129,6 +176,7 @@ async function seedStoredSalesforceCase(
     readonly subject: string;
     readonly occurredAt: string;
     readonly receivedAt: string;
+    readonly eventContextSalesforceContactId?: string | null;
   }
 ): Promise<void> {
   const sourceEvidenceId =
@@ -156,7 +204,7 @@ async function seedStoredSalesforceCase(
   });
   await context.repositories.salesforceEventContext.upsert({
     sourceEvidenceId,
-    salesforceContactId: null,
+    salesforceContactId: input.eventContextSalesforceContactId ?? null,
     projectId: null,
     expeditionId: null,
     sourceField: null
@@ -381,6 +429,191 @@ describe("reconcileIdentityQueue", () => {
       await expect(
         context.repositories.canonicalEvents.countAll()
       ).resolves.toBe(4);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("reconciles `identity_missing_anchor` when current contact has populated salesforce_contact_id", async () => {
+    const context = await createTestWorkerContext();
+    const recordId = "gmail-current-anchor-1";
+    const caseId =
+      "identity-review:source-evidence:gmail:message:gmail-current-anchor-1:identity_missing_anchor";
+
+    try {
+      await seedDurableEmailContact(context, {
+        contactId: "contact_current_anchor",
+        email: "anchor-now@example.org",
+        displayName: "Anchored Contact",
+        salesforceContactId: "003-current-anchor"
+      });
+      await seedStoredGmailCase(context, {
+        recordId,
+        payloadRef: `capture://gmail/${recordId}`,
+        normalizedIdentityValues: ["anchor-now@example.org"],
+        subject: "Anchor was backfilled after case creation",
+        occurredAt: "2026-01-01T00:06:00.000Z",
+        receivedAt: "2026-01-01T00:06:00.000Z"
+      });
+
+      const report = await reconcileIdentityQueue({
+        db: context.db,
+        repositories: context.repositories,
+        capture: context.capture,
+        gmailHistoricalReplay: {
+          liveAccount: "volunteers@adventurescientists.org",
+          projectInboxAliases: ["orcas@adventurescientists.org"]
+        },
+        dryRun: false,
+        logger: {
+          log: () => undefined
+        }
+      });
+
+      expect(report).toMatchObject({
+        dryRun: false,
+        scanned: 1,
+        resolved: 1,
+        created: 0,
+        skipped: 0
+      });
+      expect(report.errors).toEqual([]);
+      await expect(
+        context.repositories.canonicalEvents.listByContactId(
+          "contact_current_anchor"
+        )
+      ).resolves.toHaveLength(1);
+      await expect(
+        context.repositories.identityResolutionQueue.findById(caseId)
+      ).resolves.toMatchObject({
+        status: "resolved"
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("closes case as `skipped_non_volunteer_task` when anchored contact has no memberships", async () => {
+    const context = await createTestWorkerContext();
+    const recordId = "sf-non-volunteer-1";
+    const caseId =
+      "identity-review:source-evidence:salesforce:task_communication:sf-non-volunteer-1:identity_missing_anchor";
+
+    try {
+      await seedDurableEmailContact(context, {
+        contactId: "contact_non_volunteer",
+        email: "donor@example.org",
+        displayName: "Non Volunteer Contact",
+        salesforceContactId: "003-non-volunteer"
+      });
+      await seedStoredSalesforceCase(context, {
+        recordId,
+        normalizedIdentityValues: [],
+        subject: "Logged outbound follow-up",
+        occurredAt: "2026-01-01T00:07:00.000Z",
+        receivedAt: "2026-01-01T00:07:00.000Z",
+        eventContextSalesforceContactId: "003-non-volunteer"
+      });
+
+      const report = await reconcileIdentityQueue({
+        db: context.db,
+        repositories: context.repositories,
+        capture: context.capture,
+        gmailHistoricalReplay: {
+          liveAccount: "volunteers@adventurescientists.org",
+          projectInboxAliases: ["orcas@adventurescientists.org"]
+        },
+        dryRun: false,
+        logger: {
+          log: () => undefined
+        }
+      });
+
+      expect(report).toMatchObject({
+        dryRun: false,
+        scanned: 1,
+        resolved: 0,
+        created: 0,
+        skipped: 1
+      });
+      expect(report.errors).toEqual([]);
+      await expect(
+        context.repositories.canonicalEvents.countAll()
+      ).resolves.toBe(0);
+      const resolvedCase =
+        await context.repositories.identityResolutionQueue.findById(caseId);
+
+      expect(resolvedCase).toMatchObject({
+        status: "resolved"
+      });
+      expect(resolvedCase?.explanation).toContain("outside volunteer scope");
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("least-recently-attempted ordering", async () => {
+    const context = await createTestWorkerContext();
+
+    try {
+      const orderedCases = [
+        {
+          recordId: "gmail-order-never",
+          receivedAt: "2026-01-01T00:10:00.000Z",
+          lastAttemptedAt: null
+        },
+        {
+          recordId: "gmail-order-1",
+          receivedAt: "2026-01-01T00:11:00.000Z",
+          lastAttemptedAt: "2026-01-01T01:00:00.000Z"
+        },
+        {
+          recordId: "gmail-order-2",
+          receivedAt: "2026-01-01T00:12:00.000Z",
+          lastAttemptedAt: "2026-01-01T02:00:00.000Z"
+        },
+        {
+          recordId: "gmail-order-3",
+          receivedAt: "2026-01-01T00:13:00.000Z",
+          lastAttemptedAt: "2026-01-01T03:00:00.000Z"
+        },
+        {
+          recordId: "gmail-order-4",
+          receivedAt: "2026-01-01T00:14:00.000Z",
+          lastAttemptedAt: "2026-01-01T04:00:00.000Z"
+        },
+        {
+          recordId: "gmail-order-5",
+          receivedAt: "2026-01-01T00:15:00.000Z",
+          lastAttemptedAt: "2026-01-01T05:00:00.000Z"
+        }
+      ] as const;
+
+      for (const item of orderedCases) {
+        await seedStoredGmailCase(context, {
+          recordId: item.recordId,
+          payloadRef: `capture://gmail/${item.recordId}`,
+          normalizedIdentityValues: [`${item.recordId}@example.org`],
+          subject: `Subject ${item.recordId}`,
+          occurredAt: item.receivedAt,
+          receivedAt: item.receivedAt,
+          lastAttemptedAt: item.lastAttemptedAt
+        });
+      }
+
+      const openCases =
+        await context.repositories.identityResolutionQueue.listOpenByReasonCode(
+          "identity_missing_anchor"
+        );
+
+      expect(openCases.map((caseRecord) => caseRecord.id)).toEqual([
+        "identity-review:source-evidence:gmail:message:gmail-order-never:identity_missing_anchor",
+        "identity-review:source-evidence:gmail:message:gmail-order-1:identity_missing_anchor",
+        "identity-review:source-evidence:gmail:message:gmail-order-2:identity_missing_anchor",
+        "identity-review:source-evidence:gmail:message:gmail-order-3:identity_missing_anchor",
+        "identity-review:source-evidence:gmail:message:gmail-order-4:identity_missing_anchor",
+        "identity-review:source-evidence:gmail:message:gmail-order-5:identity_missing_anchor"
+      ]);
     } finally {
       await context.dispose();
     }
