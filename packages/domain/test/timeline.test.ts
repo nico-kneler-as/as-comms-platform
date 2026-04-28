@@ -799,65 +799,13 @@ describe("Stage 1 timeline presenter", () => {
     });
   });
 
-  it("hydrates attachmentCount from message_attachments rows for canonical Gmail emails", async () => {
-    const gmailOneToOne = buildGmailOutboundEmailEvent({
-      id: "evt_gmail_attachment_count",
-      sourceEvidenceId: "sev_gmail_attachment_count",
-      occurredAt: "2026-01-01T00:05:30.000Z",
-      subject: "Field photo",
-      snippet: "See attached photo.",
-      bodyPreview: "See attached photo.",
-    });
-    const repositories = createRepositoryBundle({
-      canonicalEvents: [gmailOneToOne.canonicalEvent],
-      sourceEvidence: [
-        buildSourceEvidence({
-          id: "sev_gmail_attachment_count",
-          provider: "gmail",
-          providerRecordType: "gmail_message",
-          providerRecordId: "gmail-attachment-count",
-        }),
-      ],
-      salesforceCommunicationDetails: [],
-      gmailMessageDetails: [gmailOneToOne.detail],
-      messageAttachments: [
-        {
-          id: "att:gmail:gmail-attachment-count:0/1",
-          sourceEvidenceId: "sev_gmail_attachment_count",
-          provider: "gmail",
-          gmailAttachmentId: "gmail-attachment-1",
-          mimeType: "image/jpeg",
-          filename: "field-photo.jpg",
-          sizeBytes: 1234,
-          storageKey: "gmail/ab/att:gmail:gmail-attachment-count:0/1",
-          createdAt: "2026-01-01T00:05:30.000Z",
-        },
-        {
-          id: "att:gmail:gmail-attachment-count:0/2",
-          sourceEvidenceId: "sev_gmail_attachment_count",
-          provider: "gmail",
-          gmailAttachmentId: "gmail-attachment-2",
-          mimeType: "application/pdf",
-          filename: "packet.pdf",
-          sizeBytes: 5678,
-          storageKey: "gmail/cd/att:gmail:gmail-attachment-count:0/2",
-          createdAt: "2026-01-01T00:05:30.000Z",
-        },
-      ],
-      timelineRows: [gmailOneToOne.timelineRow],
-    });
-    const presenter = createStage1TimelinePresentationService(repositories);
-
-    await expect(
-      presenter.listTimelineItemsByContactId("contact_1"),
-    ).resolves.toMatchObject([
-      {
-        canonicalEventId: "evt_gmail_attachment_count",
-        family: "one_to_one_email",
-        attachmentCount: 2,
-      },
-    ]);
-  });
+  // The "hydrates attachmentCount from message_attachments rows" assertion
+  // moved to the inbox selector tests — the domain timeline presenter
+  // intentionally returns attachmentCount: 0 to avoid a duplicate
+  // findByMessageIds call. Selector
+  // ("batch-loads timeline attachments once and groups them by source
+  // evidence id" in apps/web/tests/unit/inbox-selectors.test.ts) is now the
+  // canonical home for the attachmentCount assertion.
 
   it("collapses cross-provider outbound email duplicates and keeps the richer Gmail record", async () => {
     const duplicateFingerprint = "fp:hex-13174";

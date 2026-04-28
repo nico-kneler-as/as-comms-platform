@@ -4026,6 +4026,11 @@ describe("real inbox selectors", () => {
     expect(findByMessageIds).toHaveBeenCalledWith([
       "source:attachment-email-1",
     ]);
+    // attachmentCount derivation moved here from the domain presenter
+    // (see packages/domain/src/timeline.ts loadTimelinePresentationContext)
+    // so the selector — which already loads attachments — is the canonical
+    // home for this assertion.
+    expect(detail?.timeline[0]?.attachmentCount).toBe(2);
     expect(detail?.timeline[0]?.attachments).toEqual([
       {
         id: "att:gmail:attachment-email-1:0/1",
