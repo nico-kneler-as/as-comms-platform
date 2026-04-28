@@ -20,6 +20,7 @@ import {
   type GmailProviderCloseMessageInput
 } from "../providers/gmail-record-builder.js";
 import {
+  collectGmailAttachmentMetadata,
   extractDsnOriginalMessageId,
   extractGmailBodyPreviewFromPayloadResult,
   type GmailApiMessagePart
@@ -429,6 +430,7 @@ export async function mapLiveGmailMessageToRecord(input: {
   const bodyPreviewResult = await extractGmailBodyPreviewFromPayloadResult(
     input.message.payload
   );
+  const attachmentMetadata = collectGmailAttachmentMetadata(input.message.payload);
   const previewMessageIdPattern =
     /Message-ID:\s*(<\d+\.[a-f0-9-]+@[a-z.]+>)/iu;
   const dsnOriginalMessageIdFromParts = isPossiblyDsn
@@ -445,6 +447,7 @@ export async function mapLiveGmailMessageToRecord(input: {
     snippet: input.message.snippet,
     snippetClean: input.message.snippet,
     ...bodyPreviewResult,
+    attachmentMetadata,
     internalDate: input.message.internalDate,
     headers,
     payloadRef: `gmail://${encodeURIComponent(input.capturedMailbox)}/messages/${encodeURIComponent(input.message.id)}`,

@@ -1,6 +1,12 @@
 "use client";
 
 import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -14,9 +20,12 @@ import type { InboxTimelineEntryViewModel } from "../_lib/view-models";
 import { autolinkText } from "./_autolink";
 import { EmailParticipantHeader } from "./email-participant-header";
 import { InboxAvatar } from "./inbox-avatar";
+import { formatBytes } from "./composer-shared";
 import {
   AdventureScientistsLogo,
+  ArrowUpRightIcon,
   CornerUpLeftIcon,
+  FileDocIcon,
   LoaderIcon,
   MailIcon,
   PhoneIcon,
@@ -27,6 +36,14 @@ const WRAP_ANYWHERE = "break-words [overflow-wrap:anywhere]";
 const HTML_TAG_PATTERN = /<\/?[a-zA-Z][^>]*>/u;
 const EMAIL_HTML_BODY_CLASS =
   "text-pretty text-[14px] leading-relaxed text-slate-700 [&_a]:text-sky-700 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_code]:rounded-sm [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_ol]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-100 [&_pre]:p-3 [&_table]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_ul]:ml-5 [&_ul]:list-disc";
+
+function bodyContainsHtml(body: string): boolean {
+  return HTML_TAG_PATTERN.test(body);
+}
+
+function sanitizeTimelineHtmlBody(body: string): string {
+  return sanitizeComposerHtml(body);
+}
 
 function initialsForLabel(label: string): string {
   const parts = label.trim().split(/\s+/).filter(Boolean);
@@ -46,12 +63,89 @@ function bodyTextForEntry(entry: InboxTimelineEntryViewModel): string {
   return entry.body.trim();
 }
 
-function bodyContainsHtml(body: string): boolean {
-  return HTML_TAG_PATTERN.test(body);
+function attachmentLabel(filename: string | null): string {
+  return filename?.trim().length ? filename : "Attachment";
 }
 
-function sanitizeTimelineHtmlBody(body: string): string {
-  return sanitizeComposerHtml(body);
+function MessageAttachments({
+  attachments,
+}: {
+  readonly attachments: InboxTimelineEntryViewModel["attachments"];
+}) {
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  const imageAttachments = attachments.filter((attachment) =>
+    attachment.mimeType.startsWith("image/"),
+  );
+  const fileAttachments = attachments.filter(
+    (attachment) => !attachment.mimeType.startsWith("image/"),
+  );
+
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      {imageAttachments.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {imageAttachments.map((attachment) => {
+            const label = attachmentLabel(attachment.filename);
+
+            return (
+              <Dialog key={attachment.id}>
+                <DialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- proxy serves authenticated bytes; next/image optimizer cannot fetch through cookie auth */}
+                    <img
+                      src={attachment.proxyUrl}
+                      alt={label}
+                      loading="lazy"
+                      className="h-[160px] w-[240px] object-cover"
+                    />
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl border-slate-200 bg-white p-3">
+                  <DialogTitle className="px-8 text-sm">{label}</DialogTitle>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- same reason as the trigger thumbnail above */}
+                  <img
+                    src={attachment.proxyUrl}
+                    alt={label}
+                    className="max-h-[80vh] w-full rounded-md object-contain"
+                  />
+                </DialogContent>
+              </Dialog>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {fileAttachments.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {fileAttachments.map((attachment) => {
+            const label = attachmentLabel(attachment.filename);
+
+            return (
+              <a
+                key={attachment.id}
+                href={attachment.proxyUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Download ${label}`}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors duration-150 ease-out hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+              >
+                <FileDocIcon className="size-3.5 shrink-0" />
+                <span className="max-w-[16rem] truncate">{label}</span>
+                <span className="text-slate-400">{formatBytes(attachment.sizeBytes)}</span>
+                <ArrowUpRightIcon className="size-3 shrink-0 text-slate-400" />
+              </a>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function ReplyFooter({
@@ -243,10 +337,18 @@ export function MessageBubble({
   readonly onRetryPending?: (entryId: string) => void;
 }) {
   const isEmail = entry.channel === "email";
+  // Pre-PR-#170 we rendered every email body as plaintext via
+  // `whitespace-pre-wrap`. PR #170 added a sanitized HTML render path for
+  // legitimately rich-formatted emails. Keep both: HTML if present,
+  // plaintext+autolink fallback otherwise.
+  const sanitizedHtmlBody = (() => {
+    const candidateBody = bodyTextForEntry(entry);
+    return entry.channel === "email" && bodyContainsHtml(candidateBody)
+      ? sanitizeTimelineHtmlBody(candidateBody)
+      : null;
+  })();
   const isOutbound = direction === "outbound";
   const body = bodyTextForEntry(entry);
-  const sanitizedHtmlBody =
-    isEmail && bodyContainsHtml(body) ? sanitizeTimelineHtmlBody(body) : null;
   const inboundAvatar = (
     <InboxAvatar
       initials={initialsForLabel(entry.actorLabel)}
@@ -333,6 +435,8 @@ export function MessageBubble({
                 {autolinkText(body)}
               </p>
             ) : null}
+
+            <MessageAttachments attachments={entry.attachments} />
           </div>
 
           <ReplyFooter

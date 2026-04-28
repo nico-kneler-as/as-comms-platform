@@ -5,6 +5,7 @@ import type {
   IntegrationHealthStatus,
 } from "@as-comms/contracts";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -228,6 +229,24 @@ export const gmailMessageDetails = pgTable(
     index("gmail_message_details_record_idx").on(table.providerRecordId),
     index("gmail_message_details_thread_idx").on(table.gmailThreadId),
   ],
+);
+
+export const messageAttachments = pgTable(
+  "message_attachments",
+  {
+    id: text("id").primaryKey(),
+    sourceEvidenceId: text("source_evidence_id")
+      .notNull()
+      .references(() => sourceEvidenceLog.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    gmailAttachmentId: text("gmail_attachment_id").notNull(),
+    mimeType: text("mime_type").notNull(),
+    filename: text("filename"),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    storageKey: text("storage_key").notNull(),
+    createdAt: createdAtColumn,
+  },
+  (table) => [index("message_attachments_source_idx").on(table.sourceEvidenceId)],
 );
 
 export const salesforceEventContext = pgTable(

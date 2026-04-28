@@ -38,6 +38,7 @@ import {
   SESSION_MAX_AGE_SECONDS,
   SESSION_UPDATE_AGE_SECONDS
 } from "./config";
+import { canSignInWithGoogle } from "./google-sign-in-policy";
 
 async function buildAuthConfig(): Promise<NextAuthConfig> {
   const runtime = await getStage1WebRuntime();
@@ -68,17 +69,17 @@ async function buildAuthConfig(): Promise<NextAuthConfig> {
     adapter: DrizzleAdapter(runtime.connection.db, authAdapterTables),
     callbacks: {
       async signIn({ user }) {
-        // Deactivated operators must not be able to sign in, even if an
-        // OAuth flow succeeds against Google. The schema default is
-        // `deactivatedAt = null` so freshly created operators pass.
         const email = user.email;
-        if (!email) return false;
         const repos = await getSettingsRepositories();
-        const record = await repos.users.findByEmail(email);
-        if (record?.deactivatedAt) {
-          return false;
-        }
-        return true;
+        const record = email ? await repos.users.findByEmail(email) : null;
+
+        // Fail closed: only pre-seeded, active AS Workspace users may
+        // complete Google OAuth. This blocks adapter-driven first-time
+        // operator creation for arbitrary Google accounts.
+        return canSignInWithGoogle({
+          email,
+          userRecord: record
+        });
       },
       async jwt({ token, user }) {
         // `user` is only present on the initial sign-in. On every

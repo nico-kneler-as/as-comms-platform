@@ -753,6 +753,13 @@ async function loadTimelinePresentationContext(
   const sourceEvidenceById = new Map(
     sourceEvidence.map((record) => [record.id, record]),
   );
+  // Note: message attachments are loaded by the inbox selector layer in a
+  // single batched query for the visible timeline page (see
+  // `apps/web/app/inbox/_lib/selectors.ts`). We deliberately do NOT load them
+  // here — this presentation context is built per timeline-presentation entry
+  // point (full activity timeline + paged timeline), so loading attachments
+  // here would duplicate the call. The view-model builder derives
+  // `attachmentCount` from the selector-loaded attachments instead.
   const [
     gmailDetails,
     salesforceContexts,
@@ -792,7 +799,6 @@ async function loadTimelinePresentationContext(
       uniqueStrings(salesforceContexts.map((context) => context.expeditionId)),
     ),
   ]);
-
   return {
     sourceEvidenceById,
     salesforceContextBySourceEvidenceId: new Map(
@@ -982,6 +988,9 @@ function buildTimelineItemsFromRows(input: {
           rfc822MessageId: gmailDetail?.rfc822MessageId ?? null,
           inReplyToRfc822: null,
           sendStatus: null,
+          // attachmentCount is derived in the inbox selector view-model
+          // layer from the (singly-batched) attachments load — see
+          // `apps/web/app/inbox/_lib/selectors.ts:buildTimelineEntry`.
           attachmentCount: 0,
         });
         break;

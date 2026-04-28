@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { simpleParser } from "mailparser";
 
 export interface GmailApiMessagePartHeader {
@@ -42,6 +43,14 @@ export interface GmailBodyPreviewResult {
   readonly bodyKind: GmailBodyKind;
 }
 
+export interface GmailAttachmentMetadata {
+  readonly partIndexPath: string;
+  readonly mimeType: string;
+  readonly filename: string | null;
+  readonly sizeBytes: number;
+  readonly gmailAttachmentId: string;
+}
+
 const ENCRYPTED_MESSAGE_PLACEHOLDER =
   "[Encrypted message — open in Gmail to read]";
 const BINARY_FALLBACK_PLACEHOLDER =
@@ -51,6 +60,10 @@ const ENCRYPTED_MIME_TYPES = new Set([
   "application/x-pkcs7-mime",
   "multipart/encrypted",
   "application/pgp-encrypted"
+]);
+const DENYLISTED_ATTACHMENT_MIME_TYPES = new Set([
+  "application/pkcs7-signature",
+  "application/pgp-signature",
 ]);
 
 const REPLACEMENT_CHARACTER = "�";
@@ -65,7 +78,7 @@ const REPLACEMENT_CHARACTER = "�";
 const BINARY_NOISE_THRESHOLD = 0.3;
 const BINARY_NOISE_MIN_LENGTH = 32;
 
-function isLikelyBinaryNoise(text: string): boolean {
+export function isLikelyBinaryNoise(text: string): boolean {
   if (text.length < BINARY_NOISE_MIN_LENGTH) {
     return false;
   }
@@ -395,6 +408,59 @@ function isAttachmentPart(part: GmailApiMessagePart): boolean {
 
   const contentDisposition = getPartHeader(part, "Content-Disposition");
   return contentDisposition?.toLowerCase().includes("attachment") ?? false;
+}
+
+export function buildGmailMessageAttachmentId(input: {
+  readonly messageId: string;
+  readonly partIndexPath: string;
+}): string {
+  return `att:gmail:${input.messageId}:${input.partIndexPath}`;
+}
+
+export function buildGmailMessageAttachmentStorageKey(
+  attachmentId: string,
+): string {
+  const shard = createHash("sha256").update(attachmentId, "utf8").digest("hex");
+
+  return `gmail/${shard.slice(0, 2)}/${attachmentId}`;
+}
+
+export function collectGmailAttachmentMetadata(
+  payload: GmailApiMessagePart,
+): readonly GmailAttachmentMetadata[] {
+  const attachments: GmailAttachmentMetadata[] = [];
+
+  function walk(part: GmailApiMessagePart, path: readonly number[]): void {
+    const mimeType = normalizeMimeType(part.mimeType);
+
+    if (
+      isAttachmentPart(part) &&
+      !DENYLISTED_ATTACHMENT_MIME_TYPES.has(mimeType)
+    ) {
+      const gmailAttachmentId = part.body?.attachmentId?.trim() ?? "";
+
+      if (gmailAttachmentId.length > 0) {
+        attachments.push({
+          partIndexPath: path.join("/"),
+          mimeType: mimeType || "application/octet-stream",
+          filename:
+            part.filename?.trim().length ? part.filename.trim() : null,
+          sizeBytes: Math.max(0, part.body?.size ?? 0),
+          gmailAttachmentId,
+        });
+      }
+    }
+
+    for (const [index, childPart] of (part.parts ?? []).entries()) {
+      walk(childPart, [...path, index]);
+    }
+  }
+
+  for (const [index, childPart] of (payload.parts ?? []).entries()) {
+    walk(childPart, [index]);
+  }
+
+  return attachments;
 }
 
 function collectCandidateBodyParts(

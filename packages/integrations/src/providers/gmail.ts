@@ -56,7 +56,18 @@ export const gmailMessageRecordSchema = z.object({
   volunteerIdPlainValues: stringArraySchema.default([]),
   normalizedPhones: stringArraySchema.default([]),
   supportingRecords: z.array(supportingProviderRecordSchema).default([]),
-  crossProviderCollapseKey: nullableStringSchema.default(null)
+  crossProviderCollapseKey: nullableStringSchema.default(null),
+  attachmentMetadata: z
+    .array(
+      z.object({
+        partIndexPath: z.string().min(1),
+        mimeType: z.string().min(1),
+        filename: nullableStringSchema,
+        sizeBytes: z.number().int().nonnegative(),
+        gmailAttachmentId: z.string().min(1),
+      }),
+    )
+    .default([]),
 });
 export type GmailMessageRecord = z.infer<typeof gmailMessageRecordSchema>;
 

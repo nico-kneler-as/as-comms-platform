@@ -14,9 +14,15 @@ const workspaceRules = {
     ])
   },
   "apps/gmail-capture": {
+    // gmail-capture is a separate Railway deployable that owns local
+    // attachment storage and writes attachment metadata to durable storage
+    // directly via @as-comms/db. Unlike apps/web, it does not need a
+    // composition-root indirection — the entire service is the boundary.
     allowedWorkspaceImports: new Set([
       "@as-comms/contracts",
-      "@as-comms/integrations"
+      "@as-comms/integrations",
+      "@as-comms/db",
+      "@as-comms/db/test-helpers"
     ])
   },
   "apps/salesforce-capture": {

@@ -87,6 +87,11 @@ describe("defineStage1RepositoryBundle", () => {
         listLastInboundAliasByContactIds: () => Promise.resolve(new Map()),
         upsert: (record) => Promise.resolve(record),
       },
+      messageAttachments: {
+        findById: () => Promise.resolve(null),
+        findByMessageIds: () => Promise.resolve([]),
+        upsertManyForMessage: () => Promise.resolve(),
+      },
       salesforceEventContext: {
         listBySourceEvidenceIds: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record),

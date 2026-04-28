@@ -7,6 +7,7 @@ import type {
   GmailMessageDetailRecord,
   InboxProjectionRow,
   MailchimpCampaignActivityDetailRecord,
+  MessageAttachmentRecord,
   TimelineItem,
   SourceEvidenceRecord,
   TimelineProjectionRow,
@@ -34,6 +35,7 @@ function createRepositoryBundle(input: {
   readonly sourceEvidence: readonly SourceEvidenceRecord[];
   readonly salesforceCommunicationDetails: readonly SalesforceCommunicationDetailRecord[];
   readonly gmailMessageDetails?: readonly GmailMessageDetailRecord[];
+  readonly messageAttachments?: readonly MessageAttachmentRecord[];
   readonly mailchimpCampaignActivityDetails?: readonly MailchimpCampaignActivityDetailRecord[];
   readonly timelineRows: readonly TimelineProjectionRow[];
   readonly pendingOutbounds?: readonly PendingComposerOutboundRecord[];
@@ -56,6 +58,16 @@ function createRepositoryBundle(input: {
       detail,
     ]),
   );
+  const messageAttachmentsBySourceEvidenceId = new Map<
+    string,
+    MessageAttachmentRecord[]
+  >();
+  for (const attachment of input.messageAttachments ?? []) {
+    const existing =
+      messageAttachmentsBySourceEvidenceId.get(attachment.sourceEvidenceId) ?? [];
+    existing.push(attachment);
+    messageAttachmentsBySourceEvidenceId.set(attachment.sourceEvidenceId, existing);
+  }
   const mailchimpCampaignActivityDetailsBySourceEvidenceId = new Map(
     (input.mailchimpCampaignActivityDetails ?? []).map((detail) => [
       detail.sourceEvidenceId,
@@ -166,6 +178,21 @@ function createRepositoryBundle(input: {
         ),
       listLastInboundAliasByContactIds: () => Promise.resolve(new Map()),
       upsert: (record) => Promise.resolve(record),
+    },
+    messageAttachments: {
+      findById: (id) =>
+        Promise.resolve(
+          (input.messageAttachments ?? []).find((attachment) => attachment.id === id) ??
+            null,
+        ),
+      findByMessageIds: (sourceEvidenceIds) =>
+        Promise.resolve(
+          sourceEvidenceIds.flatMap(
+            (sourceEvidenceId) =>
+              messageAttachmentsBySourceEvidenceId.get(sourceEvidenceId) ?? [],
+          ),
+        ),
+      upsertManyForMessage: () => Promise.resolve(),
     },
     salesforceEventContext: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
@@ -771,6 +798,14 @@ describe("Stage 1 timeline presenter", () => {
       attachmentCount: 0,
     });
   });
+
+  // The "hydrates attachmentCount from message_attachments rows" assertion
+  // moved to the inbox selector tests — the domain timeline presenter
+  // intentionally returns attachmentCount: 0 to avoid a duplicate
+  // findByMessageIds call. Selector
+  // ("batch-loads timeline attachments once and groups them by source
+  // evidence id" in apps/web/tests/unit/inbox-selectors.test.ts) is now the
+  // canonical home for the attachmentCount assertion.
 
   it("collapses cross-provider outbound email duplicates and keeps the richer Gmail record", async () => {
     const duplicateFingerprint = "fp:hex-13174";

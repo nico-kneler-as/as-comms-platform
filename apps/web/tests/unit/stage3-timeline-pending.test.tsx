@@ -91,6 +91,7 @@ function buildEntry(
     failedReason: null,
     failedDetail: null,
     attachmentCount: 0,
+    attachments: [],
     campaignActivity: [],
     ...overrides,
   };

@@ -6,6 +6,7 @@ import {
   gmailMessageRecordSchema,
   type GmailRecord
 } from "./gmail.js";
+import type { GmailAttachmentMetadata } from "./gmail-body.js";
 
 export interface GmailProviderCloseMessageInput {
   readonly recordId: string;
@@ -28,6 +29,7 @@ export interface GmailProviderCloseMessageInput {
   readonly receivedAt: string;
   readonly internalAddresses: readonly string[];
   readonly projectInboxAliases: readonly string[];
+  readonly attachmentMetadata?: readonly GmailAttachmentMetadata[];
   readonly projectInboxAliasOverride?: string | null;
   readonly treatCapturedMailboxAsProjectInbox?: boolean;
 }
@@ -269,6 +271,7 @@ export function buildGmailMessageRecord(
     normalizedPhones: [],
     supportingRecords: [],
     crossProviderCollapseKey:
-      rfc822MessageId === null ? null : `rfc822:${rfc822MessageId.toLowerCase()}`
+      rfc822MessageId === null ? null : `rfc822:${rfc822MessageId.toLowerCase()}`,
+    attachmentMetadata: input.attachmentMetadata ?? [],
   });
 }
