@@ -34,7 +34,7 @@ export function createReconcileIdentityQueueTask(
         capture: dependencies.capture,
         gmailHistoricalReplay: dependencies.gmailHistoricalReplay,
         dryRun: false,
-        limit: 1,
+        limit: 200,
         logger: {
           log: () => undefined
         }
