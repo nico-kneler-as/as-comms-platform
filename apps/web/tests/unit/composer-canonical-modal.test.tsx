@@ -170,13 +170,14 @@ vi.mock("../../app/inbox/_components/composer-shared", async () => {
 
   return {
     ...actual,
-    readFileAsAttachment: async (file: File) => ({
-      id: `${file.name}:${String(file.size)}`,
-      filename: file.name,
-      size: file.size,
-      contentType: file.type || "application/octet-stream",
-      contentBase64: "YXR0YWNobWVudC1ib2R5",
-    }),
+    readFileAsAttachment: (file: File) =>
+      Promise.resolve({
+        id: `${file.name}:${String(file.size)}`,
+        filename: file.name,
+        size: file.size,
+        contentType: file.type || "application/octet-stream",
+        contentBase64: "YXR0YWNobWVudC1ib2R5",
+      }),
   };
 });
 
