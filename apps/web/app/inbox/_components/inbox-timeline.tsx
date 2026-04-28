@@ -109,7 +109,7 @@ export function InboxTimeline({
           </div>
         ) : null}
 
-        <ol className="mx-auto flex w-full max-w-[840px] flex-col gap-3">
+        <ol className="mx-auto flex w-full max-w-[920px] flex-col gap-3">
           {presentationItems.map((item) => (
             <TimelinePresentationItem
               key={item.id}
