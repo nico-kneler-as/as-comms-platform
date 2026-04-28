@@ -2164,9 +2164,15 @@ function buildTimelineEntry(input: {
       input.item.family === "one_to_one_email"
         ? (input.item.failedDetail ?? null)
         : null,
+    // For canonical (captured) emails, attachmentCount comes from the
+    // singly-batched attachments load — the domain layer intentionally
+    // returns 0 there to avoid a duplicate findByMessageIds call. Pending
+    // composer outbounds, however, set attachmentCount from the in-flight
+    // attachmentMetadataJson before any capture happens, so we honor
+    // whichever number is greater.
     attachmentCount:
       input.item.family === "one_to_one_email"
-        ? (input.item.attachmentCount ?? 0)
+        ? Math.max(input.item.attachmentCount ?? 0, attachments.length)
         : 0,
     attachments,
     campaignActivity,

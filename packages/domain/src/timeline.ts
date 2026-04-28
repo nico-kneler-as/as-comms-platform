@@ -3,7 +3,6 @@ import {
   type CampaignEmailTimelineItem,
   type CanonicalEventRecord,
   type GmailMessageDetailRecord,
-  type MessageAttachmentRecord,
   type SalesforceEventContextRecord,
   type SourceEvidenceRecord,
   type TimelineItem,
@@ -69,7 +68,6 @@ interface ManualNoteDetail {
 
 interface TimelinePresentationContext {
   readonly sourceEvidenceById: ReadonlyMap<string, SourceEvidenceRecord>;
-  readonly attachmentCountBySourceEvidenceId: ReadonlyMap<string, number>;
   readonly salesforceContextBySourceEvidenceId: ReadonlyMap<
     string,
     SalesforceEventContextDetail
@@ -755,8 +753,14 @@ async function loadTimelinePresentationContext(
   const sourceEvidenceById = new Map(
     sourceEvidence.map((record) => [record.id, record]),
   );
+  // Note: message attachments are loaded by the inbox selector layer in a
+  // single batched query for the visible timeline page (see
+  // `apps/web/app/inbox/_lib/selectors.ts`). We deliberately do NOT load them
+  // here — this presentation context is built per timeline-presentation entry
+  // point (full activity timeline + paged timeline), so loading attachments
+  // here would duplicate the call. The view-model builder derives
+  // `attachmentCount` from the selector-loaded attachments instead.
   const [
-    messageAttachments,
     gmailDetails,
     salesforceContexts,
     salesforceCommunicationDetails,
@@ -764,7 +768,6 @@ async function loadTimelinePresentationContext(
     mailchimpCampaignActivityDetails,
     manualNoteDetails,
   ] = (await Promise.all([
-    repositories.messageAttachments.findByMessageIds(sourceEvidenceIds),
     repositories.gmailMessageDetails.listBySourceEvidenceIds(sourceEvidenceIds),
     repositories.salesforceEventContext.listBySourceEvidenceIds(
       sourceEvidenceIds,
@@ -780,7 +783,6 @@ async function loadTimelinePresentationContext(
     ),
     repositories.manualNoteDetails.listBySourceEvidenceIds(sourceEvidenceIds),
   ])) as [
-    readonly MessageAttachmentRecord[],
     readonly GmailMessageDetailRecord[],
     readonly SalesforceEventContextDetail[],
     readonly SalesforceCommunicationDetail[],
@@ -797,19 +799,8 @@ async function loadTimelinePresentationContext(
       uniqueStrings(salesforceContexts.map((context) => context.expeditionId)),
     ),
   ]);
-  const attachmentCountBySourceEvidenceId = new Map<string, number>();
-
-  for (const attachment of messageAttachments) {
-    attachmentCountBySourceEvidenceId.set(
-      attachment.sourceEvidenceId,
-      (attachmentCountBySourceEvidenceId.get(attachment.sourceEvidenceId) ?? 0) +
-        1,
-    );
-  }
-
   return {
     sourceEvidenceById,
-    attachmentCountBySourceEvidenceId,
     salesforceContextBySourceEvidenceId: new Map(
       salesforceContexts.map((detail) => [detail.sourceEvidenceId, detail]),
     ),
@@ -997,11 +988,10 @@ function buildTimelineItemsFromRows(input: {
           rfc822MessageId: gmailDetail?.rfc822MessageId ?? null,
           inReplyToRfc822: null,
           sendStatus: null,
-          attachmentCount:
-            input.context.attachmentCountBySourceEvidenceId.get(
-              event.sourceEvidenceId,
-            ) ??
-            0,
+          // attachmentCount is derived in the inbox selector view-model
+          // layer from the (singly-batched) attachments load — see
+          // `apps/web/app/inbox/_lib/selectors.ts:buildTimelineEntry`.
+          attachmentCount: 0,
         });
         break;
       case "one_to_one_sms":

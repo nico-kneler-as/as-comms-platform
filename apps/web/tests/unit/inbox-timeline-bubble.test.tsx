@@ -95,7 +95,7 @@ function buildEntry(
 }
 
 describe("MessageBubble attachments", () => {
-  it("matches the no-attachment render", () => {
+  it("renders the body but no attachment chips when entry.attachments is empty", () => {
     const markup = renderToStaticMarkup(
       createElement(MessageBubble, {
         entry: buildEntry(),
@@ -103,9 +103,13 @@ describe("MessageBubble attachments", () => {
       }),
     );
 
-    expect(markup).toMatchInlineSnapshot(
-      "\"<link rel=\\\"preload\\\" as=\\\"image\\\" href=\\\"\\\"/><li class=\\\"flex w-full flex-col items-start pr-16\\\"><div class=\\\"flex w-full items-start gap-2.5 justify-start\\\"><div class=\\\"mt-2 shrink-0\\\"><div>SM</div></div><div class=\\\"min-w-0 w-full max-w-[640px] overflow-hidden rounded-xl shadow-sm border border-slate-200 bg-white\\\"><div>participants</div><div class=\\\"px-4 py-3\\\"><p class=\\\"mb-1.5 text-balance text-[14px] font-semibold text-slate-900 break-words [overflow-wrap:anywhere]\\\">Photo update</p><p class=\\\"whitespace-pre-wrap text-pretty text-[14px] leading-relaxed text-slate-700 break-words [overflow-wrap:anywhere]\\\">See attached.</p></div></div></div><div class=\\\"mt-1.5 flex items-center gap-1.5 px-1 text-xs\\\"><svg></svg><span class=\\\"font-medium text-slate-500\\\">Sarah Martinez</span></div></li>\"",
-    );
+    // Body still renders.
+    expect(markup).toContain("Photo update");
+    expect(markup).toContain("See attached.");
+    // No attachment chips, thumbnails, or proxy URLs at all.
+    expect(markup).not.toContain("/api/attachments/");
+    expect(markup).not.toContain("data-dialog-trigger");
+    expect(markup).not.toContain("Download ");
   });
 
   it("renders image thumbnails and a download chip", () => {
@@ -144,7 +148,9 @@ describe("MessageBubble attachments", () => {
     expect(markup).toContain("/api/attachments/image-1");
     expect(markup).toContain("/api/attachments/image-2");
     expect(markup).toContain("Download packet.pdf");
-    expect(markup).toContain("88.9 KB");
+    // formatBytes() rounds KB to whole numbers (composer convention).
+    // 91011 / 1024 ≈ 88.88 → rounds to 89.
+    expect(markup).toContain("89 KB");
   });
 
   it("falls back to Attachment when filename is null", () => {

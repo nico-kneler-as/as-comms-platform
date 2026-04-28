@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { SHADOW, TRANSITION, TYPE } from "@/app/_lib/design-tokens-v2";
+import { sanitizeComposerHtml } from "@/src/lib/html-sanitizer";
 
 import type { InboxTimelineEntryViewModel } from "../_lib/view-models";
 import { autolinkText } from "./_autolink";
@@ -32,6 +33,17 @@ import {
 } from "./icons";
 
 const WRAP_ANYWHERE = "break-words [overflow-wrap:anywhere]";
+const HTML_TAG_PATTERN = /<\/?[a-zA-Z][^>]*>/u;
+const EMAIL_HTML_BODY_CLASS =
+  "text-pretty text-[14px] leading-relaxed text-slate-700 [&_a]:text-sky-700 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_code]:rounded-sm [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_ol]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-100 [&_pre]:p-3 [&_table]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_ul]:ml-5 [&_ul]:list-disc";
+
+function bodyContainsHtml(body: string): boolean {
+  return HTML_TAG_PATTERN.test(body);
+}
+
+function sanitizeTimelineHtmlBody(body: string): string {
+  return sanitizeComposerHtml(body);
+}
 
 function initialsForLabel(label: string): string {
   const parts = label.trim().split(/\s+/).filter(Boolean);
@@ -325,6 +337,16 @@ export function MessageBubble({
   readonly onRetryPending?: (entryId: string) => void;
 }) {
   const isEmail = entry.channel === "email";
+  // Pre-PR-#170 we rendered every email body as plaintext via
+  // `whitespace-pre-wrap`. PR #170 added a sanitized HTML render path for
+  // legitimately rich-formatted emails. Keep both: HTML if present,
+  // plaintext+autolink fallback otherwise.
+  const sanitizedHtmlBody = (() => {
+    const candidateBody = bodyTextForEntry(entry);
+    return entry.channel === "email" && bodyContainsHtml(candidateBody)
+      ? sanitizeTimelineHtmlBody(candidateBody)
+      : null;
+  })();
   const isOutbound = direction === "outbound";
   const body = bodyTextForEntry(entry);
   const inboundAvatar = (
@@ -397,7 +419,12 @@ export function MessageBubble({
               </p>
             ) : null}
 
-            {body.length > 0 ? (
+            {sanitizedHtmlBody !== null && sanitizedHtmlBody.length > 0 ? (
+              <div
+                className={cn(EMAIL_HTML_BODY_CLASS, WRAP_ANYWHERE)}
+                dangerouslySetInnerHTML={{ __html: sanitizedHtmlBody }}
+              />
+            ) : body.length > 0 ? (
               <p
                 className={cn(
                   "whitespace-pre-wrap text-pretty text-[14px] leading-relaxed",

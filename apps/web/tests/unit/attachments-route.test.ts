@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -58,10 +58,12 @@ describe("attachment proxy route", () => {
         storageKey: "gmail/ab/att:gmail:attachment-image-1:0/1",
       });
       process.env.ATTACHMENT_VOLUME_PATH = tempDir;
-      await writeFile(
-        path.join(tempDir, "gmail/ab/att:gmail:attachment-image-1:0/1"),
-        Buffer.from("image", "utf8"),
+      const imagePath = path.join(
+        tempDir,
+        "gmail/ab/att:gmail:attachment-image-1:0/1",
       );
+      await mkdir(path.dirname(imagePath), { recursive: true });
+      await writeFile(imagePath, Buffer.from("image", "utf8"));
 
       const response = await GET(new Request("http://localhost/api/attachments"), {
         params: Promise.resolve({
@@ -115,10 +117,12 @@ describe("attachment proxy route", () => {
         storageKey: "gmail/cd/att:gmail:attachment-pdf-1:0/1",
       });
       process.env.ATTACHMENT_VOLUME_PATH = tempDir;
-      await writeFile(
-        path.join(tempDir, "gmail/cd/att:gmail:attachment-pdf-1:0/1"),
-        Buffer.from("pdf", "utf8"),
+      const pdfPath = path.join(
+        tempDir,
+        "gmail/cd/att:gmail:attachment-pdf-1:0/1",
       );
+      await mkdir(path.dirname(pdfPath), { recursive: true });
+      await writeFile(pdfPath, Buffer.from("pdf", "utf8"));
 
       const response = await GET(new Request("http://localhost/api/attachments"), {
         params: Promise.resolve({
