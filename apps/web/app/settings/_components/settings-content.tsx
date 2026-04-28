@@ -12,7 +12,7 @@ export function SettingsContent({ children }: SettingsContentProps) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <div className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="w-full max-w-[800px]">{children}</div>
+        <div className="mx-auto w-full max-w-[920px]">{children}</div>
       </div>
     </div>
   );
