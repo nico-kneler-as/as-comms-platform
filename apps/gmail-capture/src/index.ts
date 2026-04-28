@@ -6,16 +6,29 @@ import {
 } from "node:http";
 
 import {
+  createDatabaseConnection,
+  createStage1RepositoryBundleFromConnection,
+  type DatabaseConnection,
+} from "@as-comms/db";
+import {
+  createCapturedBatchResponseSchema,
   checkGmailCaptureServiceHealth,
+  createGmailMailboxApiClient,
   createGmailCaptureService,
   type CaptureServiceHttpRequest,
   type GmailCaptureServiceConfig,
+  gmailRecordSchema,
 } from "@as-comms/integrations";
 import {
   integrationHealthCheckResponseSchema,
   type IntegrationHealthCheckResponse,
 } from "@as-comms/contracts";
 import { z } from "zod";
+
+import {
+  syncGmailMessageAttachments,
+  type GmailAttachmentRuntimeConfig,
+} from "./attachments.js";
 
 const emailSchema = z.string().email();
 const volunteersEmailSchema = emailSchema.refine(
@@ -28,6 +41,10 @@ const volunteersEmailSchema = emailSchema.refine(
 export const gmailCaptureRuntimeConfigSchema = z.object({
   host: z.string().min(1).default("0.0.0.0"),
   port: z.number().int().positive().default(3001),
+  attachments: z.object({
+    attachmentVolumePath: z.string().min(1),
+    maxAttachmentBytesPerAttachment: z.number().int().positive(),
+  }),
   service: z.object({
     bearerToken: z.string().min(1),
     liveAccount: volunteersEmailSchema,
@@ -105,6 +122,20 @@ export function readGmailCaptureRuntimeConfig(
   return gmailCaptureRuntimeConfigSchema.parse({
     host: env.HOST ?? "0.0.0.0",
     port: parseOptionalPositiveIntEnv(env.PORT, 3001, "PORT"),
+    attachments: {
+      attachmentVolumePath: parseRequiredStringEnv(
+        env.ATTACHMENT_VOLUME_PATH ??
+          (env.NODE_ENV === "production"
+            ? "/data/attachments"
+            : "./tmp/attachments"),
+        "ATTACHMENT_VOLUME_PATH",
+      ),
+      maxAttachmentBytesPerAttachment: parseOptionalPositiveIntEnv(
+        env.MAX_ATTACHMENT_BYTES_PER_ATTACHMENT,
+        52_428_800,
+        "MAX_ATTACHMENT_BYTES_PER_ATTACHMENT",
+      ),
+    },
     service: {
       bearerToken: parseRequiredStringEnv(
         env.GMAIL_CAPTURE_TOKEN,
@@ -231,10 +262,39 @@ export async function handleGmailHealthRequest(
 
 export async function startGmailCaptureServer(
   config: GmailCaptureRuntimeConfig,
+  input?: {
+    readonly connection?: DatabaseConnection;
+    readonly fetchImplementation?: typeof fetch;
+    readonly now?: () => Date;
+  },
 ): Promise<Server> {
+  const apiClient = createGmailMailboxApiClient(
+    config.service satisfies GmailCaptureServiceConfig,
+    {
+      ...(input?.fetchImplementation === undefined
+        ? {}
+        : { fetchImplementation: input.fetchImplementation }),
+      ...(input?.now === undefined ? {} : { now: input.now }),
+    },
+  );
   const service = createGmailCaptureService(
     config.service satisfies GmailCaptureServiceConfig,
+    {
+      apiClient,
+      ...(input?.now === undefined ? {} : { now: input.now }),
+    },
   );
+  const connection =
+    input?.connection ??
+    createDatabaseConnection({
+      connectionString: parseRequiredStringEnv(
+        process.env.DATABASE_URL,
+        "DATABASE_URL",
+      ),
+    });
+  const repositories = createStage1RepositoryBundleFromConnection(connection);
+  const gmailCapturedBatchSchema =
+    createCapturedBatchResponseSchema(gmailRecordSchema);
 
   async function handleRequest(
     request: IncomingMessage,
@@ -260,6 +320,28 @@ export async function startGmailCaptureServer(
       const serviceResponse = await service.handleHttpRequest(
         createHttpRequest(request, bodyText),
       );
+
+      if (
+        serviceResponse.status === 200 &&
+        request.method === "POST" &&
+        (path === "/historical" || path === "/live")
+      ) {
+        const capturedBatch = gmailCapturedBatchSchema.parse(
+          JSON.parse(serviceResponse.body),
+        );
+
+        await syncGmailMessageAttachments({
+          records: capturedBatch.records,
+          repositories,
+          serviceConfig: config.service,
+          runtimeConfig: config.attachments satisfies GmailAttachmentRuntimeConfig,
+          ...(input?.fetchImplementation === undefined
+            ? {}
+            : { fetchImplementation: input.fetchImplementation }),
+          ...(input?.now === undefined ? {} : { now: input.now }),
+        });
+      }
+
       writeResponse(response, serviceResponse);
     } catch (error) {
       if (error instanceof RequestBodyTooLargeError) {
@@ -293,6 +375,11 @@ export async function startGmailCaptureServer(
   const server = createServer((request, response) => {
     void handleRequest(request, response);
   });
+  if (input?.connection === undefined) {
+    server.once("close", () => {
+      void connection.sql.end({ timeout: 5 });
+    });
+  }
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);

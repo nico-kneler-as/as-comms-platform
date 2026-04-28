@@ -79,6 +79,7 @@ import {
   seedInboxEmailEvent,
   seedInboxInternalNoteEvent,
   seedInboxLifecycleEvent,
+  seedInboxMessageAttachment,
   seedInboxProjection,
   seedInboxLegacySalesforceOutboundEmailEvent,
   seedInboxSalesforceOutboundEmailEvent,
@@ -147,6 +148,7 @@ function buildTimelineEntry(
     failedReason: null,
     failedDetail: null,
     attachmentCount: 0,
+    attachments: [],
     campaignActivity: [],
     ...overrides,
   };
@@ -3963,5 +3965,82 @@ describe("real inbox selectors", () => {
     expect(sentList.items.map((item) => item.contactId)).not.toContain(
       "contact:campaign-only-outbound",
     );
+  });
+
+  it("batch-loads timeline attachments once and groups them by source evidence id", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:attachment-test",
+      salesforceContactId: "003-attachment",
+      displayName: "Attachment Test",
+      primaryEmail: "attachment@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "attachment-email-1",
+      contactId: "contact:attachment-test",
+      occurredAt: "2026-04-20T12:00:00.000Z",
+      direction: "inbound",
+      subject: "Photo update",
+      snippet: "Two files attached.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:attachment-test",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-20T12:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-20T12:00:00.000Z",
+      snippet: "Two files attached.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:attachment-email-1",
+      id: "att:gmail:attachment-email-1:0/1",
+      mimeType: "image/jpeg",
+      filename: "field-photo.jpg",
+      sizeBytes: 1234,
+      storageKey: "gmail/ab/att:gmail:attachment-email-1:0/1",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:attachment-email-1",
+      id: "att:gmail:attachment-email-1:0/2",
+      mimeType: "application/pdf",
+      filename: "packet.pdf",
+      sizeBytes: 4567,
+      storageKey: "gmail/cd/att:gmail:attachment-email-1:0/2",
+    });
+    const findByMessageIds = vi.spyOn(
+      runtime.context.repositories.messageAttachments,
+      "findByMessageIds",
+    );
+
+    const detail = await getInboxDetail("contact:attachment-test");
+
+    expect(findByMessageIds).toHaveBeenCalledTimes(1);
+    expect(findByMessageIds).toHaveBeenCalledWith([
+      "source:attachment-email-1",
+    ]);
+    expect(detail?.timeline[0]?.attachments).toEqual([
+      {
+        id: "att:gmail:attachment-email-1:0/1",
+        mimeType: "image/jpeg",
+        filename: "field-photo.jpg",
+        sizeBytes: 1234,
+        proxyUrl: "/api/attachments/att%3Agmail%3Aattachment-email-1%3A0%2F1",
+      },
+      {
+        id: "att:gmail:attachment-email-1:0/2",
+        mimeType: "application/pdf",
+        filename: "packet.pdf",
+        sizeBytes: 4567,
+        proxyUrl: "/api/attachments/att%3Agmail%3Aattachment-email-1%3A0%2F2",
+      },
+    ]);
   });
 });

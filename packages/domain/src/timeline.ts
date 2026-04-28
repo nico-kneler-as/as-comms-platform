@@ -3,6 +3,7 @@ import {
   type CampaignEmailTimelineItem,
   type CanonicalEventRecord,
   type GmailMessageDetailRecord,
+  type MessageAttachmentRecord,
   type SalesforceEventContextRecord,
   type SourceEvidenceRecord,
   type TimelineItem,
@@ -68,6 +69,7 @@ interface ManualNoteDetail {
 
 interface TimelinePresentationContext {
   readonly sourceEvidenceById: ReadonlyMap<string, SourceEvidenceRecord>;
+  readonly attachmentCountBySourceEvidenceId: ReadonlyMap<string, number>;
   readonly salesforceContextBySourceEvidenceId: ReadonlyMap<
     string,
     SalesforceEventContextDetail
@@ -754,6 +756,7 @@ async function loadTimelinePresentationContext(
     sourceEvidence.map((record) => [record.id, record]),
   );
   const [
+    messageAttachments,
     gmailDetails,
     salesforceContexts,
     salesforceCommunicationDetails,
@@ -761,6 +764,7 @@ async function loadTimelinePresentationContext(
     mailchimpCampaignActivityDetails,
     manualNoteDetails,
   ] = (await Promise.all([
+    repositories.messageAttachments.findByMessageIds(sourceEvidenceIds),
     repositories.gmailMessageDetails.listBySourceEvidenceIds(sourceEvidenceIds),
     repositories.salesforceEventContext.listBySourceEvidenceIds(
       sourceEvidenceIds,
@@ -776,6 +780,7 @@ async function loadTimelinePresentationContext(
     ),
     repositories.manualNoteDetails.listBySourceEvidenceIds(sourceEvidenceIds),
   ])) as [
+    readonly MessageAttachmentRecord[],
     readonly GmailMessageDetailRecord[],
     readonly SalesforceEventContextDetail[],
     readonly SalesforceCommunicationDetail[],
@@ -792,9 +797,19 @@ async function loadTimelinePresentationContext(
       uniqueStrings(salesforceContexts.map((context) => context.expeditionId)),
     ),
   ]);
+  const attachmentCountBySourceEvidenceId = new Map<string, number>();
+
+  for (const attachment of messageAttachments) {
+    attachmentCountBySourceEvidenceId.set(
+      attachment.sourceEvidenceId,
+      (attachmentCountBySourceEvidenceId.get(attachment.sourceEvidenceId) ?? 0) +
+        1,
+    );
+  }
 
   return {
     sourceEvidenceById,
+    attachmentCountBySourceEvidenceId,
     salesforceContextBySourceEvidenceId: new Map(
       salesforceContexts.map((detail) => [detail.sourceEvidenceId, detail]),
     ),
@@ -982,7 +997,11 @@ function buildTimelineItemsFromRows(input: {
           rfc822MessageId: gmailDetail?.rfc822MessageId ?? null,
           inReplyToRfc822: null,
           sendStatus: null,
-          attachmentCount: 0,
+          attachmentCount:
+            input.context.attachmentCountBySourceEvidenceId.get(
+              event.sourceEvidenceId,
+            ) ??
+            0,
         });
         break;
       case "one_to_one_sms":

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   cleanGmailBodyPreviewText,
+  collectGmailAttachmentMetadata,
   extractDsnOriginalMessageId,
   extractGmailBodyPreviewFromMimeMessageResult,
   extractGmailBodyPreviewFromPayloadResult,
@@ -97,6 +98,63 @@ describe("Gmail body extraction", () => {
         bodyKind: "binary_fallback",
       }
     );
+  });
+
+  it("collects attachment metadata while skipping inline data and signature wrappers", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/mixed",
+      parts: [
+        {
+          mimeType: "image/png",
+          filename: "inline.png",
+          body: {
+            data: Buffer.from("inline", "utf8").toString("base64url"),
+            size: 6,
+          },
+        },
+        {
+          mimeType: "image/jpeg",
+          filename: "field-photo.jpg",
+          body: {
+            attachmentId: "att-image",
+            size: 12_345,
+          },
+        },
+        {
+          mimeType: "application/pdf",
+          filename: "packet.pdf",
+          body: {
+            attachmentId: "att-pdf",
+            size: 98_765,
+          },
+        },
+        {
+          mimeType: "application/pkcs7-signature",
+          filename: "smime.p7s",
+          body: {
+            attachmentId: "att-signature",
+            size: 512,
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailAttachmentMetadata(payload)).toEqual([
+      {
+        partIndexPath: "1",
+        mimeType: "image/jpeg",
+        filename: "field-photo.jpg",
+        sizeBytes: 12_345,
+        gmailAttachmentId: "att-image",
+      },
+      {
+        partIndexPath: "2",
+        mimeType: "application/pdf",
+        filename: "packet.pdf",
+        sizeBytes: 98_765,
+        gmailAttachmentId: "att-pdf",
+      },
+    ]);
   });
 
   it("treats a text/plain part containing decoded binary noise as a binary fallback", async () => {

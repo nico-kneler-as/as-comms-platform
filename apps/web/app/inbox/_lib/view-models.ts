@@ -187,6 +187,13 @@ export interface InboxTimelineEntryViewModel {
   readonly failedReason: string | null;
   readonly failedDetail: string | null;
   readonly attachmentCount: number;
+  readonly attachments: readonly {
+    readonly id: string;
+    readonly mimeType: string;
+    readonly filename: string | null;
+    readonly sizeBytes: number;
+    readonly proxyUrl: string;
+  }[];
   readonly campaignActivity: readonly InboxTimelineCampaignActivityViewModel[];
   readonly noteId?: string | null;
   readonly authorId?: string | null;

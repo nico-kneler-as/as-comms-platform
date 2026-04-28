@@ -11,6 +11,7 @@ import {
   identityResolutionSchema,
   inboxProjectionSchema,
   mailchimpCampaignActivityDetailSchema,
+  messageAttachmentSchema,
   manualNoteDetailSchema,
   projectKnowledgeEntrySchema,
   projectDimensionSchema,
@@ -33,6 +34,7 @@ import {
   type IdentityResolutionCase,
   type InboxProjectionRow,
   type MailchimpCampaignActivityDetailRecord,
+  type MessageAttachmentRecord,
   type ManualNoteDetailRecord,
   type ProjectKnowledgeEntryRecord,
   type ProjectDimensionRecord,
@@ -65,6 +67,7 @@ import type {
   integrationHealth,
   identityResolutionQueue,
   mailchimpCampaignActivityDetails,
+  messageAttachments,
   manualNoteDetails,
   pendingComposerOutbounds,
   projectAliases,
@@ -97,6 +100,7 @@ type SimpleTextingMessageDetailRow =
   typeof simpleTextingMessageDetails.$inferSelect;
 type MailchimpCampaignActivityDetailRow =
   typeof mailchimpCampaignActivityDetails.$inferSelect;
+type MessageAttachmentRow = typeof messageAttachments.$inferSelect;
 type ManualNoteDetailRow = typeof manualNoteDetails.$inferSelect;
 type PendingComposerOutboundRow = typeof pendingComposerOutbounds.$inferSelect;
 type IdentityResolutionRow = typeof identityResolutionQueue.$inferSelect;
@@ -512,6 +516,40 @@ export function mapGmailMessageDetailToInsert(
     bodyKind: parsed.bodyKind ?? null,
     capturedMailbox: parsed.capturedMailbox,
     projectInboxAlias: parsed.projectInboxAlias,
+  };
+}
+
+export function mapMessageAttachmentRow(
+  row: MessageAttachmentRow,
+): MessageAttachmentRecord {
+  return messageAttachmentSchema.parse({
+    id: row.id,
+    sourceEvidenceId: row.sourceEvidenceId,
+    provider: row.provider,
+    gmailAttachmentId: row.gmailAttachmentId,
+    mimeType: row.mimeType,
+    filename: row.filename,
+    sizeBytes: row.sizeBytes,
+    storageKey: row.storageKey,
+    createdAt: row.createdAt.toISOString(),
+  });
+}
+
+export function mapMessageAttachmentToInsert(
+  record: MessageAttachmentRecord,
+): typeof messageAttachments.$inferInsert {
+  const parsed = messageAttachmentSchema.parse(record);
+
+  return {
+    id: parsed.id,
+    sourceEvidenceId: parsed.sourceEvidenceId,
+    provider: parsed.provider,
+    gmailAttachmentId: parsed.gmailAttachmentId,
+    mimeType: parsed.mimeType,
+    filename: parsed.filename,
+    sizeBytes: parsed.sizeBytes,
+    storageKey: parsed.storageKey,
+    createdAt: toDate(parsed.createdAt),
   };
 }
 

@@ -7,6 +7,7 @@ import type {
   GmailMessageDetailRecord,
   InboxProjectionRow,
   MailchimpCampaignActivityDetailRecord,
+  MessageAttachmentRecord,
   TimelineItem,
   SourceEvidenceRecord,
   TimelineProjectionRow,
@@ -34,6 +35,7 @@ function createRepositoryBundle(input: {
   readonly sourceEvidence: readonly SourceEvidenceRecord[];
   readonly salesforceCommunicationDetails: readonly SalesforceCommunicationDetailRecord[];
   readonly gmailMessageDetails?: readonly GmailMessageDetailRecord[];
+  readonly messageAttachments?: readonly MessageAttachmentRecord[];
   readonly mailchimpCampaignActivityDetails?: readonly MailchimpCampaignActivityDetailRecord[];
   readonly timelineRows: readonly TimelineProjectionRow[];
   readonly pendingOutbounds?: readonly PendingComposerOutboundRecord[];
@@ -56,6 +58,16 @@ function createRepositoryBundle(input: {
       detail,
     ]),
   );
+  const messageAttachmentsBySourceEvidenceId = new Map<
+    string,
+    MessageAttachmentRecord[]
+  >();
+  for (const attachment of input.messageAttachments ?? []) {
+    const existing =
+      messageAttachmentsBySourceEvidenceId.get(attachment.sourceEvidenceId) ?? [];
+    existing.push(attachment);
+    messageAttachmentsBySourceEvidenceId.set(attachment.sourceEvidenceId, existing);
+  }
   const mailchimpCampaignActivityDetailsBySourceEvidenceId = new Map(
     (input.mailchimpCampaignActivityDetails ?? []).map((detail) => [
       detail.sourceEvidenceId,
@@ -166,6 +178,21 @@ function createRepositoryBundle(input: {
         ),
       listLastInboundAliasByContactIds: () => Promise.resolve(new Map()),
       upsert: (record) => Promise.resolve(record),
+    },
+    messageAttachments: {
+      findById: (id) =>
+        Promise.resolve(
+          (input.messageAttachments ?? []).find((attachment) => attachment.id === id) ??
+            null,
+        ),
+      findByMessageIds: (sourceEvidenceIds) =>
+        Promise.resolve(
+          sourceEvidenceIds.flatMap(
+            (sourceEvidenceId) =>
+              messageAttachmentsBySourceEvidenceId.get(sourceEvidenceId) ?? [],
+          ),
+        ),
+      upsertManyForMessage: () => Promise.resolve(),
     },
     salesforceEventContext: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
@@ -770,6 +797,66 @@ describe("Stage 1 timeline presenter", () => {
       sendStatus: "pending",
       attachmentCount: 0,
     });
+  });
+
+  it("hydrates attachmentCount from message_attachments rows for canonical Gmail emails", async () => {
+    const gmailOneToOne = buildGmailOutboundEmailEvent({
+      id: "evt_gmail_attachment_count",
+      sourceEvidenceId: "sev_gmail_attachment_count",
+      occurredAt: "2026-01-01T00:05:30.000Z",
+      subject: "Field photo",
+      snippet: "See attached photo.",
+      bodyPreview: "See attached photo.",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [gmailOneToOne.canonicalEvent],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_gmail_attachment_count",
+          provider: "gmail",
+          providerRecordType: "gmail_message",
+          providerRecordId: "gmail-attachment-count",
+        }),
+      ],
+      salesforceCommunicationDetails: [],
+      gmailMessageDetails: [gmailOneToOne.detail],
+      messageAttachments: [
+        {
+          id: "att:gmail:gmail-attachment-count:0/1",
+          sourceEvidenceId: "sev_gmail_attachment_count",
+          provider: "gmail",
+          gmailAttachmentId: "gmail-attachment-1",
+          mimeType: "image/jpeg",
+          filename: "field-photo.jpg",
+          sizeBytes: 1234,
+          storageKey: "gmail/ab/att:gmail:gmail-attachment-count:0/1",
+          createdAt: "2026-01-01T00:05:30.000Z",
+        },
+        {
+          id: "att:gmail:gmail-attachment-count:0/2",
+          sourceEvidenceId: "sev_gmail_attachment_count",
+          provider: "gmail",
+          gmailAttachmentId: "gmail-attachment-2",
+          mimeType: "application/pdf",
+          filename: "packet.pdf",
+          sizeBytes: 5678,
+          storageKey: "gmail/cd/att:gmail:gmail-attachment-count:0/2",
+          createdAt: "2026-01-01T00:05:30.000Z",
+        },
+      ],
+      timelineRows: [gmailOneToOne.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    await expect(
+      presenter.listTimelineItemsByContactId("contact_1"),
+    ).resolves.toMatchObject([
+      {
+        canonicalEventId: "evt_gmail_attachment_count",
+        family: "one_to_one_email",
+        attachmentCount: 2,
+      },
+    ]);
   });
 
   it("collapses cross-provider outbound email duplicates and keeps the richer Gmail record", async () => {

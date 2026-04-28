@@ -4,6 +4,7 @@ import type {
   ContactRecord,
   InboxDrivingEventType,
   InboxProjectionRow,
+  MessageAttachmentRecord,
   TimelineItem,
 } from "@as-comms/contracts";
 
@@ -105,6 +106,10 @@ interface InboxDetailCacheData {
     >
   >;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
+  readonly attachmentsByCanonicalEventId: ReadonlyMap<
+    string,
+    readonly MessageAttachmentRecord[]
+  >;
   readonly timelinePage: {
     readonly hasMore: boolean;
     readonly nextCursor: string | null;
@@ -2004,6 +2009,10 @@ function buildTimelineEntry(input: {
   >;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly referenceNowIso: string;
+  readonly attachmentsByCanonicalEventId: ReadonlyMap<
+    string,
+    readonly MessageAttachmentRecord[]
+  >;
 }): InboxTimelineEntryViewModel {
   const latestProjectionSnippet =
     input.item.family === "one_to_one_email" &&
@@ -2078,6 +2087,19 @@ function buildTimelineEntry(input: {
     input.item.canonicalEventId ===
       input.inboxProjection.lastCanonicalEventId &&
     (finalKind === "inbound-email" || finalKind === "inbound-sms");
+  const attachments =
+    input.item.family === "one_to_one_email"
+      ? (
+          input.attachmentsByCanonicalEventId.get(input.item.canonicalEventId) ??
+          []
+        ).map((attachment) => ({
+          id: attachment.id,
+          mimeType: attachment.mimeType,
+          filename: attachment.filename,
+          sizeBytes: attachment.sizeBytes,
+          proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
+        }))
+      : [];
 
   return {
     id: input.item.id,
@@ -2146,6 +2168,7 @@ function buildTimelineEntry(input: {
       input.item.family === "one_to_one_email"
         ? (input.item.attachmentCount ?? 0)
         : 0,
+    attachments,
     campaignActivity,
     noteId: input.item.family === "internal_note" ? input.item.noteId : null,
     authorId:
@@ -2787,6 +2810,32 @@ async function readInboxDetailCacheData(
     gmailDetailBySourceEvidenceId,
   });
   const latestReadAt = latestAttentionReadAt(attentionReadAudits);
+  const sourceEvidenceIdByCanonicalEventId = new Map(
+    canonicalEvents.map((event) => [event.id, event.sourceEvidenceId]),
+  );
+  const timelineSourceEvidenceIds = uniqueStrings(
+    timelinePage.items
+      .map((item) => sourceEvidenceIdByCanonicalEventId.get(item.canonicalEventId))
+      .filter((value): value is string => typeof value === "string"),
+  );
+  const attachments =
+    timelineSourceEvidenceIds.length === 0
+      ? []
+      : await runtime.repositories.messageAttachments.findByMessageIds(
+          timelineSourceEvidenceIds,
+        );
+  const attachmentsBySourceEvidenceId = new Map<
+    string,
+    MessageAttachmentRecord[]
+  >();
+
+  for (const attachment of attachments) {
+    const existing =
+      attachmentsBySourceEvidenceId.get(attachment.sourceEvidenceId) ?? [];
+    existing.push(attachment);
+    attachmentsBySourceEvidenceId.set(attachment.sourceEvidenceId, existing);
+  }
+
   const isUnread =
     inboxProjection.bucket === "New" ||
     (lastNonAliasOutboundAt !== null &&
@@ -2807,6 +2856,14 @@ async function readInboxDetailCacheData(
       }),
     projectMetadataById: await loadProjectMetadataById(memberships),
     projectLabelByAlias: await loadProjectLabelByAlias(projectAliasRecords),
+    attachmentsByCanonicalEventId: new Map(
+      timelinePage.items.map((item) => [
+        item.canonicalEventId,
+        attachmentsBySourceEvidenceId.get(
+          sourceEvidenceIdByCanonicalEventId.get(item.canonicalEventId) ?? "",
+        ) ?? [],
+      ]),
+    ),
     timelinePage: {
       hasMore: timelinePage.hasMore,
       nextCursor: timelinePage.hasMore ? timelinePage.nextBeforeSortKey : null,
@@ -3160,6 +3217,7 @@ export async function getInboxTimelinePage(
           cachedData.campaignActivitySummaryByCampaignId,
         projectLabelByAlias: cachedData.projectLabelByAlias,
         referenceNowIso,
+        attachmentsByCanonicalEventId: cachedData.attachmentsByCanonicalEventId,
       }),
     ),
     page: cachedData.timelinePage,
@@ -3258,6 +3316,7 @@ export async function getInboxDetail(
           cachedData.campaignActivitySummaryByCampaignId,
         projectLabelByAlias: cachedData.projectLabelByAlias,
         referenceNowIso,
+        attachmentsByCanonicalEventId: cachedData.attachmentsByCanonicalEventId,
       }),
     ),
     bucket: mapBucket(cachedData.inboxProjection.bucket),

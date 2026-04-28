@@ -338,6 +338,11 @@ function buildContext(input: {
         return Promise.resolve(record);
       },
     },
+    messageAttachments: {
+      findById: () => Promise.resolve(null),
+      findByMessageIds: () => Promise.resolve([]),
+      upsertManyForMessage: () => Promise.resolve(),
+    },
     salesforceEventContext: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
       upsert: (record: SalesforceEventContextRecord) => Promise.resolve(record),
