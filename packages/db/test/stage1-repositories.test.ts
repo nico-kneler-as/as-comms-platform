@@ -915,4 +915,155 @@ describe("Stage 1 DB repositories", () => {
       inboxSentExpectedOrder.slice(2),
     );
   });
+
+  it("matches project filters against any active membership and excludes inactive project memberships", async () => {
+    const { repositories, settings } = await createTestStage1Context();
+
+    await repositories.projectDimensions.upsert({
+      projectId: "project:pnw-bio",
+      projectName: "PNW Biodiversity",
+      source: "salesforce",
+      isActive: true,
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "project:whitebark-pine",
+      projectName: "Tracking Whitebark Pine",
+      source: "salesforce",
+      isActive: true,
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "project:inactive-c",
+      projectName: "Inactive Project",
+      source: "salesforce",
+      isActive: true,
+    });
+    await settings.projects.setActive("project:inactive-c", false);
+
+    await repositories.contacts.upsert({
+      id: "contact:multi-project",
+      salesforceContactId: "003-multi-project",
+      displayName: "Matt Bromley",
+      primaryEmail: "matt@example.org",
+      primaryPhone: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await repositories.contactMemberships.upsert({
+      id: "membership:multi:pnw",
+      contactId: "contact:multi-project",
+      projectId: "project:pnw-bio",
+      expeditionId: null,
+      role: "volunteer",
+      status: "lead",
+      source: "salesforce",
+      createdAt: "2026-04-01T10:00:00.000Z",
+    });
+    await repositories.contactMemberships.upsert({
+      id: "membership:multi:whitebark",
+      contactId: "contact:multi-project",
+      projectId: "project:whitebark-pine",
+      expeditionId: null,
+      role: "volunteer",
+      status: "in_training",
+      source: "salesforce",
+      createdAt: "2026-04-02T10:00:00.000Z",
+    });
+    await repositories.contactMemberships.upsert({
+      id: "membership:multi:inactive",
+      contactId: "contact:multi-project",
+      projectId: "project:inactive-c",
+      expeditionId: null,
+      role: "volunteer",
+      status: "successful",
+      source: "salesforce",
+      createdAt: "2026-04-03T10:00:00.000Z",
+    });
+    await repositories.sourceEvidence.append({
+      id: "source:multi-project-inbound",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "multi-project-inbound",
+      receivedAt: "2026-04-20T12:00:00.000Z",
+      occurredAt: "2026-04-20T12:00:00.000Z",
+      payloadRef: "payloads/gmail/multi-project-inbound.json",
+      idempotencyKey: "gmail:multi-project-inbound",
+      checksum: "checksum:multi-project-inbound",
+    });
+    await repositories.canonicalEvents.upsert({
+      id: "event:multi-project-inbound",
+      contactId: "contact:multi-project",
+      eventType: "communication.email.inbound",
+      channel: "email",
+      occurredAt: "2026-04-20T12:00:00.000Z",
+      contentFingerprint: null,
+      sourceEvidenceId: "source:multi-project-inbound",
+      idempotencyKey: "canonical:multi-project-inbound",
+      provenance: {
+        primaryProvider: "gmail",
+        primarySourceEvidenceId: "source:multi-project-inbound",
+        supportingSourceEvidenceIds: [],
+        winnerReason: "single_source",
+        sourceRecordType: "message",
+        sourceRecordId: "multi-project-inbound",
+        messageKind: "one_to_one",
+        campaignRef: null,
+        threadRef: null,
+        direction: "inbound",
+        notes: null,
+      },
+      reviewState: "clear",
+    });
+    await repositories.inboxProjection.upsert({
+      contactId: "contact:multi-project",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-20T12:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-20T12:00:00.000Z",
+      snippet: "Testing project filters.",
+      lastCanonicalEventId: "event:multi-project-inbound",
+      lastEventType: "communication.email.inbound",
+    });
+
+    const pnwRows = await repositories.inboxProjection.listPageOrderedByRecency({
+      filter: "all",
+      order: "last-inbound",
+      limit: 10,
+      cursor: null,
+      projectId: "project:pnw-bio",
+    });
+    const whitebarkRows =
+      await repositories.inboxProjection.listPageOrderedByRecency({
+        filter: "all",
+        order: "last-inbound",
+        limit: 10,
+        cursor: null,
+        projectId: "project:whitebark-pine",
+      });
+    const inactiveRows =
+      await repositories.inboxProjection.listPageOrderedByRecency({
+        filter: "all",
+        order: "last-inbound",
+        limit: 10,
+        cursor: null,
+        projectId: "project:inactive-c",
+      });
+    const pnwCounts = await repositories.inboxProjection.countByFilters({
+      projectId: "project:pnw-bio",
+    });
+    const inactiveCounts = await repositories.inboxProjection.countByFilters({
+      projectId: "project:inactive-c",
+    });
+
+    expect(pnwRows.map((row) => row.contactId)).toEqual([
+      "contact:multi-project",
+    ]);
+    expect(whitebarkRows.map((row) => row.contactId)).toEqual([
+      "contact:multi-project",
+    ]);
+    expect(inactiveRows).toEqual([]);
+    expect(pnwCounts.all).toBe(1);
+    expect(inactiveCounts.all).toBe(0);
+  });
 });

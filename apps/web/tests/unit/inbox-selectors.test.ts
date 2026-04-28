@@ -103,6 +103,8 @@ function buildItem(
     snippet: overrides.snippet ?? "Snippet",
     latestChannel: overrides.latestChannel ?? "email",
     projectLabel: overrides.projectLabel ?? null,
+    additionalActiveProjectsCount:
+      overrides.additionalActiveProjectsCount ?? 0,
     volunteerStage: overrides.volunteerStage ?? "active",
     bucket: overrides.bucket ?? "opened",
     needsFollowUp: overrides.needsFollowUp ?? false,
@@ -771,6 +773,351 @@ describe("real inbox selectors", () => {
       list.items.find((item) => item.contactId === "contact:steve-herman")
         ?.projectLabel,
     ).toBe("Passive Acoustic");
+  });
+
+  it("counts only other active memberships for the inbox row +N indicator", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:matt-bromley",
+      salesforceContactId: "003-matt",
+      displayName: "Matt Bromley",
+      primaryEmail: "matt@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-bio",
+      projectName: "PNW Biodiversity",
+      projectAlias: "PNW Biodiversity",
+      membershipId: "membership:matt:pnw",
+      membershipStatus: "lead",
+      membershipCreatedAt: "2026-04-01T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:matt-bromley",
+      salesforceContactId: "003-matt",
+      displayName: "Matt Bromley",
+      primaryEmail: "matt@example.org",
+      primaryPhone: null,
+      projectId: "project:whitebark-pine",
+      projectName: "Tracking Whitebark Pine",
+      projectAlias: "Whitebark Pine",
+      membershipId: "membership:matt:whitebark",
+      membershipStatus: "in_training",
+      membershipCreatedAt: "2026-04-02T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:matt-bromley",
+      salesforceContactId: "003-matt",
+      displayName: "Matt Bromley",
+      primaryEmail: "matt@example.org",
+      primaryPhone: null,
+      projectId: "project:wild-scenic-rivers",
+      projectName: "Wild and Scenic Rivers",
+      projectAlias: "Wild and Scenic Rivers",
+      membershipId: "membership:matt:wsr",
+      membershipStatus: "successful",
+      membershipCreatedAt: "2026-04-03T10:00:00.000Z",
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:matt:whitebark",
+      alias: "whitebark@adventurescientists.org",
+      signature: "",
+      projectId: "project:whitebark-pine",
+      createdAt: new Date("2026-04-20T12:00:00.000Z"),
+      updatedAt: new Date("2026-04-20T12:00:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "matt-inbound-1",
+      contactId: "contact:matt-bromley",
+      occurredAt: "2026-04-20T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Re: Whitebark logistics",
+      snippet: "Checking the latest whitebark plan.",
+      projectInboxAlias: "whitebark@adventurescientists.org",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:matt-bromley",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-20T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-20T13:00:00.000Z",
+      snippet: "Checking the latest whitebark plan.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const matt = (await getInboxList()).items.find(
+      (item) => item.contactId === "contact:matt-bromley",
+    );
+
+    expect(matt).toMatchObject({
+      projectLabel: "Whitebark Pine",
+      additionalActiveProjectsCount: 2,
+    });
+  });
+
+  it("ignores inactive memberships when computing additional row project counts and filters", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:ryan-davis",
+      salesforceContactId: "003-ryan",
+      displayName: "Ryan Davis",
+      primaryEmail: "ryan@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-bio",
+      projectName: "PNW Biodiversity",
+      projectAlias: "PNW Biodiversity",
+      membershipId: "membership:ryan:pnw",
+      membershipStatus: "applied",
+      membershipCreatedAt: "2026-04-03T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:ryan-davis",
+      salesforceContactId: "003-ryan",
+      displayName: "Ryan Davis",
+      primaryEmail: "ryan@example.org",
+      primaryPhone: null,
+      projectId: "project:whitebark-pine",
+      projectName: "Tracking Whitebark Pine",
+      projectAlias: "Whitebark Pine",
+      membershipId: "membership:ryan:whitebark",
+      membershipStatus: "successful",
+      membershipCreatedAt: "2026-04-02T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:ryan-davis",
+      salesforceContactId: "003-ryan",
+      displayName: "Ryan Davis",
+      primaryEmail: "ryan@example.org",
+      primaryPhone: null,
+      projectId: "project:wild-scenic-rivers",
+      projectName: "Wild and Scenic Rivers",
+      projectAlias: "Wild and Scenic Rivers",
+      membershipId: "membership:ryan:wsr",
+      membershipStatus: "in_training",
+      membershipCreatedAt: "2026-04-01T10:00:00.000Z",
+    });
+    await runtime.context.settings.projects.setActive(
+      "project:whitebark-pine",
+      false,
+    );
+    await runtime.context.settings.projects.setActive(
+      "project:wild-scenic-rivers",
+      false,
+    );
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "ryan-inbound-1",
+      contactId: "contact:ryan-davis",
+      occurredAt: "2026-04-20T14:00:00.000Z",
+      direction: "inbound",
+      subject: "Re: PNW timing",
+      snippet: "Only the active project should count here.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:ryan-davis",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-20T14:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-20T14:00:00.000Z",
+      snippet: "Only the active project should count here.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const list = await getInboxList();
+    const activeProjectFilter = await getInboxList("all", {
+      projectId: "project:pnw-bio",
+    });
+    const inactiveProjectFilter = await getInboxList("all", {
+      projectId: "project:whitebark-pine",
+    });
+    const ryan = list.items.find((item) => item.contactId === "contact:ryan-davis");
+
+    expect(ryan).toMatchObject({
+      projectLabel: "PNW Biodiversity",
+      additionalActiveProjectsCount: 0,
+    });
+    expect(
+      activeProjectFilter.items.some(
+        (item) => item.contactId === "contact:ryan-davis",
+      ),
+    ).toBe(true);
+    expect(
+      inactiveProjectFilter.items.some(
+        (item) => item.contactId === "contact:ryan-davis",
+      ),
+    ).toBe(false);
+  });
+
+  it("counts one additional active project when a volunteer has two active memberships", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:steve-two-projects",
+      salesforceContactId: "003-steve-two",
+      displayName: "Steve Two Projects",
+      primaryEmail: "steve.two@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-bio",
+      projectName: "PNW Biodiversity",
+      projectAlias: "PNW Biodiversity",
+      membershipId: "membership:steve-two:pnw",
+      membershipStatus: "lead",
+      membershipCreatedAt: "2026-04-01T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:steve-two-projects",
+      salesforceContactId: "003-steve-two",
+      displayName: "Steve Two Projects",
+      primaryEmail: "steve.two@example.org",
+      primaryPhone: null,
+      projectId: "project:whitebark-pine",
+      projectName: "Tracking Whitebark Pine",
+      projectAlias: "Whitebark Pine",
+      membershipId: "membership:steve-two:whitebark",
+      membershipStatus: "trip_planning",
+      membershipCreatedAt: "2026-04-02T10:00:00.000Z",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "steve-two-inbound-1",
+      contactId: "contact:steve-two-projects",
+      occurredAt: "2026-04-20T15:00:00.000Z",
+      direction: "inbound",
+      subject: "Re: Whitebark route",
+      snippet: "Two active projects should yield +1.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:steve-two-projects",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-20T15:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-20T15:00:00.000Z",
+      snippet: "Two active projects should yield +1.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const steve = (await getInboxList()).items.find(
+      (item) => item.contactId === "contact:steve-two-projects",
+    );
+
+    expect(steve).toMatchObject({
+      projectLabel: "Whitebark Pine",
+      additionalActiveProjectsCount: 1,
+    });
+  });
+
+  it("matches project filters against any active membership while keeping the primary chip unchanged", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:matt-filter",
+      salesforceContactId: "003-matt-filter",
+      displayName: "Matt Bromley",
+      primaryEmail: "matt.filter@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-bio",
+      projectName: "PNW Biodiversity",
+      projectAlias: "PNW Biodiversity",
+      membershipId: "membership:matt-filter:pnw",
+      membershipStatus: "lead",
+      membershipCreatedAt: "2026-04-01T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:matt-filter",
+      salesforceContactId: "003-matt-filter",
+      displayName: "Matt Bromley",
+      primaryEmail: "matt.filter@example.org",
+      primaryPhone: null,
+      projectId: "project:whitebark-pine",
+      projectName: "Tracking Whitebark Pine",
+      projectAlias: "Whitebark Pine",
+      membershipId: "membership:matt-filter:whitebark",
+      membershipStatus: "in_training",
+      membershipCreatedAt: "2026-04-02T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:matt-filter",
+      salesforceContactId: "003-matt-filter",
+      displayName: "Matt Bromley",
+      primaryEmail: "matt.filter@example.org",
+      primaryPhone: null,
+      projectId: "project:wild-scenic-rivers",
+      projectName: "Wild and Scenic Rivers",
+      projectAlias: "Wild and Scenic Rivers",
+      membershipId: "membership:matt-filter:wsr",
+      membershipStatus: "successful",
+      membershipCreatedAt: "2026-04-03T10:00:00.000Z",
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:matt-filter:whitebark",
+      alias: "whitebark-filter@adventurescientists.org",
+      signature: "",
+      projectId: "project:whitebark-pine",
+      createdAt: new Date("2026-04-20T12:00:00.000Z"),
+      updatedAt: new Date("2026-04-20T12:00:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "matt-filter-inbound-1",
+      contactId: "contact:matt-filter",
+      occurredAt: "2026-04-20T16:00:00.000Z",
+      direction: "inbound",
+      subject: "Re: Whitebark logistics",
+      snippet: "Project filters should match any active membership.",
+      projectInboxAlias: "whitebark-filter@adventurescientists.org",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:matt-filter",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-20T16:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-20T16:00:00.000Z",
+      snippet: "Project filters should match any active membership.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const pnwFilter = await getInboxList("all", {
+      projectId: "project:pnw-bio",
+    });
+    const whitebarkFilter = await getInboxList("all", {
+      projectId: "project:whitebark-pine",
+    });
+    const mattInPnw = pnwFilter.items.find(
+      (item) => item.contactId === "contact:matt-filter",
+    );
+    const mattInWhitebark = whitebarkFilter.items.find(
+      (item) => item.contactId === "contact:matt-filter",
+    );
+
+    expect(mattInPnw).toMatchObject({
+      projectLabel: "Whitebark Pine",
+      additionalActiveProjectsCount: 2,
+    });
+    expect(mattInWhitebark).toMatchObject({
+      projectLabel: "Whitebark Pine",
+      additionalActiveProjectsCount: 2,
+    });
   });
 
   it("uses bucket, needsFollowUp, and hasUnresolved for the secondary filters", async () => {
