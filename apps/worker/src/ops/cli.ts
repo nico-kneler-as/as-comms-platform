@@ -32,6 +32,7 @@ import { runBackfillSalesforceCommunicationDetailsCommand } from "./backfill-sal
 import { runBackfillMembershipSfIdsCommand } from "./backfill-membership-sf-ids.js";
 import { runBackfillGmailMboxBodiesCommand } from "./backfill-gmail-mbox-bodies.js";
 import { runBackfillContentFingerprintCommand } from "./backfill-content-fingerprint.js";
+import { runBackfillGarbledMessageBodiesCommand } from "./backfill-garbled-message-bodies.js";
 import { runBackfillMailchimpCampaignBodyCommand } from "./backfill-mailchimp-campaign-body.js";
 import { runCleanupGmailDraftEventsCommand } from "./cleanup-gmail-draft-events.js";
 import { runCleanupSalesforceOwnerScopeCommand } from "./cleanup-salesforce-owner-scope.js";
@@ -356,6 +357,9 @@ async function main(): Promise<void> {
     case "backfill-content-fingerprint":
       await runBackfillContentFingerprintCommand(rest, process.env);
       return;
+    case "backfill-garbled-message-bodies":
+      await runBackfillGarbledMessageBodiesCommand(rest, process.env);
+      return;
     case "backfill-mailchimp-campaign-body":
       await runBackfillMailchimpCampaignBodyCommand(rest, process.env);
       return;
@@ -376,7 +380,7 @@ async function main(): Promise<void> {
       return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-mailchimp-campaign-body, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, dedup-historical-ledger, reconcile-identity-queue, reclassify-sf-direction.",
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, backfill-mailchimp-campaign-body, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, dedup-historical-ledger, reconcile-identity-queue, reclassify-sf-direction.",
       );
   }
 }

@@ -11,6 +11,7 @@
     "start": "node dist/index.js",
     "ops": "tsx src/ops/cli.ts",
     "ops:backfill-content-fingerprint": "tsx src/ops/backfill-content-fingerprint.ts",
+    "ops:backfill-garbled-message-bodies": "tsx src/ops/cli.ts backfill-garbled-message-bodies",
     "ops:check-config": "tsx src/ops/cli.ts check-config",
     "ops:backfill-gmail-message-bodies": "tsx src/ops/backfill-gmail-message-bodies.ts",
     "ops:backfill-gmail-mbox-bodies": "tsx src/ops/cli.ts backfill-gmail-mbox-bodies",
