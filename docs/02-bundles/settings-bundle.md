@@ -26,7 +26,7 @@ Make routing, access, integration health, timezone, and AI knowledge configurati
 - 30-day rolling cookie sessions
 - Google SSO + server-owned sessions in production
 - **Two flat roles: `admin` and `operator`** — no permissions matrix (per `D-025`)
-- First-time Google sign-in creates an `operator` by default; admins are promoted via a one-time ops script
+- First-time Google sign-in is allowed only for active, pre-seeded `@adventurescientists.org` users; Settings admins (or initial ops setup) create the user row first, and admin promotion remains an explicit ops/admin action
 - header auth is dev/internal only: trusted header `x-dev-operator: <email>` is accepted only when `NODE_ENV !== 'production'`, seeded by a dev-only `/api/dev-auth?email=X` route that must 404 in prod
 - Notion-backed AI knowledge uses background sync/cache with no approval gate
 - admin mutations must be auditable via `audit_policy_evidence`
