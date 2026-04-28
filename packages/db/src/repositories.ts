@@ -52,6 +52,8 @@ import {
   mapIdentityResolutionToInsert,
   mapInboxProjectionRow,
   mapInboxProjectionToInsert,
+  mapMessageAttachmentRow,
+  mapMessageAttachmentToInsert,
   mapPendingComposerOutboundRow,
   mapPendingComposerOutboundToInsert,
   mapProjectAliasRow,
@@ -88,6 +90,7 @@ import {
   integrationHealth,
   identityResolutionQueue,
   mailchimpCampaignActivityDetails,
+  messageAttachments,
   manualNoteDetails,
   pendingComposerOutbounds,
   projectAliases,
@@ -1471,6 +1474,56 @@ function createStage1RepositoriesInternal(
         return mapGmailMessageDetailRow(
           requireRow(row, "Expected Gmail message detail row to be returned."),
         );
+      },
+    },
+
+    messageAttachments: {
+      async findById(id) {
+        const [row] = await db
+          .select()
+          .from(messageAttachments)
+          .where(eq(messageAttachments.id, id))
+          .limit(1);
+
+        return row === undefined ? null : mapMessageAttachmentRow(row);
+      },
+
+      async findByMessageIds(sourceEvidenceIds) {
+        if (sourceEvidenceIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(messageAttachments)
+          .where(inArray(messageAttachments.sourceEvidenceId, [...sourceEvidenceIds]))
+          .orderBy(
+            asc(messageAttachments.sourceEvidenceId),
+            asc(messageAttachments.id),
+          );
+
+        return rows.map(mapMessageAttachmentRow);
+      },
+
+      async upsertManyForMessage(sourceEvidenceId, rows) {
+        if (rows.length === 0) {
+          return;
+        }
+
+        await db
+          .insert(messageAttachments)
+          .values(
+            rows.map((row) =>
+              mapMessageAttachmentToInsert({
+                ...row,
+                sourceEvidenceId,
+                createdAt: new Date().toISOString(),
+              }),
+            ),
+          )
+          .onConflictDoNothing({
+            target: messageAttachments.id,
+          });
       },
     },
 

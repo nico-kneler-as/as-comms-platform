@@ -361,6 +361,34 @@ describe("Stage 1 DB repositories", () => {
         sourceEvidence.id,
       ]),
     ).resolves.toEqual([gmailDetail]);
+    await repositories.messageAttachments.upsertManyForMessage(
+      sourceEvidence.id,
+      [
+        {
+          id: "att:gmail:gmail-message-1:0",
+          provider: "gmail",
+          gmailAttachmentId: "gmail-attachment-1",
+          mimeType: "image/jpeg",
+          filename: "field-photo.jpg",
+          sizeBytes: 2048,
+          storageKey: "gmail/ab/att:gmail:gmail-message-1:0",
+        },
+      ],
+    );
+    await expect(
+      repositories.messageAttachments.findByMessageIds([sourceEvidence.id]),
+    ).resolves.toMatchObject([
+      {
+        id: "att:gmail:gmail-message-1:0",
+        sourceEvidenceId: sourceEvidence.id,
+        provider: "gmail",
+        gmailAttachmentId: "gmail-attachment-1",
+        mimeType: "image/jpeg",
+        filename: "field-photo.jpg",
+        sizeBytes: 2048,
+        storageKey: "gmail/ab/att:gmail:gmail-message-1:0",
+      },
+    ]);
     await expect(
       repositories.salesforceEventContext.listBySourceEvidenceIds([
         sourceEvidence.id,

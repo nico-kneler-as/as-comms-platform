@@ -13,6 +13,7 @@ import type {
   InboxBucket,
   InboxProjectionRow,
   MailchimpCampaignActivityDetailRecord,
+  MessageAttachmentRecord,
   ManualNoteDetailRecord,
   ProjectKnowledgeEntryRecord,
   ProjectDimensionRecord,
@@ -158,6 +159,27 @@ export interface GmailMessageDetailRepository {
     contactIds: readonly string[],
   ): Promise<ReadonlyMap<string, string>>;
   upsert(record: GmailMessageDetailRecord): Promise<GmailMessageDetailRecord>;
+}
+
+export interface MessageAttachmentInsert {
+  readonly id: string;
+  readonly provider: "gmail";
+  readonly gmailAttachmentId: string;
+  readonly mimeType: string;
+  readonly filename: string | null;
+  readonly sizeBytes: number;
+  readonly storageKey: string;
+}
+
+export interface MessageAttachmentRepository {
+  findById(id: string): Promise<MessageAttachmentRecord | null>;
+  findByMessageIds(
+    sourceEvidenceIds: readonly string[],
+  ): Promise<readonly MessageAttachmentRecord[]>;
+  upsertManyForMessage(
+    sourceEvidenceId: string,
+    rows: readonly MessageAttachmentInsert[],
+  ): Promise<void>;
 }
 
 export interface SalesforceEventContextRepository {
@@ -391,6 +413,7 @@ export interface Stage1RepositoryBundle {
   readonly projectDimensions: ProjectDimensionRepository;
   readonly expeditionDimensions: ExpeditionDimensionRepository;
   readonly gmailMessageDetails: GmailMessageDetailRepository;
+  readonly messageAttachments: MessageAttachmentRepository;
   readonly salesforceEventContext: SalesforceEventContextRepository;
   readonly salesforceCommunicationDetails: SalesforceCommunicationDetailRepository;
   readonly simpleTextingMessageDetails: SimpleTextingMessageDetailRepository;

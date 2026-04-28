@@ -276,6 +276,11 @@ export const gmailMessageBodyKindSchema = z.enum([
 ]);
 export type GmailMessageBodyKind = z.infer<typeof gmailMessageBodyKindSchema>;
 
+export const messageAttachmentProviderSchema = z.literal("gmail");
+export type MessageAttachmentProvider = z.infer<
+  typeof messageAttachmentProviderSchema
+>;
+
 export const gmailMessageDetailSchema = z.object({
   sourceEvidenceId: idSchema,
   providerRecordId: z.string().min(1),
@@ -294,6 +299,19 @@ export const gmailMessageDetailSchema = z.object({
   projectInboxAlias: nullableStringSchema,
 });
 export type GmailMessageDetailRecord = z.infer<typeof gmailMessageDetailSchema>;
+
+export const messageAttachmentSchema = z.object({
+  id: idSchema,
+  sourceEvidenceId: idSchema,
+  provider: messageAttachmentProviderSchema,
+  gmailAttachmentId: z.string().min(1),
+  mimeType: z.string().min(1),
+  filename: nullableStringSchema,
+  sizeBytes: z.number().int().nonnegative(),
+  storageKey: z.string().min(1),
+  createdAt: timestampSchema,
+});
+export type MessageAttachmentRecord = z.infer<typeof messageAttachmentSchema>;
 
 export const salesforceEventContextSchema = z.object({
   sourceEvidenceId: idSchema,

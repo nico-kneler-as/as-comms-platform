@@ -168,6 +168,34 @@ export async function seedInboxEmailEvent(
   };
 }
 
+export async function seedInboxMessageAttachment(
+  context: TestStage1Context,
+  input: {
+    readonly sourceEvidenceId: string;
+    readonly id: string;
+    readonly mimeType: string;
+    readonly filename: string | null;
+    readonly sizeBytes: number;
+    readonly storageKey: string;
+    readonly gmailAttachmentId?: string;
+  },
+): Promise<void> {
+  await context.repositories.messageAttachments.upsertManyForMessage(
+    input.sourceEvidenceId,
+    [
+      {
+        id: input.id,
+        provider: "gmail",
+        gmailAttachmentId: input.gmailAttachmentId ?? `gmail:${input.id}`,
+        mimeType: input.mimeType,
+        filename: input.filename,
+        sizeBytes: input.sizeBytes,
+        storageKey: input.storageKey,
+      },
+    ],
+  );
+}
+
 export async function seedInboxSmsEvent(
   context: TestStage1Context,
   input: {

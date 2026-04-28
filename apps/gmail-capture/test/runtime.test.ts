@@ -17,6 +17,8 @@ describe("Gmail capture runtime config", () => {
 
     expect(config.port).toBe(3011);
     expect(config.service.liveAccount).toBe("volunteers@adventurescientists.org");
+    expect(config.attachments.attachmentVolumePath).toBe("./tmp/attachments");
+    expect(config.attachments.maxAttachmentBytesPerAttachment).toBe(52_428_800);
   });
 
   it("fails closed when required Gmail capture env is missing", () => {

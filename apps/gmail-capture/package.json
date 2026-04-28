@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@as-comms/contracts": "workspace:*",
+    "@as-comms/db": "workspace:*",
     "@as-comms/integrations": "workspace:*",
     "zod": "^3.24.2"
   }

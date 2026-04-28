@@ -15,6 +15,7 @@ import {
   contactInboxProjection,
   contactTimelineProjection,
   databaseSchema,
+  messageAttachments,
   projectKnowledgeEntries,
   sourceEvidenceLog
 } from "../src/index.js";
@@ -38,6 +39,7 @@ describe("Stage 1 DB schema", () => {
       "integrationHealth",
       "mailchimpCampaignActivityDetails",
       "manualNoteDetails",
+      "messageAttachments",
       "pendingComposerOutbounds",
       "projectAliases",
       "projectDimensions",
@@ -59,6 +61,7 @@ describe("Stage 1 DB schema", () => {
     expect(getTableName(projectKnowledgeEntries)).toBe(
       "project_knowledge_entries"
     );
+    expect(getTableName(messageAttachments)).toBe("message_attachments");
     expect(getTableName(sourceEvidenceLog)).toBe("source_evidence_log");
     expect(getTableName(canonicalEventLedger)).toBe("canonical_event_ledger");
     expect(getTableName(contactInboxProjection)).toBe(
