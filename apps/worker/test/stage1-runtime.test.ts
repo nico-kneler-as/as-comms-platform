@@ -144,7 +144,8 @@ describe("Stage 1 worker runtime task registration", () => {
         `*/1 * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
         `*/5 * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
         `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
-        `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`
+        `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
+        "*/15 * * * * reconcile-identity-queue ?id=identity-queue-reconcile&max=1"
       ].join("\n")
     );
   });

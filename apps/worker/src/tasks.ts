@@ -8,6 +8,11 @@ import {
   type PendingOutboundSweepTaskDependencies
 } from "./jobs/sweep-pending-outbounds.js";
 import {
+  createReconcileIdentityQueueTask,
+  reconcileIdentityQueueJobName,
+  type ReconcileIdentityQueueTaskDependencies
+} from "./jobs/reconcile-identity-queue.js";
+import {
   createNotionKnowledgeSyncTask,
   notionKnowledgeSyncJobName,
   type NotionKnowledgeSyncDependencies
@@ -25,6 +30,7 @@ export function createTaskList(
     readonly integrationHealth?: IntegrationHealthTaskDependencies;
     readonly notionKnowledgeSync?: NotionKnowledgeSyncDependencies;
     readonly pendingOutboundSweep?: PendingOutboundSweepTaskDependencies;
+    readonly reconcileIdentityQueue?: ReconcileIdentityQueueTaskDependencies;
   }
 ): TaskList {
   return {
@@ -34,6 +40,13 @@ export function createTaskList(
       : {
           [sweepPendingOutboundsJobName]: createSweepPendingOutboundsTask(
             input.pendingOutboundSweep
+          )
+        }),
+    ...(input?.reconcileIdentityQueue === undefined
+      ? {}
+      : {
+          [reconcileIdentityQueueJobName]: createReconcileIdentityQueueTask(
+            input.reconcileIdentityQueue
           )
         }),
     ...(input?.notionKnowledgeSync === undefined
