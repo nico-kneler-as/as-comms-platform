@@ -15,6 +15,8 @@
 import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 
+import { GOOGLE_WORKSPACE_DOMAIN } from "./google-sign-in-policy";
+
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30-day rolling session
 export const SESSION_UPDATE_AGE_SECONDS = 24 * 60 * 60;
 
@@ -25,11 +27,18 @@ export const authEdgeConfig: NextAuthConfig = {
     // `OAuthAccountNotLinked`. The admin pre-seeding workflow (users
     // rows are created by `ops:promote-admin` or the initial setup
     // script before the operator has ever OAuth'd) relies on this. Safe
-    // here because Google is our only provider and the operator pool is
-    // restricted to the verified `@adventurescientists.org` Workspace
-    // domain; there is no third-party OAuth surface that could spoof a
-    // Workspace email.
-    Google({ allowDangerousEmailAccountLinking: true })
+    // here because Google is our only provider and sign-in is fail-closed
+    // to pre-seeded, active AS Workspace users. `hd` adds a provider-side
+    // hosted-domain restriction, while the full sign-in callback in
+    // `./index.ts` re-checks the email domain and existing user record.
+    Google({
+      allowDangerousEmailAccountLinking: true,
+      authorization: {
+        params: {
+          hd: GOOGLE_WORKSPACE_DOMAIN
+        }
+      }
+    })
   ],
   pages: {
     signIn: "/auth/sign-in"

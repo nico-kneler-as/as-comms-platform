@@ -78,7 +78,7 @@ const REPLACEMENT_CHARACTER = "�";
 const BINARY_NOISE_THRESHOLD = 0.3;
 const BINARY_NOISE_MIN_LENGTH = 32;
 
-function isLikelyBinaryNoise(text: string): boolean {
+export function isLikelyBinaryNoise(text: string): boolean {
   if (text.length < BINARY_NOISE_MIN_LENGTH) {
     return false;
   }
