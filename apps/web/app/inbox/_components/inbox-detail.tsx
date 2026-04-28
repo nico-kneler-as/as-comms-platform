@@ -415,9 +415,12 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
               {activeProject ? (
                 <div className="flex min-w-0 items-center gap-2 text-xs">
                   <span className="min-w-0 truncate font-medium text-slate-700">
-                    {activeProject.projectName} {activeProject.year.toString()}
+                    {activeProject.projectName}
                   </span>
-                  <InboxProjectStatusBadge status={activeProject.status} />
+                  <InboxProjectStatusBadge
+                    status={activeProject.status}
+                    label={activeProject.statusLabel}
+                  />
                 </div>
               ) : (
                 <span className="text-xs text-slate-400">

@@ -1098,6 +1098,7 @@ describe("real inbox selectors", () => {
     expect(detail?.contact.activeProjects[0]).toMatchObject({
       projectName: "Amazon Basin Research",
       status: "in-training",
+      statusLabel: "In Training",
       crmUrl:
         "https://adventurescientists.lightning.force.com/lightning/r/Project__c/project%3Aamazon-basin/view",
       expeditionMemberUrl:
@@ -1119,7 +1120,7 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("renders the contact rail project card with expeditionMemberUrl as primary and crmUrl as secondary", async () => {
+  it("renders the contact rail project row as a single expedition-member anchor with a hover affordance", async () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     if (detail === null) {
@@ -1134,12 +1135,19 @@ describe("real inbox selectors", () => {
     expect(markup).toContain(
       'href="https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/a0B-sarah-membership/view"',
     );
-    expect(markup).toContain(
-      'href="https://adventurescientists.lightning.force.com/lightning/r/Project__c/project%3Aamazon-basin/view"',
-    );
+    expect(markup).toContain("group-hover:opacity-100");
+    expect(markup).not.toContain("↗ Project");
   });
 
-  it("falls back to crmUrl as the primary project link when expeditionMemberUrl is null", async () => {
+  it("does not render a project-page fallback link when expeditionMemberUrl is null", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.settings.projects.setActive(
+      "project:killer-whales",
+      false,
+    );
     const detail = await getInboxDetail("contact:lisa-zhang");
 
     if (detail === null) {
@@ -1151,10 +1159,254 @@ describe("real inbox selectors", () => {
       }),
     );
 
-    expect(markup).toContain(
-      'href="https://adventurescientists.lightning.force.com/lightning/r/Project__c/project%3Akiller-whales/view"',
-    );
+    expect(markup).not.toContain("href=");
     expect(markup).not.toContain("Expedition_Members__c");
+  });
+
+  it("keeps a successful membership on an active project in Active Projects", async () => {
+    const detail = await getInboxDetail("contact:lisa-zhang");
+
+    expect(detail).not.toBeNull();
+    expect(detail?.contact.activeProjects).toHaveLength(1);
+    expect(detail?.contact.activeProjects[0]).toMatchObject({
+      projectName: "Searching for Killer Whales",
+      projectIsActive: true,
+      status: "successful",
+      statusLabel: "Successful",
+    });
+    expect(detail?.contact.pastProjects).toHaveLength(0);
+  });
+
+  it("places inactive memberships in Past Projects regardless of volunteer status", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:ryan-davis",
+      salesforceContactId: "003-ryan",
+      displayName: "Ryan Davis",
+      primaryEmail: "ryan@example.org",
+      primaryPhone: null,
+      projectId: "project:plastic-free-parks",
+      projectName: "Plastic Free Parks 2025",
+      membershipId: "membership:ryan:parks",
+      salesforceMembershipId: "a0B-ryan-parks",
+      membershipStatus: "applied",
+      membershipCreatedAt: "2024-02-01T12:00:00.000Z",
+    });
+    await runtime.context.settings.projects.setActive(
+      "project:plastic-free-parks",
+      false,
+    );
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "ryan-inbound-1",
+      contactId: "contact:ryan-davis",
+      occurredAt: "2026-04-20T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Checking project placement",
+      snippet: "This project should now be in past projects.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:ryan-davis",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-20T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-20T13:00:00.000Z",
+      snippet: "This project should now be in past projects.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:ryan-davis");
+
+    expect(detail).not.toBeNull();
+    expect(detail?.contact.activeProjects).toHaveLength(0);
+    expect(detail?.contact.pastProjects[0]).toMatchObject({
+      projectName: "Plastic Free Parks 2025",
+      projectIsActive: false,
+      status: "applied",
+      statusLabel: "Applied",
+      signupYear: 2024,
+      expeditionMemberUrl:
+        "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/a0B-ryan-parks/view",
+    });
+  });
+
+  it("sorts Past Projects by membership createdAt descending", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:past-order",
+      salesforceContactId: "003-past-order",
+      displayName: "Past Order",
+      primaryEmail: "past@example.org",
+      primaryPhone: null,
+      projectId: "project:older",
+      projectName: "Older Project",
+      membershipId: "membership:past:older",
+      salesforceMembershipId: "a0B-past-older",
+      membershipStatus: "lead",
+      membershipCreatedAt: "2022-01-01T12:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:past-order",
+      salesforceContactId: "003-past-order",
+      displayName: "Past Order",
+      primaryEmail: "past@example.org",
+      primaryPhone: null,
+      projectId: "project:newer",
+      projectName: "Newer Project",
+      membershipId: "membership:past:newer",
+      salesforceMembershipId: "a0B-past-newer",
+      membershipStatus: "successful",
+      membershipCreatedAt: "2025-01-01T12:00:00.000Z",
+    });
+    await runtime.context.settings.projects.setActive("project:older", false);
+    await runtime.context.settings.projects.setActive("project:newer", false);
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "past-order-inbound-1",
+      contactId: "contact:past-order",
+      occurredAt: "2026-04-22T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Past sort",
+      snippet: "Checking past project order.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:past-order",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-22T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-22T13:00:00.000Z",
+      snippet: "Checking past project order.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:past-order");
+
+    expect(detail?.contact.pastProjects.map((project) => project.projectName)).toEqual([
+      "Newer Project",
+      "Older Project",
+    ]);
+    expect(detail?.contact.pastProjects.map((project) => project.signupYear)).toEqual([
+      2025,
+      2022,
+    ]);
+  });
+
+  it("normalizes the full Salesforce membership-status label surface for rail badges", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const statuses = [
+      ["lead", "Lead"],
+      ["confirmed", "Confirmed"],
+      ["applied", "Applied"],
+      ["pending_acceptance", "Pending Acceptance"],
+      ["accepted", "Accepted"],
+      ["in_training", "In Training"],
+      ["trip_planning", "Trip Planning"],
+      ["in_the_field", "In the Field"],
+      ["returning_gear", "Returning Gear"],
+      ["successful", "Successful"],
+      ["completed", "Completed"],
+      ["denied", "Denied"],
+      ["declined", "Declined"],
+      ["aborted", "Aborted"],
+      ["failed", "Failed"],
+      ["waitlist", "Waitlist"],
+    ] as const;
+
+    for (const [index, [status]] of statuses.entries()) {
+      const projectId = `project:status-${index.toString()}`;
+      await seedInboxContact(runtime.context, {
+        contactId: "contact:status-labels",
+        salesforceContactId: "003-status-labels",
+        displayName: "Status Labels",
+        primaryEmail: "status@example.org",
+        primaryPhone: null,
+        projectId,
+        projectName: `Status Project ${index.toString()}`,
+        membershipId: `membership:status:${index.toString()}`,
+        salesforceMembershipId: `a0B-status-${index.toString()}`,
+        membershipStatus: status,
+        membershipCreatedAt: `202${Math.min(index, 9).toString()}-01-01T00:00:00.000Z`,
+      });
+      await runtime.context.settings.projects.setActive(projectId, false);
+    }
+
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "status-labels-inbound-1",
+      contactId: "contact:status-labels",
+      occurredAt: "2026-04-24T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Status labels",
+      snippet: "Checking status labels.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:status-labels",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-24T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-24T13:00:00.000Z",
+      snippet: "Checking status labels.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:status-labels");
+
+    expect(detail).not.toBeNull();
+    expect(
+      new Set(detail?.contact.pastProjects.map((project) => project.statusLabel)),
+    ).toEqual(new Set(statuses.map(([, label]) => label)));
+  });
+
+  it("shows signup year only for past-project rows", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.settings.projects.setActive(
+      "project:killer-whales",
+      false,
+    );
+    const [activeDetail, pastDetail] = await Promise.all([
+      getInboxDetail("contact:sarah-martinez"),
+      getInboxDetail("contact:lisa-zhang"),
+    ]);
+
+    if (activeDetail === null || pastDetail === null) {
+      throw new Error("Expected inbox detail for active and past contacts");
+    }
+
+    const activeMarkup = renderToStaticMarkup(
+      createElement(InboxContactRail, {
+        contact: activeDetail.contact,
+      }),
+    );
+    const pastMarkup = renderToStaticMarkup(
+      createElement(InboxContactRail, {
+        contact: pastDetail.contact,
+      }),
+    );
+
+    const activeSection = activeMarkup.split("Past Projects")[0] ?? activeMarkup;
+    const pastSection = pastMarkup.split("Past Projects")[1] ?? pastMarkup;
+
+    expect(activeSection).not.toContain("tabular-nums");
+    expect(pastSection).toContain("tabular-nums");
+    expect(pastSection).toContain("2026");
   });
 
   it("uses the most recent internal note as the pinned note proxy", async () => {
@@ -1194,7 +1446,7 @@ describe("real inbox selectors", () => {
     );
   });
 
-  it("orders contact rail active projects newest-first by membership createdAt and uses short aliases", async () => {
+  it("orders contact rail active projects by status rank and uses short aliases", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -1266,9 +1518,9 @@ describe("real inbox selectors", () => {
     }
 
     expect(detail.contact.activeProjects.map((project) => project.projectName)).toEqual([
-      "Passive Acoustic",
-      "Whitebark Pine",
       "Illegal Timber",
+      "Whitebark Pine",
+      "Passive Acoustic",
     ]);
     expect(
       renderToStaticMarkup(
@@ -1279,11 +1531,23 @@ describe("real inbox selectors", () => {
     ).not.toContain("WPEF Tracking Whitebark Pine OR WA 2025-2026 2026");
   });
 
-  it("sets expeditionMemberUrl to null when the membership has no Salesforce membership id", async () => {
+  it("keeps inactive memberships in past projects and non-clickable when Salesforce membership id is missing", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.settings.projects.setActive(
+      "project:killer-whales",
+      false,
+    );
     const detail = await getInboxDetail("contact:lisa-zhang");
 
     expect(detail).not.toBeNull();
     expect(detail?.contact.pastProjects[0]).toMatchObject({
+      projectIsActive: false,
+      signupYear: 2026,
+      status: "successful",
+      statusLabel: "Successful",
       crmUrl:
         "https://adventurescientists.lightning.force.com/lightning/r/Project__c/project%3Akiller-whales/view",
       expeditionMemberUrl: null,

@@ -100,8 +100,10 @@ export interface InboxProjectMembershipViewModel {
   readonly membershipId: string;
   readonly projectId: string;
   readonly projectName: string;
-  readonly year: number;
+  readonly signupYear: number;
+  readonly projectIsActive: boolean;
   readonly status: InboxProjectStatus;
+  readonly statusLabel: string;
   readonly crmUrl: string;
   readonly expeditionMemberUrl: string | null;
 }

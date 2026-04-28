@@ -163,6 +163,23 @@ vi.mock("../../app/inbox/actions", () => ({
   sendComposerAction: vi.fn(),
 }));
 
+vi.mock("../../app/inbox/_components/composer-shared", async () => {
+  const actual = await vi.importActual(
+    "../../app/inbox/_components/composer-shared",
+  );
+
+  return {
+    ...actual,
+    readFileAsAttachment: async (file: File) => ({
+      id: `${file.name}:${String(file.size)}`,
+      filename: file.name,
+      size: file.size,
+      contentType: file.type || "application/octet-stream",
+      contentBase64: "YXR0YWNobWVudC1ib2R5",
+    }),
+  };
+});
+
 vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
   ComposerEmailSurface: ({
     attachments,
