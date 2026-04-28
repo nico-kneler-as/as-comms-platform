@@ -159,6 +159,7 @@ function buildList(
         snippet: "Thanks for the quick update.",
         latestChannel: "email",
         projectLabel: "Amazon Basin",
+        additionalActiveProjectsCount: 0,
         volunteerStage: "active",
         bucket: "new",
         needsFollowUp: false,
@@ -420,5 +421,30 @@ describe("Inbox list shell", () => {
       ),
     ).toBeNull();
     expect(activeSession.container.textContent).toContain("Riley Carter");
+  });
+
+  it("renders the primary project chip with an inline +N indicator", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    const baseItem = buildList().items[0];
+
+    if (baseItem === undefined) {
+      throw new Error("Expected an inbox list fixture item");
+    }
+
+    activeSession = await mountInboxList(
+      buildList({
+        items: [
+          {
+            ...baseItem,
+            additionalActiveProjectsCount: 2,
+          },
+        ],
+      }),
+    );
+
+    const row = activeSession.container.querySelector("[data-inbox-row='true']");
+
+    expect(row?.textContent).toContain("Amazon Basin");
+    expect(row?.textContent).toContain("+2");
   });
 });

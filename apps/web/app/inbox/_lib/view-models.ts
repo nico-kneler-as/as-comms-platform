@@ -58,6 +58,7 @@ export interface InboxListItemViewModel {
   readonly snippet: string;
   readonly latestChannel: InboxChannel;
   readonly projectLabel: string | null;
+  readonly additionalActiveProjectsCount: number;
   readonly volunteerStage: InboxVolunteerStage;
 
   // ── Row states (all separate, not collapsed) ──

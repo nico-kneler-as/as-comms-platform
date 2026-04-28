@@ -428,8 +428,11 @@ function buildInboxProjectPredicate(
 
   return sql`exists (
     select 1 from ${contactMemberships}
+    inner join ${projectDimensions}
+      on ${contactMemberships.projectId} = ${projectDimensions.projectId}
     where ${contactMemberships.contactId} = ${contactInboxProjection.contactId}
       and ${contactMemberships.projectId} = ${projectId}
+      and ${projectDimensions.isActive} = true
   )`;
 }
 
