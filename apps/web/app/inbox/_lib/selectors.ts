@@ -87,7 +87,15 @@ interface InboxDetailCacheData {
   readonly campaignActivitySummaryByCampaignId: Readonly<
     Record<string, CampaignActivitySummary>
   >;
-  readonly projectNameById: Readonly<Record<string, string>>;
+  readonly projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly timelinePage: {
     readonly hasMore: boolean;
@@ -535,6 +543,7 @@ function membershipSortRank(membership: ContactMembershipRecord): number {
     case "trip-planning":
       return 3;
     case "in-field":
+    case "in-the-field":
     case "active":
       return 4;
     case "successful":
@@ -589,6 +598,7 @@ function mapVolunteerStage(
     case "training":
     case "trip-planning":
     case "in-field":
+    case "in-the-field":
     case "active":
       return "active";
     case "successful":
@@ -635,6 +645,7 @@ function mapProjectStatus(status: string | null): InboxProjectStatus {
     case "trip-planning":
       return "trip-planning";
     case "in-field":
+    case "in-the-field":
     case "active":
       return "in-field";
     case "successful":
@@ -642,6 +653,49 @@ function mapProjectStatus(status: string | null): InboxProjectStatus {
       return "successful";
     default:
       return "applied";
+  }
+}
+
+function mapProjectStatusLabel(status: string | null): string {
+  switch (normalizeMembershipStatus(status)) {
+    case "lead":
+      return "Lead";
+    case "confirmed":
+      return "Confirmed";
+    case "applied":
+    case "applicant":
+      return "Applied";
+    case "pending-acceptance":
+      return "Pending Acceptance";
+    case "accepted":
+      return "Accepted";
+    case "in-training":
+    case "training":
+      return "In Training";
+    case "trip-planning":
+      return "Trip Planning";
+    case "in-field":
+    case "in-the-field":
+    case "active":
+      return "In the Field";
+    case "returning-gear":
+      return "Returning Gear";
+    case "successful":
+      return "Successful";
+    case "completed":
+      return "Completed";
+    case "denied":
+      return "Denied";
+    case "declined":
+      return "Declined";
+    case "aborted":
+      return "Aborted";
+    case "failed":
+      return "Failed";
+    case "waitlist":
+      return "Waitlist";
+    default:
+      return "Applied";
   }
 }
 
@@ -658,9 +712,21 @@ function resolveProjectName(
 
 function buildProjectMembershipViewModel(
   membership: ContactMembershipRecord,
-  projectNameById: Readonly<Record<string, string>>,
+  projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >,
 ): InboxProjectMembershipViewModel | null {
-  const projectName = resolveProjectName(membership, projectNameById);
+  const projectName =
+    membership.projectId === null
+      ? null
+      : (projectMetadataById[membership.projectId]?.projectName ??
+        membership.projectId);
 
   if (projectName === null || membership.projectId === null) {
     return null;
@@ -670,10 +736,11 @@ function buildProjectMembershipViewModel(
     membershipId: membership.id,
     projectId: membership.projectId,
     projectName,
-    // Gap: the canonical membership season/year is not persisted yet, so the
-    // shell keeps its existing contract with a selector-derived current year.
-    year: new Date().getUTCFullYear(),
+    signupYear: new Date(membership.createdAt).getUTCFullYear(),
+    projectIsActive:
+      projectMetadataById[membership.projectId]?.isActive ?? false,
     status: mapProjectStatus(membership.status),
+    statusLabel: mapProjectStatusLabel(membership.status),
     crmUrl: `https://adventurescientists.lightning.force.com/lightning/r/Project__c/${encodeURIComponent(
       membership.projectId,
     )}/view`,
@@ -685,8 +752,23 @@ function buildProjectMembershipViewModel(
   };
 }
 
-function isPastProject(status: InboxProjectStatus): boolean {
-  return status === "successful";
+function isPastProject(
+  membership: ContactMembershipRecord,
+  projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >,
+): boolean {
+  if (membership.projectId === null) {
+    return true;
+  }
+
+  return !(projectMetadataById[membership.projectId]?.isActive ?? false);
 }
 
 function formatJoinedAtLabel(createdAt: string): string {
@@ -2114,9 +2196,19 @@ function groupMembershipsByContactId(
   return grouped;
 }
 
-async function loadProjectNameById(
+async function loadProjectMetadataById(
   memberships: readonly ContactMembershipRecord[],
-): Promise<Readonly<Record<string, string>>> {
+): Promise<
+  Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >
+> {
   const projectIds = uniqueStrings(
     memberships.map((membership) => membership.projectId),
   );
@@ -2130,7 +2222,29 @@ async function loadProjectNameById(
     await runtime.repositories.projectDimensions.listByIds(projectIds);
 
   return Object.fromEntries(
-    dimensions.map((dimension) => [dimension.projectId, dimension.projectName]),
+    dimensions.map((dimension) => [
+      dimension.projectId,
+      {
+        projectName:
+          dimension.projectAlias?.trim().length
+            ? dimension.projectAlias
+            : dimension.projectName,
+        isActive: dimension.isActive ?? false,
+      },
+    ]),
+  );
+}
+
+async function loadProjectNameById(
+  memberships: readonly ContactMembershipRecord[],
+): Promise<Readonly<Record<string, string>>> {
+  const projectMetadataById = await loadProjectMetadataById(memberships);
+
+  return Object.fromEntries(
+    Object.entries(projectMetadataById).map(([projectId, metadata]) => [
+      projectId,
+      metadata.projectName,
+    ]),
   );
 }
 
@@ -2672,7 +2786,7 @@ async function readInboxDetailCacheData(
         runtime,
         canonicalEvents,
       }),
-    projectNameById: await loadProjectLabelById(memberships),
+    projectMetadataById: await loadProjectMetadataById(memberships),
     projectLabelByAlias: await loadProjectLabelByAlias(projectAliasRecords),
     timelinePage: {
       hasMore: timelinePage.hasMore,
@@ -2843,13 +2957,30 @@ function buildContactSummary(input: {
     readonly createdAt: string;
   } | null;
   readonly activityTimelineItems: readonly TimelineItem[];
-  readonly projectNameById: Readonly<Record<string, string>>;
+  readonly projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >;
   readonly referenceNowIso: string;
 }): InboxContactSummaryViewModel {
-  const memberships = sortMembershipsByCreatedAt(input.memberships);
-  const projectMemberships = memberships
+  const activeProjects = sortMemberships(input.memberships)
+    .filter((membership) => !isPastProject(membership, input.projectMetadataById))
     .map((membership) =>
-      buildProjectMembershipViewModel(membership, input.projectNameById),
+      buildProjectMembershipViewModel(membership, input.projectMetadataById),
+    )
+    .filter(
+      (membership): membership is InboxProjectMembershipViewModel =>
+        membership !== null,
+    );
+  const pastProjects = sortMembershipsByCreatedAt(input.memberships)
+    .filter((membership) => isPastProject(membership, input.projectMetadataById))
+    .map((membership) =>
+      buildProjectMembershipViewModel(membership, input.projectMetadataById),
     )
     .filter(
       (membership): membership is InboxProjectMembershipViewModel =>
@@ -2875,12 +3006,8 @@ function buildContactSummary(input: {
               input.referenceNowIso,
             ),
           },
-    activeProjects: projectMemberships.filter(
-      (membership) => !isPastProject(membership.status),
-    ),
-    pastProjects: projectMemberships.filter((membership) =>
-      isPastProject(membership.status),
-    ),
+    activeProjects,
+    pastProjects,
     recentActivity: buildRecentActivity(
       input.activityTimelineItems,
       input.referenceNowIso,
@@ -3090,7 +3217,7 @@ export async function getInboxDetail(
       memberships: cachedData.memberships,
       latestNote: cachedData.latestNote,
       activityTimelineItems: cachedData.activityTimelineItems,
-      projectNameById: cachedData.projectNameById,
+      projectMetadataById: cachedData.projectMetadataById,
       referenceNowIso,
     }),
     timeline: cachedData.timelineItems.map((item) =>

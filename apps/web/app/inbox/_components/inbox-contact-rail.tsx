@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PROJECT_STATUS_BADGE } from "@/app/_lib/design-tokens";
+import { ExternalLink } from "lucide-react";
 import {
   LAYOUT,
   SPACING,
@@ -150,6 +151,8 @@ interface ProjectsSectionProps {
 }
 
 function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) {
+  const isPastSection = title === "Past Projects";
+
   return (
     <section className={`border-b border-slate-200 ${SPACING.section}`}>
       <SectionLabel as="h3">
@@ -161,17 +164,12 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
         <ul className="mt-2 space-y-1">
           {projects.map((project) => {
             const tone = STATUS_TONE[project.status];
-            return (
-              <li
-                key={project.membershipId}
-                className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white hover:ring-1 hover:ring-slate-200"
-              >
-                <a
-                  href={project.expeditionMemberUrl ?? project.crmUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex min-w-0 flex-1 items-center gap-2"
-                >
+            const rowClassName =
+              "group flex items-center gap-2 rounded-lg px-2 py-1.5 transition";
+            const isClickable = project.expeditionMemberUrl !== null;
+            const content = (
+              <>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
                   <span
                     aria-hidden="true"
                     className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${TONE_CLASSES[tone].dot}`}
@@ -181,23 +179,45 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
                       {project.projectName}
                     </p>
                     <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-                      <span className="tabular-nums">
-                        {project.year.toString()}
-                      </span>
-                      <span className="text-slate-300">·</span>
-                      <InboxProjectStatusBadge status={project.status} />
+                      {isPastSection ? (
+                        <>
+                          <span className="tabular-nums">
+                            {project.signupYear.toString()}
+                          </span>
+                          <span className="text-slate-300">·</span>
+                        </>
+                      ) : null}
+                      <InboxProjectStatusBadge
+                        status={project.status}
+                        label={project.statusLabel}
+                      />
                     </p>
                   </div>
-                </a>
-                <a
-                  href={project.crmUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={`Open ${project.projectName} project page in Salesforce`}
-                  className="shrink-0 rounded text-[11px] text-slate-400 transition hover:text-slate-600"
-                >
-                  ↗ Project
-                </a>
+                </div>
+                {isClickable ? (
+                  <ExternalLink
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 shrink-0 text-slate-400 opacity-0 transition group-hover:opacity-100"
+                  />
+                ) : null}
+              </>
+            );
+
+            return (
+              <li key={project.membershipId}>
+                {!isClickable ? (
+                  <div className={rowClassName}>{content}</div>
+                ) : (
+                  <a
+                    href={project.expeditionMemberUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`${rowClassName} hover:bg-white hover:ring-1 hover:ring-slate-200`}
+                    aria-label={`Open ${project.projectName} expedition member record in Salesforce`}
+                  >
+                    {content}
+                  </a>
+                )}
               </li>
             );
           })}
@@ -206,15 +226,6 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
     </section>
   );
 }
-
-const PROJECT_STATUS_LABEL: Record<InboxProjectStatus, string> = {
-  lead: "Lead",
-  applied: "Applied",
-  "in-training": "In Training",
-  "trip-planning": "Trip Planning",
-  "in-field": "In the Field",
-  successful: "Successful"
-};
 
 const STATUS_TONE: Record<InboxProjectStatus, ToneNameV2> = {
   lead: "slate",
@@ -226,15 +237,17 @@ const STATUS_TONE: Record<InboxProjectStatus, ToneNameV2> = {
 };
 
 export function InboxProjectStatusBadge({
-  status
+  status,
+  label,
 }: {
   readonly status: InboxProjectStatus;
+  readonly label: string;
 }) {
   return (
     <StatusBadge
       variant="subtle"
       colorClasses={PROJECT_STATUS_BADGE[status]}
-      label={PROJECT_STATUS_LABEL[status]}
+      label={label}
     />
   );
 }
