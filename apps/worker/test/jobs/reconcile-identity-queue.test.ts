@@ -62,7 +62,7 @@ async function seedStoredGmailCase(
 }
 
 describe("reconcile identity queue task", () => {
-  it("reconciles one open case per scheduled run and logs the report", async () => {
+  it("reconciles open cases up to the configured limit and logs the report", async () => {
     const context = await createTestWorkerContext();
     const logger = { log: vi.fn() };
 
@@ -108,16 +108,16 @@ describe("reconcile identity queue task", () => {
         context.repositories.identityResolutionQueue.findById(secondCaseId)
       ]);
 
-      expect(await context.repositories.canonicalEvents.countAll()).toBe(1);
+      expect(await context.repositories.canonicalEvents.countAll()).toBe(2);
       expect(
         [firstCase?.status, secondCase?.status].sort()
-      ).toEqual(["open", "resolved"]);
+      ).toEqual(["resolved", "resolved"]);
       expect(logger.log).toHaveBeenCalledWith(
         JSON.stringify({
           event: "identity_queue.reconcile.completed",
-          scanned: 1,
+          scanned: 2,
           resolved: 0,
-          created: 1,
+          created: 2,
           skipped: 0,
           errors: 0,
           dryRun: false
