@@ -53,6 +53,51 @@ const ENCRYPTED_MIME_TYPES = new Set([
   "application/pgp-encrypted"
 ]);
 
+const REPLACEMENT_CHARACTER = "�";
+
+// Threshold: 30% replacement-or-control chars means the byte stream couldn't
+// be decoded as UTF-8 and is almost certainly an encrypted/binary payload that
+// our MIME-type allowlist (ENCRYPTED_MIME_TYPES) didn't recognize — for
+// example, an `application/pkcs7-mime` body misdeclared as `text/plain`, or a
+// signed-but-not-listed envelope. Legitimate emails with the occasional
+// private-use Unicode char come in well under 10%; encrypted bodies measured
+// in production sit at ~50%.
+const BINARY_NOISE_THRESHOLD = 0.3;
+const BINARY_NOISE_MIN_LENGTH = 32;
+
+function isLikelyBinaryNoise(text: string): boolean {
+  if (text.length < BINARY_NOISE_MIN_LENGTH) {
+    return false;
+  }
+
+  let suspicious = 0;
+  let total = 0;
+
+  for (const ch of text) {
+    total += 1;
+
+    if (ch === REPLACEMENT_CHARACTER) {
+      suspicious += 1;
+      continue;
+    }
+
+    const code = ch.codePointAt(0) ?? 0;
+
+    // C0 controls except TAB, LF, CR. These never appear in cleanly-decoded
+    // human text and are a strong signal of mis-decoded binary content.
+    if (
+      code < 0x20 &&
+      code !== 0x09 &&
+      code !== 0x0a &&
+      code !== 0x0d
+    ) {
+      suspicious += 1;
+    }
+  }
+
+  return total > 0 && suspicious / total >= BINARY_NOISE_THRESHOLD;
+}
+
 function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n/gu, "\n").replace(/\r/gu, "\n");
 }
@@ -445,18 +490,30 @@ export async function extractGmailBodyPreviewFromPayloadResult(
   }
 
   const candidates = collectCandidateBodyParts(payload);
+  let sawGarbledCandidate = false;
 
   for (const kind of ["plain", "html"] as const) {
     for (const candidate of candidates.filter((entry) => entry.kind === kind)) {
       const bodyPreview = await extractTextFromMimePart(candidate.part);
 
-      if (bodyPreview.length > 0) {
-        return buildBodyPreviewResult(bodyPreview, "plaintext");
+      if (bodyPreview.length === 0) {
+        continue;
       }
+
+      if (isLikelyBinaryNoise(bodyPreview)) {
+        // The candidate part decoded to garbled bytes — most likely an
+        // encrypted body with a misdeclared MIME type that
+        // ENCRYPTED_MIME_TYPES did not catch. Skip it and prefer the binary
+        // fallback rather than storing replacement-character soup.
+        sawGarbledCandidate = true;
+        continue;
+      }
+
+      return buildBodyPreviewResult(bodyPreview, "plaintext");
     }
   }
 
-  if ((payload.parts?.length ?? 0) > 0) {
+  if (sawGarbledCandidate || (payload.parts?.length ?? 0) > 0) {
     return buildBodyPreviewResult(
       BINARY_FALLBACK_PLACEHOLDER,
       "binary_fallback"
@@ -465,9 +522,13 @@ export async function extractGmailBodyPreviewFromPayloadResult(
 
   const fallbackBodyPreview = await extractTextFromMimePart(payload);
 
-  return fallbackBodyPreview.length > 0
-    ? buildBodyPreviewResult(fallbackBodyPreview, "plaintext")
-    : buildBodyPreviewResult(cleanGmailBodyPreviewText(""), "plaintext");
+  if (fallbackBodyPreview.length === 0) {
+    return buildBodyPreviewResult(cleanGmailBodyPreviewText(""), "plaintext");
+  }
+
+  return isLikelyBinaryNoise(fallbackBodyPreview)
+    ? buildBodyPreviewResult(BINARY_FALLBACK_PLACEHOLDER, "binary_fallback")
+    : buildBodyPreviewResult(fallbackBodyPreview, "plaintext");
 }
 
 export async function extractGmailBodyPreviewFromPayload(
@@ -501,6 +562,12 @@ export async function extractGmailBodyPreviewFromMimeMessageResult(input: {
     const cleaned = cleanGmailBodyPreviewText(extractedText);
 
     if (cleaned.length > 0) {
+      if (isLikelyBinaryNoise(cleaned)) {
+        return buildBodyPreviewResult(
+          BINARY_FALLBACK_PLACEHOLDER,
+          "binary_fallback"
+        );
+      }
       return buildBodyPreviewResult(cleaned, "plaintext");
     }
   } catch {

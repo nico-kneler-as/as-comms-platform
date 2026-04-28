@@ -99,6 +99,77 @@ describe("Gmail body extraction", () => {
     );
   });
 
+  it("treats a text/plain part containing decoded binary noise as a binary fallback", async () => {
+    // Lone UTF-8 continuation bytes (0x80..0xBF) without lead bytes — each one
+    // decodes to U+FFFD, producing a body with ~50% replacement characters.
+    // This is the same shape we observe in production for S/MIME envelopes
+    // misdeclared as text/plain (e.g. tetratech.com Tetra Tech Outlook S/MIME).
+    const binaryBytes = Buffer.alloc(80);
+    for (let i = 0; i < 40; i += 1) {
+      binaryBytes[i * 2] = 0x80 + (i % 0x40);
+      binaryBytes[i * 2 + 1] = 0x21 + (i % 0x40);
+    }
+
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/mixed",
+      parts: [
+        {
+          mimeType: "text/plain",
+          headers: [
+            { name: "Content-Type", value: "text/plain; charset=utf-8" }
+          ],
+          body: {
+            data: binaryBytes
+              .toString("base64")
+              .replace(/\+/g, "-")
+              .replace(/\//g, "_")
+              .replace(/=+$/u, "")
+          }
+        }
+      ]
+    };
+
+    await expect(
+      extractGmailBodyPreviewFromPayloadResult(payload)
+    ).resolves.toEqual({
+      bodyTextPreview: "[Message body could not be extracted — open in Gmail]",
+      bodyKind: "binary_fallback"
+    });
+  });
+
+  it("preserves a normal email body that contains a handful of stray control characters", async () => {
+    // Mirrors the OpenAI marketing-email shape from production: ~7%
+    // replacement-or-control chars in an otherwise readable body. These must
+    // stay rendered as plaintext, not be replaced with the fallback.
+    const noisyText =
+      "Greetings from the Pod!\n\nThank you for being a part of the project. " +
+      "Many communities have been impacted by recent rainfall and flooding. " +
+      "Stay safe out there.\n\nO O O O — Project Team";
+
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/plain",
+          headers: [
+            { name: "Content-Type", value: "text/plain; charset=utf-8" }
+          ],
+          body: {
+            data: Buffer.from(noisyText, "utf8")
+              .toString("base64")
+              .replace(/\+/g, "-")
+              .replace(/\//g, "_")
+              .replace(/=+$/u, "")
+          }
+        }
+      ]
+    };
+
+    const result = await extractGmailBodyPreviewFromPayloadResult(payload);
+    expect(result.bodyKind).toBe("plaintext");
+    expect(result.bodyTextPreview).toContain("Greetings from the Pod!");
+  });
+
   it("strips multi-dash MIME boundary markers from flattened previews", () => {
     expect(
       cleanGmailBodyPreviewText(
