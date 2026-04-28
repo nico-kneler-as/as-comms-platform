@@ -43,6 +43,7 @@ import {
   type Stage1WorkerOrchestrationService
 } from "./orchestration/index.js";
 import { createTaskList } from "./tasks.js";
+import { reconcileIdentityQueueJobName } from "./jobs/reconcile-identity-queue.js";
 import { sweepPendingOutboundsJobName } from "./jobs/sweep-pending-outbounds.js";
 
 const workerCaptureConfigSchema = z.object({
@@ -98,7 +99,8 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `*/${String(gmailMinutes)} * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
     `*/${String(salesforceMinutes)} * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
     `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
-    `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`
+    `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
+    `*/15 * * * * ${reconcileIdentityQueueJobName} ?id=identity-queue-reconcile&max=1`
   ].join("\n");
 }
 
@@ -321,6 +323,15 @@ export async function createStage1WorkerRuntimeServices(
       },
       pendingOutboundSweep: {
         pendingOutbounds: repositories.pendingOutbounds
+      },
+      reconcileIdentityQueue: {
+        db: connection.db,
+        repositories,
+        capture,
+        gmailHistoricalReplay: {
+          liveAccount: config.launchScope.gmail.liveAccount,
+          projectInboxAliases
+        }
       }
     }),
     dispose() {
