@@ -131,6 +131,11 @@ export function InboxRow({ item, isActive }: RowProps) {
                         className={`h-1.5 w-1.5 rounded-full ${t.dot}`}
                       />
                       {item.projectLabel}
+                      {item.additionalActiveProjectsCount > 0 ? (
+                        <span className="text-[10px] font-semibold text-slate-500">
+                          +{item.additionalActiveProjectsCount}
+                        </span>
+                      ) : null}
                     </span>
                   );
                 })()

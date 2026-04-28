@@ -49,8 +49,16 @@ interface InboxListCacheRow {
 
 interface InboxListCacheData {
   readonly rows: readonly InboxListCacheRow[];
-  readonly projectNameById: Readonly<Record<string, string>>;
   readonly projectLabelById: Readonly<Record<string, string>>;
+  readonly projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >;
   readonly aliasToProjectId: ReadonlyMap<string, string>;
   readonly counts: {
     readonly all: number;
@@ -2235,11 +2243,17 @@ async function loadProjectMetadataById(
   );
 }
 
-async function loadProjectNameById(
-  memberships: readonly ContactMembershipRecord[],
-): Promise<Readonly<Record<string, string>>> {
-  const projectMetadataById = await loadProjectMetadataById(memberships);
-
+function buildProjectLabelById(
+  projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >,
+): Readonly<Record<string, string>> {
   return Object.fromEntries(
     Object.entries(projectMetadataById).map(([projectId, metadata]) => [
       projectId,
@@ -2248,29 +2262,35 @@ async function loadProjectNameById(
   );
 }
 
-async function loadProjectLabelById(
-  memberships: readonly ContactMembershipRecord[],
-): Promise<Readonly<Record<string, string>>> {
-  const projectIds = uniqueStrings(
-    memberships.map((membership) => membership.projectId),
-  );
+function countAdditionalActiveProjects(input: {
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly primaryMembership: ContactMembershipRecord | null;
+  readonly projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >;
+}): number {
+  const primaryProjectId = input.primaryMembership?.projectId ?? null;
+  const additionalActiveProjectIds = new Set<string>();
 
-  if (projectIds.length === 0) {
-    return {};
+  for (const membership of input.memberships) {
+    if (
+      membership.projectId === null ||
+      membership.projectId === primaryProjectId ||
+      input.projectMetadataById[membership.projectId]?.isActive !== true
+    ) {
+      continue;
+    }
+
+    additionalActiveProjectIds.add(membership.projectId);
   }
 
-  const runtime = await getStage1WebRuntime();
-  const dimensions =
-    await runtime.repositories.projectDimensions.listByIds(projectIds);
-
-  return Object.fromEntries(
-    dimensions.map((dimension) => [
-      dimension.projectId,
-      dimension.projectAlias?.trim().length
-        ? dimension.projectAlias
-        : dimension.projectName,
-    ]),
-  );
+  return additionalActiveProjectIds.size;
 }
 
 async function loadProjectLabelByAlias(
@@ -2510,10 +2530,8 @@ async function readInboxListCacheData(input: {
   ]);
   const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
   const membershipsByContactId = groupMembershipsByContactId(memberships);
-  const [projectNameById, projectLabelById] = await Promise.all([
-    loadProjectNameById(memberships),
-    loadProjectLabelById(memberships),
-  ]);
+  const projectMetadataById = await loadProjectMetadataById(memberships);
+  const projectLabelById = buildProjectLabelById(projectMetadataById);
   const aliasToProjectId = new Map<string, string>();
 
   for (const aliasRecord of projectAliasRecords) {
@@ -2612,6 +2630,7 @@ async function readInboxListCacheData(input: {
         row,
         {
           projectLabelById,
+          projectMetadataById,
           aliasToProjectId,
         },
         referenceNowIso,
@@ -2656,8 +2675,8 @@ async function readInboxListCacheData(input: {
 
   return {
     rows: pageRows,
-    projectNameById,
     projectLabelById,
+    projectMetadataById,
     aliasToProjectId,
     counts,
     activeProjects,
@@ -2887,7 +2906,10 @@ function loadInboxWelcomeWorkloadCacheData() {
 
 function toListItemViewModel(
   row: InboxListCacheRow,
-  cacheData: Pick<InboxListCacheData, "projectLabelById" | "aliasToProjectId">,
+  cacheData: Pick<
+    InboxListCacheData,
+    "projectLabelById" | "projectMetadataById" | "aliasToProjectId"
+  >,
   referenceNowIso: string,
 ): InboxListItemViewModel {
   const sortedMemberships = sortMemberships(row.memberships);
@@ -2923,6 +2945,11 @@ function toListItemViewModel(
       primaryMembership === null
         ? null
         : resolveProjectName(primaryMembership, cacheData.projectLabelById),
+    additionalActiveProjectsCount: countAdditionalActiveProjects({
+      memberships: row.memberships,
+      primaryMembership,
+      projectMetadataById: cacheData.projectMetadataById,
+    }),
     volunteerStage: mapVolunteerStage(sortedMemberships),
     bucket: mapBucket(row.inboxProjection.bucket),
     needsFollowUp: row.inboxProjection.needsFollowUp,
@@ -3056,6 +3083,7 @@ export async function getInboxList(
       row,
       {
         projectLabelById: cachedData.projectLabelById,
+        projectMetadataById: cachedData.projectMetadataById,
         aliasToProjectId: cachedData.aliasToProjectId,
       },
       referenceNowIso,
