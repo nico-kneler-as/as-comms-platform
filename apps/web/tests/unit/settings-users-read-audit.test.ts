@@ -128,4 +128,20 @@ describe("settings users read audit", () => {
     expect(typeof metadata.visibleUserCount).toBe("number");
     expect(metadata.visibleUserCount).toBeGreaterThan(0);
   });
+
+  it("redirects non-admin operators back to settings", async () => {
+    const operator = buildUser({
+      id: "user:operator",
+      email: "operator@adventurescientists.org",
+      role: "operator",
+    });
+    requireSession.mockResolvedValueOnce(operator);
+    getCurrentUser.mockResolvedValueOnce(operator);
+    redirect.mockImplementationOnce(() => {
+      throw new Error("NEXT_REDIRECT_SETTINGS");
+    });
+
+    await expect(SettingsAccessPage()).rejects.toThrow("NEXT_REDIRECT_SETTINGS");
+    expect(redirect).toHaveBeenCalledWith("/settings");
+  });
 });

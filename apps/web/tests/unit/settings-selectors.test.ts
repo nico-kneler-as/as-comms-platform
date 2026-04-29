@@ -369,6 +369,15 @@ describe("settings selectors", () => {
     ]);
   });
 
+  it("rejects non-admin callers from loading access settings", async () => {
+    getCurrentUser.mockResolvedValueOnce({
+      id: "user:operator",
+      role: "operator"
+    });
+
+    await expect(loadAccessSettings()).rejects.toThrow("FORBIDDEN");
+  });
+
   it("returns the six seeded integrations in stable order on first read", async () => {
     const viewModel = await loadIntegrationHealth();
 

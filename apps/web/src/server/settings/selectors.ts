@@ -496,11 +496,16 @@ export async function loadProjectSettingsDetail(
 }
 
 export async function loadAccessSettings(): Promise<AccessSettingsViewModel> {
-  const [currentUser, cachedData] = await Promise.all([
-    getCurrentUser(),
-    loadAccessSettingsCacheData()
-  ]);
-  const currentUserId = currentUser?.id ?? null;
+  const currentUser = await getCurrentUser();
+  if (currentUser === null) {
+    throw new Error("UNAUTHORIZED");
+  }
+  if (currentUser.role !== "admin") {
+    throw new Error("FORBIDDEN");
+  }
+
+  const cachedData = await loadAccessSettingsCacheData();
+  const currentUserId = currentUser.id;
   const admins = sortUsers(
     cachedData.rows.filter((user) => user.role === "admin"),
     currentUserId
@@ -520,7 +525,7 @@ export async function loadAccessSettings(): Promise<AccessSettingsViewModel> {
   });
 
   return {
-    isAdmin: currentUser?.role === "admin",
+    isAdmin: true,
     currentUserId,
     admins,
     internalUsers
