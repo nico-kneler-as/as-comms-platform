@@ -13,6 +13,7 @@ vi.mock("@/src/server/auth/session", () => ({
 import {
   loadAccessSettings,
   loadIntegrationHealth,
+  loadLogsSettings,
   loadProjectSettingsDetail,
   loadProjectsSettings
 } from "../../src/server/settings/selectors";
@@ -135,6 +136,41 @@ async function seedProject(
       createdAt: `2026-04-20T15:${String(index).padStart(2, "0")}:00.000Z`,
     });
   }
+}
+
+async function seedSourceEvidenceCollision(
+  runtime: Stage1WebTestRuntime,
+  input: {
+    readonly provider: "gmail" | "salesforce";
+    readonly idempotencyKey: string;
+    readonly winningId: string;
+    readonly losingId: string;
+    readonly winningReceivedAt: string;
+    readonly losingReceivedAt: string;
+  }
+): Promise<void> {
+  await runtime.context.repositories.sourceEvidence.append({
+    id: input.winningId,
+    provider: input.provider,
+    providerRecordType: "message",
+    providerRecordId: `${input.winningId}:record`,
+    receivedAt: input.winningReceivedAt,
+    occurredAt: input.winningReceivedAt,
+    payloadRef: `payloads/${input.provider}/${input.winningId}.json`,
+    idempotencyKey: input.idempotencyKey,
+    checksum: `${input.winningId}:checksum`
+  });
+  await runtime.context.repositories.sourceEvidence.append({
+    id: input.losingId,
+    provider: input.provider,
+    providerRecordType: "message",
+    providerRecordId: `${input.losingId}:record`,
+    receivedAt: input.losingReceivedAt,
+    occurredAt: input.losingReceivedAt,
+    payloadRef: `payloads/${input.provider}/${input.losingId}.json`,
+    idempotencyKey: input.idempotencyKey,
+    checksum: `${input.losingId}:checksum`
+  });
 }
 
 describe("settings selectors", () => {
@@ -401,5 +437,78 @@ describe("settings selectors", () => {
         "not_configured"
       ]
     );
+  });
+
+  it("maps source-evidence collisions into the logs settings view model", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    await seedSourceEvidenceCollision(runtime, {
+      provider: "gmail",
+      idempotencyKey: "gmail:collision:newer",
+      winningId: "sev-newer-winning",
+      losingId: "sev-newer-losing",
+      winningReceivedAt: "2026-04-20T14:00:00.000Z",
+      losingReceivedAt: "2026-04-20T14:05:00.000Z"
+    });
+    await seedSourceEvidenceCollision(runtime, {
+      provider: "salesforce",
+      idempotencyKey: "salesforce:collision:older",
+      winningId: "sev-older-winning",
+      losingId: "sev-older-losing",
+      winningReceivedAt: "2026-04-20T13:00:00.000Z",
+      losingReceivedAt: "2026-04-20T13:05:00.000Z"
+    });
+    for (let index = 0; index < 24; index += 1) {
+      const minute = String(index).padStart(2, "0");
+      await seedSourceEvidenceCollision(runtime, {
+        provider: "gmail",
+        idempotencyKey: `gmail:collision:extra:${minute}`,
+        winningId: `sev-extra-winning-${minute}`,
+        losingId: `sev-extra-losing-${minute}`,
+        winningReceivedAt: `2026-04-20T12:${minute}:00.000Z`,
+        losingReceivedAt: `2026-04-20T12:${minute}:30.000Z`
+      });
+    }
+
+    const viewModel = await loadLogsSettings({
+      streamId: "source-evidence-quarantine",
+      beforeTimestamp: null
+    });
+
+    expect(viewModel.streams).toEqual([
+      {
+        id: "source-evidence-quarantine",
+        label: "Source-evidence quarantines",
+        description: "Checksum collisions for provider idempotency keys."
+      }
+    ]);
+    expect(viewModel.activeStreamId).toBe("source-evidence-quarantine");
+    expect(viewModel.entries[0]).toMatchObject({
+      id: "gmail:gmail:collision:newer",
+      streamId: "source-evidence-quarantine",
+      timestamp: "2026-04-20T14:05:00.000Z",
+      summary:
+        "Gmail • 2 different checksums for idempotency key gmail:collision:newer",
+      detail: {
+        provider: "gmail",
+        idempotencyKey: "gmail:collision:newer",
+        winning: {
+          sourceEvidenceId: "sev-newer-winning",
+          checksum: "sev-newer-winning:checksum",
+          receivedAt: "2026-04-20T14:00:00.000Z"
+        },
+        losing: [
+          {
+            sourceEvidenceId: "sev-newer-losing",
+            checksum: "sev-newer-losing:checksum",
+            receivedAt: "2026-04-20T14:05:00.000Z"
+          }
+        ]
+      }
+    });
+    expect(typeof viewModel.nextBeforeTimestamp).toBe("string");
+    expect(viewModel.nextBeforeTimestamp).not.toBeNull();
   });
 });

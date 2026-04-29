@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { FolderOpen, Plug, Users } from "lucide-react";
+import { FolderOpen, Plug, ScrollText, Users } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -44,6 +44,13 @@ const ITEMS: readonly SectionItem[] = [
     description: "Providers this workspace depends on.",
     href: "/settings/integrations",
     Icon: Plug
+  },
+  {
+    id: "logs",
+    label: "Logs",
+    description: "Operational signals from ingestion and sync.",
+    href: "/settings/logs",
+    Icon: ScrollText
   }
 ];
 

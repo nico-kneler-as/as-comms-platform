@@ -39,12 +39,35 @@ export interface SourceEvidenceRepository {
   findByIdempotencyKey(
     idempotencyKey: string,
   ): Promise<SourceEvidenceRecord | null>;
+  listIdempotencyChecksumCollisions(input: {
+    readonly limit: number;
+    readonly beforeTimestamp?: Date;
+  }): Promise<{
+    readonly entries: readonly SourceEvidenceCollisionEntry[];
+    readonly hasMore: boolean;
+  }>;
   countByProvider(provider: Provider): Promise<number>;
   listByProviderRecord(input: {
     readonly provider: Provider;
     readonly providerRecordType: string;
     readonly providerRecordId: string;
   }): Promise<readonly SourceEvidenceRecord[]>;
+}
+
+export interface SourceEvidenceCollisionEntry {
+  readonly provider: Provider;
+  readonly idempotencyKey: string;
+  readonly latestReceivedAt: Date;
+  readonly winning: {
+    readonly sourceEvidenceId: string;
+    readonly checksum: string;
+    readonly receivedAt: Date;
+  };
+  readonly losing: readonly {
+    readonly sourceEvidenceId: string;
+    readonly checksum: string;
+    readonly receivedAt: Date;
+  }[];
 }
 
 export interface CanonicalEventRepository {

@@ -2,7 +2,8 @@ import { unstable_cache } from "next/cache";
 
 import type {
   IntegrationHealthCategory,
-  IntegrationHealthStatus
+  IntegrationHealthStatus,
+  Provider
 } from "@as-comms/contracts";
 
 import { getCurrentUser } from "../auth/session";
@@ -79,6 +80,45 @@ export interface IntegrationsSettingsViewModel {
   readonly integrations: readonly IntegrationHealthViewModel[];
 }
 
+export type LogStreamId = "source-evidence-quarantine";
+
+export interface LogStreamDescriptorViewModel {
+  readonly id: LogStreamId;
+  readonly label: string;
+  readonly description: string;
+}
+
+export interface SourceEvidenceCollisionDetailViewModel
+  extends Readonly<Record<string, unknown>> {
+  readonly provider: Provider;
+  readonly idempotencyKey: string;
+  readonly winning: {
+    readonly sourceEvidenceId: string;
+    readonly checksum: string;
+    readonly receivedAt: string;
+  };
+  readonly losing: readonly {
+    readonly sourceEvidenceId: string;
+    readonly checksum: string;
+    readonly receivedAt: string;
+  }[];
+}
+
+export interface LogEntryViewModel {
+  readonly id: string;
+  readonly streamId: LogStreamId;
+  readonly timestamp: string;
+  readonly summary: string;
+  readonly detail: Readonly<Record<string, unknown>>;
+}
+
+export interface LogsSettingsViewModel {
+  readonly streams: readonly LogStreamDescriptorViewModel[];
+  readonly activeStreamId: LogStreamId;
+  readonly entries: readonly LogEntryViewModel[];
+  readonly nextBeforeTimestamp: string | null;
+}
+
 const INTEGRATION_ORDER = [
   "salesforce",
   "gmail",
@@ -128,9 +168,48 @@ const INTEGRATION_META = {
   }
 >;
 
+const DEFAULT_LOG_STREAM_ID = "source-evidence-quarantine" as const;
+const LOGS_PAGE_SIZE = 25;
+const LOG_STREAMS: readonly LogStreamDescriptorViewModel[] = [
+  {
+    id: DEFAULT_LOG_STREAM_ID,
+    label: "Source-evidence quarantines",
+    description: "Checksum collisions for provider idempotency keys."
+  }
+];
+const PROVIDER_LABEL: Record<Provider, string> = {
+  manual: "Manual",
+  gmail: "Gmail",
+  salesforce: "Salesforce",
+  simpletexting: "SimpleTexting",
+  mailchimp: "Mailchimp"
+};
+
 function normalizeSearch(value: string | null | undefined): string | null {
   const trimmed = value?.trim() ?? "";
   return trimmed.length === 0 ? null : trimmed.toLowerCase();
+}
+
+function normalizeLogStreamId(value: string | null | undefined): LogStreamId {
+  return value === DEFAULT_LOG_STREAM_ID
+    ? DEFAULT_LOG_STREAM_ID
+    : DEFAULT_LOG_STREAM_ID;
+}
+
+function parseBeforeTimestamp(value: string | null | undefined): Date | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp;
+}
+
+function buildSourceEvidenceCollisionSummary(
+  detail: SourceEvidenceCollisionDetailViewModel
+): string {
+  const checksumCount = detail.losing.length + 1;
+  return `${PROVIDER_LABEL[detail.provider]} • ${String(checksumCount)} different checksums for idempotency key ${detail.idempotencyKey}`;
 }
 
 function hasActivationRequirements(input: {
@@ -384,6 +463,54 @@ async function readIntegrationHealth() {
   };
 }
 
+async function readLogsSettings(input: {
+  readonly streamId: LogStreamId;
+  readonly beforeTimestamp: Date | null;
+}): Promise<Pick<LogsSettingsViewModel, "entries" | "nextBeforeTimestamp">> {
+  const runtime = await getStage1WebRuntime();
+  const result =
+    await runtime.repositories.sourceEvidence.listIdempotencyChecksumCollisions(
+      input.beforeTimestamp === null
+        ? {
+            limit: LOGS_PAGE_SIZE
+          }
+        : {
+            limit: LOGS_PAGE_SIZE,
+            beforeTimestamp: input.beforeTimestamp
+          }
+    );
+
+  return {
+    entries: result.entries.map((entry) => {
+      const detail: SourceEvidenceCollisionDetailViewModel = {
+        provider: entry.provider,
+        idempotencyKey: entry.idempotencyKey,
+        winning: {
+          sourceEvidenceId: entry.winning.sourceEvidenceId,
+          checksum: entry.winning.checksum,
+          receivedAt: entry.winning.receivedAt.toISOString()
+        },
+        losing: entry.losing.map((losingEntry) => ({
+          sourceEvidenceId: losingEntry.sourceEvidenceId,
+          checksum: losingEntry.checksum,
+          receivedAt: losingEntry.receivedAt.toISOString()
+        }))
+      };
+
+      return {
+        id: `${entry.provider}:${entry.idempotencyKey}`,
+        streamId: input.streamId,
+        timestamp: entry.latestReceivedAt.toISOString(),
+        summary: buildSourceEvidenceCollisionSummary(detail),
+        detail
+      };
+    }),
+    nextBeforeTimestamp: result.hasMore
+      ? (result.entries.at(-1)?.latestReceivedAt.toISOString() ?? null)
+      : null
+  };
+}
+
 function loadProjectsSettingsCacheData(input: {
   readonly filter: "active" | "inactive" | "all";
   readonly search?: string | null;
@@ -437,6 +564,35 @@ function loadIntegrationHealthCacheData() {
     ["settings:integrations"],
     {
       tags: ["settings:integrations"]
+    }
+  )();
+}
+
+function loadLogsSettingsCacheData(input: {
+  readonly streamId: LogStreamId;
+  readonly beforeTimestampIso: string | null;
+}) {
+  const beforeTimestamp =
+    input.beforeTimestampIso === null
+      ? null
+      : new Date(input.beforeTimestampIso);
+
+  if (process.env.NODE_ENV !== "production") {
+    return readLogsSettings({
+      streamId: input.streamId,
+      beforeTimestamp
+    });
+  }
+
+  return unstable_cache(
+    () =>
+      readLogsSettings({
+        streamId: input.streamId,
+        beforeTimestamp
+      }),
+    [`settings:logs:${input.streamId}:${input.beforeTimestampIso ?? "none"}`],
+    {
+      tags: ["settings:logs"]
     }
   )();
 }
@@ -550,5 +706,42 @@ export async function loadIntegrationHealth(): Promise<IntegrationsSettingsViewM
   return {
     isAdmin: currentUser?.role === "admin",
     integrations: cachedData.integrations
+  };
+}
+
+export async function loadLogsSettings(input: {
+  readonly streamId: string;
+  readonly beforeTimestamp: string | null;
+}): Promise<LogsSettingsViewModel> {
+  const currentUser = await getCurrentUser();
+  if (currentUser === null) {
+    throw new Error("UNAUTHORIZED");
+  }
+  if (currentUser.role !== "admin") {
+    throw new Error("FORBIDDEN");
+  }
+
+  const activeStreamId = normalizeLogStreamId(input.streamId);
+  const beforeTimestamp = parseBeforeTimestamp(input.beforeTimestamp);
+  const cachedData = await loadLogsSettingsCacheData({
+    streamId: activeStreamId,
+    beforeTimestampIso: beforeTimestamp?.toISOString() ?? null
+  });
+
+  recordSensitiveReadForCurrentUserDetached({
+    action: "settings.logs.read",
+    entityType: "settings_page",
+    entityId: "logs",
+    metadataJson: {
+      streamId: activeStreamId,
+      visibleEntryCount: cachedData.entries.length
+    }
+  });
+
+  return {
+    streams: LOG_STREAMS,
+    activeStreamId,
+    entries: cachedData.entries,
+    nextBeforeTimestamp: cachedData.nextBeforeTimestamp
   };
 }

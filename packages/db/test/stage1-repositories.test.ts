@@ -172,6 +172,39 @@ async function seedSharedInboxRecencyFixture(): Promise<{
   return context;
 }
 
+async function appendSourceEvidenceRows(
+  repositories: Awaited<
+    ReturnType<typeof createTestStage1Context>
+  >["repositories"],
+  rows: readonly {
+    readonly id: string;
+    readonly provider:
+      | "gmail"
+      | "salesforce"
+      | "simpletexting"
+      | "mailchimp"
+      | "manual";
+    readonly providerRecordId: string;
+    readonly receivedAt: string;
+    readonly idempotencyKey: string;
+    readonly checksum: string;
+  }[],
+): Promise<void> {
+  for (const row of rows) {
+    await repositories.sourceEvidence.append({
+      id: row.id,
+      provider: row.provider,
+      providerRecordType: "message",
+      providerRecordId: row.providerRecordId,
+      receivedAt: row.receivedAt,
+      occurredAt: row.receivedAt,
+      payloadRef: `payloads/${row.provider}/${row.providerRecordId}.json`,
+      idempotencyKey: row.idempotencyKey,
+      checksum: row.checksum,
+    });
+  }
+}
+
 describe("Stage 1 DB repositories", () => {
   it("persists and maps source evidence, contacts, identities, and memberships", async () => {
     const { repositories, settings } = await createTestStage1Context();
@@ -414,6 +447,197 @@ describe("Stage 1 DB repositories", () => {
         sourceEvidence.id,
       ]),
     ).resolves.toEqual([manualNoteDetail]);
+  });
+
+  it("returns no source-evidence collisions when the table is empty", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await expect(
+      repositories.sourceEvidence.listIdempotencyChecksumCollisions({
+        limit: 10,
+      }),
+    ).resolves.toEqual({
+      entries: [],
+      hasMore: false,
+    });
+  });
+
+  it("ignores source-evidence keys that only have one checksum", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await appendSourceEvidenceRows(repositories, [
+      {
+        id: "sev-single",
+        provider: "gmail",
+        providerRecordId: "gmail-single",
+        receivedAt: "2026-01-01T00:00:00.000Z",
+        idempotencyKey: "gmail:single",
+        checksum: "checksum-single",
+      },
+    ]);
+
+    await expect(
+      repositories.sourceEvidence.listIdempotencyChecksumCollisions({
+        limit: 10,
+      }),
+    ).resolves.toEqual({
+      entries: [],
+      hasMore: false,
+    });
+  });
+
+  it("returns the earliest row as the winning source-evidence collision entry", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await appendSourceEvidenceRows(repositories, [
+      {
+        id: "sev-winning",
+        provider: "gmail",
+        providerRecordId: "gmail-winning",
+        receivedAt: "2026-01-01T00:00:00.000Z",
+        idempotencyKey: "gmail:collision",
+        checksum: "checksum-a",
+      },
+      {
+        id: "sev-losing",
+        provider: "gmail",
+        providerRecordId: "gmail-losing",
+        receivedAt: "2026-01-01T00:01:00.000Z",
+        idempotencyKey: "gmail:collision",
+        checksum: "checksum-b",
+      },
+    ]);
+
+    const result =
+      await repositories.sourceEvidence.listIdempotencyChecksumCollisions({
+        limit: 10,
+      });
+
+    expect(result.hasMore).toBe(false);
+    expect(result.entries).toEqual([
+      {
+        provider: "gmail",
+        idempotencyKey: "gmail:collision",
+        latestReceivedAt: new Date("2026-01-01T00:01:00.000Z"),
+        winning: {
+          sourceEvidenceId: "sev-winning",
+          checksum: "checksum-a",
+          receivedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+        losing: [
+          {
+            sourceEvidenceId: "sev-losing",
+            checksum: "checksum-b",
+            receivedAt: new Date("2026-01-01T00:01:00.000Z"),
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("pages source-evidence collisions by latest received timestamp", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await appendSourceEvidenceRows(repositories, [
+      {
+        id: "sev-older-1",
+        provider: "gmail",
+        providerRecordId: "gmail-older-1",
+        receivedAt: "2026-01-01T00:00:00.000Z",
+        idempotencyKey: "gmail:older",
+        checksum: "older-a",
+      },
+      {
+        id: "sev-older-2",
+        provider: "gmail",
+        providerRecordId: "gmail-older-2",
+        receivedAt: "2026-01-01T00:05:00.000Z",
+        idempotencyKey: "gmail:older",
+        checksum: "older-b",
+      },
+      {
+        id: "sev-newer-1",
+        provider: "salesforce",
+        providerRecordId: "sf-newer-1",
+        receivedAt: "2026-01-01T01:00:00.000Z",
+        idempotencyKey: "salesforce:newer",
+        checksum: "newer-a",
+      },
+      {
+        id: "sev-newer-2",
+        provider: "salesforce",
+        providerRecordId: "sf-newer-2",
+        receivedAt: "2026-01-01T01:15:00.000Z",
+        idempotencyKey: "salesforce:newer",
+        checksum: "newer-b",
+      },
+    ]);
+
+    const result =
+      await repositories.sourceEvidence.listIdempotencyChecksumCollisions({
+        limit: 1,
+      });
+
+    expect(result.hasMore).toBe(true);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]).toMatchObject({
+      provider: "salesforce",
+      idempotencyKey: "salesforce:newer",
+      latestReceivedAt: new Date("2026-01-01T01:15:00.000Z"),
+    });
+  });
+
+  it("applies the beforeTimestamp cursor to source-evidence collisions", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await appendSourceEvidenceRows(repositories, [
+      {
+        id: "sev-cursor-old-1",
+        provider: "gmail",
+        providerRecordId: "gmail-cursor-old-1",
+        receivedAt: "2026-01-01T00:00:00.000Z",
+        idempotencyKey: "gmail:cursor-old",
+        checksum: "cursor-old-a",
+      },
+      {
+        id: "sev-cursor-old-2",
+        provider: "gmail",
+        providerRecordId: "gmail-cursor-old-2",
+        receivedAt: "2026-01-01T00:10:00.000Z",
+        idempotencyKey: "gmail:cursor-old",
+        checksum: "cursor-old-b",
+      },
+      {
+        id: "sev-cursor-new-1",
+        provider: "mailchimp",
+        providerRecordId: "mailchimp-cursor-new-1",
+        receivedAt: "2026-01-01T01:00:00.000Z",
+        idempotencyKey: "mailchimp:cursor-new",
+        checksum: "cursor-new-a",
+      },
+      {
+        id: "sev-cursor-new-2",
+        provider: "mailchimp",
+        providerRecordId: "mailchimp-cursor-new-2",
+        receivedAt: "2026-01-01T01:20:00.000Z",
+        idempotencyKey: "mailchimp:cursor-new",
+        checksum: "cursor-new-b",
+      },
+    ]);
+
+    const result =
+      await repositories.sourceEvidence.listIdempotencyChecksumCollisions({
+        limit: 10,
+        beforeTimestamp: new Date("2026-01-01T01:20:00.000Z"),
+      });
+
+    expect(result.hasMore).toBe(false);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]).toMatchObject({
+      provider: "gmail",
+      idempotencyKey: "gmail:cursor-old",
+      latestReceivedAt: new Date("2026-01-01T00:10:00.000Z"),
+    });
   });
 
   it("persists canonical events, review queues, and projections", async () => {
