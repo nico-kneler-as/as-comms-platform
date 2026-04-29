@@ -100,6 +100,8 @@ function createRepositoryBundle(input: {
           }),
         ),
       findByIdempotencyKey: () => Promise.resolve(null),
+      listIdempotencyChecksumCollisions: () =>
+        Promise.resolve({ entries: [], hasMore: false }),
       countByProvider: () => Promise.resolve(0),
       listByProviderRecord: () => Promise.resolve([]),
     },

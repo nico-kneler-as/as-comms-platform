@@ -18,6 +18,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type {
   PendingComposerOutboundRecord,
   ProjectAliasRecord,
+  SourceEvidenceCollisionEntry,
   Stage1RepositoryBundle,
   Stage2RepositoryBundle,
   UserRecord,
@@ -195,6 +196,12 @@ type SimpleTextingMessageDetailRow = SimpleTextingMessageDetailRecord;
 type MailchimpCampaignActivityDetailRow = MailchimpCampaignActivityDetailRecord;
 type ManualNoteDetailRow = ManualNoteDetailRecord;
 type PendingComposerOutboundRow = typeof pendingComposerOutbounds.$inferSelect;
+type SourceEvidenceLogRow = typeof sourceEvidenceLog.$inferSelect;
+interface SourceEvidenceCollisionGroupRow {
+  readonly provider: SourceEvidenceCollisionEntry["provider"];
+  readonly idempotencyKey: string;
+  readonly latestReceivedAt: Date;
+}
 
 function mapSalesforceCommunicationDetailRowLocal(
   row: SalesforceCommunicationDetailRow,
@@ -222,6 +229,89 @@ function mapSalesforceCommunicationDetailToInsertLocal(
     snippet: record.snippet,
     sourceLabel: record.sourceLabel,
   };
+}
+
+function normalizeSqlResultRows<TRow>(
+  result:
+    | readonly TRow[]
+    | {
+        readonly rows?: readonly TRow[];
+      },
+): readonly TRow[] {
+  if (Array.isArray(result)) {
+    return result as readonly TRow[];
+  }
+
+  return (result as { readonly rows?: readonly TRow[] }).rows ?? [];
+}
+
+function clampSourceEvidenceCollisionLimit(limit: number): number {
+  return Math.max(1, Math.min(limit, 100));
+}
+
+function buildSourceEvidenceCollisionKey(
+  provider: SourceEvidenceCollisionEntry["provider"],
+  idempotencyKey: string,
+): string {
+  return `${provider}\u0000${idempotencyKey}`;
+}
+
+function mapSourceEvidenceCollisionEntries(input: {
+  readonly groups: readonly SourceEvidenceCollisionGroupRow[];
+  readonly rows: readonly SourceEvidenceLogRow[];
+}): readonly SourceEvidenceCollisionEntry[] {
+  const rowsByCollisionKey = new Map<string, SourceEvidenceLogRow[]>();
+
+  for (const row of input.rows) {
+    const collisionKey = buildSourceEvidenceCollisionKey(
+      row.provider,
+      row.idempotencyKey,
+    );
+    const existingRows = rowsByCollisionKey.get(collisionKey) ?? [];
+    existingRows.push(row);
+    rowsByCollisionKey.set(collisionKey, existingRows);
+  }
+
+  return input.groups.flatMap((group) => {
+    const collisionKey = buildSourceEvidenceCollisionKey(
+      group.provider,
+      group.idempotencyKey,
+    );
+    const rows = rowsByCollisionKey.get(collisionKey) ?? [];
+    const [winning, ...losing] = rows;
+
+    if (winning === undefined) {
+      return [];
+    }
+
+    return [
+      {
+        provider: group.provider,
+        idempotencyKey: group.idempotencyKey,
+        latestReceivedAt: group.latestReceivedAt,
+        winning: {
+          sourceEvidenceId: winning.id,
+          checksum: winning.checksum,
+          receivedAt: winning.receivedAt,
+        },
+        losing: losing.map((row) => ({
+          sourceEvidenceId: row.id,
+          checksum: row.checksum,
+          receivedAt: row.receivedAt,
+        })),
+      },
+    ];
+  });
+}
+
+function coerceSourceEvidenceCollisionGroups(
+  rows: readonly SourceEvidenceCollisionGroupRow[],
+): readonly SourceEvidenceCollisionGroupRow[] {
+  return rows.map((row) => ({
+    provider: row.provider,
+    idempotencyKey: row.idempotencyKey,
+    latestReceivedAt: new Date(row.latestReceivedAt),
+  }));
 }
 
 function mapSimpleTextingMessageDetailRowLocal(
@@ -657,6 +747,78 @@ function createStage1RepositoriesInternal(
           .limit(1);
 
         return row === undefined ? null : mapSourceEvidenceRow(row);
+      },
+
+      async listIdempotencyChecksumCollisions(input) {
+        const limit = clampSourceEvidenceCollisionLimit(input.limit);
+        const groupResult = await db.execute(
+          sql`
+            select
+              ${sourceEvidenceLog.provider} as "provider",
+              ${sourceEvidenceLog.idempotencyKey} as "idempotencyKey",
+              max(${sourceEvidenceLog.receivedAt}) as "latestReceivedAt"
+            from ${sourceEvidenceLog}
+            group by ${sourceEvidenceLog.provider}, ${sourceEvidenceLog.idempotencyKey}
+            having count(distinct ${sourceEvidenceLog.checksum}) > 1
+            ${
+              input.beforeTimestamp === undefined
+                ? sql``
+                : sql`and max(${sourceEvidenceLog.receivedAt}) < ${input.beforeTimestamp}`
+            }
+            order by
+              max(${sourceEvidenceLog.receivedAt}) desc,
+              ${sourceEvidenceLog.provider} asc,
+              ${sourceEvidenceLog.idempotencyKey} asc
+            limit ${limit + 1}
+          `,
+        );
+        const groups = coerceSourceEvidenceCollisionGroups(
+          normalizeSqlResultRows<SourceEvidenceCollisionGroupRow>(
+            groupResult as
+              | readonly SourceEvidenceCollisionGroupRow[]
+              | {
+                  readonly rows?: readonly SourceEvidenceCollisionGroupRow[];
+                },
+          ),
+        );
+        const visibleGroups = groups.slice(0, limit);
+
+        if (visibleGroups.length === 0) {
+          return {
+            entries: [],
+            hasMore: false,
+          };
+        }
+
+        const groupPredicates = visibleGroups.map((group) =>
+          and(
+            eq(sourceEvidenceLog.provider, group.provider),
+            eq(sourceEvidenceLog.idempotencyKey, group.idempotencyKey),
+          ),
+        );
+        const rows = await db
+          .select()
+          .from(sourceEvidenceLog)
+          .where(
+            groupPredicates.length === 1
+              ? groupPredicates[0]
+              : or(...groupPredicates),
+          )
+          .orderBy(
+            asc(sourceEvidenceLog.provider),
+            asc(sourceEvidenceLog.idempotencyKey),
+            asc(sourceEvidenceLog.receivedAt),
+            asc(sourceEvidenceLog.createdAt),
+            asc(sourceEvidenceLog.id),
+          );
+
+        return {
+          entries: mapSourceEvidenceCollisionEntries({
+            groups: visibleGroups,
+            rows,
+          }),
+          hasMore: groups.length > limit,
+        };
       },
 
       async countByProvider(provider) {

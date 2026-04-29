@@ -35,6 +35,8 @@ function buildRepositoryBundle(input: {
       findById: () => Promise.resolve(null),
       listByIds: () => Promise.resolve([]),
       findByIdempotencyKey: () => Promise.resolve(null),
+      listIdempotencyChecksumCollisions: () =>
+        Promise.resolve({ entries: [], hasMore: false }),
       countByProvider: () => Promise.resolve(0),
       listByProviderRecord: () => Promise.resolve([]),
     },

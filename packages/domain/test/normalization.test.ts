@@ -257,6 +257,8 @@ function buildContext(input: {
         ),
       findByIdempotencyKey: (idempotencyKey) =>
         Promise.resolve(sourceEvidenceByIdempotencyKey.get(idempotencyKey) ?? null),
+      listIdempotencyChecksumCollisions: () =>
+        Promise.resolve({ entries: [], hasMore: false }),
       countByProvider: () => Promise.resolve(sourceEvidenceById.size),
       listByProviderRecord: ({ provider, providerRecordType, providerRecordId }) =>
         Promise.resolve(
