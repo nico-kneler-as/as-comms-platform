@@ -47,6 +47,8 @@ import {
   uniqueValues,
 } from "./shared.js";
 
+const SALESFORCE_CAPTURE_TASK_SNIPPET_MAX = 2_000;
+
 const salesforceCaptureServiceResponseSchema =
   createCapturedBatchResponseSchema(salesforceRecordSchema);
 
@@ -1225,10 +1227,14 @@ function buildTaskRecord(input: {
       description: getStringField(input.task, "Description"),
     }),
     subject,
-    snippet:
-      getStringField(input.task, input.config.taskSnippetField) ??
-      subject ??
-      "",
+    snippet: z
+      .string()
+      .max(SALESFORCE_CAPTURE_TASK_SNIPPET_MAX)
+      .parse(
+        getStringField(input.task, input.config.taskSnippetField) ??
+          subject ??
+          "",
+      ),
     normalizedEmails: uniqueValues([
       getEmailField(input.contact ?? {}, "Email"),
     ]),

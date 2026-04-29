@@ -29,6 +29,7 @@ import {
 const nullableStringSchema = z.string().min(1).nullable();
 const stringArraySchema = z.array(z.string().min(1));
 const timestampSchema = z.string().datetime();
+const SALESFORCE_TASK_SNIPPET_MAX = 20_000;
 
 const salesforceLifecycleMilestoneSchema = z.enum([
   "signed_up",
@@ -300,7 +301,7 @@ export const salesforceTaskCommunicationRecordSchema = z.object({
   payloadRef: z.string().min(1),
   checksum: z.string().min(1),
   subject: nullableStringSchema.default(null),
-  snippet: z.string().default(""),
+  snippet: z.string().max(SALESFORCE_TASK_SNIPPET_MAX).default(""),
   normalizedEmails: stringArraySchema.default([]),
   normalizedPhones: stringArraySchema.default([]),
   volunteerIdPlainValues: stringArraySchema.default([]),
