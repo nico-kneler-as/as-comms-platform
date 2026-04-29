@@ -242,6 +242,59 @@ function buildMailchimpSummary(
   }
 }
 
+const lifecycleSources = [
+  {
+    milestone: "signed_up" as const,
+    sourceField: "Expedition_Members__c.CreatedDate" as const
+  },
+  {
+    milestone: "received_training" as const,
+    sourceField: "Expedition_Members__c.Date_Training_Sent__c" as const
+  },
+  {
+    milestone: "completed_training" as const,
+    sourceField: "Expedition_Members__c.Date_Training_Completed__c" as const
+  },
+  {
+    milestone: "submitted_first_data" as const,
+    sourceField: "Expedition_Members__c.Date_First_Sample_Collected__c" as const
+  }
+] as const;
+
+type LifecycleMilestone = (typeof lifecycleSources)[number]["milestone"];
+
+function resolveLifecycleEventType(
+  milestone: LifecycleMilestone
+): NormalizedCanonicalEventIntake["canonicalEvent"]["eventType"] {
+  switch (milestone) {
+    case "signed_up":
+      return "lifecycle.signed_up";
+    case "received_training":
+      return "lifecycle.received_training";
+    case "completed_training":
+      return "lifecycle.completed_training";
+    case "submitted_first_data":
+      return "lifecycle.submitted_first_data";
+  }
+}
+
+function buildLifecycleSummary(
+  eventType: NormalizedCanonicalEventIntake["canonicalEvent"]["eventType"]
+): string {
+  switch (eventType) {
+    case "lifecycle.signed_up":
+      return "Volunteer signed up";
+    case "lifecycle.received_training":
+      return "Volunteer received training";
+    case "lifecycle.completed_training":
+      return "Volunteer completed training";
+    case "lifecycle.submitted_first_data":
+      return "Volunteer submitted first data";
+    default:
+      throw new Error(`Unsupported lifecycle event type ${eventType}.`);
+  }
+}
+
 function buildSalesforceTaskSummary(input: {
   readonly eventType: NormalizedCanonicalEventIntake["canonicalEvent"]["eventType"];
   readonly messageKind: SalesforceCommunicationDetailRecord["messageKind"];
@@ -334,11 +387,150 @@ function parseSubjectDirection(rawSubject: string | null): {
   };
 }
 
-export async function buildEventFromStoredData(input: {
+function parseLifecycleProviderRecordId(input: {
+  readonly sourceEvidenceId: string;
+  readonly providerRecordId: string;
+}): {
+  readonly membershipId: string;
+  readonly sourceField: (typeof lifecycleSources)[number]["sourceField"];
+  readonly milestone: LifecycleMilestone;
+} {
+  const separatorIndex = input.providerRecordId.indexOf(":");
+
+  if (
+    separatorIndex <= 0 ||
+    separatorIndex === input.providerRecordId.length - 1
+  ) {
+    throw new Error(
+      `Expected lifecycle provider record id ${input.providerRecordId} for source evidence ${input.sourceEvidenceId} to use the format {membershipId}:{sourceField}.`
+    );
+  }
+
+  const membershipId = input.providerRecordId.slice(0, separatorIndex);
+  const sourceField = input.providerRecordId.slice(separatorIndex + 1);
+  const lifecycleSource = lifecycleSources.find(
+    (candidate) => candidate.sourceField === sourceField
+  );
+
+  if (lifecycleSource === undefined) {
+    throw new Error(
+      `Unsupported lifecycle source field ${sourceField} for source evidence ${input.sourceEvidenceId}.`
+    );
+  }
+
+  return {
+    membershipId,
+    sourceField: lifecycleSource.sourceField,
+    milestone: lifecycleSource.milestone
+  };
+}
+
+async function buildLifecycleIntakeFromStoredEvidence(input: {
   readonly repositories: Stage1RepositoryBundle;
   readonly sourceEvidence: SourceEvidenceRecord;
   readonly caseRecord: IdentityResolutionCase;
 }): Promise<NormalizedCanonicalEventIntake> {
+  const sourceEvidenceId = input.sourceEvidence.id;
+  const lifecycleRecord = parseLifecycleProviderRecordId({
+    sourceEvidenceId,
+    providerRecordId: input.sourceEvidence.providerRecordId
+  });
+  const eventContext = requireSingleDetail(
+    (
+      await input.repositories.salesforceEventContext.listBySourceEvidenceIds([
+        sourceEvidenceId
+      ])
+    )[0],
+    `Expected salesforce_event_context to exist for source evidence ${sourceEvidenceId}.`
+  );
+  const [project, expedition] = await Promise.all([
+    eventContext.projectId === null
+      ? Promise.resolve(undefined)
+      : input.repositories.projectDimensions
+          .listByIds([eventContext.projectId])
+          .then((records) => records[0]),
+    eventContext.expeditionId === null
+      ? Promise.resolve(undefined)
+      : input.repositories.expeditionDimensions
+          .listByIds([eventContext.expeditionId])
+          .then((records) => records[0])
+  ]);
+  const eventType = resolveLifecycleEventType(lifecycleRecord.milestone);
+  const routing = buildRoutingContext({
+    eventContext,
+    project,
+    expedition
+  });
+
+  return {
+    sourceEvidence: input.sourceEvidence,
+    canonicalEvent: {
+      id: buildCanonicalEventId({
+        provider: "salesforce",
+        providerRecordType: input.sourceEvidence.providerRecordType,
+        providerRecordId: input.sourceEvidence.providerRecordId,
+        eventType,
+        crossProviderCollapseKey: null
+      }),
+      eventType,
+      occurredAt: input.sourceEvidence.occurredAt,
+      idempotencyKey: buildCanonicalEventIdempotencyKey({
+        provider: "salesforce",
+        providerRecordType: input.sourceEvidence.providerRecordType,
+        providerRecordId: input.sourceEvidence.providerRecordId,
+        eventType,
+        crossProviderCollapseKey: null
+      }),
+      summary: buildLifecycleSummary(eventType),
+      snippet: ""
+    },
+    identity: buildIdentityFromCase({
+      caseRecord: input.caseRecord,
+      provider: input.sourceEvidence.provider,
+      preferredSalesforceContactId: eventContext.salesforceContactId
+    }),
+    ...(routing === undefined ? {} : { routing }),
+    supportingSources: [],
+    salesforceEventContext: {
+      ...eventContext,
+      sourceField: lifecycleRecord.sourceField
+    },
+    projectDimensions:
+      project === undefined
+        ? []
+        : [
+            {
+              projectId: project.projectId,
+              projectName: project.projectName,
+              source: project.source
+            }
+          ],
+    expeditionDimensions:
+      expedition === undefined
+        ? []
+        : [
+            {
+              expeditionId: expedition.expeditionId,
+              projectId: expedition.projectId,
+              expeditionName: expedition.expeditionName,
+              source: expedition.source
+            }
+          ]
+  };
+}
+
+export async function buildEventFromStoredData(input: {
+  readonly repositories: Stage1RepositoryBundle;
+  readonly sourceEvidence: SourceEvidenceRecord;
+  readonly caseRecord: IdentityResolutionCase;
+}): Promise<
+  | NormalizedCanonicalEventIntake
+  | {
+      readonly outcome: "skipped";
+      readonly reasonCode: "skipped_missing_presentation_detail";
+      readonly explanation: string;
+    }
+> {
   const sourceEvidenceId = input.sourceEvidence.id;
 
   switch (input.sourceEvidence.provider) {
@@ -349,14 +541,21 @@ export async function buildEventFromStoredData(input: {
           caseRecord: input.caseRecord,
           provider: input.sourceEvidence.provider
         });
-      const detail = requireSingleDetail(
-        (
-          await input.repositories.gmailMessageDetails.listBySourceEvidenceIds([
-            sourceEvidenceId
-          ])
-        )[0],
-        `Expected gmail_message_details to exist for source evidence ${sourceEvidenceId}.`
-      );
+      const detail = (
+        await input.repositories.gmailMessageDetails.listBySourceEvidenceIds([
+          sourceEvidenceId
+        ])
+      )[0];
+
+      if (detail === undefined) {
+        return {
+          outcome: "skipped",
+          reasonCode: "skipped_missing_presentation_detail",
+          explanation:
+            "Reconciled-as-skipped: source evidence has no gmail_message_details row (likely partial mbox import; cannot recover)"
+        };
+      }
+
       const crossProviderCollapseKey =
         detail.rfc822MessageId === null
           ? null
@@ -413,6 +612,10 @@ export async function buildEventFromStoredData(input: {
       };
     }
     case "salesforce": {
+      if (input.sourceEvidence.providerRecordType === "lifecycle_milestone") {
+        return buildLifecycleIntakeFromStoredEvidence(input);
+      }
+
       const [detail, eventContext] = await Promise.all([
         input.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds([
           sourceEvidenceId
