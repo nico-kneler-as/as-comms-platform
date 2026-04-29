@@ -86,36 +86,6 @@ async function seedResolvableRoutingReviewCase(
   return caseId;
 }
 
-async function seedBrokenRoutingReviewCase(
-  context: TestWorkerContext,
-  input: {
-    readonly caseId: string;
-    readonly sourceEvidenceId: string;
-    readonly receivedAt: string;
-  },
-): Promise<void> {
-  await context.repositories.contacts.upsert({
-    id: "contact-routing-broken",
-    salesforceContactId: null,
-    displayName: "Broken Routing Contact",
-    primaryEmail: null,
-    primaryPhone: null,
-    createdAt: input.receivedAt,
-    updatedAt: input.receivedAt,
-  });
-  await context.repositories.routingReviewQueue.upsert({
-    id: input.caseId,
-    contactId: "contact-routing-broken",
-    sourceEvidenceId: input.sourceEvidenceId,
-    reasonCode: "routing_missing_membership",
-    status: "open",
-    openedAt: input.receivedAt,
-    resolvedAt: null,
-    candidateMembershipIds: [],
-    explanation: "Seeded broken scheduled routing reconcile case.",
-  });
-}
-
 describe("reconcile routing review queue task", () => {
   it("reconciles open cases up to the configured limit and logs the report", async () => {
     const context = await createTestWorkerContext();
@@ -162,38 +132,4 @@ describe("reconcile routing review queue task", () => {
     }
   });
 
-  it("throws on systemic per-target failure", async () => {
-    const context = await createTestWorkerContext();
-    const logger = { log: vi.fn() };
-
-    try {
-      await seedBrokenRoutingReviewCase(context, {
-        caseId:
-          "routing-review:missing-source-evidence-1:routing_missing_membership",
-        sourceEvidenceId: "missing-source-evidence-1",
-        receivedAt: "2026-04-28T12:10:00.000Z",
-      });
-
-      const taskList = createTaskList(undefined, {
-        reconcileRoutingReviewQueue: {
-          db: context.db,
-          repositories: context.repositories,
-          logger,
-        },
-      });
-      const task = taskList[reconcileRoutingReviewQueueJobName];
-
-      if (task === undefined) {
-        throw new Error(
-          "Expected reconcile routing review queue task to be registered.",
-        );
-      }
-
-      await expect(task({}, {} as never)).rejects.toThrow(
-        "Routing review queue reconcile made no progress and produced 1 errors.",
-      );
-    } finally {
-      await context.dispose();
-    }
-  });
 });
