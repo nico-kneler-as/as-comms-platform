@@ -73,6 +73,7 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
       {
         id: `membership:${contactId}:project-stage1`,
         contactId,
+        salesforceMembershipId: `membership:${contactId}:project-stage1:sf`,
         projectId: "project-stage1",
         expeditionId: "expedition-stage1",
         role: "volunteer",

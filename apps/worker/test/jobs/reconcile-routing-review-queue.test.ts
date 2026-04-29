@@ -39,6 +39,7 @@ async function seedResolvableRoutingReviewCase(
       {
         id: "membership:routing-reconcile:project-stage1",
         contactId: "contact-routing-reconcile",
+        salesforceMembershipId: "membership:routing-reconcile:project-stage1:sf",
         projectId: "project-stage1",
         expeditionId: null,
         role: "volunteer",

@@ -65,6 +65,7 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
       {
         id: `membership:${contactId}:project-stage1`,
         contactId,
+        salesforceMembershipId: `membership:${contactId}:project-stage1:sf`,
         projectId: "project-stage1",
         expeditionId: "expedition-stage1",
         role: "volunteer",
@@ -427,6 +428,7 @@ Alias drift outbound message.
           updatedAt: "2026-01-03T00:00:00.000Z",
           memberships: [
             {
+              salesforceId: "membership-stage1",
               projectId: "project-stage1",
               projectName: "Project Stage 1",
               expeditionId: "expedition-stage1",
@@ -596,6 +598,7 @@ Alias drift outbound message.
             updatedAt: "2026-01-03T00:02:00.000Z",
             memberships: [
               {
+                salesforceId: "membership-stage1-fresh",
                 projectId: "project-stage1-fresh",
                 projectName: "Project Stage 1 Fresh",
                 expeditionId: "expedition-stage1-fresh",

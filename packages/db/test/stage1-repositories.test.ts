@@ -246,6 +246,18 @@ describe("Stage 1 DB repositories", () => {
       verifiedAt: "2026-01-01T00:00:00.000Z",
     });
 
+    await repositories.projectDimensions.upsert({
+      projectId: "project_1",
+      projectName: "Project Antarctica",
+      source: "salesforce",
+    });
+    await repositories.expeditionDimensions.upsert({
+      expeditionId: "expedition_1",
+      projectId: "project_1",
+      expeditionName: "Expedition Antarctica",
+      source: "salesforce",
+    });
+
     const membership = await repositories.contactMemberships.upsert({
       id: "membership_1",
       contactId: contact.id,
@@ -267,6 +279,7 @@ describe("Stage 1 DB repositories", () => {
         normalizedValue: "volunteer@example.org",
       }),
     ).resolves.toEqual([identity]);
+
     await expect(
       repositories.contactMemberships.listByContactId(contact.id),
     ).resolves.toEqual([membership]);
@@ -989,6 +1002,7 @@ describe("Stage 1 DB repositories", () => {
       contactId: "contact:multi-project",
       projectId: "project:pnw-bio",
       expeditionId: null,
+      salesforceMembershipId: "sf-membership:multi:pnw",
       role: "volunteer",
       status: "lead",
       source: "salesforce",
@@ -999,6 +1013,7 @@ describe("Stage 1 DB repositories", () => {
       contactId: "contact:multi-project",
       projectId: "project:whitebark-pine",
       expeditionId: null,
+      salesforceMembershipId: "sf-membership:multi:whitebark",
       role: "volunteer",
       status: "in_training",
       source: "salesforce",
@@ -1009,6 +1024,7 @@ describe("Stage 1 DB repositories", () => {
       contactId: "contact:multi-project",
       projectId: "project:inactive-c",
       expeditionId: null,
+      salesforceMembershipId: "sf-membership:multi:inactive",
       role: "volunteer",
       status: "successful",
       source: "salesforce",

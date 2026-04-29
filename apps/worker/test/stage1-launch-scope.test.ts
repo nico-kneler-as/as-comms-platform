@@ -46,6 +46,7 @@ describe("Stage 1 narrowed Gmail + Salesforce launch scope", () => {
             updatedAt: "2026-01-01T00:00:00.000Z",
             memberships: [
               {
+                salesforceId: "a0B-membership-antarctica-historical",
                 projectId: "project-antarctica",
                 expeditionId: "expedition-antarctica",
                 role: "volunteer",
@@ -195,6 +196,7 @@ describe("Stage 1 narrowed Gmail + Salesforce launch scope", () => {
             updatedAt: "2026-01-05T00:00:00.000Z",
             memberships: [
               {
+                salesforceId: "a0B-membership-antarctica-live",
                 projectId: "project-antarctica",
                 expeditionId: "expedition-antarctica",
                 role: "volunteer",
