@@ -28,8 +28,20 @@ export function createDatabaseConnection(rawConfig: DatabaseConfig): DatabaseCon
   // connection budget across the web + worker services. Override via
   // DB_POOL_MAX env var if Railway tier limits change.
   const poolSize = Number.parseInt(process.env.DB_POOL_MAX ?? "20", 10);
+  // Set a server-side default statement timeout for all queries. Override via
+  // DB_STATEMENT_TIMEOUT_MS if environment-specific tuning is needed.
+  const statementTimeoutMs = Number.parseInt(
+    process.env.DB_STATEMENT_TIMEOUT_MS ?? "30000",
+    10,
+  );
   const sql = postgres(config.connectionString, {
     max: Number.isFinite(poolSize) && poolSize > 0 ? poolSize : 20,
+    connection: {
+      statement_timeout:
+        Number.isFinite(statementTimeoutMs) && statementTimeoutMs > 0
+          ? statementTimeoutMs
+          : 30000,
+    },
     prepare: false
   });
 
