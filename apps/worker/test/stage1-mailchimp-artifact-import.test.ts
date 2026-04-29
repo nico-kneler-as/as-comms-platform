@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createStage1MailchimpArtifactImportService } from "../src/ops/mailchimp-artifacts.js";
 import { Stage1RetryableJobError } from "../src/orchestration/index.js";
@@ -615,6 +615,69 @@ describe("Stage 1 Mailchimp artifact importer", () => {
         cursor: "campaign-resume"
       });
     } finally {
+      await rm(artifactRoot, {
+        recursive: true,
+        force: true
+      });
+      await context.dispose();
+    }
+  });
+
+  it("heartbeats while a long Mailchimp artifact import is still running", async () => {
+    vi.useFakeTimers();
+    const context = await createTestWorkerContext();
+    const artifactRoot = await writeArtifactCampaign();
+
+    try {
+      await seedContact(context);
+
+      let notifyIngestStarted: (() => void) | undefined;
+      const ingestStarted = new Promise<void>((resolve) => {
+        notifyIngestStarted = resolve;
+      });
+      let releaseIngest: (() => void) | undefined;
+      const holdIngest = new Promise<void>((resolve) => {
+        releaseIngest = resolve;
+      });
+      const heartbeat = vi.fn(({ syncStateId }: { readonly syncStateId: string }) =>
+        context.syncState.heartbeat({ syncStateId })
+      );
+      const importer = createStage1MailchimpArtifactImportService({
+        ingest: {
+          ingestMailchimpHistoricalRecord(record) {
+            notifyIngestStarted?.();
+
+            return holdIngest.then(() =>
+              context.ingest.ingestMailchimpHistoricalRecord(record)
+            );
+          }
+        },
+        persistence: context.persistence,
+        syncState: {
+          ...context.syncState,
+          heartbeat
+        },
+        now: () => new Date("2026-02-03T00:00:00.000Z")
+      });
+
+      const importPromise = importer.importArtifacts({
+        artifactPath: artifactRoot,
+        syncStateId: "sync:mailchimp:artifacts:heartbeat",
+        correlationId: "corr:mailchimp:artifacts:heartbeat",
+        traceId: null,
+        receivedAt: "2026-02-03T00:00:00.000Z"
+      });
+
+      await ingestStarted;
+      await vi.advanceTimersByTimeAsync(30_000);
+      if (releaseIngest !== undefined) {
+        releaseIngest();
+      }
+      await importPromise;
+
+      expect(heartbeat).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
       await rm(artifactRoot, {
         recursive: true,
         force: true

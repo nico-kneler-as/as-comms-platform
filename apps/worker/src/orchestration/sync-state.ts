@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   syncStateSchema,
   type Provider,
@@ -6,6 +8,9 @@ import {
   type SyncStateRecord
 } from "@as-comms/contracts";
 import type { Stage1PersistenceService } from "@as-comms/domain";
+
+const WORKER_INSTANCE_ID = randomUUID();
+export const workerInstanceId = WORKER_INSTANCE_ID;
 
 function chooseCursor(
   existing: SyncStateRecord | null,
@@ -39,6 +44,8 @@ function toSyncState(input: {
   readonly freshnessP99Seconds: number | null;
   readonly lastSuccessfulAt: string | null;
   readonly consecutiveFailureCount: number;
+  readonly leaseOwner: string | null;
+  readonly heartbeatAt: string | null;
   readonly deadLetterCount: number;
 }): SyncStateRecord {
   return syncStateSchema.parse({
@@ -55,6 +62,8 @@ function toSyncState(input: {
     freshnessP99Seconds: input.freshnessP99Seconds,
     lastSuccessfulAt: input.lastSuccessfulAt,
     consecutiveFailureCount: input.consecutiveFailureCount,
+    leaseOwner: input.leaseOwner,
+    heartbeatAt: input.heartbeatAt,
     deadLetterCount: input.deadLetterCount
   });
 }
@@ -81,6 +90,9 @@ export interface Stage1SyncStateService {
     readonly windowEnd: string | null;
     readonly deadLetterCountIncrement: number;
   }): Promise<SyncStateRecord>;
+  heartbeat(input: {
+    readonly syncStateId: string;
+  }): Promise<SyncStateRecord | null>;
   completeWindow(input: {
     readonly syncStateId: string;
     readonly scope: SyncScope;
@@ -112,6 +124,8 @@ export interface Stage1SyncStateService {
 export function createStage1SyncStateService(
   persistence: Stage1PersistenceService
 ): Stage1SyncStateService {
+  const heartbeatTimestamp = (): string => new Date().toISOString();
+
   return {
     async startWindow(input) {
       const existing = await persistence.repositories.syncState.findById(
@@ -139,6 +153,8 @@ export function createStage1SyncStateService(
           freshnessP99Seconds: existing?.freshnessP99Seconds ?? null,
           lastSuccessfulAt: existing?.lastSuccessfulAt ?? null,
           consecutiveFailureCount: existing?.consecutiveFailureCount ?? 0,
+          leaseOwner: WORKER_INSTANCE_ID,
+          heartbeatAt: heartbeatTimestamp(),
           deadLetterCount: existing?.deadLetterCount ?? 0
         })
       );
@@ -170,8 +186,50 @@ export function createStage1SyncStateService(
           freshnessP99Seconds: existing?.freshnessP99Seconds ?? null,
           lastSuccessfulAt: existing?.lastSuccessfulAt ?? null,
           consecutiveFailureCount: existing?.consecutiveFailureCount ?? 0,
+          leaseOwner: existing?.leaseOwner ?? WORKER_INSTANCE_ID,
+          heartbeatAt: heartbeatTimestamp(),
           deadLetterCount:
             (existing?.deadLetterCount ?? 0) + input.deadLetterCountIncrement
+        })
+      );
+    },
+
+    async heartbeat(input) {
+      const existing = await persistence.repositories.syncState.findById(
+        input.syncStateId
+      );
+
+      if (existing === null) {
+        return null;
+      }
+
+      if (
+        existing.status !== "running" ||
+        existing.leaseOwner !== WORKER_INSTANCE_ID
+      ) {
+        return existing;
+      }
+
+      return persistence.saveSyncState(
+        toSyncState({
+          existing,
+          id: existing.id,
+          scope: existing.scope,
+          provider: existing.provider,
+          jobType: existing.jobType,
+          cursor: existing.cursor,
+          checkpoint: null,
+          windowStart: existing.windowStart,
+          windowEnd: existing.windowEnd,
+          status: existing.status,
+          parityPercent: existing.parityPercent,
+          freshnessP95Seconds: existing.freshnessP95Seconds,
+          freshnessP99Seconds: existing.freshnessP99Seconds,
+          lastSuccessfulAt: existing.lastSuccessfulAt,
+          consecutiveFailureCount: existing.consecutiveFailureCount,
+          leaseOwner: existing.leaseOwner,
+          heartbeatAt: heartbeatTimestamp(),
+          deadLetterCount: existing.deadLetterCount
         })
       );
     },
@@ -204,6 +262,8 @@ export function createStage1SyncStateService(
             input.freshnessP99Seconds ?? existing?.freshnessP99Seconds ?? null,
           lastSuccessfulAt: input.completedAt,
           consecutiveFailureCount: 0,
+          leaseOwner: null,
+          heartbeatAt: null,
           deadLetterCount: existing?.deadLetterCount ?? 0
         })
       );
@@ -231,6 +291,8 @@ export function createStage1SyncStateService(
           freshnessP99Seconds: existing?.freshnessP99Seconds ?? null,
           lastSuccessfulAt: existing?.lastSuccessfulAt ?? null,
           consecutiveFailureCount: (existing?.consecutiveFailureCount ?? 0) + 1,
+          leaseOwner: null,
+          heartbeatAt: null,
           deadLetterCount:
             (existing?.deadLetterCount ?? 0) + input.deadLetterCountIncrement
         })

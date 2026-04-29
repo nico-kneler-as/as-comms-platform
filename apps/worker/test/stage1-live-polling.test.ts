@@ -40,6 +40,9 @@ async function saveLiveSyncState(
     parityPercent: null,
     lastSuccessfulAt: input.lastSuccessfulAt,
     consecutiveFailureCount: 0,
+    leaseOwner: input.status === "running" ? "worker:test" : null,
+    heartbeatAt:
+      input.status === "running" ? "2026-01-01T00:00:30.000Z" : null,
     deadLetterCount: 0,
     freshnessP95Seconds: null,
     freshnessP99Seconds: null

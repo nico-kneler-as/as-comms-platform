@@ -616,6 +616,11 @@ export const syncState = pgTable(
     consecutiveFailureCount: integer("consecutive_failure_count")
       .notNull()
       .default(0),
+    leaseOwner: text("lease_owner"),
+    heartbeatAt: timestamp("heartbeat_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
     deadLetterCount: integer("dead_letter_count").notNull().default(0),
     createdAt: createdAtColumn,
     updatedAt: updatedAtColumn,

@@ -365,6 +365,8 @@ describe("Stage 1 persistence service", () => {
       freshnessP99Seconds: 120,
       lastSuccessfulAt: "2026-01-01T01:00:00.000Z",
       consecutiveFailureCount: 3,
+      leaseOwner: null,
+      heartbeatAt: null,
       deadLetterCount: 0
     });
 

@@ -11,6 +11,7 @@ import {
   pollIntegrationHealthJobName,
   pollSalesforceLiveJobName,
 } from "../src/orchestration/tasks.js";
+import { reconcileStaleRunningJobName } from "../src/jobs/reconcile-stale-running.js";
 import { sweepPendingOutboundsJobName } from "../src/jobs/sweep-pending-outbounds.js";
 import { createTaskList } from "../src/tasks.js";
 import {
@@ -146,6 +147,7 @@ describe("Stage 1 worker runtime task registration", () => {
         `*/5 * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
         `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
         `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
+        `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
         "*/15 * * * * reconcile-identity-queue ?id=identity-queue-reconcile&max=1",
         "*/15 * * * * reconcile-routing-review-queue ?id=routing-review-queue-reconcile&max=1",
       ].join("\n"),

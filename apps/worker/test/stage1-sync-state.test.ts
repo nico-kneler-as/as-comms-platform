@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { workerInstanceId } from "../src/orchestration/sync-state.js";
 import { createTestWorkerContext } from "./helpers.js";
 
 describe("Stage 1 worker sync-state service", () => {
@@ -61,13 +62,19 @@ describe("Stage 1 worker sync-state service", () => {
       });
 
       expect(started.status).toBe("running");
+      expect(started.leaseOwner).toBe(workerInstanceId);
+      expect(started.heartbeatAt).not.toBeNull();
       expect(progressed.cursor).toBe("checkpoint:1");
       expect(progressed.deadLetterCount).toBe(1);
       expect(progressed.consecutiveFailureCount).toBe(0);
+      expect(progressed.leaseOwner).toBe(workerInstanceId);
+      expect(progressed.heartbeatAt).not.toBeNull();
       expect(completed.status).toBe("succeeded");
       expect(completed.cursor).toBe("cursor:complete");
       expect(completed.parityPercent).toBe(100);
       expect(completed.consecutiveFailureCount).toBe(0);
+      expect(completed.leaseOwner).toBeNull();
+      expect(completed.heartbeatAt).toBeNull();
       expect(completedAgain).toEqual(completed);
     } finally {
       await context.dispose();
@@ -95,6 +102,101 @@ describe("Stage 1 worker sync-state service", () => {
       expect(failed.cursor).toBe("replay:checkpoint:1");
       expect(failed.consecutiveFailureCount).toBe(1);
       expect(failed.deadLetterCount).toBe(1);
+      expect(failed.leaseOwner).toBeNull();
+      expect(failed.heartbeatAt).toBeNull();
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("refreshes heartbeats only for running rows owned by this worker", async () => {
+    const context = await createTestWorkerContext();
+
+    try {
+      const started = await context.syncState.startWindow({
+        syncStateId: "sync:gmail:heartbeat:1",
+        scope: "provider",
+        provider: "gmail",
+        jobType: "historical_backfill",
+        cursor: null,
+        checkpoint: null,
+        windowStart: null,
+        windowEnd: null
+      });
+      const firstHeartbeatAt = started.heartbeatAt;
+      const heartbeated = await context.syncState.heartbeat({
+        syncStateId: started.id
+      });
+
+      expect(heartbeated?.leaseOwner).toBe(workerInstanceId);
+      expect(heartbeated?.heartbeatAt).not.toBeNull();
+      expect(Date.parse(heartbeated?.heartbeatAt ?? "")).toBeGreaterThanOrEqual(
+        Date.parse(firstHeartbeatAt ?? "")
+      );
+      if (heartbeated === null) {
+        throw new Error("Expected heartbeat to return the running sync state.");
+      }
+
+      await context.repositories.syncState.upsert({
+        ...heartbeated,
+        id: "sync:gmail:heartbeat:other-owner",
+        leaseOwner: "worker:other",
+        heartbeatAt: "2026-01-01T00:00:00.000Z"
+      });
+      await context.repositories.syncState.upsert({
+        ...heartbeated,
+        id: "sync:gmail:heartbeat:failed",
+        status: "failed",
+        leaseOwner: workerInstanceId,
+        heartbeatAt: "2026-01-01T00:00:00.000Z"
+      });
+      await context.repositories.syncState.upsert({
+        ...heartbeated,
+        id: "sync:gmail:heartbeat:quarantined",
+        status: "quarantined",
+        leaseOwner: workerInstanceId,
+        heartbeatAt: "2026-01-01T00:00:00.000Z"
+      });
+      await context.repositories.syncState.upsert({
+        ...heartbeated,
+        id: "sync:gmail:heartbeat:succeeded",
+        status: "succeeded",
+        leaseOwner: workerInstanceId,
+        heartbeatAt: "2026-01-01T00:00:00.000Z"
+      });
+
+      await expect(
+        context.syncState.heartbeat({
+          syncStateId: "sync:gmail:heartbeat:other-owner"
+        })
+      ).resolves.toMatchObject({
+        leaseOwner: "worker:other",
+        heartbeatAt: "2026-01-01T00:00:00.000Z"
+      });
+      await expect(
+        context.syncState.heartbeat({
+          syncStateId: "sync:gmail:heartbeat:failed"
+        })
+      ).resolves.toMatchObject({
+        status: "failed",
+        heartbeatAt: "2026-01-01T00:00:00.000Z"
+      });
+      await expect(
+        context.syncState.heartbeat({
+          syncStateId: "sync:gmail:heartbeat:quarantined"
+        })
+      ).resolves.toMatchObject({
+        status: "quarantined",
+        heartbeatAt: "2026-01-01T00:00:00.000Z"
+      });
+      await expect(
+        context.syncState.heartbeat({
+          syncStateId: "sync:gmail:heartbeat:succeeded"
+        })
+      ).resolves.toMatchObject({
+        status: "succeeded",
+        heartbeatAt: "2026-01-01T00:00:00.000Z"
+      });
     } finally {
       await context.dispose();
     }
@@ -221,8 +323,12 @@ describe("Stage 1 worker sync-state service", () => {
       expect(firstFailure.consecutiveFailureCount).toBe(1);
       expect(secondFailure.consecutiveFailureCount).toBe(2);
       expect(progressed.consecutiveFailureCount).toBe(2);
+      expect(progressed.leaseOwner).toBe(workerInstanceId);
+      expect(progressed.heartbeatAt).not.toBeNull();
       expect(completed.consecutiveFailureCount).toBe(0);
       expect(nextFailure.consecutiveFailureCount).toBe(1);
+      expect(nextFailure.leaseOwner).toBeNull();
+      expect(nextFailure.heartbeatAt).toBeNull();
     } finally {
       await context.dispose();
     }

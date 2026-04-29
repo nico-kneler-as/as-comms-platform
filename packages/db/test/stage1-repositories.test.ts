@@ -685,6 +685,8 @@ describe("Stage 1 DB repositories", () => {
       freshnessP99Seconds: null,
       lastSuccessfulAt: "2026-01-01T01:00:00.000Z",
       consecutiveFailureCount: 4,
+      leaseOwner: "worker:test",
+      heartbeatAt: "2026-01-01T00:30:00.000Z",
       deadLetterCount: 2,
     });
 
@@ -693,6 +695,8 @@ describe("Stage 1 DB repositories", () => {
       status: "succeeded",
       parityPercent: 100,
       consecutiveFailureCount: 0,
+      leaseOwner: null,
+      heartbeatAt: null,
       deadLetterCount: 0,
     });
 
