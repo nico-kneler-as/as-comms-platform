@@ -47,7 +47,7 @@ import {
   uniqueValues,
 } from "./shared.js";
 
-const SALESFORCE_CAPTURE_TASK_SNIPPET_MAX = 10_000;
+const SALESFORCE_CAPTURE_TASK_SNIPPET_MAX = 100_000;
 
 const salesforceCaptureServiceResponseSchema =
   createCapturedBatchResponseSchema(salesforceRecordSchema);

@@ -341,7 +341,7 @@ describe("Salesforce capture service", () => {
                   },
                   TaskSubtype: "Email",
                   Subject: "Outbound follow-up",
-                  Description: "x".repeat(10_001),
+                  Description: "x".repeat(100_001),
                   CreatedDate: "2026-01-05T00:02:00.000Z",
                   LastModifiedDate: "2026-01-05T00:03:00.000Z"
                 }
