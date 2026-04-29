@@ -131,10 +131,24 @@ export function createStage1SyncStateService(
       const existing = await persistence.repositories.syncState.findById(
         input.syncStateId
       );
+      const latestForComposite =
+        existing === null
+          ? await persistence.repositories.syncState.findLatest({
+              scope: input.scope,
+              provider: input.provider,
+              jobType: input.jobType
+            })
+          : null;
 
       if (existing?.status === "succeeded") {
         return existing;
       }
+
+      const carriedFailureCount =
+        existing?.consecutiveFailureCount ??
+        (latestForComposite?.status === "failed"
+          ? latestForComposite.consecutiveFailureCount
+          : 0);
 
       return persistence.saveSyncState(
         toSyncState({
@@ -152,7 +166,7 @@ export function createStage1SyncStateService(
           freshnessP95Seconds: existing?.freshnessP95Seconds ?? null,
           freshnessP99Seconds: existing?.freshnessP99Seconds ?? null,
           lastSuccessfulAt: existing?.lastSuccessfulAt ?? null,
-          consecutiveFailureCount: existing?.consecutiveFailureCount ?? 0,
+          consecutiveFailureCount: carriedFailureCount,
           leaseOwner: WORKER_INSTANCE_ID,
           heartbeatAt: heartbeatTimestamp(),
           deadLetterCount: existing?.deadLetterCount ?? 0
