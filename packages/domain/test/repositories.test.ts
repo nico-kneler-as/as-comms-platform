@@ -121,6 +121,7 @@ describe("defineStage1RepositoryBundle", () => {
         create: (input) =>
           Promise.resolve({
             ...input,
+            authorDisplayName: null,
             createdAt: new Date(0),
             updatedAt: new Date(0),
           }),
@@ -131,6 +132,7 @@ describe("defineStage1RepositoryBundle", () => {
             id: input.id,
             contactId: "contact_1",
             body: input.body,
+            authorDisplayName: "User 1",
             authorId: "user_1",
             createdAt: new Date(0),
             updatedAt: new Date(0),

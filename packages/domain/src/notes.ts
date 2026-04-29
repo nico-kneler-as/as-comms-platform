@@ -1,15 +1,4 @@
-import { createHash } from "node:crypto";
-
-import {
-  canonicalEventSchema,
-  manualNoteDetailSchema,
-  type CanonicalEventRecord,
-  type InboxProjectionRow,
-  type ManualNoteDetailRecord,
-  type SourceEvidenceRecord,
-  type TimelineProjectionRow,
-} from "@as-comms/contracts";
-
+import type { InternalNoteRecord } from "./repositories.js";
 import type { Stage1NormalizationService } from "./normalization.js";
 import type { Stage1PersistenceService } from "./persistence.js";
 
@@ -24,11 +13,7 @@ export interface Stage1InternalNoteCreateInput {
 
 export interface Stage1InternalNoteCreateResult {
   readonly outcome: "applied" | "duplicate";
-  readonly sourceEvidence: SourceEvidenceRecord;
-  readonly canonicalEvent: CanonicalEventRecord;
-  readonly timelineProjection: TimelineProjectionRow;
-  readonly inboxProjection: InboxProjectionRow | null;
-  readonly noteDetail: ManualNoteDetailRecord;
+  readonly note: InternalNoteRecord;
 }
 
 export interface Stage1InternalNoteService {
@@ -45,27 +30,18 @@ export interface Stage1InternalNoteService {
   deleteNote(input: {
     readonly noteId: string;
     readonly authorId: string;
+    readonly actorIsAdmin?: boolean;
   }): Promise<{
     readonly outcome: "applied" | "not_authorized" | "not_found";
   }>;
 }
 
-function buildManualNoteChecksum(input: {
-  readonly noteId: string;
-  readonly contactId: string;
-  readonly body: string;
-  readonly occurredAt: string;
-}): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        noteId: input.noteId,
-        contactId: input.contactId,
-        body: input.body,
-        occurredAt: input.occurredAt,
-      }),
-    )
-    .digest("hex");
+function isUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return false;
+  }
+
+  return (error as { readonly code?: unknown }).code === "23505";
 }
 
 export function createStage1InternalNoteService(input: {
@@ -75,39 +51,7 @@ export function createStage1InternalNoteService(input: {
     "applyTimelineProjection" | "refreshInboxReviewOverlay"
   >;
 }): Stage1InternalNoteService {
-  async function loadExistingNote(inputValue: {
-    readonly noteId: string;
-  }): Promise<{
-    readonly sourceEvidence: SourceEvidenceRecord;
-    readonly noteDetail: ManualNoteDetailRecord;
-    readonly canonicalEvent: CanonicalEventRecord | null;
-  } | null> {
-    const sourceEvidenceId = `source-evidence:manual:note:${inputValue.noteId}`;
-    const canonicalEventId = `canonical-event:manual:note:${inputValue.noteId}`;
-    const [sourceEvidence, noteDetails, canonicalEvent] = await Promise.all([
-      input.persistence.repositories.sourceEvidence.findById(sourceEvidenceId),
-      input.persistence.repositories.manualNoteDetails.listBySourceEvidenceIds([
-        sourceEvidenceId,
-      ]),
-      input.persistence.repositories.canonicalEvents.findById(canonicalEventId),
-    ]);
-
-    if (sourceEvidence === null) {
-      return null;
-    }
-
-    const noteDetail = noteDetails[0] ?? null;
-
-    if (noteDetail === null) {
-      return null;
-    }
-
-    return {
-      sourceEvidence,
-      noteDetail,
-      canonicalEvent,
-    };
-  }
+  void input.normalization;
 
   return {
     async createNote(noteInput) {
@@ -119,119 +63,82 @@ export function createStage1InternalNoteService(input: {
         throw new Error(`Contact ${noteInput.contactId} was not found.`);
       }
 
-      const sourceEvidenceId = `source-evidence:manual:note:${noteInput.noteId}`;
-      const sourceEvidence = {
-        id: sourceEvidenceId,
-        provider: "manual" as const,
-        providerRecordType: "note",
-        providerRecordId: noteInput.noteId,
-        receivedAt: noteInput.occurredAt,
-        occurredAt: noteInput.occurredAt,
-        payloadRef: `manual://note/${noteInput.noteId}`,
-        idempotencyKey: `manual:note:${noteInput.noteId}`,
-        checksum: buildManualNoteChecksum(noteInput),
-      };
-
-      const sourceEvidenceResult =
-        await input.persistence.recordSourceEvidence(sourceEvidence);
-
-      if (sourceEvidenceResult.outcome === "conflict") {
-        throw new Error(
-          `Manual note ${noteInput.noteId} conflicted with existing source evidence.`,
-        );
+      if (
+        typeof noteInput.authorId !== "string" ||
+        noteInput.authorId.trim().length === 0
+      ) {
+        throw new Error("Internal notes require an authorId.");
       }
 
-      const canonicalEvent = canonicalEventSchema.parse({
-        id: `canonical-event:manual:note:${noteInput.noteId}`,
-        contactId: noteInput.contactId,
-        eventType: "note.internal.created",
-        channel: "note",
-        occurredAt: noteInput.occurredAt,
-        sourceEvidenceId: sourceEvidenceResult.record.id,
-        idempotencyKey: `canonical-event:manual:note:${noteInput.noteId}`,
-        provenance: {
-          primaryProvider: "manual",
-          primarySourceEvidenceId: sourceEvidenceResult.record.id,
-          supportingSourceEvidenceIds: [],
-          winnerReason: "single_source",
-          sourceRecordType: "note",
-          sourceRecordId: noteInput.noteId,
-          messageKind: null,
-          campaignRef: null,
-          threadRef: null,
-          direction: null,
-          notes: null,
-        },
-        reviewState: "clear",
-      });
-
-      const canonicalEventResult =
-        await input.persistence.persistCanonicalEvent(canonicalEvent);
-
-      if (canonicalEventResult.outcome === "conflict") {
-        throw new Error(
-          `Manual note ${noteInput.noteId} conflicted with existing canonical event state.`,
-        );
-      }
-
-      const noteDetail = await input.persistence.upsertManualNoteDetail(
-        manualNoteDetailSchema.parse({
-          sourceEvidenceId: sourceEvidenceResult.record.id,
-          providerRecordId: noteInput.noteId,
-          body: noteInput.body,
-          authorDisplayName: noteInput.authorDisplayName ?? null,
-          authorId: noteInput.authorId ?? null,
-        }),
+      const existing = await input.persistence.repositories.internalNotes.findById(
+        noteInput.noteId,
       );
 
-      const persistedEvent = canonicalEventResult.record;
-      const timelineProjection =
-        await input.normalization.applyTimelineProjection({
-          canonicalEvent: persistedEvent,
-          summary: "Internal note added",
-        });
-      const inboxProjection =
-        await input.normalization.refreshInboxReviewOverlay({
+      if (existing !== undefined) {
+        return {
+          outcome: "duplicate",
+          note: existing,
+        };
+      }
+
+      const createdAt = new Date(noteInput.occurredAt);
+
+      try {
+        const note = await input.persistence.repositories.internalNotes.create({
+          id: noteInput.noteId,
           contactId: noteInput.contactId,
+          body: noteInput.body,
+          authorId: noteInput.authorId,
+          createdAt,
+          updatedAt: createdAt,
         });
 
-      return {
-        outcome:
-          sourceEvidenceResult.outcome === "inserted" &&
-          canonicalEventResult.outcome === "inserted"
-            ? "applied"
-            : "duplicate",
-        sourceEvidence: sourceEvidenceResult.record,
-        canonicalEvent: persistedEvent,
-        timelineProjection,
-        inboxProjection,
-        noteDetail,
-      };
+        return {
+          outcome: "applied",
+          note,
+        };
+      } catch (error) {
+        if (!isUniqueViolation(error)) {
+          throw error;
+        }
+
+        const duplicate =
+          await input.persistence.repositories.internalNotes.findById(
+            noteInput.noteId,
+          );
+
+        if (duplicate === undefined) {
+          throw error;
+        }
+
+        return {
+          outcome: "duplicate",
+          note: duplicate,
+        };
+      }
     },
 
     async updateNote(updateInput) {
-      const existing = await loadExistingNote({
-        noteId: updateInput.noteId,
-      });
+      const existing = await input.persistence.repositories.internalNotes.findById(
+        updateInput.noteId,
+      );
 
-      if (existing === null) {
+      if (existing === undefined) {
         return {
           outcome: "not_found",
         };
       }
 
-      const updated =
-        await input.persistence.repositories.manualNoteDetails.updateBody({
-          sourceEvidenceId: existing.sourceEvidence.id,
-          authorId: updateInput.authorId,
-          body: updateInput.body,
-        });
-
-      if (updated === null) {
+      if (existing.authorId !== updateInput.authorId) {
         return {
           outcome: "not_authorized",
         };
       }
+
+      await input.persistence.repositories.internalNotes.update({
+        id: updateInput.noteId,
+        body: updateInput.body,
+      });
 
       return {
         outcome: "applied",
@@ -239,33 +146,28 @@ export function createStage1InternalNoteService(input: {
     },
 
     async deleteNote(deleteInput) {
-      const existing = await loadExistingNote({
-        noteId: deleteInput.noteId,
-      });
+      const existing = await input.persistence.repositories.internalNotes.findById(
+        deleteInput.noteId,
+      );
 
-      if (existing === null) {
+      if (existing === undefined) {
         return {
           outcome: "not_found",
         };
       }
 
-      const deletedCount =
-        await input.persistence.repositories.manualNoteDetails.deleteByAuthor({
-          sourceEvidenceId: existing.sourceEvidence.id,
-          authorId: deleteInput.authorId,
-        });
-
-      if (deletedCount === 0) {
+      if (
+        !deleteInput.actorIsAdmin &&
+        existing.authorId !== deleteInput.authorId
+      ) {
         return {
           outcome: "not_authorized",
         };
       }
 
-      if (existing.canonicalEvent !== null) {
-        await input.normalization.refreshInboxReviewOverlay({
-          contactId: existing.canonicalEvent.contactId,
-        });
-      }
+      await input.persistence.repositories.internalNotes.delete(
+        deleteInput.noteId,
+      );
 
       return {
         outcome: "applied",

@@ -1,14 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  CanonicalEventRecord,
-  InboxProjectionRow,
-  ManualNoteDetailRecord,
-  SourceEvidenceRecord,
-  TimelineProjectionRow,
-} from "@as-comms/contracts";
-
 import { createStage1InternalNoteService } from "../src/notes.js";
+import type {
+  InternalNoteRecord,
+  InternalNoteRepository,
+} from "../src/repositories.js";
 
 function buildContact() {
   return {
@@ -22,135 +18,160 @@ function buildContact() {
   };
 }
 
-describe("Stage1InternalNoteService", () => {
-  it("passes authorId through createNote", async () => {
-    const upsertManualNoteDetail = vi.fn((record: ManualNoteDetailRecord) =>
-      Promise.resolve(record),
-    );
+function createHarness() {
+  const notes = new Map<string, InternalNoteRecord>();
+  let timestamp = Date.parse("2026-04-21T12:00:00.000Z");
 
-    const service = createStage1InternalNoteService({
-      persistence: {
-        repositories: {
-          contacts: {
-            findById: vi.fn(() => Promise.resolve(buildContact())),
-          },
-          sourceEvidence: {
-            findById: vi.fn(() => Promise.resolve(null)),
-          },
-          canonicalEvents: {
-            findById: vi.fn(() => Promise.resolve(null)),
-          },
-          manualNoteDetails: {
-            listBySourceEvidenceIds: vi.fn(() => Promise.resolve([])),
-            findLatestForContact: vi.fn(() => Promise.resolve(null)),
-            updateBody: vi.fn(() => Promise.resolve(null)),
-            deleteByAuthor: vi.fn(() => Promise.resolve(0)),
-          },
+  const recordSourceEvidence = vi.fn();
+  const persistCanonicalEvent = vi.fn();
+  const upsertManualNoteDetail = vi.fn();
+  const applyTimelineProjection = vi.fn();
+  const refreshInboxReviewOverlay = vi.fn();
+
+  const service = createStage1InternalNoteService({
+    persistence: {
+      repositories: {
+        contacts: {
+          findById: vi.fn(() => Promise.resolve(buildContact())),
         },
-        recordSourceEvidence: vi.fn(
-          (record: SourceEvidenceRecord) =>
-            ({ outcome: "inserted", record }) as const,
-        ),
-        persistCanonicalEvent: vi.fn(
-          (record: CanonicalEventRecord) =>
-            ({ outcome: "inserted", record }) as const,
-        ),
-        upsertManualNoteDetail,
-      } as never,
-      normalization: {
-        applyTimelineProjection: vi.fn(
-          (...args: unknown[]): Promise<TimelineProjectionRow> => {
-            void args;
-            return Promise.resolve({
-              id: "timeline:note-1",
-              contactId: "contact:one",
-              canonicalEventId: "canonical-event:manual:note:note-1",
-              occurredAt: "2026-04-21T12:00:00.000Z",
-              sortKey:
-                "2026-04-21T12:00:00.000Z::canonical-event:manual:note:note-1",
-              eventType: "note.internal.created",
-              summary: "Internal note added",
-              channel: "note",
-              primaryProvider: "manual",
-              reviewState: "clear",
-            } satisfies TimelineProjectionRow);
-          },
-        ),
-        refreshInboxReviewOverlay: vi.fn(() =>
-          Promise.resolve(null as InboxProjectionRow | null),
-        ),
-      },
-    });
+        internalNotes: {
+          create: vi.fn((input: Parameters<InternalNoteRepository["create"]>[0]) => {
+            const createdAt = input.createdAt ?? new Date((timestamp += 1_000));
+            const updatedAt = input.updatedAt ?? createdAt;
+            const record: InternalNoteRecord = {
+              id: input.id,
+              contactId: input.contactId,
+              body: input.body,
+              authorDisplayName:
+                input.authorId === "user:author" ? "Author User" : null,
+              authorId: input.authorId,
+              createdAt,
+              updatedAt,
+            };
+            notes.set(record.id, record);
+            return Promise.resolve(record);
+          }),
+          findById: vi.fn((id: string) => Promise.resolve(notes.get(id))),
+          findByContactId: vi.fn((contactId: string) =>
+            Promise.resolve(
+              [...notes.values()].filter((note) => note.contactId === contactId),
+            ),
+          ),
+          update: vi.fn((input: Parameters<InternalNoteRepository["update"]>[0]) => {
+            const existing = notes.get(input.id);
+            if (existing === undefined) {
+              throw new Error(`Missing note ${input.id}`);
+            }
 
-    await service.createNote({
+            const updated: InternalNoteRecord = {
+              ...existing,
+              body: input.body,
+              updatedAt: input.updatedAt ?? new Date((timestamp += 1_000)),
+            };
+            notes.set(updated.id, updated);
+            return Promise.resolve(updated);
+          }),
+          delete: vi.fn((id: string) => {
+            notes.delete(id);
+            return Promise.resolve();
+          }),
+        },
+      },
+      recordSourceEvidence,
+      persistCanonicalEvent,
+      upsertManualNoteDetail,
+    } as never,
+    normalization: {
+      applyTimelineProjection,
+      refreshInboxReviewOverlay,
+    },
+  });
+
+  return {
+    notes,
+    recordSourceEvidence,
+    persistCanonicalEvent,
+    upsertManualNoteDetail,
+    applyTimelineProjection,
+    refreshInboxReviewOverlay,
+    service,
+  };
+}
+
+describe("Stage1InternalNoteService", () => {
+  it("creates a single internal_notes row and returns it without legacy writes", async () => {
+    const harness = createHarness();
+
+    const result = await harness.service.createNote({
       noteId: "note-1",
       contactId: "contact:one",
       body: "Author-owned note",
       occurredAt: "2026-04-21T12:00:00.000Z",
-      authorDisplayName: "Operator",
+      authorDisplayName: "Author User",
       authorId: "user:author",
     });
 
-    expect(upsertManualNoteDetail).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(result).toMatchObject({
+      outcome: "applied",
+      note: {
+        id: "note-1",
+        contactId: "contact:one",
+        body: "Author-owned note",
         authorId: "user:author",
-      }),
-    );
+      },
+    });
+    expect(harness.notes.get("note-1")).toMatchObject({
+      id: "note-1",
+      body: "Author-owned note",
+    });
+    expect(harness.recordSourceEvidence).not.toHaveBeenCalled();
+    expect(harness.persistCanonicalEvent).not.toHaveBeenCalled();
+    expect(harness.upsertManualNoteDetail).not.toHaveBeenCalled();
+    expect(harness.applyTimelineProjection).not.toHaveBeenCalled();
+    expect(harness.refreshInboxReviewOverlay).not.toHaveBeenCalled();
   });
 
-  it("returns not_authorized when a non-author tries to update a note", async () => {
-    const service = createStage1InternalNoteService({
-      persistence: {
-        repositories: {
-          contacts: {
-            findById: vi.fn(() => Promise.resolve(buildContact())),
-          },
-          sourceEvidence: {
-            findById: vi.fn(
-              () =>
-                ({
-                  id: "source-evidence:manual:note:note-2",
-                  provider: "manual",
-                  providerRecordType: "note",
-                  providerRecordId: "note-2",
-                  receivedAt: "2026-04-21T12:00:00.000Z",
-                  occurredAt: "2026-04-21T12:00:00.000Z",
-                  payloadRef: "manual://note/note-2",
-                  idempotencyKey: "manual:note:note-2",
-                  checksum: "checksum-note-2",
-                }) satisfies SourceEvidenceRecord,
-            ),
-          },
-          canonicalEvents: {
-            findById: vi.fn(() => Promise.resolve(null)),
-          },
-          manualNoteDetails: {
-            listBySourceEvidenceIds: vi.fn(
-              () =>
-                [
-                  {
-                    sourceEvidenceId: "source-evidence:manual:note:note-2",
-                    providerRecordId: "note-2",
-                    body: "Original",
-                    authorDisplayName: "Author",
-                    authorId: "user:author",
-                  },
-                ] satisfies ManualNoteDetailRecord[],
-            ),
-            findLatestForContact: vi.fn(() => Promise.resolve(null)),
-            updateBody: vi.fn(() => Promise.resolve(null)),
-            deleteByAuthor: vi.fn(() => Promise.resolve(0)),
-          },
-        },
-      } as never,
-      normalization: {
-        applyTimelineProjection: vi.fn(),
-        refreshInboxReviewOverlay: vi.fn(() => Promise.resolve(null)),
-      },
+  it("is idempotent on noteId", async () => {
+    const harness = createHarness();
+
+    await harness.service.createNote({
+      noteId: "note-1",
+      contactId: "contact:one",
+      body: "First body",
+      occurredAt: "2026-04-21T12:00:00.000Z",
+      authorId: "user:author",
     });
 
     await expect(
-      service.updateNote({
+      harness.service.createNote({
+        noteId: "note-1",
+        contactId: "contact:one",
+        body: "Second body",
+        occurredAt: "2026-04-21T12:05:00.000Z",
+        authorId: "user:author",
+      }),
+    ).resolves.toMatchObject({
+      outcome: "duplicate",
+      note: {
+        id: "note-1",
+        body: "First body",
+      },
+    });
+  });
+
+  it("enforces author-only updates", async () => {
+    const harness = createHarness();
+
+    await harness.service.createNote({
+      noteId: "note-2",
+      contactId: "contact:one",
+      body: "Original",
+      occurredAt: "2026-04-21T12:00:00.000Z",
+      authorId: "user:author",
+    });
+
+    await expect(
+      harness.service.updateNote({
         noteId: "note-2",
         authorId: "user:other",
         body: "Updated",
@@ -160,91 +181,110 @@ describe("Stage1InternalNoteService", () => {
     });
   });
 
-  it("returns not_authorized when a non-author tries to delete a note", async () => {
-    const service = createStage1InternalNoteService({
-      persistence: {
-        repositories: {
-          contacts: {
-            findById: vi.fn(() => Promise.resolve(buildContact())),
-          },
-          sourceEvidence: {
-            findById: vi.fn(
-              () =>
-                ({
-                  id: "source-evidence:manual:note:note-3",
-                  provider: "manual",
-                  providerRecordType: "note",
-                  providerRecordId: "note-3",
-                  receivedAt: "2026-04-21T12:00:00.000Z",
-                  occurredAt: "2026-04-21T12:00:00.000Z",
-                  payloadRef: "manual://note/note-3",
-                  idempotencyKey: "manual:note:note-3",
-                  checksum: "checksum-note-3",
-                }) satisfies SourceEvidenceRecord,
-            ),
-          },
-          canonicalEvents: {
-            findById: vi.fn(
-              () =>
-                ({
-                  id: "canonical-event:manual:note:note-3",
-                  contactId: "contact:one",
-                  eventType: "note.internal.created",
-                  channel: "note",
-                  occurredAt: "2026-04-21T12:00:00.000Z",
-                  sourceEvidenceId: "source-evidence:manual:note:note-3",
-                  idempotencyKey: "canonical-event:manual:note:note-3",
-                  contentFingerprint: null,
-                  provenance: {
-                    primaryProvider: "manual",
-                    primarySourceEvidenceId:
-                      "source-evidence:manual:note:note-3",
-                    supportingSourceEvidenceIds: [],
-                    winnerReason: "single_source",
-                    sourceRecordType: "note",
-                    sourceRecordId: "note-3",
-                    messageKind: null,
-                    campaignRef: null,
-                    threadRef: null,
-                    direction: null,
-                    notes: null,
-                  },
-                  reviewState: "clear",
-                }) satisfies CanonicalEventRecord,
-            ),
-          },
-          manualNoteDetails: {
-            listBySourceEvidenceIds: vi.fn(
-              () =>
-                [
-                  {
-                    sourceEvidenceId: "source-evidence:manual:note:note-3",
-                    providerRecordId: "note-3",
-                    body: "Original",
-                    authorDisplayName: "Author",
-                    authorId: "user:author",
-                  },
-                ] satisfies ManualNoteDetailRecord[],
-            ),
-            findLatestForContact: vi.fn(() => Promise.resolve(null)),
-            updateBody: vi.fn(() => Promise.resolve(null)),
-            deleteByAuthor: vi.fn(() => Promise.resolve(0)),
-          },
-        },
-      } as never,
-      normalization: {
-        applyTimelineProjection: vi.fn(),
-        refreshInboxReviewOverlay: vi.fn(() => Promise.resolve(null)),
-      },
+  it("bumps updatedAt when an update applies", async () => {
+    const harness = createHarness();
+
+    const created = await harness.service.createNote({
+      noteId: "note-3",
+      contactId: "contact:one",
+      body: "Before",
+      occurredAt: "2026-04-21T12:00:00.000Z",
+      authorId: "user:author",
     });
 
     await expect(
-      service.deleteNote({
+      harness.service.updateNote({
         noteId: "note-3",
+        authorId: "user:author",
+        body: "After",
+      }),
+    ).resolves.toEqual({
+      outcome: "applied",
+    });
+
+    const updated = harness.notes.get("note-3");
+    expect(updated?.body).toBe("After");
+    expect(updated?.updatedAt.getTime()).toBeGreaterThan(
+      created.note.updatedAt.getTime(),
+    );
+  });
+
+  it("deletes a note for the author", async () => {
+    const harness = createHarness();
+
+    await harness.service.createNote({
+      noteId: "note-4",
+      contactId: "contact:one",
+      body: "Delete me",
+      occurredAt: "2026-04-21T12:00:00.000Z",
+      authorId: "user:author",
+    });
+
+    await expect(
+      harness.service.deleteNote({
+        noteId: "note-4",
+        authorId: "user:author",
+      }),
+    ).resolves.toEqual({
+      outcome: "applied",
+    });
+    expect(harness.notes.has("note-4")).toBe(false);
+  });
+
+  it("returns not_authorized when a non-author non-admin deletes a note", async () => {
+    const harness = createHarness();
+
+    await harness.service.createNote({
+      noteId: "note-5",
+      contactId: "contact:one",
+      body: "Protected",
+      occurredAt: "2026-04-21T12:00:00.000Z",
+      authorId: "user:author",
+    });
+
+    await expect(
+      harness.service.deleteNote({
+        noteId: "note-5",
         authorId: "user:other",
       }),
     ).resolves.toEqual({
       outcome: "not_authorized",
+    });
+  });
+
+  it("allows admins to delete another author's note", async () => {
+    const harness = createHarness();
+
+    await harness.service.createNote({
+      noteId: "note-6",
+      contactId: "contact:one",
+      body: "Admin removable",
+      occurredAt: "2026-04-21T12:00:00.000Z",
+      authorId: "user:author",
+    });
+
+    await expect(
+      harness.service.deleteNote({
+        noteId: "note-6",
+        authorId: "user:admin",
+        actorIsAdmin: true,
+      }),
+    ).resolves.toEqual({
+      outcome: "applied",
+    });
+    expect(harness.notes.has("note-6")).toBe(false);
+  });
+
+  it("returns not_found when deleting a missing note", async () => {
+    const harness = createHarness();
+
+    await expect(
+      harness.service.deleteNote({
+        noteId: "note-missing",
+        authorId: "user:author",
+      }),
+    ).resolves.toEqual({
+      outcome: "not_found",
     });
   });
 });

@@ -27,6 +27,7 @@ function buildCurrentUser(input?: {
   readonly id?: string;
   readonly name?: string | null;
   readonly email?: string;
+  readonly role?: "admin" | "operator";
 }) {
   const now = new Date("2026-04-21T12:00:00.000Z");
 
@@ -36,7 +37,7 @@ function buildCurrentUser(input?: {
     email: input?.email ?? "operator@example.org",
     emailVerified: now,
     image: null,
-    role: "operator" as const,
+    role: input?.role ?? ("operator" as const),
     deactivatedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -97,25 +98,22 @@ describe("note server actions", () => {
       throw new Error("Expected runtime and successful result.");
     }
 
-    const sourceEvidenceId = `source-evidence:manual:note:${result.data.noteId}`;
-    const notes =
-      await runtime.context.repositories.manualNoteDetails.listBySourceEvidenceIds(
-        [sourceEvidenceId],
-      );
+    const note = await runtime.context.repositories.internalNotes.findById(
+      result.data.noteId,
+    );
     const audits =
       await runtime.context.repositories.auditEvidence.listByEntity({
         entityType: "internal_note",
         entityId: result.data.noteId,
       });
 
-    expect(notes).toEqual([
-      expect.objectContaining({
-        sourceEvidenceId,
-        body: "Call back on Thursday",
-        authorDisplayName: "Operator Name",
-        authorId: "user:operator",
-      }),
-    ]);
+    expect(note).toMatchObject({
+      id: result.data.noteId,
+      contactId: "contact:existing",
+      body: "Call back on Thursday",
+      authorDisplayName: "Operator Name",
+      authorId: "user:operator",
+    });
     expect(audits.map((audit) => audit.action)).toEqual(["inbox.note_created"]);
   });
 
@@ -224,6 +222,65 @@ describe("note server actions", () => {
       ok: false,
       code: "forbidden",
     });
+  });
+
+  it("allows admins to delete another operator's note", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await runtime.context.settings.users.upsert(
+      buildCurrentUser({
+        id: "user:author",
+        name: "Author User",
+        email: "author@example.org",
+      }),
+    );
+    requireSession.mockResolvedValue(
+      buildCurrentUser({
+        id: "user:admin",
+        name: "Admin User",
+        email: "admin@example.org",
+        role: "admin",
+      }),
+    );
+    await seedOperator(
+      runtime,
+      buildCurrentUser({
+        id: "user:admin",
+        name: "Admin User",
+        email: "admin@example.org",
+        role: "admin",
+      }),
+    );
+
+    const internalNotes = createStage1InternalNoteService({
+      persistence: runtime.context.persistence,
+      normalization: runtime.context.normalization,
+    });
+
+    await internalNotes.createNote({
+      noteId: "note-delete-admin",
+      contactId: "contact:existing",
+      body: "Original body",
+      occurredAt: "2026-04-21T12:00:00.000Z",
+      authorDisplayName: "Author User",
+      authorId: "user:author",
+    });
+
+    await expect(
+      deleteNoteAction({
+        noteId: "note-delete-admin",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        noteId: "note-delete-admin",
+      },
+    });
+    await expect(
+      runtime.context.repositories.internalNotes.findById("note-delete-admin"),
+    ).resolves.toBeUndefined();
   });
 
   it("rate limits note creation after 60 requests per minute", async () => {

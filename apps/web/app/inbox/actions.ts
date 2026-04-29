@@ -539,20 +539,15 @@ function resolveCurrentUserDisplayName(input: {
   return "Internal note";
 }
 
-function buildManualNoteCanonicalEventId(noteId: string): string {
-  return `canonical-event:manual:note:${noteId}`;
-}
-
-async function resolveManualNoteContactId(input: {
+async function resolveInternalNoteContactId(input: {
   readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
   readonly noteId: string;
 }): Promise<string | null> {
-  const canonicalEvent =
-    await input.runtime.repositories.canonicalEvents.findById(
-      buildManualNoteCanonicalEventId(input.noteId),
-    );
+  const note = await input.runtime.repositories.internalNotes.findById(
+    input.noteId,
+  );
 
-  return canonicalEvent?.contactId ?? null;
+  return note?.contactId ?? null;
 }
 
 function normalizeMembershipStatus(value: string | null): string {
@@ -1088,7 +1083,7 @@ export async function updateNoteAction(rawInput: {
   }
 
   const runtime = await getStage1WebRuntime();
-  const contactId = await resolveManualNoteContactId({
+  const contactId = await resolveInternalNoteContactId({
     runtime,
     noteId,
   });
@@ -1179,13 +1174,14 @@ export async function deleteNoteAction(rawInput: {
   }
 
   const runtime = await getStage1WebRuntime();
-  const contactId = await resolveManualNoteContactId({
+  const contactId = await resolveInternalNoteContactId({
     runtime,
     noteId,
   });
   const result = await runtime.internalNotes.deleteNote({
     noteId,
     authorId: currentUser.id,
+    actorIsAdmin: currentUser.role === "admin",
   });
 
   if (result.outcome === "not_authorized") {

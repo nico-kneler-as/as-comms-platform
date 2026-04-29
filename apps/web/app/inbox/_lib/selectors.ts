@@ -2755,7 +2755,19 @@ async function readInboxDetailCacheData(
     runtime.repositories.contacts.findById(contactId),
     runtime.repositories.inboxProjection.findByContactId(contactId),
     runtime.repositories.contactMemberships.listByContactId(contactId),
-    runtime.repositories.manualNoteDetails.findLatestForContact(contactId),
+    runtime.repositories.internalNotes
+      .findByContactId(contactId, 1)
+      .then((rows) => {
+        const latestNote = rows[0];
+        return latestNote === undefined
+          ? null
+          : {
+              body: latestNote.body,
+              authorDisplayName: latestNote.authorDisplayName,
+              authorId: latestNote.authorId,
+              createdAt: latestNote.createdAt.toISOString(),
+            };
+      }),
     runtime.timelinePresentation.listTimelineItemsByContactId(contactId),
     runtime.timelinePresentation.listTimelineItemsPageByContactId(contactId, {
       limit: input.timelineLimit,

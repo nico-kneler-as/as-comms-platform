@@ -10,7 +10,10 @@ import {
 } from "@as-comms/contracts";
 
 import { buildOutboundEmailDuplicateFingerprint } from "./outbound-email-dedup.js";
-import type { Stage1RepositoryBundle } from "./repositories.js";
+import type {
+  InternalNoteRecord,
+  Stage1RepositoryBundle,
+} from "./repositories.js";
 import type { PendingComposerOutboundRecord } from "./pending-outbounds.js";
 
 type TimelineProvenance = CanonicalEventRecord["provenance"] & {
@@ -58,14 +61,6 @@ interface MailchimpCampaignActivityDetail {
   readonly snippet: string;
 }
 
-interface ManualNoteDetail {
-  readonly sourceEvidenceId: string;
-  readonly providerRecordId: string;
-  readonly body: string;
-  readonly authorDisplayName: string | null;
-  readonly authorId: string | null;
-}
-
 interface TimelinePresentationContext {
   readonly sourceEvidenceById: ReadonlyMap<string, SourceEvidenceRecord>;
   readonly salesforceContextBySourceEvidenceId: ReadonlyMap<
@@ -87,10 +82,6 @@ interface TimelinePresentationContext {
   readonly mailchimpDetailBySourceEvidenceId: ReadonlyMap<
     string,
     MailchimpCampaignActivityDetail
-  >;
-  readonly manualNoteDetailBySourceEvidenceId: ReadonlyMap<
-    string,
-    ManualNoteDetail
   >;
   readonly projectNameById: ReadonlyMap<string, string>;
   readonly expeditionNameById: ReadonlyMap<string, string>;
@@ -155,10 +146,6 @@ function resolveFamily(
 
   if (eventType.startsWith("lifecycle.")) {
     return "salesforce_event";
-  }
-
-  if (eventType === "note.internal.created") {
-    return "internal_note";
   }
 
   if (eventType.startsWith("campaign.email.")) {
@@ -230,6 +217,40 @@ function commonFields(
 
 function buildPendingTimelineSortKey(id: string, sentAt: string): string {
   return `${sentAt}::pending-outbound:${id}`;
+}
+
+function isInternalNoteEvent(event: CanonicalEventRecord): boolean {
+  return event.eventType === "note.internal.created";
+}
+
+function buildNoteCanonicalEventId(noteId: string): string {
+  return `note:${noteId}`;
+}
+
+function buildNoteSortKey(note: InternalNoteRecord): string {
+  return `${note.createdAt.toISOString()}::${buildNoteCanonicalEventId(note.id)}`;
+}
+
+function buildInternalNoteTimelineItems(
+  notes: readonly InternalNoteRecord[],
+): readonly TimelineItem[] {
+  return timelineItemListSchema.parse(
+    notes.map((note) => ({
+      id: buildNoteCanonicalEventId(note.id),
+      contactId: note.contactId,
+      canonicalEventId: buildNoteCanonicalEventId(note.id),
+      family: "internal_note" as const,
+      occurredAt: note.createdAt.toISOString(),
+      sortKey: buildNoteSortKey(note),
+      reviewState: "clear" as const,
+      primaryProvider: "manual" as const,
+      summary: "Internal note added",
+      noteId: note.id,
+      body: note.body,
+      authorDisplayName: note.authorDisplayName,
+      authorId: note.authorId,
+    })),
+  );
 }
 
 function buildPendingTimelineItems(
@@ -837,7 +858,6 @@ async function loadTimelinePresentationContext(
     salesforceCommunicationDetails,
     simpleTextingMessageDetails,
     mailchimpCampaignActivityDetails,
-    manualNoteDetails,
   ] = (await Promise.all([
     repositories.gmailMessageDetails.listBySourceEvidenceIds(sourceEvidenceIds),
     repositories.salesforceEventContext.listBySourceEvidenceIds(
@@ -852,14 +872,12 @@ async function loadTimelinePresentationContext(
     repositories.mailchimpCampaignActivityDetails.listBySourceEvidenceIds(
       sourceEvidenceIds,
     ),
-    repositories.manualNoteDetails.listBySourceEvidenceIds(sourceEvidenceIds),
   ])) as [
     readonly GmailMessageDetailRecord[],
     readonly SalesforceEventContextDetail[],
     readonly SalesforceCommunicationDetail[],
     readonly SimpleTextingMessageDetail[],
     readonly MailchimpCampaignActivityDetail[],
-    readonly ManualNoteDetail[],
   ];
 
   const [projectDimensions, expeditionDimensions] = await Promise.all([
@@ -896,9 +914,6 @@ async function loadTimelinePresentationContext(
         detail,
       ]),
     ),
-    manualNoteDetailBySourceEvidenceId: new Map(
-      manualNoteDetails.map((detail) => [detail.sourceEvidenceId, detail]),
-    ),
     projectNameById: new Map(
       projectDimensions.map((dimension) => [
         dimension.projectId,
@@ -924,7 +939,7 @@ function buildTimelineItemsFromRows(input: {
   for (const row of input.timelineRows) {
     const event = input.canonicalEventById.get(row.canonicalEventId);
 
-    if (event === undefined) {
+    if (event === undefined || isInternalNoteEvent(event)) {
       continue;
     }
 
@@ -951,8 +966,6 @@ function buildTimelineItemsFromRows(input: {
     const mailchimpDetail = input.context.mailchimpDetailBySourceEvidenceId.get(
       evidence.id,
     );
-    const manualNoteDetail =
-      input.context.manualNoteDetailBySourceEvidenceId.get(evidence.id);
 
     switch (family) {
       case "salesforce_event":
@@ -1084,17 +1097,6 @@ function buildTimelineItemsFromRows(input: {
             null,
         });
         break;
-      case "internal_note":
-        items.push({
-          ...base,
-          family,
-          noteId:
-            manualNoteDetail?.providerRecordId ?? evidence.providerRecordId,
-          body: manualNoteDetail?.body ?? "",
-          authorDisplayName: manualNoteDetail?.authorDisplayName ?? null,
-          authorId: manualNoteDetail?.authorId ?? null,
-        });
-        break;
     }
   }
 
@@ -1106,21 +1108,26 @@ export function createStage1TimelinePresentationService(
 ): Stage1TimelinePresentationService {
   return {
     async listTimelineItemsByContactId(contactId) {
-      const [canonicalEvents, timelineRows, pendingRows] = await Promise.all([
+      const [canonicalEvents, timelineRows, pendingRows, internalNotes] =
+        await Promise.all([
         repositories.canonicalEvents.listByContactId(contactId),
         repositories.timelineProjection.listByContactId(contactId),
         repositories.pendingOutbounds.findForContact(contactId, {
           limit: Number.MAX_SAFE_INTEGER,
         }),
-      ]);
+          repositories.internalNotes.findByContactId(contactId),
+        ]);
+      const canonicalTimelineEvents = canonicalEvents.filter(
+        (event) => !isInternalNoteEvent(event),
+      );
       const canonicalEventById = new Map(
-        canonicalEvents.map((event) => [event.id, event]),
+        canonicalTimelineEvents.map((event) => [event.id, event]),
       );
       const context = await loadTimelinePresentationContext(
         repositories,
-        canonicalEvents,
+        canonicalTimelineEvents,
       );
-      const canonicalItems = collapseDuplicateTimelineItems({
+      const mergedCanonicalItems = collapseDuplicateTimelineItems({
         canonicalItems: buildTimelineItemsFromRows({
           timelineRows,
           canonicalEventById,
@@ -1128,6 +1135,9 @@ export function createStage1TimelinePresentationService(
         }),
         canonicalEventById,
       });
+      const canonicalItems = [...mergedCanonicalItems, ...buildInternalNoteTimelineItems(internalNotes)].sort(
+        (left, right) => left.sortKey.localeCompare(right.sortKey),
+      );
 
       return mergeTimelineItems({
         canonicalItems,
@@ -1136,27 +1146,32 @@ export function createStage1TimelinePresentationService(
     },
 
     async listTimelineItemsPageByContactId(contactId, input) {
-      const [canonicalEvents, rows, pendingRows] = await Promise.all([
+      const [canonicalEvents, rows, pendingRows, internalNotes] =
+        await Promise.all([
         repositories.canonicalEvents.listByContactId(contactId),
         repositories.timelineProjection.listByContactId(contactId),
         repositories.pendingOutbounds.findForContact(contactId, {
           limit: Number.MAX_SAFE_INTEGER,
         }),
-      ]);
+          repositories.internalNotes.findByContactId(contactId),
+        ]);
+      const canonicalTimelineEvents = canonicalEvents.filter(
+        (event) => !isInternalNoteEvent(event),
+      );
       const canonicalEventById = new Map(
-        canonicalEvents.map((event) => [event.id, event]),
+        canonicalTimelineEvents.map((event) => [event.id, event]),
       );
       const context = await loadTimelinePresentationContext(
         repositories,
-        canonicalEvents,
+        canonicalTimelineEvents,
       );
       warnTimelineProjectionGaps({
         contactId,
-        canonicalEvents,
+        canonicalEvents: canonicalTimelineEvents,
         timelineRows: rows,
         context,
       });
-      const canonicalItems = collapseDuplicateTimelineItems({
+      const mergedCanonicalItems = collapseDuplicateTimelineItems({
         canonicalItems: buildTimelineItemsFromRows({
           timelineRows: rows,
           canonicalEventById,
@@ -1164,6 +1179,9 @@ export function createStage1TimelinePresentationService(
         }),
         canonicalEventById,
       });
+      const canonicalItems = [...mergedCanonicalItems, ...buildInternalNoteTimelineItems(internalNotes)].sort(
+        (left, right) => left.sortKey.localeCompare(right.sortKey),
+      );
       const mergedItems = mergeTimelineItems({
         canonicalItems,
         pendingRows,
