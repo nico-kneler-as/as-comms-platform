@@ -263,6 +263,34 @@ export interface ManualNoteDetailRepository {
   }): Promise<number>;
 }
 
+export interface InternalNoteRecord {
+  readonly id: string;
+  readonly contactId: string;
+  readonly body: string;
+  readonly authorId: string;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface InternalNoteRepository {
+  create(input: {
+    readonly id: string;
+    readonly contactId: string;
+    readonly body: string;
+    readonly authorId: string;
+  }): Promise<InternalNoteRecord>;
+  findById(id: string): Promise<InternalNoteRecord | undefined>;
+  findByContactId(
+    contactId: string,
+    limit?: number,
+  ): Promise<readonly InternalNoteRecord[]>;
+  update(input: {
+    readonly id: string;
+    readonly body: string;
+  }): Promise<InternalNoteRecord>;
+  delete(id: string): Promise<void>;
+}
+
 export interface PendingComposerOutboundRepository {
   insert(input: {
     readonly id: string;
@@ -442,6 +470,7 @@ export interface Stage1RepositoryBundle {
   readonly simpleTextingMessageDetails: SimpleTextingMessageDetailRepository;
   readonly mailchimpCampaignActivityDetails: MailchimpCampaignActivityDetailRepository;
   readonly manualNoteDetails: ManualNoteDetailRepository;
+  readonly internalNotes: InternalNoteRepository;
   readonly pendingOutbounds: PendingComposerOutboundRepository;
   readonly identityResolutionQueue: IdentityResolutionRepository;
   readonly routingReviewQueue: RoutingReviewRepository;

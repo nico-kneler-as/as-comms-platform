@@ -15,6 +15,7 @@ import {
   contactInboxProjection,
   contactTimelineProjection,
   databaseSchema,
+  internalNotes,
   messageAttachments,
   projectKnowledgeEntries,
   sourceEvidenceLog,
@@ -40,6 +41,7 @@ describe("Stage 1 DB schema", () => {
       "gmailMessageDetails",
       "identityResolutionQueue",
       "integrationHealth",
+      "internalNotes",
       "mailchimpCampaignActivityDetails",
       "manualNoteDetails",
       "messageAttachments",
@@ -67,6 +69,7 @@ describe("Stage 1 DB schema", () => {
     expect(getTableName(messageAttachments)).toBe("message_attachments");
     expect(getTableName(sourceEvidenceLog)).toBe("source_evidence_log");
     expect(getTableName(canonicalEventLedger)).toBe("canonical_event_ledger");
+    expect(getTableName(internalNotes)).toBe("internal_notes");
     expect(getTableName(contactInboxProjection)).toBe(
       "contact_inbox_projection"
     );
