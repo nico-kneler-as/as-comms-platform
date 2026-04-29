@@ -16,6 +16,7 @@ import {
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
+  InternalNoteRecord,
   PendingComposerOutboundRecord,
   ProjectAliasRecord,
   Stage1RepositoryBundle,
@@ -89,6 +90,7 @@ import {
   gmailMessageDetails,
   integrationHealth,
   identityResolutionQueue,
+  internalNotes,
   mailchimpCampaignActivityDetails,
   messageAttachments,
   manualNoteDetails,
@@ -194,6 +196,7 @@ type SalesforceCommunicationDetailRow = SalesforceCommunicationDetailRecord;
 type SimpleTextingMessageDetailRow = SimpleTextingMessageDetailRecord;
 type MailchimpCampaignActivityDetailRow = MailchimpCampaignActivityDetailRecord;
 type ManualNoteDetailRow = ManualNoteDetailRecord;
+type InternalNoteRow = typeof internalNotes.$inferSelect;
 type PendingComposerOutboundRow = typeof pendingComposerOutbounds.$inferSelect;
 
 function mapSalesforceCommunicationDetailRowLocal(
@@ -307,6 +310,17 @@ function mapManualNoteDetailToInsertLocal(record: ManualNoteDetailRecord) {
     body: record.body,
     authorDisplayName: record.authorDisplayName,
     authorId: record.authorId,
+  };
+}
+
+function mapInternalNoteRowLocal(row: InternalNoteRow): InternalNoteRecord {
+  return {
+    id: row.id,
+    contactId: row.contactId,
+    body: row.body,
+    authorId: row.authorId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -1855,6 +1869,80 @@ function createStage1RepositoriesInternal(
 
           return deletedRows.length;
         });
+      },
+    },
+
+    internalNotes: {
+      async create(input) {
+        const now = new Date();
+        const [row] = await db
+          .insert(internalNotes)
+          .values({
+            id: input.id,
+            contactId: input.contactId,
+            body: input.body,
+            authorId: input.authorId,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+
+        return mapInternalNoteRowLocal(
+          requireRow(row, "Expected internal_notes row to be returned."),
+        );
+      },
+
+      async findById(id) {
+        const [row] = await db
+          .select()
+          .from(internalNotes)
+          .where(eq(internalNotes.id, id))
+          .limit(1);
+
+        return row === undefined ? undefined : mapInternalNoteRowLocal(row);
+      },
+
+      async findByContactId(contactId, limit) {
+        if (limit === undefined) {
+          const rows = await db
+            .select()
+            .from(internalNotes)
+            .where(eq(internalNotes.contactId, contactId))
+            .orderBy(desc(internalNotes.createdAt), desc(internalNotes.id));
+
+          return rows.map(mapInternalNoteRowLocal);
+        }
+
+        const rows = await db
+          .select()
+          .from(internalNotes)
+          .where(eq(internalNotes.contactId, contactId))
+          .orderBy(desc(internalNotes.createdAt), desc(internalNotes.id))
+          .limit(limit);
+
+        return rows.map(mapInternalNoteRowLocal);
+      },
+
+      async update(input) {
+        const [row] = await db
+          .update(internalNotes)
+          .set({
+            body: input.body,
+            updatedAt: new Date(),
+          })
+          .where(eq(internalNotes.id, input.id))
+          .returning();
+
+        return mapInternalNoteRowLocal(
+          requireRow(
+            row,
+            `Expected internal_notes row ${input.id} to update.`,
+          ),
+        );
+      },
+
+      async delete(id) {
+        await db.delete(internalNotes).where(eq(internalNotes.id, id));
       },
     },
 

@@ -134,6 +134,26 @@ function buildRepositoryBundle(input: {
       updateBody: () => Promise.resolve(null),
       deleteByAuthor: () => Promise.resolve(0),
     },
+    internalNotes: {
+      create: (input) =>
+        Promise.resolve({
+          ...input,
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        }),
+      findById: () => Promise.resolve(undefined),
+      findByContactId: () => Promise.resolve([]),
+      update: (input) =>
+        Promise.resolve({
+          id: input.id,
+          contactId: "contact:volunteer",
+          body: input.body,
+          authorId: "user:author",
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        }),
+      delete: () => Promise.resolve(),
+    },
     pendingOutbounds: {
       insert: ({ id }) => Promise.resolve(id),
       findByFingerprint: () =>

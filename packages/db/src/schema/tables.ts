@@ -381,6 +381,26 @@ export const manualNoteDetails = pgTable(
   ],
 );
 
+export const internalNotes = pgTable(
+  "internal_notes",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    index("internal_notes_contact_id_idx").on(table.contactId),
+    index("internal_notes_created_at_idx").on(table.createdAt),
+  ],
+);
+
 export const canonicalEventLedger = pgTable(
   "canonical_event_ledger",
   {
