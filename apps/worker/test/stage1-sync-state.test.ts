@@ -63,9 +63,11 @@ describe("Stage 1 worker sync-state service", () => {
       expect(started.status).toBe("running");
       expect(progressed.cursor).toBe("checkpoint:1");
       expect(progressed.deadLetterCount).toBe(1);
+      expect(progressed.consecutiveFailureCount).toBe(0);
       expect(completed.status).toBe("succeeded");
       expect(completed.cursor).toBe("cursor:complete");
       expect(completed.parityPercent).toBe(100);
+      expect(completed.consecutiveFailureCount).toBe(0);
       expect(completedAgain).toEqual(completed);
     } finally {
       await context.dispose();
@@ -91,6 +93,7 @@ describe("Stage 1 worker sync-state service", () => {
 
       expect(failed.status).toBe("quarantined");
       expect(failed.cursor).toBe("replay:checkpoint:1");
+      expect(failed.consecutiveFailureCount).toBe(1);
       expect(failed.deadLetterCount).toBe(1);
     } finally {
       await context.dispose();
@@ -144,6 +147,82 @@ describe("Stage 1 worker sync-state service", () => {
       expect(completed.freshnessP95Seconds).toBe(45);
       expect(completed.freshnessP99Seconds).toBe(90);
       expect(progressedAgain).toEqual(completed);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("increments consecutive failures and resets them only on terminal success", async () => {
+    const context = await createTestWorkerContext();
+
+    try {
+      const firstFailure = await context.syncState.failWindow({
+        syncStateId: "sync:salesforce:live:counter:1",
+        scope: "provider",
+        provider: "salesforce",
+        jobType: "live_ingest",
+        cursor: "salesforce:cursor:1",
+        checkpoint: "salesforce:checkpoint:1",
+        windowStart: "2026-01-05T00:00:00.000Z",
+        windowEnd: "2026-01-05T00:05:00.000Z",
+        deadLetterCountIncrement: 0,
+        deadLettered: false
+      });
+      const secondFailure = await context.syncState.failWindow({
+        syncStateId: firstFailure.id,
+        scope: firstFailure.scope,
+        provider: firstFailure.provider,
+        jobType: firstFailure.jobType,
+        cursor: firstFailure.cursor,
+        checkpoint: "salesforce:checkpoint:2",
+        windowStart: firstFailure.windowStart,
+        windowEnd: firstFailure.windowEnd,
+        deadLetterCountIncrement: 0,
+        deadLettered: false
+      });
+      const progressed = await context.syncState.recordBatchProgress({
+        syncStateId: secondFailure.id,
+        scope: secondFailure.scope,
+        provider: secondFailure.provider,
+        jobType: secondFailure.jobType,
+        cursor: secondFailure.cursor,
+        checkpoint: "salesforce:checkpoint:3",
+        windowStart: secondFailure.windowStart,
+        windowEnd: secondFailure.windowEnd,
+        deadLetterCountIncrement: 0
+      });
+      const completed = await context.syncState.completeWindow({
+        syncStateId: progressed.id,
+        scope: progressed.scope,
+        provider: progressed.provider,
+        jobType: progressed.jobType,
+        cursor: progressed.cursor,
+        checkpoint: "salesforce:checkpoint:4",
+        windowStart: progressed.windowStart,
+        windowEnd: progressed.windowEnd,
+        parityPercent: null,
+        freshnessP95Seconds: 60,
+        freshnessP99Seconds: 120,
+        completedAt: "2026-01-05T00:05:00.000Z"
+      });
+      const nextFailure = await context.syncState.failWindow({
+        syncStateId: completed.id,
+        scope: completed.scope,
+        provider: completed.provider,
+        jobType: completed.jobType,
+        cursor: completed.cursor,
+        checkpoint: "salesforce:checkpoint:5",
+        windowStart: completed.windowStart,
+        windowEnd: completed.windowEnd,
+        deadLetterCountIncrement: 0,
+        deadLettered: false
+      });
+
+      expect(firstFailure.consecutiveFailureCount).toBe(1);
+      expect(secondFailure.consecutiveFailureCount).toBe(2);
+      expect(progressed.consecutiveFailureCount).toBe(2);
+      expect(completed.consecutiveFailureCount).toBe(0);
+      expect(nextFailure.consecutiveFailureCount).toBe(1);
     } finally {
       await context.dispose();
     }

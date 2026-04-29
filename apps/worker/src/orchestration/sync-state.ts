@@ -38,6 +38,7 @@ function toSyncState(input: {
   readonly freshnessP95Seconds: number | null;
   readonly freshnessP99Seconds: number | null;
   readonly lastSuccessfulAt: string | null;
+  readonly consecutiveFailureCount: number;
   readonly deadLetterCount: number;
 }): SyncStateRecord {
   return syncStateSchema.parse({
@@ -53,6 +54,7 @@ function toSyncState(input: {
     freshnessP95Seconds: input.freshnessP95Seconds,
     freshnessP99Seconds: input.freshnessP99Seconds,
     lastSuccessfulAt: input.lastSuccessfulAt,
+    consecutiveFailureCount: input.consecutiveFailureCount,
     deadLetterCount: input.deadLetterCount
   });
 }
@@ -136,6 +138,7 @@ export function createStage1SyncStateService(
           freshnessP95Seconds: existing?.freshnessP95Seconds ?? null,
           freshnessP99Seconds: existing?.freshnessP99Seconds ?? null,
           lastSuccessfulAt: existing?.lastSuccessfulAt ?? null,
+          consecutiveFailureCount: existing?.consecutiveFailureCount ?? 0,
           deadLetterCount: existing?.deadLetterCount ?? 0
         })
       );
@@ -166,6 +169,7 @@ export function createStage1SyncStateService(
           freshnessP95Seconds: existing?.freshnessP95Seconds ?? null,
           freshnessP99Seconds: existing?.freshnessP99Seconds ?? null,
           lastSuccessfulAt: existing?.lastSuccessfulAt ?? null,
+          consecutiveFailureCount: existing?.consecutiveFailureCount ?? 0,
           deadLetterCount:
             (existing?.deadLetterCount ?? 0) + input.deadLetterCountIncrement
         })
@@ -199,6 +203,7 @@ export function createStage1SyncStateService(
           freshnessP99Seconds:
             input.freshnessP99Seconds ?? existing?.freshnessP99Seconds ?? null,
           lastSuccessfulAt: input.completedAt,
+          consecutiveFailureCount: 0,
           deadLetterCount: existing?.deadLetterCount ?? 0
         })
       );
@@ -229,6 +234,7 @@ export function createStage1SyncStateService(
           freshnessP95Seconds: existing?.freshnessP95Seconds ?? null,
           freshnessP99Seconds: existing?.freshnessP99Seconds ?? null,
           lastSuccessfulAt: existing?.lastSuccessfulAt ?? null,
+          consecutiveFailureCount: (existing?.consecutiveFailureCount ?? 0) + 1,
           deadLetterCount:
             (existing?.deadLetterCount ?? 0) + input.deadLetterCountIncrement
         })

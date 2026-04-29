@@ -863,6 +863,7 @@ export function mapSyncStateRow(row: SyncStateRow): SyncStateRecord {
     freshnessP95Seconds: row.freshnessP95Seconds,
     freshnessP99Seconds: row.freshnessP99Seconds,
     lastSuccessfulAt: fromDate(row.lastSuccessfulAt),
+    consecutiveFailureCount: row.consecutiveFailureCount,
     deadLetterCount: row.deadLetterCount,
   });
 }
@@ -888,6 +889,7 @@ export function mapSyncStateToInsert(
     freshnessP99Seconds: parsed.freshnessP99Seconds,
     lastSuccessfulAt:
       parsed.lastSuccessfulAt === null ? null : toDate(parsed.lastSuccessfulAt),
+    consecutiveFailureCount: parsed.consecutiveFailureCount,
     deadLetterCount: parsed.deadLetterCount,
   };
 }

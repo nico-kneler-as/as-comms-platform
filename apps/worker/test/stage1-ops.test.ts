@@ -149,6 +149,7 @@ async function seedInspectableContact(context: TestWorkerContext): Promise<void>
     windowEnd: "2026-01-01T00:05:00.000Z",
     parityPercent: null,
     lastSuccessfulAt: "2026-01-01T00:05:00.000Z",
+    consecutiveFailureCount: 0,
     deadLetterCount: 0,
     freshnessP95Seconds: 60,
     freshnessP99Seconds: 120
@@ -298,6 +299,7 @@ describe("Stage 1 ops helpers", () => {
         windowEnd: "2026-01-02T00:10:00.000Z",
         parityPercent: null,
         lastSuccessfulAt: null,
+        consecutiveFailureCount: 0,
         deadLetterCount: 0,
         freshnessP95Seconds: null,
         freshnessP99Seconds: null

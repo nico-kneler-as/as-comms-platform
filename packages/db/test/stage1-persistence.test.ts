@@ -364,6 +364,7 @@ describe("Stage 1 persistence service", () => {
       freshnessP95Seconds: 60,
       freshnessP99Seconds: 120,
       lastSuccessfulAt: "2026-01-01T01:00:00.000Z",
+      consecutiveFailureCount: 3,
       deadLetterCount: 0
     });
 
@@ -387,6 +388,7 @@ describe("Stage 1 persistence service", () => {
     expect(sync.parityPercent).toBe(100);
     expect(sync.freshnessP95Seconds).toBe(60);
     expect(sync.freshnessP99Seconds).toBe(120);
+    expect(sync.consecutiveFailureCount).toBe(3);
     await expect(
       repositories.inboxProjection.findByContactId("contact_1")
     ).resolves.toEqual(inbox);

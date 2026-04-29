@@ -19,6 +19,7 @@ describe("Stage 1 sync failure audit", () => {
         windowEnd: "2026-01-05T00:00:00.000Z",
         parityPercent: null,
         lastSuccessfulAt: null,
+        consecutiveFailureCount: 0,
         deadLetterCount: 0,
         freshnessP95Seconds: null,
         freshnessP99Seconds: null
