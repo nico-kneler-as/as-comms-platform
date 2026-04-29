@@ -1949,6 +1949,11 @@ export function createStage1NormalizationService(
         );
       }
 
+      await upsertProjectAndExpeditionDimensions(persistence, {
+        projectDimensions: parsed.projectDimensions,
+        expeditionDimensions: parsed.expeditionDimensions
+      });
+
       const memberships: ContactMembershipRecord[] = [];
       for (const membership of parsed.memberships) {
         const parsedMembership = contactMembershipSchema.parse(membership);
@@ -1966,11 +1971,6 @@ export function createStage1NormalizationService(
           })
         );
       }
-
-      await upsertProjectAndExpeditionDimensions(persistence, {
-        projectDimensions: parsed.projectDimensions,
-        expeditionDimensions: parsed.expeditionDimensions
-      });
       identityResolutionContext.clear();
 
       return {
