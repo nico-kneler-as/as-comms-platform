@@ -479,6 +479,18 @@ function timelineOccurredAtMs(value: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function timelinePresentationDuplicateWindowMs(
+  left: CanonicalTimelineItemWithEvent,
+  right: CanonicalTimelineItemWithEvent,
+): number {
+  if (left.item.family === "auto_email" && right.item.family === "auto_email") {
+    // Auto-emails can legitimately repeat the same template minutes apart.
+    return 30 * 1000;
+  }
+
+  return timelineDuplicateWindowMs;
+}
+
 function isTimelinePresentationDuplicate(
   left: CanonicalTimelineItemWithEvent,
   right: CanonicalTimelineItemWithEvent,
@@ -512,7 +524,7 @@ function isTimelinePresentationDuplicate(
     Math.abs(
       timelineOccurredAtMs(left.canonicalEvent.occurredAt) -
         timelineOccurredAtMs(right.canonicalEvent.occurredAt),
-    ) <= timelineDuplicateWindowMs
+    ) <= timelinePresentationDuplicateWindowMs(left, right)
   );
 }
 
@@ -710,6 +722,65 @@ function mergeTimelineItems(input: {
       ...buildPendingTimelineItems(input.pendingRows),
     ].sort((left, right) => left.sortKey.localeCompare(right.sortKey)),
   );
+}
+
+function isDisplayableCommunicationEvent(input: {
+  readonly event: CanonicalEventRecord;
+  readonly context: TimelinePresentationContext;
+}): boolean {
+  if (!input.event.eventType.startsWith("communication.")) {
+    return false;
+  }
+
+  try {
+    resolveFamily(
+      input.event,
+      input.context.salesforceCommunicationBySourceEvidenceId.get(
+        input.event.sourceEvidenceId,
+      ),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function warnTimelineProjectionGaps(input: {
+  readonly contactId: string;
+  readonly canonicalEvents: readonly CanonicalEventRecord[];
+  readonly timelineRows: readonly TimelineProjectionRow[];
+  readonly context: TimelinePresentationContext;
+}): void {
+  try {
+    const projectedCanonicalEventIds = new Set(
+      input.timelineRows.map((row) => row.canonicalEventId),
+    );
+
+    for (const event of input.canonicalEvents) {
+      if (
+        !isDisplayableCommunicationEvent({
+          event,
+          context: input.context,
+        }) ||
+        projectedCanonicalEventIds.has(event.id)
+      ) {
+        continue;
+      }
+
+      console.warn(
+        "Timeline projection gap detected for canonical communication event.",
+        {
+          contactId: input.contactId,
+          canonicalEventId: event.id,
+          eventType: event.eventType,
+          provider: event.provenance.primaryProvider,
+          timestamp: event.occurredAt,
+        },
+      );
+    }
+  } catch {
+    // Projection-gap diagnostics must never block timeline rendering.
+  }
 }
 
 export interface Stage1TimelinePresentationService {
@@ -1079,6 +1150,12 @@ export function createStage1TimelinePresentationService(
         repositories,
         canonicalEvents,
       );
+      warnTimelineProjectionGaps({
+        contactId,
+        canonicalEvents,
+        timelineRows: rows,
+        context,
+      });
       const canonicalItems = collapseDuplicateTimelineItems({
         canonicalItems: buildTimelineItemsFromRows({
           timelineRows: rows,

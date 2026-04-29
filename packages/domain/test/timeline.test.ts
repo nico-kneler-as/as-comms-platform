@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   AuditEvidenceRecord,
@@ -930,6 +930,113 @@ describe("Stage 1 timeline presenter", () => {
     });
   });
 
+  it("does not warn when every displayable communication event has a timeline projection row", async () => {
+    const autoEmail = buildSalesforceEmailEvent({
+      id: "evt_projection_complete",
+      sourceEvidenceId: "sev_projection_complete",
+      occurredAt: "2026-01-01T00:10:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "auto",
+      subject: "Plan your Adventure Today",
+      snippet: "Body: Reminder sent.",
+      contentFingerprint: "fp:projection-complete",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [autoEmail.canonicalEvent],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_projection_complete",
+          providerRecordId: "projection-complete",
+        }),
+      ],
+      salesforceCommunicationDetails: [autoEmail.detail],
+      timelineRows: [autoEmail.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    try {
+      await presenter.listTimelineItemsPageByContactId("contact_1", {
+        limit: 40,
+        beforeSortKey: null,
+      });
+
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("warns when a displayable communication event is missing from the timeline projection", async () => {
+    const firstAutoEmail = buildSalesforceEmailEvent({
+      id: "evt_projection_present",
+      sourceEvidenceId: "sev_projection_present",
+      occurredAt: "2026-01-01T00:10:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "auto",
+      subject: "Plan your Adventure Today",
+      snippet: "Body: First reminder sent.",
+      contentFingerprint: "fp:projection-gap",
+    });
+    const missingAutoEmail = buildSalesforceEmailEvent({
+      id: "evt_projection_missing",
+      sourceEvidenceId: "sev_projection_missing",
+      occurredAt: "2026-01-01T00:12:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "auto",
+      subject: "Plan your Adventure Today",
+      snippet: "Body: Second reminder sent.",
+      contentFingerprint: "fp:projection-gap",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [
+        firstAutoEmail.canonicalEvent,
+        missingAutoEmail.canonicalEvent,
+      ],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_projection_present",
+          providerRecordId: "projection-present",
+        }),
+        buildSourceEvidence({
+          id: "sev_projection_missing",
+          providerRecordId: "projection-missing",
+        }),
+      ],
+      salesforceCommunicationDetails: [
+        firstAutoEmail.detail,
+        missingAutoEmail.detail,
+      ],
+      timelineRows: [firstAutoEmail.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    try {
+      await presenter.listTimelineItemsPageByContactId("contact_1", {
+        limit: 40,
+        beforeSortKey: null,
+      });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Timeline projection gap detected for canonical communication event.",
+        {
+          contactId: "contact_1",
+          canonicalEventId: "evt_projection_missing",
+          eventType: "communication.email.outbound",
+          provider: "salesforce",
+          timestamp: "2026-01-01T00:12:00.000Z",
+        },
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("collapses duplicate campaign rows before pagination counts them", async () => {
     const duplicateFingerprint = "fp:campaign-april-update";
     const firstCampaign = buildMailchimpCampaignEmailEvent({
@@ -1052,6 +1159,116 @@ describe("Stage 1 timeline presenter", () => {
       activityType: "sent",
       campaignName: "Trailhead Update",
       snippet: "Subject: Trailhead Update\n\nBody:\nBring your field notebook.",
+    });
+  });
+
+  it("keeps auto-email rows with the same signature when they are minutes apart", async () => {
+    const firstAutoEmail = buildSalesforceEmailEvent({
+      id: "evt_auto_email_1",
+      sourceEvidenceId: "sev_auto_email_1",
+      occurredAt: "2026-01-01T00:10:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "auto",
+      subject: "Plan your Adventure Today",
+      snippet: "Body: Reminder sent.",
+      contentFingerprint: "fp:auto-email-repeat",
+    });
+    const secondAutoEmail = buildSalesforceEmailEvent({
+      id: "evt_auto_email_2",
+      sourceEvidenceId: "sev_auto_email_2",
+      occurredAt: "2026-01-01T00:12:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "auto",
+      subject: "Plan your Adventure Today",
+      snippet: "Body: Reminder sent.",
+      contentFingerprint: "fp:auto-email-repeat",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [
+        firstAutoEmail.canonicalEvent,
+        secondAutoEmail.canonicalEvent,
+      ],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_auto_email_1",
+          providerRecordId: "auto-email-1",
+        }),
+        buildSourceEvidence({
+          id: "sev_auto_email_2",
+          providerRecordId: "auto-email-2",
+        }),
+      ],
+      salesforceCommunicationDetails: [
+        firstAutoEmail.detail,
+        secondAutoEmail.detail,
+      ],
+      timelineRows: [firstAutoEmail.timelineRow, secondAutoEmail.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.canonicalEventId)).toEqual([
+      "evt_auto_email_1",
+      "evt_auto_email_2",
+    ]);
+    expect(items.every((item) => item.family === "auto_email")).toBe(true);
+  });
+
+  it("still collapses non-auto-email rows with the same signature in the duplicate window", async () => {
+    const firstOneToOneEmail = buildSalesforceEmailEvent({
+      id: "evt_one_to_one_1",
+      sourceEvidenceId: "sev_one_to_one_1",
+      occurredAt: "2026-01-01T00:10:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
+      subject: "Checking in",
+      snippet: "Body: Following up on your question.",
+      contentFingerprint: "fp:one-to-one-repeat",
+    });
+    const secondOneToOneEmail = buildSalesforceEmailEvent({
+      id: "evt_one_to_one_2",
+      sourceEvidenceId: "sev_one_to_one_2",
+      occurredAt: "2026-01-01T00:12:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
+      subject: "Checking in",
+      snippet: "Body: Following up on your question.",
+      contentFingerprint: "fp:one-to-one-repeat",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [
+        firstOneToOneEmail.canonicalEvent,
+        secondOneToOneEmail.canonicalEvent,
+      ],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_one_to_one_1",
+          providerRecordId: "one-to-one-1",
+        }),
+        buildSourceEvidence({
+          id: "sev_one_to_one_2",
+          providerRecordId: "one-to-one-2",
+        }),
+      ],
+      salesforceCommunicationDetails: [
+        firstOneToOneEmail.detail,
+        secondOneToOneEmail.detail,
+      ],
+      timelineRows: [
+        firstOneToOneEmail.timelineRow,
+        secondOneToOneEmail.timelineRow,
+      ],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      canonicalEventId: "evt_one_to_one_1",
+      family: "one_to_one_email",
     });
   });
 });
