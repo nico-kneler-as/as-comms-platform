@@ -20,6 +20,8 @@ describe("Stage 1 sync failure audit", () => {
         parityPercent: null,
         lastSuccessfulAt: null,
         consecutiveFailureCount: 0,
+        leaseOwner: null,
+        heartbeatAt: null,
         deadLetterCount: 0,
         freshnessP95Seconds: null,
         freshnessP99Seconds: null

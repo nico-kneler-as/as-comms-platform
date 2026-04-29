@@ -95,6 +95,7 @@ interface Stage1MailchimpArtifactImportDependencies {
 }
 
 const MAILCHIMP_RECORD_PROGRESS_INTERVAL = 25;
+const DEFAULT_SYNC_STATE_HEARTBEAT_INTERVAL_MS = 30_000;
 const emptyMailchimpKnownIdentityIndex: MailchimpKnownIdentityIndex = {
   knownEmails: new Set<string>(),
   knownVolunteerIds: new Set<string>(),
@@ -1043,6 +1044,16 @@ function buildImportFailure(error: unknown): Stage1JobFailure {
   };
 }
 
+function readSyncStateHeartbeatIntervalMs(): number {
+  const parsed = Number(process.env.SYNC_STATE_HEARTBEAT_INTERVAL_MS ?? "30000");
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_SYNC_STATE_HEARTBEAT_INTERVAL_MS;
+  }
+
+  return parsed;
+}
+
 function buildMailchimpRecordCursor(
   campaignId: string,
   nextRecordIndex: number,
@@ -1378,6 +1389,15 @@ export function createStage1MailchimpArtifactImportService(
         createMailchimpIdentityPresenceResolver(dependencies);
       let pendingDeadLetterCountIncrement = 0;
       let latestCursor = startedSyncState.cursor;
+      const heartbeatIntervalMs = readSyncStateHeartbeatIntervalMs();
+      const heartbeatTimer = setInterval(() => {
+        void dependencies.syncState
+          .heartbeat({ syncStateId: parsedInput.syncStateId })
+          .catch(() => {
+            // Best-effort only; the stale-running sweeper handles missed heartbeats.
+          });
+      }, heartbeatIntervalMs);
+      heartbeatTimer.unref();
 
       try {
         for (const campaignPath of campaignPaths) {
@@ -1644,6 +1664,8 @@ export function createStage1MailchimpArtifactImportService(
                 unmatchedReportCsvPath: unmatchedReportPaths.csvPath,
               }),
         };
+      } finally {
+        clearInterval(heartbeatTimer);
       }
     },
   };

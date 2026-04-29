@@ -864,6 +864,8 @@ export function mapSyncStateRow(row: SyncStateRow): SyncStateRecord {
     freshnessP99Seconds: row.freshnessP99Seconds,
     lastSuccessfulAt: fromDate(row.lastSuccessfulAt),
     consecutiveFailureCount: row.consecutiveFailureCount,
+    leaseOwner: row.leaseOwner,
+    heartbeatAt: fromDate(row.heartbeatAt),
     deadLetterCount: row.deadLetterCount,
   });
 }
@@ -890,6 +892,8 @@ export function mapSyncStateToInsert(
     lastSuccessfulAt:
       parsed.lastSuccessfulAt === null ? null : toDate(parsed.lastSuccessfulAt),
     consecutiveFailureCount: parsed.consecutiveFailureCount,
+    leaseOwner: parsed.leaseOwner,
+    heartbeatAt: parsed.heartbeatAt === null ? null : toDate(parsed.heartbeatAt),
     deadLetterCount: parsed.deadLetterCount,
   };
 }

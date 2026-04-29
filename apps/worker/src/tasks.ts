@@ -18,6 +18,11 @@ import {
   type ReconcileRoutingReviewQueueTaskDependencies,
 } from "./jobs/reconcile-routing-review-queue.js";
 import {
+  createReconcileStaleRunningTask,
+  reconcileStaleRunningJobName,
+  type ReconcileStaleRunningTaskDependencies,
+} from "./jobs/reconcile-stale-running.js";
+import {
   createNotionKnowledgeSyncTask,
   notionKnowledgeSyncJobName,
   type NotionKnowledgeSyncDependencies,
@@ -37,6 +42,7 @@ export function createTaskList(
     readonly pendingOutboundSweep?: PendingOutboundSweepTaskDependencies;
     readonly reconcileIdentityQueue?: ReconcileIdentityQueueTaskDependencies;
     readonly reconcileRoutingReviewQueue?: ReconcileRoutingReviewQueueTaskDependencies;
+    readonly reconcileStaleRunning?: ReconcileStaleRunningTaskDependencies;
   },
 ): TaskList {
   return {
@@ -62,6 +68,13 @@ export function createTaskList(
             createReconcileRoutingReviewQueueTask(
               input.reconcileRoutingReviewQueue,
             ),
+        }),
+    ...(input?.reconcileStaleRunning === undefined
+      ? {}
+      : {
+          [reconcileStaleRunningJobName]: createReconcileStaleRunningTask(
+            input.reconcileStaleRunning
+          )
         }),
     ...(input?.notionKnowledgeSync === undefined
       ? {}

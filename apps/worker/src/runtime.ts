@@ -33,6 +33,7 @@ import {
 import { readNotionKnowledgeSyncConfig } from "./jobs/notion-knowledge-sync/index.js";
 import { reconcileRoutingReviewQueueJobName } from "./jobs/reconcile-routing-review-queue.js";
 import {
+  createStage1SyncStateService,
   createStage1WorkerOrchestrationService,
   type MailchimpCapturePort,
   pollGmailLiveJobName,
@@ -43,7 +44,10 @@ import {
 } from "./orchestration/index.js";
 import { createTaskList } from "./tasks.js";
 import { reconcileIdentityQueueJobName } from "./jobs/reconcile-identity-queue.js";
+import { reconcileStaleRunningJobName } from "./jobs/reconcile-stale-running.js";
 import { sweepPendingOutboundsJobName } from "./jobs/sweep-pending-outbounds.js";
+
+const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
 
 const workerCaptureConfigSchema = z.object({
   gmail: capturePortHttpConfigSchema,
@@ -99,9 +103,23 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `*/${String(salesforceMinutes)} * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
     `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
     `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
+    `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
     `*/15 * * * * ${reconcileIdentityQueueJobName} ?id=identity-queue-reconcile&max=1`,
     `*/15 * * * * ${reconcileRoutingReviewQueueJobName} ?id=routing-review-queue-reconcile&max=1`,
   ].join("\n");
+}
+
+function readSyncStateLeaseThresholdMs(env: NodeJS.ProcessEnv): number {
+  const parsed = Number(
+    env.SYNC_STATE_LEASE_THRESHOLD_MS ??
+      String(defaultSyncStateLeaseThresholdMs)
+  );
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return defaultSyncStateLeaseThresholdMs;
+  }
+
+  return parsed;
 }
 
 function readOptionalCaptureConfig(
@@ -262,6 +280,7 @@ export async function createStage1WorkerRuntimeServices(
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
   const ingest = createStage1IngestService(normalization);
+  const syncState = createStage1SyncStateService(persistence);
   const fetchOptions =
     input?.fetchImplementation === undefined
       ? undefined
@@ -269,6 +288,7 @@ export async function createStage1WorkerRuntimeServices(
           fetchImplementation: input.fetchImplementation,
         };
   const fetchImplementation = input?.fetchImplementation ?? fetch;
+  const leaseThresholdMs = readSyncStateLeaseThresholdMs(input?.env ?? process.env);
   const capture = {
     gmail: createGmailCapturePort(config.capture.gmail, fetchOptions),
     salesforce: createSalesforceCapturePort(
@@ -341,6 +361,12 @@ export async function createStage1WorkerRuntimeServices(
       reconcileRoutingReviewQueue: {
         db: connection.db,
         repositories,
+      },
+      reconcileStaleRunning: {
+        db: connection.db,
+        repositories,
+        syncState,
+        leaseThresholdMs,
       },
     }),
     dispose() {

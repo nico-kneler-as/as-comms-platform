@@ -1771,6 +1771,8 @@ Alias drift outbound message.
         freshnessP99Seconds: 120,
         lastSuccessfulAt: "2026-01-02T01:00:00.000Z",
         consecutiveFailureCount: 0,
+        leaseOwner: null,
+        heartbeatAt: null,
         deadLetterCount: 0
       });
 

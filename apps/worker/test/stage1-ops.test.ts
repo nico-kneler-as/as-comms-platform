@@ -150,6 +150,8 @@ async function seedInspectableContact(context: TestWorkerContext): Promise<void>
     parityPercent: null,
     lastSuccessfulAt: "2026-01-01T00:05:00.000Z",
     consecutiveFailureCount: 0,
+    leaseOwner: null,
+    heartbeatAt: null,
     deadLetterCount: 0,
     freshnessP95Seconds: 60,
     freshnessP99Seconds: 120
@@ -300,6 +302,8 @@ describe("Stage 1 ops helpers", () => {
         parityPercent: null,
         lastSuccessfulAt: null,
         consecutiveFailureCount: 0,
+        leaseOwner: null,
+        heartbeatAt: null,
         deadLetterCount: 0,
         freshnessP95Seconds: null,
         freshnessP99Seconds: null

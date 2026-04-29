@@ -527,6 +527,8 @@ export const syncStateSchema = z
     freshnessP99Seconds: z.number().int().nonnegative().nullable(),
     lastSuccessfulAt: optionalTimestampSchema,
     consecutiveFailureCount: z.number().int().nonnegative(),
+    leaseOwner: z.string().min(1).nullable(),
+    heartbeatAt: optionalTimestampSchema,
     deadLetterCount: z.number().int().nonnegative(),
   })
   .superRefine((value, context) => {

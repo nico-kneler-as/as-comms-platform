@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getTableName } from "drizzle-orm";
+import { getTableName, sql } from "drizzle-orm";
 import {
   canonicalEventTypeValues,
   channelValues,
@@ -20,6 +20,7 @@ import {
   sourceEvidenceLog,
   syncState
 } from "../src/index.js";
+import { createTestStage1Context } from "./helpers.js";
 import { mapSyncStateRow, mapSyncStateToInsert } from "../src/mappers.js";
 
 describe("Stage 1 DB schema", () => {
@@ -110,6 +111,8 @@ describe("Stage 1 DB schema", () => {
       freshnessP99Seconds: null,
       lastSuccessfulAt: null,
       consecutiveFailureCount: 4,
+      leaseOwner: "worker:test",
+      heartbeatAt: "2026-01-05T00:04:00.000Z",
       deadLetterCount: 1
     });
     const row = mapSyncStateRow({
@@ -126,6 +129,8 @@ describe("Stage 1 DB schema", () => {
       freshnessP99Seconds: insert.freshnessP99Seconds ?? null,
       lastSuccessfulAt: insert.lastSuccessfulAt ?? null,
       consecutiveFailureCount: insert.consecutiveFailureCount ?? 0,
+      leaseOwner: insert.leaseOwner ?? null,
+      heartbeatAt: insert.heartbeatAt ?? null,
       deadLetterCount: insert.deadLetterCount ?? 0,
       createdAt: new Date("2026-01-05T00:05:00.000Z"),
       updatedAt: new Date("2026-01-05T00:05:00.000Z")
@@ -133,6 +138,81 @@ describe("Stage 1 DB schema", () => {
 
     expect(syncState.consecutiveFailureCount.name).toBe("consecutive_failure_count");
     expect(row.consecutiveFailureCount).toBe(4);
+    expect(row.leaseOwner).toBe("worker:test");
+    expect(row.heartbeatAt).toBe("2026-01-05T00:04:00.000Z");
     expect(row.deadLetterCount).toBe(1);
+  });
+
+  it("adds nullable lease and heartbeat columns to sync_state and preserves null round-trips", async () => {
+    const context = await createTestStage1Context();
+
+    try {
+      const columnResult: unknown = await context.db.execute(sql<{
+        readonly columnName: string;
+        readonly dataType: string;
+        readonly isNullable: "YES" | "NO";
+      }>`
+        select
+          column_name as "columnName",
+          data_type as "dataType",
+          is_nullable as "isNullable"
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'sync_state'
+          and column_name in ('lease_owner', 'heartbeat_at')
+        order by column_name
+      `);
+      const columns = Array.isArray(columnResult)
+        ? (columnResult as readonly {
+            readonly columnName: string;
+            readonly dataType: string;
+            readonly isNullable: "YES" | "NO";
+          }[])
+        : (
+            columnResult as {
+              readonly rows: readonly {
+                readonly columnName: string;
+                readonly dataType: string;
+                readonly isNullable: "YES" | "NO";
+              }[];
+            }
+          ).rows;
+      const inserted = await context.repositories.syncState.upsert({
+        id: "sync:schema:lease-heartbeat",
+        scope: "provider",
+        provider: "gmail",
+        jobType: "historical_backfill",
+        cursor: null,
+        windowStart: null,
+        windowEnd: null,
+        status: "running",
+        parityPercent: null,
+        freshnessP95Seconds: null,
+        freshnessP99Seconds: null,
+        lastSuccessfulAt: null,
+        consecutiveFailureCount: 0,
+        leaseOwner: null,
+        heartbeatAt: null,
+        deadLetterCount: 0
+      });
+
+      await expect(
+        context.repositories.syncState.findById(inserted.id)
+      ).resolves.toEqual(inserted);
+      expect(columns).toEqual([
+        {
+          columnName: "heartbeat_at",
+          dataType: "timestamp with time zone",
+          isNullable: "YES"
+        },
+        {
+          columnName: "lease_owner",
+          dataType: "text",
+          isNullable: "YES"
+        }
+      ]);
+    } finally {
+      await context.dispose();
+    }
   });
 });
