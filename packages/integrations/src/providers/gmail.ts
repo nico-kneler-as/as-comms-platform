@@ -25,8 +25,8 @@ const nullableStringSchema = z.string().min(1).nullable();
 const stringArraySchema = z.array(z.string().min(1));
 const timestampSchema = z.string().datetime();
 const nullableStringArraySchema = z.array(z.string().min(1)).nullable();
-const GMAIL_SNIPPET_MAX = 2_000;
-const GMAIL_BODY_PREVIEW_MAX = 20_000;
+const GMAIL_SNIPPET_MAX = 10_000;
+const GMAIL_BODY_PREVIEW_MAX = 100_000;
 
 export const gmailMessageRecordSchema = z.object({
   recordType: z.literal("message"),
