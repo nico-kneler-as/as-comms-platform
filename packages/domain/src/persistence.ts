@@ -218,6 +218,12 @@ function mergeAnchoredContact(
   });
 }
 
+function buildSourceEvidenceQuarantineDetails(
+  record: SourceEvidenceRecord
+): Readonly<Record<string, unknown>> {
+  return { ...record };
+}
+
 export function createStage1PersistenceService(
   repositories: Stage1RepositoryBundle
 ): Stage1PersistenceService {
@@ -243,6 +249,16 @@ export function createStage1PersistenceService(
             record: existingByIdempotency
           };
         }
+
+        await repositories.sourceEvidenceQuarantine.record({
+          provider: parsed.provider,
+          idempotencyKey: parsed.idempotencyKey,
+          checksum: parsed.checksum,
+          attemptedAt: new Date(parsed.receivedAt),
+          reason: "checksum_mismatch",
+          payloadRef: parsed.payloadRef,
+          details: buildSourceEvidenceQuarantineDetails(parsed)
+        });
 
         return {
           outcome: "conflict",
@@ -280,6 +296,32 @@ export function createStage1PersistenceService(
       }
 
       const inserted = await repositories.sourceEvidence.append(parsed);
+
+      if (inserted.checksum !== parsed.checksum) {
+        await repositories.sourceEvidenceQuarantine.record({
+          provider: parsed.provider,
+          idempotencyKey: parsed.idempotencyKey,
+          checksum: parsed.checksum,
+          attemptedAt: new Date(parsed.receivedAt),
+          reason: "checksum_mismatch",
+          payloadRef: parsed.payloadRef,
+          details: buildSourceEvidenceQuarantineDetails(parsed)
+        });
+
+        return {
+          outcome: "conflict",
+          incoming: parsed,
+          conflictingRecords: [inserted],
+          reason: "idempotency_key_mismatch"
+        };
+      }
+
+      if (!sameSourceEvidenceRecord(parsed, inserted)) {
+        return {
+          outcome: "duplicate",
+          record: inserted
+        };
+      }
 
       return {
         outcome: "inserted",

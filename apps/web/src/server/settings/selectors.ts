@@ -98,9 +98,9 @@ export interface SourceEvidenceCollisionDetailViewModel
     readonly receivedAt: string;
   };
   readonly losing: readonly {
-    readonly sourceEvidenceId: string;
+    readonly quarantineId: string;
     readonly checksum: string;
-    readonly receivedAt: string;
+    readonly attemptedAt: string;
   }[];
 }
 
@@ -491,9 +491,9 @@ async function readLogsSettings(input: {
           receivedAt: entry.winning.receivedAt.toISOString()
         },
         losing: entry.losing.map((losingEntry) => ({
-          sourceEvidenceId: losingEntry.sourceEvidenceId,
+          quarantineId: losingEntry.quarantineId,
           checksum: losingEntry.checksum,
-          receivedAt: losingEntry.receivedAt.toISOString()
+          attemptedAt: losingEntry.attemptedAt.toISOString()
         }))
       };
 

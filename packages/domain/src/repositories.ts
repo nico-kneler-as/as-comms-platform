@@ -54,6 +54,35 @@ export interface SourceEvidenceRepository {
   }): Promise<readonly SourceEvidenceRecord[]>;
 }
 
+export interface SourceEvidenceQuarantineInput {
+  readonly provider: Provider;
+  readonly idempotencyKey: string;
+  readonly checksum: string;
+  readonly attemptedAt: Date;
+  readonly reason: "checksum_mismatch";
+  readonly payloadRef: string;
+  readonly details: Readonly<Record<string, unknown>>;
+}
+
+export interface SourceEvidenceQuarantineRecord
+  extends SourceEvidenceQuarantineInput {
+  readonly id: string;
+  readonly createdAt: Date;
+}
+
+export interface SourceEvidenceQuarantineRepository {
+  record(
+    input: SourceEvidenceQuarantineInput,
+  ): Promise<SourceEvidenceQuarantineRecord>;
+  listRecent(input: {
+    readonly limit: number;
+    readonly beforeTimestamp?: Date;
+  }): Promise<{
+    readonly entries: readonly SourceEvidenceQuarantineRecord[];
+    readonly hasMore: boolean;
+  }>;
+}
+
 export interface SourceEvidenceCollisionEntry {
   readonly provider: Provider;
   readonly idempotencyKey: string;
@@ -64,9 +93,9 @@ export interface SourceEvidenceCollisionEntry {
     readonly receivedAt: Date;
   };
   readonly losing: readonly {
-    readonly sourceEvidenceId: string;
+    readonly quarantineId: string;
     readonly checksum: string;
-    readonly receivedAt: Date;
+    readonly attemptedAt: Date;
   }[];
 }
 
@@ -459,6 +488,7 @@ export interface AuditEvidenceRepository {
 
 export interface Stage1RepositoryBundle {
   readonly sourceEvidence: SourceEvidenceRepository;
+  readonly sourceEvidenceQuarantine: SourceEvidenceQuarantineRepository;
   readonly canonicalEvents: CanonicalEventRepository;
   readonly aiKnowledge: AiKnowledgeRepository;
   readonly projectKnowledge: ProjectKnowledgeRepository;

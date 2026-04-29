@@ -19,6 +19,7 @@ import {
   messageAttachments,
   projectKnowledgeEntries,
   sourceEvidenceLog,
+  sourceEvidenceQuarantine,
   syncState
 } from "../src/index.js";
 import { createTestStage1Context } from "./helpers.js";
@@ -55,6 +56,7 @@ describe("Stage 1 DB schema", () => {
       "sessions",
       "simpleTextingMessageDetails",
       "sourceEvidenceLog",
+      "sourceEvidenceQuarantine",
       "syncState",
       "users",
       "verificationTokens"
@@ -68,6 +70,9 @@ describe("Stage 1 DB schema", () => {
     );
     expect(getTableName(messageAttachments)).toBe("message_attachments");
     expect(getTableName(sourceEvidenceLog)).toBe("source_evidence_log");
+    expect(getTableName(sourceEvidenceQuarantine)).toBe(
+      "source_evidence_quarantine"
+    );
     expect(getTableName(canonicalEventLedger)).toBe("canonical_event_ledger");
     expect(getTableName(internalNotes)).toBe("internal_notes");
     expect(getTableName(contactInboxProjection)).toBe(

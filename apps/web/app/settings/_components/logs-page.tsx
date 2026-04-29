@@ -62,11 +62,11 @@ function isSourceEvidenceCollisionDetail(
 }
 
 function formatCollisionLine(input: {
-  readonly sourceEvidenceId: string;
+  readonly recordId: string;
   readonly checksum: string;
-  readonly receivedAt: string;
+  readonly timestamp: string;
 }): string {
-  return `${input.sourceEvidenceId} • ${input.checksum} • ${formatTimestamp(input.receivedAt)}`;
+  return `${input.recordId} • ${input.checksum} • ${formatTimestamp(input.timestamp)}`;
 }
 
 function StreamSelector({
@@ -166,13 +166,23 @@ function DetailPanel({
 
       <dt className={TYPE.label}>Winning source-evidence</dt>
       <dd className={cn(TYPE.bodySm, "break-all text-slate-700")}>
-        {formatCollisionLine(detail.winning)}
+        {formatCollisionLine({
+          recordId: detail.winning.sourceEvidenceId,
+          checksum: detail.winning.checksum,
+          timestamp: detail.winning.receivedAt,
+        })}
       </dd>
 
-      <dt className={TYPE.label}>Losing source-evidence</dt>
+      <dt className={TYPE.label}>Losing quarantine rows</dt>
       <dd className={cn("space-y-1", TYPE.bodySm, "text-slate-700")}>
         {detail.losing.map((entry) => (
-          <div key={entry.sourceEvidenceId}>{formatCollisionLine(entry)}</div>
+          <div key={entry.quarantineId}>
+            {formatCollisionLine({
+              recordId: entry.quarantineId,
+              checksum: entry.checksum,
+              timestamp: entry.attemptedAt,
+            })}
+          </div>
         ))}
       </dd>
     </dl>

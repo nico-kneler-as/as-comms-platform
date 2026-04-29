@@ -70,6 +70,8 @@ import {
   mapSalesforceEventContextToInsert,
   mapSourceEvidenceRow,
   mapSourceEvidenceToInsert,
+  mapSourceEvidenceQuarantineRow,
+  mapSourceEvidenceQuarantineToInsert,
   mapSyncStateRow,
   mapSyncStateToInsert,
   mapTimelineProjectionRow,
@@ -104,6 +106,7 @@ import {
   salesforceEventContext,
   simpleTextingMessageDetails,
   sourceEvidenceLog,
+  sourceEvidenceQuarantine,
   syncState,
   users,
 } from "./schema/index.js";
@@ -205,11 +208,21 @@ interface InternalNoteWithAuthorRow {
   } | null;
 }
 type PendingComposerOutboundRow = typeof pendingComposerOutbounds.$inferSelect;
-type SourceEvidenceLogRow = typeof sourceEvidenceLog.$inferSelect;
 interface SourceEvidenceCollisionGroupRow {
   readonly provider: SourceEvidenceCollisionEntry["provider"];
   readonly idempotencyKey: string;
   readonly latestReceivedAt: Date;
+}
+interface SourceEvidenceCollisionJoinedRow {
+  readonly provider: SourceEvidenceCollisionEntry["provider"];
+  readonly idempotencyKey: string;
+  readonly latestReceivedAt: Date;
+  readonly winningSourceEvidenceId: string;
+  readonly winningChecksum: string;
+  readonly winningReceivedAt: Date;
+  readonly losingQuarantineId: string;
+  readonly losingChecksum: string;
+  readonly losingAttemptedAt: Date;
 }
 
 function mapSalesforceCommunicationDetailRowLocal(
@@ -267,9 +280,9 @@ function buildSourceEvidenceCollisionKey(
 
 function mapSourceEvidenceCollisionEntries(input: {
   readonly groups: readonly SourceEvidenceCollisionGroupRow[];
-  readonly rows: readonly SourceEvidenceLogRow[];
+  readonly rows: readonly SourceEvidenceCollisionJoinedRow[];
 }): readonly SourceEvidenceCollisionEntry[] {
-  const rowsByCollisionKey = new Map<string, SourceEvidenceLogRow[]>();
+  const rowsByCollisionKey = new Map<string, SourceEvidenceCollisionJoinedRow[]>();
 
   for (const row of input.rows) {
     const collisionKey = buildSourceEvidenceCollisionKey(
@@ -287,7 +300,7 @@ function mapSourceEvidenceCollisionEntries(input: {
       group.idempotencyKey,
     );
     const rows = rowsByCollisionKey.get(collisionKey) ?? [];
-    const [winning, ...losing] = rows;
+    const [winning] = rows;
 
     if (winning === undefined) {
       return [];
@@ -299,14 +312,14 @@ function mapSourceEvidenceCollisionEntries(input: {
         idempotencyKey: group.idempotencyKey,
         latestReceivedAt: group.latestReceivedAt,
         winning: {
-          sourceEvidenceId: winning.id,
-          checksum: winning.checksum,
-          receivedAt: winning.receivedAt,
+          sourceEvidenceId: winning.winningSourceEvidenceId,
+          checksum: winning.winningChecksum,
+          receivedAt: winning.winningReceivedAt,
         },
-        losing: losing.map((row) => ({
-          sourceEvidenceId: row.id,
-          checksum: row.checksum,
-          receivedAt: row.receivedAt,
+        losing: rows.map((row) => ({
+          quarantineId: row.losingQuarantineId,
+          checksum: row.losingChecksum,
+          attemptedAt: row.losingAttemptedAt,
         })),
       },
     ];
@@ -320,6 +333,22 @@ function coerceSourceEvidenceCollisionGroups(
     provider: row.provider,
     idempotencyKey: row.idempotencyKey,
     latestReceivedAt: new Date(row.latestReceivedAt),
+  }));
+}
+
+function coerceSourceEvidenceCollisionJoinedRows(
+  rows: readonly SourceEvidenceCollisionJoinedRow[],
+): readonly SourceEvidenceCollisionJoinedRow[] {
+  return rows.map((row) => ({
+    provider: row.provider,
+    idempotencyKey: row.idempotencyKey,
+    latestReceivedAt: new Date(row.latestReceivedAt),
+    winningSourceEvidenceId: row.winningSourceEvidenceId,
+    winningChecksum: row.winningChecksum,
+    winningReceivedAt: new Date(row.winningReceivedAt),
+    losingQuarantineId: row.losingQuarantineId,
+    losingChecksum: row.losingChecksum,
+    losingAttemptedAt: new Date(row.losingAttemptedAt),
   }));
 }
 
@@ -715,7 +744,6 @@ function createStage1RepositoriesInternal(
             target: [
               sourceEvidenceLog.provider,
               sourceEvidenceLog.idempotencyKey,
-              sourceEvidenceLog.checksum,
             ],
           })
           .returning();
@@ -731,7 +759,6 @@ function createStage1RepositoriesInternal(
             and(
               eq(sourceEvidenceLog.provider, values.provider),
               eq(sourceEvidenceLog.idempotencyKey, values.idempotencyKey),
-              eq(sourceEvidenceLog.checksum, values.checksum),
             ),
           )
           .limit(1);
@@ -784,21 +811,40 @@ function createStage1RepositoriesInternal(
         const groupResult = await db.execute(
           sql`
             select
-              ${sourceEvidenceLog.provider} as "provider",
-              ${sourceEvidenceLog.idempotencyKey} as "idempotencyKey",
-              max(${sourceEvidenceLog.receivedAt}) as "latestReceivedAt"
-            from ${sourceEvidenceLog}
-            group by ${sourceEvidenceLog.provider}, ${sourceEvidenceLog.idempotencyKey}
-            having count(distinct ${sourceEvidenceLog.checksum}) > 1
+              ${sourceEvidenceQuarantine.provider} as "provider",
+              ${sourceEvidenceQuarantine.idempotencyKey} as "idempotencyKey",
+              max(
+                greatest(
+                  ${sourceEvidenceLog.receivedAt},
+                  ${sourceEvidenceQuarantine.attemptedAt}
+                )
+              ) as "latestReceivedAt"
+            from ${sourceEvidenceQuarantine}
+            inner join ${sourceEvidenceLog}
+              on ${sourceEvidenceLog.provider} = ${sourceEvidenceQuarantine.provider}
+              and ${sourceEvidenceLog.idempotencyKey} = ${sourceEvidenceQuarantine.idempotencyKey}
+            group by ${sourceEvidenceQuarantine.provider}, ${sourceEvidenceQuarantine.idempotencyKey}
             ${
               input.beforeTimestamp === undefined
                 ? sql``
-                : sql`and max(${sourceEvidenceLog.receivedAt}) < ${input.beforeTimestamp}`
+                : sql`
+                    having max(
+                      greatest(
+                        ${sourceEvidenceLog.receivedAt},
+                        ${sourceEvidenceQuarantine.attemptedAt}
+                      )
+                    ) < ${input.beforeTimestamp}
+                  `
             }
             order by
-              max(${sourceEvidenceLog.receivedAt}) desc,
-              ${sourceEvidenceLog.provider} asc,
-              ${sourceEvidenceLog.idempotencyKey} asc
+              max(
+                greatest(
+                  ${sourceEvidenceLog.receivedAt},
+                  ${sourceEvidenceQuarantine.attemptedAt}
+                )
+              ) desc,
+              ${sourceEvidenceQuarantine.provider} asc,
+              ${sourceEvidenceQuarantine.idempotencyKey} asc
             limit ${limit + 1}
           `,
         );
@@ -822,25 +868,52 @@ function createStage1RepositoriesInternal(
 
         const groupPredicates = visibleGroups.map((group) =>
           and(
-            eq(sourceEvidenceLog.provider, group.provider),
-            eq(sourceEvidenceLog.idempotencyKey, group.idempotencyKey),
+            eq(sourceEvidenceQuarantine.provider, group.provider),
+            eq(sourceEvidenceQuarantine.idempotencyKey, group.idempotencyKey),
           ),
         );
-        const rows = await db
-          .select()
-          .from(sourceEvidenceLog)
-          .where(
-            groupPredicates.length === 1
-              ? groupPredicates[0]
-              : or(...groupPredicates),
-          )
-          .orderBy(
-            asc(sourceEvidenceLog.provider),
-            asc(sourceEvidenceLog.idempotencyKey),
-            asc(sourceEvidenceLog.receivedAt),
-            asc(sourceEvidenceLog.createdAt),
-            asc(sourceEvidenceLog.id),
-          );
+        const rows = coerceSourceEvidenceCollisionJoinedRows(
+          await db
+            .select({
+              provider: sourceEvidenceQuarantine.provider,
+              idempotencyKey: sourceEvidenceQuarantine.idempotencyKey,
+              latestReceivedAt: sql<Date>`
+                greatest(
+                  ${sourceEvidenceLog.receivedAt},
+                  ${sourceEvidenceQuarantine.attemptedAt}
+                )
+              `,
+              winningSourceEvidenceId: sourceEvidenceLog.id,
+              winningChecksum: sourceEvidenceLog.checksum,
+              winningReceivedAt: sourceEvidenceLog.receivedAt,
+              losingQuarantineId: sourceEvidenceQuarantine.id,
+              losingChecksum: sourceEvidenceQuarantine.checksum,
+              losingAttemptedAt: sourceEvidenceQuarantine.attemptedAt,
+            })
+            .from(sourceEvidenceQuarantine)
+            .innerJoin(
+              sourceEvidenceLog,
+              and(
+                eq(sourceEvidenceLog.provider, sourceEvidenceQuarantine.provider),
+                eq(
+                  sourceEvidenceLog.idempotencyKey,
+                  sourceEvidenceQuarantine.idempotencyKey,
+                ),
+              ),
+            )
+            .where(
+              groupPredicates.length === 1
+                ? groupPredicates[0]
+                : or(...groupPredicates),
+            )
+            .orderBy(
+              asc(sourceEvidenceQuarantine.provider),
+              asc(sourceEvidenceQuarantine.idempotencyKey),
+              asc(sourceEvidenceQuarantine.attemptedAt),
+              asc(sourceEvidenceQuarantine.createdAt),
+              asc(sourceEvidenceQuarantine.id),
+            ),
+        );
 
         return {
           entries: mapSourceEvidenceCollisionEntries({
@@ -882,6 +955,49 @@ function createStage1RepositoriesInternal(
           );
 
         return rows.map(mapSourceEvidenceRow);
+      },
+    },
+
+    sourceEvidenceQuarantine: {
+      async record(input) {
+        const [row] = await db
+          .insert(sourceEvidenceQuarantine)
+          .values(
+            mapSourceEvidenceQuarantineToInsert({
+              id: `source_evidence_quarantine:${crypto.randomUUID()}`,
+              record: input,
+            }),
+          )
+          .returning();
+
+        return mapSourceEvidenceQuarantineRow(
+          requireRow(row, "Expected source evidence quarantine row after insert."),
+        );
+      },
+
+      async listRecent(input) {
+        const limit = clampSourceEvidenceCollisionLimit(input.limit);
+        const rows = await db
+          .select()
+          .from(sourceEvidenceQuarantine)
+          .where(
+            input.beforeTimestamp === undefined
+              ? undefined
+              : lt(sourceEvidenceQuarantine.attemptedAt, input.beforeTimestamp),
+          )
+          .orderBy(
+            desc(sourceEvidenceQuarantine.attemptedAt),
+            desc(sourceEvidenceQuarantine.createdAt),
+            desc(sourceEvidenceQuarantine.id),
+          )
+          .limit(limit + 1);
+
+        const visibleRows = rows.slice(0, limit).map(mapSourceEvidenceQuarantineRow);
+
+        return {
+          entries: visibleRows,
+          hasMore: rows.length > limit,
+        };
       },
     },
 

@@ -147,7 +147,7 @@ async function seedSourceEvidenceCollision(
     readonly winningId: string;
     readonly losingId: string;
     readonly winningReceivedAt: string;
-    readonly losingReceivedAt: string;
+    readonly losingAttemptedAt: string;
   }
 ): Promise<void> {
   await runtime.context.repositories.sourceEvidence.append({
@@ -161,16 +161,24 @@ async function seedSourceEvidenceCollision(
     idempotencyKey: input.idempotencyKey,
     checksum: `${input.winningId}:checksum`
   });
-  await runtime.context.repositories.sourceEvidence.append({
-    id: input.losingId,
+  await runtime.context.repositories.sourceEvidenceQuarantine.record({
     provider: input.provider,
-    providerRecordType: "message",
-    providerRecordId: `${input.losingId}:record`,
-    receivedAt: input.losingReceivedAt,
-    occurredAt: input.losingReceivedAt,
-    payloadRef: `payloads/${input.provider}/${input.losingId}.json`,
     idempotencyKey: input.idempotencyKey,
-    checksum: `${input.losingId}:checksum`
+    checksum: `${input.losingId}:checksum`,
+    attemptedAt: new Date(input.losingAttemptedAt),
+    reason: "checksum_mismatch",
+    payloadRef: `payloads/${input.provider}/${input.losingId}.json`,
+    details: {
+      id: input.losingId,
+      provider: input.provider,
+      providerRecordType: "message",
+      providerRecordId: `${input.losingId}:record`,
+      receivedAt: input.losingAttemptedAt,
+      occurredAt: input.losingAttemptedAt,
+      payloadRef: `payloads/${input.provider}/${input.losingId}.json`,
+      idempotencyKey: input.idempotencyKey,
+      checksum: `${input.losingId}:checksum`
+    }
   });
 }
 
@@ -451,7 +459,7 @@ describe("settings selectors", () => {
       winningId: "sev-newer-winning",
       losingId: "sev-newer-losing",
       winningReceivedAt: "2026-04-20T14:00:00.000Z",
-      losingReceivedAt: "2026-04-20T14:05:00.000Z"
+      losingAttemptedAt: "2026-04-20T14:05:00.000Z"
     });
     await seedSourceEvidenceCollision(runtime, {
       provider: "salesforce",
@@ -459,7 +467,7 @@ describe("settings selectors", () => {
       winningId: "sev-older-winning",
       losingId: "sev-older-losing",
       winningReceivedAt: "2026-04-20T13:00:00.000Z",
-      losingReceivedAt: "2026-04-20T13:05:00.000Z"
+      losingAttemptedAt: "2026-04-20T13:05:00.000Z"
     });
     for (let index = 0; index < 24; index += 1) {
       const minute = String(index).padStart(2, "0");
@@ -469,7 +477,7 @@ describe("settings selectors", () => {
         winningId: `sev-extra-winning-${minute}`,
         losingId: `sev-extra-losing-${minute}`,
         winningReceivedAt: `2026-04-20T12:${minute}:00.000Z`,
-        losingReceivedAt: `2026-04-20T12:${minute}:30.000Z`
+        losingAttemptedAt: `2026-04-20T12:${minute}:30.000Z`
       });
     }
 
@@ -502,13 +510,20 @@ describe("settings selectors", () => {
         },
         losing: [
           {
-            sourceEvidenceId: "sev-newer-losing",
             checksum: "sev-newer-losing:checksum",
-            receivedAt: "2026-04-20T14:05:00.000Z"
+            attemptedAt: "2026-04-20T14:05:00.000Z"
           }
         ]
       }
     });
+    const firstLosingDetail = (
+      viewModel.entries[0]?.detail as {
+        readonly losing: readonly {
+          readonly quarantineId: string;
+        }[];
+      }
+    ).losing[0];
+    expect(typeof firstLosingDetail?.quarantineId).toBe("string");
     expect(typeof viewModel.nextBeforeTimestamp).toBe("string");
     expect(viewModel.nextBeforeTimestamp).not.toBeNull();
   });

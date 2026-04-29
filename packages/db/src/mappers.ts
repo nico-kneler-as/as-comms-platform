@@ -50,6 +50,8 @@ import {
 import type {
   PendingComposerOutboundRecord,
   ProjectAliasRecord,
+  SourceEvidenceQuarantineInput,
+  SourceEvidenceQuarantineRecord,
   UserRecord,
 } from "@as-comms/domain";
 
@@ -78,11 +80,13 @@ import type {
   salesforceEventContext,
   simpleTextingMessageDetails,
   sourceEvidenceLog,
+  sourceEvidenceQuarantine,
   syncState,
   users,
 } from "./schema/index.js";
 
 type SourceEvidenceRow = typeof sourceEvidenceLog.$inferSelect;
+type SourceEvidenceQuarantineRow = typeof sourceEvidenceQuarantine.$inferSelect;
 type AiKnowledgeEntryRow = typeof aiKnowledgeEntries.$inferSelect;
 type ProjectKnowledgeEntryRow = typeof projectKnowledgeEntries.$inferSelect;
 type CanonicalEventRow = typeof canonicalEventLedger.$inferSelect;
@@ -243,6 +247,38 @@ export function mapSourceEvidenceToInsert(
     payloadRef: parsed.payloadRef,
     idempotencyKey: parsed.idempotencyKey,
     checksum: parsed.checksum,
+  };
+}
+
+export function mapSourceEvidenceQuarantineRow(
+  row: SourceEvidenceQuarantineRow,
+): SourceEvidenceQuarantineRecord {
+  return {
+    id: row.id,
+    provider: row.provider,
+    idempotencyKey: row.idempotencyKey,
+    checksum: row.checksum,
+    attemptedAt: row.attemptedAt,
+    reason: row.reason as SourceEvidenceQuarantineRecord["reason"],
+    payloadRef: row.payloadRef,
+    details: row.detailsJsonb as Readonly<Record<string, unknown>>,
+    createdAt: row.createdAt,
+  };
+}
+
+export function mapSourceEvidenceQuarantineToInsert(input: {
+  readonly id: string;
+  readonly record: SourceEvidenceQuarantineInput;
+}): typeof sourceEvidenceQuarantine.$inferInsert {
+  return {
+    id: input.id,
+    provider: input.record.provider,
+    idempotencyKey: input.record.idempotencyKey,
+    checksum: input.record.checksum,
+    attemptedAt: input.record.attemptedAt,
+    reason: input.record.reason,
+    payloadRef: input.record.payloadRef,
+    detailsJsonb: input.record.details,
   };
 }
 
