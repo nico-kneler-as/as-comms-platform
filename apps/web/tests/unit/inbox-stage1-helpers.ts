@@ -37,10 +37,14 @@ export async function seedInboxContact(
   });
 
   if (input.projectId !== undefined) {
+    const fallbackAlias = input.projectName ?? input.projectId;
     await context.repositories.projectDimensions.upsert({
       projectId: input.projectId,
       projectName: input.projectName ?? input.projectId,
-      projectAlias: input.projectAlias ?? null,
+      // Migration 0045 enforces a CHECK that active projects have a
+      // non-empty alias. Default to projectName/projectId so legacy
+      // fixtures that don't pass projectAlias continue to seed successfully.
+      projectAlias: input.projectAlias ?? fallbackAlias,
       source: "salesforce",
       // Default fixture projects to active so tests don't have to opt in. Tests
       // that need a specific project to be inactive should call setActive(id,false)

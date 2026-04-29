@@ -1002,6 +1002,8 @@ describe("Stage 1 DB repositories", () => {
     await repositories.projectDimensions.upsert({
       projectId: "project_1",
       projectName: "Project Antarctica",
+      // Alias required for setActive(true) per migration 0045 CHECK constraint.
+      projectAlias: "Antarctica",
       isActive: false,
       source: "salesforce",
     });
@@ -1016,6 +1018,7 @@ describe("Stage 1 DB repositories", () => {
     await repositories.projectDimensions.upsert({
       projectId: "project_1",
       projectName: "Project Antarctica Resynced",
+      projectAlias: "Antarctica",
       isActive: false,
       source: "salesforce",
     });
@@ -1318,21 +1321,25 @@ describe("Stage 1 DB repositories", () => {
   it("matches project filters against any active membership and excludes inactive project memberships", async () => {
     const { repositories, settings } = await createTestStage1Context();
 
+    // Alias required for active rows per migration 0045 CHECK constraint.
     await repositories.projectDimensions.upsert({
       projectId: "project:pnw-bio",
       projectName: "PNW Biodiversity",
+      projectAlias: "PNW Biodiversity",
       source: "salesforce",
       isActive: true,
     });
     await repositories.projectDimensions.upsert({
       projectId: "project:whitebark-pine",
       projectName: "Tracking Whitebark Pine",
+      projectAlias: "Whitebark Pine",
       source: "salesforce",
       isActive: true,
     });
     await repositories.projectDimensions.upsert({
       projectId: "project:inactive-c",
       projectName: "Inactive Project",
+      projectAlias: "Inactive",
       source: "salesforce",
       isActive: true,
     });

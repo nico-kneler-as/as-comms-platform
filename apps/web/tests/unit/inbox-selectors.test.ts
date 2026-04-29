@@ -1314,18 +1314,21 @@ describe("real inbox selectors", () => {
     await runtime.context.repositories.projectDimensions.upsert({
       projectId: "project:amazon-basin",
       projectName: "Amazon Basin Research",
+      projectAlias: "Amazon Basin",
       source: "salesforce",
       isActive: true,
     });
     await runtime.context.repositories.projectDimensions.upsert({
       projectId: "project:whitebark-pine",
       projectName: "Tracking Whitebark Pine",
+      projectAlias: "Whitebark Pine",
       source: "salesforce",
       isActive: true,
     });
     await runtime.context.repositories.projectDimensions.upsert({
       projectId: "project:river-cleanup",
       projectName: "River Cleanup",
+      projectAlias: "River Cleanup",
       source: "salesforce",
       isActive: true,
     });
@@ -1379,12 +1382,14 @@ describe("real inbox selectors", () => {
     await runtime.context.repositories.projectDimensions.upsert({
       projectId: "project:amazon-basin",
       projectName: "Amazon Basin Research",
+      projectAlias: "Amazon Basin",
       source: "salesforce",
       isActive: true,
     });
     await runtime.context.repositories.projectDimensions.upsert({
       projectId: "project:whitebark-pine",
       projectName: "Tracking Whitebark Pine",
+      projectAlias: "Whitebark Pine",
       source: "salesforce",
       isActive: true,
     });
