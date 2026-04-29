@@ -769,82 +769,28 @@ export async function seedInboxInternalNoteEvent(
     readonly authorId?: string | null;
   },
 ): Promise<{ readonly canonicalEventId: string }> {
-  const sourceEvidenceId = `source:${input.id}`;
-  const canonicalEventId = `event:${input.id}`;
+  const canonicalEventId = `note:${input.id}`;
+  const authorId = input.authorId ?? `user:${input.id}:internal-note`;
 
-  await context.repositories.sourceEvidence.append({
-    id: sourceEvidenceId,
-    provider: "manual",
-    providerRecordType: "note",
-    providerRecordId: input.id,
-    receivedAt: input.occurredAt,
-    occurredAt: input.occurredAt,
-    payloadRef: `payloads/manual/${input.id}.json`,
-    idempotencyKey: `manual:${input.id}`,
-    checksum: `checksum:${input.id}`,
+  await context.settings.users.upsert({
+    id: authorId,
+    email: `${authorId.replace(/[^a-zA-Z0-9]/g, "-")}@test.local`,
+    name: input.authorDisplayName,
+    emailVerified: null,
+    image: null,
+    role: "operator",
+    deactivatedAt: null,
+    createdAt: new Date(input.occurredAt),
+    updatedAt: new Date(input.occurredAt),
   });
 
-  await context.repositories.canonicalEvents.upsert({
-    id: canonicalEventId,
+  await context.repositories.internalNotes.create({
+    id: input.id,
     contactId: input.contactId,
-    eventType: "note.internal.created",
-    channel: "note",
-    occurredAt: input.occurredAt,
-    sourceEvidenceId,
-    idempotencyKey: `canonical:${input.id}`,
-    contentFingerprint: null,
-    provenance: {
-      primaryProvider: "manual",
-      primarySourceEvidenceId: sourceEvidenceId,
-      supportingSourceEvidenceIds: [],
-      winnerReason: "single_source",
-      sourceRecordType: "note",
-      sourceRecordId: input.id,
-      messageKind: null,
-      campaignRef: null,
-      threadRef: null,
-      direction: null,
-      notes: null,
-    },
-    reviewState: "clear",
-  });
-
-  // FK from manual_note_details.author_id → users.id requires the user to exist
-  // before we can insert a note that references it. Upsert a minimal user row
-  // when authorId is provided.
-  if (input.authorId) {
-    await context.settings.users.upsert({
-      id: input.authorId,
-      email: `${input.authorId.replace(/[^a-zA-Z0-9]/g, "-")}@test.local`,
-      name: input.authorDisplayName,
-      emailVerified: null,
-      image: null,
-      role: "operator",
-      deactivatedAt: null,
-      createdAt: new Date(input.occurredAt),
-      updatedAt: new Date(input.occurredAt),
-    });
-  }
-
-  await context.repositories.manualNoteDetails.upsert({
-    sourceEvidenceId,
-    providerRecordId: input.id,
     body: input.body,
-    authorDisplayName: input.authorDisplayName,
-    authorId: input.authorId ?? null,
-  });
-
-  await context.repositories.timelineProjection.upsert({
-    id: `timeline:${input.id}`,
-    contactId: input.contactId,
-    canonicalEventId,
-    occurredAt: input.occurredAt,
-    sortKey: `${input.occurredAt}::${canonicalEventId}`,
-    eventType: "note.internal.created",
-    summary: "Internal note added",
-    channel: "note",
-    primaryProvider: "manual",
-    reviewState: "clear",
+    authorId,
+    createdAt: new Date(input.occurredAt),
+    updatedAt: new Date(input.occurredAt),
   });
 
   return {

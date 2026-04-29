@@ -140,6 +140,7 @@ function buildRepositoryBundle(input: {
       create: (input) =>
         Promise.resolve({
           ...input,
+          authorDisplayName: null,
           createdAt: new Date(0),
           updatedAt: new Date(0),
         }),
@@ -150,6 +151,7 @@ function buildRepositoryBundle(input: {
           id: input.id,
           contactId: "contact:volunteer",
           body: input.body,
+          authorDisplayName: "Author",
           authorId: "user:author",
           createdAt: new Date(0),
           updatedAt: new Date(0),

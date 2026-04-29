@@ -14,6 +14,7 @@ import type {
 } from "@as-comms/contracts";
 
 import {
+  type InternalNoteRecord,
   type Stage1RepositoryBundle,
   defineStage1RepositoryBundle,
 } from "../src/repositories.js";
@@ -37,6 +38,7 @@ function createRepositoryBundle(input: {
   readonly gmailMessageDetails?: readonly GmailMessageDetailRecord[];
   readonly messageAttachments?: readonly MessageAttachmentRecord[];
   readonly mailchimpCampaignActivityDetails?: readonly MailchimpCampaignActivityDetailRecord[];
+  readonly internalNotes?: readonly InternalNoteRecord[];
   readonly timelineRows: readonly TimelineProjectionRow[];
   readonly pendingOutbounds?: readonly PendingComposerOutboundRecord[];
 }): Stage1RepositoryBundle {
@@ -245,16 +247,23 @@ function createRepositoryBundle(input: {
       create: (input) =>
         Promise.resolve({
           ...input,
+          authorDisplayName: null,
           createdAt: new Date(0),
           updatedAt: new Date(0),
         }),
       findById: () => Promise.resolve(undefined),
-      findByContactId: () => Promise.resolve([]),
+      findByContactId: (contactId, limit) =>
+        Promise.resolve(
+          (input.internalNotes ?? [])
+            .filter((note) => note.contactId === contactId)
+            .slice(0, limit),
+        ),
       update: (input) =>
         Promise.resolve({
           id: input.id,
           contactId: "contact_1",
           body: input.body,
+          authorDisplayName: "Author",
           authorId: "user:author",
           createdAt: new Date(0),
           updatedAt: new Date(0),
@@ -597,6 +606,25 @@ function buildMailchimpCampaignEmailEvent(input: {
       primaryProvider: "mailchimp",
       reviewState: "clear",
     },
+  };
+}
+
+function buildInternalNote(input: {
+  readonly id: string;
+  readonly contactId?: string;
+  readonly body: string;
+  readonly authorDisplayName?: string | null;
+  readonly authorId?: string;
+  readonly createdAt: string;
+}): InternalNoteRecord {
+  return {
+    id: input.id,
+    contactId: input.contactId ?? "contact_1",
+    body: input.body,
+    authorDisplayName: input.authorDisplayName ?? null,
+    authorId: input.authorId ?? "user:author",
+    createdAt: new Date(input.createdAt),
+    updatedAt: new Date(input.createdAt),
   };
 }
 
@@ -1292,5 +1320,232 @@ describe("Stage 1 timeline presenter", () => {
       canonicalEventId: "evt_one_to_one_1",
       family: "one_to_one_email",
     });
+  });
+
+  it("interleaves internal notes with canonical events by occurredAt", async () => {
+    const firstEvent = buildSalesforceEmailEvent({
+      id: "evt_t0",
+      sourceEvidenceId: "sev_t0",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
+      subject: "First event",
+      snippet: "First event body",
+    });
+    const secondEvent = buildSalesforceEmailEvent({
+      id: "evt_t2",
+      sourceEvidenceId: "sev_t2",
+      occurredAt: "2026-01-01T00:00:02.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
+      subject: "Second event",
+      snippet: "Second event body",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [firstEvent.canonicalEvent, secondEvent.canonicalEvent],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_t0",
+          providerRecordId: "timeline-t0",
+        }),
+        buildSourceEvidence({
+          id: "sev_t2",
+          providerRecordId: "timeline-t2",
+        }),
+      ],
+      salesforceCommunicationDetails: [firstEvent.detail, secondEvent.detail],
+      internalNotes: [
+        buildInternalNote({
+          id: "note_t1",
+          body: "Interleaved note",
+          authorDisplayName: "Author",
+          createdAt: "2026-01-01T00:00:01.000Z",
+        }),
+      ],
+      timelineRows: [firstEvent.timelineRow, secondEvent.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items.map((item) => item.canonicalEventId)).toEqual([
+      "evt_t0",
+      "note:note_t1",
+      "evt_t2",
+    ]);
+  });
+
+  it("uses a deterministic sort-key tiebreaker when a note and event share a timestamp", async () => {
+    const event = buildSalesforceEmailEvent({
+      id: "evt_same_time",
+      sourceEvidenceId: "sev_same_time",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
+      subject: "Same timestamp",
+      snippet: "Canonical event",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [event.canonicalEvent],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_same_time",
+          providerRecordId: "same-time",
+        }),
+      ],
+      salesforceCommunicationDetails: [event.detail],
+      internalNotes: [
+        buildInternalNote({
+          id: "note_same_time",
+          body: "Same timestamp note",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ],
+      timelineRows: [event.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items.map((item) => item.canonicalEventId)).toEqual([
+      "evt_same_time",
+      "note:note_same_time",
+    ]);
+  });
+
+  it("paginates across interleaved canonical events and internal notes without drops or duplicates", async () => {
+    const event0 = buildSalesforceEmailEvent({
+      id: "evt_page_0",
+      sourceEvidenceId: "sev_page_0",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
+      subject: "Page 0",
+      snippet: "Page 0 body",
+    });
+    const event2 = buildSalesforceEmailEvent({
+      id: "evt_page_2",
+      sourceEvidenceId: "sev_page_2",
+      occurredAt: "2026-01-01T00:00:02.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
+      subject: "Page 2",
+      snippet: "Page 2 body",
+    });
+    const event4 = buildSalesforceEmailEvent({
+      id: "evt_page_4",
+      sourceEvidenceId: "sev_page_4",
+      occurredAt: "2026-01-01T00:00:04.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
+      subject: "Page 4",
+      snippet: "Page 4 body",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [
+        event0.canonicalEvent,
+        event2.canonicalEvent,
+        event4.canonicalEvent,
+      ],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_page_0",
+          providerRecordId: "page-0",
+        }),
+        buildSourceEvidence({
+          id: "sev_page_2",
+          providerRecordId: "page-2",
+        }),
+        buildSourceEvidence({
+          id: "sev_page_4",
+          providerRecordId: "page-4",
+        }),
+      ],
+      salesforceCommunicationDetails: [
+        event0.detail,
+        event2.detail,
+        event4.detail,
+      ],
+      internalNotes: [
+        buildInternalNote({
+          id: "note_page_1",
+          body: "Page 1",
+          createdAt: "2026-01-01T00:00:01.000Z",
+        }),
+        buildInternalNote({
+          id: "note_page_3",
+          body: "Page 3",
+          createdAt: "2026-01-01T00:00:03.000Z",
+        }),
+      ],
+      timelineRows: [event0.timelineRow, event2.timelineRow, event4.timelineRow],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const page1 = await presenter.listTimelineItemsPageByContactId("contact_1", {
+      limit: 2,
+      beforeSortKey: null,
+    });
+    const page2 = await presenter.listTimelineItemsPageByContactId("contact_1", {
+      limit: 2,
+      beforeSortKey: page1.nextBeforeSortKey,
+    });
+    const page3 = await presenter.listTimelineItemsPageByContactId("contact_1", {
+      limit: 2,
+      beforeSortKey: page2.nextBeforeSortKey,
+    });
+
+    expect(page1.total).toBe(5);
+    expect(page1.items.map((item) => item.canonicalEventId)).toEqual([
+      "note:note_page_3",
+      "evt_page_4",
+    ]);
+    expect(page2.items.map((item) => item.canonicalEventId)).toEqual([
+      "note:note_page_1",
+      "evt_page_2",
+    ]);
+    expect(page3.items.map((item) => item.canonicalEventId)).toEqual([
+      "evt_page_0",
+    ]);
+    expect([
+      ...page1.items,
+      ...page2.items,
+      ...page3.items,
+    ].map((item) => item.canonicalEventId)).toEqual([
+      "note:note_page_3",
+      "evt_page_4",
+      "note:note_page_1",
+      "evt_page_2",
+      "evt_page_0",
+    ]);
+  });
+
+  it("does not collapse duplicate internal notes", async () => {
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [],
+      sourceEvidence: [],
+      salesforceCommunicationDetails: [],
+      internalNotes: [
+        buildInternalNote({
+          id: "note_dup_1",
+          body: "Same body",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
+        buildInternalNote({
+          id: "note_dup_2",
+          body: "Same body",
+          createdAt: "2026-01-01T00:04:00.000Z",
+        }),
+      ],
+      timelineRows: [],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items.map((item) => item.canonicalEventId)).toEqual([
+      "note:note_dup_1",
+      "note:note_dup_2",
+    ]);
   });
 });

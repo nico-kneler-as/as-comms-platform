@@ -76,6 +76,29 @@ async function seedVolunteerContact(input: {
   return context;
 }
 
+async function seedUser(
+  context: Awaited<ReturnType<typeof createTestStage1Context>>,
+  input: {
+    readonly id: string;
+    readonly name: string;
+    readonly email: string;
+  },
+) {
+  const now = new Date("2026-01-01T00:00:00.000Z");
+
+  await context.settings.users.upsert({
+    id: input.id,
+    name: input.name,
+    email: input.email,
+    emailVerified: now,
+    image: null,
+    role: "operator",
+    deactivatedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 function buildCommunicationClassification(input: {
   readonly sourceRecordType: string;
   readonly sourceRecordId: string;
@@ -106,13 +129,18 @@ function buildCommunicationClassification(input: {
 }
 
 describe("Stage 1 notes and timeline presenter", () => {
-  it("creates an internal note through the canonical pipeline without mutating inbox state", async () => {
+  it("creates an internal note through internal_notes without mutating inbox state", async () => {
     const context = await seedVolunteerContact({
       contactId: "contact_1",
       salesforceContactId: "003-stage1",
       displayName: "Stage One Volunteer",
       email: "volunteer@example.org",
       phone: "+15555550123"
+    });
+    await seedUser(context, {
+      id: "user:author",
+      name: "Author User",
+      email: "author@example.org",
     });
     const noteService = createStage1InternalNoteService({
       persistence: context.persistence,
@@ -124,17 +152,19 @@ describe("Stage 1 notes and timeline presenter", () => {
       noteId: "note-1",
       contactId: "contact_1",
       body: "Volunteer asked to be contacted again next week.",
-      occurredAt: "2026-01-02T00:00:00.000Z"
+      occurredAt: "2026-01-02T00:00:00.000Z",
+      authorDisplayName: "Author User",
+      authorId: "user:author",
     });
 
     expect(result.outcome).toBe("applied");
-    expect(result.sourceEvidence.provider).toBe("manual");
-    expect(result.canonicalEvent.eventType).toBe("note.internal.created");
-    expect(result.timelineProjection.channel).toBe("note");
-    expect(result.noteDetail.body).toBe(
-      "Volunteer asked to be contacted again next week."
-    );
-    expect(result.inboxProjection).toBeNull();
+    expect(result.note).toMatchObject({
+      id: "note-1",
+      contactId: "contact_1",
+      body: "Volunteer asked to be contacted again next week.",
+      authorDisplayName: "Author User",
+      authorId: "user:author",
+    });
     await expect(
       context.repositories.inboxProjection.findByContactId("contact_1")
     ).resolves.toBeNull();
@@ -145,7 +175,7 @@ describe("Stage 1 notes and timeline presenter", () => {
       expect.objectContaining({
         family: "internal_note",
         body: "Volunteer asked to be contacted again next week.",
-        authorDisplayName: null
+        authorDisplayName: "Author User"
       })
     ]);
   });
@@ -163,6 +193,11 @@ describe("Stage 1 notes and timeline presenter", () => {
       normalization: context.normalization
     });
     const presenter = createStage1TimelinePresentationService(context.repositories);
+    await seedUser(context, {
+      id: "user:author",
+      name: "Author User",
+      email: "author@example.org",
+    });
 
     await context.repositories.projectDimensions.upsert({
       projectId: "project-stage1",
@@ -455,7 +490,8 @@ describe("Stage 1 notes and timeline presenter", () => {
       contactId: "contact_1",
       body: "Internal follow-up note.",
       occurredAt: "2026-01-01T00:06:00.000Z",
-      authorDisplayName: null
+      authorDisplayName: "Author User",
+      authorId: "user:author",
     });
 
     const items = await presenter.listTimelineItemsByContactId("contact_1");
@@ -526,7 +562,7 @@ describe("Stage 1 notes and timeline presenter", () => {
       expect.objectContaining({
         family: "internal_note",
         body: "Internal follow-up note.",
-        authorDisplayName: null
+        authorDisplayName: "Author User"
       })
     );
   });

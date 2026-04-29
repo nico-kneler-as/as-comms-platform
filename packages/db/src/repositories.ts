@@ -198,6 +198,12 @@ type SimpleTextingMessageDetailRow = SimpleTextingMessageDetailRecord;
 type MailchimpCampaignActivityDetailRow = MailchimpCampaignActivityDetailRecord;
 type ManualNoteDetailRow = ManualNoteDetailRecord;
 type InternalNoteRow = typeof internalNotes.$inferSelect;
+interface InternalNoteWithAuthorRow {
+  readonly internal_notes: InternalNoteRow;
+  readonly users: {
+    readonly name: string | null;
+  } | null;
+}
 type PendingComposerOutboundRow = typeof pendingComposerOutbounds.$inferSelect;
 type SourceEvidenceLogRow = typeof sourceEvidenceLog.$inferSelect;
 interface SourceEvidenceCollisionGroupRow {
@@ -408,9 +414,19 @@ function mapInternalNoteRowLocal(row: InternalNoteRow): InternalNoteRecord {
     id: row.id,
     contactId: row.contactId,
     body: row.body,
+    authorDisplayName: null,
     authorId: row.authorId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+function mapInternalNoteWithAuthorRow(
+  row: InternalNoteWithAuthorRow,
+): InternalNoteRecord {
+  return {
+    ...mapInternalNoteRowLocal(row.internal_notes),
+    authorDisplayName: row.users?.name ?? null,
   };
 }
 
@@ -2036,66 +2052,116 @@ function createStage1RepositoriesInternal(
 
     internalNotes: {
       async create(input) {
-        const now = new Date();
-        const [row] = await db
+        const createdAt = input.createdAt ?? new Date();
+        const updatedAt = input.updatedAt ?? createdAt;
+        await db
           .insert(internalNotes)
           .values({
             id: input.id,
             contactId: input.contactId,
             body: input.body,
             authorId: input.authorId,
-            createdAt: now,
-            updatedAt: now,
+            createdAt,
+            updatedAt,
           })
-          .returning();
+          .returning({
+            id: internalNotes.id,
+          });
 
-        return mapInternalNoteRowLocal(
-          requireRow(row, "Expected internal_notes row to be returned."),
+        const [row] = await db
+          .select({
+            internal_notes: internalNotes,
+            users: {
+              name: users.name,
+            },
+          })
+          .from(internalNotes)
+          .leftJoin(users, eq(internalNotes.authorId, users.id))
+          .where(eq(internalNotes.id, input.id))
+          .limit(1);
+
+        return mapInternalNoteWithAuthorRow(
+          requireRow(
+            row,
+            `Expected internal_notes row ${input.id} to be returned.`,
+          ),
         );
       },
 
       async findById(id) {
         const [row] = await db
-          .select()
+          .select({
+            internal_notes: internalNotes,
+            users: {
+              name: users.name,
+            },
+          })
           .from(internalNotes)
+          .leftJoin(users, eq(internalNotes.authorId, users.id))
           .where(eq(internalNotes.id, id))
           .limit(1);
 
-        return row === undefined ? undefined : mapInternalNoteRowLocal(row);
+        return row === undefined ? undefined : mapInternalNoteWithAuthorRow(row);
       },
 
       async findByContactId(contactId, limit) {
         if (limit === undefined) {
           const rows = await db
-            .select()
+            .select({
+              internal_notes: internalNotes,
+              users: {
+                name: users.name,
+              },
+            })
             .from(internalNotes)
+            .leftJoin(users, eq(internalNotes.authorId, users.id))
             .where(eq(internalNotes.contactId, contactId))
             .orderBy(desc(internalNotes.createdAt), desc(internalNotes.id));
 
-          return rows.map(mapInternalNoteRowLocal);
+          return rows.map(mapInternalNoteWithAuthorRow);
         }
 
         const rows = await db
-          .select()
+          .select({
+            internal_notes: internalNotes,
+            users: {
+              name: users.name,
+            },
+          })
           .from(internalNotes)
+          .leftJoin(users, eq(internalNotes.authorId, users.id))
           .where(eq(internalNotes.contactId, contactId))
           .orderBy(desc(internalNotes.createdAt), desc(internalNotes.id))
           .limit(limit);
 
-        return rows.map(mapInternalNoteRowLocal);
+        return rows.map(mapInternalNoteWithAuthorRow);
       },
 
       async update(input) {
-        const [row] = await db
+        await db
           .update(internalNotes)
           .set({
             body: input.body,
-            updatedAt: new Date(),
+            updatedAt: input.updatedAt ?? new Date(),
           })
           .where(eq(internalNotes.id, input.id))
-          .returning();
+          .returning({
+            id: internalNotes.id,
+          });
 
-        return mapInternalNoteRowLocal(
+        const [row] = await db
+          .select({
+            internal_notes: internalNotes,
+            users: {
+              name: users.name,
+            },
+          })
+          .from(internalNotes)
+          .leftJoin(users, eq(internalNotes.authorId, users.id))
+          .where(eq(internalNotes.id, input.id))
+          .limit(1);
+
+        return mapInternalNoteWithAuthorRow(
           requireRow(
             row,
             `Expected internal_notes row ${input.id} to update.`,

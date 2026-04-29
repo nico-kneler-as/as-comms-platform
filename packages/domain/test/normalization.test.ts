@@ -402,6 +402,7 @@ function buildContext(input: {
       create: (input) =>
         Promise.resolve({
           ...input,
+          authorDisplayName: null,
           createdAt: new Date(0),
           updatedAt: new Date(0),
         }),
@@ -412,6 +413,7 @@ function buildContext(input: {
           id: input.id,
           contactId: "contact_1",
           body: input.body,
+          authorDisplayName: "Author",
           authorId: "user:author",
           createdAt: new Date(0),
           updatedAt: new Date(0),
