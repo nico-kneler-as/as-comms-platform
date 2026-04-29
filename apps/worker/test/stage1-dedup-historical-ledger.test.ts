@@ -81,6 +81,7 @@ async function seedContact(input: {
       {
         id: `membership:${input.contactId}:default`,
         contactId: input.contactId,
+        salesforceMembershipId: `membership:${input.contactId}:default:sf`,
         projectId: "project_default",
         expeditionId: "expedition_default",
         role: "volunteer",

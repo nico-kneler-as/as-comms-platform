@@ -7,6 +7,31 @@ import {
 
 import { createTestStage1Context } from "./helpers.js";
 
+async function seedMembershipDimensions(
+  context: Awaited<ReturnType<typeof createTestStage1Context>>,
+  dimensions: readonly {
+    readonly projectId: string;
+    readonly expeditionId: string | null;
+  }[]
+) {
+  for (const { projectId, expeditionId } of dimensions) {
+    await context.repositories.projectDimensions.upsert({
+      projectId,
+      projectName: projectId,
+      source: "salesforce"
+    });
+
+    if (expeditionId !== null) {
+      await context.repositories.expeditionDimensions.upsert({
+        expeditionId,
+        projectId,
+        expeditionName: expeditionId,
+        source: "salesforce"
+      });
+    }
+  }
+}
+
 async function seedContactWithEmail(
   email: string,
   input: {
@@ -25,12 +50,22 @@ async function seedContactWithEmail(
             contactId: input.contactId,
             projectId: "project_default",
             expeditionId: "expedition_default",
+            salesforceMembershipId: `sf-membership:${input.contactId}:default`,
             role: "volunteer",
             status: "active",
             source: "salesforce" as const,
             createdAt: "2026-01-01T00:00:00.000Z",
           }
         ];
+
+  if (memberships.length > 0) {
+    await seedMembershipDimensions(context, [
+      {
+        projectId: "project_default",
+        expeditionId: "expedition_default"
+      }
+    ]);
+  }
 
   await context.normalization.upsertNormalizedContactGraph({
     contact: {
@@ -253,9 +288,13 @@ async function expectExactlyOneCanonicalEvent(
 
 describe("Stage 1 normalization service", () => {
   it("upserts canonical contact graph state through the application boundary", async () => {
-    const { normalization, repositories } = await createTestStage1Context();
+    const context = await createTestStage1Context();
 
-    const result = await normalization.upsertNormalizedContactGraph({
+    await seedMembershipDimensions(context, [
+      { projectId: "project_1", expeditionId: "expedition_1" }
+    ]);
+
+    const result = await context.normalization.upsertNormalizedContactGraph({
       contact: {
         id: "contact_1",
         salesforceContactId: "003-stage1",
@@ -291,6 +330,7 @@ describe("Stage 1 normalization service", () => {
           contactId: "contact_1",
           projectId: "project_1",
           expeditionId: "expedition_1",
+          salesforceMembershipId: "sf-membership:contact_1:project_1",
           role: "volunteer",
           status: "active",
           source: "salesforce",
@@ -302,7 +342,7 @@ describe("Stage 1 normalization service", () => {
     expect(result.contact.salesforceContactId).toBe("003-stage1");
     expect(result.identities).toHaveLength(2);
     expect(result.memberships).toHaveLength(1);
-    await expect(repositories.contacts.findById("contact_1")).resolves.toEqual(
+    await expect(context.repositories.contacts.findById("contact_1")).resolves.toEqual(
       result.contact
     );
   });
@@ -1571,6 +1611,11 @@ describe("Stage 1 normalization service", () => {
       displayName: "Routing Contact"
     });
 
+    await seedMembershipDimensions(context, [
+      { projectId: "project_1", expeditionId: null },
+      { projectId: "project_2", expeditionId: null }
+    ]);
+
     await context.normalization.upsertNormalizedContactGraph({
       contact: {
         id: "contact_1",
@@ -1588,6 +1633,7 @@ describe("Stage 1 normalization service", () => {
           contactId: "contact_1",
           projectId: "project_1",
           expeditionId: null,
+          salesforceMembershipId: "sf-membership:routing:1",
           role: "volunteer",
           status: "active",
           source: "salesforce",
@@ -1598,6 +1644,7 @@ describe("Stage 1 normalization service", () => {
           contactId: "contact_1",
           projectId: "project_2",
           expeditionId: null,
+          salesforceMembershipId: "sf-membership:routing:2",
           role: "volunteer",
           status: "active",
           source: "salesforce",
@@ -1669,6 +1716,13 @@ describe("Stage 1 normalization service", () => {
   it("keeps the Salesforce anchor, opens identity review for mismatched weaker evidence, and marks inbox unresolved", async () => {
     const context = await createTestStage1Context();
 
+    await seedMembershipDimensions(context, [
+      {
+        projectId: "project_anchor",
+        expeditionId: "expedition_anchor"
+      }
+    ]);
+
     await context.normalization.upsertNormalizedContactGraph({
       contact: {
         id: "contact_anchor",
@@ -1686,6 +1740,7 @@ describe("Stage 1 normalization service", () => {
           contactId: "contact_anchor",
           projectId: "project_anchor",
           expeditionId: "expedition_anchor",
+          salesforceMembershipId: "sf-membership:anchor:default",
           role: "volunteer",
           status: "active",
           source: "salesforce",
@@ -1764,6 +1819,13 @@ describe("Stage 1 normalization service", () => {
   it("reuses anchored identity lookups across repeated events for the same contact evidence", async () => {
     const context = await createTestStage1Context();
 
+    await seedMembershipDimensions(context, [
+      {
+        projectId: "project_cached",
+        expeditionId: "expedition_cached"
+      }
+    ]);
+
     await context.normalization.upsertNormalizedContactGraph({
       contact: {
         id: "contact_cached",
@@ -1800,6 +1862,7 @@ describe("Stage 1 normalization service", () => {
           contactId: "contact_cached",
           projectId: "project_cached",
           expeditionId: "expedition_cached",
+          salesforceMembershipId: "sf-membership:cached:default",
           role: "volunteer",
           status: "active",
           source: "salesforce",
