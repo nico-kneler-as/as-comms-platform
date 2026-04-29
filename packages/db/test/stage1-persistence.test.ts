@@ -211,6 +211,7 @@ describe("Stage 1 persistence service", () => {
       sourceEvidence: {
         ...context.repositories.sourceEvidence,
         findByIdempotencyKey: () => Promise.resolve(null),
+        listByProviderRecord: () => Promise.resolve([]),
         append: () => Promise.resolve(winningRow)
       }
     });
