@@ -915,6 +915,87 @@ Alias drift outbound message.
     }
   });
 
+  it("dead-letters Salesforce live ingest across 5 distinct sync_state rows (per-poll fresh UUIDs)", async () => {
+    const capture = createEmptyCapturePorts();
+    capture.salesforce.captureLiveBatch = () => {
+      throw new Stage1RetryableJobError("Temporary Salesforce live capture failure.");
+    };
+
+    const context = await createTestWorkerContext({ capture });
+
+    try {
+      for (let attempt = 1; attempt <= 4; attempt += 1) {
+        const pollId = String(attempt);
+        const result = await context.orchestration.runSalesforceLiveCaptureBatch(
+          buildSalesforceLivePayload({
+            syncStateId: `sync:salesforce:live:poll-${pollId}`
+          })
+        );
+
+        expect(result.outcome).toBe("failed");
+        if (result.outcome !== "failed") {
+          throw new Error("Expected Salesforce live cross-poll failure.");
+        }
+
+        expect(result.failure.disposition).toBe("retryable");
+        expect(result.syncState.status).toBe("failed");
+        expect(result.syncState.consecutiveFailureCount).toBe(attempt);
+        expect(result.syncState.deadLetterCount).toBe(0);
+      }
+
+      const deadLettered = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload({
+          syncStateId: "sync:salesforce:live:poll-5"
+        })
+      );
+
+      expect(deadLettered.outcome).toBe("failed");
+      if (deadLettered.outcome !== "failed") {
+        throw new Error("Expected fifth cross-poll Salesforce live failure.");
+      }
+
+      expect(deadLettered.failure.disposition).toBe("dead_letter");
+      expect(deadLettered.syncState.status).toBe("quarantined");
+      expect(deadLettered.syncState.consecutiveFailureCount).toBe(5);
+      expect(deadLettered.syncState.deadLetterCount).toBe(1);
+
+      capture.salesforce.captureLiveBatch = () => Promise.resolve(buildCapturedBatch([]));
+      const recovered = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload({
+          syncStateId: "sync:salesforce:live:poll-reset-success"
+        })
+      );
+
+      expect(recovered.outcome).toBe("succeeded");
+      if (recovered.outcome !== "succeeded") {
+        throw new Error("Expected cross-poll Salesforce live recovery batch.");
+      }
+
+      expect(recovered.syncState.consecutiveFailureCount).toBe(0);
+
+      capture.salesforce.captureLiveBatch = () => {
+        throw new Stage1RetryableJobError("Temporary Salesforce live capture failure.");
+      };
+      const afterReset = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload({
+          syncStateId: "sync:salesforce:live:poll-reset-failure"
+        })
+      );
+
+      expect(afterReset.outcome).toBe("failed");
+      if (afterReset.outcome !== "failed") {
+        throw new Error("Expected Salesforce live failure after cross-poll reset.");
+      }
+
+      expect(afterReset.failure.disposition).toBe("retryable");
+      expect(afterReset.syncState.status).toBe("failed");
+      expect(afterReset.syncState.consecutiveFailureCount).toBe(1);
+      expect(afterReset.syncState.deadLetterCount).toBe(0);
+    } finally {
+      await context.dispose();
+    }
+  });
+
   it("skips already-ingested Gmail live messages without duplicating events or projections", async () => {
     const gmailRecord = buildGmailMessageRecord({
       recordId: "gmail-live-duplicate-1",
