@@ -463,22 +463,19 @@ function mapSalesforceContactSnapshot(
   >();
 
   for (const membership of record.memberships) {
-    if (membership.projectId !== null && membership.projectName !== null) {
+    if (membership.projectId !== null) {
       projectDimensionsById.set(membership.projectId, {
         projectId: membership.projectId,
-        projectName: membership.projectName,
+        projectName: membership.projectName ?? membership.projectId,
         source: "salesforce",
       });
     }
 
-    if (
-      membership.expeditionId !== null &&
-      membership.expeditionName !== null
-    ) {
+    if (membership.expeditionId !== null) {
       expeditionDimensionsById.set(membership.expeditionId, {
         expeditionId: membership.expeditionId,
         projectId: membership.projectId,
-        expeditionName: membership.expeditionName,
+        expeditionName: membership.expeditionName ?? membership.expeditionId,
         source: "salesforce",
       });
     }
@@ -636,23 +633,24 @@ function mapSalesforceLifecycleRecord(
       sourceField: record.sourceField,
     },
     projectDimensions:
-      record.routing.projectId !== null && record.routing.projectName !== null
+      record.routing.projectId !== null
         ? [
             {
               projectId: record.routing.projectId,
-              projectName: record.routing.projectName,
+              projectName:
+                record.routing.projectName ?? record.routing.projectId,
               source: "salesforce" as const,
             },
           ]
         : [],
     expeditionDimensions:
-      record.routing.expeditionId !== null &&
-      record.routing.expeditionName !== null
+      record.routing.expeditionId !== null
         ? [
             {
               expeditionId: record.routing.expeditionId,
               projectId: record.routing.projectId,
-              expeditionName: record.routing.expeditionName,
+              expeditionName:
+                record.routing.expeditionName ?? record.routing.expeditionId,
               source: "salesforce" as const,
             },
           ]

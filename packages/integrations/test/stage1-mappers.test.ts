@@ -409,6 +409,65 @@ describe("Stage 1 provider-close mappers", () => {
     }
   });
 
+  it("emits placeholder dimensions when Salesforce membership names are missing", () => {
+    const result = mapSalesforceRecord({
+      recordType: "contact_snapshot",
+      recordId: "003-placeholder-dimensions",
+      salesforceContactId: "003-placeholder-dimensions",
+      displayName: "Placeholder Dimension Volunteer",
+      primaryEmail: "placeholder@example.org",
+      primaryPhone: null,
+      normalizedEmails: ["placeholder@example.org"],
+      normalizedPhones: [],
+      volunteerIdPlainValues: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      memberships: [
+        {
+          salesforceId: "a0B-placeholder-1",
+          projectId: "sf-project-X",
+          projectName: null,
+          expeditionId: "sf-expedition-X",
+          expeditionName: null,
+          role: "volunteer",
+          status: "active"
+        }
+      ]
+    });
+
+    expect(result.outcome).toBe("command");
+    if (result.outcome !== "command") {
+      throw new Error("Expected a contact graph command.");
+    }
+
+    expect(result.command.kind).toBe("contact_graph");
+    if (result.command.kind !== "contact_graph") {
+      throw new Error("Expected a contact graph command.");
+    }
+
+    expect(result.command.input.memberships).toEqual([
+      expect.objectContaining({
+        projectId: "sf-project-X",
+        expeditionId: "sf-expedition-X"
+      })
+    ]);
+    expect(result.command.input.projectDimensions).toEqual([
+      {
+        projectId: "sf-project-X",
+        projectName: "sf-project-X",
+        source: "salesforce"
+      }
+    ]);
+    expect(result.command.input.expeditionDimensions).toEqual([
+      {
+        expeditionId: "sf-expedition-X",
+        projectId: "sf-project-X",
+        expeditionName: "sf-expedition-X",
+        source: "salesforce"
+      }
+    ]);
+  });
+
   it("defers Salesforce contact snapshots that are not backed by expedition memberships", () => {
     const result = mapSalesforceRecord({
       recordType: "contact_snapshot",

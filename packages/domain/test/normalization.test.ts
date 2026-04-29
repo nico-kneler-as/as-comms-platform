@@ -13,6 +13,7 @@ import type {
   MailchimpCampaignActivityDetailRecord,
   ManualNoteDetailRecord,
   NormalizedCanonicalEventIntake,
+  NormalizedContactGraphUpsertInput,
   ProjectDimensionRecord,
   RoutingReviewCase,
   SalesforceCommunicationDetailRecord,
@@ -201,6 +202,12 @@ function buildContext(input: {
   readonly contacts?: readonly ContactRecord[];
   readonly contactIdentities?: readonly ContactIdentityRecord[];
   readonly sourceProvider?: SourceEvidenceRecord["provider"];
+  readonly onContactIdentityUpsert?: (record: ContactIdentityRecord) => void;
+  readonly onContactMembershipUpsert?: (record: ContactMembershipRecord) => void;
+  readonly onProjectDimensionUpsert?: (record: ProjectDimensionRecord) => void;
+  readonly onExpeditionDimensionUpsert?: (
+    record: Parameters<Stage1RepositoryBundle["expeditionDimensions"]["upsert"]>[0],
+  ) => void;
 }): TestContext {
   const contacts = input.contacts ?? [contact];
   const contactIdentities = input.contactIdentities ?? [emailIdentity];
@@ -371,22 +378,34 @@ function buildContext(input: {
             (identity) => identity.normalizedValue === normalizedValue,
           ),
         ),
-      upsert: (record) => Promise.resolve(record),
+      upsert: (record) => {
+        input.onContactIdentityUpsert?.(record);
+        return Promise.resolve(record);
+      },
     },
     contactMemberships: {
       listByContactId: () => Promise.resolve([]),
       listByContactIds: () => Promise.resolve([]),
-      upsert: (record: ContactMembershipRecord) => Promise.resolve(record),
+      upsert: (record: ContactMembershipRecord) => {
+        input.onContactMembershipUpsert?.(record);
+        return Promise.resolve(record);
+      },
     },
     projectDimensions: {
       listAll: () => Promise.resolve([]),
       listActive: () => Promise.resolve([]),
       listByIds: () => Promise.resolve([]),
-      upsert: (record: ProjectDimensionRecord) => Promise.resolve(record),
+      upsert: (record: ProjectDimensionRecord) => {
+        input.onProjectDimensionUpsert?.(record);
+        return Promise.resolve(record);
+      },
     },
     expeditionDimensions: {
       listByIds: () => Promise.resolve([]),
-      upsert: (record) => Promise.resolve(record),
+      upsert: (record) => {
+        input.onExpeditionDimensionUpsert?.(record);
+        return Promise.resolve(record);
+      },
     },
     gmailMessageDetails: {
       listBySourceEvidenceIds: (ids) =>
@@ -783,6 +802,98 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
       bucket: "New",
       lastInboundAt: latestInbound.occurredAt,
     });
+  });
+});
+
+describe("upsertNormalizedContactGraph write ordering", () => {
+  it("writes project and expedition dimensions before contact memberships for a new expedition", async () => {
+    const callOrder: { kind: string; id: string }[] = [];
+    const context = buildContext({
+      events: [],
+      contacts: [],
+      contactIdentities: [],
+      onContactIdentityUpsert: (record) => {
+        callOrder.push({ kind: "contactIdentity", id: record.id });
+      },
+      onProjectDimensionUpsert: (record) => {
+        callOrder.push({ kind: "projectDimension", id: record.projectId });
+      },
+      onExpeditionDimensionUpsert: (record) => {
+        callOrder.push({ kind: "expeditionDimension", id: record.expeditionId });
+      },
+      onContactMembershipUpsert: (record) => {
+        callOrder.push({ kind: "contactMembership", id: record.id });
+      }
+    });
+    const input: NormalizedContactGraphUpsertInput = {
+      contact: {
+        id: "contact:salesforce:003-new-expedition",
+        salesforceContactId: "003-new-expedition",
+        displayName: "New Expedition Volunteer",
+        primaryEmail: "new-expedition@example.org",
+        primaryPhone: null,
+        createdAt: "2026-04-29T00:00:00.000Z",
+        updatedAt: "2026-04-29T00:00:00.000Z"
+      },
+      identities: [
+        {
+          id: "identity:salesforce-contact-id:003-new-expedition",
+          contactId: "contact:salesforce:003-new-expedition",
+          kind: "salesforce_contact_id",
+          normalizedValue: "003-new-expedition",
+          isPrimary: true,
+          source: "salesforce",
+          verifiedAt: "2026-04-29T00:00:00.000Z"
+        }
+      ],
+      memberships: [
+        {
+          id: "membership:new-expedition",
+          contactId: "contact:salesforce:003-new-expedition",
+          projectId: "sf-project-NEW-1",
+          expeditionId: "sf-expedition-NEW-1",
+          salesforceMembershipId: "a0B-new-expedition",
+          role: "volunteer",
+          status: "active",
+          source: "salesforce",
+          createdAt: "2026-04-29T00:00:00.000Z"
+        }
+      ],
+      projectDimensions: [
+        {
+          projectId: "sf-project-NEW-1",
+          projectName: "New Project",
+          source: "salesforce",
+          isActive: false
+        }
+      ],
+      expeditionDimensions: [
+        {
+          expeditionId: "sf-expedition-NEW-1",
+          projectId: "sf-project-NEW-1",
+          expeditionName: "New Expedition",
+          source: "salesforce"
+        }
+      ]
+    };
+
+    await context.normalization.upsertNormalizedContactGraph(input);
+
+    const firstProjectDimensionIndex = callOrder.findIndex(
+      (entry) => entry.kind === "projectDimension"
+    );
+    const firstExpeditionDimensionIndex = callOrder.findIndex(
+      (entry) => entry.kind === "expeditionDimension"
+    );
+    const firstMembershipIndex = callOrder.findIndex(
+      (entry) => entry.kind === "contactMembership"
+    );
+
+    expect(firstProjectDimensionIndex).toBeGreaterThanOrEqual(0);
+    expect(firstExpeditionDimensionIndex).toBeGreaterThanOrEqual(0);
+    expect(firstMembershipIndex).toBeGreaterThanOrEqual(0);
+    expect(firstProjectDimensionIndex).toBeLessThan(firstMembershipIndex);
+    expect(firstExpeditionDimensionIndex).toBeLessThan(firstMembershipIndex);
   });
 });
 
