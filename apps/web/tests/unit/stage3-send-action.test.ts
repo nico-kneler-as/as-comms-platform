@@ -320,6 +320,48 @@ describe("sendComposerAction", () => {
     ).resolves.toEqual([]);
   });
 
+  it("maps ambiguous net-new recipient emails to invalid_recipient", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    const now = new Date("2026-04-21T12:05:00.000Z").toISOString();
+    await runtime.context.repositories.contacts.upsert({
+      id: "contact:duplicate",
+      salesforceContactId: null,
+      displayName: "Duplicate Contact",
+      primaryEmail: "existing@example.org",
+      primaryPhone: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await runtime.context.repositories.contactIdentities.upsert({
+      id: "identity:duplicate:email",
+      contactId: "contact:duplicate",
+      kind: "email",
+      normalizedValue: "existing@example.org",
+      isPrimary: true,
+      source: "manual",
+      verifiedAt: now,
+    });
+
+    const result = await sendComposerAction(
+      buildInput({
+        recipient: {
+          kind: "email",
+          emailAddress: "existing@example.org",
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "invalid_recipient",
+      retryable: false,
+    });
+    expect(sendComposerGmailMessage).not.toHaveBeenCalled();
+  });
+
   it("maps all typed Gmail send errors into the FP-07 envelope and marks the row failed", async () => {
     const cases = [
       ["auth_error", "composer_unavailable", false],

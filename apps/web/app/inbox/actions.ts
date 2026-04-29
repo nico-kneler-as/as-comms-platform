@@ -5,7 +5,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { composerSendInputSchema } from "@as-comms/contracts";
-import { computePendingComposerOutboundFingerprint } from "@as-comms/domain";
+import {
+  CanonicalContactAmbiguityError,
+  computePendingComposerOutboundFingerprint,
+} from "@as-comms/domain";
 import { requireSession } from "@/src/server/auth/session";
 import { sendComposerGmailMessage } from "@/src/server/composer/gmail-send";
 import {
@@ -1313,11 +1316,21 @@ export async function sendComposerAction(
       return mapComposerProviderError(requestId, "invalid_recipient");
     }
 
-    const contact = await runtime.normalization.ensureCanonicalContactForEmail({
-      emailAddress: toEmailNormalized,
-      createdAt: sentAtIso,
-      source: "manual",
-    });
+    let contact;
+    try {
+      contact = await runtime.normalization.ensureCanonicalContactForEmail({
+        emailAddress: toEmailNormalized,
+        createdAt: sentAtIso,
+        source: "manual",
+      });
+    } catch (error) {
+      if (error instanceof CanonicalContactAmbiguityError) {
+        // TODO: Surface ambiguous-recipient routing review UX instead of refusing.
+        return mapComposerProviderError(requestId, "invalid_recipient");
+      }
+
+      throw error;
+    }
     canonicalContactId = contact.id;
   }
 
