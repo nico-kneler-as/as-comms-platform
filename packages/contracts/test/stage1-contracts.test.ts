@@ -103,6 +103,7 @@ describe("Stage 1 contracts", () => {
       freshnessP95Seconds: 60,
       freshnessP99Seconds: 120,
       lastSuccessfulAt: null,
+      consecutiveFailureCount: 0,
       deadLetterCount: 0
     });
     const orchestrationScoped = syncStateSchema.safeParse({
@@ -118,6 +119,7 @@ describe("Stage 1 contracts", () => {
       freshnessP95Seconds: null,
       freshnessP99Seconds: null,
       lastSuccessfulAt: "2026-01-01T01:00:00.000Z",
+      consecutiveFailureCount: 0,
       deadLetterCount: 0
     });
     const invalid = syncStateSchema.safeParse({
@@ -133,6 +135,7 @@ describe("Stage 1 contracts", () => {
       freshnessP95Seconds: null,
       freshnessP99Seconds: null,
       lastSuccessfulAt: null,
+      consecutiveFailureCount: 0,
       deadLetterCount: 0
     });
 

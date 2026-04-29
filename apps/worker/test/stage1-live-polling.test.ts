@@ -39,6 +39,7 @@ async function saveLiveSyncState(
     windowEnd: input.windowEnd,
     parityPercent: null,
     lastSuccessfulAt: input.lastSuccessfulAt,
+    consecutiveFailureCount: 0,
     deadLetterCount: 0,
     freshnessP95Seconds: null,
     freshnessP99Seconds: null

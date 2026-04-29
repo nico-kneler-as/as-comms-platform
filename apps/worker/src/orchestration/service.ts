@@ -84,6 +84,7 @@ const gmailAndSimpleTextingP99ThresholdSeconds = 300;
 const salesforceLifecycleP95ThresholdSeconds = 600;
 const defaultGmailLivePollIntervalSeconds = 60;
 const defaultSalesforceLivePollIntervalSeconds = 300;
+const CONSECUTIVE_FAILURE_DEAD_LETTER_THRESHOLD = 5;
 export const gmailLiveWindowLookbackMs = 10 * 60 * 1000;
 const livePollMaxRecords = 1000;
 
@@ -1163,6 +1164,21 @@ export function createStage1WorkerOrchestrationService(input: {
       };
     } catch (error) {
       const failure = buildJobFailure(error, payload.attempt, payload.maxAttempts);
+      const existingSyncState = await input.persistence.repositories.syncState.findById(
+        payload.syncStateId
+      );
+      const nextConsecutiveFailures =
+        (existingSyncState?.consecutiveFailureCount ?? 0) + 1;
+      const finalFailure =
+        payload.provider === "salesforce" &&
+        payload.jobType === "live_ingest" &&
+        nextConsecutiveFailures >= CONSECUTIVE_FAILURE_DEAD_LETTER_THRESHOLD
+          ? {
+              ...failure,
+              disposition: "dead_letter" as const,
+              retryable: false
+            }
+          : failure;
       const failedSyncState = await syncState.failWindow({
         syncStateId: payload.syncStateId,
         scope: "provider",
@@ -1172,8 +1188,8 @@ export function createStage1WorkerOrchestrationService(input: {
         checkpoint: payload.checkpoint,
         windowStart: payload.windowStart,
         windowEnd: payload.windowEnd,
-        deadLetterCountIncrement: failure.disposition === "dead_letter" ? 1 : 0,
-        deadLettered: failure.disposition === "dead_letter"
+        deadLetterCountIncrement: finalFailure.disposition === "dead_letter" ? 1 : 0,
+        deadLettered: finalFailure.disposition === "dead_letter"
       });
       await recordSyncFailureAudit(input.persistence, {
         syncStateId: payload.syncStateId,
@@ -1183,7 +1199,7 @@ export function createStage1WorkerOrchestrationService(input: {
         checkpoint: payload.checkpoint,
         windowStart: payload.windowStart,
         windowEnd: payload.windowEnd,
-        failure,
+        failure: finalFailure,
         occurredAt: new Date().toISOString(),
         actorId: "stage1-orchestration"
       });
@@ -1200,12 +1216,12 @@ export function createStage1WorkerOrchestrationService(input: {
           quarantined: 0,
           deferred: 0,
           deadLetterCountIncrement:
-            failure.disposition === "dead_letter" ? 1 : 0
+            finalFailure.disposition === "dead_letter" ? 1 : 0
         },
         ingestResults: [],
         nextCursor: payload.cursor,
         checkpoint: payload.checkpoint,
-        failure
+        failure: finalFailure
       };
     }
   }
