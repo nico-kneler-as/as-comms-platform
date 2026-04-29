@@ -64,6 +64,7 @@ async function seedVolunteerContact(input: {
         contactId: input.contactId,
         projectId: "project-stage1-seed",
         expeditionId: "expedition-stage1-seed",
+        salesforceMembershipId: `sf-membership:${input.contactId}:seed`,
         role: null,
         status: "applied",
         source: "salesforce",

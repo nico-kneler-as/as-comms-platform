@@ -7,6 +7,7 @@ import type {
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -156,8 +157,13 @@ export const contactMemberships = pgTable(
     contactId: text("contact_id")
       .notNull()
       .references(() => contacts.id, { onDelete: "cascade" }),
-    projectId: text("project_id"),
-    expeditionId: text("expedition_id"),
+    projectId: text("project_id").references(() => projectDimensions.projectId, {
+      onDelete: "restrict",
+    }),
+    expeditionId: text("expedition_id").references(
+      () => expeditionDimensions.expeditionId,
+      { onDelete: "restrict" },
+    ),
     salesforceMembershipId: text("salesforce_membership_id"),
     role: text("role"),
     status: text("status"),
@@ -166,6 +172,10 @@ export const contactMemberships = pgTable(
     updatedAt: updatedAtColumn,
   },
   (table) => [
+    check(
+      "contact_memberships_sf_id_check",
+      sql`${table.source} <> 'salesforce' OR ${table.salesforceMembershipId} IS NOT NULL`,
+    ),
     index("contact_memberships_contact_idx").on(table.contactId),
     index("contact_memberships_context_idx").on(
       table.projectId,

@@ -56,7 +56,10 @@ export async function seedInboxContact(
       contactId: input.contactId,
       projectId: input.projectId ?? null,
       expeditionId: null,
-      salesforceMembershipId: input.salesforceMembershipId ?? undefined,
+      salesforceMembershipId:
+        "salesforceMembershipId" in input
+          ? input.salesforceMembershipId
+          : `${input.membershipId}:sf`,
       role: "volunteer",
       status: input.membershipStatus ?? null,
       source: "salesforce",

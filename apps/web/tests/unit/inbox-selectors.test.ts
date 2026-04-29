@@ -1400,6 +1400,7 @@ describe("real inbox selectors", () => {
       contactId: "contact:sarah-martinez",
       projectId: "project:whitebark-pine",
       expeditionId: null,
+      salesforceMembershipId: "membership:sarah:whitebark:sf",
       role: "volunteer",
       status: "trip_planning",
       source: "salesforce",
@@ -1488,7 +1489,7 @@ describe("real inbox selectors", () => {
     expect(markup).not.toContain("↗ Project");
   });
 
-  it("does not render a project-page fallback link when expeditionMemberUrl is null", async () => {
+  it("renders the expedition member link for Salesforce-backed past projects", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -1508,8 +1509,10 @@ describe("real inbox selectors", () => {
       }),
     );
 
-    expect(markup).not.toContain("href=");
-    expect(markup).not.toContain("Expedition_Members__c");
+    expect(markup).toContain(
+      'href="https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/membership%3Alisa%3Asf/view"',
+    );
+    expect(markup).not.toContain("↗ Project");
   });
 
   it("keeps a successful membership on an active project in Active Projects", async () => {
@@ -1880,7 +1883,7 @@ describe("real inbox selectors", () => {
     ).not.toContain("WPEF Tracking Whitebark Pine OR WA 2025-2026 2026");
   });
 
-  it("keeps inactive memberships in past projects and non-clickable when Salesforce membership id is missing", async () => {
+  it("keeps inactive memberships in past projects with their Salesforce membership link", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -1899,7 +1902,8 @@ describe("real inbox selectors", () => {
       statusLabel: "Successful",
       crmUrl:
         "https://adventurescientists.lightning.force.com/lightning/r/Project__c/project%3Akiller-whales/view",
-      expeditionMemberUrl: null,
+      expeditionMemberUrl:
+        "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/membership%3Alisa%3Asf/view",
     });
   });
 
@@ -3510,6 +3514,7 @@ describe("real inbox selectors", () => {
       contactId: "contact:expedition-only",
       projectId: null,
       expeditionId: "expedition:amazon-fallback",
+      salesforceMembershipId: "membership:expedition-only:sf",
       role: "volunteer",
       status: "active",
       source: "salesforce",

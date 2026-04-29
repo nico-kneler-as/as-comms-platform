@@ -130,6 +130,7 @@ async function seedProject(
       contactId,
       projectId: input.projectId,
       expeditionId: null,
+      salesforceMembershipId: `${input.projectId}:membership:${String(index)}:sf`,
       role: "volunteer",
       status: "active",
       source: "salesforce",
