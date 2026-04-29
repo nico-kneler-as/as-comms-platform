@@ -120,6 +120,46 @@ afterEach(() => {
 });
 
 describe("Gmail body extraction", () => {
+  it("rejects oversized Gmail snippet and body preview fields", () => {
+    const result = gmailMessageRecordSchema.safeParse({
+      recordType: "message",
+      recordId: "gmail-oversized-1",
+      direction: "inbound",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      receivedAt: "2026-01-01T00:01:00.000Z",
+      payloadRef: "payloads/gmail/gmail-oversized-1.json",
+      checksum: "checksum-oversized-1",
+      snippet: "x".repeat(2_001),
+      snippetClean: "x".repeat(2_001),
+      bodyTextPreview: "x".repeat(20_001),
+      normalizedParticipantEmails: ["volunteer@example.org"],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts Gmail snippet and body preview fields within bounds", () => {
+    expect(
+      gmailMessageRecordSchema.parse({
+        recordType: "message",
+        recordId: "gmail-bounded-1",
+        direction: "inbound",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        receivedAt: "2026-01-01T00:01:00.000Z",
+        payloadRef: "payloads/gmail/gmail-bounded-1.json",
+        checksum: "checksum-bounded-1",
+        snippet: "x".repeat(2_000),
+        snippetClean: "x".repeat(2_000),
+        bodyTextPreview: "x".repeat(20_000),
+        normalizedParticipantEmails: ["volunteer@example.org"],
+      }),
+    ).toMatchObject({
+      snippet: "x".repeat(2_000),
+      snippetClean: "x".repeat(2_000),
+      bodyTextPreview: "x".repeat(20_000),
+    });
+  });
+
   it("cleans flattened MIME previews without leaving scaffolding behind", async () => {
     const flattenedPreview = await readFixtureText("body-preview-flat-mime.txt");
     const cleanedPreview = cleanGmailBodyPreviewText(flattenedPreview);

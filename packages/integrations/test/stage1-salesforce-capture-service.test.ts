@@ -311,6 +311,86 @@ describe("Salesforce capture service", () => {
     ).rejects.toThrow("Salesforce query failed");
   });
 
+  it("rejects oversized Salesforce Task snippet fields during capture", async () => {
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: {
+          queryAll(soql) {
+            if (soql.includes(" FROM Contact ")) {
+              return Promise.resolve([
+                {
+                  Id: "003-stage1",
+                  Name: "Stage One Volunteer",
+                  Email: "volunteer@example.org",
+                  CreatedDate: "2026-01-01T00:00:00.000Z",
+                  LastModifiedDate: "2026-01-05T00:00:00.000Z"
+                }
+              ]);
+            }
+
+            if (soql.includes(" FROM Task ")) {
+              return Promise.resolve([
+                {
+                  Id: "00T-task-oversized-1",
+                  WhoId: "003-stage1",
+                  OwnerId: "005-nim-admin",
+                  Owner: {
+                    Name: "Nim Admin",
+                    Username: "admin+1@adventurescientists.org"
+                  },
+                  TaskSubtype: "Email",
+                  Subject: "Outbound follow-up",
+                  Description: "x".repeat(2_001),
+                  CreatedDate: "2026-01-05T00:02:00.000Z",
+                  LastModifiedDate: "2026-01-05T00:03:00.000Z"
+                }
+              ]);
+            }
+
+            if (soql.includes(" FROM Expedition_Members__c ")) {
+              return Promise.resolve([]);
+            }
+
+            return Promise.resolve([]);
+          }
+        }
+      }
+    );
+
+    const response = await service.handleHttpRequest({
+      method: "POST",
+      path: "/live",
+      headers: {
+        authorization: "Bearer salesforce-token"
+      },
+      bodyText: JSON.stringify({
+        version: 1,
+        jobId: "job:salesforce:live:oversized-task-1",
+        correlationId: "corr:salesforce:live:oversized-task-1",
+        traceId: null,
+        batchId: "batch:salesforce:live:oversized-task-1",
+        syncStateId: "sync:salesforce:live:oversized-task-1",
+        attempt: 1,
+        maxAttempts: 3,
+        provider: "salesforce",
+        mode: "live",
+        jobType: "live_ingest",
+        cursor: null,
+        checkpoint: null,
+        windowStart: "2026-01-01T00:00:00.000Z",
+        windowEnd: "2026-01-06T00:00:00.000Z",
+        recordIds: [],
+        maxRecords: 25
+      })
+    });
+
+    expect(response.status).toBe(400);
+    expect(JSON.parse(response.body)).toMatchObject({
+      error: "invalid_request"
+    });
+  });
+
   it("returns launch-scope Salesforce Contact, Expedition_Members__c, and Task records in the worker-facing provider-close shape", async () => {
     const queries: string[] = [];
     const baseApiClient = createFakeSalesforceApiClient();

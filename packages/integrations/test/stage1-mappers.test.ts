@@ -5,7 +5,8 @@ import {
   mapMailchimpRecord,
   mapSalesforceRecord,
   parseSubjectDirection,
-  mapSimpleTextingRecord
+  mapSimpleTextingRecord,
+  salesforceTaskCommunicationRecordSchema
 } from "../src/index.js";
 
 describe("Stage 1 provider-close mappers", () => {
@@ -57,6 +58,38 @@ describe("Stage 1 provider-close mappers", () => {
     expect(parseSubjectDirection(null)).toEqual({
       direction: "outbound",
       cleanSubject: null
+    });
+  });
+
+  it("rejects oversized Salesforce task snippets", () => {
+    const result = salesforceTaskCommunicationRecordSchema.safeParse({
+      recordType: "task_communication",
+      recordId: "task-oversized-1",
+      channel: "email",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      receivedAt: "2026-01-01T00:01:00.000Z",
+      payloadRef: "salesforce://Task/task-oversized-1",
+      checksum: "checksum-task-oversized-1",
+      snippet: "x".repeat(20_001)
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts Salesforce task snippets within bounds", () => {
+    expect(
+      salesforceTaskCommunicationRecordSchema.parse({
+        recordType: "task_communication",
+        recordId: "task-bounded-1",
+        channel: "email",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        receivedAt: "2026-01-01T00:01:00.000Z",
+        payloadRef: "salesforce://Task/task-bounded-1",
+        checksum: "checksum-task-bounded-1",
+        snippet: "x".repeat(20_000)
+      })
+    ).toMatchObject({
+      snippet: "x".repeat(20_000)
     });
   });
 

@@ -25,6 +25,8 @@ const nullableStringSchema = z.string().min(1).nullable();
 const stringArraySchema = z.array(z.string().min(1));
 const timestampSchema = z.string().datetime();
 const nullableStringArraySchema = z.array(z.string().min(1)).nullable();
+const GMAIL_SNIPPET_MAX = 2_000;
+const GMAIL_BODY_PREVIEW_MAX = 20_000;
 
 export const gmailMessageRecordSchema = z.object({
   recordType: z.literal("message"),
@@ -34,14 +36,14 @@ export const gmailMessageRecordSchema = z.object({
   receivedAt: timestampSchema,
   payloadRef: z.string().min(1),
   checksum: z.string().min(1),
-  snippet: z.string().default(""),
+  snippet: z.string().max(GMAIL_SNIPPET_MAX).default(""),
   subject: nullableStringSchema.default(null),
   fromHeader: nullableStringSchema.default(null),
   toHeader: nullableStringSchema.default(null),
   ccHeader: nullableStringSchema.default(null),
   labelIds: nullableStringArraySchema.optional(),
-  snippetClean: z.string().default(""),
-  bodyTextPreview: z.string().default(""),
+  snippetClean: z.string().max(GMAIL_SNIPPET_MAX).default(""),
+  bodyTextPreview: z.string().max(GMAIL_BODY_PREVIEW_MAX).default(""),
   bodyKind: z
     .enum(["plaintext", "encrypted_placeholder", "binary_fallback"])
     .nullable()
