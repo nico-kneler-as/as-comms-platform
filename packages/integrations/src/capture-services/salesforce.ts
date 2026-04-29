@@ -117,6 +117,22 @@ class SalesforceHealthCheckError extends Error {
   }
 }
 
+export class SalesforcePaginationOriginError extends Error {
+  constructor(input: {
+    readonly expectedOrigin: string;
+    readonly resolvedUrl: string;
+    readonly reason: "origin" | "path";
+  }) {
+    const resolvedUrl = new URL(input.resolvedUrl);
+    const message =
+      input.reason === "origin"
+        ? `Salesforce nextRecordsUrl origin mismatch: expected ${input.expectedOrigin}, received ${resolvedUrl.origin} (${resolvedUrl.host}).`
+        : `Salesforce nextRecordsUrl path is outside /services/data/: ${resolvedUrl.pathname} on ${resolvedUrl.origin}. Expected origin ${input.expectedOrigin}.`;
+    super(message);
+    this.name = "SalesforcePaginationOriginError";
+  }
+}
+
 const salesforceTokenResponseSchema = z.object({
   access_token: z.string().min(1),
   instance_url: z.string().url(),
@@ -646,6 +662,7 @@ export function createSalesforceApiClient(
   return {
     async queryAll(soql) {
       const token = await getAccessToken();
+      const expectedInstanceOrigin = new URL(token.instanceUrl).origin;
       const records: SalesforceRow[] = [];
       let nextUrl = new URL(
         `/services/data/v${parsedConfig.apiVersion}/query?q=${encodeURIComponent(soql)}`,
@@ -672,13 +689,32 @@ export function createSalesforceApiClient(
         const queryPayload: unknown = JSON.parse(await response.text());
         const queryResponse = salesforceQueryResponseSchema.parse(queryPayload);
         records.push(...queryResponse.records);
-        nextUrl =
-          queryResponse.nextRecordsUrl === undefined
-            ? ""
-            : new URL(
-                queryResponse.nextRecordsUrl,
-                token.instanceUrl,
-              ).toString();
+        if (queryResponse.nextRecordsUrl === undefined) {
+          nextUrl = "";
+          continue;
+        }
+
+        const resolvedNextUrl = new URL(
+          queryResponse.nextRecordsUrl,
+          token.instanceUrl,
+        );
+        if (resolvedNextUrl.origin !== expectedInstanceOrigin) {
+          throw new SalesforcePaginationOriginError({
+            expectedOrigin: expectedInstanceOrigin,
+            resolvedUrl: resolvedNextUrl.toString(),
+            reason: "origin",
+          });
+        }
+
+        if (!resolvedNextUrl.pathname.startsWith("/services/data/")) {
+          throw new SalesforcePaginationOriginError({
+            expectedOrigin: expectedInstanceOrigin,
+            resolvedUrl: resolvedNextUrl.toString(),
+            reason: "path",
+          });
+        }
+
+        nextUrl = resolvedNextUrl.toString();
       }
 
       return records;

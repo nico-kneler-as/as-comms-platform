@@ -4,6 +4,7 @@ import {
   createSalesforceApiClient,
   createSalesforceCapturePort,
   createSalesforceCaptureService,
+  SalesforcePaginationOriginError,
   type CaptureServiceHttpRequest,
   type SalesforceApiClient,
   type SalesforceCaptureService,
@@ -1234,6 +1235,144 @@ describe("Salesforce capture service", () => {
       aud: "https://login.example.test",
       exp: expectedExp,
     });
+  });
+
+  it("throws when nextRecordsUrl points to a different origin", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>((input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
+
+      if (url === "https://test.salesforce.com/services/oauth2/token") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              access_token: "token-123",
+              instance_url: "https://instance.example.test",
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          ),
+        );
+      }
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            records: [{ Id: "003-first" }],
+            done: false,
+            nextRecordsUrl:
+              "https://evil.example.com/services/data/v60.0/query/01g-next",
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      );
+    });
+
+    const client = createSalesforceApiClient(createSalesforceServiceConfig(), {
+      fetchImplementation,
+    });
+
+    const queryPromise = client.queryAll("SELECT Id FROM Contact");
+
+    await expect(queryPromise).rejects.toThrow(SalesforcePaginationOriginError);
+    await expect(queryPromise).rejects.toThrow(
+      /expected https:\/\/instance\.example\.test, received https:\/\/evil\.example\.com/u,
+    );
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
+  it("continues normally when nextRecordsUrl is a relative path under /services/data/", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>((input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.toString();
+
+      if (url === "https://test.salesforce.com/services/oauth2/token") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              access_token: "token-123",
+              instance_url: "https://instance.example.test/base/path",
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          ),
+        );
+      }
+
+      if (
+        url ===
+        "https://instance.example.test/services/data/v61.0/query?q=SELECT%20Id%20FROM%20Contact"
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              records: [{ Id: "003-first" }],
+              done: false,
+              nextRecordsUrl: "/services/data/v61.0/query/01g-next",
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          ),
+        );
+      }
+
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            records: [{ Id: "003-second" }],
+            done: true,
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          },
+        ),
+      );
+    });
+
+    const client = createSalesforceApiClient(createSalesforceServiceConfig(), {
+      fetchImplementation,
+    });
+
+    await expect(client.queryAll("SELECT Id FROM Contact")).resolves.toEqual([
+      { Id: "003-first" },
+      { Id: "003-second" },
+    ]);
+    const thirdCall = fetchImplementation.mock.calls[2];
+
+    expect(thirdCall?.[0]).toBe(
+      "https://instance.example.test/services/data/v61.0/query/01g-next",
+    );
+    expect(new Headers(thirdCall?.[1]?.headers).get("authorization")).toBe(
+      "Bearer token-123",
+    );
   });
 
   it("includes the Salesforce response body in token exchange errors when available", async () => {
