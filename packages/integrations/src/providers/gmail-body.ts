@@ -33,6 +33,40 @@ interface CandidateBodyPart {
   readonly part: GmailApiMessagePart;
 }
 
+interface GmailMimeBoundsConfig {
+  readonly maxDepth: number;
+  readonly maxParts: number;
+  readonly maxDecodedBytes: number;
+  readonly parseTimeoutMs: number;
+}
+
+type GmailMimeBudgetName =
+  | "depth"
+  | "parts"
+  | "decoded_bytes"
+  | "parse_timeout_ms";
+
+interface GmailMimeBudgetContext {
+  readonly bounds: GmailMimeBoundsConfig;
+  readonly messageIdentifier: string;
+  readonly warnedBudgets: Set<GmailMimeBudgetName>;
+}
+
+interface GmailMimeTraversalState {
+  visitedParts: number;
+  budgetExceeded: boolean;
+}
+
+interface GmailMimeDecodeState {
+  decodedBytes: number;
+  budgetExceeded: boolean;
+}
+
+interface SerializedMimePart {
+  readonly decodedBody: Buffer;
+  readonly serializedPart: Buffer;
+}
+
 export type GmailBodyKind =
   | "plaintext"
   | "encrypted_placeholder"
@@ -77,6 +111,121 @@ const REPLACEMENT_CHARACTER = "�";
 // in production sit at ~50%.
 const BINARY_NOISE_THRESHOLD = 0.3;
 const BINARY_NOISE_MIN_LENGTH = 32;
+const DEFAULT_GMAIL_MIME_MAX_DEPTH = 64;
+const DEFAULT_GMAIL_MIME_MAX_PARTS = 512;
+const DEFAULT_GMAIL_MIME_MAX_DECODED_BYTES = 20 * 1024 * 1024;
+const DEFAULT_GMAIL_MIME_PARSE_TIMEOUT_MS = 10_000;
+
+class GmailMimeParseTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Gmail MIME parsing exceeded timeout of ${String(timeoutMs)}ms.`);
+    this.name = "GmailMimeParseTimeoutError";
+  }
+}
+
+function parsePositiveIntEnv(
+  envName: string,
+  defaultValue: number
+): number {
+  const parsedValue = Number.parseInt(process.env[envName] ?? "", 10);
+
+  if (!Number.isFinite(parsedValue)) {
+    return defaultValue;
+  }
+
+  return Math.max(1, parsedValue);
+}
+
+function readGmailMimeBoundsConfig(): GmailMimeBoundsConfig {
+  return {
+    maxDepth: parsePositiveIntEnv(
+      "GMAIL_MIME_MAX_DEPTH",
+      DEFAULT_GMAIL_MIME_MAX_DEPTH
+    ),
+    maxParts: parsePositiveIntEnv(
+      "GMAIL_MIME_MAX_PARTS",
+      DEFAULT_GMAIL_MIME_MAX_PARTS
+    ),
+    maxDecodedBytes: parsePositiveIntEnv(
+      "GMAIL_MIME_MAX_DECODED_BYTES",
+      DEFAULT_GMAIL_MIME_MAX_DECODED_BYTES
+    ),
+    parseTimeoutMs: parsePositiveIntEnv(
+      "GMAIL_MIME_PARSE_TIMEOUT_MS",
+      DEFAULT_GMAIL_MIME_PARSE_TIMEOUT_MS
+    )
+  };
+}
+
+function createGmailMimeBudgetContext(
+  messageIdentifier?: string | null
+): GmailMimeBudgetContext {
+  return {
+    bounds: readGmailMimeBoundsConfig(),
+    messageIdentifier: messageIdentifier?.trim().length
+      ? messageIdentifier
+      : "unknown",
+    warnedBudgets: new Set<GmailMimeBudgetName>()
+  };
+}
+
+function warnGmailMimeBudgetExceeded(
+  context: GmailMimeBudgetContext,
+  budgetName: GmailMimeBudgetName,
+  limit: number
+): void {
+  if (context.warnedBudgets.has(budgetName)) {
+    return;
+  }
+
+  context.warnedBudgets.add(budgetName);
+  console.warn("Gmail MIME parsing budget exceeded.", {
+    budgetName,
+    limit,
+    messageIdentifier: context.messageIdentifier
+  });
+}
+
+function markTraversalBudgetExceeded(
+  context: GmailMimeBudgetContext,
+  traversalState: GmailMimeTraversalState,
+  budgetName: "depth" | "parts",
+  limit: number
+): void {
+  traversalState.budgetExceeded = true;
+  warnGmailMimeBudgetExceeded(context, budgetName, limit);
+}
+
+function markDecodedBytesBudgetExceeded(
+  context: GmailMimeBudgetContext,
+  decodeState: GmailMimeDecodeState
+): void {
+  decodeState.budgetExceeded = true;
+  warnGmailMimeBudgetExceeded(
+    context,
+    "decoded_bytes",
+    context.bounds.maxDecodedBytes
+  );
+}
+
+function visitChildPart(
+  context: GmailMimeBudgetContext,
+  traversalState: GmailMimeTraversalState
+): boolean {
+  traversalState.visitedParts += 1;
+
+  if (traversalState.visitedParts > context.bounds.maxParts) {
+    markTraversalBudgetExceeded(
+      context,
+      traversalState,
+      "parts",
+      context.bounds.maxParts
+    );
+    return true;
+  }
+
+  return false;
+}
 
 export function isLikelyBinaryNoise(text: string): boolean {
   if (text.length < BINARY_NOISE_MIN_LENGTH) {
@@ -270,18 +419,52 @@ function decodeBase64Url(value: string): Buffer {
   return Buffer.from(paddedValue, "base64");
 }
 
-function decodePartBodyToString(part: GmailApiMessagePart): string | null {
+function decodePartBody(
+  part: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  decodeState: GmailMimeDecodeState
+): Buffer | null {
   const bodyData = part.body?.data;
 
   if (typeof bodyData !== "string" || bodyData.length === 0) {
     return null;
   }
 
+  const declaredSize = Math.max(0, part.body?.size ?? 0);
+
+  if (
+    declaredSize > 0 &&
+    decodeState.decodedBytes + declaredSize > context.bounds.maxDecodedBytes
+  ) {
+    markDecodedBytesBudgetExceeded(context, decodeState);
+    return null;
+  }
+
   try {
-    return decodeBase64Url(bodyData).toString("utf8");
+    const decodedBody = decodeBase64Url(bodyData);
+
+    if (
+      decodeState.decodedBytes + decodedBody.length >
+      context.bounds.maxDecodedBytes
+    ) {
+      markDecodedBytesBudgetExceeded(context, decodeState);
+      return null;
+    }
+
+    decodeState.decodedBytes += decodedBody.length;
+    return decodedBody;
   } catch {
     return null;
   }
+}
+
+function decodePartBodyToString(
+  part: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  decodeState: GmailMimeDecodeState
+): string | null {
+  const decodedBody = decodePartBody(part, context, decodeState);
+  return decodedBody?.toString("utf8") ?? null;
 }
 
 function getPartHeader(
@@ -319,12 +502,54 @@ function extractHeaderValue(
 }
 
 export function extractDsnOriginalMessageId(
-  payload: GmailApiMessagePart
-): string | null {
+  payload: GmailApiMessagePart,
+  options?: {
+    readonly messageIdentifier?: string | null;
+  }
+): string | null | undefined {
+  const context = createGmailMimeBudgetContext(options?.messageIdentifier);
+  const traversalState: GmailMimeTraversalState = {
+    visitedParts: 0,
+    budgetExceeded: false
+  };
+  const decodeState: GmailMimeDecodeState = {
+    decodedBytes: 0,
+    budgetExceeded: false
+  };
+
+  return extractDsnOriginalMessageIdInternal(
+    payload,
+    context,
+    traversalState,
+    decodeState
+  );
+}
+
+function extractDsnOriginalMessageIdInternal(
+  payload: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  traversalState: GmailMimeTraversalState,
+  decodeState: GmailMimeDecodeState,
+  depth = 0
+): string | null | undefined {
+  if (depth > context.bounds.maxDepth) {
+    markTraversalBudgetExceeded(
+      context,
+      traversalState,
+      "depth",
+      context.bounds.maxDepth
+    );
+    return undefined;
+  }
+
   const mimeType = normalizeMimeType(payload.mimeType);
 
   if (mimeType === "message/delivery-status") {
-    const decoded = decodePartBodyToString(payload);
+    const decoded = decodePartBodyToString(payload, context, decodeState);
+
+    if (decodeState.budgetExceeded) {
+      return undefined;
+    }
 
     if (decoded !== null) {
       const originalMessageId = extractHeaderValue(decoded, [
@@ -347,7 +572,11 @@ export function extractDsnOriginalMessageId(
   }
 
   if (mimeType === "message/rfc822") {
-    const decoded = decodePartBodyToString(payload);
+    const decoded = decodePartBodyToString(payload, context, decodeState);
+
+    if (decodeState.budgetExceeded) {
+      return undefined;
+    }
 
     if (decoded !== null) {
       const embeddedMessageId = extractHeaderValue(decoded, [
@@ -361,7 +590,21 @@ export function extractDsnOriginalMessageId(
   }
 
   for (const childPart of payload.parts ?? []) {
-    const nestedMatch = extractDsnOriginalMessageId(childPart);
+    if (visitChildPart(context, traversalState)) {
+      return undefined;
+    }
+
+    const nestedMatch = extractDsnOriginalMessageIdInternal(
+      childPart,
+      context,
+      traversalState,
+      decodeState,
+      depth + 1
+    );
+
+    if (nestedMatch === undefined) {
+      return undefined;
+    }
 
     if (nestedMatch !== null) {
       return nestedMatch;
@@ -391,14 +634,38 @@ export function extractBodyKind(part: GmailApiMessagePart): GmailBodyKind {
     : "plaintext";
 }
 
-function containsEncryptedBodyPart(part: GmailApiMessagePart): boolean {
+function containsEncryptedBodyPartInternal(
+  part: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  traversalState: GmailMimeTraversalState,
+  depth = 0
+): boolean {
+  if (depth > context.bounds.maxDepth) {
+    markTraversalBudgetExceeded(
+      context,
+      traversalState,
+      "depth",
+      context.bounds.maxDepth
+    );
+    return true;
+  }
+
   if (extractBodyKind(part) === "encrypted_placeholder") {
     return true;
   }
 
-  return (part.parts ?? []).some((childPart) =>
-    containsEncryptedBodyPart(childPart)
-  );
+  return (part.parts ?? []).some((childPart) => {
+    if (visitChildPart(context, traversalState)) {
+      return true;
+    }
+
+    return containsEncryptedBodyPartInternal(
+      childPart,
+      context,
+      traversalState,
+      depth + 1
+    );
+  });
 }
 
 function isAttachmentPart(part: GmailApiMessagePart): boolean {
@@ -463,12 +730,39 @@ export function collectGmailAttachmentMetadata(
   return attachments;
 }
 
-function collectCandidateBodyParts(
+function collectCandidateBodyPartsInternal(
   part: GmailApiMessagePart,
-  candidates: CandidateBodyPart[] = []
+  context: GmailMimeBudgetContext,
+  traversalState: GmailMimeTraversalState,
+  candidates: CandidateBodyPart[] = [],
+  depth = 0
 ): CandidateBodyPart[] {
+  if (depth > context.bounds.maxDepth) {
+    markTraversalBudgetExceeded(
+      context,
+      traversalState,
+      "depth",
+      context.bounds.maxDepth
+    );
+    return candidates;
+  }
+
   for (const childPart of part.parts ?? []) {
-    collectCandidateBodyParts(childPart, candidates);
+    if (visitChildPart(context, traversalState)) {
+      return candidates;
+    }
+
+    collectCandidateBodyPartsInternal(
+      childPart,
+      context,
+      traversalState,
+      candidates,
+      depth + 1
+    );
+
+    if (traversalState.budgetExceeded) {
+      return candidates;
+    }
   }
 
   const mimeType = part.mimeType?.toLowerCase() ?? "";
@@ -490,7 +784,11 @@ function collectCandidateBodyParts(
   return candidates;
 }
 
-function serializeMimePart(part: GmailApiMessagePart): Buffer | null {
+function serializeMimePart(
+  part: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  decodeState: GmailMimeDecodeState
+): SerializedMimePart | null {
   const bodyData = part.body?.data;
 
   if (typeof bodyData !== "string" || bodyData.length === 0) {
@@ -509,15 +807,40 @@ function serializeMimePart(part: GmailApiMessagePart): Buffer | null {
   const serializedHeaders = headerLines
     .map((header) => `${header.name}: ${header.value}`)
     .join("\r\n");
+  const decodedBody = decodePartBody(part, context, decodeState);
 
-  return Buffer.concat([
-    Buffer.from(`${serializedHeaders}\r\n\r\n`, "utf8"),
-    decodeBase64Url(bodyData)
-  ]);
+  if (decodedBody === null) {
+    return null;
+  }
+
+  return {
+    decodedBody,
+    serializedPart: Buffer.concat([
+      Buffer.from(`${serializedHeaders}\r\n\r\n`, "utf8"),
+      decodedBody
+    ])
+  };
 }
 
-async function extractTextFromMimeDocument(document: string | Buffer): Promise<string> {
-  const parsed = await simpleParser(document, SIMPLE_PARSER_OPTIONS);
+async function extractTextFromMimeDocument(
+  document: string | Buffer,
+  context: GmailMimeBudgetContext
+): Promise<string> {
+  const parsePromise = simpleParser(document, SIMPLE_PARSER_OPTIONS);
+
+  // This timeout only stops awaiting `simpleParser`; mailparser does not
+  // expose cancellation, so the abandoned parse may still finish in the
+  // background.
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const timeoutHandle = setTimeout(() => {
+      reject(new GmailMimeParseTimeoutError(context.bounds.parseTimeoutMs));
+    }, context.bounds.parseTimeoutMs);
+
+    void parsePromise.finally(() => {
+      clearTimeout(timeoutHandle);
+    });
+  });
+  const parsed = await Promise.race([parsePromise, timeoutPromise]);
 
   if (typeof parsed.text === "string" && parsed.text.trim().length > 0) {
     return parsed.text;
@@ -530,37 +853,98 @@ async function extractTextFromMimeDocument(document: string | Buffer): Promise<s
   return "";
 }
 
-async function extractTextFromMimePart(part: GmailApiMessagePart): Promise<string> {
-  const serializedPart = serializeMimePart(part);
+async function extractTextFromMimePart(
+  part: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  decodeState: GmailMimeDecodeState
+): Promise<string> {
+  const serializedPart = serializeMimePart(part, context, decodeState);
 
   if (serializedPart === null) {
     return "";
   }
 
   try {
-    const extractedText = await extractTextFromMimeDocument(serializedPart);
+    const extractedText = await extractTextFromMimeDocument(
+      serializedPart.serializedPart,
+      context
+    );
     return cleanGmailBodyPreviewText(extractedText);
-  } catch {
-    return cleanGmailBodyPreviewText(decodeBase64Url(part.body?.data ?? "").toString("utf8"));
+  } catch (error) {
+    if (error instanceof GmailMimeParseTimeoutError) {
+      warnGmailMimeBudgetExceeded(
+        context,
+        "parse_timeout_ms",
+        context.bounds.parseTimeoutMs
+      );
+      return "";
+    }
+
+    return cleanGmailBodyPreviewText(serializedPart.decodedBody.toString("utf8"));
   }
 }
 
 export async function extractGmailBodyPreviewFromPayloadResult(
-  payload: GmailApiMessagePart
+  payload: GmailApiMessagePart,
+  options?: {
+    readonly messageIdentifier?: string | null;
+  }
 ): Promise<GmailBodyPreviewResult> {
-  if (containsEncryptedBodyPart(payload)) {
+  const context = createGmailMimeBudgetContext(options?.messageIdentifier);
+  const encryptedTraversalState: GmailMimeTraversalState = {
+    visitedParts: 0,
+    budgetExceeded: false
+  };
+
+  if (
+    containsEncryptedBodyPartInternal(
+      payload,
+      context,
+      encryptedTraversalState
+    )
+  ) {
     return buildBodyPreviewResult(
       ENCRYPTED_MESSAGE_PLACEHOLDER,
       "encrypted_placeholder"
     );
   }
 
-  const candidates = collectCandidateBodyParts(payload);
+  const candidateTraversalState: GmailMimeTraversalState = {
+    visitedParts: 0,
+    budgetExceeded: false
+  };
+  const decodeState: GmailMimeDecodeState = {
+    decodedBytes: 0,
+    budgetExceeded: false
+  };
+  const candidates = collectCandidateBodyPartsInternal(
+    payload,
+    context,
+    candidateTraversalState
+  );
   let sawGarbledCandidate = false;
+
+  if (candidateTraversalState.budgetExceeded) {
+    return buildBodyPreviewResult(
+      BINARY_FALLBACK_PLACEHOLDER,
+      "binary_fallback"
+    );
+  }
 
   for (const kind of ["plain", "html"] as const) {
     for (const candidate of candidates.filter((entry) => entry.kind === kind)) {
-      const bodyPreview = await extractTextFromMimePart(candidate.part);
+      const bodyPreview = await extractTextFromMimePart(
+        candidate.part,
+        context,
+        decodeState
+      );
+
+      if (decodeState.budgetExceeded) {
+        return buildBodyPreviewResult(
+          BINARY_FALLBACK_PLACEHOLDER,
+          "binary_fallback"
+        );
+      }
 
       if (bodyPreview.length === 0) {
         continue;
@@ -586,7 +970,18 @@ export async function extractGmailBodyPreviewFromPayloadResult(
     );
   }
 
-  const fallbackBodyPreview = await extractTextFromMimePart(payload);
+  const fallbackBodyPreview = await extractTextFromMimePart(
+    payload,
+    context,
+    decodeState
+  );
+
+  if (decodeState.budgetExceeded) {
+    return buildBodyPreviewResult(
+      BINARY_FALLBACK_PLACEHOLDER,
+      "binary_fallback"
+    );
+  }
 
   if (fallbackBodyPreview.length === 0) {
     return buildBodyPreviewResult(cleanGmailBodyPreviewText(""), "plaintext");
@@ -598,9 +993,15 @@ export async function extractGmailBodyPreviewFromPayloadResult(
 }
 
 export async function extractGmailBodyPreviewFromPayload(
-  payload: GmailApiMessagePart
+  payload: GmailApiMessagePart,
+  options?: {
+    readonly messageIdentifier?: string | null;
+  }
 ): Promise<string> {
-  const result = await extractGmailBodyPreviewFromPayloadResult(payload);
+  const result = await extractGmailBodyPreviewFromPayloadResult(
+    payload,
+    options
+  );
   return result.bodyTextPreview;
 }
 
@@ -615,7 +1016,10 @@ function extractTopLevelContentType(rawMessage: string): string {
 export async function extractGmailBodyPreviewFromMimeMessageResult(input: {
   readonly rawMessage: string;
   readonly fallbackBodyText?: string | null;
+  readonly messageIdentifier?: string | null;
 }): Promise<GmailBodyPreviewResult> {
+  const context = createGmailMimeBudgetContext(input.messageIdentifier);
+
   if (ENCRYPTED_MIME_TYPES.has(extractTopLevelContentType(input.rawMessage))) {
     return buildBodyPreviewResult(
       ENCRYPTED_MESSAGE_PLACEHOLDER,
@@ -624,7 +1028,10 @@ export async function extractGmailBodyPreviewFromMimeMessageResult(input: {
   }
 
   try {
-    const extractedText = await extractTextFromMimeDocument(input.rawMessage);
+    const extractedText = await extractTextFromMimeDocument(
+      input.rawMessage,
+      context
+    );
     const cleaned = cleanGmailBodyPreviewText(extractedText);
 
     if (cleaned.length > 0) {
@@ -636,7 +1043,15 @@ export async function extractGmailBodyPreviewFromMimeMessageResult(input: {
       }
       return buildBodyPreviewResult(cleaned, "plaintext");
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof GmailMimeParseTimeoutError) {
+      warnGmailMimeBudgetExceeded(
+        context,
+        "parse_timeout_ms",
+        context.bounds.parseTimeoutMs
+      );
+    }
+
     // Fall back to a conservative text clean-up below.
   }
 
@@ -654,6 +1069,7 @@ export async function extractGmailBodyPreviewFromMimeMessageResult(input: {
 export async function extractGmailBodyPreviewFromMimeMessage(input: {
   readonly rawMessage: string;
   readonly fallbackBodyText?: string | null;
+  readonly messageIdentifier?: string | null;
 }): Promise<string> {
   const result = await extractGmailBodyPreviewFromMimeMessageResult(input);
   return result.bodyTextPreview;
