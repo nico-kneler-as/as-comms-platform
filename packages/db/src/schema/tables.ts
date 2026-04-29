@@ -171,6 +171,10 @@ export const contactMemberships = pgTable(
       table.projectId,
       table.expeditionId,
     ),
+    index("contact_memberships_project_contact_idx").on(
+      table.projectId,
+      table.contactId,
+    ),
   ],
 );
 
@@ -528,6 +532,16 @@ export const contactInboxProjection = pgTable(
     index("contact_inbox_projection_bucket_idx").on(
       table.bucket,
       table.lastActivityAt,
+    ),
+    index("contact_inbox_projection_recency_inbound_idx").on(
+      table.lastInboundAt.desc().nullsLast(),
+      table.lastActivityAt.desc(),
+      table.contactId.asc(),
+    ),
+    index("contact_inbox_projection_recency_outbound_idx").on(
+      table.lastOutboundAt.desc().nullsLast(),
+      table.lastActivityAt.desc(),
+      table.contactId.asc(),
     ),
     index("contact_inbox_projection_unresolved_idx").on(
       table.hasUnresolved,
