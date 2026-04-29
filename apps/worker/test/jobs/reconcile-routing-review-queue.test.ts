@@ -94,18 +94,14 @@ async function seedBrokenRoutingReviewCase(
     readonly receivedAt: string;
   },
 ): Promise<void> {
-  await context.normalization.upsertNormalizedContactGraph({
-    contact: {
-      id: "contact-routing-broken",
-      salesforceContactId: null,
-      displayName: "Broken Routing Contact",
-      primaryEmail: null,
-      primaryPhone: null,
-      createdAt: input.receivedAt,
-      updatedAt: input.receivedAt,
-    },
-    identities: [],
-    memberships: [],
+  await context.repositories.contacts.upsert({
+    id: "contact-routing-broken",
+    salesforceContactId: null,
+    displayName: "Broken Routing Contact",
+    primaryEmail: null,
+    primaryPhone: null,
+    createdAt: input.receivedAt,
+    updatedAt: input.receivedAt,
   });
   await context.repositories.routingReviewQueue.upsert({
     id: input.caseId,
