@@ -1,6 +1,41 @@
 import { readFile } from "node:fs/promises";
+import type * as MailparserModule from "mailparser";
+import type { SimpleParserOptions } from "mailparser";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { getActualSimpleParser, setActualSimpleParser, simpleParserMock } =
+  vi.hoisted(() => {
+    let actualSimpleParser: ((
+      source: string | Buffer,
+      options?: SimpleParserOptions
+    ) => Promise<{ text?: string | null; html?: string | false | null }>) | null =
+      null;
+
+    return {
+      getActualSimpleParser: () => actualSimpleParser,
+      setActualSimpleParser: (
+        implementation: (
+          source: string | Buffer,
+          options?: SimpleParserOptions
+        ) => Promise<{ text?: string | null; html?: string | false | null }>
+      ) => {
+        actualSimpleParser = implementation;
+      },
+      simpleParserMock: vi.fn()
+    };
+  });
+
+vi.mock("mailparser", async () => {
+  const actual = await vi.importActual<typeof MailparserModule>("mailparser");
+  setActualSimpleParser(actual.simpleParser);
+  simpleParserMock.mockImplementation(actual.simpleParser);
+
+  return {
+    ...actual,
+    simpleParser: simpleParserMock
+  };
+});
 
 import {
   cleanGmailBodyPreviewText,
@@ -17,6 +52,8 @@ import {
 } from "../src/index.js";
 
 const fixturesDirectory = new URL("./fixtures/gmail/", import.meta.url);
+const ONE_MEBIBYTE = 1024 * 1024;
+const OVER_LIMIT_DECLARED_BYTES = 26 * 1024 * 1024;
 
 async function readFixtureText(name: string): Promise<string> {
   return readFile(new URL(name, fixturesDirectory), "utf8");
@@ -25,6 +62,62 @@ async function readFixtureText(name: string): Promise<string> {
 async function readFixtureJson<T>(name: string): Promise<T> {
   return JSON.parse(await readFixtureText(name)) as T;
 }
+
+function encodeBase64Url(value: string | Buffer): string {
+  const buffer = typeof value === "string" ? Buffer.from(value, "utf8") : value;
+
+  return buffer
+    .toString("base64")
+    .replace(/\+/gu, "-")
+    .replace(/\//gu, "_")
+    .replace(/=+$/u, "");
+}
+
+function buildTextBodyPart(
+  text: string,
+  size = Buffer.byteLength(text, "utf8")
+): GmailApiMessagePart {
+  return {
+    mimeType: "text/plain",
+    headers: [
+      { name: "Content-Type", value: "text/plain; charset=utf-8" }
+    ],
+    body: {
+      data: encodeBase64Url(text),
+      size
+    }
+  };
+}
+
+function buildNestedPayload(
+  depth: number,
+  leafPart: GmailApiMessagePart
+): GmailApiMessagePart {
+  let payload = leafPart;
+
+  for (let index = 0; index < depth; index += 1) {
+    payload = {
+      mimeType: "multipart/mixed",
+      parts: [payload]
+    };
+  }
+
+  return payload;
+}
+
+beforeEach(() => {
+  const actualSimpleParser = getActualSimpleParser();
+
+  if (actualSimpleParser !== null) {
+    simpleParserMock.mockReset();
+    simpleParserMock.mockImplementation(actualSimpleParser);
+  }
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("Gmail body extraction", () => {
   it("cleans flattened MIME previews without leaving scaffolding behind", async () => {
@@ -394,5 +487,205 @@ describe("Gmail body extraction", () => {
     };
 
     expect(extractDsnOriginalMessageId(payload)).toBeNull();
+  });
+
+  it("extracts a DSN original message id within the default depth budget", () => {
+    const payload = buildNestedPayload(32, {
+      mimeType: "message/delivery-status",
+      body: {
+        data: encodeBase64Url(
+          "Original-Message-ID: <depth-under-limit@example.org>"
+        ),
+        size: 51
+      }
+    });
+
+    expect(
+      extractDsnOriginalMessageId(payload, {
+        messageIdentifier: "gmail-depth-under-limit"
+      })
+    ).toBe("<depth-under-limit@example.org>");
+  });
+
+  it("returns undefined and warns once when DSN extraction exceeds the depth budget", () => {
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    const payload = buildNestedPayload(128, {
+      mimeType: "message/delivery-status",
+      body: {
+        data: encodeBase64Url(
+          "Original-Message-ID: <depth-over-limit@example.org>"
+        ),
+        size: 50
+      }
+    });
+
+    expect(
+      extractDsnOriginalMessageId(payload, {
+        messageIdentifier: "gmail-depth-over-limit"
+      })
+    ).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Gmail MIME parsing budget exceeded.",
+      expect.objectContaining({
+        budgetName: "depth",
+        limit: 64,
+        messageIdentifier: "gmail-depth-over-limit"
+      })
+    );
+  });
+
+  it("extracts a plaintext part within the default part-count budget", async () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/mixed",
+      parts: Array.from({ length: 256 }, (_, index) =>
+        buildTextBodyPart(`Sibling part ${String(index)}`)
+      )
+    };
+
+    await expect(
+      extractGmailBodyPreviewFromPayloadResult(payload, {
+        messageIdentifier: "gmail-parts-under-limit"
+      })
+    ).resolves.toEqual({
+      bodyTextPreview: "Sibling part 0",
+      bodyKind: "plaintext"
+    });
+  });
+
+  it("returns the encrypted placeholder and warns once when part traversal exceeds the budget", async () => {
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/mixed",
+      parts: Array.from({ length: 1024 }, (_, index) =>
+        buildTextBodyPart(`Sibling part ${String(index)}`)
+      )
+    };
+
+    await expect(
+      extractGmailBodyPreviewFromPayloadResult(payload, {
+        messageIdentifier: "gmail-parts-over-limit"
+      })
+    ).resolves.toEqual({
+      bodyTextPreview: "[Encrypted message — open in Gmail to read]",
+      bodyKind: "encrypted_placeholder"
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Gmail MIME parsing budget exceeded.",
+      expect.objectContaining({
+        budgetName: "parts",
+        limit: 512,
+        messageIdentifier: "gmail-parts-over-limit"
+      })
+    );
+  });
+
+  it("extracts plaintext within the default decoded-size budget", async () => {
+    const largeText = "A".repeat(ONE_MEBIBYTE);
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [buildTextBodyPart(largeText)]
+    };
+
+    const result = await extractGmailBodyPreviewFromPayloadResult(payload, {
+      messageIdentifier: "gmail-decoded-under-limit"
+    });
+
+    expect(result.bodyKind).toBe("plaintext");
+    expect(result.bodyTextPreview.length).toBe(ONE_MEBIBYTE);
+    expect(result.bodyTextPreview.startsWith("AAAA")).toBe(true);
+  });
+
+  it("returns the binary fallback and warns once when decoded bytes exceed the budget", async () => {
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/plain",
+          headers: [
+            { name: "Content-Type", value: "text/plain; charset=utf-8" }
+          ],
+          body: {
+            data: encodeBase64Url("small body"),
+            size: OVER_LIMIT_DECLARED_BYTES
+          }
+        }
+      ]
+    };
+
+    await expect(
+      extractGmailBodyPreviewFromPayloadResult(payload, {
+        messageIdentifier: "gmail-decoded-over-limit"
+      })
+    ).resolves.toEqual({
+      bodyTextPreview: "[Message body could not be extracted — open in Gmail]",
+      bodyKind: "binary_fallback"
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Gmail MIME parsing budget exceeded.",
+      expect.objectContaining({
+        budgetName: "decoded_bytes",
+        limit: 20 * 1024 * 1024,
+        messageIdentifier: "gmail-decoded-over-limit"
+      })
+    );
+  });
+
+  it("parses a small MIME message within the default parser timeout", async () => {
+    const result = await extractGmailBodyPreviewFromMimeMessageResult({
+      rawMessage: "Subject: Quick parse\r\n\r\nHello within the timeout.",
+      messageIdentifier: "mbox://timeout-under-limit"
+    });
+
+    expect(result).toEqual({
+      bodyTextPreview: "Hello within the timeout.",
+      bodyKind: "plaintext"
+    });
+  });
+
+  it("falls back and warns once when MIME parsing exceeds the timeout budget", async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    simpleParserMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({ text: "Delayed parse output" });
+          }, 11_000);
+        })
+    );
+
+    const extractionPromise = extractGmailBodyPreviewFromMimeMessageResult({
+      rawMessage: "Subject: Slow parse\r\n\r\nIgnored body",
+      fallbackBodyText: "Fallback body",
+      messageIdentifier: "mbox://timeout-over-limit"
+    });
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(extractionPromise).resolves.toEqual({
+      bodyTextPreview: "Fallback body",
+      bodyKind: "plaintext"
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Gmail MIME parsing budget exceeded.",
+      expect.objectContaining({
+        budgetName: "parse_timeout_ms",
+        limit: 10_000,
+        messageIdentifier: "mbox://timeout-over-limit"
+      })
+    );
+    await vi.advanceTimersByTimeAsync(1_000);
   });
 });
