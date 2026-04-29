@@ -214,10 +214,6 @@ export function createStage1SyncStateService(
         input.syncStateId
       );
 
-      if (existing?.status === "succeeded") {
-        return existing;
-      }
-
       return persistence.saveSyncState(
         toSyncState({
           existing,
