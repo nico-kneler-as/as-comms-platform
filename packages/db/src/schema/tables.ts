@@ -181,13 +181,14 @@ export const contactMemberships = pgTable(
     contactId: text("contact_id")
       .notNull()
       .references(() => contacts.id, { onDelete: "cascade" }),
-    projectId: text("project_id").references(() => projectDimensions.projectId, {
-      onDelete: "restrict",
-    }),
-    expeditionId: text("expedition_id").references(
-      () => expeditionDimensions.expeditionId,
-      { onDelete: "restrict" },
-    ),
+    // FKs to project_dimensions and expedition_dimensions were introduced in
+    // migration 0039 then immediately dropped in production after a P0:
+    // Salesforce live capture writes contact_memberships rows pointing at
+    // expedition IDs that haven't yet been ingested into expedition_dimensions.
+    // The capture pipeline needs to seed dimensions before memberships before
+    // these FKs can return. Until then, plain text columns.
+    projectId: text("project_id"),
+    expeditionId: text("expedition_id"),
     salesforceMembershipId: text("salesforce_membership_id"),
     role: text("role"),
     status: text("status"),
