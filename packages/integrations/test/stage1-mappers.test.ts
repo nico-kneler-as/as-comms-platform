@@ -70,7 +70,7 @@ describe("Stage 1 provider-close mappers", () => {
       receivedAt: "2026-01-01T00:01:00.000Z",
       payloadRef: "salesforce://Task/task-oversized-1",
       checksum: "checksum-task-oversized-1",
-      snippet: "x".repeat(20_001)
+      snippet: "x".repeat(100_001)
     });
 
     expect(result.success).toBe(false);

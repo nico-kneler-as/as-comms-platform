@@ -129,9 +129,9 @@ describe("Gmail body extraction", () => {
       receivedAt: "2026-01-01T00:01:00.000Z",
       payloadRef: "payloads/gmail/gmail-oversized-1.json",
       checksum: "checksum-oversized-1",
-      snippet: "x".repeat(2_001),
-      snippetClean: "x".repeat(2_001),
-      bodyTextPreview: "x".repeat(20_001),
+      snippet: "x".repeat(10_001),
+      snippetClean: "x".repeat(10_001),
+      bodyTextPreview: "x".repeat(100_001),
       normalizedParticipantEmails: ["volunteer@example.org"],
     });
 

@@ -29,7 +29,7 @@ import {
 const nullableStringSchema = z.string().min(1).nullable();
 const stringArraySchema = z.array(z.string().min(1));
 const timestampSchema = z.string().datetime();
-const SALESFORCE_TASK_SNIPPET_MAX = 20_000;
+const SALESFORCE_TASK_SNIPPET_MAX = 100_000;
 
 const salesforceLifecycleMilestoneSchema = z.enum([
   "signed_up",
