@@ -68,6 +68,7 @@ type ReconcileExecutionResult =
     }
   | {
       readonly kind: "skipped";
+      readonly reasonCode?: "skipped_missing_presentation_detail";
     };
 
 class DryRunRollback extends Error {
@@ -204,7 +205,13 @@ async function loadOpenIdentityReconcileTargets(input: {
 
 function resolveOriginalCaseClosure(input: {
   readonly currentReasonCode: IdentityResolutionCase["reasonCode"];
-  readonly result: NormalizedCanonicalEventResult;
+  readonly result:
+    | NormalizedCanonicalEventResult
+    | {
+        readonly outcome: "skipped";
+        readonly reasonCode: "skipped_missing_presentation_detail";
+        readonly explanation: string;
+      };
 }): { readonly explanation: string } | null {
   const { currentReasonCode, result } = input;
 
@@ -215,6 +222,12 @@ function resolveOriginalCaseClosure(input: {
   }
 
   if (result.outcome === "skipped") {
+    if (result.reasonCode === "skipped_missing_presentation_detail") {
+      return {
+        explanation: result.explanation
+      };
+    }
+
     return {
       explanation:
         "Reconciled from stored evidence; task is outside volunteer scope (no memberships for anchored contact)."
@@ -331,11 +344,40 @@ async function executeTarget(input: {
       return;
     }
 
-    const normalizedIntake = await buildEventFromStoredData({
+    const storedEvidenceResult = await buildEventFromStoredData({
       repositories,
       sourceEvidence: input.target.sourceEvidence,
       caseRecord: currentCase
     });
+
+    if ("outcome" in storedEvidenceResult) {
+      const closure = resolveOriginalCaseClosure({
+        currentReasonCode: currentCase.reasonCode,
+        result: storedEvidenceResult
+      });
+
+      if (closure !== null) {
+        await markIdentityCaseResolved({
+          repositories,
+          caseRecord: currentCase,
+          resolvedAt: processedAt,
+          explanation: closure.explanation
+        });
+      }
+
+      execution = {
+        kind: "skipped",
+        reasonCode: storedEvidenceResult.reasonCode
+      };
+
+      if (input.dryRun) {
+        throw new DryRunRollback();
+      }
+
+      return;
+    }
+
+    const normalizedIntake = storedEvidenceResult;
     const beforeContactCount = (await repositories.contacts.listAll()).length;
     const normalizationResult =
       await normalization.applyNormalizedCanonicalEvent(normalizedIntake);

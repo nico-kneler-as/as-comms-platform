@@ -61,7 +61,7 @@ async function seedStoredGmailCase(
   return caseId;
 }
 
-async function seedBrokenStoredGmailCase(
+async function seedBrokenStoredSalesforceCase(
   context: TestWorkerContext,
   input: {
     readonly recordId: string;
@@ -70,18 +70,27 @@ async function seedBrokenStoredGmailCase(
     readonly receivedAt: string;
   }
 ): Promise<void> {
-  const sourceEvidenceId = `source-evidence:gmail:message:${input.recordId}`;
+  const sourceEvidenceId =
+    `source-evidence:salesforce:task_communication:${input.recordId}`;
 
   await context.repositories.sourceEvidence.append({
     id: sourceEvidenceId,
-    provider: "gmail",
-    providerRecordType: "message",
+    provider: "salesforce",
+    providerRecordType: "task_communication",
     providerRecordId: input.recordId,
     receivedAt: input.receivedAt,
     occurredAt: input.occurredAt,
-    payloadRef: `capture://gmail/${input.recordId}`,
-    idempotencyKey: `source-evidence:gmail:message:${input.recordId}`,
+    payloadRef: `capture://salesforce/${input.recordId}`,
+    idempotencyKey:
+      `source-evidence:salesforce:task_communication:${input.recordId}`,
     checksum: `checksum:${input.recordId}`
+  });
+  await context.repositories.salesforceEventContext.upsert({
+    sourceEvidenceId,
+    salesforceContactId: null,
+    projectId: null,
+    expeditionId: null,
+    sourceField: null
   });
   await context.repositories.identityResolutionQueue.upsert({
     id: `identity-review:${sourceEvidenceId}:identity_missing_anchor`,
@@ -170,20 +179,20 @@ describe("reconcile identity queue task", () => {
 
     try {
       await Promise.all([
-        seedBrokenStoredGmailCase(context, {
-          recordId: "gmail-broken-1",
+        seedBrokenStoredSalesforceCase(context, {
+          recordId: "sf-broken-1",
           email: "broken-1@example.org",
           occurredAt: "2026-04-28T12:10:00.000Z",
           receivedAt: "2026-04-28T12:10:00.000Z"
         }),
-        seedBrokenStoredGmailCase(context, {
-          recordId: "gmail-broken-2",
+        seedBrokenStoredSalesforceCase(context, {
+          recordId: "sf-broken-2",
           email: "broken-2@example.org",
           occurredAt: "2026-04-28T12:11:00.000Z",
           receivedAt: "2026-04-28T12:11:00.000Z"
         }),
-        seedBrokenStoredGmailCase(context, {
-          recordId: "gmail-broken-3",
+        seedBrokenStoredSalesforceCase(context, {
+          recordId: "sf-broken-3",
           email: "broken-3@example.org",
           occurredAt: "2026-04-28T12:12:00.000Z",
           receivedAt: "2026-04-28T12:12:00.000Z"

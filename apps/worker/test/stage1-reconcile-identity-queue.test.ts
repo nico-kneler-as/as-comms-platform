@@ -119,6 +119,7 @@ async function seedStoredGmailCase(
     readonly subject: string;
     readonly occurredAt: string;
     readonly receivedAt: string;
+    readonly includeDetails?: boolean;
     readonly lastAttemptedAt?: string | null;
     readonly reasonCode?:
       | "identity_missing_anchor"
@@ -139,21 +140,25 @@ async function seedStoredGmailCase(
     idempotencyKey: `source-evidence:gmail:message:${input.recordId}`,
     checksum: `checksum:${input.recordId}`
   });
-  await context.repositories.gmailMessageDetails.upsert({
-    sourceEvidenceId,
-    providerRecordId: input.recordId,
-    gmailThreadId: `thread:${input.recordId}`,
-    rfc822MessageId: `<${input.recordId}@example.org>`,
-    direction: "inbound",
-    subject: input.subject,
-    fromHeader: "Volunteer <volunteer@example.org>",
-    toHeader: "volunteers@adventurescientists.org",
-    ccHeader: null,
-    snippetClean: `snippet:${input.recordId}`,
-    bodyTextPreview: `body:${input.recordId}`,
-    capturedMailbox: "volunteers@adventurescientists.org",
-    projectInboxAlias: null
-  });
+
+  if (input.includeDetails !== false) {
+    await context.repositories.gmailMessageDetails.upsert({
+      sourceEvidenceId,
+      providerRecordId: input.recordId,
+      gmailThreadId: `thread:${input.recordId}`,
+      rfc822MessageId: `<${input.recordId}@example.org>`,
+      direction: "inbound",
+      subject: input.subject,
+      fromHeader: "Volunteer <volunteer@example.org>",
+      toHeader: "volunteers@adventurescientists.org",
+      ccHeader: null,
+      snippetClean: `snippet:${input.recordId}`,
+      bodyTextPreview: `body:${input.recordId}`,
+      capturedMailbox: "volunteers@adventurescientists.org",
+      projectInboxAlias: null
+    });
+  }
+
   await seedOpenIdentityCase(context, {
     sourceEvidenceId,
     normalizedIdentityValues: input.normalizedIdentityValues,
@@ -176,6 +181,7 @@ async function seedStoredSalesforceCase(
     readonly subject: string;
     readonly occurredAt: string;
     readonly receivedAt: string;
+    readonly includeCommunicationDetail?: boolean;
     readonly eventContextSalesforceContactId?: string | null;
   }
 ): Promise<void> {
@@ -193,21 +199,67 @@ async function seedStoredSalesforceCase(
     idempotencyKey: `source-evidence:salesforce:task_communication:${input.recordId}`,
     checksum: `checksum:${input.recordId}`
   });
-  await context.repositories.salesforceCommunicationDetails.upsert({
-    sourceEvidenceId,
-    providerRecordId: input.recordId,
-    channel: "email",
-    messageKind: "one_to_one",
-    subject: input.subject,
-    snippet: `snippet:${input.recordId}`,
-    sourceLabel: "Salesforce Task"
-  });
+
+  if (input.includeCommunicationDetail !== false) {
+    await context.repositories.salesforceCommunicationDetails.upsert({
+      sourceEvidenceId,
+      providerRecordId: input.recordId,
+      channel: "email",
+      messageKind: "one_to_one",
+      subject: input.subject,
+      snippet: `snippet:${input.recordId}`,
+      sourceLabel: "Salesforce Task"
+    });
+  }
+
   await context.repositories.salesforceEventContext.upsert({
     sourceEvidenceId,
     salesforceContactId: input.eventContextSalesforceContactId ?? null,
     projectId: null,
     expeditionId: null,
     sourceField: null
+  });
+  await seedOpenIdentityCase(context, {
+    sourceEvidenceId,
+    normalizedIdentityValues: input.normalizedIdentityValues,
+    openedAt: input.receivedAt
+  });
+}
+
+async function seedStoredSalesforceLifecycleCase(
+  context: TestWorkerContext,
+  input: {
+    readonly recordId: string;
+    readonly normalizedIdentityValues: readonly string[];
+    readonly occurredAt: string;
+    readonly receivedAt: string;
+    readonly salesforceContactId: string | null;
+  }
+): Promise<void> {
+  const sourceEvidenceId =
+    `source-evidence:salesforce:lifecycle_milestone:${encodeURIComponent(input.recordId)}`;
+  const separatorIndex = input.recordId.indexOf(":");
+  const sourceField =
+    separatorIndex === -1 ? null : input.recordId.slice(separatorIndex + 1);
+
+  await context.repositories.sourceEvidence.append({
+    id: sourceEvidenceId,
+    provider: "salesforce",
+    providerRecordType: "lifecycle_milestone",
+    providerRecordId: input.recordId,
+    receivedAt: input.receivedAt,
+    occurredAt: input.occurredAt,
+    payloadRef: `capture://salesforce/${encodeURIComponent(input.recordId)}`,
+    idempotencyKey:
+      `source-evidence:salesforce:lifecycle_milestone:${input.recordId}`,
+    checksum: `checksum:${input.recordId}`
+  });
+  await context.repositories.salesforceEventContext.upsert({
+    sourceEvidenceId,
+    salesforceContactId: input.salesforceContactId,
+    projectId: null,
+    expeditionId: null,
+    sourceField
   });
   await seedOpenIdentityCase(context, {
     sourceEvidenceId,
@@ -547,6 +599,172 @@ describe("reconcileIdentityQueue", () => {
         status: "resolved"
       });
       expect(resolvedCase?.explanation).toContain("outside volunteer scope");
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("reconciles a stuck salesforce lifecycle_milestone case", async () => {
+    const context = await createTestWorkerContext();
+    const recordId = "membership-stage1:Expedition_Members__c.Date_Training_Sent__c";
+    const caseId =
+      `identity-review:source-evidence:salesforce:lifecycle_milestone:${encodeURIComponent(recordId)}:identity_missing_anchor`;
+
+    try {
+      await seedDurableEmailContact(context, {
+        contactId: "contact_lifecycle_anchor",
+        email: "lifecycle@example.org",
+        displayName: "Lifecycle Contact",
+        salesforceContactId: "003-lifecycle-anchor"
+      });
+      await seedStoredSalesforceLifecycleCase(context, {
+        recordId,
+        normalizedIdentityValues: [],
+        occurredAt: "2026-01-01T00:08:00.000Z",
+        receivedAt: "2026-01-01T00:08:00.000Z",
+        salesforceContactId: "003-lifecycle-anchor"
+      });
+
+      const report = await reconcileIdentityQueue({
+        db: context.db,
+        repositories: context.repositories,
+        capture: context.capture,
+        gmailHistoricalReplay: {
+          liveAccount: "volunteers@adventurescientists.org",
+          projectInboxAliases: ["orcas@adventurescientists.org"]
+        },
+        dryRun: false,
+        logger: {
+          log: () => undefined
+        }
+      });
+
+      expect(report).toMatchObject({
+        dryRun: false,
+        scanned: 1,
+        resolved: 1,
+        created: 0,
+        skipped: 0
+      });
+      expect(report.errors).toEqual([]);
+      await expect(
+        context.repositories.canonicalEvents.listByContactId(
+          "contact_lifecycle_anchor"
+        )
+      ).resolves.toEqual([
+        expect.objectContaining({
+          eventType: "lifecycle.received_training"
+        })
+      ]);
+      await expect(
+        context.repositories.identityResolutionQueue.findById(caseId)
+      ).resolves.toMatchObject({
+        status: "resolved"
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("closes orphan gmail case as skipped when gmail_message_details missing", async () => {
+    const context = await createTestWorkerContext();
+    const recordId = "mbox:orphan-gmail-1";
+    const caseId =
+      "identity-review:source-evidence:gmail:message:mbox:orphan-gmail-1:identity_missing_anchor";
+
+    try {
+      await seedStoredGmailCase(context, {
+        recordId,
+        payloadRef: `mbox://archive.mbox#message=${encodeURIComponent(recordId)}`,
+        normalizedIdentityValues: ["orphan@example.org"],
+        subject: "Missing Gmail detail row",
+        occurredAt: "2026-01-01T00:09:00.000Z",
+        receivedAt: "2026-01-01T00:09:00.000Z",
+        includeDetails: false
+      });
+
+      const report = await reconcileIdentityQueue({
+        db: context.db,
+        repositories: context.repositories,
+        capture: context.capture,
+        gmailHistoricalReplay: {
+          liveAccount: "volunteers@adventurescientists.org",
+          projectInboxAliases: ["orcas@adventurescientists.org"]
+        },
+        dryRun: false,
+        logger: {
+          log: () => undefined
+        }
+      });
+
+      expect(report).toMatchObject({
+        dryRun: false,
+        scanned: 1,
+        resolved: 0,
+        created: 0,
+        skipped: 1
+      });
+      expect(report.errors).toEqual([]);
+      const resolvedCase =
+        await context.repositories.identityResolutionQueue.findById(caseId);
+
+      expect(resolvedCase?.status).toBe("resolved");
+      expect(resolvedCase?.explanation).toContain("gmail_message_details row");
+      await expect(
+        context.repositories.canonicalEvents.countAll()
+      ).resolves.toBe(0);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("still throws on orphan salesforce task_communication", async () => {
+    const context = await createTestWorkerContext();
+    const caseId =
+      "identity-review:source-evidence:salesforce:task_communication:sf-orphan-task-1:identity_missing_anchor";
+
+    try {
+      await seedStoredSalesforceCase(context, {
+        recordId: "sf-orphan-task-1",
+        normalizedIdentityValues: ["orphan-salesforce@example.org"],
+        subject: "Missing Salesforce detail row",
+        occurredAt: "2026-01-01T00:10:00.000Z",
+        receivedAt: "2026-01-01T00:10:00.000Z",
+        includeCommunicationDetail: false
+      });
+
+      const report = await reconcileIdentityQueue({
+        db: context.db,
+        repositories: context.repositories,
+        capture: context.capture,
+        gmailHistoricalReplay: {
+          liveAccount: "volunteers@adventurescientists.org",
+          projectInboxAliases: ["orcas@adventurescientists.org"]
+        },
+        dryRun: false,
+        logger: {
+          log: () => undefined
+        }
+      });
+
+      expect(report).toMatchObject({
+        dryRun: false,
+        scanned: 1,
+        resolved: 0,
+        created: 0,
+        skipped: 0
+      });
+      expect(report.errors).toHaveLength(1);
+      expect(report.errors[0]?.caseId).toBe(caseId);
+      expect(report.errors[0]?.reason).toBe("target_execution_failed");
+      expect(report.errors[0]?.message).toContain(
+        "Expected salesforce_communication_details to exist"
+      );
+      await expect(
+        context.repositories.identityResolutionQueue.findById(caseId)
+      ).resolves.toMatchObject({
+        status: "open"
+      });
     } finally {
       await context.dispose();
     }
