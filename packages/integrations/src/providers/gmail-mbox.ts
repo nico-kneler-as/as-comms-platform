@@ -271,7 +271,8 @@ export async function importGmailMboxRecords(
       toSafeIsoTimestamp(message.headers.Date) ?? parsedInput.receivedAt;
     const extractedBody = await extractGmailBodyPreviewFromMimeMessageResult({
       rawMessage: message.rawMessage,
-      fallbackBodyText: message.bodyText
+      fallbackBodyText: message.bodyText,
+      messageIdentifier: payloadRef
     });
     const bodyTextPreview = extractedBody.bodyTextPreview;
     const snippetClean = buildSnippet(bodyTextPreview, message.headers.Subject);

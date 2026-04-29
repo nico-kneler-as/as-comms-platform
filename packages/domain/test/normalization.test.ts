@@ -29,6 +29,7 @@ import {
   type PendingComposerOutboundRecord,
   type Stage1RepositoryBundle,
 } from "../src/index.js";
+import type { CanonicalContactAmbiguityError } from "../src/index.js";
 
 const contact: ContactRecord = {
   id: "contact:volunteer",
@@ -197,14 +198,30 @@ function buildReplayInput(event: CanonicalEventRecord): NormalizedCanonicalEvent
 function buildContext(input: {
   readonly events: readonly CanonicalEventRecord[];
   readonly existingProjection?: InboxProjectionRow | null;
+  readonly contacts?: readonly ContactRecord[];
+  readonly contactIdentities?: readonly ContactIdentityRecord[];
+  readonly sourceProvider?: SourceEvidenceRecord["provider"];
 }): TestContext {
+  const contacts = input.contacts ?? [contact];
+  const contactIdentities = input.contactIdentities ?? [emailIdentity];
+  const contactsById = new Map(contacts.map((entry) => [entry.id, entry]));
+  const contactsBySalesforceContactId = new Map(
+    contacts
+      .filter((entry): entry is ContactRecord & { salesforceContactId: string } =>
+        entry.salesforceContactId !== null
+      )
+      .map((entry) => [entry.salesforceContactId, entry]),
+  );
   const sourceEvidenceById = new Map(
     input.events.map((event) => [
       event.sourceEvidenceId,
-      buildSourceEvidence({
-        key: event.id.replace("event:", ""),
-        occurredAt: event.occurredAt,
-      }),
+      {
+        ...buildSourceEvidence({
+          key: event.id.replace("event:", ""),
+          occurredAt: event.occurredAt,
+        }),
+        provider: input.sourceProvider ?? "gmail",
+      },
     ]),
   );
   const sourceEvidenceByIdempotencyKey = new Map(
@@ -292,19 +309,29 @@ function buildContext(input: {
       getForRetrieval: () => Promise.resolve([]),
     },
     contacts: {
-      findById: (id) => Promise.resolve(id === contact.id ? contact : null),
-      findBySalesforceContactId: () => Promise.resolve(null),
-      listAll: () => Promise.resolve([contact]),
-      listByIds: () => Promise.resolve([contact]),
-      searchByQuery: () => Promise.resolve([contact]),
+      findById: (id) => Promise.resolve(contactsById.get(id) ?? null),
+      findBySalesforceContactId: (salesforceContactId) =>
+        Promise.resolve(contactsBySalesforceContactId.get(salesforceContactId) ?? null),
+      listAll: () => Promise.resolve([...contacts]),
+      listByIds: (ids) =>
+        Promise.resolve(
+          ids
+            .map((id) => contactsById.get(id))
+            .filter((entry): entry is ContactRecord => entry !== undefined),
+        ),
+      searchByQuery: () => Promise.resolve([...contacts]),
       upsert: (record) => Promise.resolve(record),
     },
     contactIdentities: {
       listByContactId: (contactId) =>
-        Promise.resolve(contactId === contact.id ? [emailIdentity] : []),
+        Promise.resolve(
+          contactIdentities.filter((identity) => identity.contactId === contactId),
+        ),
       listByNormalizedValue: ({ normalizedValue }) =>
         Promise.resolve(
-          normalizedValue === emailIdentity.normalizedValue ? [emailIdentity] : [],
+          contactIdentities.filter(
+            (identity) => identity.normalizedValue === normalizedValue,
+          ),
         ),
       upsert: (record) => Promise.resolve(record),
     },
@@ -463,7 +490,7 @@ function buildContext(input: {
       countByContactId: () => Promise.resolve(timelineRowsByCanonicalEventId.size),
       getFreshnessByContactId: () =>
         Promise.resolve({
-          contactId: contact.id,
+          contactId: contacts[0]?.id ?? contact.id,
           total: timelineRowsByCanonicalEventId.size,
           latestUpdatedAt: null,
           latestSortKey: null,
@@ -696,5 +723,151 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
       bucket: "New",
       lastInboundAt: latestInbound.occurredAt,
     });
+  });
+});
+
+describe("identity resolution hardening", () => {
+  it("still anchors Salesforce intakes by salesforceContactId", async () => {
+    const anchoredContact: ContactRecord = {
+      ...contact,
+      id: "contact:anchored",
+      salesforceContactId: "sf-contact-1",
+    };
+    const event = buildEvent({
+      key: "salesforce-anchor",
+      occurredAt: "2026-04-25T10:00:00.000Z",
+      direction: "inbound",
+    });
+    const context = buildContext({
+      events: [],
+      contacts: [anchoredContact],
+      contactIdentities: [],
+    });
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      ...buildReplayInput(event),
+      sourceEvidence: {
+        ...buildSourceEvidence({
+          key: "salesforce-anchor",
+          occurredAt: event.occurredAt,
+        }),
+        provider: "salesforce",
+      },
+      identity: {
+        salesforceContactId: "sf-contact-1",
+        volunteerIdPlainValues: [],
+        normalizedEmails: [],
+        normalizedPhones: [],
+      },
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      throw new Error("Expected applied result.");
+    }
+    expect(result.canonicalEvent.contactId).toBe(anchoredContact.id);
+  });
+
+  it("ignores salesforceContactId from non-Salesforce intakes", async () => {
+    const anchoredContact: ContactRecord = {
+      ...contact,
+      id: "contact:anchored",
+      salesforceContactId: "sf-contact-1",
+      primaryEmail: "anchored@example.org",
+    };
+    const emailMatchedContact: ContactRecord = {
+      ...contact,
+      id: "contact:email-match",
+      salesforceContactId: null,
+      primaryEmail: "volunteer@example.org",
+    };
+    const event = buildEvent({
+      key: "gmail-untrusted-anchor",
+      occurredAt: "2026-04-25T11:00:00.000Z",
+      direction: "inbound",
+    });
+    const context = buildContext({
+      events: [],
+      contacts: [anchoredContact, emailMatchedContact],
+      contactIdentities: [
+        {
+          ...emailIdentity,
+          contactId: emailMatchedContact.id,
+        },
+      ],
+    });
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      ...buildReplayInput(event),
+      sourceEvidence: {
+        ...buildSourceEvidence({
+          key: "gmail-untrusted-anchor",
+          occurredAt: event.occurredAt,
+        }),
+        provider: "gmail",
+      },
+      identity: {
+        salesforceContactId: "sf-contact-1",
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["volunteer@example.org"],
+        normalizedPhones: [],
+      },
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      throw new Error("Expected applied result.");
+    }
+    expect(result.canonicalEvent.contactId).toBe(emailMatchedContact.id);
+  });
+
+  it("returns the single contact for an unambiguous email", async () => {
+    const context = buildContext({
+      events: [],
+    });
+
+    await expect(
+      context.normalization.ensureCanonicalContactForEmail({
+        emailAddress: "volunteer@example.org",
+      }),
+    ).resolves.toMatchObject({
+      id: contact.id,
+    });
+  });
+
+  it("throws CanonicalContactAmbiguityError when the email maps to multiple contacts", async () => {
+    const duplicateContact: ContactRecord = {
+      ...contact,
+      id: "contact:duplicate",
+      primaryEmail: "volunteer@example.org",
+    };
+    const duplicateIdentity: ContactIdentityRecord = {
+      ...emailIdentity,
+      id: "identity:duplicate:email",
+      contactId: duplicateContact.id,
+    };
+    const context = buildContext({
+      events: [],
+      contacts: [contact, duplicateContact],
+      contactIdentities: [emailIdentity, duplicateIdentity],
+    });
+
+    try {
+      await context.normalization.ensureCanonicalContactForEmail({
+        emailAddress: "volunteer@example.org",
+      });
+      throw new Error("Expected CanonicalContactAmbiguityError.");
+    } catch (error) {
+      if (!(error instanceof Error)) {
+        throw error;
+      }
+
+      const ambiguityError = error as CanonicalContactAmbiguityError;
+      expect(ambiguityError.name).toBe("CanonicalContactAmbiguityError");
+      expect(ambiguityError.normalizedEmail).toBe("volunteer@example.org");
+      expect([...ambiguityError.candidateContactIds].sort()).toEqual(
+        [contact.id, duplicateContact.id].sort(),
+      );
+    }
   });
 });

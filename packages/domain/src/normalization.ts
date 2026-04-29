@@ -42,6 +42,7 @@ import {
   type NormalizedIdentityEvidence,
   type ProjectDimensionRecord,
   type NormalizedSourceEvidenceIntake,
+  type Provider,
   type ProvenanceWinnerReason,
   type QuarantineReasonCode,
   type RoutingAmbiguityInput,
@@ -88,6 +89,23 @@ interface IdentityResolutionContext {
 interface WinnerDecision {
   readonly winnerReason: ProvenanceWinnerReason;
   readonly notes: string | null;
+}
+
+export class CanonicalContactAmbiguityError extends Error {
+  readonly normalizedEmail: string;
+  readonly candidateContactIds: readonly string[];
+
+  constructor(input: {
+    readonly normalizedEmail: string;
+    readonly candidateContactIds: readonly string[];
+  }) {
+    super(
+      `Normalized email ${input.normalizedEmail} maps to multiple contacts.`
+    );
+    this.name = "CanonicalContactAmbiguityError";
+    this.normalizedEmail = input.normalizedEmail;
+    this.candidateContactIds = input.candidateContactIds;
+  }
 }
 
 interface ProviderDetailMaps {
@@ -1272,7 +1290,8 @@ async function resolveIdentityDecision(
   context: IdentityResolutionContext,
   sourceEvidenceId: string,
   openedAt: string,
-  identity: NormalizedIdentityEvidence
+  identity: NormalizedIdentityEvidence,
+  provider: Provider
 ): Promise<IdentityResolutionDecision> {
   const emailMatches = await context.loadContactsForIdentityKind(
     "email",
@@ -1288,7 +1307,10 @@ async function resolveIdentityDecision(
   );
   const normalizedIdentityValues = buildNormalizedIdentityValues(identity);
 
-  if (identity.salesforceContactId !== null) {
+  if (
+    identity.salesforceContactId !== null &&
+    provider === "salesforce"
+  ) {
     const anchored = await context.findAnchoredContact(
       identity.salesforceContactId
     );
@@ -1983,14 +2005,21 @@ export function createStage1NormalizationService(
       if (existingContacts.length > 0) {
         const [existingContact] = existingContacts;
 
-        if (existingContact === undefined) {
-          throw new Error(
-            "Expected an existing contact when normalized email matches."
-          );
-        }
-
-        return existingContact;
+      if (existingContact === undefined) {
+        throw new Error(
+          "Expected an existing contact when normalized email matches."
+        );
       }
+
+      if (existingContacts.length > 1) {
+        throw new CanonicalContactAmbiguityError({
+          normalizedEmail,
+          candidateContactIds: existingContacts.map((contact) => contact.id)
+        });
+      }
+
+      return existingContact;
+    }
 
       return (
         await service.upsertNormalizedContactGraph(
@@ -2307,7 +2336,8 @@ export function createStage1NormalizationService(
         identityResolutionContext,
         sourceEvidenceResult.record.id,
         parsed.sourceEvidence.receivedAt,
-        parsed.identity
+        parsed.identity,
+        parsed.sourceEvidence.provider
       );
 
       if (identityDecision.outcome === "needs_identity_review") {

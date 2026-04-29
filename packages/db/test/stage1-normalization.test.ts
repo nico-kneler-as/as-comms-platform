@@ -855,7 +855,7 @@ describe("Stage 1 normalization service", () => {
       identity: {
         salesforceContactId: "003-stage1",
         volunteerIdPlainValues: [],
-        normalizedEmails: [],
+        normalizedEmails: ["volunteer@example.org"],
         normalizedPhones: []
       },
       supportingSources: [
@@ -905,7 +905,7 @@ describe("Stage 1 normalization service", () => {
       identity: {
         salesforceContactId: "003-stage1",
         volunteerIdPlainValues: [],
-        normalizedEmails: [],
+        normalizedEmails: ["volunteer@example.org"],
         normalizedPhones: []
       },
       supportingSources: [
@@ -946,7 +946,7 @@ describe("Stage 1 normalization service", () => {
       identity: {
         salesforceContactId: "003-stage1",
         volunteerIdPlainValues: [],
-        normalizedEmails: [],
+        normalizedEmails: ["volunteer@example.org"],
         normalizedPhones: []
       },
       supportingSources: []
@@ -1885,7 +1885,7 @@ describe("Stage 1 normalization service", () => {
 
     expect(firstResult.outcome).toBe("applied");
     expect(lookupCounts).toEqual({
-      anchor: 1,
+      anchor: 0,
       byId: 1,
       byValue: 2
     });
@@ -1932,7 +1932,7 @@ describe("Stage 1 normalization service", () => {
 
     expect(secondResult.outcome).toBe("applied");
     expect(lookupCounts).toEqual({
-      anchor: 1,
+      anchor: 0,
       byId: 1,
       byValue: 2
     });

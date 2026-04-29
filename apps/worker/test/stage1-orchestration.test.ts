@@ -76,6 +76,32 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
   });
 }
 
+function buildSalesforceLivePayload(input: {
+  readonly syncStateId: string;
+  readonly attempt?: number;
+  readonly maxAttempts?: number;
+}) {
+  return salesforceLiveCaptureBatchPayloadSchema.parse({
+    version: 1,
+    jobId: `job:${input.syncStateId}`,
+    correlationId: `corr:${input.syncStateId}`,
+    traceId: null,
+    batchId: `batch:${input.syncStateId}`,
+    syncStateId: input.syncStateId,
+    attempt: input.attempt ?? 1,
+    maxAttempts: input.maxAttempts ?? 3,
+    provider: "salesforce",
+    mode: "live",
+    jobType: "live_ingest",
+    cursor: "salesforce:cursor:live",
+    checkpoint: "salesforce:checkpoint:live",
+    windowStart: "2026-01-05T00:00:00.000Z",
+    windowEnd: "2026-01-05T00:05:00.000Z",
+    recordIds: [],
+    maxRecords: 100
+  });
+}
+
 function buildGmailMessageRecord(
   overrides: Partial<{
     readonly recordId: string;
@@ -804,6 +830,83 @@ Alias drift outbound message.
       expect(result.syncState.provider).toBe("gmail");
       expect(result.syncState.freshnessP95Seconds).toBe(60);
       expect(result.syncState.freshnessP99Seconds).toBe(60);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("dead-letters Salesforce live ingest after five consecutive failures and resets after success", async () => {
+    const capture = createEmptyCapturePorts();
+    capture.salesforce.captureLiveBatch = () => {
+      throw new Stage1RetryableJobError("Temporary Salesforce live capture failure.");
+    };
+
+    const context = await createTestWorkerContext({ capture });
+
+    try {
+      for (let attempt = 1; attempt <= 4; attempt += 1) {
+        const result = await context.orchestration.runSalesforceLiveCaptureBatch(
+          buildSalesforceLivePayload({
+            syncStateId: "sync:salesforce:live:consecutive-failures"
+          })
+        );
+
+        expect(result.outcome).toBe("failed");
+        if (result.outcome !== "failed") {
+          throw new Error("Expected Salesforce live failure to remain failed.");
+        }
+
+        expect(result.failure.disposition).toBe("retryable");
+        expect(result.syncState.status).toBe("failed");
+        expect(result.syncState.consecutiveFailureCount).toBe(attempt);
+        expect(result.syncState.deadLetterCount).toBe(0);
+      }
+
+      const deadLettered = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload({
+          syncStateId: "sync:salesforce:live:consecutive-failures"
+        })
+      );
+
+      expect(deadLettered.outcome).toBe("failed");
+      if (deadLettered.outcome !== "failed") {
+        throw new Error("Expected fifth Salesforce live failure to dead-letter.");
+      }
+
+      expect(deadLettered.failure.disposition).toBe("dead_letter");
+      expect(deadLettered.syncState.status).toBe("quarantined");
+      expect(deadLettered.syncState.consecutiveFailureCount).toBe(5);
+      expect(deadLettered.syncState.deadLetterCount).toBe(1);
+
+      capture.salesforce.captureLiveBatch = () => Promise.resolve(buildCapturedBatch([]));
+      const recovered = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload({
+          syncStateId: "sync:salesforce:live:reset-after-success"
+        })
+      );
+
+      expect(recovered.outcome).toBe("succeeded");
+      if (recovered.outcome !== "succeeded") {
+        throw new Error("Expected Salesforce live recovery batch to succeed.");
+      }
+
+      expect(recovered.syncState.consecutiveFailureCount).toBe(0);
+
+      capture.salesforce.captureLiveBatch = () => {
+        throw new Stage1RetryableJobError("Temporary Salesforce live capture failure.");
+      };
+      const afterReset = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload({
+          syncStateId: "sync:salesforce:live:reset-after-success"
+        })
+      );
+
+      expect(afterReset.outcome).toBe("failed");
+      if (afterReset.outcome !== "failed") {
+        throw new Error("Expected Salesforce live failure after reset.");
+      }
+
+      expect(afterReset.syncState.consecutiveFailureCount).toBe(1);
     } finally {
       await context.dispose();
     }
@@ -1667,6 +1770,7 @@ Alias drift outbound message.
         freshnessP95Seconds: 60,
         freshnessP99Seconds: 120,
         lastSuccessfulAt: "2026-01-02T01:00:00.000Z",
+        consecutiveFailureCount: 0,
         deadLetterCount: 0
       });
 
