@@ -107,6 +107,15 @@ function createRepositoryBundle(input: {
       countByProvider: () => Promise.resolve(0),
       listByProviderRecord: () => Promise.resolve([]),
     },
+    sourceEvidenceQuarantine: {
+      record: (input) =>
+        Promise.resolve({
+          id: "source_evidence_quarantine:timeline",
+          ...input,
+          createdAt: new Date(0),
+        }),
+      listRecent: () => Promise.resolve({ entries: [], hasMore: false }),
+    },
     canonicalEvents: {
       findById: (id) => Promise.resolve(canonicalEventsById.get(id) ?? null),
       findByIdempotencyKey: () => Promise.resolve(null),

@@ -28,6 +28,7 @@ import {
   sessions,
   simpleTextingMessageDetails,
   sourceEvidenceLog,
+  sourceEvidenceQuarantine,
   syncState,
   users,
   verificationTokens
@@ -35,6 +36,7 @@ import {
 
 export const databaseSchema = {
   sourceEvidenceLog,
+  sourceEvidenceQuarantine,
   aiKnowledgeEntries,
   contacts,
   contactIdentities,

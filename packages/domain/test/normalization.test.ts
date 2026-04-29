@@ -238,6 +238,17 @@ function buildContext(input: {
   );
   const timelineRowsByCanonicalEventId = new Map<string, TimelineProjectionRow>();
   const gmailDetailsBySourceEvidenceId = new Map<string, GmailMessageDetailRecord>();
+  const sourceEvidenceQuarantineEntries = new Array<{
+    id: string;
+    provider: SourceEvidenceRecord["provider"];
+    idempotencyKey: string;
+    checksum: string;
+    attemptedAt: Date;
+    reason: "checksum_mismatch";
+    payloadRef: string;
+    details: Readonly<Record<string, unknown>>;
+    createdAt: Date;
+  }>();
   let inboxProjection = input.existingProjection ?? null;
   let inboxSaveCount = 0;
 
@@ -269,6 +280,31 @@ function buildContext(input: {
               record.providerRecordId === providerRecordId,
           ),
         ),
+    },
+    sourceEvidenceQuarantine: {
+      record: (input) => {
+        const record = {
+          id: `source_evidence_quarantine:${String(sourceEvidenceQuarantineEntries.length + 1)}`,
+          ...input,
+          createdAt: input.attemptedAt,
+        };
+        sourceEvidenceQuarantineEntries.push(record);
+        return Promise.resolve(record);
+      },
+      listRecent: ({ limit, beforeTimestamp }) => {
+        const entries = [...sourceEvidenceQuarantineEntries]
+          .filter((entry) =>
+            beforeTimestamp === undefined
+              ? true
+              : entry.attemptedAt < beforeTimestamp,
+          )
+          .sort((left, right) => right.attemptedAt.getTime() - left.attemptedAt.getTime());
+
+        return Promise.resolve({
+          entries: entries.slice(0, limit),
+          hasMore: entries.length > limit,
+        });
+      },
     },
     canonicalEvents: {
       findById: (id) => Promise.resolve(canonicalEventsById.get(id) ?? null),

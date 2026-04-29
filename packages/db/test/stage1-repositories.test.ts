@@ -205,6 +205,52 @@ async function appendSourceEvidenceRows(
   }
 }
 
+async function recordSourceEvidenceQuarantineRows(
+  repositories: Awaited<
+    ReturnType<typeof createTestStage1Context>
+  >["repositories"],
+  rows: readonly {
+    readonly provider:
+      | "gmail"
+      | "salesforce"
+      | "simpletexting"
+      | "mailchimp"
+      | "manual";
+    readonly idempotencyKey: string;
+    readonly checksum: string;
+    readonly attemptedAt: string;
+    readonly payloadRef: string;
+    readonly providerRecordId: string;
+  }[],
+) {
+  const records = [];
+
+  for (const row of rows) {
+    records.push(
+      await repositories.sourceEvidenceQuarantine.record({
+        provider: row.provider,
+        idempotencyKey: row.idempotencyKey,
+        checksum: row.checksum,
+        attemptedAt: new Date(row.attemptedAt),
+        reason: "checksum_mismatch",
+        payloadRef: row.payloadRef,
+        details: {
+          provider: row.provider,
+          providerRecordType: "message",
+          providerRecordId: row.providerRecordId,
+          receivedAt: row.attemptedAt,
+          occurredAt: row.attemptedAt,
+          payloadRef: row.payloadRef,
+          idempotencyKey: row.idempotencyKey,
+          checksum: row.checksum,
+        },
+      }),
+    );
+  }
+
+  return records;
+}
+
 describe("Stage 1 DB repositories", () => {
   it("persists and maps source evidence, contacts, identities, and memberships", async () => {
     const { repositories, settings } = await createTestStage1Context();
@@ -499,7 +545,67 @@ describe("Stage 1 DB repositories", () => {
     });
   });
 
-  it("returns the earliest row as the winning source-evidence collision entry", async () => {
+  it("records and pages source-evidence quarantine rows", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    const older = await repositories.sourceEvidenceQuarantine.record({
+      provider: "gmail",
+      idempotencyKey: "gmail:quarantine:older",
+      checksum: "checksum-older",
+      attemptedAt: new Date("2026-01-01T00:00:00.000Z"),
+      reason: "checksum_mismatch",
+      payloadRef: "payloads/gmail/quarantine-older.json",
+      details: {
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-quarantine-older",
+        receivedAt: "2026-01-01T00:00:00.000Z",
+        occurredAt: "2026-01-01T00:00:00.000Z",
+        payloadRef: "payloads/gmail/quarantine-older.json",
+        idempotencyKey: "gmail:quarantine:older",
+        checksum: "checksum-older",
+      },
+    });
+    const newer = await repositories.sourceEvidenceQuarantine.record({
+      provider: "gmail",
+      idempotencyKey: "gmail:quarantine:newer",
+      checksum: "checksum-newer",
+      attemptedAt: new Date("2026-01-01T00:05:00.000Z"),
+      reason: "checksum_mismatch",
+      payloadRef: "payloads/gmail/quarantine-newer.json",
+      details: {
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-quarantine-newer",
+        receivedAt: "2026-01-01T00:05:00.000Z",
+        occurredAt: "2026-01-01T00:05:00.000Z",
+        payloadRef: "payloads/gmail/quarantine-newer.json",
+        idempotencyKey: "gmail:quarantine:newer",
+        checksum: "checksum-newer",
+      },
+    });
+
+    await expect(
+      repositories.sourceEvidenceQuarantine.listRecent({
+        limit: 1,
+      }),
+    ).resolves.toEqual({
+      entries: [newer],
+      hasMore: true,
+    });
+
+    await expect(
+      repositories.sourceEvidenceQuarantine.listRecent({
+        limit: 10,
+        beforeTimestamp: new Date("2026-01-01T00:05:00.000Z"),
+      }),
+    ).resolves.toEqual({
+      entries: [older],
+      hasMore: false,
+    });
+  });
+
+  it("returns the winning log row with quarantine-backed losing entries", async () => {
     const { repositories } = await createTestStage1Context();
 
     await appendSourceEvidenceRows(repositories, [
@@ -511,15 +617,26 @@ describe("Stage 1 DB repositories", () => {
         idempotencyKey: "gmail:collision",
         checksum: "checksum-a",
       },
-      {
-        id: "sev-losing",
-        provider: "gmail",
-        providerRecordId: "gmail-losing",
-        receivedAt: "2026-01-01T00:01:00.000Z",
-        idempotencyKey: "gmail:collision",
-        checksum: "checksum-b",
-      },
     ]);
+    const [losingFirst, losingSecond] =
+      await recordSourceEvidenceQuarantineRows(repositories, [
+        {
+          provider: "gmail",
+          idempotencyKey: "gmail:collision",
+          checksum: "checksum-b",
+          attemptedAt: "2026-01-01T00:01:00.000Z",
+          payloadRef: "payloads/gmail/gmail-losing-1.json",
+          providerRecordId: "gmail-losing-1",
+        },
+        {
+          provider: "gmail",
+          idempotencyKey: "gmail:collision",
+          checksum: "checksum-c",
+          attemptedAt: "2026-01-01T00:02:00.000Z",
+          payloadRef: "payloads/gmail/gmail-losing-2.json",
+          providerRecordId: "gmail-losing-2",
+        },
+      ]);
 
     const result =
       await repositories.sourceEvidence.listIdempotencyChecksumCollisions({
@@ -531,7 +648,7 @@ describe("Stage 1 DB repositories", () => {
       {
         provider: "gmail",
         idempotencyKey: "gmail:collision",
-        latestReceivedAt: new Date("2026-01-01T00:01:00.000Z"),
+        latestReceivedAt: new Date("2026-01-01T00:02:00.000Z"),
         winning: {
           sourceEvidenceId: "sev-winning",
           checksum: "checksum-a",
@@ -539,9 +656,14 @@ describe("Stage 1 DB repositories", () => {
         },
         losing: [
           {
-            sourceEvidenceId: "sev-losing",
+            quarantineId: losingFirst?.id ?? "",
             checksum: "checksum-b",
-            receivedAt: new Date("2026-01-01T00:01:00.000Z"),
+            attemptedAt: new Date("2026-01-01T00:01:00.000Z"),
+          },
+          {
+            quarantineId: losingSecond?.id ?? "",
+            checksum: "checksum-c",
+            attemptedAt: new Date("2026-01-01T00:02:00.000Z"),
           },
         ],
       },
@@ -561,14 +683,6 @@ describe("Stage 1 DB repositories", () => {
         checksum: "older-a",
       },
       {
-        id: "sev-older-2",
-        provider: "gmail",
-        providerRecordId: "gmail-older-2",
-        receivedAt: "2026-01-01T00:05:00.000Z",
-        idempotencyKey: "gmail:older",
-        checksum: "older-b",
-      },
-      {
         id: "sev-newer-1",
         provider: "salesforce",
         providerRecordId: "sf-newer-1",
@@ -576,13 +690,23 @@ describe("Stage 1 DB repositories", () => {
         idempotencyKey: "salesforce:newer",
         checksum: "newer-a",
       },
+    ]);
+    await recordSourceEvidenceQuarantineRows(repositories, [
       {
-        id: "sev-newer-2",
+        provider: "gmail",
+        idempotencyKey: "gmail:older",
+        checksum: "older-b",
+        attemptedAt: "2026-01-01T00:05:00.000Z",
+        payloadRef: "payloads/gmail/gmail-older-2.json",
+        providerRecordId: "gmail-older-2",
+      },
+      {
         provider: "salesforce",
-        providerRecordId: "sf-newer-2",
-        receivedAt: "2026-01-01T01:15:00.000Z",
         idempotencyKey: "salesforce:newer",
         checksum: "newer-b",
+        attemptedAt: "2026-01-01T01:15:00.000Z",
+        payloadRef: "payloads/salesforce/sf-newer-2.json",
+        providerRecordId: "sf-newer-2",
       },
     ]);
 
@@ -613,14 +737,6 @@ describe("Stage 1 DB repositories", () => {
         checksum: "cursor-old-a",
       },
       {
-        id: "sev-cursor-old-2",
-        provider: "gmail",
-        providerRecordId: "gmail-cursor-old-2",
-        receivedAt: "2026-01-01T00:10:00.000Z",
-        idempotencyKey: "gmail:cursor-old",
-        checksum: "cursor-old-b",
-      },
-      {
         id: "sev-cursor-new-1",
         provider: "mailchimp",
         providerRecordId: "mailchimp-cursor-new-1",
@@ -628,13 +744,23 @@ describe("Stage 1 DB repositories", () => {
         idempotencyKey: "mailchimp:cursor-new",
         checksum: "cursor-new-a",
       },
+    ]);
+    await recordSourceEvidenceQuarantineRows(repositories, [
       {
-        id: "sev-cursor-new-2",
+        provider: "gmail",
+        idempotencyKey: "gmail:cursor-old",
+        checksum: "cursor-old-b",
+        attemptedAt: "2026-01-01T00:10:00.000Z",
+        payloadRef: "payloads/gmail/gmail-cursor-old-2.json",
+        providerRecordId: "gmail-cursor-old-2",
+      },
+      {
         provider: "mailchimp",
-        providerRecordId: "mailchimp-cursor-new-2",
-        receivedAt: "2026-01-01T01:20:00.000Z",
         idempotencyKey: "mailchimp:cursor-new",
         checksum: "cursor-new-b",
+        attemptedAt: "2026-01-01T01:20:00.000Z",
+        payloadRef: "payloads/mailchimp/mailchimp-cursor-new-2.json",
+        providerRecordId: "mailchimp-cursor-new-2",
       },
     ]);
 

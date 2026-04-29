@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
+import { createStage1PersistenceService } from "@as-comms/domain";
 
 import { createTestStage1Context } from "./helpers.js";
 
@@ -86,6 +87,165 @@ describe("Stage 1 persistence service", () => {
         providerRecordId: "gmail-message-1"
       })
     ).resolves.toEqual([firstResult.record]);
+  });
+
+  it("recordSourceEvidence preserves same-checksum replay as duplicate", async () => {
+    const { persistence } = await createTestStage1Context();
+
+    const firstResult = await persistence.recordSourceEvidence({
+      id: "sev_duplicate_1",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-duplicate-1",
+      receivedAt: "2026-01-02T00:01:00.000Z",
+      occurredAt: "2026-01-02T00:00:00.000Z",
+      payloadRef: "payloads/gmail/gmail-duplicate-1.json",
+      idempotencyKey: "gmail:message:gmail-duplicate-1",
+      checksum: "checksum-duplicate-1"
+    });
+
+    if (firstResult.outcome !== "inserted") {
+      throw new Error("Expected the first source evidence write to insert.");
+    }
+
+    await expect(
+      persistence.recordSourceEvidence({
+        id: "sev_duplicate_2",
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-duplicate-1",
+        receivedAt: "2026-01-02T00:02:00.000Z",
+        occurredAt: "2026-01-02T00:00:00.000Z",
+        payloadRef: "payloads/gmail/gmail-duplicate-1.json",
+        idempotencyKey: "gmail:message:gmail-duplicate-1",
+        checksum: "checksum-duplicate-1"
+      })
+    ).resolves.toEqual({
+      outcome: "duplicate",
+      record: firstResult.record
+    });
+  });
+
+  it("recordSourceEvidence quarantines a different-checksum collision and returns conflict", async () => {
+    const { persistence, repositories } = await createTestStage1Context();
+
+    const firstResult = await persistence.recordSourceEvidence({
+      id: "sev_quarantine_winner",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-quarantine-winner",
+      receivedAt: "2026-01-03T00:01:00.000Z",
+      occurredAt: "2026-01-03T00:00:00.000Z",
+      payloadRef: "payloads/gmail/gmail-quarantine-winner.json",
+      idempotencyKey: "gmail:message:gmail-quarantine",
+      checksum: "checksum-a"
+    });
+
+    if (firstResult.outcome !== "inserted") {
+      throw new Error("Expected the winning source evidence row to insert.");
+    }
+
+    const result = await persistence.recordSourceEvidence({
+      id: "sev_quarantine_loser",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-quarantine-winner",
+      receivedAt: "2026-01-03T00:02:00.000Z",
+      occurredAt: "2026-01-03T00:00:00.000Z",
+      payloadRef: "payloads/gmail/gmail-quarantine-loser.json",
+      idempotencyKey: "gmail:message:gmail-quarantine",
+      checksum: "checksum-b"
+    });
+
+    expect(result.outcome).toBe("conflict");
+    if (result.outcome === "conflict") {
+      expect(result.reason).toBe("idempotency_key_mismatch");
+      expect(result.conflictingRecords).toEqual([firstResult.record]);
+    }
+
+    await expect(
+      repositories.sourceEvidence.listByProviderRecord({
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-quarantine-winner"
+      })
+    ).resolves.toEqual([firstResult.record]);
+
+    const quarantineRows = await repositories.sourceEvidenceQuarantine.listRecent({
+      limit: 10
+    });
+    expect(quarantineRows.entries).toHaveLength(1);
+    expect(quarantineRows.entries[0]).toMatchObject({
+      provider: "gmail",
+      idempotencyKey: "gmail:message:gmail-quarantine",
+      checksum: "checksum-b",
+      attemptedAt: new Date("2026-01-03T00:02:00.000Z"),
+      reason: "checksum_mismatch",
+      payloadRef: "payloads/gmail/gmail-quarantine-loser.json",
+      details: {
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-quarantine-winner",
+        payloadRef: "payloads/gmail/gmail-quarantine-loser.json",
+        idempotencyKey: "gmail:message:gmail-quarantine",
+        checksum: "checksum-b"
+      }
+    });
+  });
+
+  it("recordSourceEvidence handles DB-layer race losers via post-append re-read", async () => {
+    const context = await createTestStage1Context();
+    const winningRow = await context.repositories.sourceEvidence.append({
+      id: "sev_race_winner",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-race-winner",
+      receivedAt: "2026-01-04T00:01:00.000Z",
+      occurredAt: "2026-01-04T00:00:00.000Z",
+      payloadRef: "payloads/gmail/gmail-race-winner.json",
+      idempotencyKey: "gmail:message:gmail-race",
+      checksum: "checksum-winner"
+    });
+    const persistence = createStage1PersistenceService({
+      ...context.repositories,
+      sourceEvidence: {
+        ...context.repositories.sourceEvidence,
+        findByIdempotencyKey: () => Promise.resolve(null),
+        listByProviderRecord: () => Promise.resolve([]),
+        append: () => Promise.resolve(winningRow)
+      }
+    });
+
+    const result = await persistence.recordSourceEvidence({
+      id: "sev_race_loser",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-race-winner",
+      receivedAt: "2026-01-04T00:02:00.000Z",
+      occurredAt: "2026-01-04T00:00:00.000Z",
+      payloadRef: "payloads/gmail/gmail-race-loser.json",
+      idempotencyKey: "gmail:message:gmail-race",
+      checksum: "checksum-loser"
+    });
+
+    expect(result.outcome).toBe("conflict");
+    if (result.outcome === "conflict") {
+      expect(result.reason).toBe("idempotency_key_mismatch");
+      expect(result.conflictingRecords).toEqual([winningRow]);
+    }
+
+    const quarantineRows = await context.repositories.sourceEvidenceQuarantine.listRecent({
+      limit: 10
+    });
+    expect(quarantineRows.entries).toHaveLength(1);
+    expect(quarantineRows.entries[0]).toMatchObject({
+      provider: "gmail",
+      idempotencyKey: "gmail:message:gmail-race",
+      checksum: "checksum-loser",
+      attemptedAt: new Date("2026-01-04T00:02:00.000Z"),
+      reason: "checksum_mismatch",
+      payloadRef: "payloads/gmail/gmail-race-loser.json"
+    });
   });
 
   it("keeps live Gmail re-polls duplicate-safe when Subject is newly fetched", async () => {

@@ -85,10 +85,34 @@ export const sourceEvidenceLog = pgTable(
       table.providerRecordType,
       table.providerRecordId,
     ),
-    uniqueIndex("source_evidence_log_replay_unique").on(
+    uniqueIndex("source_evidence_log_provider_idempotency_unique").on(
       table.provider,
       table.idempotencyKey,
-      table.checksum,
+    ),
+  ],
+);
+
+export const sourceEvidenceQuarantine = pgTable(
+  "source_evidence_quarantine",
+  {
+    id: text("id").primaryKey(),
+    provider: providerEnum("provider").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    checksum: text("checksum").notNull(),
+    attemptedAt: timestamp("attempted_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    // Canonical values are free-text strings like "checksum_mismatch".
+    reason: text("reason").notNull(),
+    payloadRef: text("payload_ref").notNull(),
+    detailsJsonb: jsonb("details_jsonb").notNull(),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    index("source_evidence_quarantine_provider_idempotency_idx").on(
+      table.provider,
+      table.idempotencyKey,
     ),
   ],
 );

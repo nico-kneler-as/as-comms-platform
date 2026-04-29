@@ -31,6 +31,15 @@ describe("defineStage1RepositoryBundle", () => {
         countByProvider: () => Promise.resolve(0),
         listByProviderRecord: () => Promise.resolve([]),
       },
+      sourceEvidenceQuarantine: {
+        record: (input) =>
+          Promise.resolve({
+            id: "source_evidence_quarantine:test",
+            ...input,
+            createdAt: new Date(0),
+          }),
+        listRecent: () => Promise.resolve({ entries: [], hasMore: false }),
+      },
       canonicalEvents: {
         findById: () => Promise.resolve(null),
         findByIdempotencyKey: () => Promise.resolve(null),
