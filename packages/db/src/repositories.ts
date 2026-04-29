@@ -113,6 +113,29 @@ import {
 
 export type Stage1Database = PgDatabase<PgQueryResultHKT, DatabaseSchema>;
 
+/**
+ * Thrown by the projects repository when an attempt is made to flip
+ * `is_active` to `true` on a project_dimensions row whose `project_alias`
+ * is null or empty/whitespace.
+ *
+ * The Settings action layer (apps/web/app/settings/actions.ts) already
+ * validates this before calling setActive, so this error is defense-in-depth
+ * against any future code path that bypasses the action layer. The DB also
+ * enforces the same invariant via a CHECK constraint
+ * (migration 0045_project_dimensions_active_alias_required.sql).
+ */
+export class ProjectAliasRequiredError extends Error {
+  readonly projectId: string;
+
+  constructor(projectId: string) {
+    super(
+      `Cannot activate project ${projectId}: project_alias must be set and non-empty.`,
+    );
+    this.name = "ProjectAliasRequiredError";
+    this.projectId = projectId;
+  }
+}
+
 interface SalesforceCommunicationDetailRecord {
   readonly sourceEvidenceId: string;
   readonly providerRecordId: string;
@@ -3314,6 +3337,26 @@ function createStage2RepositoriesInternal(
       },
 
       async setActive(projectId: string, isActive: boolean) {
+        if (isActive) {
+          // Defense-in-depth: action-layer callers already validate alias
+          // before this point (apps/web/app/settings/actions.ts:711, :1290).
+          // The DB CHECK constraint (migration 0045) is the ultimate
+          // backstop. This pre-flight check turns the constraint violation
+          // into a typed error any future caller can handle.
+          const [aliasRow] = await db
+            .select({ projectAlias: projectDimensions.projectAlias })
+            .from(projectDimensions)
+            .where(eq(projectDimensions.projectId, projectId))
+            .limit(1);
+
+          if (aliasRow !== undefined) {
+            const trimmed = aliasRow.projectAlias?.trim() ?? "";
+            if (trimmed.length === 0) {
+              throw new ProjectAliasRequiredError(projectId);
+            }
+          }
+        }
+
         const [row] = await db
           .update(projectDimensions)
           .set({
