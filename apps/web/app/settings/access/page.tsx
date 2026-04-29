@@ -23,7 +23,16 @@ export default async function SettingsAccessPage() {
     throw error;
   }
 
-  const viewModel = await loadAccessSettings();
+  let viewModel;
+
+  try {
+    viewModel = await loadAccessSettings();
+  } catch (error) {
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      redirect("/settings");
+    }
+    throw error;
+  }
 
   return (
     <SettingsContent>

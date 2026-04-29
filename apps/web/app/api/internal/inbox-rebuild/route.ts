@@ -19,6 +19,16 @@ const rebuildRequestSchema = z.object({
   selection: z.enum(["all", "invalid"]).default("all")
 });
 
+function isAuthorized(request: Request): boolean {
+  const expectedToken = process.env.INTERNAL_INBOX_REBUILD_TOKEN;
+
+  if (!expectedToken || expectedToken.trim().length === 0) {
+    return false;
+  }
+
+  return request.headers.get("authorization") === `Bearer ${expectedToken}`;
+}
+
 function compareCanonicalEventOrder(
   left: CanonicalEventRecord,
   right: CanonicalEventRecord
@@ -109,6 +119,18 @@ async function loadInboxSnippetForEvent(
 }
 
 export async function POST(request: Request) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "unauthorized"
+      },
+      {
+        status: 401
+      }
+    );
+  }
+
   if (process.env.NODE_ENV === "production") {
     return NextResponse.json(
       {
