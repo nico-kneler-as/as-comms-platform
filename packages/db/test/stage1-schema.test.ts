@@ -17,8 +17,10 @@ import {
   databaseSchema,
   messageAttachments,
   projectKnowledgeEntries,
-  sourceEvidenceLog
+  sourceEvidenceLog,
+  syncState
 } from "../src/index.js";
+import { mapSyncStateRow, mapSyncStateToInsert } from "../src/mappers.js";
 
 describe("Stage 1 DB schema", () => {
   it("exports the Stage 1 and Stage 2 durable tables", () => {
@@ -91,5 +93,46 @@ describe("Stage 1 DB schema", () => {
       "quarantined"
     ]);
     expect(syncScopeValues).toEqual(["provider", "orchestration"]);
+  });
+
+  it("round-trips sync-state consecutive failure counts through the mapper", () => {
+    const insert = mapSyncStateToInsert({
+      id: "sync:salesforce:live:mapper",
+      scope: "provider",
+      provider: "salesforce",
+      jobType: "live_ingest",
+      cursor: "salesforce:cursor:mapper",
+      windowStart: "2026-01-05T00:00:00.000Z",
+      windowEnd: "2026-01-05T00:05:00.000Z",
+      status: "failed",
+      parityPercent: null,
+      freshnessP95Seconds: null,
+      freshnessP99Seconds: null,
+      lastSuccessfulAt: null,
+      consecutiveFailureCount: 4,
+      deadLetterCount: 1
+    });
+    const row = mapSyncStateRow({
+      id: insert.id,
+      scope: insert.scope,
+      provider: insert.provider ?? null,
+      jobType: insert.jobType,
+      cursor: insert.cursor ?? null,
+      windowStart: insert.windowStart ?? null,
+      windowEnd: insert.windowEnd ?? null,
+      status: insert.status,
+      parityPercent: insert.parityPercent ?? null,
+      freshnessP95Seconds: insert.freshnessP95Seconds ?? null,
+      freshnessP99Seconds: insert.freshnessP99Seconds ?? null,
+      lastSuccessfulAt: insert.lastSuccessfulAt ?? null,
+      consecutiveFailureCount: insert.consecutiveFailureCount ?? 0,
+      deadLetterCount: insert.deadLetterCount ?? 0,
+      createdAt: new Date("2026-01-05T00:05:00.000Z"),
+      updatedAt: new Date("2026-01-05T00:05:00.000Z")
+    });
+
+    expect(syncState.consecutiveFailureCount.name).toBe("consecutive_failure_count");
+    expect(row.consecutiveFailureCount).toBe(4);
+    expect(row.deadLetterCount).toBe(1);
   });
 });

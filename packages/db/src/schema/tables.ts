@@ -613,6 +613,9 @@ export const syncState = pgTable(
       mode: "date",
       withTimezone: true,
     }),
+    consecutiveFailureCount: integer("consecutive_failure_count")
+      .notNull()
+      .default(0),
     deadLetterCount: integer("dead_letter_count").notNull().default(0),
     createdAt: createdAtColumn,
     updatedAt: updatedAtColumn,

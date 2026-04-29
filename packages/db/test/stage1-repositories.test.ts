@@ -684,6 +684,7 @@ describe("Stage 1 DB repositories", () => {
       freshnessP95Seconds: null,
       freshnessP99Seconds: null,
       lastSuccessfulAt: "2026-01-01T01:00:00.000Z",
+      consecutiveFailureCount: 4,
       deadLetterCount: 2,
     });
 
@@ -691,6 +692,7 @@ describe("Stage 1 DB repositories", () => {
       ...syncRecord,
       status: "succeeded",
       parityPercent: 100,
+      consecutiveFailureCount: 0,
       deadLetterCount: 0,
     });
 
@@ -712,6 +714,8 @@ describe("Stage 1 DB repositories", () => {
     expect(syncUpdate.parityPercent).toBe(100);
     expect(syncUpdate.scope).toBe("provider");
     expect(syncUpdate.provider).toBe("gmail");
+    expect(syncRecord.consecutiveFailureCount).toBe(4);
+    expect(syncUpdate.consecutiveFailureCount).toBe(0);
     await expect(
       repositories.syncState.findLatest({
         scope: "provider",

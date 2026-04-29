@@ -2605,6 +2605,7 @@ function createStage1RepositoriesInternal(
               freshnessP95Seconds: values.freshnessP95Seconds,
               freshnessP99Seconds: values.freshnessP99Seconds,
               lastSuccessfulAt: values.lastSuccessfulAt,
+              consecutiveFailureCount: values.consecutiveFailureCount,
               deadLetterCount: values.deadLetterCount,
               updatedAt: new Date(),
             },

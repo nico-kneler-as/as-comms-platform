@@ -428,13 +428,18 @@ export async function mapLiveGmailMessageToRecord(input: {
     subjectHeader.startsWith("mail delivery failed") ||
     topLevelMimeType.includes("multipart/report");
   const bodyPreviewResult = await extractGmailBodyPreviewFromPayloadResult(
-    input.message.payload
+    input.message.payload,
+    {
+      messageIdentifier: input.message.id
+    }
   );
   const attachmentMetadata = collectGmailAttachmentMetadata(input.message.payload);
   const previewMessageIdPattern =
     /Message-ID:\s*(<\d+\.[a-f0-9-]+@[a-z.]+>)/iu;
   const dsnOriginalMessageIdFromParts = isPossiblyDsn
-    ? extractDsnOriginalMessageId(input.message.payload)
+    ? extractDsnOriginalMessageId(input.message.payload, {
+        messageIdentifier: input.message.id
+      })
     : null;
   const dsnOriginalMessageIdFromPreview = isPossiblyDsn
     ? (previewMessageIdPattern.exec(bodyPreviewResult.bodyTextPreview)?.[1] ??
