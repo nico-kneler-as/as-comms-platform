@@ -17,6 +17,7 @@ import type {
   InboxListViewModel,
 } from "../_lib/view-models";
 import { fetchInboxListPage } from "../_lib/client-api";
+import { parseInboxFilterId } from "../_lib/view-models";
 import { shouldApplyUrlSearchQuery } from "../_lib/search-sync";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -133,6 +134,7 @@ export function InboxList({
     openNewDraft,
   } = useInboxClient();
   const urlQuery = searchParams.get("q") ?? "";
+  const urlFilter = searchParams.get("filter");
   const urlProjectId = searchParams.get("projectId");
   const urlProjectIds = searchParams.getAll("projectId");
   const rawSearchQuery = search.query.trim();
@@ -161,6 +163,7 @@ export function InboxList({
     urlProjectId ?? initialList.selectedProjectId ?? null,
   );
   const previousUrlQueryRef = useRef(urlQuery);
+  const previousUrlFilterRef = useRef(urlFilter);
   const previousUrlProjectIdRef = useRef(urlProjectId);
   const latestShellStateRef = useRef({
     activeFilter: initialFilterId,
@@ -210,6 +213,19 @@ export function InboxList({
     previousUrlProjectIdRef.current = urlProjectId;
     setSelectedProjectId(urlProjectId);
   }, [urlProjectId]);
+
+  useEffect(() => {
+    if (urlFilter === previousUrlFilterRef.current) {
+      return;
+    }
+
+    previousUrlFilterRef.current = urlFilter;
+    const parsedFilter = parseInboxFilterId(urlFilter);
+
+    if (parsedFilter !== null) {
+      setActiveFilter(parsedFilter);
+    }
+  }, [urlFilter]);
 
   useEffect(() => {
     const currentUrlQuery = urlQuery.trim();

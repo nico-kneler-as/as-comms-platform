@@ -30,6 +30,22 @@ export type InboxFilterId =
   | "sent"
   | "archived";
 
+export const INBOX_FILTER_IDS: readonly InboxFilterId[] = [
+  "all",
+  "unread",
+  "follow-up",
+  "unresolved",
+  "sent",
+];
+
+export function parseInboxFilterId(
+  value: string | null | undefined,
+): InboxFilterId | null {
+  return INBOX_FILTER_IDS.includes(value as InboxFilterId)
+    ? (value as InboxFilterId)
+    : null;
+}
+
 export type InboxChannel = "email" | "sms";
 
 export type InboxVolunteerStage =
@@ -356,12 +372,26 @@ export interface InboxWelcomeProjectWorkloadViewModel {
   readonly needsFollowUpCount: number;
 }
 
+export interface InboxWelcomeFollowUpEntryViewModel {
+  readonly contactId: string;
+  readonly displayName: string;
+  readonly initials: string;
+  readonly avatarTone: InboxAvatarTone;
+  readonly projectLabel: string | null;
+  readonly latestSubject: string;
+  readonly lastActivityLabel: string;
+}
+
 export interface InboxWelcomeWorkloadViewModel {
   readonly projects: readonly InboxWelcomeProjectWorkloadViewModel[];
   readonly totals: {
     readonly activeProjects: number;
     readonly unread: number;
     readonly needsFollowUp: number;
+  };
+  readonly followUpRail: {
+    readonly totalCount: number;
+    readonly entries: readonly InboxWelcomeFollowUpEntryViewModel[];
   };
 }
 

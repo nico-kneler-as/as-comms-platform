@@ -1436,6 +1436,405 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("returns an empty follow-up rail when no active workload row needs follow-up", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:sarah-martinez",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-14T13:00:00.000Z",
+      lastOutboundAt: "2026-04-13T12:00:00.000Z",
+      lastActivityAt: "2026-04-14T13:00:00.000Z",
+      snippet:
+        "Following up on the field study logistics for the Amazon basin project.",
+      lastCanonicalEventId: "event:sarah-inbound-1",
+      lastEventType: "communication.email.inbound",
+    });
+
+    const workload = await getInboxWelcomeWorkload();
+
+    expect(workload.followUpRail).toEqual({
+      totalCount: 0,
+      entries: [],
+    });
+  });
+
+  it("excludes follow-up rows whose memberships only touch inactive projects", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.settings.projects.setActive(
+      "project:killer-whales",
+      false,
+    );
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:sarah-martinez",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-14T13:00:00.000Z",
+      lastOutboundAt: "2026-04-13T12:00:00.000Z",
+      lastActivityAt: "2026-04-14T13:00:00.000Z",
+      snippet:
+        "Following up on the field study logistics for the Amazon basin project.",
+      lastCanonicalEventId: "event:sarah-inbound-1",
+      lastEventType: "communication.email.inbound",
+    });
+
+    const hiddenLatest = await seedInboxEmailEvent(runtime.context, {
+      id: "hidden-follow-up-1",
+      contactId: "contact:hidden-follow-up",
+      occurredAt: "2026-04-10T10:00:00.000Z",
+      direction: "inbound",
+      subject: "Killer whales check-in",
+      snippet: "Checking in from the inactive project.",
+    });
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:hidden-follow-up",
+      salesforceContactId: "003-hidden-follow-up",
+      displayName: "Hidden Follow Up",
+      primaryEmail: "hidden-follow-up@example.org",
+      primaryPhone: null,
+      projectId: "project:killer-whales",
+      projectName: "Searching for Killer Whales",
+      membershipId: "membership:hidden-follow-up",
+      membershipStatus: "active",
+      membershipCreatedAt: "2026-04-10T10:00:00.000Z",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:hidden-follow-up",
+      bucket: "New",
+      needsFollowUp: true,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-10T10:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-10T10:00:00.000Z",
+      snippet: "Checking in from the inactive project.",
+      lastCanonicalEventId: hiddenLatest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const workload = await getInboxWelcomeWorkload();
+
+    expect(workload.followUpRail.totalCount).toBe(0);
+    expect(workload.followUpRail.entries).toEqual([]);
+  });
+
+  it("caps the follow-up rail inline list at three rows while preserving the full count", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:sarah-martinez",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-14T13:00:00.000Z",
+      lastOutboundAt: "2026-04-13T12:00:00.000Z",
+      lastActivityAt: "2026-04-14T13:00:00.000Z",
+      snippet:
+        "Following up on the field study logistics for the Amazon basin project.",
+      lastCanonicalEventId: "event:sarah-inbound-1",
+      lastEventType: "communication.email.inbound",
+    });
+
+    const contacts = [
+      {
+        contactId: "contact:follow-up-a",
+        displayName: "Follow Up A",
+        occurredAt: "2026-04-09T09:00:00.000Z",
+      },
+      {
+        contactId: "contact:follow-up-b",
+        displayName: "Follow Up B",
+        occurredAt: "2026-04-10T09:00:00.000Z",
+      },
+      {
+        contactId: "contact:follow-up-c",
+        displayName: "Follow Up C",
+        occurredAt: "2026-04-11T09:00:00.000Z",
+      },
+      {
+        contactId: "contact:follow-up-d",
+        displayName: "Follow Up D",
+        occurredAt: "2026-04-12T09:00:00.000Z",
+      },
+      {
+        contactId: "contact:follow-up-e",
+        displayName: "Follow Up E",
+        occurredAt: "2026-04-13T09:00:00.000Z",
+      },
+    ] as const;
+
+    for (const contact of contacts) {
+      await seedInboxContact(runtime.context, {
+        contactId: contact.contactId,
+        salesforceContactId: contact.contactId.replace("contact:", "003-"),
+        displayName: contact.displayName,
+        primaryEmail: `${contact.contactId}@example.org`,
+        primaryPhone: null,
+        projectId: "project:amazon-basin",
+        projectName: "Amazon Basin Research",
+        membershipId: `membership:${contact.contactId}`,
+        membershipStatus: "active",
+        membershipCreatedAt: contact.occurredAt,
+      });
+      const latest = await seedInboxEmailEvent(runtime.context, {
+        id: `${contact.contactId}-follow-up`,
+        contactId: contact.contactId,
+        occurredAt: contact.occurredAt,
+        direction: "inbound",
+        subject: `${contact.displayName} subject`,
+        snippet: `${contact.displayName} snippet`,
+      });
+      await seedInboxProjection(runtime.context, {
+        contactId: contact.contactId,
+        bucket: "New",
+        needsFollowUp: true,
+        hasUnresolved: false,
+        lastInboundAt: contact.occurredAt,
+        lastOutboundAt: null,
+        lastActivityAt: contact.occurredAt,
+        snippet: `${contact.displayName} snippet`,
+        lastCanonicalEventId: latest.canonicalEventId,
+        lastEventType: "communication.email.inbound",
+      });
+    }
+
+    const workload = await getInboxWelcomeWorkload();
+
+    expect(workload.followUpRail.totalCount).toBe(5);
+    expect(workload.followUpRail.entries).toHaveLength(3);
+    expect(workload.followUpRail.entries.map((entry) => entry.contactId)).toEqual([
+      "contact:follow-up-a",
+      "contact:follow-up-b",
+      "contact:follow-up-c",
+    ]);
+  });
+
+  it("orders follow-up rail rows by oldest lastActivityAt first with contactId tiebreaks", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:sarah-martinez",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-14T13:00:00.000Z",
+      lastOutboundAt: "2026-04-13T12:00:00.000Z",
+      lastActivityAt: "2026-04-14T13:00:00.000Z",
+      snippet:
+        "Following up on the field study logistics for the Amazon basin project.",
+      lastCanonicalEventId: "event:sarah-inbound-1",
+      lastEventType: "communication.email.inbound",
+    });
+
+    const contacts = [
+      {
+        contactId: "contact:zeta",
+        displayName: "Zeta Contact",
+        occurredAt: "2026-04-10T09:00:00.000Z",
+      },
+      {
+        contactId: "contact:alpha",
+        displayName: "Alpha Contact",
+        occurredAt: "2026-04-10T09:00:00.000Z",
+      },
+      {
+        contactId: "contact:middle",
+        displayName: "Middle Contact",
+        occurredAt: "2026-04-11T09:00:00.000Z",
+      },
+    ] as const;
+
+    for (const contact of contacts) {
+      await seedInboxContact(runtime.context, {
+        contactId: contact.contactId,
+        salesforceContactId: contact.contactId.replace("contact:", "003-"),
+        displayName: contact.displayName,
+        primaryEmail: `${contact.contactId}@example.org`,
+        primaryPhone: null,
+        projectId: "project:amazon-basin",
+        projectName: "Amazon Basin Research",
+        membershipId: `membership:${contact.contactId}`,
+        membershipStatus: "active",
+        membershipCreatedAt: contact.occurredAt,
+      });
+      const latest = await seedInboxEmailEvent(runtime.context, {
+        id: `${contact.contactId}-order`,
+        contactId: contact.contactId,
+        occurredAt: contact.occurredAt,
+        direction: "inbound",
+        subject: `${contact.displayName} subject`,
+        snippet: `${contact.displayName} snippet`,
+      });
+      await seedInboxProjection(runtime.context, {
+        contactId: contact.contactId,
+        bucket: "New",
+        needsFollowUp: true,
+        hasUnresolved: false,
+        lastInboundAt: contact.occurredAt,
+        lastOutboundAt: null,
+        lastActivityAt: contact.occurredAt,
+        snippet: `${contact.displayName} snippet`,
+        lastCanonicalEventId: latest.canonicalEventId,
+        lastEventType: "communication.email.inbound",
+      });
+    }
+
+    const workload = await getInboxWelcomeWorkload();
+
+    expect(workload.followUpRail.entries.map((entry) => entry.contactId)).toEqual([
+      "contact:alpha",
+      "contact:zeta",
+      "contact:middle",
+    ]);
+  });
+
+  it("uses one active project label per row based on the newest active membership", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:sarah-martinez",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-14T13:00:00.000Z",
+      lastOutboundAt: "2026-04-13T12:00:00.000Z",
+      lastActivityAt: "2026-04-14T13:00:00.000Z",
+      snippet:
+        "Following up on the field study logistics for the Amazon basin project.",
+      lastCanonicalEventId: "event:sarah-inbound-1",
+      lastEventType: "communication.email.inbound",
+    });
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:whitebark-pine",
+      projectName: "Tracking Whitebark Pine",
+      source: "salesforce",
+      isActive: true,
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:multi-membership",
+      salesforceContactId: "003-multi-membership",
+      displayName: "Multi Membership",
+      primaryEmail: "multi-membership@example.org",
+      primaryPhone: null,
+      projectId: "project:amazon-basin",
+      projectName: "Amazon Basin Research",
+      membershipId: "membership:multi-membership:amazon",
+      membershipStatus: "lead",
+      membershipCreatedAt: "2026-04-08T09:00:00.000Z",
+    });
+    await runtime.context.repositories.contactMemberships.upsert({
+      id: "membership:multi-membership:whitebark",
+      contactId: "contact:multi-membership",
+      projectId: "project:whitebark-pine",
+      expeditionId: null,
+      salesforceMembershipId: "membership:multi-membership:whitebark:sf",
+      role: "volunteer",
+      status: "active",
+      source: "salesforce",
+      createdAt: "2026-04-12T09:00:00.000Z",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "multi-membership-follow-up",
+      contactId: "contact:multi-membership",
+      occurredAt: "2026-04-12T09:00:00.000Z",
+      direction: "inbound",
+      subject: "Multi membership subject",
+      snippet: "Multi membership snippet",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:multi-membership",
+      bucket: "New",
+      needsFollowUp: true,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-12T09:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-12T09:00:00.000Z",
+      snippet: "Multi membership snippet",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const workload = await getInboxWelcomeWorkload();
+    const entry = workload.followUpRail.entries.find(
+      (item) => item.contactId === "contact:multi-membership",
+    );
+
+    expect(entry?.projectLabel).toBe("Tracking Whitebark Pine");
+  });
+
+  it("uses the event-type fallback subject for follow-up rows", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:sarah-martinez",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-14T13:00:00.000Z",
+      lastOutboundAt: "2026-04-13T12:00:00.000Z",
+      lastActivityAt: "2026-04-14T13:00:00.000Z",
+      snippet:
+        "Following up on the field study logistics for the Amazon basin project.",
+      lastCanonicalEventId: "event:sarah-inbound-1",
+      lastEventType: "communication.email.inbound",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "fallback-follow-up",
+      contactId: "contact:fallback-follow-up",
+      occurredAt: "2026-04-09T08:00:00.000Z",
+      direction: "outbound",
+      subject: "Ignored explicit subject",
+      snippet: "",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:fallback-follow-up",
+      salesforceContactId: "003-fallback-follow-up",
+      displayName: "Fallback Follow Up",
+      primaryEmail: "fallback-follow-up@example.org",
+      primaryPhone: null,
+      projectId: "project:amazon-basin",
+      projectName: "Amazon Basin Research",
+      membershipId: "membership:fallback-follow-up",
+      membershipStatus: "active",
+      membershipCreatedAt: "2026-04-09T08:00:00.000Z",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:fallback-follow-up",
+      bucket: "Opened",
+      needsFollowUp: true,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-09T08:00:00.000Z",
+      lastActivityAt: "2026-04-09T08:00:00.000Z",
+      snippet: "",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const workload = await getInboxWelcomeWorkload();
+    const entry = workload.followUpRail.entries.find(
+      (item) => item.contactId === "contact:fallback-follow-up",
+    );
+
+    expect(entry?.latestSubject).toBe("Outbound email sent");
+  });
+
   it("assembles selected-contact detail from real contact, membership, timeline, and projection data", async () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 

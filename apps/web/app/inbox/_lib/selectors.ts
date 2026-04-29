@@ -126,11 +126,13 @@ interface InboxDetailCacheData {
 interface InboxWelcomeWorkloadCacheData {
   readonly projects: InboxWelcomeWorkloadViewModel["projects"];
   readonly totals: InboxWelcomeWorkloadViewModel["totals"];
+  readonly followUpRail: InboxWelcomeWorkloadViewModel["followUpRail"];
 }
 
 const DEFAULT_INBOX_LIST_PAGE_SIZE = 50;
 const DEFAULT_INBOX_TIMELINE_PAGE_SIZE = 40;
 const INBOX_LIST_SCAN_LIMIT = 5_000;
+const WELCOME_FOLLOW_UP_INLINE_LIMIT = 3;
 
 type CampaignActivityType = Extract<
   TimelineItem,
@@ -2234,6 +2236,24 @@ function groupMembershipsByContactId(
   return grouped;
 }
 
+function pickPrimaryActiveProjectName(input: {
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly activeProjectIds: ReadonlySet<string>;
+  readonly projectLabelById: ReadonlyMap<string, string>;
+}): string | null {
+  const membership =
+    sortMembershipsByCreatedAt(input.memberships).find(
+      (record) =>
+        record.projectId !== null &&
+        input.activeProjectIds.has(record.projectId) &&
+        input.projectLabelById.has(record.projectId),
+    ) ?? null;
+
+  return membership?.projectId == null
+    ? null
+    : input.projectLabelById.get(membership.projectId) ?? null;
+}
+
 async function loadProjectMetadataById(
   memberships: readonly ContactMembershipRecord[],
 ): Promise<
@@ -2977,6 +2997,30 @@ async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkload
         activeProjectIds.has(membership.projectId),
     ),
   );
+  const followUpRows = activeWorkloadRows.filter((row) => row.needsFollowUp);
+  const orderedFollowUpRows = [...followUpRows].sort((left, right) => {
+    const timestampDifference = left.lastActivityAt.localeCompare(
+      right.lastActivityAt,
+    );
+
+    return timestampDifference !== 0
+      ? timestampDifference
+      : left.contactId.localeCompare(right.contactId);
+  });
+  const inlineRows = orderedFollowUpRows.slice(
+    0,
+    WELCOME_FOLLOW_UP_INLINE_LIMIT,
+  );
+  const inlineContactIds = inlineRows.map((row) => row.contactId);
+  const inlineContacts =
+    inlineContactIds.length === 0
+      ? []
+      : await runtime.repositories.contacts.listByIds(inlineContactIds);
+  const contactById = new Map(inlineContacts.map((contact) => [contact.id, contact]));
+  const projectLabelById = new Map(
+    activeProjects.map((project) => [project.projectId, project.projectName]),
+  );
+  const referenceNowIso = new Date().toISOString();
 
   return {
     projects: activeProjects.map((project, index) => {
@@ -3001,6 +3045,32 @@ async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkload
       unread: activeWorkloadRows.filter((row) => row.bucket === "New").length,
       needsFollowUp: activeWorkloadRows.filter((row) => row.needsFollowUp)
         .length,
+    },
+    followUpRail: {
+      totalCount: orderedFollowUpRows.length,
+      entries: inlineRows.map((row) => {
+        const contact = contactById.get(row.contactId);
+        const displayName = contact?.displayName ?? "Unknown contact";
+        const membershipsForContact =
+          membershipsByContactId.get(row.contactId) ?? [];
+
+        return {
+          contactId: row.contactId,
+          displayName,
+          initials: toInitials(displayName),
+          avatarTone: avatarToneForContact(row.contactId),
+          projectLabel: pickPrimaryActiveProjectName({
+            memberships: membershipsForContact,
+            activeProjectIds,
+            projectLabelById,
+          }),
+          latestSubject: fallbackLatestSubject(row.lastEventType),
+          lastActivityLabel: formatRelativeTimestamp(
+            row.lastActivityAt,
+            referenceNowIso,
+          ),
+        };
+      }),
     },
   };
 }
@@ -3235,6 +3305,7 @@ export async function getInboxWelcomeWorkload(): Promise<InboxWelcomeWorkloadVie
   return {
     projects: cachedData.projects,
     totals: cachedData.totals,
+    followUpRail: cachedData.followUpRail,
   };
 }
 
