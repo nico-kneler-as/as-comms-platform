@@ -281,6 +281,7 @@ function buildPendingTimelineItems(
       inReplyToRfc822: row.inReplyToRfc822,
       sendStatus:
         row.status === "pending" ||
+        row.status === "confirmed" ||
         row.status === "failed" ||
         row.status === "orphaned"
           ? row.status
