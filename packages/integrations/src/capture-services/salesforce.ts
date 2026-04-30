@@ -1132,11 +1132,29 @@ function buildTaskRecord(input: {
   readonly receivedAt: string;
 }): SalesforceRecord {
   const taskId = getStringField(input.task, "Id");
+  const taskSubtype = getStringField(input.task, "TaskSubtype");
+  const subject = getStringField(input.task, "Subject");
+  const ownerUsername = getStringField(input.task, "Owner.Username");
+  const whoId = getStringField(input.task, input.config.taskContactField);
+  const createdDate = toIsoTimestamp(getStringField(input.task, "CreatedDate"));
+  const lastModifiedDate = toIsoTimestamp(
+    getStringField(input.task, "LastModifiedDate"),
+  );
+  const deferredTaskMetadata = {
+    taskSubtype,
+    subject,
+    ownerUsername,
+    whoId,
+    relatedMembershipPresent: input.relatedMembership !== null,
+    createdDate,
+    lastModifiedDate,
+  };
 
   if (taskId === null) {
     return {
       recordType: "task_missing_id",
       recordId: "unknown-task",
+      ...deferredTaskMetadata,
     };
   }
 
@@ -1150,6 +1168,7 @@ function buildTaskRecord(input: {
     return {
       recordType: "task_unmapped_channel",
       recordId: taskId,
+      ...deferredTaskMetadata,
     };
   }
 
@@ -1162,11 +1181,12 @@ function buildTaskRecord(input: {
     return {
       recordType: "task_missing_occurred_at",
       recordId: taskId,
+      ...deferredTaskMetadata,
     };
   }
 
   const salesforceContactId =
-    getStringField(input.task, input.config.taskContactField) ??
+    whoId ??
     getStringField(input.contact ?? {}, "Id");
   const projectId =
     input.relatedMembership === null
@@ -1198,13 +1218,12 @@ function buildTaskRecord(input: {
         );
   const hasMembershipRoutingContext =
     projectId !== null || expeditionId !== null;
-  const subject = getStringField(input.task, "Subject");
   const messageKind = classifySalesforceTaskMessageKind({
     channel,
-    taskSubtype: getStringField(input.task, "TaskSubtype"),
+    taskSubtype,
     ownerId: getStringField(input.task, "OwnerId"),
     ownerName: getStringField(input.task, "Owner.Name"),
-    ownerUsername: getStringField(input.task, "Owner.Username"),
+    ownerUsername,
     subject,
   }).messageKind;
 
