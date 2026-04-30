@@ -1018,7 +1018,7 @@ export function mapPendingComposerOutboundRow(
     attachmentMetadata: row.attachmentMetadataJson,
     gmailThreadId: row.gmailThreadId,
     inReplyToRfc822: row.inReplyToRfc822,
-    sentAt: row.sentAt.toISOString(),
+    attemptedAt: row.attemptedAt.toISOString(),
     reconciledEventId: row.reconciledEventId,
     reconciledAt: fromDate(row.reconciledAt),
     failedReason: row.failedReason,
@@ -1049,7 +1049,7 @@ export function mapPendingComposerOutboundToInsert(
     attachmentMetadataJson: record.attachmentMetadata,
     gmailThreadId: record.gmailThreadId,
     inReplyToRfc822: record.inReplyToRfc822,
-    sentAt: toDate(record.sentAt),
+    attemptedAt: toDate(record.attemptedAt),
     reconciledEventId: record.reconciledEventId,
     reconciledAt:
       record.reconciledAt === null ? null : toDate(record.reconciledAt),

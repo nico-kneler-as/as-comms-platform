@@ -870,7 +870,7 @@ export const pendingComposerOutbounds = pgTable(
       .default([]),
     gmailThreadId: text("gmail_thread_id"),
     inReplyToRfc822: text("in_reply_to_rfc822"),
-    sentAt: timestamp("sent_at", {
+    attemptedAt: timestamp("attempted_at", {
       mode: "date",
       withTimezone: true,
     }).notNull(),
@@ -899,7 +899,7 @@ export const pendingComposerOutbounds = pgTable(
       .on(table.sentRfc822MessageId)
       .where(sql`${table.sentRfc822MessageId} is not null`),
     index("pending_composer_outbounds_pending_sweep_idx")
-      .on(table.status, table.sentAt)
+      .on(table.status, table.attemptedAt)
       .where(sql`${table.status} = 'pending'`),
   ],
 );

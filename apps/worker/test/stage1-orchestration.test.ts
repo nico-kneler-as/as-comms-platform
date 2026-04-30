@@ -1150,7 +1150,7 @@ Alias drift outbound message.
         attachmentMetadata: [],
         gmailThreadId: null,
         inReplyToRfc822: null,
-        sentAt: "2026-01-02T00:01:00.000Z"
+        attemptedAt: "2026-01-02T00:01:00.000Z"
       });
       await context.repositories.pendingOutbounds.markSentRfc822(
         "pending:dsn-match",

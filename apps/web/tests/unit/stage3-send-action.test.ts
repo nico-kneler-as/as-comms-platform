@@ -481,7 +481,7 @@ describe("sendComposerAction", () => {
       attachmentMetadata: [],
       gmailThreadId: null,
       inReplyToRfc822: null,
-      sentAt: "2026-04-21T11:00:00.000Z",
+      attemptedAt: "2026-04-21T11:00:00.000Z",
     });
     await runtime.context.repositories.pendingOutbounds.markFailed("pending:old", {
       reason: "permanent",

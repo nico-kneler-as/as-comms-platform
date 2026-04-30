@@ -215,8 +215,8 @@ function commonFields(
   } as Omit<TimelineItem, "family"> & { family?: never };
 }
 
-function buildPendingTimelineSortKey(id: string, sentAt: string): string {
-  return `${sentAt}::pending-outbound:${id}`;
+function buildPendingTimelineSortKey(id: string, attemptedAt: string): string {
+  return `${attemptedAt}::pending-outbound:${id}`;
 }
 
 function isInternalNoteEvent(event: CanonicalEventRecord): boolean {
@@ -262,8 +262,8 @@ function buildPendingTimelineItems(
       contactId: row.canonicalContactId,
       canonicalEventId: `pending-outbound:${row.id}`,
       family: "one_to_one_email" as const,
-      occurredAt: row.sentAt,
-      sortKey: buildPendingTimelineSortKey(row.id, row.sentAt),
+      occurredAt: row.attemptedAt,
+      sortKey: buildPendingTimelineSortKey(row.id, row.attemptedAt),
       reviewState: "clear" as const,
       primaryProvider: "manual" as const,
       summary:
