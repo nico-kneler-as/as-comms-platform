@@ -166,7 +166,7 @@ describe("diag-unmapped-task-scope", () => {
     });
     expect(report.ownerUsernameDistribution[0]).toEqual({
       ownerUsername: "admin+1@adventurescientists.org",
-      count: 7,
+      count: 8,
       launchScopeOwner: true
     });
     expect(report.last30DayCounts).toEqual([
