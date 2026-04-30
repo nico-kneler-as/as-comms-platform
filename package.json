@@ -22,6 +22,7 @@
     "ops:worker:seed-aliases-from-env": "tsx scripts/ops/seed-aliases-from-env.ts",
     "ops:backfill-project-aliases": "tsx scripts/ops/backfill-project-aliases.ts",
     "ops:backfill-stuck-identity-anchors": "tsx scripts/ops/backfill-stuck-identity-anchors.ts",
+    "ops:recover-orphan-task-details": "tsx scripts/ops/recover-orphan-task-details.ts",
     "ops:promote-admin": "tsx scripts/ops/promote-admin.ts",
     "build": "turbo build && node scripts/verify-runtime-exports.mjs",
     "lint": "turbo lint",

@@ -96,6 +96,19 @@ type ResolvedSalesforceCaptureServiceConfig = z.output<
 
 type SalesforceRow = Record<string, unknown>;
 
+export interface SalesforceTaskFieldConfig {
+  readonly taskContactField: string;
+  readonly taskChannelField: string;
+  readonly taskOccurredAtField: string;
+  readonly taskCrossProviderKeyField: string | null;
+}
+
+export interface SalesforceTaskChannelConfig {
+  readonly taskChannelField: string;
+  readonly taskEmailChannelValues: readonly string[];
+  readonly taskSmsChannelValues: readonly string[];
+}
+
 export interface SalesforceApiClient {
   queryAll(soql: string): Promise<readonly SalesforceRow[]>;
 }
@@ -759,7 +772,7 @@ function buildMembershipFields(
 }
 
 function buildTaskFields(
-  config: ResolvedSalesforceCaptureServiceConfig,
+  config: SalesforceTaskFieldConfig,
 ): string[] {
   return uniqueValues([
     "Id",
@@ -779,6 +792,12 @@ function buildTaskFields(
       ? []
       : [config.taskCrossProviderKeyField]),
   ]);
+}
+
+export function buildSalesforceTaskFields(
+  config: SalesforceTaskFieldConfig,
+): string[] {
+  return buildTaskFields(config);
 }
 
 function buildContactWindowWhere(window: {
@@ -1077,10 +1096,10 @@ function buildLifecycleRecords(input: {
   return records;
 }
 
-function resolveTaskChannel(input: {
+export function resolveTaskChannel(input: {
   readonly row: SalesforceRow;
   readonly relatedMembership: SalesforceRow | null;
-  readonly config: ResolvedSalesforceCaptureServiceConfig;
+  readonly config: SalesforceTaskChannelConfig;
 }): "email" | "sms" | null {
   const rawChannelValue = getStringField(
     input.row,
