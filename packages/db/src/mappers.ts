@@ -822,6 +822,7 @@ export function mapInboxProjectionRow(
     lastOutboundAt: fromDate(row.lastOutboundAt),
     lastActivityAt: row.lastActivityAt.toISOString(),
     snippet: row.snippet,
+    archivedAt: fromDate(row.archivedAt),
     lastCanonicalEventId: row.lastCanonicalEventId,
     lastEventType: row.lastEventType,
   });

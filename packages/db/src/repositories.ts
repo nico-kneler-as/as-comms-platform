@@ -554,7 +554,8 @@ type InboxProjectionFilter =
   | "unread"
   | "follow-up"
   | "unresolved"
-  | "sent";
+  | "sent"
+  | "archived";
 type InboxProjectionOrder = "last-inbound" | "last-outbound";
 
 interface InboxRecencyCursor {
@@ -583,15 +584,26 @@ function buildInboxRecencyOrderBy(
 function buildInboxFilterPredicate(
   filter: InboxProjectionFilter,
 ): SQL | undefined {
-  return filter === "unread"
-    ? eq(contactInboxProjection.bucket, "New")
-    : filter === "follow-up"
-      ? eq(contactInboxProjection.isStarred, true)
-      : filter === "unresolved"
-        ? eq(contactInboxProjection.hasUnresolved, true)
-        : filter === "sent"
-          ? isNotNull(contactInboxProjection.lastOutboundAt)
-        : undefined;
+  const excludeArchived = isNull(contactInboxProjection.archivedAt);
+
+  if (filter === "archived") {
+    return isNotNull(contactInboxProjection.archivedAt);
+  }
+
+  const filterPredicate =
+    filter === "unread"
+      ? eq(contactInboxProjection.bucket, "New")
+      : filter === "follow-up"
+        ? eq(contactInboxProjection.isStarred, true)
+        : filter === "unresolved"
+          ? eq(contactInboxProjection.hasUnresolved, true)
+          : filter === "sent"
+            ? isNotNull(contactInboxProjection.lastOutboundAt)
+            : undefined;
+
+  return filterPredicate === undefined
+    ? excludeArchived
+    : and(excludeArchived, filterPredicate);
 }
 
 function buildInboxProjectPredicate(
@@ -2771,11 +2783,12 @@ function createStage1RepositoriesInternal(
         const projectPredicate = buildInboxProjectPredicate(input?.projectId);
         const baseQuery = db
           .select({
-            all: count(),
-            unread: sql<number>`coalesce(sum(case when ${contactInboxProjection.bucket} = 'New' then 1 else 0 end), 0)`,
-            followUp: sql<number>`coalesce(sum(case when ${contactInboxProjection.isStarred} then 1 else 0 end), 0)`,
-            unresolved: sql<number>`coalesce(sum(case when ${contactInboxProjection.hasUnresolved} then 1 else 0 end), 0)`,
-            sent: sql<number>`coalesce(sum(case when ${contactInboxProjection.lastOutboundAt} is not null then 1 else 0 end), 0)`,
+            all: sql<number>`coalesce(sum(case when ${contactInboxProjection.archivedAt} is null then 1 else 0 end), 0)`,
+            unread: sql<number>`coalesce(sum(case when ${contactInboxProjection.bucket} = 'New' and ${contactInboxProjection.archivedAt} is null then 1 else 0 end), 0)`,
+            followUp: sql<number>`coalesce(sum(case when ${contactInboxProjection.isStarred} and ${contactInboxProjection.archivedAt} is null then 1 else 0 end), 0)`,
+            unresolved: sql<number>`coalesce(sum(case when ${contactInboxProjection.hasUnresolved} and ${contactInboxProjection.archivedAt} is null then 1 else 0 end), 0)`,
+            sent: sql<number>`coalesce(sum(case when ${contactInboxProjection.lastOutboundAt} is not null and ${contactInboxProjection.archivedAt} is null then 1 else 0 end), 0)`,
+            archived: sql<number>`coalesce(sum(case when ${contactInboxProjection.archivedAt} is not null then 1 else 0 end), 0)`,
           })
           .from(contactInboxProjection);
         const [row] = await (projectPredicate === undefined
@@ -2788,6 +2801,7 @@ function createStage1RepositoriesInternal(
           followUp: row?.followUp ?? 0,
           unresolved: row?.unresolved ?? 0,
           sent: row?.sent ?? 0,
+          archived: row?.archived ?? 0,
         };
       },
 
@@ -2839,6 +2853,19 @@ function createStage1RepositoriesInternal(
           .update(contactInboxProjection)
           .set({
             isStarred: input.needsFollowUp,
+            updatedAt: new Date(),
+          })
+          .where(eq(contactInboxProjection.contactId, input.contactId))
+          .returning();
+
+        return row === undefined ? null : mapInboxProjectionRow(row);
+      },
+
+      async setArchived(input) {
+        const [row] = await db
+          .update(contactInboxProjection)
+          .set({
+            archivedAt: input.archived ? new Date() : null,
             updatedAt: new Date(),
           })
           .where(eq(contactInboxProjection.contactId, input.contactId))

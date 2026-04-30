@@ -11,7 +11,11 @@ import {
   useTransition,
 } from "react";
 
-import type { InboxFilterId, InboxListViewModel } from "../_lib/view-models";
+import type {
+  InboxActiveProjectOption,
+  InboxFilterId,
+  InboxListViewModel,
+} from "../_lib/view-models";
 import { fetchInboxListPage } from "../_lib/client-api";
 import { shouldApplyUrlSearchQuery } from "../_lib/search-sync";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -47,7 +51,70 @@ interface ListColumnProps {
   readonly initialFilterId?: InboxFilterId;
 }
 
-const TITLE = "Inbox";
+const STATE_HEADER_LABEL: Partial<Record<InboxFilterId, string>> = {
+  unread: "Unread",
+  "follow-up": "Follow-up",
+  unresolved: "Unresolved",
+  sent: "Sent",
+  archived: "Archived",
+};
+
+function resolveInboxHeaderTitle(input: {
+  readonly searchQuery: string;
+  readonly activeFilter: InboxFilterId;
+  readonly selectedProjectId: string | null;
+  readonly urlProjectIds: readonly string[];
+  readonly activeProjects: readonly InboxActiveProjectOption[];
+}): string {
+  if (input.searchQuery.trim().length >= 3) {
+    return "Results";
+  }
+
+  const normalizedProjectIds =
+    input.urlProjectIds.length > 0
+      ? Array.from(
+          new Set(input.urlProjectIds.filter((projectId) => projectId.length > 0)),
+        )
+      : input.selectedProjectId === null
+        ? []
+        : [input.selectedProjectId];
+  const activeStateLabel: string | null =
+    input.activeFilter === "all"
+      ? null
+      : STATE_HEADER_LABEL[input.activeFilter] ?? null;
+  const activeFacetCount =
+    normalizedProjectIds.length + (activeStateLabel === null ? 0 : 1);
+
+  if (activeFacetCount === 0) {
+    return "All";
+  }
+
+  if (activeFacetCount > 2) {
+    return "Filtered";
+  }
+
+  let projectLabel: string | null = null;
+
+  if (normalizedProjectIds.length > 1) {
+    projectLabel = `${String(normalizedProjectIds.length)} projects`;
+  } else if (normalizedProjectIds.length === 1) {
+    const selectedProject = input.activeProjects.find(
+      (project) => project.id === normalizedProjectIds[0],
+    );
+
+    if (selectedProject !== undefined) {
+      // TODO(feat/inbox-header-dynamic-label): Once the alias bug-fix branch is
+      // merged everywhere, remove the name fallback and rely on alias only.
+      projectLabel = selectedProject.alias ?? selectedProject.name;
+    }
+  }
+
+  if (projectLabel !== null && activeStateLabel !== null) {
+    return `${projectLabel} · ${activeStateLabel}`;
+  }
+
+  return projectLabel ?? activeStateLabel ?? "All";
+}
 
 export function InboxList({
   initialList,
@@ -67,6 +134,7 @@ export function InboxList({
   } = useInboxClient();
   const urlQuery = searchParams.get("q") ?? "";
   const urlProjectId = searchParams.get("projectId");
+  const urlProjectIds = searchParams.getAll("projectId");
   const rawSearchQuery = search.query.trim();
   const deferredQuery = useDeferredValue(search.query);
   const normalizedQuery = deferredQuery.trim();
@@ -334,6 +402,17 @@ export function InboxList({
   const activeProjects = currentList.activeProjects;
   const hasActiveFilters = activeFilter !== "all" || selectedProjectId !== null;
   const shouldShowSearchSummary = search.isActive && isSearchThresholdMet;
+  const headerTitle = useMemo(
+    () =>
+      resolveInboxHeaderTitle({
+        searchQuery: search.query,
+        activeFilter,
+        selectedProjectId,
+        urlProjectIds,
+        activeProjects,
+      }),
+    [activeFilter, activeProjects, search.query, selectedProjectId, urlProjectIds],
+  );
 
   const handleFilterChange = useCallback(
     (id: InboxFilterId) => {
@@ -439,7 +518,7 @@ export function InboxList({
           className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-5`}
         >
           <h1 className={`min-w-0 flex-1 truncate ${TYPE.headingLg}`}>
-            {TITLE}
+            {headerTitle}
           </h1>
           <Button
             type="button"

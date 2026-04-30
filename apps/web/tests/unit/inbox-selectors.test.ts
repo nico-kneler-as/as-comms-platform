@@ -110,6 +110,7 @@ function buildItem(
     bucket: overrides.bucket ?? "opened",
     needsFollowUp: overrides.needsFollowUp ?? false,
     hasUnresolved: overrides.hasUnresolved ?? false,
+    isArchived: overrides.isArchived ?? false,
     isUnread: overrides.isUnread ?? false,
     unreadCount: overrides.unreadCount ?? 0,
     isUnanswered: overrides.isUnanswered ?? false,

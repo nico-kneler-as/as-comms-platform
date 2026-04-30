@@ -886,7 +886,12 @@ export async function seedInboxLifecycleEvent(
 
 export async function seedInboxProjection(
   context: TestStage1Context,
-  row: InboxProjectionRow,
+  row: Omit<InboxProjectionRow, "archivedAt"> & {
+    readonly archivedAt?: string | null;
+  },
 ): Promise<void> {
-  await context.repositories.inboxProjection.upsert(row);
+  await context.repositories.inboxProjection.upsert({
+    ...row,
+    archivedAt: row.archivedAt ?? null,
+  });
 }

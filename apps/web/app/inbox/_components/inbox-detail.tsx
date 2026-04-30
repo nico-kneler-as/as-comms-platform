@@ -16,9 +16,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import {
+  archiveInboxContactAction,
   clearInboxNeedsFollowUpAction,
   markInboxNeedsFollowUpAction,
   markInboxOpenedAction,
@@ -35,6 +42,7 @@ import type {
 import type { UiError, UiResult } from "@/src/server/ui-result";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import { useInboxClient, type Reminder } from "./inbox-client-provider";
+import { InboxAvatar } from "./inbox-avatar";
 import { SectionLabel } from "@/components/ui/section-label";
 import {
   LAYOUT,
@@ -52,6 +60,7 @@ import { TimelineSkeleton } from "./inbox-loading";
 import { InboxTimeline } from "./inbox-timeline";
 import {
   AlertTriangleIcon,
+  ArchiveBoxIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   ClockIcon,
@@ -257,6 +266,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   });
   const router = useRouter();
   const [isMarkUnreadPending, startMarkUnreadTransition] = useTransition();
+  const [isArchivePending, startArchiveTransition] = useTransition();
   const markOpenedRef = useRef(false);
 
   // Acknowledging an unread conversation uses the same open path whether the
@@ -281,6 +291,17 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
       const formData = new FormData();
       formData.set("contactId", contact.contactId);
       const result = await markInboxUnreadAction(formData);
+      if (result.ok) {
+        router.push("/inbox");
+      }
+    });
+  }, [contact.contactId, router]);
+
+  const handleArchive = useCallback(() => {
+    startArchiveTransition(async () => {
+      const formData = new FormData();
+      formData.set("contactId", contact.contactId);
+      const result = await archiveInboxContactAction(formData);
       if (result.ok) {
         router.push("/inbox");
       }
@@ -407,6 +428,11 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
           className={`flex ${LAYOUT.headerHeight} items-center justify-between gap-4 border-b border-slate-200 px-6`}
         >
           <div className="flex min-w-0 items-center gap-4">
+            <InboxAvatar
+              initials={detail.initials}
+              tone={detail.avatarTone}
+              size="md"
+            />
             <h1 className={`truncate ${TYPE.headingLg}`}>
               {contact.displayName}
             </h1>
@@ -442,82 +468,120 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            <FollowUpToggleControl
-              needsFollowUp={isFollowUp}
-              isPending={followUpToggle.isPending}
-              error={followUpToggle.error}
-              onToggle={followUpToggle.toggle}
-            />
+          <TooltipProvider>
+            <div className="flex shrink-0 items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <FollowUpToggleControl
+                      needsFollowUp={isFollowUp}
+                      isPending={followUpToggle.isPending}
+                      error={followUpToggle.error}
+                      onToggle={followUpToggle.toggle}
+                    />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Needs Follow-Up</TooltipContent>
+              </Tooltip>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isMarkUnreadPending}
-              onClick={handleMarkUnread}
-              aria-label="Mark as unread"
-              className="gap-1.5"
-              data-inbox-mark-unread="true"
-            >
-              <MailOpenIcon className="h-3.5 w-3.5" />
-              Mark as unread
-            </Button>
-
-            <Popover open={reminderOpen} onOpenChange={setReminderOpen}>
-              <PopoverTrigger asChild>
-                {existingReminder ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button
+                    type="button"
                     variant="outline"
-                    size="sm"
-                    className="gap-1.5 border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-800"
+                    size="icon"
+                    disabled={isMarkUnreadPending}
+                    onClick={handleMarkUnread}
+                    aria-label="Mark as unread"
+                    className="h-8 w-8"
+                    data-inbox-mark-unread="true"
                   >
-                    <ClockIcon className="h-3.5 w-3.5" />
-                    Reminder · {formatShortReminder(existingReminder)}
+                    <MailOpenIcon className="h-4 w-4" />
                   </Button>
-                ) : (
+                </TooltipTrigger>
+                <TooltipContent>Mark as unread</TooltipContent>
+              </Tooltip>
+
+              <Popover open={reminderOpen} onOpenChange={setReminderOpen}>
+                <PopoverTrigger asChild>
+                  {existingReminder ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label="Set reminder"
+                      title="Set reminder"
+                      className="gap-1.5 border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-800"
+                    >
+                      <ClockIcon className="h-3.5 w-3.5" />
+                      Reminder · {formatShortReminder(existingReminder)}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Set reminder"
+                      title="Set reminder"
+                    >
+                      <ClockIcon className="h-4 w-4" />
+                    </Button>
+                  )}
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72">
+                  <ReminderPopoverBody
+                    existing={existingReminder}
+                    value={reminderValue}
+                    unit={reminderUnit}
+                    onChangeValue={setReminderValue}
+                    onChangeUnit={setReminderUnit}
+                    onClose={() => {
+                      setReminderOpen(false);
+                    }}
+                    onSet={handleSetReminder}
+                    onClear={handleClearReminder}
+                  />
+                </PopoverContent>
+              </Popover>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button
+                    type="button"
                     variant="outline"
                     size="icon"
                     className="h-8 w-8"
-                    aria-label="Set a reminder"
+                    aria-label="Archive conversation"
+                    disabled={isArchivePending}
+                    onClick={handleArchive}
                   >
-                    <ClockIcon className="h-4 w-4" />
+                    <ArchiveBoxIcon className="h-4 w-4" />
                   </Button>
-                )}
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-72">
-                <ReminderPopoverBody
-                  existing={existingReminder}
-                  value={reminderValue}
-                  unit={reminderUnit}
-                  onChangeValue={setReminderValue}
-                  onChangeUnit={setReminderUnit}
-                  onClose={() => {
-                    setReminderOpen(false);
-                  }}
-                  onSet={handleSetReminder}
-                  onClear={handleClearReminder}
-                />
-              </PopoverContent>
-            </Popover>
+                </TooltipTrigger>
+                <TooltipContent>Archive conversation</TooltipContent>
+              </Tooltip>
 
-            {!railOpen ? (
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                aria-label="Expand contact details"
-                aria-expanded={false}
-                aria-controls="inbox-contact-rail"
-                onClick={() => {
-                  setRailOpen(true);
-                }}
-              >
-                <PanelRightOpenIcon className="h-4 w-4" />
-              </Button>
-            ) : null}
-          </div>
+              {!railOpen ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      aria-label="Toggle contact details"
+                      aria-expanded={false}
+                      aria-controls="inbox-contact-rail"
+                      onClick={() => {
+                        setRailOpen(true);
+                      }}
+                    >
+                      <PanelRightOpenIcon className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle contact details</TooltipContent>
+                </Tooltip>
+              ) : null}
+            </div>
+          </TooltipProvider>
         </header>
 
         {contact.hasUnresolved ? <UnresolvedBanner /> : null}
@@ -625,20 +689,20 @@ function FollowUpToggleButton({
     <Button
       type="button"
       variant="outline"
-      size="sm"
+      size="icon"
       disabled={pending}
       aria-pressed={needsFollowUp}
+      aria-label="Needs Follow-Up"
       aria-keyshortcuts="f"
       data-inbox-follow-up-toggle="true"
       onClick={onToggle}
       className={cn(
-        "gap-1.5",
+        "h-8 w-8",
         needsFollowUp &&
           "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800",
       )}
     >
-      <FlagIcon className="h-3.5 w-3.5" />
-      Needs Follow-Up
+      <FlagIcon className="h-4 w-4" />
     </Button>
   );
 }

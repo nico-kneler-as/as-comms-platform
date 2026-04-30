@@ -319,6 +319,7 @@ describe("server-backed follow-up actions", () => {
       lastOutboundAt: "2026-04-14T12:00:00.000Z",
       lastActivityAt: "2026-04-14T14:30:00.000Z",
       snippet: "Fresh inbound message that arrived after the stale snapshot.",
+      archivedAt: null,
       lastCanonicalEventId: fresherEvent.canonicalEventId,
       lastEventType: "communication.email.inbound",
     });

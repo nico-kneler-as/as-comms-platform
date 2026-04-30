@@ -164,6 +164,7 @@ async function seedContactWithTwoOutboundEvents() {
     lastOutboundAt: "2026-04-20T18:05:00.000Z",
     lastActivityAt: "2026-04-20T18:05:00.000Z",
     snippet: "Draft autosave body",
+    archivedAt: null,
     lastCanonicalEventId: "canonical-event:gmail-draft-1",
     lastEventType: "communication.email.outbound",
   });

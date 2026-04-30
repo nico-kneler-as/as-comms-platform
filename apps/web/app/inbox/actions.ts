@@ -18,6 +18,7 @@ import {
   type AiDraftResponse,
 } from "@/src/server/ai";
 import { getAiProviderConfig } from "@/src/server/ai/provider";
+import { setInboxArchived } from "@/src/server/inbox/archive";
 import { setInboxBucket } from "@/src/server/inbox/bucket";
 
 export type { AiDraftRequestPayload } from "@/src/server/ai";
@@ -58,6 +59,13 @@ export type InboxBucketActionData = {
 };
 
 export type InboxBucketActionResult = UiResult<InboxBucketActionData>;
+
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+export type InboxArchiveActionData = {
+  readonly contactId: string;
+};
+
+export type InboxArchiveActionResult = UiResult<InboxArchiveActionData>;
 
 // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
 export type ComposerSendActionData = {
@@ -284,6 +292,16 @@ function bucketRateLimitError(requestId: string): InboxBucketActionResult {
     ok: false,
     code: "rate_limit_exceeded",
     message: "Too many read-state changes. Please wait a minute and try again.",
+    requestId,
+    retryable: true,
+  };
+}
+
+function archiveRateLimitError(requestId: string): InboxArchiveActionResult {
+  return {
+    ok: false,
+    code: "rate_limit_exceeded",
+    message: "Too many archive changes. Please wait a minute and try again.",
     requestId,
     retryable: true,
   };
@@ -1547,6 +1565,80 @@ export async function clearInboxNeedsFollowUpAction(
   formData: FormData,
 ): Promise<FollowUpActionResult> {
   return updateNeedsFollowUp(formData, false);
+}
+
+async function archiveContact(
+  formData: FormData,
+): Promise<InboxArchiveActionResult> {
+  const requestId = randomUUID();
+  const contactId = readContactId(formData);
+
+  let currentUser;
+  try {
+    currentUser = await requireSession();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return unauthorizedError(requestId);
+    }
+    throw error;
+  }
+
+  if (contactId === null) {
+    return {
+      ok: false,
+      code: "validation_error",
+      message: "Missing contactId",
+      requestId,
+      fieldErrors: { contactId: "required" },
+    };
+  }
+
+  const decision = await enforceRateLimit({
+    scope: "server-action:inbox-archive",
+    identifier: currentUser.id,
+    limit: 60,
+    audit: {
+      actorType: "user",
+      actorId: currentUser.id,
+      action: "inbox.archive.rate_limited",
+      entityType: "server_action",
+      entityId: "inbox.archive",
+      metadataJson: {
+        contactId,
+        archived: true,
+      },
+    },
+  });
+
+  if (!decision.allowed) {
+    return archiveRateLimitError(requestId);
+  }
+
+  const result = await setInboxArchived({ contactId, archived: true });
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      code: "inbox_contact_not_found",
+      message: "No inbox row for that contact",
+      requestId,
+      retryable: false,
+    };
+  }
+
+  revalidateInboxContact(contactId);
+
+  return {
+    ok: true,
+    data: { contactId },
+    requestId,
+  };
+}
+
+export async function archiveInboxContactAction(
+  formData: FormData,
+): Promise<InboxArchiveActionResult> {
+  return archiveContact(formData);
 }
 
 async function updateInboxBucket(

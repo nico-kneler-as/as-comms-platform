@@ -158,6 +158,7 @@ async function seedSharedInboxRecencyFixture(): Promise<{
       lastOutboundAt: row.lastOutboundAt,
       lastActivityAt: row.lastActivityAt,
       snippet: `${row.displayName} preview`,
+      archivedAt: null,
       lastCanonicalEventId:
         row.lastActivityAt === row.lastInboundAt
           ? `evt-recency-inbound-${index.toString()}`
@@ -863,6 +864,7 @@ describe("Stage 1 DB repositories", () => {
       lastOutboundAt: null,
       lastActivityAt: "2026-01-01T00:00:00.000Z",
       snippet: "Inbound hello",
+      archivedAt: null,
       lastCanonicalEventId: canonicalEvent.id,
       lastEventType: "communication.email.inbound",
     });
@@ -932,6 +934,7 @@ describe("Stage 1 DB repositories", () => {
       lastOutboundAt: "2026-01-01T00:10:00.000Z",
       lastActivityAt: "2026-01-01T00:10:00.000Z",
       snippet: "Outbound only follow-up",
+      archivedAt: null,
       lastCanonicalEventId: secondCanonicalEvent.id,
       lastEventType: "communication.email.outbound",
     });
@@ -1431,6 +1434,7 @@ describe("Stage 1 DB repositories", () => {
       lastOutboundAt: null,
       lastActivityAt: "2026-04-20T12:00:00.000Z",
       snippet: "Testing project filters.",
+      archivedAt: null,
       lastCanonicalEventId: "event:multi-project-inbound",
       lastEventType: "communication.email.inbound",
     });

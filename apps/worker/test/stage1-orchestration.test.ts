@@ -1348,6 +1348,7 @@ Alias drift outbound message.
         lastOutboundAt: "2026-01-01T00:00:00.000Z",
         lastActivityAt: "2026-01-01T00:00:00.000Z",
         snippet: "Outbound email sent",
+        archivedAt: null,
         lastCanonicalEventId: "evt:stale-salesforce-task",
         lastEventType: "communication.email.outbound"
       });
@@ -1536,6 +1537,7 @@ Alias drift outbound message.
         lastOutboundAt: "2026-03-31T18:00:00.000Z",
         lastActivityAt: "2026-03-31T18:00:00.000Z",
         snippet: "Staff forwarded this internally.",
+        archivedAt: null,
         lastCanonicalEventId: "evt:gmail-internal-only",
         lastEventType: "communication.email.outbound"
       });

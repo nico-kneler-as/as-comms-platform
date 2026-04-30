@@ -150,6 +150,7 @@ function buildExistingProjection(input: {
     lastOutboundAt,
     lastActivityAt,
     snippet: "Existing snippet",
+    archivedAt: null,
     lastCanonicalEventId: input.lastCanonicalEventId ?? "event:existing",
     lastEventType: input.lastEventType ?? "communication.email.inbound",
   };
@@ -521,6 +522,10 @@ function buildContext(input: {
           followUp: inboxProjection?.needsFollowUp === true ? 1 : 0,
           unresolved: inboxProjection?.hasUnresolved === true ? 1 : 0,
           sent: inboxProjection?.lastOutboundAt === null ? 0 : 1,
+          archived:
+            inboxProjection !== null && inboxProjection.archivedAt !== null
+              ? 1
+              : 0,
         }),
       getFreshness: () =>
         Promise.resolve({
@@ -539,6 +544,16 @@ function buildContext(input: {
             : {
                 ...inboxProjection,
                 needsFollowUp,
+              };
+        return Promise.resolve(inboxProjection);
+      },
+      setArchived: ({ archived }) => {
+        inboxProjection =
+          inboxProjection === null
+            ? null
+            : {
+                ...inboxProjection,
+                archivedAt: archived ? "2026-04-14T00:00:00.000Z" : null,
               };
         return Promise.resolve(inboxProjection);
       },

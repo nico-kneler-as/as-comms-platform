@@ -11,6 +11,9 @@ import type { InboxListViewModel } from "../../app/inbox/_lib/view-models";
 const fetchInboxListPageMock = vi.hoisted(() => vi.fn());
 const routerReplaceMock = vi.hoisted(() => vi.fn());
 const routerPrefetchMock = vi.hoisted(() => vi.fn());
+const searchParamsMock = vi.hoisted(() => ({
+  current: "",
+}));
 
 vi.mock("next/link", () => ({
   default: ({
@@ -35,7 +38,7 @@ vi.mock("next/navigation", () => ({
     prefetch: routerPrefetchMock,
     replace: routerReplaceMock,
   }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(searchParamsMock.current),
 }));
 
 vi.mock("../../app/inbox/_lib/client-api", () => ({
@@ -48,6 +51,7 @@ function iconMock(name: string) {
 }
 
 vi.mock("../../app/inbox/_components/icons", () => ({
+  ArchiveBoxIcon: iconMock("ArchiveBoxIcon"),
   FlagIcon: iconMock("FlagIcon"),
   FilterIcon: iconMock("FilterIcon"),
   InboxIcon: iconMock("InboxIcon"),
@@ -164,6 +168,7 @@ function buildList(
         bucket: "new",
         needsFollowUp: false,
         hasUnresolved: false,
+        isArchived: false,
         isUnread: true,
         unreadCount: 1,
         isUnanswered: true,
@@ -180,6 +185,7 @@ function buildList(
       { id: "unread", label: "Unread", count: 3, hint: null },
       { id: "follow-up", label: "Needs Follow-Up", count: 2, hint: null },
       { id: "sent", label: "Sent", count: 7, hint: null },
+      { id: "archived", label: "Archived", count: 1, hint: null },
     ],
     totals: {
       all: 1289,
@@ -187,11 +193,13 @@ function buildList(
       followUp: 2,
       unresolved: 0,
       sent: 7,
+      archived: 1,
     },
     activeProjects: [
       {
         id: "project-1",
         name: "Amazon Basin",
+        alias: "Amazon Basin",
       },
     ],
     selectedProjectId: null,
@@ -206,6 +214,22 @@ function buildList(
     },
     ...overrides,
   };
+}
+
+function buildPnwProjectList(
+  overrides: Partial<InboxListViewModel> = {},
+): InboxListViewModel {
+  return buildList({
+    activeProjects: [
+      {
+        id: "project-pnw",
+        name: "Pacific Northwest Biodiversity Survey",
+        alias: "PNW Biodiversity",
+      },
+    ],
+    selectedProjectId: "project-pnw",
+    ...overrides,
+  });
 }
 
 async function mountInboxList(
@@ -295,6 +319,138 @@ describe("Inbox list shell", () => {
     }
 
     vi.clearAllMocks();
+    searchParamsMock.current = "";
+  });
+
+  it("renders All when no filter is active", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList();
+
+    const heading = activeSession.container.querySelector("h1");
+    expect(heading?.textContent).toBe("All");
+  });
+
+  it("renders the selected project alias in the header", async () => {
+    const projectList = buildPnwProjectList();
+    fetchInboxListPageMock.mockResolvedValue(projectList);
+    activeSession = await mountInboxList(projectList);
+
+    const heading = activeSession.container.querySelector("h1");
+    expect(heading?.textContent).toBe("PNW Biodiversity");
+  });
+
+  it("joins the selected project and state filter with a middot", async () => {
+    const projectList = buildPnwProjectList();
+    fetchInboxListPageMock.mockResolvedValue(projectList);
+    activeSession = await mountInboxList(projectList);
+    const session = activeSession;
+
+    await act(async () => {
+      findButtonByLabel(session.container, "Filters").click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findButtonByText(session.container, "Unread").click();
+      await Promise.resolve();
+    });
+    await flushReact();
+
+    const heading = session.container.querySelector("h1");
+    expect(heading?.textContent).toBe("PNW Biodiversity · Unread");
+  });
+
+  it("renders the active state label when only a state filter is active", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList();
+    const session = activeSession;
+
+    await act(async () => {
+      findButtonByLabel(session.container, "Filters").click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findButtonByText(session.container, "Needs Follow-Up").click();
+      await Promise.resolve();
+    });
+    await flushReact();
+
+    const heading = session.container.querySelector("h1");
+    expect(heading?.textContent).toBe("Follow-up");
+  });
+
+  it("renders Results when search is active", async () => {
+    fetchInboxListPageMock.mockReturnValue(new Promise(() => undefined));
+    activeSession = await mountInboxList(buildList(), {
+      query: "basin",
+      isQueueLoading: true,
+    });
+    await flushReact();
+
+    const heading = activeSession.container.querySelector("h1");
+    expect(heading?.textContent).toBe("Results");
+  });
+
+  it("renders the project count for multiple project ids in the URL", async () => {
+    searchParamsMock.current = "projectId=project-pnw&projectId=project-whitebark";
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList(
+      buildList({
+        activeProjects: [
+          {
+            id: "project-pnw",
+            name: "Pacific Northwest Biodiversity Survey",
+            alias: "PNW Biodiversity",
+          },
+          {
+            id: "project-whitebark",
+            name: "Tracking Whitebark Pine",
+            alias: "Whitebark",
+          },
+        ],
+      }),
+    );
+
+    const heading = activeSession.container.querySelector("h1");
+    expect(heading?.textContent).toBe("2 projects");
+  });
+
+  it("renders Filtered when more than two facets are active", async () => {
+    searchParamsMock.current =
+      "projectId=project-pnw&projectId=project-whitebark";
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList(
+      buildList({
+        activeProjects: [
+          {
+            id: "project-pnw",
+            name: "Pacific Northwest Biodiversity Survey",
+            alias: "PNW Biodiversity",
+          },
+          {
+            id: "project-whitebark",
+            name: "Tracking Whitebark Pine",
+            alias: "Whitebark",
+          },
+        ],
+      }),
+    );
+    const session = activeSession;
+
+    await act(async () => {
+      findButtonByLabel(session.container, "Filters").click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findButtonByText(session.container, "Unread").click();
+      await Promise.resolve();
+    });
+    await flushReact();
+
+    const heading = session.container.querySelector("h1");
+    expect(heading?.textContent).toBe("Filtered");
   });
 
   it("keeps filters hidden by default and exposes open and active button states", async () => {

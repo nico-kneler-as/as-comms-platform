@@ -11,6 +11,7 @@ import type {
   InboxFilterViewModel,
 } from "../_lib/view-models";
 import {
+  ArchiveBoxIcon,
   FlagIcon,
   InboxIcon,
   MailOpenIcon,
@@ -22,6 +23,7 @@ const FILTER_ICON: Record<InboxFilterId, LucideIcon | null> = {
   unread: MailOpenIcon,
   "follow-up": FlagIcon,
   sent: SendIcon,
+  archived: ArchiveBoxIcon,
   unresolved: null,
 };
 
