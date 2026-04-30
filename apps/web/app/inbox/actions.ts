@@ -11,6 +11,7 @@ import {
 } from "@as-comms/domain";
 import { requireSession } from "@/src/server/auth/session";
 import { sendComposerGmailMessage } from "@/src/server/composer/gmail-send";
+import type { GmailSendError } from "@as-comms/integrations";
 import {
   aiDraftRequestSchema,
   generateAiDraft,
@@ -118,6 +119,22 @@ interface AiDraftConcurrencyState {
 
 declare global {
   var __AS_COMMS_AI_DRAFT_CONCURRENCY__: AiDraftConcurrencyState | undefined;
+}
+
+function describeComposerSendError(error: GmailSendError): string {
+  if ("detail" in error) {
+    return error.detail;
+  }
+  switch (error.kind) {
+    case "send_as_not_authorized":
+      return `Gmail rejected send-as for alias "${error.alias}".`;
+    case "attachment_too_large":
+      return `Total attachment bytes ${String(error.totalBytes)} exceeds Gmail limit.`;
+    case "rate_limited":
+      return error.retryAfterSeconds === null
+        ? "Gmail rate-limited; retry-after not provided."
+        : `Gmail rate-limited; retry after ${String(error.retryAfterSeconds)}s.`;
+  }
 }
 
 function getAiDraftConcurrencyState(): AiDraftConcurrencyState {
@@ -1513,8 +1530,10 @@ export async function sendComposerAction(
       };
     }
 
+    const failedDetail = describeComposerSendError(sendResult);
     await runtime.repositories.pendingOutbounds.markFailed(pendingOutboundId, {
       reason: sendResult.kind,
+      detail: failedDetail,
     });
     await appendSecurityAudit({
       actorType: "user",
@@ -1527,14 +1546,18 @@ export async function sendComposerAction(
       metadataJson: {
         canonicalContactId,
         reason: sendResult.kind,
+        detail: failedDetail,
       },
     });
     revalidateInboxContact(canonicalContactId);
 
     return mapComposerProviderError(requestId, sendResult.kind);
-  } catch {
+  } catch (error) {
+    const exceptionDetail =
+      error instanceof Error ? error.message : String(error);
     await runtime.repositories.pendingOutbounds.markFailed(pendingOutboundId, {
       reason: "exception",
+      detail: exceptionDetail,
     });
     await appendSecurityAudit({
       actorType: "user",
@@ -1547,6 +1570,7 @@ export async function sendComposerAction(
       metadataJson: {
         canonicalContactId,
         reason: "exception",
+        detail: exceptionDetail,
       },
     });
     revalidateInboxContact(canonicalContactId);
