@@ -136,6 +136,20 @@ describe("backfill-stuck-identity-anchors helpers", () => {
     const context = await createTestStage1Context();
 
     try {
+      // FK parent: source_evidence_log row must exist before identity_resolution_queue
+      // can reference it (identity_resolution_queue_source_evidence_id_fkey, ON DELETE restrict).
+      await context.repositories.sourceEvidence.append({
+        id: "source-evidence:salesforce:task_communication:task-1",
+        provider: "salesforce",
+        providerRecordType: "task_communication",
+        providerRecordId: "task-1",
+        receivedAt: "2026-04-30T00:00:00.000Z",
+        occurredAt: "2026-04-30T00:00:00.000Z",
+        payloadRef: "salesforce://Task/task-1",
+        idempotencyKey: "salesforce:task_communication:task-1",
+        checksum: "checksum:task-1",
+      });
+
       await context.repositories.identityResolutionQueue.upsert({
         id: "identity-review:source-evidence:salesforce:task_communication:task-1:identity_missing_anchor",
         sourceEvidenceId: "source-evidence:salesforce:task_communication:task-1",
