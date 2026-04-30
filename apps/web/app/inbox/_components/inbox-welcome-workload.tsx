@@ -12,11 +12,13 @@ import {
 import { cn } from "@/lib/utils";
 
 import type {
+  InboxWelcomeFollowUpEntryViewModel,
   InboxWelcomeProjectWorkloadViewModel,
   InboxWelcomeWorkloadViewModel,
 } from "../_lib/view-models";
 import { FIELD_QUOTES } from "../_lib/field-quotes";
 import { projectToneFromName } from "../_lib/project-tone";
+import { InboxAvatar } from "./inbox-avatar";
 import { ArrowUpRightIcon, QuoteIcon, RefreshCwIcon } from "./icons";
 
 interface InboxWelcomeWorkloadProps {
@@ -77,6 +79,18 @@ export function InboxWelcomeWorkload({
           projects={workload.projects}
           onOpenProject={openProject}
         />
+
+        {workload.followUpRail.totalCount > 0 ? (
+          <FollowUpRail
+            rail={workload.followUpRail}
+            onOpenContact={(contactId) => {
+              router.push(`/inbox/${encodeURIComponent(contactId)}`);
+            }}
+            onViewAll={() => {
+              router.push("/inbox?filter=follow-up");
+            }}
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -202,6 +216,103 @@ function ProjectMiniDashboard({
         })}
       </div>
     </div>
+  );
+}
+
+interface FollowUpRailProps {
+  readonly rail: InboxWelcomeWorkloadViewModel["followUpRail"];
+  readonly onOpenContact: (contactId: string) => void;
+  readonly onViewAll: () => void;
+}
+
+function FollowUpRail({
+  rail,
+  onOpenContact,
+  onViewAll,
+}: FollowUpRailProps) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-4">
+        <SectionLabel as="h2">
+          {`\u{1F6A9} These need follow-up · ${rail.totalCount.toString()}`}
+        </SectionLabel>
+        <button
+          type="button"
+          onClick={onViewAll}
+          className="text-xs font-medium text-slate-500 transition-colors hover:text-slate-900"
+        >
+          View all →
+        </button>
+      </div>
+
+      <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="divide-y divide-slate-100">
+          {rail.entries.map((entry) => (
+            <FollowUpRailRow
+              key={entry.contactId}
+              entry={entry}
+              onOpenContact={onOpenContact}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface FollowUpRailRowProps {
+  readonly entry: InboxWelcomeFollowUpEntryViewModel;
+  readonly onOpenContact: (contactId: string) => void;
+}
+
+function FollowUpRailRow({ entry, onOpenContact }: FollowUpRailRowProps) {
+  const tone =
+    entry.projectLabel === null
+      ? null
+      : TONE_CLASSES[projectToneFromName(entry.projectLabel)];
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onOpenContact(entry.contactId);
+      }}
+      aria-label={`Open conversation with ${entry.displayName}`}
+      className="group relative flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50/80"
+    >
+      <InboxAvatar
+        initials={entry.initials}
+        tone={entry.avatarTone}
+        size="sm"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-semibold text-slate-900">
+            {entry.displayName}
+          </span>
+          {entry.projectLabel !== null && tone !== null ? (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                tone.subtle,
+                tone.subtleText,
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn("h-1.5 w-1.5 rounded-full", tone.dot)}
+              />
+              {entry.projectLabel}
+            </span>
+          ) : null}
+        </div>
+        <p className={cn(TYPE.caption, "truncate")}>{entry.latestSubject}</p>
+      </div>
+      <span className={cn(TYPE.micro, "shrink-0 whitespace-nowrap")}>
+        {entry.lastActivityLabel}
+      </span>
+      <ArrowUpRightIcon className="h-3.5 w-3.5 shrink-0 text-slate-300 transition-colors group-hover:text-slate-600" />
+    </button>
   );
 }
 
