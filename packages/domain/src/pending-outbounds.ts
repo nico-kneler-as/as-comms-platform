@@ -30,7 +30,7 @@ export interface PendingComposerOutboundRecord {
   readonly attachmentMetadata: readonly PendingComposerOutboundAttachmentMetadata[];
   readonly gmailThreadId: string | null;
   readonly inReplyToRfc822: string | null;
-  readonly sentAt: string;
+  readonly attemptedAt: string;
   readonly reconciledEventId: string | null;
   readonly reconciledAt: string | null;
   readonly failedReason: string | null;

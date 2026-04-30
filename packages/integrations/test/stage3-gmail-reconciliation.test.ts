@@ -117,7 +117,7 @@ describe("Gmail outbound reconciliation", () => {
         attachmentMetadata: [],
         gmailThreadId: null,
         inReplyToRfc822: null,
-        sentAt: "2026-04-21T12:34:01.000Z",
+        attemptedAt: "2026-04-21T12:34:01.000Z",
       });
 
       const mapped = mapGmailRecord(

@@ -40,7 +40,7 @@ async function seedPendingOutboundFixture() {
 describe("pending composer outbound repositories", () => {
   it("inserts rows, finds by fingerprint, and returns timeline-visible statuses", async () => {
     const context = await seedPendingOutboundFixture();
-    const sentAt = "2026-04-21T12:34:00.000Z";
+    const attemptedAt = "2026-04-21T12:34:00.000Z";
 
     try {
       const id = await context.repositories.pendingOutbounds.insert({
@@ -63,7 +63,7 @@ describe("pending composer outbound repositories", () => {
         ],
         gmailThreadId: "thread:1",
         inReplyToRfc822: "<reply@example.org>",
-        sentAt,
+        attemptedAt,
       });
 
       expect(id).toBe("pending:1");
@@ -80,7 +80,7 @@ describe("pending composer outbound repositories", () => {
             contentType: "application/pdf",
           },
         ],
-        sentAt,
+        attemptedAt,
         sentRfc822MessageId: null,
         failedDetail: null,
       });
@@ -107,7 +107,7 @@ describe("pending composer outbound repositories", () => {
         attachmentMetadata: [],
         gmailThreadId: null,
         inReplyToRfc822: null,
-        sentAt: "2026-04-21T12:35:00.000Z",
+        attemptedAt: "2026-04-21T12:35:00.000Z",
       });
       await context.repositories.pendingOutbounds.markSuperseded("pending:2");
       await context.repositories.pendingOutbounds.insert({
@@ -124,7 +124,7 @@ describe("pending composer outbound repositories", () => {
         attachmentMetadata: [],
         gmailThreadId: null,
         inReplyToRfc822: null,
-        sentAt: "2026-04-21T12:36:00.000Z",
+        attemptedAt: "2026-04-21T12:36:00.000Z",
       });
 
       await expect(
@@ -172,7 +172,7 @@ describe("pending composer outbound repositories", () => {
         attachmentMetadata: [],
         gmailThreadId: null,
         inReplyToRfc822: null,
-        sentAt: "2026-04-21T12:00:00.000Z",
+        attemptedAt: "2026-04-21T12:00:00.000Z",
       });
       await context.repositories.pendingOutbounds.insert({
         id: "pending:old",
@@ -188,7 +188,7 @@ describe("pending composer outbound repositories", () => {
         attachmentMetadata: [],
         gmailThreadId: null,
         inReplyToRfc822: null,
-        sentAt: "2026-04-21T11:20:00.000Z",
+        attemptedAt: "2026-04-21T11:20:00.000Z",
       });
       await context.repositories.pendingOutbounds.insert({
         id: "pending:new",
@@ -204,7 +204,7 @@ describe("pending composer outbound repositories", () => {
         attachmentMetadata: [],
         gmailThreadId: null,
         inReplyToRfc822: null,
-        sentAt: "2026-04-21T11:45:00.000Z",
+        attemptedAt: "2026-04-21T11:45:00.000Z",
       });
 
       await context.repositories.pendingOutbounds.markConfirmed("pending:confirm", {

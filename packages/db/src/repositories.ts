@@ -2350,7 +2350,7 @@ function createStage1RepositoriesInternal(
           attachmentMetadata: input.attachmentMetadata,
           gmailThreadId: input.gmailThreadId,
           inReplyToRfc822: input.inReplyToRfc822,
-          sentAt: input.sentAt,
+          attemptedAt: input.attemptedAt,
           reconciledEventId: null,
           reconciledAt: null,
           failedReason: null,
@@ -2378,7 +2378,7 @@ function createStage1RepositoriesInternal(
           .where(eq(pendingComposerOutbounds.fingerprint, fingerprint))
           .orderBy(
             sql`case when ${pendingComposerOutbounds.status} = 'pending' then 0 else 1 end`,
-            desc(pendingComposerOutbounds.sentAt),
+            desc(pendingComposerOutbounds.attemptedAt),
             desc(pendingComposerOutbounds.createdAt),
           )
           .limit(1)) as PendingComposerOutboundRow[];
@@ -2398,7 +2398,7 @@ function createStage1RepositoriesInternal(
           .select()
           .from(pendingComposerOutbounds)
           .where(eq(pendingComposerOutbounds.sentRfc822MessageId, messageId))
-          .orderBy(desc(pendingComposerOutbounds.sentAt))
+          .orderBy(desc(pendingComposerOutbounds.attemptedAt))
           .limit(1)) as PendingComposerOutboundRow[];
         return row === undefined ? null : mapPendingComposerOutboundRow(row);
       },
@@ -2476,7 +2476,7 @@ function createStage1RepositoriesInternal(
           .where(
             and(
               eq(pendingComposerOutbounds.status, "pending"),
-              lt(pendingComposerOutbounds.sentAt, input.olderThan),
+              lt(pendingComposerOutbounds.attemptedAt, input.olderThan),
             ),
           )
           .returning({ id: pendingComposerOutbounds.id });
@@ -2504,7 +2504,7 @@ function createStage1RepositoriesInternal(
             ),
           )
           .orderBy(
-            desc(pendingComposerOutbounds.sentAt),
+            desc(pendingComposerOutbounds.attemptedAt),
             desc(pendingComposerOutbounds.createdAt),
           )
           .limit(input.limit)) as PendingComposerOutboundRow[];
