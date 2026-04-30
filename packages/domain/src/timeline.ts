@@ -737,10 +737,20 @@ function mergeTimelineItems(input: {
   readonly canonicalItems: readonly TimelineItem[];
   readonly pendingRows: readonly PendingComposerOutboundRecord[];
 }): readonly TimelineItem[] {
+  // Keep unreconciled rows visible, but suppress pending rows once their
+  // reconciled canonical event is present in the current page.
+  const canonicalIds = new Set(
+    input.canonicalItems.map((item) => item.canonicalEventId),
+  );
+  const filteredPending = input.pendingRows.filter(
+    (row) =>
+      row.reconciledEventId === null ||
+      !canonicalIds.has(row.reconciledEventId),
+  );
   return timelineItemListSchema.parse(
     [
       ...input.canonicalItems,
-      ...buildPendingTimelineItems(input.pendingRows),
+      ...buildPendingTimelineItems(filteredPending),
     ].sort((left, right) => left.sortKey.localeCompare(right.sortKey)),
   );
 }
