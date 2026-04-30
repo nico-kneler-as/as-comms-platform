@@ -830,7 +830,7 @@ describe("Stage 1 timeline presenter", () => {
           attachmentMetadata: [],
           gmailThreadId: null,
           inReplyToRfc822: null,
-          sentAt: "2026-01-01T00:02:00.000Z",
+          attemptedAt: "2026-01-01T00:02:00.000Z",
           reconciledEventId: null,
           reconciledAt: null,
           failedReason: null,

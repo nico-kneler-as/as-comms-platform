@@ -340,7 +340,7 @@ export interface PendingComposerOutboundRepository {
     readonly attachmentMetadata: PendingComposerOutboundRecord["attachmentMetadata"];
     readonly gmailThreadId: string | null;
     readonly inReplyToRfc822: string | null;
-    readonly sentAt: string;
+    readonly attemptedAt: string;
   }): Promise<string>;
   findByFingerprint(
     fingerprint: string,

@@ -50,7 +50,7 @@ describe("pending outbound orphan sweep task", () => {
         attachmentMetadata: [],
         gmailThreadId: null,
         inReplyToRfc822: null,
-        sentAt: "2026-04-21T11:20:00.000Z",
+        attemptedAt: "2026-04-21T11:20:00.000Z",
       });
       await context.repositories.pendingOutbounds.insert({
         id: "pending:new",
@@ -66,7 +66,7 @@ describe("pending outbound orphan sweep task", () => {
         attachmentMetadata: [],
         gmailThreadId: null,
         inReplyToRfc822: null,
-        sentAt: "2026-04-21T11:45:00.000Z",
+        attemptedAt: "2026-04-21T11:45:00.000Z",
       });
 
       const taskList = createTaskList(undefined, {

@@ -1321,8 +1321,8 @@ export async function sendComposerAction(
     };
   }
 
-  const sentAt = new Date();
-  const sentAtIso = sentAt.toISOString();
+  const attemptedAt = new Date();
+  const attemptedAtIso = attemptedAt.toISOString();
   let canonicalContactId: string;
   let toEmailNormalized: string | null;
 
@@ -1353,7 +1353,7 @@ export async function sendComposerAction(
     try {
       contact = await runtime.normalization.ensureCanonicalContactForEmail({
         emailAddress: toEmailNormalized,
-        createdAt: sentAtIso,
+        createdAt: attemptedAtIso,
         source: "manual",
       });
     } catch (error) {
@@ -1389,7 +1389,7 @@ export async function sendComposerAction(
     contactId: canonicalContactId,
     subject: parsedInput.data.subject,
     bodyPlaintext,
-    sentAt: sentAtIso,
+    sentAt: attemptedAtIso,
   });
 
   if (fingerprint === null) {
@@ -1417,7 +1417,7 @@ export async function sendComposerAction(
     attachmentMetadata: buildAttachmentMetadata(parsedInput.data.attachments),
     gmailThreadId: parsedInput.data.threadId ?? null,
     inReplyToRfc822: parsedInput.data.inReplyToRfc822 ?? null,
-    sentAt: sentAtIso,
+    attemptedAt: attemptedAtIso,
   });
 
   await appendSecurityAudit({
@@ -1507,7 +1507,7 @@ export async function sendComposerAction(
             gmailMessageId: sendResult.gmailMessageId,
             gmailThreadId: sendResult.gmailThreadId,
             rfc822MessageId: sendResult.rfc822MessageId,
-            createdAt: sentAt,
+            createdAt: attemptedAt,
             createdByUserId: currentUser.id,
           });
         } catch (error) {
