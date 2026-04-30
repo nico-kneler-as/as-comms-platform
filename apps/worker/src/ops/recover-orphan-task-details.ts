@@ -352,17 +352,31 @@ async function loadStuckOrphanTaskRows(
     recoverOrphanTaskDetailsSql,
   );
 
-  return rows.map((row) => ({
-    queueCaseId: row.queue_id,
-    sourceEvidenceId: row.source_evidence_id,
-    salesforceTaskId: row.sf_task_id,
-    occurredAt: row.occurred_at,
-    receivedAt: row.received_at,
-    salesforceContactId: row.context_who,
-    projectId: row.project_id,
-    expeditionId: row.expedition_id,
-    sourceField: row.source_field,
-  }));
+  return rows.map((row) => {
+    // Postgres returns timestamps as "2026-04-05 00:21:42.55+00" which Zod's
+    // z.string().datetime() rejects (offset disallowed). Normalize via the
+    // existing helper, matching the pattern that bit #224 in PR #225.
+    const occurredAt = toIsoTimestamp(row.occurred_at);
+    const receivedAt = toIsoTimestamp(row.received_at);
+
+    if (occurredAt === null || receivedAt === null) {
+      throw new Error(
+        `Source-evidence row ${row.source_evidence_id} has unparseable timestamps (occurred_at=${row.occurred_at}, received_at=${row.received_at}).`,
+      );
+    }
+
+    return {
+      queueCaseId: row.queue_id,
+      sourceEvidenceId: row.source_evidence_id,
+      salesforceTaskId: row.sf_task_id,
+      occurredAt,
+      receivedAt,
+      salesforceContactId: row.context_who,
+      projectId: row.project_id,
+      expeditionId: row.expedition_id,
+      sourceField: row.source_field,
+    };
+  });
 }
 
 export function groupCasesBySalesforceTaskId(
