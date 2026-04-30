@@ -1486,15 +1486,6 @@ describe("real inbox selectors", () => {
       lastEventType: "communication.email.inbound",
     });
 
-    const hiddenLatest = await seedInboxEmailEvent(runtime.context, {
-      id: "hidden-follow-up-1",
-      contactId: "contact:hidden-follow-up",
-      occurredAt: "2026-04-10T10:00:00.000Z",
-      direction: "inbound",
-      subject: "Killer whales check-in",
-      snippet: "Checking in from the inactive project.",
-    });
-
     await seedInboxContact(runtime.context, {
       contactId: "contact:hidden-follow-up",
       salesforceContactId: "003-hidden-follow-up",
@@ -1506,6 +1497,14 @@ describe("real inbox selectors", () => {
       membershipId: "membership:hidden-follow-up",
       membershipStatus: "active",
       membershipCreatedAt: "2026-04-10T10:00:00.000Z",
+    });
+    const hiddenLatest = await seedInboxEmailEvent(runtime.context, {
+      id: "hidden-follow-up-1",
+      contactId: "contact:hidden-follow-up",
+      occurredAt: "2026-04-10T10:00:00.000Z",
+      direction: "inbound",
+      subject: "Killer whales check-in",
+      snippet: "Checking in from the inactive project.",
     });
     await seedInboxProjection(runtime.context, {
       contactId: "contact:hidden-follow-up",
@@ -1794,14 +1793,6 @@ describe("real inbox selectors", () => {
       lastCanonicalEventId: "event:sarah-inbound-1",
       lastEventType: "communication.email.inbound",
     });
-    const latest = await seedInboxEmailEvent(runtime.context, {
-      id: "fallback-follow-up",
-      contactId: "contact:fallback-follow-up",
-      occurredAt: "2026-04-09T08:00:00.000Z",
-      direction: "outbound",
-      subject: "Ignored explicit subject",
-      snippet: "",
-    });
     await seedInboxContact(runtime.context, {
       contactId: "contact:fallback-follow-up",
       salesforceContactId: "003-fallback-follow-up",
@@ -1813,6 +1804,14 @@ describe("real inbox selectors", () => {
       membershipId: "membership:fallback-follow-up",
       membershipStatus: "active",
       membershipCreatedAt: "2026-04-09T08:00:00.000Z",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "fallback-follow-up",
+      contactId: "contact:fallback-follow-up",
+      occurredAt: "2026-04-09T08:00:00.000Z",
+      direction: "outbound",
+      subject: "Ignored explicit subject",
+      snippet: "",
     });
     await seedInboxProjection(runtime.context, {
       contactId: "contact:fallback-follow-up",

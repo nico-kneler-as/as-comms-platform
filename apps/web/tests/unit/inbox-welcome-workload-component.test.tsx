@@ -195,7 +195,9 @@ describe("InboxWelcomeWorkload follow-up rail", () => {
     activeSession = renderComponent(buildWorkload(3));
 
     const buttons = Array.from(
-      activeSession.container.querySelectorAll("button[aria-label]"),
+      activeSession.container.querySelectorAll(
+        'button[aria-label^="Open conversation with"]',
+      ),
     ).map((element) => element.getAttribute("aria-label"));
 
     expect(
