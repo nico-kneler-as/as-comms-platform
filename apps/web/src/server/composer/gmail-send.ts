@@ -1,13 +1,16 @@
 import { z } from "zod";
 
 import {
+  resolveLiveGmailThreadId,
   sendGmailMessage,
   type GmailSendError,
+  type GmailSendConfig,
   type GmailSendParams,
   type GmailSendResult
 } from "@as-comms/integrations";
 
 export type { GmailSendError, GmailSendParams, GmailSendResult };
+export { resolveLiveGmailThreadId };
 
 const composerGmailSendConfigSchema = z.object({
   liveAccount: z.string().email(),
@@ -40,22 +43,10 @@ function readComposerGmailSendConfig(env: NodeJS.ProcessEnv) {
   });
 }
 
-export async function sendComposerGmailMessage(
-  params: GmailSendParams
-): Promise<GmailSendResult> {
-  let config;
-
-  try {
-    config = readComposerGmailSendConfig(process.env);
-  } catch (error) {
-    console.error("[composer/gmail-send] Config parse failed — check GMAIL_* env vars on web service.", error);
-    return {
-      kind: "auth_error",
-      detail: "Composer Gmail send is not configured."
-    };
-  }
-
-  return sendGmailMessage(params, {
+function buildComposerGmailSendConfig(
+  config: ReturnType<typeof readComposerGmailSendConfig>
+): GmailSendConfig {
+  return {
     liveAccount: config.liveAccount,
     oauthClient: {
       clientId: config.oauthClientId,
@@ -66,5 +57,63 @@ export async function sendComposerGmailMessage(
     fetchImplementation: fetch,
     timeoutMs: config.timeoutMs,
     accessTokenCache
-  });
+  };
+}
+
+export async function sendComposerGmailMessage(
+  params: GmailSendParams,
+  options?: { readonly resolveThreadIdViaRfc822?: boolean }
+): Promise<GmailSendResult> {
+  let config;
+
+  try {
+    config = readComposerGmailSendConfig(process.env);
+  } catch (error) {
+    console.error(
+      "[composer/gmail-send] Config parse failed — check GMAIL_* env vars on web service.",
+      error
+    );
+    return {
+      kind: "auth_error",
+      detail: "Composer Gmail send is not configured."
+    };
+  }
+
+  const sendConfig = buildComposerGmailSendConfig(config);
+  let resolvedThreadId = params.threadId;
+
+  // Keep OAuth config encapsulated in the wrapper so callers only opt into live-thread resolution.
+  if (
+    options?.resolveThreadIdViaRfc822 === true &&
+    params.threadId !== undefined &&
+    params.inReplyToRfc822MessageId !== undefined
+  ) {
+    const resolution = await resolveLiveGmailThreadId({
+      rfc822MessageId: params.inReplyToRfc822MessageId,
+      config: sendConfig
+    });
+
+    if (resolution.kind === "resolved") {
+      resolvedThreadId = resolution.threadId;
+    } else if (resolution.kind === "not_found") {
+      resolvedThreadId = undefined;
+    } else {
+      console.warn(
+        "[composer/thread-resolver] Could not resolve live threadId; falling back to header-based threading.",
+        {
+          kind: resolution.kind,
+          detail: resolution.detail
+        }
+      );
+      resolvedThreadId = undefined;
+    }
+  }
+
+  return sendGmailMessage(
+    {
+      ...params,
+      ...(resolvedThreadId === undefined ? {} : { threadId: resolvedThreadId })
+    },
+    sendConfig
+  );
 }

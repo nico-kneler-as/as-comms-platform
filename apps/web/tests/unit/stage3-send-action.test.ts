@@ -193,6 +193,7 @@ describe("sendComposerAction", () => {
         bodyPlaintext: "Thanks again for confirming the field logistics.",
         bodyHtml: "<p>Thanks again for confirming the field logistics.</p>",
       }),
+      expect.objectContaining({ resolveThreadIdViaRfc822: true }),
     );
     expect(markSentRfc822Spy).toHaveBeenCalledWith(
       result.data.pendingOutboundId,
@@ -225,6 +226,7 @@ describe("sendComposerAction", () => {
         cc: ["partner@example.org"],
         bcc: ["archive@example.org"],
       }),
+      expect.objectContaining({ resolveThreadIdViaRfc822: true }),
     );
   });
 
