@@ -103,7 +103,7 @@ export function classifySystemDivider(body: string): SystemDividerCategory {
 
   return {
     label: "LIFECYCLE",
-    tone: "amber",
+    tone: "violet",
     Icon: CalendarIcon,
   };
 }
@@ -138,10 +138,13 @@ export function SystemDivider({
         </span>
         <span className={cn(TYPE.label, tone.text)}>{category.label}</span>
         <span className="text-[11.5px] text-slate-600">{body}</span>
+        <span className="text-[11px] text-slate-400 tabular-nums" aria-hidden="true">
+          ·
+        </span>
         <time
           dateTime={entry.occurredAt}
           title={formatExactTimestamp(entry.occurredAt)}
-          className="cursor-help text-[11px] text-slate-400"
+          className="cursor-help text-[11px] text-slate-400 tabular-nums"
         >
           {entry.occurredAtLabel}
         </time>

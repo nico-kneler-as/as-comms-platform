@@ -37,6 +37,24 @@ function normalizeHeaderValue(value: string | null): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+function splitHeaderValue(value: string): {
+  readonly primary: string;
+  readonly subdued: string | null;
+} {
+  const match = /^(.*?)(\s*<[^>]+>)$/u.exec(value);
+
+  if (!match) {
+    return { primary: value, subdued: null };
+  }
+
+  const primary = match[1] ?? value;
+  const subdued = match[2] ?? null;
+  return {
+    primary: primary.trimEnd(),
+    subdued: subdued?.trimStart() ?? null,
+  };
+}
+
 function extractDisplayName(value: string | null): string | null {
   const normalized = normalizeHeaderValue(value);
 
@@ -180,18 +198,28 @@ export function EmailParticipantHeader({
         id={contentId}
         className={cn("border-b px-4 py-2", detailBorderClass)}
       >
-        <dl className="space-y-1 text-[11.5px] leading-relaxed text-slate-600">
-          {rows.map((row) => (
-            <div
-              key={row.label}
-              className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2"
-            >
-              <dt className="font-medium text-slate-400">{row.label}</dt>
-              <dd className={cn("min-w-0 text-slate-700", WRAP_ANYWHERE)}>
-                {row.value}
-              </dd>
-            </div>
-          ))}
+        <dl className="space-y-0.5 text-[11.5px] leading-relaxed text-slate-600">
+          {rows.map((row) => {
+            const parts = splitHeaderValue(row.value);
+
+            return (
+              <div
+                key={row.label}
+                className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2"
+              >
+                <dt className="text-slate-400">{row.label}</dt>
+                <dd className={cn("min-w-0 text-slate-700", WRAP_ANYWHERE)}>
+                  <span>{parts.primary}</span>
+                  {parts.subdued ? (
+                    <>
+                      {parts.primary.length > 0 ? " " : null}
+                      <span className="text-slate-400">{parts.subdued}</span>
+                    </>
+                  ) : null}
+                </dd>
+              </div>
+            );
+          })}
         </dl>
       </CollapsibleContent>
     </Collapsible>

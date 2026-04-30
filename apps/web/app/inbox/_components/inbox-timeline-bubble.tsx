@@ -35,7 +35,7 @@ import {
 const WRAP_ANYWHERE = "break-words [overflow-wrap:anywhere]";
 const HTML_TAG_PATTERN = /<\/?[a-zA-Z][^>]*>/u;
 const EMAIL_HTML_BODY_CLASS =
-  "text-pretty text-[14px] leading-relaxed text-slate-700 [&_a]:text-sky-700 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_code]:rounded-sm [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_ol]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-100 [&_pre]:p-3 [&_table]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_ul]:ml-5 [&_ul]:list-disc";
+  "text-pretty text-[13px] leading-relaxed text-slate-700 [&_a]:text-sky-700 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_code]:rounded-sm [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_ol]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-100 [&_pre]:p-3 [&_table]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_ul]:ml-5 [&_ul]:list-disc";
 
 function bodyContainsHtml(body: string): boolean {
   return HTML_TAG_PATTERN.test(body);
@@ -150,11 +150,9 @@ function MessageAttachments({
 
 function ReplyFooter({
   entryId,
-  tone,
   onReply,
 }: {
   readonly entryId: string;
-  readonly tone: "slate" | "sky" | "sky-inverse";
   readonly onReply?: (entryId: string) => void;
 }) {
   if (onReply === undefined) {
@@ -162,28 +160,16 @@ function ReplyFooter({
   }
 
   return (
-    <div
-      className={cn(
-        "flex items-center justify-end border-t px-4 py-2",
-        tone === "sky-inverse"
-          ? "border-sky-500/40"
-          : tone === "sky"
-            ? "border-sky-100/60"
-            : "border-slate-100",
-      )}
-    >
+    <div className="flex items-center justify-end border-t border-slate-100 px-4 py-1.5">
       <button
         type="button"
         onClick={() => {
           onReply(entryId);
         }}
         className={cn(
-          "inline-flex items-center gap-1 text-[12px]",
+          "inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800",
           TRANSITION.fast,
           TRANSITION.reduceMotion,
-          tone === "sky-inverse"
-            ? "text-sky-100 hover:text-white hover:underline"
-            : "text-sky-700 hover:underline",
         )}
       >
         <CornerUpLeftIcon className="h-3 w-3" />
@@ -359,12 +345,11 @@ export function MessageBubble({
 
   const bubbleClassName = isEmail
     ? isOutbound
-      ? "border border-sky-100 bg-sky-50"
+      ? "border border-sky-200 bg-sky-50/40"
       : "border border-slate-200 bg-white"
     : isOutbound
       ? "border border-sky-600 bg-sky-600 text-white"
       : "border border-slate-200 bg-white";
-  const replyTone = isOutbound ? (isEmail ? "sky" : "sky-inverse") : "slate";
 
   return (
     <li
@@ -427,7 +412,7 @@ export function MessageBubble({
             ) : body.length > 0 ? (
               <p
                 className={cn(
-                  "whitespace-pre-wrap text-pretty text-[14px] leading-relaxed",
+                  "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed",
                   isOutbound && !isEmail ? "text-white" : "text-slate-700",
                   WRAP_ANYWHERE,
                 )}
@@ -441,7 +426,6 @@ export function MessageBubble({
 
           <ReplyFooter
             entryId={entry.id}
-            tone={replyTone}
             {...(onReply === undefined ? {} : { onReply })}
           />
         </div>
