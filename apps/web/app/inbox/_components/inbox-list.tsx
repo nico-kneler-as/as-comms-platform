@@ -654,7 +654,7 @@ export function InboxList({
         ) : null}
       </div>
 
-      <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={listViewportRef} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
         {shouldShowSearchSkeleton ? (
           <QueueLoadingSkeleton rowCount={3} label="Searching inbox" />
         ) : shouldShowInitialSkeleton ? (

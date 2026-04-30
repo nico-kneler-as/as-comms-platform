@@ -579,7 +579,7 @@ describe("Inbox list shell", () => {
     expect(activeSession.container.textContent).toContain("Riley Carter");
   });
 
-  it("renders the primary project chip with an inline +N indicator", async () => {
+  it("renders the primary project chip without the overflow count badge", async () => {
     fetchInboxListPageMock.mockResolvedValue(buildList());
     const baseItem = buildList().items[0];
 
@@ -601,6 +601,6 @@ describe("Inbox list shell", () => {
     const row = activeSession.container.querySelector("[data-inbox-row='true']");
 
     expect(row?.textContent).toContain("Amazon Basin");
-    expect(row?.textContent).toContain("+2");
+    expect(row?.textContent).not.toContain("+2");
   });
 });
