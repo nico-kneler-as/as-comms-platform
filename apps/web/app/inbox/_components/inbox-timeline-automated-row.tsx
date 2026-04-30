@@ -71,6 +71,7 @@ interface EventRowDescriptor {
   readonly label: string;
   readonly Icon: ComponentType<{ className?: string }>;
   readonly shellClassName: string;
+  readonly hoverClassName: string;
   readonly iconClassName: string;
   readonly labelClassName: string;
 }
@@ -83,9 +84,9 @@ function describeEventRow(input: {
     return {
       label: input.isEmail ? "Campaign" : "Campaign SMS",
       Icon: MegaphoneIcon,
-      shellClassName:
-        "border-violet-200/70 bg-violet-50/30 hover:bg-violet-50/60",
-      iconClassName: "border-violet-100 bg-violet-100 text-violet-700",
+      shellClassName: "border-violet-200/70 bg-violet-50/30",
+      hoverClassName: "hover:bg-violet-50/60",
+      iconClassName: "bg-violet-100 text-violet-700",
       labelClassName: "text-violet-700",
     };
   }
@@ -94,8 +95,9 @@ function describeEventRow(input: {
     return {
       label: input.isEmail ? "Activity" : "SMS Activity",
       Icon: input.isEmail ? MailIcon : PhoneIcon,
-      shellClassName: "border-violet-200 bg-violet-50/75 hover:bg-violet-50",
-      iconClassName: "border-violet-200 text-violet-700",
+      shellClassName: "border-violet-200 bg-violet-50/75",
+      hoverClassName: "hover:bg-violet-50",
+      iconClassName: "bg-violet-100 text-violet-700",
       labelClassName: "text-violet-700",
     };
   }
@@ -103,8 +105,9 @@ function describeEventRow(input: {
   return {
     label: input.isEmail ? "Automated" : "Automated SMS",
     Icon: input.isEmail ? ZapIcon : WandIcon,
-    shellClassName: "border-slate-200 bg-slate-50/40 hover:bg-slate-100/60",
-    iconClassName: "border-slate-100 bg-slate-100 text-slate-600",
+    shellClassName: "border-slate-200 bg-slate-50/40",
+    hoverClassName: "hover:bg-slate-100/60",
+    iconClassName: "bg-slate-100 text-slate-600",
     labelClassName: "text-slate-500",
   };
 }
@@ -246,86 +249,102 @@ export function TimelineAutomatedRow({
     <li className="flex w-full flex-col items-end pl-16">
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-expanded={isExpanded}
-            title={formatExactTimestamp(entry.occurredAt)}
-            onClick={onToggle}
-            data-event-role={role}
-            data-campaign-state={campaignState}
+          <div
             className={cn(
-              "group flex w-full max-w-[560px] items-start gap-2.5 rounded-xl border px-4 py-2.5 text-left",
-              "transition-[color,background-color,transform] duration-150 ease-out",
-              "active:scale-[0.96]",
-              TRANSITION.reduceMotion,
+              "w-full max-w-[560px] overflow-hidden rounded-xl border",
               descriptor.shellClassName,
             )}
           >
-            <div
+            <button
+              type="button"
+              aria-expanded={isExpanded}
+              title={formatExactTimestamp(entry.occurredAt)}
+              onClick={onToggle}
+              data-event-role={role}
+              data-campaign-state={campaignState}
               className={cn(
-                "mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md border bg-white/90",
-                descriptor.iconClassName,
+                "group flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left",
+                "transition-[background-color,transform] duration-150 ease-out active:scale-[0.99]",
+                descriptor.hoverClassName,
+                TRANSITION.reduceMotion,
               )}
             >
-              {role === "campaign" ? (
-                <CampaignStateIcon state={campaignState ?? "sent"} />
-              ) : (
-                <descriptor.Icon className="size-4" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div
                   className={cn(
-                    "text-[9.5px] font-semibold uppercase tracking-wider",
-                    descriptor.labelClassName,
+                    "inline-flex size-6 shrink-0 items-center justify-center rounded-md",
+                    descriptor.iconClassName,
                   )}
                 >
-                  {descriptor.label}
-                </span>
-                <RelativeTimestamp
-                  timestamp={entry.occurredAt}
-                  label={entry.occurredAtLabel}
-                  className="text-[11px] text-slate-500"
+                  {role === "campaign" ? (
+                    <CampaignStateIcon state={campaignState ?? "sent"} />
+                  ) : (
+                    <descriptor.Icon className="size-4" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "text-[9.5px] font-semibold uppercase tracking-wider",
+                        descriptor.labelClassName,
+                      )}
+                    >
+                      {descriptor.label}
+                    </span>
+                    <RelativeTimestamp
+                      timestamp={entry.occurredAt}
+                      label={`· ${entry.occurredAtLabel}`}
+                      className="text-[11px] text-slate-400"
+                    />
+                  </div>
+                  {headline ? (
+                    <p
+                      className={cn(
+                        "mt-0.5 truncate text-[12.5px] font-medium text-slate-800",
+                        WRAP_ANYWHERE,
+                      )}
+                    >
+                      {headline}
+                    </p>
+                  ) : null}
+                  {!hideCollapsedBody && body.length > 0 ? (
+                    <p
+                      className={cn(
+                        "mt-0.5 line-clamp-1 font-message-body text-[13.5px] leading-relaxed text-slate-700",
+                        WRAP_ANYWHERE,
+                      )}
+                    >
+                      {body}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {role === "campaign" && campaignState !== undefined ? (
+                  <CampaignStateBadge state={campaignState} />
+                ) : null}
+                <ChevronRightIcon
+                  className={cn(
+                    "h-3.5 w-3.5 text-slate-500 transition-transform duration-150",
+                    isExpanded && "rotate-90",
+                  )}
                 />
               </div>
-              {headline ? (
+            </button>
+            {isExpanded && body.length > 0 ? (
+              <div className="border-t border-slate-200 bg-white px-4 py-3">
                 <p
                   className={cn(
-                    "mt-0.5 text-pretty text-[12.5px] font-medium leading-snug text-slate-800",
+                    "whitespace-pre-wrap text-pretty font-message-body text-[13.5px] leading-relaxed text-slate-700",
                     WRAP_ANYWHERE,
                   )}
                 >
-                  {headline}
+                  {autolinkText(body, "text-sky-600")}
                 </p>
-              ) : null}
-              {!hideCollapsedBody && body.length > 0 ? (
-                <p
-                  className={cn(
-                    "font-message-body text-[13.5px] leading-relaxed text-slate-700",
-                    WRAP_ANYWHERE,
-                    (headline !== null || role === "campaign") && "mt-1.5",
-                    isExpanded
-                      ? "whitespace-pre-wrap text-pretty"
-                      : "line-clamp-1",
-                  )}
-                >
-                  {isExpanded ? autolinkText(body, "text-sky-600") : body}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 items-center gap-2 pt-1">
-              {role === "campaign" && campaignState !== undefined ? (
-                <CampaignStateBadge state={campaignState} />
-              ) : null}
-              <ChevronRightIcon
-                className={cn(
-                  "h-3.5 w-3.5 text-slate-500 transition-transform duration-150",
-                  isExpanded && "rotate-90",
-                )}
-              />
-            </div>
-          </button>
+              </div>
+            ) : null}
+          </div>
         </TooltipTrigger>
         <TooltipContent side="top">
           <p>{formatExactTimestamp(entry.occurredAt)}</p>
