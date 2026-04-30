@@ -55,14 +55,16 @@ describe("diag-unmapped-task-scope", () => {
         {
           policyCode: "stage1.skip.task_unmapped_channel",
           entityId: "00T-3",
-          occurredAt: "2026-04-01T10:00:00.000Z",
+          // 2026-04-01T13:00 sits AFTER the 30-day cutoff at 2026-04-01T12:00
+          // (now=2026-04-30T12:00 minus 29 days), so this row stays in window.
+          occurredAt: "2026-04-01T13:00:00.000Z",
           taskSubtype: null,
           subject: "Completely different subject",
           ownerUsername: "someone@example.org",
           whoId: "003-3",
           relatedMembershipPresent: false,
-          createdDate: "2026-04-01T09:00:00.000Z",
-          lastModifiedDate: "2026-04-01T09:30:00.000Z"
+          createdDate: "2026-04-01T12:00:00.000Z",
+          lastModifiedDate: "2026-04-01T12:30:00.000Z"
         },
         {
           policyCode: "stage1.skip.task_unmapped_channel",
