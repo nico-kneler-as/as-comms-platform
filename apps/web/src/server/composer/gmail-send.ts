@@ -2,9 +2,12 @@ import { z } from "zod";
 
 import {
   sendGmailMessage,
+  type GmailSendError,
   type GmailSendParams,
   type GmailSendResult
 } from "@as-comms/integrations";
+
+export type { GmailSendError, GmailSendParams, GmailSendResult };
 
 const composerGmailSendConfigSchema = z.object({
   liveAccount: z.string().email(),
