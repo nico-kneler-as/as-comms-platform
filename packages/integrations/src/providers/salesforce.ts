@@ -429,7 +429,7 @@ export function parseSubjectDirection(rawSubject: string | null): {
   };
 }
 
-function mapSalesforceContactSnapshot(
+export function mapSalesforceContactSnapshot(
   record: SalesforceContactSnapshotRecord,
 ): NormalizedContactGraphUpsertInput {
   const contactId = buildContactIdFromSalesforceContactId(
