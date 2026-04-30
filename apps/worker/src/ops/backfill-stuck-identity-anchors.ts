@@ -19,6 +19,7 @@ import {
   normalizeEmail,
   normalizePhone,
   salesforceContactSnapshotRecordSchema,
+  toIsoTimestamp,
   type SalesforceCaptureServiceConfig,
 } from "@as-comms/integrations";
 import type {
@@ -590,8 +591,16 @@ async function probeSalesforceContacts(input: {
     for (const rawContactRow of contactRows) {
       const contactRow = rawContactRow as Record<string, unknown>;
       const salesforceContactId = readRowStringField(contactRow, "Id");
-      const createdAt = readRowStringField(contactRow, "CreatedDate");
-      const updatedAt = readRowStringField(contactRow, "LastModifiedDate");
+      // Salesforce returns datetimes like "2026-04-30T13:40:34.000+0000",
+      // which Zod's z.string().datetime() rejects (offset disallowed by default).
+      // Normalize to "...Z" via the existing helper, matching the pattern in
+      // packages/integrations/src/capture-services/salesforce.ts.
+      const createdAt = toIsoTimestamp(
+        readRowStringField(contactRow, "CreatedDate"),
+      );
+      const updatedAt = toIsoTimestamp(
+        readRowStringField(contactRow, "LastModifiedDate"),
+      );
 
       if (
         salesforceContactId === null ||
