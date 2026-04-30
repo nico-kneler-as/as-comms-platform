@@ -292,10 +292,16 @@ export function TimelineAutomatedRow({
                     >
                       {descriptor.label}
                     </span>
+                    <span
+                      aria-hidden="true"
+                      className="text-[11px] text-slate-400 tabular-nums"
+                    >
+                      ·
+                    </span>
                     <RelativeTimestamp
                       timestamp={entry.occurredAt}
-                      label={`· ${entry.occurredAtLabel}`}
-                      className="text-[11px] text-slate-400"
+                      label={entry.occurredAtLabel}
+                      className="text-[11px] text-slate-400 tabular-nums"
                     />
                   </div>
                   {headline ? (
