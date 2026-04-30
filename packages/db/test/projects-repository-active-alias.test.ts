@@ -135,4 +135,27 @@ describe("settings.projects.setActive — alias requirement", () => {
       await context.dispose();
     }
   });
+
+  it("upsert allows non-null callers to update an existing alias", async () => {
+    const context = await createTestStage1Context();
+    try {
+      await context.repositories.projectDimensions.upsert({
+        projectId: "project_alias_update",
+        projectName: "Original Project Name",
+        projectAlias: "Old Alias",
+        source: "salesforce",
+      });
+
+      const updated = await context.repositories.projectDimensions.upsert({
+        projectId: "project_alias_update",
+        projectName: "Original Project Name",
+        projectAlias: "New Alias",
+        source: "salesforce",
+      });
+
+      expect(updated.projectAlias).toBe("New Alias");
+    } finally {
+      await context.dispose();
+    }
+  });
 });

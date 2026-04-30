@@ -1664,9 +1664,15 @@ function createStage1RepositoriesInternal(
             target: projectDimensions.projectId,
             set: {
               projectName: values.projectName,
-              // isActive and projectAlias intentionally NOT updated: admins manage
-              // them in Settings, and Salesforce capture must not overwrite that
-              // app-owned state.
+              // projectAlias preserves existing value when caller passes null
+              // (Salesforce capture has no alias concept and must not clobber
+              // admin-managed state from Settings). Non-null callers can still
+              // overwrite intentionally.
+              projectAlias: sql`COALESCE(EXCLUDED.${sql.identifier(
+                "project_alias",
+              )}, ${projectDimensions.projectAlias})`,
+              // isActive intentionally NOT updated: admins manage it in Settings,
+              // and Salesforce capture must not overwrite that app-owned state.
               aiKnowledgeUrl: values.aiKnowledgeUrl,
               aiKnowledgeSyncedAt: values.aiKnowledgeSyncedAt,
               source: values.source,
