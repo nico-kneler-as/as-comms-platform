@@ -2116,4 +2116,125 @@ Alias drift outbound message.
       await nonRetryableContext.dispose();
     }
   });
+
+  it("records one audit row for deferred Salesforce task_unmapped_channel drops and stays idempotent across reruns", async () => {
+    const capture = createEmptyCapturePorts();
+    capture.salesforce.captureLiveBatch = () =>
+      Promise.resolve(
+        buildCapturedBatch([
+          {
+            recordType: "task_unmapped_channel" as const,
+            recordId: "00T-unmapped-1",
+            taskSubtype: "Task",
+            subject:
+              "Plan your Adventure Today! This subject is intentionally long to verify truncation stays bounded when the instrumentation records the audit metadata payload for skipped Salesforce tasks.",
+            ownerUsername: "admin+1@adventurescientists.org",
+            whoId: "003-stage1",
+            relatedMembershipPresent: true,
+            createdDate: "2026-01-05T00:01:00.000Z",
+            lastModifiedDate: "2026-01-05T00:02:00.000Z"
+          }
+        ])
+      );
+    const context = await createTestWorkerContext({ capture });
+
+    try {
+      const first = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload({
+          syncStateId: "sync:salesforce:task-unmapped:1"
+        })
+      );
+      const second = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload({
+          syncStateId: "sync:salesforce:task-unmapped:2"
+        })
+      );
+
+      expect(first.outcome).toBe("succeeded");
+      expect(second.outcome).toBe("succeeded");
+      const audits = await context.repositories.auditEvidence.listByEntity({
+        entityType: "salesforce_task",
+        entityId: "00T-unmapped-1"
+      });
+
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({
+        actorType: "system",
+        actorId: "salesforce_capture",
+        action: "skipped_unmapped_task",
+        entityType: "salesforce_task",
+        entityId: "00T-unmapped-1",
+        policyCode: "stage1.skip.task_unmapped_channel",
+        result: "recorded"
+      });
+      expect(audits[0]?.metadataJson).toMatchObject({
+        taskSubtype: "Task",
+        ownerUsername: "admin+1@adventurescientists.org",
+        whoId: "003-stage1",
+        relatedMembershipPresent: true,
+        createdDate: "2026-01-05T00:01:00.000Z",
+        lastModifiedDate: "2026-01-05T00:02:00.000Z"
+      });
+      expect(typeof audits[0]?.metadataJson.subject).toBe("string");
+      expect((audits[0]?.metadataJson.subject as string).length).toBeLessThanOrEqual(
+        200
+      );
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("does not record deferred-task audit evidence for normal Salesforce task_communication records", async () => {
+    const capture = createEmptyCapturePorts();
+    capture.salesforce.captureLiveBatch = () =>
+      Promise.resolve(
+        buildCapturedBatch([
+          {
+            recordType: "task_communication" as const,
+            recordId: "00T-task-1",
+            channel: "email" as const,
+            messageKind: "auto" as const,
+            salesforceContactId: "003-stage1",
+            occurredAt: "2026-01-05T00:01:00.000Z",
+            receivedAt: "2026-01-05T00:02:00.000Z",
+            payloadRef: "payloads/salesforce/00T-task-1.json",
+            checksum: "checksum-00T-task-1",
+            subject: "Email: Launch update",
+            snippet: "Outbound email sent",
+            normalizedEmails: ["volunteer@example.org"],
+            normalizedPhones: [],
+            volunteerIdPlainValues: [],
+            supportingRecords: [],
+            crossProviderCollapseKey: null,
+            routing: {
+              required: true,
+              projectId: "project-stage1",
+              expeditionId: "expedition-stage1",
+              projectName: "Project Stage 1",
+              expeditionName: "Expedition Stage 1"
+            }
+          }
+        ])
+      );
+    const context = await createTestWorkerContext({ capture });
+
+    try {
+      await seedContact(context);
+      const result = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload({
+          syncStateId: "sync:salesforce:task-communication:1"
+        })
+      );
+
+      expect(result.outcome).toBe("succeeded");
+      await expect(
+        context.repositories.auditEvidence.listByEntity({
+          entityType: "salesforce_task",
+          entityId: "00T-task-1"
+        })
+      ).resolves.toEqual([]);
+    } finally {
+      await context.dispose();
+    }
+  });
 });

@@ -317,6 +317,29 @@ export type SalesforceTaskCommunicationRecord = z.infer<
   typeof salesforceTaskCommunicationRecordSchema
 >;
 
+const salesforceDeferredTaskRecordMetadataSchema = z.object({
+  taskSubtype: nullableStringSchema.default(null),
+  subject: nullableStringSchema.default(null),
+  ownerUsername: nullableStringSchema.default(null),
+  whoId: nullableStringSchema.default(null),
+  relatedMembershipPresent: z.boolean().default(false),
+  createdDate: nullableStringSchema.default(null),
+  lastModifiedDate: nullableStringSchema.default(null),
+});
+
+export const salesforceDeferredTaskRecordSchema =
+  salesforceDeferredTaskRecordMetadataSchema.extend({
+    recordType: z.enum([
+      "task_unmapped_channel",
+      "task_missing_id",
+      "task_missing_occurred_at",
+    ]),
+    recordId: z.string().min(1),
+  });
+export type SalesforceDeferredTaskRecord = z.infer<
+  typeof salesforceDeferredTaskRecordSchema
+>;
+
 export const salesforceUnsupportedRecordSchema = z
   .object({
     recordType: z.string().min(1),
@@ -328,6 +351,9 @@ export const salesforceUnsupportedRecordSchema = z
         "contact_snapshot",
         "lifecycle_milestone",
         "task_communication",
+        "task_unmapped_channel",
+        "task_missing_id",
+        "task_missing_occurred_at",
       ].includes(record.recordType),
     {
       message:
@@ -342,12 +368,14 @@ export const salesforceRecordSchema = z.union([
   salesforceContactSnapshotRecordSchema,
   salesforceLifecycleRecordSchema,
   salesforceTaskCommunicationRecordSchema,
+  salesforceDeferredTaskRecordSchema,
   salesforceUnsupportedRecordSchema,
 ]);
 export type SalesforceRecord =
   | SalesforceContactSnapshotRecord
   | SalesforceLifecycleRecord
   | SalesforceTaskCommunicationRecord
+  | SalesforceDeferredTaskRecord
   | SalesforceUnsupportedRecord;
 
 function resolveLifecycleEventType(
@@ -865,6 +893,18 @@ export function mapSalesforceRecord(
       command: createCanonicalEventCommand(
         mapSalesforceTaskCommunicationRecord(taskRecord.data),
       ),
+    });
+  }
+
+  const deferredTaskRecord = salesforceDeferredTaskRecordSchema.safeParse(rawRecord);
+
+  if (deferredTaskRecord.success) {
+    return createDeferredMappingResult({
+      provider: "salesforce",
+      sourceRecordType: deferredTaskRecord.data.recordType,
+      sourceRecordId: deferredTaskRecord.data.recordId,
+      reason: "deferred_record_family",
+      detail: `Salesforce ${deferredTaskRecord.data.recordType} records are deferred in Stage 1.`,
     });
   }
 

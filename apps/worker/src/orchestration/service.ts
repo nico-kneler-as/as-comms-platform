@@ -114,6 +114,27 @@ interface ParsedGmailHistoricalPayloadRef {
   readonly messageNumber: number;
 }
 
+const instrumentedSalesforceDeferredTaskPolicyCodeByRecordType = {
+  task_unmapped_channel: "stage1.skip.task_unmapped_channel",
+  task_missing_id: "stage1.skip.task_missing_id",
+  task_missing_occurred_at: "stage1.skip.task_missing_occurred_at"
+} as const;
+
+type InstrumentedSalesforceDeferredTaskRecordType =
+  keyof typeof instrumentedSalesforceDeferredTaskPolicyCodeByRecordType;
+
+interface InstrumentedSalesforceDeferredTaskRecord {
+  readonly recordType: InstrumentedSalesforceDeferredTaskRecordType;
+  readonly recordId: string;
+  readonly taskSubtype?: string | null;
+  readonly subject?: string | null;
+  readonly ownerUsername?: string | null;
+  readonly whoId?: string | null;
+  readonly relatedMembershipPresent?: boolean;
+  readonly createdDate?: string | null;
+  readonly lastModifiedDate?: string | null;
+}
+
 function buildHistoricalReplayProjectInboxAliases(input: {
   readonly configuredAliases: readonly string[];
   readonly recordedProjectInboxAlias: string | null;
@@ -149,6 +170,75 @@ function compareEventOrder(
 
 function buildWorkerOperationId(prefix: string): string {
   return `${prefix}:${randomUUID()}`;
+}
+
+function isInstrumentedSalesforceDeferredTaskRecord(
+  record: SalesforceRecord
+): record is InstrumentedSalesforceDeferredTaskRecord {
+  return (
+    record.recordType === "task_unmapped_channel" ||
+    record.recordType === "task_missing_id" ||
+    record.recordType === "task_missing_occurred_at"
+  );
+}
+
+function truncateAuditSubject(subject: string | null | undefined): string | null {
+  if (typeof subject !== "string") {
+    return null;
+  }
+
+  return subject.length <= 200 ? subject : subject.slice(0, 200);
+}
+
+async function recordDeferredSalesforceTaskAuditIfNeeded(
+  persistence: Stage1PersistenceService,
+  input: {
+    readonly record: SalesforceRecord;
+    readonly ingestResult: Stage1IngestResult;
+  }
+): Promise<void> {
+  if (
+    input.ingestResult.outcome !== "deferred" ||
+    input.ingestResult.provider !== "salesforce" ||
+    !isInstrumentedSalesforceDeferredTaskRecord(input.record)
+  ) {
+    return;
+  }
+
+  const policyCode =
+    instrumentedSalesforceDeferredTaskPolicyCodeByRecordType[
+      input.record.recordType
+    ];
+  const auditId = `audit:salesforce_task:${input.record.recordId}:${policyCode}`;
+  const existingRecords = await persistence.repositories.auditEvidence.listByEntity({
+    entityType: "salesforce_task",
+    entityId: input.record.recordId
+  });
+
+  if (existingRecords.some((record) => record.policyCode === policyCode)) {
+    return;
+  }
+
+  await persistence.recordAuditEvidence({
+    id: auditId,
+    actorType: "system",
+    actorId: "salesforce_capture",
+    action: "skipped_unmapped_task",
+    entityType: "salesforce_task",
+    entityId: input.record.recordId,
+    occurredAt: new Date().toISOString(),
+    result: "recorded",
+    policyCode,
+    metadataJson: {
+      taskSubtype: input.record.taskSubtype ?? null,
+      subject: truncateAuditSubject(input.record.subject),
+      ownerUsername: input.record.ownerUsername ?? null,
+      whoId: input.record.whoId ?? null,
+      relatedMembershipPresent: input.record.relatedMembershipPresent ?? false,
+      createdDate: input.record.createdDate ?? null,
+      lastModifiedDate: input.record.lastModifiedDate ?? null
+    }
+  });
 }
 
 function subtractSeconds(now: Date, seconds: number): string {
@@ -1006,6 +1096,13 @@ export function createStage1WorkerOrchestrationService(input: {
       for (const { record, mapped } of prioritizedRecords) {
         const ingestResult = await params.ingestRecord(record);
         ingestResults.push(ingestResult);
+
+        if (payload.provider === "salesforce") {
+          await recordDeferredSalesforceTaskAuditIfNeeded(input.persistence, {
+            record: record as SalesforceRecord,
+            ingestResult
+          });
+        }
 
         if (
           payload.provider === "gmail" &&
