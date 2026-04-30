@@ -10,8 +10,10 @@ import {
   computePendingComposerOutboundFingerprint,
 } from "@as-comms/domain";
 import { requireSession } from "@/src/server/auth/session";
-import { sendComposerGmailMessage } from "@/src/server/composer/gmail-send";
-import type { GmailSendError } from "@as-comms/integrations";
+import {
+  sendComposerGmailMessage,
+  type GmailSendError,
+} from "@/src/server/composer/gmail-send";
 import {
   aiDraftRequestSchema,
   generateAiDraft,
