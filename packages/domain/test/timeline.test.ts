@@ -860,6 +860,178 @@ describe("Stage 1 timeline presenter", () => {
     });
   });
 
+  it("drops reconciled pending outbounds once the canonical event is present", async () => {
+    const outbound = buildGmailOutboundEmailEvent({
+      id: "canonical-event:gmail%3Amessage%3Atest123",
+      sourceEvidenceId: "sev_gmail_outbound_reconciled",
+      occurredAt: "2026-01-01T00:03:00.000Z",
+      subject: "Reconciled outbound",
+      snippet: "Reconciled outbound body",
+      bodyPreview: "Reconciled outbound body",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [outbound.canonicalEvent],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_gmail_outbound_reconciled",
+          provider: "gmail",
+          providerRecordType: "gmail_message",
+          providerRecordId: "gmail-message-test123",
+        }),
+      ],
+      gmailMessageDetails: [outbound.detail],
+      timelineRows: [outbound.timelineRow],
+      salesforceCommunicationDetails: [],
+      pendingOutbounds: [
+        {
+          id: "pending:reconciled",
+          fingerprint: "fp:pending:reconciled",
+          status: "confirmed",
+          actorId: "user:operator",
+          canonicalContactId: "contact_1",
+          projectId: null,
+          fromAlias: "antarctica@example.org",
+          toEmailNormalized: "volunteer@example.org",
+          subject: "Reconciled outbound",
+          bodyPlaintext: "Reconciled outbound body",
+          bodyHtml: "<p>Reconciled outbound body</p>",
+          bodySha256: "sha256:reconciled",
+          attachmentMetadata: [],
+          gmailThreadId: null,
+          inReplyToRfc822: null,
+          sentAt: "2026-01-01T00:03:00.000Z",
+          reconciledEventId: "canonical-event:gmail%3Amessage%3Atest123",
+          reconciledAt: "2026-01-01T00:03:24.000Z",
+          failedReason: null,
+          sentRfc822MessageId: null,
+          failedDetail: null,
+          orphanedAt: null,
+          createdAt: "2026-01-01T00:03:00.000Z",
+          updatedAt: "2026-01-01T00:03:24.000Z",
+        },
+      ],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items.filter((item) => item.family === "one_to_one_email")).toHaveLength(1);
+    expect(items.map((item) => item.canonicalEventId)).toEqual([
+      "canonical-event:gmail%3Amessage%3Atest123",
+    ]);
+  });
+
+  it("preserves unreconciled pending outbounds", async () => {
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [],
+      sourceEvidence: [],
+      salesforceCommunicationDetails: [],
+      timelineRows: [],
+      pendingOutbounds: [
+        {
+          id: "pending:null-reconcile",
+          fingerprint: "fp:pending:null-reconcile",
+          status: "pending",
+          actorId: "user:operator",
+          canonicalContactId: "contact_1",
+          projectId: null,
+          fromAlias: "antarctica@example.org",
+          toEmailNormalized: "volunteer@example.org",
+          subject: "Pending outbound",
+          bodyPlaintext: "Pending outbound body",
+          bodyHtml: "<p>Pending outbound body</p>",
+          bodySha256: "sha256:pending-null",
+          attachmentMetadata: [],
+          gmailThreadId: null,
+          inReplyToRfc822: null,
+          sentAt: "2026-01-01T00:04:00.000Z",
+          reconciledEventId: null,
+          reconciledAt: null,
+          failedReason: null,
+          sentRfc822MessageId: null,
+          failedDetail: null,
+          orphanedAt: null,
+          createdAt: "2026-01-01T00:04:00.000Z",
+          updatedAt: "2026-01-01T00:04:00.000Z",
+        },
+      ],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items.map((item) => item.canonicalEventId)).toEqual([
+      "pending-outbound:pending:null-reconcile",
+    ]);
+    expect(items[0]).toMatchObject({
+      sendStatus: "pending",
+      subject: "Pending outbound",
+    });
+  });
+
+  it("preserves reconciled pending outbounds when the canonical event is not in the current page", async () => {
+    const outbound = buildSalesforceEmailEvent({
+      id: "evt_salesforce_one_to_one_page_only",
+      sourceEvidenceId: "sev_salesforce_one_to_one_page_only",
+      occurredAt: "2026-01-01T00:05:00.000Z",
+      direction: "outbound",
+      canonicalMessageKind: "one_to_one",
+      subject: "Page event",
+      snippet: "Page event body",
+    });
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [outbound.canonicalEvent],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_salesforce_one_to_one_page_only",
+          providerRecordId: "salesforce-page-only",
+        }),
+      ],
+      salesforceCommunicationDetails: [outbound.detail],
+      timelineRows: [outbound.timelineRow],
+      pendingOutbounds: [
+        {
+          id: "pending:lag-window",
+          fingerprint: "fp:pending:lag-window",
+          status: "confirmed",
+          actorId: "user:operator",
+          canonicalContactId: "contact_1",
+          projectId: null,
+          fromAlias: "antarctica@example.org",
+          toEmailNormalized: "volunteer@example.org",
+          subject: "Lag window outbound",
+          bodyPlaintext: "Lag window outbound body",
+          bodyHtml: "<p>Lag window outbound body</p>",
+          bodySha256: "sha256:lag-window",
+          attachmentMetadata: [],
+          gmailThreadId: null,
+          inReplyToRfc822: null,
+          sentAt: "2026-01-01T00:06:00.000Z",
+          reconciledEventId: "canonical-event:something-not-in-the-page",
+          reconciledAt: "2026-01-01T00:06:24.000Z",
+          failedReason: null,
+          sentRfc822MessageId: null,
+          failedDetail: null,
+          orphanedAt: null,
+          createdAt: "2026-01-01T00:06:00.000Z",
+          updatedAt: "2026-01-01T00:06:24.000Z",
+        },
+      ],
+    });
+    const presenter = createStage1TimelinePresentationService(repositories);
+
+    const items = await presenter.listTimelineItemsByContactId("contact_1");
+
+    expect(items.map((item) => item.canonicalEventId)).toEqual([
+      "evt_salesforce_one_to_one_page_only",
+      "pending-outbound:pending:lag-window",
+    ]);
+    expect(items[1]).toMatchObject({
+      sendStatus: "confirmed",
+      subject: "Lag window outbound",
+    });
+  });
+
   // The "hydrates attachmentCount from message_attachments rows" assertion
   // moved to the inbox selector tests — the domain timeline presenter
   // intentionally returns attachmentCount: 0 to avoid a duplicate

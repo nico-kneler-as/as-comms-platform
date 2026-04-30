@@ -1461,7 +1461,9 @@ export async function sendComposerAction(
             referencesRfc822MessageIds: [parsedInput.data.inReplyToRfc822],
           }),
     };
-    const sendResult = await sendComposerGmailMessage(sendParams);
+    const sendResult = await sendComposerGmailMessage(sendParams, {
+      resolveThreadIdViaRfc822: true,
+    });
 
     if (sendResult.kind === "success") {
       await runtime.repositories.pendingOutbounds.markConfirmed(pendingOutboundId, {

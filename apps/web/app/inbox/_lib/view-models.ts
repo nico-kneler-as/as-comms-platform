@@ -171,6 +171,7 @@ export type InboxTimelineEntryKind =
 
 export type InboxTimelineEntrySendStatus =
   | "pending"
+  | "confirmed"
   | "failed"
   | "orphaned"
   | null;
