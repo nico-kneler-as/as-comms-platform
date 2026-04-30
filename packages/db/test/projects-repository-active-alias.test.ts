@@ -86,4 +86,76 @@ describe("settings.projects.setActive — alias requirement", () => {
       await context.dispose();
     }
   });
+
+  it("preserves operator-set alias and active state when Salesforce upsert sends null alias", async () => {
+    const context = await createTestStage1Context();
+    try {
+      await context.repositories.projectDimensions.upsert({
+        projectId: "project_preserve_alias",
+        projectName: "Original Project Name",
+        projectAlias: "Operator-Set Alias",
+        source: "salesforce",
+      });
+
+      await context.settings.projects.setActive("project_preserve_alias", true);
+
+      await context.repositories.projectDimensions.upsert({
+        projectId: "project_preserve_alias",
+        projectName: "Updated Project Name",
+        projectAlias: null,
+        source: "salesforce",
+      });
+
+      const [project] = await context.repositories.projectDimensions.listByIds([
+        "project_preserve_alias",
+      ]);
+
+      expect(project).toBeDefined();
+      expect(project?.projectAlias).toBe("Operator-Set Alias");
+      expect(project?.isActive).toBe(true);
+      expect(project?.projectName).toBe("Updated Project Name");
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("inserts new Salesforce projects inactive with null alias", async () => {
+    const context = await createTestStage1Context();
+    try {
+      const inserted = await context.repositories.projectDimensions.upsert({
+        projectId: "project_insert_defaults",
+        projectName: "Inserted Project",
+        projectAlias: null,
+        source: "salesforce",
+      });
+
+      expect(inserted.isActive).toBe(false);
+      expect(inserted.projectAlias).toBeNull();
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("upsert allows non-null callers to update an existing alias", async () => {
+    const context = await createTestStage1Context();
+    try {
+      await context.repositories.projectDimensions.upsert({
+        projectId: "project_alias_update",
+        projectName: "Original Project Name",
+        projectAlias: "Old Alias",
+        source: "salesforce",
+      });
+
+      const updated = await context.repositories.projectDimensions.upsert({
+        projectId: "project_alias_update",
+        projectName: "Original Project Name",
+        projectAlias: "New Alias",
+        source: "salesforce",
+      });
+
+      expect(updated.projectAlias).toBe("New Alias");
+    } finally {
+      await context.dispose();
+    }
+  });
 });
