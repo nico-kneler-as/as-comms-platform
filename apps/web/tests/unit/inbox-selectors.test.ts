@@ -1720,6 +1720,7 @@ describe("real inbox selectors", () => {
     await runtime.context.repositories.projectDimensions.upsert({
       projectId: "project:whitebark-pine",
       projectName: "Tracking Whitebark Pine",
+      projectAlias: "Whitebark Pine",
       source: "salesforce",
       isActive: true,
     });
