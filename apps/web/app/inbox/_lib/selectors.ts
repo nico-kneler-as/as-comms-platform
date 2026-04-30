@@ -67,6 +67,7 @@ interface InboxListCacheData {
     readonly followUp: number;
     readonly unresolved: number;
     readonly sent: number;
+    readonly archived: number;
   };
   readonly activeProjects: readonly InboxActiveProjectOption[];
   readonly page: {
@@ -2493,34 +2494,47 @@ async function readInboxListCacheData(input: {
   const decodedCursor = decodeInboxListCursor(input.cursor);
   const normalizedQuery = normalizeInlineText(input.query) ?? null;
   const order = orderForInboxFilter(input.filterId);
-  const [matchedProjections, freshness, activeProjectRecords, projectAliasRecords] =
-    await Promise.all([
-      normalizedQuery === null
-        ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
-            filter: "all",
+  const loadProjectionRows = (filter: InboxFilterId) =>
+    normalizedQuery === null
+      ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
+          filter,
+          order,
+          limit: INBOX_LIST_SCAN_LIMIT,
+          cursor: null,
+          projectId: input.projectId,
+        })
+      : runtime.repositories.inboxProjection
+          .searchPageOrderedByRecency({
+            filter,
             order,
             limit: INBOX_LIST_SCAN_LIMIT,
             cursor: null,
+            query: normalizedQuery,
             projectId: input.projectId,
           })
-        : runtime.repositories.inboxProjection
-            .searchPageOrderedByRecency({
-              filter: "all",
-              order,
-              limit: INBOX_LIST_SCAN_LIMIT,
-              cursor: null,
-              query: normalizedQuery,
-              projectId: input.projectId,
-            })
-            .then((result) => result.rows),
-      runtime.repositories.inboxProjection.getFreshness(),
-      runtime.repositories.projectDimensions.listActive(),
-      runtime.settings.aliases.listAll(),
-    ]);
+          .then((result) => result.rows);
+  const [
+    visibleProjections,
+    archivedProjections,
+    freshness,
+    activeProjectRecords,
+    projectAliasRecords,
+  ] = await Promise.all([
+    loadProjectionRows("all"),
+    loadProjectionRows("archived"),
+    runtime.repositories.inboxProjection.getFreshness(),
+    runtime.repositories.projectDimensions.listActive(),
+    runtime.settings.aliases.listAll(),
+  ]);
+  const matchedProjections = [...visibleProjections, ...archivedProjections];
   const activeProjects: readonly InboxActiveProjectOption[] =
     activeProjectRecords.map((record) => ({
       id: record.projectId,
       name: record.projectName,
+      alias:
+        record.projectAlias?.trim().length && record.projectAlias.trim().length > 0
+          ? record.projectAlias.trim()
+          : null,
     }));
   const candidateContactIds = matchedProjections.map(
     (projection) => projection.contactId,
@@ -2693,12 +2707,26 @@ async function readInboxListCacheData(input: {
     return row === undefined ? [] : [row];
   });
   const counts = {
-    all: allRows.length,
-    unread: allRows.filter((row) => row.isUnread).length,
-    followUp: allRows.filter((row) => row.inboxProjection.needsFollowUp).length,
-    unresolved: allRows.filter((row) => row.inboxProjection.hasUnresolved)
-      .length,
-    sent: allRows.filter((row) => row.inboxProjection.lastOutboundAt !== null)
+    all: allRows.filter((row) => row.inboxProjection.archivedAt === null).length,
+    unread: allRows.filter(
+      (row) => row.inboxProjection.archivedAt === null && row.isUnread,
+    ).length,
+    followUp: allRows.filter(
+      (row) =>
+        row.inboxProjection.archivedAt === null &&
+        row.inboxProjection.needsFollowUp,
+    ).length,
+    unresolved: allRows.filter(
+      (row) =>
+        row.inboxProjection.archivedAt === null &&
+        row.inboxProjection.hasUnresolved,
+    ).length,
+    sent: allRows.filter(
+      (row) =>
+        row.inboxProjection.archivedAt === null &&
+        row.inboxProjection.lastOutboundAt !== null,
+    ).length,
+    archived: allRows.filter((row) => row.inboxProjection.archivedAt !== null)
       .length,
   };
 
@@ -2957,6 +2985,8 @@ async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkload
         unread: 0,
         followUp: 0,
         unresolved: 0,
+        sent: 0,
+        archived: 0,
       };
 
       return {
@@ -3029,6 +3059,7 @@ function toListItemViewModel(
     bucket: mapBucket(row.inboxProjection.bucket),
     needsFollowUp: row.inboxProjection.needsFollowUp,
     hasUnresolved: row.inboxProjection.hasUnresolved,
+    isArchived: row.inboxProjection.archivedAt !== null,
     isUnread: row.isUnread,
     unreadCount: row.isUnread ? 1 : 0,
     isUnanswered:
@@ -3121,6 +3152,10 @@ function matchesServerFilter(
   item: InboxListItemViewModel,
   filterId: InboxFilterId,
 ): boolean {
+  if (item.isArchived) {
+    return filterId === "archived";
+  }
+
   switch (filterId) {
     case "all":
       return true;
@@ -3132,6 +3167,8 @@ function matchesServerFilter(
       return item.hasUnresolved;
     case "sent":
       return item.lastOutboundAt !== null;
+    case "archived":
+      return item.isArchived;
   }
 }
 
@@ -3176,6 +3213,8 @@ export async function getInboxList(
           ? totals.unresolved
           : filter.id === "sent"
             ? totals.sent
+            : filter.id === "archived"
+              ? totals.archived
             : totals[filter.id],
   }));
 
@@ -3324,6 +3363,8 @@ export async function getInboxDetail(
       projectMetadataById: cachedData.projectMetadataById,
       referenceNowIso,
     }),
+    initials: toInitials(cachedData.contact.displayName),
+    avatarTone: avatarToneForContact(cachedData.contact.id),
     timeline: cachedData.timelineItems.map((item) =>
       buildTimelineEntry({
         contactDisplayName: cachedData.contact.displayName,
@@ -3339,6 +3380,7 @@ export async function getInboxDetail(
     ),
     bucket: mapBucket(cachedData.inboxProjection.bucket),
     needsFollowUp: cachedData.inboxProjection.needsFollowUp,
+    isArchived: cachedData.inboxProjection.archivedAt !== null,
     isUnread: cachedData.isUnread,
     smsEligible: cachedData.contact.primaryPhone !== null,
     composerReplyContext,

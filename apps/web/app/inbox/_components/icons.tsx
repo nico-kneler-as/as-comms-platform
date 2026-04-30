@@ -68,4 +68,5 @@ export {
   ArrowUpRight as ArrowUpRightIcon,
   Quote as QuoteIcon,
   Database as DatabaseIcon,
+  Archive as ArchiveBoxIcon,
 } from "lucide-react";

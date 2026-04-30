@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { isNotNull, sql } from "drizzle-orm";
 import type {
   CanonicalEventProvenance,
   IntegrationHealthCategory,
@@ -588,6 +588,10 @@ export const contactInboxProjection = pgTable(
       withTimezone: true,
     }).notNull(),
     snippet: text("snippet").notNull().default(""),
+    archivedAt: timestamp("archived_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
     lastCanonicalEventId: text("last_canonical_event_id")
       .notNull()
       .references(() => canonicalEventLedger.id, { onDelete: "restrict" }),
@@ -613,6 +617,9 @@ export const contactInboxProjection = pgTable(
       table.hasUnresolved,
       table.lastActivityAt,
     ),
+    index("contact_inbox_projection_archived_idx")
+      .on(table.archivedAt)
+      .where(isNotNull(table.archivedAt)),
   ],
 );
 

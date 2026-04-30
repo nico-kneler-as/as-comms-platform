@@ -220,6 +220,7 @@ async function seedHistoricalDuplicates(
     lastOutboundAt: toriSalesforce.occurredAt,
     lastActivityAt: toriSalesforce.occurredAt,
     snippet: "Confirmed. You are all set for Hex 13174.",
+    archivedAt: null,
     lastCanonicalEventId: toriSalesforce.id,
     lastEventType: "communication.email.outbound"
   });
@@ -273,6 +274,7 @@ async function seedHistoricalDuplicates(
     lastOutboundAt: rosieGmail2.occurredAt,
     lastActivityAt: rosieGmail2.occurredAt,
     snippet: "There is still time to get involved if you want a spot on the next training.",
+    archivedAt: null,
     lastCanonicalEventId: rosieGmail2.id,
     lastEventType: "communication.email.outbound"
   });
@@ -327,6 +329,7 @@ async function seedHistoricalDuplicates(
     lastActivityAt: taniSalesforce.occurredAt,
     snippet:
       "Were you able to pick up your ARU? Here is the link: https://example.org/aru?utm_term=aru",
+    archivedAt: null,
     lastCanonicalEventId: taniSalesforce.id,
     lastEventType: "communication.email.outbound"
   });
@@ -370,6 +373,7 @@ async function seedHistoricalDuplicates(
     lastActivityAt: nextStepSecond.occurredAt,
     snippet:
       "Thanks for joining the cohort. Here are your next step instructions.",
+    archivedAt: null,
     lastCanonicalEventId: nextStepSecond.id,
     lastEventType: "communication.email.outbound"
   });

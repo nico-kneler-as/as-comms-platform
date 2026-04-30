@@ -27,7 +27,8 @@ export type InboxFilterId =
   | "unread"
   | "follow-up"
   | "unresolved"
-  | "sent";
+  | "sent"
+  | "archived";
 
 export type InboxChannel = "email" | "sms";
 
@@ -65,6 +66,7 @@ export interface InboxListItemViewModel {
   readonly bucket: InboxBucket;
   readonly needsFollowUp: boolean;
   readonly hasUnresolved: boolean;
+  readonly isArchived: boolean;
   readonly isUnread: boolean;
   readonly unreadCount: number;
   /**
@@ -313,9 +315,12 @@ export interface InboxComposerReplyContext {
 
 export interface InboxDetailViewModel {
   readonly contact: InboxContactSummaryViewModel;
+  readonly initials: string;
+  readonly avatarTone: InboxAvatarTone;
   readonly timeline: readonly InboxTimelineEntryViewModel[];
   readonly bucket: InboxBucket;
   readonly needsFollowUp: boolean;
+  readonly isArchived: boolean;
   readonly isUnread: boolean;
   readonly smsEligible: boolean;
   readonly composerReplyContext: InboxComposerReplyContext | null;
@@ -341,6 +346,7 @@ export interface InboxFilterViewModel {
 export interface InboxActiveProjectOption {
   readonly id: string;
   readonly name: string;
+  readonly alias: string | null;
 }
 
 export interface InboxWelcomeProjectWorkloadViewModel {
@@ -368,6 +374,7 @@ export interface InboxListViewModel {
     readonly followUp: number;
     readonly unresolved: number;
     readonly sent: number;
+    readonly archived: number;
   };
   readonly activeProjects: readonly InboxActiveProjectOption[];
   readonly selectedProjectId: string | null;

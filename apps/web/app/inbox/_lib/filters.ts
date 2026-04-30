@@ -20,6 +20,7 @@ export const INBOX_FILTERS: readonly FilterDefinition[] = [
   { id: "unread", label: "Unread", hint: "New inbound message" },
   { id: "follow-up", label: "Needs Follow-Up", hint: "Flagged by you" },
   { id: "sent", label: "Sent", hint: "Last outbound 1:1 message" },
+  { id: "archived", label: "Archived", hint: "Hidden from inbox" },
 ];
 
 /**

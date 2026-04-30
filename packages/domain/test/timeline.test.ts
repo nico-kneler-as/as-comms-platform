@@ -326,6 +326,7 @@ function createRepositoryBundle(input: {
           followUp: 0,
           unresolved: 0,
           sent: 0,
+          archived: 0,
         }),
       getFreshness: () =>
         Promise.resolve({
@@ -335,6 +336,7 @@ function createRepositoryBundle(input: {
       getFreshnessByContactId: () => Promise.resolve(null),
       deleteByContactId: () => Promise.resolve(),
       setNeedsFollowUp: () => Promise.resolve(null),
+      setArchived: () => Promise.resolve(null),
       setBucket: () => Promise.resolve(null),
       upsert: (record: InboxProjectionRow) => Promise.resolve(record),
     },

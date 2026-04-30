@@ -432,6 +432,7 @@ export const inboxProjectionSchema = z
     lastOutboundAt: optionalTimestampSchema,
     lastActivityAt: timestampSchema,
     snippet: z.string(),
+    archivedAt: optionalTimestampSchema.default(null),
     lastCanonicalEventId: idSchema,
     lastEventType: inboxDrivingEventTypeSchema,
   })

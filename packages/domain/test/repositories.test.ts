@@ -192,6 +192,7 @@ describe("defineStage1RepositoryBundle", () => {
             followUp: 0,
             unresolved: 0,
             sent: 0,
+            archived: 0,
           }),
         getFreshness: () =>
           Promise.resolve({
@@ -201,6 +202,7 @@ describe("defineStage1RepositoryBundle", () => {
         getFreshnessByContactId: () => Promise.resolve(null),
         deleteByContactId: () => Promise.resolve(),
         setNeedsFollowUp: () => Promise.resolve(null),
+        setArchived: () => Promise.resolve(null),
         setBucket: () => Promise.resolve(null),
         upsert: (record) => Promise.resolve(record),
       },

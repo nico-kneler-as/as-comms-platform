@@ -494,6 +494,7 @@ describe("Stage 1 persistence service", () => {
       lastOutboundAt: "2026-01-01T00:00:00.000Z",
       lastActivityAt: "2026-01-01T00:00:00.000Z",
       snippet: "Outbound follow-up",
+      archivedAt: null,
       lastCanonicalEventId: eventResult.record.id,
       lastEventType: "communication.email.outbound"
     });

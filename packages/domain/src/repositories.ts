@@ -392,7 +392,13 @@ export interface InboxProjectionRepository {
   listInvalidRecencyContactIds(): Promise<readonly string[]>;
   listAllOrderedByRecency(): Promise<readonly InboxProjectionRow[]>;
   searchPageOrderedByRecency(input: {
-    readonly filter: "all" | "unread" | "follow-up" | "unresolved" | "sent";
+    readonly filter:
+      | "all"
+      | "unread"
+      | "follow-up"
+      | "unresolved"
+      | "sent"
+      | "archived";
     readonly order: "last-inbound" | "last-outbound";
     readonly limit: number;
     readonly query: string;
@@ -408,7 +414,13 @@ export interface InboxProjectionRepository {
     readonly total: number;
   }>;
   listPageOrderedByRecency(input: {
-    readonly filter: "all" | "unread" | "follow-up" | "unresolved" | "sent";
+    readonly filter:
+      | "all"
+      | "unread"
+      | "follow-up"
+      | "unresolved"
+      | "sent"
+      | "archived";
     readonly order: "last-inbound" | "last-outbound";
     readonly limit: number;
     readonly projectId?: string | null;
@@ -425,6 +437,7 @@ export interface InboxProjectionRepository {
     readonly followUp: number;
     readonly unresolved: number;
     readonly sent: number;
+    readonly archived: number;
   }>;
   getFreshness(): Promise<{
     readonly total: number;
@@ -438,6 +451,10 @@ export interface InboxProjectionRepository {
   setNeedsFollowUp(input: {
     readonly contactId: string;
     readonly needsFollowUp: boolean;
+  }): Promise<InboxProjectionRow | null>;
+  setArchived(input: {
+    readonly contactId: string;
+    readonly archived: boolean;
   }): Promise<InboxProjectionRow | null>;
   setBucket(input: {
     readonly contactId: string;

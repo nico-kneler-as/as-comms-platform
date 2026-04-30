@@ -1061,6 +1061,7 @@ async function rebuildInboxProjectionForContact(
     lastOutboundAt,
     lastActivityAt,
     snippet: resolveInboxSnippet(latestEvent, detailMaps),
+    archivedAt: existing?.archivedAt ?? null,
     lastCanonicalEventId: latestEvent.id,
     lastEventType: latestEvent.eventType
   });
@@ -2153,6 +2154,7 @@ export function createStage1NormalizationService(
         snippet: incomingIsLatestKnown
           ? parsed.snippet
           : existing?.snippet ?? parsed.snippet,
+        archivedAt: existing?.archivedAt ?? null,
         lastCanonicalEventId: incomingIsLatestKnown
           ? parsed.canonicalEvent.id
           : existing?.lastCanonicalEventId ?? parsed.canonicalEvent.id,
