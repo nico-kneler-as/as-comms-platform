@@ -41,6 +41,7 @@ export const salesforceTimelineItemSchema = timelineItemBaseSchema.extend({
     "completed_training",
     "submitted_first_data",
   ]),
+  projectId: nullableStringSchema,
   projectName: nullableStringSchema,
   expeditionName: nullableStringSchema,
   sourceField: nullableStringSchema,

@@ -984,6 +984,7 @@ function buildTimelineItemsFromRows(input: {
           ...base,
           family,
           milestone: getLifecycleMilestone(event.eventType),
+          projectId: salesforceContext?.projectId ?? null,
           projectName:
             salesforceContext?.projectId === null ||
             salesforceContext?.projectId === undefined
