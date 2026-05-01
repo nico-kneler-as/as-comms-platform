@@ -43,12 +43,12 @@ export function SettingsSection({
         <div className="min-w-0">
           <h2
             id={headingId}
-            className="text-lg font-semibold tracking-tight text-slate-950"
+            className="text-lg font-semibold tracking-tight text-balance text-slate-950"
           >
             {title}
           </h2>
           {description ? (
-            <p className="mt-0.5 text-sm text-slate-500">{description}</p>
+            <p className="mt-0.5 text-sm text-pretty text-slate-500">{description}</p>
           ) : null}
         </div>
         {action ? (
