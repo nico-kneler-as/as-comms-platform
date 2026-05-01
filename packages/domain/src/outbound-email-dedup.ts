@@ -59,6 +59,9 @@ export interface ContentFingerprintInput {
   readonly contactId: string | null;
   readonly channel: CanonicalEventRecord["channel"];
   readonly direction: "inbound" | "outbound" | null;
+  // Kept for caller compatibility. computeContentFingerprint intentionally
+  // ignores preview/body text so Gmail and Salesforce can converge on the same
+  // cross-provider key for the same outbound email.
   readonly previewText?: string | null;
 }
 
@@ -300,6 +303,14 @@ function buildMinuteBucket(occurredAt: string): string | null {
   return new Date(occurredAtMs).toISOString().slice(0, 16);
 }
 
+/**
+ * Computes the cross-provider content fingerprint for outbound email dedup.
+ *
+ * Path C intentionally excludes preview/body text from the hash so Gmail
+ * plaintext and Salesforce HTML-derived snippets converge on the same
+ * fingerprint for the same outbound email. Keep previewText in the input for
+ * caller compatibility, but do not add it back into this hash.
+ */
 export function computeContentFingerprint(
   input: ContentFingerprintInput
 ): string | null {
@@ -312,26 +323,22 @@ export function computeContentFingerprint(
   }
 
   const normalizedSubject = normalizeContentFingerprintSubject(input.subject);
-  const normalizedPreview = normalizeContentFingerprintPreview(
-    input.previewText
-  );
   const minuteBucket = buildMinuteBucket(input.occurredAt);
 
-  if (
-    normalizedSubject === null ||
-    normalizedPreview === null ||
-    minuteBucket === null
-  ) {
+  if (normalizedSubject === null || minuteBucket === null) {
     return null;
   }
 
+  // Subject-only fingerprint. Preview/body text is intentionally excluded per
+  // Path C so Gmail plaintext and Salesforce stripped HTML can share the same
+  // cross-provider key for the same outbound email. Keep L2/L4 exact-body
+  // matching unchanged in buildOutboundEmailDuplicateFingerprint.
   const key = [
     input.contactId,
     input.channel,
     input.direction,
     minuteBucket,
-    normalizedSubject,
-    sha256Text(normalizedPreview)
+    normalizedSubject
   ].join("|");
 
   return `fp:${sha256Text(key)}`;

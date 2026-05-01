@@ -1380,7 +1380,7 @@ describe("Stage 1 normalization service", () => {
     expect(canonicalEvent.contentFingerprint).toMatch(/^fp:/);
   });
 
-  it("does not collapse distinct same-minute Gmail and Salesforce emails when the body content differs", async () => {
+  it("does not collapse distinct same-minute Gmail and Salesforce emails when the normalized subject differs", async () => {
     const context = await seedContactWithEmail("monica@example.org", {
       contactId: "contact_monica",
       salesforceContactId: "003-monica",
@@ -1402,7 +1402,7 @@ describe("Stage 1 normalization service", () => {
       salesforceContactId: "003-monica",
       occurredAt: "2026-04-20T21:27:45.000Z",
       receivedAt: "2026-04-20T21:28:30.000Z",
-      subject: "→ Email: Re: Hex 12345",
+      subject: "→ Email: Re: Hex 67890",
       snippet: "Second draft with a different call to action and follow-up wording.",
       messageKind: "auto"
     });
