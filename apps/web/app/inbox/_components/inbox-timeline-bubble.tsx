@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
+
 import {
   Dialog,
   DialogContent,
@@ -34,6 +36,7 @@ import {
 
 const WRAP_ANYWHERE = "break-words [overflow-wrap:anywhere]";
 const HTML_TAG_PATTERN = /<\/?[a-zA-Z][^>]*>/u;
+const BODY_CLAMP_TEXT_LENGTH = 800;
 const EMAIL_HTML_BODY_CLASS =
   "text-pretty text-[13px] leading-relaxed text-slate-700 [&_a]:text-sky-700 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_code]:rounded-sm [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_ol]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-100 [&_pre]:p-3 [&_table]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_ul]:ml-5 [&_ul]:list-disc";
 
@@ -65,6 +68,44 @@ function bodyTextForEntry(entry: InboxTimelineEntryViewModel): string {
 
 function attachmentLabel(filename: string | null): string {
   return filename?.trim().length ? filename : "Attachment";
+}
+
+function shouldClampBody(entry: InboxTimelineEntryViewModel): boolean {
+  return !entry.isUnread && bodyTextForEntry(entry).length > BODY_CLAMP_TEXT_LENGTH;
+}
+
+function CollapsibleBody({
+  children,
+  shouldClamp,
+}: {
+  readonly children: ReactNode;
+  readonly shouldClamp: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isCollapsed = shouldClamp && !expanded;
+
+  return (
+    <div>
+      <div className={isCollapsed ? "line-clamp-[10]" : undefined}>
+        {children}
+      </div>
+      {isCollapsed ? (
+        <button
+          type="button"
+          onClick={() => {
+            setExpanded(true);
+          }}
+          className={cn(
+            "mt-2 text-left text-[11px] text-slate-500 hover:text-slate-800",
+            TRANSITION.fast,
+            TRANSITION.reduceMotion,
+          )}
+        >
+          Read more
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function MessageAttachments({
@@ -302,7 +343,7 @@ function OutboundBrandAvatar() {
   return (
     <span
       aria-label="Adventure Scientists"
-      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white ring-1 ring-slate-900/10"
+      className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-slate-900"
     >
       <AdventureScientistsLogo className="size-6" />
     </span>
@@ -335,6 +376,7 @@ export function MessageBubble({
   })();
   const isOutbound = direction === "outbound";
   const body = bodyTextForEntry(entry);
+  const shouldClamp = shouldClampBody(entry);
   const inboundAvatar = (
     <InboxAvatar
       initials={initialsForLabel(entry.actorLabel)}
@@ -405,20 +447,24 @@ export function MessageBubble({
             ) : null}
 
             {sanitizedHtmlBody !== null && sanitizedHtmlBody.length > 0 ? (
-              <div
-                className={cn(EMAIL_HTML_BODY_CLASS, WRAP_ANYWHERE)}
-                dangerouslySetInnerHTML={{ __html: sanitizedHtmlBody }}
-              />
+              <CollapsibleBody shouldClamp={shouldClamp}>
+                <div
+                  className={cn(EMAIL_HTML_BODY_CLASS, WRAP_ANYWHERE)}
+                  dangerouslySetInnerHTML={{ __html: sanitizedHtmlBody }}
+                />
+              </CollapsibleBody>
             ) : body.length > 0 ? (
-              <p
-                className={cn(
-                  "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed",
-                  isOutbound && !isEmail ? "text-white" : "text-slate-700",
-                  WRAP_ANYWHERE,
-                )}
-              >
-                {autolinkText(body)}
-              </p>
+              <CollapsibleBody shouldClamp={shouldClamp}>
+                <p
+                  className={cn(
+                    "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed",
+                    isOutbound && !isEmail ? "text-white" : "text-slate-700",
+                    WRAP_ANYWHERE,
+                  )}
+                >
+                  {autolinkText(body)}
+                </p>
+              </CollapsibleBody>
             ) : null}
 
             <MessageAttachments attachments={entry.attachments} />
@@ -437,7 +483,9 @@ export function MessageBubble({
         ) : null}
       </div>
 
-      {!isOutbound ? <InboundMetadataRow entry={entry} /> : null}
+      {!isOutbound && entry.channel !== "email" ? (
+        <InboundMetadataRow entry={entry} />
+      ) : null}
     </li>
   );
 }
