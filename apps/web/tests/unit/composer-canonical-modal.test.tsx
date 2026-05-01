@@ -635,25 +635,6 @@ function TestApp() {
   );
 }
 
-function TestAppWithAliases({
-  aliases,
-}: {
-  readonly aliases: readonly InboxComposerAliasOption[];
-}) {
-  return (
-    <InboxClientProvider composerAliases={aliases} currentActorId="user:operator">
-      <InboxKeyboardProvider>
-        <InboxWorkspace>
-          <section data-testid="underlying-conversation">
-            Conversation remains visible
-          </section>
-          <ComposerControls />
-        </InboxWorkspace>
-      </InboxKeyboardProvider>
-    </InboxClientProvider>
-  );
-}
-
 async function mount(element: ReactElement): Promise<RenderSession> {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     url: "http://localhost/inbox",
