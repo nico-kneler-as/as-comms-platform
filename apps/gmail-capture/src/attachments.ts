@@ -63,7 +63,7 @@ function decodeBase64Url(value: string): Buffer {
   return Buffer.from(paddedValue, "base64");
 }
 
-function resolveAbsoluteAttachmentPath(input: {
+export function resolveAbsoluteAttachmentPath(input: {
   readonly attachmentVolumePath: string;
   readonly storageKey: string;
 }): string {

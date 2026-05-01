@@ -18,7 +18,10 @@ const sourceSerif = Source_Serif_4({
 });
 
 export const metadata: Metadata = {
-  title: "AS Comms Platform",
+  title: {
+    default: "AS Comms Platform",
+    template: "%s · AS Comms Platform",
+  },
   description:
     "Stage 0 monorepo foundation for the AS Comms Platform rebuild.",
 };

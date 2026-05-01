@@ -2432,7 +2432,7 @@ describe("real inbox selectors", () => {
     );
   });
 
-  it("orders contact rail active projects by status rank and uses short aliases", async () => {
+  it("orders contact rail active projects by latest lifecycle activity and uses short aliases", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -2476,6 +2476,30 @@ describe("real inbox selectors", () => {
       membershipStatus: "active",
       membershipCreatedAt: "2026-04-03T10:00:00.000Z",
     });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "steve-whitebark-received-training",
+      contactId: "contact:steve-herman",
+      occurredAt: "2026-04-15T10:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+      projectId: "project:whitebark-pine",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "steve-illegal-signed-up",
+      contactId: "contact:steve-herman",
+      occurredAt: "2026-04-12T10:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:illegal-timber",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "steve-passive-submitted-data",
+      contactId: "contact:steve-herman",
+      occurredAt: "2026-04-20T10:00:00.000Z",
+      eventType: "lifecycle.submitted_first_data",
+      summary: "Submitted first data",
+      projectId: "project:passive-acoustic",
+    });
     const latest = await seedInboxEmailEvent(runtime.context, {
       id: "steve-detail-inbound-1",
       contactId: "contact:steve-herman",
@@ -2504,9 +2528,9 @@ describe("real inbox selectors", () => {
     }
 
     expect(detail.contact.activeProjects.map((project) => project.projectName)).toEqual([
-      "Illegal Timber",
-      "Whitebark Pine",
       "Passive Acoustic",
+      "Whitebark Pine",
+      "Illegal Timber",
     ]);
     expect(
       renderToStaticMarkup(
@@ -2539,6 +2563,101 @@ describe("real inbox selectors", () => {
       expeditionMemberUrl:
         "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/membership%3Alisa%3Asf/view",
     });
+  });
+
+  it("derives past-project signup year from the earliest lifecycle event and falls back to membership createdAt", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:past-signup-year",
+      salesforceContactId: "003-past-signup-year",
+      displayName: "Past Signup Year",
+      primaryEmail: "past-signup-year@example.org",
+      primaryPhone: null,
+      projectId: "project:old-ledger-year",
+      projectName: "Old Ledger Year",
+      membershipId: "membership:past:old-ledger-year",
+      salesforceMembershipId: "a0B-past-old-ledger-year",
+      membershipStatus: "successful",
+      membershipCreatedAt: "2026-02-01T00:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:past-signup-year",
+      salesforceContactId: "003-past-signup-year",
+      displayName: "Past Signup Year",
+      primaryEmail: "past-signup-year@example.org",
+      primaryPhone: null,
+      projectId: "project:fallback-membership-year",
+      projectName: "Fallback Membership Year",
+      membershipId: "membership:past:fallback-membership-year",
+      salesforceMembershipId: "a0B-past-fallback-membership-year",
+      membershipStatus: "completed",
+      membershipCreatedAt: "2024-05-01T00:00:00.000Z",
+    });
+    await runtime.context.settings.projects.setActive(
+      "project:old-ledger-year",
+      false,
+    );
+    await runtime.context.settings.projects.setActive(
+      "project:fallback-membership-year",
+      false,
+    );
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "past-signup-year-oldest",
+      contactId: "contact:past-signup-year",
+      occurredAt: "2021-07-14T00:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:old-ledger-year",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "past-signup-year-newer",
+      contactId: "contact:past-signup-year",
+      occurredAt: "2023-03-20T00:00:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Completed training",
+      projectId: "project:old-ledger-year",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "past-signup-year-inbound",
+      contactId: "contact:past-signup-year",
+      occurredAt: "2026-04-25T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Past signup year check",
+      snippet: "Checking lifecycle-derived signup year.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:past-signup-year",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-25T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-25T13:00:00.000Z",
+      snippet: "Checking lifecycle-derived signup year.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:past-signup-year");
+
+    // Past projects sort by membership.createdAt desc (newest first).
+    // Old Ledger Year has membershipCreatedAt 2026-02-01, Fallback has 2024-05-01.
+    // signupYear is independent of sort: derived from earliest project event
+    // (2021 for Old Ledger via lifecycle event), or falls back to membership
+    // year (2024 for Fallback Membership Year, no events).
+    expect(detail?.contact.pastProjects).toMatchObject([
+      {
+        projectName: "Old Ledger Year",
+        signupYear: 2021,
+      },
+      {
+        projectName: "Fallback Membership Year",
+        signupYear: 2024,
+      },
+    ]);
   });
 
   it("threads Gmail From, To, and Cc headers into the timeline detail view model", async () => {
@@ -3036,6 +3155,38 @@ describe("real inbox selectors", () => {
         }),
       ),
     ).toContain("No project activity recorded.");
+  });
+
+  it("highlights the most recent project-activity dot and date in the rail", async () => {
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    if (detail === null) {
+      throw new Error("Expected inbox detail for Sarah Martinez");
+    }
+
+    const markup = renderToStaticMarkup(
+      createElement(InboxContactRail, {
+        contact: {
+          ...detail.contact,
+          recentActivity: [
+            {
+              id: "recent-1",
+              label: "Submitted first data - Amazon Basin",
+              occurredAtLabel: "1h ago",
+            },
+            {
+              id: "recent-2",
+              label: "Received training - Amazon Basin",
+              occurredAtLabel: "2d ago",
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(markup).toContain("border-sky-500 bg-sky-500");
+    expect(markup).toContain("text-[11px] text-slate-700");
+    expect(markup).toContain("text-[11px] text-slate-400");
   });
 
   it("does not borrow email or campaign timeline entries when no lifecycle activity exists", async () => {
