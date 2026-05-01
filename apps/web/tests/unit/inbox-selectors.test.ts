@@ -1870,9 +1870,138 @@ describe("real inbox selectors", () => {
     });
     expect(detail?.timelinePage).toEqual({
       hasMore: false,
+      hasHiddenEarlierHistory: false,
       nextCursor: null,
       total: 2,
     });
+  });
+
+  it("filters pre-cutover timeline entries while keeping the cutover boundary inclusive", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:cutover-boundary",
+      salesforceContactId: "003-cutover-boundary",
+      displayName: "Cutover Boundary",
+      primaryEmail: "cutover-boundary@example.org",
+      primaryPhone: null,
+      projectId: "project:cutover-boundary",
+      projectName: "Cutover Boundary Project",
+      membershipId: "membership:cutover-boundary",
+      membershipStatus: "active",
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "cutover-pre-outbound",
+      contactId: "contact:cutover-boundary",
+      occurredAt: "2024-12-31T23:59:59.999Z",
+      direction: "outbound",
+      subject: "Older hidden email",
+      snippet: "This email should be hidden from the timeline.",
+    });
+    const boundaryInbound = await seedInboxEmailEvent(runtime.context, {
+      id: "cutover-boundary-inbound",
+      contactId: "contact:cutover-boundary",
+      occurredAt: "2025-01-01T00:00:00.000Z",
+      direction: "inbound",
+      subject: "Boundary inbound email",
+      snippet: "This inbound message sits exactly on the cutover.",
+    });
+    const postCutoverOutbound = await seedInboxEmailEvent(runtime.context, {
+      id: "cutover-post-outbound",
+      contactId: "contact:cutover-boundary",
+      occurredAt: "2025-01-02T12:00:00.000Z",
+      direction: "outbound",
+      subject: "Visible post-cutover email",
+      snippet: "This email should remain visible.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:cutover-boundary",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2025-01-01T00:00:00.000Z",
+      lastOutboundAt: "2025-01-02T12:00:00.000Z",
+      lastActivityAt: "2025-01-02T12:00:00.000Z",
+      snippet: "This email should remain visible.",
+      lastCanonicalEventId: postCutoverOutbound.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:cutover-boundary");
+
+    expect(detail?.timeline.map((entry) => entry.subject)).toEqual([
+      "Boundary inbound email",
+      "Visible post-cutover email",
+    ]);
+    expect(detail?.timeline.map((entry) => entry.occurredAt)).toEqual([
+      "2025-01-01T00:00:00.000Z",
+      "2025-01-02T12:00:00.000Z",
+    ]);
+    expect(detail?.timelinePage).toEqual({
+      hasMore: false,
+      hasHiddenEarlierHistory: true,
+      nextCursor: null,
+      total: 2,
+    });
+    expect(detail?.composerReplyContext).toMatchObject({
+      threadCursor: boundaryInbound.canonicalEventId,
+      subject: "Re: Boundary inbound email",
+    });
+  });
+
+  it("filters pre-cutover message history out of the composer reply context", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:cutover-reply",
+      salesforceContactId: "003-cutover-reply",
+      displayName: "Cutover Reply",
+      primaryEmail: "cutover-reply@example.org",
+      primaryPhone: null,
+      projectId: "project:cutover-reply",
+      projectName: "Cutover Reply Project",
+      membershipId: "membership:cutover-reply",
+      membershipStatus: "active",
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "cutover-reply-pre-inbound",
+      contactId: "contact:cutover-reply",
+      occurredAt: "2024-12-15T15:00:00.000Z",
+      direction: "inbound",
+      subject: "Only older inbound",
+      snippet: "This is the last inbound before full capture.",
+    });
+    const visibleOutbound = await seedInboxEmailEvent(runtime.context, {
+      id: "cutover-reply-visible-outbound",
+      contactId: "contact:cutover-reply",
+      occurredAt: "2025-02-01T15:00:00.000Z",
+      direction: "outbound",
+      subject: "Visible outbound",
+      snippet: "Visible outbound with no visible inbound to reply to.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:cutover-reply",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2024-12-15T15:00:00.000Z",
+      lastOutboundAt: "2025-02-01T15:00:00.000Z",
+      lastActivityAt: "2025-02-01T15:00:00.000Z",
+      snippet: "Visible outbound with no visible inbound to reply to.",
+      lastCanonicalEventId: visibleOutbound.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:cutover-reply");
+
+    expect(detail?.timeline.map((entry) => entry.subject)).toEqual([
+      "Visible outbound",
+    ]);
+    expect(detail?.composerReplyContext).toBeNull();
   });
 
   it("renders the contact rail project row as a single expedition-member anchor with a hover affordance", async () => {
@@ -1932,6 +2061,53 @@ describe("real inbox selectors", () => {
       statusLabel: "Successful",
     });
     expect(detail?.contact.pastProjects).toHaveLength(0);
+  });
+
+  it("keeps all-time project memberships visible even when the membership predates the cutover", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:membership-all-time",
+      salesforceContactId: "003-membership-all-time",
+      displayName: "Membership All Time",
+      primaryEmail: "membership-all-time@example.org",
+      primaryPhone: null,
+      projectId: "project:all-time-membership",
+      projectName: "All-Time Membership Project",
+      membershipId: "membership:all-time-membership",
+      membershipStatus: "successful",
+      membershipCreatedAt: "2023-06-01T12:00:00.000Z",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "membership-all-time-inbound",
+      contactId: "contact:membership-all-time",
+      occurredAt: "2025-03-01T12:00:00.000Z",
+      direction: "inbound",
+      subject: "Visible 2025 email",
+      snippet: "The timeline should filter events, not memberships.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:membership-all-time",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2025-03-01T12:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2025-03-01T12:00:00.000Z",
+      snippet: "The timeline should filter events, not memberships.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:membership-all-time");
+
+    expect(detail?.contact.activeProjects[0]).toMatchObject({
+      projectName: "All-Time Membership Project",
+      signupYear: 2023,
+      status: "successful",
+    });
   });
 
   it("places inactive memberships in Past Projects regardless of volunteer status", async () => {

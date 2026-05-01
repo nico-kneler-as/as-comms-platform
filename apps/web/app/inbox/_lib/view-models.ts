@@ -343,6 +343,7 @@ export interface InboxDetailViewModel {
   readonly composerReplyContext: InboxComposerReplyContext | null;
   readonly timelinePage: {
     readonly hasMore: boolean;
+    readonly hasHiddenEarlierHistory: boolean;
     readonly nextCursor: string | null;
     readonly total: number;
   };

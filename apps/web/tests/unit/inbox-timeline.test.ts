@@ -180,6 +180,35 @@ describe("InboxTimeline", () => {
     expect(markup).not.toContain("1 automated");
   });
 
+  it("renders the earlier-history divider when pre-cutover events exist", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [baseEntry],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+        showEarlierHistoryDivider: true,
+      }),
+    );
+
+    expect(markup).toContain(
+      "Earlier history not shown - full capture began Jan 1, 2025",
+    );
+  });
+
+  it("omits the earlier-history divider when no pre-cutover events exist", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [baseEntry],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).not.toContain(
+      "Earlier history not shown - full capture began Jan 1, 2025",
+    );
+  });
+
   it("shows one consolidated campaign state while keeping the row in the purple campaign treatment", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
