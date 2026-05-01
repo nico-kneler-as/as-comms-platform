@@ -918,9 +918,9 @@ describe("composer canonical modal", () => {
 
     await click(getByText("Open new draft"));
 
-    const aiDraftButton = getByText("Draft with AI");
-    expect(aiDraftButton).toBeInstanceOf(HTMLButtonElement);
-    expect((aiDraftButton as HTMLButtonElement).disabled).toBe(false);
+    const aiDraftButton = getByText("Draft with AI") as HTMLButtonElement;
+    expect(aiDraftButton.tagName).toBe("BUTTON");
+    expect(aiDraftButton.disabled).toBe(false);
   });
 
   it("closes from the modal header and from the minimized pill", async () => {
