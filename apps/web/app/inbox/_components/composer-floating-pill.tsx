@@ -52,7 +52,7 @@ export function ComposerFloatingPill() {
       role="region"
       aria-label="Minimized composer"
       className={cn(
-        `fixed bottom-4 right-4 z-40 flex h-11 w-[300px] items-center gap-2 border border-slate-200 bg-white px-3 shadow-xl ring-1 ring-slate-900/5 ${RADIUS.lg}`,
+        `fixed bottom-[max(theme(spacing.4),env(safe-area-inset-bottom))] right-[max(theme(spacing.4),env(safe-area-inset-right))] z-40 flex h-11 w-[300px] items-center gap-2 border border-slate-200 bg-white px-3 shadow-xl ring-1 ring-slate-900/5 ${RADIUS.lg}`,
       )}
     >
       <span
