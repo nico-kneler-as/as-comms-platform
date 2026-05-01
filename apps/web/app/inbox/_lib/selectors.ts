@@ -593,6 +593,66 @@ function sortMemberships(
   });
 }
 
+function buildProjectActivityIndex(
+  timelineItems: readonly TimelineItem[],
+): {
+  readonly firstOccurredAtByProjectId: ReadonlyMap<string, string>;
+  readonly lastOccurredAtByProjectId: ReadonlyMap<string, string>;
+} {
+  const firstOccurredAtByProjectId = new Map<string, string>();
+  const lastOccurredAtByProjectId = new Map<string, string>();
+
+  for (const item of timelineItems) {
+    if (item.family !== "salesforce_event" || item.projectId === null) {
+      continue;
+    }
+
+    const firstOccurredAt =
+      firstOccurredAtByProjectId.get(item.projectId) ?? null;
+
+    if (firstOccurredAt === null || item.occurredAt < firstOccurredAt) {
+      firstOccurredAtByProjectId.set(item.projectId, item.occurredAt);
+    }
+
+    const lastOccurredAt = lastOccurredAtByProjectId.get(item.projectId) ?? null;
+
+    if (lastOccurredAt === null || item.occurredAt > lastOccurredAt) {
+      lastOccurredAtByProjectId.set(item.projectId, item.occurredAt);
+    }
+  }
+
+  return {
+    firstOccurredAtByProjectId,
+    lastOccurredAtByProjectId,
+  };
+}
+
+function sortMembershipsByLastActivity(
+  memberships: readonly ContactMembershipRecord[],
+  lastOccurredAtByProjectId: ReadonlyMap<string, string>,
+): readonly ContactMembershipRecord[] {
+  return [...memberships].sort((left, right) => {
+    const leftLastActivityAt =
+      (left.projectId === null ? null : lastOccurredAtByProjectId.get(left.projectId)) ??
+      left.createdAt;
+    const rightLastActivityAt =
+      (right.projectId === null
+        ? null
+        : lastOccurredAtByProjectId.get(right.projectId)) ?? right.createdAt;
+    const activityDifference = rightLastActivityAt.localeCompare(leftLastActivityAt);
+
+    if (activityDifference !== 0) {
+      return activityDifference;
+    }
+
+    if (left.projectId !== right.projectId) {
+      return (left.projectId ?? "").localeCompare(right.projectId ?? "");
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
 export function sortMembershipsByCreatedAt(
   memberships: readonly ContactMembershipRecord[],
 ): readonly ContactMembershipRecord[] {
@@ -742,6 +802,7 @@ function buildProjectMembershipViewModel(
       }
     >
   >,
+  firstOccurredAtByProjectId: ReadonlyMap<string, string>,
 ): InboxProjectMembershipViewModel | null {
   const projectName =
     membership.projectId === null
@@ -757,7 +818,9 @@ function buildProjectMembershipViewModel(
     membershipId: membership.id,
     projectId: membership.projectId,
     projectName,
-    signupYear: new Date(membership.createdAt).getUTCFullYear(),
+    signupYear: new Date(
+      firstOccurredAtByProjectId.get(membership.projectId) ?? membership.createdAt,
+    ).getUTCFullYear(),
     projectIsActive:
       projectMetadataById[membership.projectId]?.isActive ?? false,
     status: mapProjectStatus(membership.status),
@@ -3223,10 +3286,20 @@ function buildContactSummary(input: {
   >;
   readonly referenceNowIso: string;
 }): InboxContactSummaryViewModel {
-  const activeProjects = sortMemberships(input.memberships)
+  const projectActivityIndex = buildProjectActivityIndex(
+    input.activityTimelineItems,
+  );
+  const activeProjects = sortMembershipsByLastActivity(
+    input.memberships,
+    projectActivityIndex.lastOccurredAtByProjectId,
+  )
     .filter((membership) => !isPastProject(membership, input.projectMetadataById))
     .map((membership) =>
-      buildProjectMembershipViewModel(membership, input.projectMetadataById),
+      buildProjectMembershipViewModel(
+        membership,
+        input.projectMetadataById,
+        projectActivityIndex.firstOccurredAtByProjectId,
+      ),
     )
     .filter(
       (membership): membership is InboxProjectMembershipViewModel =>
@@ -3235,7 +3308,11 @@ function buildContactSummary(input: {
   const pastProjects = sortMembershipsByCreatedAt(input.memberships)
     .filter((membership) => isPastProject(membership, input.projectMetadataById))
     .map((membership) =>
-      buildProjectMembershipViewModel(membership, input.projectMetadataById),
+      buildProjectMembershipViewModel(
+        membership,
+        input.projectMetadataById,
+        projectActivityIndex.firstOccurredAtByProjectId,
+      ),
     )
     .filter(
       (membership): membership is InboxProjectMembershipViewModel =>
