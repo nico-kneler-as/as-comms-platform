@@ -8,7 +8,7 @@ import { LAYOUT, SPACING, TONE } from "@/app/_lib/design-tokens";
  */
 export function InboxAppLoading() {
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-100 antialiased">
+    <div className="flex h-dvh w-screen overflow-hidden bg-slate-100 antialiased">
       {/* Icon rail skeleton */}
       <div className={`flex ${LAYOUT.iconRailWidth} shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4`}>
         <Skeleton className="h-9 w-9 rounded-xl" />
