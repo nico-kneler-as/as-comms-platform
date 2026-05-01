@@ -125,6 +125,16 @@ export const PROJECT_STATUS_BADGE = {
   successful: "bg-violet-50 text-violet-700",
 } as const;
 
+/** Project participation status — text-only color (for header context, no chip background) */
+export const PROJECT_STATUS_TEXT = {
+  lead: "text-slate-600",
+  applied: "text-sky-700",
+  "in-training": "text-indigo-700",
+  "trip-planning": "text-amber-700",
+  "in-field": "text-emerald-700",
+  successful: "text-violet-700",
+} as const;
+
 /** Chip tone classes (neutral/info/warn/success) */
 export const CHIP_TONE = {
   neutral: "bg-slate-100 text-slate-700 ring-slate-200",

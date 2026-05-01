@@ -676,9 +676,13 @@ export function InboxList({
         ) : shouldShowInitialSkeleton ? (
           <QueueLoadingSkeleton />
         ) : shouldShowSearchSummary && displayItems.length === 0 ? (
-          <SearchEmptyState query={search.query} />
+          <SearchEmptyState query={search.query} onClearSearch={clearSearch} />
         ) : displayItems.length === 0 ? (
-          <QueueEmptyState />
+          <QueueEmptyState
+            onSwitchToFollowUp={() => {
+              handleFilterChange("follow-up");
+            }}
+          />
         ) : (
           <>
             <ul className="divide-y divide-slate-100">
@@ -712,17 +716,37 @@ export function InboxList({
   );
 }
 
-function QueueEmptyState() {
+function QueueEmptyState({
+  onSwitchToFollowUp,
+}: {
+  readonly onSwitchToFollowUp: () => void;
+}) {
   return (
     <EmptyState
       icon={<InboxIcon className="h-6 w-6" />}
       title="All caught up"
       description="No conversations match the current filter."
+      action={
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onSwitchToFollowUp}
+        >
+          Switch to follow-ups
+        </Button>
+      }
     />
   );
 }
 
-function SearchEmptyState({ query }: { readonly query: string }) {
+function SearchEmptyState({
+  query,
+  onClearSearch,
+}: {
+  readonly query: string;
+  readonly onClearSearch: () => void;
+}) {
   return (
     <EmptyState
       icon={<SearchXIcon className="h-6 w-6" />}
@@ -732,6 +756,16 @@ function SearchEmptyState({ query }: { readonly query: string }) {
           Nothing in the inbox matches &ldquo;{query}&rdquo;. Try a different
           search.
         </>
+      }
+      action={
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onClearSearch}
+        >
+          Clear filter
+        </Button>
       }
     />
   );

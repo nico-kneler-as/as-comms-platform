@@ -44,6 +44,7 @@ import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import { useInboxClient, type Reminder } from "./inbox-client-provider";
 import { InboxAvatar } from "./inbox-avatar";
 import { SectionLabel } from "@/components/ui/section-label";
+import { PROJECT_STATUS_TEXT } from "@/app/_lib/design-tokens";
 import {
   LAYOUT,
   SPACING,
@@ -52,10 +53,7 @@ import {
   TYPE,
 } from "@/app/_lib/design-tokens-v2";
 import { InboxComposerReplyBar } from "./inbox-composer";
-import {
-  InboxContactRail,
-  InboxProjectStatusBadge,
-} from "./inbox-contact-rail";
+import { InboxContactRail } from "./inbox-contact-rail";
 import { TimelineSkeleton } from "./inbox-loading";
 import { InboxTimeline } from "./inbox-timeline";
 import {
@@ -443,10 +441,14 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                   <span className="min-w-0 truncate font-medium text-slate-700">
                     {activeProject.projectName}
                   </span>
-                  <InboxProjectStatusBadge
-                    status={activeProject.status}
-                    label={activeProject.statusLabel}
-                  />
+                  <span
+                    className={cn(
+                      "shrink-0 text-[11px] font-semibold uppercase tracking-wider",
+                      PROJECT_STATUS_TEXT[activeProject.status],
+                    )}
+                  >
+                    {activeProject.statusLabel}
+                  </span>
                 </div>
               ) : (
                 <span className="text-xs text-slate-400">
@@ -455,11 +457,6 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
               )}
             </div>
             <div className="hidden items-center gap-1.5 sm:flex">
-              {isFollowUp ? (
-                <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-800">
-                  Needs Follow-Up
-                </span>
-              ) : null}
               {contact.hasUnresolved ? (
                 <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                   Unresolved
