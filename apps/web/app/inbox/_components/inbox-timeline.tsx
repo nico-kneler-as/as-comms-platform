@@ -41,6 +41,7 @@ interface TimelineProps {
   readonly entries: readonly InboxTimelineEntryViewModel[];
   readonly volunteerFirstName: string;
   readonly currentOperatorUserId: string;
+  readonly showEarlierHistoryDivider?: boolean;
   readonly hasMore?: boolean;
   readonly isLoadingOlder?: boolean;
   readonly onLoadOlder?: () => void;
@@ -53,6 +54,7 @@ export function InboxTimeline({
   entries,
   volunteerFirstName,
   currentOperatorUserId,
+  showEarlierHistoryDivider = false,
   hasMore = false,
   isLoadingOlder = false,
   onLoadOlder,
@@ -110,6 +112,17 @@ export function InboxTimeline({
         ) : null}
 
         <ol className="mx-auto flex w-full max-w-[920px] flex-col gap-3">
+          {showEarlierHistoryDivider ? (
+            <li aria-label="Earlier history not shown" className="list-none">
+              <div className="flex items-center gap-3 py-1 text-xs text-muted-foreground">
+                <div className="h-px flex-1 bg-border" />
+                <span className="whitespace-nowrap">
+                  Earlier history not shown - full capture began Jan 1, 2025
+                </span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+            </li>
+          ) : null}
           {presentationItems.map((item) => (
             <TimelinePresentationItem
               key={item.id}

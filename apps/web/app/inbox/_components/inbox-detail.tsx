@@ -597,6 +597,9 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
               entries={timelineEntries}
               volunteerFirstName={firstName}
               currentOperatorUserId={currentOperatorUserId}
+              showEarlierHistoryDivider={
+                timelinePage.hasHiddenEarlierHistory
+              }
               hasMore={timelinePage.hasMore}
               isLoadingOlder={isTimelineLoading}
               retryingEntryId={isRetryPending ? retryingEntryId : null}
