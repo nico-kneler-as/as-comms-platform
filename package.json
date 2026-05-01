@@ -21,6 +21,7 @@
     "ops:reclassify-salesforce-tasks": "pnpm --filter @as-comms/worker ops:reclassify-salesforce-tasks",
     "ops:worker:seed-aliases-from-env": "tsx scripts/ops/seed-aliases-from-env.ts",
     "ops:backfill-project-aliases": "tsx scripts/ops/backfill-project-aliases.ts",
+    "ops:backfill-content-fingerprint": "tsx scripts/ops/backfill-content-fingerprint.ts",
     "ops:backfill-stuck-identity-anchors": "tsx scripts/ops/backfill-stuck-identity-anchors.ts",
     "ops:recover-orphan-task-details": "tsx scripts/ops/recover-orphan-task-details.ts",
     "ops:promote-admin": "tsx scripts/ops/promote-admin.ts",
