@@ -13,6 +13,7 @@ import { InboxClientProvider } from "./inbox-client-provider";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import { InboxKeyboardProvider } from "./inbox-keyboard-provider";
 import { InboxList } from "./inbox-list";
+import { InboxNotificationsOrchestrator } from "./inbox-notifications-orchestrator";
 import { InboxWorkspace } from "./inbox-workspace";
 
 interface ShellProps {
@@ -54,6 +55,9 @@ export function InboxShell({
     >
       <InboxKeyboardProvider>
         <InboxFreshnessPoller listFreshness={initialList.freshness} />
+        <InboxNotificationsOrchestrator
+          unreadCount={initialList.totals.unread}
+        />
         <PrimaryIconRail operator={operator} />
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
