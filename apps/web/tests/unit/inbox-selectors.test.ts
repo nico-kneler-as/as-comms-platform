@@ -55,6 +55,7 @@ vi.mock("@/app/_lib/design-tokens", () => ({
 import {
   compareInboxOutboundRecency,
   compareInboxRecency,
+  formatBubbleTimestamp,
   getInboxDetail,
   getInboxList,
   getInboxTimelinePage,
@@ -154,6 +155,60 @@ function buildTimelineEntry(
     ...overrides,
   };
 }
+
+describe("formatBubbleTimestamp", () => {
+  const timeZone = "UTC";
+
+  it("renders time only for messages from today", () => {
+    expect(
+      formatBubbleTimestamp(
+        "2026-05-01T21:42:00.000Z",
+        "2026-05-01T22:15:00.000Z",
+        timeZone,
+      ),
+    ).toBe("9:42 PM");
+  });
+
+  it("renders month and day for yesterday", () => {
+    expect(
+      formatBubbleTimestamp(
+        "2026-05-01T18:00:00.000Z",
+        "2026-05-02T12:00:00.000Z",
+        timeZone,
+      ),
+    ).toBe("May 1");
+  });
+
+  it("renders month and day for five days ago in the current year", () => {
+    expect(
+      formatBubbleTimestamp(
+        "2026-04-26T12:00:00.000Z",
+        "2026-05-01T12:00:00.000Z",
+        timeZone,
+      ),
+    ).toBe("Apr 26");
+  });
+
+  it("renders month and day for older messages in the current year", () => {
+    expect(
+      formatBubbleTimestamp(
+        "2026-03-01T12:00:00.000Z",
+        "2026-05-01T12:00:00.000Z",
+        timeZone,
+      ),
+    ).toBe("Mar 1");
+  });
+
+  it("renders month, day, and year for prior-year messages", () => {
+    expect(
+      formatBubbleTimestamp(
+        "2025-11-10T12:00:00.000Z",
+        "2026-01-15T12:00:00.000Z",
+        timeZone,
+      ),
+    ).toBe("Nov 10, 2025");
+  });
+});
 
 function buildMembership(
   overrides: Partial<ContactMembershipRecord> & {
