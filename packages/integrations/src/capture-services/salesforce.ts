@@ -1132,12 +1132,22 @@ export function resolveTaskChannel(input: {
 
   const subject = getStringField(input.row, "Subject")?.toLowerCase() ?? null;
 
-  if (
-    normalizedChannelValue === "task" &&
-    input.relatedMembership !== null &&
-    subject?.includes("email:") === true
-  ) {
-    return "email";
+  if (normalizedChannelValue === "task" && input.relatedMembership !== null) {
+    const ownerUsername =
+      getStringField(input.row, "Owner.Username")?.toLowerCase() ?? null;
+    const isLaunchScopeOwner =
+      ownerUsername !== null &&
+      (salesforceLaunchScopeAutomatedOwnerUsernames as readonly string[]).some(
+        (username) => username.toLowerCase() === ownerUsername,
+      );
+
+    if (isLaunchScopeOwner) {
+      return "email";
+    }
+
+    if (subject?.includes("email:") === true) {
+      return "email";
+    }
   }
 
   return null;
