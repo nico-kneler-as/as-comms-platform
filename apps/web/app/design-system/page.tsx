@@ -19,6 +19,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Chip } from "@/components/ui/chip";
 import { ToneAvatar } from "@/components/ui/tone-avatar";
 import { DividerLabel } from "@/components/ui/divider-label";
+import { Button } from "@/components/ui/button";
 import {
   InboxIcon,
   SearchIcon,
@@ -551,6 +552,21 @@ export default function DesignSystemPage() {
                   }
                 />
               </div>
+              <div className="rounded-lg border border-slate-200 bg-white">
+                <p className="border-b border-slate-100 px-4 py-2 text-xs font-medium text-slate-500">
+                  size=&quot;sm&quot; with action
+                </p>
+                <EmptyState
+                  icon={<InboxIcon className="h-6 w-6" />}
+                  title="All caught up"
+                  description="No conversations match the current filter."
+                  action={
+                    <Button variant="outline" size="sm">
+                      Switch to follow-ups
+                    </Button>
+                  }
+                />
+              </div>
             </div>
             <div className="mt-4 rounded-lg border border-slate-200 bg-white">
               <p className="border-b border-slate-100 px-4 py-2 text-xs font-medium text-slate-500">
@@ -566,7 +582,7 @@ export default function DesignSystemPage() {
               </div>
             </div>
             <CodeBlock>
-              {`<EmptyState\n  icon={<InboxIcon className="h-6 w-6" />}\n  title="All caught up"\n  description="No conversations match the current filter."\n/>\n\n<EmptyState\n  size="lg"\n  icon={<InboxIcon className="h-7 w-7" />}\n  title="Select a person"\n  description="Choose anyone to view their history."\n/>`}
+              {`<EmptyState\n  icon={<InboxIcon className="h-6 w-6" />}\n  title="All caught up"\n  description="No conversations match the current filter."\n/>\n\n<EmptyState\n  icon={<InboxIcon className="h-6 w-6" />}\n  title="All caught up"\n  description="No conversations match the current filter."\n  action={\n    <Button variant="outline" size="sm">\n      Switch to follow-ups\n    </Button>\n  }\n/>\n\n<EmptyState\n  size="lg"\n  icon={<InboxIcon className="h-7 w-7" />}\n  title="Select a person"\n  description="Choose anyone to view their history."\n/>`}
             </CodeBlock>
           </CatalogSection>
 
