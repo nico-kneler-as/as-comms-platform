@@ -1132,7 +1132,7 @@ export function resolveTaskChannel(input: {
 
   const subject = getStringField(input.row, "Subject")?.toLowerCase() ?? null;
 
-  if (normalizedChannelValue === "task" && input.relatedMembership !== null) {
+  if (normalizedChannelValue === "task") {
     const ownerUsername =
       getStringField(input.row, "Owner.Username")?.toLowerCase() ?? null;
     const isLaunchScopeOwner =

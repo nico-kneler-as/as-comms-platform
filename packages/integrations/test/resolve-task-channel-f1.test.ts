@@ -37,14 +37,55 @@ describe("resolveTaskChannel F.1 owner-trust extension", () => {
     ).toBe("email");
   });
 
-  it("requires a related membership before trusting the launch-scope owner", () => {
+  it("trusts launch-scope owners on Task subtype rows without a related membership (F.1 widen)", () => {
     expect(
       resolveTaskChannel({
         row: makeRow(),
         relatedMembership: null,
         config: defaultChannelConfig,
       }),
+    ).toBe("email");
+  });
+
+  it("does not match Call subtype even for launch-scope owners with null membership", () => {
+    expect(
+      resolveTaskChannel({
+        row: makeRow({ TaskSubtype: "Call" }),
+        relatedMembership: null,
+        config: defaultChannelConfig,
+      }),
     ).toBeNull();
+  });
+
+  it("does not trust non-launch-scope owners on Task subtype with null membership", () => {
+    expect(
+      resolveTaskChannel({
+        row: makeRow({
+          Owner: {
+            Username: "ricky@adventurescientists.org",
+            Name: "Ricky",
+          },
+        }),
+        relatedMembership: null,
+        config: defaultChannelConfig,
+      }),
+    ).toBeNull();
+  });
+
+  it("preserves the legacy email subject heuristic with null membership", () => {
+    expect(
+      resolveTaskChannel({
+        row: makeRow({
+          Owner: {
+            Username: "ricky@adventurescientists.org",
+            Name: "Ricky",
+          },
+          Subject: "→ Email: Hello",
+        }),
+        relatedMembership: null,
+        config: defaultChannelConfig,
+      }),
+    ).toBe("email");
   });
 
   it("does not trust non-launch-scope owners without the legacy subject heuristic", () => {
