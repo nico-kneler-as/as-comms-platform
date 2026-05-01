@@ -267,9 +267,113 @@ describe("gmail-capture internal attachments route", () => {
       expect(response.headers.get("Content-Type")).toBe("image/jpeg");
       expect(response.headers.get("Content-Length")).toBe(String(bytes.length));
       expect(response.headers.get("Content-Disposition")).toBe(
-        'inline; filename="field-photo.jpg"',
+        "inline; filename=\"field-photo.jpg\"; filename*=UTF-8''field-photo.jpg",
       );
       await expect(response.text()).resolves.toBe("image");
+    } finally {
+      await closeServer(server);
+      await context.dispose();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("RFC 5987-encodes Content-Disposition for non-ASCII filenames", async () => {
+    const context = await createTestStage1Context();
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-internal-attachments-"));
+    const server = await startGmailCaptureServer(createConfig(tempDir), {
+      connection: createTestConnection(context),
+    });
+
+    try {
+      const attachmentId = "att:gmail:non-ascii:0/1";
+      const storageKey = "gmail/aa/att:gmail:non-ascii:0/1";
+      const attachmentPath = path.join(tempDir, storageKey);
+      const bytes = Buffer.from("image", "utf8");
+
+      await seedAttachment({
+        context,
+        id: attachmentId,
+        storageKey,
+        sizeBytes: bytes.length,
+        mimeType: "image/png",
+        filename: "café — déjà vu.png",
+      });
+      await mkdir(path.dirname(attachmentPath), { recursive: true });
+      await writeFile(attachmentPath, bytes);
+
+      const address = server.address() as AddressInfo;
+      const response = await fetch(
+        new URL(
+          `/internal/attachments/${encodeURIComponent(attachmentId)}`,
+          `http://127.0.0.1:${String(address.port)}`,
+        ),
+        {
+          headers: {
+            authorization: "Bearer gmail-token",
+          },
+        },
+      );
+
+      expect(response.status).toBe(200);
+      const header = response.headers.get("Content-Disposition") ?? "";
+      // ASCII fallback replaces non-ASCII with `_` and preserves the
+      // extension; the UTF-8 form percent-encodes the original.
+      expect(header).toMatch(/^inline; filename="caf_ _ d_j_ vu\.png"; /);
+      expect(header).toContain(
+        "filename*=UTF-8''caf%C3%A9%20%E2%80%94%20d%C3%A9j%C3%A0%20vu.png",
+      );
+    } finally {
+      await closeServer(server);
+      await context.dispose();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("strips quotes and CR/LF from the ASCII fallback", async () => {
+    const context = await createTestStage1Context();
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-internal-attachments-"));
+    const server = await startGmailCaptureServer(createConfig(tempDir), {
+      connection: createTestConnection(context),
+    });
+
+    try {
+      const attachmentId = "att:gmail:dangerous-name:0/1";
+      const storageKey = "gmail/dd/att:gmail:dangerous-name:0/1";
+      const attachmentPath = path.join(tempDir, storageKey);
+      const bytes = Buffer.from("image", "utf8");
+
+      await seedAttachment({
+        context,
+        id: attachmentId,
+        storageKey,
+        sizeBytes: bytes.length,
+        mimeType: "image/png",
+        // Embedded quote, backslash, CR, LF — would otherwise either
+        // inject a header or break the quoted-string format.
+        filename: 'a"b\\c\r\nd.png',
+      });
+      await mkdir(path.dirname(attachmentPath), { recursive: true });
+      await writeFile(attachmentPath, bytes);
+
+      const address = server.address() as AddressInfo;
+      const response = await fetch(
+        new URL(
+          `/internal/attachments/${encodeURIComponent(attachmentId)}`,
+          `http://127.0.0.1:${String(address.port)}`,
+        ),
+        {
+          headers: {
+            authorization: "Bearer gmail-token",
+          },
+        },
+      );
+
+      expect(response.status).toBe(200);
+      const header = response.headers.get("Content-Disposition") ?? "";
+      expect(header).toMatch(/^inline; filename="abc__d\.png"; /);
+      expect(header).not.toContain('"b');
+      expect(header).not.toContain("\r");
+      expect(header).not.toContain("\n");
     } finally {
       await closeServer(server);
       await context.dispose();
