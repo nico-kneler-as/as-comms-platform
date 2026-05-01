@@ -287,7 +287,7 @@ const baseProps: ComposerEmailSurfaceProps = {
   isGeneratingAi: false,
   runAiDraftDisabled: false,
   runAiDraftDisabledReason: null,
-  selectedAliasAiReady: true,
+  selectedAliasHasCachedContent: true,
   selectedAliasProjectName: "Coastal Survey",
   aiWarningMessage: null,
   inlineError: null,
@@ -374,6 +374,30 @@ afterEach(async () => {
 });
 
 describe("composer send menu", () => {
+  it("shows the grounded knowledge label when project knowledge is cached", async () => {
+    await mount({
+      selectedAliasHasCachedContent: true,
+    });
+
+    expect(document.body.textContent).toContain("Uses Coastal Survey knowledge");
+    expect(document.body.textContent).not.toContain(
+      "No project knowledge linked yet",
+    );
+  });
+
+  it("shows the soft knowledge indicator when project knowledge is not cached", async () => {
+    await mount({
+      selectedAliasHasCachedContent: false,
+    });
+
+    expect(document.body.textContent).toContain(
+      "No project knowledge linked yet",
+    );
+    expect(document.body.textContent).toContain(
+      "AI Draft will use voice instructions only",
+    );
+  });
+
   it("renders send options for send-and-save and save draft", async () => {
     const onSend = vi.fn();
     const onSaveDraft = vi.fn();

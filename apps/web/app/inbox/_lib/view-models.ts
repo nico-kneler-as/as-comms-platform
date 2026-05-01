@@ -311,11 +311,15 @@ export interface InboxComposerAliasOption {
   readonly projectId: string;
   readonly projectName: string;
   /**
-   * Full Stage 4 grounding readiness: provider configured and at least one
-   * cached Notion project-context entry is available for this alias's project.
+   * AI generation is available for this alias: the provider is configured and
+   * the project is active.
    */
   readonly isAiReady: boolean;
   readonly isAiConfigured?: boolean;
+  /**
+   * Canonical project-knowledge signal: whether this alias's project has
+   * cached Notion-backed context available for grounding.
+   */
   readonly hasCachedContent?: boolean;
 }
 
