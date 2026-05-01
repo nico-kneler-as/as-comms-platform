@@ -6,7 +6,7 @@ import {
 } from "@as-comms/db";
 import { sql } from "drizzle-orm";
 
-import { createTestStage1Context } from "../../../packages/db/test/helpers.js";
+import { createTestStage1Context } from "./helpers.js";
 import {
   applyMergeForPair,
   loadDupePairs,

@@ -8,7 +8,7 @@ import type {
 import {
   createTestStage1Context,
   type TestStage1Context
-} from "../../../packages/db/test/helpers.js";
+} from "@as-comms/db/test-helpers";
 import { createStage1IngestService, type Stage1IngestService } from "../src/ingest/index.js";
 import {
   createStage1SyncStateService,
@@ -18,6 +18,8 @@ import {
   type Stage1SyncStateService,
   type Stage1WorkerOrchestrationService
 } from "../src/orchestration/index.js";
+
+export { createTestStage1Context } from "@as-comms/db/test-helpers";
 
 export interface TestWorkerContext extends TestStage1Context {
   readonly ingest: Stage1IngestService;
