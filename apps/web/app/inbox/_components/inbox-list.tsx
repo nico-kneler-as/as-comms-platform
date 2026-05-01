@@ -44,7 +44,7 @@ import {
   XIcon,
 } from "./icons";
 import { InboxFilterList } from "./inbox-filter-list";
-import { QueueLoadingSkeleton } from "./inbox-loading";
+import { QueueLoadingSkeleton, QueueLoadMoreSkeleton } from "./inbox-loading";
 import { InboxRow } from "./inbox-row";
 
 interface ListColumnProps {
@@ -703,9 +703,7 @@ export function InboxList({
                   className="h-px w-full"
                 />
                 {isLoadingMore ? (
-                  <p className="pt-3 text-center text-sm text-slate-500">
-                    Loading more conversations...
-                  </p>
+                  <QueueLoadMoreSkeleton />
                 ) : null}
               </div>
             ) : null}

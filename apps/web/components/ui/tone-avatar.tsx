@@ -25,10 +25,7 @@ export function ToneAvatar({
   className,
 }: ToneAvatarProps) {
   return (
-    <Avatar
-      className={cn(size === "xs" ? "" : "ring-1", SIZE_CLASSES[size], className)}
-      aria-hidden="true"
-    >
+    <Avatar className={cn(SIZE_CLASSES[size], className)} aria-hidden="true">
       <AvatarFallback className={cn("font-semibold", AVATAR_TONE[tone])}>
         {initials}
       </AvatarFallback>
