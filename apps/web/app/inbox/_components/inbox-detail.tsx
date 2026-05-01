@@ -490,10 +490,10 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                     disabled={isMarkUnreadPending}
                     onClick={handleMarkUnread}
                     aria-label="Mark as unread"
-                    className="h-8 w-8"
+                    className="size-8"
                     data-inbox-mark-unread="true"
                   >
-                    <MailOpenIcon className="h-4 w-4" />
+                    <MailOpenIcon className="size-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Mark as unread</TooltipContent>
@@ -509,18 +509,18 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                       title="Set reminder"
                       className="gap-1.5 border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-800"
                     >
-                      <ClockIcon className="h-3.5 w-3.5" />
+                      <ClockIcon className="size-3.5" />
                       Reminder · {formatShortReminder(existingReminder)}
                     </Button>
                   ) : (
                     <Button
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8"
+                      className="size-8"
                       aria-label="Set reminder"
                       title="Set reminder"
                     >
-                      <ClockIcon className="h-4 w-4" />
+                      <ClockIcon className="size-4" />
                     </Button>
                   )}
                 </PopoverTrigger>
@@ -546,12 +546,12 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                     type="button"
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8"
+                    className="size-8"
                     aria-label="Archive conversation"
                     disabled={isArchivePending}
                     onClick={handleArchive}
                   >
-                    <ArchiveBoxIcon className="h-4 w-4" />
+                    <ArchiveBoxIcon className="size-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Archive conversation</TooltipContent>
@@ -563,7 +563,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                     <Button
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8"
+                      className="size-8"
                       aria-label="Toggle contact details"
                       aria-expanded={false}
                       aria-controls="inbox-contact-rail"
@@ -571,7 +571,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                         setRailOpen(true);
                       }}
                     >
-                      <PanelRightOpenIcon className="h-4 w-4" />
+                      <PanelRightOpenIcon className="size-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Toggle contact details</TooltipContent>
@@ -697,12 +697,12 @@ function FollowUpToggleButton({
       data-inbox-follow-up-toggle="true"
       onClick={onToggle}
       className={cn(
-        "h-8 w-8",
+        "size-8",
         needsFollowUp &&
           "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800",
       )}
     >
-      <FlagIcon className="h-4 w-4" />
+      <FlagIcon className="size-4" />
     </Button>
   );
 }
@@ -769,7 +769,7 @@ function UnresolvedBanner() {
       className={`flex items-center gap-2 border-b border-amber-200 px-6 py-2.5 ${TONE_CLASSES.amber.subtle}`}
       role="status"
     >
-      <AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-600" />
+      <AlertTriangleIcon className="size-4 shrink-0 text-amber-600" />
       <span className="text-sm font-medium text-amber-900">
         Unresolved items need attention
       </span>
@@ -819,11 +819,11 @@ function ReminderPopoverBody({
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0 text-slate-400 hover:text-slate-700"
+          className="size-7 shrink-0 text-slate-400 hover:text-slate-700"
           aria-label="Cancel reminder"
           onClick={onClear}
         >
-          <XIcon className="h-3.5 w-3.5" />
+          <XIcon className="size-3.5" />
         </Button>
       </div>
     );
@@ -850,7 +850,7 @@ function ReminderPopoverBody({
               }}
               className="flex h-[18px] w-6 items-center justify-center text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
             >
-              <ChevronUpIcon className="h-3.5 w-3.5" />
+              <ChevronUpIcon className="size-3.5" />
             </button>
             <button
               type="button"
@@ -861,7 +861,7 @@ function ReminderPopoverBody({
               }}
               className="flex h-[18px] w-6 items-center justify-center border-t border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
             >
-              <ChevronDownIcon className="h-3.5 w-3.5" />
+              <ChevronDownIcon className="size-3.5" />
             </button>
           </div>
         </div>

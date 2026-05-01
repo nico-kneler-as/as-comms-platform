@@ -213,7 +213,7 @@ function ReplyFooter({
           TRANSITION.reduceMotion,
         )}
       >
-        <CornerUpLeftIcon className="h-3 w-3" />
+        <CornerUpLeftIcon className="size-3" />
         <span>Reply</span>
       </button>
     </div>
@@ -229,11 +229,11 @@ function InboundMetadataRow({
 
   return (
     <div className={cn("mt-1.5 flex items-center gap-1.5 px-1", TYPE.micro)}>
-      <ChannelIcon className="h-3 w-3" />
+      <ChannelIcon className="size-3" />
       <span className="font-medium text-slate-500">{entry.actorLabel}</span>
       {entry.isUnread ? (
         <span
-          className="inline-flex h-1.5 w-1.5 rounded-full bg-sky-500"
+          className="inline-flex size-1.5 rounded-full bg-sky-500"
           aria-label="Unread"
         />
       ) : null}
@@ -248,7 +248,7 @@ function OutboundSmsMetaRow({
 }) {
   return (
     <div className="mb-1.5 flex items-center gap-1.5 pr-1 text-[11px] text-sky-600">
-      <PhoneIcon className="h-3 w-3" />
+      <PhoneIcon className="size-3" />
       <span className="font-medium uppercase tracking-wide">SMS</span>
       <span className="text-sky-300">·</span>
       <time

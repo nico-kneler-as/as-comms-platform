@@ -134,7 +134,7 @@ export function SystemDivider({
             tone.subtle,
           )}
         >
-          <category.Icon className={cn("h-3 w-3", tone.text)} />
+          <category.Icon className={cn("size-3", tone.text)} />
         </span>
         <span className={cn(TYPE.label, tone.text)}>{category.label}</span>
         <span className="text-[11.5px] text-slate-600">{body}</span>

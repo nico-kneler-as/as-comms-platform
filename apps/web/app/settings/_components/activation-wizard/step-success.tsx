@@ -12,8 +12,8 @@ export function StepSuccess({
 }) {
   return (
     <div className="flex h-full flex-col items-center justify-center text-center">
-      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-4 ring-emerald-50">
-        <Check className="h-6 w-6" aria-hidden="true" />
+      <span className="flex size-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-4 ring-emerald-50">
+        <Check className="size-6" aria-hidden="true" />
       </span>
       <h2 className="mt-5 text-[18px] font-semibold text-slate-900">
         {aliasDraft.trim()} is live
@@ -24,17 +24,17 @@ export function StepSuccess({
       </p>
       <div className="mt-6 grid w-full max-w-[420px] grid-cols-3 gap-3">
         <SuccessStat
-          icon={<Mail className="h-3.5 w-3.5" aria-hidden="true" />}
+          icon={<Mail className="size-3.5" aria-hidden="true" />}
           label="Aliases"
           value={String(aliasesCount)}
         />
         <SuccessStat
-          icon={<Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
+          icon={<Sparkles className="size-3.5" aria-hidden="true" />}
           label="Notion"
           value="Synced"
         />
         <SuccessStat
-          icon={<Check className="h-3.5 w-3.5" aria-hidden="true" />}
+          icon={<Check className="size-3.5" aria-hidden="true" />}
           label="Status"
           value="Live"
         />

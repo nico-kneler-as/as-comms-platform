@@ -24,8 +24,8 @@ export function SidebarChecklist({
     <aside className="flex w-[280px] shrink-0 flex-col border-r border-slate-100 bg-slate-50/70">
       <div className="border-b border-slate-100 px-6 py-6">
         <div className="flex items-center gap-3">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white">
-            <Plus className="h-4 w-4" aria-hidden="true" />
+          <span className="flex size-8 items-center justify-center rounded-lg bg-slate-900 text-white">
+            <Plus className="size-4" aria-hidden="true" />
           </span>
           <div>
             <p className="text-[13px] font-semibold text-slate-900">
@@ -81,7 +81,7 @@ export function SidebarChecklist({
                   )}
                 >
                   {state === "done" ? (
-                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                    <Check className="size-3.5" aria-hidden="true" />
                   ) : (
                     String(index + 1)
                   )}
@@ -109,7 +109,7 @@ export function SidebarChecklist({
 
       <div className="m-4 rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-slate-700">
-          <Sparkles className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
+          <Sparkles className="size-3.5 text-amber-500" aria-hidden="true" />
           Activation checklist
         </div>
         <ul className="mt-3 space-y-2 text-[11.5px]">
@@ -133,9 +133,9 @@ function ChecklistRow({
   return (
     <li className="flex items-center gap-2 text-slate-600">
       {ok ? (
-        <Check className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" />
+        <Check className="size-3.5 text-emerald-500" aria-hidden="true" />
       ) : (
-        <Circle className="h-3.5 w-3.5 text-slate-300" aria-hidden="true" />
+        <Circle className="size-3.5 text-slate-300" aria-hidden="true" />
       )}
       <span className={ok ? "text-slate-700" : "text-slate-500"}>{label}</span>
     </li>

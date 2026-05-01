@@ -94,17 +94,17 @@ export function PrimaryIconRail({
         aria-label="Primary"
       >
         <div
-          className="mb-4 flex h-9 w-9 items-center justify-center text-slate-900"
+          className="mb-4 flex size-9 items-center justify-center text-slate-900"
           aria-label="Adventure Scientists"
         >
-          <AdventureScientistsLogo className="h-8 w-8" />
+          <AdventureScientistsLogo className="size-8" />
         </div>
 
         <div className="flex flex-1 flex-col items-center gap-1">
           {ITEMS.map((item) => {
             const Icon = item.Icon;
             const active = isActive(pathname, item.activePrefixes);
-            const baseClass = `flex h-10 w-10 items-center justify-center ${RADIUS.lg} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
+            const baseClass = `flex size-10 items-center justify-center ${RADIUS.lg} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
               active
                 ? "bg-slate-900 text-white"
                 : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
@@ -122,7 +122,7 @@ export function PrimaryIconRail({
                       tabIndex={-1}
                       className={baseClass}
                     >
-                      <Icon className="h-5 w-5" />
+                      <Icon className="size-5" />
                     </button>
                   ) : (
                     <Link
@@ -131,7 +131,7 @@ export function PrimaryIconRail({
                       aria-current={active ? "page" : undefined}
                       className={baseClass}
                     >
-                      <Icon className="h-5 w-5" />
+                      <Icon className="size-5" />
                     </Link>
                   )}
                 </TooltipTrigger>
@@ -195,7 +195,7 @@ function OperatorMenu({
       <DropdownMenuContent side="right" align="end" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
               {operator.initials}
             </div>
             <div className="min-w-0">
@@ -214,7 +214,7 @@ function OperatorMenu({
             type="submit"
             className="relative flex w-full select-none items-center gap-2 rounded-sm px-2 py-1.5 text-xs font-medium outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
           >
-            <LogOutIcon className="h-3.5 w-3.5" />
+            <LogOutIcon className="size-3.5" />
             Log out
           </button>
         </form>
