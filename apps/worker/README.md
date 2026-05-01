@@ -57,3 +57,5 @@ pnpm ops:worker:import-gmail-mbox -- \
 ```
 
 Leave `--overwrite-bodies` off to preserve the existing Gmail detail preview fields on duplicate re-imports. Enable it when a duplicate-safe re-import should refresh `subject`, `snippetClean`, and `bodyTextPreview` from the current `.mbox` parse.
+
+`pnpm --filter @as-comms/worker ops backfill-content-fingerprint [--execute] [--limit N] [--event-types <comma-list>]`

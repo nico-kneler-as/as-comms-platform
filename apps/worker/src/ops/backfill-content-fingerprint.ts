@@ -1,68 +1,96 @@
 #!/usr/bin/env tsx
+/**
+ * backfill-content-fingerprint
+ *
+ * Usage:
+ *   pnpm --filter @as-comms/worker ops backfill-content-fingerprint
+ *   pnpm --filter @as-comms/worker ops backfill-content-fingerprint --limit 100
+ *   pnpm --filter @as-comms/worker ops backfill-content-fingerprint --execute
+ *
+ * Dry-run by default. Recomputes canonical_event_ledger.content_fingerprint
+ * using the current persisted fingerprint-source builder plus the current
+ * computeContentFingerprint algorithm. Emits JSONL audit rows to stdout and
+ * writes summary counts to stderr.
+ */
 import process from "node:process";
 
-import {
-  asc,
-  eq,
-  sql
-} from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 
 import {
-  canonicalEventSchema
+  canonicalEventSchema,
+  type CanonicalEventRecord,
 } from "@as-comms/contracts";
 import {
   canonicalEventLedger,
   closeDatabaseConnection,
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
-  gmailMessageDetails,
-  salesforceCommunicationDetails,
-  type Stage1Database
+  type Stage1Database,
 } from "@as-comms/db";
+import type { createStage1RepositoryBundle } from "@as-comms/db";
 import {
+  buildPersistedContentFingerprintSource,
   computeContentFingerprint,
-  type ContentFingerprintInput
 } from "@as-comms/domain";
+import { toIsoTimestamp } from "@as-comms/integrations";
 
 import {
   parseCliFlags,
-  readOptionalIntegerFlag
+  readOptionalBooleanFlag,
+  readOptionalIntegerFlag,
+  readOptionalStringArrayFlag,
 } from "./helpers.js";
 
-const updateChunkSize = 500;
+const detailBatchSize = 500;
+const updateBatchSize = 500;
+const defaultEventTypes = [
+  "communication.email.outbound",
+  "communication.email.inbound",
+] as const satisfies readonly CanonicalEventRecord["eventType"][];
+
+type Stage1Repositories = ReturnType<typeof createStage1RepositoryBundle>;
 
 interface Logger {
-  log(...args: readonly unknown[]): void;
+  error(...args: readonly unknown[]): void;
 }
 
-interface ContentFingerprintBackfillRow {
-  readonly canonicalEventId: string;
+interface AuditWriter {
+  writeLine(line: string): void;
+}
+
+type SupportedFingerprintProvider = "gmail" | "salesforce";
+type BackfillCategory = "unchanged" | "new_value" | "cleared" | "still_null";
+
+interface BackfillContentFingerprintAuditLine {
+  readonly id: string;
   readonly contactId: string;
-  readonly occurredAt: Date;
-  readonly contentFingerprint: string | null;
-  readonly primaryProvider: string;
-  readonly direction: "inbound" | "outbound" | null;
-  readonly gmailSubject: string | null;
-  readonly gmailBodyTextPreview: string | null;
-  readonly gmailSnippetClean: string | null;
-  readonly salesforceSubject: string | null;
-  readonly salesforceSnippet: string | null;
+  readonly provider: SupportedFingerprintProvider;
+  readonly oldFingerprint: string | null;
+  readonly newFingerprint: string | null;
+  readonly occurredAt: string;
+  readonly eventType: CanonicalEventRecord["eventType"];
 }
 
-interface ContentFingerprintBackfillCandidate {
-  readonly canonicalEventId: string;
-  readonly currentContentFingerprint: string | null;
-  readonly nextContentFingerprint: string | null;
+interface BackfillContentFingerprintCandidate {
+  readonly id: string;
+  readonly contactId: string;
+  readonly provider: SupportedFingerprintProvider;
+  readonly eventType: CanonicalEventRecord["eventType"];
+  readonly occurredAt: string;
+  readonly oldFingerprint: string | null;
+  readonly newFingerprint: string | null;
+  readonly category: BackfillCategory;
 }
 
 export interface BackfillContentFingerprintResult {
   readonly dryRun: boolean;
+  readonly eventTypes: readonly CanonicalEventRecord["eventType"][];
   readonly scannedCount: number;
-  readonly computedCount: number;
-  readonly unchangedCount: number;
-  readonly updateCount: number;
+  readonly categoryCounts: Readonly<Record<BackfillCategory, number>>;
   readonly updatedCount: number;
-  readonly sample: readonly ContentFingerprintBackfillCandidate[];
+  readonly runtimeMs: number;
+  readonly warningCount: number;
+  readonly auditLines: readonly BackfillContentFingerprintAuditLine[];
 }
 
 function readConnectionString(env: NodeJS.ProcessEnv): string {
@@ -70,7 +98,7 @@ function readConnectionString(env: NodeJS.ProcessEnv): string {
 
   if (connectionString === undefined || connectionString.trim().length === 0) {
     throw new Error(
-      "DATABASE_URL or WORKER_DATABASE_URL is required for this ops command."
+      "DATABASE_URL or WORKER_DATABASE_URL is required for this ops command.",
     );
   }
 
@@ -79,7 +107,7 @@ function readConnectionString(env: NodeJS.ProcessEnv): string {
 
 function chunkValues<TValue>(
   values: readonly TValue[],
-  chunkSize: number
+  chunkSize: number,
 ): TValue[][] {
   const chunks: TValue[][] = [];
 
@@ -90,205 +118,309 @@ function chunkValues<TValue>(
   return chunks;
 }
 
-function buildContentFingerprintInput(
-  row: ContentFingerprintBackfillRow
-): ContentFingerprintInput | null {
-  if (row.primaryProvider === "gmail") {
-    return {
-      subject: row.gmailSubject,
-      occurredAt: row.occurredAt.toISOString(),
-      contactId: row.contactId,
-      channel: "email",
-      direction: row.direction,
-      previewText: row.gmailBodyTextPreview ?? row.gmailSnippetClean
-    };
+function parseBackfillEventTypes(
+  args: readonly CanonicalEventRecord["eventType"][],
+): CanonicalEventRecord["eventType"][] {
+  const allowed = new Set<CanonicalEventRecord["eventType"]>([
+    "communication.email.outbound",
+    "communication.email.inbound",
+  ]);
+  const eventTypes = args.length === 0 ? [...defaultEventTypes] : [...new Set(args)];
+
+  for (const eventType of eventTypes) {
+    if (!allowed.has(eventType)) {
+      throw new Error(
+        `Unsupported --event-types value "${eventType}". Allowed values: communication.email.outbound, communication.email.inbound.`,
+      );
+    }
   }
 
-  if (row.primaryProvider === "salesforce") {
-    return {
-      subject: row.salesforceSubject,
-      occurredAt: row.occurredAt.toISOString(),
-      contactId: row.contactId,
-      channel: "email",
-      direction: row.direction,
-      previewText: row.salesforceSnippet
-    };
-  }
-
-  return null;
+  return eventTypes;
 }
 
-async function loadBackfillRows(input: {
-  readonly db: Stage1Database;
-  readonly limit: number | null;
-}): Promise<readonly ContentFingerprintBackfillRow[]> {
-  const rows = await input.db
-    .select({
-      canonicalEventId: canonicalEventLedger.id,
-      contactId: canonicalEventLedger.contactId,
-      occurredAt: canonicalEventLedger.occurredAt,
-      contentFingerprint: canonicalEventLedger.contentFingerprint,
-      primaryProvider:
-        sql<string>`${canonicalEventLedger.provenance} ->> 'primaryProvider'`,
-      direction:
-        sql<"inbound" | "outbound" | null>`${canonicalEventLedger.provenance} ->> 'direction'`,
-      gmailSubject: gmailMessageDetails.subject,
-      gmailBodyTextPreview: gmailMessageDetails.bodyTextPreview,
-      gmailSnippetClean: gmailMessageDetails.snippetClean,
-      salesforceSubject: salesforceCommunicationDetails.subject,
-      salesforceSnippet: salesforceCommunicationDetails.snippet
-    })
-    .from(canonicalEventLedger)
-    .leftJoin(
-      gmailMessageDetails,
-      eq(gmailMessageDetails.sourceEvidenceId, canonicalEventLedger.sourceEvidenceId)
-    )
-    .leftJoin(
-      salesforceCommunicationDetails,
-      eq(
-        salesforceCommunicationDetails.sourceEvidenceId,
-        canonicalEventLedger.sourceEvidenceId
-      )
-    )
-    .where(eq(canonicalEventLedger.channel, "email"))
-    .orderBy(
-      asc(canonicalEventLedger.occurredAt),
-      asc(canonicalEventLedger.id)
-    );
+function normalizeOccurredAt(value: Date | string): string {
+  const normalized = toIsoTimestamp(value);
 
-  return input.limit === null ? rows : rows.slice(0, input.limit);
+  if (normalized === null) {
+    throw new Error("Expected canonical_event_ledger.occurred_at to be a valid timestamp.");
+  }
+
+  return normalized;
+}
+
+function toCanonicalEventRecord(row: typeof canonicalEventLedger.$inferSelect): CanonicalEventRecord {
+  return canonicalEventSchema.parse({
+    id: row.id,
+    contactId: row.contactId,
+    eventType: row.eventType,
+    channel: row.channel,
+    occurredAt: normalizeOccurredAt(row.occurredAt),
+    contentFingerprint: row.contentFingerprint,
+    sourceEvidenceId: row.sourceEvidenceId,
+    idempotencyKey: row.idempotencyKey,
+    provenance: row.provenance,
+    reviewState: row.reviewState,
+  });
+}
+
+function categorizeFingerprintChange(input: {
+  readonly oldFingerprint: string | null;
+  readonly newFingerprint: string | null;
+}): BackfillCategory {
+  if (input.oldFingerprint === input.newFingerprint) {
+    return input.oldFingerprint === null ? "still_null" : "unchanged";
+  }
+
+  if (input.newFingerprint === null) {
+    return "cleared";
+  }
+
+  return "new_value";
+}
+
+async function loadCandidates(input: {
+  readonly db: Stage1Database;
+  readonly repositories: Stage1Repositories;
+  readonly eventTypes: readonly CanonicalEventRecord["eventType"][];
+  readonly limit: number | null;
+}): Promise<readonly BackfillContentFingerprintCandidate[]> {
+  const rows = await input.db
+    .select()
+    .from(canonicalEventLedger)
+    .where(inArray(canonicalEventLedger.eventType, [...input.eventTypes]))
+    .orderBy(
+      asc(canonicalEventLedger.contactId),
+      asc(canonicalEventLedger.occurredAt),
+      asc(canonicalEventLedger.id),
+    );
+  const limitedRows =
+    input.limit === null ? rows : rows.slice(0, input.limit);
+  const parsedEvents = limitedRows.map(toCanonicalEventRecord);
+  const sourceEvidenceIds = Array.from(
+    new Set(parsedEvents.map((event) => event.sourceEvidenceId)),
+  ).sort((left, right) => left.localeCompare(right));
+
+  const gmailMessageDetailBySourceEvidenceId = new Map();
+  const salesforceCommunicationDetailBySourceEvidenceId = new Map();
+
+  for (const sourceEvidenceIdChunk of chunkValues(sourceEvidenceIds, detailBatchSize)) {
+    const [gmailDetails, salesforceDetails] = await Promise.all([
+      input.repositories.gmailMessageDetails.listBySourceEvidenceIds(
+        sourceEvidenceIdChunk,
+      ),
+      input.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds(
+        sourceEvidenceIdChunk,
+      ),
+    ]);
+
+    for (const detail of gmailDetails) {
+      gmailMessageDetailBySourceEvidenceId.set(detail.sourceEvidenceId, detail);
+    }
+
+    for (const detail of salesforceDetails) {
+      salesforceCommunicationDetailBySourceEvidenceId.set(
+        detail.sourceEvidenceId,
+        detail,
+      );
+    }
+  }
+
+  const candidates: BackfillContentFingerprintCandidate[] = [];
+
+  for (const event of parsedEvents) {
+    const provider = event.provenance.primaryProvider;
+
+    if (provider !== "gmail" && provider !== "salesforce") {
+      continue;
+    }
+
+    const fingerprintSource = buildPersistedContentFingerprintSource({
+      event,
+      sourceEvidenceId: event.sourceEvidenceId,
+      gmailMessageDetailBySourceEvidenceId,
+      salesforceCommunicationDetailBySourceEvidenceId,
+    });
+    const newFingerprint =
+      fingerprintSource === null
+        ? null
+        : computeContentFingerprint(fingerprintSource);
+
+    candidates.push({
+      id: event.id,
+      contactId: event.contactId,
+      provider,
+      eventType: event.eventType,
+      occurredAt: event.occurredAt,
+      oldFingerprint: event.contentFingerprint ?? null,
+      newFingerprint,
+      category: categorizeFingerprintChange({
+        oldFingerprint: event.contentFingerprint ?? null,
+        newFingerprint,
+      }),
+    });
+  }
+
+  return candidates;
+}
+
+async function applyUpdates(input: {
+  readonly db: Stage1Database;
+  readonly candidates: readonly BackfillContentFingerprintCandidate[];
+}): Promise<number> {
+  let updatedCount = 0;
+
+  for (const batch of chunkValues(input.candidates, updateBatchSize)) {
+    await input.db.transaction(async (tx) => {
+      for (const candidate of batch) {
+        await tx
+          .update(canonicalEventLedger)
+          .set({
+            contentFingerprint: candidate.newFingerprint,
+            updatedAt: new Date(),
+          })
+          .where(eq(canonicalEventLedger.id, candidate.id));
+      }
+    });
+    updatedCount += batch.length;
+  }
+
+  return updatedCount;
 }
 
 export async function backfillContentFingerprint(input: {
   readonly db: Stage1Database;
-  readonly repositories?: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
+  readonly repositories: Stage1Repositories;
   readonly dryRun?: boolean;
   readonly limit?: number | null;
+  readonly eventTypes?: readonly CanonicalEventRecord["eventType"][];
   readonly logger?: Logger;
+  readonly auditWriter?: AuditWriter;
 }): Promise<BackfillContentFingerprintResult> {
+  const startedAt = Date.now();
   const dryRun = input.dryRun ?? true;
   const logger = input.logger ?? console;
-  const rows = await loadBackfillRows({
+  const auditWriter = input.auditWriter ?? {
+    writeLine(line: string) {
+      process.stdout.write(`${line}\n`);
+    },
+  };
+  const eventTypes = parseBackfillEventTypes([
+    ...(input.eventTypes ?? defaultEventTypes),
+  ]);
+  const candidates = await loadCandidates({
     db: input.db,
-    limit: input.limit ?? null
+    repositories: input.repositories,
+    eventTypes,
+    limit: input.limit ?? null,
   });
-  const candidates: ContentFingerprintBackfillCandidate[] = [];
-  let computedCount = 0;
-  let unchangedCount = 0;
+  const categoryCounts: Record<BackfillCategory, number> = {
+    unchanged: 0,
+    new_value: 0,
+    cleared: 0,
+    still_null: 0,
+  };
+  const auditLines: BackfillContentFingerprintAuditLine[] = [];
+  const updates = candidates.filter(
+    (candidate) =>
+      candidate.category === "new_value" || candidate.category === "cleared",
+  );
 
-  for (const row of rows) {
-    const fingerprintInput = buildContentFingerprintInput(row);
-    const nextContentFingerprint =
-      fingerprintInput === null
-        ? null
-        : computeContentFingerprint(fingerprintInput);
+  for (const candidate of candidates) {
+    categoryCounts[candidate.category] += 1;
 
-    if (nextContentFingerprint !== null) {
-      computedCount += 1;
-    }
-
-    if (row.contentFingerprint === nextContentFingerprint) {
-      unchangedCount += 1;
+    if (candidate.category !== "new_value" && candidate.category !== "cleared") {
       continue;
     }
 
-    candidates.push({
-      canonicalEventId: row.canonicalEventId,
-      currentContentFingerprint: row.contentFingerprint,
-      nextContentFingerprint
-    });
+    const auditLine: BackfillContentFingerprintAuditLine = {
+      id: candidate.id,
+      contactId: candidate.contactId,
+      provider: candidate.provider,
+      oldFingerprint: candidate.oldFingerprint,
+      newFingerprint: candidate.newFingerprint,
+      occurredAt: candidate.occurredAt,
+      eventType: candidate.eventType,
+    };
+    auditLines.push(auditLine);
+    auditWriter.writeLine(JSON.stringify(auditLine));
   }
 
-  if (!dryRun && candidates.length > 0) {
-    if (input.repositories === undefined) {
-      throw new Error("repositories are required when --execute is used.");
-    }
+  const updatedCount = dryRun ? 0 : await applyUpdates({ db: input.db, candidates: updates });
+  const runtimeMs = Date.now() - startedAt;
+  const warningCount = categoryCounts.cleared;
 
-    const events = await input.repositories.canonicalEvents.listByIds(
-      candidates.map((candidate) => candidate.canonicalEventId)
+  logger.error("backfill-content-fingerprint");
+  logger.error(`Mode: ${dryRun ? "dry-run" : "execute"}`);
+  logger.error(`Event types: ${eventTypes.join(", ")}`);
+  logger.error(`- scanned rows: ${String(candidates.length)}`);
+  logger.error(`- unchanged: ${String(categoryCounts.unchanged)}`);
+  logger.error(`- new_value: ${String(categoryCounts.new_value)}`);
+  logger.error(`- cleared: ${String(categoryCounts.cleared)}`);
+  logger.error(`- still_null: ${String(categoryCounts.still_null)}`);
+  logger.error(`- updated: ${String(updatedCount)}`);
+  logger.error(`- runtime_ms: ${String(runtimeMs)}`);
+
+  if (warningCount > 0) {
+    logger.error(
+      `WARNING: ${String(warningCount)} rows would clear or cleared content_fingerprint. Investigate normalization regressions before trusting this run.`,
     );
-    const eventById = new Map(events.map((event) => [event.id, event] as const));
-
-    for (const chunk of chunkValues(candidates, updateChunkSize)) {
-      for (const candidate of chunk) {
-        const event = eventById.get(candidate.canonicalEventId);
-
-        if (event === undefined) {
-          continue;
-        }
-
-        await input.repositories.canonicalEvents.upsert(
-          canonicalEventSchema.parse({
-            ...event,
-            contentFingerprint: candidate.nextContentFingerprint
-          })
-        );
-      }
-    }
   }
-
-  logger.log(
-    JSON.stringify(
-      {
-        dryRun,
-        scannedCount: rows.length,
-        computedCount,
-        unchangedCount,
-        updateCount: candidates.length,
-        updatedCount: dryRun ? 0 : candidates.length,
-        sample: candidates.slice(0, 10)
-      },
-      null,
-      2
-    )
-  );
 
   return {
     dryRun,
-    scannedCount: rows.length,
-    computedCount,
-    unchangedCount,
-    updateCount: candidates.length,
-    updatedCount: dryRun ? 0 : candidates.length,
-    sample: candidates.slice(0, 10)
+    eventTypes,
+    scannedCount: candidates.length,
+    categoryCounts,
+    updatedCount,
+    runtimeMs,
+    warningCount,
+    auditLines,
   };
 }
 
 export async function runBackfillContentFingerprintCommand(
   args: readonly string[],
-  env: NodeJS.ProcessEnv
-): Promise<void> {
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<BackfillContentFingerprintResult> {
   const flags = parseCliFlags(args);
   const connection = createDatabaseConnection({
-    connectionString: readConnectionString(env)
+    connectionString: readConnectionString(env),
   });
 
   try {
     const repositories = createStage1RepositoryBundleFromConnection(connection);
-
-    await backfillContentFingerprint({
+    const result = await backfillContentFingerprint({
       db: connection.db,
       repositories,
-      dryRun: !args.includes("--execute"),
-      limit: readOptionalIntegerFlag(flags, "limit", 0) || null
+      dryRun: !readOptionalBooleanFlag(flags, "execute", false),
+      limit: readOptionalIntegerFlag(flags, "limit", 0) || null,
+      eventTypes: parseBackfillEventTypes(
+        readOptionalStringArrayFlag(flags, "event-types") as CanonicalEventRecord["eventType"][],
+      ),
     });
+
+    if (!result.dryRun && result.categoryCounts.cleared > 0) {
+      throw new Error(
+        `backfill-content-fingerprint completed with ${String(result.categoryCounts.cleared)} cleared rows.`,
+      );
+    }
+
+    return result;
   } finally {
     await closeDatabaseConnection(connection);
   }
 }
 
-const entrypointPath = process.argv[1];
-
-if (
-  entrypointPath !== undefined &&
-  import.meta.url === `file://${entrypointPath}`
-) {
-  void runBackfillContentFingerprintCommand(process.argv.slice(2), process.env).catch(
+if (import.meta.url === `file://${process.argv[1] ?? ""}`) {
+  void runBackfillContentFingerprintCommand(process.argv.slice(2)).catch(
     (error: unknown) => {
-      console.error(
-        error instanceof Error ? error.message : "backfill-content-fingerprint failed."
-      );
+      const message =
+        error instanceof Error
+          ? error.message
+          : "backfill-content-fingerprint failed.";
+
+      console.error(message);
       process.exitCode = 1;
-    }
+    },
   );
 }
