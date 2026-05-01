@@ -3,6 +3,11 @@ import type { TaskList } from "graphile-worker";
 import { noopJobName } from "@as-comms/contracts";
 
 import {
+  createDedupHistoricalLedgerTask,
+  dedupHistoricalLedgerJobName,
+  type DedupHistoricalLedgerTaskDependencies,
+} from "./jobs/dedup-historical-ledger.js";
+import {
   createSweepPendingOutboundsTask,
   sweepPendingOutboundsJobName,
   type PendingOutboundSweepTaskDependencies,
@@ -37,6 +42,7 @@ import {
 export function createTaskList(
   orchestration?: Stage1WorkerOrchestrationService,
   input?: {
+    readonly dedupHistoricalLedger?: DedupHistoricalLedgerTaskDependencies;
     readonly integrationHealth?: IntegrationHealthTaskDependencies;
     readonly notionKnowledgeSync?: NotionKnowledgeSyncDependencies;
     readonly pendingOutboundSweep?: PendingOutboundSweepTaskDependencies;
@@ -52,6 +58,13 @@ export function createTaskList(
       : {
           [sweepPendingOutboundsJobName]: createSweepPendingOutboundsTask(
             input.pendingOutboundSweep,
+          ),
+        }),
+    ...(input?.dedupHistoricalLedger === undefined
+      ? {}
+      : {
+          [dedupHistoricalLedgerJobName]: createDedupHistoricalLedgerTask(
+            input.dedupHistoricalLedger,
           ),
         }),
     ...(input?.reconcileIdentityQueue === undefined

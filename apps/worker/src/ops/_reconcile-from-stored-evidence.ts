@@ -1,3 +1,11 @@
+/**
+ * Underscore-prefixed because this is an internal helper, not a standalone ops entrypoint.
+ * Invoked manually through `src/ops/cli.ts reconcile-identity-queue`, which calls
+ * `reconcile-identity-queue.ts`, which imports `buildEventFromStoredData`.
+ * Retained because identity-queue recovery still reconstructs canonical events from stored rows.
+ * Git history still shows active maintenance through 2026-04-29 (`fix(worker): reconcile lifecycle_milestone + close gmail-orphan cases`).
+ * Remove only after `reconcile-identity-queue.ts` stops rebuilding from stored evidence or inlines/replaces this helper.
+ */
 import type {
   ContactIdentityKind,
   ExpeditionDimensionRecord,

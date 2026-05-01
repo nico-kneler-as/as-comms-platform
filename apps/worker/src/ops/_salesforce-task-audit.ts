@@ -1,3 +1,10 @@
+/**
+ * Underscore-prefixed because this is a helper module behind a targeted ops audit, not a general runtime surface.
+ * Invoked manually by `src/ops/audit-salesforce-task-ingest.ts`, shipped via the `ops:audit-salesforce-task-ingest` package script.
+ * Retained because that audit entrypoint and its unit test still import these helpers directly.
+ * Git history still shows follow-up maintenance through 2026-04-23 (`Fix inbox welcome workload totals and invalidation`).
+ * Remove only after retiring `audit-salesforce-task-ingest.ts` and its test or moving this logic into a non-underscore module.
+ */
 export interface SalesforceTaskAuditRow {
   readonly canonicalEventId: string;
   readonly sourceEvidenceId: string;
