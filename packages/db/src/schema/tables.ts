@@ -278,6 +278,9 @@ export const gmailMessageDetails = pgTable(
   (table) => [
     index("gmail_message_details_record_idx").on(table.providerRecordId),
     index("gmail_message_details_thread_idx").on(table.gmailThreadId),
+    index("gmail_message_details_rfc822_idx")
+      .on(table.rfc822MessageId)
+      .where(sql`${table.rfc822MessageId} IS NOT NULL`),
   ],
 );
 
