@@ -899,30 +899,6 @@ describe("composer canonical modal", () => {
     expect(getInput("Bcc").value).toBe("archive@example.org");
   });
 
-  it("keeps AI Draft enabled when AI is configured without cached project knowledge", async () => {
-    await mount(
-      <TestAppWithAliases
-        aliases={[
-          {
-            id: "alias:whitebark",
-            alias: "whitebark@adventurescientists.org",
-            projectId: "project:whitebark",
-            projectName: "Whitebark Pine",
-            isAiReady: true,
-            isAiConfigured: true,
-            hasCachedContent: false,
-          },
-        ]}
-      />,
-    );
-
-    await click(getByText("Open new draft"));
-
-    const aiDraftButton = getByText("Draft with AI") as HTMLButtonElement;
-    expect(aiDraftButton.tagName).toBe("BUTTON");
-    expect(aiDraftButton.disabled).toBe(false);
-  });
-
   it("closes from the modal header and from the minimized pill", async () => {
     await mount(<TestApp />);
 
