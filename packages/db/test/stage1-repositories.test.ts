@@ -465,6 +465,7 @@ describe("Stage 1 DB repositories", () => {
           filename: "field-photo.jpg",
           sizeBytes: 2048,
           storageKey: "gmail/ab/att:gmail:gmail-message-1:0",
+          isInline: false,
         },
       ],
     );
@@ -480,6 +481,7 @@ describe("Stage 1 DB repositories", () => {
         filename: "field-photo.jpg",
         sizeBytes: 2048,
         storageKey: "gmail/ab/att:gmail:gmail-message-1:0",
+        isInline: false,
       },
     ]);
     await expect(

@@ -185,6 +185,7 @@ export async function seedInboxMessageAttachment(
     readonly sizeBytes: number;
     readonly storageKey: string;
     readonly gmailAttachmentId?: string;
+    readonly isInline?: boolean;
   },
 ): Promise<void> {
   await context.repositories.messageAttachments.upsertManyForMessage(
@@ -198,6 +199,7 @@ export async function seedInboxMessageAttachment(
         filename: input.filename,
         sizeBytes: input.sizeBytes,
         storageKey: input.storageKey,
+        isInline: input.isInline ?? false,
       },
     ],
   );

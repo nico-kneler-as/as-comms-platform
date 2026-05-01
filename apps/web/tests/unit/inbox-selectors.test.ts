@@ -4796,6 +4796,7 @@ describe("real inbox selectors", () => {
       filename: "field-photo.jpg",
       sizeBytes: 1234,
       storageKey: "gmail/ab/att:gmail:attachment-email-1:0/1",
+      isInline: true,
     });
     await seedInboxMessageAttachment(runtime.context, {
       sourceEvidenceId: "source:attachment-email-1",
@@ -4820,15 +4821,8 @@ describe("real inbox selectors", () => {
     // (see packages/domain/src/timeline.ts loadTimelinePresentationContext)
     // so the selector — which already loads attachments — is the canonical
     // home for this assertion.
-    expect(detail?.timeline[0]?.attachmentCount).toBe(2);
+    expect(detail?.timeline[0]?.attachmentCount).toBe(1);
     expect(detail?.timeline[0]?.attachments).toEqual([
-      {
-        id: "att:gmail:attachment-email-1:0/1",
-        mimeType: "image/jpeg",
-        filename: "field-photo.jpg",
-        sizeBytes: 1234,
-        proxyUrl: "/api/attachments/att%3Agmail%3Aattachment-email-1%3A0%2F1",
-      },
       {
         id: "att:gmail:attachment-email-1:0/2",
         mimeType: "application/pdf",

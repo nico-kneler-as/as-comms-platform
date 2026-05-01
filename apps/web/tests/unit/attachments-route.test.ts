@@ -39,6 +39,7 @@ async function seedAttachmentFixture() {
     filename: "field-photo.jpg",
     sizeBytes: 5,
     storageKey: "gmail/ab/att:gmail:attachment-image-1:0/1",
+    isInline: false,
   });
 
   return runtime;

@@ -40,6 +40,7 @@ vi.mock("mailparser", async () => {
 import {
   cleanGmailBodyPreviewText,
   collectGmailAttachmentMetadata,
+  collectGmailHtmlCidReferences,
   extractDsnOriginalMessageId,
   extractGmailBodyPreviewFromMimeMessageResult,
   extractGmailBodyPreviewFromPayloadResult,
@@ -279,6 +280,8 @@ describe("Gmail body extraction", () => {
         filename: "field-photo.jpg",
         sizeBytes: 12_345,
         gmailAttachmentId: "att-image",
+        contentDisposition: null,
+        contentId: null,
       },
       {
         partIndexPath: "2",
@@ -286,8 +289,29 @@ describe("Gmail body extraction", () => {
         filename: "packet.pdf",
         sizeBytes: 98_765,
         gmailAttachmentId: "att-pdf",
+        contentDisposition: null,
+        contentId: null,
       },
     ]);
+  });
+
+  it("collects normalized cid references from html body parts", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: Buffer.from(
+              '<html><body><img src="cid:<ABC@x>"><img src="CID:def@x"></body></html>',
+              "utf8",
+            ).toString("base64url"),
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailHtmlCidReferences(payload)).toEqual(["abc@x", "def@x"]);
   });
 
   it("treats a text/plain part containing decoded binary noise as a binary fallback", async () => {
