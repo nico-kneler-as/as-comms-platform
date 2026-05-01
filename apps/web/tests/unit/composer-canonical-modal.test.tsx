@@ -908,7 +908,7 @@ describe("composer canonical modal", () => {
             alias: "whitebark@adventurescientists.org",
             projectId: "project:whitebark",
             projectName: "Whitebark Pine",
-            isAiReady: false,
+            isAiReady: true,
             isAiConfigured: true,
             hasCachedContent: false,
           },
