@@ -469,6 +469,8 @@ const composerAliases: readonly InboxComposerAliasOption[] = [
     projectId: "project:whitebark",
     projectName: "Whitebark Pine",
     isAiReady: true,
+    isAiConfigured: true,
+    hasCachedContent: true,
   },
 ];
 
