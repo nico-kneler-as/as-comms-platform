@@ -128,6 +128,29 @@ export function QueueLoadingSkeleton({
   );
 }
 
+export function QueueLoadMoreSkeleton({
+  rowCount = 3,
+}: {
+  readonly rowCount?: number;
+}) {
+  return (
+    <div className="pt-3" role="status" aria-label="Loading more conversations">
+      <div className="space-y-0">
+        {Array.from({ length: rowCount }).map((_, i) => (
+          <div key={i} className="flex gap-3 px-4 py-3">
+            <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Skeleton className="h-3 w-32" />
+              <Skeleton className="h-3 w-48 max-w-full" />
+              <Skeleton className="h-3 w-40 max-w-full" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Timeline loading skeleton. Mirrors the alternating left/right bubble
  * pattern of the real timeline.
