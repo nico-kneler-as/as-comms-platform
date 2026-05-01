@@ -1931,6 +1931,118 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("sets conversationProject from membership when the contact has an active project membership", async () => {
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.conversationProject).toEqual({
+      projectId: "project:amazon-basin",
+      projectName: "Amazon Basin Research",
+      source: "membership",
+    });
+  });
+
+  it("falls back to a conversation-derived project when there is no membership project", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:orcas",
+      projectName: "Orca Listening Network",
+      projectAlias: "Orcas",
+      source: "salesforce",
+      isActive: true,
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:external-orcas",
+      salesforceContactId: null,
+      displayName: "External Orcas",
+      primaryEmail: "external-orcas@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "external-orcas-outbound",
+      contactId: "contact:external-orcas",
+      occurredAt: "2026-04-19T16:00:00.000Z",
+      direction: "outbound",
+      subject: "Project alias send",
+      snippet: "Sent from the orcas alias.",
+      bodyTextPreview: "Sent from the orcas alias.",
+      fromHeader: "Orcas <orcas@adventurescientists.org>",
+      toHeader: "External Orcas <external-orcas@example.org>",
+      projectInboxAlias: "orcas@adventurescientists.org",
+    });
+    await runtime.context.repositories.salesforceEventContext.upsert({
+      sourceEvidenceId: "source:external-orcas-outbound",
+      salesforceContactId: null,
+      projectId: "project:orcas",
+      expeditionId: null,
+      sourceField: null,
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:external-orcas",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-19T16:00:00.000Z",
+      lastActivityAt: "2026-04-19T16:00:00.000Z",
+      snippet: "Sent from the orcas alias.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:external-orcas");
+
+    expect(detail?.contact.activeProjects).toHaveLength(0);
+    expect(detail?.conversationProject).toEqual({
+      projectId: "project:orcas",
+      projectName: "Orca Listening Network",
+      source: "conversation",
+    });
+  });
+
+  it("leaves conversationProject null when there is no membership or project-linked event context", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:no-project-context",
+      salesforceContactId: null,
+      displayName: "No Project Context",
+      primaryEmail: "no-project-context@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "no-project-context-inbound",
+      contactId: "contact:no-project-context",
+      occurredAt: "2026-04-19T17:00:00.000Z",
+      direction: "inbound",
+      subject: "No project context",
+      snippet: "No project-linked event context.",
+      bodyTextPreview: "No project-linked event context.",
+      fromHeader: "No Project Context <no-project-context@example.org>",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:no-project-context",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-19T17:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-19T17:00:00.000Z",
+      snippet: "No project-linked event context.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:no-project-context");
+
+    expect(detail?.contact.activeProjects).toHaveLength(0);
+    expect(detail?.conversationProject).toBeNull();
+  });
+
   it("filters pre-cutover timeline entries while keeping the cutover boundary inclusive", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
@@ -2862,6 +2974,151 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("normalizes canonical inbound contact names instead of using inconsistent From headers", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const cases = [
+      {
+        contactId: "contact:normalized-last-first",
+        displayName: "RUTLEDGE, JOE",
+        primaryEmail: "last-first@example.org",
+        fromHeader: "jrutle <last-first@example.org>",
+        expected: "Joe Rutledge",
+      },
+      {
+        contactId: "contact:normalized-all-caps",
+        displayName: "JOE RUTLEDGE",
+        primaryEmail: "all-caps@example.org",
+        fromHeader: "Joe rutledge <all-caps@example.org>",
+        expected: "Joe Rutledge",
+      },
+      {
+        contactId: "contact:normalized-lowercase",
+        displayName: "Joe rutledge",
+        primaryEmail: "lowercase@example.org",
+        fromHeader: "JOE RUTLEDGE <lowercase@example.org>",
+        expected: "Joe Rutledge",
+      },
+      {
+        contactId: "contact:normalized-username",
+        displayName: "jrutle",
+        primaryEmail: "username@example.org",
+        fromHeader: "JOE RUTLEDGE <username@example.org>",
+        expected: "jrutle",
+      },
+    ] as const;
+
+    for (const entry of cases) {
+      await seedInboxContact(runtime.context, {
+        contactId: entry.contactId,
+        salesforceContactId: null,
+        displayName: entry.displayName,
+        primaryEmail: entry.primaryEmail,
+        primaryPhone: null,
+      });
+      const latest = await seedInboxEmailEvent(runtime.context, {
+        id: `${entry.contactId}-latest`,
+        contactId: entry.contactId,
+        occurredAt: "2026-04-23T12:00:00.000Z",
+        direction: "inbound",
+        subject: "Author normalization",
+        snippet: "Testing author normalization.",
+        bodyTextPreview: "Testing author normalization.",
+        fromHeader: entry.fromHeader,
+      });
+      await seedInboxProjection(runtime.context, {
+        contactId: entry.contactId,
+        bucket: "New",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt: "2026-04-23T12:00:00.000Z",
+        lastOutboundAt: null,
+        lastActivityAt: "2026-04-23T12:00:00.000Z",
+        snippet: "Testing author normalization.",
+        lastCanonicalEventId: latest.canonicalEventId,
+        lastEventType: "communication.email.inbound",
+      });
+    }
+
+    const detailByContactId = new Map<string, Awaited<ReturnType<typeof getInboxDetail>>>(
+      await Promise.all(
+        cases.map(async (entry) => {
+          const detail = await getInboxDetail(entry.contactId);
+          return [entry.contactId, detail] as const;
+        }),
+      ),
+    );
+
+    expect(detailByContactId.get("contact:normalized-last-first")?.timeline.at(-1))
+      .toMatchObject({ actorLabel: "Joe Rutledge" });
+    expect(detailByContactId.get("contact:normalized-all-caps")?.timeline.at(-1))
+      .toMatchObject({ actorLabel: "Joe Rutledge" });
+    expect(detailByContactId.get("contact:normalized-lowercase")?.timeline.at(-1))
+      .toMatchObject({ actorLabel: "Joe Rutledge" });
+    expect(detailByContactId.get("contact:normalized-username")?.timeline.at(-1))
+      .toMatchObject({ actorLabel: "jrutle" });
+  });
+
+  it("uses a known sender contact record for inbound actor labels when the sender already exists", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:primary-thread",
+      salesforceContactId: null,
+      displayName: "Primary Thread",
+      primaryEmail: "primary-thread@example.org",
+      primaryPhone: null,
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:known-sender",
+      salesforceContactId: null,
+      displayName: "RUTLEDGE, JOE",
+      primaryEmail: "joe.sender@example.org",
+      primaryPhone: null,
+    });
+    await runtime.context.repositories.contactIdentities.upsert({
+      id: "identity:known-sender-email",
+      contactId: "contact:known-sender",
+      kind: "email",
+      normalizedValue: "joe.sender@example.org",
+      isPrimary: true,
+      source: "gmail",
+      verifiedAt: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "known-sender-inbound",
+      contactId: "contact:primary-thread",
+      occurredAt: "2026-04-23T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Known sender",
+      snippet: "Known sender body.",
+      bodyTextPreview: "Known sender body.",
+      fromHeader: "JOE RUTLEDGE <joe.sender@example.org>",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:primary-thread",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-23T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-23T13:00:00.000Z",
+      snippet: "Known sender body.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:primary-thread");
+
+    expect(detail?.timeline.at(-1)).toMatchObject({
+      actorLabel: "Joe Rutledge",
+    });
+  });
+
   it("preserves Stage 1 timeline families instead of flattening them into generic system events", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
@@ -3248,13 +3505,13 @@ describe("real inbox selectors", () => {
 
     expect(nullClassifiedEntry).toMatchObject({
       kind: "outbound-email",
-      actorLabel: "You",
+      actorLabel: "Adventure Scientists",
       channel: "email",
       body: "Logged Salesforce follow-up body.",
     });
     expect(explicitOneToOneEntry).toMatchObject({
       kind: "outbound-email",
-      actorLabel: "You",
+      actorLabel: "Adventure Scientists",
       channel: "email",
       body: "Explicit Salesforce one-to-one body.",
     });
