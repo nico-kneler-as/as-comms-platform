@@ -907,6 +907,83 @@ function formatRelativeTimestamp(
   return `${Math.floor(days / 365).toString()}y ago`;
 }
 
+const BUBBLE_DAY_KEY_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+const BUBBLE_TIME_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+const BUBBLE_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+const BUBBLE_MONTH_DAY_YEAR_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+function bubbleDayKey(timestamp: string, timeZone: string): string {
+  let formatter = BUBBLE_DAY_KEY_FORMATTER_CACHE.get(timeZone);
+
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    BUBBLE_DAY_KEY_FORMATTER_CACHE.set(timeZone, formatter);
+  }
+
+  return formatter.format(new Date(timestamp));
+}
+
+function bubbleTimeLabel(timestamp: string, timeZone: string): string {
+  let formatter = BUBBLE_TIME_FORMATTER_CACHE.get(timeZone);
+
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone,
+    });
+    BUBBLE_TIME_FORMATTER_CACHE.set(timeZone, formatter);
+  }
+
+  return formatter.format(new Date(timestamp));
+}
+
+function bubbleYear(timestamp: string, timeZone: string): number {
+  return Number.parseInt(bubbleDayKey(timestamp, timeZone).slice(0, 4), 10);
+}
+
+export function formatBubbleTimestamp(
+  timestamp: string,
+  referenceNowIso: string,
+  timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string {
+  const targetDayKey = bubbleDayKey(timestamp, timeZone);
+  const referenceDayKey = bubbleDayKey(referenceNowIso, timeZone);
+
+  if (targetDayKey === referenceDayKey) {
+    return bubbleTimeLabel(timestamp, timeZone);
+  }
+
+  const referenceDate = new Date(referenceNowIso);
+  const yesterdayReference = new Date(referenceDate);
+  yesterdayReference.setDate(referenceDate.getDate() - 1);
+
+  if (targetDayKey === bubbleDayKey(yesterdayReference.toISOString(), timeZone)) {
+    return BUBBLE_MONTH_DAY_FORMATTER.format(new Date(timestamp));
+  }
+
+  if (bubbleYear(timestamp, timeZone) === bubbleYear(referenceNowIso, timeZone)) {
+    return BUBBLE_MONTH_DAY_FORMATTER.format(new Date(timestamp));
+  }
+
+  return BUBBLE_MONTH_DAY_YEAR_FORMATTER.format(new Date(timestamp));
+}
+
 function normalizeInlineText(value: string | null | undefined): string | null {
   if (value === null || value === undefined) {
     return null;
@@ -2176,10 +2253,11 @@ function buildTimelineEntry(input: {
     id: input.item.id,
     kind: finalKind,
     occurredAt: input.item.occurredAt,
-    occurredAtLabel: formatRelativeTimestamp(
-      input.item.occurredAt,
-      input.referenceNowIso,
-    ),
+    occurredAtLabel:
+      input.item.family === "one_to_one_email" ||
+      input.item.family === "one_to_one_sms"
+        ? formatBubbleTimestamp(input.item.occurredAt, input.referenceNowIso)
+        : formatRelativeTimestamp(input.item.occurredAt, input.referenceNowIso),
     actorLabel: timelineActorLabel(
       input.item,
       input.contactDisplayName,
