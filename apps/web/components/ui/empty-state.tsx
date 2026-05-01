@@ -5,6 +5,7 @@ interface EmptyStateProps {
   readonly icon: React.ReactNode;
   readonly title: string;
   readonly description: React.ReactNode;
+  readonly action?: React.ReactNode;
   /** `sm` for inline/list contexts, `lg` for full-page empty states */
   readonly size?: "sm" | "lg";
   readonly className?: string;
@@ -17,6 +18,7 @@ const SIZE_CONFIG = {
     iconClass: "h-6 w-6 text-slate-400",
     title: "mt-4 text-sm font-medium text-slate-700",
     description: `mt-1 ${TEXT.caption}`,
+    actionWrapper: "mt-4 flex justify-center",
   },
   lg: {
     wrapper: "flex h-full flex-col items-center justify-center px-10 text-center",
@@ -24,6 +26,7 @@ const SIZE_CONFIG = {
     iconClass: "h-7 w-7",
     title: "mt-5 text-base font-semibold text-slate-900",
     description: "mt-1 max-w-sm text-sm leading-6 text-slate-500",
+    actionWrapper: "mt-5 flex justify-center",
   },
 } as const;
 
@@ -31,6 +34,7 @@ export function EmptyState({
   icon,
   title,
   description,
+  action,
   size = "sm",
   className,
 }: EmptyStateProps) {
@@ -43,6 +47,7 @@ export function EmptyState({
       </div>
       <p className={cfg.title}>{title}</p>
       <p className={cfg.description}>{description}</p>
+      {action ? <div className={cfg.actionWrapper}>{action}</div> : null}
     </div>
   );
 }
