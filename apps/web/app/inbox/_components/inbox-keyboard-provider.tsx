@@ -359,13 +359,13 @@ export function InboxKeyboardProvider({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 text-slate-400 hover:text-slate-700"
+              className="size-7 shrink-0 text-slate-400 hover:text-slate-700"
               aria-label="Close shortcuts"
               onClick={() => {
                 setShortcutsOpen(false);
               }}
             >
-              <XIcon className="h-3.5 w-3.5" />
+              <XIcon className="size-3.5" />
             </Button>
           </div>
 

@@ -229,7 +229,7 @@ export default function DesignSystemPage() {
               ).map(([name, classes]) => (
                 <div key={name} className="flex flex-col items-center gap-2">
                   <div
-                    className={`flex h-16 w-16 items-center justify-center border-2 border-slate-300 bg-slate-100 ${classes}`}
+                    className={`flex size-16 items-center justify-center border-2 border-slate-300 bg-slate-100 ${classes}`}
                   />
                   <span className="text-xs font-medium text-slate-700">
                     {name}
@@ -457,19 +457,19 @@ export default function DesignSystemPage() {
                 <div className="flex flex-wrap gap-2">
                   <Chip
                     tone="info"
-                    icon={<MailIcon className="h-3 w-3" />}
+                    icon={<MailIcon className="size-3" />}
                   >
                     Email
                   </Chip>
                   <Chip
                     tone="success"
-                    icon={<CheckCircleIcon className="h-3 w-3" />}
+                    icon={<CheckCircleIcon className="size-3" />}
                   >
                     Verified
                   </Chip>
                   <Chip
                     tone="warn"
-                    icon={<AlertTriangleIcon className="h-3 w-3" />}
+                    icon={<AlertTriangleIcon className="size-3" />}
                   >
                     Pending
                   </Chip>
@@ -532,7 +532,7 @@ export default function DesignSystemPage() {
                   size=&quot;sm&quot; (default)
                 </p>
                 <EmptyState
-                  icon={<InboxIcon className="h-6 w-6" />}
+                  icon={<InboxIcon className="size-6" />}
                   title="All caught up"
                   description="No conversations match the current filter."
                 />
@@ -542,7 +542,7 @@ export default function DesignSystemPage() {
                   size=&quot;sm&quot; with search
                 </p>
                 <EmptyState
-                  icon={<SearchIcon className="h-6 w-6" />}
+                  icon={<SearchIcon className="size-6" />}
                   title="No results"
                   description={
                     <>
@@ -557,7 +557,7 @@ export default function DesignSystemPage() {
                   size=&quot;sm&quot; with action
                 </p>
                 <EmptyState
-                  icon={<InboxIcon className="h-6 w-6" />}
+                  icon={<InboxIcon className="size-6" />}
                   title="All caught up"
                   description="No conversations match the current filter."
                   action={
@@ -575,14 +575,14 @@ export default function DesignSystemPage() {
               <div className="h-64">
                 <EmptyState
                   size="lg"
-                  icon={<InboxIcon className="h-7 w-7" />}
+                  icon={<InboxIcon className="size-7" />}
                   title="Select a person to begin"
                   description="Choose anyone to see their full communication history."
                 />
               </div>
             </div>
             <CodeBlock>
-              {`<EmptyState\n  icon={<InboxIcon className="h-6 w-6" />}\n  title="All caught up"\n  description="No conversations match the current filter."\n/>\n\n<EmptyState\n  icon={<InboxIcon className="h-6 w-6" />}\n  title="All caught up"\n  description="No conversations match the current filter."\n  action={\n    <Button variant="outline" size="sm">\n      Switch to follow-ups\n    </Button>\n  }\n/>\n\n<EmptyState\n  size="lg"\n  icon={<InboxIcon className="h-7 w-7" />}\n  title="Select a person"\n  description="Choose anyone to view their history."\n/>`}
+              {`<EmptyState\n  icon={<InboxIcon className="size-6" />}\n  title="All caught up"\n  description="No conversations match the current filter."\n/>\n\n<EmptyState\n  icon={<InboxIcon className="size-6" />}\n  title="All caught up"\n  description="No conversations match the current filter."\n  action={\n    <Button variant="outline" size="sm">\n      Switch to follow-ups\n    </Button>\n  }\n/>\n\n<EmptyState\n  size="lg"\n  icon={<InboxIcon className="size-7" />}\n  title="Select a person"\n  description="Choose anyone to view their history."\n/>`}
             </CodeBlock>
           </CatalogSection>
 
@@ -623,7 +623,7 @@ function SwatchCell({
       {textSwatch ? (
         <span className={`text-lg font-bold ${classes}`}>Aa</span>
       ) : (
-        <div className={`h-8 w-8 rounded-md ${classes}`} />
+        <div className={`size-8 rounded-md ${classes}`} />
       )}
       <span className="text-[10px] text-slate-500">{label}</span>
     </div>

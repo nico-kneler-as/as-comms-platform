@@ -81,7 +81,7 @@ export function InboxRow({ item, isActive }: RowProps) {
 
           <div className="mt-0.5 flex items-center gap-1 text-[12px]">
             <ChannelIcon
-              className={`h-3 w-3 shrink-0 ${
+              className={`size-3 shrink-0 ${
                 isUnread ? "text-sky-600" : "text-slate-400"
               }`}
               aria-label={
@@ -110,7 +110,7 @@ export function InboxRow({ item, isActive }: RowProps) {
               ) : null}
               {item.needsFollowUp ? (
                 <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] text-rose-700">
-                  <FlagIcon className="h-2.5 w-2.5" />
+                  <FlagIcon className="size-2.5" />
                   Follow-up
                 </span>
               ) : null}

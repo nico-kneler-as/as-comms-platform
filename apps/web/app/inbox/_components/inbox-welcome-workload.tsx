@@ -114,8 +114,8 @@ function QuoteCard({ quoteText, author, onCycle }: QuoteCardProps) {
         }}
       />
       <div className="relative flex items-start gap-5 p-7">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-700">
-          <QuoteIcon className="h-5 w-5" />
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-700">
+          <QuoteIcon className="size-5" />
         </div>
         <div className="min-w-0 flex-1">
           <SectionLabel as="h2" className="text-teal-700">
@@ -132,7 +132,7 @@ function QuoteCard({ quoteText, author, onCycle }: QuoteCardProps) {
           onClick={onCycle}
           className="text-slate-400 opacity-0 transition-opacity duration-150 hover:text-slate-700 group-hover:opacity-100"
         >
-          <RefreshCwIcon className="h-4 w-4" />
+          <RefreshCwIcon className="size-4" />
         </button>
       </div>
     </div>
@@ -187,14 +187,14 @@ function ProjectMiniDashboard({
                   <div className="flex items-center gap-2">
                     <span
                       aria-hidden="true"
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${t.dot}`}
+                      className={`size-1.5 shrink-0 rounded-full ${t.dot}`}
                     />
                     <span className={`${TYPE.headingSm} truncate`}>
                       {project.projectName}
                     </span>
                   </div>
                 </div>
-                <ArrowUpRightIcon className="h-3.5 w-3.5 shrink-0 text-slate-300 transition-colors group-hover:text-slate-600" />
+                <ArrowUpRightIcon className="size-3.5 shrink-0 text-slate-300 transition-colors group-hover:text-slate-600" />
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-2 pl-2">
@@ -300,7 +300,7 @@ function FollowUpRailRow({ entry, onOpenContact }: FollowUpRailRowProps) {
             >
               <span
                 aria-hidden="true"
-                className={cn("h-1.5 w-1.5 rounded-full", tone.dot)}
+                className={cn("size-1.5 rounded-full", tone.dot)}
               />
               {entry.projectLabel}
             </span>
@@ -311,7 +311,7 @@ function FollowUpRailRow({ entry, onOpenContact }: FollowUpRailRowProps) {
       <span className={cn(TYPE.micro, "shrink-0 whitespace-nowrap")}>
         {entry.lastActivityLabel}
       </span>
-      <ArrowUpRightIcon className="h-3.5 w-3.5 shrink-0 text-slate-300 transition-colors group-hover:text-slate-600" />
+      <ArrowUpRightIcon className="size-3.5 shrink-0 text-slate-300 transition-colors group-hover:text-slate-600" />
     </button>
   );
 }

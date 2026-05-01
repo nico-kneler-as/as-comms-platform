@@ -218,7 +218,7 @@ export function ActivationWizard({
                 onClick={handleClose}
                 className="flex size-8 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <X className="h-4 w-4" aria-hidden="true" />
+                <X className="size-4" aria-hidden="true" />
               </button>
             </header>
 
@@ -307,7 +307,7 @@ export function ActivationWizard({
                 disabled={state.step === 0 || isActivated || isPending}
                 className="inline-flex items-center gap-1.5 text-[12.5px] text-slate-600 transition-colors hover:text-slate-900 disabled:invisible"
               >
-                <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                <ArrowLeft className="size-3.5" aria-hidden="true" />
                 Back
               </button>
 
@@ -326,7 +326,7 @@ export function ActivationWizard({
                   {state.activationStatus === "pending" ? (
                     <>
                       <RefreshCw
-                        className="h-3.5 w-3.5 animate-spin"
+                        className="size-3.5 animate-spin"
                         aria-hidden="true"
                       />
                       Activating...
@@ -342,7 +342,7 @@ export function ActivationWizard({
                   disabled={!canContinue || state.knowledgeStatus === "syncing"}
                 >
                   Continue
-                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  <ChevronRight className="size-3.5" aria-hidden="true" />
                 </Button>
               )}
             </footer>

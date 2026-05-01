@@ -542,7 +542,7 @@ export function ProjectDetail({
             RADIUS.sm
           )}
         >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          <ArrowLeft className="size-3.5" aria-hidden="true" />
           Back to Projects
         </Link>
 
@@ -690,7 +690,7 @@ export function ProjectDetail({
                   )}
                 >
                   <Mail
-                    className="h-3.5 w-3.5 shrink-0 text-slate-400"
+                    className="size-3.5 shrink-0 text-slate-400"
                     aria-hidden="true"
                   />
                   <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-slate-800">
@@ -737,7 +737,7 @@ export function ProjectDetail({
                         "disabled:cursor-not-allowed disabled:opacity-40"
                       )}
                     >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      <Trash2 className="size-3.5" aria-hidden="true" />
                     </button>
                   ) : null}
                 </div>
@@ -784,7 +784,7 @@ export function ProjectDetail({
           <span className={TYPE.label}>AI knowledge source</span>
           <div className="flex flex-col gap-2">
             <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 sm:flex-row sm:items-center">
-              <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-white text-[10px] font-semibold text-slate-900 ring-1 ring-slate-200">
+              <span className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-white text-[10px] font-semibold text-slate-900 ring-1 ring-slate-200">
                 N
               </span>
               <div className="min-w-0 flex-1">

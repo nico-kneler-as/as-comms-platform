@@ -67,7 +67,7 @@ export function ProjectsSection({
                       openWizard();
                     }}
                   >
-                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    <Plus className="size-3.5" aria-hidden="true" />
                     Activate a project
                   </Button>
                 ) : null}
@@ -77,8 +77,8 @@ export function ProjectsSection({
               projects={viewModel.active}
               emptyMessage="No active projects yet."
               renderLeading={() => (
-                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/60">
-                  <FolderOpen className="h-4 w-4" aria-hidden="true" />
+                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/60">
+                  <FolderOpen className="size-4" aria-hidden="true" />
                 </span>
               )}
               renderMeta={() => (
@@ -93,14 +93,14 @@ export function ProjectsSection({
                   href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
                   aria-label={`Open ${project.projectName}`}
                   className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center",
+                    "flex size-8 shrink-0 items-center justify-center",
                     RADIUS.sm,
                     "text-slate-400 hover:bg-slate-100 hover:text-slate-700",
                     TRANSITION.fast,
                     FOCUS_RING
                   )}
                 >
-                  <Pencil className="h-4 w-4" aria-hidden="true" />
+                  <Pencil className="size-4" aria-hidden="true" />
                 </Link>
               )}
             />

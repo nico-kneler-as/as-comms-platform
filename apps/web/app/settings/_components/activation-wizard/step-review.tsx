@@ -67,15 +67,15 @@ export function StepReview({
         <p className="font-medium text-slate-900">What happens on activate</p>
         <ul className="mt-2 space-y-1.5">
           <li className="flex gap-2">
-            <Check className="mt-0.5 h-3 w-3 text-emerald-600" aria-hidden="true" />
+            <Check className="mt-0.5 size-3 text-emerald-600" aria-hidden="true" />
             Project becomes active and starts routing inbound mail.
           </li>
           <li className="flex gap-2">
-            <Mail className="mt-0.5 h-3 w-3 text-emerald-600" aria-hidden="true" />
+            <Mail className="mt-0.5 size-3 text-emerald-600" aria-hidden="true" />
             All inbox aliases route to this project.
           </li>
           <li className="flex gap-2">
-            <Check className="mt-0.5 h-3 w-3 text-emerald-600" aria-hidden="true" />
+            <Check className="mt-0.5 size-3 text-emerald-600" aria-hidden="true" />
             Future AI drafts use the synced Notion knowledge.
           </li>
         </ul>
