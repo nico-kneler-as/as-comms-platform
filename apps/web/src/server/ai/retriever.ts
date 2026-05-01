@@ -1,4 +1,5 @@
 import type { Stage1RepositoryBundle } from "@as-comms/domain";
+import { filterItemsAtOrAfterPlatformFullCaptureCutover } from "@/app/_lib/cutover";
 
 import type {
   AiDraftGrounding,
@@ -147,9 +148,9 @@ export async function retrieveGrounding(
     );
   }
 
-  const communicationEvents = canonicalEvents.filter((event) =>
-    isCommunicationEvent(event.eventType),
-  );
+  const communicationEvents = filterItemsAtOrAfterPlatformFullCaptureCutover(
+    canonicalEvents,
+  ).filter((event) => isCommunicationEvent(event.eventType));
   const sourceEvidenceIds = communicationEvents.map((event) => event.sourceEvidenceId);
   const [gmailDetails, salesforceDetails, simpleTextingDetails] =
     await Promise.all([

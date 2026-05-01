@@ -10,6 +10,10 @@ import type {
 
 import { recordSensitiveReadForCurrentUserDetached } from "@/src/server/security/audit";
 import { getStage1WebRuntime } from "../../../src/server/stage1-runtime";
+import {
+  occurredAtIsBeforePlatformFullCaptureCutover,
+  filterItemsAtOrAfterPlatformFullCaptureCutover,
+} from "@/app/_lib/cutover";
 
 import { INBOX_FILTERS } from "./filters";
 import type {
@@ -113,6 +117,7 @@ interface InboxDetailCacheData {
   >;
   readonly timelinePage: {
     readonly hasMore: boolean;
+    readonly hasHiddenEarlierHistory: boolean;
     readonly nextCursor: string | null;
     readonly total: number;
   };
@@ -2190,7 +2195,7 @@ function buildComposerReplyContext(input: {
   readonly timelineItems: readonly TimelineItem[];
   readonly defaultAlias: string | null;
 }): InboxComposerReplyContext | null {
-  const inboundEmails = [...input.timelineItems]
+  const inboundEmails = [...filterItemsAtOrAfterPlatformFullCaptureCutover(input.timelineItems)]
     .reverse()
     .filter(
       (item): item is Extract<TimelineItem, { family: "one_to_one_email" }> =>
@@ -2214,6 +2219,46 @@ function buildComposerReplyContext(input: {
     inReplyToRfc822: latestInboundEmail.rfc822MessageId ?? null,
     defaultAlias: input.defaultAlias,
     cc: extractEmailAddresses(latestInboundEmail.ccHeader),
+  };
+}
+
+function paginateTimelineItems(input: {
+  readonly timelineItems: readonly TimelineItem[];
+  readonly limit: number;
+  readonly beforeSortKey: string | null;
+}): {
+  readonly items: readonly TimelineItem[];
+  readonly hasMore: boolean;
+  readonly nextCursor: string | null;
+  readonly total: number;
+} {
+  const total = input.timelineItems.length;
+  const endIndex =
+    input.beforeSortKey === null
+      ? total
+      : input.timelineItems.findIndex(
+          (item) => item.sortKey === input.beforeSortKey,
+        );
+
+  if (endIndex <= 0) {
+    return {
+      items: [],
+      hasMore: false,
+      nextCursor: null,
+      total,
+    };
+  }
+
+  const sliceEnd = endIndex === -1 ? total : endIndex;
+  const sliceStart = Math.max(0, sliceEnd - input.limit);
+  const items = input.timelineItems.slice(sliceStart, sliceEnd);
+  const hasMore = sliceStart > 0;
+
+  return {
+    items,
+    hasMore,
+    nextCursor: hasMore ? items[0]?.sortKey ?? null : null,
+    total,
   };
 }
 
@@ -2793,7 +2838,6 @@ async function readInboxDetailCacheData(
     memberships,
     latestNote,
     activityTimelineItems,
-    timelinePage,
     inboxFreshness,
     timelineFreshness,
     canonicalEvents,
@@ -2817,10 +2861,6 @@ async function readInboxDetailCacheData(
             };
       }),
     runtime.timelinePresentation.listTimelineItemsByContactId(contactId),
-    runtime.timelinePresentation.listTimelineItemsPageByContactId(contactId, {
-      limit: input.timelineLimit,
-      beforeSortKey: input.timelineCursor,
-    }),
     runtime.repositories.inboxProjection.getFreshnessByContactId(contactId),
     runtime.repositories.timelineProjection.getFreshnessByContactId(contactId),
     runtime.repositories.canonicalEvents.listByContactId(contactId),
@@ -2853,6 +2893,17 @@ async function readInboxDetailCacheData(
     aliasesByProjectId.set(aliasRecord.projectId, aliases);
   }
 
+  const visibleTimelineItems = filterItemsAtOrAfterPlatformFullCaptureCutover(
+    activityTimelineItems,
+  );
+  const timelinePage = paginateTimelineItems({
+    timelineItems: visibleTimelineItems,
+    limit: input.timelineLimit,
+    beforeSortKey: input.timelineCursor,
+  });
+  const hasHiddenEarlierHistory = canonicalEvents.some((event) =>
+    occurredAtIsBeforePlatformFullCaptureCutover(event.occurredAt),
+  );
   const gmailSourceEvidenceIds = uniqueStrings(
     canonicalEvents
       .filter((event) => event.eventType === "communication.email.outbound")
@@ -2932,7 +2983,8 @@ async function readInboxDetailCacheData(
     ),
     timelinePage: {
       hasMore: timelinePage.hasMore,
-      nextCursor: timelinePage.hasMore ? timelinePage.nextBeforeSortKey : null,
+      hasHiddenEarlierHistory,
+      nextCursor: timelinePage.nextCursor,
       total: timelinePage.total,
     },
     freshness: {
@@ -2941,7 +2993,7 @@ async function readInboxDetailCacheData(
         timelineFreshness.latestUpdatedAt ??
         timelinePage.items[timelinePage.items.length - 1]?.occurredAt ??
         null,
-      timelineCount: timelinePage.total,
+      timelineCount: timelineFreshness.total,
     },
   };
 }
