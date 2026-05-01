@@ -626,13 +626,13 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
 
       <div
         className={cn(
-          `overflow-hidden border-l ${TRANSITION.layout} ${TRANSITION.reduceMotion}`,
+          `min-h-0 shrink-0 overflow-hidden border-l ${TRANSITION.layout} ${TRANSITION.reduceMotion}`,
           railOpen
             ? `${LAYOUT.railWidth} border-slate-200 opacity-100`
             : "w-0 border-transparent opacity-0",
         )}
       >
-        <div className={LAYOUT.railWidth}>
+        <div className={`min-h-0 ${LAYOUT.railWidth}`}>
           <InboxContactRail
             contact={contact}
             onClose={() => {
