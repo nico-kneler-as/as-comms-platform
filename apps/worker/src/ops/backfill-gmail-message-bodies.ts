@@ -146,7 +146,7 @@ function isGmailMessageRecord(
   return record.recordType === "message";
 }
 
-function mapLiveRecordToDetailRow(input: {
+export function mapLiveRecordToDetailRow(input: {
   readonly sourceEvidenceId: string;
   readonly record: GmailMessageRecord;
 }): GmailMessageDetailRecord {

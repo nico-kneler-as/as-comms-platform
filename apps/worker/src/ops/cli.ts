@@ -37,6 +37,7 @@ import { runBackfillMailchimpCampaignBodyCommand } from "./backfill-mailchimp-ca
 import { runCleanupGmailDraftEventsCommand } from "./cleanup-gmail-draft-events.js";
 import { runCleanupSalesforceOwnerScopeCommand } from "./cleanup-salesforce-owner-scope.js";
 import { main as runMergeEmailOnlyIntoSfAnchoredCommand } from "./merge-email-only-into-sf-anchored.js";
+import { runRecoverOrphanGmailDetailsCommand } from "./recover-orphan-gmail-details.js";
 import { reconcileIdentityQueue } from "./reconcile-identity-queue.js";
 import { reconcileRoutingReviewQueue } from "./reconcile-routing-review-queue.js";
 import { runDedupHistoricalLedgerCommand } from "./dedup-historical-ledger.js";
@@ -395,6 +396,9 @@ async function main(): Promise<void> {
     case "cleanup-gmail-draft-events":
       await runCleanupGmailDraftEventsCommand(rest, process.env);
       return;
+    case "recover-orphan-gmail-details":
+      await runRecoverOrphanGmailDetailsCommand(rest, process.env);
+      return;
     case "dedup-historical-ledger":
       await runDedupHistoricalLedgerCommand(rest, process.env);
       return;
@@ -412,7 +416,7 @@ async function main(): Promise<void> {
       return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, backfill-mailchimp-campaign-body, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction.",
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, backfill-mailchimp-campaign-body, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, recover-orphan-gmail-details, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction.",
       );
   }
 }
