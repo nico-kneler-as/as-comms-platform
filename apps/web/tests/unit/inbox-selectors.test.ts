@@ -2588,14 +2588,19 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:past-signup-year");
 
+    // Past projects sort by membership.createdAt desc (newest first).
+    // Old Ledger Year has membershipCreatedAt 2026-02-01, Fallback has 2024-05-01.
+    // signupYear is independent of sort: derived from earliest project event
+    // (2021 for Old Ledger via lifecycle event), or falls back to membership
+    // year (2024 for Fallback Membership Year, no events).
     expect(detail?.contact.pastProjects).toMatchObject([
-      {
-        projectName: "Fallback Membership Year",
-        signupYear: 2024,
-      },
       {
         projectName: "Old Ledger Year",
         signupYear: 2021,
+      },
+      {
+        projectName: "Fallback Membership Year",
+        signupYear: 2024,
       },
     ]);
   });
