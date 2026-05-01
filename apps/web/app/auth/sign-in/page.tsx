@@ -15,7 +15,7 @@ async function signInWithGoogle(): Promise<void> {
 
 export default function SignInPage() {
   return (
-    <main className="flex min-h-screen w-full items-center justify-center bg-slate-50 p-6">
+    <main className="flex min-h-dvh w-full items-center justify-center bg-slate-50 p-6">
       <section className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
         <header className="mb-6 flex flex-col gap-1 text-center">
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">

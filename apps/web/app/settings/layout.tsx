@@ -39,7 +39,7 @@ export default async function SettingsLayout({
   });
 
   return (
-    <div className="flex min-h-screen w-full bg-slate-100 text-slate-900 antialiased">
+    <div className="flex min-h-dvh w-full bg-slate-100 text-slate-900 antialiased">
       <PrimaryIconRail
         operator={{
           initials: getInitials(currentUser.name ?? currentUser.email),

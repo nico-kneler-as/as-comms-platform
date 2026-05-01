@@ -98,9 +98,9 @@ const NAV_ITEMS = [
 
 export default function DesignSystemPage() {
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-dvh bg-slate-50">
       {/* Sidebar nav */}
-      <nav className="sticky top-0 flex h-screen w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-slate-200 bg-white px-3 py-6">
+      <nav className="sticky top-0 flex h-dvh w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-slate-200 bg-white px-3 py-6">
         <p className="mb-4 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
           Design System
         </p>

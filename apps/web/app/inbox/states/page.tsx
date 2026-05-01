@@ -785,7 +785,7 @@ function AiStatePreview({
 
 export default function InboxStatesPage() {
   return (
-    <div className="min-h-screen bg-slate-100 p-6">
+    <div className="min-h-dvh bg-slate-100 p-6">
       <div className="mx-auto max-w-5xl space-y-6">
         {/* Page header */}
         <div>
