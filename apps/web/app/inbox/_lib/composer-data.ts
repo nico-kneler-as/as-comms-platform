@@ -44,10 +44,7 @@ export async function getInboxComposerAliases(): Promise<
         projectName: project.projectName,
         isAiConfigured,
         hasCachedContent: hasCachedContentByProjectId.has(alias.projectId),
-        isAiReady:
-          project.isActive === true &&
-          isAiConfigured &&
-          hasCachedContentByProjectId.has(alias.projectId),
+        isAiReady: project.isActive === true && isAiConfigured,
       },
     ];
   });

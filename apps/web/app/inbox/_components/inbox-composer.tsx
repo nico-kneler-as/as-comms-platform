@@ -925,7 +925,9 @@ export function InboxComposerDetailPane() {
               isGeneratingAi={isGeneratingAi}
               runAiDraftDisabled={runAiDraftDisabled}
               runAiDraftDisabledReason={runAiDraftDisabledReason}
-              selectedAliasAiReady={selectedAliasRecord?.isAiReady === true}
+              selectedAliasHasCachedContent={
+                selectedAliasRecord?.hasCachedContent === true
+              }
               selectedAliasProjectName={
                 selectedAliasRecord?.projectName ?? null
               }

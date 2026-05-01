@@ -469,6 +469,8 @@ const composerAliases: readonly InboxComposerAliasOption[] = [
     projectId: "project:whitebark",
     projectName: "Whitebark Pine",
     isAiReady: true,
+    isAiConfigured: true,
+    hasCachedContent: true,
   },
 ];
 
@@ -621,6 +623,25 @@ function TestApp() {
       composerAliases={composerAliases}
       currentActorId="user:operator"
     >
+      <InboxKeyboardProvider>
+        <InboxWorkspace>
+          <section data-testid="underlying-conversation">
+            Conversation remains visible
+          </section>
+          <ComposerControls />
+        </InboxWorkspace>
+      </InboxKeyboardProvider>
+    </InboxClientProvider>
+  );
+}
+
+function TestAppWithAliases({
+  aliases,
+}: {
+  readonly aliases: readonly InboxComposerAliasOption[];
+}) {
+  return (
+    <InboxClientProvider composerAliases={aliases} currentActorId="user:operator">
       <InboxKeyboardProvider>
         <InboxWorkspace>
           <section data-testid="underlying-conversation">
@@ -876,6 +897,30 @@ describe("composer canonical modal", () => {
 
     expect(getInput("Cc").value).toBe("partner@example.org");
     expect(getInput("Bcc").value).toBe("archive@example.org");
+  });
+
+  it("keeps AI Draft enabled when AI is configured without cached project knowledge", async () => {
+    await mount(
+      <TestAppWithAliases
+        aliases={[
+          {
+            id: "alias:whitebark",
+            alias: "whitebark@adventurescientists.org",
+            projectId: "project:whitebark",
+            projectName: "Whitebark Pine",
+            isAiReady: false,
+            isAiConfigured: true,
+            hasCachedContent: false,
+          },
+        ]}
+      />,
+    );
+
+    await click(getByText("Open new draft"));
+
+    const aiDraftButton = getByText("Draft with AI");
+    expect(aiDraftButton).toBeInstanceOf(HTMLButtonElement);
+    expect((aiDraftButton as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("closes from the modal header and from the minimized pill", async () => {
