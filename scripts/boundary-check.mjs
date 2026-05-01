@@ -31,11 +31,37 @@ const workspaceRules = {
       "@as-comms/integrations"
     ])
   },
+  "apps/worker": {
+    allowedWorkspaceImports: new Set([
+      "@as-comms/contracts",
+      "@as-comms/domain",
+      "@as-comms/integrations",
+      "@as-comms/db"
+    ])
+  },
   "packages/contracts": {
     allowedWorkspaceImports: new Set()
   },
+  "packages/db": {
+    // db consumes contracts (table types) and domain (record shapes
+    // re-exported by repositories.ts). It does NOT consume integrations
+    // — that would be a layer inversion.
+    allowedWorkspaceImports: new Set([
+      "@as-comms/contracts",
+      "@as-comms/domain"
+    ])
+  },
   "packages/domain": {
     allowedWorkspaceImports: new Set(["@as-comms/contracts"])
+  },
+  "packages/integrations": {
+    // integrations consumes contracts (provider record schemas) and
+    // domain (capture-service types). The one test-only import of
+    // `@as-comms/db/test-helpers` gets a narrow per-file exception below.
+    allowedWorkspaceImports: new Set([
+      "@as-comms/contracts",
+      "@as-comms/domain"
+    ])
   },
   "packages/ui": {
     allowedWorkspaceImports: new Set()
@@ -63,6 +89,25 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
     // Test-only split of the composition root. Keeps `@as-comms/db/test-helpers`
     // (which pulls in PGlite) off the production Edge Runtime bundle path.
     // Only test files may import this module.
+    return true;
+  }
+
+  if (
+    relativeFile === "apps/worker/test/helpers.ts" &&
+    specifier === "@as-comms/db/test-helpers"
+  ) {
+    // Worker tests centralize Stage 1 PGlite-backed db fixture wiring here.
+    // Keep the exception narrow to the single local test-helper module.
+    return true;
+  }
+
+  if (
+    relativeFile ===
+      "packages/integrations/test/stage3-gmail-reconciliation.test.ts" &&
+    specifier === "@as-comms/db/test-helpers"
+  ) {
+    // Test-only reconciliation coverage needs the Stage 1 db helper wiring.
+    // Keep this escape hatch narrow to the single spec and specifier.
     return true;
   }
 
