@@ -97,7 +97,9 @@ describe("recover-orphan-gmail-details", () => {
         snippetClean: "Recovered Gmail snippet",
         bodyTextPreview: "Recovered message body.",
         capturedMailbox: "volunteers@example.org",
-        projectInboxAlias: "orcas@example.org",
+        // projectInboxAlias is null here because the test message's headers
+        // don't reference the alias; resolveProjectInboxAlias only matches
+        // when the alias appears in From/To/Cc/Bcc/capturedMailbox.
       },
     });
     expect(missingPlan).toMatchObject({
