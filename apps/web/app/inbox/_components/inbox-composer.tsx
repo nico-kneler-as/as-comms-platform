@@ -615,13 +615,18 @@ export function InboxComposerDetailPane() {
 
   const handleFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.currentTarget.files;
-    event.currentTarget.value = "";
-
     if (files === null || files.length === 0) {
+      // Picker dispatched change with no selection — treat as cancel.
+      event.currentTarget.value = "";
       return;
     }
 
+    // HTMLInputElement.files is a *live* FileList: resetting `.value`
+    // empties it. Snapshot to a real array before the reset so the rest
+    // of the handler keeps its file references and the user's selection
+    // actually arrives in the attachment list.
     const selectedFiles = Array.from(files);
+    event.currentTarget.value = "";
     const nextTotalBytes =
       attachmentBytes +
       selectedFiles.reduce((total, file) => total + file.size, 0);
