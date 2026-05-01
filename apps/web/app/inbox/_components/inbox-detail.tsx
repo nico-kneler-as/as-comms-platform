@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useOptimistic,
   useRef,
   useState,
@@ -38,6 +39,7 @@ import type {
   InboxComposerReplyContext,
   InboxDetailViewModel,
   InboxTimelineEntryViewModel,
+  OptimisticOutbound,
 } from "../_lib/view-models";
 import type { UiError, UiResult } from "@/src/server/ui-result";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
@@ -131,6 +133,37 @@ function buildTimelineReplyContext(input: {
   };
 }
 
+function sortTimelineEntries(
+  entries: readonly InboxTimelineEntryViewModel[],
+): readonly InboxTimelineEntryViewModel[] {
+  return [...entries].sort((left, right) =>
+    left.occurredAt.localeCompare(right.occurredAt),
+  );
+}
+
+function realEntryMatchesOptimistic(
+  realEntry: InboxTimelineEntryViewModel,
+  optimisticEntry: OptimisticOutbound,
+): boolean {
+  if (realEntry.id === optimisticEntry.id) {
+    return false;
+  }
+
+  if (realEntry.kind !== optimisticEntry.kind) {
+    return false;
+  }
+
+  if (realEntry.subject !== optimisticEntry.subject) {
+    return false;
+  }
+
+  if (realEntry.mailbox !== optimisticEntry.mailbox) {
+    return false;
+  }
+
+  return realEntry.occurredAt >= optimisticEntry.occurredAt;
+}
+
 export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const { contact } = detail;
   const timelineScrollRef = useRef<HTMLDivElement>(null);
@@ -143,6 +176,9 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     clearReminder,
     isTimelineLoading,
     setTimelineLoading,
+    optimisticOutbounds,
+    clearOptimisticForContact,
+    removeOptimisticOutbound,
     openReplyDraft,
     showToast,
   } = useInboxClient();
@@ -163,10 +199,12 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     setTimelinePage(detail.timelinePage);
 
     if (previousContactIdRef.current !== detail.contact.contactId) {
+      clearOptimisticForContact(previousContactIdRef.current);
       shouldScrollToLatestRef.current = true;
       previousContactIdRef.current = detail.contact.contactId;
     }
   }, [
+    clearOptimisticForContact,
     detail.contact.contactId,
     detail.freshness.inboxUpdatedAt,
     detail.freshness.timelineCount,
@@ -175,6 +213,39 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     detail.timelinePage,
     setTimelineLoading,
   ]);
+
+  const activeOptimisticOutbounds = useMemo(
+    () =>
+      optimisticOutbounds.filter(
+        (entry) => entry.contactId === detail.contact.contactId,
+      ),
+    [detail.contact.contactId, optimisticOutbounds],
+  );
+
+  const mergedTimelineEntries = useMemo(
+    () => sortTimelineEntries([...timelineEntries, ...activeOptimisticOutbounds]),
+    [activeOptimisticOutbounds, timelineEntries],
+  );
+
+  useEffect(() => {
+    const matchedSettledIds = activeOptimisticOutbounds
+      .filter(
+        (entry) =>
+          entry.settledAt !== null &&
+          timelineEntries.some((realEntry) =>
+            realEntryMatchesOptimistic(realEntry, entry),
+          ),
+      )
+      .map((entry) => entry.clientGeneratedId);
+
+    if (matchedSettledIds.length === 0) {
+      return;
+    }
+
+    for (const clientGeneratedId of matchedSettledIds) {
+      removeOptimisticOutbound(clientGeneratedId);
+    }
+  }, [activeOptimisticOutbounds, removeOptimisticOutbound, timelineEntries]);
 
   useEffect(() => {
     if (!shouldScrollToLatestRef.current) {
@@ -195,7 +266,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [detail.contact.contactId, timelineEntries]);
+  }, [detail.contact.contactId, mergedTimelineEntries]);
 
   const loadOlderTimeline = useCallback(async () => {
     if (!timelinePage.hasMore || timelinePage.nextCursor === null) {
@@ -313,7 +384,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const composerReplyContext = detail.composerReplyContext;
   const handleReply = useCallback(
     (entryId: string) => {
-      const entry = timelineEntries.find((item) => item.id === entryId);
+      const entry = mergedTimelineEntries.find((item) => item.id === entryId);
 
       if (entry === undefined) {
         if (composerReplyContext !== null) {
@@ -338,8 +409,8 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
       composerReplyContext,
       contact.contactId,
       contact.displayName,
+      mergedTimelineEntries,
       openReplyDraft,
-      timelineEntries,
     ],
   );
 
@@ -358,7 +429,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
 
   const handleRetryPending = useCallback(
     (entryId: string) => {
-      const entry = timelineEntries.find((item) => item.id === entryId);
+      const entry = mergedTimelineEntries.find((item) => item.id === entryId);
 
       if (
         entry?.sendStatus === undefined ||
@@ -372,9 +443,11 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
 
       const pendingId = entry.id.startsWith("pending-outbound:")
         ? entry.id.slice("pending-outbound:".length)
-        : null;
+        : entry.id.startsWith("optimistic:")
+          ? null
+          : null;
 
-      if (pendingId === null) {
+      if (!entry.id.startsWith("pending-outbound:") && !entry.id.startsWith("optimistic:")) {
         return;
       }
 
@@ -397,7 +470,9 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
             ...(entry.inReplyToRfc822 === null
               ? {}
               : { inReplyToRfc822: entry.inReplyToRfc822 }),
-            supersedesPendingId: pendingId,
+            ...(pendingId === null
+              ? {}
+              : { supersedesPendingId: pendingId }),
           });
 
           if (result.ok) {
@@ -411,7 +486,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
         setRetryingEntryId(null);
       });
     },
-    [contact.contactId, contact.displayName, showToast, timelineEntries],
+    [contact.contactId, contact.displayName, mergedTimelineEntries, showToast],
   );
 
   return (
@@ -587,11 +662,11 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
           ref={timelineScrollRef}
           className={`min-h-0 flex-1 overflow-y-auto ${TONE_CLASSES.slate.subtle} ${SPACING.container}`}
         >
-          {isTimelineLoading && timelineEntries.length === 0 ? (
+          {isTimelineLoading && mergedTimelineEntries.length === 0 ? (
             <TimelineSkeleton />
           ) : (
             <InboxTimeline
-              entries={timelineEntries}
+              entries={mergedTimelineEntries}
               volunteerFirstName={firstName}
               currentOperatorUserId={currentOperatorUserId}
               showEarlierHistoryDivider={

@@ -13,6 +13,7 @@ import type { AiDraftRequestPayload, AiDraftResponseVm } from "../actions";
 import type {
   InboxComposerAliasOption,
   InboxComposerReplyContext,
+  OptimisticOutbound,
 } from "../_lib/view-models";
 import {
   reduceComposerPane,
@@ -123,9 +124,19 @@ export interface InboxToastState {
 
 interface InboxClientState {
   readonly currentActorId: string;
+  readonly operatorDisplayName: string;
   readonly reminders: ReadonlyMap<string, Reminder>;
   readonly setReminder: (contactId: string, reminder: Reminder) => void;
   readonly clearReminder: (contactId: string) => void;
+  readonly optimisticOutbounds: readonly OptimisticOutbound[];
+  readonly addOptimisticOutbound: (entry: OptimisticOutbound) => void;
+  readonly markOptimisticSettled: (clientGeneratedId: string) => void;
+  readonly markOptimisticFailed: (
+    clientGeneratedId: string,
+    reason: string,
+  ) => void;
+  readonly removeOptimisticOutbound: (clientGeneratedId: string) => void;
+  readonly clearOptimisticForContact: (contactId: string) => void;
 
   readonly search: SearchState;
   readonly setSearchQuery: (query: string) => void;
@@ -198,10 +209,12 @@ export function InboxClientProvider({
   children,
   composerAliases,
   currentActorId,
+  operatorDisplayName = currentActorId,
 }: {
   readonly children: ReactNode;
   readonly composerAliases: readonly InboxComposerAliasOption[];
   readonly currentActorId: string;
+  readonly operatorDisplayName?: string;
 }) {
   const [reminders, setReminders] = useState<ReadonlyMap<string, Reminder>>(
     () => new Map<string, Reminder>(),
@@ -219,6 +232,9 @@ export function InboxClientProvider({
   >([]);
   const [toast, setToast] = useState<InboxToastState | null>(null);
   const [aiDraft, setAiDraft] = useState(INITIAL_AI_DRAFT);
+  const [optimisticOutbounds, setOptimisticOutbounds] = useState<
+    readonly OptimisticOutbound[]
+  >([]);
 
   const setReminder = useCallback((contactId: string, reminder: Reminder) => {
     setReminders((previous) => {
@@ -257,6 +273,54 @@ export function InboxClientProvider({
 
   const clearSearch = useCallback(() => {
     setSearch(INITIAL_SEARCH);
+  }, []);
+
+  const addOptimisticOutbound = useCallback((entry: OptimisticOutbound) => {
+    setOptimisticOutbounds((previous) => [...previous, entry]);
+  }, []);
+
+  const markOptimisticSettled = useCallback((clientGeneratedId: string) => {
+    setOptimisticOutbounds((previous) =>
+      previous.map((entry) =>
+        entry.clientGeneratedId === clientGeneratedId
+          ? {
+              ...entry,
+              settledAt: Date.now(),
+            }
+          : entry,
+      ),
+    );
+  }, []);
+
+  const markOptimisticFailed = useCallback(
+    (clientGeneratedId: string, reason: string) => {
+      setOptimisticOutbounds((previous) =>
+        previous.map((entry) =>
+          entry.clientGeneratedId === clientGeneratedId
+            ? {
+                ...entry,
+                sendStatus: "failed",
+                failedReason: "send_failed",
+                failedDetail: reason,
+                settledAt: null,
+              }
+            : entry,
+        ),
+      );
+    },
+    [],
+  );
+
+  const removeOptimisticOutbound = useCallback((clientGeneratedId: string) => {
+    setOptimisticOutbounds((previous) =>
+      previous.filter((entry) => entry.clientGeneratedId !== clientGeneratedId),
+    );
+  }, []);
+
+  const clearOptimisticForContact = useCallback((contactId: string) => {
+    setOptimisticOutbounds((previous) =>
+      previous.filter((entry) => entry.contactId !== contactId),
+    );
   }, []);
 
   const openNewDraft = useCallback(() => {
@@ -507,9 +571,16 @@ export function InboxClientProvider({
   const value = useMemo<InboxClientState>(
     () => ({
       currentActorId,
+      operatorDisplayName,
       reminders,
       setReminder,
       clearReminder,
+      optimisticOutbounds,
+      addOptimisticOutbound,
+      markOptimisticSettled,
+      markOptimisticFailed,
+      removeOptimisticOutbound,
+      clearOptimisticForContact,
       search,
       setSearchQuery,
       setSearchResults,
@@ -550,9 +621,16 @@ export function InboxClientProvider({
     }),
     [
       currentActorId,
+      operatorDisplayName,
       reminders,
       setReminder,
       clearReminder,
+      optimisticOutbounds,
+      addOptimisticOutbound,
+      markOptimisticSettled,
+      markOptimisticFailed,
+      removeOptimisticOutbound,
+      clearOptimisticForContact,
       search,
       setSearchQuery,
       setSearchResults,

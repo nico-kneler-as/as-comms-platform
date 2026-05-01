@@ -34,6 +34,7 @@ import {
   resolveSendAndSaveForAiAvailability,
   type ComposerSendKind,
 } from "../_lib/composer-ui";
+import type { OptimisticOutbound } from "../_lib/view-models";
 import {
   clearDraft,
   loadDraft,
@@ -103,6 +104,19 @@ function resolveSupplementaryRecipientEmails(input: {
   return {
     ok: true,
     emails,
+  };
+}
+
+function toOptimisticAttachment(attachment: AttachmentDraft, index: number) {
+  return {
+    id: `optimistic-attachment:${attachment.id}:${String(index)}`,
+    mimeType: attachment.contentType,
+    filename: attachment.filename,
+    sizeBytes: attachment.size,
+    proxyUrl:
+      attachment.contentBase64 === null
+        ? ""
+        : `data:${attachment.contentType};base64,${attachment.contentBase64}`,
   };
 }
 
@@ -184,6 +198,7 @@ export function InboxComposerDetailPane() {
   const router = useRouter();
   const {
     currentActorId,
+    operatorDisplayName,
     composerAliases,
     composerPane,
     composerView,
@@ -204,6 +219,9 @@ export function InboxComposerDetailPane() {
     cancelReprompt,
     resetAiDraft,
     setAiError,
+    addOptimisticOutbound,
+    markOptimisticSettled,
+    markOptimisticFailed,
   } = useInboxClient();
   const [activeTab, setActiveTab] = useState<"email" | "note">("email");
   const [recipient, setRecipient] = useState<ComposerRecipientValue | null>(
@@ -765,34 +783,89 @@ export function InboxComposerDetailPane() {
         ? { inReplyToRfc822: replyContext.inReplyToRfc822 }
         : {}),
     };
+    const clientGeneratedId = crypto.randomUUID();
+    const recipientLabel = resolveRecipientLabel(recipient);
+    const occurredAt = new Date().toISOString();
+    const optimisticEntry: OptimisticOutbound = {
+      id: `optimistic:${clientGeneratedId}`,
+      clientGeneratedId,
+      contactId: recipient.kind === "contact" ? recipient.contactId : null,
+      settledAt: null,
+      kind: "outbound-email",
+      occurredAt,
+      occurredAtLabel: "Just now",
+      actorLabel: operatorDisplayName,
+      subject: subject.trim(),
+      body: body.trim(),
+      channel: "email",
+      isUnread: false,
+      isPreview: false,
+      fromHeader: selectedAlias,
+      toHeader: recipientLabel,
+      recipientLabel,
+      ccHeader:
+        resolvedCc.emails.length > 0 ? resolvedCc.emails.join(", ") : null,
+      mailbox: selectedAlias,
+      threadId: replyContext?.threadId ?? null,
+      rfc822MessageId: null,
+      inReplyToRfc822: replyContext?.inReplyToRfc822 ?? null,
+      sendStatus: "pending",
+      failedReason: null,
+      failedDetail: null,
+      attachmentCount: attachments.length,
+      attachments: attachments.map(toOptimisticAttachment),
+      campaignActivity: [],
+    };
 
     setInlineError(null);
     setComposerErrors([]);
     setComposerStatus("sending");
+    addOptimisticOutbound(optimisticEntry);
+
+    if (draftKey !== null) {
+      clearDraft(draftKey);
+    }
+    closeComposer();
 
     startSendTransition(async () => {
-      const result = await sendComposerAction(payload);
+      try {
+        const result = await sendComposerAction({
+          ...payload,
+          clientGeneratedId,
+        });
 
-      if (result.ok) {
-        if (draftKey !== null) {
-          clearDraft(draftKey);
+        if (result.ok) {
+          if (result.data.clientGeneratedId !== null) {
+            markOptimisticSettled(result.data.clientGeneratedId);
+          }
+          setComposerStatus("sent-success");
+          showToast(`Sent to ${recipientLabel}`, "success");
+          router.refresh();
+          return;
         }
-        setComposerStatus("sent-success");
-        showToast(`Sent to ${resolveRecipientLabel(recipient)}`, "success");
-        closeComposer();
-        return;
-      }
 
-      setComposerErrors(mapFieldErrors(result));
-      setComposerStatus(
-        result.code === "validation_error"
-          ? "validation-error"
-          : "send-failure",
-      );
-      setInlineError({
-        message: result.message,
-        retryable: result.retryable === true,
-      });
+        markOptimisticFailed(clientGeneratedId, result.message);
+        setComposerErrors(mapFieldErrors(result));
+        setComposerStatus(
+          result.code === "validation_error"
+            ? "validation-error"
+            : "send-failure",
+        );
+        setInlineError({
+          message: result.message,
+          retryable: result.retryable === true,
+        });
+      } catch {
+        markOptimisticFailed(
+          clientGeneratedId,
+          "We could not send that message right now.",
+        );
+        setComposerStatus("send-failure");
+        setInlineError({
+          message: "We could not send that message right now.",
+          retryable: true,
+        });
+      }
     });
   };
 
