@@ -31,6 +31,7 @@ import {
   type Stage1SafeRuntimeConfigSummary,
 } from "./ops/config.js";
 import { readNotionKnowledgeSyncConfig } from "./jobs/notion-knowledge-sync/index.js";
+import { dedupHistoricalLedgerJobName } from "./jobs/dedup-historical-ledger.js";
 import { reconcileRoutingReviewQueueJobName } from "./jobs/reconcile-routing-review-queue.js";
 import {
   createStage1SyncStateService,
@@ -105,6 +106,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
     `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
     `*/15 * * * * ${reconcileIdentityQueueJobName} ?id=identity-queue-reconcile&max=1`,
+    `0 10 * * * ${dedupHistoricalLedgerJobName} ?id=dedup-historical-ledger&max=1`,
     `*/15 * * * * ${reconcileRoutingReviewQueueJobName} ?id=routing-review-queue-reconcile&max=1`,
   ].join("\n");
 }
@@ -348,6 +350,10 @@ export async function createStage1WorkerRuntimeServices(
       },
       pendingOutboundSweep: {
         pendingOutbounds: repositories.pendingOutbounds,
+      },
+      dedupHistoricalLedger: {
+        db: connection.db,
+        repositories,
       },
       reconcileIdentityQueue: {
         db: connection.db,
