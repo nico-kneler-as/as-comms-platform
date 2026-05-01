@@ -33,7 +33,6 @@ import {
   RichTextComposerEditor,
 } from "./composer-editor-surface";
 import {
-  AlertCircleIcon,
   ChevronDownIcon,
   LoaderIcon,
   MailIcon,
@@ -50,17 +49,16 @@ import type {
   ComposerValidationError,
 } from "./inbox-client-provider";
 
-function WarningKnowledgeIndicator({
-  tooltipMessage,
+function KnowledgeIndicator({
+  tooltipMessage = "AI Draft will use voice instructions only — no project-specific context.",
 }: {
-  readonly tooltipMessage: string;
+  readonly tooltipMessage?: string;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600">
-          <AlertCircleIcon className="size-3.5" />
-          AI grounding unavailable for this project
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
+          No project knowledge linked yet
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-64 text-pretty">
@@ -216,7 +214,7 @@ export function ComposerEmailSurface({
   isGeneratingAi,
   runAiDraftDisabled,
   runAiDraftDisabledReason,
-  selectedAliasAiReady,
+  selectedAliasHasCachedContent,
   selectedAliasProjectName,
   aiWarningMessage,
   inlineError,
@@ -274,7 +272,7 @@ export function ComposerEmailSurface({
   readonly isGeneratingAi: boolean;
   readonly runAiDraftDisabled: boolean;
   readonly runAiDraftDisabledReason: string | null;
-  readonly selectedAliasAiReady: boolean;
+  readonly selectedAliasHasCachedContent: boolean;
   readonly selectedAliasProjectName: string | null;
   readonly aiWarningMessage: string | null;
   readonly inlineError: InlineComposerError | null;
@@ -318,7 +316,7 @@ export function ComposerEmailSurface({
   readonly onCancel: () => void;
 }) {
   const knowledgeTooltip =
-    "Set up Anthropic integration in Settings → Integrations to enable AI drafting.";
+    "AI Draft will use voice instructions only — no project-specific context is linked yet. Add a Notion URL in Settings → Projects to enable project knowledge.";
   const sendAndSaveDisabled = isSendDisabled || !canSendAndSaveForAi;
   const sendAndSaveTooltipMessage =
     canSendAndSaveForAi || sendAndSaveDisabledReason === null
@@ -526,13 +524,13 @@ export function ComposerEmailSurface({
           </Button>
 
           <div className="ml-auto flex items-center gap-2">
-            {selectedAliasAiReady && selectedAliasProjectName !== null ? (
+            {selectedAliasHasCachedContent && selectedAliasProjectName !== null ? (
               <span className={`hidden items-center ${TYPE.caption} md:inline-flex`}>
                 Uses {selectedAliasProjectName} knowledge
               </span>
             ) : selectedAliasProjectName !== null ? (
               <div className="hidden md:block">
-                <WarningKnowledgeIndicator tooltipMessage={knowledgeTooltip} />
+                <KnowledgeIndicator tooltipMessage={knowledgeTooltip} />
               </div>
             ) : null}
 
@@ -605,9 +603,9 @@ export function ComposerEmailSurface({
           </div>
         </div>
 
-        {!selectedAliasAiReady && selectedAliasProjectName !== null ? (
+        {!selectedAliasHasCachedContent && selectedAliasProjectName !== null ? (
           <div className="mt-2 md:hidden">
-            <WarningKnowledgeIndicator tooltipMessage={knowledgeTooltip} />
+            <KnowledgeIndicator tooltipMessage={knowledgeTooltip} />
           </div>
         ) : null}
       </div>
