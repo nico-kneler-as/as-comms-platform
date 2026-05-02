@@ -52,6 +52,88 @@ function compactLabel(
   return "";
 }
 
+const HEADER_EMAIL_PATTERN = /<\s*([^>\s]+@[^>\s]+)\s*>/u;
+const PLAIN_EMAIL_PATTERN = /^[^\s<>"]+@[^\s<>"]+\.[^\s<>"]+$/u;
+
+function extractDisplayNameRaw(value: string | null): string | null {
+  if (value === null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const stripped = trimmed.replace(/\s*<[^>]+>\s*/g, "").trim();
+  if (stripped.length === 0) {
+    return null;
+  }
+  if (PLAIN_EMAIL_PATTERN.test(stripped)) {
+    return null;
+  }
+  return stripped.replace(/^["']|["']$/g, "").trim() || null;
+}
+
+function extractEmailFromHeader(value: string | null): string | null {
+  if (value === null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const angle = HEADER_EMAIL_PATTERN.exec(trimmed)?.[1];
+  if (angle !== undefined && angle.length > 0) {
+    return angle;
+  }
+  if (PLAIN_EMAIL_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+  return null;
+}
+
+/**
+ * When the view-model didn't supply pre-resolved `participantRows`
+ * (e.g. test fixtures, hand-rolled entries, or in-flight optimistic
+ * outbound entries before the selector has touched them), build the
+ * minimum viable rows from the raw header fields so the bubble still
+ * renders something. This is a defense-in-depth fallback — production
+ * entries always come with `participantRows` populated.
+ */
+function deriveParticipantRowsFromRawHeaders(
+  entry: InboxTimelineEntryViewModel,
+): readonly InboxTimelineEntryParticipantRowViewModel[] {
+  const rows: InboxTimelineEntryParticipantRowViewModel[] = [];
+
+  const fromName = extractDisplayNameRaw(entry.fromHeader) ?? entry.actorLabel;
+  rows.push({
+    label: "From",
+    name: fromName.length > 0 ? fromName : null,
+    email: extractEmailFromHeader(entry.fromHeader),
+  });
+
+  const toName =
+    entry.recipientLabel ??
+    extractDisplayNameRaw(entry.toHeader) ??
+    entry.headerProjectLabel ??
+    null;
+  rows.push({
+    label: "To",
+    name: toName !== null && toName.length > 0 ? toName : null,
+    email:
+      extractEmailFromHeader(entry.toHeader) ?? entry.mailbox ?? null,
+  });
+
+  if (entry.ccHeader !== null && entry.ccHeader.trim().length > 0) {
+    rows.push({
+      label: "Cc",
+      name: entry.ccHeader.trim(),
+      email: null,
+    });
+  }
+
+  return rows;
+}
+
 function RelativeTimestamp({
   timestamp,
   label,
@@ -98,7 +180,10 @@ export function EmailParticipantHeader({
     return null;
   }
 
-  const rows = entry.participantRows ?? [];
+  const rows =
+    entry.participantRows !== undefined && entry.participantRows.length > 0
+      ? entry.participantRows
+      : deriveParticipantRowsFromRawHeaders(entry);
   const fromRow = rows[0];
   const toRow = rows[1];
   const sender = compactLabel(fromRow);
