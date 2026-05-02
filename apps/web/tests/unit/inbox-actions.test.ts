@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireSession = vi.hoisted(() => vi.fn());
+const getCurrentUser = vi.hoisted(() => vi.fn().mockResolvedValue(null));
 const generateAiDraft = vi.hoisted(() => vi.fn());
 
 vi.mock("next/cache", () => ({
@@ -9,6 +10,7 @@ vi.mock("next/cache", () => ({
 
 vi.mock("@/src/server/auth/session", () => ({
   requireSession,
+  getCurrentUser,
 }));
 
 vi.mock("@/src/server/ai", async (importOriginal) => {

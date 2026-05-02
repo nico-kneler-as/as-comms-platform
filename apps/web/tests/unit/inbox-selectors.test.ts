@@ -8,6 +8,13 @@ vi.mock("next/cache", () => ({
   revalidateTag: vi.fn(),
 }));
 
+// Stub the session module so importing selectors.ts does not pull in
+// next-auth (and therefore `next/server`, which Node ESM cannot resolve
+// from inside next-auth's package layout in the test environment).
+vi.mock("@/src/server/auth/session", () => ({
+  getCurrentUser: vi.fn().mockResolvedValue(null),
+}));
+
 Object.assign(globalThis, { React });
 
 vi.mock("@/components/ui/button", () => ({
