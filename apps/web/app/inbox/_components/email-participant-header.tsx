@@ -122,15 +122,24 @@ export function EmailParticipantHeader({
     entry.recipientLabel ??
     extractDisplayName(entry.toHeader) ??
     normalizeHeaderValue(entry.toHeader);
+  const fromHeaderName = extractDisplayName(entry.fromHeader);
 
   // Outbound: projectAlias on the left (us, sending FROM the alias),
   // volunteer name on the right.
   // Inbound:  volunteer name on the left, projectAlias on the right
   // (the operator inbox the volunteer wrote TO).
+  // Outbound: prefer the resolved project alias (e.g. "PNW Biodiversity"),
+  // then the From-header's display name (handles legacy / non-aliased
+  // sends), then the operator's actorLabel as a final fallback.
+  // Inbound: actorLabel was already normalized server-side (canonical
+  // contact display name in Title Case), so use it directly. The raw
+  // From-header is only consulted if actorLabel is empty.
   const sender =
     direction === "outbound"
-      ? (projectLabel ?? entry.actorLabel)
-      : entry.actorLabel;
+      ? (projectLabel ?? fromHeaderName ?? entry.actorLabel)
+      : entry.actorLabel.length > 0
+        ? entry.actorLabel
+        : (fromHeaderName ?? entry.actorLabel);
   const recipient =
     direction === "outbound"
       ? recipientLabelFallback

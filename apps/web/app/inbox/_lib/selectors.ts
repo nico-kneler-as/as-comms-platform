@@ -2131,25 +2131,18 @@ function resolveRecipientLabel(input: {
 
   // Outbound: prefer a Title-Cased contact name resolved via the To
   // email so the bubble header renders "Pam Hoult" instead of
-  // "phoult@yahoo.com" or whatever raw display name the From-header
-  // happened to carry.
+  // "phoult@yahoo.com". Falls through to whatever name was on the wire
+  // when the recipient email isn't a known contact, then the bare
+  // email. Notably, we don't fall back to the conversation's canonical
+  // contact name — that contact may not match the actual To address.
   if (input.item.direction === "outbound") {
     const contactName =
       toEmail !== null ? input.contactDisplayNameByEmail.get(toEmail) : null;
     if (contactName !== null && contactName !== undefined) {
       return normalizeDisplayName(contactName) || contactName;
     }
-    if (input.contactDisplayName.length > 0) {
-      return (
-        normalizeDisplayName(input.contactDisplayName) ||
-        input.contactDisplayName
-      );
-    }
     if (hasDisplayNameHeader(toHeader)) {
-      const headerName = participantHeaderLabel(toHeader);
-      if (headerName !== null) {
-        return normalizeDisplayName(headerName) || headerName;
-      }
+      return participantHeaderLabel(toHeader);
     }
     return toEmail ?? normalizeEmailAddress(input.contactPrimaryEmail);
   }
