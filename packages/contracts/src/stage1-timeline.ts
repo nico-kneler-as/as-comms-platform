@@ -107,6 +107,15 @@ export const oneToOneEmailTimelineItemSchema = timelineItemBaseSchema.extend({
   failedReason: z.string().nullable().optional(),
   failedDetail: z.string().nullable().optional(),
   attachmentCount: z.number().int().nonnegative().optional(),
+  pendingAttachmentMetadata: z
+    .array(
+      z.object({
+        filename: nullableStringSchema,
+        contentType: z.string(),
+        sizeBytes: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
 });
 export type OneToOneEmailTimelineItem = z.infer<
   typeof oneToOneEmailTimelineItemSchema

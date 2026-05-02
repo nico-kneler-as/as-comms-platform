@@ -289,6 +289,11 @@ function buildPendingTimelineItems(
       failedReason: row.failedReason,
       failedDetail: row.failedDetail,
       attachmentCount: row.attachmentMetadata.length,
+      pendingAttachmentMetadata: row.attachmentMetadata.map((meta) => ({
+        filename: meta.filename,
+        contentType: meta.contentType,
+        sizeBytes: meta.size,
+      })),
     })),
   );
 }

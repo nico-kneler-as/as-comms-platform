@@ -5143,4 +5143,147 @@ describe("real inbox selectors", () => {
       },
     ]);
   });
+
+  it("falls back to pending attachment metadata when pending outbounds have no canonical attachments yet", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:pending-attachment-test",
+      salesforceContactId: null,
+      displayName: "Pending Attachment Test",
+      primaryEmail: "pending@example.org",
+      primaryPhone: null,
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:pending-attachment-test",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-20T12:05:00.000Z",
+      lastActivityAt: "2026-04-20T12:05:00.000Z",
+      snippet: "Pending outbound with attachment.",
+      lastCanonicalEventId: "pending-outbound:pending-attachment-1",
+      lastEventType: "communication.email.outbound",
+    });
+    await runtime.context.repositories.pendingOutbounds.insert({
+      id: "pending-attachment-1",
+      fingerprint: "fp:pending-attachment-1",
+      actorId: "user:operator",
+      canonicalContactId: "contact:pending-attachment-test",
+      projectId: null,
+      fromAlias: "field@adventuresci.org",
+      toEmailNormalized: "pending@example.org",
+      subject: "Packet attached",
+      bodyPlaintext: "See attached.",
+      bodyHtml: "<p>See attached.</p>",
+      bodySha256: "sha256:pending-attachment-1",
+      attachmentMetadata: [
+        {
+          filename: "x.zip",
+          contentType: "application/zip",
+          size: 1234,
+        },
+      ],
+      gmailThreadId: null,
+      inReplyToRfc822: null,
+      attemptedAt: "2026-04-20T12:05:00.000Z",
+    });
+
+    const detail = await getInboxDetail("contact:pending-attachment-test");
+
+    expect(detail?.timeline[0]?.attachmentCount).toBe(1);
+    expect(detail?.timeline[0]?.attachments).toEqual([
+      {
+        id: null,
+        mimeType: "application/zip",
+        filename: "x.zip",
+        sizeBytes: 1234,
+        proxyUrl: null,
+      },
+    ]);
+  });
+
+  it("prefers canonical attachments over pending metadata after reconciliation", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:canonical-attachment-preferred",
+      salesforceContactId: "003-canonical-attachment",
+      displayName: "Canonical Attachment Preferred",
+      primaryEmail: "canonical@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "canonical-attachment-email-1",
+      contactId: "contact:canonical-attachment-preferred",
+      occurredAt: "2026-04-20T13:00:00.000Z",
+      direction: "outbound",
+      subject: "Canonical packet",
+      snippet: "See canonical attachment.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:canonical-attachment-preferred",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-20T13:00:00.000Z",
+      lastActivityAt: "2026-04-20T13:00:00.000Z",
+      snippet: "See canonical attachment.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:canonical-attachment-email-1",
+      id: "att:gmail:canonical-attachment-email-1:0/1",
+      mimeType: "application/pdf",
+      filename: "canonical.pdf",
+      sizeBytes: 4567,
+      storageKey: "gmail/ef/att:gmail:canonical-attachment-email-1:0/1",
+    });
+    await runtime.context.repositories.pendingOutbounds.insert({
+      id: "pending-canonical-attachment-1",
+      fingerprint: "fp:pending-canonical-attachment-1",
+      actorId: "user:operator",
+      canonicalContactId: "contact:canonical-attachment-preferred",
+      projectId: null,
+      fromAlias: "field@adventuresci.org",
+      toEmailNormalized: "canonical@example.org",
+      subject: "Canonical packet",
+      bodyPlaintext: "See canonical attachment.",
+      bodyHtml: "<p>See canonical attachment.</p>",
+      bodySha256: "sha256:pending-canonical-attachment-1",
+      attachmentMetadata: [
+        {
+          filename: "pending.zip",
+          contentType: "application/zip",
+          size: 1234,
+        },
+      ],
+      gmailThreadId: null,
+      inReplyToRfc822: null,
+      attemptedAt: "2026-04-20T12:59:00.000Z",
+    });
+
+    const detail = await getInboxDetail("contact:canonical-attachment-preferred");
+
+    const canonicalEntry = detail?.timeline.find((entry) =>
+      entry.attachments.some((attachment) => attachment.proxyUrl !== null),
+    );
+    expect(canonicalEntry?.attachments).toEqual([
+      {
+        id: "att:gmail:canonical-attachment-email-1:0/1",
+        mimeType: "application/pdf",
+        filename: "canonical.pdf",
+        sizeBytes: 4567,
+        proxyUrl:
+          "/api/attachments/att%3Agmail%3Acanonical-attachment-email-1%3A0%2F1",
+      },
+    ]);
+  });
 });

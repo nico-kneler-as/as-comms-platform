@@ -240,11 +240,11 @@ export interface InboxTimelineEntryViewModel {
   readonly failedDetail: string | null;
   readonly attachmentCount: number;
   readonly attachments: readonly {
-    readonly id: string;
+    readonly id: string | null;
     readonly mimeType: string;
     readonly filename: string | null;
     readonly sizeBytes: number;
-    readonly proxyUrl: string;
+    readonly proxyUrl: string | null;
   }[];
   readonly campaignActivity: readonly InboxTimelineCampaignActivityViewModel[];
   readonly noteId?: string | null;

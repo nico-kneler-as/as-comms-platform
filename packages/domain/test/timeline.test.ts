@@ -827,7 +827,13 @@ describe("Stage 1 timeline presenter", () => {
           bodyPlaintext: "Pending outbound body",
           bodyHtml: "<p>Pending outbound body</p>",
           bodySha256: "sha256:pending",
-          attachmentMetadata: [],
+          attachmentMetadata: [
+            {
+              filename: "x.zip",
+              contentType: "application/zip",
+              size: 1234,
+            },
+          ],
           gmailThreadId: null,
           inReplyToRfc822: null,
           attemptedAt: "2026-01-01T00:02:00.000Z",
@@ -856,7 +862,14 @@ describe("Stage 1 timeline presenter", () => {
       subject: "Pending outbound",
       bodyPreview: "Pending outbound body",
       sendStatus: "pending",
-      attachmentCount: 0,
+      attachmentCount: 1,
+      pendingAttachmentMetadata: [
+        {
+          filename: "x.zip",
+          contentType: "application/zip",
+          sizeBytes: 1234,
+        },
+      ],
     });
   });
 
