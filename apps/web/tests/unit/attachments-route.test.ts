@@ -102,7 +102,7 @@ describe("attachment proxy route", () => {
       expect(response.headers.get("Content-Type")).toBe("image/jpeg");
       expect(response.headers.get("Content-Length")).toBe("5");
       expect(response.headers.get("Content-Disposition")).toBe(
-        'inline; filename="field-photo.jpg"',
+        "inline; filename=\"field-photo.jpg\"; filename*=UTF-8''field-photo.jpg",
       );
       await expect(response.text()).resolves.toBe("image");
     } finally {

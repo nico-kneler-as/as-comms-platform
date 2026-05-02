@@ -116,7 +116,7 @@ export function TimelineNoteEntry({
       <div className="w-full max-w-[640px] rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2.5 shadow-sm">
         <div className="mb-1 flex items-center justify-between gap-3 text-[11px] text-amber-700">
           <div className="flex items-center gap-1.5">
-            <NoteIcon className="h-3 w-3" />
+            <NoteIcon className="size-3" />
             <span className="font-medium">Note</span>
             <span className="text-amber-300">·</span>
             <span>{entry.actorLabel}</span>

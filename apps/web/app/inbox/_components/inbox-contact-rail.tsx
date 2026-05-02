@@ -55,11 +55,11 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8 shrink-0"
+            className="size-8 shrink-0"
             aria-label="Collapse contact details"
             onClick={onClose}
           >
-            <PanelRightCloseIcon className="h-4 w-4" />
+            <PanelRightCloseIcon className="size-4" />
           </Button>
         ) : null}
       </header>
@@ -71,23 +71,23 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
         </SectionLabel>
         <dl className="mt-2 space-y-1.5 text-[13px]">
           {contact.primaryEmail ? (
-            <ContactLine icon={<MailIcon className="h-3.5 w-3.5" />}>
+            <ContactLine icon={<MailIcon className="size-3.5" />}>
               {contact.primaryEmail}
             </ContactLine>
           ) : null}
           {contact.primaryPhone ? (
-            <ContactLine icon={<PhoneIcon className="h-3.5 w-3.5" />}>
+            <ContactLine icon={<PhoneIcon className="size-3.5" />}>
               {contact.primaryPhone}
             </ContactLine>
           ) : (
             <ContactLine
-              icon={<PhoneIcon className="h-3.5 w-3.5" />}
+              icon={<PhoneIcon className="size-3.5" />}
               muted
             >
               No phone on file
             </ContactLine>
           )}
-          <ContactLine icon={<CalendarIcon className="h-3.5 w-3.5" />}>
+          <ContactLine icon={<CalendarIcon className="size-3.5" />}>
             {contact.joinedAtLabel}
           </ContactLine>
         </dl>
@@ -199,7 +199,7 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
                 {isClickable ? (
                   <ExternalLink
                     aria-hidden="true"
-                    className="h-3.5 w-3.5 shrink-0 text-slate-400 opacity-0 transition group-hover:opacity-100"
+                    className="size-3.5 shrink-0 text-slate-400 opacity-0 transition group-hover:opacity-100"
                   />
                 ) : null}
               </>

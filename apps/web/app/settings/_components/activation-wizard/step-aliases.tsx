@@ -59,7 +59,7 @@ export function StepAliases({
     <div className="flex flex-col gap-6">
       <div className="rounded-xl border border-sky-200/70 bg-sky-50/60 p-4 text-[12px] text-sky-900">
         <div className="flex items-start gap-2">
-          <Mail className="mt-0.5 h-3.5 w-3.5 text-sky-600" aria-hidden="true" />
+          <Mail className="mt-0.5 size-3.5 text-sky-600" aria-hidden="true" />
           <p>
             Any email sent to these addresses routes into{" "}
             <span className="font-medium">
@@ -77,7 +77,7 @@ export function StepAliases({
         <div className="mt-2 flex flex-col gap-1.5">
           {aliases.length === 0 ? (
             <div className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-3 text-[12.5px] text-slate-500">
-              <Mail className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+              <Mail className="size-3.5 text-slate-400" aria-hidden="true" />
               No aliases yet. Add the first below.
             </div>
           ) : null}
@@ -87,7 +87,7 @@ export function StepAliases({
               key={alias.address}
               className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5"
             >
-              <Mail className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+              <Mail className="size-3.5 text-slate-400" aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-slate-800">
                 {alias.address}
               </span>
@@ -116,7 +116,7 @@ export function StepAliases({
                 }}
                 className="text-slate-400 transition-colors hover:text-rose-600"
               >
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <Trash2 className="size-3.5" aria-hidden="true" />
               </button>
             </div>
           ))}
@@ -147,7 +147,7 @@ export function StepAliases({
               submitAddress(draftAddress);
             }}
           >
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            <Plus className="size-3.5" aria-hidden="true" />
             Add
           </Button>
         </div>
@@ -175,7 +175,7 @@ export function StepAliases({
                   "hover:bg-slate-100"
                 )}
               >
-                <Plus className="h-3 w-3" aria-hidden="true" />
+                <Plus className="size-3" aria-hidden="true" />
                 Add suggested
               </button>
             ))}

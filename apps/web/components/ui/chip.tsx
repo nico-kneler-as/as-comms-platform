@@ -24,7 +24,7 @@ export function Chip({
         className,
       )}
     >
-      {icon ? <span className="flex h-3 w-3 items-center">{icon}</span> : null}
+      {icon ? <span className="flex size-3 items-center">{icon}</span> : null}
       {children}
     </span>
   );

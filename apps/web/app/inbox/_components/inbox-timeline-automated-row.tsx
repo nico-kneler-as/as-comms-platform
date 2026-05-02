@@ -332,7 +332,7 @@ export function TimelineAutomatedRow({
                 ) : null}
                 <ChevronRightIcon
                   className={cn(
-                    "h-3.5 w-3.5 text-slate-500 transition-transform duration-150",
+                    "size-3.5 text-slate-500 transition-transform duration-150",
                     isExpanded && "rotate-90",
                   )}
                 />

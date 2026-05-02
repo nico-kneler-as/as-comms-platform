@@ -275,20 +275,41 @@ export async function handleGmailHealthRequest(
   return integrationHealthCheckResponseSchema.parse(health);
 }
 
+/**
+ * RFC 5987 / 6266-compliant Content-Disposition builder.
+ *
+ * The legacy `filename=` parameter is a quoted-string per RFC 7230, which
+ * only permits printable ASCII (0x20-0x7E) — non-ASCII bytes throw on
+ * Node's strict header validator. We provide both an ASCII-sanitized
+ * fallback and a UTF-8 percent-encoded `filename*=` for full Unicode
+ * support per RFC 5987. Browsers prefer `filename*` when both are present.
+ */
+function encodeRfc5987(value: string): string {
+  return encodeURIComponent(value).replace(
+    /['()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
 function buildAttachmentContentDisposition(input: {
   readonly mimeType: string;
   readonly filename: string | null;
 }): string {
   const trimmed = input.filename?.trim();
-  const filename = (trimmed && trimmed.length > 0 ? trimmed : "Attachment").replaceAll(
-    '"',
-    "",
-  );
+  const rawName = trimmed && trimmed.length > 0 ? trimmed : "Attachment";
+  // Strip non-printable-ASCII (covers Unicode, CR, LF, control chars) and
+  // characters that would break the quoted-string format.
+  const asciiFallback = rawName
+    .replace(/[^\x20-\x7e]/g, "_")
+    .replaceAll('"', "")
+    .replaceAll("\\", "");
+  const safeFallback = asciiFallback.length > 0 ? asciiFallback : "Attachment";
+  const utf8Encoded = encodeRfc5987(rawName);
   const disposition = input.mimeType.startsWith("image/")
     ? "inline"
     : "attachment";
 
-  return `${disposition}; filename="${filename}"`;
+  return `${disposition}; filename="${safeFallback}"; filename*=UTF-8''${utf8Encoded}`;
 }
 
 async function handleInternalAttachmentRequest(

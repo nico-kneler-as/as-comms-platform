@@ -30,7 +30,7 @@ export function IntegrationHealthBanner({
       role="alert"
       className={`flex min-h-10 items-center gap-2 border-b px-4 py-2 ${TONE.amber.subtle} border-amber-200 text-amber-900`}
     >
-      <AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-600" />
+      <AlertTriangleIcon className="size-4 shrink-0 text-amber-600" />
       <p className="min-w-0 flex-1 text-sm font-medium">
         {serviceList} integration {verb} degraded. Operators may not see new
         messages until resolved.

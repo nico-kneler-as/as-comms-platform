@@ -11,13 +11,13 @@ export function InboxAppLoading() {
     <div className="flex h-dvh w-screen overflow-hidden bg-slate-100 antialiased">
       {/* Icon rail skeleton */}
       <div className={`flex ${LAYOUT.iconRailWidth} shrink-0 flex-col items-center border-r border-slate-200 bg-white py-4`}>
-        <Skeleton className="h-9 w-9 rounded-xl" />
+        <Skeleton className="size-9 rounded-xl" />
         <div className="mt-4 flex flex-1 flex-col items-center gap-1">
-          <Skeleton className="h-10 w-10 rounded-xl" />
-          <Skeleton className="h-10 w-10 rounded-xl" />
-          <Skeleton className="h-10 w-10 rounded-xl" />
+          <Skeleton className="size-10 rounded-xl" />
+          <Skeleton className="size-10 rounded-xl" />
+          <Skeleton className="size-10 rounded-xl" />
         </div>
-        <Skeleton className="mt-2 h-9 w-9 rounded-full" />
+        <Skeleton className="mt-2 size-9 rounded-full" />
       </div>
 
       {/* List column skeleton */}
@@ -26,7 +26,7 @@ export function InboxAppLoading() {
           <div className={`flex ${LAYOUT.headerHeight} items-center gap-2`}>
             <Skeleton className="h-5 w-24" />
             <div className="flex-1" />
-            <Skeleton className="h-8 w-8 rounded-lg" />
+            <Skeleton className="size-8 rounded-lg" />
           </div>
           <div className="pb-4 pt-1">
             <Skeleton className="h-8 w-full rounded-lg" />
@@ -47,8 +47,8 @@ export function InboxAppLoading() {
           <Skeleton className="hidden h-4 w-48 sm:block" />
           <div className="flex-1" />
           <Skeleton className="h-8 w-28 rounded-md" />
-          <Skeleton className="h-8 w-8 rounded-md" />
-          <Skeleton className="h-8 w-8 rounded-md" />
+          <Skeleton className="size-8 rounded-md" />
+          <Skeleton className="size-8 rounded-md" />
         </div>
         <div className={`flex-1 ${TONE.slate.subtle} ${SPACING.container}`}>
           <TimelineSkeleton />
@@ -75,7 +75,7 @@ export function InboxDetailLoading() {
             <Skeleton className="mt-2 h-3.5 w-56" />
           </div>
           <Skeleton className="h-8 w-28 rounded-md" />
-          <Skeleton className="h-8 w-8 rounded-md" />
+          <Skeleton className="size-8 rounded-md" />
         </header>
         <div className={`min-h-0 flex-1 overflow-y-auto ${TONE.slate.subtle} ${SPACING.container}`}>
           <TimelineSkeleton />
@@ -95,7 +95,7 @@ export function InboxDetailLoading() {
 export function QueueRowSkeleton() {
   return (
     <div className={`flex gap-3 border-b border-slate-100 ${SPACING.listItem}`}>
-      <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+      <Skeleton className="size-10 shrink-0 rounded-full" />
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <Skeleton className="h-3.5 w-28" />
@@ -138,7 +138,7 @@ export function QueueLoadMoreSkeleton({
       <div className="space-y-0">
         {Array.from({ length: rowCount }).map((_, i) => (
           <div key={i} className="flex gap-3 px-4 py-3">
-            <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+            <Skeleton className="size-9 shrink-0 rounded-full" />
             <div className="min-w-0 flex-1 space-y-1.5">
               <Skeleton className="h-3 w-32" />
               <Skeleton className="h-3 w-48 max-w-full" />
