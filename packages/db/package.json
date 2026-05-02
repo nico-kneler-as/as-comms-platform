@@ -19,7 +19,7 @@
   "scripts": {
     "build": "node ../../scripts/clean-dist.mjs dist && tsc -p tsconfig.build.json",
     "lint": "eslint src test drizzle.config.ts --max-warnings=0",
-    "migrate": "drizzle-kit migrate",
+    "migrate": "node ./scripts/migrate.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:unit": "vitest run --config ../../vitest.config.ts --passWithNoTests"
   },
