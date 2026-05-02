@@ -64,7 +64,7 @@ export function StepSignature({
         </p>
         <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-2 text-[11.5px]">
-            <Mail className="h-3 w-3 text-slate-400" aria-hidden="true" />
+            <Mail className="size-3 text-slate-400" aria-hidden="true" />
             <span className="text-slate-500">From</span>
             <span className="font-mono text-slate-700">
               {primaryAliasAddress ?? buildProjectEmailPreview(aliasDraft)}

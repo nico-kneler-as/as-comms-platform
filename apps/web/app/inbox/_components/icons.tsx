@@ -28,6 +28,7 @@ export {
   Clock as ClockIcon,
   PanelRightOpen as PanelRightOpenIcon,
   PanelRightClose as PanelRightCloseIcon,
+  UserRound as UserRoundIcon,
   CornerUpLeft as CornerUpLeftIcon,
   ArrowRight as ArrowRightIcon,
   X as XIcon,
@@ -69,4 +70,5 @@ export {
   Quote as QuoteIcon,
   Database as DatabaseIcon,
   Archive as ArchiveBoxIcon,
+  ArchiveRestore as ArchiveRestoreIcon,
 } from "lucide-react";

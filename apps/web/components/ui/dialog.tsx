@@ -74,7 +74,7 @@ const DialogContent = React.forwardRef<HTMLElement, DialogContentProps>(
             "absolute right-4 top-4 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:pointer-events-none"
           )}
         >
-          <X className="h-4 w-4" />
+          <X className="size-4" />
           <span className="sr-only">Close</span>
         </DialogClosePrimitive>
       </DialogContentPrimitive>
@@ -115,7 +115,7 @@ const DialogTitle = React.forwardRef<HTMLElement, DialogTitleProps>(
     <DialogTitlePrimitive
       ref={ref}
       className={cn(
-        "text-base font-semibold leading-none tracking-tight text-slate-900",
+        "text-base font-semibold leading-none tracking-tight text-balance text-slate-900",
         className
       )}
       {...props}
@@ -132,7 +132,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogDescriptionPrimitive
     ref={ref}
-    className={cn("text-sm text-slate-500", className)}
+    className={cn("text-sm text-pretty text-slate-500", className)}
     {...props}
   />
 ))

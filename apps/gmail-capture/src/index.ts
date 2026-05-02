@@ -4,6 +4,10 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { createReadStream } from "node:fs";
+import { access } from "node:fs/promises";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 
 import {
   createDatabaseConnection,
@@ -18,6 +22,8 @@ import {
   type CaptureServiceHttpRequest,
   type GmailCaptureServiceConfig,
   gmailRecordSchema,
+  hasBearerToken,
+  jsonResponse,
 } from "@as-comms/integrations";
 import {
   integrationHealthCheckResponseSchema,
@@ -26,6 +32,7 @@ import {
 import { z } from "zod";
 
 import {
+  resolveAbsoluteAttachmentPath,
   syncGmailMessageAttachments,
   type GmailAttachmentRuntimeConfig,
 } from "./attachments.js";
@@ -218,16 +225,24 @@ function readRequestBody(request: IncomingMessage): Promise<string> {
   });
 }
 
+type ServerResponseBody = NodeReadableStream<Uint8Array> | string;
+
 function writeResponse(
   response: ServerResponse,
   input: {
     readonly status: number;
     readonly headers: Record<string, string>;
-    readonly body: string;
+    readonly body: ServerResponseBody;
   },
 ): void {
   response.writeHead(input.status, input.headers);
-  response.end(input.body);
+
+  if (typeof input.body === "string") {
+    response.end(input.body);
+    return;
+  }
+
+  Readable.fromWeb(input.body).pipe(response);
 }
 
 function readServiceVersion(env: NodeJS.ProcessEnv): string | null {
@@ -258,6 +273,138 @@ export async function handleGmailHealthRequest(
   });
 
   return integrationHealthCheckResponseSchema.parse(health);
+}
+
+/**
+ * RFC 5987 / 6266-compliant Content-Disposition builder.
+ *
+ * The legacy `filename=` parameter is a quoted-string per RFC 7230, which
+ * only permits printable ASCII (0x20-0x7E) — non-ASCII bytes throw on
+ * Node's strict header validator. We provide both an ASCII-sanitized
+ * fallback and a UTF-8 percent-encoded `filename*=` for full Unicode
+ * support per RFC 5987. Browsers prefer `filename*` when both are present.
+ */
+function encodeRfc5987(value: string): string {
+  return encodeURIComponent(value).replace(
+    /['()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+function buildAttachmentContentDisposition(input: {
+  readonly mimeType: string;
+  readonly filename: string | null;
+}): string {
+  const trimmed = input.filename?.trim();
+  const rawName = trimmed && trimmed.length > 0 ? trimmed : "Attachment";
+  // Strip non-printable-ASCII (covers Unicode, CR, LF, control chars) and
+  // characters that would break the quoted-string format.
+  const asciiFallback = rawName
+    .replace(/[^\x20-\x7e]/g, "_")
+    .replaceAll('"', "")
+    .replaceAll("\\", "");
+  const safeFallback = asciiFallback.length > 0 ? asciiFallback : "Attachment";
+  const utf8Encoded = encodeRfc5987(rawName);
+  const disposition = input.mimeType.startsWith("image/")
+    ? "inline"
+    : "attachment";
+
+  return `${disposition}; filename="${safeFallback}"; filename*=UTF-8''${utf8Encoded}`;
+}
+
+async function handleInternalAttachmentRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  input: {
+    readonly encodedId: string;
+    readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
+    readonly config: GmailCaptureRuntimeConfig;
+  },
+): Promise<void> {
+  const authRequest: CaptureServiceHttpRequest = {
+    method: request.method ?? "GET",
+    path: request.url ?? "/internal/attachments",
+    headers: request.headers,
+    bodyText: "",
+  };
+
+  if (!hasBearerToken(authRequest, input.config.service.bearerToken)) {
+    writeResponse(response, jsonResponse(401, { error: "unauthorized" }));
+    return;
+  }
+
+  if (request.method !== "GET") {
+    writeResponse(response, jsonResponse(405, { error: "method_not_allowed" }));
+    return;
+  }
+
+  let id: string;
+  try {
+    id = decodeURIComponent(input.encodedId);
+  } catch {
+    writeResponse(response, {
+      status: 404,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+      },
+      body: "Attachment not found",
+    });
+    return;
+  }
+
+  if (id.length === 0) {
+    writeResponse(response, {
+      status: 404,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+      },
+      body: "Attachment not found",
+    });
+    return;
+  }
+
+  const attachment = await input.repositories.messageAttachments.findById(id);
+  if (attachment === null) {
+    writeResponse(response, {
+      status: 404,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+      },
+      body: "Attachment not found",
+    });
+    return;
+  }
+
+  let absolutePath: string;
+  try {
+    absolutePath = resolveAbsoluteAttachmentPath({
+      attachmentVolumePath: input.config.attachments.attachmentVolumePath,
+      storageKey: attachment.storageKey,
+    });
+    await access(absolutePath);
+  } catch {
+    writeResponse(response, {
+      status: 404,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+      },
+      body: "Attachment not found",
+    });
+    return;
+  }
+
+  writeResponse(response, {
+    status: 200,
+    headers: {
+      "Content-Disposition": buildAttachmentContentDisposition({
+        mimeType: attachment.mimeType,
+        filename: attachment.filename,
+      }),
+      "Content-Length": String(attachment.sizeBytes),
+      "Content-Type": attachment.mimeType,
+    },
+    body: Readable.toWeb(createReadStream(absolutePath)) as NodeReadableStream<Uint8Array>,
+  });
 }
 
 export async function startGmailCaptureServer(
@@ -303,6 +450,7 @@ export async function startGmailCaptureServer(
     try {
       const path = new URL(request.url ?? "/", "http://gmail-capture.local")
         .pathname;
+      const internalAttachmentPrefix = "/internal/attachments/";
 
       if (request.method === "GET" && path === "/health") {
         const health = await handleGmailHealthRequest(config);
@@ -312,6 +460,20 @@ export async function startGmailCaptureServer(
             "content-type": "application/json; charset=utf-8",
           },
           body: JSON.stringify(health),
+        });
+        return;
+      }
+
+      if (
+        path === "/internal/attachments" ||
+        path.startsWith(internalAttachmentPrefix)
+      ) {
+        await handleInternalAttachmentRequest(request, response, {
+          encodedId: path.startsWith(internalAttachmentPrefix)
+            ? path.slice(internalAttachmentPrefix.length)
+            : "",
+          repositories,
+          config,
         });
         return;
       }

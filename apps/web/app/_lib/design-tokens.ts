@@ -80,18 +80,18 @@ export type ToneName = keyof typeof TONE;
 // ─── Avatar Tone Classes ────────────────────────────────────────────────────
 //
 // Pre-composed class strings for avatar backgrounds. Slightly different from
-// the base tone (uses -100 bg, -800 text, -200 ring) to ensure legibility
-// on the small circular surface.
+// the base tone (uses -100 bg and -800 text) to ensure legibility on the
+// small circular surface.
 
 export const AVATAR_TONE = {
-  indigo: "bg-indigo-100 text-indigo-800 ring-indigo-200",
-  emerald: "bg-emerald-100 text-emerald-800 ring-emerald-200",
-  amber: "bg-amber-100 text-amber-800 ring-amber-200",
-  rose: "bg-rose-100 text-rose-800 ring-rose-200",
-  sky: "bg-sky-100 text-sky-800 ring-sky-200",
-  violet: "bg-violet-100 text-violet-800 ring-violet-200",
-  teal: "bg-teal-100 text-teal-800 ring-teal-200",
-  slate: "bg-slate-200 text-slate-700 ring-slate-300",
+  indigo: "bg-indigo-100 text-indigo-800",
+  emerald: "bg-emerald-100 text-emerald-800",
+  amber: "bg-amber-100 text-amber-800",
+  rose: "bg-rose-100 text-rose-800",
+  sky: "bg-sky-100 text-sky-800",
+  violet: "bg-violet-100 text-violet-800",
+  teal: "bg-teal-100 text-teal-800",
+  slate: "bg-slate-200 text-slate-700",
 } as const;
 
 // ─── Badge / Status Colors ──────────────────────────────────────────────────
@@ -123,6 +123,16 @@ export const PROJECT_STATUS_BADGE = {
   "trip-planning": "bg-amber-50 text-amber-700",
   "in-field": "bg-emerald-50 text-emerald-700",
   successful: "bg-violet-50 text-violet-700",
+} as const;
+
+/** Project participation status — text-only color (for header context, no chip background) */
+export const PROJECT_STATUS_TEXT = {
+  lead: "text-slate-600",
+  applied: "text-sky-700",
+  "in-training": "text-indigo-700",
+  "trip-planning": "text-amber-700",
+  "in-field": "text-emerald-700",
+  successful: "text-violet-700",
 } as const;
 
 /** Chip tone classes (neutral/info/warn/success) */

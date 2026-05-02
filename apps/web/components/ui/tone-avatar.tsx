@@ -5,10 +5,10 @@ import { AVATAR_TONE } from "@/app/_lib/design-tokens";
 type ToneAvatarTone = keyof typeof AVATAR_TONE;
 
 const SIZE_CLASSES = {
-  sm: "h-8 w-8 text-xs",
-  xs: "h-9 w-9 text-xs",
-  md: "h-10 w-10 text-sm",
-  lg: "h-14 w-14 text-base",
+  sm: "size-8 text-xs",
+  xs: "size-9 text-xs",
+  md: "size-10 text-sm",
+  lg: "size-14 text-base",
 } as const;
 
 interface ToneAvatarProps {
@@ -25,10 +25,7 @@ export function ToneAvatar({
   className,
 }: ToneAvatarProps) {
   return (
-    <Avatar
-      className={cn(size === "xs" ? "" : "ring-1", SIZE_CLASSES[size], className)}
-      aria-hidden="true"
-    >
+    <Avatar className={cn(SIZE_CLASSES[size], className)} aria-hidden="true">
       <AvatarFallback className={cn("font-semibold", AVATAR_TONE[tone])}>
         {initials}
       </AvatarFallback>

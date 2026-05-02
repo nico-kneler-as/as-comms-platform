@@ -194,8 +194,10 @@ export const TRANSITION = {
 } as const;
 
 export const LAYOUT = {
-  /** Shared header height for list, detail, and rail */
-  headerHeight: "h-[65px]",
+  /** Compact title/header bar for list, detail, and rail */
+  headerHeight: "h-[54px]",
+  /** Welcome dashboard header spans the list title and search bands */
+  welcomeHeaderHeight: "h-[102px]",
   /** Inbox list column width */
   listWidth: "w-[22rem]",
   /** Contact rail width */

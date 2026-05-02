@@ -8,6 +8,7 @@ import type {
   TimelineItem,
 } from "@as-comms/contracts";
 
+import { getCurrentUser } from "@/src/server/auth/session";
 import { recordSensitiveReadForCurrentUserDetached } from "@/src/server/security/audit";
 import { getStage1WebRuntime } from "../../../src/server/stage1-runtime";
 import {
@@ -33,6 +34,7 @@ import type {
   InboxRecentActivityViewModel,
   InboxTimelineCampaignActivityViewModel,
   InboxTimelineEntryKind,
+  InboxTimelineEntryParticipantRowViewModel,
   InboxTimelineEntryViewModel,
   InboxVolunteerStage,
   InboxWelcomeWorkloadViewModel,
@@ -101,6 +103,7 @@ interface InboxDetailCacheData {
   readonly campaignActivitySummaryByCampaignId: Readonly<
     Record<string, CampaignActivitySummary>
   >;
+  readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
   readonly projectMetadataById: Readonly<
     Record<
       string,
@@ -110,6 +113,13 @@ interface InboxDetailCacheData {
       }
     >
   >;
+  readonly salesforceEventContextBySourceEvidenceId: ReadonlyMap<
+    string,
+    {
+      readonly projectId: string | null;
+    }
+  >;
+  readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly attachmentsByCanonicalEventId: ReadonlyMap<
     string,
@@ -593,6 +603,66 @@ function sortMemberships(
   });
 }
 
+function buildProjectActivityIndex(
+  timelineItems: readonly TimelineItem[],
+): {
+  readonly firstOccurredAtByProjectId: ReadonlyMap<string, string>;
+  readonly lastOccurredAtByProjectId: ReadonlyMap<string, string>;
+} {
+  const firstOccurredAtByProjectId = new Map<string, string>();
+  const lastOccurredAtByProjectId = new Map<string, string>();
+
+  for (const item of timelineItems) {
+    if (item.family !== "salesforce_event" || item.projectId === null) {
+      continue;
+    }
+
+    const firstOccurredAt =
+      firstOccurredAtByProjectId.get(item.projectId) ?? null;
+
+    if (firstOccurredAt === null || item.occurredAt < firstOccurredAt) {
+      firstOccurredAtByProjectId.set(item.projectId, item.occurredAt);
+    }
+
+    const lastOccurredAt = lastOccurredAtByProjectId.get(item.projectId) ?? null;
+
+    if (lastOccurredAt === null || item.occurredAt > lastOccurredAt) {
+      lastOccurredAtByProjectId.set(item.projectId, item.occurredAt);
+    }
+  }
+
+  return {
+    firstOccurredAtByProjectId,
+    lastOccurredAtByProjectId,
+  };
+}
+
+function sortMembershipsByLastActivity(
+  memberships: readonly ContactMembershipRecord[],
+  lastOccurredAtByProjectId: ReadonlyMap<string, string>,
+): readonly ContactMembershipRecord[] {
+  return [...memberships].sort((left, right) => {
+    const leftLastActivityAt =
+      (left.projectId === null ? null : lastOccurredAtByProjectId.get(left.projectId)) ??
+      left.createdAt;
+    const rightLastActivityAt =
+      (right.projectId === null
+        ? null
+        : lastOccurredAtByProjectId.get(right.projectId)) ?? right.createdAt;
+    const activityDifference = rightLastActivityAt.localeCompare(leftLastActivityAt);
+
+    if (activityDifference !== 0) {
+      return activityDifference;
+    }
+
+    if (left.projectId !== right.projectId) {
+      return (left.projectId ?? "").localeCompare(right.projectId ?? "");
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
 export function sortMembershipsByCreatedAt(
   memberships: readonly ContactMembershipRecord[],
 ): readonly ContactMembershipRecord[] {
@@ -742,6 +812,7 @@ function buildProjectMembershipViewModel(
       }
     >
   >,
+  firstOccurredAtByProjectId: ReadonlyMap<string, string>,
 ): InboxProjectMembershipViewModel | null {
   const projectName =
     membership.projectId === null
@@ -757,7 +828,9 @@ function buildProjectMembershipViewModel(
     membershipId: membership.id,
     projectId: membership.projectId,
     projectName,
-    signupYear: new Date(membership.createdAt).getUTCFullYear(),
+    signupYear: new Date(
+      firstOccurredAtByProjectId.get(membership.projectId) ?? membership.createdAt,
+    ).getUTCFullYear(),
     projectIsActive:
       projectMetadataById[membership.projectId]?.isActive ?? false,
     status: mapProjectStatus(membership.status),
@@ -842,6 +915,83 @@ function formatRelativeTimestamp(
   }
 
   return `${Math.floor(days / 365).toString()}y ago`;
+}
+
+const BUBBLE_DAY_KEY_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+const BUBBLE_TIME_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+const BUBBLE_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+const BUBBLE_MONTH_DAY_YEAR_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+function bubbleDayKey(timestamp: string, timeZone: string): string {
+  let formatter = BUBBLE_DAY_KEY_FORMATTER_CACHE.get(timeZone);
+
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    BUBBLE_DAY_KEY_FORMATTER_CACHE.set(timeZone, formatter);
+  }
+
+  return formatter.format(new Date(timestamp));
+}
+
+function bubbleTimeLabel(timestamp: string, timeZone: string): string {
+  let formatter = BUBBLE_TIME_FORMATTER_CACHE.get(timeZone);
+
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone,
+    });
+    BUBBLE_TIME_FORMATTER_CACHE.set(timeZone, formatter);
+  }
+
+  return formatter.format(new Date(timestamp));
+}
+
+function bubbleYear(timestamp: string, timeZone: string): number {
+  return Number.parseInt(bubbleDayKey(timestamp, timeZone).slice(0, 4), 10);
+}
+
+export function formatBubbleTimestamp(
+  timestamp: string,
+  referenceNowIso: string,
+  timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string {
+  const targetDayKey = bubbleDayKey(timestamp, timeZone);
+  const referenceDayKey = bubbleDayKey(referenceNowIso, timeZone);
+
+  if (targetDayKey === referenceDayKey) {
+    return bubbleTimeLabel(timestamp, timeZone);
+  }
+
+  const referenceDate = new Date(referenceNowIso);
+  const yesterdayReference = new Date(referenceDate);
+  yesterdayReference.setDate(referenceDate.getDate() - 1);
+
+  if (targetDayKey === bubbleDayKey(yesterdayReference.toISOString(), timeZone)) {
+    return BUBBLE_MONTH_DAY_FORMATTER.format(new Date(timestamp));
+  }
+
+  if (bubbleYear(timestamp, timeZone) === bubbleYear(referenceNowIso, timeZone)) {
+    return BUBBLE_MONTH_DAY_FORMATTER.format(new Date(timestamp));
+  }
+
+  return BUBBLE_MONTH_DAY_YEAR_FORMATTER.format(new Date(timestamp));
 }
 
 function normalizeInlineText(value: string | null | undefined): string | null {
@@ -948,6 +1098,57 @@ function sanitizePreviewText(value: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+const PREVIEW_NOISE_THRESHOLD = 0.3;
+const PREVIEW_NOISE_MIN_LENGTH = 32;
+const SHORT_PREVIEW_NOISE_MIN_SUSPICIOUS = 3;
+const REPLACEMENT_CHARACTER = "�";
+
+function isLikelyPreviewNoise(value: string): boolean {
+  const normalized = value.trim();
+
+  if (normalized.length === 0) {
+    return false;
+  }
+
+  let suspicious = 0;
+  let total = 0;
+
+  for (const character of normalized) {
+    total += 1;
+
+    if (character === REPLACEMENT_CHARACTER) {
+      suspicious += 1;
+      continue;
+    }
+
+    const code = character.codePointAt(0) ?? 0;
+
+    if (
+      code < 0x20 &&
+      code !== 0x09 &&
+      code !== 0x0a &&
+      code !== 0x0d
+    ) {
+      suspicious += 1;
+    }
+  }
+
+  if (total === 0) {
+    return false;
+  }
+
+  const ratio = suspicious / total;
+
+  if (total < PREVIEW_NOISE_MIN_LENGTH) {
+    return (
+      suspicious >= SHORT_PREVIEW_NOISE_MIN_SUSPICIOUS &&
+      ratio >= PREVIEW_NOISE_THRESHOLD
+    );
+  }
+
+  return ratio >= PREVIEW_NOISE_THRESHOLD;
 }
 
 const STRUCTURED_EMAIL_TRANSLATION_MARKER_PATTERN =
@@ -1385,7 +1586,11 @@ function resolvePreferredMessagePreview(input: {
       subjectFromPreview = parsed.subject;
     }
 
-    if (body.length === 0 && parsed.body.length > 0) {
+    if (
+      body.length === 0 &&
+      parsed.body.length > 0 &&
+      !isLikelyPreviewNoise(parsed.body)
+    ) {
       body = parsed.body;
       continue;
     }
@@ -1393,7 +1598,7 @@ function resolvePreferredMessagePreview(input: {
     if (sanitizedFallback.length === 0) {
       const sanitized = sanitizePreviewText(rawCandidate);
 
-      if (sanitized.length > 0) {
+      if (sanitized.length > 0 && !isLikelyPreviewNoise(sanitized)) {
         sanitizedFallback = sanitized;
       }
     }
@@ -1695,25 +1900,50 @@ function timelineActorLabel(
   item: TimelineItem,
   contactDisplayName: string,
   kind: InboxTimelineEntryKind,
+  operatorDisplayName: string,
+  canonicalContactDisplayName: string | null = null,
 ): string {
   if (kind === "inbound-email") {
+    const normalizedCanonicalContactName =
+      canonicalContactDisplayName === null
+        ? ""
+        : normalizeDisplayName(canonicalContactDisplayName);
+
+    // Skip the canonical lookup when the stored displayName is just the
+    // email itself (placeholder for email-only contacts). The From
+    // header on inbound usually carries the sender's real name —
+    // prefer that over a degraded stored value.
+    if (
+      normalizedCanonicalContactName.length > 0 &&
+      !isEmailLikeName(normalizedCanonicalContactName)
+    ) {
+      return normalizedCanonicalContactName;
+    }
+
     if (item.family === "one_to_one_email") {
       const senderLabel = participantHeaderLabel(item.fromHeader ?? null);
+      const normalizedSenderLabel =
+        senderLabel === null ? "" : normalizeDisplayName(senderLabel);
 
-      if (senderLabel !== null) {
-        return senderLabel;
+      if (
+        normalizedSenderLabel.length > 0 &&
+        !isEmailLikeName(normalizedSenderLabel)
+      ) {
+        return normalizedSenderLabel;
       }
     }
 
-    return contactDisplayName;
+    const fallback =
+      normalizeDisplayName(contactDisplayName) || contactDisplayName;
+    return fallback;
   }
 
   if (kind === "inbound-sms") {
-    return contactDisplayName;
+    return normalizeDisplayName(contactDisplayName) || contactDisplayName;
   }
 
   if (kind === "outbound-email" || kind === "outbound-sms") {
-    return "You";
+    return normalizeDisplayName(operatorDisplayName) || "Adventure Scientists";
   }
 
   if (kind === "email-activity") {
@@ -1723,7 +1953,7 @@ function timelineActorLabel(
   switch (item.family) {
     case "one_to_one_email":
     case "one_to_one_sms":
-      return "You";
+      return normalizeDisplayName(operatorDisplayName) || "Adventure Scientists";
     case "auto_email":
     case "auto_sms":
       return item.sourceLabel;
@@ -1744,6 +1974,78 @@ const PLACEHOLDER_BODY_PREVIEWS = new Set([
   "[Encrypted message — open in Gmail to read]",
   "[Message body could not be extracted — open in Gmail]",
 ]);
+
+function hasUppercaseBeyondFirst(token: string): boolean {
+  for (let index = 1; index < token.length; index += 1) {
+    const character = token[index];
+
+    if (character !== undefined && /[A-Z]/u.test(character)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function titleCaseSimpleToken(token: string): string {
+  if (token.length === 0) {
+    return token;
+  }
+
+  if (/[.'’-]/u.test(token) && hasUppercaseBeyondFirst(token)) {
+    return token;
+  }
+
+  return `${token[0]?.toUpperCase() ?? ""}${token.slice(1).toLowerCase()}`;
+}
+
+/**
+ * Treats `local@host.tld`-shaped strings as "we don't actually have a
+ * real name for this person" — used so we never render `email <email>`
+ * in the bubble header AND so a contact whose stored displayName
+ * happens to be the email itself doesn't short-circuit the From-header
+ * fallback chain. Conservative on whitespace: any space disqualifies.
+ */
+function isEmailLikeName(value: string | null | undefined): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return false;
+  }
+
+  return /^\S+@\S+\.\S+$/u.test(trimmed);
+}
+
+function normalizeDisplayName(raw: string): string {
+  const trimmed = raw.trim();
+
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  if (/^[a-z0-9._-]+$/iu.test(trimmed)) {
+    return trimmed;
+  }
+
+  const reversedNameMatch = /^([^,]+),\s*([^,]+)$/u.exec(trimmed);
+
+  if (reversedNameMatch !== null) {
+    return [reversedNameMatch[2], reversedNameMatch[1]]
+      .flatMap((part) => (part ?? "").trim().split(/\s+/u))
+      .filter((part) => part.length > 0)
+      .map(titleCaseSimpleToken)
+      .join(" ");
+  }
+
+  return trimmed
+    .split(/\s+/u)
+    .map(titleCaseSimpleToken)
+    .join(" ");
+}
 
 function participantHeaderLabel(headerValue: string | null): string | null {
   if (headerValue === null) {
@@ -1770,6 +2072,16 @@ function participantHeaderLabel(headerValue: string | null): string | null {
   }
 
   return trimmed;
+}
+
+function participantHeaderEmail(headerValue: string | null): string | null {
+  if (headerValue === null) {
+    return null;
+  }
+
+  return normalizeEmailAddress(
+    PARTICIPANT_HEADER_EMAIL_PATTERN.exec(headerValue)?.[0] ?? null,
+  );
 }
 
 const OUTBOUND_SUBJECT_PREFIX_PATTERN =
@@ -1895,6 +2207,8 @@ function hasDisplayNameHeader(value: string | null | undefined): boolean {
 function resolveRecipientLabel(input: {
   readonly item: TimelineItem;
   readonly contactPrimaryEmail: string | null;
+  readonly contactDisplayName: string;
+  readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
 }): string | null {
   if (input.item.family !== "one_to_one_email") {
@@ -1902,27 +2216,44 @@ function resolveRecipientLabel(input: {
   }
 
   const toHeader = normalizeInlineText(input.item.toHeader);
+  const toEmail = normalizeEmailAddress(toHeader);
 
+  // Outbound: prefer a Title-Cased contact name resolved via the To
+  // email so the bubble header renders "Pam Hoult" instead of
+  // "phoult@yahoo.com". Falls through to whatever name was on the wire
+  // when the recipient email isn't a known contact, then the bare
+  // email. Notably, we don't fall back to the conversation's canonical
+  // contact name — that contact may not match the actual To address.
+  if (input.item.direction === "outbound") {
+    const contactName =
+      toEmail !== null ? input.contactDisplayNameByEmail.get(toEmail) : null;
+    if (contactName !== null && contactName !== undefined) {
+      return normalizeDisplayName(contactName) || contactName;
+    }
+    if (hasDisplayNameHeader(toHeader)) {
+      return participantHeaderLabel(toHeader);
+    }
+    return toEmail ?? normalizeEmailAddress(input.contactPrimaryEmail);
+  }
+
+  // Inbound: prefer a known project alias label. Falls back to the
+  // To-header's display name, then the email, then the mailbox alias.
+  if (toEmail !== null) {
+    const aliasLabel = input.projectLabelByAlias.get(toEmail);
+    if (aliasLabel !== undefined) {
+      return aliasLabel;
+    }
+  }
   if (hasDisplayNameHeader(toHeader)) {
     return participantHeaderLabel(toHeader);
   }
-
-  const toEmail = normalizeEmailAddress(toHeader);
-
   if (toEmail !== null) {
-    return input.item.direction === "inbound"
-      ? (input.projectLabelByAlias.get(toEmail) ?? toEmail)
-      : toEmail;
+    return toEmail;
   }
-
-  if (input.item.direction === "inbound") {
-    return projectLabelForAlias({
-      alias: input.item.mailbox,
-      projectLabelByAlias: input.projectLabelByAlias,
-    });
-  }
-
-  return normalizeEmailAddress(input.contactPrimaryEmail);
+  return projectLabelForAlias({
+    alias: input.item.mailbox,
+    projectLabelByAlias: input.projectLabelByAlias,
+  });
 }
 
 function formatCampaignActivityLabel(
@@ -2010,11 +2341,15 @@ function isPreviewTimelineItem(item: TimelineItem): boolean {
 function buildTimelineEntry(input: {
   readonly contactDisplayName: string;
   readonly contactPrimaryEmail: string | null;
+  readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
+  readonly operatorDisplayName: string;
   readonly inboxProjection: InboxProjectionRow;
   readonly item: TimelineItem;
   readonly campaignActivitySummaryByCampaignId: Readonly<
     Record<string, CampaignActivitySummary>
   >;
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly projectMetadataById: InboxDetailCacheData["projectMetadataById"];
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly referenceNowIso: string;
   readonly attachmentsByCanonicalEventId: ReadonlyMap<
@@ -2100,27 +2435,47 @@ function buildTimelineEntry(input: {
       ? (
           input.attachmentsByCanonicalEventId.get(input.item.canonicalEventId) ??
           []
-        ).map((attachment) => ({
-          id: attachment.id,
-          mimeType: attachment.mimeType,
-          filename: attachment.filename,
-          sizeBytes: attachment.sizeBytes,
-          proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
-        }))
+        )
+          .filter((attachment) => !attachment.isInline)
+          .map((attachment) => ({
+            id: attachment.id,
+            mimeType: attachment.mimeType,
+            filename: attachment.filename,
+            sizeBytes: attachment.sizeBytes,
+            proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
+          }))
       : [];
+  const headerProjectLabel =
+    input.item.family === "one_to_one_email"
+      ? resolveHeaderProjectLabel({
+          item: input.item,
+          memberships: input.memberships,
+          projectMetadataById: input.projectMetadataById,
+          projectLabelByAlias: input.projectLabelByAlias,
+        })
+      : null;
+  const canonicalSenderDisplayName =
+    input.item.family === "one_to_one_email"
+      ? input.contactDisplayNameByEmail.get(
+          participantHeaderEmail(input.item.fromHeader ?? null) ?? "",
+        ) ?? null
+      : null;
 
   return {
     id: input.item.id,
     kind: finalKind,
     occurredAt: input.item.occurredAt,
-    occurredAtLabel: formatRelativeTimestamp(
-      input.item.occurredAt,
-      input.referenceNowIso,
-    ),
+    occurredAtLabel:
+      input.item.family === "one_to_one_email" ||
+      input.item.family === "one_to_one_sms"
+        ? formatBubbleTimestamp(input.item.occurredAt, input.referenceNowIso)
+        : formatRelativeTimestamp(input.item.occurredAt, input.referenceNowIso),
     actorLabel: timelineActorLabel(
       input.item,
       input.contactDisplayName,
       finalKind,
+      input.operatorDisplayName,
+      canonicalSenderDisplayName,
     ),
     subject,
     body: resolvedBody,
@@ -2138,6 +2493,8 @@ function buildTimelineEntry(input: {
     recipientLabel: resolveRecipientLabel({
       item: input.item,
       contactPrimaryEmail: input.contactPrimaryEmail,
+      contactDisplayName: input.contactDisplayName,
+      contactDisplayNameByEmail: input.contactDisplayNameByEmail,
       projectLabelByAlias: input.projectLabelByAlias,
     }),
     ccHeader:
@@ -2184,10 +2541,238 @@ function buildTimelineEntry(input: {
         : 0,
     attachments,
     campaignActivity,
+    headerProjectLabel,
+    ...(input.item.family === "one_to_one_email"
+      ? {
+          participantRows: buildParticipantRows({
+            item: input.item,
+            contactDisplayName: input.contactDisplayName,
+            contactPrimaryEmail: input.contactPrimaryEmail,
+            contactDisplayNameByEmail: input.contactDisplayNameByEmail,
+            projectLabelByAlias: input.projectLabelByAlias,
+            operatorDisplayName: input.operatorDisplayName,
+            headerProjectLabel,
+          }),
+        }
+      : {}),
     noteId: input.item.family === "internal_note" ? input.item.noteId : null,
     authorId:
       input.item.family === "internal_note" ? input.item.authorId : null,
   };
+}
+
+/**
+ * Resolve a single bubble-header participant slot ("From"/"To"
+ * volunteer side, never the project side) to a `name` (or null when
+ * we have nothing better than the email itself). Order: known-contact
+ * lookup by email, header display name, conversation-contact display
+ * name. Each candidate is rejected when it looks like a bare email
+ * (`isEmailLikeName`) so we never echo `email <email>` in the UI.
+ */
+function resolveVolunteerParticipantName(input: {
+  readonly emailAddress: string | null;
+  readonly headerDisplayName: string | null;
+  readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
+  readonly conversationContactDisplayName: string;
+}): string | null {
+  if (input.emailAddress !== null) {
+    const lookup = input.contactDisplayNameByEmail.get(input.emailAddress);
+    if (
+      lookup !== undefined &&
+      lookup.length > 0 &&
+      !isEmailLikeName(lookup)
+    ) {
+      const normalized = normalizeDisplayName(lookup);
+      if (normalized.length > 0) {
+        return normalized;
+      }
+    }
+  }
+
+  if (input.headerDisplayName !== null) {
+    const normalized = normalizeDisplayName(input.headerDisplayName);
+    if (normalized.length > 0 && !isEmailLikeName(normalized)) {
+      return normalized;
+    }
+  }
+
+  if (
+    input.conversationContactDisplayName.length > 0 &&
+    !isEmailLikeName(input.conversationContactDisplayName)
+  ) {
+    const normalized = normalizeDisplayName(
+      input.conversationContactDisplayName,
+    );
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Build the From / To / (optional Cc) rows that drive both the
+ * compact bubble header and the expanded debug view. Direction is
+ * baked in so the component can render
+ * `participantRows[0].name → participantRows[1].name` without
+ * branching: the From slot for outbound is the project alias, for
+ * inbound it is the volunteer's resolved name (and vice versa for
+ * To). When toHeader is missing on an inbound capture the To row
+ * falls back to `item.mailbox` so we never render an empty right
+ * side.
+ */
+function buildParticipantRows(input: {
+  readonly item: Extract<TimelineItem, { family: "one_to_one_email" }>;
+  readonly contactDisplayName: string;
+  readonly contactPrimaryEmail: string | null;
+  readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
+  readonly projectLabelByAlias: ReadonlyMap<string, string>;
+  readonly operatorDisplayName: string;
+  readonly headerProjectLabel: string | null;
+}): readonly InboxTimelineEntryParticipantRowViewModel[] {
+  const fromEmail =
+    participantHeaderEmail(input.item.fromHeader ?? null) ??
+    (input.item.direction === "inbound"
+      ? normalizeEmailAddress(input.contactPrimaryEmail)
+      : null);
+  const toEmail = participantHeaderEmail(input.item.toHeader ?? null);
+  const fromHeaderDisplayName = participantHeaderLabel(
+    input.item.fromHeader ?? null,
+  );
+  const toHeaderDisplayName = participantHeaderLabel(
+    input.item.toHeader ?? null,
+  );
+  const normalizedOperator = normalizeDisplayName(input.operatorDisplayName);
+  const operatorLabel =
+    normalizedOperator.length > 0 ? normalizedOperator : "Adventure Scientists";
+
+  const rows: InboxTimelineEntryParticipantRowViewModel[] = [];
+
+  if (input.item.direction === "outbound") {
+    // For outbound the From slot holds whatever the operator was
+    // sending AS. Order: resolved project alias → whatever display
+    // name appears on the wire (handles legacy / non-aliased sends
+    // like "PNW Project <pnwbio@…>") → operator name → fallback.
+    const fromHeaderName =
+      fromHeaderDisplayName !== null &&
+      !isEmailLikeName(fromHeaderDisplayName)
+        ? normalizeDisplayName(fromHeaderDisplayName) || fromHeaderDisplayName
+        : null;
+    rows.push({
+      label: "From",
+      name: input.headerProjectLabel ?? fromHeaderName ?? operatorLabel,
+      email: fromEmail,
+    });
+    rows.push({
+      label: "To",
+      name: resolveVolunteerParticipantName({
+        emailAddress: toEmail,
+        headerDisplayName:
+          toHeaderDisplayName !== null && !isEmailLikeName(toHeaderDisplayName)
+            ? toHeaderDisplayName
+            : null,
+        contactDisplayNameByEmail: input.contactDisplayNameByEmail,
+        conversationContactDisplayName: input.contactDisplayName,
+      }),
+      email: toEmail,
+    });
+  } else {
+    rows.push({
+      label: "From",
+      name: resolveVolunteerParticipantName({
+        emailAddress: fromEmail,
+        headerDisplayName:
+          fromHeaderDisplayName !== null &&
+          !isEmailLikeName(fromHeaderDisplayName)
+            ? fromHeaderDisplayName
+            : null,
+        contactDisplayNameByEmail: input.contactDisplayNameByEmail,
+        conversationContactDisplayName: input.contactDisplayName,
+      }),
+      email: fromEmail,
+    });
+    // Inbound captures sometimes drop the To header (older
+    // Salesforce-derived items, mbox imports). Fall back to the
+    // captured `mailbox` so the compact header always has a right
+    // side and the expanded view always shows a To row.
+    const inboundToEmail = toEmail ?? input.item.mailbox ?? null;
+    rows.push({
+      label: "To",
+      name: input.headerProjectLabel ?? "Adventure Scientists",
+      email: inboundToEmail,
+    });
+  }
+
+  if (
+    input.item.ccHeader !== null &&
+    input.item.ccHeader.trim().length > 0
+  ) {
+    rows.push({
+      label: "Cc",
+      name: input.item.ccHeader.trim(),
+      email: null,
+    });
+  }
+
+  return rows;
+}
+
+/**
+ * Resolve the project alias label for a 1:1 email — used in the bubble
+ * header in place of "Adventure Scientists" / verbose project names.
+ *
+ * Looks at whichever side of the email is one of our project aliases:
+ * outbound → fromHeader (we sent FROM the alias),
+ * inbound  → toHeader (the operator received TO the alias).
+ * Falls back to the explicit `mailbox` field when headers are missing.
+ */
+function resolveHeaderProjectLabel(input: {
+  readonly item: Extract<TimelineItem, { family: "one_to_one_email" }>;
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly projectMetadataById: InboxDetailCacheData["projectMetadataById"];
+  readonly projectLabelByAlias: ReadonlyMap<string, string>;
+}): string | null {
+  const fromEmail = participantHeaderEmail(input.item.fromHeader ?? null);
+  const toEmail = participantHeaderEmail(input.item.toHeader ?? null);
+
+  const fromMatch =
+    fromEmail !== null
+      ? (input.projectLabelByAlias.get(fromEmail) ?? null)
+      : null;
+  if (fromMatch !== null) {
+    return fromMatch;
+  }
+
+  const toMatch =
+    toEmail !== null
+      ? (input.projectLabelByAlias.get(toEmail) ?? null)
+      : null;
+  if (toMatch !== null) {
+    return toMatch;
+  }
+
+  const mailboxMatch = projectLabelForAlias({
+    alias: input.item.mailbox,
+    projectLabelByAlias: input.projectLabelByAlias,
+  });
+  if (mailboxMatch !== null) {
+    return mailboxMatch;
+  }
+
+  const membershipProjects = input.memberships.flatMap((membership) => {
+    const metadata =
+      membership.projectId === null
+        ? undefined
+        : input.projectMetadataById[membership.projectId];
+    return metadata === undefined ? [] : [metadata];
+  });
+
+  return (
+    membershipProjects.find((metadata) => metadata.isActive)?.projectName ??
+    membershipProjects[0]?.projectName ??
+    null
+  );
 }
 
 function buildComposerReplyContext(input: {
@@ -2301,6 +2886,14 @@ function pickPrimaryActiveProjectName(input: {
 
 async function loadProjectMetadataById(
   memberships: readonly ContactMembershipRecord[],
+  /**
+   * Additional project IDs to look up beyond what the contact's memberships
+   * surface. The conversation-derived project pill needs the metadata for
+   * any project_id that appears in salesforce_event_context for this
+   * contact's events, even when no membership exists (external contacts
+   * sent FROM a project alias).
+   */
+  extraProjectIds: readonly (string | null | undefined)[] = [],
 ): Promise<
   Readonly<
     Record<
@@ -2312,9 +2905,10 @@ async function loadProjectMetadataById(
     >
   >
 > {
-  const projectIds = uniqueStrings(
-    memberships.map((membership) => membership.projectId),
-  );
+  const projectIds = uniqueStrings([
+    ...memberships.map((membership) => membership.projectId),
+    ...extraProjectIds,
+  ]);
 
   if (projectIds.length === 0) {
     return {};
@@ -2909,11 +3503,20 @@ async function readInboxDetailCacheData(
       .filter((event) => event.eventType === "communication.email.outbound")
       .map((event) => event.sourceEvidenceId),
   );
+  const canonicalSourceEvidenceIds = uniqueStrings(
+    canonicalEvents.map((event) => event.sourceEvidenceId),
+  );
   const gmailDetails =
     gmailSourceEvidenceIds.length === 0
       ? []
       : await runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
           gmailSourceEvidenceIds,
+        );
+  const salesforceEventContexts =
+    canonicalSourceEvidenceIds.length === 0
+      ? []
+      : await runtime.repositories.salesforceEventContext.listBySourceEvidenceIds(
+          canonicalSourceEvidenceIds,
         );
   const gmailDetailBySourceEvidenceId = new Map(
     gmailDetails.map((detail) => [detail.sourceEvidenceId, detail]),
@@ -2935,12 +3538,62 @@ async function readInboxDetailCacheData(
       .map((item) => sourceEvidenceIdByCanonicalEventId.get(item.canonicalEventId))
       .filter((value): value is string => typeof value === "string"),
   );
+  const senderEmails = uniqueStrings(
+    timelinePage.items
+      .flatMap((item) =>
+        item.family === "one_to_one_email"
+          ? [participantHeaderEmail(item.fromHeader ?? null)]
+          : [],
+      )
+      .filter((value): value is string => value !== null),
+  );
   const attachments =
     timelineSourceEvidenceIds.length === 0
       ? []
       : await runtime.repositories.messageAttachments.findByMessageIds(
           timelineSourceEvidenceIds,
         );
+  const contactIdentityMatches = await Promise.all(
+    senderEmails.map(async (email) => ({
+      email,
+      identities:
+        await runtime.repositories.contactIdentities.listByNormalizedValue({
+          kind: "email",
+          normalizedValue: email,
+        }),
+    })),
+  );
+  const matchedContactIds = uniqueStrings(
+    contactIdentityMatches.flatMap(({ identities }) =>
+      identities.map((identity) => identity.contactId),
+    ),
+  );
+  const matchedContacts =
+    matchedContactIds.length === 0
+      ? []
+      : await runtime.repositories.contacts.listByIds(matchedContactIds);
+  const contactById = new Map(matchedContacts.map((row) => [row.id, row]));
+  const contactDisplayNameByEmail = new Map<string, string>();
+
+  if (
+    contact.primaryEmail !== null &&
+    normalizeEmailAddress(contact.primaryEmail) !== null
+  ) {
+    contactDisplayNameByEmail.set(
+      normalizeEmailAddress(contact.primaryEmail) ?? "",
+      contact.displayName,
+    );
+  }
+
+  for (const match of contactIdentityMatches) {
+    const contactId = match.identities[0]?.contactId;
+    const matchedContact =
+      contactId === undefined ? null : (contactById.get(contactId) ?? null);
+
+    if (matchedContact !== null) {
+      contactDisplayNameByEmail.set(match.email, matchedContact.displayName);
+    }
+  }
   const attachmentsBySourceEvidenceId = new Map<
     string,
     MessageAttachmentRecord[]
@@ -2971,7 +3624,20 @@ async function readInboxDetailCacheData(
         runtime,
         canonicalEvents,
       }),
-    projectMetadataById: await loadProjectMetadataById(memberships),
+    canonicalEventById: new Map(canonicalEvents.map((event) => [event.id, event])),
+    projectMetadataById: await loadProjectMetadataById(
+      memberships,
+      salesforceEventContexts.map((context) => context.projectId),
+    ),
+    salesforceEventContextBySourceEvidenceId: new Map(
+      salesforceEventContexts.map((context) => [
+        context.sourceEvidenceId,
+        {
+          projectId: context.projectId,
+        },
+      ]),
+    ),
+    contactDisplayNameByEmail,
     projectLabelByAlias: await loadProjectLabelByAlias(projectAliasRecords),
     attachmentsByCanonicalEventId: new Map(
       timelinePage.items.map((item) => [
@@ -3069,8 +3735,18 @@ async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkload
       ? []
       : await runtime.repositories.contacts.listByIds(inlineContactIds);
   const contactById = new Map(inlineContacts.map((contact) => [contact.id, contact]));
+  // Operator-facing label: prefer the alias (e.g. "PNW Biodiversity")
+  // over the verbose Salesforce projectName. Falls back to projectName
+  // when alias is null/empty so we never show a blank label.
+  const projectDisplayName = (project: {
+    readonly projectAlias?: string | null | undefined;
+    readonly projectName: string;
+  }): string => {
+    const trimmedAlias = project.projectAlias?.trim() ?? "";
+    return trimmedAlias.length > 0 ? trimmedAlias : project.projectName;
+  };
   const projectLabelById = new Map(
-    activeProjects.map((project) => [project.projectId, project.projectName]),
+    activeProjects.map((project) => [project.projectId, projectDisplayName(project)]),
   );
   const referenceNowIso = new Date().toISOString();
 
@@ -3087,7 +3763,7 @@ async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkload
 
       return {
         projectId: project.projectId,
-        projectName: project.projectName,
+        projectName: projectDisplayName(project),
         unreadCount: counts.unread,
         needsFollowUpCount: counts.followUp,
       };
@@ -3223,10 +3899,20 @@ function buildContactSummary(input: {
   >;
   readonly referenceNowIso: string;
 }): InboxContactSummaryViewModel {
-  const activeProjects = sortMemberships(input.memberships)
+  const projectActivityIndex = buildProjectActivityIndex(
+    input.activityTimelineItems,
+  );
+  const activeProjects = sortMembershipsByLastActivity(
+    input.memberships,
+    projectActivityIndex.lastOccurredAtByProjectId,
+  )
     .filter((membership) => !isPastProject(membership, input.projectMetadataById))
     .map((membership) =>
-      buildProjectMembershipViewModel(membership, input.projectMetadataById),
+      buildProjectMembershipViewModel(
+        membership,
+        input.projectMetadataById,
+        projectActivityIndex.firstOccurredAtByProjectId,
+      ),
     )
     .filter(
       (membership): membership is InboxProjectMembershipViewModel =>
@@ -3235,7 +3921,11 @@ function buildContactSummary(input: {
   const pastProjects = sortMembershipsByCreatedAt(input.memberships)
     .filter((membership) => isPastProject(membership, input.projectMetadataById))
     .map((membership) =>
-      buildProjectMembershipViewModel(membership, input.projectMetadataById),
+      buildProjectMembershipViewModel(
+        membership,
+        input.projectMetadataById,
+        projectActivityIndex.firstOccurredAtByProjectId,
+      ),
     )
     .filter(
       (membership): membership is InboxProjectMembershipViewModel =>
@@ -3268,6 +3958,70 @@ function buildContactSummary(input: {
       input.referenceNowIso,
     ),
   };
+}
+
+function buildConversationProject(input: {
+  readonly contact: InboxContactSummaryViewModel;
+  readonly timelineItems: readonly TimelineItem[];
+  readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
+  readonly salesforceEventContextBySourceEvidenceId: ReadonlyMap<
+    string,
+    {
+      readonly projectId: string | null;
+    }
+  >;
+  readonly projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >;
+}): InboxDetailViewModel["conversationProject"] {
+  const membershipProject = input.contact.activeProjects[0];
+
+  if (membershipProject !== undefined) {
+    return {
+      projectId: membershipProject.projectId,
+      projectName: membershipProject.projectName,
+      source: "membership",
+    };
+  }
+
+  for (const item of [...input.timelineItems].sort((left, right) =>
+    right.occurredAt.localeCompare(left.occurredAt),
+  )) {
+    const sourceEvidenceId =
+      input.canonicalEventById.get(item.canonicalEventId)?.sourceEvidenceId;
+
+    if (sourceEvidenceId === undefined) {
+      continue;
+    }
+
+    const projectId =
+      input.salesforceEventContextBySourceEvidenceId.get(sourceEvidenceId)
+        ?.projectId ?? null;
+
+    if (projectId === null) {
+      continue;
+    }
+
+    const projectName = input.projectMetadataById[projectId]?.projectName;
+
+    if (typeof projectName !== "string" || projectName.length === 0) {
+      continue;
+    }
+
+    return {
+      projectId,
+      projectName,
+      source: "conversation",
+    };
+  }
+
+  return null;
 }
 
 function matchesServerFilter(
@@ -3385,16 +4139,21 @@ export async function getInboxTimelinePage(
   }
 
   const referenceNowIso = new Date().toISOString();
+  const operatorDisplayName = "Adventure Scientists";
 
   return {
     entries: cachedData.timelineItems.map((item) =>
       buildTimelineEntry({
         contactDisplayName: cachedData.contact.displayName,
         contactPrimaryEmail: cachedData.contact.primaryEmail,
+        contactDisplayNameByEmail: cachedData.contactDisplayNameByEmail,
+        operatorDisplayName,
         inboxProjection: cachedData.inboxProjection,
         item,
         campaignActivitySummaryByCampaignId:
           cachedData.campaignActivitySummaryByCampaignId,
+        memberships: cachedData.memberships,
+        projectMetadataById: cachedData.projectMetadataById,
         projectLabelByAlias: cachedData.projectLabelByAlias,
         referenceNowIso,
         attachmentsByCanonicalEventId: cachedData.attachmentsByCanonicalEventId,
@@ -3467,6 +4226,18 @@ export async function getInboxDetail(
 
   const runtime = await getStage1WebRuntime();
   const referenceNowIso = new Date().toISOString();
+  const currentUser = await getCurrentUser();
+  const operatorDisplayName =
+    normalizeDisplayName(currentUser?.name ?? "") || "Adventure Scientists";
+  const contactSummary = buildContactSummary({
+    contact: cachedData.contact,
+    inboxProjection: cachedData.inboxProjection,
+    memberships: cachedData.memberships,
+    latestNote: cachedData.latestNote,
+    activityTimelineItems: cachedData.activityTimelineItems,
+    projectMetadataById: cachedData.projectMetadataById,
+    referenceNowIso,
+  });
   const composerReplyContext = buildComposerReplyContext({
     contact: cachedData.contact,
     timelineItems: cachedData.timelineItems,
@@ -3477,14 +4248,14 @@ export async function getInboxDetail(
   });
 
   return {
-    contact: buildContactSummary({
-      contact: cachedData.contact,
-      inboxProjection: cachedData.inboxProjection,
-      memberships: cachedData.memberships,
-      latestNote: cachedData.latestNote,
-      activityTimelineItems: cachedData.activityTimelineItems,
+    contact: contactSummary,
+    conversationProject: buildConversationProject({
+      contact: contactSummary,
+      timelineItems: cachedData.activityTimelineItems,
+      canonicalEventById: cachedData.canonicalEventById,
+      salesforceEventContextBySourceEvidenceId:
+        cachedData.salesforceEventContextBySourceEvidenceId,
       projectMetadataById: cachedData.projectMetadataById,
-      referenceNowIso,
     }),
     initials: toInitials(cachedData.contact.displayName),
     avatarTone: avatarToneForContact(cachedData.contact.id),
@@ -3492,10 +4263,14 @@ export async function getInboxDetail(
       buildTimelineEntry({
         contactDisplayName: cachedData.contact.displayName,
         contactPrimaryEmail: cachedData.contact.primaryEmail,
+        contactDisplayNameByEmail: cachedData.contactDisplayNameByEmail,
+        operatorDisplayName,
         inboxProjection: cachedData.inboxProjection,
         item,
         campaignActivitySummaryByCampaignId:
           cachedData.campaignActivitySummaryByCampaignId,
+        memberships: cachedData.memberships,
+        projectMetadataById: cachedData.projectMetadataById,
         projectLabelByAlias: cachedData.projectLabelByAlias,
         referenceNowIso,
         attachmentsByCanonicalEventId: cachedData.attachmentsByCanonicalEventId,

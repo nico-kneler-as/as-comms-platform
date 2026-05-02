@@ -21,8 +21,11 @@ import {
 } from "../providers/gmail-record-builder.js";
 import {
   collectGmailAttachmentMetadata,
+  collectGmailHtmlCidReferences,
+  cleanGmailBodyPreviewText,
   extractDsnOriginalMessageId,
   extractGmailBodyPreviewFromPayloadResult,
+  isUsableGmailBodyPreviewText,
   type GmailApiMessagePart
 } from "../providers/gmail-body.js";
 import {
@@ -433,7 +436,19 @@ export async function mapLiveGmailMessageToRecord(input: {
       messageIdentifier: input.message.id
     }
   );
+  const cleanedGmailSnippet = cleanGmailBodyPreviewText(input.message.snippet);
+  const usableSnippetFallback =
+    bodyPreviewResult.bodyKind === "binary_fallback" &&
+    isUsableGmailBodyPreviewText(cleanedGmailSnippet)
+      ? cleanedGmailSnippet
+      : null;
   const attachmentMetadata = collectGmailAttachmentMetadata(input.message.payload);
+  const htmlBodyCidReferences = collectGmailHtmlCidReferences(
+    input.message.payload,
+    {
+      messageIdentifier: input.message.id,
+    }
+  );
   const previewMessageIdPattern =
     /Message-ID:\s*(<\d+\.[a-f0-9-]+@[a-z.]+>)/iu;
   const dsnOriginalMessageIdFromParts = isPossiblyDsn
@@ -451,8 +466,10 @@ export async function mapLiveGmailMessageToRecord(input: {
     labelIds: input.message.labelIds,
     snippet: input.message.snippet,
     snippetClean: input.message.snippet,
-    ...bodyPreviewResult,
+    bodyTextPreview: usableSnippetFallback ?? bodyPreviewResult.bodyTextPreview,
+    bodyKind: usableSnippetFallback === null ? bodyPreviewResult.bodyKind : "plaintext",
     attachmentMetadata,
+    htmlBodyCidReferences,
     internalDate: input.message.internalDate,
     headers,
     payloadRef: `gmail://${encodeURIComponent(input.capturedMailbox)}/messages/${encodeURIComponent(input.message.id)}`,

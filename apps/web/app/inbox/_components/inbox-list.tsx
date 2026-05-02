@@ -44,7 +44,7 @@ import {
   XIcon,
 } from "./icons";
 import { InboxFilterList } from "./inbox-filter-list";
-import { QueueLoadingSkeleton } from "./inbox-loading";
+import { QueueLoadingSkeleton, QueueLoadMoreSkeleton } from "./inbox-loading";
 import { InboxRow } from "./inbox-row";
 
 interface ListColumnProps {
@@ -531,9 +531,9 @@ export function InboxList({
     >
       <div className="sticky top-0 z-10 bg-white/95 backdrop-blur">
         <div
-          className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-5`}
+          className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-4`}
         >
-          <h1 className={`min-w-0 flex-1 truncate ${TYPE.headingLg}`}>
+          <h1 className={`min-w-0 flex-1 truncate ${TYPE.headingMd}`}>
             {headerTitle}
           </h1>
           <Button
@@ -544,7 +544,7 @@ export function InboxList({
             aria-keyshortcuts="c"
             title="Compose"
             onClick={openNewDraft}
-            className="h-8 w-8 shrink-0 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="size-8 shrink-0 text-slate-900 hover:bg-slate-100 hover:text-slate-950"
           >
             <PencilIcon aria-hidden="true" data-icon="inline-start" />
           </Button>
@@ -558,12 +558,12 @@ export function InboxList({
             title="Filters"
             onClick={toggleFilterPane}
             className={cn(
-              "relative h-8 w-8 shrink-0",
+              "relative size-8 shrink-0",
               isFilterPaneOpen
                 ? "bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
                 : hasActiveFilters
                   ? "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+                  : "text-slate-900 hover:bg-slate-100 hover:text-slate-950",
             )}
           >
             <FilterIcon aria-hidden="true" data-icon="inline-start" />
@@ -572,7 +572,7 @@ export function InboxList({
                 aria-hidden="true"
                 data-filter-active-indicator="true"
                 className={cn(
-                  "absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-sky-500 ring-2",
+                  "absolute right-1 top-1 size-1.5 rounded-full bg-sky-500 ring-2",
                   isFilterPaneOpen ? "ring-slate-900" : "ring-white",
                 )}
               />
@@ -580,11 +580,11 @@ export function InboxList({
           </Button>
         </div>
 
-        <div className="px-5 pb-3 pt-3">
+        <div className="px-4 py-2.5">
           <label
             className={`flex items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm} ${TRANSITION.fast} focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300`}
           >
-            <SearchIcon className="h-4 w-4 text-slate-400" />
+            <SearchIcon className="size-4 text-slate-400" />
             <input
               id="inbox-search-input"
               data-inbox-search-input="true"
@@ -601,11 +601,11 @@ export function InboxList({
               <span
                 role="status"
                 aria-label="Search loading"
-                className="inline-flex h-4 w-4 items-center justify-center"
+                className="inline-flex size-4 items-center justify-center"
               >
                 <LoaderIcon
                   aria-hidden="true"
-                  className="h-3.5 w-3.5 animate-spin text-slate-400"
+                  className="size-3.5 animate-spin text-slate-400"
                 />
               </span>
             ) : search.isActive ? (
@@ -621,7 +621,7 @@ export function InboxList({
                   FOCUS_RING,
                 )}
               >
-                <XIcon className="h-3.5 w-3.5" />
+                <XIcon className="size-3.5" />
               </button>
             ) : null}
           </label>
@@ -676,9 +676,13 @@ export function InboxList({
         ) : shouldShowInitialSkeleton ? (
           <QueueLoadingSkeleton />
         ) : shouldShowSearchSummary && displayItems.length === 0 ? (
-          <SearchEmptyState query={search.query} />
+          <SearchEmptyState query={search.query} onClearSearch={clearSearch} />
         ) : displayItems.length === 0 ? (
-          <QueueEmptyState />
+          <QueueEmptyState
+            onSwitchToFollowUp={() => {
+              handleFilterChange("follow-up");
+            }}
+          />
         ) : (
           <>
             <ul className="divide-y divide-slate-100">
@@ -699,9 +703,7 @@ export function InboxList({
                   className="h-px w-full"
                 />
                 {isLoadingMore ? (
-                  <p className="pt-3 text-center text-sm text-slate-500">
-                    Loading more conversations...
-                  </p>
+                  <QueueLoadMoreSkeleton />
                 ) : null}
               </div>
             ) : null}
@@ -712,26 +714,56 @@ export function InboxList({
   );
 }
 
-function QueueEmptyState() {
+function QueueEmptyState({
+  onSwitchToFollowUp,
+}: {
+  readonly onSwitchToFollowUp: () => void;
+}) {
   return (
     <EmptyState
-      icon={<InboxIcon className="h-6 w-6" />}
+      icon={<InboxIcon className="size-6" />}
       title="All caught up"
       description="No conversations match the current filter."
+      action={
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onSwitchToFollowUp}
+        >
+          Switch to follow-ups
+        </Button>
+      }
     />
   );
 }
 
-function SearchEmptyState({ query }: { readonly query: string }) {
+function SearchEmptyState({
+  query,
+  onClearSearch,
+}: {
+  readonly query: string;
+  readonly onClearSearch: () => void;
+}) {
   return (
     <EmptyState
-      icon={<SearchXIcon className="h-6 w-6" />}
+      icon={<SearchXIcon className="size-6" />}
       title="No results"
       description={
         <>
           Nothing in the inbox matches &ldquo;{query}&rdquo;. Try a different
           search.
         </>
+      }
+      action={
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onClearSearch}
+        >
+          Clear filter
+        </Button>
       }
     />
   );

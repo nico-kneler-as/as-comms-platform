@@ -8,6 +8,13 @@ vi.mock("next/cache", () => ({
   revalidateTag: vi.fn(),
 }));
 
+// Stub the session module so importing selectors.ts does not pull in
+// next-auth (and therefore `next/server`, which Node ESM cannot resolve
+// from inside next-auth's package layout in the test environment).
+vi.mock("@/src/server/auth/session", () => ({
+  getCurrentUser: vi.fn().mockResolvedValue(null),
+}));
+
 Object.assign(globalThis, { React });
 
 vi.mock("@/components/ui/button", () => ({
@@ -55,6 +62,7 @@ vi.mock("@/app/_lib/design-tokens", () => ({
 import {
   compareInboxOutboundRecency,
   compareInboxRecency,
+  formatBubbleTimestamp,
   getInboxDetail,
   getInboxList,
   getInboxTimelinePage,
@@ -154,6 +162,60 @@ function buildTimelineEntry(
     ...overrides,
   };
 }
+
+describe("formatBubbleTimestamp", () => {
+  const timeZone = "UTC";
+
+  it("renders time only for messages from today", () => {
+    expect(
+      formatBubbleTimestamp(
+        "2026-05-01T21:42:00.000Z",
+        "2026-05-01T22:15:00.000Z",
+        timeZone,
+      ),
+    ).toBe("9:42 PM");
+  });
+
+  it("renders month and day for yesterday", () => {
+    expect(
+      formatBubbleTimestamp(
+        "2026-05-01T18:00:00.000Z",
+        "2026-05-02T12:00:00.000Z",
+        timeZone,
+      ),
+    ).toBe("May 1");
+  });
+
+  it("renders month and day for five days ago in the current year", () => {
+    expect(
+      formatBubbleTimestamp(
+        "2026-04-26T12:00:00.000Z",
+        "2026-05-01T12:00:00.000Z",
+        timeZone,
+      ),
+    ).toBe("Apr 26");
+  });
+
+  it("renders month and day for older messages in the current year", () => {
+    expect(
+      formatBubbleTimestamp(
+        "2026-03-01T12:00:00.000Z",
+        "2026-05-01T12:00:00.000Z",
+        timeZone,
+      ),
+    ).toBe("Mar 1");
+  });
+
+  it("renders month, day, and year for prior-year messages", () => {
+    expect(
+      formatBubbleTimestamp(
+        "2025-11-10T12:00:00.000Z",
+        "2026-01-15T12:00:00.000Z",
+        timeZone,
+      ),
+    ).toBe("Nov 10, 2025");
+  });
+});
 
 function buildMembership(
   overrides: Partial<ContactMembershipRecord> & {
@@ -1346,7 +1408,7 @@ describe("real inbox selectors", () => {
     expect(workload.projects).toEqual([
       {
         projectId: "project:amazon-basin",
-        projectName: "Amazon Basin Research",
+        projectName: "Amazon Basin",
         unreadCount: 1,
         needsFollowUpCount: 1,
       },
@@ -1358,7 +1420,7 @@ describe("real inbox selectors", () => {
       },
       {
         projectId: "project:whitebark-pine",
-        projectName: "Tracking Whitebark Pine",
+        projectName: "Whitebark Pine",
         unreadCount: 0,
         needsFollowUpCount: 0,
       },
@@ -1418,13 +1480,13 @@ describe("real inbox selectors", () => {
     expect(workload.projects).toEqual([
       {
         projectId: "project:amazon-basin",
-        projectName: "Amazon Basin Research",
+        projectName: "Amazon Basin",
         unreadCount: 1,
         needsFollowUpCount: 1,
       },
       {
         projectId: "project:whitebark-pine",
-        projectName: "Tracking Whitebark Pine",
+        projectName: "Whitebark Pine",
         unreadCount: 1,
         needsFollowUpCount: 1,
       },
@@ -1773,7 +1835,7 @@ describe("real inbox selectors", () => {
       (item) => item.contactId === "contact:multi-membership",
     );
 
-    expect(entry?.projectLabel).toBe("Tracking Whitebark Pine");
+    expect(entry?.projectLabel).toBe("Whitebark Pine");
   });
 
   it("uses the event-type fallback subject for follow-up rows", async () => {
@@ -1874,6 +1936,120 @@ describe("real inbox selectors", () => {
       nextCursor: null,
       total: 2,
     });
+  });
+
+  it("sets conversationProject from membership when the contact has an active project membership", async () => {
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.conversationProject).toEqual({
+      projectId: "project:amazon-basin",
+      projectName: "Amazon Basin Research",
+      source: "membership",
+    });
+  });
+
+  it("falls back to a conversation-derived project when there is no membership project", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:orcas",
+      projectName: "Orca Listening Network",
+      projectAlias: "Orcas",
+      source: "salesforce",
+      isActive: true,
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:external-orcas",
+      salesforceContactId: null,
+      displayName: "External Orcas",
+      primaryEmail: "external-orcas@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "external-orcas-outbound",
+      contactId: "contact:external-orcas",
+      occurredAt: "2026-04-19T16:00:00.000Z",
+      direction: "outbound",
+      subject: "Project alias send",
+      snippet: "Sent from the orcas alias.",
+      bodyTextPreview: "Sent from the orcas alias.",
+      fromHeader: "Orcas <orcas@adventurescientists.org>",
+      toHeader: "External Orcas <external-orcas@example.org>",
+      projectInboxAlias: "orcas@adventurescientists.org",
+    });
+    await runtime.context.repositories.salesforceEventContext.upsert({
+      sourceEvidenceId: "source:external-orcas-outbound",
+      salesforceContactId: null,
+      projectId: "project:orcas",
+      expeditionId: null,
+      sourceField: null,
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:external-orcas",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-19T16:00:00.000Z",
+      lastActivityAt: "2026-04-19T16:00:00.000Z",
+      snippet: "Sent from the orcas alias.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:external-orcas");
+
+    expect(detail?.contact.activeProjects).toHaveLength(0);
+    // loadProjectMetadataById prefers projectAlias over projectName
+    // (system convention — the alias is the operator-facing label).
+    expect(detail?.conversationProject).toEqual({
+      projectId: "project:orcas",
+      projectName: "Orcas",
+      source: "conversation",
+    });
+  });
+
+  it("leaves conversationProject null when there is no membership or project-linked event context", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:no-project-context",
+      salesforceContactId: null,
+      displayName: "No Project Context",
+      primaryEmail: "no-project-context@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "no-project-context-inbound",
+      contactId: "contact:no-project-context",
+      occurredAt: "2026-04-19T17:00:00.000Z",
+      direction: "inbound",
+      subject: "No project context",
+      snippet: "No project-linked event context.",
+      bodyTextPreview: "No project-linked event context.",
+      fromHeader: "No Project Context <no-project-context@example.org>",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:no-project-context",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-19T17:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-19T17:00:00.000Z",
+      snippet: "No project-linked event context.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:no-project-context");
+
+    expect(detail?.contact.activeProjects).toHaveLength(0);
+    expect(detail?.conversationProject).toBeNull();
   });
 
   it("filters pre-cutover timeline entries while keeping the cutover boundary inclusive", async () => {
@@ -2377,7 +2553,7 @@ describe("real inbox selectors", () => {
     );
   });
 
-  it("orders contact rail active projects by status rank and uses short aliases", async () => {
+  it("orders contact rail active projects by latest lifecycle activity and uses short aliases", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -2421,6 +2597,30 @@ describe("real inbox selectors", () => {
       membershipStatus: "active",
       membershipCreatedAt: "2026-04-03T10:00:00.000Z",
     });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "steve-whitebark-received-training",
+      contactId: "contact:steve-herman",
+      occurredAt: "2026-04-15T10:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+      projectId: "project:whitebark-pine",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "steve-illegal-signed-up",
+      contactId: "contact:steve-herman",
+      occurredAt: "2026-04-12T10:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:illegal-timber",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "steve-passive-submitted-data",
+      contactId: "contact:steve-herman",
+      occurredAt: "2026-04-20T10:00:00.000Z",
+      eventType: "lifecycle.submitted_first_data",
+      summary: "Submitted first data",
+      projectId: "project:passive-acoustic",
+    });
     const latest = await seedInboxEmailEvent(runtime.context, {
       id: "steve-detail-inbound-1",
       contactId: "contact:steve-herman",
@@ -2449,9 +2649,9 @@ describe("real inbox selectors", () => {
     }
 
     expect(detail.contact.activeProjects.map((project) => project.projectName)).toEqual([
-      "Illegal Timber",
-      "Whitebark Pine",
       "Passive Acoustic",
+      "Whitebark Pine",
+      "Illegal Timber",
     ]);
     expect(
       renderToStaticMarkup(
@@ -2484,6 +2684,101 @@ describe("real inbox selectors", () => {
       expeditionMemberUrl:
         "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/membership%3Alisa%3Asf/view",
     });
+  });
+
+  it("derives past-project signup year from the earliest lifecycle event and falls back to membership createdAt", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:past-signup-year",
+      salesforceContactId: "003-past-signup-year",
+      displayName: "Past Signup Year",
+      primaryEmail: "past-signup-year@example.org",
+      primaryPhone: null,
+      projectId: "project:old-ledger-year",
+      projectName: "Old Ledger Year",
+      membershipId: "membership:past:old-ledger-year",
+      salesforceMembershipId: "a0B-past-old-ledger-year",
+      membershipStatus: "successful",
+      membershipCreatedAt: "2026-02-01T00:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:past-signup-year",
+      salesforceContactId: "003-past-signup-year",
+      displayName: "Past Signup Year",
+      primaryEmail: "past-signup-year@example.org",
+      primaryPhone: null,
+      projectId: "project:fallback-membership-year",
+      projectName: "Fallback Membership Year",
+      membershipId: "membership:past:fallback-membership-year",
+      salesforceMembershipId: "a0B-past-fallback-membership-year",
+      membershipStatus: "completed",
+      membershipCreatedAt: "2024-05-01T00:00:00.000Z",
+    });
+    await runtime.context.settings.projects.setActive(
+      "project:old-ledger-year",
+      false,
+    );
+    await runtime.context.settings.projects.setActive(
+      "project:fallback-membership-year",
+      false,
+    );
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "past-signup-year-oldest",
+      contactId: "contact:past-signup-year",
+      occurredAt: "2021-07-14T00:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:old-ledger-year",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "past-signup-year-newer",
+      contactId: "contact:past-signup-year",
+      occurredAt: "2023-03-20T00:00:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Completed training",
+      projectId: "project:old-ledger-year",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "past-signup-year-inbound",
+      contactId: "contact:past-signup-year",
+      occurredAt: "2026-04-25T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Past signup year check",
+      snippet: "Checking lifecycle-derived signup year.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:past-signup-year",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-25T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-25T13:00:00.000Z",
+      snippet: "Checking lifecycle-derived signup year.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:past-signup-year");
+
+    // Past projects sort by membership.createdAt desc (newest first).
+    // Old Ledger Year has membershipCreatedAt 2026-02-01, Fallback has 2024-05-01.
+    // signupYear is independent of sort: derived from earliest project event
+    // (2021 for Old Ledger via lifecycle event), or falls back to membership
+    // year (2024 for Fallback Membership Year, no events).
+    expect(detail?.contact.pastProjects).toMatchObject([
+      {
+        projectName: "Old Ledger Year",
+        signupYear: 2021,
+      },
+      {
+        projectName: "Fallback Membership Year",
+        signupYear: 2024,
+      },
+    ]);
   });
 
   it("threads Gmail From, To, and Cc headers into the timeline detail view model", async () => {
@@ -2685,6 +2980,151 @@ describe("real inbox selectors", () => {
       fromHeader: "Ricky Jones <ricky@adventurescientists.org>",
       toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
       ccHeader: "PNW Forest Biodiversity <pnwbio@adventurescientists.org>",
+    });
+  });
+
+  it("normalizes canonical inbound contact names instead of using inconsistent From headers", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const cases = [
+      {
+        contactId: "contact:normalized-last-first",
+        displayName: "RUTLEDGE, JOE",
+        primaryEmail: "last-first@example.org",
+        fromHeader: "jrutle <last-first@example.org>",
+        expected: "Joe Rutledge",
+      },
+      {
+        contactId: "contact:normalized-all-caps",
+        displayName: "JOE RUTLEDGE",
+        primaryEmail: "all-caps@example.org",
+        fromHeader: "Joe rutledge <all-caps@example.org>",
+        expected: "Joe Rutledge",
+      },
+      {
+        contactId: "contact:normalized-lowercase",
+        displayName: "Joe rutledge",
+        primaryEmail: "lowercase@example.org",
+        fromHeader: "JOE RUTLEDGE <lowercase@example.org>",
+        expected: "Joe Rutledge",
+      },
+      {
+        contactId: "contact:normalized-username",
+        displayName: "jrutle",
+        primaryEmail: "username@example.org",
+        fromHeader: "JOE RUTLEDGE <username@example.org>",
+        expected: "jrutle",
+      },
+    ] as const;
+
+    for (const entry of cases) {
+      await seedInboxContact(runtime.context, {
+        contactId: entry.contactId,
+        salesforceContactId: null,
+        displayName: entry.displayName,
+        primaryEmail: entry.primaryEmail,
+        primaryPhone: null,
+      });
+      const latest = await seedInboxEmailEvent(runtime.context, {
+        id: `${entry.contactId}-latest`,
+        contactId: entry.contactId,
+        occurredAt: "2026-04-23T12:00:00.000Z",
+        direction: "inbound",
+        subject: "Author normalization",
+        snippet: "Testing author normalization.",
+        bodyTextPreview: "Testing author normalization.",
+        fromHeader: entry.fromHeader,
+      });
+      await seedInboxProjection(runtime.context, {
+        contactId: entry.contactId,
+        bucket: "New",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt: "2026-04-23T12:00:00.000Z",
+        lastOutboundAt: null,
+        lastActivityAt: "2026-04-23T12:00:00.000Z",
+        snippet: "Testing author normalization.",
+        lastCanonicalEventId: latest.canonicalEventId,
+        lastEventType: "communication.email.inbound",
+      });
+    }
+
+    const detailByContactId = new Map<string, Awaited<ReturnType<typeof getInboxDetail>>>(
+      await Promise.all(
+        cases.map(async (entry) => {
+          const detail = await getInboxDetail(entry.contactId);
+          return [entry.contactId, detail] as const;
+        }),
+      ),
+    );
+
+    expect(detailByContactId.get("contact:normalized-last-first")?.timeline.at(-1))
+      .toMatchObject({ actorLabel: "Joe Rutledge" });
+    expect(detailByContactId.get("contact:normalized-all-caps")?.timeline.at(-1))
+      .toMatchObject({ actorLabel: "Joe Rutledge" });
+    expect(detailByContactId.get("contact:normalized-lowercase")?.timeline.at(-1))
+      .toMatchObject({ actorLabel: "Joe Rutledge" });
+    expect(detailByContactId.get("contact:normalized-username")?.timeline.at(-1))
+      .toMatchObject({ actorLabel: "jrutle" });
+  });
+
+  it("uses a known sender contact record for inbound actor labels when the sender already exists", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:primary-thread",
+      salesforceContactId: null,
+      displayName: "Primary Thread",
+      primaryEmail: "primary-thread@example.org",
+      primaryPhone: null,
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:known-sender",
+      salesforceContactId: null,
+      displayName: "RUTLEDGE, JOE",
+      primaryEmail: "joe.sender@example.org",
+      primaryPhone: null,
+    });
+    await runtime.context.repositories.contactIdentities.upsert({
+      id: "identity:known-sender-email",
+      contactId: "contact:known-sender",
+      kind: "email",
+      normalizedValue: "joe.sender@example.org",
+      isPrimary: true,
+      source: "gmail",
+      verifiedAt: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "known-sender-inbound",
+      contactId: "contact:primary-thread",
+      occurredAt: "2026-04-23T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Known sender",
+      snippet: "Known sender body.",
+      bodyTextPreview: "Known sender body.",
+      fromHeader: "JOE RUTLEDGE <joe.sender@example.org>",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:primary-thread",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-23T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-23T13:00:00.000Z",
+      snippet: "Known sender body.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:primary-thread");
+
+    expect(detail?.timeline.at(-1)).toMatchObject({
+      actorLabel: "Joe Rutledge",
     });
   });
 
@@ -2983,6 +3423,38 @@ describe("real inbox selectors", () => {
     ).toContain("No project activity recorded.");
   });
 
+  it("highlights the most recent project-activity dot and date in the rail", async () => {
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    if (detail === null) {
+      throw new Error("Expected inbox detail for Sarah Martinez");
+    }
+
+    const markup = renderToStaticMarkup(
+      createElement(InboxContactRail, {
+        contact: {
+          ...detail.contact,
+          recentActivity: [
+            {
+              id: "recent-1",
+              label: "Submitted first data - Amazon Basin",
+              occurredAtLabel: "1h ago",
+            },
+            {
+              id: "recent-2",
+              label: "Received training - Amazon Basin",
+              occurredAtLabel: "2d ago",
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(markup).toContain("border-sky-500 bg-sky-500");
+    expect(markup).toContain("text-[11px] text-slate-700");
+    expect(markup).toContain("text-[11px] text-slate-400");
+  });
+
   it("does not borrow email or campaign timeline entries when no lifecycle activity exists", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
@@ -3042,13 +3514,13 @@ describe("real inbox selectors", () => {
 
     expect(nullClassifiedEntry).toMatchObject({
       kind: "outbound-email",
-      actorLabel: "You",
+      actorLabel: "Adventure Scientists",
       channel: "email",
       body: "Logged Salesforce follow-up body.",
     });
     expect(explicitOneToOneEntry).toMatchObject({
       kind: "outbound-email",
-      actorLabel: "You",
+      actorLabel: "Adventure Scientists",
       channel: "email",
       body: "Explicit Salesforce one-to-one body.",
     });
@@ -3456,6 +3928,51 @@ describe("real inbox selectors", () => {
       subject: "Re: Project check-in",
       threadCursor: "event:encrypted-reply-older",
       inReplyToRfc822: "<encrypted-reply-latest@example.org>",
+    });
+  });
+
+  it("skips short garbled Gmail bodies and renders the readable snippet instead", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:short-garbled",
+      salesforceContactId: "003-short-garbled",
+      displayName: "Joe Rutledge",
+      primaryEmail: "joe@example.org",
+      primaryPhone: null,
+    });
+
+    const latestEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "short-garbled-latest",
+      contactId: "contact:short-garbled",
+      occurredAt: "2026-04-30T16:31:58.000Z",
+      direction: "inbound",
+      subject: "Re: Placement completed 28 April",
+      snippet: "Thanks. Will work on this. May take a day or two",
+      snippetClean: "Thanks. Will work on this. May take a day or two",
+      bodyTextPreview: "�٥�杙�Z��iz�����w/�i",
+      bodyKind: "plaintext",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:short-garbled",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-30T16:31:58.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-30T16:31:58.000Z",
+      snippet: "Thanks. Will work on this. May take a day or two",
+      lastCanonicalEventId: latestEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:short-garbled");
+
+    expect(detail?.timeline.at(-1)).toMatchObject({
+      kind: "inbound-email",
+      body: "Thanks. Will work on this. May take a day or two",
     });
   });
 
@@ -4590,6 +5107,7 @@ describe("real inbox selectors", () => {
       filename: "field-photo.jpg",
       sizeBytes: 1234,
       storageKey: "gmail/ab/att:gmail:attachment-email-1:0/1",
+      isInline: true,
     });
     await seedInboxMessageAttachment(runtime.context, {
       sourceEvidenceId: "source:attachment-email-1",
@@ -4614,15 +5132,8 @@ describe("real inbox selectors", () => {
     // (see packages/domain/src/timeline.ts loadTimelinePresentationContext)
     // so the selector — which already loads attachments — is the canonical
     // home for this assertion.
-    expect(detail?.timeline[0]?.attachmentCount).toBe(2);
+    expect(detail?.timeline[0]?.attachmentCount).toBe(1);
     expect(detail?.timeline[0]?.attachments).toEqual([
-      {
-        id: "att:gmail:attachment-email-1:0/1",
-        mimeType: "image/jpeg",
-        filename: "field-photo.jpg",
-        sizeBytes: 1234,
-        proxyUrl: "/api/attachments/att%3Agmail%3Aattachment-email-1%3A0%2F1",
-      },
       {
         id: "att:gmail:attachment-email-1:0/2",
         mimeType: "application/pdf",

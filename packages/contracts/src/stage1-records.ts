@@ -309,6 +309,7 @@ export const messageAttachmentSchema = z.object({
   filename: nullableStringSchema,
   sizeBytes: z.number().int().nonnegative(),
   storageKey: z.string().min(1),
+  isInline: z.boolean(),
   createdAt: timestampSchema,
 });
 export type MessageAttachmentRecord = z.infer<typeof messageAttachmentSchema>;

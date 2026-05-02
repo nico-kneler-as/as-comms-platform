@@ -1,7 +1,7 @@
 import type {
   InboxContactSummaryViewModel,
   InboxProjectMembershipViewModel,
-  InboxProjectStatus
+  InboxProjectStatus,
 } from "../_lib/view-models";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -13,7 +13,6 @@ import {
   SPACING,
   TONE_CLASSES,
   TYPE,
-  type ToneNameV2,
 } from "@/app/_lib/design-tokens-v2";
 
 import {
@@ -32,7 +31,7 @@ interface RailProps {
  * Server component: renders contact reference data for the detail workspace.
  *
  * Header: name + record ID (mono, dim). Then contact details (with phone
- * fallback), active and past project participations (status-tone dots), and
+ * fallback), active and past project participations, and
  * milestone activity. Visibility is controlled by the parent detail
  * component via conditional render.
  */
@@ -56,11 +55,11 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8 shrink-0"
+            className="size-8 shrink-0"
             aria-label="Collapse contact details"
             onClick={onClose}
           >
-            <PanelRightCloseIcon className="h-4 w-4" />
+            <PanelRightCloseIcon className="size-4" />
           </Button>
         ) : null}
       </header>
@@ -72,23 +71,23 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
         </SectionLabel>
         <dl className="mt-2 space-y-1.5 text-[13px]">
           {contact.primaryEmail ? (
-            <ContactLine icon={<MailIcon className="h-3.5 w-3.5" />}>
+            <ContactLine icon={<MailIcon className="size-3.5" />}>
               {contact.primaryEmail}
             </ContactLine>
           ) : null}
           {contact.primaryPhone ? (
-            <ContactLine icon={<PhoneIcon className="h-3.5 w-3.5" />}>
+            <ContactLine icon={<PhoneIcon className="size-3.5" />}>
               {contact.primaryPhone}
             </ContactLine>
           ) : (
             <ContactLine
-              icon={<PhoneIcon className="h-3.5 w-3.5" />}
+              icon={<PhoneIcon className="size-3.5" />}
               muted
             >
               No phone on file
             </ContactLine>
           )}
-          <ContactLine icon={<CalendarIcon className="h-3.5 w-3.5" />}>
+          <ContactLine icon={<CalendarIcon className="size-3.5" />}>
             {contact.joinedAtLabel}
           </ContactLine>
         </dl>
@@ -125,12 +124,22 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
                   <div className="absolute left-[5px] top-3 h-full w-px bg-slate-200" />
                 ) : null}
                 {/* Dot — h-[10px] w-[10px] centers at 5px to match line */}
-                <div className="relative mt-1.5 h-[10px] w-[10px] shrink-0 rounded-full border-2 border-slate-300 bg-white" />
+                <div
+                  className={`relative mt-1.5 h-[10px] w-[10px] shrink-0 rounded-full border-2 ${
+                    index === 0
+                      ? `border-sky-500 ${TONE_CLASSES.sky.dot}`
+                      : "border-slate-300 bg-white"
+                  }`}
+                />
                 <div className="min-w-0 flex-1">
                   <p className="text-[12.5px] leading-snug text-slate-700">
                     {entry.label}
                   </p>
-                  <p className="text-[11px] text-slate-400">
+                  <p
+                    className={`text-[11px] ${
+                      index === 0 ? "text-slate-700" : "text-slate-400"
+                    }`}
+                  >
                     {entry.occurredAtLabel}
                   </p>
                 </div>
@@ -163,41 +172,34 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
       ) : (
         <ul className="mt-2 space-y-1">
           {projects.map((project) => {
-            const tone = STATUS_TONE[project.status];
             const rowClassName =
               "group flex items-center gap-2 rounded-lg px-2 py-1.5 transition";
             const isClickable = project.expeditionMemberUrl !== null;
             const content = (
               <>
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <span
-                    aria-hidden="true"
-                    className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${TONE_CLASSES[tone].dot}`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-slate-800 group-hover:text-slate-900">
-                      {project.projectName}
-                    </p>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-                      {isPastSection ? (
-                        <>
-                          <span className="tabular-nums">
-                            {project.signupYear.toString()}
-                          </span>
-                          <span className="text-slate-300">·</span>
-                        </>
-                      ) : null}
-                      <InboxProjectStatusBadge
-                        status={project.status}
-                        label={project.statusLabel}
-                      />
-                    </p>
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-medium text-slate-800 group-hover:text-slate-900">
+                    {project.projectName}
+                  </p>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+                    {isPastSection ? (
+                      <>
+                        <span className="tabular-nums">
+                          {project.signupYear.toString()}
+                        </span>
+                        <span className="text-slate-300">·</span>
+                      </>
+                    ) : null}
+                    <InboxProjectStatusBadge
+                      status={project.status}
+                      label={project.statusLabel}
+                    />
+                  </p>
                 </div>
                 {isClickable ? (
                   <ExternalLink
                     aria-hidden="true"
-                    className="h-3.5 w-3.5 shrink-0 text-slate-400 opacity-0 transition group-hover:opacity-100"
+                    className="size-3.5 shrink-0 text-slate-400 opacity-0 transition group-hover:opacity-100"
                   />
                 ) : null}
               </>
@@ -226,15 +228,6 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
     </section>
   );
 }
-
-const STATUS_TONE: Record<InboxProjectStatus, ToneNameV2> = {
-  lead: "slate",
-  applied: "sky",
-  "in-training": "indigo",
-  "trip-planning": "amber",
-  "in-field": "emerald",
-  successful: "violet"
-};
 
 export function InboxProjectStatusBadge({
   status,

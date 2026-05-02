@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
-import React, { createElement } from "react";
+import { createRequire } from "node:module";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import React, { act, createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createRoot, type Root } from "react-dom/client";
 
 Object.assign(globalThis, { React });
 
@@ -62,6 +64,21 @@ vi.mock("../../app/inbox/_components/icons", () => ({
 import { MessageBubble } from "../../app/inbox/_components/inbox-timeline-bubble";
 import type { InboxTimelineEntryViewModel } from "../../app/inbox/_lib/view-models";
 
+const workerRequire = createRequire(
+  new URL("../../../worker/package.json", import.meta.url),
+);
+const { JSDOM } = workerRequire("jsdom") as {
+  readonly JSDOM: new (
+    html: string,
+    options: { readonly url: string },
+  ) => {
+    readonly window: Window &
+      typeof globalThis & {
+        close: () => void;
+      };
+  };
+};
+
 function buildEntry(
   overrides: Partial<InboxTimelineEntryViewModel> = {},
 ): InboxTimelineEntryViewModel {
@@ -93,6 +110,83 @@ function buildEntry(
     ...overrides,
   };
 }
+
+interface RenderSession {
+  readonly container: HTMLElement;
+  readonly root: Root;
+  readonly cleanup: () => Promise<void>;
+}
+
+let activeSession: RenderSession | null = null;
+
+function setDomGlobals(window: Window & typeof globalThis) {
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: window,
+  });
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: window.document,
+  });
+  Object.defineProperty(globalThis, "HTMLElement", {
+    configurable: true,
+    value: window.HTMLElement,
+  });
+  Object.defineProperty(globalThis, "Node", {
+    configurable: true,
+    value: window.Node,
+  });
+  Object.defineProperty(globalThis, "Event", {
+    configurable: true,
+    value: window.Event,
+  });
+  Object.defineProperty(globalThis, "MouseEvent", {
+    configurable: true,
+    value: window.MouseEvent,
+  });
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: window.navigator,
+  });
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+    true;
+}
+
+async function mountBubble(
+  entry: InboxTimelineEntryViewModel,
+  direction: "inbound" | "outbound",
+): Promise<RenderSession> {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    url: "http://localhost/inbox",
+  });
+  setDomGlobals(dom.window);
+
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(createElement(MessageBubble, { entry, direction }));
+    await Promise.resolve();
+  });
+
+  const cleanup = async () => {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    container.remove();
+    dom.window.close();
+  };
+
+  activeSession = { container, root, cleanup };
+  return activeSession;
+}
+
+afterEach(async () => {
+  await activeSession?.cleanup();
+  activeSession = null;
+});
 
 describe("MessageBubble attachments", () => {
   it("renders the body but no attachment chips when entry.attachments is empty", () => {
@@ -174,5 +268,120 @@ describe("MessageBubble attachments", () => {
 
     expect(markup).toContain("Download Attachment");
     expect(markup).toContain(">Attachment<");
+  });
+});
+
+describe("MessageBubble metadata and polish", () => {
+  it("hides the inbound metadata row for email bubbles", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MessageBubble, {
+        entry: buildEntry({
+          channel: "email",
+          actorLabel: "Sarah Martinez",
+        }),
+        direction: "inbound",
+      }),
+    );
+
+    expect(markup).toContain("participants");
+    expect(markup).not.toContain("Sarah Martinez");
+  });
+
+  it("keeps the inbound metadata row for sms bubbles", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MessageBubble, {
+        entry: buildEntry({
+          channel: "sms",
+          kind: "inbound-sms",
+          subject: null,
+          fromHeader: null,
+          toHeader: null,
+          body: "SMS body",
+        }),
+        direction: "inbound",
+      }),
+    );
+
+    expect(markup).toContain("Sarah Martinez");
+    expect(markup).toContain("SMS body");
+  });
+
+  it("renders the outbound brand avatar as dark-on-light without a ring", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MessageBubble, {
+        entry: buildEntry({
+          kind: "outbound-email",
+        }),
+        direction: "outbound",
+      }),
+    );
+
+    expect(markup).toContain("bg-white text-slate-900");
+    expect(markup).not.toContain("ring-1");
+  });
+});
+
+describe("MessageBubble read more", () => {
+  it("clamps long plain-text bodies and expands permanently for the mount lifetime", async () => {
+    const longBody = "Long message ".repeat(90);
+    const session = await mountBubble(
+      buildEntry({
+        channel: "sms",
+        kind: "inbound-sms",
+        subject: null,
+        fromHeader: null,
+        toHeader: null,
+        body: longBody,
+      }),
+      "inbound",
+    );
+
+    expect(session.container.textContent).toContain("Read more");
+    expect(session.container.innerHTML).toContain("line-clamp-[10]");
+
+    const button = session.container.querySelector("button");
+    expect(button?.textContent).toBe("Read more");
+
+    await act(async () => {
+      button?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(session.container.textContent).not.toContain("Read more");
+    expect(session.container.innerHTML).not.toContain("line-clamp-[10]");
+
+    await act(async () => {
+      window.dispatchEvent(new window.Event("blur"));
+      window.dispatchEvent(new window.Event("scroll"));
+      await Promise.resolve();
+    });
+
+    expect(session.container.textContent).not.toContain("Read more");
+    expect(session.container.innerHTML).not.toContain("line-clamp-[10]");
+  });
+
+  it("renders unread long bodies fully expanded with no read-more affordance", async () => {
+    const session = await mountBubble(
+      buildEntry({
+        body: "Unread body ".repeat(90),
+        isUnread: true,
+      }),
+      "inbound",
+    );
+
+    expect(session.container.textContent).not.toContain("Read more");
+    expect(session.container.innerHTML).not.toContain("line-clamp-[10]");
+  });
+
+  it("applies the same clamp behavior to sanitized html bodies", async () => {
+    const session = await mountBubble(
+      buildEntry({
+        body: `<p>${"HTML body ".repeat(120)}</p>`,
+      }),
+      "inbound",
+    );
+
+    expect(session.container.textContent).toContain("Read more");
+    expect(session.container.innerHTML).toContain("line-clamp-[10]");
   });
 });

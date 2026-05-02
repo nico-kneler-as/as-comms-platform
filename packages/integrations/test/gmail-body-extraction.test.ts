@@ -40,6 +40,7 @@ vi.mock("mailparser", async () => {
 import {
   cleanGmailBodyPreviewText,
   collectGmailAttachmentMetadata,
+  collectGmailHtmlCidReferences,
   extractDsnOriginalMessageId,
   extractGmailBodyPreviewFromMimeMessageResult,
   extractGmailBodyPreviewFromPayloadResult,
@@ -279,6 +280,8 @@ describe("Gmail body extraction", () => {
         filename: "field-photo.jpg",
         sizeBytes: 12_345,
         gmailAttachmentId: "att-image",
+        contentDisposition: null,
+        contentId: null,
       },
       {
         partIndexPath: "2",
@@ -286,8 +289,29 @@ describe("Gmail body extraction", () => {
         filename: "packet.pdf",
         sizeBytes: 98_765,
         gmailAttachmentId: "att-pdf",
+        contentDisposition: null,
+        contentId: null,
       },
     ]);
+  });
+
+  it("collects normalized cid references from html body parts", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: Buffer.from(
+              '<html><body><img src="cid:<ABC@x>"><img src="CID:def@x"></body></html>',
+              "utf8",
+            ).toString("base64url"),
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailHtmlCidReferences(payload)).toEqual(["abc@x", "def@x"]);
   });
 
   it("treats a text/plain part containing decoded binary noise as a binary fallback", async () => {
@@ -325,6 +349,70 @@ describe("Gmail body extraction", () => {
     ).resolves.toEqual({
       bodyTextPreview: "[Message body could not be extracted — open in Gmail]",
       bodyKind: "binary_fallback"
+    });
+  });
+
+  it("treats a short replacement-heavy text/plain part as a binary fallback", async () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "text/plain",
+      headers: [{ name: "Content-Type", value: "text/plain; charset=utf-8" }],
+      body: {
+        data: encodeBase64Url(Buffer.from([0x80, 0x81, 0x82, 0x83, 0x84, 0x85])),
+        size: 6,
+      },
+    };
+
+    await expect(
+      extractGmailBodyPreviewFromPayloadResult(payload),
+    ).resolves.toEqual({
+      bodyTextPreview: "[Message body could not be extracted — open in Gmail]",
+      bodyKind: "binary_fallback",
+    });
+  });
+
+  it("uses a readable Gmail snippet when live body extraction returns a short binary fallback", async () => {
+    const binaryPart: GmailApiMessagePart = {
+      mimeType: "text/plain",
+      headers: [{ name: "Content-Type", value: "text/plain; charset=utf-8" }],
+      body: {
+        data: encodeBase64Url(Buffer.from([0x80, 0x81, 0x82, 0x83, 0x84, 0x85])),
+        size: 6,
+      },
+    };
+
+    const record = await mapLiveGmailMessageToRecord({
+      message: {
+        id: "gmail-short-binary-snippet",
+        threadId: "thread-short-binary-snippet",
+        labelIds: ["INBOX"],
+        snippet: "Thanks. Will work on this. May take a day or two",
+        internalDate: "1777566721000",
+        payload: {
+          mimeType: "multipart/mixed",
+          headers: [
+            { name: "From", value: "Joe <joe@example.org>" },
+            { name: "To", value: "PNW Biodiversity <pnwbio@example.org>" },
+            { name: "Subject", value: "Re: Placement completed 28 April" },
+            { name: "Date", value: "Thu, 30 Apr 2026 09:31:58 -0800" },
+            {
+              name: "Message-ID",
+              value: "<gmail-short-binary-snippet@example.org>",
+            },
+          ],
+          parts: [binaryPart],
+        },
+      },
+      capturedMailbox: "pnwbio@example.org",
+      liveAccount: "pnwbio@example.org",
+      projectInboxAliases: ["pnwbio@example.org"],
+      receivedAt: "2026-04-30T16:33:00.147Z",
+    });
+
+    expect(record).toMatchObject({
+      recordType: "message",
+      bodyTextPreview: "Thanks. Will work on this. May take a day or two",
+      bodyKind: "plaintext",
+      snippetClean: "Thanks. Will work on this. May take a day or two",
     });
   });
 

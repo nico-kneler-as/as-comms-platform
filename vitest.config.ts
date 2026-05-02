@@ -43,6 +43,8 @@ export default defineConfig({
   },
   test: {
     include: [
+      "apps/web/app/**/*.test.ts",
+      "apps/web/app/**/*.test.tsx",
       "test/**/*.test.ts",
       "test/**/*.test.tsx",
       "tests/**/*.test.ts",

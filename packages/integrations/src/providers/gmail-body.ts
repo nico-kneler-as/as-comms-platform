@@ -83,6 +83,8 @@ export interface GmailAttachmentMetadata {
   readonly filename: string | null;
   readonly sizeBytes: number;
   readonly gmailAttachmentId: string;
+  readonly contentDisposition: string | null;
+  readonly contentId: string | null;
 }
 
 const ENCRYPTED_MESSAGE_PLACEHOLDER =
@@ -111,6 +113,7 @@ const REPLACEMENT_CHARACTER = "�";
 // in production sit at ~50%.
 const BINARY_NOISE_THRESHOLD = 0.3;
 const BINARY_NOISE_MIN_LENGTH = 32;
+const SHORT_BINARY_NOISE_MIN_SUSPICIOUS = 3;
 const DEFAULT_GMAIL_MIME_MAX_DEPTH = 64;
 const DEFAULT_GMAIL_MIME_MAX_PARTS = 512;
 const DEFAULT_GMAIL_MIME_MAX_DECODED_BYTES = 20 * 1024 * 1024;
@@ -228,7 +231,7 @@ function visitChildPart(
 }
 
 export function isLikelyBinaryNoise(text: string): boolean {
-  if (text.length < BINARY_NOISE_MIN_LENGTH) {
+  if (text.trim().length === 0) {
     return false;
   }
 
@@ -257,7 +260,20 @@ export function isLikelyBinaryNoise(text: string): boolean {
     }
   }
 
-  return total > 0 && suspicious / total >= BINARY_NOISE_THRESHOLD;
+  if (total === 0) {
+    return false;
+  }
+
+  const ratio = suspicious / total;
+
+  if (total < BINARY_NOISE_MIN_LENGTH) {
+    return (
+      suspicious >= SHORT_BINARY_NOISE_MIN_SUSPICIOUS &&
+      ratio >= BINARY_NOISE_THRESHOLD
+    );
+  }
+
+  return ratio >= BINARY_NOISE_THRESHOLD;
 }
 
 function normalizeLineEndings(value: string): string {
@@ -409,6 +425,12 @@ export function cleanGmailBodyPreviewText(value: string): string {
       : sanitizePreviewText(value);
 
   return normalized;
+}
+
+export function isUsableGmailBodyPreviewText(value: string): boolean {
+  const normalized = cleanGmailBodyPreviewText(value);
+
+  return normalized.length > 0 && !isLikelyBinaryNoise(normalized);
 }
 
 function decodeBase64Url(value: string): Buffer {
@@ -714,6 +736,8 @@ export function collectGmailAttachmentMetadata(
             part.filename?.trim().length ? part.filename.trim() : null,
           sizeBytes: Math.max(0, part.body?.size ?? 0),
           gmailAttachmentId,
+          contentDisposition: getPartHeader(part, "Content-Disposition"),
+          contentId: getPartHeader(part, "Content-ID"),
         });
       }
     }
@@ -728,6 +752,62 @@ export function collectGmailAttachmentMetadata(
   }
 
   return attachments;
+}
+
+function normalizeContentIdReference(value: string): string | null {
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const withoutAngleBrackets = trimmed.replace(/^<|>$/gu, "");
+  return withoutAngleBrackets.length > 0
+    ? withoutAngleBrackets.toLowerCase()
+    : null;
+}
+
+export function collectGmailHtmlCidReferences(
+  payload: GmailApiMessagePart,
+  options?: {
+    readonly messageIdentifier?: string | null;
+  },
+): readonly string[] {
+  const references = new Set<string>();
+  const context = createGmailMimeBudgetContext(options?.messageIdentifier);
+  const decodeState: GmailMimeDecodeState = {
+    decodedBytes: 0,
+    budgetExceeded: false,
+  };
+
+  function walk(part: GmailApiMessagePart, depth: number): void {
+    if (depth > context.bounds.maxDepth || decodeState.budgetExceeded) {
+      return;
+    }
+
+    const mimeType = normalizeMimeType(part.mimeType);
+
+    if (mimeType === "text/html" && !isAttachmentPart(part)) {
+      const decodedHtml = decodePartBodyToString(part, context, decodeState);
+
+      if (decodedHtml !== null) {
+        for (const match of decodedHtml.matchAll(/cid:([^"'\\\s>]+)/giu)) {
+          const normalized = normalizeContentIdReference(match[1] ?? "");
+
+          if (normalized !== null) {
+            references.add(normalized);
+          }
+        }
+      }
+    }
+
+    for (const childPart of part.parts ?? []) {
+      walk(childPart, depth + 1);
+    }
+  }
+
+  walk(payload, 0);
+  return [...references].sort((left, right) => left.localeCompare(right));
 }
 
 function collectCandidateBodyPartsInternal(

@@ -317,7 +317,7 @@ export function TimelineAutomatedRow({
                   {!hideCollapsedBody && body.length > 0 ? (
                     <p
                       className={cn(
-                        "mt-0.5 line-clamp-1 font-message-body text-[13.5px] leading-relaxed text-slate-700",
+                        "mt-0.5 line-clamp-1 text-[13.5px] leading-relaxed text-slate-700",
                         WRAP_ANYWHERE,
                       )}
                     >
@@ -332,7 +332,7 @@ export function TimelineAutomatedRow({
                 ) : null}
                 <ChevronRightIcon
                   className={cn(
-                    "h-3.5 w-3.5 text-slate-500 transition-transform duration-150",
+                    "size-3.5 text-slate-500 transition-transform duration-150",
                     isExpanded && "rotate-90",
                   )}
                 />
@@ -342,7 +342,7 @@ export function TimelineAutomatedRow({
               <div className="border-t border-slate-200 bg-white px-4 py-3">
                 <p
                   className={cn(
-                    "whitespace-pre-wrap text-pretty font-message-body text-[13.5px] leading-relaxed text-slate-700",
+                    "whitespace-pre-wrap text-pretty text-[13.5px] leading-relaxed text-slate-700",
                     WRAP_ANYWHERE,
                   )}
                 >

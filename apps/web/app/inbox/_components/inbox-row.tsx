@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useRef } from "react";
 
 import type { InboxListItemViewModel } from "../_lib/view-models";
@@ -18,13 +18,23 @@ interface RowProps {
  * List row for a contact. The left accent bar is sky when the row has
  * bucket === "new" and rose when needsFollowUp is set. If both apply,
  * both colors remain visible via stacked segments.
+ *
+ * The href preserves the current URL search params (`q=`, `filter=`,
+ * `projectId=`) so navigating into a thread doesn't reset the search
+ * bar. The InboxList view-model URL sync keeps the input populated
+ * because the param survives the navigation. Operators can still clear
+ * the search via the input's X button.
  */
 export function InboxRow({ item, isActive }: RowProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const prefetchedRef = useRef(false);
   const isUnread = item.isUnread;
   const ChannelIcon = item.latestChannel === "email" ? MailIcon : PhoneIcon;
-  const href = `/inbox/${encodeURIComponent(item.contactId)}`;
+  const queryString = searchParams.toString();
+  const href = queryString.length > 0
+    ? `/inbox/${encodeURIComponent(item.contactId)}?${queryString}`
+    : `/inbox/${encodeURIComponent(item.contactId)}`;
 
   const showBadges = Boolean(item.projectLabel) || item.needsFollowUp;
 
@@ -81,7 +91,7 @@ export function InboxRow({ item, isActive }: RowProps) {
 
           <div className="mt-0.5 flex items-center gap-1 text-[12px]">
             <ChannelIcon
-              className={`h-3 w-3 shrink-0 ${
+              className={`size-3 shrink-0 ${
                 isUnread ? "text-sky-600" : "text-slate-400"
               }`}
               aria-label={
@@ -110,7 +120,7 @@ export function InboxRow({ item, isActive }: RowProps) {
               ) : null}
               {item.needsFollowUp ? (
                 <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] text-rose-700">
-                  <FlagIcon className="h-2.5 w-2.5" />
+                  <FlagIcon className="size-2.5" />
                   Follow-up
                 </span>
               ) : null}

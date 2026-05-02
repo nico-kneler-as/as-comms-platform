@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Image from "next/image";
 import { RefreshCw } from "lucide-react";
 
 import {
@@ -209,181 +210,46 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
   );
 }
 
+const BRAND_LOGO: Partial<
+  Record<IntegrationHealthViewModel["serviceName"], string>
+> = {
+  salesforce: "/integrations/salesforce.png",
+  gmail: "/integrations/gmail.png",
+  simpletexting: "/integrations/simpletexting.png",
+  mailchimp: "/integrations/mailchimp.png",
+  notion: "/integrations/notion.png",
+  openai: "/integrations/anthropic.png"
+};
+
 function IntegrationLogoMark({
   integration
 }: {
   readonly integration: IntegrationHealthViewModel;
 }) {
+  const logoSrc = BRAND_LOGO[integration.serviceName];
+
   return (
-    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-700 ring-1 ring-inset ring-slate-200/70">
+    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-inset ring-slate-200/70">
       <span className="sr-only">{integration.displayName}</span>
-      <BrandMark
-        serviceName={integration.serviceName}
-        className="size-5"
-      />
+      {logoSrc ? (
+        <Image
+          src={logoSrc}
+          alt=""
+          width={32}
+          height={32}
+          className="size-7 object-contain"
+          aria-hidden="true"
+        />
+      ) : (
+        <span
+          className="inline-flex size-5 items-center justify-center text-[10px] font-semibold uppercase"
+          aria-hidden="true"
+        >
+          {integration.serviceName.slice(0, 2).toUpperCase()}
+        </span>
+      )}
     </div>
   );
-}
-
-function BrandMark({
-  serviceName,
-  className
-}: {
-  readonly serviceName: IntegrationHealthViewModel["serviceName"];
-  readonly className?: string;
-}) {
-  switch (serviceName) {
-    case "salesforce":
-      return (
-        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
-          <path
-            d="M16.6 31.9c-4.1 0-7.4-3-7.4-6.8 0-3.5 2.8-6.4 6.5-6.8.8-4.1 4.6-7.2 9.2-7.2 5.1 0 9.3 3.9 9.5 8.8 3 .8 5.2 3.4 5.2 6.5 0 3.8-3.2 6.8-7.2 6.8H16.6Z"
-            fill="#00A1E0"
-          />
-          <text
-            x="24"
-            y="29"
-            textAnchor="middle"
-            className="fill-white text-[11px] font-bold"
-          >
-            sf
-          </text>
-        </svg>
-      );
-    case "gmail":
-      return (
-        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
-          <path
-            d="M9 14.5 24 26l15-11.5"
-            fill="none"
-            stroke="#EA4335"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M9 14.5v19h8.5V22.3L24 27l6.5-4.7v11.2H39v-19"
-            fill="none"
-            stroke="#34A853"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M9 14.5 24 26l15-11.5"
-            fill="none"
-            stroke="#4285F4"
-            strokeWidth="2"
-            opacity="0.65"
-          />
-          <path
-            d="M9 14.5v19"
-            fill="none"
-            stroke="#FBBC05"
-            strokeWidth="4"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-    case "simpletexting":
-      return (
-        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
-          <rect x="8" y="10" width="25" height="18" rx="8" fill="#1D4ED8" />
-          <path d="M18 28h8l6 8v-8" fill="#1D4ED8" />
-          <rect x="16" y="16" width="10" height="3" rx="1.5" fill="white" />
-          <rect
-            x="16"
-            y="22"
-            width="14"
-            height="3"
-            rx="1.5"
-            fill="white"
-            opacity="0.78"
-          />
-        </svg>
-      );
-    case "mailchimp":
-      return (
-        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
-          <circle cx="24" cy="24" r="12" fill="#FACC15" />
-          <path
-            d="M18 28c1.8 2.3 4 3.5 6 3.5s4.2-1.2 6-3.5"
-            fill="none"
-            stroke="#111827"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-          />
-          <circle cx="20" cy="21" r="1.8" fill="#111827" />
-          <circle cx="28" cy="21" r="1.8" fill="#111827" />
-          <path
-            d="M30.8 15.3c2.4-.4 4.7.9 5.8 3"
-            fill="none"
-            stroke="#111827"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-    case "notion":
-      return (
-        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
-          <rect
-            x="11"
-            y="11"
-            width="26"
-            height="26"
-            rx="3"
-            fill="white"
-            stroke="#111827"
-            strokeWidth="2.5"
-          />
-          <path
-            d="M18 31V18l12 13V18"
-            fill="none"
-            stroke="#111827"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-    case "openai":
-      return (
-        <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
-          <g
-            fill="none"
-            stroke="#111827"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M24 11c3.6 0 6.6 2.9 6.6 6.5v2.1" />
-            <path d="M35.1 18.7c1.8 3.2.8 7.3-2.3 9.1L31 28.9" />
-            <path d="M33 31.5c-1.8 3.2-5.9 4.3-9.1 2.5L22 32.9" />
-            <path d="M18 34c-3.6 0-6.6-2.9-6.6-6.5v-2.1" />
-            <path d="M12.9 29.3c-1.8-3.2-.8-7.3 2.3-9.1L17 19.1" />
-            <path d="M15 16.5c1.8-3.2 5.9-4.3 9.1-2.5L26 15.1" />
-          </g>
-          <path
-            d="M18.5 18.5 29.5 29.5"
-            stroke="#D97706"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
-    default:
-      return (
-        <span
-          className={cn(
-            "inline-flex items-center justify-center text-[10px] font-semibold uppercase",
-            className
-          )}
-        >
-          {serviceName.slice(0, 2).toUpperCase()}
-        </span>
-      );
-  }
 }
 
 interface SyncButtonProps {
@@ -411,7 +277,7 @@ function SyncButton({
       aria-label={`Refresh ${integrationName}`}
     >
       <RefreshCw
-        className={cn("h-3 w-3", pending && "animate-spin")}
+        className={cn("size-3", pending && "animate-spin")}
         aria-hidden="true"
       />
       Refresh

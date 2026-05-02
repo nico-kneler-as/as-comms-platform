@@ -19,7 +19,7 @@ import {
 } from "@/app/_lib/design-tokens-v2";
 
 import type { InboxComposerAliasOption } from "../_lib/view-models";
-import { ChevronDownIcon, SparkleIcon } from "./icons";
+import { ChevronDownIcon } from "./icons";
 
 export function ComposerSendFromChip({
   value,
@@ -54,12 +54,6 @@ export function ComposerSendFromChip({
                   </span>
                   <span className={`mt-0.5 flex items-center gap-1.5 ${TYPE.caption}`}>
                     <span className="truncate">{selectedAlias.projectName}</span>
-                    {selectedAlias.isAiReady ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-700">
-                        <SparkleIcon className="h-3 w-3" />
-                        AI ready
-                      </span>
-                    ) : null}
                   </span>
                 </span>
               ) : (
@@ -97,19 +91,13 @@ export function ComposerSendFromChip({
               <DropdownMenuRadioItem
                 key={alias.id}
                 value={alias.alias}
-                className={cn(
-                  "rounded-lg",
-                  alias.isAiReady ? "" : "opacity-75",
-                )}
+                className="rounded-lg"
               >
                 <div className="flex min-w-0 flex-col">
                   <span className="truncate text-sm font-medium text-slate-900">
                     {alias.alias}
                   </span>
-                  <span className={`truncate ${TYPE.caption}`}>
-                    {alias.projectName}
-                    {alias.isAiReady ? " - AI ready" : " - AI unavailable"}
-                  </span>
+                  <span className={`truncate ${TYPE.caption}`}>{alias.projectName}</span>
                 </div>
               </DropdownMenuRadioItem>
             ))}

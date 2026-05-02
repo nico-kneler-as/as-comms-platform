@@ -65,7 +65,7 @@ export function StepKnowledge({
             disabled={!canSync}
             className="min-w-[140px]"
           >
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            <RefreshCw className="size-3.5" aria-hidden="true" />
             Save and sync
           </Button>
         </div>
@@ -83,7 +83,7 @@ export function StepKnowledge({
           <div className="space-y-4">
             <div className="flex items-start gap-3">
               <RefreshCw
-                className="mt-0.5 h-4 w-4 animate-spin text-slate-500"
+                className="mt-0.5 size-4 animate-spin text-slate-500"
                 aria-hidden="true"
               />
               <div>
@@ -103,7 +103,7 @@ export function StepKnowledge({
 
         {knowledgeStatus === "done" ? (
           <div className="flex items-start gap-3">
-            <Check className="mt-0.5 h-4 w-4 text-emerald-600" aria-hidden="true" />
+            <Check className="mt-0.5 size-4 text-emerald-600" aria-hidden="true" />
             <div>
               <p className="text-[13px] font-semibold text-slate-900">
                 Saved. Sync queued.

@@ -149,7 +149,7 @@ function Section({
   return (
     <section id={id} className="scroll-mt-20">
       <div className="mb-3 flex items-center gap-3">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white tabular-nums">
+        <span className="flex size-7 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white tabular-nums">
           {number}
         </span>
         <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
@@ -514,8 +514,8 @@ function EmptyQueuePreview({ variant }: { readonly variant: "all" | "new" | "ope
 
   return (
     <div className="w-[22rem] px-5 py-16 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
-        <InboxIcon className="h-6 w-6 text-slate-400" />
+      <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-slate-100">
+        <InboxIcon className="size-6 text-slate-400" />
       </div>
       <p className="mt-4 text-sm font-medium text-slate-700">{msg.title}</p>
       <p className="mt-1 text-xs text-slate-500">{msg.description}</p>
@@ -526,8 +526,8 @@ function EmptyQueuePreview({ variant }: { readonly variant: "all" | "new" | "ope
 function SearchNoResultsPreview() {
   return (
     <div className="w-[22rem] px-5 py-16 text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
-        <SearchXIcon className="h-6 w-6 text-slate-400" />
+      <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-slate-100">
+        <SearchXIcon className="size-6 text-slate-400" />
       </div>
       <p className="mt-4 text-sm font-medium text-slate-700">No results</p>
       <p className="mt-1 text-xs text-slate-500">
@@ -547,7 +547,7 @@ function SearchWithResultsPreview() {
         </p>
       </div>
       <div className="flex gap-3 border-b border-slate-100 bg-sky-50/60 px-5 py-3.5 ring-1 ring-inset ring-sky-200">
-        <div className="h-10 w-10 shrink-0 rounded-full bg-indigo-100 flex items-center justify-center text-sm font-semibold text-indigo-800">
+        <div className="size-10 shrink-0 rounded-full bg-indigo-100 flex items-center justify-center text-sm font-semibold text-indigo-800">
           MP
         </div>
         <div className="min-w-0 flex-1">
@@ -595,7 +595,7 @@ function UnresolvedBannerPreview() {
         }}
         className="flex w-full items-center gap-2 px-6 py-2.5 text-left transition-colors hover:bg-amber-100/60"
       >
-        <AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-600" />
+        <AlertTriangleIcon className="size-4 shrink-0 text-amber-600" />
         <span className="flex-1 text-sm font-medium text-amber-900">
           Unresolved items need attention
         </span>
@@ -628,7 +628,7 @@ function FollowUpPreview({ isOn }: { readonly isOn: boolean }) {
             "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800"
         )}
       >
-        <span className="inline-flex h-3.5 w-3.5 items-center justify-center">
+        <span className="inline-flex size-3.5 items-center justify-center">
           ↩
         </span>
         Needs Follow Up
@@ -655,32 +655,32 @@ function ComposerStatusPreview({
       className: "text-slate-500"
     },
     "saving-draft": {
-      icon: <LoaderIcon className="h-3 w-3 animate-spin" />,
+      icon: <LoaderIcon className="size-3 animate-spin" />,
       text: "Saving draft…",
       className: "text-slate-500"
     },
     "draft-saved": {
-      icon: <CheckCircleIcon className="h-3 w-3" />,
+      icon: <CheckCircleIcon className="size-3" />,
       text: "Draft saved",
       className: "text-emerald-700"
     },
     "validation-error": {
-      icon: <AlertCircleIcon className="h-3 w-3" />,
+      icon: <AlertCircleIcon className="size-3" />,
       text: "Fix errors above",
       className: "text-red-600"
     },
     sending: {
-      icon: <LoaderIcon className="h-3 w-3 animate-spin" />,
+      icon: <LoaderIcon className="size-3 animate-spin" />,
       text: "Sending…",
       className: "text-slate-500"
     },
     "sent-success": {
-      icon: <CheckCircleIcon className="h-3 w-3" />,
+      icon: <CheckCircleIcon className="size-3" />,
       text: "Message sent",
       className: "text-emerald-700"
     },
     "send-failure": {
-      icon: <XCircleIcon className="h-3 w-3" />,
+      icon: <XCircleIcon className="size-3" />,
       text: "Failed to send",
       className: "text-red-600"
     }
@@ -697,12 +697,12 @@ function ComposerStatusPreview({
       <div className="flex items-center gap-2">
         {status === "saving-draft" ? (
           <Button variant="ghost" size="sm" disabled>
-            <LoaderIcon className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            <LoaderIcon className="mr-1.5 size-3.5 animate-spin" />
             Saving…
           </Button>
         ) : status === "draft-saved" ? (
           <Button variant="ghost" size="sm">
-            <CheckCircleIcon className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
+            <CheckCircleIcon className="mr-1.5 size-3.5 text-emerald-600" />
             Saved
           </Button>
         ) : (
@@ -717,17 +717,17 @@ function ComposerStatusPreview({
         >
           {status === "sending" ? (
             <>
-              <LoaderIcon className="h-3.5 w-3.5 animate-spin" />
+              <LoaderIcon className="size-3.5 animate-spin" />
               Sending…
             </>
           ) : status === "sent-success" ? (
             <>
-              <CheckCircleIcon className="h-3.5 w-3.5" />
+              <CheckCircleIcon className="size-3.5" />
               Sent
             </>
           ) : (
             <>
-              <SendIcon className="h-3.5 w-3.5" />
+              <SendIcon className="size-3.5" />
               Send
             </>
           )}
@@ -738,7 +738,7 @@ function ComposerStatusPreview({
             size="sm"
             className="h-6 px-2 text-xs text-red-700"
           >
-            <RefreshCwIcon className="mr-1 h-3 w-3" />
+            <RefreshCwIcon className="mr-1 size-3" />
             Retry
           </Button>
         ) : null}
@@ -761,7 +761,7 @@ function ValidationErrorPreview() {
       </div>
       <div className="border-t border-red-100 bg-red-50/50 px-5 py-2">
         <p className="flex items-center gap-1.5 text-xs text-red-700">
-          <AlertCircleIcon className="h-3 w-3 shrink-0" />
+          <AlertCircleIcon className="size-3 shrink-0" />
           Subject is required
         </p>
       </div>
@@ -785,7 +785,7 @@ function AiStatePreview({
 
 export default function InboxStatesPage() {
   return (
-    <div className="min-h-screen bg-slate-100 p-6">
+    <div className="min-h-dvh bg-slate-100 p-6">
       <div className="mx-auto max-w-5xl space-y-6">
         {/* Page header */}
         <div>
@@ -813,7 +813,7 @@ export default function InboxStatesPage() {
                 href={`#${item.id}`}
                 className="flex items-center gap-2 rounded px-1.5 py-1 text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900"
               >
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold tabular-nums text-slate-600">
+                <span className="flex size-5 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold tabular-nums text-slate-600">
                   {item.number}
                 </span>
                 {item.title}
@@ -989,7 +989,7 @@ export default function InboxStatesPage() {
         <Section id="ai-idle" number={20} title="AI — Idle (Button Ready)">
           <div className="flex items-center justify-end px-5 py-3">
             <Button variant="outline" size="sm" className="gap-1.5">
-              <SparkleIcon className="h-3.5 w-3.5 text-violet-600" />
+              <SparkleIcon className="size-3.5 text-violet-600" />
               Draft with AI
             </Button>
           </div>
@@ -1002,17 +1002,17 @@ export default function InboxStatesPage() {
         >
           <AiStatePreview>
             <div className="flex items-center gap-3 px-5 py-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100">
-                <BotIcon className="h-4 w-4 text-violet-600" />
+              <div className="flex size-8 items-center justify-center rounded-lg bg-violet-100">
+                <BotIcon className="size-4 text-violet-600" />
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium text-violet-900">
                   Drafting a reply…
                 </p>
                 <div className="mt-1.5 flex gap-1">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:0ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:150ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:300ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:0ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:150ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:300ms]" />
                 </div>
               </div>
             </div>
@@ -1027,8 +1027,8 @@ export default function InboxStatesPage() {
           <AiStatePreview>
             <div className="px-5 py-4">
               <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100">
-                  <WandIcon className="h-4 w-4 text-violet-600" />
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-violet-100">
+                  <WandIcon className="size-4 text-violet-600" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-violet-800">
@@ -1045,11 +1045,11 @@ export default function InboxStatesPage() {
                       size="sm"
                       className="gap-1.5 bg-violet-600 hover:bg-violet-700"
                     >
-                      <CheckCircleIcon className="h-3.5 w-3.5" />
+                      <CheckCircleIcon className="size-3.5" />
                       Insert into composer
                     </Button>
                     <Button variant="outline" size="sm" className="gap-1.5">
-                      <TrashIcon className="h-3.5 w-3.5" />
+                      <TrashIcon className="size-3.5" />
                       Discard
                     </Button>
                   </div>
@@ -1067,7 +1067,7 @@ export default function InboxStatesPage() {
                   size="sm"
                   className="h-7 gap-1 px-2 text-xs"
                 >
-                  <RotateCcwIcon className="h-3 w-3" />
+                  <RotateCcwIcon className="size-3" />
                   Reprompt
                 </Button>
               </div>
@@ -1082,17 +1082,17 @@ export default function InboxStatesPage() {
         >
           <AiStatePreview>
             <div className="flex items-center gap-3 px-5 py-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100">
-                <BotIcon className="h-4 w-4 text-violet-600" />
+              <div className="flex size-8 items-center justify-center rounded-lg bg-violet-100">
+                <BotIcon className="size-4 text-violet-600" />
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium text-violet-900">
                   Regenerating draft…
                 </p>
                 <div className="mt-1.5 flex gap-1">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:0ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:150ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:300ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:0ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:150ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:300ms]" />
                 </div>
               </div>
             </div>
@@ -1106,7 +1106,7 @@ export default function InboxStatesPage() {
         >
           <div className="p-4">
             <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-              <WifiOffIcon className="h-4 w-4 shrink-0 text-slate-500" />
+              <WifiOffIcon className="size-4 shrink-0 text-slate-500" />
               <p className="text-xs text-slate-600">
                 AI drafting is currently unavailable. You can compose your
                 reply manually, or try again later.
@@ -1119,7 +1119,7 @@ export default function InboxStatesPage() {
                 className="gap-1.5 text-slate-400"
                 disabled
               >
-                <WifiOffIcon className="h-3.5 w-3.5" />
+                <WifiOffIcon className="size-3.5" />
                 AI unavailable
               </Button>
             </div>
@@ -1129,7 +1129,7 @@ export default function InboxStatesPage() {
         <Section id="ai-error" number={25} title="AI — Error State">
           <div className="p-4">
             <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-              <AlertCircleIcon className="h-4 w-4 shrink-0 text-red-600" />
+              <AlertCircleIcon className="size-4 shrink-0 text-red-600" />
               <p className="flex-1 text-xs text-red-700">
                 AI service timed out. Please try again.
               </p>
@@ -1138,7 +1138,7 @@ export default function InboxStatesPage() {
                 size="sm"
                 className="h-6 px-2 text-xs text-red-700 hover:text-red-900"
               >
-                <RefreshCwIcon className="mr-1 h-3 w-3" />
+                <RefreshCwIcon className="mr-1 size-3" />
                 Try again
               </Button>
             </div>
@@ -1152,7 +1152,7 @@ export default function InboxStatesPage() {
         >
           <div className="flex items-center gap-3 border-t border-slate-100 px-5 py-3">
             <span className="flex items-center gap-1 text-[11px] text-slate-500">
-              <PencilIcon className="h-3 w-3" />
+              <PencilIcon className="size-3" />
               Edited
             </span>
             <span className="text-[11px] text-slate-400">
@@ -1169,7 +1169,7 @@ export default function InboxStatesPage() {
           <div className="border-b border-violet-200 bg-violet-50/50">
             <div className="flex items-center justify-between px-5 py-3">
               <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                <TrashIcon className="h-3 w-3" />
+                <TrashIcon className="size-3" />
                 AI draft discarded
               </span>
               <Button
@@ -1177,7 +1177,7 @@ export default function InboxStatesPage() {
                 size="sm"
                 className="h-6 px-2 text-xs"
               >
-                <XIcon className="h-3 w-3" />
+                <XIcon className="size-3" />
               </Button>
             </div>
           </div>
