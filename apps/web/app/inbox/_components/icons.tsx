@@ -69,4 +69,5 @@ export {
   Quote as QuoteIcon,
   Database as DatabaseIcon,
   Archive as ArchiveBoxIcon,
+  ArchiveRestore as ArchiveRestoreIcon,
 } from "lucide-react";
