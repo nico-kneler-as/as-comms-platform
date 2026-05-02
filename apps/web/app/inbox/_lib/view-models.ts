@@ -197,6 +197,18 @@ export interface InboxTimelineEntryViewModel {
   readonly fromHeader: string | null;
   readonly toHeader: string | null;
   readonly recipientLabel?: string | null;
+  /**
+   * Resolved project alias label (e.g. "PNW Biodiversity") for the
+   * conversation this email belongs to, derived from whichever side of
+   * the From/To headers is one of our known project aliases. Null for
+   * non-email entries or when the alias email can't be matched.
+   *
+   * Used by `EmailParticipantHeader` to render headers as
+   *   outbound: <projectAlias> → <volunteer>
+   *   inbound:  <volunteer>     → <projectAlias>
+   * without the bubble component needing access to the alias map.
+   */
+  readonly headerProjectLabel?: string | null;
   readonly ccHeader: string | null;
   readonly mailbox: string | null;
   readonly threadId: string | null;

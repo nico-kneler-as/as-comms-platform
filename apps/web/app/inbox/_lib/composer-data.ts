@@ -36,12 +36,20 @@ export async function getInboxComposerAliases(): Promise<
       return [];
     }
 
+    // Prefer the operator-facing alias label over the verbose Salesforce
+    // project name (e.g. "PNW Biodiversity" not "Passive Acoustic
+    // Monitoring of Pacific Northwest Forests"). Falls back to the full
+    // name when the alias is null/empty.
+    const trimmedAlias = project.projectAlias?.trim() ?? "";
+    const projectDisplayName =
+      trimmedAlias.length > 0 ? trimmedAlias : project.projectName;
+
     return [
       {
         id: alias.id,
         alias: alias.alias,
         projectId: alias.projectId,
-        projectName: project.projectName,
+        projectName: projectDisplayName,
         isAiConfigured,
         hasCachedContent: hasCachedContentByProjectId.has(alias.projectId),
         isAiReady: project.isActive === true && isAiConfigured,

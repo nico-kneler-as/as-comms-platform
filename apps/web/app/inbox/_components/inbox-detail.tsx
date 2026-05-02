@@ -32,6 +32,7 @@ import {
   markInboxOpenedAction,
   markInboxUnreadAction,
   sendComposerAction,
+  unarchiveInboxContactAction,
 } from "../actions";
 import { plaintextToComposerHtml } from "@/src/lib/html-sanitizer";
 import { fetchInboxTimelinePage } from "../_lib/client-api";
@@ -61,6 +62,7 @@ import { InboxTimeline } from "./inbox-timeline";
 import {
   AlertTriangleIcon,
   ArchiveBoxIcon,
+  ArchiveRestoreIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   ClockIcon,
@@ -377,6 +379,20 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     });
   }, [contact.contactId, router]);
 
+  const handleUnarchive = useCallback(() => {
+    startArchiveTransition(async () => {
+      const formData = new FormData();
+      formData.set("contactId", contact.contactId);
+      const result = await unarchiveInboxContactAction(formData);
+      if (result.ok) {
+        // Stay on the conversation; it's now in the regular inbox.
+        // router.refresh() picks up the updated isArchived flag and the
+        // header button switches back to "Archive".
+        router.refresh();
+      }
+    });
+  }, [contact.contactId, router]);
+
   const headerProject = contact.activeProjects[0] ?? detail.conversationProject;
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
   const isFollowUp = followUpToggle.value;
@@ -632,14 +648,26 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                     variant="outline"
                     size="icon"
                     className="size-8"
-                    aria-label="Archive conversation"
+                    aria-label={
+                      detail.isArchived
+                        ? "Move back to inbox"
+                        : "Archive conversation"
+                    }
                     disabled={isArchivePending}
-                    onClick={handleArchive}
+                    onClick={detail.isArchived ? handleUnarchive : handleArchive}
                   >
-                    <ArchiveBoxIcon className="size-4" />
+                    {detail.isArchived ? (
+                      <ArchiveRestoreIcon className="size-4" />
+                    ) : (
+                      <ArchiveBoxIcon className="size-4" />
+                    )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Archive conversation</TooltipContent>
+                <TooltipContent>
+                  {detail.isArchived
+                    ? "Move back to inbox"
+                    : "Archive conversation"}
+                </TooltipContent>
               </Tooltip>
 
               {!railOpen ? (

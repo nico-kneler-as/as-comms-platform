@@ -1408,7 +1408,7 @@ describe("real inbox selectors", () => {
     expect(workload.projects).toEqual([
       {
         projectId: "project:amazon-basin",
-        projectName: "Amazon Basin Research",
+        projectName: "Amazon Basin",
         unreadCount: 1,
         needsFollowUpCount: 1,
       },
@@ -1420,7 +1420,7 @@ describe("real inbox selectors", () => {
       },
       {
         projectId: "project:whitebark-pine",
-        projectName: "Tracking Whitebark Pine",
+        projectName: "Whitebark Pine",
         unreadCount: 0,
         needsFollowUpCount: 0,
       },
@@ -1480,13 +1480,13 @@ describe("real inbox selectors", () => {
     expect(workload.projects).toEqual([
       {
         projectId: "project:amazon-basin",
-        projectName: "Amazon Basin Research",
+        projectName: "Amazon Basin",
         unreadCount: 1,
         needsFollowUpCount: 1,
       },
       {
         projectId: "project:whitebark-pine",
-        projectName: "Tracking Whitebark Pine",
+        projectName: "Whitebark Pine",
         unreadCount: 1,
         needsFollowUpCount: 1,
       },
@@ -1835,7 +1835,7 @@ describe("real inbox selectors", () => {
       (item) => item.contactId === "contact:multi-membership",
     );
 
-    expect(entry?.projectLabel).toBe("Tracking Whitebark Pine");
+    expect(entry?.projectLabel).toBe("Whitebark Pine");
   });
 
   it("uses the event-type fallback subject for follow-up rows", async () => {
