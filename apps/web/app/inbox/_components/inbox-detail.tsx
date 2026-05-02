@@ -514,21 +514,21 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
 
       <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
         <header
-          className={`flex ${LAYOUT.headerHeight} items-center justify-between gap-4 border-b border-slate-200 px-6`}
+          className={`flex ${LAYOUT.headerHeight} items-center justify-between gap-4 border-b border-slate-200 px-5`}
         >
-          <div className="flex min-w-0 items-center gap-4">
+          <div className="flex min-w-0 items-center gap-3.5">
             <InboxAvatar
               initials={detail.initials}
               tone={detail.avatarTone}
-              size="md"
+              size="sm"
+              className="size-7 text-[11px]"
             />
-            <h1 className={`truncate ${TYPE.headingLg}`}>
-              {contact.displayName}
-            </h1>
-            <div className="hidden h-5 w-px bg-slate-200 sm:block" />
-            <div className="hidden min-w-0 flex-1 sm:block">
+            <div className="min-w-0">
+              <h1 className={`truncate ${TYPE.headingMd}`}>
+                {contact.displayName}
+              </h1>
               {headerProject ? (
-                <div className="flex min-w-0 items-center gap-2 text-xs">
+                <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs">
                   <span
                     className="min-w-0 truncate font-medium text-slate-700"
                     title={
@@ -586,12 +586,12 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
                     disabled={isMarkUnreadPending}
                     onClick={handleMarkUnread}
                     aria-label="Mark as unread"
-                    className="size-8"
+                    className="size-8 text-slate-800 hover:bg-slate-100 hover:text-slate-950"
                     data-inbox-mark-unread="true"
                   >
                     <MailOpenIcon className="size-4" />
@@ -604,20 +604,20 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                 <PopoverTrigger asChild>
                   {existingReminder ? (
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       aria-label="Set reminder"
                       title="Set reminder"
-                      className="gap-1.5 border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-800"
+                      className="gap-1.5 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-800"
                     >
                       <ClockIcon className="size-3.5" />
                       Reminder · {formatShortReminder(existingReminder)}
                     </Button>
                   ) : (
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon"
-                      className="size-8"
+                      className="size-8 text-slate-800 hover:bg-slate-100 hover:text-slate-950"
                       aria-label="Set reminder"
                       title="Set reminder"
                     >
@@ -645,9 +645,9 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
-                    className="size-8"
+                    className="size-8 text-slate-800 hover:bg-slate-100 hover:text-slate-950"
                     aria-label={
                       detail.isArchived
                         ? "Move back to inbox"
@@ -674,9 +674,9 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="icon"
-                      className="size-8"
+                      className="size-8 text-slate-800 hover:bg-slate-100 hover:text-slate-950"
                       aria-label="Toggle contact details"
                       aria-expanded={false}
                       aria-controls="inbox-contact-rail"
@@ -801,7 +801,7 @@ function FollowUpToggleButton({
   return (
     <Button
       type="button"
-      variant="outline"
+      variant="ghost"
       size="icon"
       disabled={pending}
       aria-pressed={needsFollowUp}
@@ -810,9 +810,9 @@ function FollowUpToggleButton({
       data-inbox-follow-up-toggle="true"
       onClick={onToggle}
       className={cn(
-        "size-8",
+        "size-8 text-slate-800 hover:bg-slate-100 hover:text-slate-950",
         needsFollowUp &&
-          "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800",
+          "bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800",
       )}
     >
       <FlagIcon className="size-4" />

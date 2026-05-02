@@ -115,7 +115,7 @@ function deriveParticipantRowsFromRawHeaders(
     entry.recipientLabel ??
     extractDisplayNameRaw(entry.toHeader) ??
     entry.headerProjectLabel ??
-    null;
+    (entry.kind === "inbound-email" ? "Adventure Scientists" : null);
   rows.push({
     label: "To",
     name: toName !== null && toName.length > 0 ? toName : null,
