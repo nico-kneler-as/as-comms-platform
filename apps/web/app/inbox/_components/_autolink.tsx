@@ -151,6 +151,11 @@ function findNextParentheticalLink(
   for (const match of segment.matchAll(pattern)) {
     const matchIndex = match.index;
     const href = match[1];
+
+    if (href === undefined) {
+      continue;
+    }
+
     const openParenthesisIndex = matchIndex + 1;
     const label = findParentheticalLabel(segment, openParenthesisIndex);
 
