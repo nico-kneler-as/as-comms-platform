@@ -34,6 +34,7 @@ import type {
   InboxRecentActivityViewModel,
   InboxTimelineCampaignActivityViewModel,
   InboxTimelineEntryKind,
+  InboxTimelineEntryParticipantRowViewModel,
   InboxTimelineEntryViewModel,
   InboxVolunteerStage,
   InboxWelcomeWorkloadViewModel,
@@ -1853,7 +1854,14 @@ function timelineActorLabel(
         ? ""
         : normalizeDisplayName(canonicalContactDisplayName);
 
-    if (normalizedCanonicalContactName.length > 0) {
+    // Skip the canonical lookup when the stored displayName is just the
+    // email itself (placeholder for email-only contacts). The From
+    // header on inbound usually carries the sender's real name —
+    // prefer that over a degraded stored value.
+    if (
+      normalizedCanonicalContactName.length > 0 &&
+      !isEmailLikeName(normalizedCanonicalContactName)
+    ) {
       return normalizedCanonicalContactName;
     }
 
@@ -1862,12 +1870,17 @@ function timelineActorLabel(
       const normalizedSenderLabel =
         senderLabel === null ? "" : normalizeDisplayName(senderLabel);
 
-      if (normalizedSenderLabel.length > 0) {
+      if (
+        normalizedSenderLabel.length > 0 &&
+        !isEmailLikeName(normalizedSenderLabel)
+      ) {
         return normalizedSenderLabel;
       }
     }
 
-    return normalizeDisplayName(contactDisplayName) || contactDisplayName;
+    const fallback =
+      normalizeDisplayName(contactDisplayName) || contactDisplayName;
+    return fallback;
   }
 
   if (kind === "inbound-sms") {
@@ -1929,6 +1942,27 @@ function titleCaseSimpleToken(token: string): string {
   }
 
   return `${token[0]?.toUpperCase() ?? ""}${token.slice(1).toLowerCase()}`;
+}
+
+/**
+ * Treats `local@host.tld`-shaped strings as "we don't actually have a
+ * real name for this person" — used so we never render `email <email>`
+ * in the bubble header AND so a contact whose stored displayName
+ * happens to be the email itself doesn't short-circuit the From-header
+ * fallback chain. Conservative on whitespace: any space disqualifies.
+ */
+function isEmailLikeName(value: string | null | undefined): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return false;
+  }
+
+  return /^\S+@\S+\.\S+$/u.test(trimmed);
 }
 
 function normalizeDisplayName(raw: string): string {
@@ -2448,10 +2482,177 @@ function buildTimelineEntry(input: {
             projectLabelByAlias: input.projectLabelByAlias,
           })
         : null,
+    ...(input.item.family === "one_to_one_email"
+      ? {
+          participantRows: buildParticipantRows({
+            item: input.item,
+            contactDisplayName: input.contactDisplayName,
+            contactDisplayNameByEmail: input.contactDisplayNameByEmail,
+            projectLabelByAlias: input.projectLabelByAlias,
+            operatorDisplayName: input.operatorDisplayName,
+            headerProjectLabel: resolveHeaderProjectLabel({
+              item: input.item,
+              projectLabelByAlias: input.projectLabelByAlias,
+            }),
+          }),
+        }
+      : {}),
     noteId: input.item.family === "internal_note" ? input.item.noteId : null,
     authorId:
       input.item.family === "internal_note" ? input.item.authorId : null,
   };
+}
+
+/**
+ * Resolve a single bubble-header participant slot ("From"/"To"
+ * volunteer side, never the project side) to a `name` (or null when
+ * we have nothing better than the email itself). Order: known-contact
+ * lookup by email, header display name, conversation-contact display
+ * name. Each candidate is rejected when it looks like a bare email
+ * (`isEmailLikeName`) so we never echo `email <email>` in the UI.
+ */
+function resolveVolunteerParticipantName(input: {
+  readonly emailAddress: string | null;
+  readonly headerDisplayName: string | null;
+  readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
+  readonly conversationContactDisplayName: string;
+}): string | null {
+  if (input.emailAddress !== null) {
+    const lookup = input.contactDisplayNameByEmail.get(input.emailAddress);
+    if (
+      lookup !== undefined &&
+      lookup.length > 0 &&
+      !isEmailLikeName(lookup)
+    ) {
+      const normalized = normalizeDisplayName(lookup);
+      if (normalized.length > 0) {
+        return normalized;
+      }
+    }
+  }
+
+  if (input.headerDisplayName !== null) {
+    const normalized = normalizeDisplayName(input.headerDisplayName);
+    if (normalized.length > 0 && !isEmailLikeName(normalized)) {
+      return normalized;
+    }
+  }
+
+  if (
+    input.conversationContactDisplayName.length > 0 &&
+    !isEmailLikeName(input.conversationContactDisplayName)
+  ) {
+    const normalized = normalizeDisplayName(
+      input.conversationContactDisplayName,
+    );
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Build the From / To / (optional Cc) rows that drive both the
+ * compact bubble header and the expanded debug view. Direction is
+ * baked in so the component can render
+ * `participantRows[0].name → participantRows[1].name` without
+ * branching: the From slot for outbound is the project alias, for
+ * inbound it is the volunteer's resolved name (and vice versa for
+ * To). When toHeader is missing on an inbound capture the To row
+ * falls back to `item.mailbox` so we never render an empty right
+ * side.
+ */
+function buildParticipantRows(input: {
+  readonly item: Extract<TimelineItem, { family: "one_to_one_email" }>;
+  readonly contactDisplayName: string;
+  readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
+  readonly projectLabelByAlias: ReadonlyMap<string, string>;
+  readonly operatorDisplayName: string;
+  readonly headerProjectLabel: string | null;
+}): readonly InboxTimelineEntryParticipantRowViewModel[] {
+  const fromEmail = participantHeaderEmail(input.item.fromHeader ?? null);
+  const toEmail = participantHeaderEmail(input.item.toHeader ?? null);
+  const fromHeaderDisplayName = participantHeaderLabel(
+    input.item.fromHeader ?? null,
+  );
+  const toHeaderDisplayName = participantHeaderLabel(
+    input.item.toHeader ?? null,
+  );
+  const normalizedOperator = normalizeDisplayName(input.operatorDisplayName);
+  const operatorLabel =
+    normalizedOperator.length > 0 ? normalizedOperator : "Adventure Scientists";
+
+  const rows: InboxTimelineEntryParticipantRowViewModel[] = [];
+
+  if (input.item.direction === "outbound") {
+    // For outbound the From slot holds whatever the operator was
+    // sending AS. Order: resolved project alias → whatever display
+    // name appears on the wire (handles legacy / non-aliased sends
+    // like "PNW Project <pnwbio@…>") → operator name → fallback.
+    const fromHeaderName =
+      fromHeaderDisplayName !== null &&
+      !isEmailLikeName(fromHeaderDisplayName)
+        ? normalizeDisplayName(fromHeaderDisplayName) || fromHeaderDisplayName
+        : null;
+    rows.push({
+      label: "From",
+      name: input.headerProjectLabel ?? fromHeaderName ?? operatorLabel,
+      email: fromEmail,
+    });
+    rows.push({
+      label: "To",
+      name: resolveVolunteerParticipantName({
+        emailAddress: toEmail,
+        headerDisplayName:
+          toHeaderDisplayName !== null && !isEmailLikeName(toHeaderDisplayName)
+            ? toHeaderDisplayName
+            : null,
+        contactDisplayNameByEmail: input.contactDisplayNameByEmail,
+        conversationContactDisplayName: input.contactDisplayName,
+      }),
+      email: toEmail,
+    });
+  } else {
+    rows.push({
+      label: "From",
+      name: resolveVolunteerParticipantName({
+        emailAddress: fromEmail,
+        headerDisplayName:
+          fromHeaderDisplayName !== null &&
+          !isEmailLikeName(fromHeaderDisplayName)
+            ? fromHeaderDisplayName
+            : null,
+        contactDisplayNameByEmail: input.contactDisplayNameByEmail,
+        conversationContactDisplayName: input.contactDisplayName,
+      }),
+      email: fromEmail,
+    });
+    // Inbound captures sometimes drop the To header (older
+    // Salesforce-derived items, mbox imports). Fall back to the
+    // captured `mailbox` so the compact header always has a right
+    // side and the expanded view always shows a To row.
+    const inboundToEmail = toEmail ?? input.item.mailbox ?? null;
+    rows.push({
+      label: "To",
+      name: input.headerProjectLabel,
+      email: inboundToEmail,
+    });
+  }
+
+  if (
+    input.item.ccHeader !== null &&
+    input.item.ccHeader.trim().length > 0
+  ) {
+    rows.push({
+      label: "Cc",
+      name: input.item.ccHeader.trim(),
+      email: null,
+    });
+  }
+
+  return rows;
 }
 
 /**

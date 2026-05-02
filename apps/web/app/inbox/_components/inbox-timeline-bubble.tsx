@@ -422,7 +422,6 @@ export function MessageBubble({
           {isEmail ? (
             <EmailParticipantHeader
               entry={entry}
-              direction={isOutbound ? "outbound" : "inbound"}
               tone={isOutbound ? "sky" : "slate"}
             />
           ) : null}
