@@ -2535,6 +2535,14 @@ function pickPrimaryActiveProjectName(input: {
 
 async function loadProjectMetadataById(
   memberships: readonly ContactMembershipRecord[],
+  /**
+   * Additional project IDs to look up beyond what the contact's memberships
+   * surface. The conversation-derived project pill needs the metadata for
+   * any project_id that appears in salesforce_event_context for this
+   * contact's events, even when no membership exists (external contacts
+   * sent FROM a project alias).
+   */
+  extraProjectIds: readonly (string | null | undefined)[] = [],
 ): Promise<
   Readonly<
     Record<
@@ -2546,9 +2554,10 @@ async function loadProjectMetadataById(
     >
   >
 > {
-  const projectIds = uniqueStrings(
-    memberships.map((membership) => membership.projectId),
-  );
+  const projectIds = uniqueStrings([
+    ...memberships.map((membership) => membership.projectId),
+    ...extraProjectIds,
+  ]);
 
   if (projectIds.length === 0) {
     return {};
@@ -3265,7 +3274,10 @@ async function readInboxDetailCacheData(
         canonicalEvents,
       }),
     canonicalEventById: new Map(canonicalEvents.map((event) => [event.id, event])),
-    projectMetadataById: await loadProjectMetadataById(memberships),
+    projectMetadataById: await loadProjectMetadataById(
+      memberships,
+      salesforceEventContexts.map((context) => context.projectId),
+    ),
     salesforceEventContextBySourceEvidenceId: new Map(
       salesforceEventContexts.map((context) => [
         context.sourceEvidenceId,
