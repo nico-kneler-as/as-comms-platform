@@ -544,7 +544,7 @@ export function InboxList({
             aria-keyshortcuts="c"
             title="Compose"
             onClick={openNewDraft}
-            className="size-8 shrink-0 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="size-8 shrink-0 text-slate-900 hover:bg-slate-100 hover:text-slate-950"
           >
             <PencilIcon aria-hidden="true" data-icon="inline-start" />
           </Button>
@@ -563,7 +563,7 @@ export function InboxList({
                 ? "bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
                 : hasActiveFilters
                   ? "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+                  : "text-slate-900 hover:bg-slate-100 hover:text-slate-950",
             )}
           >
             <FilterIcon aria-hidden="true" data-icon="inline-start" />
