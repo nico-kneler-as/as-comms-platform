@@ -38,6 +38,7 @@ import {
   SESSION_MAX_AGE_SECONDS,
   SESSION_UPDATE_AGE_SECONDS
 } from "./config";
+import { backfillUserNameOnSignIn } from "./name-backfill";
 import { canSignInWithGoogle } from "./google-sign-in-policy";
 
 async function buildAuthConfig(): Promise<NextAuthConfig> {
@@ -68,10 +69,17 @@ async function buildAuthConfig(): Promise<NextAuthConfig> {
     },
     adapter: DrizzleAdapter(runtime.connection.db, authAdapterTables),
     callbacks: {
-      async signIn({ user }) {
+      async signIn({ user, profile }) {
         const email = user.email;
         const repos = await getSettingsRepositories();
         const record = email ? await repos.users.findByEmail(email) : null;
+
+        await backfillUserNameOnSignIn({
+          record,
+          profileName: typeof profile?.name === "string" ? profile.name : null,
+          userName: user.name,
+          usersRepository: repos.users,
+        });
 
         // Fail closed: only pre-seeded, active AS Workspace users may
         // complete Google OAuth. This blocks adapter-driven first-time

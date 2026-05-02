@@ -12,6 +12,7 @@ export interface UsersRepository {
   findById(id: string): Promise<UserRecord | null>;
   listAll(): Promise<readonly UserRecord[]>;
   updateRole(id: string, role: UserRole): Promise<UserRecord>;
+  updateName(id: string, name: string): Promise<UserRecord>;
   setDeactivated(id: string, deactivatedAt: Date | null): Promise<UserRecord>;
   upsert(record: UserRecord): Promise<UserRecord>;
 }
