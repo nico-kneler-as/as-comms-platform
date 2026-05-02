@@ -199,10 +199,19 @@ function OperatorMenu({
               {operator.initials}
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">
-                {operator.displayName}
-              </p>
-              <p className="truncate text-[11px] text-slate-500">
+              {operator.displayName !== operator.email ? (
+                <p className="truncate text-sm font-semibold text-slate-900">
+                  {operator.displayName}
+                </p>
+              ) : null}
+              <p
+                className={cn(
+                  "truncate",
+                  operator.displayName !== operator.email
+                    ? "text-[11px] text-slate-500"
+                    : "text-sm font-semibold text-slate-900",
+                )}
+              >
                 {operator.email}
               </p>
             </div>
