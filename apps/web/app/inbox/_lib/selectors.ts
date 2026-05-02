@@ -2293,6 +2293,8 @@ function buildTimelineEntry(input: {
   readonly campaignActivitySummaryByCampaignId: Readonly<
     Record<string, CampaignActivitySummary>
   >;
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly projectMetadataById: InboxDetailCacheData["projectMetadataById"];
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly referenceNowIso: string;
   readonly attachmentsByCanonicalEventId: ReadonlyMap<
@@ -2388,6 +2390,15 @@ function buildTimelineEntry(input: {
             proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
           }))
       : [];
+  const headerProjectLabel =
+    input.item.family === "one_to_one_email"
+      ? resolveHeaderProjectLabel({
+          item: input.item,
+          memberships: input.memberships,
+          projectMetadataById: input.projectMetadataById,
+          projectLabelByAlias: input.projectLabelByAlias,
+        })
+      : null;
   const canonicalSenderDisplayName =
     input.item.family === "one_to_one_email"
       ? input.contactDisplayNameByEmail.get(
@@ -2475,25 +2486,17 @@ function buildTimelineEntry(input: {
         : 0,
     attachments,
     campaignActivity,
-    headerProjectLabel:
-      input.item.family === "one_to_one_email"
-        ? resolveHeaderProjectLabel({
-            item: input.item,
-            projectLabelByAlias: input.projectLabelByAlias,
-          })
-        : null,
+    headerProjectLabel,
     ...(input.item.family === "one_to_one_email"
       ? {
           participantRows: buildParticipantRows({
             item: input.item,
             contactDisplayName: input.contactDisplayName,
+            contactPrimaryEmail: input.contactPrimaryEmail,
             contactDisplayNameByEmail: input.contactDisplayNameByEmail,
             projectLabelByAlias: input.projectLabelByAlias,
             operatorDisplayName: input.operatorDisplayName,
-            headerProjectLabel: resolveHeaderProjectLabel({
-              item: input.item,
-              projectLabelByAlias: input.projectLabelByAlias,
-            }),
+            headerProjectLabel,
           }),
         }
       : {}),
@@ -2567,12 +2570,17 @@ function resolveVolunteerParticipantName(input: {
 function buildParticipantRows(input: {
   readonly item: Extract<TimelineItem, { family: "one_to_one_email" }>;
   readonly contactDisplayName: string;
+  readonly contactPrimaryEmail: string | null;
   readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly operatorDisplayName: string;
   readonly headerProjectLabel: string | null;
 }): readonly InboxTimelineEntryParticipantRowViewModel[] {
-  const fromEmail = participantHeaderEmail(input.item.fromHeader ?? null);
+  const fromEmail =
+    participantHeaderEmail(input.item.fromHeader ?? null) ??
+    (input.item.direction === "inbound"
+      ? normalizeEmailAddress(input.contactPrimaryEmail)
+      : null);
   const toEmail = participantHeaderEmail(input.item.toHeader ?? null);
   const fromHeaderDisplayName = participantHeaderLabel(
     input.item.fromHeader ?? null,
@@ -2636,7 +2644,7 @@ function buildParticipantRows(input: {
     const inboundToEmail = toEmail ?? input.item.mailbox ?? null;
     rows.push({
       label: "To",
-      name: input.headerProjectLabel,
+      name: input.headerProjectLabel ?? "Adventure Scientists",
       email: inboundToEmail,
     });
   }
@@ -2666,6 +2674,8 @@ function buildParticipantRows(input: {
  */
 function resolveHeaderProjectLabel(input: {
   readonly item: Extract<TimelineItem, { family: "one_to_one_email" }>;
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly projectMetadataById: InboxDetailCacheData["projectMetadataById"];
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
 }): string | null {
   const fromEmail = participantHeaderEmail(input.item.fromHeader ?? null);
@@ -2687,10 +2697,27 @@ function resolveHeaderProjectLabel(input: {
     return toMatch;
   }
 
-  return projectLabelForAlias({
+  const mailboxMatch = projectLabelForAlias({
     alias: input.item.mailbox,
     projectLabelByAlias: input.projectLabelByAlias,
   });
+  if (mailboxMatch !== null) {
+    return mailboxMatch;
+  }
+
+  const membershipProjects = input.memberships.flatMap((membership) => {
+    const metadata =
+      membership.projectId === null
+        ? undefined
+        : input.projectMetadataById[membership.projectId];
+    return metadata === undefined ? [] : [metadata];
+  });
+
+  return (
+    membershipProjects.find((metadata) => metadata.isActive)?.projectName ??
+    membershipProjects[0]?.projectName ??
+    null
+  );
 }
 
 function buildComposerReplyContext(input: {
@@ -4070,6 +4097,8 @@ export async function getInboxTimelinePage(
         item,
         campaignActivitySummaryByCampaignId:
           cachedData.campaignActivitySummaryByCampaignId,
+        memberships: cachedData.memberships,
+        projectMetadataById: cachedData.projectMetadataById,
         projectLabelByAlias: cachedData.projectLabelByAlias,
         referenceNowIso,
         attachmentsByCanonicalEventId: cachedData.attachmentsByCanonicalEventId,
@@ -4185,6 +4214,8 @@ export async function getInboxDetail(
         item,
         campaignActivitySummaryByCampaignId:
           cachedData.campaignActivitySummaryByCampaignId,
+        memberships: cachedData.memberships,
+        projectMetadataById: cachedData.projectMetadataById,
         projectLabelByAlias: cachedData.projectLabelByAlias,
         referenceNowIso,
         attachmentsByCanonicalEventId: cachedData.attachmentsByCanonicalEventId,

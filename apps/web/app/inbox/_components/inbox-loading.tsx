@@ -1,5 +1,6 @@
 import { Skeleton } from "@/components/ui/skeleton";
-import { LAYOUT, SPACING, TONE } from "@/app/_lib/design-tokens";
+import { SPACING, TONE } from "@/app/_lib/design-tokens";
+import { LAYOUT } from "@/app/_lib/design-tokens-v2";
 
 /**
  * Full-screen app loading skeleton for the inbox home (`/inbox`).
@@ -23,13 +24,13 @@ export function InboxAppLoading() {
 
       {/* List column skeleton */}
       <div className={`flex ${LAYOUT.listWidth} shrink-0 flex-col border-r border-slate-200 bg-white`}>
-        <div className="border-b border-slate-200 px-5">
+        <div className="border-b border-slate-200 px-4">
           <div className={`flex ${LAYOUT.headerHeight} items-center gap-2`}>
             <Skeleton className="h-5 w-24" />
             <div className="flex-1" />
             <Skeleton className="size-8 rounded-lg" />
           </div>
-          <div className="pb-4 pt-1">
+          <div className="py-2.5">
             <Skeleton className="h-8 w-full rounded-lg" />
           </div>
         </div>
@@ -60,7 +61,7 @@ export function WelcomeWorkloadSkeleton() {
     >
       {/* Header strip — matches `Welcome back, X` + sync indicator */}
       <header
-        className={`flex ${LAYOUT.headerHeight} shrink-0 items-center border-b border-slate-200 bg-white px-10`}
+        className={`flex ${LAYOUT.welcomeHeaderHeight} shrink-0 items-center border-b border-slate-200 bg-white px-10`}
       >
         <div className="flex w-full items-baseline justify-between gap-4">
           <div className="min-w-0 space-y-2">
