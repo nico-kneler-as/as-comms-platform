@@ -58,6 +58,14 @@ const nextConfig: NextConfig = {
     "@as-comms/domain",
     "@as-comms/ui",
   ],
+  experimental: {
+    // Composer send carries base64-encoded attachments inline; the gmail-send
+    // integration caps total raw bytes at 20 MB (≈27 MB after base64), so the
+    // server action body limit needs headroom above Next.js's 1 MB default.
+    serverActions: {
+      bodySizeLimit: "30mb",
+    },
+  },
   headers() {
     return Promise.resolve([
       {
