@@ -1100,6 +1100,57 @@ function sanitizePreviewText(value: string): string {
     .trim();
 }
 
+const PREVIEW_NOISE_THRESHOLD = 0.3;
+const PREVIEW_NOISE_MIN_LENGTH = 32;
+const SHORT_PREVIEW_NOISE_MIN_SUSPICIOUS = 3;
+const REPLACEMENT_CHARACTER = "�";
+
+function isLikelyPreviewNoise(value: string): boolean {
+  const normalized = value.trim();
+
+  if (normalized.length === 0) {
+    return false;
+  }
+
+  let suspicious = 0;
+  let total = 0;
+
+  for (const character of normalized) {
+    total += 1;
+
+    if (character === REPLACEMENT_CHARACTER) {
+      suspicious += 1;
+      continue;
+    }
+
+    const code = character.codePointAt(0) ?? 0;
+
+    if (
+      code < 0x20 &&
+      code !== 0x09 &&
+      code !== 0x0a &&
+      code !== 0x0d
+    ) {
+      suspicious += 1;
+    }
+  }
+
+  if (total === 0) {
+    return false;
+  }
+
+  const ratio = suspicious / total;
+
+  if (total < PREVIEW_NOISE_MIN_LENGTH) {
+    return (
+      suspicious >= SHORT_PREVIEW_NOISE_MIN_SUSPICIOUS &&
+      ratio >= PREVIEW_NOISE_THRESHOLD
+    );
+  }
+
+  return ratio >= PREVIEW_NOISE_THRESHOLD;
+}
+
 const STRUCTURED_EMAIL_TRANSLATION_MARKER_PATTERN =
   /\b(?:en|es|fr|de|pt):(?=[A-ZÀ-Ý])/g;
 const STRUCTURED_EMAIL_PARAGRAPH_STARTERS = [
@@ -1535,7 +1586,11 @@ function resolvePreferredMessagePreview(input: {
       subjectFromPreview = parsed.subject;
     }
 
-    if (body.length === 0 && parsed.body.length > 0) {
+    if (
+      body.length === 0 &&
+      parsed.body.length > 0 &&
+      !isLikelyPreviewNoise(parsed.body)
+    ) {
       body = parsed.body;
       continue;
     }
@@ -1543,7 +1598,7 @@ function resolvePreferredMessagePreview(input: {
     if (sanitizedFallback.length === 0) {
       const sanitized = sanitizePreviewText(rawCandidate);
 
-      if (sanitized.length > 0) {
+      if (sanitized.length > 0 && !isLikelyPreviewNoise(sanitized)) {
         sanitizedFallback = sanitized;
       }
     }
