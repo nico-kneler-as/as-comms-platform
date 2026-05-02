@@ -3544,6 +3544,21 @@ function createStage2RepositoriesInternal(
         );
       },
 
+      async updateName(id, name: string) {
+        const [row] = await db
+          .update(users)
+          .set({
+            name,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, id))
+          .returning();
+
+        return mapUserRow(
+          requireRow(row, "Expected user row to be returned from updateName."),
+        );
+      },
+
       async setDeactivated(id, deactivatedAt) {
         const [row] = await db
           .update(users)
