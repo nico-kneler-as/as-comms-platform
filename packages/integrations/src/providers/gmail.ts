@@ -67,9 +67,12 @@ export const gmailMessageRecordSchema = z.object({
         filename: nullableStringSchema,
         sizeBytes: z.number().int().nonnegative(),
         gmailAttachmentId: z.string().min(1),
+        contentDisposition: nullableStringSchema.default(null),
+        contentId: nullableStringSchema.default(null),
       }),
     )
     .default([]),
+  htmlBodyCidReferences: stringArraySchema.default([]),
 });
 export type GmailMessageRecord = z.infer<typeof gmailMessageRecordSchema>;
 

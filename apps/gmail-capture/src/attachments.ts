@@ -55,6 +55,50 @@ const attachmentLogger: AttachmentLogger = {
   },
 };
 
+function normalizeContentId(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const normalized = trimmed.replace(/^<|>$/gu, "").toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function hasInlineContentDisposition(
+  contentDisposition: string | null | undefined,
+): boolean {
+  if (typeof contentDisposition !== "string") {
+    return false;
+  }
+
+  const dispositionType = contentDisposition.split(";")[0]?.trim().toLowerCase();
+  return dispositionType === "inline";
+}
+
+function isInlineAttachment(input: {
+  readonly attachment: {
+    readonly contentDisposition?: string | null;
+    readonly contentId?: string | null;
+  };
+  readonly htmlBodyCidReferences: ReadonlySet<string>;
+}): boolean {
+  if (hasInlineContentDisposition(input.attachment.contentDisposition)) {
+    return true;
+  }
+
+  const normalizedContentId = normalizeContentId(input.attachment.contentId);
+  return (
+    normalizedContentId !== null &&
+    input.htmlBodyCidReferences.has(normalizedContentId)
+  );
+}
+
 function decodeBase64Url(value: string): Buffer {
   const paddedValue =
     value.replace(/-/gu, "+").replace(/_/gu, "/") +
@@ -249,6 +293,12 @@ export async function syncGmailMessageAttachments(input: {
     const existingAttachmentIds = new Set(
       existingAttachments.map((attachment) => attachment.id),
     );
+    const htmlBodyCidReferences = new Set(
+      parsedRecord.data.htmlBodyCidReferences.flatMap((value) => {
+        const normalized = normalizeContentId(value);
+        return normalized === null ? [] : [normalized];
+      }),
+    );
     const rowsToInsert: {
       readonly id: string;
       readonly provider: "gmail";
@@ -257,6 +307,7 @@ export async function syncGmailMessageAttachments(input: {
       readonly filename: string | null;
       readonly sizeBytes: number;
       readonly storageKey: string;
+      readonly isInline: boolean;
     }[] = [];
 
     for (const attachment of parsedRecord.data.attachmentMetadata) {
@@ -333,6 +384,10 @@ export async function syncGmailMessageAttachments(input: {
         filename: attachment.filename,
         sizeBytes: cachedAttachment.sizeBytes,
         storageKey,
+        isInline: isInlineAttachment({
+          attachment,
+          htmlBodyCidReferences,
+        }),
       });
     }
 
