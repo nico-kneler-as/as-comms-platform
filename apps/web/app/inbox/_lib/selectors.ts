@@ -2325,13 +2325,15 @@ function buildTimelineEntry(input: {
       ? (
           input.attachmentsByCanonicalEventId.get(input.item.canonicalEventId) ??
           []
-        ).map((attachment) => ({
-          id: attachment.id,
-          mimeType: attachment.mimeType,
-          filename: attachment.filename,
-          sizeBytes: attachment.sizeBytes,
-          proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
-        }))
+        )
+          .filter((attachment) => !attachment.isInline)
+          .map((attachment) => ({
+            id: attachment.id,
+            mimeType: attachment.mimeType,
+            filename: attachment.filename,
+            sizeBytes: attachment.sizeBytes,
+            proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
+          }))
       : [];
   const canonicalSenderDisplayName =
     input.item.family === "one_to_one_email"

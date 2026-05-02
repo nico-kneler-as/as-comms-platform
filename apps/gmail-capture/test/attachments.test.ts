@@ -17,6 +17,9 @@ function buildGmailRecord(input: {
   readonly direction: "inbound" | "outbound";
   readonly recordId: string;
   readonly attachmentSizeBytes: number;
+  readonly contentDisposition?: string | null;
+  readonly contentId?: string | null;
+  readonly htmlBodyCidReferences?: readonly string[];
 }): GmailRecord {
   return {
     recordType: "message",
@@ -59,9 +62,47 @@ function buildGmailRecord(input: {
         filename: "field-photo.jpg",
         sizeBytes: input.attachmentSizeBytes,
         gmailAttachmentId: "gmail-attachment-1",
+        contentDisposition: input.contentDisposition ?? null,
+        contentId: input.contentId ?? null,
       },
     ],
+    htmlBodyCidReferences: [...(input.htmlBodyCidReferences ?? [])],
   };
+}
+
+function buildSuccessfulFetchImplementation(
+  attachmentBytes: Buffer,
+): typeof fetch {
+  return vi.fn((url: string | URL | Request) => {
+    const resolvedUrl =
+      typeof url === "string"
+        ? url
+        : url instanceof URL
+          ? url.toString()
+          : url.url;
+
+    if (resolvedUrl === "https://oauth2.googleapis.com/token") {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            access_token: "access-token",
+            expires_in: 3600,
+          }),
+          { status: 200 },
+        ),
+      );
+    }
+
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          data: attachmentBytes.toString("base64url"),
+          size: attachmentBytes.length,
+        }),
+        { status: 200 },
+      ),
+    );
+  }) as unknown as typeof fetch;
 }
 
 describe("gmail attachment sync", () => {
@@ -160,6 +201,7 @@ describe("gmail attachment sync", () => {
           filename: "field-photo.jpg",
           sizeBytes: attachmentBytes.length,
           storageKey: buildGmailMessageAttachmentStorageKey(attachmentId),
+          isInline: false,
         },
       ]);
       await expect(
@@ -222,6 +264,158 @@ describe("gmail attachment sync", () => {
           buildSourceEvidenceId("gmail", "message", "gmail-inbound-oversize"),
         ]),
       ).resolves.toEqual([]);
+    } finally {
+      await context.dispose();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("marks Content-Disposition inline attachments as inline", async () => {
+    const context = await createTestStage1Context();
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
+    const attachmentBytes = Buffer.from("inline-image", "utf8");
+
+    try {
+      const record = buildGmailRecord({
+        direction: "inbound",
+        recordId: "gmail-inline-disposition-1",
+        attachmentSizeBytes: attachmentBytes.length,
+        contentDisposition: "inline; filename=\"image001.png\"",
+      });
+      const sourceEvidenceId = buildSourceEvidenceId(
+        "gmail",
+        "message",
+        "gmail-inline-disposition-1",
+      );
+
+      await syncGmailMessageAttachments({
+        records: [record],
+        repositories: context.repositories,
+        serviceConfig: {
+          liveAccount: "volunteers@example.org",
+          oauthClientId: "gmail-oauth-client-id",
+          oauthClientSecret: "gmail-oauth-client-secret",
+          oauthRefreshToken: "gmail-oauth-refresh-token",
+          tokenUri: "https://oauth2.googleapis.com/token",
+          timeoutMs: 15_000,
+        },
+        runtimeConfig: {
+          attachmentVolumePath: tempDir,
+          maxAttachmentBytesPerAttachment: 52_428_800,
+        },
+        fetchImplementation: buildSuccessfulFetchImplementation(attachmentBytes),
+      });
+
+      await expect(
+        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
+      ).resolves.toMatchObject([
+        {
+          sourceEvidenceId,
+          isInline: true,
+        },
+      ]);
+    } finally {
+      await context.dispose();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("marks Content-ID attachments referenced by sibling HTML as inline", async () => {
+    const context = await createTestStage1Context();
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
+    const attachmentBytes = Buffer.from("cid-image", "utf8");
+
+    try {
+      const record = buildGmailRecord({
+        direction: "inbound",
+        recordId: "gmail-inline-cid-1",
+        attachmentSizeBytes: attachmentBytes.length,
+        contentId: "<abc@x>",
+        htmlBodyCidReferences: ["abc@x"],
+      });
+      const sourceEvidenceId = buildSourceEvidenceId(
+        "gmail",
+        "message",
+        "gmail-inline-cid-1",
+      );
+
+      await syncGmailMessageAttachments({
+        records: [record],
+        repositories: context.repositories,
+        serviceConfig: {
+          liveAccount: "volunteers@example.org",
+          oauthClientId: "gmail-oauth-client-id",
+          oauthClientSecret: "gmail-oauth-client-secret",
+          oauthRefreshToken: "gmail-oauth-refresh-token",
+          tokenUri: "https://oauth2.googleapis.com/token",
+          timeoutMs: 15_000,
+        },
+        runtimeConfig: {
+          attachmentVolumePath: tempDir,
+          maxAttachmentBytesPerAttachment: 52_428_800,
+        },
+        fetchImplementation: buildSuccessfulFetchImplementation(attachmentBytes),
+      });
+
+      await expect(
+        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
+      ).resolves.toMatchObject([
+        {
+          sourceEvidenceId,
+          isInline: true,
+        },
+      ]);
+    } finally {
+      await context.dispose();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps plain attachments non-inline when no inline MIME signals are present", async () => {
+    const context = await createTestStage1Context();
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
+    const attachmentBytes = Buffer.from("plain-attachment", "utf8");
+
+    try {
+      const record = buildGmailRecord({
+        direction: "inbound",
+        recordId: "gmail-plain-attachment-1",
+        attachmentSizeBytes: attachmentBytes.length,
+        contentDisposition: "attachment; filename=\"field-photo.jpg\"",
+        contentId: "<not-referenced@example.org>",
+      });
+      const sourceEvidenceId = buildSourceEvidenceId(
+        "gmail",
+        "message",
+        "gmail-plain-attachment-1",
+      );
+
+      await syncGmailMessageAttachments({
+        records: [record],
+        repositories: context.repositories,
+        serviceConfig: {
+          liveAccount: "volunteers@example.org",
+          oauthClientId: "gmail-oauth-client-id",
+          oauthClientSecret: "gmail-oauth-client-secret",
+          oauthRefreshToken: "gmail-oauth-refresh-token",
+          tokenUri: "https://oauth2.googleapis.com/token",
+          timeoutMs: 15_000,
+        },
+        runtimeConfig: {
+          attachmentVolumePath: tempDir,
+          maxAttachmentBytesPerAttachment: 52_428_800,
+        },
+        fetchImplementation: buildSuccessfulFetchImplementation(attachmentBytes),
+      });
+
+      await expect(
+        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
+      ).resolves.toMatchObject([
+        {
+          sourceEvidenceId,
+          isInline: false,
+        },
+      ]);
     } finally {
       await context.dispose();
       await rm(tempDir, { recursive: true, force: true });

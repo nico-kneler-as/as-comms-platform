@@ -30,6 +30,7 @@ export interface GmailProviderCloseMessageInput {
   readonly internalAddresses: readonly string[];
   readonly projectInboxAliases: readonly string[];
   readonly attachmentMetadata?: readonly GmailAttachmentMetadata[];
+  readonly htmlBodyCidReferences?: readonly string[];
   readonly projectInboxAliasOverride?: string | null;
   readonly treatCapturedMailboxAsProjectInbox?: boolean;
 }
@@ -273,5 +274,6 @@ export function buildGmailMessageRecord(
     crossProviderCollapseKey:
       rfc822MessageId === null ? null : `rfc822:${rfc822MessageId.toLowerCase()}`,
     attachmentMetadata: input.attachmentMetadata ?? [],
+    htmlBodyCidReferences: input.htmlBodyCidReferences ?? [],
   });
 }
