@@ -2,9 +2,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { LAYOUT, SPACING, TONE } from "@/app/_lib/design-tokens";
 
 /**
- * Full-screen app loading skeleton. Mirrors the 3-column layout
- * (icon rail + list column + detail workspace) with pulsing placeholders
- * so the user sees a recognizable structure while data loads.
+ * Full-screen app loading skeleton for the inbox home (`/inbox`).
+ * Mirrors the 3-column shell + welcome dashboard so the user sees a
+ * recognizable structure while data loads. The detail route
+ * (`/inbox/[contactId]`) overrides this with `InboxDetailLoading`.
  */
 export function InboxAppLoading() {
   return (
@@ -39,24 +40,123 @@ export function InboxAppLoading() {
         </div>
       </div>
 
-      {/* Detail workspace skeleton */}
-      <div className="flex min-w-0 flex-1 flex-col bg-white">
-        <div className={`flex ${LAYOUT.headerHeight} items-center gap-4 border-b border-slate-200 px-6`}>
-          <Skeleton className="h-5 w-36" />
-          <Skeleton className="hidden h-4 w-px sm:block" />
-          <Skeleton className="hidden h-4 w-48 sm:block" />
-          <div className="flex-1" />
-          <Skeleton className="h-8 w-28 rounded-md" />
-          <Skeleton className="size-8 rounded-md" />
-          <Skeleton className="size-8 rounded-md" />
+      {/* Welcome workload skeleton (right pane) */}
+      <WelcomeWorkloadSkeleton />
+    </div>
+  );
+}
+
+/**
+ * Skeleton for the inbox welcome dashboard. Mirrors the layout of
+ * `InboxWelcomeWorkload`: header strip, quote card, active-project
+ * mini-dashboard grid, and follow-up rail rows.
+ */
+export function WelcomeWorkloadSkeleton() {
+  return (
+    <section
+      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/40"
+      role="status"
+      aria-label="Loading welcome dashboard"
+    >
+      {/* Header strip — matches `Welcome back, X` + sync indicator */}
+      <header
+        className={`flex ${LAYOUT.headerHeight} shrink-0 items-center border-b border-slate-200 bg-white px-10`}
+      >
+        <div className="flex w-full items-baseline justify-between gap-4">
+          <div className="min-w-0 space-y-2">
+            <Skeleton className="h-5 w-56" />
+            <Skeleton className="h-3 w-40" />
+          </div>
+          <Skeleton className="h-3 w-28" />
         </div>
-        <div className={`flex-1 ${TONE.slate.subtle} ${SPACING.container}`}>
-          <TimelineSkeleton />
+      </header>
+
+      <div className="mx-auto w-full max-w-[920px] space-y-8 px-10 py-8">
+        {/* Quote card */}
+        <div className="rounded-xl border border-slate-200 bg-white p-7">
+          <div className="flex items-start gap-5">
+            <Skeleton className="size-10 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1 space-y-3">
+              <Skeleton className="h-3 w-36" />
+              <Skeleton className="h-5 w-full" />
+              <Skeleton className="h-5 w-[80%]" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          </div>
         </div>
-        <div className="border-t border-slate-200 px-5 py-4">
-          <Skeleton className="h-24 w-full rounded-lg" />
+
+        {/* Active project workload — 2-col grid */}
+        <div>
+          <Skeleton className="h-3 w-44" />
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <ProjectWorkloadCardSkeleton key={i} />
+            ))}
+          </div>
+        </div>
+
+        {/* Follow-up rail — section label + 3 rows */}
+        <div>
+          <div className="flex items-baseline justify-between gap-4">
+            <Skeleton className="h-3 w-52" />
+            <Skeleton className="h-3 w-16" />
+          </div>
+          <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="divide-y divide-slate-100">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <FollowUpRailRowSkeleton key={i} />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
+
+      <span className="sr-only">Loading welcome dashboard...</span>
+    </section>
+  );
+}
+
+function ProjectWorkloadCardSkeleton() {
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4">
+      <span
+        aria-hidden="true"
+        className="absolute left-0 top-0 h-full w-1 bg-slate-200"
+      />
+      <div className="flex items-start justify-between gap-2 pl-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Skeleton className="size-1.5 shrink-0 rounded-full" />
+          <Skeleton className="h-4 w-44 max-w-full" />
+        </div>
+        <Skeleton className="size-3.5 shrink-0 rounded-sm" />
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2 pl-2">
+        <div className="flex items-baseline gap-1.5">
+          <Skeleton className="h-6 w-8" />
+          <Skeleton className="h-3 w-12" />
+        </div>
+        <div className="flex items-baseline gap-1.5">
+          <Skeleton className="h-6 w-6" />
+          <Skeleton className="h-3 w-14" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FollowUpRailRowSkeleton() {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <Skeleton className="size-8 shrink-0 rounded-full" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-3.5 w-32" />
+          <Skeleton className="h-3 w-24 rounded-full" />
+        </div>
+        <Skeleton className="h-3 w-56 max-w-full" />
+      </div>
+      <Skeleton className="h-3 w-10 shrink-0" />
+      <Skeleton className="size-3.5 shrink-0 rounded-sm" />
     </div>
   );
 }

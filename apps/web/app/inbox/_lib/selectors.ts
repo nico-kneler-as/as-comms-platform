@@ -3386,8 +3386,18 @@ async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkload
       ? []
       : await runtime.repositories.contacts.listByIds(inlineContactIds);
   const contactById = new Map(inlineContacts.map((contact) => [contact.id, contact]));
+  // Operator-facing label: prefer the alias (e.g. "PNW Biodiversity")
+  // over the verbose Salesforce projectName. Falls back to projectName
+  // when alias is null/empty so we never show a blank label.
+  const projectDisplayName = (project: {
+    readonly projectAlias?: string | null | undefined;
+    readonly projectName: string;
+  }): string => {
+    const trimmedAlias = project.projectAlias?.trim() ?? "";
+    return trimmedAlias.length > 0 ? trimmedAlias : project.projectName;
+  };
   const projectLabelById = new Map(
-    activeProjects.map((project) => [project.projectId, project.projectName]),
+    activeProjects.map((project) => [project.projectId, projectDisplayName(project)]),
   );
   const referenceNowIso = new Date().toISOString();
 
@@ -3404,7 +3414,7 @@ async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkload
 
       return {
         projectId: project.projectId,
-        projectName: project.projectName,
+        projectName: projectDisplayName(project),
         unreadCount: counts.unread,
         needsFollowUpCount: counts.followUp,
       };
