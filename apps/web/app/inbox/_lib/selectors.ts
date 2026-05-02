@@ -2118,6 +2118,8 @@ function hasDisplayNameHeader(value: string | null | undefined): boolean {
 function resolveRecipientLabel(input: {
   readonly item: TimelineItem;
   readonly contactPrimaryEmail: string | null;
+  readonly contactDisplayName: string;
+  readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
 }): string | null {
   if (input.item.family !== "one_to_one_email") {
@@ -2125,27 +2127,51 @@ function resolveRecipientLabel(input: {
   }
 
   const toHeader = normalizeInlineText(input.item.toHeader);
+  const toEmail = normalizeEmailAddress(toHeader);
 
+  // Outbound: prefer a Title-Cased contact name resolved via the To
+  // email so the bubble header renders "Pam Hoult" instead of
+  // "phoult@yahoo.com" or whatever raw display name the From-header
+  // happened to carry.
+  if (input.item.direction === "outbound") {
+    const contactName =
+      toEmail !== null ? input.contactDisplayNameByEmail.get(toEmail) : null;
+    if (contactName !== null && contactName !== undefined) {
+      return normalizeDisplayName(contactName) || contactName;
+    }
+    if (input.contactDisplayName.length > 0) {
+      return (
+        normalizeDisplayName(input.contactDisplayName) ||
+        input.contactDisplayName
+      );
+    }
+    if (hasDisplayNameHeader(toHeader)) {
+      const headerName = participantHeaderLabel(toHeader);
+      if (headerName !== null) {
+        return normalizeDisplayName(headerName) || headerName;
+      }
+    }
+    return toEmail ?? normalizeEmailAddress(input.contactPrimaryEmail);
+  }
+
+  // Inbound: prefer a known project alias label. Falls back to the
+  // To-header's display name, then the email, then the mailbox alias.
+  if (toEmail !== null) {
+    const aliasLabel = input.projectLabelByAlias.get(toEmail);
+    if (aliasLabel !== undefined) {
+      return aliasLabel;
+    }
+  }
   if (hasDisplayNameHeader(toHeader)) {
     return participantHeaderLabel(toHeader);
   }
-
-  const toEmail = normalizeEmailAddress(toHeader);
-
   if (toEmail !== null) {
-    return input.item.direction === "inbound"
-      ? (input.projectLabelByAlias.get(toEmail) ?? toEmail)
-      : toEmail;
+    return toEmail;
   }
-
-  if (input.item.direction === "inbound") {
-    return projectLabelForAlias({
-      alias: input.item.mailbox,
-      projectLabelByAlias: input.projectLabelByAlias,
-    });
-  }
-
-  return normalizeEmailAddress(input.contactPrimaryEmail);
+  return projectLabelForAlias({
+    alias: input.item.mailbox,
+    projectLabelByAlias: input.projectLabelByAlias,
+  });
 }
 
 function formatCampaignActivityLabel(
@@ -2374,6 +2400,8 @@ function buildTimelineEntry(input: {
     recipientLabel: resolveRecipientLabel({
       item: input.item,
       contactPrimaryEmail: input.contactPrimaryEmail,
+      contactDisplayName: input.contactDisplayName,
+      contactDisplayNameByEmail: input.contactDisplayNameByEmail,
       projectLabelByAlias: input.projectLabelByAlias,
     }),
     ccHeader:
@@ -2420,10 +2448,55 @@ function buildTimelineEntry(input: {
         : 0,
     attachments,
     campaignActivity,
+    headerProjectLabel:
+      input.item.family === "one_to_one_email"
+        ? resolveHeaderProjectLabel({
+            item: input.item,
+            projectLabelByAlias: input.projectLabelByAlias,
+          })
+        : null,
     noteId: input.item.family === "internal_note" ? input.item.noteId : null,
     authorId:
       input.item.family === "internal_note" ? input.item.authorId : null,
   };
+}
+
+/**
+ * Resolve the project alias label for a 1:1 email — used in the bubble
+ * header in place of "Adventure Scientists" / verbose project names.
+ *
+ * Looks at whichever side of the email is one of our project aliases:
+ * outbound → fromHeader (we sent FROM the alias),
+ * inbound  → toHeader (the operator received TO the alias).
+ * Falls back to the explicit `mailbox` field when headers are missing.
+ */
+function resolveHeaderProjectLabel(input: {
+  readonly item: Extract<TimelineItem, { family: "one_to_one_email" }>;
+  readonly projectLabelByAlias: ReadonlyMap<string, string>;
+}): string | null {
+  const fromEmail = participantHeaderEmail(input.item.fromHeader ?? null);
+  const toEmail = participantHeaderEmail(input.item.toHeader ?? null);
+
+  const fromMatch =
+    fromEmail !== null
+      ? (input.projectLabelByAlias.get(fromEmail) ?? null)
+      : null;
+  if (fromMatch !== null) {
+    return fromMatch;
+  }
+
+  const toMatch =
+    toEmail !== null
+      ? (input.projectLabelByAlias.get(toEmail) ?? null)
+      : null;
+  if (toMatch !== null) {
+    return toMatch;
+  }
+
+  return projectLabelForAlias({
+    alias: input.item.mailbox,
+    projectLabelByAlias: input.projectLabelByAlias,
+  });
 }
 
 function buildComposerReplyContext(input: {

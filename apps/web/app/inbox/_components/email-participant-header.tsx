@@ -94,9 +94,20 @@ function RelativeTimestamp({
 
 export function EmailParticipantHeader({
   entry,
+  direction = "inbound",
   tone = "slate",
 }: {
   readonly entry: InboxTimelineEntryViewModel;
+  /**
+   * Drives the bubble-header label swap:
+   *   outbound → "<projectAlias> → <volunteer>"
+   *   inbound  → "<volunteer> → <projectAlias>"
+   *
+   * The MessageBubble already knows the direction; passing it here keeps
+   * the header dumb (no tone-as-direction guessing) and lets the
+   * pre-resolved labels from `selectors.ts` fall through.
+   */
+  readonly direction?: "inbound" | "outbound";
   readonly tone?: "slate" | "sky";
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -106,16 +117,34 @@ export function EmailParticipantHeader({
     return null;
   }
 
-  const recipient =
+  const projectLabel = entry.headerProjectLabel ?? null;
+  const recipientLabelFallback =
     entry.recipientLabel ??
     extractDisplayName(entry.toHeader) ??
     normalizeHeaderValue(entry.toHeader);
+
+  // Outbound: projectAlias on the left (us, sending FROM the alias),
+  // volunteer name on the right.
+  // Inbound:  volunteer name on the left, projectAlias on the right
+  // (the operator inbox the volunteer wrote TO).
+  const sender =
+    direction === "outbound"
+      ? (projectLabel ?? entry.actorLabel)
+      : entry.actorLabel;
+  const recipient =
+    direction === "outbound"
+      ? recipientLabelFallback
+      : (projectLabel ?? recipientLabelFallback);
+
   const rows = [
     {
       label: "From",
       value: normalizeHeaderValue(entry.fromHeader) ?? entry.actorLabel,
     },
-    { label: "To", value: normalizeHeaderValue(entry.toHeader) ?? recipient },
+    {
+      label: "To",
+      value: normalizeHeaderValue(entry.toHeader) ?? recipientLabelFallback,
+    },
     { label: "Cc", value: entry.ccHeader },
   ].filter(
     (
@@ -126,7 +155,6 @@ export function EmailParticipantHeader({
     } => row.value !== null,
   );
 
-  const sender = extractDisplayName(entry.fromHeader) ?? entry.actorLabel;
   const hasCc = entry.ccHeader !== null && entry.ccHeader.trim().length > 0;
   const headerBorderClass =
     tone === "sky" ? "border-sky-100/60" : "border-slate-100";
