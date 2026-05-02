@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useOptimistic,
   useRef,
   useState,
@@ -38,6 +39,7 @@ import type {
   InboxComposerReplyContext,
   InboxDetailViewModel,
   InboxTimelineEntryViewModel,
+  OptimisticOutbound,
 } from "../_lib/view-models";
 import type { UiError, UiResult } from "@/src/server/ui-result";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
@@ -131,6 +133,37 @@ function buildTimelineReplyContext(input: {
   };
 }
 
+function sortTimelineEntries(
+  entries: readonly InboxTimelineEntryViewModel[],
+): readonly InboxTimelineEntryViewModel[] {
+  return [...entries].sort((left, right) =>
+    left.occurredAt.localeCompare(right.occurredAt),
+  );
+}
+
+function realEntryMatchesOptimistic(
+  realEntry: InboxTimelineEntryViewModel,
+  optimisticEntry: OptimisticOutbound,
+): boolean {
+  if (realEntry.id === optimisticEntry.id) {
+    return false;
+  }
+
+  if (realEntry.kind !== optimisticEntry.kind) {
+    return false;
+  }
+
+  if (realEntry.subject !== optimisticEntry.subject) {
+    return false;
+  }
+
+  if (realEntry.mailbox !== optimisticEntry.mailbox) {
+    return false;
+  }
+
+  return realEntry.occurredAt >= optimisticEntry.occurredAt;
+}
+
 export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const { contact } = detail;
   const timelineScrollRef = useRef<HTMLDivElement>(null);
@@ -143,6 +176,9 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     clearReminder,
     isTimelineLoading,
     setTimelineLoading,
+    optimisticOutbounds,
+    clearOptimisticForContact,
+    removeOptimisticOutbound,
     openReplyDraft,
     showToast,
   } = useInboxClient();
@@ -163,10 +199,12 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     setTimelinePage(detail.timelinePage);
 
     if (previousContactIdRef.current !== detail.contact.contactId) {
+      clearOptimisticForContact(previousContactIdRef.current);
       shouldScrollToLatestRef.current = true;
       previousContactIdRef.current = detail.contact.contactId;
     }
   }, [
+    clearOptimisticForContact,
     detail.contact.contactId,
     detail.freshness.inboxUpdatedAt,
     detail.freshness.timelineCount,
@@ -175,6 +213,39 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     detail.timelinePage,
     setTimelineLoading,
   ]);
+
+  const activeOptimisticOutbounds = useMemo(
+    () =>
+      optimisticOutbounds.filter(
+        (entry) => entry.contactId === detail.contact.contactId,
+      ),
+    [detail.contact.contactId, optimisticOutbounds],
+  );
+
+  const mergedTimelineEntries = useMemo(
+    () => sortTimelineEntries([...timelineEntries, ...activeOptimisticOutbounds]),
+    [activeOptimisticOutbounds, timelineEntries],
+  );
+
+  useEffect(() => {
+    const matchedSettledIds = activeOptimisticOutbounds
+      .filter(
+        (entry) =>
+          entry.settledAt !== null &&
+          timelineEntries.some((realEntry) =>
+            realEntryMatchesOptimistic(realEntry, entry),
+          ),
+      )
+      .map((entry) => entry.clientGeneratedId);
+
+    if (matchedSettledIds.length === 0) {
+      return;
+    }
+
+    for (const clientGeneratedId of matchedSettledIds) {
+      removeOptimisticOutbound(clientGeneratedId);
+    }
+  }, [activeOptimisticOutbounds, removeOptimisticOutbound, timelineEntries]);
 
   useEffect(() => {
     if (!shouldScrollToLatestRef.current) {
@@ -195,7 +266,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [detail.contact.contactId, timelineEntries]);
+  }, [detail.contact.contactId, mergedTimelineEntries]);
 
   const loadOlderTimeline = useCallback(async () => {
     if (!timelinePage.hasMore || timelinePage.nextCursor === null) {
@@ -313,7 +384,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const composerReplyContext = detail.composerReplyContext;
   const handleReply = useCallback(
     (entryId: string) => {
-      const entry = timelineEntries.find((item) => item.id === entryId);
+      const entry = mergedTimelineEntries.find((item) => item.id === entryId);
 
       if (entry === undefined) {
         if (composerReplyContext !== null) {
@@ -338,8 +409,8 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
       composerReplyContext,
       contact.contactId,
       contact.displayName,
+      mergedTimelineEntries,
       openReplyDraft,
-      timelineEntries,
     ],
   );
 
@@ -358,7 +429,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
 
   const handleRetryPending = useCallback(
     (entryId: string) => {
-      const entry = timelineEntries.find((item) => item.id === entryId);
+      const entry = mergedTimelineEntries.find((item) => item.id === entryId);
 
       if (
         entry?.sendStatus === undefined ||
@@ -372,9 +443,11 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
 
       const pendingId = entry.id.startsWith("pending-outbound:")
         ? entry.id.slice("pending-outbound:".length)
-        : null;
+        : entry.id.startsWith("optimistic:")
+          ? null
+          : null;
 
-      if (pendingId === null) {
+      if (!entry.id.startsWith("pending-outbound:") && !entry.id.startsWith("optimistic:")) {
         return;
       }
 
@@ -397,7 +470,9 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
             ...(entry.inReplyToRfc822 === null
               ? {}
               : { inReplyToRfc822: entry.inReplyToRfc822 }),
-            supersedesPendingId: pendingId,
+            ...(pendingId === null
+              ? {}
+              : { supersedesPendingId: pendingId }),
           });
 
           if (result.ok) {
@@ -411,7 +486,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
         setRetryingEntryId(null);
       });
     },
-    [contact.contactId, contact.displayName, showToast, timelineEntries],
+    [contact.contactId, contact.displayName, mergedTimelineEntries, showToast],
   );
 
   return (
@@ -500,10 +575,10 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                     disabled={isMarkUnreadPending}
                     onClick={handleMarkUnread}
                     aria-label="Mark as unread"
-                    className="h-8 w-8"
+                    className="size-8"
                     data-inbox-mark-unread="true"
                   >
-                    <MailOpenIcon className="h-4 w-4" />
+                    <MailOpenIcon className="size-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Mark as unread</TooltipContent>
@@ -519,18 +594,18 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                       title="Set reminder"
                       className="gap-1.5 border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-800"
                     >
-                      <ClockIcon className="h-3.5 w-3.5" />
+                      <ClockIcon className="size-3.5" />
                       Reminder · {formatShortReminder(existingReminder)}
                     </Button>
                   ) : (
                     <Button
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8"
+                      className="size-8"
                       aria-label="Set reminder"
                       title="Set reminder"
                     >
-                      <ClockIcon className="h-4 w-4" />
+                      <ClockIcon className="size-4" />
                     </Button>
                   )}
                 </PopoverTrigger>
@@ -556,12 +631,12 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                     type="button"
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8"
+                    className="size-8"
                     aria-label="Archive conversation"
                     disabled={isArchivePending}
                     onClick={handleArchive}
                   >
-                    <ArchiveBoxIcon className="h-4 w-4" />
+                    <ArchiveBoxIcon className="size-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Archive conversation</TooltipContent>
@@ -573,7 +648,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                     <Button
                       variant="outline"
                       size="icon"
-                      className="h-8 w-8"
+                      className="size-8"
                       aria-label="Toggle contact details"
                       aria-expanded={false}
                       aria-controls="inbox-contact-rail"
@@ -581,7 +656,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                         setRailOpen(true);
                       }}
                     >
-                      <PanelRightOpenIcon className="h-4 w-4" />
+                      <PanelRightOpenIcon className="size-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Toggle contact details</TooltipContent>
@@ -597,11 +672,11 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
           ref={timelineScrollRef}
           className={`min-h-0 flex-1 overflow-y-auto ${TONE_CLASSES.slate.subtle} ${SPACING.container}`}
         >
-          {isTimelineLoading && timelineEntries.length === 0 ? (
+          {isTimelineLoading && mergedTimelineEntries.length === 0 ? (
             <TimelineSkeleton />
           ) : (
             <InboxTimeline
-              entries={timelineEntries}
+              entries={mergedTimelineEntries}
               volunteerFirstName={firstName}
               currentOperatorUserId={currentOperatorUserId}
               showEarlierHistoryDivider={
@@ -707,12 +782,12 @@ function FollowUpToggleButton({
       data-inbox-follow-up-toggle="true"
       onClick={onToggle}
       className={cn(
-        "h-8 w-8",
+        "size-8",
         needsFollowUp &&
           "border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-800",
       )}
     >
-      <FlagIcon className="h-4 w-4" />
+      <FlagIcon className="size-4" />
     </Button>
   );
 }
@@ -779,7 +854,7 @@ function UnresolvedBanner() {
       className={`flex items-center gap-2 border-b border-amber-200 px-6 py-2.5 ${TONE_CLASSES.amber.subtle}`}
       role="status"
     >
-      <AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-600" />
+      <AlertTriangleIcon className="size-4 shrink-0 text-amber-600" />
       <span className="text-sm font-medium text-amber-900">
         Unresolved items need attention
       </span>
@@ -829,11 +904,11 @@ function ReminderPopoverBody({
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0 text-slate-400 hover:text-slate-700"
+          className="size-7 shrink-0 text-slate-400 hover:text-slate-700"
           aria-label="Cancel reminder"
           onClick={onClear}
         >
-          <XIcon className="h-3.5 w-3.5" />
+          <XIcon className="size-3.5" />
         </Button>
       </div>
     );
@@ -860,7 +935,7 @@ function ReminderPopoverBody({
               }}
               className="flex h-[18px] w-6 items-center justify-center text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
             >
-              <ChevronUpIcon className="h-3.5 w-3.5" />
+              <ChevronUpIcon className="size-3.5" />
             </button>
             <button
               type="button"
@@ -871,7 +946,7 @@ function ReminderPopoverBody({
               }}
               className="flex h-[18px] w-6 items-center justify-center border-t border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
             >
-              <ChevronDownIcon className="h-3.5 w-3.5" />
+              <ChevronDownIcon className="size-3.5" />
             </button>
           </div>
         </div>

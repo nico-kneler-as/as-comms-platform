@@ -86,7 +86,7 @@ export function InboxFilterList({
                     : "text-slate-700 hover:bg-slate-50",
                 )}
               >
-                <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                <Icon aria-hidden="true" className="size-3.5 shrink-0" />
                 <span
                   className={cn(
                     "flex-1 truncate",

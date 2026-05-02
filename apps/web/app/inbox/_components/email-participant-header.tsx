@@ -161,11 +161,11 @@ export function EmailParticipantHeader({
               TRANSITION.reduceMotion,
             )}
           >
-            <MailIcon className="h-3 w-3 shrink-0 text-slate-400" />
+            <MailIcon className="size-3 shrink-0 text-slate-400" />
             <span className="min-w-0 truncate font-medium text-slate-800">
               {sender}
             </span>
-            <ArrowRightIcon className="h-3 w-3 shrink-0 text-slate-400" />
+            <ArrowRightIcon className="size-3 shrink-0 text-slate-400" />
             <span className="min-w-0 truncate text-slate-700">{recipient}</span>
             {hasCc ? (
               <span
@@ -179,7 +179,7 @@ export function EmailParticipantHeader({
             ) : null}
             <ChevronDownIcon
               className={cn(
-                "h-3 w-3 shrink-0 text-slate-400 transition-transform duration-150",
+                "size-3 shrink-0 text-slate-400 transition-transform duration-150",
                 expanded && "rotate-180",
                 TRANSITION.reduceMotion,
               )}

@@ -30,8 +30,8 @@ export default function InboxError({ error, reset }: ErrorProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6">
       <div className="flex flex-col items-center gap-3 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">
-          <AlertTriangle className="h-6 w-6" />
+        <div className="flex size-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">
+          <AlertTriangle className="size-6" />
         </div>
         <h2 className="text-base font-semibold text-slate-900">
           Something went wrong

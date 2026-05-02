@@ -218,6 +218,12 @@ export interface InboxTimelineEntryViewModel {
   readonly authorId?: string | null;
 }
 
+export type OptimisticOutbound = InboxTimelineEntryViewModel & {
+  readonly contactId: string | null;
+  readonly clientGeneratedId: string;
+  readonly settledAt: number | null;
+};
+
 export interface InboxTimelineSystemGroupViewModel {
   readonly id: string;
   readonly kind: "system-message-group";

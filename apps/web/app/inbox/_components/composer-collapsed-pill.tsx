@@ -21,7 +21,7 @@ export function ComposerCollapsedPill({
           onClick={onExpand}
           className={`group flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left ${SHADOW.sm} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:border-slate-300 hover:shadow`}
         >
-          <MailIcon className="h-3.5 w-3.5 shrink-0 text-slate-400 group-hover:text-slate-500" />
+          <MailIcon className="size-3.5 shrink-0 text-slate-400 group-hover:text-slate-500" />
           <span className="min-w-0 flex-1 truncate text-[13px] text-slate-400">
             Reply to {personName}...
           </span>
@@ -36,7 +36,7 @@ export function ComposerCollapsedPill({
           onClick={onNote}
           className={`flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-500 ${SHADOW.sm} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:border-amber-300 hover:bg-amber-50/50 hover:text-amber-700`}
         >
-          <NoteIcon className="h-3.5 w-3.5 shrink-0" />
+          <NoteIcon className="size-3.5 shrink-0" />
           <span>Note</span>
         </button>
       </div>

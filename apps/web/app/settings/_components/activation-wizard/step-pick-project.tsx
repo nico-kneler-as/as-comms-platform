@@ -42,7 +42,7 @@ export function StepPickProject({
         </p>
         <div className="relative mt-2">
           <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+            className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400"
             aria-hidden="true"
           />
           <Input
@@ -87,7 +87,7 @@ export function StepPickProject({
                 >
                   <FolderOpen
                     className={cn(
-                      "h-4 w-4",
+                      "size-4",
                       isSelected ? "text-white" : "text-slate-500"
                     )}
                     aria-hidden="true"
@@ -112,7 +112,7 @@ export function StepPickProject({
                   </p>
                 </div>
                 {isSelected ? (
-                  <Check className="h-4 w-4 text-white" aria-hidden="true" />
+                  <Check className="size-4 text-white" aria-hidden="true" />
                 ) : null}
               </button>
             );

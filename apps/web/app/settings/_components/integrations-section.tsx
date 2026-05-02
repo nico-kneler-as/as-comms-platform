@@ -411,7 +411,7 @@ function SyncButton({
       aria-label={`Refresh ${integrationName}`}
     >
       <RefreshCw
-        className={cn("h-3 w-3", pending && "animate-spin")}
+        className={cn("size-3", pending && "animate-spin")}
         aria-hidden="true"
       />
       Refresh

@@ -116,7 +116,7 @@ export function SettingsSectionNav() {
                 )}
                 aria-hidden="true"
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="size-4" />
               </span>
               <span className="min-w-0 flex-1">
                 <span
