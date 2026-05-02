@@ -55,7 +55,7 @@ export function InboxWelcomeWorkload({
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-slate-50/40">
       <header
-        className={`flex ${LAYOUT.headerHeight} shrink-0 items-center border-b border-slate-200 bg-white px-10`}
+        className={`flex ${LAYOUT.welcomeHeaderHeight} shrink-0 items-center border-b border-slate-200 bg-white px-10`}
       >
         <div className="flex w-full items-baseline justify-between gap-4">
           <div className="min-w-0">

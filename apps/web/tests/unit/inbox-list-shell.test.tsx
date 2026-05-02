@@ -462,7 +462,7 @@ describe("Inbox list shell", () => {
 
     const filterButton = findButtonByLabel(session.container, "Filters");
     expect(filterButton.getAttribute("aria-expanded")).toBe("false");
-    expect(filterButton.className).toContain("text-slate-500");
+    expect(filterButton.className).toContain("text-slate-900");
 
     act(() => {
       filterButton.click();

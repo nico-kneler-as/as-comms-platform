@@ -183,6 +183,12 @@ export interface InboxTimelineCampaignActivityViewModel {
   readonly label: string;
 }
 
+export interface InboxTimelineEntryParticipantRowViewModel {
+  readonly label: "From" | "To" | "Cc";
+  readonly name: string | null;
+  readonly email: string | null;
+}
+
 export interface InboxTimelineEntryViewModel {
   readonly id: string;
   readonly kind: InboxTimelineEntryKind;
@@ -197,6 +203,33 @@ export interface InboxTimelineEntryViewModel {
   readonly fromHeader: string | null;
   readonly toHeader: string | null;
   readonly recipientLabel?: string | null;
+  /**
+   * Resolved project alias label (e.g. "PNW Biodiversity") for the
+   * conversation this email belongs to, derived from whichever side of
+   * the From/To headers is one of our known project aliases. Null for
+   * non-email entries or when the alias email can't be matched.
+   *
+   * Used by `EmailParticipantHeader` to render headers as
+   *   outbound: <projectAlias> → <volunteer>
+   *   inbound:  <volunteer>     → <projectAlias>
+   * without the bubble component needing access to the alias map.
+   */
+  readonly headerProjectLabel?: string | null;
+  /**
+   * Pre-resolved bubble-header rows for email entries. Always emits a
+   * From and a To row even when one side of the captured header is
+   * missing — the bubble's compact header reads
+   * `participantRows[0].name → participantRows[1].name` regardless of
+   * direction; the expanded debug view renders each row as
+   * `<name> <email>` (or just `<email>` when the resolver couldn't
+   * find a real name). `email` is null when only a label is known
+   * (e.g. a project alias without a captured alias address).
+   *
+   * Cc, when present, is appended as a single row with the raw
+   * comma-separated header in `name` and `email = null`. Per-address
+   * parsing is a future follow-up.
+   */
+  readonly participantRows?: readonly InboxTimelineEntryParticipantRowViewModel[];
   readonly ccHeader: string | null;
   readonly mailbox: string | null;
   readonly threadId: string | null;

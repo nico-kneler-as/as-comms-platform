@@ -531,9 +531,9 @@ export function InboxList({
     >
       <div className="sticky top-0 z-10 bg-white/95 backdrop-blur">
         <div
-          className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-5`}
+          className={`flex ${LAYOUT.headerHeight} items-center gap-2 border-b border-slate-200 px-4`}
         >
-          <h1 className={`min-w-0 flex-1 truncate ${TYPE.headingLg}`}>
+          <h1 className={`min-w-0 flex-1 truncate ${TYPE.headingMd}`}>
             {headerTitle}
           </h1>
           <Button
@@ -544,7 +544,7 @@ export function InboxList({
             aria-keyshortcuts="c"
             title="Compose"
             onClick={openNewDraft}
-            className="size-8 shrink-0 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="size-8 shrink-0 text-slate-900 hover:bg-slate-100 hover:text-slate-950"
           >
             <PencilIcon aria-hidden="true" data-icon="inline-start" />
           </Button>
@@ -563,7 +563,7 @@ export function InboxList({
                 ? "bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
                 : hasActiveFilters
                   ? "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+                  : "text-slate-900 hover:bg-slate-100 hover:text-slate-950",
             )}
           >
             <FilterIcon aria-hidden="true" data-icon="inline-start" />
@@ -580,7 +580,7 @@ export function InboxList({
           </Button>
         </div>
 
-        <div className="px-5 pb-3 pt-3">
+        <div className="px-4 py-2.5">
           <label
             className={`flex items-center gap-2 ${RADIUS.md} border border-slate-200 bg-white px-3 py-1.5 text-sm ${SHADOW.sm} ${TRANSITION.fast} focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-300`}
           >

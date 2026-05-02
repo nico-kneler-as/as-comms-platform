@@ -113,6 +113,7 @@ const REPLACEMENT_CHARACTER = "�";
 // in production sit at ~50%.
 const BINARY_NOISE_THRESHOLD = 0.3;
 const BINARY_NOISE_MIN_LENGTH = 32;
+const SHORT_BINARY_NOISE_MIN_SUSPICIOUS = 3;
 const DEFAULT_GMAIL_MIME_MAX_DEPTH = 64;
 const DEFAULT_GMAIL_MIME_MAX_PARTS = 512;
 const DEFAULT_GMAIL_MIME_MAX_DECODED_BYTES = 20 * 1024 * 1024;
@@ -230,7 +231,7 @@ function visitChildPart(
 }
 
 export function isLikelyBinaryNoise(text: string): boolean {
-  if (text.length < BINARY_NOISE_MIN_LENGTH) {
+  if (text.trim().length === 0) {
     return false;
   }
 
@@ -259,7 +260,20 @@ export function isLikelyBinaryNoise(text: string): boolean {
     }
   }
 
-  return total > 0 && suspicious / total >= BINARY_NOISE_THRESHOLD;
+  if (total === 0) {
+    return false;
+  }
+
+  const ratio = suspicious / total;
+
+  if (total < BINARY_NOISE_MIN_LENGTH) {
+    return (
+      suspicious >= SHORT_BINARY_NOISE_MIN_SUSPICIOUS &&
+      ratio >= BINARY_NOISE_THRESHOLD
+    );
+  }
+
+  return ratio >= BINARY_NOISE_THRESHOLD;
 }
 
 function normalizeLineEndings(value: string): string {
@@ -411,6 +425,12 @@ export function cleanGmailBodyPreviewText(value: string): string {
       : sanitizePreviewText(value);
 
   return normalized;
+}
+
+export function isUsableGmailBodyPreviewText(value: string): boolean {
+  const normalized = cleanGmailBodyPreviewText(value);
+
+  return normalized.length > 0 && !isLikelyBinaryNoise(normalized);
 }
 
 function decodeBase64Url(value: string): Buffer {
