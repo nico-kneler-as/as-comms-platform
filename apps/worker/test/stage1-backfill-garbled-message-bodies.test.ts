@@ -10,6 +10,10 @@ function buildGarbledBody(): string {
   return "A�".repeat(20);
 }
 
+function buildShortGarbledBody(): string {
+  return "�٥�杙�Z��iz�����w/�i";
+}
+
 function buildCleanBody(): string {
   return "Hello there.\n\nThis message is readable and should stay untouched.";
 }
@@ -19,7 +23,8 @@ async function seedGmailMessageDetail(input: {
   readonly sourceEvidenceId: string;
   readonly providerRecordId: string;
   readonly bodyTextPreview: string;
-  readonly bodyKind?: "binary_fallback" | null;
+  readonly snippetClean?: string;
+  readonly bodyKind?: "plaintext" | "binary_fallback" | null;
 }): Promise<void> {
   await input.context.repositories.sourceEvidence.append({
     id: input.sourceEvidenceId,
@@ -44,7 +49,7 @@ async function seedGmailMessageDetail(input: {
     toHeader: "Volunteer <volunteer@example.org>",
     ccHeader: null,
     labelIds: null,
-    snippetClean: input.bodyTextPreview,
+    snippetClean: input.snippetClean ?? input.bodyTextPreview,
     bodyTextPreview: input.bodyTextPreview,
     bodyKind: input.bodyKind ?? null,
     capturedMailbox: "volunteers@example.org",
@@ -130,6 +135,85 @@ describe("Stage 1 garbled Gmail message body backfill", () => {
     }
   });
 
+  it("repairs short garbled bodies from a readable snippet", async () => {
+    const context = await createTestWorkerContext();
+    const sourceEvidenceId =
+      "source-evidence:gmail:message:garbled-short-snippet";
+    const readableSnippet =
+      "Thanks. Will work on this. May take a day or two Sent from my Galaxy";
+
+    try {
+      await seedGmailMessageDetail({
+        context,
+        sourceEvidenceId,
+        providerRecordId: "garbled-short-snippet",
+        bodyTextPreview: buildShortGarbledBody(),
+        snippetClean: readableSnippet,
+      });
+
+      const result = await backfillGarbledMessageBodies({
+        db: context.db,
+        dryRun: false,
+      });
+      const [persisted] =
+        await context.repositories.gmailMessageDetails.listBySourceEvidenceIds([
+          sourceEvidenceId,
+        ]);
+
+      expect(result).toMatchObject({
+        dryRun: false,
+        scanned: 1,
+        garbled: 1,
+        updated: 1,
+      });
+      expect(persisted).toMatchObject({
+        bodyTextPreview: readableSnippet,
+        snippetClean: readableSnippet,
+        bodyKind: "plaintext",
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("repairs plaintext-classified short garbled rows", async () => {
+    const context = await createTestWorkerContext();
+    const sourceEvidenceId =
+      "source-evidence:gmail:message:garbled-short-plaintext";
+
+    try {
+      await seedGmailMessageDetail({
+        context,
+        sourceEvidenceId,
+        providerRecordId: "garbled-short-plaintext",
+        bodyTextPreview: buildShortGarbledBody(),
+        bodyKind: "plaintext",
+      });
+
+      const result = await backfillGarbledMessageBodies({
+        db: context.db,
+        dryRun: false,
+      });
+      const [persisted] =
+        await context.repositories.gmailMessageDetails.listBySourceEvidenceIds([
+          sourceEvidenceId,
+        ]);
+
+      expect(result).toMatchObject({
+        scanned: 1,
+        garbled: 1,
+        updated: 1,
+      });
+      expect(persisted).toMatchObject({
+        bodyTextPreview: BINARY_FALLBACK_PLACEHOLDER,
+        snippetClean: BINARY_FALLBACK_PLACEHOLDER,
+        bodyKind: "binary_fallback",
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
   it("leaves readable bodies untouched", async () => {
     const context = await createTestWorkerContext();
     const sourceEvidenceId = "source-evidence:gmail:message:garbled-clean";
@@ -153,7 +237,7 @@ describe("Stage 1 garbled Gmail message body backfill", () => {
         ]);
 
       expect(result).toMatchObject({
-        scanned: 1,
+        scanned: 0,
         garbled: 0,
         dryRunWouldUpdate: 0,
         updated: 0,

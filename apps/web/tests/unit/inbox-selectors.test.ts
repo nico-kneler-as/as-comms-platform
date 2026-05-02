@@ -3931,6 +3931,51 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("skips short garbled Gmail bodies and renders the readable snippet instead", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:short-garbled",
+      salesforceContactId: "003-short-garbled",
+      displayName: "Joe Rutledge",
+      primaryEmail: "joe@example.org",
+      primaryPhone: null,
+    });
+
+    const latestEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "short-garbled-latest",
+      contactId: "contact:short-garbled",
+      occurredAt: "2026-04-30T16:31:58.000Z",
+      direction: "inbound",
+      subject: "Re: Placement completed 28 April",
+      snippet: "Thanks. Will work on this. May take a day or two",
+      snippetClean: "Thanks. Will work on this. May take a day or two",
+      bodyTextPreview: "�٥�杙�Z��iz�����w/�i",
+      bodyKind: "plaintext",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:short-garbled",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-30T16:31:58.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-30T16:31:58.000Z",
+      snippet: "Thanks. Will work on this. May take a day or two",
+      lastCanonicalEventId: latestEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:short-garbled");
+
+    expect(detail?.timeline.at(-1)).toMatchObject({
+      kind: "inbound-email",
+      body: "Thanks. Will work on this. May take a day or two",
+    });
+  });
+
   it("falls back to provider communication details before projection snippets for Salesforce-backed latest rows", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
