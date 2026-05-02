@@ -2002,9 +2002,11 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:external-orcas");
 
     expect(detail?.contact.activeProjects).toHaveLength(0);
+    // loadProjectMetadataById prefers projectAlias over projectName
+    // (system convention — the alias is the operator-facing label).
     expect(detail?.conversationProject).toEqual({
       projectId: "project:orcas",
-      projectName: "Orca Listening Network",
+      projectName: "Orcas",
       source: "conversation",
     });
   });
