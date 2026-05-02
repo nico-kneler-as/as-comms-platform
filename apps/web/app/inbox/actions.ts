@@ -1598,8 +1598,9 @@ export async function clearInboxNeedsFollowUpAction(
   return updateNeedsFollowUp(formData, false);
 }
 
-async function archiveContact(
+async function setContactArchivedFlag(
   formData: FormData,
+  archived: boolean,
 ): Promise<InboxArchiveActionResult> {
   const requestId = randomUUID();
   const contactId = readContactId(formData);
@@ -1636,7 +1637,7 @@ async function archiveContact(
       entityId: "inbox.archive",
       metadataJson: {
         contactId,
-        archived: true,
+        archived,
       },
     },
   });
@@ -1645,7 +1646,7 @@ async function archiveContact(
     return archiveRateLimitError(requestId);
   }
 
-  const result = await setInboxArchived({ contactId, archived: true });
+  const result = await setInboxArchived({ contactId, archived });
 
   if (!result.ok) {
     return {
@@ -1669,7 +1670,13 @@ async function archiveContact(
 export async function archiveInboxContactAction(
   formData: FormData,
 ): Promise<InboxArchiveActionResult> {
-  return archiveContact(formData);
+  return setContactArchivedFlag(formData, true);
+}
+
+export async function unarchiveInboxContactAction(
+  formData: FormData,
+): Promise<InboxArchiveActionResult> {
+  return setContactArchivedFlag(formData, false);
 }
 
 async function updateInboxBucket(

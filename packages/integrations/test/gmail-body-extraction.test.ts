@@ -352,6 +352,70 @@ describe("Gmail body extraction", () => {
     });
   });
 
+  it("treats a short replacement-heavy text/plain part as a binary fallback", async () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "text/plain",
+      headers: [{ name: "Content-Type", value: "text/plain; charset=utf-8" }],
+      body: {
+        data: encodeBase64Url(Buffer.from([0x80, 0x81, 0x82, 0x83, 0x84, 0x85])),
+        size: 6,
+      },
+    };
+
+    await expect(
+      extractGmailBodyPreviewFromPayloadResult(payload),
+    ).resolves.toEqual({
+      bodyTextPreview: "[Message body could not be extracted — open in Gmail]",
+      bodyKind: "binary_fallback",
+    });
+  });
+
+  it("uses a readable Gmail snippet when live body extraction returns a short binary fallback", async () => {
+    const binaryPart: GmailApiMessagePart = {
+      mimeType: "text/plain",
+      headers: [{ name: "Content-Type", value: "text/plain; charset=utf-8" }],
+      body: {
+        data: encodeBase64Url(Buffer.from([0x80, 0x81, 0x82, 0x83, 0x84, 0x85])),
+        size: 6,
+      },
+    };
+
+    const record = await mapLiveGmailMessageToRecord({
+      message: {
+        id: "gmail-short-binary-snippet",
+        threadId: "thread-short-binary-snippet",
+        labelIds: ["INBOX"],
+        snippet: "Thanks. Will work on this. May take a day or two",
+        internalDate: "1777566721000",
+        payload: {
+          mimeType: "multipart/mixed",
+          headers: [
+            { name: "From", value: "Joe <joe@example.org>" },
+            { name: "To", value: "PNW Biodiversity <pnwbio@example.org>" },
+            { name: "Subject", value: "Re: Placement completed 28 April" },
+            { name: "Date", value: "Thu, 30 Apr 2026 09:31:58 -0800" },
+            {
+              name: "Message-ID",
+              value: "<gmail-short-binary-snippet@example.org>",
+            },
+          ],
+          parts: [binaryPart],
+        },
+      },
+      capturedMailbox: "pnwbio@example.org",
+      liveAccount: "pnwbio@example.org",
+      projectInboxAliases: ["pnwbio@example.org"],
+      receivedAt: "2026-04-30T16:33:00.147Z",
+    });
+
+    expect(record).toMatchObject({
+      recordType: "message",
+      bodyTextPreview: "Thanks. Will work on this. May take a day or two",
+      bodyKind: "plaintext",
+      snippetClean: "Thanks. Will work on this. May take a day or two",
+    });
+  });
+
   it("preserves a normal email body that contains a handful of stray control characters", async () => {
     // Mirrors the OpenAI marketing-email shape from production: ~7%
     // replacement-or-control chars in an otherwise readable body. These must

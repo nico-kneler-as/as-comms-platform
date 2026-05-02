@@ -2,7 +2,7 @@
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
-import { and, asc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, ne, or, sql } from "drizzle-orm";
 
 import {
   closeDatabaseConnection,
@@ -10,14 +10,16 @@ import {
   gmailMessageDetails,
   type Stage1Database,
 } from "@as-comms/db";
-import { isLikelyBinaryNoise } from "@as-comms/integrations";
+import {
+  isLikelyBinaryNoise,
+  isUsableGmailBodyPreviewText,
+} from "@as-comms/integrations";
 
 import { parseCliFlags, readOptionalIntegerFlag } from "./helpers.js";
 
 const BINARY_FALLBACK_PLACEHOLDER =
   "[Message body could not be extracted — open in Gmail]";
 const DEFAULT_BATCH_SIZE = 200;
-const BINARY_NOISE_MIN_LENGTH = 32;
 const REPLACEMENT_CHARACTER = "�";
 
 interface BackfillLogger {
@@ -26,7 +28,15 @@ interface BackfillLogger {
 
 interface GarbledMessageBodyCandidateRow {
   readonly sourceEvidenceId: string;
+  readonly snippetClean: string;
   readonly bodyTextPreview: string;
+  readonly bodyKind: "plaintext" | "encrypted_placeholder" | "binary_fallback" | null;
+}
+
+interface GarbledBodyRepair {
+  readonly bodyTextPreview: string;
+  readonly snippetClean: string;
+  readonly bodyKind: "plaintext" | "binary_fallback";
 }
 
 export interface GarbledMessageBodiesBackfillResult {
@@ -51,7 +61,7 @@ function readConnectionString(env: NodeJS.ProcessEnv): string {
 }
 
 function calculateReplacementRatio(text: string): number {
-  if (text.length < BINARY_NOISE_MIN_LENGTH) {
+  if (text.trim().length === 0) {
     return 0;
   }
 
@@ -86,16 +96,21 @@ async function loadCandidateBatch(input: {
   readonly afterSourceEvidenceId: string | null;
   readonly batchSize: number;
 }): Promise<readonly GarbledMessageBodyCandidateRow[]> {
-  return input.db
+  const rows = await input.db
     .select({
       sourceEvidenceId: gmailMessageDetails.sourceEvidenceId,
+      snippetClean: gmailMessageDetails.snippetClean,
       bodyTextPreview: gmailMessageDetails.bodyTextPreview,
+      bodyKind: gmailMessageDetails.bodyKind,
     })
     .from(gmailMessageDetails)
     .where(
       and(
-        isNull(gmailMessageDetails.bodyKind),
-        sql<boolean>`length(${gmailMessageDetails.bodyTextPreview}) >= ${BINARY_NOISE_MIN_LENGTH}`,
+        or(
+          sql`${gmailMessageDetails.bodyKind} is null`,
+          ne(gmailMessageDetails.bodyKind, "binary_fallback"),
+        ),
+        sql<boolean>`position(chr(65533) in ${gmailMessageDetails.bodyTextPreview}) > 0`,
         input.afterSourceEvidenceId === null
           ? undefined
           : gt(gmailMessageDetails.sourceEvidenceId, input.afterSourceEvidenceId),
@@ -103,21 +118,50 @@ async function loadCandidateBatch(input: {
     )
     .orderBy(asc(gmailMessageDetails.sourceEvidenceId))
     .limit(input.batchSize);
+
+  return rows.map((row) => ({
+    ...row,
+    bodyKind:
+      row.bodyKind === "plaintext" ||
+      row.bodyKind === "encrypted_placeholder" ||
+      row.bodyKind === "binary_fallback"
+        ? row.bodyKind
+        : null,
+  }));
 }
 
 async function updateGarbledBodyRow(input: {
   readonly db: Stage1Database;
   readonly sourceEvidenceId: string;
+  readonly repair: GarbledBodyRepair;
 }): Promise<void> {
   await input.db
     .update(gmailMessageDetails)
     .set({
-      bodyTextPreview: BINARY_FALLBACK_PLACEHOLDER,
-      snippetClean: BINARY_FALLBACK_PLACEHOLDER,
-      bodyKind: "binary_fallback",
+      bodyTextPreview: input.repair.bodyTextPreview,
+      snippetClean: input.repair.snippetClean,
+      bodyKind: input.repair.bodyKind,
       updatedAt: new Date(),
     })
     .where(eq(gmailMessageDetails.sourceEvidenceId, input.sourceEvidenceId));
+}
+
+function resolveGarbledBodyRepair(
+  candidate: GarbledMessageBodyCandidateRow,
+): GarbledBodyRepair {
+  if (isUsableGmailBodyPreviewText(candidate.snippetClean)) {
+    return {
+      bodyTextPreview: candidate.snippetClean,
+      snippetClean: candidate.snippetClean,
+      bodyKind: "plaintext",
+    };
+  }
+
+  return {
+    bodyTextPreview: BINARY_FALLBACK_PLACEHOLDER,
+    snippetClean: BINARY_FALLBACK_PLACEHOLDER,
+    bodyKind: "binary_fallback",
+  };
 }
 
 export async function backfillGarbledMessageBodies(input: {
@@ -178,12 +222,15 @@ export async function backfillGarbledMessageBodies(input: {
 
       if (dryRun) {
         dryRunWouldUpdate += 1;
+        const repair = resolveGarbledBodyRepair(candidate);
         logger.info(
           JSON.stringify({
             source_evidence_id: candidate.sourceEvidenceId,
             body_len: candidate.bodyTextPreview.length,
             replacement_ratio: Number(replacementRatio.toFixed(4)),
             sample: candidate.bodyTextPreview.slice(0, 80),
+            repair_body_kind: repair.bodyKind,
+            repair_sample: repair.bodyTextPreview.slice(0, 80),
           }),
         );
         continue;
@@ -192,6 +239,7 @@ export async function backfillGarbledMessageBodies(input: {
       await updateGarbledBodyRow({
         db: input.db,
         sourceEvidenceId: candidate.sourceEvidenceId,
+        repair: resolveGarbledBodyRepair(candidate),
       });
       updated += 1;
     }

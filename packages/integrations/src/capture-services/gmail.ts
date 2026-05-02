@@ -22,8 +22,10 @@ import {
 import {
   collectGmailAttachmentMetadata,
   collectGmailHtmlCidReferences,
+  cleanGmailBodyPreviewText,
   extractDsnOriginalMessageId,
   extractGmailBodyPreviewFromPayloadResult,
+  isUsableGmailBodyPreviewText,
   type GmailApiMessagePart
 } from "../providers/gmail-body.js";
 import {
@@ -434,6 +436,12 @@ export async function mapLiveGmailMessageToRecord(input: {
       messageIdentifier: input.message.id
     }
   );
+  const cleanedGmailSnippet = cleanGmailBodyPreviewText(input.message.snippet);
+  const usableSnippetFallback =
+    bodyPreviewResult.bodyKind === "binary_fallback" &&
+    isUsableGmailBodyPreviewText(cleanedGmailSnippet)
+      ? cleanedGmailSnippet
+      : null;
   const attachmentMetadata = collectGmailAttachmentMetadata(input.message.payload);
   const htmlBodyCidReferences = collectGmailHtmlCidReferences(
     input.message.payload,
@@ -458,7 +466,8 @@ export async function mapLiveGmailMessageToRecord(input: {
     labelIds: input.message.labelIds,
     snippet: input.message.snippet,
     snippetClean: input.message.snippet,
-    ...bodyPreviewResult,
+    bodyTextPreview: usableSnippetFallback ?? bodyPreviewResult.bodyTextPreview,
+    bodyKind: usableSnippetFallback === null ? bodyPreviewResult.bodyKind : "plaintext",
     attachmentMetadata,
     htmlBodyCidReferences,
     internalDate: input.message.internalDate,

@@ -12,6 +12,7 @@ const filterSchema = z.enum([
   "follow-up",
   "unresolved",
   "sent",
+  "archived",
 ]);
 
 function parseLimit(raw: string | null): number | undefined {
