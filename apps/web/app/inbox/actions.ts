@@ -41,6 +41,7 @@ import type { UiResult } from "../../src/server/ui-result";
 const composerSendActionInputSchema = composerSendInputSchema.extend({
   saveAsKnowledge: z.boolean().optional(),
   captureAsKnowledge: z.boolean().optional().default(false),
+  clientGeneratedId: z.string().min(1).optional(),
 });
 
 type ComposerSendActionParsedInput = z.output<
@@ -75,6 +76,7 @@ export type ComposerSendActionData = {
   readonly pendingOutboundId: string;
   readonly canonicalContactId: string;
   readonly threadId: string | null;
+  readonly clientGeneratedId: string | null;
 };
 
 export type ComposerSendActionInput = z.input<
@@ -1529,6 +1531,7 @@ export async function sendComposerAction(
           pendingOutboundId,
           canonicalContactId,
           threadId: sendResult.gmailThreadId,
+          clientGeneratedId: parsedInput.data.clientGeneratedId ?? null,
         },
         requestId,
       };

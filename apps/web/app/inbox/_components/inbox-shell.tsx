@@ -52,6 +52,7 @@ export function InboxShell({
     <InboxClientProvider
       composerAliases={composerAliases}
       currentActorId={currentActorId}
+      operatorDisplayName={operator.displayName}
     >
       <InboxKeyboardProvider>
         <InboxFreshnessPoller listFreshness={initialList.freshness} />
