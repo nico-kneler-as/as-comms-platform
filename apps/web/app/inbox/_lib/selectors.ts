@@ -1077,8 +1077,71 @@ function stripMimeScaffolding(value: string): string {
   return keptLines.join("\n");
 }
 
+const DISALLOWED_CONTROL_CHARACTER_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
+const BASE64_BODY_MIN_LENGTH = 300;
+const BASE64_BODY_CHARS_PATTERN = /^[A-Za-z0-9+/=\s]+$/;
+const BASE64_BODY_WORD_PATTERN =
+  /\b(?:the|and|you|your|hello|hi|thanks|thank|samantha|please|would|available|coordinates|location|regards)\b/i;
+const INLINE_REPLY_BOUNDARY_PATTERNS: readonly RegExp[] = [
+  /\s+On\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?[\s\S]{0,180}?\bwrote:\s*[\s\S]*$/i,
+  /\s+On\s+\d{4}-\d{2}-\d{2}[\s\S]{0,180}?\bwrote:\s*[\s\S]*$/i,
+  /\s+On\s+\d{1,2}\/\d{1,2}\/\d{2,4}[\s\S]{0,180}?\bwrote:\s*[\s\S]*$/i,
+  /\s+El\s+[\s\S]{0,180}?\bescribi[oó]:\s*[\s\S]*$/i,
+  /\s+-{2,}\s*Original message\s*-{2,}[\s\S]*$/i,
+  /\s+Begin forwarded message:[\s\S]*$/i,
+  /\s+Forwarded message:[\s\S]*$/i,
+];
+const INLINE_PHONE_SIGNATURE_PATTERN =
+  /(?:\s+|(?<=[a-z.!?])(?=Sent from my (?:iPhone|iPad|Galaxy)|Get Outlook for (?:iOS|Android)))(?:Sent from my (?:iPhone|iPad|Galaxy)|Get Outlook for (?:iOS|Android))[\s\S]*$/i;
+
+function normalizeMisdecodedControlCharacters(value: string): string {
+  return value
+    .replace(/\x18/g, "'")
+    .replace(/\x19/g, "'")
+    .replace(/\x1C/g, '"')
+    .replace(/\x1D/g, '"')
+    .replace(/\x14/g, " - ")
+    .replace(/\x15/g, " - ")
+    .replace(DISALLOWED_CONTROL_CHARACTER_PATTERN, " ");
+}
+
+function decodeBase64BodyIfReadable(value: string): string {
+  const normalized = value.trim();
+  const compact = normalized.replace(/\s+/g, "");
+
+  if (
+    compact.length < BASE64_BODY_MIN_LENGTH ||
+    compact.length % 4 !== 0 ||
+    !BASE64_BODY_CHARS_PATTERN.test(normalized)
+  ) {
+    return value;
+  }
+
+  try {
+    const decoded = Buffer.from(compact, "base64").toString("utf8");
+    const printable = normalizeMisdecodedControlCharacters(decoded)
+      .replace(/\uFFFD/g, "")
+      .trim();
+
+    if (
+      printable.length < 80 ||
+      printable.length < compact.length / 4 ||
+      !BASE64_BODY_WORD_PATTERN.test(printable)
+    ) {
+      return value;
+    }
+
+    return decoded;
+  } catch {
+    return value;
+  }
+}
+
 function sanitizePreviewText(value: string): string {
-  const mimeAware = stripMimeScaffolding(decodeQuotedPrintable(value));
+  const decodedBase64 = decodeBase64BodyIfReadable(value);
+  const normalizedControls =
+    normalizeMisdecodedControlCharacters(decodedBase64);
+  const mimeAware = stripMimeScaffolding(decodeQuotedPrintable(normalizedControls));
   const htmlAware = /<[^>]+>/.test(mimeAware)
     ? mimeAware
         .replace(/<\s*br\s*\/?>/gi, "\n")
@@ -1098,6 +1161,20 @@ function sanitizePreviewText(value: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+function trimInlineReplyBoundaries(value: string): string {
+  let trimmed = value;
+
+  for (const boundary of INLINE_REPLY_BOUNDARY_PATTERNS) {
+    trimmed = trimmed.replace(boundary, "");
+  }
+
+  return trimmed.trim();
+}
+
+function trimInlinePhoneSignature(value: string): string {
+  return value.replace(INLINE_PHONE_SIGNATURE_PATTERN, "").trim();
 }
 
 const PREVIEW_NOISE_THRESHOLD = 0.3;
@@ -1386,9 +1463,11 @@ function trimQuotedReplyContent(value: string): string {
     earliestBoundary = forwardedHeaderBoundary;
   }
 
-  return (
+  const trimmed = (
     earliestBoundary === -1 ? normalized : normalized.slice(0, earliestBoundary)
   ).trim();
+
+  return trimInlinePhoneSignature(trimInlineReplyBoundaries(trimmed));
 }
 
 function signatureLooksLikeClosing(
@@ -1480,7 +1559,7 @@ export function stripSignature(body: string): string {
     return normalized.slice(0, trailingSignatureMatch.index).trim();
   }
 
-  return normalized;
+  return trimInlinePhoneSignature(normalized);
 }
 
 function parseCommunicationPreview(raw: string): ParsedPreview {

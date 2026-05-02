@@ -506,6 +506,49 @@ describe("Gmail body extraction", () => {
     ).toBe("Thanks for the clarification.");
   });
 
+  it("trims flattened phone signatures and original-message tails", () => {
+    expect(
+      cleanGmailBodyPreviewText(
+        "Thanks. Will work on this. May take a day or twoSent from my Galaxy -------- Original message --------From: Adventure Scientists Date: 4/30/26"
+      )
+    ).toBe("Thanks. Will work on this. May take a day or two");
+  });
+
+  it("trims flattened On ... wrote quoted reply tails", () => {
+    expect(
+      cleanGmailBodyPreviewText(
+        "Awesome, thanks Allegra! Then, on the trip report please include mileage. On Wed, Apr 29, 2026 at 9:15 AM Adventure Scientists wrote: Prior message"
+      )
+    ).toBe(
+      "Awesome, thanks Allegra! Then, on the trip report please include mileage."
+    );
+  });
+
+  it("normalizes misdecoded smart punctuation control characters", () => {
+    expect(
+      cleanGmailBodyPreviewText(
+        "Hi Jessica, Phew\x14we\x19re finally getting ARUs down to the Bay Area!"
+      )
+    ).toBe("Hi Jessica, Phew - we're finally getting ARUs down to the Bay Area!");
+  });
+
+  it("decodes whole-body base64 text previews when they are readable prose", () => {
+    const original = [
+      "Hi Samantha,",
+      "",
+      "Apologies for not responding sooner. Would you be available for a short call sometime tomorrow to discuss the trip report?",
+      "",
+      "Regards,",
+      "",
+      "I also wanted to confirm the coordinates and location notes before we head out this weekend. Thank you for your patience while we sorted out the schedule.",
+      "",
+      "Please let me know if there is anything else you need from us before the trip report is submitted."
+    ].join("\n");
+    const encoded = Buffer.from(original, "utf8").toString("base64");
+
+    expect(cleanGmailBodyPreviewText(encoded)).toBe(original);
+  });
+
   it("does not trim plain body content that happens to include From and Sent lines", () => {
     expect(
       trimQuotedReplyContent(

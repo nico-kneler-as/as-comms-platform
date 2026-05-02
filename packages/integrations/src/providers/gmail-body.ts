@@ -103,6 +103,23 @@ const DENYLISTED_ATTACHMENT_MIME_TYPES = new Set([
 ]);
 
 const REPLACEMENT_CHARACTER = "�";
+const DISALLOWED_CONTROL_CHARACTER_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/gu;
+const BASE64_BODY_MIN_LENGTH = 300;
+const BASE64_BODY_CHARS_PATTERN = /^[A-Za-z0-9+/=\s]+$/u;
+const BASE64_BODY_WORD_PATTERN =
+  /\b(?:the|and|you|your|hello|hi|thanks|thank|samantha|please|would|available|coordinates|location|regards)\b/iu;
+const INLINE_REPLY_BOUNDARY_PATTERNS: readonly RegExp[] = [
+  /\s+On\s+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?[\s\S]{0,180}?\bwrote:\s*[\s\S]*$/iu,
+  /\s+On\s+\d{4}-\d{2}-\d{2}[\s\S]{0,180}?\bwrote:\s*[\s\S]*$/iu,
+  /\s+On\s+\d{1,2}\/\d{1,2}\/\d{2,4}[\s\S]{0,180}?\bwrote:\s*[\s\S]*$/iu,
+  /\s+El\s+[\s\S]{0,180}?\bescribi[oó]:\s*[\s\S]*$/iu,
+  /\s+-{2,}\s*Original message\s*-{2,}[\s\S]*$/iu,
+  /\s+-{2,}\s*Original Message\s*-{2,}[\s\S]*$/u,
+  /\s+Begin forwarded message:[\s\S]*$/iu,
+  /\s+Forwarded message:[\s\S]*$/iu
+];
+const INLINE_PHONE_SIGNATURE_PATTERN =
+  /(?:\s+|(?<=[a-z.!?])(?=Sent from my (?:iPhone|iPad|Galaxy)|Get Outlook for (?:iOS|Android)))(?:Sent from my (?:iPhone|iPad|Galaxy)|Get Outlook for (?:iOS|Android))[\s\S]*$/iu;
 
 // Threshold: 30% replacement-or-control chars means the byte stream couldn't
 // be decoded as UTF-8 and is almost certainly an encrypted/binary payload that
@@ -308,6 +325,49 @@ function decodeQuotedPrintable(value: string): string {
   });
 }
 
+function normalizeMisdecodedControlCharacters(value: string): string {
+  return value
+    .replace(/\x18/gu, "'")
+    .replace(/\x19/gu, "'")
+    .replace(/\x1C/gu, "\"")
+    .replace(/\x1D/gu, "\"")
+    .replace(/\x14/gu, " - ")
+    .replace(/\x15/gu, " - ")
+    .replace(DISALLOWED_CONTROL_CHARACTER_PATTERN, " ");
+}
+
+function decodeBase64BodyIfReadable(value: string): string {
+  const normalized = value.trim();
+  const compact = normalized.replace(/\s+/gu, "");
+
+  if (
+    compact.length < BASE64_BODY_MIN_LENGTH ||
+    compact.length % 4 !== 0 ||
+    !BASE64_BODY_CHARS_PATTERN.test(normalized)
+  ) {
+    return value;
+  }
+
+  try {
+    const decoded = Buffer.from(compact, "base64").toString("utf8");
+    const printable = normalizeMisdecodedControlCharacters(decoded)
+      .replace(/\uFFFD/gu, "")
+      .trim();
+
+    if (
+      printable.length < 80 ||
+      printable.length < compact.length / 4 ||
+      !BASE64_BODY_WORD_PATTERN.test(printable)
+    ) {
+      return value;
+    }
+
+    return decoded;
+  } catch {
+    return value;
+  }
+}
+
 function stripMimeScaffolding(value: string): string {
   const normalized = value
     .replace(
@@ -361,7 +421,12 @@ function stripMimeScaffolding(value: string): string {
 }
 
 function sanitizePreviewText(value: string): string {
-  const mimeAware = stripMimeScaffolding(decodeQuotedPrintable(value));
+  const decodedBase64 = decodeBase64BodyIfReadable(value);
+  const normalizedControls =
+    normalizeMisdecodedControlCharacters(decodedBase64);
+  const mimeAware = stripMimeScaffolding(
+    decodeQuotedPrintable(normalizedControls)
+  );
   const htmlAware = /<[^>]+>/u.test(mimeAware)
     ? mimeAware
         .replace(/<\s*br\s*\/?>/giu, "\n")
@@ -381,6 +446,20 @@ function sanitizePreviewText(value: string): string {
     .replace(/\n{3,}/gu, "\n\n")
     .replace(/[ \t]{2,}/gu, " ")
     .trim();
+}
+
+function trimInlineReplyBoundaries(value: string): string {
+  let trimmed = value;
+
+  for (const boundary of INLINE_REPLY_BOUNDARY_PATTERNS) {
+    trimmed = trimmed.replace(boundary, "");
+  }
+
+  return trimmed.trim();
+}
+
+function trimInlinePhoneSignature(value: string): string {
+  return value.replace(INLINE_PHONE_SIGNATURE_PATTERN, "").trim();
 }
 
 export function trimQuotedReplyContent(value: string): string {
@@ -412,9 +491,11 @@ export function trimQuotedReplyContent(value: string): string {
     }
   }
 
-  return (
+  const trimmed = (
     earliestBoundary === -1 ? normalized : normalized.slice(0, earliestBoundary)
   ).trim();
+
+  return trimInlinePhoneSignature(trimInlineReplyBoundaries(trimmed));
 }
 
 export function cleanGmailBodyPreviewText(value: string): string {

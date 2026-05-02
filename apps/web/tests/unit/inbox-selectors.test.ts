@@ -3873,6 +3873,115 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("strips flattened phone signatures and original-message tails in timeline email bodies", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:inline-phone-signature",
+      salesforceContactId: "003-inline-phone-signature",
+      displayName: "Joe Rutledge",
+      primaryEmail: "joe.rutledge@example.org",
+      primaryPhone: null,
+    });
+    const latestEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "inline-phone-signature-latest",
+      contactId: "contact:inline-phone-signature",
+      occurredAt: "2026-04-30T16:32:00.000Z",
+      direction: "inbound",
+      subject: "Re: Placement completed 28 April",
+      snippet: "Thanks. Will work on this.",
+      bodyTextPreview:
+        "Thanks. Will work on this. May take a day or twoSent from my Galaxy -------- Original message --------From: Adventure Scientists Date: 4/30/26",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:inline-phone-signature",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-30T16:32:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-30T16:32:00.000Z",
+      snippet: "Thanks. Will work on this.",
+      lastCanonicalEventId: latestEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:inline-phone-signature");
+
+    expect(detail?.timeline.at(-1)).toMatchObject({
+      kind: "inbound-email",
+      body: "Thanks. Will work on this. May take a day or two",
+    });
+  });
+
+  it("normalizes control-character punctuation and decodes readable base64 previews", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:text-hygiene",
+      salesforceContactId: "003-text-hygiene",
+      displayName: "Text Hygiene",
+      primaryEmail: "text.hygiene@example.org",
+      primaryPhone: null,
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "text-hygiene-control",
+      contactId: "contact:text-hygiene",
+      occurredAt: "2026-04-30T15:00:00.000Z",
+      direction: "inbound",
+      subject: "Re: Update on Hex 43191",
+      snippet: "Control punctuation",
+      bodyTextPreview:
+        "Hi Jessica, Phew\x14we\x19re finally getting some ARUs down to the Bay Area!",
+    });
+    const decodedBase64Body = [
+      "Hi Samantha,",
+      "",
+      "Apologies for not responding sooner. Would you be available for a short call sometime tomorrow to discuss the trip report?",
+      "",
+      "I also wanted to confirm the coordinates and location notes before we head out this weekend. Thank you for your patience while we sorted out the schedule.",
+      "",
+      "Please let me know if there is anything else you need from us before the trip report is submitted.",
+    ].join("\n");
+    const latestEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "text-hygiene-base64",
+      contactId: "contact:text-hygiene",
+      occurredAt: "2026-04-30T16:00:00.000Z",
+      direction: "inbound",
+      subject: "Re: Trip Reporting Question",
+      snippet: "Base64 fallback",
+      bodyTextPreview: Buffer.from(decodedBase64Body, "utf8").toString("base64"),
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:text-hygiene",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-30T16:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-30T16:00:00.000Z",
+      snippet: "Base64 fallback",
+      lastCanonicalEventId: latestEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:text-hygiene");
+
+    expect(detail?.timeline.at(-2)).toMatchObject({
+      kind: "inbound-email",
+      body:
+        "Hi Jessica, Phew - we're finally getting some ARUs down to the Bay Area!",
+    });
+    expect(detail?.timeline.at(-1)).toMatchObject({
+      kind: "inbound-email",
+      body: decodedBase64Body,
+    });
+  });
+
   it("skips encrypted placeholder bodies when deriving composer reply context", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
