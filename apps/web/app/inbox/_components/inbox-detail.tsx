@@ -377,7 +377,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
     });
   }, [contact.contactId, router]);
 
-  const activeProject = contact.activeProjects[0] ?? null;
+  const headerProject = contact.activeProjects[0] ?? detail.conversationProject;
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
   const isFollowUp = followUpToggle.value;
   const existingReminder = reminders.get(contact.contactId) ?? null;
@@ -511,19 +511,29 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
             </h1>
             <div className="hidden h-5 w-px bg-slate-200 sm:block" />
             <div className="hidden min-w-0 flex-1 sm:block">
-              {activeProject ? (
+              {headerProject ? (
                 <div className="flex min-w-0 items-center gap-2 text-xs">
-                  <span className="min-w-0 truncate font-medium text-slate-700">
-                    {activeProject.projectName}
-                  </span>
                   <span
-                    className={cn(
-                      "shrink-0 text-[11px] font-semibold uppercase tracking-wider",
-                      PROJECT_STATUS_TEXT[activeProject.status],
-                    )}
+                    className="min-w-0 truncate font-medium text-slate-700"
+                    title={
+                      "source" in headerProject &&
+                      headerProject.source === "conversation"
+                        ? "Via project alias"
+                        : undefined
+                    }
                   >
-                    {activeProject.statusLabel}
+                    {headerProject.projectName}
                   </span>
+                  {"status" in headerProject ? (
+                    <span
+                      className={cn(
+                        "shrink-0 text-[11px] font-semibold uppercase tracking-wider",
+                        PROJECT_STATUS_TEXT[headerProject.status],
+                      )}
+                    >
+                      {headerProject.statusLabel}
+                    </span>
+                  ) : null}
                 </div>
               ) : (
                 <span className="text-xs text-slate-400">

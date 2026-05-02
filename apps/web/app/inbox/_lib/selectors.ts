@@ -8,6 +8,7 @@ import type {
   TimelineItem,
 } from "@as-comms/contracts";
 
+import { getCurrentUser } from "@/src/server/auth/session";
 import { recordSensitiveReadForCurrentUserDetached } from "@/src/server/security/audit";
 import { getStage1WebRuntime } from "../../../src/server/stage1-runtime";
 import {
@@ -101,6 +102,7 @@ interface InboxDetailCacheData {
   readonly campaignActivitySummaryByCampaignId: Readonly<
     Record<string, CampaignActivitySummary>
   >;
+  readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
   readonly projectMetadataById: Readonly<
     Record<
       string,
@@ -110,6 +112,13 @@ interface InboxDetailCacheData {
       }
     >
   >;
+  readonly salesforceEventContextBySourceEvidenceId: ReadonlyMap<
+    string,
+    {
+      readonly projectId: string | null;
+    }
+  >;
+  readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly attachmentsByCanonicalEventId: ReadonlyMap<
     string,
@@ -1835,25 +1844,38 @@ function timelineActorLabel(
   item: TimelineItem,
   contactDisplayName: string,
   kind: InboxTimelineEntryKind,
+  operatorDisplayName: string,
+  canonicalContactDisplayName: string | null = null,
 ): string {
   if (kind === "inbound-email") {
+    const normalizedCanonicalContactName =
+      canonicalContactDisplayName === null
+        ? ""
+        : normalizeDisplayName(canonicalContactDisplayName);
+
+    if (normalizedCanonicalContactName.length > 0) {
+      return normalizedCanonicalContactName;
+    }
+
     if (item.family === "one_to_one_email") {
       const senderLabel = participantHeaderLabel(item.fromHeader ?? null);
+      const normalizedSenderLabel =
+        senderLabel === null ? "" : normalizeDisplayName(senderLabel);
 
-      if (senderLabel !== null) {
-        return senderLabel;
+      if (normalizedSenderLabel.length > 0) {
+        return normalizedSenderLabel;
       }
     }
 
-    return contactDisplayName;
+    return normalizeDisplayName(contactDisplayName) || contactDisplayName;
   }
 
   if (kind === "inbound-sms") {
-    return contactDisplayName;
+    return normalizeDisplayName(contactDisplayName) || contactDisplayName;
   }
 
   if (kind === "outbound-email" || kind === "outbound-sms") {
-    return "You";
+    return normalizeDisplayName(operatorDisplayName) || "Adventure Scientists";
   }
 
   if (kind === "email-activity") {
@@ -1863,7 +1885,7 @@ function timelineActorLabel(
   switch (item.family) {
     case "one_to_one_email":
     case "one_to_one_sms":
-      return "You";
+      return normalizeDisplayName(operatorDisplayName) || "Adventure Scientists";
     case "auto_email":
     case "auto_sms":
       return item.sourceLabel;
@@ -1884,6 +1906,57 @@ const PLACEHOLDER_BODY_PREVIEWS = new Set([
   "[Encrypted message — open in Gmail to read]",
   "[Message body could not be extracted — open in Gmail]",
 ]);
+
+function hasUppercaseBeyondFirst(token: string): boolean {
+  for (let index = 1; index < token.length; index += 1) {
+    const character = token[index];
+
+    if (character !== undefined && /[A-Z]/u.test(character)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function titleCaseSimpleToken(token: string): string {
+  if (token.length === 0) {
+    return token;
+  }
+
+  if (/[.'’-]/u.test(token) && hasUppercaseBeyondFirst(token)) {
+    return token;
+  }
+
+  return `${token[0]?.toUpperCase() ?? ""}${token.slice(1).toLowerCase()}`;
+}
+
+function normalizeDisplayName(raw: string): string {
+  const trimmed = raw.trim();
+
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  if (/^[a-z0-9._-]+$/iu.test(trimmed)) {
+    return trimmed;
+  }
+
+  const reversedNameMatch = /^([^,]+),\s*([^,]+)$/u.exec(trimmed);
+
+  if (reversedNameMatch !== null) {
+    return [reversedNameMatch[2], reversedNameMatch[1]]
+      .flatMap((part) => (part ?? "").trim().split(/\s+/u))
+      .filter((part) => part.length > 0)
+      .map(titleCaseSimpleToken)
+      .join(" ");
+  }
+
+  return trimmed
+    .split(/\s+/u)
+    .map(titleCaseSimpleToken)
+    .join(" ");
+}
 
 function participantHeaderLabel(headerValue: string | null): string | null {
   if (headerValue === null) {
@@ -1910,6 +1983,16 @@ function participantHeaderLabel(headerValue: string | null): string | null {
   }
 
   return trimmed;
+}
+
+function participantHeaderEmail(headerValue: string | null): string | null {
+  if (headerValue === null) {
+    return null;
+  }
+
+  return normalizeEmailAddress(
+    PARTICIPANT_HEADER_EMAIL_PATTERN.exec(headerValue)?.[0] ?? null,
+  );
 }
 
 const OUTBOUND_SUBJECT_PREFIX_PATTERN =
@@ -2150,6 +2233,8 @@ function isPreviewTimelineItem(item: TimelineItem): boolean {
 function buildTimelineEntry(input: {
   readonly contactDisplayName: string;
   readonly contactPrimaryEmail: string | null;
+  readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
+  readonly operatorDisplayName: string;
   readonly inboxProjection: InboxProjectionRow;
   readonly item: TimelineItem;
   readonly campaignActivitySummaryByCampaignId: Readonly<
@@ -2250,6 +2335,12 @@ function buildTimelineEntry(input: {
             proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
           }))
       : [];
+  const canonicalSenderDisplayName =
+    input.item.family === "one_to_one_email"
+      ? input.contactDisplayNameByEmail.get(
+          participantHeaderEmail(input.item.fromHeader ?? null) ?? "",
+        ) ?? null
+      : null;
 
   return {
     id: input.item.id,
@@ -2264,6 +2355,8 @@ function buildTimelineEntry(input: {
       input.item,
       input.contactDisplayName,
       finalKind,
+      input.operatorDisplayName,
+      canonicalSenderDisplayName,
     ),
     subject,
     body: resolvedBody,
@@ -2444,6 +2537,14 @@ function pickPrimaryActiveProjectName(input: {
 
 async function loadProjectMetadataById(
   memberships: readonly ContactMembershipRecord[],
+  /**
+   * Additional project IDs to look up beyond what the contact's memberships
+   * surface. The conversation-derived project pill needs the metadata for
+   * any project_id that appears in salesforce_event_context for this
+   * contact's events, even when no membership exists (external contacts
+   * sent FROM a project alias).
+   */
+  extraProjectIds: readonly (string | null | undefined)[] = [],
 ): Promise<
   Readonly<
     Record<
@@ -2455,9 +2556,10 @@ async function loadProjectMetadataById(
     >
   >
 > {
-  const projectIds = uniqueStrings(
-    memberships.map((membership) => membership.projectId),
-  );
+  const projectIds = uniqueStrings([
+    ...memberships.map((membership) => membership.projectId),
+    ...extraProjectIds,
+  ]);
 
   if (projectIds.length === 0) {
     return {};
@@ -3052,11 +3154,20 @@ async function readInboxDetailCacheData(
       .filter((event) => event.eventType === "communication.email.outbound")
       .map((event) => event.sourceEvidenceId),
   );
+  const canonicalSourceEvidenceIds = uniqueStrings(
+    canonicalEvents.map((event) => event.sourceEvidenceId),
+  );
   const gmailDetails =
     gmailSourceEvidenceIds.length === 0
       ? []
       : await runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
           gmailSourceEvidenceIds,
+        );
+  const salesforceEventContexts =
+    canonicalSourceEvidenceIds.length === 0
+      ? []
+      : await runtime.repositories.salesforceEventContext.listBySourceEvidenceIds(
+          canonicalSourceEvidenceIds,
         );
   const gmailDetailBySourceEvidenceId = new Map(
     gmailDetails.map((detail) => [detail.sourceEvidenceId, detail]),
@@ -3078,12 +3189,62 @@ async function readInboxDetailCacheData(
       .map((item) => sourceEvidenceIdByCanonicalEventId.get(item.canonicalEventId))
       .filter((value): value is string => typeof value === "string"),
   );
+  const senderEmails = uniqueStrings(
+    timelinePage.items
+      .flatMap((item) =>
+        item.family === "one_to_one_email"
+          ? [participantHeaderEmail(item.fromHeader ?? null)]
+          : [],
+      )
+      .filter((value): value is string => value !== null),
+  );
   const attachments =
     timelineSourceEvidenceIds.length === 0
       ? []
       : await runtime.repositories.messageAttachments.findByMessageIds(
           timelineSourceEvidenceIds,
         );
+  const contactIdentityMatches = await Promise.all(
+    senderEmails.map(async (email) => ({
+      email,
+      identities:
+        await runtime.repositories.contactIdentities.listByNormalizedValue({
+          kind: "email",
+          normalizedValue: email,
+        }),
+    })),
+  );
+  const matchedContactIds = uniqueStrings(
+    contactIdentityMatches.flatMap(({ identities }) =>
+      identities.map((identity) => identity.contactId),
+    ),
+  );
+  const matchedContacts =
+    matchedContactIds.length === 0
+      ? []
+      : await runtime.repositories.contacts.listByIds(matchedContactIds);
+  const contactById = new Map(matchedContacts.map((row) => [row.id, row]));
+  const contactDisplayNameByEmail = new Map<string, string>();
+
+  if (
+    contact.primaryEmail !== null &&
+    normalizeEmailAddress(contact.primaryEmail) !== null
+  ) {
+    contactDisplayNameByEmail.set(
+      normalizeEmailAddress(contact.primaryEmail) ?? "",
+      contact.displayName,
+    );
+  }
+
+  for (const match of contactIdentityMatches) {
+    const contactId = match.identities[0]?.contactId;
+    const matchedContact =
+      contactId === undefined ? null : (contactById.get(contactId) ?? null);
+
+    if (matchedContact !== null) {
+      contactDisplayNameByEmail.set(match.email, matchedContact.displayName);
+    }
+  }
   const attachmentsBySourceEvidenceId = new Map<
     string,
     MessageAttachmentRecord[]
@@ -3114,7 +3275,20 @@ async function readInboxDetailCacheData(
         runtime,
         canonicalEvents,
       }),
-    projectMetadataById: await loadProjectMetadataById(memberships),
+    canonicalEventById: new Map(canonicalEvents.map((event) => [event.id, event])),
+    projectMetadataById: await loadProjectMetadataById(
+      memberships,
+      salesforceEventContexts.map((context) => context.projectId),
+    ),
+    salesforceEventContextBySourceEvidenceId: new Map(
+      salesforceEventContexts.map((context) => [
+        context.sourceEvidenceId,
+        {
+          projectId: context.projectId,
+        },
+      ]),
+    ),
+    contactDisplayNameByEmail,
     projectLabelByAlias: await loadProjectLabelByAlias(projectAliasRecords),
     attachmentsByCanonicalEventId: new Map(
       timelinePage.items.map((item) => [
@@ -3427,6 +3601,70 @@ function buildContactSummary(input: {
   };
 }
 
+function buildConversationProject(input: {
+  readonly contact: InboxContactSummaryViewModel;
+  readonly timelineItems: readonly TimelineItem[];
+  readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
+  readonly salesforceEventContextBySourceEvidenceId: ReadonlyMap<
+    string,
+    {
+      readonly projectId: string | null;
+    }
+  >;
+  readonly projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >;
+}): InboxDetailViewModel["conversationProject"] {
+  const membershipProject = input.contact.activeProjects[0];
+
+  if (membershipProject !== undefined) {
+    return {
+      projectId: membershipProject.projectId,
+      projectName: membershipProject.projectName,
+      source: "membership",
+    };
+  }
+
+  for (const item of [...input.timelineItems].sort((left, right) =>
+    right.occurredAt.localeCompare(left.occurredAt),
+  )) {
+    const sourceEvidenceId =
+      input.canonicalEventById.get(item.canonicalEventId)?.sourceEvidenceId;
+
+    if (sourceEvidenceId === undefined) {
+      continue;
+    }
+
+    const projectId =
+      input.salesforceEventContextBySourceEvidenceId.get(sourceEvidenceId)
+        ?.projectId ?? null;
+
+    if (projectId === null) {
+      continue;
+    }
+
+    const projectName = input.projectMetadataById[projectId]?.projectName;
+
+    if (typeof projectName !== "string" || projectName.length === 0) {
+      continue;
+    }
+
+    return {
+      projectId,
+      projectName,
+      source: "conversation",
+    };
+  }
+
+  return null;
+}
+
 function matchesServerFilter(
   item: InboxListItemViewModel,
   filterId: InboxFilterId,
@@ -3542,12 +3780,15 @@ export async function getInboxTimelinePage(
   }
 
   const referenceNowIso = new Date().toISOString();
+  const operatorDisplayName = "Adventure Scientists";
 
   return {
     entries: cachedData.timelineItems.map((item) =>
       buildTimelineEntry({
         contactDisplayName: cachedData.contact.displayName,
         contactPrimaryEmail: cachedData.contact.primaryEmail,
+        contactDisplayNameByEmail: cachedData.contactDisplayNameByEmail,
+        operatorDisplayName,
         inboxProjection: cachedData.inboxProjection,
         item,
         campaignActivitySummaryByCampaignId:
@@ -3624,6 +3865,18 @@ export async function getInboxDetail(
 
   const runtime = await getStage1WebRuntime();
   const referenceNowIso = new Date().toISOString();
+  const currentUser = await getCurrentUser();
+  const operatorDisplayName =
+    normalizeDisplayName(currentUser?.name ?? "") || "Adventure Scientists";
+  const contactSummary = buildContactSummary({
+    contact: cachedData.contact,
+    inboxProjection: cachedData.inboxProjection,
+    memberships: cachedData.memberships,
+    latestNote: cachedData.latestNote,
+    activityTimelineItems: cachedData.activityTimelineItems,
+    projectMetadataById: cachedData.projectMetadataById,
+    referenceNowIso,
+  });
   const composerReplyContext = buildComposerReplyContext({
     contact: cachedData.contact,
     timelineItems: cachedData.timelineItems,
@@ -3634,14 +3887,14 @@ export async function getInboxDetail(
   });
 
   return {
-    contact: buildContactSummary({
-      contact: cachedData.contact,
-      inboxProjection: cachedData.inboxProjection,
-      memberships: cachedData.memberships,
-      latestNote: cachedData.latestNote,
-      activityTimelineItems: cachedData.activityTimelineItems,
+    contact: contactSummary,
+    conversationProject: buildConversationProject({
+      contact: contactSummary,
+      timelineItems: cachedData.activityTimelineItems,
+      canonicalEventById: cachedData.canonicalEventById,
+      salesforceEventContextBySourceEvidenceId:
+        cachedData.salesforceEventContextBySourceEvidenceId,
       projectMetadataById: cachedData.projectMetadataById,
-      referenceNowIso,
     }),
     initials: toInitials(cachedData.contact.displayName),
     avatarTone: avatarToneForContact(cachedData.contact.id),
@@ -3649,6 +3902,8 @@ export async function getInboxDetail(
       buildTimelineEntry({
         contactDisplayName: cachedData.contact.displayName,
         contactPrimaryEmail: cachedData.contact.primaryEmail,
+        contactDisplayNameByEmail: cachedData.contactDisplayNameByEmail,
+        operatorDisplayName,
         inboxProjection: cachedData.inboxProjection,
         item,
         campaignActivitySummaryByCampaignId:

@@ -342,6 +342,11 @@ export interface InboxComposerReplyContext {
 
 export interface InboxDetailViewModel {
   readonly contact: InboxContactSummaryViewModel;
+  readonly conversationProject: {
+    readonly projectId: string;
+    readonly projectName: string;
+    readonly source: "membership" | "conversation";
+  } | null;
   readonly initials: string;
   readonly avatarTone: InboxAvatarTone;
   readonly timeline: readonly InboxTimelineEntryViewModel[];
