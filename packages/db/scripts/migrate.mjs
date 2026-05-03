@@ -137,15 +137,40 @@ async function bootstrap(sql, migrations) {
   `;
 }
 
+// Migrations may opt out of the per-migration transaction by including the
+// directive `-- migrate:no-transaction` anywhere in the file. Required for
+// statements Postgres forbids inside transaction blocks — most commonly
+// `ALTER TYPE ... ADD VALUE` and `CREATE INDEX CONCURRENTLY`.
+//
+// The trade-off: a partial-failure mid-migration leaves the DB in an
+// intermediate state. Keep no-transaction migrations narrow (ideally a
+// single statement) so partial failure is recoverable.
+const NO_TRANSACTION_DIRECTIVE = /^[ \t]*--[ \t]*migrate:no-transaction\b/mu;
+
+function migrationOptsOutOfTransaction(migration) {
+  return NO_TRANSACTION_DIRECTIVE.test(migration.sql);
+}
+
 async function applyMigration(sql, migration) {
-  log(`applying ${migration.id}`);
-  await sql.begin(async (tx) => {
-    await tx.unsafe(migration.sql);
-    await tx`
-      INSERT INTO ${tx(TRACKING_TABLE)} (id, hash)
+  const noTransaction = migrationOptsOutOfTransaction(migration);
+  log(`applying ${migration.id}${noTransaction ? " (no-transaction)" : ""}`);
+
+  if (noTransaction) {
+    await sql.unsafe(migration.sql);
+    await sql`
+      INSERT INTO ${sql(TRACKING_TABLE)} (id, hash)
       VALUES (${migration.id}, ${migration.hash})
     `;
-  });
+  } else {
+    await sql.begin(async (tx) => {
+      await tx.unsafe(migration.sql);
+      await tx`
+        INSERT INTO ${tx(TRACKING_TABLE)} (id, hash)
+        VALUES (${migration.id}, ${migration.hash})
+      `;
+    });
+  }
+
   log(`applied ${migration.id}`);
 }
 
