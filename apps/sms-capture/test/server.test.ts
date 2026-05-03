@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 
+import { smsSenders } from "@as-comms/db";
 import { createTestStage1Context, type TestStage1Context } from "@as-comms/db/test-helpers";
 import type { TwilioProvider } from "@as-comms/integrations";
 import { afterEach, describe, expect, it } from "vitest";
@@ -82,6 +83,37 @@ describe("SMS capture server", () => {
   it("updates the sms message row on a signed status callback", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);
+
+    const seedTimestamp = new Date("2026-05-03T12:00:00.000Z");
+    await context.settings.users.upsert({
+      id: "user-1",
+      name: "Test Operator",
+      email: "operator@example.org",
+      emailVerified: seedTimestamp,
+      image: null,
+      role: "operator",
+      deactivatedAt: null,
+      createdAt: seedTimestamp,
+      updatedAt: seedTimestamp,
+    });
+    await context.repositories.contacts.upsert({
+      id: "contact-1",
+      salesforceContactId: null,
+      displayName: "Volunteer One",
+      primaryEmail: null,
+      primaryPhone: "+14065550143",
+      createdAt: seedTimestamp.toISOString(),
+      updatedAt: seedTimestamp.toISOString(),
+    });
+    await context.db.insert(smsSenders).values({
+      id: "sender-1",
+      phoneE164: "+14065550142",
+      displayName: "AS Test Sender",
+      monthlyCap: null,
+      isActive: true,
+      createdAt: seedTimestamp,
+      updatedAt: seedTimestamp,
+    });
 
     await context.repositories.smsMessages.insert({
       id: "sms-message-1",
