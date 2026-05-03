@@ -870,6 +870,10 @@ export async function buildEventFromStoredData(input: {
         mailchimpCampaignActivityDetail: detail
       };
     }
+    case "twilio":
+      throw new Error(
+        `Twilio source evidence ${sourceEvidenceId} cannot be reconciled through the identity queue operation.`
+      );
     case "manual":
       throw new Error(
         `Manual source evidence ${sourceEvidenceId} cannot be reconciled through the identity queue operation.`

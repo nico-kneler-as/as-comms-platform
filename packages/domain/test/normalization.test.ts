@@ -392,6 +392,22 @@ function buildContext(input: {
         return Promise.resolve(record);
       },
     },
+    smsMessages: {
+      insert: (record) => Promise.resolve(record),
+      findByTwilioSid: () => Promise.resolve(null),
+      listByContact: () => Promise.resolve([]),
+      updateSendStatus: () => Promise.resolve(null),
+    },
+    consentRecords: {
+      findLatestByPhone: () => Promise.resolve(null),
+      findLatestByContact: () => Promise.resolve(null),
+      insert: (record) => Promise.resolve(record),
+    },
+    smsSenders: {
+      listActive: () => Promise.resolve([]),
+      findById: () => Promise.resolve(null),
+      findByPhone: () => Promise.resolve(null),
+    },
     projectDimensions: {
       listAll: () => Promise.resolve([]),
       listActive: () => Promise.resolve([]),

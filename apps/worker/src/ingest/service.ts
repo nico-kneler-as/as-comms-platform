@@ -127,6 +127,10 @@ function toStage1IngestProvider(
     case "simpletexting":
     case "mailchimp":
       return provider;
+    case "twilio":
+      throw new Error(
+        "Twilio provider records are not supported by the Stage 1 ingest service.",
+      );
     case "manual":
       throw new Error(
         "Manual provider records are not supported by the Stage 1 ingest service.",

@@ -11,7 +11,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "node ../../scripts/clean-dist.mjs dist && tsc -p tsconfig.build.json",
     "lint": "eslint src test --max-warnings=0",
@@ -19,6 +21,7 @@
     "test:unit": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "@as-comms/contracts": "workspace:*"
+    "@as-comms/contracts": "workspace:*",
+    "libphonenumber-js": "^1.12.42"
   }
 }

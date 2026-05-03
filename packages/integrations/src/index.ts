@@ -31,3 +31,4 @@ export * from "./providers/anthropic.js";
 export * from "./providers/notion.js";
 export * from "./providers/salesforce.js";
 export * from "./providers/simpletexting.js";
+export * from "./providers/twilio.js";

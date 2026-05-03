@@ -252,6 +252,118 @@ export const expeditionDimensions = pgTable(
   (table) => [index("expedition_dimensions_project_idx").on(table.projectId)],
 );
 
+export const smsSenders = pgTable(
+  "sms_senders",
+  {
+    id: text("id").primaryKey(),
+    phoneE164: text("phone_e164").notNull(),
+    displayName: text("display_name").notNull(),
+    monthlyCap: integer("monthly_cap"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    uniqueIndex("sms_senders_phone_e164_unique").on(table.phoneE164),
+  ],
+);
+
+export const smsMessages = pgTable(
+  "sms_messages",
+  {
+    id: text("id").primaryKey(),
+    twilioMessageSid: text("twilio_message_sid"),
+    direction: text("direction").notNull(),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    phoneE164: text("phone_e164").notNull(),
+    senderId: text("sender_id")
+      .notNull()
+      .references(() => smsSenders.id, { onDelete: "restrict" }),
+    body: text("body").notNull(),
+    segments: integer("segments").notNull().default(1),
+    encoding: text("encoding").notNull(),
+    mediaUrls: text("media_urls").array(),
+    sendStatus: text("send_status").notNull(),
+    failedReason: text("failed_reason"),
+    failedDetail: text("failed_detail"),
+    sentAt: timestamp("sent_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    receivedAt: timestamp("received_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    actorId: text("actor_id").references(() => users.id),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    check(
+      "sms_messages_direction_check",
+      sql`${table.direction} IN ('inbound', 'outbound')`,
+    ),
+    check(
+      "sms_messages_encoding_check",
+      sql`${table.encoding} IN ('GSM-7', 'Unicode')`,
+    ),
+    index("sms_messages_contact_created_idx").on(
+      table.contactId,
+      sql`${table.createdAt} DESC`,
+    ),
+    uniqueIndex("sms_messages_twilio_sid_unique")
+      .on(table.twilioMessageSid)
+      .where(isNotNull(table.twilioMessageSid)),
+    index("sms_messages_phone_e164_idx").on(table.phoneE164),
+  ],
+);
+
+export const consentRecords = pgTable(
+  "consent_records",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id").references(() => contacts.id, {
+      onDelete: "cascade",
+    }),
+    phoneE164: text("phone_e164").notNull(),
+    status: text("status").notNull(),
+    source: text("source").notNull(),
+    sourceDetail: text("source_detail"),
+    consentedAt: timestamp("consented_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    revokedAt: timestamp("revoked_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    recordedByUserId: text("recorded_by_user_id").references(() => users.id),
+    notes: text("notes"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    check(
+      "consent_records_status_check",
+      sql`${table.status} IN ('opted_in', 'revoked')`,
+    ),
+    check(
+      "consent_records_source_check",
+      sql`${table.source} IN ('volunteer_application_form', 'sms_reply_yes', 'operator_attestation', 'salesforce_field', 'inbound_thread')`,
+    ),
+    index("consent_records_phone_created_idx").on(
+      table.phoneE164,
+      sql`${table.createdAt} DESC`,
+    ),
+    index("consent_records_contact_created_idx").on(
+      table.contactId,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
 export const gmailMessageDetails = pgTable(
   "gmail_message_details",
   {

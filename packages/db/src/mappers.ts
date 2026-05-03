@@ -52,6 +52,9 @@ import type {
   ProjectAliasRecord,
   SourceEvidenceQuarantineInput,
   SourceEvidenceQuarantineRecord,
+  ConsentRecord,
+  SmsMessageRecord,
+  SmsSenderRecord,
   UserRecord,
 } from "@as-comms/domain";
 
@@ -59,6 +62,7 @@ import type {
   aiKnowledgeEntries,
   auditPolicyEvidence,
   canonicalEventLedger,
+  consentRecords,
   contactIdentities,
   contactInboxProjection,
   contactMemberships,
@@ -79,6 +83,8 @@ import type {
   salesforceCommunicationDetails,
   salesforceEventContext,
   simpleTextingMessageDetails,
+  smsMessages,
+  smsSenders,
   sourceEvidenceLog,
   sourceEvidenceQuarantine,
   syncState,
@@ -93,6 +99,9 @@ type CanonicalEventRow = typeof canonicalEventLedger.$inferSelect;
 type ContactRow = typeof contacts.$inferSelect;
 type ContactIdentityRow = typeof contactIdentities.$inferSelect;
 type ContactMembershipRow = typeof contactMemberships.$inferSelect;
+type SmsMessageRow = typeof smsMessages.$inferSelect;
+type ConsentRecordRow = typeof consentRecords.$inferSelect;
+type SmsSenderRow = typeof smsSenders.$inferSelect;
 type ProjectDimensionRow = typeof projectDimensions.$inferSelect;
 type ExpeditionDimensionRow = typeof expeditionDimensions.$inferSelect;
 type GmailMessageDetailRow = typeof gmailMessageDetails.$inferSelect;
@@ -407,6 +416,116 @@ export function mapContactMembershipToInsert(
     status: parsed.status,
     source: parsed.source,
     createdAt: toDate(parsed.createdAt),
+  };
+}
+
+export function mapSmsMessageRow(row: SmsMessageRow): SmsMessageRecord {
+  return {
+    id: row.id,
+    twilioMessageSid: row.twilioMessageSid,
+    direction: row.direction as SmsMessageRecord["direction"],
+    contactId: row.contactId,
+    phoneE164: row.phoneE164,
+    senderId: row.senderId,
+    body: row.body,
+    segments: row.segments,
+    encoding: row.encoding as SmsMessageRecord["encoding"],
+    mediaUrls: row.mediaUrls,
+    sendStatus: row.sendStatus,
+    failedReason: row.failedReason,
+    failedDetail: row.failedDetail,
+    sentAt: row.sentAt,
+    receivedAt: row.receivedAt,
+    actorId: row.actorId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function mapSmsMessageToInsert(
+  record: SmsMessageRecord,
+): typeof smsMessages.$inferInsert {
+  return {
+    id: record.id,
+    twilioMessageSid: record.twilioMessageSid,
+    direction: record.direction,
+    contactId: record.contactId,
+    phoneE164: record.phoneE164,
+    senderId: record.senderId,
+    body: record.body,
+    segments: record.segments,
+    encoding: record.encoding,
+    mediaUrls: record.mediaUrls === null ? null : [...record.mediaUrls],
+    sendStatus: record.sendStatus,
+    failedReason: record.failedReason,
+    failedDetail: record.failedDetail,
+    sentAt: record.sentAt,
+    receivedAt: record.receivedAt,
+    actorId: record.actorId,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+export function mapConsentRecordRow(row: ConsentRecordRow): ConsentRecord {
+  return {
+    id: row.id,
+    contactId: row.contactId,
+    phoneE164: row.phoneE164,
+    status: row.status as ConsentRecord["status"],
+    source: row.source as ConsentRecord["source"],
+    sourceDetail: row.sourceDetail,
+    consentedAt: row.consentedAt,
+    revokedAt: row.revokedAt,
+    recordedByUserId: row.recordedByUserId,
+    notes: row.notes,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function mapConsentRecordToInsert(
+  record: ConsentRecord,
+): typeof consentRecords.$inferInsert {
+  return {
+    id: record.id,
+    contactId: record.contactId,
+    phoneE164: record.phoneE164,
+    status: record.status,
+    source: record.source,
+    sourceDetail: record.sourceDetail,
+    consentedAt: record.consentedAt,
+    revokedAt: record.revokedAt,
+    recordedByUserId: record.recordedByUserId,
+    notes: record.notes,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+export function mapSmsSenderRow(row: SmsSenderRow): SmsSenderRecord {
+  return {
+    id: row.id,
+    phoneE164: row.phoneE164,
+    displayName: row.displayName,
+    monthlyCap: row.monthlyCap,
+    isActive: row.isActive,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export function mapSmsSenderToInsert(
+  record: SmsSenderRecord,
+): typeof smsSenders.$inferInsert {
+  return {
+    id: record.id,
+    phoneE164: record.phoneE164,
+    displayName: record.displayName,
+    monthlyCap: record.monthlyCap,
+    isActive: record.isActive,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
   };
 }
 
