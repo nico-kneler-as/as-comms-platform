@@ -24,6 +24,7 @@ import { TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { TimelineAutomatedRow } from "./inbox-timeline-automated-row";
 import { MessageBubble } from "./inbox-timeline-bubble";
 import { TimelineNoteEntry } from "./inbox-timeline-note-entry";
+import { SmsMessage } from "./sms-message";
 import { SystemDivider } from "./inbox-timeline-system-divider";
 
 export { shouldHideAutomatedRowBody } from "./inbox-timeline-automated-row";
@@ -279,6 +280,16 @@ function TimelineEntry({
 
   switch (role) {
     case "inbound":
+      if (entry.kind === "inbound-sms") {
+        return (
+          <SmsMessage
+            entry={entry}
+            direction="inbound"
+            {...(onReply === undefined ? {} : { onReply })}
+          />
+        );
+      }
+
       return (
         <MessageBubble
           entry={entry}
@@ -287,6 +298,18 @@ function TimelineEntry({
         />
       );
     case "outbound":
+      if (entry.kind === "outbound-sms") {
+        return (
+          <SmsMessage
+            entry={entry}
+            direction="outbound"
+            isRetrying={retryingEntryId === entry.id}
+            {...(onReply === undefined ? {} : { onReply })}
+            {...(onRetryPending === undefined ? {} : { onRetryPending })}
+          />
+        );
+      }
+
       return (
         <MessageBubble
           entry={entry}

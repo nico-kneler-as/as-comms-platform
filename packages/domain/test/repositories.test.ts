@@ -68,6 +68,7 @@ describe("defineStage1RepositoryBundle", () => {
       contacts: {
         findById: () => Promise.resolve(contact),
         findBySalesforceContactId: () => Promise.resolve(contact),
+        findByPrimaryPhone: () => Promise.resolve(contact),
         listAll: () => Promise.resolve([contact]),
         listByIds: () => Promise.resolve([contact]),
         searchByQuery: () => Promise.resolve([contact]),

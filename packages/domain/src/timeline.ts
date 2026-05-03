@@ -829,6 +829,16 @@ function isDisplayableCommunicationEvent(input: {
     return false;
   }
 
+  // Twilio inbound SMS is anchored in the canonical ledger for inbox
+  // projection/rebuild truth, but the visible chat bubble is intentionally
+  // sourced from `sms_messages` rather than timeline projection rows.
+  if (
+    input.event.provenance.primaryProvider === "twilio" &&
+    input.event.channel === "sms"
+  ) {
+    return false;
+  }
+
   try {
     resolveFamily(
       input.event,

@@ -164,6 +164,7 @@ export interface ContactRepository {
   findBySalesforceContactId(
     salesforceContactId: string,
   ): Promise<ContactRecord | null>;
+  findByPrimaryPhone(phoneE164: string): Promise<ContactRecord | null>;
   listAll(): Promise<readonly ContactRecord[]>;
   listByIds(ids: readonly string[]): Promise<readonly ContactRecord[]>;
   searchByQuery(input: {
