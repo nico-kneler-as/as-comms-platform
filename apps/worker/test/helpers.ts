@@ -9,6 +9,10 @@ import {
   createTestStage1Context,
   type TestStage1Context
 } from "@as-comms/db/test-helpers";
+import {
+  createMailchimpCampaignTailStateRepository,
+  type MailchimpCampaignTailStateRepository
+} from "@as-comms/db";
 import { createStage1IngestService, type Stage1IngestService } from "../src/ingest/index.js";
 import {
   createStage1SyncStateService,
@@ -25,6 +29,7 @@ export interface TestWorkerContext extends TestStage1Context {
   readonly ingest: Stage1IngestService;
   readonly syncState: Stage1SyncStateService;
   readonly capture: Stage1ProviderCapturePorts;
+  readonly mailchimpTailState: MailchimpCampaignTailStateRepository;
   readonly orchestration: Stage1WorkerOrchestrationService;
   dispose(): Promise<void>;
 }
@@ -122,6 +127,10 @@ export async function createTestWorkerContext(input?: {
     readonly liveAccount?: string;
     readonly projectInboxAliases?: readonly string[];
   };
+  readonly mailchimpTransition?: {
+    readonly enabled?: boolean;
+    readonly discoverySeed?: string;
+  };
   readonly revalidateInboxViews?: (input: {
     readonly contactIds: readonly string[];
   }) => Promise<void>;
@@ -196,6 +205,9 @@ export async function createTestWorkerContext(input?: {
   const { persistence } = baseContext;
   const ingest = createStage1IngestService(normalization);
   const capture = input?.capture ?? createEmptyCapturePorts();
+  const mailchimpTailState = createMailchimpCampaignTailStateRepository(
+    baseContext.db,
+  );
   const orchestration = createStage1WorkerOrchestrationService({
     capture,
     ingest,
@@ -210,6 +222,13 @@ export async function createTestWorkerContext(input?: {
           "orcas@adventurescientists.org"
         ])
       ]
+    },
+    mailchimpTransition: {
+      enabled: input?.mailchimpTransition?.enabled ?? false,
+      discoverySeed:
+        input?.mailchimpTransition?.discoverySeed ??
+        "2026-01-01T00:00:00.000Z",
+      tailState: mailchimpTailState,
     },
     ...(input?.revalidateInboxViews === undefined
       ? {}
@@ -229,6 +248,7 @@ export async function createTestWorkerContext(input?: {
     ingest,
     syncState: createStage1SyncStateService(persistence),
     capture,
+    mailchimpTailState,
     orchestration,
     async dispose() {
       await baseContext.client.close();

@@ -1,4 +1,5 @@
 export * from "./errors.js";
+export * from "./mailchimp-transition-scheduler.js";
 export * from "./service.js";
 export * from "./sync-state.js";
 export * from "./tasks.js";

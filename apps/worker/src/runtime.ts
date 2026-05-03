@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   closeDatabaseConnection,
+  createMailchimpCampaignTailStateRepository,
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
@@ -36,6 +37,7 @@ import { reconcileRoutingReviewQueueJobName } from "./jobs/reconcile-routing-rev
 import {
   createStage1SyncStateService,
   createStage1WorkerOrchestrationService,
+  mailchimpTransitionSchedulerJobName,
   type MailchimpCapturePort,
   pollGmailLiveJobName,
   pollIntegrationHealthJobName,
@@ -49,12 +51,26 @@ import { reconcileStaleRunningJobName } from "./jobs/reconcile-stale-running.js"
 import { sweepPendingOutboundsJobName } from "./jobs/sweep-pending-outbounds.js";
 
 const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
+const mailchimpTransitionDiscoverySeedLookbackDays = 35;
+
+function parseBooleanEnv(value: unknown): boolean {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
 
 const workerCaptureConfigSchema = z.object({
   gmail: capturePortHttpConfigSchema,
   salesforce: capturePortHttpConfigSchema,
   simpleTexting: capturePortHttpConfigSchema.optional(),
   mailchimp: capturePortHttpConfigSchema.optional(),
+});
+
+const workerMailchimpTransitionConfigSchema = z.object({
+  enabled: z.preprocess(parseBooleanEnv, z.boolean()).default(false),
+  discoverySeed: z.string().datetime(),
 });
 
 const workerWebConfigSchema = z.object({
@@ -67,6 +83,7 @@ const workerConfigSchema = z.object({
   concurrency: z.number().int().positive().default(1),
   launchScope: stage1LaunchScopeConfigSchema,
   capture: workerCaptureConfigSchema,
+  mailchimpTransition: workerMailchimpTransitionConfigSchema,
   web: workerWebConfigSchema.optional(),
 });
 
@@ -102,6 +119,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
   return [
     `*/${String(gmailMinutes)} * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
     `*/${String(salesforceMinutes)} * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
+    `0 * * * * ${mailchimpTransitionSchedulerJobName} ?id=mailchimp-transition-scheduler&max=1`,
     `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
     `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
     `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
@@ -122,6 +140,25 @@ function readSyncStateLeaseThresholdMs(env: NodeJS.ProcessEnv): number {
   }
 
   return parsed;
+}
+
+function buildDefaultMailchimpTransitionDiscoverySeed(now = new Date()): string {
+  return new Date(
+    now.getTime() -
+      mailchimpTransitionDiscoverySeedLookbackDays * 24 * 60 * 60 * 1000,
+  ).toISOString();
+}
+
+function readMailchimpTransitionConfig(
+  env: NodeJS.ProcessEnv,
+  now = new Date(),
+): z.infer<typeof workerMailchimpTransitionConfigSchema> {
+  return workerMailchimpTransitionConfigSchema.parse({
+    enabled: env.MAILCHIMP_TRANSITION_ENABLED,
+    discoverySeed:
+      env.MAILCHIMP_TRANSITION_DISCOVERY_SEED ??
+      buildDefaultMailchimpTransitionDiscoverySeed(now),
+  });
 }
 
 function readOptionalCaptureConfig(
@@ -224,6 +261,7 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig | null {
         tokenKey: "MAILCHIMP_CAPTURE_TOKEN",
       }),
     },
+    mailchimpTransition: readMailchimpTransitionConfig(env),
     web: readOptionalWebConfig(env),
   });
 }
@@ -275,6 +313,9 @@ export async function createStage1WorkerRuntimeServices(
       : [...config.launchScope.gmail.projectInboxAliases];
 
   const repositories = createStage1RepositoryBundleFromConnection(connection);
+  const mailchimpTailState = createMailchimpCampaignTailStateRepository(
+    connection.db,
+  );
   const settings = createStage2RepositoryBundleFromConnection(connection);
   const notionKnowledgeSync = readNotionKnowledgeSyncConfig(
     input?.env ?? process.env,
@@ -328,6 +369,11 @@ export async function createStage1WorkerRuntimeServices(
     gmailHistoricalReplay: {
       liveAccount: config.launchScope.gmail.liveAccount,
       projectInboxAliases,
+    },
+    mailchimpTransition: {
+      enabled: config.mailchimpTransition.enabled,
+      discoverySeed: config.mailchimpTransition.discoverySeed,
+      tailState: mailchimpTailState,
     },
   });
 
