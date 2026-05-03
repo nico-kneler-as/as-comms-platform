@@ -6,7 +6,6 @@
   },
   "deploy": {
     "startCommand": "pnpm --filter @as-comms/worker start",
-    "preDeployCommand": "pnpm --filter @as-comms/db migrate",
     "healthcheckPath": null
   }
 }
