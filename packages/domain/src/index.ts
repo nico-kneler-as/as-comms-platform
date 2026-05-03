@@ -1,3 +1,4 @@
+export * from "./contact-resolution.js";
 export * from "./consent.js";
 export * from "./inbox-driving.js";
 export * from "./notes.js";

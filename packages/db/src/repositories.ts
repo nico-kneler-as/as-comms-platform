@@ -1628,6 +1628,16 @@ function createStage1RepositoriesInternal(
         return row === undefined ? null : mapContactRow(row);
       },
 
+      async findByPrimaryPhone(phoneE164) {
+        const [row] = await db
+          .select()
+          .from(contacts)
+          .where(eq(contacts.primaryPhone, phoneE164))
+          .limit(1);
+
+        return row === undefined ? null : mapContactRow(row);
+      },
+
       async listAll() {
         const rows = await db.select().from(contacts).orderBy(asc(contacts.id));
 

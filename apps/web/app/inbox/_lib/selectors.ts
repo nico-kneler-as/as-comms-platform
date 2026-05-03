@@ -9,6 +9,7 @@ import type {
 } from "@as-comms/contracts";
 
 import { getCurrentUser } from "@/src/server/auth/session";
+import { readWebEnv } from "@/src/server/env";
 import { recordSensitiveReadForCurrentUserDetached } from "@/src/server/security/audit";
 import { getStage1WebRuntime } from "../../../src/server/stage1-runtime";
 import {
@@ -40,6 +41,17 @@ import type {
   InboxWelcomeWorkloadViewModel,
 } from "./view-models";
 export { groupInboxTimelineSystemMessages } from "./view-models";
+
+function filterSmsTimelineItems(
+  items: readonly TimelineItem[],
+  smsEnabled: boolean,
+): readonly TimelineItem[] {
+  if (smsEnabled) {
+    return items;
+  }
+
+  return items.filter((item) => item.family !== "one_to_one_sms");
+}
 
 interface InboxListCacheRow {
   readonly contact: ContactRecord;
@@ -2426,10 +2438,14 @@ function buildTimelineEntry(input: {
         })
       : [];
   const isUnread =
-    input.inboxProjection.bucket === "New" &&
-    input.item.canonicalEventId ===
-      input.inboxProjection.lastCanonicalEventId &&
-    (finalKind === "inbound-email" || finalKind === "inbound-sms");
+    finalKind === "inbound-sms"
+      ? input.inboxProjection.bucket === "New" &&
+        input.inboxProjection.lastEventType === "communication.sms.inbound" &&
+        input.inboxProjection.lastInboundAt === input.item.occurredAt
+      : input.inboxProjection.bucket === "New" &&
+        input.item.canonicalEventId ===
+          input.inboxProjection.lastCanonicalEventId &&
+        finalKind === "inbound-email";
   const attachments =
     input.item.family === "one_to_one_email"
       ? buildEmailAttachmentsForEntry({
@@ -3460,6 +3476,7 @@ async function readInboxDetailCacheData(
   },
 ): Promise<InboxDetailCacheData | null> {
   const runtime = await getStage1WebRuntime();
+  const env = readWebEnv();
   const [
     contact,
     inboxProjection,
@@ -3522,7 +3539,7 @@ async function readInboxDetailCacheData(
   }
 
   const visibleTimelineItems = filterItemsAtOrAfterPlatformFullCaptureCutover(
-    activityTimelineItems,
+    filterSmsTimelineItems(activityTimelineItems, env.SMS_ENABLED),
   );
   const timelinePage = paginateTimelineItems({
     timelineItems: visibleTimelineItems,

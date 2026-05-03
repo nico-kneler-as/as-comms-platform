@@ -358,6 +358,10 @@ function buildContext(input: {
       findById: (id) => Promise.resolve(contactsById.get(id) ?? null),
       findBySalesforceContactId: (salesforceContactId) =>
         Promise.resolve(contactsBySalesforceContactId.get(salesforceContactId) ?? null),
+      findByPrimaryPhone: (phoneE164) =>
+        Promise.resolve(
+          contacts.find((contact) => contact.primaryPhone === phoneE164) ?? null,
+        ),
       listAll: () => Promise.resolve([...contacts]),
       listByIds: (ids) =>
         Promise.resolve(
