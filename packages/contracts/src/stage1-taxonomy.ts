@@ -4,6 +4,7 @@ export const providerValues = [
   "manual",
   "gmail",
   "salesforce",
+  "twilio",
   "simpletexting",
   "mailchimp"
 ] as const;
@@ -13,6 +14,7 @@ export type Provider = z.infer<typeof providerSchema>;
 export const recordSourceValues = [
   "gmail",
   "salesforce",
+  "twilio",
   "simpletexting",
   "mailchimp",
   "manual",

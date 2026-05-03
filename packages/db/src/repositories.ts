@@ -38,6 +38,8 @@ import {
   mapAuditEvidenceToInsert,
   mapCanonicalEventRow,
   mapCanonicalEventToInsert,
+  mapConsentRecordRow,
+  mapConsentRecordToInsert,
   mapContactIdentityRow,
   mapContactIdentityToInsert,
   mapContactMembershipRow,
@@ -68,6 +70,9 @@ import {
   mapRoutingReviewToInsert,
   mapSalesforceEventContextRow,
   mapSalesforceEventContextToInsert,
+  mapSmsMessageRow,
+  mapSmsMessageToInsert,
+  mapSmsSenderRow,
   mapSourceEvidenceRow,
   mapSourceEvidenceToInsert,
   mapSourceEvidenceQuarantineRow,
@@ -84,6 +89,7 @@ import {
   aiKnowledgeEntries,
   auditPolicyEvidence,
   canonicalEventLedger,
+  consentRecords,
   contactIdentities,
   contactInboxProjection,
   contactMemberships,
@@ -105,6 +111,8 @@ import {
   salesforceCommunicationDetails,
   salesforceEventContext,
   simpleTextingMessageDetails,
+  smsMessages,
+  smsSenders,
   sourceEvidenceLog,
   sourceEvidenceQuarantine,
   syncState,
@@ -510,6 +518,142 @@ function requireRow<T>(row: T | undefined, message: string): T {
   return row;
 }
 
+function clampSmsListLimit(limit: number | undefined): number {
+  return Math.max(1, Math.min(limit ?? 50, 200));
+}
+
+function createSmsRepositorySlices(db: Stage1Database) {
+  return {
+    smsMessages: {
+      async insert(record) {
+        const values = mapSmsMessageToInsert(record);
+        const [row] = await db
+          .insert(smsMessages)
+          .values(values)
+          .returning();
+
+        return mapSmsMessageRow(
+          requireRow(row, "Expected SMS message row to be returned."),
+        );
+      },
+
+      async findByTwilioSid(sid) {
+        const [row] = await db
+          .select()
+          .from(smsMessages)
+          .where(eq(smsMessages.twilioMessageSid, sid))
+          .limit(1);
+
+        return row === undefined ? null : mapSmsMessageRow(row);
+      },
+
+      async listByContact(contactId, limit) {
+        const rows = await db
+          .select()
+          .from(smsMessages)
+          .where(eq(smsMessages.contactId, contactId))
+          .orderBy(desc(smsMessages.createdAt), desc(smsMessages.id))
+          .limit(clampSmsListLimit(limit));
+
+        return rows.map(mapSmsMessageRow);
+      },
+
+      async updateSendStatus(
+        messageId,
+        status,
+        failedReason = null,
+        failedDetail = null,
+        sentAt = null,
+      ) {
+        const [row] = await db
+          .update(smsMessages)
+          .set({
+            sendStatus: status,
+            failedReason,
+            failedDetail,
+            sentAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(smsMessages.id, messageId))
+          .returning();
+
+        return row === undefined ? null : mapSmsMessageRow(row);
+      },
+    },
+
+    consentRecords: {
+      async findLatestByPhone(phoneE164) {
+        const [row] = await db
+          .select()
+          .from(consentRecords)
+          .where(eq(consentRecords.phoneE164, phoneE164))
+          .orderBy(desc(consentRecords.createdAt), desc(consentRecords.id))
+          .limit(1);
+
+        return row === undefined ? null : mapConsentRecordRow(row);
+      },
+
+      async findLatestByContact(contactId) {
+        const [row] = await db
+          .select()
+          .from(consentRecords)
+          .where(eq(consentRecords.contactId, contactId))
+          .orderBy(desc(consentRecords.createdAt), desc(consentRecords.id))
+          .limit(1);
+
+        return row === undefined ? null : mapConsentRecordRow(row);
+      },
+
+      async insert(record) {
+        const values = mapConsentRecordToInsert(record);
+        const [row] = await db
+          .insert(consentRecords)
+          .values(values)
+          .returning();
+
+        return mapConsentRecordRow(
+          requireRow(row, "Expected consent record row to be returned."),
+        );
+      },
+    },
+
+    smsSenders: {
+      async listActive() {
+        const rows = await db
+          .select()
+          .from(smsSenders)
+          .where(eq(smsSenders.isActive, true))
+          .orderBy(asc(smsSenders.displayName), asc(smsSenders.phoneE164));
+
+        return rows.map(mapSmsSenderRow);
+      },
+
+      async findById(id) {
+        const [row] = await db
+          .select()
+          .from(smsSenders)
+          .where(eq(smsSenders.id, id))
+          .limit(1);
+
+        return row === undefined ? null : mapSmsSenderRow(row);
+      },
+
+      async findByPhone(phoneE164) {
+        const [row] = await db
+          .select()
+          .from(smsSenders)
+          .where(eq(smsSenders.phoneE164, phoneE164))
+          .limit(1);
+
+        return row === undefined ? null : mapSmsSenderRow(row);
+      },
+    },
+  } satisfies Pick<
+    Stage1RepositoryBundle,
+    "smsMessages" | "consentRecords" | "smsSenders"
+  >;
+}
+
 const DEFAULT_INTEGRATION_HEALTH_SEED = [
   {
     id: "salesforce",
@@ -768,6 +912,8 @@ function buildInboxSearchPredicate(query: string): SQL {
 function createStage1RepositoriesInternal(
   db: Stage1Database,
 ): Stage1RepositoryBundle {
+  const smsRepositories = createSmsRepositorySlices(db);
+
   return defineStage1RepositoryBundle({
     sourceEvidence: {
       async append(record) {
@@ -1620,6 +1766,8 @@ function createStage1RepositoriesInternal(
         );
       },
     },
+
+    ...smsRepositories,
 
     projectDimensions: {
       async listAll() {
@@ -3157,6 +3305,8 @@ export function createStage1RepositoryBundleFromConnection(
 function createStage2RepositoriesInternal(
   db: Stage1Database,
 ): Stage2RepositoryBundle {
+  const smsRepositories = createSmsRepositorySlices(db);
+
   async function loadSettingsProjects(projectIds?: readonly string[]) {
     const normalizedProjectIds =
       projectIds === undefined
@@ -3294,6 +3444,8 @@ function createStage2RepositoriesInternal(
   }
 
   return defineStage2RepositoryBundle({
+    ...smsRepositories,
+
     integrationHealth: {
       async findById(id) {
         const [row] = await db

@@ -483,6 +483,7 @@ function extractFreshnessSample(
         ? toFreshnessSeconds(record.occurredAt, record.receivedAt)
         : null;
     case "mailchimp":
+    case "twilio":
     case "manual":
       return null;
   }
@@ -587,6 +588,10 @@ function getMappedResultForRecord(
       return mapSimpleTextingRecord(record as SimpleTextingRecord);
     case "mailchimp":
       return mapMailchimpRecord(record as MailchimpRecord);
+    case "twilio":
+      throw new Stage1NonRetryableJobError(
+        "Twilio provider records are not mapped through worker orchestration."
+      );
     case "manual":
       throw new Stage1NonRetryableJobError(
         "Manual note provider records are not mapped through worker orchestration."
@@ -766,6 +771,10 @@ async function captureRecordsForReplay(
               maxRecords: replayMaxRecords
             })
           );
+    case "twilio":
+      throw new Stage1NonRetryableJobError(
+        "Twilio provider is not supported for replay capture batches."
+      );
     case "manual":
       throw new Stage1NonRetryableJobError(
         "Manual note provider is not supported for replay capture batches."
@@ -2169,6 +2178,10 @@ export function createStage1WorkerOrchestrationService(input: {
                 : input.ingest.ingestMailchimpTransitionRecord(
                     record as MailchimpRecord
                   );
+            case "twilio":
+              throw new Stage1NonRetryableJobError(
+                "Twilio provider is not supported for replay ingest batches."
+              );
             case "manual":
               throw new Stage1NonRetryableJobError(
                 "Manual note provider is not supported for replay ingest batches."

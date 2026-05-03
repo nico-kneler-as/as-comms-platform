@@ -25,6 +25,15 @@ const workspaceRules = {
       "@as-comms/db/test-helpers"
     ])
   },
+  "apps/sms-capture": {
+    allowedWorkspaceImports: new Set([
+      "@as-comms/contracts",
+      "@as-comms/integrations",
+      "@as-comms/db",
+      "@as-comms/db/test-helpers",
+      "@as-comms/domain"
+    ])
+  },
   "apps/salesforce-capture": {
     allowedWorkspaceImports: new Set([
       "@as-comms/contracts",

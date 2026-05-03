@@ -1,4 +1,9 @@
 import type { IntegrationHealthRecord } from "@as-comms/contracts";
+import type {
+  ConsentRecordRepository,
+  SmsMessageRepository,
+  SmsSenderRepository
+} from "../repositories.js";
 
 import type {
   ProjectAliasRecord,
@@ -63,6 +68,9 @@ export interface IntegrationHealthRepository {
 }
 
 export interface Stage2RepositoryBundle {
+  readonly smsMessages: SmsMessageRepository;
+  readonly consentRecords: ConsentRecordRepository;
+  readonly smsSenders: SmsSenderRepository;
   readonly integrationHealth: IntegrationHealthRepository;
   readonly projects: SettingsProjectsRepository;
   readonly users: UsersRepository;

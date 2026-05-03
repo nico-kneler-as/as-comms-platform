@@ -181,6 +181,7 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   manual: "Manual",
   gmail: "Gmail",
   salesforce: "Salesforce",
+  twilio: "Twilio",
   simpletexting: "SimpleTexting",
   mailchimp: "Mailchimp"
 };

@@ -1,37 +1,23 @@
 {
-  "name": "@as-comms/integrations",
+  "name": "@as-comms/sms-capture",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
-  "types": "./src/index.ts",
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "default": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist"
-  ],
+  "types": "./dist/index.d.ts",
   "scripts": {
+    "dev": "tsx watch src/index.ts",
     "build": "node ../../scripts/clean-dist.mjs dist && tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
     "lint": "eslint src test --max-warnings=0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:unit": "vitest run --config ../../vitest.config.ts --passWithNoTests"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.61.0",
     "@as-comms/contracts": "workspace:*",
-    "@notionhq/client": "^4.0.2",
-    "libmime": "^5.3.8",
-    "mailparser": "^3.9.8",
-    "twilio": "^6.0.0",
-    "zod": "^3.24.2"
-  },
-  "devDependencies": {
     "@as-comms/db": "workspace:*",
     "@as-comms/domain": "workspace:*",
-    "@types/mailparser": "^3.4.6"
+    "@as-comms/integrations": "workspace:*",
+    "zod": "^3.24.2"
   }
 }

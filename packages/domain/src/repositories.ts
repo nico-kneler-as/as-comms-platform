@@ -31,6 +31,11 @@ import type {
 } from "@as-comms/contracts";
 
 import type { PendingComposerOutboundRecord } from "./pending-outbounds.js";
+import type {
+  ConsentRecord,
+  SmsMessageRecord,
+  SmsSenderRecord,
+} from "./records.js";
 
 export interface SourceEvidenceRepository {
   append(record: SourceEvidenceRecord): Promise<SourceEvidenceRecord>;
@@ -185,6 +190,34 @@ export interface ContactMembershipRepository {
     contactIds: readonly string[],
   ): Promise<readonly ContactMembershipRecord[]>;
   upsert(record: ContactMembershipRecord): Promise<ContactMembershipRecord>;
+}
+
+export interface SmsMessageRepository {
+  insert(record: SmsMessageRecord): Promise<SmsMessageRecord>;
+  findByTwilioSid(sid: string): Promise<SmsMessageRecord | null>;
+  listByContact(
+    contactId: string,
+    limit?: number,
+  ): Promise<readonly SmsMessageRecord[]>;
+  updateSendStatus(
+    messageId: string,
+    status: SmsMessageRecord["sendStatus"],
+    failedReason?: string | null,
+    failedDetail?: string | null,
+    sentAt?: Date | null,
+  ): Promise<SmsMessageRecord | null>;
+}
+
+export interface ConsentRecordRepository {
+  findLatestByPhone(phoneE164: string): Promise<ConsentRecord | null>;
+  findLatestByContact(contactId: string): Promise<ConsentRecord | null>;
+  insert(record: ConsentRecord): Promise<ConsentRecord>;
+}
+
+export interface SmsSenderRepository {
+  listActive(): Promise<readonly SmsSenderRecord[]>;
+  findById(id: string): Promise<SmsSenderRecord | null>;
+  findByPhone(phoneE164: string): Promise<SmsSenderRecord | null>;
 }
 
 export interface ProjectDimensionRepository {
@@ -513,6 +546,9 @@ export interface Stage1RepositoryBundle {
   readonly contacts: ContactRepository;
   readonly contactIdentities: ContactIdentityRepository;
   readonly contactMemberships: ContactMembershipRepository;
+  readonly smsMessages: SmsMessageRepository;
+  readonly consentRecords: ConsentRecordRepository;
+  readonly smsSenders: SmsSenderRepository;
   readonly projectDimensions: ProjectDimensionRepository;
   readonly expeditionDimensions: ExpeditionDimensionRepository;
   readonly gmailMessageDetails: GmailMessageDetailRepository;
