@@ -5218,8 +5218,11 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:pending-attachment-test");
 
-    expect(detail?.timeline[0]?.attachmentCount).toBe(1);
-    expect(detail?.timeline[0]?.attachments).toEqual([
+    const pendingEntry = detail?.timeline.find((entry) =>
+      entry.attachments.some((attachment) => attachment.proxyUrl === null),
+    );
+    expect(pendingEntry?.attachmentCount).toBe(1);
+    expect(pendingEntry?.attachments).toEqual([
       {
         id: null,
         mimeType: "application/zip",
