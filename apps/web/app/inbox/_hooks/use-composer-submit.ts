@@ -12,6 +12,7 @@ import {
   type ComposerSendKind,
 } from "../_lib/composer-ui";
 import type {
+  InboxComposerAliasOption,
   InboxComposerReplyContext,
   OptimisticOutbound,
 } from "../_lib/view-models";
@@ -82,6 +83,7 @@ export function useComposerSubmit({
   state,
   dispatch,
   draftKey,
+  composerAliases,
   isReplying,
   replyContext,
   operatorDisplayName,
@@ -99,6 +101,7 @@ export function useComposerSubmit({
   readonly state: ComposerDraftState;
   readonly dispatch: Dispatch<ComposerDraftAction>;
   readonly draftKey: string | null;
+  readonly composerAliases: readonly InboxComposerAliasOption[];
   readonly isReplying: boolean;
   readonly replyContext: InboxComposerReplyContext | null;
   readonly operatorDisplayName: string;
@@ -313,7 +316,7 @@ export function useComposerSubmit({
     });
   };
 
-  const submitSms = () => {
+  const submitSms = (sendKind: ComposerSendKind = "send") => {
     if (state.activeTab !== "sms") {
       return;
     }
@@ -349,6 +352,11 @@ export function useComposerSubmit({
     const clientGeneratedId = crypto.randomUUID();
     const smsRecipient = state.smsRecipient;
     const smsSenderId = state.smsSelectedSenderId;
+    const selectedAliasRecord =
+      state.selectedAlias === null
+        ? null
+        : (composerAliases.find((alias) => alias.alias === state.selectedAlias) ??
+          null);
     const occurredAt = new Date().toISOString();
     const recipientLabel =
       smsRecipient.kind === "contact"
@@ -409,6 +417,11 @@ export function useComposerSubmit({
           senderId: smsSenderId,
           body,
           clientGeneratedId,
+          projectId:
+            sendKind === "send-and-save"
+              ? selectedAliasRecord?.projectId ?? null
+              : null,
+          saveAsKnowledge: sendKind === "send-and-save",
         });
 
         if (result.ok) {

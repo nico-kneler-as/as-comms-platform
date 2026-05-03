@@ -20,6 +20,10 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { RADIUS, SHADOW, TYPE } from "@/app/_lib/design-tokens-v2";
+import {
+  estimateSmsCostUsd,
+  formatSmsEstimatedCostUsd,
+} from "@/src/lib/sms-pricing";
 
 import { ComposerAiDraftWindow } from "./composer-ai-draft-window";
 import {
@@ -645,12 +649,15 @@ export function ComposerSmsSurface({
   body,
   includeSignature,
   segmentMetrics,
+  outboundRateUsdPerSegment,
   aiDraft,
   aiDirective,
   repromptText,
   isGeneratingAi,
   runAiDraftDisabled,
   runAiDraftDisabledReason,
+  canSendAndSaveForAi,
+  sendAndSaveDisabledReason,
   sendDisabledReason,
   inlineError,
   recipientError,
@@ -681,12 +688,15 @@ export function ComposerSmsSurface({
   readonly body: string;
   readonly includeSignature: boolean;
   readonly segmentMetrics: SmsMetrics;
+  readonly outboundRateUsdPerSegment: number;
   readonly aiDraft: AiDraftState;
   readonly aiDirective: string;
   readonly repromptText: string;
   readonly isGeneratingAi: boolean;
   readonly runAiDraftDisabled: boolean;
   readonly runAiDraftDisabledReason: string | null;
+  readonly canSendAndSaveForAi: boolean;
+  readonly sendAndSaveDisabledReason: string | null;
   readonly sendDisabledReason: string | null;
   readonly inlineError: InlineComposerError | null;
   readonly recipientError?: ComposerValidationError;
@@ -707,20 +717,33 @@ export function ComposerSmsSurface({
   readonly onRepromptTextChange: (value: string) => void;
   readonly onReprompt: () => void;
   readonly onToggleSignature: () => void;
-  readonly onSend: () => void;
+  readonly onSend: (sendKind?: ComposerSendKind) => void;
   readonly onCancel: () => void;
 }) {
   const selectedSender =
     smsSenders.find((sender) => sender.id === selectedSenderId) ??
     smsSenders[0] ??
     null;
+  const estimatedCostUsd =
+    segmentMetrics.segments > 0
+      ? estimateSmsCostUsd(
+          segmentMetrics.segments,
+          outboundRateUsdPerSegment,
+        )
+      : null;
+  const sendAndSaveDisabled = !canSendAndSaveForAi || isSending;
+  const sendAndSaveTooltipMessage =
+    sendAndSaveDisabledReason ??
+    (!canSendAndSaveForAi ? "Project knowledge capture is unavailable." : null);
   const sendButton = (
     <div className="inline-flex items-stretch overflow-hidden rounded-md shadow-sm">
       <Button
         type="button"
         disabled={sendDisabledReason !== null || isSending}
         className="h-9 rounded-none rounded-l-md bg-slate-900 px-3 text-[12.5px] font-medium text-white shadow-none hover:bg-slate-800"
-        onClick={onSend}
+        onClick={() => {
+          onSend("send");
+        }}
       >
         {isSending ? (
           <>
@@ -745,11 +768,11 @@ export function ComposerSmsSurface({
             <ChevronDownIcon className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-64 rounded-xl p-1.5">
+        <DropdownMenuContent align="end" className="w-72 rounded-xl p-1.5">
           <DropdownMenuItem
             className="rounded-md"
             onSelect={() => {
-              onSend();
+              onSend("send");
             }}
           >
             <div className="flex min-w-0 flex-col">
@@ -759,6 +782,13 @@ export function ComposerSmsSurface({
               </span>
             </div>
           </DropdownMenuItem>
+          <SendAndSaveMenuItem
+            disabled={sendAndSaveDisabled}
+            tooltipMessage={sendAndSaveTooltipMessage}
+            onSelect={() => {
+              onSend("send-and-save");
+            }}
+          />
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -847,11 +877,16 @@ export function ComposerSmsSurface({
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="text-[11.5px] text-slate-500">
+          <div className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-slate-500">
             <span className="font-medium text-slate-700">
               {segmentMetrics.segments === 0 ? "0 segments" : `${String(segmentMetrics.segments)} segments`}
             </span>
             {` · ${segmentMetrics.encoding} · ${String(segmentMetrics.remaining)} remaining`}
+            {estimatedCostUsd === null ? null : (
+              <span className="font-medium tabular-nums text-slate-500">
+                · Est. ${formatSmsEstimatedCostUsd(estimatedCostUsd)}
+              </span>
+            )}
           </div>
 
           {recipientError?.message ? (

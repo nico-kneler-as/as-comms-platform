@@ -8,6 +8,7 @@ import type {
 
 import { getCurrentUser } from "../auth/session";
 import { readWebEnv } from "../env";
+import { estimateSmsCostUsd } from "@/src/lib/sms-pricing";
 import { recordSensitiveReadForCurrentUserDetached } from "../security/audit";
 import { getStage1WebRuntime } from "../stage1-runtime";
 
@@ -84,6 +85,10 @@ export interface IntegrationsSettingsViewModel {
     readonly smsEnabled: boolean;
     readonly hasActiveSender: boolean;
     readonly lastStatusCallbackAt: string | null;
+    readonly outboundRateUsdPerSegment: number;
+    readonly monthToDateSpendUsd: number | null;
+    readonly monthToDateSegments: number | null;
+    readonly monthlyCapUsd: number | null;
   };
 }
 
@@ -443,14 +448,20 @@ async function readIntegrationHealth(): Promise<
 > {
   const runtime = await getStage1WebRuntime();
   const env = readWebEnv();
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
 
   await runtime.settings.integrationHealth.seedDefaults();
-  const [rows, activeSmsSenders, latestCallback, latestDelivered] =
+  const [rows, activeSmsSenders, latestCallback, latestDelivered, usageSnapshot] =
     await Promise.all([
       runtime.settings.integrationHealth.listAll(),
       runtime.settings.smsSenders.listActive(),
       runtime.settings.smsMessages.findLatestByStatuses(["delivered", "failed"]),
       runtime.settings.smsMessages.findLatestByStatuses(["delivered"]),
+      runtime.settings.smsSenders.getActiveUsageSnapshot({
+        monthStart,
+      }),
     ]);
 
   const integrationById = new Map(rows.map((row) => [row.id, row] as const));
@@ -485,6 +496,14 @@ async function readIntegrationHealth(): Promise<
       : deliveredWithinLastDay
         ? "active"
         : "degraded";
+  const monthToDateSegments = usageSnapshot?.monthToDateSegments ?? null;
+  const monthToDateSpendUsd =
+    monthToDateSegments === null
+      ? null
+      : estimateSmsCostUsd(
+          monthToDateSegments,
+          env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT,
+        );
 
   return {
     integrations,
@@ -493,6 +512,10 @@ async function readIntegrationHealth(): Promise<
       smsEnabled: env.SMS_ENABLED,
       hasActiveSender,
       lastStatusCallbackAt: latestCallback?.updatedAt.toISOString() ?? null,
+      outboundRateUsdPerSegment: env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT,
+      monthToDateSpendUsd,
+      monthToDateSegments,
+      monthlyCapUsd: usageSnapshot?.monthlyCap ?? null,
     },
   };
 }
