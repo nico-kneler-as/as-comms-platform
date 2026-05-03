@@ -4,12 +4,21 @@ import { useEffect, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 
+import type { InboxSmsSenderOption } from "../_lib/view-models";
 import { ComposerFloatingPill } from "./composer-floating-pill";
 import { useInboxClient } from "./inbox-client-provider";
 import { InboxComposerDetailPane } from "./inbox-composer";
 import { XIcon } from "./icons";
 
-export function InboxWorkspace({ children }: { readonly children: ReactNode }) {
+export function InboxWorkspace({
+  children,
+  smsEnabled = false,
+  smsSenders = [],
+}: {
+  readonly children: ReactNode;
+  readonly smsEnabled?: boolean;
+  readonly smsSenders?: readonly InboxSmsSenderOption[];
+}) {
   const { composerPane, toast, clearToast } = useInboxClient();
 
   useEffect(() => {
@@ -29,7 +38,12 @@ export function InboxWorkspace({ children }: { readonly children: ReactNode }) {
   return (
     <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
       {children}
-      {composerPane.mode === "closed" ? null : <InboxComposerDetailPane />}
+      {composerPane.mode === "closed" ? null : (
+        <InboxComposerDetailPane
+          smsEnabled={smsEnabled}
+          smsSenders={smsSenders}
+        />
+      )}
       <ComposerFloatingPill />
 
       {toast ? (

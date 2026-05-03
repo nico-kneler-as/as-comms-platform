@@ -9,6 +9,14 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./phone": {
+      "types": "./src/phone.ts",
+      "default": "./dist/phone.js"
+    },
+    "./sms-segments": {
+      "types": "./src/sms-segments.ts",
+      "default": "./dist/sms-segments.js"
     }
   },
   "files": [

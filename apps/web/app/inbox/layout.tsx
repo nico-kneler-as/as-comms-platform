@@ -2,9 +2,13 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { requireSession } from "@/src/server/auth/session";
+import { readWebEnv } from "@/src/server/env";
 
 import { InboxShell } from "./_components/inbox-shell";
-import { getInboxComposerAliases } from "./_lib/composer-data";
+import {
+  getInboxComposerAliases,
+  getInboxSmsSenders,
+} from "./_lib/composer-data";
 import { getInboxIntegrationHealthBanner } from "./_lib/integration-health";
 import { getInboxList } from "./_lib/selectors";
 
@@ -43,10 +47,12 @@ export default async function InboxLayout({
     }
     throw error;
   });
+  const env = readWebEnv();
 
-  const [list, composerAliases, healthBanner] = await Promise.all([
+  const [list, composerAliases, smsSenders, healthBanner] = await Promise.all([
     getInboxList("all"),
     getInboxComposerAliases(),
+    env.SMS_ENABLED ? getInboxSmsSenders() : Promise.resolve([]),
     getInboxIntegrationHealthBanner(),
   ]);
 
@@ -55,6 +61,8 @@ export default async function InboxLayout({
       initialList={list}
       initialFilterId="all"
       composerAliases={composerAliases}
+      smsEnabled={env.SMS_ENABLED}
+      smsSenders={smsSenders}
       healthBanner={healthBanner}
       currentActorId={currentUser.id}
       operator={{

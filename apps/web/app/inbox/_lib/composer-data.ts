@@ -1,4 +1,7 @@
-import type { InboxComposerAliasOption } from "./view-models";
+import type {
+  InboxComposerAliasOption,
+  InboxSmsSenderOption,
+} from "./view-models";
 import { getAiProviderConfig } from "@/src/server/ai/provider";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 
@@ -56,4 +59,17 @@ export async function getInboxComposerAliases(): Promise<
       },
     ];
   });
+}
+
+export async function getInboxSmsSenders(): Promise<
+  readonly InboxSmsSenderOption[]
+> {
+  const runtime = await getStage1WebRuntime();
+  const senders = await runtime.settings.smsSenders.listActive();
+
+  return senders.map((sender) => ({
+    id: sender.id,
+    phoneE164: sender.phoneE164,
+    displayName: sender.displayName,
+  }));
 }

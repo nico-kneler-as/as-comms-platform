@@ -477,6 +477,7 @@ const composerAliases: readonly InboxComposerAliasOption[] = [
 const replyContext = {
   contactId: "contact:maya",
   contactDisplayName: "Maya Lee",
+  contactPrimaryPhone: "+14065550123",
   subject: "Trip logistics",
   threadCursor: "event:inbound-1",
   threadId: "thread:gmail-1",

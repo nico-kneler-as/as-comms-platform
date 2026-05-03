@@ -17,6 +17,7 @@ import {
 const replyContext: InboxComposerReplyContext = {
   contactId: "contact-1",
   contactDisplayName: "Alice Smith",
+  contactPrimaryPhone: "+14065550123",
   subject: "Re: Trip logistics",
   threadCursor: "event-1",
   threadId: "thread-1",

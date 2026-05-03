@@ -121,12 +121,13 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
   }
 
   if (
-    relativeFile === "apps/web/src/server/composer/gmail-send.ts" &&
+    (relativeFile === "apps/web/src/server/composer/gmail-send.ts" ||
+      relativeFile === "apps/web/src/server/composer/twilio-send.ts") &&
     specifier === "@as-comms/integrations"
   ) {
-    // Composition root for Composer Gmail sends. Reads env-based OAuth
-    // config and forwards to the integrations send client. No other
-    // apps/web file may import from @as-comms/integrations.
+    // Composition root for Composer provider sends. Reads env-based
+    // transport config and forwards to the integrations send client.
+    // No other apps/web file may import from @as-comms/integrations.
     return true;
   }
 

@@ -547,6 +547,36 @@ function createSmsRepositorySlices(db: Stage1Database) {
         return row === undefined ? null : mapSmsMessageRow(row);
       },
 
+      async findLatestByStatuses(statuses) {
+        if (statuses.length === 0) {
+          return null;
+        }
+
+        const [row] = await db
+          .select()
+          .from(smsMessages)
+          .where(inArray(smsMessages.sendStatus, [...statuses]))
+          .orderBy(desc(smsMessages.updatedAt), desc(smsMessages.id))
+          .limit(1);
+
+        return row === undefined ? null : mapSmsMessageRow(row);
+      },
+
+      async hasInboundForPhone(phoneE164) {
+        const [row] = await db
+          .select({ id: smsMessages.id })
+          .from(smsMessages)
+          .where(
+            and(
+              eq(smsMessages.phoneE164, phoneE164),
+              eq(smsMessages.direction, "inbound"),
+            ),
+          )
+          .limit(1);
+
+        return row !== undefined;
+      },
+
       async listByContact(contactId, limit) {
         const rows = await db
           .select()
@@ -556,6 +586,25 @@ function createSmsRepositorySlices(db: Stage1Database) {
           .limit(clampSmsListLimit(limit));
 
         return rows.map(mapSmsMessageRow);
+      },
+
+      async updateDelivery(input) {
+        const [row] = await db
+          .update(smsMessages)
+          .set({
+            ...(input.twilioMessageSid === undefined
+              ? {}
+              : { twilioMessageSid: input.twilioMessageSid }),
+            sendStatus: input.status,
+            failedReason: input.failedReason ?? null,
+            failedDetail: input.failedDetail ?? null,
+            sentAt: input.sentAt ?? null,
+            updatedAt: new Date(),
+          })
+          .where(eq(smsMessages.id, input.messageId))
+          .returning();
+
+        return row === undefined ? null : mapSmsMessageRow(row);
       },
 
       async updateSendStatus(

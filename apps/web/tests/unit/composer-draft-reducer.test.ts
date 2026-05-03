@@ -28,6 +28,7 @@ describe("composer draft reducer", () => {
         replyContext: {
           contactId: "contact-1",
           contactDisplayName: "Ada Lovelace",
+          contactPrimaryPhone: "+14065550123",
           subject: "Re: Forest dates",
           defaultAlias: "forest@adventuresci.org",
           threadId: "thread-1",
@@ -39,6 +40,7 @@ describe("composer draft reducer", () => {
       replyContext: {
         contactId: "contact-1",
         contactDisplayName: "Ada Lovelace",
+        contactPrimaryPhone: "+14065550123",
         subject: "Re: Forest dates",
         defaultAlias: "forest@adventuresci.org",
         threadId: "thread-1",

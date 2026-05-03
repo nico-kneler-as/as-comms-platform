@@ -15,6 +15,7 @@ import type {
   Stage1RepositoryBundle,
 } from "./repositories.js";
 import type { PendingComposerOutboundRecord } from "./pending-outbounds.js";
+import type { SmsMessageRecord } from "./records.js";
 
 type TimelineProvenance = CanonicalEventRecord["provenance"] & {
   readonly messageKind?: "auto" | "campaign" | "one_to_one" | null;
@@ -294,6 +295,63 @@ function buildPendingTimelineItems(
         contentType: meta.contentType,
         sizeBytes: meta.size,
       })),
+    })),
+  );
+}
+
+function buildSmsMessageTimelineSortKey(message: SmsMessageRecord): string {
+  return `${message.createdAt.toISOString()}::sms-message:${message.id}`;
+}
+
+function mapSmsTimelineSendStatus(
+  status: SmsMessageRecord["sendStatus"],
+): "pending" | "confirmed" | "failed" | "orphaned" | null {
+  switch (status) {
+    case "queued":
+      return "pending";
+    case "sent":
+    case "delivered":
+    case "received":
+      return "confirmed";
+    case "failed":
+    case "undelivered":
+      return "failed";
+    default:
+      return null;
+  }
+}
+
+function buildSmsMessageTimelineItems(
+  messages: readonly SmsMessageRecord[],
+): readonly TimelineItem[] {
+  return timelineItemListSchema.parse(
+    messages.map((message) => ({
+      id: `sms-message:${message.id}`,
+      contactId: message.contactId,
+      canonicalEventId: `sms-message:${message.id}`,
+      family: "one_to_one_sms" as const,
+      occurredAt: message.createdAt.toISOString(),
+      sortKey: buildSmsMessageTimelineSortKey(message),
+      reviewState: "clear" as const,
+      primaryProvider: "twilio" as const,
+      summary:
+        message.body.trim().length > 0
+          ? message.body
+          : message.direction === "inbound"
+            ? "Inbound SMS"
+            : "Outbound SMS",
+      direction: message.direction,
+      messageTextPreview: message.body,
+      phone: message.phoneE164,
+      threadKey: message.phoneE164,
+      sendStatus:
+        message.direction === "outbound"
+          ? mapSmsTimelineSendStatus(message.sendStatus)
+          : null,
+      failedReason:
+        message.direction === "outbound" ? message.failedReason : null,
+      failedDetail:
+        message.direction === "outbound" ? message.failedDetail : null,
     })),
   );
 }
@@ -742,6 +800,7 @@ function collapseDuplicateTimelineItems(input: {
 function mergeTimelineItems(input: {
   readonly canonicalItems: readonly TimelineItem[];
   readonly pendingRows: readonly PendingComposerOutboundRecord[];
+  readonly smsMessages?: readonly SmsMessageRecord[];
 }): readonly TimelineItem[] {
   // Keep unreconciled rows visible, but suppress pending rows once their
   // reconciled canonical event is present in the current page.
@@ -757,6 +816,7 @@ function mergeTimelineItems(input: {
     [
       ...input.canonicalItems,
       ...buildPendingTimelineItems(filteredPending),
+      ...buildSmsMessageTimelineItems(input.smsMessages ?? []),
     ].sort((left, right) => left.sortKey.localeCompare(right.sortKey)),
   );
 }
@@ -1125,13 +1185,14 @@ export function createStage1TimelinePresentationService(
 ): Stage1TimelinePresentationService {
   return {
     async listTimelineItemsByContactId(contactId) {
-      const [canonicalEvents, timelineRows, pendingRows, internalNotes] =
+      const [canonicalEvents, timelineRows, pendingRows, smsMessages, internalNotes] =
         await Promise.all([
         repositories.canonicalEvents.listByContactId(contactId),
         repositories.timelineProjection.listByContactId(contactId),
         repositories.pendingOutbounds.findForContact(contactId, {
           limit: Number.MAX_SAFE_INTEGER,
         }),
+          repositories.smsMessages.listByContact(contactId, Number.MAX_SAFE_INTEGER),
           repositories.internalNotes.findByContactId(contactId),
         ]);
       const canonicalTimelineEvents = canonicalEvents.filter(
@@ -1159,17 +1220,19 @@ export function createStage1TimelinePresentationService(
       return mergeTimelineItems({
         canonicalItems,
         pendingRows,
+        smsMessages,
       });
     },
 
     async listTimelineItemsPageByContactId(contactId, input) {
-      const [canonicalEvents, rows, pendingRows, internalNotes] =
+      const [canonicalEvents, rows, pendingRows, smsMessages, internalNotes] =
         await Promise.all([
         repositories.canonicalEvents.listByContactId(contactId),
         repositories.timelineProjection.listByContactId(contactId),
         repositories.pendingOutbounds.findForContact(contactId, {
           limit: Number.MAX_SAFE_INTEGER,
         }),
+          repositories.smsMessages.listByContact(contactId, Number.MAX_SAFE_INTEGER),
           repositories.internalNotes.findByContactId(contactId),
         ]);
       const canonicalTimelineEvents = canonicalEvents.filter(
@@ -1202,6 +1265,7 @@ export function createStage1TimelinePresentationService(
       const mergedItems = mergeTimelineItems({
         canonicalItems,
         pendingRows,
+        smsMessages,
       });
       const beforeSortKey = input.beforeSortKey;
       const filteredItems =

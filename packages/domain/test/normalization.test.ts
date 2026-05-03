@@ -395,7 +395,10 @@ function buildContext(input: {
     smsMessages: {
       insert: (record) => Promise.resolve(record),
       findByTwilioSid: () => Promise.resolve(null),
+      findLatestByStatuses: () => Promise.resolve(null),
+      hasInboundForPhone: () => Promise.resolve(false),
       listByContact: () => Promise.resolve([]),
+      updateDelivery: () => Promise.resolve(null),
       updateSendStatus: () => Promise.resolve(null),
     },
     consentRecords: {

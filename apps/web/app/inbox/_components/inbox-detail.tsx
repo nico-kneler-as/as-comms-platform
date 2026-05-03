@@ -108,6 +108,7 @@ function buildReplySubject(subject: string | null): string {
 function buildTimelineReplyContext(input: {
   readonly contactId: string;
   readonly contactDisplayName: string;
+  readonly contactPrimaryPhone: string | null;
   readonly entry: InboxTimelineEntryViewModel;
   readonly defaultAlias: string | null;
 }): InboxComposerReplyContext | null {
@@ -118,6 +119,7 @@ function buildTimelineReplyContext(input: {
   return {
     contactId: input.contactId,
     contactDisplayName: input.contactDisplayName,
+    contactPrimaryPhone: input.contactPrimaryPhone,
     subject: buildReplySubject(input.entry.subject),
     threadCursor:
       input.entry.kind === "inbound-email" ? input.entry.id : null,
@@ -409,6 +411,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
         buildTimelineReplyContext({
           contactId: contact.contactId,
           contactDisplayName: contact.displayName,
+          contactPrimaryPhone: contact.primaryPhone,
           entry,
           defaultAlias: composerReplyContext?.defaultAlias ?? null,
         }) ?? composerReplyContext;

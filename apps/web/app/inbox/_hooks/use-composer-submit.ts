@@ -4,6 +4,7 @@ import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.
 import {
   createNoteAction,
   sendComposerAction,
+  sendSmsAction,
   type ComposerSendActionInput,
 } from "../actions";
 import {
@@ -312,6 +313,140 @@ export function useComposerSubmit({
     });
   };
 
+  const submitSms = () => {
+    if (state.activeTab !== "sms") {
+      return;
+    }
+
+    if (state.smsRecipient === null) {
+      setErrors({
+        message: "Choose a phone recipient first.",
+        retryable: false,
+        fieldErrors: [{ field: "recipient", message: "Choose a recipient." }],
+      });
+      return;
+    }
+
+    if (state.smsSelectedSenderId === null) {
+      setErrors({
+        message: "No active SMS sender is configured.",
+        retryable: false,
+        fieldErrors: [{ field: "sender", message: "Choose a sender." }],
+      });
+      return;
+    }
+
+    const body = state.smsBody.trim();
+    if (body.length === 0) {
+      setErrors({
+        message: "Write an SMS before sending.",
+        retryable: false,
+        fieldErrors: [{ field: "body", message: "Message body is required." }],
+      });
+      return;
+    }
+
+    const clientGeneratedId = crypto.randomUUID();
+    const smsRecipient = state.smsRecipient;
+    const smsSenderId = state.smsSelectedSenderId;
+    const occurredAt = new Date().toISOString();
+    const recipientLabel =
+      smsRecipient.kind === "contact"
+        ? `${smsRecipient.displayName} (${smsRecipient.phoneE164})`
+        : smsRecipient.phoneE164;
+    const optimisticEntry: OptimisticOutbound = {
+      id: `optimistic:${clientGeneratedId}`,
+      clientGeneratedId,
+      contactId:
+        smsRecipient.kind === "contact"
+          ? smsRecipient.contactId
+          : null,
+      settledAt: null,
+      kind: "outbound-sms",
+      occurredAt,
+      occurredAtLabel: "Just now",
+      actorLabel: operatorDisplayName,
+      subject: null,
+      body,
+      channel: "sms",
+      isUnread: false,
+      isPreview: false,
+      fromHeader: null,
+      toHeader: recipientLabel,
+      recipientLabel,
+      ccHeader: null,
+      mailbox: null,
+      threadId: null,
+      rfc822MessageId: null,
+      inReplyToRfc822: null,
+      sendStatus: "pending",
+      failedReason: null,
+      failedDetail: null,
+      attachmentCount: 0,
+      attachments: [],
+      campaignActivity: [],
+    };
+
+    dispatch({ type: "CLEAR_ERRORS" });
+    setComposerErrors([]);
+    setComposerStatus("sending");
+    addOptimisticOutbound(optimisticEntry);
+    closeComposer();
+
+    startSendTransition(async () => {
+      try {
+        const result = await sendSmsAction({
+          recipient:
+            smsRecipient.kind === "contact"
+              ? {
+                  kind: "contact",
+                  contactId: smsRecipient.contactId,
+                }
+              : {
+                  kind: "phone",
+                  phoneE164: smsRecipient.phoneE164,
+                },
+          senderId: smsSenderId,
+          body,
+          clientGeneratedId,
+        });
+
+        if (result.ok) {
+          markOptimisticSettled(result.data.clientGeneratedId);
+          setComposerStatus("sent-success");
+          showToast(`Sent to ${recipientLabel}`, "success");
+          router.refresh();
+          return;
+        }
+
+        markOptimisticFailed(clientGeneratedId, result.message);
+        setComposerStatus(
+          result.code === "validation_error" ? "validation-error" : "send-failure",
+        );
+        dispatch({
+          type: "SET_INLINE_ERROR",
+          error: {
+            message: result.message,
+            retryable: result.retryable === true,
+          },
+        });
+      } catch {
+        markOptimisticFailed(
+          clientGeneratedId,
+          "We could not send that SMS right now.",
+        );
+        setComposerStatus("send-failure");
+        dispatch({
+          type: "SET_INLINE_ERROR",
+          error: {
+            message: "We could not send that SMS right now.",
+            retryable: true,
+          },
+        });
+      }
+    });
+  };
+
   const saveNote = () => {
     if (!isReplying || replyContext === null) {
       return;
@@ -372,6 +507,7 @@ export function useComposerSubmit({
 
   return {
     submit,
+    submitSms,
     saveNote,
     cancel,
   };

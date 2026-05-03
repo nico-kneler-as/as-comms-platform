@@ -7,6 +7,7 @@ import type {
 } from "@as-comms/contracts";
 
 import { getCurrentUser } from "../auth/session";
+import { readWebEnv } from "../env";
 import { recordSensitiveReadForCurrentUserDetached } from "../security/audit";
 import { getStage1WebRuntime } from "../stage1-runtime";
 
@@ -78,6 +79,12 @@ export interface IntegrationHealthViewModel {
 export interface IntegrationsSettingsViewModel {
   readonly isAdmin: boolean;
   readonly integrations: readonly IntegrationHealthViewModel[];
+  readonly twilioCard: {
+    readonly status: "not-configured" | "active" | "degraded";
+    readonly smsEnabled: boolean;
+    readonly hasActiveSender: boolean;
+    readonly lastStatusCallbackAt: string | null;
+  };
 }
 
 export type LogStreamId = "source-evidence-quarantine";
@@ -431,11 +438,20 @@ async function readAccessSettings() {
   };
 }
 
-async function readIntegrationHealth() {
+async function readIntegrationHealth(): Promise<
+  Pick<IntegrationsSettingsViewModel, "integrations" | "twilioCard">
+> {
   const runtime = await getStage1WebRuntime();
+  const env = readWebEnv();
 
   await runtime.settings.integrationHealth.seedDefaults();
-  const rows = await runtime.settings.integrationHealth.listAll();
+  const [rows, activeSmsSenders, latestCallback, latestDelivered] =
+    await Promise.all([
+      runtime.settings.integrationHealth.listAll(),
+      runtime.settings.smsSenders.listActive(),
+      runtime.settings.smsMessages.findLatestByStatuses(["delivered", "failed"]),
+      runtime.settings.smsMessages.findLatestByStatuses(["delivered"]),
+    ]);
 
   const integrationById = new Map(rows.map((row) => [row.id, row] as const));
   const integrations = INTEGRATION_ORDER.flatMap((serviceName) => {
@@ -459,8 +475,25 @@ async function readIntegrationHealth() {
     ];
   });
 
+  const hasActiveSender = activeSmsSenders.length > 0;
+  const deliveredWithinLastDay =
+    latestDelivered !== null &&
+    Date.now() - latestDelivered.updatedAt.getTime() <= 24 * 60 * 60 * 1000;
+  const twilioCardStatus =
+    !env.SMS_ENABLED || !hasActiveSender
+      ? "not-configured"
+      : deliveredWithinLastDay
+        ? "active"
+        : "degraded";
+
   return {
-    integrations
+    integrations,
+    twilioCard: {
+      status: twilioCardStatus,
+      smsEnabled: env.SMS_ENABLED,
+      hasActiveSender,
+      lastStatusCallbackAt: latestCallback?.updatedAt.toISOString() ?? null,
+    },
   };
 }
 
@@ -555,7 +588,9 @@ function loadAccessSettingsCacheData() {
   })();
 }
 
-function loadIntegrationHealthCacheData() {
+function loadIntegrationHealthCacheData(): Promise<
+  Pick<IntegrationsSettingsViewModel, "integrations" | "twilioCard">
+> {
   if (process.env.NODE_ENV !== "production") {
     return readIntegrationHealth();
   }
@@ -706,7 +741,8 @@ export async function loadIntegrationHealth(): Promise<IntegrationsSettingsViewM
 
   return {
     isAdmin: currentUser?.role === "admin",
-    integrations: cachedData.integrations
+    integrations: cachedData.integrations,
+    twilioCard: cachedData.twilioCard,
   };
 }
 
