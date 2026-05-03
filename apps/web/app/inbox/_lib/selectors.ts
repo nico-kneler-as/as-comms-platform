@@ -3668,7 +3668,7 @@ async function readInboxDetailCacheData(
     isUnread,
     memberships,
     latestNote,
-    activityTimelineItems: visibleTimelineItems,
+    activityTimelineItems,
     timelineItems: timelinePage.items,
     campaignActivitySummaryByCampaignId:
       await loadCampaignActivitySummaryByCampaignId({
