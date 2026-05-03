@@ -236,6 +236,21 @@ function buildMembership(
   };
 }
 
+async function seedOperatorUser(runtime: InboxTestRuntime): Promise<void> {
+  const now = new Date("2026-04-20T10:00:00.000Z");
+  await runtime.context.settings.users.upsert({
+    id: "user:operator",
+    email: "operator@test.local",
+    name: "Operator",
+    emailVerified: now,
+    image: null,
+    role: "operator",
+    deactivatedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 async function seedInboxFixture(runtime: InboxTestRuntime): Promise<void> {
   await seedInboxContact(runtime.context, {
     contactId: "contact:lisa-zhang",
@@ -5149,6 +5164,7 @@ describe("real inbox selectors", () => {
       throw new Error("Expected inbox test runtime");
     }
 
+    await seedOperatorUser(runtime);
     await seedInboxContact(runtime.context, {
       contactId: "contact:pending-attachment-test",
       salesforceContactId: null,
@@ -5156,17 +5172,25 @@ describe("real inbox selectors", () => {
       primaryEmail: "pending@example.org",
       primaryPhone: null,
     });
+    const priorInbound = await seedInboxEmailEvent(runtime.context, {
+      id: "pending-attachment-inbound-1",
+      contactId: "contact:pending-attachment-test",
+      occurredAt: "2026-04-20T11:00:00.000Z",
+      direction: "inbound",
+      subject: "Question about volunteering",
+      snippet: "Hi, I would like to know more.",
+    });
     await seedInboxProjection(runtime.context, {
       contactId: "contact:pending-attachment-test",
       bucket: "Opened",
       needsFollowUp: false,
       hasUnresolved: false,
-      lastInboundAt: null,
+      lastInboundAt: "2026-04-20T11:00:00.000Z",
       lastOutboundAt: "2026-04-20T12:05:00.000Z",
       lastActivityAt: "2026-04-20T12:05:00.000Z",
       snippet: "Pending outbound with attachment.",
-      lastCanonicalEventId: "pending-outbound:pending-attachment-1",
-      lastEventType: "communication.email.outbound",
+      lastCanonicalEventId: priorInbound.canonicalEventId,
+      lastEventType: "communication.email.inbound",
     });
     await runtime.context.repositories.pendingOutbounds.insert({
       id: "pending-attachment-1",
@@ -5211,6 +5235,7 @@ describe("real inbox selectors", () => {
       throw new Error("Expected inbox test runtime");
     }
 
+    await seedOperatorUser(runtime);
     await seedInboxContact(runtime.context, {
       contactId: "contact:canonical-attachment-preferred",
       salesforceContactId: "003-canonical-attachment",
