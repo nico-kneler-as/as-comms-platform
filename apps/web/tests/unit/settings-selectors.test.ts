@@ -497,6 +497,12 @@ describe("settings selectors", () => {
       updatedAt: "2026-05-01T00:00:00.000Z"
     });
 
+    await runtime.context.settings.users.upsert(buildUser({
+      id: "user:admin",
+      email: "admin@example.org",
+      role: "admin"
+    }));
+
     await runtime.context.repositories.smsMessages.insert({
       id: "sms:outbound:current-month",
       twilioMessageSid: "SM-current",
