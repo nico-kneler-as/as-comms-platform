@@ -65,15 +65,16 @@ const baseBundle: GroundingBundle = {
 
 describe("prompt builder", () => {
   it("builds the draft prompt", () => {
-    expect(
-      buildDraftPrompt(baseBundle, {
-        contactId: "contact:maya",
-        projectId: "project:whitebark",
-        threadCursor: "event:inbound-1",
-        repromptIndex: 0,
-        mode: "draft",
-      }),
-    ).toMatchInlineSnapshot(`
+    const prompt = buildDraftPrompt(baseBundle, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      threadCursor: "event:inbound-1",
+      repromptIndex: 0,
+      channel: "email",
+      mode: "draft",
+    });
+
+    expect(prompt).toMatchInlineSnapshot(`
       {
         "messages": [
           {
@@ -103,6 +104,9 @@ describe("prompt builder", () => {
       You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
       }
     `);
+    expect(prompt.system).toContain(
+      "You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
+    );
   });
 
   it("builds the fill prompt", () => {
@@ -112,6 +116,7 @@ describe("prompt builder", () => {
         projectId: "project:whitebark",
         threadCursor: "event:inbound-1",
         repromptIndex: 0,
+        channel: "email",
         mode: "fill",
         operatorPrompt: "Tell her the revised field kit will ship tomorrow.",
       }),
@@ -159,6 +164,7 @@ describe("prompt builder", () => {
         projectId: "project:whitebark",
         threadCursor: "event:inbound-1",
         repromptIndex: 1,
+        channel: "email",
         mode: "reprompt",
         previousDraft: "Thanks for checking in.",
         repromptDirection: "Make it warmer and add the ship date.",
@@ -216,6 +222,7 @@ describe("prompt builder", () => {
           projectId: null,
           threadCursor: null,
           repromptIndex: 0,
+          channel: "email",
           mode: "draft",
         },
       ),
@@ -282,11 +289,28 @@ describe("prompt builder", () => {
           projectId: "project:whitebark",
           threadCursor: "event:inbound-1",
           repromptIndex: 0,
+          channel: "email",
           mode: "draft",
         },
       ).system,
     ).toContain(
       "[Tier 3 Canonical Examples]\n• [Issue: Trip planning] Q: Current field kit list\n  Strategy: Confirm the latest kit source and invite follow-up.\n  Example: Hi {NAME}, the latest kit list is in the volunteer portal.",
     );
+  });
+
+  it("builds the sms system prompt variant", () => {
+    const prompt = buildDraftPrompt(baseBundle, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      threadCursor: "event:inbound-1",
+      repromptIndex: 0,
+      channel: "sms",
+      mode: "draft",
+    });
+
+    expect(prompt.system).toContain("Write SMS replies. Be concise, plaintext");
+    expect(prompt.system).toContain("target ~140 characters");
+    expect(prompt.system).toContain("never exceed 320");
+    expect(prompt.system).toContain("Don't include 'Reply STOP to opt out'");
   });
 });

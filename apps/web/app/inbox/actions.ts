@@ -43,6 +43,8 @@ import { enforceRateLimit } from "@/src/server/security/rate-limit";
 
 import type { UiResult } from "../../src/server/ui-result";
 
+const SMS_AI_MAX_TOKENS = 120;
+
 const composerSendActionInputSchema = composerSendInputSchema.extend({
   saveAsKnowledge: z.boolean().optional(),
   captureAsKnowledge: z.boolean().optional().default(false),
@@ -1325,7 +1327,10 @@ export async function draftWithAiAction(
         estimateCostUsd: provider.estimateCostUsd,
         model: provider.model,
         temperature: provider.temperature,
-        maxTokens: provider.maxTokens,
+        maxTokens:
+          parsedInput.data.channel === "sms"
+            ? SMS_AI_MAX_TOKENS
+            : provider.maxTokens,
         dailyCapUsd: provider.dailyCapUsd,
       },
       parsedInput.data,

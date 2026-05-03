@@ -120,6 +120,7 @@ function DraftActionTrigger({
 }
 
 export function ComposerAiDraftWindow({
+  directivePlaceholder = 'Optional: nudge the draft (e.g. "keep it brief, offer May 14 slot"). Or just click Draft with AI.',
   aiDraft,
   directiveText,
   repromptText,
@@ -136,6 +137,7 @@ export function ComposerAiDraftWindow({
   onApprove,
   onAbout,
 }: {
+  readonly directivePlaceholder?: string;
   readonly aiDraft: AiDraftState;
   readonly directiveText: string;
   readonly repromptText: string;
@@ -196,7 +198,7 @@ export function ComposerAiDraftWindow({
                   onRunDraft();
                 }
               }}
-              placeholder='Optional: nudge the draft (e.g. "keep it brief, offer May 14 slot"). Or just click Draft with AI.'
+              placeholder={directivePlaceholder}
               rows={2}
               disabled={isGeneratingAi}
               className={`flex-1 resize-none rounded-md bg-slate-50/60 px-2.5 py-2 text-[12.5px] leading-relaxed text-slate-800 placeholder:text-slate-400 ring-1 ring-inset ring-slate-200 focus:outline-none focus:ring-violet-300 disabled:opacity-60 ${TRANSITION.reduceMotion}`}

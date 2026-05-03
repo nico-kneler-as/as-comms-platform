@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TransitionStartFunction } from "react";
 
 vi.mock("../../app/inbox/actions", () => ({
   draftWithAiAction: vi.fn(),
@@ -10,6 +11,7 @@ import { INITIAL_COMPOSER_DRAFT_STATE } from "../../app/inbox/_hooks/composer-dr
 
 const baseAiDraft: AiDraftState = {
   status: "reviewable",
+  channel: "email",
   mode: "draft",
   responseMode: "generated",
   prompt: "Draft with AI",
@@ -29,20 +31,66 @@ const baseAiDraft: AiDraftState = {
 function setup(input?: {
   readonly aiDraft?: AiDraftState;
   readonly body?: string;
+  readonly smsBody?: string;
+  readonly activeTab?: "email" | "sms" | "note";
+  readonly recipient?: (typeof INITIAL_COMPOSER_DRAFT_STATE)["recipient"];
+  readonly smsRecipient?: (typeof INITIAL_COMPOSER_DRAFT_STATE)["smsRecipient"];
+  readonly selectedAliasAiConfigured?: boolean;
+  readonly startAiGeneration?: ReturnType<typeof vi.fn>;
+  readonly startAiTransition?: TransitionStartFunction;
 }) {
   const dispatch = vi.fn();
   const approveAiDraft = vi.fn();
+  const startAiGeneration = input?.startAiGeneration ?? vi.fn();
   const controls = useAiDraftRun({
     state: {
       ...INITIAL_COMPOSER_DRAFT_STATE,
+      activeTab: input?.activeTab ?? "email",
       body: input?.body ?? "",
+      smsBody: input?.smsBody ?? "",
+      recipient:
+        input?.recipient ??
+        ({
+          kind: "contact",
+          contactId: "contact-1",
+          displayName: "Ada Lovelace",
+          primaryEmail: "ada@example.org",
+          primaryProjectName: "Forest",
+          salesforceContactId: "sf-1",
+        } as const),
+      smsRecipient:
+        input?.smsRecipient ??
+        ({
+          kind: "contact",
+          contactId: "contact-sms-1",
+          displayName: "Maya Lee",
+          phoneE164: "+14065550123",
+        } as const),
     },
     dispatch,
     aiDraft: input?.aiDraft ?? baseAiDraft,
-    selectedAliasRecord: null,
-    selectedAliasAiConfigured: false,
-    replyContext: null,
-    startAiGeneration: vi.fn(),
+    selectedAliasRecord: {
+      id: "alias-1",
+      alias: "forest@adventuresci.org",
+      projectId: "project-1",
+      projectName: "Forest",
+      isAiReady: true,
+      isAiConfigured: true,
+      hasCachedContent: true,
+    },
+    selectedAliasAiConfigured: input?.selectedAliasAiConfigured ?? true,
+    replyContext: {
+      contactId: "contact-1",
+      contactDisplayName: "Ada Lovelace",
+      contactPrimaryPhone: "+14065550123",
+      subject: "Re: Forest dates",
+      threadCursor: "thread-cursor-1",
+      threadId: "thread-1",
+      inReplyToRfc822: "<message@example.org>",
+      defaultAlias: "forest@adventuresci.org",
+      cc: [],
+    },
+    startAiGeneration,
     markAiDraftReviewable: vi.fn(),
     approveAiDraft,
     discardAiDraft: vi.fn(),
@@ -51,12 +99,17 @@ function setup(input?: {
     cancelReprompt: vi.fn(),
     setAiError: vi.fn(),
     setComposerErrors: vi.fn(),
-    startAiTransition: vi.fn(),
+    startAiTransition:
+      input?.startAiTransition ??
+      ((callback) => {
+        void callback();
+      }),
   });
 
   return {
     dispatch,
     approveAiDraft,
+    startAiGeneration,
     controls,
   };
 }
@@ -73,6 +126,7 @@ describe("useAiDraftRun", () => {
 
     expect(dispatch).toHaveBeenCalledWith({
       type: "APPLY_AI_APPROVAL",
+      channel: "email",
       approvedText: "AI draft",
     });
     expect(approveAiDraft).toHaveBeenCalledOnce();
@@ -95,6 +149,7 @@ describe("useAiDraftRun", () => {
     );
     expect(dispatch).not.toHaveBeenCalledWith({
       type: "APPLY_AI_APPROVAL",
+      channel: "email",
       approvedText: "AI draft",
     });
     expect(approveAiDraft).not.toHaveBeenCalled();
@@ -118,8 +173,61 @@ describe("useAiDraftRun", () => {
     );
     expect(dispatch).not.toHaveBeenCalledWith({
       type: "APPLY_AI_APPROVAL",
+      channel: "email",
       approvedText: "AI draft",
     });
     expect(approveAiDraft).not.toHaveBeenCalled();
+  });
+
+  it("applies approval to sms without checking the email body", () => {
+    const { dispatch, approveAiDraft, controls } = setup({
+      activeTab: "sms",
+      body: "Existing email draft",
+      smsBody: "",
+      aiDraft: {
+        ...baseAiDraft,
+        channel: "sms",
+      },
+    });
+
+    controls.approveAi();
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "APPLY_AI_APPROVAL",
+      channel: "sms",
+      approvedText: "AI draft",
+    });
+    expect(approveAiDraft).toHaveBeenCalledOnce();
+  });
+
+  it("starts an sms AI draft with channel-aware request inputs", () => {
+    const startAiGeneration = vi.fn();
+    const startAiTransition = vi.fn();
+    const { controls } = setup({
+      activeTab: "sms",
+      startAiGeneration,
+      startAiTransition,
+      recipient: null,
+      smsRecipient: {
+        kind: "contact",
+        contactId: "contact-sms-42",
+        displayName: "Maya Lee",
+        phoneE164: "+14065550123",
+      },
+    });
+
+    controls.runAiDraft();
+
+    expect(startAiGeneration).toHaveBeenCalledWith({
+      request: {
+        contactId: "contact-sms-42",
+        projectId: "project-1",
+        threadCursor: "thread-cursor-1",
+        channel: "sms",
+        mode: "draft",
+      },
+      prompt: "Draft with AI",
+    });
+    expect(startAiTransition).toHaveBeenCalledOnce();
   });
 });

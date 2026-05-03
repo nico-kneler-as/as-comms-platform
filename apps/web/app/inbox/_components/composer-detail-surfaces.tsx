@@ -645,14 +645,31 @@ export function ComposerSmsSurface({
   body,
   includeSignature,
   segmentMetrics,
+  aiDraft,
+  aiDirective,
+  repromptText,
+  isGeneratingAi,
+  runAiDraftDisabled,
+  runAiDraftDisabledReason,
   sendDisabledReason,
   inlineError,
   recipientError,
   senderError,
   bodyError,
   isSending,
+  isAboutOpen,
+  onAboutOpenChange,
   onRecipientChange,
   onBodyChange,
+  onAiDirectiveChange,
+  onAiEdited,
+  onDiscardAi,
+  onOpenReprompt,
+  onCancelReprompt,
+  onApproveAi,
+  onRunAiDraft,
+  onRepromptTextChange,
+  onReprompt,
   onToggleSignature,
   onSend,
   onCancel,
@@ -664,14 +681,31 @@ export function ComposerSmsSurface({
   readonly body: string;
   readonly includeSignature: boolean;
   readonly segmentMetrics: SmsMetrics;
+  readonly aiDraft: AiDraftState;
+  readonly aiDirective: string;
+  readonly repromptText: string;
+  readonly isGeneratingAi: boolean;
+  readonly runAiDraftDisabled: boolean;
+  readonly runAiDraftDisabledReason: string | null;
   readonly sendDisabledReason: string | null;
   readonly inlineError: InlineComposerError | null;
   readonly recipientError?: ComposerValidationError;
   readonly senderError?: ComposerValidationError;
   readonly bodyError?: ComposerValidationError;
   readonly isSending: boolean;
+  readonly isAboutOpen: boolean;
+  readonly onAboutOpenChange: (open: boolean) => void;
   readonly onRecipientChange: (recipient: ComposerSmsRecipient | null) => void;
   readonly onBodyChange: (value: string) => void;
+  readonly onAiDirectiveChange: (value: string) => void;
+  readonly onAiEdited: () => void;
+  readonly onDiscardAi: () => void;
+  readonly onOpenReprompt: () => void;
+  readonly onCancelReprompt: () => void;
+  readonly onApproveAi: () => void;
+  readonly onRunAiDraft: () => void;
+  readonly onRepromptTextChange: (value: string) => void;
+  readonly onReprompt: () => void;
   readonly onToggleSignature: () => void;
   readonly onSend: () => void;
   readonly onCancel: () => void;
@@ -763,11 +797,34 @@ export function ComposerSmsSurface({
       </div>
 
       <div className="px-4 py-4">
+        <ComposerAiDraftWindow
+          directivePlaceholder='Optional: nudge the SMS draft (e.g. "remind them about Wed training, keep under 140 chars"). Or just click Draft with AI.'
+          aiDraft={aiDraft}
+          directiveText={aiDirective}
+          repromptText={repromptText}
+          isGeneratingAi={isGeneratingAi}
+          runDraftDisabled={runAiDraftDisabled}
+          runDraftDisabledReason={runAiDraftDisabledReason}
+          onDirectiveTextChange={onAiDirectiveChange}
+          onRepromptTextChange={onRepromptTextChange}
+          onRunDraft={onRunAiDraft}
+          onOpenReprompt={onOpenReprompt}
+          onSubmitReprompt={onReprompt}
+          onCancelReprompt={onCancelReprompt}
+          onDiscard={onDiscardAi}
+          onApprove={onApproveAi}
+          onAbout={() => {
+            onAboutOpenChange(true);
+          }}
+        />
         <textarea
           rows={8}
           value={body}
           onChange={(event) => {
             onBodyChange(event.currentTarget.value);
+            if (aiDraft.status === "inserted") {
+              onAiEdited();
+            }
           }}
           placeholder="Write an SMS reply"
           className={cn(
@@ -825,6 +882,11 @@ export function ComposerSmsSurface({
           </div>
         </div>
       </div>
+      <AboutThisDraft
+        aiDraft={aiDraft}
+        open={isAboutOpen}
+        onOpenChange={onAboutOpenChange}
+      />
     </TooltipProvider>
   );
 }

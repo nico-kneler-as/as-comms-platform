@@ -90,7 +90,11 @@ export type ComposerDraftAction =
   | { readonly type: "ADD_ATTACHMENTS"; readonly attachments: readonly AttachmentDraft[] }
   | { readonly type: "REMOVE_ATTACHMENT"; readonly id: string }
   | { readonly type: "MARK_ATTACHMENTS_NEEDING_REUPLOAD" }
-  | { readonly type: "APPLY_AI_APPROVAL"; readonly approvedText: string }
+  | {
+      readonly type: "APPLY_AI_APPROVAL";
+      readonly channel: "email" | "sms";
+      readonly approvedText: string;
+    }
   | { readonly type: "SET_INLINE_ERROR"; readonly error: InlineComposerError }
   | { readonly type: "SET_FIELD_ERRORS"; readonly errors: ComposerFieldErrors }
   | {
@@ -329,8 +333,14 @@ export function reduceComposerDraft(
     case "APPLY_AI_APPROVAL":
       return {
         ...state,
-        body: action.approvedText,
-        bodyHtml: plaintextToComposerHtml(action.approvedText),
+        ...(action.channel === "sms"
+          ? {
+              smsBody: action.approvedText,
+            }
+          : {
+              body: action.approvedText,
+              bodyHtml: plaintextToComposerHtml(action.approvedText),
+            }),
         aiDirective: "",
         repromptText: "",
       };

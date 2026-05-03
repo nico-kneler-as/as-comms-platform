@@ -67,6 +67,7 @@ const aiDraftBaseRequestSchema = z.object({
   projectId: z.string().min(1).nullable().optional().default(null),
   threadCursor: z.string().min(1).nullable().optional().default(null),
   repromptIndex: z.number().int().nonnegative().optional().default(0),
+  channel: z.enum(["email", "sms"]).default("email"),
 });
 
 export const aiDraftRequestSchema = z.discriminatedUnion("mode", [

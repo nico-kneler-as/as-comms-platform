@@ -276,6 +276,7 @@ const baseProps: ComposerEmailSurfaceProps = {
   attachments: [],
   aiDraft: {
     status: "idle",
+    channel: "email",
     mode: null,
     responseMode: null,
     prompt: "",
