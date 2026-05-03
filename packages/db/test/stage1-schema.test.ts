@@ -45,6 +45,7 @@ describe("Stage 1 DB schema", () => {
       "integrationHealth",
       "internalNotes",
       "mailchimpCampaignActivityDetails",
+      "mailchimpCampaignTailState",
       "manualNoteDetails",
       "messageAttachments",
       "pendingComposerOutbounds",
