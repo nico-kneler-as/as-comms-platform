@@ -2432,18 +2432,13 @@ function buildTimelineEntry(input: {
     (finalKind === "inbound-email" || finalKind === "inbound-sms");
   const attachments =
     input.item.family === "one_to_one_email"
-      ? (
-          input.attachmentsByCanonicalEventId.get(input.item.canonicalEventId) ??
-          []
-        )
-          .filter((attachment) => !attachment.isInline)
-          .map((attachment) => ({
-            id: attachment.id,
-            mimeType: attachment.mimeType,
-            filename: attachment.filename,
-            sizeBytes: attachment.sizeBytes,
-            proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
-          }))
+      ? buildEmailAttachmentsForEntry({
+          canonical:
+            input.attachmentsByCanonicalEventId.get(
+              input.item.canonicalEventId,
+            ) ?? [],
+          pending: input.item.pendingAttachmentMetadata ?? [],
+        })
       : [];
   const headerProjectLabel =
     input.item.family === "one_to_one_email"
@@ -2559,6 +2554,41 @@ function buildTimelineEntry(input: {
     authorId:
       input.item.family === "internal_note" ? input.item.authorId : null,
   };
+}
+
+function buildEmailAttachmentsForEntry(input: {
+  readonly canonical: readonly MessageAttachmentRecord[];
+  readonly pending: readonly {
+    readonly filename: string | null;
+    readonly contentType: string;
+    readonly sizeBytes: number;
+  }[];
+}): InboxTimelineEntryViewModel["attachments"] {
+  const canonicalAttachments = input.canonical
+    .filter((attachment) => !attachment.isInline)
+    .map((attachment) => ({
+      id: attachment.id,
+      mimeType: attachment.mimeType,
+      filename: attachment.filename,
+      sizeBytes: attachment.sizeBytes,
+      proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
+    }));
+
+  if (canonicalAttachments.length > 0) {
+    return canonicalAttachments;
+  }
+
+  if (input.pending.length > 0) {
+    return input.pending.map((attachment) => ({
+      id: null,
+      mimeType: attachment.contentType,
+      filename: attachment.filename,
+      sizeBytes: attachment.sizeBytes,
+      proxyUrl: null,
+    }));
+  }
+
+  return [];
 }
 
 /**

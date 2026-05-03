@@ -118,21 +118,28 @@ function MessageAttachments({
   }
 
   const imageAttachments = attachments.filter((attachment) =>
-    attachment.mimeType.startsWith("image/"),
+    attachment.proxyUrl !== null && attachment.mimeType.startsWith("image/"),
   );
   const fileAttachments = attachments.filter(
-    (attachment) => !attachment.mimeType.startsWith("image/"),
+    (attachment) =>
+      attachment.proxyUrl === null || !attachment.mimeType.startsWith("image/"),
   );
 
   return (
     <div className="mt-3 flex flex-col gap-3">
       {imageAttachments.length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          {imageAttachments.map((attachment) => {
+          {imageAttachments.map((attachment, index) => {
             const label = attachmentLabel(attachment.filename);
+            const attachmentKey = attachment.id ?? `pending-${String(index)}`;
+            const proxyUrl = attachment.proxyUrl;
+
+            if (proxyUrl === null) {
+              return null;
+            }
 
             return (
-              <Dialog key={attachment.id}>
+              <Dialog key={attachmentKey}>
                 <DialogTrigger asChild>
                   <button
                     type="button"
@@ -140,7 +147,7 @@ function MessageAttachments({
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element -- proxy serves authenticated bytes; next/image optimizer cannot fetch through cookie auth */}
                     <img
-                      src={attachment.proxyUrl}
+                      src={proxyUrl}
                       alt={label}
                       loading="lazy"
                       className="h-[160px] w-[240px] object-cover"
@@ -151,7 +158,7 @@ function MessageAttachments({
                   <DialogTitle className="px-8 text-sm">{label}</DialogTitle>
                   {/* eslint-disable-next-line @next/next/no-img-element -- same reason as the trigger thumbnail above */}
                   <img
-                    src={attachment.proxyUrl}
+                    src={proxyUrl}
                     alt={label}
                     className="max-h-[80vh] w-full rounded-md object-contain"
                   />
@@ -164,12 +171,28 @@ function MessageAttachments({
 
       {fileAttachments.length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          {fileAttachments.map((attachment) => {
+          {fileAttachments.map((attachment, index) => {
             const label = attachmentLabel(attachment.filename);
+            const attachmentKey = attachment.id ?? `pending-${String(index)}`;
+
+            if (attachment.proxyUrl === null) {
+              return (
+                <span
+                  key={attachmentKey}
+                  className="inline-flex cursor-default items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500"
+                >
+                  <FileDocIcon className="size-3.5 shrink-0" />
+                  <span className="max-w-[16rem] truncate">{label}</span>
+                  <span className="text-slate-400">
+                    {formatBytes(attachment.sizeBytes)}
+                  </span>
+                </span>
+              );
+            }
 
             return (
               <a
-                key={attachment.id}
+                key={attachmentKey}
                 href={attachment.proxyUrl}
                 target="_blank"
                 rel="noreferrer"
