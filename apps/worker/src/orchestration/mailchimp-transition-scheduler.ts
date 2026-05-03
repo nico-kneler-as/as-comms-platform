@@ -20,8 +20,12 @@ const rotationWindowMs = 30 * 24 * 60 * 60 * 1000;
 const matureCampaignRefreshIntervalMs = 6 * 60 * 60 * 1000;
 const defaultDiscoveryBatchMaxRecords = 1000;
 
+// Graphile Worker's crontab parser rejects dots in task identifiers
+// (the job-name pattern used elsewhere in this codebase), so this
+// scheduler uses the hyphenated `poll-*` convention from sibling
+// cron tasks like `poll-gmail-live`.
 export const mailchimpTransitionSchedulerJobName =
-  "stage1.mailchimp.transition.scheduler" as const;
+  "poll-mailchimp-transition-scheduler" as const;
 export const mailchimpTransitionDiscoverySyncStateId =
   "sync:mailchimp:transition:discovery" as const;
 
