@@ -159,7 +159,9 @@ vi.mock("@/components/ui/dialog", () => ({
 vi.mock("../../app/inbox/actions", () => ({
   createNoteAction: vi.fn(),
   draftWithAiAction: vi.fn(),
-  resolveSmsConsentAction: vi.fn(),
+  resolveSmsConsentAction: vi
+    .fn()
+    .mockResolvedValue({ ok: false, message: "Mocked: SMS off in test." }),
   searchContactsAction: vi.fn(),
   sendComposerAction: vi.fn(),
   sendSmsAction: vi.fn(),
