@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useTransition } from "react";
 
-import { smsMetrics } from "@as-comms/domain";
+import { smsMetrics } from "@as-comms/domain/sms-segments";
 
 import {
   FOCUS_RING,

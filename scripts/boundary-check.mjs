@@ -10,6 +10,10 @@ const workspaceRules = {
     allowedWorkspaceImports: new Set([
       "@as-comms/contracts",
       "@as-comms/domain",
+      // Browser-safe subpath exports avoid transitive node:crypto pull from
+      // outbound-email-dedup. Any new subpath needs another entry — check is exact-string.
+      "@as-comms/domain/phone",
+      "@as-comms/domain/sms-segments",
       "@as-comms/ui"
     ])
   },

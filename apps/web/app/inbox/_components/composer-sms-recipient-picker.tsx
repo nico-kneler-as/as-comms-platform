@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-import { toE164 } from "@as-comms/domain";
+import { toE164 } from "@as-comms/domain/phone";
 
 import { Chip } from "@/components/ui/chip";
 import { Input } from "@/components/ui/input";
