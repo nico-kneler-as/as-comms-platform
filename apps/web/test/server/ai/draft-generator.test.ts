@@ -75,6 +75,7 @@ describe("generateAiDraft", () => {
       projectId: "project:whitebark",
       threadCursor: "event:thread-1-inbound",
       repromptIndex: 0,
+      channel: "email",
       mode: "draft",
     });
 
@@ -96,6 +97,7 @@ describe("generateAiDraft", () => {
       projectId: "project:whitebark",
       threadCursor: "event:thread-1-inbound",
       repromptIndex: 0,
+      channel: "email",
       mode: "fill",
       operatorPrompt: "Tell her the revised field kit will ship tomorrow.",
     });
@@ -114,6 +116,7 @@ describe("generateAiDraft", () => {
       projectId: "project:whitebark",
       threadCursor: "event:thread-1-inbound",
       repromptIndex: 1,
+      channel: "email",
       mode: "reprompt",
       previousDraft: "Thanks for checking in.",
       repromptDirection: "Make it shorter.",
@@ -137,6 +140,7 @@ describe("generateAiDraft", () => {
         projectId: "project:whitebark",
         threadCursor: "event:thread-1-inbound",
         repromptIndex: 0,
+        channel: "email",
         mode: "draft",
       },
     );
@@ -165,6 +169,7 @@ describe("generateAiDraft", () => {
         projectId: "project:whitebark",
         threadCursor: "event:thread-1-inbound",
         repromptIndex: 0,
+        channel: "email",
         mode: "draft",
       },
     );
@@ -186,6 +191,7 @@ describe("generateAiDraft", () => {
       projectId: "project:missing",
       threadCursor: "event:thread-1-inbound",
       repromptIndex: 0,
+      channel: "email",
       mode: "draft",
     });
 
@@ -209,6 +215,7 @@ describe("generateAiDraft", () => {
         projectId: "project:whitebark",
         threadCursor: "event:thread-1-inbound",
         repromptIndex: 0,
+        channel: "email",
         mode: "draft",
       },
     );
@@ -241,6 +248,7 @@ describe("generateAiDraft", () => {
         projectId: "project:whitebark",
         threadCursor: "event:thread-1-inbound",
         repromptIndex: 0,
+        channel: "email",
         mode: "draft",
       },
     );

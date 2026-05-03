@@ -68,6 +68,7 @@ export type AiDraftStatus =
 
 export interface AiDraftState {
   readonly status: AiDraftStatus;
+  readonly channel: "email" | "sms";
   readonly mode: AiDraftRequestPayload["mode"] | null;
   readonly responseMode: AiDraftResponseVm["mode"] | null;
   readonly prompt: string;
@@ -89,6 +90,7 @@ export interface AiDraftState {
 
 const INITIAL_AI_DRAFT: AiDraftState = {
   status: "idle",
+  channel: "email",
   mode: null,
   responseMode: null,
   prompt: "",
@@ -395,6 +397,7 @@ export function InboxClientProvider({
     }) => {
       setAiDraft({
         status: "generating",
+        channel: input.request.channel ?? "email",
         mode: input.request.mode,
         responseMode: null,
         prompt: input.prompt,
@@ -424,6 +427,7 @@ export function InboxClientProvider({
       setAiDraft((previous) => ({
         ...previous,
         status: "reviewable",
+        channel: input.request.channel ?? "email",
         mode: input.request.mode,
         responseMode: input.response.mode,
         prompt: input.prompt,
@@ -477,6 +481,7 @@ export function InboxClientProvider({
       setAiDraft((previous) => ({
         ...previous,
         status: "inserted",
+        channel: input.request.channel ?? "email",
         mode: input.request.mode,
         responseMode: input.response.mode,
         prompt: input.prompt,
@@ -539,6 +544,7 @@ export function InboxClientProvider({
       setAiDraft((previous) => ({
         ...previous,
         status: "reprompting",
+        channel: input.request.channel ?? previous.channel,
         mode: "reprompt",
         prompt: input.prompt,
         errorMessage: null,

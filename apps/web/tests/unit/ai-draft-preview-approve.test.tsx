@@ -71,6 +71,7 @@ const { JSDOM } = workerRequire("jsdom") as {
 
 const initialAiDraft: AiDraftState = {
   status: "idle",
+  channel: "email",
   mode: null,
   responseMode: null,
   prompt: "",

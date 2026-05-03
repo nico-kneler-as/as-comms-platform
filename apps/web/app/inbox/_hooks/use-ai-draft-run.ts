@@ -68,7 +68,7 @@ export function useAiDraftRun({
     readonly mode: "reprompt";
     readonly repromptDirection: string;
   }) => {
-    if (state.activeTab !== "email") {
+    if (state.activeTab !== "email" && state.activeTab !== "sms") {
       return;
     }
 
@@ -78,11 +78,22 @@ export function useAiDraftRun({
 
     clearComposerErrors();
 
-    if (state.recipient?.kind !== "contact") {
+    const isSms = state.activeTab === "sms";
+    const contactId =
+      isSms && state.smsRecipient?.kind === "contact"
+        ? state.smsRecipient.contactId
+        : !isSms && state.recipient?.kind === "contact"
+          ? state.recipient.contactId
+          : null;
+
+    if (contactId === null) {
       dispatch({
         type: "SET_INLINE_ERROR",
         error: {
-          message: "AI drafting is available only when replying to a contact.",
+          message:
+            state.activeTab === "sms"
+              ? "AI drafting requires a known volunteer contact."
+              : "AI drafting is available only when replying to a contact.",
           retryable: false,
         },
       });
@@ -90,9 +101,10 @@ export function useAiDraftRun({
     }
 
     const baseRequest = {
-      contactId: state.recipient.contactId,
+      contactId,
       projectId: selectedAliasRecord?.projectId ?? null,
       threadCursor: replyContext?.threadCursor ?? null,
+      channel: isSms ? ("sms" as const) : ("email" as const),
     } as const;
 
     const request =
@@ -188,7 +200,10 @@ export function useAiDraftRun({
   const approveAi = () => {
     const willOverwrite =
       aiDraft.status === "edited-after-generation" ||
-      (aiDraft.status === "reviewable" && state.body.trim().length > 0);
+      (aiDraft.status === "reviewable" &&
+        (aiDraft.channel === "sms"
+          ? state.smsBody.trim().length > 0
+          : state.body.trim().length > 0));
 
     if (willOverwrite && !window.confirm("Replace your current message with the AI draft?")) {
       return;
@@ -196,6 +211,7 @@ export function useAiDraftRun({
 
     dispatch({
       type: "APPLY_AI_APPROVAL",
+      channel: aiDraft.channel,
       approvedText: aiDraft.generatedText,
     });
     approveAiDraft();

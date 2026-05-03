@@ -131,6 +131,7 @@ describe("composer draft reducer", () => {
   it("applies AI approval and clears tab-scoped errors on tab switch", () => {
     const approved = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
       type: "APPLY_AI_APPROVAL",
+      channel: "email",
       approvedText: "Generated reply",
     });
 
@@ -149,6 +150,25 @@ describe("composer draft reducer", () => {
     expect(switched.activeTab).toBe("note");
     expect(switched.inlineError).toBeNull();
     expect(switched.fieldErrors).toEqual([]);
+  });
+
+  it("applies sms AI approval without mutating email fields", () => {
+    const approved = reduceComposerDraft(
+      {
+        ...INITIAL_COMPOSER_DRAFT_STATE,
+        body: "Existing email body",
+        bodyHtml: "<p>Existing email body</p>",
+      },
+      {
+        type: "APPLY_AI_APPROVAL",
+        channel: "sms",
+        approvedText: "Generated SMS reply",
+      },
+    );
+
+    expect(approved.smsBody).toBe("Generated SMS reply");
+    expect(approved.body).toBe("Existing email body");
+    expect(approved.bodyHtml).toBe("<p>Existing email body</p>");
   });
 
   it("returns initial state when the pane closes", () => {

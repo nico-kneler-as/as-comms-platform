@@ -9,6 +9,7 @@ import type { AiDraftState } from "../../app/inbox/_components/inbox-client-prov
 
 const aiDraft: AiDraftState = {
   status: "inserted",
+  channel: "email",
   mode: "reprompt",
   responseMode: "generated",
   prompt: "Make it shorter",
@@ -52,6 +53,7 @@ const aiDraft: AiDraftState = {
     projectId: "project:whitebark",
     threadCursor: "event:inbound-1",
     repromptIndex: 1,
+    channel: "email",
     mode: "reprompt",
     previousDraft: "Original draft",
     repromptDirection: "Make it shorter",

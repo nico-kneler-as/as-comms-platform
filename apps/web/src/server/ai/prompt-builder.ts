@@ -58,7 +58,18 @@ function renderTier3Entries(bundle: GroundingBundle): string {
     .join("\n\n");
 }
 
-function buildSystemPrompt(bundle: GroundingBundle): string {
+function renderChannelInstructionBlock(channel: AiDraftRequest["channel"]): string {
+  if (channel === "sms") {
+    return "Write SMS replies. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown, no greetings if the volunteer is mid-thread, no signature unless the operator asked. Match the tone of prior thread messages if any. Use the volunteer's first name when natural; default to no salutation. Don't include 'Reply STOP to opt out' — Twilio appends compliance language automatically.";
+  }
+
+  return "You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.";
+}
+
+function buildSystemPrompt(
+  bundle: GroundingBundle,
+  request: Pick<AiDraftRequest, "channel">,
+): string {
   return [
     renderContextSection(
       "Tier 1 Voice Instructions",
@@ -80,7 +91,7 @@ function buildSystemPrompt(bundle: GroundingBundle): string {
     "",
     "The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.",
     "",
-    "You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
+    renderChannelInstructionBlock(request.channel),
   ].join("\n");
 }
 
@@ -108,7 +119,7 @@ export function buildDraftPrompt(
 ): BuiltPrompt {
   void input;
   return {
-    system: buildSystemPrompt(bundle),
+    system: buildSystemPrompt(bundle, input),
     messages: [
       {
         role: "user",
@@ -123,7 +134,7 @@ export function buildFillPrompt(
   input: Extract<AiDraftRequest, { mode: "fill" }>,
 ): BuiltPrompt {
   return {
-    system: buildSystemPrompt(bundle),
+    system: buildSystemPrompt(bundle, input),
     messages: [
       {
         role: "user",
@@ -145,7 +156,7 @@ export function buildRepromptPrompt(
   input: Extract<AiDraftRequest, { mode: "reprompt" }>,
 ): BuiltPrompt {
   return {
-    system: buildSystemPrompt(bundle),
+    system: buildSystemPrompt(bundle, input),
     messages: [
       {
         role: "user",

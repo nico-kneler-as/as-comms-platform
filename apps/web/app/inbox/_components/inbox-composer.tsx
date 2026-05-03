@@ -270,19 +270,32 @@ export function InboxComposerDetailPane({
         null);
   const selectedAliasAiConfigured =
     selectedAliasRecord?.isAiConfigured ?? selectedAliasRecord?.isAiReady ?? false;
+  const smsRecipientRequiresKnownContact =
+    state.activeTab === "sms" && state.smsRecipient?.kind === "phone";
+  const smsAiConfigured =
+    selectedAliasRecord !== null && selectedAliasAiConfigured;
   const runAiDraftDisabled =
-    selectedAliasRecord === null ||
-    !selectedAliasAiConfigured ||
+    (state.activeTab === "sms"
+      ? !smsAiConfigured || smsRecipientRequiresKnownContact
+      : selectedAliasRecord === null || !selectedAliasAiConfigured) ||
     isGeneratingAi ||
     aiDraft.status === "generating" ||
     aiDraft.status === "reviewable" ||
     aiDraft.status === "reprompting";
   const runAiDraftDisabledReason =
-    selectedAliasRecord === null
-      ? "Choose a sender alias first."
-      : !selectedAliasAiConfigured
-        ? "AI is not configured for this project. Set it up in Settings → Integrations."
-        : null;
+    state.activeTab === "sms"
+      ? smsRecipientRequiresKnownContact
+        ? "AI drafting requires a known volunteer contact."
+        : !smsAiConfigured
+          ? selectedAliasRecord === null
+            ? "Choose a sender alias first."
+            : "AI is not configured for this project. Set it up in Settings → Integrations."
+          : null
+      : selectedAliasRecord === null
+        ? "Choose a sender alias first."
+        : !selectedAliasAiConfigured
+          ? "AI is not configured for this project. Set it up in Settings → Integrations."
+          : null;
   const aiWarningMessage = resolveAiWarningMessage(aiDraft);
   const sendAndSaveAvailability = resolveSendAndSaveForAiAvailability({
     selectedAlias: state.selectedAlias,
@@ -584,9 +597,19 @@ export function InboxComposerDetailPane({
               body={state.smsBody}
               includeSignature={state.smsIncludeSignature}
               segmentMetrics={smsMetricsValue}
+              aiDraft={aiDraft}
+              aiDirective={state.aiDirective}
+              repromptText={state.repromptText}
+              isGeneratingAi={isGeneratingAi}
+              runAiDraftDisabled={runAiDraftDisabled}
+              runAiDraftDisabledReason={runAiDraftDisabledReason}
               sendDisabledReason={smsSendDisabledReason}
               inlineError={state.inlineError}
               isSending={isSending}
+              isAboutOpen={state.isAboutOpen}
+              onAboutOpenChange={(open) => {
+                dispatch({ type: "SET_ABOUT_OPEN", open });
+              }}
               onRecipientChange={(nextRecipient) => {
                 if (nextRecipient === null) {
                   dispatch({
@@ -624,6 +647,21 @@ export function InboxComposerDetailPane({
               onBodyChange={(value) => {
                 dispatch({ type: "SET_SMS_BODY", body: value });
               }}
+              onAiDirectiveChange={(value) => {
+                dispatch({ type: "SET_AI_DIRECTIVE", value });
+              }}
+              onAiEdited={markAiDraftEdited}
+              onDiscardAi={discardAi}
+              onOpenReprompt={openReprompt}
+              onCancelReprompt={cancelAiReprompt}
+              onApproveAi={approveAi}
+              onRunAiDraft={() => {
+                runAiDraft();
+              }}
+              onRepromptTextChange={(value) => {
+                dispatch({ type: "SET_REPROMPT_TEXT", value });
+              }}
+              onReprompt={regenerateAi}
               onToggleSignature={() => {
                 dispatch({ type: "TOGGLE_SMS_SIGNATURE" });
               }}
