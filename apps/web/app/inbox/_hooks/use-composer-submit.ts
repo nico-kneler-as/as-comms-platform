@@ -1,0 +1,378 @@
+import type { Dispatch, TransitionStartFunction } from "react";
+import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
+
+import {
+  createNoteAction,
+  sendComposerAction,
+  type ComposerSendActionInput,
+} from "../actions";
+import {
+  resolveComposerSendActionFlags,
+  type ComposerSendKind,
+} from "../_lib/composer-ui";
+import type {
+  InboxComposerReplyContext,
+  OptimisticOutbound,
+} from "../_lib/view-models";
+import { clearDraft } from "../_lib/composer-draft-storage";
+import {
+  getInternalNoteValidationError,
+  normalizeInternalNoteBody,
+} from "@/src/lib/internal-note-validation";
+import {
+  mapFieldErrors,
+  resolveRecipientEmailAddress,
+  resolveRecipientLabel,
+  type AttachmentDraft,
+  type ComposerFieldErrors,
+} from "../_components/composer-shared";
+import type { ComposerRecipientValue } from "../_components/composer-recipient-picker";
+import type {
+  ComposerDraftAction,
+  ComposerDraftState,
+} from "./composer-draft-reducer";
+
+function resolveSupplementaryRecipientEmails(input: {
+  readonly recipients: readonly ComposerRecipientValue[];
+}):
+  | {
+      readonly ok: true;
+      readonly emails: readonly string[];
+    }
+  | {
+      readonly ok: false;
+      readonly message: string;
+    } {
+  const emails: string[] = [];
+
+  for (const recipient of input.recipients) {
+    const email = resolveRecipientEmailAddress(recipient);
+
+    if (email === null) {
+      return {
+        ok: false,
+        message: "Every selected recipient needs a valid email address.",
+      };
+    }
+
+    emails.push(email);
+  }
+
+  return {
+    ok: true,
+    emails,
+  };
+}
+
+function toOptimisticAttachment(attachment: AttachmentDraft, index: number) {
+  return {
+    id: `optimistic-attachment:${attachment.id}:${String(index)}`,
+    mimeType: attachment.contentType,
+    filename: attachment.filename,
+    sizeBytes: attachment.size,
+    proxyUrl:
+      attachment.contentBase64 === null
+        ? ""
+        : `data:${attachment.contentType};base64,${attachment.contentBase64}`,
+  };
+}
+
+export function useComposerSubmit({
+  state,
+  dispatch,
+  draftKey,
+  isReplying,
+  replyContext,
+  operatorDisplayName,
+  router,
+  closeComposer,
+  showToast,
+  setComposerErrors,
+  setComposerStatus,
+  addOptimisticOutbound,
+  markOptimisticSettled,
+  markOptimisticFailed,
+  startSendTransition,
+  startSaveNoteTransition,
+}: {
+  readonly state: ComposerDraftState;
+  readonly dispatch: Dispatch<ComposerDraftAction>;
+  readonly draftKey: string | null;
+  readonly isReplying: boolean;
+  readonly replyContext: InboxComposerReplyContext | null;
+  readonly operatorDisplayName: string;
+  readonly router: AppRouterInstance;
+  readonly closeComposer: () => void;
+  readonly showToast: (message: string, kind: "success" | "error") => void;
+  readonly setComposerErrors: (errors: ComposerFieldErrors) => void;
+  readonly setComposerStatus: (
+    status:
+      | "sending"
+      | "sent-success"
+      | "validation-error"
+      | "send-failure"
+      | "saving-draft"
+      | "draft-saved",
+  ) => void;
+  readonly addOptimisticOutbound: (entry: OptimisticOutbound) => void;
+  readonly markOptimisticSettled: (clientGeneratedId: string) => void;
+  readonly markOptimisticFailed: (
+    clientGeneratedId: string,
+    message: string,
+  ) => void;
+  readonly startSendTransition: TransitionStartFunction;
+  readonly startSaveNoteTransition: TransitionStartFunction;
+}) {
+  const setErrors = (input: {
+    readonly message: string;
+    readonly retryable: boolean;
+    readonly fieldErrors: ComposerFieldErrors;
+  }) => {
+    dispatch({
+      type: "SET_ERRORS",
+      inlineError: {
+        message: input.message,
+        retryable: input.retryable,
+      },
+      fieldErrors: input.fieldErrors,
+    });
+    setComposerErrors(input.fieldErrors);
+  };
+
+  const submit = (sendKind: ComposerSendKind) => {
+    if (
+      state.recipient === null ||
+      state.selectedAlias === null ||
+      state.activeTab !== "email"
+    ) {
+      return;
+    }
+
+    const resolvedCc = resolveSupplementaryRecipientEmails({
+      recipients: state.cc,
+    });
+    if (!resolvedCc.ok) {
+      setErrors({
+        message: resolvedCc.message,
+        retryable: false,
+        fieldErrors: [{ field: "cc", message: resolvedCc.message }],
+      });
+      return;
+    }
+
+    const resolvedBcc = resolveSupplementaryRecipientEmails({
+      recipients: state.bcc,
+    });
+    if (!resolvedBcc.ok) {
+      setErrors({
+        message: resolvedBcc.message,
+        retryable: false,
+        fieldErrors: [{ field: "bcc", message: resolvedBcc.message }],
+      });
+      return;
+    }
+
+    if (
+      state.attachments.some((attachment) => attachment.contentBase64 === null)
+    ) {
+      const message =
+        "Please reattach files added before refresh before sending.";
+      setErrors({
+        message,
+        retryable: false,
+        fieldErrors: [{ field: "attachments", message }],
+      });
+      return;
+    }
+
+    const payload: ComposerSendActionInput = {
+      recipient:
+        state.recipient.kind === "contact"
+          ? { kind: "contact", contactId: state.recipient.contactId }
+          : { kind: "email", emailAddress: state.recipient.emailAddress },
+      alias: state.selectedAlias,
+      subject: state.subject.trim(),
+      bodyPlaintext: state.body.trim(),
+      bodyHtml: state.bodyHtml,
+      ...(resolvedCc.emails.length > 0 ? { cc: [...resolvedCc.emails] } : {}),
+      ...(resolvedBcc.emails.length > 0
+        ? { bcc: [...resolvedBcc.emails] }
+        : {}),
+      attachments: state.attachments.flatMap((attachment) =>
+        attachment.contentBase64 === null
+          ? []
+          : [
+              {
+                filename: attachment.filename,
+                contentType: attachment.contentType,
+                contentBase64: attachment.contentBase64,
+              },
+            ],
+      ),
+      ...resolveComposerSendActionFlags({
+        sendKind,
+      }),
+      ...(replyContext?.threadId ? { threadId: replyContext.threadId } : {}),
+      ...(replyContext?.inReplyToRfc822
+        ? { inReplyToRfc822: replyContext.inReplyToRfc822 }
+        : {}),
+    };
+    const clientGeneratedId = crypto.randomUUID();
+    const recipientLabel = resolveRecipientLabel(state.recipient);
+    const occurredAt = new Date().toISOString();
+    const optimisticEntry: OptimisticOutbound = {
+      id: `optimistic:${clientGeneratedId}`,
+      clientGeneratedId,
+      contactId:
+        state.recipient.kind === "contact" ? state.recipient.contactId : null,
+      settledAt: null,
+      kind: "outbound-email",
+      occurredAt,
+      occurredAtLabel: "Just now",
+      actorLabel: operatorDisplayName,
+      subject: state.subject.trim(),
+      body: state.body.trim(),
+      channel: "email",
+      isUnread: false,
+      isPreview: false,
+      fromHeader: state.selectedAlias,
+      toHeader: recipientLabel,
+      recipientLabel,
+      ccHeader:
+        resolvedCc.emails.length > 0 ? resolvedCc.emails.join(", ") : null,
+      mailbox: state.selectedAlias,
+      threadId: replyContext?.threadId ?? null,
+      rfc822MessageId: null,
+      inReplyToRfc822: replyContext?.inReplyToRfc822 ?? null,
+      sendStatus: "pending",
+      failedReason: null,
+      failedDetail: null,
+      attachmentCount: state.attachments.length,
+      attachments: state.attachments.map(toOptimisticAttachment),
+      campaignActivity: [],
+    };
+
+    dispatch({ type: "CLEAR_ERRORS" });
+    setComposerErrors([]);
+    setComposerStatus("sending");
+    addOptimisticOutbound(optimisticEntry);
+
+    if (draftKey !== null) {
+      clearDraft(draftKey);
+    }
+    closeComposer();
+
+    startSendTransition(async () => {
+      try {
+        const result = await sendComposerAction({
+          ...payload,
+          clientGeneratedId,
+        });
+
+        if (result.ok) {
+          if (result.data.clientGeneratedId !== null) {
+            markOptimisticSettled(result.data.clientGeneratedId);
+          }
+          setComposerStatus("sent-success");
+          showToast(`Sent to ${recipientLabel}`, "success");
+          router.refresh();
+          return;
+        }
+
+        markOptimisticFailed(clientGeneratedId, result.message);
+        const fieldErrors = mapFieldErrors(result);
+        dispatch({
+          type: "SET_ERRORS",
+          inlineError: {
+            message: result.message,
+            retryable: result.retryable === true,
+          },
+          fieldErrors,
+        });
+        setComposerErrors(fieldErrors);
+        setComposerStatus(
+          result.code === "validation_error"
+            ? "validation-error"
+            : "send-failure",
+        );
+      } catch {
+        markOptimisticFailed(
+          clientGeneratedId,
+          "We could not send that message right now.",
+        );
+        setComposerStatus("send-failure");
+        dispatch({
+          type: "SET_INLINE_ERROR",
+          error: {
+            message: "We could not send that message right now.",
+            retryable: true,
+          },
+        });
+      }
+    });
+  };
+
+  const saveNote = () => {
+    if (!isReplying || replyContext === null) {
+      return;
+    }
+
+    const normalizedBody = normalizeInternalNoteBody(state.body);
+    const validationError = getInternalNoteValidationError(normalizedBody);
+
+    if (validationError !== null) {
+      setErrors({
+        message: validationError,
+        retryable: false,
+        fieldErrors: [{ field: "body", message: validationError }],
+      });
+      return;
+    }
+
+    dispatch({ type: "CLEAR_ERRORS" });
+    setComposerErrors([]);
+    setComposerStatus("saving-draft");
+
+    startSaveNoteTransition(async () => {
+      const result = await createNoteAction({
+        contactId: replyContext.contactId,
+        body: normalizedBody,
+      });
+
+      if (result.ok) {
+        setComposerStatus("draft-saved");
+        dispatch({ type: "SET_BODY", body: "", bodyHtml: "" });
+        closeComposer();
+        router.refresh();
+        showToast("Note saved.", "success");
+        return;
+      }
+
+      const fieldErrors = mapFieldErrors(result);
+      dispatch({
+        type: "SET_ERRORS",
+        inlineError: {
+          message: result.message,
+          retryable: result.retryable === true,
+        },
+        fieldErrors,
+      });
+      setComposerErrors(fieldErrors);
+      setComposerStatus("validation-error");
+    });
+  };
+
+  const cancel = () => {
+    if (draftKey !== null) {
+      clearDraft(draftKey);
+    }
+
+    closeComposer();
+  };
+
+  return {
+    submit,
+    saveNote,
+    cancel,
+  };
+}

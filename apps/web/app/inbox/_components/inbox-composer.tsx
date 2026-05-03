@@ -1,13 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import {
-  useEffect,
-  useRef,
-  useState,
-  useTransition,
-  type ChangeEvent,
-} from "react";
+import { useEffect, useRef, useTransition } from "react";
 
 import {
   FOCUS_RING,
@@ -16,109 +10,26 @@ import {
 } from "@/app/_lib/design-tokens-v2";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import {
-  getInternalNoteValidationError,
-  normalizeInternalNoteBody,
-} from "@/src/lib/internal-note-validation";
 
 import {
-  createNoteAction,
-  draftWithAiAction,
-  sendComposerAction,
-  type ComposerSendActionInput,
-} from "../actions";
-import {
   isComposerSendDisabled,
-  resolveComposerSendActionFlags,
-  resolveDefaultAlias,
   resolveSendAndSaveForAiAvailability,
-  type ComposerSendKind,
 } from "../_lib/composer-ui";
-import type { OptimisticOutbound } from "../_lib/view-models";
-import {
-  clearDraft,
-  loadDraft,
-  saveDraft,
-} from "../_lib/composer-draft-storage";
-import { plaintextToComposerHtml } from "./composer-html";
 import { ComposerCollapsedPill } from "./composer-collapsed-pill";
 import {
   ComposerEmailSurface,
   ComposerNoteSurface,
 } from "./composer-detail-surfaces";
 import {
-  type ComposerContactRecipient,
-  type ComposerRecipientValue,
-} from "./composer-recipient-picker";
-import {
   autoResizeTextarea,
-  mapFieldErrors,
-  readFileAsAttachment,
   resolveAiWarningMessage,
-  resolveComposerDraftKey,
-  resolveRecipientEmailAddress,
-  resolveRecipientLabel,
-  type AttachmentDraft,
-  type InlineComposerError,
 } from "./composer-shared";
 import { useInboxClient } from "./inbox-client-provider";
 import { ChevronDownIcon, MailIcon, NoteIcon, XIcon } from "./icons";
-
-const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-
-function toEmailRecipients(
-  emails: readonly string[] | undefined,
-): readonly ComposerRecipientValue[] {
-  return (emails ?? []).map((emailAddress) => ({
-    kind: "email",
-    emailAddress,
-  }));
-}
-
-function resolveSupplementaryRecipientEmails(input: {
-  readonly recipients: readonly ComposerRecipientValue[];
-}):
-  | {
-      readonly ok: true;
-      readonly emails: readonly string[];
-    }
-  | {
-      readonly ok: false;
-      readonly message: string;
-    } {
-  const emails: string[] = [];
-
-  for (const recipient of input.recipients) {
-    const email = resolveRecipientEmailAddress(recipient);
-
-    if (email === null) {
-      return {
-        ok: false,
-        message: "Every selected recipient needs a valid email address.",
-      };
-    }
-
-    emails.push(email);
-  }
-
-  return {
-    ok: true,
-    emails,
-  };
-}
-
-function toOptimisticAttachment(attachment: AttachmentDraft, index: number) {
-  return {
-    id: `optimistic-attachment:${attachment.id}:${String(index)}`,
-    mimeType: attachment.contentType,
-    filename: attachment.filename,
-    sizeBytes: attachment.size,
-    proxyUrl:
-      attachment.contentBase64 === null
-        ? ""
-        : `data:${attachment.contentType};base64,${attachment.contentBase64}`,
-  };
-}
+import { useAiDraftRun } from "../_hooks/use-ai-draft-run";
+import { useAttachmentIntake } from "../_hooks/use-attachment-intake";
+import { useComposerDraftState } from "../_hooks/use-composer-draft-state";
+import { useComposerSubmit } from "../_hooks/use-composer-submit";
 
 export function InboxComposerReplyBar({
   contactDisplayName,
@@ -223,263 +134,47 @@ export function InboxComposerDetailPane() {
     markOptimisticSettled,
     markOptimisticFailed,
   } = useInboxClient();
-  const [activeTab, setActiveTab] = useState<"email" | "note">("email");
-  const [recipient, setRecipient] = useState<ComposerRecipientValue | null>(
-    null,
-  );
-  const [ccRecipients, setCcRecipients] = useState<
-    readonly ComposerRecipientValue[]
-  >([]);
-  const [bccRecipients, setBccRecipients] = useState<
-    readonly ComposerRecipientValue[]
-  >([]);
-  const [showCc, setShowCc] = useState(false);
-  const [showBcc, setShowBcc] = useState(false);
-  const [selectedAlias, setSelectedAlias] = useState<string | null>(null);
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
-  const [bodyHtml, setBodyHtml] = useState("");
-  const [attachments, setAttachments] = useState<readonly AttachmentDraft[]>(
-    [],
-  );
-  const [aiDirective, setAiDirective] = useState("");
-  const [repromptText, setRepromptText] = useState("");
-  const [inlineError, setInlineError] = useState<InlineComposerError | null>(
-    null,
-  );
-  const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isSending, startSendTransition] = useTransition();
   const [isSavingNote, startSaveNoteTransition] = useTransition();
   const [isGeneratingAi, startAiTransition] = useTransition();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
-  const hydratedDraftKeyRef = useRef<string | null>(null);
-
-  const replyContext =
-    composerPane.mode === "replying" ? composerPane.replyContext : null;
-  const isReplying = composerPane.mode === "replying";
+  const {
+    state,
+    dispatch,
+    draftKey,
+    isReplying,
+    replyContext,
+  } = useComposerDraftState({
+    actorId: currentActorId,
+    composerPane,
+    composerAliases,
+    setComposerStatus,
+    setComposerErrors,
+    resetAiDraft,
+  });
   const canUseNoteTab = isReplying && replyContext !== null;
 
   useEffect(() => {
-    if (composerPane.mode === "closed") {
-      hydratedDraftKeyRef.current = null;
-      return;
-    }
-
-    const replyRecipient: ComposerContactRecipient | null =
-      replyContext === null
-        ? null
-        : {
-            kind: "contact",
-            contactId: replyContext.contactId,
-            displayName: replyContext.contactDisplayName,
-            primaryEmail: null,
-            primaryProjectName: null,
-            salesforceContactId: null,
-          };
-
-    setActiveTab(
-      composerPane.mode === "replying" && composerPane.initialTab === "note"
-        ? "note"
-        : "email",
-    );
-    setRecipient(replyRecipient);
-    setCcRecipients(
-      toEmailRecipients(replyContext?.cc).filter((candidate) => {
-        if (candidate.kind !== "email") {
-          return true;
-        }
-
-        return candidate.emailAddress !== replyContext?.defaultAlias;
-      }),
-    );
-    setBccRecipients([]);
-    setShowCc((replyContext?.cc?.length ?? 0) > 0);
-    setShowBcc(false);
-    setSelectedAlias(replyContext?.defaultAlias ?? null);
-    setSubject(replyContext?.subject ?? "");
-    setBody("");
-    setBodyHtml("");
-    setAttachments([]);
-    setAiDirective("");
-    setRepromptText("");
-    setInlineError(null);
-    setIsAboutOpen(false);
-    setComposerStatus("idle");
-    setComposerErrors([]);
-    resetAiDraft();
-  }, [
-    composerPane,
-    replyContext,
-    resetAiDraft,
-    setComposerErrors,
-    setComposerStatus,
-  ]);
-
-  const baselineSubject = replyContext?.subject ?? "";
-  const baselineAlias = isReplying
-    ? (replyContext?.defaultAlias ?? null)
-    : resolveDefaultAlias({
-        recipient,
-        aliases: composerAliases,
-      });
-  const draftKey = resolveComposerDraftKey({
-    actorId: currentActorId,
-    recipient,
-  });
-
-  useEffect(() => {
-    if (
-      composerPane.mode === "closed" ||
-      activeTab !== "email" ||
-      draftKey === null ||
-      hydratedDraftKeyRef.current === draftKey
-    ) {
-      return;
-    }
-
-    const isUntouchedComposer =
-      subject.trim() === baselineSubject.trim() &&
-      body.trim().length === 0 &&
-      bodyHtml.trim().length === 0 &&
-      ccRecipients.length === 0 &&
-      bccRecipients.length === 0 &&
-      attachments.length === 0 &&
-      selectedAlias === baselineAlias;
-
-    if (!isUntouchedComposer) {
-      hydratedDraftKeyRef.current = draftKey;
-      return;
-    }
-
-    const draft = loadDraft(draftKey);
-    hydratedDraftKeyRef.current = draftKey;
-
-    if (draft === null) {
-      return;
-    }
-
-    setSubject(draft.subject);
-    setBody(draft.bodyPlaintext);
-    setBodyHtml(draft.bodyHtml);
-    const draftCc = Array.isArray((draft as { readonly cc?: unknown }).cc)
-      ? ((draft as { readonly cc?: readonly string[] }).cc ?? [])
-      : [];
-    const draftBcc = Array.isArray((draft as { readonly bcc?: unknown }).bcc)
-      ? ((draft as { readonly bcc?: readonly string[] }).bcc ?? [])
-      : [];
-    setCcRecipients(toEmailRecipients(draftCc));
-    setBccRecipients(toEmailRecipients(draftBcc));
-    setShowCc(draftCc.length > 0);
-    setShowBcc(draftBcc.length > 0);
-    setSelectedAlias(draft.selectedAlias);
-    setAttachments(
-      draft.attachments.map((attachment, index) => ({
-        id: `draft:${attachment.filename}:${String(attachment.size)}:${String(index)}`,
-        filename: attachment.filename,
-        size: attachment.size,
-        contentType: attachment.contentType,
-        contentBase64: null,
-      })),
-    );
-  }, [
-    activeTab,
-    attachments.length,
-    baselineAlias,
-    baselineSubject,
-    body,
-    bodyHtml,
-    bccRecipients.length,
-    ccRecipients.length,
-    composerPane.mode,
-    draftKey,
-    selectedAlias,
-    subject,
-  ]);
-
-  useEffect(() => {
-    if (
-      composerPane.mode === "closed" ||
-      activeTab !== "email" ||
-      draftKey === null
-    ) {
-      return;
-    }
-
-    const hasPersistableContent =
-      subject.trim() !== baselineSubject.trim() ||
-      body.trim().length > 0 ||
-      bodyHtml.trim().length > 0 ||
-      ccRecipients.length > 0 ||
-      bccRecipients.length > 0 ||
-      selectedAlias !== baselineAlias ||
-      attachments.length > 0;
-
-    const timeoutId = window.setTimeout(() => {
-      if (!hasPersistableContent) {
-        clearDraft(draftKey);
-        return;
-      }
-
-      saveDraft(draftKey, {
-        subject,
-        bodyPlaintext: body,
-        bodyHtml,
-        selectedAlias,
-        cc: ccRecipients.flatMap((recipient) => {
-          const email = resolveRecipientEmailAddress(recipient);
-          return email === null ? [] : [email];
-        }),
-        bcc: bccRecipients.flatMap((recipient) => {
-          const email = resolveRecipientEmailAddress(recipient);
-          return email === null ? [] : [email];
-        }),
-        attachments: attachments.map((attachment) => ({
-          filename: attachment.filename,
-          size: attachment.size,
-          contentType: attachment.contentType,
-        })),
-      });
-    }, 500);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [
-    activeTab,
-    attachments,
-    baselineAlias,
-    baselineSubject,
-    body,
-    bodyHtml,
-    bccRecipients,
-    ccRecipients,
-    composerPane.mode,
-    draftKey,
-    selectedAlias,
-    subject,
-  ]);
-
-  useEffect(() => {
-    if (activeTab !== "note" || !bodyRef.current) {
+    if (state.activeTab !== "note" || !bodyRef.current) {
       return;
     }
 
     autoResizeTextarea(bodyRef.current);
-  }, [activeTab, body]);
+  }, [state.activeTab, state.body]);
 
   if (composerPane.mode === "closed") {
     return null;
   }
 
-  const attachmentBytes = attachments.reduce(
+  const attachmentBytes = state.attachments.reduce(
     (total, attachment) => total + attachment.size,
     0,
   );
   const selectedAliasRecord =
-    selectedAlias === null
+    state.selectedAlias === null
       ? null
-      : (composerAliases.find((alias) => alias.alias === selectedAlias) ??
+      : (composerAliases.find((alias) => alias.alias === state.selectedAlias) ??
         null);
   const selectedAliasAiConfigured =
     selectedAliasRecord?.isAiConfigured ?? selectedAliasRecord?.isAiReady ?? false;
@@ -498,26 +193,24 @@ export function InboxComposerDetailPane() {
         : null;
   const aiWarningMessage = resolveAiWarningMessage(aiDraft);
   const sendAndSaveAvailability = resolveSendAndSaveForAiAvailability({
-    selectedAlias,
+    selectedAlias: state.selectedAlias,
     aliases: composerAliases,
   });
   const isSendDisabled = isComposerSendDisabled({
-    activeTab,
-    recipient,
-    selectedAlias,
-    subject,
-    body,
+    activeTab: state.activeTab,
+    recipient: state.recipient,
+    selectedAlias: state.selectedAlias,
+    subject: state.subject,
+    body: state.body,
     isSending,
   });
   const isSaveNoteDisabled =
-    activeTab !== "note" ||
+    state.activeTab !== "note" ||
     !canUseNoteTab ||
-    body.trim().length === 0 ||
+    state.body.trim().length === 0 ||
     isSavingNote;
   const aliasError = composerErrors.find((error) => error.field === "alias");
-  const subjectError = composerErrors.find(
-    (error) => error.field === "subject",
-  );
+  const subjectError = composerErrors.find((error) => error.field === "subject");
   const bodyError = composerErrors.find((error) => error.field === "body");
   const recipientError = composerErrors.find(
     (error) => error.field === "recipient",
@@ -528,7 +221,7 @@ export function InboxComposerDetailPane() {
     (error) => error.field === "attachments",
   );
   const modalTitle =
-    activeTab === "note"
+    state.activeTab === "note"
       ? "Note"
       : isReplying && replyContext !== null
         ? resolveReplyTitle({
@@ -536,397 +229,54 @@ export function InboxComposerDetailPane() {
             fallbackName: replyContext.contactDisplayName,
           })
         : "New message";
-
-  const clearComposerErrors = () => {
-    setInlineError(null);
-    setComposerErrors([]);
-  };
-
-  const runAiDraft = (requestOverride?: {
-    readonly mode: "reprompt";
-    readonly repromptDirection: string;
-  }) => {
-    if (activeTab !== "email") {
-      return;
-    }
-
-    if (!selectedAliasAiConfigured) {
-      return;
-    }
-
-    clearComposerErrors();
-
-    if (recipient?.kind !== "contact") {
-      setInlineError({
-        message: "AI drafting is available only when replying to a contact.",
-        retryable: false,
-      });
-      return;
-    }
-
-    const baseRequest = {
-      contactId: recipient.contactId,
-      projectId: selectedAliasRecord?.projectId ?? null,
-      threadCursor: replyContext?.threadCursor ?? null,
-    } as const;
-
-    const request =
-      requestOverride?.mode === "reprompt"
-        ? {
-            ...baseRequest,
-            mode: "reprompt" as const,
-            previousDraft: aiDraft.generatedText.trim(),
-            repromptDirection: requestOverride.repromptDirection,
-            repromptIndex: aiDraft.repromptChain.length + 1,
-          }
-        : aiDirective.trim().length === 0
-          ? {
-              ...baseRequest,
-              mode: "draft" as const,
-            }
-          : {
-              ...baseRequest,
-              mode: "fill" as const,
-              operatorPrompt: aiDirective.trim(),
-            };
-
-    const prompt =
-      request.mode === "reprompt"
-        ? request.repromptDirection
-        : request.mode === "draft"
-          ? "Draft with AI"
-          : request.operatorPrompt;
-
-    if (request.mode === "reprompt") {
-      repromptAi({ request, prompt });
-    } else {
-      startAiGeneration({ request, prompt });
-    }
-
-    startAiTransition(async () => {
-      const result = await draftWithAiAction(request);
-
-      if (!result.ok) {
-        setAiError(result.message);
-        setInlineError({
-          message: result.message,
-          retryable: false,
-        });
-        return;
-      }
-
-      clearComposerErrors();
-      setInlineError(null);
-      setRepromptText("");
-      markAiDraftReviewable({
-        request,
-        response: result.data,
-        prompt,
-        ...(request.mode === "reprompt"
-          ? {
-              repromptDirection: request.repromptDirection,
-            }
-          : {}),
-      });
-    });
-  };
-
-  const handleFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = event.currentTarget.files;
-    if (files === null || files.length === 0) {
-      // Picker dispatched change with no selection — treat as cancel.
-      event.currentTarget.value = "";
-      return;
-    }
-
-    // HTMLInputElement.files is a *live* FileList: resetting `.value`
-    // empties it. Snapshot to a real array before the reset so the rest
-    // of the handler keeps its file references and the user's selection
-    // actually arrives in the attachment list.
-    const selectedFiles = Array.from(files);
-    event.currentTarget.value = "";
-    const nextTotalBytes =
-      attachmentBytes +
-      selectedFiles.reduce((total, file) => total + file.size, 0);
-
-    if (nextTotalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
-      setInlineError({
-        message: "Attachments can't exceed 20 MB total.",
-        retryable: false,
-      });
-      setComposerErrors([
-        {
-          field: "attachments",
-          message: "Attachments can't exceed 20 MB total.",
-        },
-      ]);
-      return;
-    }
-
-    try {
-      const nextAttachments = await Promise.all(
-        selectedFiles.map((file) => readFileAsAttachment(file)),
-      );
-      setAttachments((previous) => [...previous, ...nextAttachments]);
-      clearComposerErrors();
-    } catch {
-      setInlineError({
-        message: "We couldn't read one of those files. Please try again.",
-        retryable: true,
-      });
-    }
-  };
-
-  const handleDiscardAi = () => {
-    discardAiDraft();
-    setAiDirective("");
-    setRepromptText("");
-  };
-
-  const handleRegenerateAi = () => {
-    if (repromptText.trim().length === 0) {
-      return;
-    }
-
-    runAiDraft({
-      mode: "reprompt",
-      repromptDirection: repromptText.trim(),
-    });
-  };
-
-  const handleOpenReprompt = () => {
-    setRepromptText("");
-    markAiDraftReprompting();
-  };
-
-  const handleCancelReprompt = () => {
-    setRepromptText("");
-    cancelReprompt();
-  };
-
-  const handleApproveAi = () => {
-    const approvedText = aiDraft.generatedText;
-    setBody(approvedText);
-    setBodyHtml(plaintextToComposerHtml(approvedText));
-    setAiDirective("");
-    setRepromptText("");
-    approveAiDraft();
-  };
-
-  const submit = (sendKind: ComposerSendKind) => {
-    if (recipient === null || selectedAlias === null || activeTab !== "email") {
-      return;
-    }
-
-    const resolvedCc = resolveSupplementaryRecipientEmails({
-      recipients: ccRecipients,
-    });
-    if (!resolvedCc.ok) {
-      setInlineError({
-        message: resolvedCc.message,
-        retryable: false,
-      });
-      setComposerErrors([{ field: "cc", message: resolvedCc.message }]);
-      return;
-    }
-
-    const resolvedBcc = resolveSupplementaryRecipientEmails({
-      recipients: bccRecipients,
-    });
-    if (!resolvedBcc.ok) {
-      setInlineError({
-        message: resolvedBcc.message,
-        retryable: false,
-      });
-      setComposerErrors([{ field: "bcc", message: resolvedBcc.message }]);
-      return;
-    }
-
-    if (attachments.some((attachment) => attachment.contentBase64 === null)) {
-      setInlineError({
-        message: "Please reattach files added before refresh before sending.",
-        retryable: false,
-      });
-      setComposerErrors([
-        {
-          field: "attachments",
-          message: "Please reattach files added before refresh before sending.",
-        },
-      ]);
-      return;
-    }
-
-    const payload: ComposerSendActionInput = {
-      recipient:
-        recipient.kind === "contact"
-          ? { kind: "contact", contactId: recipient.contactId }
-          : { kind: "email", emailAddress: recipient.emailAddress },
-      alias: selectedAlias,
-      subject: subject.trim(),
-      bodyPlaintext: body.trim(),
-      bodyHtml,
-      ...(resolvedCc.emails.length > 0 ? { cc: [...resolvedCc.emails] } : {}),
-      ...(resolvedBcc.emails.length > 0
-        ? { bcc: [...resolvedBcc.emails] }
-        : {}),
-      attachments: attachments.flatMap((attachment) =>
-        attachment.contentBase64 === null
-          ? []
-          : [
-              {
-                filename: attachment.filename,
-                contentType: attachment.contentType,
-                contentBase64: attachment.contentBase64,
-              },
-            ],
-      ),
-      ...resolveComposerSendActionFlags({
-        sendKind,
-      }),
-      ...(replyContext?.threadId ? { threadId: replyContext.threadId } : {}),
-      ...(replyContext?.inReplyToRfc822
-        ? { inReplyToRfc822: replyContext.inReplyToRfc822 }
-        : {}),
-    };
-    const clientGeneratedId = crypto.randomUUID();
-    const recipientLabel = resolveRecipientLabel(recipient);
-    const occurredAt = new Date().toISOString();
-    const optimisticEntry: OptimisticOutbound = {
-      id: `optimistic:${clientGeneratedId}`,
-      clientGeneratedId,
-      contactId: recipient.kind === "contact" ? recipient.contactId : null,
-      settledAt: null,
-      kind: "outbound-email",
-      occurredAt,
-      occurredAtLabel: "Just now",
-      actorLabel: operatorDisplayName,
-      subject: subject.trim(),
-      body: body.trim(),
-      channel: "email",
-      isUnread: false,
-      isPreview: false,
-      fromHeader: selectedAlias,
-      toHeader: recipientLabel,
-      recipientLabel,
-      ccHeader:
-        resolvedCc.emails.length > 0 ? resolvedCc.emails.join(", ") : null,
-      mailbox: selectedAlias,
-      threadId: replyContext?.threadId ?? null,
-      rfc822MessageId: null,
-      inReplyToRfc822: replyContext?.inReplyToRfc822 ?? null,
-      sendStatus: "pending",
-      failedReason: null,
-      failedDetail: null,
-      attachmentCount: attachments.length,
-      attachments: attachments.map(toOptimisticAttachment),
-      campaignActivity: [],
-    };
-
-    setInlineError(null);
-    setComposerErrors([]);
-    setComposerStatus("sending");
-    addOptimisticOutbound(optimisticEntry);
-
-    if (draftKey !== null) {
-      clearDraft(draftKey);
-    }
-    closeComposer();
-
-    startSendTransition(async () => {
-      try {
-        const result = await sendComposerAction({
-          ...payload,
-          clientGeneratedId,
-        });
-
-        if (result.ok) {
-          if (result.data.clientGeneratedId !== null) {
-            markOptimisticSettled(result.data.clientGeneratedId);
-          }
-          setComposerStatus("sent-success");
-          showToast(`Sent to ${recipientLabel}`, "success");
-          router.refresh();
-          return;
-        }
-
-        markOptimisticFailed(clientGeneratedId, result.message);
-        setComposerErrors(mapFieldErrors(result));
-        setComposerStatus(
-          result.code === "validation_error"
-            ? "validation-error"
-            : "send-failure",
-        );
-        setInlineError({
-          message: result.message,
-          retryable: result.retryable === true,
-        });
-      } catch {
-        markOptimisticFailed(
-          clientGeneratedId,
-          "We could not send that message right now.",
-        );
-        setComposerStatus("send-failure");
-        setInlineError({
-          message: "We could not send that message right now.",
-          retryable: true,
-        });
-      }
-    });
-  };
-
-  const saveNote = () => {
-    if (!isReplying || replyContext === null) {
-      return;
-    }
-
-    const normalizedBody = normalizeInternalNoteBody(body);
-    const validationError = getInternalNoteValidationError(normalizedBody);
-
-    if (validationError !== null) {
-      setInlineError({
-        message: validationError,
-        retryable: false,
-      });
-      setComposerErrors([{ field: "body", message: validationError }]);
-      return;
-    }
-
-    setInlineError(null);
-    setComposerErrors([]);
-    setComposerStatus("saving-draft");
-
-    startSaveNoteTransition(async () => {
-      const result = await createNoteAction({
-        contactId: replyContext.contactId,
-        body: normalizedBody,
-      });
-
-      if (result.ok) {
-        setComposerStatus("draft-saved");
-        setBody("");
-        setBodyHtml("");
-        closeComposer();
-        router.refresh();
-        showToast("Note saved.", "success");
-        return;
-      }
-
-      setComposerErrors(mapFieldErrors(result));
-      setComposerStatus("validation-error");
-      setInlineError({
-        message: result.message,
-        retryable: result.retryable === true,
-      });
-    });
-  };
-
-  const handleCancel = () => {
-    if (draftKey !== null) {
-      clearDraft(draftKey);
-    }
-
-    closeComposer();
-  };
+  const handleFilesSelected = useAttachmentIntake({
+    attachmentBytes,
+    dispatch,
+    setComposerErrors,
+  });
+  const {
+    runAiDraft,
+    discardAi,
+    regenerateAi,
+    openReprompt,
+    cancelAiReprompt,
+    approveAi,
+  } = useAiDraftRun({
+    state,
+    dispatch,
+    aiDraft,
+    selectedAliasRecord,
+    selectedAliasAiConfigured,
+    replyContext,
+    startAiGeneration,
+    markAiDraftReviewable,
+    approveAiDraft,
+    discardAiDraft,
+    markAiDraftReprompting,
+    repromptAi,
+    cancelReprompt,
+    setAiError,
+    setComposerErrors,
+    startAiTransition,
+  });
+  const { submit, saveNote, cancel } = useComposerSubmit({
+    state,
+    dispatch,
+    draftKey,
+    isReplying,
+    replyContext,
+    operatorDisplayName,
+    router,
+    closeComposer,
+    showToast,
+    setComposerErrors,
+    setComposerStatus,
+    addOptimisticOutbound,
+    markOptimisticSettled,
+    markOptimisticFailed,
+    startSendTransition,
+    startSaveNoteTransition,
+  });
 
   return (
     <Dialog
@@ -949,7 +299,7 @@ export function InboxComposerDetailPane() {
               aria-hidden="true"
               className="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white"
             >
-              {activeTab === "note" ? (
+              {state.activeTab === "note" ? (
                 <NoteIcon className="size-3.5" />
               ) : (
                 <MailIcon className="size-3.5" />
@@ -982,24 +332,24 @@ export function InboxComposerDetailPane() {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-          <ComposerModeTabs activeTab={activeTab} />
+          <ComposerModeTabs activeTab={state.activeTab} />
 
-          {activeTab === "email" ? (
+          {state.activeTab === "email" ? (
             <ComposerEmailSurface
               composerAliases={composerAliases}
-              selectedAlias={selectedAlias}
-              recipient={recipient}
-              ccRecipients={ccRecipients}
-              bccRecipients={bccRecipients}
-              showCc={showCc}
-              showBcc={showBcc}
+              selectedAlias={state.selectedAlias}
+              recipient={state.recipient}
+              ccRecipients={state.cc}
+              bccRecipients={state.bcc}
+              showCc={state.showCc}
+              showBcc={state.showBcc}
               isReplying={isReplying}
-              subject={subject}
-              body={body}
-              attachments={attachments}
+              subject={state.subject}
+              body={state.body}
+              attachments={state.attachments}
               aiDraft={aiDraft}
-              aiDirective={aiDirective}
-              repromptText={repromptText}
+              aiDirective={state.aiDirective}
+              repromptText={state.repromptText}
               isGeneratingAi={isGeneratingAi}
               runAiDraftDisabled={runAiDraftDisabled}
               runAiDraftDisabledReason={runAiDraftDisabledReason}
@@ -1010,85 +360,78 @@ export function InboxComposerDetailPane() {
                 selectedAliasRecord?.projectName ?? null
               }
               aiWarningMessage={aiWarningMessage}
-              inlineError={inlineError}
+              inlineError={state.inlineError}
               canSendAndSaveForAi={sendAndSaveAvailability.enabled}
               sendAndSaveDisabledReason={
                 sendAndSaveAvailability.disabledReason
               }
               isSendDisabled={isSendDisabled}
               isSending={isSending}
-              isAboutOpen={isAboutOpen}
-              onAboutOpenChange={setIsAboutOpen}
+              isAboutOpen={state.isAboutOpen}
+              onAboutOpenChange={(open) => {
+                dispatch({ type: "SET_ABOUT_OPEN", open });
+              }}
               onAliasChange={(nextAlias) => {
-                setSelectedAlias(nextAlias);
-                clearComposerErrors();
+                dispatch({ type: "SET_ALIAS", alias: nextAlias });
               }}
               onRecipientChange={(nextRecipient) => {
-                setRecipient(nextRecipient);
-                clearComposerErrors();
-                if (!isReplying) {
-                  setSelectedAlias(
-                    resolveDefaultAlias({
-                      recipient: nextRecipient,
-                      aliases: composerAliases,
-                    }),
-                  );
-                }
+                dispatch({
+                  type: "SET_RECIPIENT",
+                  recipient: nextRecipient,
+                  isReplying,
+                  aliases: composerAliases,
+                });
               }}
               onCcChange={(nextRecipients) => {
-                setCcRecipients(nextRecipients);
-                clearComposerErrors();
+                dispatch({ type: "SET_CC", recipients: nextRecipients });
               }}
               onBccChange={(nextRecipients) => {
-                setBccRecipients(nextRecipients);
-                clearComposerErrors();
+                dispatch({ type: "SET_BCC", recipients: nextRecipients });
               }}
               onToggleCc={(open) => {
-                setShowCc(open);
-                if (!open) {
-                  setCcRecipients([]);
-                }
-                clearComposerErrors();
+                dispatch({ type: "TOGGLE_CC", open });
               }}
               onToggleBcc={(open) => {
-                setShowBcc(open);
-                if (!open) {
-                  setBccRecipients([]);
-                }
-                clearComposerErrors();
+                dispatch({ type: "TOGGLE_BCC", open });
               }}
               onSubjectChange={(value) => {
-                setSubject(value);
-                clearComposerErrors();
+                dispatch({ type: "SET_SUBJECT", subject: value });
               }}
               onBodyChange={(nextBody) => {
-                setBody(nextBody.bodyPlaintext);
-                setBodyHtml(nextBody.bodyHtml);
+                dispatch({
+                  type: "SET_BODY",
+                  body: nextBody.bodyPlaintext,
+                  bodyHtml: nextBody.bodyHtml,
+                });
               }}
-              onClearErrors={clearComposerErrors}
-              onAiDirectiveChange={setAiDirective}
+              onClearErrors={() => {
+                dispatch({ type: "CLEAR_ERRORS" });
+                setComposerErrors([]);
+              }}
+              onAiDirectiveChange={(value) => {
+                dispatch({ type: "SET_AI_DIRECTIVE", value });
+              }}
               onAiEdited={markAiDraftEdited}
-              onDiscardAi={handleDiscardAi}
-              onOpenReprompt={handleOpenReprompt}
-              onCancelReprompt={handleCancelReprompt}
-              onApproveAi={handleApproveAi}
+              onDiscardAi={discardAi}
+              onOpenReprompt={openReprompt}
+              onCancelReprompt={cancelAiReprompt}
+              onApproveAi={approveAi}
               onRunAiDraft={() => {
                 runAiDraft();
               }}
-              onRepromptTextChange={setRepromptText}
-              onReprompt={handleRegenerateAi}
+              onRepromptTextChange={(value) => {
+                dispatch({ type: "SET_REPROMPT_TEXT", value });
+              }}
+              onReprompt={regenerateAi}
               onAttachmentClick={() => {
                 attachmentInputRef.current?.click();
               }}
               onAttachmentRemove={(id) => {
-                clearComposerErrors();
-                setAttachments((previous) =>
-                  previous.filter((attachment) => attachment.id !== id),
-                );
+                dispatch({ type: "REMOVE_ATTACHMENT", id });
               }}
               onSaveDraft={minimizeComposer}
               onSend={submit}
-              onCancel={handleCancel}
+              onCancel={cancel}
               {...(aliasError ? { aliasError } : {})}
               {...(recipientError ? { recipientError } : {})}
               {...(ccError ? { ccError } : {})}
@@ -1099,18 +442,19 @@ export function InboxComposerDetailPane() {
             />
           ) : (
             <ComposerNoteSurface
-              body={body}
+              body={state.body}
               isSavingNote={isSavingNote}
               isSaveNoteDisabled={isSaveNoteDisabled}
-              inlineError={inlineError}
+              inlineError={state.inlineError}
               textareaRef={bodyRef}
               onBodyChange={(value) => {
-                setBody(value);
-                clearComposerErrors();
+                dispatch({ type: "SET_BODY", body: value, bodyHtml: "" });
+                dispatch({ type: "CLEAR_ERRORS" });
+                setComposerErrors([]);
               }}
               onTextareaInput={autoResizeTextarea}
               onSaveNote={saveNote}
-              onCancel={handleCancel}
+              onCancel={cancel}
               {...(bodyError ? { bodyError } : {})}
             />
           )}

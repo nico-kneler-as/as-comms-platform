@@ -12,6 +12,11 @@ import {
   TYPE,
 } from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { sanitizeComposerHtml } from "@/src/lib/html-sanitizer";
 
@@ -63,27 +68,44 @@ export function AttachmentRow({
   return (
     <div className="border-t border-slate-200 px-4 py-3">
       <div className="flex flex-wrap gap-2">
-        {attachments.map((attachment) => (
-          <span
-            key={attachment.id}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700"
-          >
-            <span className="font-medium">{attachment.filename}</span>
-            <span className="text-slate-500">
-              {formatBytes(attachment.size)}
-            </span>
-            <button
-              type="button"
-              aria-label={`Remove ${attachment.filename}`}
-              className={`inline-flex size-5 items-center justify-center rounded-full text-slate-400 ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:bg-slate-200 hover:text-slate-700`}
-              onClick={() => {
-                onRemove(attachment.id);
-              }}
+        {attachments.map((attachment) => {
+          const needsReupload = attachment.contentBase64 === null;
+
+          return (
+            <span
+              key={attachment.id}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-lg border bg-slate-50 px-3 py-1.5 text-xs text-slate-700",
+                needsReupload ? "border-amber-300" : "border-slate-200",
+              )}
             >
-              <XIcon className="size-3.5" />
-            </button>
-          </span>
-        ))}
+              <span className="font-medium">{attachment.filename}</span>
+              <span className="text-slate-500">
+                {formatBytes(attachment.size)}
+              </span>
+              {needsReupload ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.04em] text-amber-800">
+                      needs reupload
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Re-attach to send</TooltipContent>
+                </Tooltip>
+              ) : null}
+              <button
+                type="button"
+                aria-label={`Remove ${attachment.filename}`}
+                className={`inline-flex size-5 items-center justify-center rounded-full text-slate-400 ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:bg-slate-200 hover:text-slate-700`}
+                onClick={() => {
+                  onRemove(attachment.id);
+                }}
+              >
+                <XIcon className="size-3.5" />
+              </button>
+            </span>
+          );
+        })}
       </div>
     </div>
   );
