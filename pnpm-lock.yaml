@@ -87,6 +87,18 @@ importers:
         specifier: ^3.24.2
         version: 3.25.76
 
+  apps/mailchimp-capture:
+    dependencies:
+      '@as-comms/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@as-comms/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+
   apps/salesforce-capture:
     dependencies:
       '@as-comms/contracts':

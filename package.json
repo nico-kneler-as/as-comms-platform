@@ -12,6 +12,7 @@
     "dev:web": "pnpm --filter @as-comms/web dev",
     "dev:worker": "pnpm --filter @as-comms/worker dev",
     "dev:gmail-capture": "pnpm --filter @as-comms/gmail-capture dev",
+    "dev:mailchimp-capture": "pnpm --filter @as-comms/mailchimp-capture dev",
     "dev:sms-capture": "pnpm --filter @as-comms/sms-capture dev",
     "dev:salesforce-capture": "pnpm --filter @as-comms/salesforce-capture dev",
     "ops:worker:check-config": "pnpm --filter @as-comms/worker ops:check-config",

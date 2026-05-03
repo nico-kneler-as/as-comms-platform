@@ -1,0 +1,32 @@
+{
+  "emails": [
+    {
+      "email_id": "member-1",
+      "email_address": "Volunteer@Example.org",
+      "merge_fields": {
+        "SF_CONTACT_ID": "003-stage1",
+        "voluntid": "VOL-123"
+      },
+      "activity": [
+        {
+          "action": "sent",
+          "timestamp": "2026-02-01T15:00:00.000Z"
+        },
+        {
+          "action": "open",
+          "timestamp": "2026-02-01T15:10:00.000Z"
+        },
+        {
+          "action": "click",
+          "timestamp": "2026-02-01T15:12:00.000Z",
+          "url": "https://example.org/project"
+        },
+        {
+          "action": "unsub",
+          "timestamp": "2026-02-02T10:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "total_items": 2
+}
