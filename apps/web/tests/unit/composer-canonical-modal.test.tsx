@@ -629,7 +629,7 @@ function TestApp() {
       currentActorId="user:operator"
     >
       <InboxKeyboardProvider>
-        <InboxWorkspace>
+        <InboxWorkspace outboundRateUsdPerSegment={0.0079}>
           <section data-testid="underlying-conversation">
             Conversation remains visible
           </section>

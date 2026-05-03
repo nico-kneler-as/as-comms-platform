@@ -107,6 +107,8 @@ const sendSmsActionInputSchema = z.object({
   senderId: z.string().min(1),
   body: z.string().min(1),
   clientGeneratedId: z.string().min(1),
+  projectId: z.string().min(1).nullable().optional(),
+  saveAsKnowledge: z.boolean().optional(),
 });
 
 export type SendSmsActionInput = z.input<typeof sendSmsActionInputSchema>;
@@ -206,39 +208,68 @@ function maskKnowledgeExample(value: string): string {
 async function captureKnowledgeFromSend(input: {
   readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
   readonly projectId: string;
-  readonly subject: string;
   readonly bodyPlaintext: string;
-  readonly pendingOutboundId: string;
-  readonly gmailMessageId: string;
-  readonly gmailThreadId: string | null;
-  readonly rfc822MessageId: string | null;
   readonly createdAt: Date;
   readonly createdByUserId: string;
+  readonly source:
+    | {
+        readonly channel: "email";
+        readonly subject: string;
+        readonly pendingOutboundId: string;
+        readonly gmailMessageId: string;
+        readonly gmailThreadId: string | null;
+        readonly rfc822MessageId: string | null;
+      }
+    | {
+        readonly channel: "sms";
+        readonly smsMessageId: string;
+        readonly twilioMessageSid: string | null;
+        readonly summary: string;
+      };
 }): Promise<void> {
   const nowIso = input.createdAt.toISOString();
+  const questionSummary =
+    input.source.channel === "email"
+      ? input.source.subject
+      : input.source.summary;
+  const entryId =
+    input.source.channel === "email"
+      ? `project_knowledge:captured:${input.source.pendingOutboundId}`
+      : `project_knowledge:captured:${input.source.smsMessageId}`;
+  const metadataJson =
+    input.source.channel === "email"
+      ? {
+          subject: input.source.subject,
+          bodyPlaintext: input.bodyPlaintext,
+          createdByUserId: input.createdByUserId,
+          pendingOutboundId: input.source.pendingOutboundId,
+          gmailMessageId: input.source.gmailMessageId,
+          gmailThreadId: input.source.gmailThreadId,
+          rfc822MessageId: input.source.rfc822MessageId,
+          maskedExample: maskKnowledgeExample(input.bodyPlaintext),
+        }
+      : {
+          channel: "sms" as const,
+          bodyPlaintext: input.bodyPlaintext,
+          createdByUserId: input.createdByUserId,
+          smsMessageId: input.source.smsMessageId,
+          twilioMessageSid: input.source.twilioMessageSid,
+          maskedExample: maskKnowledgeExample(input.bodyPlaintext),
+        };
 
   await input.runtime.repositories.projectKnowledge.upsert({
-    id: `project_knowledge:captured:${input.pendingOutboundId}`,
+    id: entryId,
     projectId: input.projectId,
     kind: "canonical_reply",
     issueType: null,
     volunteerStage: null,
-    questionSummary: input.subject,
+    questionSummary,
     replyStrategy: null,
     maskedExample: input.bodyPlaintext,
     sourceKind: "captured_from_send",
     approvedForAi: false,
     sourceEventId: null,
-    metadataJson: {
-      subject: input.subject,
-      bodyPlaintext: input.bodyPlaintext,
-      createdByUserId: input.createdByUserId,
-      pendingOutboundId: input.pendingOutboundId,
-      gmailMessageId: input.gmailMessageId,
-      gmailThreadId: input.gmailThreadId,
-      rfc822MessageId: input.rfc822MessageId,
-      maskedExample: maskKnowledgeExample(input.bodyPlaintext),
-    },
+    metadataJson,
     lastReviewedAt: null,
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -246,9 +277,12 @@ async function captureKnowledgeFromSend(input: {
 }
 
 function readSaveAsKnowledgeFlag(
-  input: ComposerSendActionParsedInput,
+  input: {
+    readonly saveAsKnowledge?: boolean | undefined;
+    readonly captureAsKnowledge?: boolean | undefined;
+  },
 ): boolean {
-  return input.saveAsKnowledge ?? input.captureAsKnowledge;
+  return input.saveAsKnowledge ?? input.captureAsKnowledge ?? false;
 }
 
 function beginAiDraftRequest(userId: string): boolean {
@@ -1034,6 +1068,8 @@ export async function sendSmsAction(
       message: "SMS send input is invalid.",
     };
   }
+  const saveAsKnowledge = readSaveAsKnowledgeFlag(parsedInput.data);
+  const knowledgeProjectId = parsedInput.data.projectId ?? null;
 
   let currentUser;
   try {
@@ -1137,6 +1173,7 @@ export async function sendSmsAction(
       retryable: false,
     };
   }
+  const contact = await runtime.repositories.contacts.findById(contactId);
 
   const messageId = randomUUID();
   await runtime.repositories.smsMessages.insert({
@@ -1172,6 +1209,41 @@ export async function sendSmsAction(
       status: "sent",
       sentAt: attemptedAt,
     });
+
+    if (saveAsKnowledge && knowledgeProjectId !== null) {
+      try {
+        const contactDisplayName = (contact?.displayName ?? "").trim();
+        const contactLabel =
+          contactDisplayName.length > 0 ? contactDisplayName : phoneE164;
+        const trimmedBody = body.trim();
+        const fallbackSummary =
+          trimmedBody.length <= 60
+            ? trimmedBody
+            : `${trimmedBody.slice(0, 57).trimEnd()}...`;
+
+        await captureKnowledgeFromSend({
+          runtime,
+          projectId: knowledgeProjectId,
+          bodyPlaintext: body,
+          createdAt: attemptedAt,
+          createdByUserId: currentUser.id,
+          source: {
+            channel: "sms",
+            smsMessageId: messageId,
+            twilioMessageSid: sendResult.messageSid,
+            summary:
+              contactLabel.length > 0 ? `SMS to ${contactLabel}` : fallbackSummary,
+          },
+        });
+      } catch (error) {
+        console.warn("SMS send succeeded but knowledge capture failed.", {
+          messageId,
+          projectId: knowledgeProjectId,
+          error,
+        });
+      }
+    }
+
     revalidateInboxContact(contactId);
 
     return {
@@ -1914,14 +1986,17 @@ export async function sendComposerAction(
           await captureKnowledgeFromSend({
             runtime,
             projectId: alias.projectId,
-            subject: parsedInput.data.subject,
             bodyPlaintext,
-            pendingOutboundId,
-            gmailMessageId: sendResult.gmailMessageId,
-            gmailThreadId: sendResult.gmailThreadId,
-            rfc822MessageId: sendResult.rfc822MessageId,
             createdAt: attemptedAt,
             createdByUserId: currentUser.id,
+            source: {
+              channel: "email",
+              subject: parsedInput.data.subject,
+              pendingOutboundId,
+              gmailMessageId: sendResult.gmailMessageId,
+              gmailThreadId: sendResult.gmailThreadId,
+              rfc822MessageId: sendResult.rfc822MessageId,
+            },
           });
         } catch (error) {
           console.warn("Composer send succeeded but knowledge capture failed.", {

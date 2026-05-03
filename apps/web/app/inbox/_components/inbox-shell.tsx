@@ -21,6 +21,7 @@ interface ShellProps {
   readonly initialList: InboxListViewModel;
   readonly initialFilterId: InboxFilterId;
   readonly composerAliases: readonly InboxComposerAliasOption[];
+  readonly outboundRateUsdPerSegment: number;
   readonly smsEnabled: boolean;
   readonly smsSenders: readonly InboxSmsSenderOption[];
   readonly healthBanner: InboxIntegrationHealthBannerViewModel | null;
@@ -46,6 +47,7 @@ export function InboxShell({
   initialList,
   initialFilterId,
   composerAliases,
+  outboundRateUsdPerSegment,
   smsEnabled,
   smsSenders,
   healthBanner,
@@ -75,7 +77,11 @@ export function InboxShell({
               initialFilterId={initialFilterId}
             />
 
-            <InboxWorkspace smsEnabled={smsEnabled} smsSenders={smsSenders}>
+            <InboxWorkspace
+              outboundRateUsdPerSegment={outboundRateUsdPerSegment}
+              smsEnabled={smsEnabled}
+              smsSenders={smsSenders}
+            >
               {children}
             </InboxWorkspace>
           </div>

@@ -199,3 +199,25 @@ export function resolveSendAndSaveForAiAvailability(input: {
       : "AI is not configured for this project.",
   };
 }
+
+export function resolveSmsSendAndSaveForAiAvailability(input: {
+  readonly selectedAlias: string | null;
+  readonly aliases: readonly InboxComposerAliasOption[];
+  readonly smsRecipientKind: "contact" | "phone" | null;
+}): {
+  readonly enabled: boolean;
+  readonly disabledReason: string | null;
+} {
+  if (input.smsRecipientKind === "phone") {
+    return {
+      enabled: false,
+      disabledReason:
+        "Project knowledge capture requires a known contact with project context.",
+    };
+  }
+
+  return resolveSendAndSaveForAiAvailability({
+    selectedAlias: input.selectedAlias,
+    aliases: input.aliases,
+  });
+}

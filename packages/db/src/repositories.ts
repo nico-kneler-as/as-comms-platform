@@ -696,6 +696,39 @@ function createSmsRepositorySlices(db: Stage1Database) {
 
         return row === undefined ? null : mapSmsSenderRow(row);
       },
+
+      async getActiveUsageSnapshot(input) {
+        const [row] = await db
+          .select({
+            monthlyCap: smsSenders.monthlyCap,
+            monthToDateSegments:
+              sql<number>`coalesce(sum(${smsMessages.segments}), 0)`.mapWith(
+                Number,
+              ),
+          })
+          .from(smsSenders)
+          .leftJoin(
+            smsMessages,
+            and(
+              eq(smsMessages.senderId, smsSenders.id),
+              eq(smsMessages.direction, "outbound"),
+              sql`${smsMessages.createdAt} >= ${input.monthStart}`,
+            ),
+          )
+          .where(eq(smsSenders.isActive, true))
+          .groupBy(smsSenders.id)
+          .orderBy(asc(smsSenders.createdAt), asc(smsSenders.id))
+          .limit(1);
+
+        if (row === undefined) {
+          return null;
+        }
+
+        return {
+          monthlyCap: row.monthlyCap,
+          monthToDateSegments: row.monthToDateSegments,
+        };
+      },
     },
   } satisfies Pick<
     Stage1RepositoryBundle,

@@ -61,6 +61,7 @@ export default async function InboxLayout({
       initialList={list}
       initialFilterId="all"
       composerAliases={composerAliases}
+      outboundRateUsdPerSegment={env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT}
       smsEnabled={env.SMS_ENABLED}
       smsSenders={smsSenders}
       healthBanner={healthBanner}

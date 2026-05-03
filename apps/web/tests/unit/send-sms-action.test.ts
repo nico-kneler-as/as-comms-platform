@@ -244,4 +244,94 @@ describe("sendSmsAction", () => {
       sendStatus: "sent",
     });
   });
+
+  it("captures project knowledge for SMS when saveAsKnowledge is true", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    sendSmsViaTwilio.mockResolvedValue({
+      messageSid: "SM456",
+      segments: 1,
+    });
+    await runtime.context.repositories.consentRecords.insert({
+      id: "consent-4",
+      contactId: "contact-1",
+      phoneE164: "+14065550123",
+      status: "opted_in",
+      source: "operator_attestation",
+      sourceDetail: null,
+      consentedAt: new Date("2026-05-03T12:00:00.000Z"),
+      revokedAt: null,
+      recordedByUserId: "user:operator",
+      notes: null,
+      createdAt: new Date("2026-05-03T12:00:00.000Z"),
+      updatedAt: new Date("2026-05-03T12:00:00.000Z"),
+    });
+
+    const result = await sendSmsAction({
+      ...buildInput(),
+      projectId: "project:antarctica",
+      saveAsKnowledge: true,
+    });
+
+    expect(result.ok).toBe(true);
+
+    const entries = await runtime.context.repositories.projectKnowledge.list({
+      projectId: "project:antarctica",
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "canonical_reply",
+      sourceKind: "captured_from_send",
+      approvedForAi: false,
+      questionSummary: "SMS to Maya Lee",
+      maskedExample: "Field update confirmed.",
+    });
+    expect(entries[0]?.metadataJson).toMatchObject({
+      channel: "sms",
+      bodyPlaintext: "Field update confirmed.",
+      createdByUserId: "user:operator",
+      twilioMessageSid: "SM456",
+    });
+  });
+
+  it("does not capture project knowledge for SMS when saveAsKnowledge is false", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    sendSmsViaTwilio.mockResolvedValue({
+      messageSid: "SM789",
+      segments: 1,
+    });
+    await runtime.context.repositories.consentRecords.insert({
+      id: "consent-5",
+      contactId: "contact-1",
+      phoneE164: "+14065550123",
+      status: "opted_in",
+      source: "operator_attestation",
+      sourceDetail: null,
+      consentedAt: new Date("2026-05-03T12:00:00.000Z"),
+      revokedAt: null,
+      recordedByUserId: "user:operator",
+      notes: null,
+      createdAt: new Date("2026-05-03T12:00:00.000Z"),
+      updatedAt: new Date("2026-05-03T12:00:00.000Z"),
+    });
+
+    const result = await sendSmsAction({
+      ...buildInput(),
+      projectId: "project:antarctica",
+      saveAsKnowledge: false,
+    });
+
+    expect(result.ok).toBe(true);
+    await expect(
+      runtime.context.repositories.projectKnowledge.list({
+        projectId: "project:antarctica",
+      }),
+    ).resolves.toEqual([]);
+  });
 });

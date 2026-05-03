@@ -184,6 +184,8 @@ async function seedSourceEvidenceCollision(
 
 describe("settings selectors", () => {
   let runtime: Stage1WebTestRuntime | null = null;
+  const originalSmsEnabled = process.env.SMS_ENABLED;
+  const originalTwilioRate = process.env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT;
 
   beforeEach(async () => {
     runtime = await createStage1WebTestRuntime();
@@ -192,9 +194,21 @@ describe("settings selectors", () => {
       id: "user:admin",
       role: "admin"
     });
+    process.env.SMS_ENABLED = "true";
+    process.env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT = "0.0079";
   });
 
   afterEach(async () => {
+    if (originalSmsEnabled === undefined) {
+      delete process.env.SMS_ENABLED;
+    } else {
+      process.env.SMS_ENABLED = originalSmsEnabled;
+    }
+    if (originalTwilioRate === undefined) {
+      delete process.env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT;
+    } else {
+      process.env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT = originalTwilioRate;
+    }
     await waitForPendingSecurityAuditTasksForTests();
     await runtime?.dispose();
     runtime = null;
@@ -446,6 +460,122 @@ describe("settings selectors", () => {
         "not_configured"
       ]
     );
+  });
+
+  it("aggregates Twilio MTD spend and monthly cap from outbound SMS usage", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    await runtime.context.client.exec(`
+      insert into sms_senders (
+        id,
+        phone_e164,
+        display_name,
+        monthly_cap,
+        is_active,
+        created_at,
+        updated_at
+      ) values (
+        'sender-1',
+        '+14065550142',
+        'Adventure Scientists',
+        40,
+        true,
+        '2026-05-01T00:00:00.000Z',
+        '2026-05-01T00:00:00.000Z'
+      );
+    `);
+
+    await runtime.context.repositories.contacts.upsert({
+      id: "contact:settings:sms",
+      salesforceContactId: null,
+      displayName: "SMS Volunteer",
+      primaryEmail: null,
+      primaryPhone: "+14065550123",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+
+    await runtime.context.repositories.smsMessages.insert({
+      id: "sms:outbound:current-month",
+      twilioMessageSid: "SM-current",
+      direction: "outbound",
+      contactId: "contact:settings:sms",
+      phoneE164: "+14065550123",
+      senderId: "sender-1",
+      body: "Current month outbound",
+      segments: 547,
+      encoding: "GSM-7",
+      mediaUrls: null,
+      sendStatus: "sent",
+      failedReason: null,
+      failedDetail: null,
+      sentAt: new Date("2026-05-02T12:00:00.000Z"),
+      receivedAt: null,
+      actorId: "user:admin",
+      createdAt: new Date("2026-05-02T12:00:00.000Z"),
+      updatedAt: new Date("2026-05-02T12:00:00.000Z"),
+    });
+    await runtime.context.repositories.smsMessages.insert({
+      id: "sms:outbound:previous-month",
+      twilioMessageSid: "SM-previous",
+      direction: "outbound",
+      contactId: "contact:settings:sms",
+      phoneE164: "+14065550123",
+      senderId: "sender-1",
+      body: "Previous month outbound",
+      segments: 100,
+      encoding: "GSM-7",
+      mediaUrls: null,
+      sendStatus: "sent",
+      failedReason: null,
+      failedDetail: null,
+      sentAt: new Date("2026-04-20T12:00:00.000Z"),
+      receivedAt: null,
+      actorId: "user:admin",
+      createdAt: new Date("2026-04-20T12:00:00.000Z"),
+      updatedAt: new Date("2026-04-20T12:00:00.000Z"),
+    });
+
+    const viewModel = await loadIntegrationHealth();
+
+    expect(viewModel.twilioCard.monthToDateSegments).toBe(547);
+    expect(viewModel.twilioCard.monthToDateSpendUsd).toBeCloseTo(4.3213, 4);
+    expect(viewModel.twilioCard.monthlyCapUsd).toBe(40);
+    expect(viewModel.twilioCard.outboundRateUsdPerSegment).toBe(0.0079);
+  });
+
+  it("returns a null Twilio monthly cap when the active sender has no cap", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    await runtime.context.client.exec(`
+      insert into sms_senders (
+        id,
+        phone_e164,
+        display_name,
+        monthly_cap,
+        is_active,
+        created_at,
+        updated_at
+      ) values (
+        'sender-uncapped',
+        '+14065550143',
+        'Uncapped Sender',
+        null,
+        true,
+        '2026-05-01T00:00:00.000Z',
+        '2026-05-01T00:00:00.000Z'
+      );
+    `);
+
+    const viewModel = await loadIntegrationHealth();
+
+    expect(viewModel.twilioCard.monthToDateSegments).toBe(0);
+    expect(viewModel.twilioCard.monthToDateSpendUsd).toBe(0);
+    expect(viewModel.twilioCard.monthlyCapUsd).toBeNull();
   });
 
   it("maps source-evidence collisions into the logs settings view model", async () => {

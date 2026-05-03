@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 import {
   isComposerSendDisabled,
+  resolveSmsSendAndSaveForAiAvailability,
   resolveSendAndSaveForAiAvailability,
 } from "../_lib/composer-ui";
 import { ComposerCollapsedPill } from "./composer-collapsed-pill";
@@ -147,9 +148,11 @@ function ComposerModeTabs({
 }
 
 export function InboxComposerDetailPane({
+  outboundRateUsdPerSegment,
   smsEnabled = false,
   smsSenders = [],
 }: {
+  readonly outboundRateUsdPerSegment: number;
   readonly smsEnabled?: boolean;
   readonly smsSenders?: readonly InboxSmsSenderOption[];
 }) {
@@ -301,6 +304,11 @@ export function InboxComposerDetailPane({
     selectedAlias: state.selectedAlias,
     aliases: composerAliases,
   });
+  const smsSendAndSaveAvailability = resolveSmsSendAndSaveForAiAvailability({
+    selectedAlias: state.selectedAlias,
+    aliases: composerAliases,
+    smsRecipientKind: state.smsRecipient?.kind ?? null,
+  });
   const isSendDisabled = isComposerSendDisabled({
     activeTab: state.activeTab,
     recipient: state.recipient,
@@ -368,6 +376,7 @@ export function InboxComposerDetailPane({
     state,
     dispatch,
     draftKey,
+    composerAliases,
     isReplying,
     replyContext,
     operatorDisplayName,
@@ -597,12 +606,17 @@ export function InboxComposerDetailPane({
               body={state.smsBody}
               includeSignature={state.smsIncludeSignature}
               segmentMetrics={smsMetricsValue}
+              outboundRateUsdPerSegment={outboundRateUsdPerSegment}
               aiDraft={aiDraft}
               aiDirective={state.aiDirective}
               repromptText={state.repromptText}
               isGeneratingAi={isGeneratingAi}
               runAiDraftDisabled={runAiDraftDisabled}
               runAiDraftDisabledReason={runAiDraftDisabledReason}
+              canSendAndSaveForAi={smsSendAndSaveAvailability.enabled}
+              sendAndSaveDisabledReason={
+                smsSendAndSaveAvailability.disabledReason
+              }
               sendDisabledReason={smsSendDisabledReason}
               inlineError={state.inlineError}
               isSending={isSending}

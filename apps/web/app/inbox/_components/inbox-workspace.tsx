@@ -12,10 +12,12 @@ import { XIcon } from "./icons";
 
 export function InboxWorkspace({
   children,
+  outboundRateUsdPerSegment,
   smsEnabled = false,
   smsSenders = [],
 }: {
   readonly children: ReactNode;
+  readonly outboundRateUsdPerSegment: number;
   readonly smsEnabled?: boolean;
   readonly smsSenders?: readonly InboxSmsSenderOption[];
 }) {
@@ -40,6 +42,7 @@ export function InboxWorkspace({
       {children}
       {composerPane.mode === "closed" ? null : (
         <InboxComposerDetailPane
+          outboundRateUsdPerSegment={outboundRateUsdPerSegment}
           smsEnabled={smsEnabled}
           smsSenders={smsSenders}
         />

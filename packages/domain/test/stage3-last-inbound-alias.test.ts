@@ -116,6 +116,7 @@ function buildRepositoryBundle(input: {
       listActive: () => Promise.resolve([]),
       findById: () => Promise.resolve(null),
       findByPhone: () => Promise.resolve(null),
+      getActiveUsageSnapshot: () => Promise.resolve(null),
     },
     projectDimensions: {
       listAll: () => Promise.resolve([]),

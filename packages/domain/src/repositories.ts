@@ -231,6 +231,15 @@ export interface SmsSenderRepository {
   listActive(): Promise<readonly SmsSenderRecord[]>;
   findById(id: string): Promise<SmsSenderRecord | null>;
   findByPhone(phoneE164: string): Promise<SmsSenderRecord | null>;
+  getActiveUsageSnapshot(input: {
+    readonly monthStart: Date;
+  }): Promise<
+    | {
+        readonly monthlyCap: number | null;
+        readonly monthToDateSegments: number;
+      }
+    | null
+  >;
 }
 
 export interface ProjectDimensionRepository {

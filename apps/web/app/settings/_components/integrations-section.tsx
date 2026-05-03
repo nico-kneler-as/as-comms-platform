@@ -17,6 +17,10 @@ import {
   TooltipTrigger
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import {
+  formatSmsEstimatedCostUsd,
+  formatUsdAmount
+} from "@/src/lib/sms-pricing";
 import type {
   IntegrationHealthViewModel,
   IntegrationsSettingsViewModel
@@ -85,6 +89,34 @@ function formatRelative(iso: string | null): string {
   if (months < 12) return `${String(months)}mo ago`;
   const years = Math.floor(days / 365);
   return `${String(years)}y ago`;
+}
+
+function buildTwilioUsageState(input: {
+  readonly spendUsd: number | null;
+  readonly capUsd: number | null;
+}): null | {
+  readonly label: string;
+  readonly className: string;
+} {
+  if (input.spendUsd === null || input.capUsd === null || input.capUsd <= 0) {
+    return null;
+  }
+
+  if (input.spendUsd >= input.capUsd) {
+    return {
+      label: "Cap exceeded — sends still allowed in v1, no hard enforcement",
+      className: "bg-rose-50 text-rose-700 ring-rose-200"
+    };
+  }
+
+  if (input.spendUsd >= input.capUsd * 0.8) {
+    return {
+      label: "Approaching cap",
+      className: "bg-amber-50 text-amber-800 ring-amber-200"
+    };
+  }
+
+  return null;
 }
 
 export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
@@ -230,6 +262,14 @@ function TwilioConnectorCard({
       colorClasses: "bg-amber-50 text-amber-800 ring-amber-200",
     },
   }[viewModel.status];
+  const usageState = buildTwilioUsageState({
+    spendUsd: viewModel.monthToDateSpendUsd,
+    capUsd: viewModel.monthlyCapUsd
+  });
+  const showUsageRows =
+    viewModel.smsEnabled &&
+    viewModel.monthToDateSpendUsd !== null &&
+    viewModel.monthToDateSegments !== null;
 
   return (
     <div
@@ -280,6 +320,44 @@ function TwilioConnectorCard({
           <dd>{formatRelative(viewModel.lastStatusCallbackAt)}</dd>
         </div>
       </dl>
+
+      {showUsageRows ? (
+        <div className="border-t border-slate-200 pt-3">
+          <dl className="grid gap-2 text-[12px] text-slate-600">
+            <div className="flex items-start justify-between gap-3">
+              <dt className="font-medium text-slate-900">Spend MTD</dt>
+              <dd className="text-right">
+                <span className="font-medium tabular-nums text-slate-900">
+                  ${formatUsdAmount(viewModel.monthToDateSpendUsd)}
+                </span>
+              </dd>
+            </div>
+            <div className="-mt-1 text-right text-[11.5px] text-slate-500 tabular-nums">
+              (${formatSmsEstimatedCostUsd(viewModel.outboundRateUsdPerSegment)} /
+              {" "}
+              segment, {String(viewModel.monthToDateSegments)} segments)
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="font-medium text-slate-900">Monthly cap</dt>
+              <dd className="font-medium tabular-nums text-slate-900">
+                {viewModel.monthlyCapUsd === null
+                  ? "—"
+                  : `$${formatUsdAmount(viewModel.monthlyCapUsd)}`}
+              </dd>
+            </div>
+          </dl>
+
+          {usageState ? (
+            <div className="mt-3">
+              <StatusBadge
+                label={usageState.label}
+                colorClasses={usageState.className}
+                variant="soft"
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
