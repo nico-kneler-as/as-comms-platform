@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { sql } from "drizzle-orm";
 
 import type {
   IntegrationHealthCategory,
@@ -75,7 +76,20 @@ export interface IntegrationHealthViewModel {
   readonly lastCheckedAt: string | null;
   readonly detail: string | null;
   readonly supportsRefresh: boolean;
+  readonly mailchimp:
+    | {
+        readonly status: "connected" | "stale" | "unconfigured";
+        readonly lastSuccessfulSyncAt: string | null;
+        readonly lastCampaignName: string | null;
+        readonly lastCampaignSentAt: string | null;
+        readonly lastBatchRecipientCount: number | null;
+      }
+    | null;
 }
+
+type MailchimpTileStatus = NonNullable<
+  IntegrationHealthViewModel["mailchimp"]
+>["status"];
 
 export interface IntegrationsSettingsViewModel {
   readonly isAdmin: boolean;
@@ -158,7 +172,7 @@ const INTEGRATION_META = {
   },
   mailchimp: {
     displayName: "Mailchimp",
-    description: "Historical campaign records",
+    description: "Transition-period campaign ingest",
     supportsRefresh: false
   },
   notion: {
@@ -197,10 +211,176 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   simpletexting: "SimpleTexting",
   mailchimp: "Mailchimp"
 };
+const MAILCHIMP_HEALTHY_WINDOW_MS = 70 * 60 * 1000;
+const MAILCHIMP_AUTO_HIDE_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
+
+interface MailchimpSnapshotRow {
+  readonly latestActivityAt: Date | string | null;
+  readonly lastCampaignName: string | null;
+  readonly lastCampaignSentAt: Date | string | null;
+}
+
+interface MailchimpBatchCountRow {
+  readonly canonicalEventCount: number | string;
+}
 
 function normalizeSearch(value: string | null | undefined): string | null {
   const trimmed = value?.trim() ?? "";
   return trimmed.length === 0 ? null : trimmed.toLowerCase();
+}
+
+function normalizeSqlResultRows(result: unknown): readonly unknown[] {
+  if (Array.isArray(result)) {
+    return result;
+  }
+
+  return (result as { readonly rows?: readonly unknown[] }).rows ?? [];
+}
+
+function coerceIsoTimestamp(value: Date | string | null | undefined): string | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp.toISOString();
+}
+
+function readMailchimpCaptureBaseUrl(): string | null {
+  const baseUrl = process.env.MAILCHIMP_CAPTURE_BASE_URL?.trim();
+  return baseUrl && baseUrl.length > 0 ? baseUrl : null;
+}
+
+function getLatestSuccessfulMailchimpTransitionSync(
+  syncStates: readonly {
+    readonly scope: string;
+    readonly provider: string | null;
+    readonly jobType: string;
+    readonly status: string;
+    readonly lastSuccessfulAt: string | null;
+    readonly windowStart: string | null;
+    readonly windowEnd: string | null;
+  }[]
+) {
+  return syncStates
+    .filter(
+      (row) =>
+        row.scope === "provider" &&
+        row.provider === "mailchimp" &&
+        row.jobType === "live_ingest" &&
+        row.status === "succeeded"
+    )
+    .sort((left, right) => {
+      const leftTimestamp =
+        Date.parse(
+          left.lastSuccessfulAt ?? left.windowEnd ?? left.windowStart ?? "1970-01-01T00:00:00.000Z"
+        ) || 0;
+      const rightTimestamp =
+        Date.parse(
+          right.lastSuccessfulAt ??
+            right.windowEnd ??
+            right.windowStart ??
+            "1970-01-01T00:00:00.000Z"
+        ) || 0;
+      return rightTimestamp - leftTimestamp;
+    })
+    .at(0) ?? null;
+}
+
+async function readMailchimpSnapshot(runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>) {
+  if (runtime.connection === null) {
+    return {
+      latestActivityAt: null,
+      lastCampaignName: null,
+      lastCampaignSentAt: null,
+    };
+  }
+
+  const snapshotResult = await runtime.connection.db.execute(
+    sql<MailchimpSnapshotRow>`
+      select
+        (
+          select max(cel.occurred_at)
+          from canonical_event_ledger cel
+          inner join source_evidence_log sel
+            on sel.id = cel.source_evidence_id
+          where sel.provider = 'mailchimp'
+        ) as "latestActivityAt",
+        (
+          select mcad.campaign_name
+          from canonical_event_ledger cel
+          inner join source_evidence_log sel
+            on sel.id = cel.source_evidence_id
+          left join mailchimp_campaign_activity_details mcad
+            on mcad.source_evidence_id = cel.source_evidence_id
+          where sel.provider = 'mailchimp'
+            and cel.event_type = 'campaign.email.sent'
+          order by cel.occurred_at desc, cel.created_at desc
+          limit 1
+        ) as "lastCampaignName",
+        (
+          select cel.occurred_at
+          from canonical_event_ledger cel
+          inner join source_evidence_log sel
+            on sel.id = cel.source_evidence_id
+          where sel.provider = 'mailchimp'
+            and cel.event_type = 'campaign.email.sent'
+          order by cel.occurred_at desc, cel.created_at desc
+          limit 1
+        ) as "lastCampaignSentAt"
+    `
+  );
+
+  const [row] = normalizeSqlResultRows(snapshotResult) as readonly MailchimpSnapshotRow[];
+  return {
+    latestActivityAt: coerceIsoTimestamp(row?.latestActivityAt ?? null),
+    lastCampaignName: row?.lastCampaignName ?? null,
+    lastCampaignSentAt: coerceIsoTimestamp(row?.lastCampaignSentAt ?? null),
+  };
+}
+
+async function readMailchimpLastBatchRecipientCount(
+  runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>,
+  input: {
+    readonly windowStart: string | null;
+    readonly windowEnd: string | null;
+  }
+): Promise<number | null> {
+  if (
+    runtime.connection === null ||
+    input.windowStart === null ||
+    input.windowEnd === null
+  ) {
+    return null;
+  }
+
+  const countResult = await runtime.connection.db.execute(
+    sql<MailchimpBatchCountRow>`
+      select count(*)::int as "canonicalEventCount"
+      from canonical_event_ledger cel
+      inner join source_evidence_log sel
+        on sel.id = cel.source_evidence_id
+      where sel.provider = 'mailchimp'
+        and cel.occurred_at > ${input.windowStart}
+        and cel.occurred_at <= ${input.windowEnd}
+    `
+  );
+
+  const [row] = normalizeSqlResultRows(countResult) as readonly MailchimpBatchCountRow[];
+  if (row === undefined) {
+    return 0;
+  }
+
+  const parsed =
+    typeof row.canonicalEventCount === "number"
+      ? row.canonicalEventCount
+      : Number.parseInt(row.canonicalEventCount, 10);
+
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function normalizeLogStreamId(value: string | null | undefined): LogStreamId {
@@ -453,9 +633,11 @@ async function readIntegrationHealth(): Promise<
   monthStart.setUTCHours(0, 0, 0, 0);
 
   await runtime.settings.integrationHealth.seedDefaults();
-  const [rows, activeSmsSenders, latestCallback, latestDelivered, usageSnapshot] =
+  const [rows, syncStates, mailchimpSnapshot, activeSmsSenders, latestCallback, latestDelivered, usageSnapshot] =
     await Promise.all([
       runtime.settings.integrationHealth.listAll(),
+      runtime.repositories.syncState.listAll(),
+      readMailchimpSnapshot(runtime),
       runtime.settings.smsSenders.listActive(),
       runtime.settings.smsMessages.findLatestByStatuses(["delivered", "failed"]),
       runtime.settings.smsMessages.findLatestByStatuses(["delivered"]),
@@ -465,26 +647,81 @@ async function readIntegrationHealth(): Promise<
     ]);
 
   const integrationById = new Map(rows.map((row) => [row.id, row] as const));
-  const integrations = INTEGRATION_ORDER.flatMap((serviceName) => {
+  const latestMailchimpSync = getLatestSuccessfulMailchimpTransitionSync(syncStates);
+  const latestMailchimpSyncAt = latestMailchimpSync?.lastSuccessfulAt ?? null;
+  const mailchimpBaseUrl = readMailchimpCaptureBaseUrl();
+  const mailchimpActivityAgeMs =
+    mailchimpSnapshot.latestActivityAt === null
+      ? null
+      : Date.now() - Date.parse(mailchimpSnapshot.latestActivityAt);
+  const shouldHideMailchimp =
+    mailchimpBaseUrl === null &&
+    mailchimpSnapshot.latestActivityAt !== null &&
+    mailchimpActivityAgeMs !== null &&
+    mailchimpActivityAgeMs > MAILCHIMP_AUTO_HIDE_WINDOW_MS;
+  const mailchimpBatchRecipientCount = await readMailchimpLastBatchRecipientCount(
+    runtime,
+    {
+      windowStart: latestMailchimpSync?.windowStart ?? null,
+      windowEnd: latestMailchimpSync?.windowEnd ?? null,
+    }
+  );
+  const integrations: IntegrationHealthViewModel[] = [];
+
+  for (const serviceName of INTEGRATION_ORDER) {
     const record = integrationById.get(serviceName);
-    if (record === undefined) {
-      return [];
+    if (record === undefined || (serviceName === "mailchimp" && shouldHideMailchimp)) {
+      continue;
     }
 
     const meta = INTEGRATION_META[serviceName];
-    return [
-      {
+    if (serviceName === "mailchimp") {
+      const mailchimpStatus: MailchimpTileStatus =
+        mailchimpBaseUrl === null
+          ? "unconfigured"
+          : latestMailchimpSyncAt !== null &&
+              Date.now() - Date.parse(latestMailchimpSyncAt) <=
+                MAILCHIMP_HEALTHY_WINDOW_MS
+            ? "connected"
+            : "stale";
+
+      integrations.push({
         serviceName: record.serviceName,
         displayName: meta.displayName,
         description: meta.description,
         category: record.category,
-        status: record.status,
-        lastCheckedAt: record.lastCheckedAt,
-        detail: record.detail,
-        supportsRefresh: meta.supportsRefresh
-      }
-    ];
-  });
+        status:
+          mailchimpStatus === "connected"
+            ? "healthy"
+            : mailchimpStatus === "unconfigured"
+              ? "not_configured"
+              : "needs_attention",
+        lastCheckedAt: latestMailchimpSyncAt,
+        detail: null,
+        supportsRefresh: meta.supportsRefresh,
+        mailchimp: {
+          status: mailchimpStatus,
+          lastSuccessfulSyncAt: latestMailchimpSyncAt,
+          lastCampaignName: mailchimpSnapshot.lastCampaignName,
+          lastCampaignSentAt: mailchimpSnapshot.lastCampaignSentAt,
+          lastBatchRecipientCount: mailchimpBatchRecipientCount,
+        },
+      });
+      continue;
+    }
+
+    integrations.push({
+      serviceName: record.serviceName,
+      displayName: meta.displayName,
+      description: meta.description,
+      category: record.category,
+      status: record.status,
+      lastCheckedAt: record.lastCheckedAt,
+      detail: record.detail,
+      supportsRefresh: meta.supportsRefresh,
+      mailchimp: null,
+    });
+  }
 
   const hasActiveSender = activeSmsSenders.length > 0;
   const deliveredWithinLastDay =

@@ -182,12 +182,72 @@ async function seedSourceEvidenceCollision(
   });
 }
 
+async function seedMailchimpCampaignEvent(
+  runtime: Stage1WebTestRuntime,
+  input: {
+    readonly sourceEvidenceId: string;
+    readonly providerRecordId: string;
+    readonly canonicalEventId: string;
+    readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
+    readonly eventType:
+      | "campaign.email.sent"
+      | "campaign.email.opened"
+      | "campaign.email.clicked"
+      | "campaign.email.unsubscribed";
+    readonly campaignId: string;
+    readonly campaignName: string;
+    readonly occurredAt: string;
+  }
+): Promise<void> {
+  await runtime.context.normalization.applyNormalizedCanonicalEvent({
+    sourceEvidence: {
+      id: input.sourceEvidenceId,
+      provider: "mailchimp",
+      providerRecordType: "campaign_member_activity",
+      providerRecordId: input.providerRecordId,
+      receivedAt: input.occurredAt,
+      occurredAt: input.occurredAt,
+      payloadRef: `payloads/mailchimp/${input.providerRecordId}.json`,
+      idempotencyKey: `mailchimp:${input.providerRecordId}`,
+      checksum: `checksum:${input.providerRecordId}`
+    },
+    canonicalEvent: {
+      id: input.canonicalEventId,
+      eventType: input.eventType,
+      occurredAt: input.occurredAt,
+      idempotencyKey: `canonical:${input.providerRecordId}`,
+      summary: `Mailchimp ${input.activityType}`,
+      snippet: ""
+    },
+    identity: {
+      salesforceContactId: null,
+      volunteerIdPlainValues: [],
+      normalizedEmails: ["volunteer@example.org"],
+      normalizedPhones: [],
+    },
+    supportingSources: [],
+    mailchimpCampaignActivityDetail: {
+      sourceEvidenceId: input.sourceEvidenceId,
+      providerRecordId: input.providerRecordId,
+      activityType: input.activityType,
+      campaignId: input.campaignId,
+      audienceId: "audience-1",
+      memberId: `member:${input.providerRecordId}`,
+      campaignName: input.campaignName,
+      snippet: "",
+    },
+  });
+}
+
 describe("settings selectors", () => {
   let runtime: Stage1WebTestRuntime | null = null;
   const originalSmsEnabled = process.env.SMS_ENABLED;
   const originalTwilioRate = process.env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT;
+  const originalMailchimpCaptureBaseUrl = process.env.MAILCHIMP_CAPTURE_BASE_URL;
 
   beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-03T12:00:00.000Z"));
     runtime = await createStage1WebTestRuntime();
     getCurrentUser.mockReset();
     getCurrentUser.mockResolvedValue({
@@ -209,6 +269,12 @@ describe("settings selectors", () => {
     } else {
       process.env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT = originalTwilioRate;
     }
+    if (originalMailchimpCaptureBaseUrl === undefined) {
+      delete process.env.MAILCHIMP_CAPTURE_BASE_URL;
+    } else {
+      process.env.MAILCHIMP_CAPTURE_BASE_URL = originalMailchimpCaptureBaseUrl;
+    }
+    vi.useRealTimers();
     await waitForPendingSecurityAuditTasksForTests();
     await runtime?.dispose();
     runtime = null;
@@ -460,6 +526,109 @@ describe("settings selectors", () => {
         "not_configured"
       ]
     );
+  });
+
+  it("derives Mailchimp connected health from the latest successful transition sync and canonical events", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    process.env.MAILCHIMP_CAPTURE_BASE_URL = "https://mailchimp-capture.internal";
+
+    await seedMailchimpCampaignEvent(runtime, {
+      sourceEvidenceId: "sev-mailchimp-sent",
+      providerRecordId: "campaign-1:member-1:sent",
+      canonicalEventId: "evt-mailchimp-sent",
+      activityType: "sent",
+      eventType: "campaign.email.sent",
+      campaignId: "campaign-1",
+      campaignName: "Spring Update",
+      occurredAt: "2026-05-03T11:15:00.000Z",
+    });
+    await seedMailchimpCampaignEvent(runtime, {
+      sourceEvidenceId: "sev-mailchimp-opened",
+      providerRecordId: "campaign-1:member-1:opened",
+      canonicalEventId: "evt-mailchimp-opened",
+      activityType: "opened",
+      eventType: "campaign.email.opened",
+      campaignId: "campaign-1",
+      campaignName: "Spring Update",
+      occurredAt: "2026-05-03T11:20:00.000Z",
+    });
+    await runtime.context.repositories.syncState.upsert({
+      id: "sync:mailchimp:transition:latest",
+      scope: "provider",
+      provider: "mailchimp",
+      jobType: "live_ingest",
+      cursor: "cursor:mailchimp",
+      windowStart: "2026-05-03T11:00:00.000Z",
+      windowEnd: "2026-05-03T11:30:00.000Z",
+      status: "succeeded",
+      parityPercent: null,
+      freshnessP95Seconds: null,
+      freshnessP99Seconds: null,
+      lastSuccessfulAt: "2026-05-03T11:30:00.000Z",
+      consecutiveFailureCount: 0,
+      leaseOwner: null,
+      heartbeatAt: null,
+      deadLetterCount: 0,
+    });
+
+    const viewModel = await loadIntegrationHealth();
+    const mailchimp = viewModel.integrations.find(
+      (integration) => integration.serviceName === "mailchimp"
+    );
+
+    expect(mailchimp).toMatchObject({
+      status: "healthy",
+      lastCheckedAt: "2026-05-03T11:30:00.000Z",
+      mailchimp: {
+        status: "connected",
+        lastSuccessfulSyncAt: "2026-05-03T11:30:00.000Z",
+        lastCampaignName: "Spring Update",
+        lastCampaignSentAt: "2026-05-03T11:15:00.000Z",
+        lastBatchRecipientCount: 2,
+      },
+    });
+  });
+
+  it("marks Mailchimp stale when the last successful transition sync is older than 70 minutes", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    process.env.MAILCHIMP_CAPTURE_BASE_URL = "https://mailchimp-capture.internal";
+
+    await runtime.context.repositories.syncState.upsert({
+      id: "sync:mailchimp:transition:stale",
+      scope: "provider",
+      provider: "mailchimp",
+      jobType: "live_ingest",
+      cursor: null,
+      windowStart: "2026-05-03T09:00:00.000Z",
+      windowEnd: "2026-05-03T09:10:00.000Z",
+      status: "succeeded",
+      parityPercent: null,
+      freshnessP95Seconds: null,
+      freshnessP99Seconds: null,
+      lastSuccessfulAt: "2026-05-03T09:10:00.000Z",
+      consecutiveFailureCount: 0,
+      leaseOwner: null,
+      heartbeatAt: null,
+      deadLetterCount: 0,
+    });
+
+    const viewModel = await loadIntegrationHealth();
+    const mailchimp = viewModel.integrations.find(
+      (integration) => integration.serviceName === "mailchimp"
+    );
+
+    expect(mailchimp).toMatchObject({
+      status: "needs_attention",
+      mailchimp: {
+        status: "stale",
+      },
+    });
   });
 
   it("aggregates Twilio MTD spend and monthly cap from outbound SMS usage", async () => {

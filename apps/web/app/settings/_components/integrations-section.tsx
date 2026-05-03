@@ -91,6 +91,34 @@ function formatRelative(iso: string | null): string {
   return `${String(years)}y ago`;
 }
 
+function formatMailchimpCount(value: number | null): string {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatMailchimpStatus(
+  integration: Extract<IntegrationHealthViewModel, { mailchimp: unknown }>
+): { readonly label: string; readonly colorClasses: string } {
+  switch (integration.mailchimp?.status) {
+    case "connected":
+      return {
+        label: "✓ Connected",
+        colorClasses: "bg-emerald-50 text-emerald-700 ring-emerald-200"
+      };
+    case "stale":
+      return {
+        label: "✗ Stale",
+        colorClasses: "bg-rose-50 text-rose-700 ring-rose-200"
+      };
+    case "unconfigured":
+    default:
+      return {
+        label: "⚠ Unconfigured",
+        colorClasses: "bg-amber-50 text-amber-800 ring-amber-200"
+      };
+  }
+}
+
 function buildTwilioUsageState(input: {
   readonly spendUsd: number | null;
   readonly capUsd: number | null;
@@ -168,7 +196,10 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
       >
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {items.map((integration) => {
-            const statusMeta = STATUS_META[integration.status];
+            const statusMeta =
+              integration.serviceName === "mailchimp" && integration.mailchimp !== null
+                ? formatMailchimpStatus(integration)
+                : STATUS_META[integration.status];
             const isRowPending =
               pending && pendingId === integration.serviceName;
             const isSyncDisabled =
@@ -216,23 +247,27 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
                   />
                 </div>
 
-                <div className="flex items-center justify-between gap-3 text-[11.5px] text-slate-500">
-                  <span className="min-w-0 truncate tabular-nums">
-                    Last checked · {formatRelative(integration.lastCheckedAt)}
-                  </span>
+                {integration.mailchimp !== null ? (
+                  <MailchimpTileDetails integration={integration} />
+                ) : (
+                  <div className="flex items-center justify-between gap-3 text-[11.5px] text-slate-500">
+                    <span className="min-w-0 truncate tabular-nums">
+                      Last checked · {formatRelative(integration.lastCheckedAt)}
+                    </span>
 
-                  {viewModel.isAdmin && (
-                    <SyncButton
-                      disabled={isSyncDisabled}
-                      supportsRefresh={integration.supportsRefresh}
-                      pending={isRowPending}
-                      integrationName={integration.displayName}
-                      onSync={() => {
-                        handleRefresh(integration);
-                      }}
-                    />
-                  )}
-                </div>
+                    {viewModel.isAdmin && (
+                      <SyncButton
+                        disabled={isSyncDisabled}
+                        supportsRefresh={integration.supportsRefresh}
+                        pending={isRowPending}
+                        integrationName={integration.displayName}
+                        onSync={() => {
+                          handleRefresh(integration);
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
               </li>
             );
           })}
@@ -240,6 +275,45 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
         <TwilioConnectorCard viewModel={viewModel.twilioCard} />
       </SettingsSection>
     </TooltipProvider>
+  );
+}
+
+function MailchimpTileDetails({
+  integration,
+}: {
+  readonly integration: IntegrationHealthViewModel;
+}) {
+  if (integration.mailchimp === null) {
+    return null;
+  }
+
+  return (
+    <div className="border-t border-slate-200 pt-3">
+      <dl className="grid gap-2 text-[12px] text-slate-600">
+        <div className="flex items-start justify-between gap-3">
+          <dt className="font-medium text-slate-900">Last sync</dt>
+          <dd className="text-right tabular-nums">
+            {formatRelative(integration.mailchimp.lastSuccessfulSyncAt)}
+          </dd>
+        </div>
+        <div className="flex items-start justify-between gap-3">
+          <dt className="font-medium text-slate-900">Last campaign</dt>
+          <dd className="max-w-[60%] text-right">
+            {integration.mailchimp.lastCampaignName === null
+              ? "—"
+              : `${integration.mailchimp.lastCampaignName} · ${formatRelative(
+                  integration.mailchimp.lastCampaignSentAt
+                )}`}
+          </dd>
+        </div>
+        <div className="flex items-start justify-between gap-3">
+          <dt className="font-medium text-slate-900">Last batch</dt>
+          <dd className="text-right tabular-nums">
+            {formatMailchimpCount(integration.mailchimp.lastBatchRecipientCount)} recipients
+          </dd>
+        </div>
+      </dl>
+    </div>
   );
 }
 
