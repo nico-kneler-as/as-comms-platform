@@ -512,6 +512,37 @@ export const mailchimpCampaignActivityDetails = pgTable(
   ],
 );
 
+export const mailchimpCampaignTailState = pgTable(
+  "mailchimp_campaign_tail_state",
+  {
+    campaignId: text("campaign_id").primaryKey(),
+    audienceId: text("audience_id").notNull(),
+    firstSeenSendTime: timestamp("first_seen_send_time", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    lastActivitySeenAt: timestamp("last_activity_seen_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    lastPolledAt: timestamp("last_polled_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    droppedAt: timestamp("dropped_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    index("mailchimp_campaign_tail_state_active_refresh_idx")
+      .on(table.lastPolledAt)
+      .where(sql`${table.droppedAt} IS NULL`),
+  ],
+);
+
 export const manualNoteDetails = pgTable(
   "manual_note_details",
   {

@@ -50,6 +50,7 @@ import type {
   Stage1PersistenceService
 } from "@as-comms/domain";
 import { isInboxDrivingCanonicalEvent } from "@as-comms/domain";
+import type { MailchimpCampaignTailStateRepository } from "@as-comms/db";
 
 import type { Stage1IngestService } from "../ingest/service.js";
 import type { Stage1IngestResult } from "../ingest/types.js";
@@ -57,6 +58,7 @@ import {
   Stage1NonRetryableJobError,
   Stage1RetryableJobError
 } from "./errors.js";
+import { createMailchimpTransitionScheduler } from "./mailchimp-transition-scheduler.js";
 import { projectionSeedPolicyCode, recordProjectionSeedOnce } from "./projection-seed.js";
 import { recordSyncFailureAudit } from "./sync-failure-audit.js";
 import { createStage1SyncStateService } from "./sync-state.js";
@@ -962,6 +964,12 @@ export function createStage1WorkerOrchestrationService(input: {
   readonly persistence: Stage1PersistenceService;
   readonly gmailHistoricalReplay: Stage1GmailHistoricalReplayConfig;
   readonly livePolling?: Partial<Stage1LivePollingConfig>;
+  readonly mailchimpTransition?: {
+    readonly enabled: boolean;
+    readonly discoverySeed: string;
+    readonly discoveryBatchMaxRecords?: number;
+    readonly tailState: MailchimpCampaignTailStateRepository;
+  };
   readonly revalidateInboxViews?: (input: {
     readonly contactIds: readonly string[];
   }) => Promise<void>;
@@ -977,6 +985,25 @@ export function createStage1WorkerOrchestrationService(input: {
       input.livePolling?.salesforcePollIntervalSeconds ??
       defaultSalesforceLivePollIntervalSeconds
   };
+  const mailchimpTransitionScheduler =
+    input.mailchimpTransition === undefined
+      ? null
+      : createMailchimpTransitionScheduler({
+          capture: input.capture.mailchimp,
+          syncState: input.persistence.repositories.syncState,
+          tailState: input.mailchimpTransition.tailState,
+          config: {
+            enabled: input.mailchimpTransition.enabled,
+            discoverySeed: input.mailchimpTransition.discoverySeed,
+            ...(input.mailchimpTransition.discoveryBatchMaxRecords === undefined
+              ? {}
+              : {
+                  discoveryBatchMaxRecords:
+                    input.mailchimpTransition.discoveryBatchMaxRecords
+                })
+          },
+          logger
+        });
 
   async function planGmailLiveCaptureBatch(
     now = new Date()
@@ -2038,6 +2065,8 @@ export function createStage1WorkerOrchestrationService(input: {
   return {
     planGmailLiveCaptureBatch,
     planSalesforceLiveCaptureBatch,
+    runMailchimpTransitionSchedulerTick: (params) =>
+      mailchimpTransitionScheduler?.runTick(params) ?? Promise.resolve(),
     runGmailHistoricalCaptureBatch: (payload) => {
       return runCapturedBatch({
         payload,
@@ -2123,8 +2152,8 @@ export function createStage1WorkerOrchestrationService(input: {
       });
     },
 
-    runMailchimpTransitionCaptureBatch: (payload) => {
-      return runCapturedBatch({
+    runMailchimpTransitionCaptureBatch: async (payload) => {
+      const outcome = await runCapturedBatch({
         payload,
         parse: (rawPayload) =>
           mailchimpTransitionCaptureBatchPayloadSchema.parse(rawPayload),
@@ -2133,6 +2162,26 @@ export function createStage1WorkerOrchestrationService(input: {
         ingestRecord: (record) => input.ingest.ingestMailchimpTransitionRecord(record),
         mapRecord: mapMailchimpRecord
       });
+
+      const campaignId =
+        payload.recordIds.length === 1 && payload.recordIds[0] !== undefined
+          ? payload.recordIds[0]
+          : null;
+
+      if (
+        outcome.outcome === "succeeded" &&
+        campaignId !== null &&
+        input.mailchimpTransition !== undefined &&
+        outcome.summary.processed > 0 &&
+        outcome.checkpoint !== null
+      ) {
+        await input.mailchimpTransition.tailState.updateLastActivitySeenAt({
+          campaignId,
+          lastActivitySeenAt: outcome.checkpoint
+        });
+      }
+
+      return outcome;
     },
 
     runReplayBatch: (rawPayload) => {

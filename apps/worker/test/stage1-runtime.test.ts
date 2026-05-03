@@ -147,6 +147,7 @@ describe("Stage 1 worker runtime task registration", () => {
       [
         `*/1 * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
         `*/5 * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
+        `0 * * * * stage1.mailchimp.transition.scheduler ?id=mailchimp-transition-scheduler&max=1`,
         `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
         `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
         `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,

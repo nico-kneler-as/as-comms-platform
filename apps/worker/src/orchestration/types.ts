@@ -209,6 +209,16 @@ export interface Stage1WorkerOrchestrationService {
   planSalesforceLiveCaptureBatch(
     now?: Date
   ): Promise<SalesforceLiveCaptureBatchPayload | null>;
+  runMailchimpTransitionSchedulerTick(input: {
+    readonly addJob: (
+      jobName: string,
+      payload: unknown,
+      spec?: {
+        readonly maxAttempts?: number;
+      }
+    ) => Promise<unknown>;
+    readonly now?: Date;
+  }): Promise<void>;
   runGmailHistoricalCaptureBatch(
     payload: GmailHistoricalCaptureBatchPayload
   ): Promise<Stage1CaptureJobOutcome>;

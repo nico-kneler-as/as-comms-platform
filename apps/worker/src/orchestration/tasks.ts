@@ -34,6 +34,7 @@ import {
   createIntegrationHealthAlertSender,
   type IntegrationHealthAlertSender
 } from "../jobs/integration-health/email.js";
+import { mailchimpTransitionSchedulerJobName } from "./mailchimp-transition-scheduler.js";
 import type { Stage1WorkerOrchestrationService } from "./types.js";
 
 export const pollGmailLiveJobName = "poll-gmail-live" as const;
@@ -487,6 +488,12 @@ export function createStage1TaskList(
         jobName: salesforceLiveCaptureBatchJobName
       }
     ),
+    [mailchimpTransitionSchedulerJobName]: async (_rawPayload, helpers) => {
+      await orchestration.runMailchimpTransitionSchedulerTick({
+        addJob: helpers.addJob,
+        now: new Date()
+      });
+    },
     ...(input?.integrationHealth === undefined
       ? {}
       : {

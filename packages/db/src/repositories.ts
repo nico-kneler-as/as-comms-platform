@@ -101,6 +101,7 @@ import {
   identityResolutionQueue,
   internalNotes,
   mailchimpCampaignActivityDetails,
+  mailchimpCampaignTailState,
   messageAttachments,
   manualNoteDetails,
   pendingComposerOutbounds,
@@ -120,6 +121,42 @@ import {
 } from "./schema/index.js";
 
 export type Stage1Database = PgDatabase<PgQueryResultHKT, DatabaseSchema>;
+
+export interface MailchimpCampaignTailStateRecord {
+  readonly campaignId: string;
+  readonly audienceId: string;
+  readonly firstSeenSendTime: string;
+  readonly lastActivitySeenAt: string | null;
+  readonly lastPolledAt: string | null;
+  readonly droppedAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface MailchimpCampaignTailStateRepository {
+  findByCampaignId(
+    campaignId: string,
+  ): Promise<MailchimpCampaignTailStateRecord | null>;
+  listActive(): Promise<readonly MailchimpCampaignTailStateRecord[]>;
+  upsert(
+    record: Pick<
+      MailchimpCampaignTailStateRecord,
+      "campaignId" | "audienceId" | "firstSeenSendTime"
+    >,
+  ): Promise<MailchimpCampaignTailStateRecord>;
+  markPolled(input: {
+    readonly campaignId: string;
+    readonly polledAt: string;
+  }): Promise<MailchimpCampaignTailStateRecord | null>;
+  updateLastActivitySeenAt(input: {
+    readonly campaignId: string;
+    readonly lastActivitySeenAt: string;
+  }): Promise<MailchimpCampaignTailStateRecord | null>;
+  markDropped(input: {
+    readonly campaignId: string;
+    readonly droppedAt: string;
+  }): Promise<MailchimpCampaignTailStateRecord | null>;
+}
 
 /**
  * Thrown by the projects repository when an attempt is made to flip
@@ -218,6 +255,8 @@ interface MailchimpCampaignActivityDetailRecord {
   readonly campaignName: string | null;
   readonly snippet: string;
 }
+
+type MailchimpCampaignTailStateRow = typeof mailchimpCampaignTailState.$inferSelect;
 
 interface ManualNoteDetailRecord {
   readonly sourceEvidenceId: string;
@@ -447,6 +486,25 @@ function mapMailchimpCampaignActivityDetailToInsertLocal(
   };
 }
 
+function toIsoTimestampLocal(value: Date | null): string | null {
+  return value === null ? null : value.toISOString();
+}
+
+function mapMailchimpCampaignTailStateRow(
+  row: MailchimpCampaignTailStateRow,
+): MailchimpCampaignTailStateRecord {
+  return {
+    campaignId: row.campaignId,
+    audienceId: row.audienceId,
+    firstSeenSendTime: row.firstSeenSendTime.toISOString(),
+    lastActivitySeenAt: toIsoTimestampLocal(row.lastActivitySeenAt),
+    lastPolledAt: toIsoTimestampLocal(row.lastPolledAt),
+    droppedAt: toIsoTimestampLocal(row.droppedAt),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 function mapManualNoteDetailRowLocal(
   row: ManualNoteDetailRow,
 ): ManualNoteDetailRecord {
@@ -502,6 +560,10 @@ const mailchimpCampaignActivityDetailsTable =
   mailchimpCampaignActivityDetails as typeof mailchimpCampaignActivityDetails & {
     readonly sourceEvidenceId: typeof mailchimpCampaignActivityDetails.sourceEvidenceId;
   };
+const mailchimpCampaignTailStateTable =
+  mailchimpCampaignTailState as typeof mailchimpCampaignTailState & {
+    readonly campaignId: typeof mailchimpCampaignTailState.campaignId;
+  };
 const manualNoteDetailsTable = manualNoteDetails as typeof manualNoteDetails & {
   readonly sourceEvidenceId: typeof manualNoteDetails.sourceEvidenceId;
 };
@@ -516,6 +578,102 @@ function requireRow<T>(row: T | undefined, message: string): T {
   }
 
   return row;
+}
+
+export function createMailchimpCampaignTailStateRepository(
+  db: Stage1Database,
+): MailchimpCampaignTailStateRepository {
+  return {
+    async findByCampaignId(campaignId) {
+      const [row] = await db
+        .select()
+        .from(mailchimpCampaignTailState)
+        .where(eq(mailchimpCampaignTailState.campaignId, campaignId))
+        .limit(1);
+
+      return row === undefined ? null : mapMailchimpCampaignTailStateRow(row);
+    },
+
+    async listActive() {
+      const rows = await db
+        .select()
+        .from(mailchimpCampaignTailState)
+        .where(isNull(mailchimpCampaignTailState.droppedAt))
+        .orderBy(
+          asc(mailchimpCampaignTailState.firstSeenSendTime),
+          asc(mailchimpCampaignTailState.campaignId),
+        );
+
+      return rows.map(mapMailchimpCampaignTailStateRow);
+    },
+
+    async upsert(record) {
+      const values = {
+        campaignId: record.campaignId,
+        audienceId: record.audienceId,
+        firstSeenSendTime: new Date(record.firstSeenSendTime),
+      };
+      const [row] = await db
+        .insert(mailchimpCampaignTailState)
+        .values(values)
+        .onConflictDoUpdate({
+          target: mailchimpCampaignTailStateTable.campaignId,
+          set: {
+            audienceId: values.audienceId,
+            firstSeenSendTime: sql`least(${mailchimpCampaignTailState.firstSeenSendTime}, ${values.firstSeenSendTime})`,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+
+      return mapMailchimpCampaignTailStateRow(
+        requireRow(
+          row,
+          "Expected Mailchimp campaign tail-state row to be returned.",
+        ),
+      );
+    },
+
+    async markPolled(input) {
+      const [row] = await db
+        .update(mailchimpCampaignTailState)
+        .set({
+          lastPolledAt: new Date(input.polledAt),
+          updatedAt: new Date(),
+        })
+        .where(eq(mailchimpCampaignTailState.campaignId, input.campaignId))
+        .returning();
+
+      return row === undefined ? null : mapMailchimpCampaignTailStateRow(row);
+    },
+
+    async updateLastActivitySeenAt(input) {
+      const lastActivitySeenAt = new Date(input.lastActivitySeenAt);
+      const [row] = await db
+        .update(mailchimpCampaignTailState)
+        .set({
+          lastActivitySeenAt: sql`greatest(coalesce(${mailchimpCampaignTailState.lastActivitySeenAt}, ${lastActivitySeenAt}), ${lastActivitySeenAt})`,
+          updatedAt: new Date(),
+        })
+        .where(eq(mailchimpCampaignTailState.campaignId, input.campaignId))
+        .returning();
+
+      return row === undefined ? null : mapMailchimpCampaignTailStateRow(row);
+    },
+
+    async markDropped(input) {
+      const [row] = await db
+        .update(mailchimpCampaignTailState)
+        .set({
+          droppedAt: new Date(input.droppedAt),
+          updatedAt: new Date(),
+        })
+        .where(eq(mailchimpCampaignTailState.campaignId, input.campaignId))
+        .returning();
+
+      return row === undefined ? null : mapMailchimpCampaignTailStateRow(row);
+    },
+  };
 }
 
 function clampSmsListLimit(limit: number | undefined): number {
