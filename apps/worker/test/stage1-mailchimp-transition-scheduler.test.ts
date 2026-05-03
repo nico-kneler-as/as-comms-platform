@@ -114,7 +114,19 @@ async function seedKnownContact(context: TestWorkerContext): Promise<void> {
         verifiedAt: "2026-01-01T00:00:00.000Z",
       },
     ],
-    memberships: [],
+    memberships: [
+      {
+        id: "membership:mailchimp:known",
+        contactId: "contact:mailchimp:known",
+        salesforceMembershipId: "a0B-mailchimp-known-membership",
+        projectId: "project_mailchimp_known",
+        expeditionId: "expedition_mailchimp_known",
+        role: "volunteer",
+        status: "active",
+        source: "salesforce",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
   });
 }
 
