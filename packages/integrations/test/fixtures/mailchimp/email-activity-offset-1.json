@@ -1,0 +1,16 @@
+{
+  "emails": [
+    {
+      "email_id": "member-2",
+      "email_address": "second@example.org",
+      "merge_fields": {},
+      "activity": [
+        {
+          "action": "sent",
+          "timestamp": "2026-02-01T15:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "total_items": 2
+}

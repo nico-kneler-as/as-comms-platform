@@ -1,0 +1,15 @@
+{
+  "campaigns": [
+    {
+      "id": "campaign-1",
+      "send_time": "2026-02-01T15:00:00.000Z",
+      "recipients": {
+        "list_id": "audience-1"
+      },
+      "settings": {
+        "title": "Volunteer Update"
+      }
+    }
+  ],
+  "total_items": 1
+}

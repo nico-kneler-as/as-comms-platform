@@ -8,6 +8,7 @@
     { "path": "./packages/ui" },
     { "path": "./apps/worker" },
     { "path": "./apps/gmail-capture" },
+    { "path": "./apps/mailchimp-capture" },
     { "path": "./apps/salesforce-capture" }
   ]
 }
