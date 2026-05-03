@@ -41,6 +41,7 @@ edit the markdown here and re-mirror.
 | Runbook | Symptom |
 |---|---|
 | [worker-queue-stuck.md](./worker-queue-stuck.md) | Worker is running but jobs not advancing; no `reconcile.completed` logs |
+| [mailchimp-decommission.md](./mailchimp-decommission.md) | Planned SendGrid cutover is complete and the temporary Mailchimp ingest path must be retired |
 
 ## Investigation guides
 

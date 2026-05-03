@@ -34,7 +34,10 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
   const context = await createTestStage1Context();
 
   const runtime: Stage1WebRuntime = {
-    connection: null,
+    connection: {
+      db: context.db as unknown as NonNullable<Stage1WebRuntime["connection"]>["db"],
+      sql: null as never,
+    },
     repositories: context.repositories,
     settings: context.settings,
     normalization: context.normalization,

@@ -8,7 +8,8 @@
 ## Summary
 
 - narrowed launch-scope completion is Gmail + Salesforce only
-- SimpleTexting and Mailchimp remain valid Stage 1 architecture paths, but they are deferred for initial launch acceptance
+- SimpleTexting remains a valid Stage 1 architecture path, but it is deferred for initial launch acceptance
+- Mailchimp is now an active transition-period live-ingest path until SendGrid cutover; see the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
 - Historical backfill and live ingest must map into the same normalization path.
 - Keep provider scope narrow and explicit.
 - If a source record cannot be mapped safely in Stage 1, defer it or send it to review; do not widen the matrix by guesswork.
@@ -132,7 +133,8 @@
 
 Launch-scope note:
 
-- deferred for initial Gmail + Salesforce launch completion
+- live transition path active until SendGrid cutover
+- decommission sequence: [mailchimp-decommission.md](../runbooks/mailchimp-decommission.md)
 
 ### Required first pass
 
@@ -225,7 +227,8 @@ Launch-scope note:
 ### Historical backfill vs live ingest
 
 - historical campaign activity is the first-priority Stage 1 scope
-- transition-period live ingest uses the same event taxonomy and normalization path only if Mailchimp is still active during cutover
+- transition-period live ingest is active during the Mailchimp → SendGrid cutover window and uses the same event taxonomy and normalization path
+- once SendGrid is trusted, disable scheduling, drain the 30-day tail, and retire the capture service per the decommission runbook
 
 ### Tie-break and identity-anchor notes
 

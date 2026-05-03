@@ -29,6 +29,7 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 - campaign content, review state, and frozen audience remain product-owned
 - SendGrid is the Email delivery provider, not the authoring source of truth
 - Mailchimp remains historical and transition-period live ingest scope until native Email Campaigns are trusted
+- transition-period live Mailchimp ingest is now operational for the cutover window; see PRD #283 and the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
 
 ## Required Interfaces / Concepts
 
