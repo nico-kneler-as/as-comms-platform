@@ -195,10 +195,22 @@ export interface ContactMembershipRepository {
 export interface SmsMessageRepository {
   insert(record: SmsMessageRecord): Promise<SmsMessageRecord>;
   findByTwilioSid(sid: string): Promise<SmsMessageRecord | null>;
+  findLatestByStatuses(
+    statuses: readonly SmsMessageRecord["sendStatus"][],
+  ): Promise<SmsMessageRecord | null>;
+  hasInboundForPhone(phoneE164: string): Promise<boolean>;
   listByContact(
     contactId: string,
     limit?: number,
   ): Promise<readonly SmsMessageRecord[]>;
+  updateDelivery(input: {
+    readonly messageId: string;
+    readonly twilioMessageSid?: string | null;
+    readonly status: SmsMessageRecord["sendStatus"];
+    readonly failedReason?: string | null;
+    readonly failedDetail?: string | null;
+    readonly sentAt?: Date | null;
+  }): Promise<SmsMessageRecord | null>;
   updateSendStatus(
     messageId: string,
     status: SmsMessageRecord["sendStatus"],

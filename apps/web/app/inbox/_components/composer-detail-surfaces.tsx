@@ -2,6 +2,8 @@
 
 import type { RefObject } from "react";
 
+import type { SmsMetrics } from "@as-comms/domain";
+
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -43,11 +45,17 @@ import {
 } from "./icons";
 import type { AttachmentDraft, InlineComposerError } from "./composer-shared";
 import type { ComposerSendKind } from "../_lib/composer-ui";
-import type { InboxComposerAliasOption } from "../_lib/view-models";
+import type {
+  InboxComposerAliasOption,
+  InboxSmsSenderOption,
+} from "../_lib/view-models";
+import type { ComposerSmsRecipient } from "../_hooks/composer-draft-reducer";
 import type {
   AiDraftState,
   ComposerValidationError,
 } from "./inbox-client-provider";
+import { ComposerSmsRecipientPicker } from "./composer-sms-recipient-picker";
+import { SendFromPhoneChip } from "./composer-send-from-phone-chip";
 
 function KnowledgeIndicator({
   tooltipMessage = "AI Draft will use voice instructions only — no project-specific context.",
@@ -615,6 +623,208 @@ export function ComposerEmailSurface({
         open={isAboutOpen}
         onOpenChange={onAboutOpenChange}
       />
+    </TooltipProvider>
+  );
+}
+
+function resolveSmsRecipientLabel(recipient: ComposerSmsRecipient | null): string {
+  if (recipient === null) {
+    return "No recipient selected";
+  }
+
+  return recipient.kind === "contact"
+    ? `${recipient.displayName} (${recipient.phoneE164})`
+    : recipient.phoneE164;
+}
+
+export function ComposerSmsSurface({
+  smsSenders,
+  selectedSenderId,
+  recipient,
+  lockedRecipient,
+  body,
+  includeSignature,
+  segmentMetrics,
+  sendDisabledReason,
+  inlineError,
+  recipientError,
+  senderError,
+  bodyError,
+  isSending,
+  onRecipientChange,
+  onBodyChange,
+  onToggleSignature,
+  onSend,
+  onCancel,
+}: {
+  readonly smsSenders: readonly InboxSmsSenderOption[];
+  readonly selectedSenderId: string | null;
+  readonly recipient: ComposerSmsRecipient | null;
+  readonly lockedRecipient: boolean;
+  readonly body: string;
+  readonly includeSignature: boolean;
+  readonly segmentMetrics: SmsMetrics;
+  readonly sendDisabledReason: string | null;
+  readonly inlineError: InlineComposerError | null;
+  readonly recipientError?: ComposerValidationError;
+  readonly senderError?: ComposerValidationError;
+  readonly bodyError?: ComposerValidationError;
+  readonly isSending: boolean;
+  readonly onRecipientChange: (recipient: ComposerSmsRecipient | null) => void;
+  readonly onBodyChange: (value: string) => void;
+  readonly onToggleSignature: () => void;
+  readonly onSend: () => void;
+  readonly onCancel: () => void;
+}) {
+  const selectedSender =
+    smsSenders.find((sender) => sender.id === selectedSenderId) ??
+    smsSenders[0] ??
+    null;
+  const sendButton = (
+    <div className="inline-flex items-stretch overflow-hidden rounded-md shadow-sm">
+      <Button
+        type="button"
+        disabled={sendDisabledReason !== null || isSending}
+        className="h-9 rounded-none rounded-l-md bg-slate-900 px-3 text-[12.5px] font-medium text-white shadow-none hover:bg-slate-800"
+        onClick={onSend}
+      >
+        {isSending ? (
+          <>
+            <LoaderIcon className="size-4 animate-spin" />
+            Sending...
+          </>
+        ) : (
+          <>
+            <SendIcon className="size-4" />
+            Send
+          </>
+        )}
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            aria-label="SMS send options"
+            disabled={isSending}
+            className="h-9 rounded-none rounded-r-md border-l border-slate-700 bg-slate-900 px-2 text-white shadow-none hover:bg-slate-800"
+          >
+            <ChevronDownIcon className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64 rounded-xl p-1.5">
+          <DropdownMenuItem
+            className="rounded-md"
+            onSelect={() => {
+              onSend();
+            }}
+          >
+            <div className="flex min-w-0 flex-col">
+              <span className="text-sm font-medium text-slate-900">Send SMS</span>
+              <span className={TYPE.caption}>
+                {resolveSmsRecipientLabel(recipient)}
+              </span>
+            </div>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <ComposerField label="FROM">
+        <SendFromPhoneChip
+          sender={selectedSender}
+          {...(senderError?.message ? { errorMessage: senderError.message } : {})}
+        />
+      </ComposerField>
+
+      <ComposerField label="TO">
+        <ComposerSmsRecipientPicker
+          recipient={recipient}
+          locked={lockedRecipient}
+          onRecipientChange={onRecipientChange}
+          {...(recipientError?.message
+            ? { errorMessage: recipientError.message }
+            : {})}
+        />
+      </ComposerField>
+
+      <div className="px-4 pt-4">
+        <label className="flex items-center gap-2 text-[12px] font-medium text-slate-600">
+          <input
+            type="checkbox"
+            checked={includeSignature}
+            onChange={onToggleSignature}
+            className="size-4 rounded border-slate-300 text-slate-900"
+          />
+          Include sender signature
+        </label>
+      </div>
+
+      <div className="px-4 py-4">
+        <textarea
+          rows={8}
+          value={body}
+          onChange={(event) => {
+            onBodyChange(event.currentTarget.value);
+          }}
+          placeholder="Write an SMS reply"
+          className={cn(
+            `min-h-52 w-full resize-none border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 ${RADIUS.md} focus:outline-none focus:ring-1 focus:ring-slate-300`,
+            bodyError ? "border-rose-300 ring-1 ring-rose-200" : "",
+          )}
+        />
+        {bodyError ? (
+          <p className="mt-2 text-xs text-rose-700">{bodyError.message}</p>
+        ) : null}
+      </div>
+
+      <div className="border-t border-slate-200 px-4 py-4">
+        {inlineError ? (
+          <InlineErrorBanner
+            message={inlineError.message}
+            retryable={inlineError.retryable}
+            onRetry={onSend}
+          />
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-[11.5px] text-slate-500">
+            <span className="font-medium text-slate-700">
+              {segmentMetrics.segments === 0 ? "0 segments" : `${String(segmentMetrics.segments)} segments`}
+            </span>
+            {` · ${segmentMetrics.encoding} · ${String(segmentMetrics.remaining)} remaining`}
+          </div>
+
+          {recipientError?.message ? (
+            <span className="text-[11.5px] text-rose-700">
+              {recipientError.message}
+            </span>
+          ) : null}
+
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-[12px] text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
+            {sendDisabledReason === null ? (
+              sendButton
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>{sendButton}</div>
+                </TooltipTrigger>
+                <TooltipContent side="top">{sendDisabledReason}</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+      </div>
     </TooltipProvider>
   );
 }

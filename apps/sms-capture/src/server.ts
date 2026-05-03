@@ -5,12 +5,18 @@ import {
   type ServerResponse,
 } from "node:http";
 
+import {
+  createDatabaseConnection,
+  createStage1RepositoryBundleFromConnection,
+} from "@as-comms/db";
+import type { Stage1RepositoryBundle } from "@as-comms/domain";
 import { createTwilioProvider, type TwilioProvider } from "@as-comms/integrations";
 import { z } from "zod";
 
 export const smsCaptureRuntimeConfigSchema = z.object({
   host: z.string().min(1).default("0.0.0.0"),
   port: z.number().int().positive().default(3003),
+  databaseUrl: z.string().min(1),
   service: z.object({
     accountSid: z.string().min(1),
     authToken: z.string().min(1),
@@ -72,6 +78,7 @@ export function readSmsCaptureRuntimeConfig(
   return smsCaptureRuntimeConfigSchema.parse({
     host: env.HOST ?? "0.0.0.0",
     port: parseOptionalPositiveIntEnv(env.PORT, 3003, "PORT"),
+    databaseUrl: parseRequiredStringEnv(env.DATABASE_URL, "DATABASE_URL"),
     service: {
       accountSid: parseRequiredStringEnv(
         env.TWILIO_ACCOUNT_SID,
@@ -156,6 +163,7 @@ async function handleWebhookRequest(input: {
   readonly request: IncomingMessage;
   readonly response: ServerResponse;
   readonly provider: TwilioProvider;
+  readonly repositories: Pick<Stage1RepositoryBundle, "smsMessages">;
   readonly path: string;
 }): Promise<void> {
   const bodyText = await readRequestBody(input.request);
@@ -175,16 +183,84 @@ async function handleWebhookRequest(input: {
     return;
   }
 
-  console.info(`SMS webhook stub accepted: ${input.path}`);
+  if (input.path === "/webhooks/inbound") {
+    writeJson(input.response, 200, { ok: true });
+    return;
+  }
+
+  if (input.path === "/webhooks/status") {
+    const parsed = z
+      .object({
+        MessageSid: z.string().min(1),
+        MessageStatus: z.string().min(1),
+        ErrorCode: z.string().optional(),
+        ErrorMessage: z.string().optional(),
+      })
+      .safeParse(params);
+
+    if (!parsed.success) {
+      writeJson(input.response, 200, { ok: true });
+      return;
+    }
+
+    const message = await input.repositories.smsMessages.findByTwilioSid(
+      parsed.data.MessageSid,
+    );
+
+    if (message === null) {
+      console.info(
+        `SMS status callback ignored for unknown sid ${parsed.data.MessageSid}`,
+      );
+      writeJson(input.response, 200, { ok: true });
+      return;
+    }
+
+    const nextStatus = (() => {
+      switch (parsed.data.MessageStatus) {
+        case "queued":
+        case "accepted":
+        case "sending":
+        case "sent":
+          return message.sendStatus === "delivered" ? "delivered" : "sent";
+        case "delivered":
+          return "delivered";
+        case "failed":
+          return "failed";
+        case "undelivered":
+          return "undelivered";
+        default:
+          return message.sendStatus;
+      }
+    })();
+
+    await input.repositories.smsMessages.updateDelivery({
+      messageId: message.id,
+      status: nextStatus,
+      failedReason: parsed.data.ErrorCode ?? null,
+      failedDetail: parsed.data.ErrorMessage ?? null,
+      sentAt: message.sentAt,
+    });
+    writeJson(input.response, 200, { ok: true });
+    return;
+  }
+
   writeJson(input.response, 200, { ok: true });
 }
 
 export function createSmsCaptureServer(input: {
   readonly config: SmsCaptureRuntimeConfig;
   readonly provider?: TwilioProvider;
+  readonly repositories?: Pick<Stage1RepositoryBundle, "smsMessages">;
 }): Server {
   const provider =
     input.provider ?? createTwilioProvider(input.config.service);
+  const repositories =
+    input.repositories ??
+    createStage1RepositoryBundleFromConnection(
+      createDatabaseConnection({
+        connectionString: input.config.databaseUrl,
+      }),
+    );
 
   return createServer((request, response) => {
     void (async () => {
@@ -197,7 +273,13 @@ export function createSmsCaptureServer(input: {
           return;
         }
 
-        await handleWebhookRequest({ request, response, provider, path });
+        await handleWebhookRequest({
+          request,
+          response,
+          provider,
+          repositories,
+          path,
+        });
       } catch (error) {
         if (error instanceof RequestBodyTooLargeError) {
           writeJson(response, 413, { ok: false, error: "payload_too_large" });

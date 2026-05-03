@@ -2513,15 +2513,18 @@ function buildTimelineEntry(input: {
         ? (input.item.inReplyToRfc822 ?? null)
         : null,
     sendStatus:
-      input.item.family === "one_to_one_email"
+      input.item.family === "one_to_one_email" ||
+      input.item.family === "one_to_one_sms"
         ? (input.item.sendStatus ?? null)
         : null,
     failedReason:
-      input.item.family === "one_to_one_email"
+      input.item.family === "one_to_one_email" ||
+      input.item.family === "one_to_one_sms"
         ? (input.item.failedReason ?? null)
         : null,
     failedDetail:
-      input.item.family === "one_to_one_email"
+      input.item.family === "one_to_one_email" ||
+      input.item.family === "one_to_one_sms"
         ? (input.item.failedDetail ?? null)
         : null,
     // For canonical (captured) emails, attachmentCount comes from the
@@ -2828,6 +2831,7 @@ function buildComposerReplyContext(input: {
   return {
     contactId: input.contact.id,
     contactDisplayName: input.contact.displayName,
+    contactPrimaryPhone: input.contact.primaryPhone,
     subject: buildReplySubject(latestInboundEmail.subject),
     threadCursor: latestQuotableInboundEmail?.canonicalEventId ?? null,
     threadId: latestInboundEmail.threadId ?? null,

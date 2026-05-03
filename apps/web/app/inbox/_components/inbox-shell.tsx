@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import type {
   InboxFilterId,
   InboxListViewModel,
-  InboxComposerAliasOption
+  InboxComposerAliasOption,
+  InboxSmsSenderOption,
 } from "../_lib/view-models";
 import type { InboxIntegrationHealthBannerViewModel } from "../_lib/integration-health";
 import { PrimaryIconRail } from "@/app/_components/primary-icon-rail";
@@ -20,6 +21,8 @@ interface ShellProps {
   readonly initialList: InboxListViewModel;
   readonly initialFilterId: InboxFilterId;
   readonly composerAliases: readonly InboxComposerAliasOption[];
+  readonly smsEnabled: boolean;
+  readonly smsSenders: readonly InboxSmsSenderOption[];
   readonly healthBanner: InboxIntegrationHealthBannerViewModel | null;
   readonly currentActorId: string;
   readonly operator: {
@@ -43,6 +46,8 @@ export function InboxShell({
   initialList,
   initialFilterId,
   composerAliases,
+  smsEnabled,
+  smsSenders,
   healthBanner,
   currentActorId,
   operator,
@@ -70,7 +75,9 @@ export function InboxShell({
               initialFilterId={initialFilterId}
             />
 
-            <InboxWorkspace>{children}</InboxWorkspace>
+            <InboxWorkspace smsEnabled={smsEnabled} smsSenders={smsSenders}>
+              {children}
+            </InboxWorkspace>
           </div>
         </div>
       </InboxKeyboardProvider>

@@ -50,6 +50,7 @@ export interface ComposerValidationError {
     | "cc"
     | "bcc"
     | "alias"
+    | "sender"
     | "attachments";
   readonly message: string;
 }

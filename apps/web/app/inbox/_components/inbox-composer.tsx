@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useTransition } from "react";
 
+import { smsMetrics } from "@as-comms/domain/sms-segments";
+
 import {
   FOCUS_RING,
   TRANSITION,
@@ -19,13 +21,16 @@ import { ComposerCollapsedPill } from "./composer-collapsed-pill";
 import {
   ComposerEmailSurface,
   ComposerNoteSurface,
+  ComposerSmsSurface,
 } from "./composer-detail-surfaces";
 import {
   autoResizeTextarea,
   resolveAiWarningMessage,
 } from "./composer-shared";
 import { useInboxClient } from "./inbox-client-provider";
-import { ChevronDownIcon, MailIcon, NoteIcon, XIcon } from "./icons";
+import type { InboxSmsSenderOption } from "../_lib/view-models";
+import { resolveSmsConsentAction } from "../actions";
+import { ChevronDownIcon, MailIcon, NoteIcon, PhoneIcon, XIcon } from "./icons";
 import { useAiDraftRun } from "../_hooks/use-ai-draft-run";
 import { useAttachmentIntake } from "../_hooks/use-attachment-intake";
 import { useComposerDraftState } from "../_hooks/use-composer-draft-state";
@@ -61,10 +66,21 @@ function resolveReplyTitle(input: {
 
 function ComposerModeTabs({
   activeTab,
+  canUseNoteTab,
+  smsEnabled,
+  onEmail,
+  onSms,
+  onNote,
 }: {
-  readonly activeTab: "email" | "note";
+  readonly activeTab: "email" | "sms" | "note";
+  readonly canUseNoteTab: boolean;
+  readonly smsEnabled: boolean;
+  readonly onEmail: () => void;
+  readonly onSms: () => void;
+  readonly onNote: () => void;
 }) {
   const isNote = activeTab === "note";
+  const isSms = activeTab === "sms";
 
   return (
     <div className="border-b border-slate-200 px-4 py-2.5">
@@ -76,25 +92,50 @@ function ComposerModeTabs({
         <button
           type="button"
           role="tab"
-          aria-selected={!isNote}
-          tabIndex={-1}
+          aria-selected={activeTab === "email"}
+          tabIndex={0}
           className={cn(
             `inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion}`,
-            !isNote
+            activeTab === "email"
               ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
               : "text-slate-500",
           )}
+          onClick={onEmail}
         >
           <MailIcon className="size-3.5" />
           Email
         </button>
-        {isNote ? (
+        {smsEnabled ? (
           <button
             type="button"
             role="tab"
-            aria-selected="true"
-            tabIndex={-1}
-            className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-medium bg-white text-amber-700 shadow-sm ring-1 ring-amber-200 ${FOCUS_RING}`}
+            aria-selected={isSms}
+            tabIndex={0}
+            className={cn(
+              `inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion}`,
+              isSms
+                ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
+                : "text-slate-500",
+            )}
+            onClick={onSms}
+          >
+            <PhoneIcon className="size-3.5" />
+            SMS
+          </button>
+        ) : null}
+        {canUseNoteTab ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={isNote}
+            tabIndex={0}
+            className={cn(
+              `inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-medium ${FOCUS_RING}`,
+              isNote
+                ? "bg-white text-amber-700 shadow-sm ring-1 ring-amber-200"
+                : "text-amber-700",
+            )}
+            onClick={onNote}
           >
             <NoteIcon className="size-3.5" />
             Note
@@ -105,7 +146,13 @@ function ComposerModeTabs({
   );
 }
 
-export function InboxComposerDetailPane() {
+export function InboxComposerDetailPane({
+  smsEnabled = false,
+  smsSenders = [],
+}: {
+  readonly smsEnabled?: boolean;
+  readonly smsSenders?: readonly InboxSmsSenderOption[];
+}) {
   const router = useRouter();
   const {
     currentActorId,
@@ -162,6 +209,51 @@ export function InboxComposerDetailPane() {
 
     autoResizeTextarea(bodyRef.current);
   }, [state.activeTab, state.body]);
+
+  useEffect(() => {
+    if (state.smsSelectedSenderId !== null) {
+      return;
+    }
+
+    const defaultSender = smsSenders[0];
+    if (defaultSender === undefined) {
+      return;
+    }
+
+    dispatch({ type: "SET_SMS_SENDER", senderId: defaultSender.id });
+  }, [dispatch, smsSenders, state.smsSelectedSenderId]);
+
+  useEffect(() => {
+    if (state.smsRecipient === null || state.smsConsent !== null) {
+      return;
+    }
+
+    const recipient = state.smsRecipient;
+
+    void (async () => {
+      const result = await resolveSmsConsentAction({
+        recipient:
+          recipient.kind === "contact"
+            ? {
+                kind: "contact",
+                contactId: recipient.contactId,
+              }
+            : {
+                kind: "phone",
+                phoneE164: recipient.phoneE164,
+              },
+      });
+
+      dispatch({
+        type: "SET_SMS_RECIPIENT",
+        recipient,
+        consent:
+          result.ok && result.data !== undefined
+            ? result.data
+            : { canSend: false, reason: "no_consent" },
+      });
+    })();
+  }, [dispatch, state.smsConsent, state.smsRecipient]);
 
   if (composerPane.mode === "closed") {
     return null;
@@ -259,7 +351,7 @@ export function InboxComposerDetailPane() {
     setComposerErrors,
     startAiTransition,
   });
-  const { submit, saveNote, cancel } = useComposerSubmit({
+  const { submit, submitSms, saveNote, cancel } = useComposerSubmit({
     state,
     dispatch,
     draftKey,
@@ -277,6 +369,32 @@ export function InboxComposerDetailPane() {
     startSendTransition,
     startSaveNoteTransition,
   });
+  const senderError = composerErrors.find((error) => error.field === "sender");
+  const selectedSmsSender =
+    smsSenders.find((sender) => sender.id === state.smsSelectedSenderId) ??
+    smsSenders[0] ??
+    null;
+  const smsSignature =
+    state.smsIncludeSignature && selectedSmsSender !== null
+      ? `\n\n- ${selectedSmsSender.displayName}`
+      : "";
+  const smsMetricsValue = smsMetrics(`${state.smsBody}${smsSignature}`);
+  const smsSendDisabledReason =
+    state.smsRecipient === null
+      ? "Choose a phone recipient first."
+      : state.smsConsent === null
+        ? "Checking SMS consent..."
+      : state.smsBody.trim().length === 0
+        ? "Write an SMS before sending."
+        : !state.smsConsent.canSend
+          ? state.smsConsent.reason === "revoked"
+            ? "SMS consent was revoked for this recipient."
+            : "SMS requires prior inbound or recorded opt-in."
+          : selectedSmsSender === null
+            ? "No active SMS sender is configured."
+            : smsMetricsValue.segments > 10
+              ? "SMS messages are limited to 10 segments."
+              : null;
 
   return (
     <Dialog
@@ -301,6 +419,8 @@ export function InboxComposerDetailPane() {
             >
               {state.activeTab === "note" ? (
                 <NoteIcon className="size-3.5" />
+              ) : state.activeTab === "sms" ? (
+                <PhoneIcon className="size-3.5" />
               ) : (
                 <MailIcon className="size-3.5" />
               )}
@@ -332,7 +452,20 @@ export function InboxComposerDetailPane() {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-          <ComposerModeTabs activeTab={state.activeTab} />
+          <ComposerModeTabs
+            activeTab={state.activeTab}
+            canUseNoteTab={canUseNoteTab}
+            smsEnabled={smsEnabled}
+            onEmail={() => {
+              dispatch({ type: "SET_ACTIVE_TAB", tab: "email" });
+            }}
+            onSms={() => {
+              dispatch({ type: "SET_ACTIVE_TAB", tab: "sms" });
+            }}
+            onNote={() => {
+              dispatch({ type: "SET_ACTIVE_TAB", tab: "note" });
+            }}
+          />
 
           {state.activeTab === "email" ? (
             <ComposerEmailSurface
@@ -439,6 +572,66 @@ export function InboxComposerDetailPane() {
               {...(subjectError ? { subjectError } : {})}
               {...(bodyError ? { bodyError } : {})}
               {...(attachmentError ? { attachmentError } : {})}
+            />
+          ) : state.activeTab === "sms" ? (
+            <ComposerSmsSurface
+              smsSenders={smsSenders}
+              selectedSenderId={state.smsSelectedSenderId}
+              recipient={state.smsRecipient}
+              lockedRecipient={
+                isReplying && replyContext?.contactPrimaryPhone !== null
+              }
+              body={state.smsBody}
+              includeSignature={state.smsIncludeSignature}
+              segmentMetrics={smsMetricsValue}
+              sendDisabledReason={smsSendDisabledReason}
+              inlineError={state.inlineError}
+              isSending={isSending}
+              onRecipientChange={(nextRecipient) => {
+                if (nextRecipient === null) {
+                  dispatch({
+                    type: "SET_SMS_RECIPIENT",
+                    recipient: null,
+                    consent: { canSend: true, reason: null },
+                  });
+                  return;
+                }
+
+                void (async () => {
+                  const result = await resolveSmsConsentAction({
+                    recipient:
+                      nextRecipient.kind === "contact"
+                        ? {
+                            kind: "contact",
+                            contactId: nextRecipient.contactId,
+                          }
+                        : {
+                            kind: "phone",
+                            phoneE164: nextRecipient.phoneE164,
+                          },
+                  });
+
+                  dispatch({
+                    type: "SET_SMS_RECIPIENT",
+                    recipient: nextRecipient,
+                    consent:
+                      result.ok && result.data !== undefined
+                        ? result.data
+                        : { canSend: false, reason: "no_consent" },
+                  });
+                })();
+              }}
+              onBodyChange={(value) => {
+                dispatch({ type: "SET_SMS_BODY", body: value });
+              }}
+              onToggleSignature={() => {
+                dispatch({ type: "TOGGLE_SMS_SIGNATURE" });
+              }}
+              onSend={submitSms}
+              onCancel={cancel}
+              {...(recipientError ? { recipientError } : {})}
+              {...(senderError ? { senderError } : {})}
+              {...(bodyError ? { bodyError } : {})}
             />
           ) : (
             <ComposerNoteSurface

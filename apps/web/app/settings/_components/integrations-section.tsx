@@ -205,8 +205,82 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
             );
           })}
         </ul>
+        <TwilioConnectorCard viewModel={viewModel.twilioCard} />
       </SettingsSection>
     </TooltipProvider>
+  );
+}
+
+function TwilioConnectorCard({
+  viewModel,
+}: {
+  readonly viewModel: IntegrationsSettingsViewModel["twilioCard"];
+}) {
+  const statusMeta = {
+    "not-configured": {
+      label: "Not configured",
+      colorClasses: "bg-slate-100 text-slate-600 ring-slate-200",
+    },
+    active: {
+      label: "Active",
+      colorClasses: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    },
+    degraded: {
+      label: "Degraded",
+      colorClasses: "bg-amber-50 text-amber-800 ring-amber-200",
+    },
+  }[viewModel.status];
+
+  return (
+    <div
+      className={cn(
+        "mt-4 flex min-h-full flex-col gap-3 border border-slate-200 bg-white p-4",
+        RADIUS.lg,
+        SHADOW.sm,
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-inset ring-slate-200/70">
+            <span className="text-[10px] font-semibold uppercase">TW</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="truncate text-[13.5px] font-semibold text-slate-900">
+                Twilio
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Messaging
+              </span>
+            </div>
+            <p className="mt-1 text-[12px] text-slate-500">
+              Outbound SMS connector. Read-only in this phase.
+            </p>
+          </div>
+        </div>
+        <StatusBadge
+          label={statusMeta.label}
+          colorClasses={statusMeta.colorClasses}
+          variant="soft"
+          className="shrink-0"
+        />
+      </div>
+
+      <dl className="grid gap-2 text-[12px] text-slate-600 sm:grid-cols-3">
+        <div>
+          <dt className="font-medium text-slate-900">SMS enabled</dt>
+          <dd>{viewModel.smsEnabled ? "On" : "Off"}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-slate-900">Active sender</dt>
+          <dd>{viewModel.hasActiveSender ? "Configured" : "Missing"}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-slate-900">Last status callback</dt>
+          <dd>{formatRelative(viewModel.lastStatusCallbackAt)}</dd>
+        </div>
+      </dl>
+    </div>
   );
 }
 

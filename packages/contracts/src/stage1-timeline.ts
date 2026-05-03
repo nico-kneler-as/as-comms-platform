@@ -127,6 +127,12 @@ export const oneToOneSmsTimelineItemSchema = timelineItemBaseSchema.extend({
   messageTextPreview: z.string(),
   phone: nullableStringSchema,
   threadKey: nullableStringSchema,
+  sendStatus: z
+    .enum(["pending", "confirmed", "failed", "orphaned"])
+    .nullable()
+    .optional(),
+  failedReason: z.string().nullable().optional(),
+  failedDetail: z.string().nullable().optional(),
 });
 export type OneToOneSmsTimelineItem = z.infer<
   typeof oneToOneSmsTimelineItemSchema

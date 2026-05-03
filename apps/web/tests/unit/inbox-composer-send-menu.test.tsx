@@ -172,8 +172,17 @@ vi.mock("../../app/inbox/_components/composer-recipient-picker", () => ({
     createElement("div", null, "Recipient picker"),
 }));
 
+vi.mock("../../app/inbox/_components/composer-sms-recipient-picker", () => ({
+  ComposerSmsRecipientPicker: () =>
+    createElement("div", null, "SMS recipient picker"),
+}));
+
 vi.mock("../../app/inbox/_components/composer-send-from-chip", () => ({
   ComposerSendFromChip: () => createElement("div", null, "Alias picker"),
+}));
+
+vi.mock("../../app/inbox/_components/composer-send-from-phone-chip", () => ({
+  SendFromPhoneChip: () => createElement("div", null, "Phone alias picker"),
 }));
 
 vi.mock("../../app/inbox/_components/about-this-draft", () => ({

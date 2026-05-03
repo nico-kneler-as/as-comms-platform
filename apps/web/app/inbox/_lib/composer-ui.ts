@@ -136,7 +136,7 @@ export function resolveDefaultAlias(input: {
 }
 
 export function isComposerSendDisabled(input: {
-  readonly activeTab: "email" | "note";
+  readonly activeTab: "email" | "sms" | "note";
   readonly recipient: { readonly kind: string } | null;
   readonly selectedAlias: string | null;
   readonly subject: string;

@@ -15,6 +15,23 @@ import type { ComposerRecipientValue } from "../_components/composer-recipient-p
 import type { StoredComposerDraft } from "../_lib/composer-draft-storage";
 import { plaintextToComposerHtml } from "../_components/composer-html";
 
+export interface SmsRecipientConsentState {
+  readonly canSend: boolean;
+  readonly reason: "no_consent" | "revoked" | null;
+}
+
+export type ComposerSmsRecipient =
+  | {
+      readonly kind: "contact";
+      readonly contactId: string;
+      readonly displayName: string;
+      readonly phoneE164: string;
+    }
+  | {
+      readonly kind: "phone";
+      readonly phoneE164: string;
+    };
+
 export interface ComposerDraftState {
   readonly recipient: ComposerRecipientValue | null;
   readonly cc: readonly ComposerRecipientValue[];
@@ -31,7 +48,12 @@ export interface ComposerDraftState {
   readonly inlineError: InlineComposerError | null;
   readonly fieldErrors: ComposerFieldErrors;
   readonly isAboutOpen: boolean;
-  readonly activeTab: "email" | "note";
+  readonly activeTab: "email" | "sms" | "note";
+  readonly smsRecipient: ComposerSmsRecipient | null;
+  readonly smsConsent: SmsRecipientConsentState | null;
+  readonly smsBody: string;
+  readonly smsIncludeSignature: boolean;
+  readonly smsSelectedSenderId: string | null;
 }
 
 export type ComposerDraftAction =
@@ -64,7 +86,7 @@ export type ComposerDraftAction =
   | { readonly type: "SET_AI_DIRECTIVE"; readonly value: string }
   | { readonly type: "SET_REPROMPT_TEXT"; readonly value: string }
   | { readonly type: "SET_ABOUT_OPEN"; readonly open: boolean }
-  | { readonly type: "SET_ACTIVE_TAB"; readonly tab: "email" | "note" }
+  | { readonly type: "SET_ACTIVE_TAB"; readonly tab: "email" | "sms" | "note" }
   | { readonly type: "ADD_ATTACHMENTS"; readonly attachments: readonly AttachmentDraft[] }
   | { readonly type: "REMOVE_ATTACHMENT"; readonly id: string }
   | { readonly type: "MARK_ATTACHMENTS_NEEDING_REUPLOAD" }
@@ -76,6 +98,14 @@ export type ComposerDraftAction =
       readonly inlineError: InlineComposerError | null;
       readonly fieldErrors: ComposerFieldErrors;
     }
+  | {
+      readonly type: "SET_SMS_RECIPIENT";
+      readonly recipient: ComposerSmsRecipient | null;
+      readonly consent: SmsRecipientConsentState;
+    }
+  | { readonly type: "SET_SMS_BODY"; readonly body: string }
+  | { readonly type: "TOGGLE_SMS_SIGNATURE" }
+  | { readonly type: "SET_SMS_SENDER"; readonly senderId: string | null }
   | { readonly type: "CLEAR_ERRORS" };
 
 export const INITIAL_COMPOSER_DRAFT_STATE: ComposerDraftState = {
@@ -95,6 +125,11 @@ export const INITIAL_COMPOSER_DRAFT_STATE: ComposerDraftState = {
   fieldErrors: [],
   isAboutOpen: false,
   activeTab: "email",
+  smsRecipient: null,
+  smsConsent: null,
+  smsBody: "",
+  smsIncludeSignature: true,
+  smsSelectedSenderId: null,
 };
 
 export function toEmailRecipients(
@@ -146,6 +181,19 @@ export function reduceComposerDraft(
 
       return {
         ...INITIAL_COMPOSER_DRAFT_STATE,
+        ...(action.composerPane.mode === "replying" && replyContext !== null
+          ? {
+              smsRecipient:
+                replyContext.contactPrimaryPhone === null
+                  ? null
+                  : {
+                      kind: "contact" as const,
+                      contactId: replyContext.contactId,
+                      displayName: replyContext.contactDisplayName,
+                      phoneE164: replyContext.contactPrimaryPhone,
+                    },
+            }
+          : {}),
         activeTab:
           action.composerPane.mode === "replying" &&
           action.composerPane.initialTab === "note"
@@ -237,6 +285,27 @@ export function reduceComposerDraft(
         inlineError: null,
         fieldErrors: [],
       };
+    case "SET_SMS_RECIPIENT":
+      return clearErrors({
+        ...state,
+        smsRecipient: action.recipient,
+        smsConsent: action.recipient === null ? null : action.consent,
+      });
+    case "SET_SMS_BODY":
+      return clearErrors({
+        ...state,
+        smsBody: action.body,
+      });
+    case "TOGGLE_SMS_SIGNATURE":
+      return clearErrors({
+        ...state,
+        smsIncludeSignature: !state.smsIncludeSignature,
+      });
+    case "SET_SMS_SENDER":
+      return clearErrors({
+        ...state,
+        smsSelectedSenderId: action.senderId,
+      });
     case "ADD_ATTACHMENTS":
       return clearErrors({
         ...state,

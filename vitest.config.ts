@@ -21,6 +21,14 @@ export default defineConfig({
         replacement: path.resolve(repoRoot, "packages/db/src/index.ts"),
       },
       {
+        find: "@as-comms/domain/phone",
+        replacement: path.resolve(repoRoot, "packages/domain/src/phone.ts"),
+      },
+      {
+        find: "@as-comms/domain/sms-segments",
+        replacement: path.resolve(repoRoot, "packages/domain/src/sms-segments.ts"),
+      },
+      {
         find: "@as-comms/domain",
         replacement: path.resolve(repoRoot, "packages/domain/src/index.ts"),
       },

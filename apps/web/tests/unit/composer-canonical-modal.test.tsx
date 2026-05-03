@@ -159,8 +159,12 @@ vi.mock("@/components/ui/dialog", () => ({
 vi.mock("../../app/inbox/actions", () => ({
   createNoteAction: vi.fn(),
   draftWithAiAction: vi.fn(),
+  resolveSmsConsentAction: vi
+    .fn()
+    .mockResolvedValue({ ok: false, message: "Mocked: SMS off in test." }),
   searchContactsAction: vi.fn(),
   sendComposerAction: vi.fn(),
+  sendSmsAction: vi.fn(),
 }));
 
 vi.mock("../../app/inbox/_components/composer-shared", async () => {
@@ -477,6 +481,7 @@ const composerAliases: readonly InboxComposerAliasOption[] = [
 const replyContext = {
   contactId: "contact:maya",
   contactDisplayName: "Maya Lee",
+  contactPrimaryPhone: "+14065550123",
   subject: "Trip logistics",
   threadCursor: "event:inbound-1",
   threadId: "thread:gmail-1",

@@ -96,6 +96,10 @@ export function mapFieldErrors(
       case "attachments":
         mappedErrors.push({ field: "attachments", message });
         break;
+      case "sender":
+      case "senderId":
+        mappedErrors.push({ field: "sender", message });
+        break;
       case "body":
       case "bodyPlaintext":
       case "bodyHtml":

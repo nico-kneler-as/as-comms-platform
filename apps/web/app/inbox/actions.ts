@@ -7,13 +7,17 @@ import { z } from "zod";
 import { composerSendInputSchema } from "@as-comms/contracts";
 import {
   CanonicalContactAmbiguityError,
+  canSendTo,
   computePendingComposerOutboundFingerprint,
+  smsMetrics,
+  toE164,
 } from "@as-comms/domain";
 import { requireSession } from "@/src/server/auth/session";
 import {
   sendComposerGmailMessage,
   type GmailSendError,
 } from "@/src/server/composer/gmail-send";
+import { sendSmsViaTwilio } from "@/src/server/composer/twilio-send";
 import {
   aiDraftRequestSchema,
   generateAiDraft,
@@ -21,6 +25,7 @@ import {
   type AiDraftResponse,
 } from "@/src/server/ai";
 import { getAiProviderConfig } from "@/src/server/ai/provider";
+import { readWebEnv } from "@/src/server/env";
 import { setInboxArchived } from "@/src/server/inbox/archive";
 import { setInboxBucket } from "@/src/server/inbox/bucket";
 
@@ -84,6 +89,45 @@ export type ComposerSendActionInput = z.input<
 >;
 export type ComposerSendActionResult = UiResult<ComposerSendActionData>;
 
+const smsRecipientSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("contact"),
+    contactId: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("phone"),
+    phoneE164: z.string().min(1),
+  }),
+]);
+
+const sendSmsActionInputSchema = z.object({
+  recipient: smsRecipientSchema,
+  senderId: z.string().min(1),
+  body: z.string().min(1),
+  clientGeneratedId: z.string().min(1),
+});
+
+export type SendSmsActionInput = z.input<typeof sendSmsActionInputSchema>;
+export type SendSmsActionResult =
+  | {
+      readonly ok: true;
+      readonly data: {
+        readonly messageId: string;
+        readonly clientGeneratedId: string;
+      };
+    }
+  | {
+      readonly ok: false;
+      readonly code:
+        | "validation_error"
+        | "feature_disabled"
+        | "consent_denied"
+        | "twilio_error"
+        | "unknown_error";
+      readonly message: string;
+      readonly retryable?: boolean;
+    };
+
 // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
 export type NoteCreateActionData = {
   readonly noteId: string;
@@ -103,6 +147,7 @@ export type ContactSearchResult = {
   readonly id: string;
   readonly displayName: string;
   readonly primaryEmail: string | null;
+  readonly primaryPhone: string | null;
   readonly salesforceContactId: string | null;
   readonly primaryProjectName: string | null;
 };
@@ -755,6 +800,7 @@ export async function searchContactsAction(
         id: contact.id,
         displayName: contact.displayName,
         primaryEmail: contact.primaryEmail,
+        primaryPhone: contact.primaryPhone,
         salesforceContactId: contact.salesforceContactId,
         primaryProjectName:
           primaryMembership?.projectId === null || primaryMembership === null
@@ -796,6 +842,364 @@ async function resolveContactEmail(input: {
     identities.find((identity) => identity.kind === "email")?.normalizedValue ??
     null
   );
+}
+
+async function resolveContactPhone(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly contactId: string;
+}): Promise<string | null> {
+  const contact = await input.runtime.repositories.contacts.findById(
+    input.contactId,
+  );
+
+  if (contact === null) {
+    return null;
+  }
+
+  if (contact.primaryPhone !== null) {
+    return contact.primaryPhone;
+  }
+
+  const identities =
+    await input.runtime.repositories.contactIdentities.listByContactId(
+      contact.id,
+    );
+
+  return (
+    identities.find((identity) => identity.kind === "phone")?.normalizedValue ??
+    null
+  );
+}
+
+async function resolveSmsConsentDecision(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly contactId: string | null;
+  readonly phoneE164: string;
+}) {
+  const [phoneConsent, contactConsent, hasPriorInbound] = await Promise.all([
+    input.runtime.repositories.consentRecords.findLatestByPhone(input.phoneE164),
+    input.contactId === null
+      ? Promise.resolve(null)
+      : input.runtime.repositories.consentRecords.findLatestByContact(
+          input.contactId,
+        ),
+    input.runtime.repositories.smsMessages.hasInboundForPhone(input.phoneE164),
+  ]);
+
+  const latestConsent =
+    contactConsent === null
+      ? phoneConsent
+      : phoneConsent === null
+        ? contactConsent
+        : contactConsent.createdAt >= phoneConsent.createdAt
+          ? contactConsent
+          : phoneConsent;
+
+  return canSendTo({
+    latestConsent,
+    hasPriorInbound,
+  });
+}
+
+async function ensureCanonicalContactForPhone(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly phoneE164: string;
+  readonly occurredAtIso: string;
+}) {
+  const identities =
+    await input.runtime.repositories.contactIdentities.listByNormalizedValue({
+      kind: "phone",
+      normalizedValue: input.phoneE164,
+    });
+  const contactIds = Array.from(new Set(identities.map((identity) => identity.contactId)));
+
+  if (contactIds.length > 1) {
+    throw new Error(`Multiple contacts already own phone ${input.phoneE164}.`);
+  }
+
+  const existingContactId = contactIds[0];
+  if (existingContactId !== undefined) {
+    return existingContactId;
+  }
+
+  const contactId = `contact:phone:${input.phoneE164}`;
+  await input.runtime.repositories.contacts.upsert({
+    id: contactId,
+    salesforceContactId: null,
+    displayName: input.phoneE164,
+    primaryEmail: null,
+    primaryPhone: input.phoneE164,
+    createdAt: input.occurredAtIso,
+    updatedAt: input.occurredAtIso,
+  });
+  await input.runtime.repositories.contactIdentities.upsert({
+    id: `contact-identity:${contactId}:phone:${input.phoneE164}`,
+    contactId,
+    kind: "phone",
+    normalizedValue: input.phoneE164,
+    isPrimary: true,
+    source: "manual",
+    verifiedAt: input.occurredAtIso,
+  });
+
+  return contactId;
+}
+
+export async function resolveSmsConsentAction(rawInput: {
+  readonly recipient:
+    | {
+        readonly kind: "contact";
+        readonly contactId: string;
+      }
+    | {
+        readonly kind: "phone";
+        readonly phoneE164: string;
+      };
+}): Promise<{
+  readonly ok: boolean;
+  readonly data?: {
+    readonly canSend: boolean;
+    readonly reason: "no_consent" | "revoked" | null;
+  };
+}> {
+  try {
+    await requireSession();
+  } catch {
+    return {
+      ok: true,
+      data: {
+        canSend: false,
+        reason: "no_consent",
+      },
+    };
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const resolvedPhone =
+    rawInput.recipient.kind === "contact"
+      ? await resolveContactPhone({
+          runtime,
+          contactId: rawInput.recipient.contactId,
+        })
+      : toE164(rawInput.recipient.phoneE164);
+
+  if (resolvedPhone === null) {
+    return {
+      ok: true,
+      data: {
+        canSend: false,
+        reason: "no_consent",
+      },
+    };
+  }
+
+  const decision = await resolveSmsConsentDecision({
+    runtime,
+    contactId:
+      rawInput.recipient.kind === "contact"
+        ? rawInput.recipient.contactId
+        : null,
+    phoneE164: resolvedPhone,
+  });
+
+  return {
+    ok: true,
+    data: {
+      canSend: decision.canSend,
+      reason: decision.canSend ? null : decision.reason,
+    },
+  };
+}
+
+export async function sendSmsAction(
+  rawInput: SendSmsActionInput,
+): Promise<SendSmsActionResult> {
+  const env = readWebEnv();
+
+  if (!env.SMS_ENABLED) {
+    return {
+      ok: false,
+      code: "feature_disabled",
+      message: "SMS is not enabled.",
+    };
+  }
+
+  const parsedInput = sendSmsActionInputSchema.safeParse(rawInput);
+  if (!parsedInput.success) {
+    return {
+      ok: false,
+      code: "validation_error",
+      message: "SMS send input is invalid.",
+    };
+  }
+
+  let currentUser;
+  try {
+    currentUser = await requireSession();
+  } catch {
+    return {
+      ok: false,
+      code: "unknown_error",
+      message: "Your session has expired. Please sign in again.",
+    };
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const attemptedAt = new Date();
+  const attemptedAtIso = attemptedAt.toISOString();
+  const sender = await runtime.repositories.smsSenders.findById(
+    parsedInput.data.senderId,
+  );
+
+  if (sender?.isActive !== true) {
+    return {
+      ok: false,
+      code: "validation_error",
+      message: "The selected SMS sender is not configured.",
+      retryable: false,
+    };
+  }
+
+  const body = parsedInput.data.body.trim();
+  if (body.length === 0) {
+    return {
+      ok: false,
+      code: "validation_error",
+      message: "SMS body is required.",
+      retryable: false,
+    };
+  }
+
+  const metrics = smsMetrics(body);
+  if (metrics.segments > 10) {
+    return {
+      ok: false,
+      code: "validation_error",
+      message: "SMS messages are limited to 10 segments.",
+      retryable: false,
+    };
+  }
+
+  let phoneE164: string | null;
+  let contactId: string | null;
+
+  if (parsedInput.data.recipient.kind === "contact") {
+    contactId = parsedInput.data.recipient.contactId;
+    phoneE164 = await resolveContactPhone({
+      runtime,
+      contactId,
+    });
+  } else {
+    phoneE164 = toE164(parsedInput.data.recipient.phoneE164);
+    contactId = null;
+  }
+
+  if (phoneE164 === null) {
+    return {
+      ok: false,
+      code: "validation_error",
+      message: "A valid recipient phone number is required.",
+      retryable: false,
+    };
+  }
+
+  const consentDecision = await resolveSmsConsentDecision({
+    runtime,
+    contactId,
+    phoneE164,
+  });
+
+  if (!consentDecision.canSend) {
+    return {
+      ok: false,
+      code: "consent_denied",
+      message:
+        consentDecision.reason === "revoked"
+          ? "This recipient revoked SMS consent."
+          : "This recipient has not opted in to SMS.",
+      retryable: false,
+    };
+  }
+
+  try {
+    contactId ??= await ensureCanonicalContactForPhone({
+      runtime,
+      phoneE164,
+      occurredAtIso: attemptedAtIso,
+    });
+  } catch {
+    return {
+      ok: false,
+      code: "validation_error",
+      message: "That phone number could not be matched safely.",
+      retryable: false,
+    };
+  }
+
+  const messageId = randomUUID();
+  await runtime.repositories.smsMessages.insert({
+    id: messageId,
+    twilioMessageSid: null,
+    direction: "outbound",
+    contactId,
+    phoneE164,
+    senderId: sender.id,
+    body,
+    segments: metrics.segments,
+    encoding: metrics.encoding,
+    mediaUrls: null,
+    sendStatus: "queued",
+    failedReason: null,
+    failedDetail: null,
+    sentAt: null,
+    receivedAt: null,
+    actorId: currentUser.id,
+    createdAt: attemptedAt,
+    updatedAt: attemptedAt,
+  });
+
+  try {
+    const sendResult = await sendSmsViaTwilio({
+      toE164: phoneE164,
+      body,
+    });
+
+    await runtime.repositories.smsMessages.updateDelivery({
+      messageId,
+      twilioMessageSid: sendResult.messageSid,
+      status: "sent",
+      sentAt: attemptedAt,
+    });
+    revalidateInboxContact(contactId);
+
+    return {
+      ok: true,
+      data: {
+        messageId,
+        clientGeneratedId: parsedInput.data.clientGeneratedId,
+      },
+    };
+  } catch (error) {
+    const detail =
+      error instanceof Error && error.message.trim().length > 0
+        ? error.message
+        : "Twilio send failed.";
+
+    await runtime.repositories.smsMessages.updateDelivery({
+      messageId,
+      status: "failed",
+      failedReason: "twilio_send_failed",
+      failedDetail: detail,
+    });
+    revalidateInboxContact(contactId);
+
+    return {
+      ok: false,
+      code: "twilio_error",
+      message: "SMS sending failed.",
+      retryable: true,
+    };
+  }
 }
 
 async function updateNeedsFollowUp(
