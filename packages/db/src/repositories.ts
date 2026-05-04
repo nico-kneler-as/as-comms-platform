@@ -613,6 +613,11 @@ export function createMailchimpCampaignTailStateRepository(
         audienceId: record.audienceId,
         firstSeenSendTime: new Date(record.firstSeenSendTime),
       };
+      // Inside a raw sql`` template, Drizzle does not apply the column's
+      // type-mapping. A Date object falls through to Date.prototype.toString()
+      // ("Sun Apr 05 2026 15:00:00 GMT+0000 ..."), which Postgres rejects
+      // as a timestamptz. Pre-stringify to ISO and cast explicitly.
+      const firstSeenIso = values.firstSeenSendTime.toISOString();
       const [row] = await db
         .insert(mailchimpCampaignTailState)
         .values(values)
@@ -620,7 +625,7 @@ export function createMailchimpCampaignTailStateRepository(
           target: mailchimpCampaignTailStateTable.campaignId,
           set: {
             audienceId: values.audienceId,
-            firstSeenSendTime: sql`least(${mailchimpCampaignTailState.firstSeenSendTime}, ${values.firstSeenSendTime})`,
+            firstSeenSendTime: sql`least(${mailchimpCampaignTailState.firstSeenSendTime}, ${firstSeenIso}::timestamptz)`,
             updatedAt: new Date(),
           },
         })
