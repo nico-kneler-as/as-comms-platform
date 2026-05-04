@@ -1,5 +1,6 @@
-import { sql } from "drizzle-orm";
+import { and, asc, gte, inArray, lte } from "drizzle-orm";
 
+import { canonicalEventLedger } from "@as-comms/db";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 
 import {
@@ -15,12 +16,6 @@ import {
   type SyncFreshnessState,
 } from "./sync-freshness";
 
-interface LifecycleEventSqlRow {
-  readonly contactId: string;
-  readonly eventType: LifecycleEventRow["eventType"];
-  readonly occurredAt: Date | string;
-}
-
 export interface InboxWelcomeSalesforceLifecycleData {
   readonly tiles: readonly ProjectLifecycleTile[];
   readonly freshness: SyncFreshnessState;
@@ -33,19 +28,6 @@ const LIFECYCLE_EVENT_TYPES = [
   "lifecycle.submitted_first_data",
 ] as const satisfies readonly LifecycleEventRow["eventType"][];
 const MS_PER_DAY = 24 * 60 * 60 * 1_000;
-
-function normalizeSqlResultRows(result: unknown): readonly unknown[] {
-  if (
-    typeof result === "object" &&
-    result !== null &&
-    "rows" in result &&
-    Array.isArray(result.rows)
-  ) {
-    return result.rows;
-  }
-
-  return [];
-}
 
 function toValidDate(value: Date | string | null | undefined): Date | null {
   if (value instanceof Date) {
@@ -84,29 +66,27 @@ async function readLifecycleEvents(
 
   const todayStart = startOfUtcDay(now);
   const windowStart = new Date(todayStart.getTime() - 6 * MS_PER_DAY);
-  const result = await runtime.connection.db.execute(
-    sql<LifecycleEventSqlRow>`
-      select
-        contact_id as "contactId",
-        event_type as "eventType",
-        occurred_at as "occurredAt"
-      from canonical_event_ledger
-      where event_type in (
-        ${LIFECYCLE_EVENT_TYPES[0]},
-        ${LIFECYCLE_EVENT_TYPES[1]},
-        ${LIFECYCLE_EVENT_TYPES[2]}
-      )
-        and occurred_at >= ${windowStart.toISOString()}
-        and occurred_at <= ${now.toISOString()}
-      order by occurred_at asc, id asc
-    `,
-  );
 
-  return normalizeSqlResultRows(result)
-    .map((row) => row as LifecycleEventSqlRow)
+  const rows = await runtime.connection.db
+    .select({
+      contactId: canonicalEventLedger.contactId,
+      eventType: canonicalEventLedger.eventType,
+      occurredAt: canonicalEventLedger.occurredAt,
+    })
+    .from(canonicalEventLedger)
+    .where(
+      and(
+        inArray(canonicalEventLedger.eventType, [...LIFECYCLE_EVENT_TYPES]),
+        gte(canonicalEventLedger.occurredAt, windowStart),
+        lte(canonicalEventLedger.occurredAt, now),
+      ),
+    )
+    .orderBy(asc(canonicalEventLedger.occurredAt), asc(canonicalEventLedger.id));
+
+  return rows
     .map((row) => ({
       contactId: row.contactId,
-      eventType: row.eventType,
+      eventType: row.eventType as LifecycleEventRow["eventType"],
       occurredAt: toValidDate(row.occurredAt),
     }))
     .filter(

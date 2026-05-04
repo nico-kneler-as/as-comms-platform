@@ -832,7 +832,7 @@ export async function loadProjectMetricContacts(input: {
         inner join contact_memberships cm
           on cm.contact_id = cel.contact_id
          and cm.project_id = ${input.projectId}
-        where cel.event_type = ${eventType}
+        where cel.event_type::text = ${eventType}
           and cel.occurred_at >= ${windowStart.toISOString()}
           and cel.occurred_at < ${windowEndExclusive.toISOString()}
         group by cel.contact_id
