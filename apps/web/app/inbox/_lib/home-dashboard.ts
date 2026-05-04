@@ -91,7 +91,7 @@ async function readLifecycleEvents(
         event_type as "eventType",
         occurred_at as "occurredAt"
       from canonical_event_ledger
-      where event_type in (
+      where event_type::text in (
         ${LIFECYCLE_EVENT_TYPES[0]},
         ${LIFECYCLE_EVENT_TYPES[1]},
         ${LIFECYCLE_EVENT_TYPES[2]}
