@@ -28,6 +28,7 @@ import {
   QuoteIcon,
   RefreshCwIcon,
 } from "./icons";
+import { ProjectMetricDetailDialog } from "./project-metric-detail-dialog";
 import { ProjectLifecycleTile } from "./project-lifecycle-tile";
 
 interface InboxWelcomeWorkloadProps {
@@ -35,6 +36,12 @@ interface InboxWelcomeWorkloadProps {
   readonly salesforceLifecycle: InboxWelcomeSalesforceLifecycleData;
   readonly firstName: string;
 }
+
+const METRIC_DIALOG_LABELS: Readonly<Record<MetricKey, string>> = {
+  signups: "New Signups",
+  trainingCompletions: "Training Completions",
+  dataSubmissions: "Data Submissions",
+};
 
 function formatDay(date: Date): string {
   return date.toLocaleDateString("en-US", {
@@ -53,9 +60,12 @@ export function InboxWelcomeWorkload({
   const today = new Date();
   const initialQuoteIdx = today.getDate() % FIELD_QUOTES.length;
   const [quoteIdx, setQuoteIdx] = useState(initialQuoteIdx);
-  const [, setPendingMetric] = useState<{
+  const [metricDialog, setMetricDialog] = useState<{
     readonly projectId: string;
+    readonly projectName: string;
     readonly metricKey: MetricKey;
+    readonly metricLabel: string;
+    readonly totalForDescription: number;
   } | null>(null);
   const quote = FIELD_QUOTES[quoteIdx] ?? FIELD_QUOTES[0];
 
@@ -100,7 +110,21 @@ export function InboxWelcomeWorkload({
           salesforceLifecycle={salesforceLifecycle}
           onOpenProject={openProject}
           onOpenMetric={(projectId, metricKey) => {
-            setPendingMetric({ projectId, metricKey });
+            const tile = salesforceLifecycle.tiles.find(
+              (candidate) => candidate.projectId === projectId,
+            );
+
+            if (tile === undefined) {
+              return;
+            }
+
+            setMetricDialog({
+              projectId,
+              projectName: tile.projectName,
+              metricKey,
+              metricLabel: METRIC_DIALOG_LABELS[metricKey],
+              totalForDescription: tile.totals[metricKey],
+            });
           }}
         />
 
@@ -116,6 +140,24 @@ export function InboxWelcomeWorkload({
           />
         ) : null}
       </div>
+
+      <ProjectMetricDetailDialog
+        open={metricDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMetricDialog(null);
+          }
+        }}
+        onOpenContact={(contactId) => {
+          router.push(`/inbox/${encodeURIComponent(contactId)}`);
+          setMetricDialog(null);
+        }}
+        projectId={metricDialog?.projectId ?? null}
+        projectName={metricDialog?.projectName ?? null}
+        metricKey={metricDialog?.metricKey ?? null}
+        metricLabel={metricDialog?.metricLabel ?? null}
+        totalForDescription={metricDialog?.totalForDescription ?? 0}
+      />
     </section>
   );
 }
