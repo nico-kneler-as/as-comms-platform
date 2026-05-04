@@ -35,6 +35,12 @@ const LIFECYCLE_EVENT_TYPES = [
 const MS_PER_DAY = 24 * 60 * 60 * 1_000;
 
 function normalizeSqlResultRows(result: unknown): readonly unknown[] {
+  // postgres-js (drizzle-orm/postgres-js, used in production) returns a
+  // plain array; node-pg / pglite return { rows: [...] }.
+  if (Array.isArray(result)) {
+    return result;
+  }
+
   if (
     typeof result === "object" &&
     result !== null &&

@@ -225,6 +225,12 @@ function getAiDraftConcurrencyState(): AiDraftConcurrencyState {
 }
 
 function normalizeSqlResultRows(result: unknown): readonly unknown[] {
+  // postgres-js (drizzle-orm/postgres-js, used in production) returns a
+  // plain array; node-pg / pglite return { rows: [...] }.
+  if (Array.isArray(result)) {
+    return result;
+  }
+
   if (
     typeof result === "object" &&
     result !== null &&
