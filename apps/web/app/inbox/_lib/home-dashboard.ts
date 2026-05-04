@@ -24,6 +24,7 @@ interface LifecycleEventSqlRow {
 export interface InboxWelcomeSalesforceLifecycleData {
   readonly tiles: readonly ProjectLifecycleTile[];
   readonly freshness: SyncFreshnessState;
+  readonly lastSuccessAt: Date | null;
 }
 
 const LIFECYCLE_EVENT_TYPES = [
@@ -215,5 +216,6 @@ export async function getInboxWelcomeSalesforceLifecycle(
       lastSuccessAt,
       now,
     }),
+    lastSuccessAt,
   };
 }

@@ -4,25 +4,35 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
-  LAYOUT,
   TONE_CLASSES,
+  LAYOUT,
   TYPE,
 } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
 
 import type {
   InboxWelcomeFollowUpEntryViewModel,
-  InboxWelcomeProjectWorkloadViewModel,
   InboxWelcomeWorkloadViewModel,
 } from "../_lib/view-models";
 import { FIELD_QUOTES } from "../_lib/field-quotes";
+import type { InboxWelcomeSalesforceLifecycleData } from "../_lib/home-dashboard";
+import type { MetricKey } from "../_lib/project-lifecycle-metrics";
 import { projectToneFromName } from "../_lib/project-tone";
 import { InboxAvatar } from "./inbox-avatar";
-import { ArrowUpRightIcon, QuoteIcon, RefreshCwIcon } from "./icons";
+import {
+  AlertTriangleIcon,
+  ArrowUpRightIcon,
+  DatabaseIcon,
+  QuoteIcon,
+  RefreshCwIcon,
+} from "./icons";
+import { ProjectLifecycleTile } from "./project-lifecycle-tile";
 
 interface InboxWelcomeWorkloadProps {
   readonly workload: InboxWelcomeWorkloadViewModel;
+  readonly salesforceLifecycle: InboxWelcomeSalesforceLifecycleData;
   readonly firstName: string;
 }
 
@@ -36,12 +46,17 @@ function formatDay(date: Date): string {
 
 export function InboxWelcomeWorkload({
   workload,
+  salesforceLifecycle,
   firstName,
 }: InboxWelcomeWorkloadProps) {
   const router = useRouter();
   const today = new Date();
   const initialQuoteIdx = today.getDate() % FIELD_QUOTES.length;
   const [quoteIdx, setQuoteIdx] = useState(initialQuoteIdx);
+  const [, setPendingMetric] = useState<{
+    readonly projectId: string;
+    readonly metricKey: MetricKey;
+  } | null>(null);
   const quote = FIELD_QUOTES[quoteIdx] ?? FIELD_QUOTES[0];
 
   const cycleQuote = () => {
@@ -51,6 +66,8 @@ export function InboxWelcomeWorkload({
   const openProject = (projectId: string) => {
     router.push(`/inbox?projectId=${encodeURIComponent(projectId)}`);
   };
+
+  const freshnessBadge = readFreshnessBadge(salesforceLifecycle, today);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-slate-50/40">
@@ -64,7 +81,11 @@ export function InboxWelcomeWorkload({
             </h1>
             <p className={`mt-1 ${TYPE.caption}`}>Today is {formatDay(today)}</p>
           </div>
-          <p className={`shrink-0 ${TYPE.caption}`}>Last synced just now</p>
+          <p
+            className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium ${freshnessBadge.className}`}
+          >
+            {freshnessBadge.label}
+          </p>
         </div>
       </header>
 
@@ -75,9 +96,12 @@ export function InboxWelcomeWorkload({
           onCycle={cycleQuote}
         />
 
-        <ProjectMiniDashboard
-          projects={workload.projects}
+        <ProjectLifecycleDashboard
+          salesforceLifecycle={salesforceLifecycle}
           onOpenProject={openProject}
+          onOpenMetric={(projectId, metricKey) => {
+            setPendingMetric({ projectId, metricKey });
+          }}
         />
 
         {workload.followUpRail.totalCount > 0 ? (
@@ -94,6 +118,54 @@ export function InboxWelcomeWorkload({
       </div>
     </section>
   );
+}
+
+function readFreshnessBadge(
+  salesforceLifecycle: InboxWelcomeSalesforceLifecycleData,
+  now: Date,
+): {
+  readonly label: string;
+  readonly className: string;
+} {
+  switch (salesforceLifecycle.freshness) {
+    case "fresh": {
+      if (salesforceLifecycle.lastSuccessAt === null) {
+        return {
+          label: "Up to date",
+          className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+        };
+      }
+
+      const ageMs = Math.max(
+        0,
+        now.getTime() - salesforceLifecycle.lastSuccessAt.getTime(),
+      );
+      const ageMinutes = Math.floor(ageMs / 60_000);
+
+      return {
+        label:
+          ageMinutes <= 0
+            ? "Last synced just now"
+            : `Last synced ${ageMinutes.toString()} min ago`,
+        className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+      };
+    }
+    case "stale-30m":
+      return {
+        label: "Last synced over 30 min ago",
+        className: "border-amber-200 bg-amber-50 text-amber-700",
+      };
+    case "stale-2h":
+      return {
+        label: "Last synced over 2 hr ago",
+        className: "border-slate-200 bg-slate-50 text-slate-600",
+      };
+    case "unknown":
+      return {
+        label: "Salesforce sync status unavailable",
+        className: "border-slate-200 bg-slate-50 text-slate-600",
+      };
+  }
 }
 
 interface QuoteCardProps {
@@ -139,82 +211,56 @@ function QuoteCard({ quoteText, author, onCycle }: QuoteCardProps) {
   );
 }
 
-interface ProjectMiniDashboardProps {
-  readonly projects: readonly InboxWelcomeProjectWorkloadViewModel[];
+interface ProjectLifecycleDashboardProps {
+  readonly salesforceLifecycle: InboxWelcomeSalesforceLifecycleData;
   readonly onOpenProject: (projectId: string) => void;
+  readonly onOpenMetric: (projectId: string, metricKey: MetricKey) => void;
 }
 
-function ProjectMiniDashboard({
-  projects,
+function ProjectLifecycleDashboard({
+  salesforceLifecycle,
   onOpenProject,
-}: ProjectMiniDashboardProps) {
-  if (projects.length === 0) {
-    return (
-      <div className="rounded-xl border border-slate-200 bg-white px-7 py-10 text-center">
-        <SectionLabel as="h2" className="text-slate-500">
-          Active project workload
-        </SectionLabel>
-        <p className={`mt-2 ${TYPE.caption}`}>
-          No active projects are currently enabled. Activate projects in
-          Settings to surface unread and follow-up counts here.
-        </p>
-      </div>
-    );
-  }
+  onOpenMetric,
+}: ProjectLifecycleDashboardProps) {
+  const { tiles, freshness } = salesforceLifecycle;
 
   return (
     <div>
-      <SectionLabel as="h2">Active project workload</SectionLabel>
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {projects.map((project) => {
-          const tone = projectToneFromName(project.projectName);
-          const t = TONE_CLASSES[tone];
-          return (
-            <button
-              key={project.projectId}
-              type="button"
-              onClick={() => {
-                onOpenProject(project.projectId);
-              }}
-              className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 text-left transition-all duration-200 hover:border-slate-300 hover:shadow-sm"
-            >
-              <span
-                aria-hidden="true"
-                className={`absolute left-0 top-0 h-full w-1 ${t.bg}`}
-              />
-              <div className="flex items-start justify-between gap-2 pl-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span
-                      aria-hidden="true"
-                      className={`size-1.5 shrink-0 rounded-full ${t.dot}`}
-                    />
-                    <span className={`${TYPE.headingSm} truncate`}>
-                      {project.projectName}
-                    </span>
-                  </div>
-                </div>
-                <ArrowUpRightIcon className="size-3.5 shrink-0 text-slate-300 transition-colors group-hover:text-slate-600" />
-              </div>
+      {freshness === "stale-2h" ? (
+        <div
+          role="alert"
+          className="mb-3 flex min-h-10 items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-amber-900"
+        >
+          <AlertTriangleIcon className="size-4 shrink-0 text-amber-600" />
+          <p className="min-w-0 flex-1 text-sm font-medium">
+            Salesforce sync delayed — numbers may be stale.
+          </p>
+        </div>
+      ) : null}
 
-              <div className="mt-4 grid grid-cols-2 gap-2 pl-2">
-                <Stat
-                  label="Unread"
-                  value={project.unreadCount}
-                  emphasis={project.unreadCount > 0}
-                  tone="slate"
-                />
-                <Stat
-                  label="Follow-up"
-                  value={project.needsFollowUpCount}
-                  emphasis={project.needsFollowUpCount > 0}
-                  tone="amber"
-                />
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      <SectionLabel as="h2">Active Projects · Last 7 Days</SectionLabel>
+      {tiles.length === 0 ? (
+        <div className="mt-3 rounded-xl border border-slate-200 bg-white px-7 py-10 text-center">
+          <EmptyState
+            size="sm"
+            icon={<DatabaseIcon className="size-6 text-slate-400" />}
+            title="No active projects yet — activate one in Settings"
+            description={<span aria-hidden="true">&nbsp;</span>}
+            className="px-0 py-10"
+          />
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {tiles.map((tile) => (
+            <ProjectLifecycleTile
+              key={tile.projectId}
+              tile={tile}
+              onOpenProject={onOpenProject}
+              onOpenMetric={onOpenMetric}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -313,29 +359,5 @@ function FollowUpRailRow({ entry, onOpenContact }: FollowUpRailRowProps) {
       </span>
       <ArrowUpRightIcon className="size-3.5 shrink-0 text-slate-300 transition-colors group-hover:text-slate-600" />
     </button>
-  );
-}
-
-interface StatProps {
-  readonly label: string;
-  readonly value: number;
-  readonly emphasis: boolean;
-  readonly tone: "slate" | "amber";
-}
-
-function Stat({ label, value, emphasis, tone }: StatProps) {
-  const valueClass = emphasis
-    ? tone === "amber"
-      ? "text-amber-700"
-      : "text-slate-900"
-    : "text-slate-300";
-
-  return (
-    <div className="flex items-baseline gap-1.5">
-      <span className={cn("text-xl font-semibold tabular-nums", valueClass)}>
-        {value.toLocaleString("en-US")}
-      </span>
-      <span className={TYPE.micro}>{label}</span>
-    </div>
   );
 }

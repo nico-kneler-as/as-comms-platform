@@ -47,6 +47,7 @@ export default async function InboxListPage() {
   return (
     <InboxWelcomeWorkload
       workload={dashboardData.workload}
+      salesforceLifecycle={dashboardData.salesforceLifecycle}
       firstName={firstName}
     />
   );

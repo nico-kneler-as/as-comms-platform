@@ -4,8 +4,9 @@ import React, { act, createElement } from "react";
 Object.assign(globalThis, { React });
 
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { InboxWelcomeSalesforceLifecycleData } from "../../app/inbox/_lib/home-dashboard";
 import type { InboxWelcomeWorkloadViewModel } from "../../app/inbox/_lib/view-models";
 
 const routerPushMock = vi.hoisted(() => vi.fn());
@@ -22,7 +23,9 @@ function iconMock(name: string) {
 }
 
 vi.mock("../../app/inbox/_components/icons", () => ({
+  AlertTriangleIcon: iconMock("AlertTriangleIcon"),
   ArrowUpRightIcon: iconMock("ArrowUpRightIcon"),
+  DatabaseIcon: iconMock("DatabaseIcon"),
   QuoteIcon: iconMock("QuoteIcon"),
   RefreshCwIcon: iconMock("RefreshCwIcon"),
 }));
@@ -103,7 +106,10 @@ function setDomGlobals(window: Window & typeof globalThis) {
   });
 }
 
-function renderComponent(workload: InboxWelcomeWorkloadViewModel): RenderSession {
+function renderComponent(
+  workload: InboxWelcomeWorkloadViewModel,
+  salesforceLifecycle: InboxWelcomeSalesforceLifecycleData,
+): RenderSession {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     url: "http://localhost/inbox",
   });
@@ -115,7 +121,11 @@ function renderComponent(workload: InboxWelcomeWorkloadViewModel): RenderSession
 
   act(() => {
     root.render(
-      <InboxWelcomeWorkload workload={workload} firstName="Nicolas" />,
+      <InboxWelcomeWorkload
+        workload={workload}
+        salesforceLifecycle={salesforceLifecycle}
+        firstName="Nicolas"
+      />,
     );
   });
 
@@ -181,6 +191,60 @@ function buildWorkload(
   };
 }
 
+function buildSalesforceLifecycle(
+  overrides: Partial<InboxWelcomeSalesforceLifecycleData> = {},
+): InboxWelcomeSalesforceLifecycleData {
+  return {
+    freshness: overrides.freshness ?? "fresh",
+    lastSuccessAt:
+      overrides.lastSuccessAt ?? new Date("2026-05-07T11:55:00.000Z"),
+    tiles: overrides.tiles ?? [
+      {
+        projectId: "project:beta",
+        projectName: "Beta Research",
+        projectTone: "emerald",
+        unreadCount: 0,
+        totals: {
+          signups: 2,
+          trainingCompletions: 1,
+          dataSubmissions: 0,
+        },
+        today: {
+          signups: 1,
+          trainingCompletions: 0,
+          dataSubmissions: 0,
+        },
+        sparkline: {
+          signups: [0, 0, 0, 0, 1, 0, 1],
+          trainingCompletions: [0, 0, 0, 0, 0, 1, 0],
+          dataSubmissions: [0, 0, 0, 0, 0, 0, 0],
+        },
+      },
+      {
+        projectId: "project:alpha",
+        projectName: "Alpha Research",
+        projectTone: "sky",
+        unreadCount: 3,
+        totals: {
+          signups: 4,
+          trainingCompletions: 2,
+          dataSubmissions: 1,
+        },
+        today: {
+          signups: 1,
+          trainingCompletions: 1,
+          dataSubmissions: 0,
+        },
+        sparkline: {
+          signups: [0, 0, 1, 0, 1, 1, 1],
+          trainingCompletions: [0, 0, 0, 0, 0, 1, 1],
+          dataSubmissions: [0, 0, 0, 0, 0, 1, 0],
+        },
+      },
+    ],
+  };
+}
+
 afterEach(() => {
   routerPushMock.mockReset();
 
@@ -190,9 +254,18 @@ afterEach(() => {
   }
 });
 
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-05-07T12:00:00.000Z"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("InboxWelcomeWorkload follow-up rail", () => {
   it("renders follow-up rows with conversation aria labels", () => {
-    activeSession = renderComponent(buildWorkload(3));
+    activeSession = renderComponent(buildWorkload(3), buildSalesforceLifecycle());
 
     const buttons = Array.from(
       activeSession.container.querySelectorAll(
@@ -213,7 +286,7 @@ describe("InboxWelcomeWorkload follow-up rail", () => {
   });
 
   it("hides the follow-up rail entirely when the total count is zero", () => {
-    activeSession = renderComponent(buildWorkload(0));
+    activeSession = renderComponent(buildWorkload(0), buildSalesforceLifecycle());
 
     expect(activeSession.container.textContent).not.toContain(
       "These need follow-up",
@@ -222,7 +295,7 @@ describe("InboxWelcomeWorkload follow-up rail", () => {
   });
 
   it("routes View all clicks to the follow-up inbox filter", () => {
-    activeSession = renderComponent(buildWorkload(3));
+    activeSession = renderComponent(buildWorkload(3), buildSalesforceLifecycle());
 
     const viewAllButton = Array.from(
       activeSession.container.querySelectorAll("button"),
@@ -241,5 +314,88 @@ describe("InboxWelcomeWorkload follow-up rail", () => {
     });
 
     expect(routerPushMock).toHaveBeenCalledWith("/inbox?filter=follow-up");
+  });
+});
+
+describe("InboxWelcomeWorkload lifecycle dashboard", () => {
+  it("renders tiles in the order provided by the server assembler", () => {
+    activeSession = renderComponent(buildWorkload(0), buildSalesforceLifecycle());
+
+    const projectButtons = Array.from(
+      activeSession.container.querySelectorAll("button"),
+    ).filter((element) =>
+      ["Beta Research", "Alpha Research"].some((name) =>
+        element.textContent.includes(name),
+      ),
+    );
+
+    expect(projectButtons.map((element) => element.textContent)).toEqual([
+      expect.stringContaining("Beta Research"),
+      expect.stringContaining("Alpha Research"),
+    ]);
+  });
+
+  it("renders the empty state when no active lifecycle tiles are returned", () => {
+    activeSession = renderComponent(
+      buildWorkload(0),
+      buildSalesforceLifecycle({ tiles: [] }),
+    );
+
+    expect(activeSession.container.textContent).toContain(
+      "No active projects yet — activate one in Settings",
+    );
+  });
+
+  it("renders the stale banner only for stale-2h freshness", () => {
+    activeSession = renderComponent(
+      buildWorkload(0),
+      buildSalesforceLifecycle({ freshness: "stale-2h" }),
+    );
+
+    expect(activeSession.container.textContent).toContain(
+      "Salesforce sync delayed — numbers may be stale.",
+    );
+
+    activeSession.cleanup();
+    activeSession = renderComponent(
+      buildWorkload(0),
+      buildSalesforceLifecycle({ freshness: "stale-30m" }),
+    );
+
+    expect(activeSession.container.textContent).not.toContain(
+      "Salesforce sync delayed — numbers may be stale.",
+    );
+  });
+
+  it.each([
+    {
+      freshness: "fresh" as const,
+      lastSuccessAt: new Date("2026-05-07T11:55:00.000Z"),
+      expectedLabel: "Last synced 5 min ago",
+    },
+    {
+      freshness: "stale-30m" as const,
+      lastSuccessAt: new Date("2026-05-07T11:00:00.000Z"),
+      expectedLabel: "Last synced over 30 min ago",
+    },
+    {
+      freshness: "stale-2h" as const,
+      lastSuccessAt: new Date("2026-05-07T09:30:00.000Z"),
+      expectedLabel: "Last synced over 2 hr ago",
+    },
+  ])("updates the freshness label for $freshness", ({
+    freshness,
+    lastSuccessAt,
+    expectedLabel,
+  }) => {
+    activeSession = renderComponent(
+      buildWorkload(0),
+      buildSalesforceLifecycle({
+        freshness,
+        lastSuccessAt,
+      }),
+    );
+
+    expect(activeSession.container.textContent).toContain(expectedLabel);
   });
 });
