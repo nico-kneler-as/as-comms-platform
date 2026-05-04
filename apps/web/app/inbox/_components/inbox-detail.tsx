@@ -342,7 +342,11 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   // unread state came from an inbound volunteer message or a non-alias
   // teammate reply. The ref prevents re-firing if the effect re-runs.
   useEffect(() => {
-    if (markOpenedRef.current || !detail.isUnread) {
+    if (
+      markOpenedRef.current ||
+      !detail.projectionAvailable ||
+      !detail.isUnread
+    ) {
       return;
     }
     markOpenedRef.current = true;
@@ -353,7 +357,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
         router.refresh();
       }
     });
-  }, [contact.contactId, detail.isUnread, router]);
+  }, [contact.contactId, detail.isUnread, detail.projectionAvailable, router]);
 
   const handleMarkUnread = useCallback(() => {
     startMarkUnreadTransition(async () => {
@@ -564,23 +568,27 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <FollowUpToggleControl
-              needsFollowUp={isFollowUp}
-              isPending={followUpToggle.isPending}
-              error={followUpToggle.error}
-              onToggle={followUpToggle.toggle}
-            />
+            {detail.projectionAvailable ? (
+              <>
+                <FollowUpToggleControl
+                  needsFollowUp={isFollowUp}
+                  isPending={followUpToggle.isPending}
+                  error={followUpToggle.error}
+                  onToggle={followUpToggle.toggle}
+                />
 
-            <HeaderActionButton
-              label="Mark Unread"
-              aria-label="Mark unread"
-              disabled={isMarkUnreadPending}
-              onClick={handleMarkUnread}
-              data-inbox-mark-unread="true"
-              widthClassName="w-32"
-            >
-              <MailOpenIcon className="size-4" />
-            </HeaderActionButton>
+                <HeaderActionButton
+                  label="Mark Unread"
+                  aria-label="Mark unread"
+                  disabled={isMarkUnreadPending}
+                  onClick={handleMarkUnread}
+                  data-inbox-mark-unread="true"
+                  widthClassName="w-32"
+                >
+                  <MailOpenIcon className="size-4" />
+                </HeaderActionButton>
+              </>
+            ) : null}
 
             <Popover open={reminderOpen} onOpenChange={setReminderOpen}>
               <PopoverTrigger asChild>
@@ -623,23 +631,25 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
               </PopoverContent>
             </Popover>
 
-            <HeaderActionButton
-              label={detail.isArchived ? "Unarchive" : "Archive"}
-              aria-label={
-                detail.isArchived
-                  ? "Move back to inbox"
-                  : "Archive conversation"
-              }
-              disabled={isArchivePending}
-              onClick={detail.isArchived ? handleUnarchive : handleArchive}
-              widthClassName={detail.isArchived ? "w-28" : "w-24"}
-            >
-              {detail.isArchived ? (
-                <ArchiveRestoreIcon className="size-4" />
-              ) : (
-                <ArchiveBoxIcon className="size-4" />
-              )}
-            </HeaderActionButton>
+            {detail.projectionAvailable ? (
+              <HeaderActionButton
+                label={detail.isArchived ? "Unarchive" : "Archive"}
+                aria-label={
+                  detail.isArchived
+                    ? "Move back to inbox"
+                    : "Archive conversation"
+                }
+                disabled={isArchivePending}
+                onClick={detail.isArchived ? handleUnarchive : handleArchive}
+                widthClassName={detail.isArchived ? "w-28" : "w-24"}
+              >
+                {detail.isArchived ? (
+                  <ArchiveRestoreIcon className="size-4" />
+                ) : (
+                  <ArchiveBoxIcon className="size-4" />
+                )}
+              </HeaderActionButton>
+            ) : null}
 
             {!railOpen ? (
               <HeaderActionButton
