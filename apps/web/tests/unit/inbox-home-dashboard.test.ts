@@ -105,6 +105,7 @@ describe("getInboxWelcomeSalesforceLifecycle", () => {
     });
 
     expect(result.freshness).toBe("fresh");
+    expect(result.lastSuccessAt?.toISOString()).toBe("2026-05-07T11:50:00.000Z");
     expect(result.tiles).toEqual([
       {
         projectId: "project:alpha",
