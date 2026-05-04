@@ -438,9 +438,20 @@ describe("Stage 1 Mailchimp artifact importer", () => {
         await context.repositories.canonicalEvents.listByContactId(contactId);
       expect(canonicalEvents).toHaveLength(4);
 
+      // Under the widened projection rule, campaign events qualify and create
+      // an Opened-bucket projection. lastOutboundAt advances on
+      // campaign.email.sent; lastActivityAt and lastEventType advance on the
+      // newest qualifying event (here the Feb 2 unsubscribe).
       await expect(
         context.repositories.inboxProjection.findByContactId(contactId)
-      ).resolves.toBeNull();
+      ).resolves.toMatchObject({
+        contactId,
+        bucket: "Opened",
+        lastInboundAt: null,
+        lastOutboundAt: "2026-02-01T15:00:00.000Z",
+        lastActivityAt: "2026-02-02T10:00:00.000Z",
+        lastEventType: "campaign.email.unsubscribed",
+      });
 
       const sourceEvidenceIds = canonicalEvents.map((event) => event.sourceEvidenceId);
       await expect(

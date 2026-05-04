@@ -1321,6 +1321,7 @@ Alias drift outbound message.
           campaignRef: null,
           threadRef: null,
           direction: "outbound",
+          inboxProjectionExclusionReason: "forwarded_chain",
           notes: null
         },
         reviewState: "clear"
