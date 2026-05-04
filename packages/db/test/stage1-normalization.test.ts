@@ -913,7 +913,7 @@ describe("Stage 1 normalization service", () => {
       );
       expect(outboundResult.inboxProjection?.bucket).toBe("Opened");
       expect(outboundResult.timelineProjection.sortKey).toBe(
-        "2026-01-01T00:04:00.000Z::evt_1"
+        "2026-01-01T00:04:00.000Z::00::evt_1"
       );
     }
 
