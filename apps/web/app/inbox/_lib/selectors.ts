@@ -13,6 +13,7 @@ import { readWebEnv } from "@/src/server/env";
 import { recordSensitiveReadForCurrentUserDetached } from "@/src/server/security/audit";
 import { getStage1WebRuntime } from "../../../src/server/stage1-runtime";
 import {
+  occurredAtIsOnOrAfterPlatformFullCaptureCutover,
   occurredAtIsBeforePlatformFullCaptureCutover,
   filterItemsAtOrAfterPlatformFullCaptureCutover,
 } from "@/app/_lib/cutover";
@@ -2829,7 +2830,13 @@ function buildComposerReplyContext(input: {
   readonly timelineItems: readonly TimelineItem[];
   readonly defaultAlias: string | null;
 }): InboxComposerReplyContext | null {
-  const inboundEmails = [...filterItemsAtOrAfterPlatformFullCaptureCutover(input.timelineItems)]
+  const hasPostCutoverActivity = input.timelineItems.some((item) =>
+    occurredAtIsOnOrAfterPlatformFullCaptureCutover(item.occurredAt),
+  );
+  const visibleTimelineItems = hasPostCutoverActivity
+    ? filterItemsAtOrAfterPlatformFullCaptureCutover(input.timelineItems)
+    : input.timelineItems;
+  const inboundEmails = [...visibleTimelineItems]
     .reverse()
     .filter(
       (item): item is Extract<TimelineItem, { family: "one_to_one_email" }> =>
@@ -3538,17 +3545,26 @@ async function readInboxDetailCacheData(
     aliasesByProjectId.set(aliasRecord.projectId, aliases);
   }
 
-  const visibleTimelineItems = filterItemsAtOrAfterPlatformFullCaptureCutover(
-    filterSmsTimelineItems(activityTimelineItems, env.SMS_ENABLED),
+  const smsFilteredTimelineItems = filterSmsTimelineItems(
+    activityTimelineItems,
+    env.SMS_ENABLED,
   );
+  const hasPostCutoverActivity = canonicalEvents.some((event) =>
+    occurredAtIsOnOrAfterPlatformFullCaptureCutover(event.occurredAt),
+  );
+  const visibleTimelineItems = hasPostCutoverActivity
+    ? filterItemsAtOrAfterPlatformFullCaptureCutover(smsFilteredTimelineItems)
+    : smsFilteredTimelineItems;
   const timelinePage = paginateTimelineItems({
     timelineItems: visibleTimelineItems,
     limit: input.timelineLimit,
     beforeSortKey: input.timelineCursor,
   });
-  const hasHiddenEarlierHistory = canonicalEvents.some((event) =>
-    occurredAtIsBeforePlatformFullCaptureCutover(event.occurredAt),
-  );
+  const hasHiddenEarlierHistory =
+    hasPostCutoverActivity &&
+    canonicalEvents.some((event) =>
+      occurredAtIsBeforePlatformFullCaptureCutover(event.occurredAt),
+    );
   const gmailSourceEvidenceIds = uniqueStrings(
     canonicalEvents
       .filter((event) => event.eventType === "communication.email.outbound")

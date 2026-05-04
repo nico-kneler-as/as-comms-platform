@@ -1951,6 +1951,9 @@ describe("real inbox selectors", () => {
       nextCursor: null,
       total: 2,
     });
+    expect(detail?.composerReplyContext).toMatchObject({
+      subject: "Re: Older inbound email",
+    });
   });
 
   it("sets conversationProject from membership when the contact has an active project membership", async () => {
@@ -2139,6 +2142,127 @@ describe("real inbox selectors", () => {
     expect(detail?.composerReplyContext).toMatchObject({
       threadCursor: boundaryInbound.canonicalEventId,
       subject: "Re: Boundary inbound email",
+    });
+  });
+
+  it("shows only-pre-cutover contact history when there is no post-cutover activity", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:pre-cutover-only",
+      salesforceContactId: "003-pre-cutover-only",
+      displayName: "Pre Cutover Only",
+      primaryEmail: "pre-cutover-only@example.org",
+      primaryPhone: null,
+      projectId: "project:pre-cutover-only",
+      projectName: "Pre Cutover Only Project",
+      membershipId: "membership:pre-cutover-only",
+      membershipStatus: "active",
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "pre-cutover-only-inbound",
+      contactId: "contact:pre-cutover-only",
+      occurredAt: "2024-11-15T15:00:00.000Z",
+      direction: "inbound",
+      subject: "Older inbound email",
+      snippet: "This pre-cutover history should remain visible.",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "pre-cutover-only-outbound",
+      contactId: "contact:pre-cutover-only",
+      occurredAt: "2024-12-20T18:00:00.000Z",
+      direction: "outbound",
+      subject: "Older outbound email",
+      snippet: "This outbound is still the latest activity before cutover.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:pre-cutover-only",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2024-11-15T15:00:00.000Z",
+      lastOutboundAt: "2024-12-20T18:00:00.000Z",
+      lastActivityAt: "2024-12-20T18:00:00.000Z",
+      snippet: "This outbound is still the latest activity before cutover.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:pre-cutover-only");
+
+    expect(detail?.timeline.map((entry) => entry.subject)).toEqual([
+      "Older inbound email",
+      "Older outbound email",
+    ]);
+    expect(detail?.timelinePage).toEqual({
+      hasMore: false,
+      hasHiddenEarlierHistory: false,
+      nextCursor: null,
+      total: 2,
+    });
+    expect(detail?.composerReplyContext).toMatchObject({
+      subject: "Re: Visible inbound email",
+    });
+  });
+
+  it("shows only-post-cutover contact history without an earlier-history expander", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:post-cutover-only",
+      salesforceContactId: "003-post-cutover-only",
+      displayName: "Post Cutover Only",
+      primaryEmail: "post-cutover-only@example.org",
+      primaryPhone: null,
+      projectId: "project:post-cutover-only",
+      projectName: "Post Cutover Only Project",
+      membershipId: "membership:post-cutover-only",
+      membershipStatus: "active",
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "post-cutover-only-inbound",
+      contactId: "contact:post-cutover-only",
+      occurredAt: "2025-01-05T09:00:00.000Z",
+      direction: "inbound",
+      subject: "Visible inbound email",
+      snippet: "This post-cutover history should stay visible.",
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "post-cutover-only-outbound",
+      contactId: "contact:post-cutover-only",
+      occurredAt: "2025-01-06T11:30:00.000Z",
+      direction: "outbound",
+      subject: "Visible outbound email",
+      snippet: "This is the latest visible post-cutover activity.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:post-cutover-only",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2025-01-05T09:00:00.000Z",
+      lastOutboundAt: "2025-01-06T11:30:00.000Z",
+      lastActivityAt: "2025-01-06T11:30:00.000Z",
+      snippet: "This is the latest visible post-cutover activity.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:post-cutover-only");
+
+    expect(detail?.timeline.map((entry) => entry.subject)).toEqual([
+      "Visible inbound email",
+      "Visible outbound email",
+    ]);
+    expect(detail?.timelinePage).toEqual({
+      hasMore: false,
+      hasHiddenEarlierHistory: false,
+      nextCursor: null,
+      total: 2,
     });
   });
 
