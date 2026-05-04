@@ -1,4 +1,5 @@
 import {
+  canonicalEventTypeValues,
   canonicalEventSchema,
   contactIdentitySchema,
   contactMembershipSchema,
@@ -76,6 +77,28 @@ import {
 import type { Stage1PersistenceService } from "./persistence.js";
 
 type ContactLookupMap = ReadonlyMap<string, ContactRecord>;
+
+const [
+  ,
+  ,
+  ,
+  ,
+  ,
+  ,
+  lifecycleSignedUpEventType,
+  lifecycleReceivedTrainingEventType,
+  lifecycleCompletedTrainingEventType,
+  lifecycleSubmittedFirstDataEventType
+] = canonicalEventTypeValues;
+
+const lifecycleTimelineOrdinalByEventType: Partial<
+  Record<CanonicalEventRecord["eventType"], string>
+> = {
+  [lifecycleSignedUpEventType]: "01",
+  [lifecycleReceivedTrainingEventType]: "02",
+  [lifecycleCompletedTrainingEventType]: "03",
+  [lifecycleSubmittedFirstDataEventType]: "04"
+};
 
 interface IdentityResolutionContext {
   loadContactsForIdentityKind(
@@ -330,8 +353,18 @@ function buildTimelineProjectionId(canonicalEventId: string): string {
   return `timeline:${canonicalEventId}`;
 }
 
-function buildTimelineSortKey(canonicalEventId: string, occurredAt: string): string {
-  return `${occurredAt}::${canonicalEventId}`;
+function resolveTimelineSortOrdinal(
+  eventType: CanonicalEventRecord["eventType"]
+): string {
+  return lifecycleTimelineOrdinalByEventType[eventType] ?? "00";
+}
+
+export function buildTimelineSortKey(
+  canonicalEventId: string,
+  occurredAt: string,
+  eventType: CanonicalEventRecord["eventType"]
+): string {
+  return `${occurredAt}::${resolveTimelineSortOrdinal(eventType)}::${canonicalEventId}`;
 }
 
 function buildIdentityCaseId(
@@ -2083,7 +2116,8 @@ export function createStage1NormalizationService(
         occurredAt: parsed.canonicalEvent.occurredAt,
         sortKey: buildTimelineSortKey(
           parsed.canonicalEvent.id,
-          parsed.canonicalEvent.occurredAt
+          parsed.canonicalEvent.occurredAt,
+          parsed.canonicalEvent.eventType
         ),
         eventType: parsed.canonicalEvent.eventType,
         summary: parsed.summary,
