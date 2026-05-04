@@ -173,7 +173,9 @@ export function createMailchimpTransitionScheduler(
   return {
     async runTick(params) {
       if (!input.config.enabled) {
-        logger.info("[mailchimp.scheduler] disabled");
+        logger.info(
+          `[mailchimp.scheduler] disabled (config.enabled=${String(input.config.enabled)} env.MAILCHIMP_TRANSITION_ENABLED=${JSON.stringify(process.env.MAILCHIMP_TRANSITION_ENABLED ?? null)})`,
+        );
         return;
       }
 
