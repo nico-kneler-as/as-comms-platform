@@ -1,6 +1,7 @@
 import { requireSession } from "@/src/server/auth/session";
 
 import { InboxWelcomeWorkload } from "./_components/inbox-welcome-workload";
+import { getInboxWelcomeSalesforceLifecycle } from "./_lib/home-dashboard";
 import { getInboxWelcomeWorkload } from "./_lib/selectors";
 
 function deriveFirstName(name: string | null, email: string): string {
@@ -31,12 +32,22 @@ function deriveFirstName(name: string | null, email: string): string {
 }
 
 export default async function InboxListPage() {
-  const [workload, currentUser] = await Promise.all([
+  const [workload, salesforceLifecycle, currentUser] = await Promise.all([
     getInboxWelcomeWorkload(),
+    getInboxWelcomeSalesforceLifecycle(),
     requireSession(),
   ]);
+  const dashboardData = {
+    workload,
+    salesforceLifecycle,
+  };
 
   const firstName = deriveFirstName(currentUser.name, currentUser.email);
 
-  return <InboxWelcomeWorkload workload={workload} firstName={firstName} />;
+  return (
+    <InboxWelcomeWorkload
+      workload={dashboardData.workload}
+      firstName={firstName}
+    />
+  );
 }
