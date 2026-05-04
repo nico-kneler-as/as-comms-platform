@@ -49,7 +49,7 @@ import type {
   Stage1NormalizationService,
   Stage1PersistenceService
 } from "@as-comms/domain";
-import { isInboxDrivingCanonicalEvent } from "@as-comms/domain";
+import { qualifiesForInboxProjection } from "@as-comms/domain";
 import type { MailchimpCampaignTailStateRepository } from "@as-comms/db";
 
 import type { Stage1IngestService } from "../ingest/service.js";
@@ -279,10 +279,10 @@ function resolveLivePollCheckpoint(input: {
   );
 }
 
-function isInboxDrivingEvent(
-  event: Pick<CanonicalEventRecord, "eventType" | "provenance">
+function qualifiesForProjectionRebuild(
+  event: Pick<CanonicalEventRecord, "provenance">
 ): boolean {
-  return isInboxDrivingCanonicalEvent(event);
+  return qualifiesForInboxProjection(event);
 }
 
 function buildDefaultProjectionSeed(
@@ -1421,7 +1421,7 @@ export function createStage1WorkerOrchestrationService(input: {
 
           if (
             rebuildInboxProjection &&
-            isInboxDrivingEvent(event)
+            qualifiesForProjectionRebuild(event)
           ) {
             await input.normalization.applyInboxProjection({
               canonicalEvent: event,
@@ -1653,7 +1653,7 @@ export function createStage1WorkerOrchestrationService(input: {
           contactId
         );
         const inboxDrivingEventCount = canonicalEvents.filter((event) =>
-          isInboxDrivingEvent(event)
+          qualifiesForProjectionRebuild(event)
         ).length;
 
         sampledContacts.push({

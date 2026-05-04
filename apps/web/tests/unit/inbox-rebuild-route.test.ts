@@ -8,7 +8,7 @@ const createStage1NormalizationService = vi.hoisted(() => vi.fn());
 vi.mock("@as-comms/domain", () => ({
   createStage1NormalizationService,
   createStage1PersistenceService,
-  isInboxDrivingCanonicalEvent: vi.fn(() => true),
+  qualifiesForInboxProjection: vi.fn(() => true),
 }));
 
 vi.mock("../../src/server/inbox/revalidate", () => ({

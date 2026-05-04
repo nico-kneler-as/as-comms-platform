@@ -11,7 +11,6 @@ import {
   contactIdentityKindSchema,
   identityResolutionReasonCodeSchema,
   inboxBucketSchema,
-  inboxDrivingEventTypeSchema,
   provenanceWinnerReasonSchema,
   providerSchema,
   recordSourceSchema,
@@ -435,17 +434,9 @@ export const inboxProjectionSchema = z
     snippet: z.string(),
     archivedAt: optionalTimestampSchema.default(null),
     lastCanonicalEventId: idSchema,
-    lastEventType: inboxDrivingEventTypeSchema,
+    lastEventType: canonicalEventTypeSchema,
   })
   .superRefine((value, context) => {
-    if (value.lastInboundAt === null && value.lastOutboundAt === null) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          "an inbox projection must include at least one inbound or outbound timestamp",
-      });
-    }
-
     if (
       value.lastInboundAt === null &&
       value.lastOutboundAt !== null &&

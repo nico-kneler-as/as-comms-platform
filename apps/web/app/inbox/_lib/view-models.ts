@@ -1,4 +1,4 @@
-import type { InboxDrivingEventType } from "@as-comms/contracts";
+import type { CanonicalEventType } from "@as-comms/contracts";
 
 /**
  * Inbox — UI-facing view models.
@@ -97,7 +97,7 @@ export interface InboxListItemViewModel {
   readonly lastNonAliasMessageAt: string | null;
   readonly lastOutboundAt: string | null;
   readonly lastActivityAt: string;
-  readonly lastEventType: InboxDrivingEventType;
+  readonly lastEventType: CanonicalEventType;
   readonly lastActivityLabel: string;
 }
 

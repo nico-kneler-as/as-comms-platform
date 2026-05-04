@@ -1466,7 +1466,7 @@ describe("Stage 1 normalization service", () => {
     expect(canonicalEvent.occurredAt).toBe("2026-03-04T21:00:06.000Z");
   });
 
-  it("keeps Salesforce auto task messages out of inbox projection mutation", async () => {
+  it("creates an Opened-bucket inbox projection for Salesforce auto task messages", async () => {
     const context = await seedContactWithEmail("auto@example.org", {
       contactId: "contact_1",
       displayName: "Auto Task Contact"
@@ -1508,12 +1508,25 @@ describe("Stage 1 normalization service", () => {
 
     expect(result.outcome).toBe("applied");
     if (result.outcome === "applied") {
-      expect(result.inboxProjection).toBeNull();
+      expect(result.inboxProjection).not.toBeNull();
+      expect(result.inboxProjection).toMatchObject({
+        contactId: "contact_1",
+        bucket: "Opened",
+        lastInboundAt: null,
+        lastOutboundAt: "2026-01-01T00:02:00.000Z",
+        lastActivityAt: "2026-01-01T00:02:00.000Z",
+        lastCanonicalEventId: "evt_auto_task_1",
+        lastEventType: "communication.email.outbound"
+      });
     }
 
     await expect(
       context.repositories.inboxProjection.findByContactId("contact_1")
-    ).resolves.toBeNull();
+    ).resolves.toMatchObject({
+      contactId: "contact_1",
+      bucket: "Opened",
+      lastOutboundAt: "2026-01-01T00:02:00.000Z"
+    });
     await expect(
       context.repositories.timelineProjection.listByContactId("contact_1")
     ).resolves.toHaveLength(1);
@@ -1594,7 +1607,20 @@ describe("Stage 1 normalization service", () => {
 
     expect(campaignResult.outcome).toBe("applied");
     if (campaignResult.outcome === "applied") {
-      expect(campaignResult.inboxProjection).toEqual(beforeCampaign);
+      // Campaign opens are now qualifying events: they advance lastActivityAt /
+      // lastEventType / snippet / lastCanonicalEventId, but they do NOT count as
+      // outbound (only campaign.email.sent does), and they do NOT flip bucket
+      // (bucket only flips to "New" on a newer inbound).
+      expect(campaignResult.inboxProjection).toMatchObject({
+        contactId: "contact_1",
+        bucket: beforeCampaign?.bucket,
+        lastInboundAt: beforeCampaign?.lastInboundAt,
+        lastOutboundAt: beforeCampaign?.lastOutboundAt,
+        lastActivityAt: "2026-01-01T00:02:00.000Z",
+        lastCanonicalEventId: "evt_2",
+        lastEventType: "campaign.email.opened",
+        snippet: "Campaign open"
+      });
     }
 
     const timelineRows =

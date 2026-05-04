@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   createStage1NormalizationService,
   createStage1PersistenceService,
-  isInboxDrivingCanonicalEvent,
+  qualifiesForInboxProjection,
   type Stage1PersistenceService
 } from "@as-comms/domain";
 import type { CanonicalEventRecord } from "@as-comms/contracts";
@@ -59,7 +59,7 @@ async function rebuildInboxProjectionForContact(
   let rebuiltInboxRows = 0;
 
   for (const event of canonicalEvents) {
-    if (!isInboxDrivingCanonicalEvent(event)) {
+    if (!qualifiesForInboxProjection(event)) {
       continue;
     }
 

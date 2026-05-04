@@ -1,6 +1,5 @@
 import {
   inboxDrivingEventTypeValues,
-  type CanonicalEventProvenance,
   type CanonicalEventRecord,
   type InboxDrivingEventType
 } from "@as-comms/contracts";
@@ -13,15 +12,11 @@ export function isInboxDrivingEventType(
   return inboxDrivingEventTypes.has(eventType);
 }
 
-function hasTrustedInboxDrivingEvidence(
-  provenance: Pick<
-    CanonicalEventProvenance,
-    | "inboxProjectionExclusionReason"
-    | "messageKind"
-    | "primaryProvider"
-    | "sourceRecordType"
-  >
+export function qualifiesForInboxProjection(
+  event: Pick<CanonicalEventRecord, "provenance">
 ): boolean {
+  const provenance = event.provenance;
+
   if (provenance.inboxProjectionExclusionReason === "forwarded_chain") {
     return false;
   }
@@ -30,37 +25,5 @@ function hasTrustedInboxDrivingEvidence(
     return false;
   }
 
-  if (provenance.messageKind === "one_to_one") {
-    return true;
-  }
-
-  if (
-    provenance.messageKind === "auto" ||
-    provenance.messageKind === "campaign"
-  ) {
-    return false;
-  }
-
-  if (provenance.primaryProvider === "gmail") {
-    return (
-      provenance.sourceRecordType === null ||
-      provenance.sourceRecordType === "message"
-    );
-  }
-
-  if (provenance.primaryProvider === "simpletexting") {
-    return provenance.sourceRecordType !== "internal_only_message";
-  }
-
-  return false;
-}
-
-export function isInboxDrivingCanonicalEvent(
-  event: Pick<CanonicalEventRecord, "eventType" | "provenance">
-): event is Pick<CanonicalEventRecord, "eventType" | "provenance"> & {
-  readonly eventType: InboxDrivingEventType;
-} {
-  return isInboxDrivingEventType(event.eventType)
-    ? hasTrustedInboxDrivingEvidence(event.provenance)
-    : false;
+  return true;
 }
