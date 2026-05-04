@@ -351,6 +351,14 @@ export async function startMailchimpCaptureServer(
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> {
+    const requestStartedAt = Date.now()
+    const requestPathForLog = new URL(
+      request.url ?? "/",
+      "http://mailchimp-capture.local",
+    ).pathname
+    console.info(
+      `[mailchimp-capture] -> ${request.method ?? "GET"} ${requestPathForLog}`,
+    )
     try {
       const bodyText = await readRequestBody(request)
       const serviceResponse = await handleMailchimpCaptureHttpRequestInternal({
@@ -358,6 +366,9 @@ export async function startMailchimpCaptureServer(
         request: createHttpRequest(request, bodyText),
       })
       writeResponse(response, serviceResponse)
+      console.info(
+        `[mailchimp-capture] <- ${request.method ?? "GET"} ${requestPathForLog} status=${String(serviceResponse.status)} dur=${String(Date.now() - requestStartedAt)}ms`,
+      )
     } catch (error) {
       if (error instanceof RequestBodyTooLargeError) {
         writeResponse(response, {
