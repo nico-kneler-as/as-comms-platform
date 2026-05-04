@@ -2,6 +2,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { composerSendInputSchema } from "@as-comms/contracts";
@@ -41,6 +42,7 @@ import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 import { appendSecurityAudit } from "@/src/server/security/audit";
 import { enforceRateLimit } from "@/src/server/security/rate-limit";
 
+import type { MetricKey } from "./_lib/project-lifecycle-metrics";
 import type { UiResult } from "../../src/server/ui-result";
 
 const SMS_AI_MAX_TOKENS = 120;
@@ -162,6 +164,16 @@ export type ContactSearchActionResult = UiResult<
 export type AiDraftResponseVm = AiDraftResponse;
 export type DraftWithAiActionResult = UiResult<AiDraftResponseVm>;
 
+export type ProjectMetricKey = MetricKey;
+
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+export type ProjectMetricContactRow = {
+  readonly contactId: string;
+  readonly name: string | null;
+  readonly email: string | null;
+  readonly occurredAt: string;
+};
+
 type AiDraftFailureClassification =
   | { readonly kind: "misconfigured" }
   | { readonly kind: "unexpected" };
@@ -170,9 +182,23 @@ interface AiDraftConcurrencyState {
   readonly counts: Map<string, number>;
 }
 
+interface ProjectMetricContactSqlRow {
+  readonly contactId: string;
+  readonly name: string | null;
+  readonly email: string | null;
+  readonly occurredAt: Date | string;
+}
+
 declare global {
   var __AS_COMMS_AI_DRAFT_CONCURRENCY__: AiDraftConcurrencyState | undefined;
 }
+
+const PROJECT_METRIC_EVENT_TYPE: Readonly<Record<ProjectMetricKey, string>> = {
+  signups: "lifecycle.signed_up",
+  trainingCompletions: "lifecycle.completed_training",
+  dataSubmissions: "lifecycle.submitted_first_data",
+};
+const MS_PER_DAY = 24 * 60 * 60 * 1_000;
 
 function describeComposerSendError(error: GmailSendError): string {
   if ("detail" in error) {
@@ -196,6 +222,58 @@ function getAiDraftConcurrencyState(): AiDraftConcurrencyState {
   };
 
   return globalThis.__AS_COMMS_AI_DRAFT_CONCURRENCY__;
+}
+
+function normalizeSqlResultRows(result: unknown): readonly unknown[] {
+  if (
+    typeof result === "object" &&
+    result !== null &&
+    "rows" in result &&
+    Array.isArray(result.rows)
+  ) {
+    return result.rows;
+  }
+
+  return [];
+}
+
+function toValidDate(value: Date | string | null | undefined): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function startOfUtcDay(date: Date): Date {
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+}
+
+function mapProjectMetricContactRow(
+  row: ProjectMetricContactSqlRow,
+): ProjectMetricContactRow | null {
+  const occurredAt = toValidDate(row.occurredAt);
+
+  if (occurredAt === null) {
+    return null;
+  }
+
+  const name = row.name?.trim() ?? "";
+  const email = row.email?.trim() ?? "";
+
+  return {
+    contactId: row.contactId,
+    name: name.length > 0 ? name : null,
+    email: email.length > 0 ? email : null,
+    occurredAt: occurredAt.toISOString(),
+  };
 }
 
 function maskKnowledgeExample(value: string): string {
@@ -722,6 +800,60 @@ function buildAttachmentMetadata(
     size: Buffer.from(attachment.contentBase64, "base64").length,
     contentType: attachment.contentType,
   }));
+}
+
+export async function loadProjectMetricContacts(input: {
+  readonly projectId: string;
+  readonly metricKey: ProjectMetricKey;
+}): Promise<{ readonly rows: readonly ProjectMetricContactRow[] }> {
+  await requireSession();
+
+  const runtime = await getStage1WebRuntime();
+  const [project] = await runtime.repositories.projectDimensions.listByIds([
+    input.projectId,
+  ]);
+
+  if (project?.isActive !== true || runtime.connection === null) {
+    return { rows: [] };
+  }
+
+  const now = new Date();
+  const todayStart = startOfUtcDay(now);
+  const windowStart = new Date(todayStart.getTime() - 6 * MS_PER_DAY);
+  const windowEndExclusive = new Date(todayStart.getTime() + MS_PER_DAY);
+  const eventType = PROJECT_METRIC_EVENT_TYPE[input.metricKey];
+  const result = await runtime.connection.db.execute(
+    sql<ProjectMetricContactSqlRow>`
+      with deduped_contacts as (
+        select
+          cel.contact_id as "contactId",
+          min(cel.occurred_at) as "occurredAt"
+        from canonical_event_ledger cel
+        inner join contact_memberships cm
+          on cm.contact_id = cel.contact_id
+         and cm.project_id = ${input.projectId}
+        where cel.event_type = ${eventType}
+          and cel.occurred_at >= ${windowStart.toISOString()}
+          and cel.occurred_at < ${windowEndExclusive.toISOString()}
+        group by cel.contact_id
+      )
+      select
+        dc."contactId" as "contactId",
+        c.display_name as "name",
+        c.primary_email as "email",
+        dc."occurredAt" as "occurredAt"
+      from deduped_contacts dc
+      inner join contacts c
+        on c.id = dc."contactId"
+      order by dc."occurredAt" desc, dc."contactId" asc
+    `,
+  );
+
+  return {
+    rows: normalizeSqlResultRows(result)
+      .map((row) => mapProjectMetricContactRow(row as ProjectMetricContactSqlRow))
+      .filter((row): row is ProjectMetricContactRow => row !== null),
+  };
 }
 
 export async function searchContactsAction(
