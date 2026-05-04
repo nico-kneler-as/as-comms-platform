@@ -246,7 +246,7 @@ describe("ProjectMetricDetailDialog", () => {
     activeSession = renderDialog();
     await activeSession.rerender();
 
-    expect(activeSession.container.querySelectorAll(".animate-pulse")).toHaveLength(24);
+    expect(activeSession.container.querySelectorAll(".animate-pulse")).toHaveLength(32);
 
     pending.resolve({
       rows: [
