@@ -168,7 +168,9 @@ describe("Mailchimp transition scheduler", () => {
 
       expect(addJob).not.toHaveBeenCalled();
       expect(captureTransitionBatch).not.toHaveBeenCalled();
-      expect(logger.info).toHaveBeenCalledWith("[mailchimp.scheduler] disabled");
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringMatching(/^\[mailchimp\.scheduler\] disabled\b/),
+      );
     } finally {
       await context.dispose();
     }
