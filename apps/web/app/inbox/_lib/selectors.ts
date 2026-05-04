@@ -43,6 +43,14 @@ import type {
 } from "./view-models";
 export { groupInboxTimelineSystemMessages } from "./view-models";
 
+type InboxDetailProjection = Omit<
+  InboxProjectionRow,
+  "lastCanonicalEventId" | "lastEventType"
+> & {
+  readonly lastCanonicalEventId: string | null;
+  readonly lastEventType: CanonicalEventRecord["eventType"] | null;
+};
+
 function filterSmsTimelineItems(
   items: readonly TimelineItem[],
   smsEnabled: boolean,
@@ -52,6 +60,24 @@ function filterSmsTimelineItems(
   }
 
   return items.filter((item) => item.family !== "one_to_one_sms");
+}
+
+function findNewestCanonicalEvent(
+  events: readonly CanonicalEventRecord[],
+): CanonicalEventRecord | null {
+  let newestEvent: CanonicalEventRecord | null = null;
+
+  for (const event of events) {
+    if (
+      newestEvent === null ||
+      event.occurredAt > newestEvent.occurredAt ||
+      (event.occurredAt === newestEvent.occurredAt && event.id > newestEvent.id)
+    ) {
+      newestEvent = event;
+    }
+  }
+
+  return newestEvent;
 }
 
 interface InboxListCacheRow {
@@ -102,7 +128,8 @@ interface InboxListCacheData {
 
 interface InboxDetailCacheData {
   readonly contact: ContactRecord;
-  readonly inboxProjection: InboxProjectionRow;
+  readonly inboxProjection: InboxDetailProjection;
+  readonly projectionAvailable: boolean;
   readonly isUnread: boolean;
   readonly memberships: readonly ContactMembershipRecord[];
   readonly latestNote: {
@@ -2356,7 +2383,7 @@ function buildTimelineEntry(input: {
   readonly contactPrimaryEmail: string | null;
   readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
   readonly operatorDisplayName: string;
-  readonly inboxProjection: InboxProjectionRow;
+  readonly inboxProjection: InboxDetailProjection;
   readonly item: TimelineItem;
   readonly campaignActivitySummaryByCampaignId: Readonly<
     Record<string, CampaignActivitySummary>
@@ -3523,9 +3550,26 @@ async function readInboxDetailCacheData(
     }),
   ]);
 
-  if (contact === null || inboxProjection === null) {
+  if (contact === null) {
     return null;
   }
+
+  const newestCanonicalEvent = findNewestCanonicalEvent(canonicalEvents);
+  const projectionAvailable = inboxProjection !== null;
+  const detailProjection: InboxDetailProjection =
+    inboxProjection ?? {
+      contactId,
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      archivedAt: null,
+      lastInboundAt: null,
+      lastOutboundAt: null,
+      lastActivityAt: newestCanonicalEvent?.occurredAt ?? contact.updatedAt,
+      snippet: "",
+      lastCanonicalEventId: newestCanonicalEvent?.id ?? null,
+      lastEventType: newestCanonicalEvent?.eventType ?? null,
+    };
 
   const aliasesByProjectId = new Map<string, string[]>();
 
@@ -3674,13 +3718,14 @@ async function readInboxDetailCacheData(
   }
 
   const isUnread =
-    inboxProjection.bucket === "New" ||
+    detailProjection.bucket === "New" ||
     (lastNonAliasOutboundAt !== null &&
       (latestReadAt === null || lastNonAliasOutboundAt > latestReadAt));
 
   return {
     contact,
-    inboxProjection,
+    inboxProjection: detailProjection,
+    projectionAvailable,
     isUnread,
     memberships,
     latestNote,
@@ -3946,7 +3991,7 @@ function toListItemViewModel(
 
 function buildContactSummary(input: {
   readonly contact: ContactRecord;
-  readonly inboxProjection: InboxProjectionRow;
+  readonly inboxProjection: InboxDetailProjection;
   readonly memberships: readonly ContactMembershipRecord[];
   readonly latestNote: {
     readonly body: string;
@@ -4316,6 +4361,7 @@ export async function getInboxDetail(
 
   return {
     contact: contactSummary,
+    projectionAvailable: cachedData.projectionAvailable,
     conversationProject: buildConversationProject({
       contact: contactSummary,
       timelineItems: cachedData.activityTimelineItems,

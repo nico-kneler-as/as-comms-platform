@@ -382,6 +382,7 @@ export interface InboxComposerReplyContext {
 
 export interface InboxDetailViewModel {
   readonly contact: InboxContactSummaryViewModel;
+  readonly projectionAvailable: boolean;
   readonly conversationProject: {
     readonly projectId: string;
     readonly projectName: string;

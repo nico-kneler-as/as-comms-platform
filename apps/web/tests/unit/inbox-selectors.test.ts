@@ -1917,6 +1917,7 @@ describe("real inbox selectors", () => {
 
     expect(detail).not.toBeNull();
     expect(detail).toMatchObject({
+      projectionAvailable: true,
       bucket: "new",
       needsFollowUp: true,
       smsEligible: true,
@@ -1954,6 +1955,86 @@ describe("real inbox selectors", () => {
     expect(detail?.composerReplyContext).toMatchObject({
       subject: "Re: Amazon Basin equipment list",
     });
+  });
+
+  it("synthesizes a degraded detail view when the projection row is missing but canonical events exist", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.inboxProjection.deleteByContactId(
+      "contact:sarah-martinez",
+    );
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail).not.toBeNull();
+    expect(detail).toMatchObject({
+      projectionAvailable: false,
+      bucket: "opened",
+      needsFollowUp: false,
+      isArchived: false,
+    });
+    expect(detail?.freshness.inboxUpdatedAt).toBeNull();
+    expect(detail?.timelinePage).toEqual({
+      hasMore: false,
+      hasHiddenEarlierHistory: false,
+      nextCursor: null,
+      total: 2,
+    });
+    expect(detail?.timeline.at(-1)).toMatchObject({
+      occurredAt: "2026-04-14T13:00:00.000Z",
+      isUnread: false,
+    });
+  });
+
+  it("falls back to contact.updatedAt when the projection row and canonical events are both missing", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:no-projection-no-events",
+      salesforceContactId: "003-no-projection-no-events",
+      displayName: "No Projection No Events",
+      primaryEmail: "no-projection-no-events@example.org",
+      primaryPhone: null,
+    });
+    await runtime.context.repositories.contacts.upsert({
+      id: "contact:no-projection-no-events",
+      salesforceContactId: "003-no-projection-no-events",
+      displayName: "No Projection No Events",
+      primaryEmail: "no-projection-no-events@example.org",
+      primaryPhone: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-04-22T09:45:00.000Z",
+    });
+
+    const detail = await getInboxDetail("contact:no-projection-no-events");
+
+    expect(detail).not.toBeNull();
+    expect(detail).toMatchObject({
+      projectionAvailable: false,
+      bucket: "opened",
+      needsFollowUp: false,
+      isArchived: false,
+    });
+    expect(detail?.timeline).toEqual([]);
+    expect(detail?.timelinePage).toEqual({
+      hasMore: false,
+      hasHiddenEarlierHistory: false,
+      nextCursor: null,
+      total: 0,
+    });
+    expect(detail?.freshness).toEqual({
+      inboxUpdatedAt: null,
+      timelineUpdatedAt: null,
+      timelineCount: 0,
+    });
+  });
+
+  it("still returns null when the contact does not exist", async () => {
+    await expect(getInboxDetail("contact:missing")).resolves.toBeNull();
   });
 
   it("sets conversationProject from membership when the contact has an active project membership", async () => {
