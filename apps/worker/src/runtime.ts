@@ -54,6 +54,16 @@ const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
 const mailchimpTransitionDiscoverySeedLookbackDays = 35;
 
 function parseBooleanEnv(value: unknown): boolean {
+  // Pass booleans through unchanged. The schema this preprocess feeds is
+  // composed inside an outer schema (workerConfigSchema), so when the outer
+  // schema re-parses an already-parsed inner value, the preprocess fires a
+  // second time on a boolean — which would otherwise fall through to the
+  // non-string branch and incorrectly return false. Observed 2026-05-04 in
+  // production after MAILCHIMP_TRANSITION_ENABLED=true was set.
+  if (typeof value === "boolean") {
+    return value;
+  }
+
   if (typeof value !== "string") {
     return false;
   }
