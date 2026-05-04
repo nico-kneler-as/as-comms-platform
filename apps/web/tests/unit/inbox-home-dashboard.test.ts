@@ -47,6 +47,14 @@ describe("getInboxWelcomeSalesforceLifecycle", () => {
       source: "salesforce",
       isActive: true,
     });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "lifecycle-alpha-signup",
+      contactId: "contact:active",
+      occurredAt: "2026-05-07T10:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:alpha",
+    });
     await seedInboxProjection(runtime.context, {
       contactId: "contact:active",
       bucket: "New",
@@ -58,14 +66,6 @@ describe("getInboxWelcomeSalesforceLifecycle", () => {
       snippet: "Unread inbound",
       lastCanonicalEventId: "event:lifecycle-alpha-signup",
       lastEventType: "communication.email.inbound",
-    });
-    await seedInboxLifecycleEvent(runtime.context, {
-      id: "lifecycle-alpha-signup",
-      contactId: "contact:active",
-      occurredAt: "2026-05-07T10:00:00.000Z",
-      eventType: "lifecycle.signed_up",
-      summary: "Signed up",
-      projectId: "project:alpha",
     });
     await runtime.context.settings.integrationHealth.seedDefaults();
     const salesforceHealth =
