@@ -91,9 +91,13 @@ export function readMailchimpCaptureRuntimeConfig(
     port: parseOptionalPositiveIntEnv(env.PORT, 3003, "PORT"),
     logLevel: parseOptionalStringEnv(env.LOG_LEVEL, "info"),
     service: {
+      // Accept either env name. The worker reads the bearer token under
+      // `MAILCHIMP_CAPTURE_TOKEN` (matching the GMAIL_/SALESFORCE_ pattern).
+      // `MAILCHIMP_CAPTURE_BEARER_TOKEN` is retained for backward compat
+      // with the original Brief 1 shape.
       bearerToken: parseRequiredStringEnv(
-        env.MAILCHIMP_CAPTURE_BEARER_TOKEN,
-        "MAILCHIMP_CAPTURE_BEARER_TOKEN",
+        env.MAILCHIMP_CAPTURE_TOKEN ?? env.MAILCHIMP_CAPTURE_BEARER_TOKEN,
+        "MAILCHIMP_CAPTURE_TOKEN",
       ),
       apiKey: parseRequiredStringEnv(env.MAILCHIMP_API_KEY, "MAILCHIMP_API_KEY"),
       salesforceContactIdMergeField: "SFCONTACTID",
