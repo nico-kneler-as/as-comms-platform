@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectLifecycleTile } from "../../app/inbox/_components/project-lifecycle-tile";
 import type { ProjectLifecycleTile as ProjectLifecycleTileData } from "../../app/inbox/_lib/project-lifecycle-metrics";
 
+Object.assign(globalThis, { React });
+
 const workerRequire = createRequire(
   new URL("../../../worker/package.json", import.meta.url),
 );

@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { Sparkline7 } from "../../app/inbox/_components/sparkline-7";
 
+Object.assign(globalThis, { React });
+
 describe("Sparkline7", () => {
   it("renders an svg with 7 bars", () => {
     const html = renderToStaticMarkup(

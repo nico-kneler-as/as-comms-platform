@@ -24,6 +24,7 @@ function iconMock(name: string) {
 
 vi.mock("../../app/inbox/_components/icons", () => ({
   AlertTriangleIcon: iconMock("AlertTriangleIcon"),
+  ArrowUpRightIcon: iconMock("ArrowUpRightIcon"),
   DatabaseIcon: iconMock("DatabaseIcon"),
   QuoteIcon: iconMock("QuoteIcon"),
   RefreshCwIcon: iconMock("RefreshCwIcon"),
