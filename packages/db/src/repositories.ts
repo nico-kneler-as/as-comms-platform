@@ -653,11 +653,16 @@ export function createMailchimpCampaignTailStateRepository(
     },
 
     async updateLastActivitySeenAt(input) {
-      const lastActivitySeenAt = new Date(input.lastActivitySeenAt);
+      // Same trap as the upsert path: Date interpolated in raw sql`` doesn't
+      // get column type-mapped → Postgres rejects Date.toString() as
+      // timestamptz. Pre-stringify + cast.
+      const lastActivitySeenIso = new Date(
+        input.lastActivitySeenAt,
+      ).toISOString();
       const [row] = await db
         .update(mailchimpCampaignTailState)
         .set({
-          lastActivitySeenAt: sql`greatest(coalesce(${mailchimpCampaignTailState.lastActivitySeenAt}, ${lastActivitySeenAt}), ${lastActivitySeenAt})`,
+          lastActivitySeenAt: sql`greatest(coalesce(${mailchimpCampaignTailState.lastActivitySeenAt}, ${lastActivitySeenIso}::timestamptz), ${lastActivitySeenIso}::timestamptz)`,
           updatedAt: new Date(),
         })
         .where(eq(mailchimpCampaignTailState.campaignId, input.campaignId))
