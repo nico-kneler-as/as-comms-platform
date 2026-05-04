@@ -182,8 +182,12 @@ function readOptionalCaptureConfig(
   input: {
     readonly baseUrlKey: string;
     readonly tokenKey: string;
+    readonly timeoutMsKey?: string;
+    readonly defaultTimeoutMs?: number;
   },
-): { readonly baseUrl?: string; readonly bearerToken?: string } | undefined {
+):
+  | { readonly baseUrl?: string; readonly bearerToken?: string; readonly timeoutMs?: number }
+  | undefined {
   const baseUrl = env[input.baseUrlKey];
   const bearerToken = env[input.tokenKey];
 
@@ -191,9 +195,19 @@ function readOptionalCaptureConfig(
     return undefined;
   }
 
+  const timeoutFromEnv =
+    input.timeoutMsKey === undefined
+      ? undefined
+      : Number.parseInt(env[input.timeoutMsKey] ?? "", 10);
+  const timeoutMs =
+    timeoutFromEnv !== undefined && Number.isFinite(timeoutFromEnv)
+      ? timeoutFromEnv
+      : input.defaultTimeoutMs;
+
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(bearerToken === undefined ? {} : { bearerToken }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
   };
 }
 
@@ -275,6 +289,11 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig | null {
       mailchimp: readOptionalCaptureConfig(env, {
         baseUrlKey: "MAILCHIMP_CAPTURE_BASE_URL",
         tokenKey: "MAILCHIMP_CAPTURE_TOKEN",
+        timeoutMsKey: "MAILCHIMP_CAPTURE_TIMEOUT_MS",
+        // Mailchimp's Marketing API can be slow on /reports/email-activity
+        // for large campaigns. Observed 2026-05-04: P95 17s+ for legitimate
+        // responses. Default 60s; override via MAILCHIMP_CAPTURE_TIMEOUT_MS.
+        defaultTimeoutMs: 60_000,
       }),
     },
     mailchimpTransition: readMailchimpTransitionConfig(env),
