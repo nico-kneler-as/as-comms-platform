@@ -153,12 +153,18 @@ function readMailchimpTransitionConfig(
   env: NodeJS.ProcessEnv,
   now = new Date(),
 ): z.infer<typeof workerMailchimpTransitionConfigSchema> {
-  return workerMailchimpTransitionConfigSchema.parse({
-    enabled: env.MAILCHIMP_TRANSITION_ENABLED,
+  const rawEnabled = env.MAILCHIMP_TRANSITION_ENABLED;
+  const preProcessOutput = parseBooleanEnv(rawEnabled);
+  const parsed = workerMailchimpTransitionConfigSchema.parse({
+    enabled: rawEnabled,
     discoverySeed:
       env.MAILCHIMP_TRANSITION_DISCOVERY_SEED ??
       buildDefaultMailchimpTransitionDiscoverySeed(now),
   });
+  console.info(
+    `[mailchimp.config.diag] rawEnabled=${JSON.stringify(rawEnabled ?? null)} parseBooleanEnv=${String(preProcessOutput)} parsed.enabled=${String(parsed.enabled)}`,
+  );
+  return parsed;
 }
 
 function readOptionalCaptureConfig(
