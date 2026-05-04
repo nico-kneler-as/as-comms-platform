@@ -1,8 +1,8 @@
 import type {
+  CanonicalEventType,
   CanonicalEventRecord,
   ContactMembershipRecord,
   ContactRecord,
-  InboxDrivingEventType,
   InboxProjectionRow,
   MessageAttachmentRecord,
   TimelineItem,
@@ -585,8 +585,16 @@ function mapBucket(bucket: InboxProjectionRow["bucket"]): InboxBucket {
   return bucket === "New" ? "new" : "opened";
 }
 
-function mapChannel(eventType: InboxDrivingEventType): InboxChannel {
-  return eventType.includes(".sms.") ? "sms" : "email";
+function mapChannel(eventType: CanonicalEventType): InboxChannel {
+  switch (eventType) {
+    case "communication.sms.inbound":
+    case "communication.sms.outbound":
+    case "communication.sms.opt_in":
+    case "communication.sms.opt_out":
+      return "sms";
+    default:
+      return "email";
+  }
 }
 
 function normalizeMembershipStatus(status: string | null): string | null {
@@ -1807,7 +1815,7 @@ function lifecycleRailActivityLabel(
   }
 }
 
-function fallbackLatestSubject(eventType: InboxDrivingEventType): string {
+function fallbackLatestSubject(eventType: CanonicalEventType): string {
   switch (eventType) {
     case "communication.email.inbound":
       return "Inbound email received";
@@ -1817,11 +1825,33 @@ function fallbackLatestSubject(eventType: InboxDrivingEventType): string {
       return "Inbound SMS received";
     case "communication.sms.outbound":
       return "Outbound SMS sent";
+    case "communication.sms.opt_in":
+      return "SMS opt-in received";
+    case "communication.sms.opt_out":
+      return "SMS opt-out received";
+    case "lifecycle.signed_up":
+      return "Signed up";
+    case "lifecycle.received_training":
+      return "Received training";
+    case "lifecycle.completed_training":
+      return "Completed training";
+    case "lifecycle.submitted_first_data":
+      return "Submitted first data";
+    case "campaign.email.sent":
+      return "Campaign email sent";
+    case "campaign.email.opened":
+      return "Campaign email opened";
+    case "campaign.email.clicked":
+      return "Campaign email clicked";
+    case "campaign.email.unsubscribed":
+      return "Campaign email unsubscribed";
+    case "note.internal.created":
+      return "Internal note created";
   }
 }
 
 function defaultLatestSubject(
-  eventType: InboxDrivingEventType,
+  eventType: CanonicalEventType,
   fallback: string | null,
   previewSubject: string | null,
 ): string {

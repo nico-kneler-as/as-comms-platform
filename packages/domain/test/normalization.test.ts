@@ -71,12 +71,14 @@ function sortEvents(
 function buildSourceEvidence(input: {
   readonly key: string;
   readonly occurredAt: string;
+  readonly provider?: SourceEvidenceRecord["provider"];
+  readonly providerRecordType?: SourceEvidenceRecord["providerRecordType"];
 }): SourceEvidenceRecord {
   return {
     id: `source:${input.key}`,
-    provider: "gmail",
-    providerRecordType: "message",
-    providerRecordId: `gmail:${input.key}`,
+    provider: input.provider ?? "gmail",
+    providerRecordType: input.providerRecordType ?? "message",
+    providerRecordId: `${input.provider ?? "gmail"}:${input.key}`,
     receivedAt: input.occurredAt,
     occurredAt: input.occurredAt,
     payloadRef: `payloads/gmail/${input.key}.json`,
@@ -88,33 +90,50 @@ function buildSourceEvidence(input: {
 function buildEvent(input: {
   readonly key: string;
   readonly occurredAt: string;
-  readonly direction: "inbound" | "outbound";
+  readonly direction?: "inbound" | "outbound" | null;
+  readonly eventType?: CanonicalEventRecord["eventType"];
+  readonly provider?: CanonicalEventRecord["provenance"]["primaryProvider"];
+  readonly sourceRecordType?: CanonicalEventRecord["provenance"]["sourceRecordType"];
+  readonly messageKind?: CanonicalEventRecord["provenance"]["messageKind"];
+  readonly channel?: CanonicalEventRecord["channel"];
 }): CanonicalEventRecord {
   const eventType =
-    input.direction === "inbound"
-      ? "communication.email.inbound"
-      : "communication.email.outbound";
+    input.eventType ??
+    (input.direction === "outbound"
+      ? "communication.email.outbound"
+      : "communication.email.inbound");
+  const channel =
+    input.channel ??
+    (eventType.startsWith("communication.email.")
+      ? "email"
+      : eventType.startsWith("communication.sms.")
+        ? "sms"
+        : eventType.startsWith("lifecycle.")
+          ? "lifecycle"
+          : eventType.startsWith("campaign.email.")
+            ? "campaign_email"
+            : "note");
 
   return {
     id: `event:${input.key}`,
     contactId: contact.id,
     eventType,
-    channel: "email",
+    channel,
     occurredAt: input.occurredAt,
     contentFingerprint: null,
     sourceEvidenceId: `source:${input.key}`,
     idempotencyKey: `canonical:${input.key}`,
     provenance: {
-      primaryProvider: "gmail",
+      primaryProvider: input.provider ?? "gmail",
       primarySourceEvidenceId: `source:${input.key}`,
       supportingSourceEvidenceIds: [],
       winnerReason: "single_source",
-      sourceRecordType: "message",
-      sourceRecordId: `gmail:${input.key}`,
-      messageKind: "one_to_one",
+      sourceRecordType: input.sourceRecordType ?? "message",
+      sourceRecordId: `${input.provider ?? "gmail"}:${input.key}`,
+      messageKind: input.messageKind ?? "one_to_one",
       campaignRef: null,
       threadRef: null,
-      direction: input.direction,
+      direction: input.direction ?? null,
       notes: null,
     },
     reviewState: "clear",
@@ -157,12 +176,27 @@ function buildExistingProjection(input: {
 }
 
 function buildReplayInput(event: CanonicalEventRecord): NormalizedCanonicalEventIntake {
-  const direction = event.provenance.direction ?? "inbound";
+  const direction = event.provenance.direction;
+  const communicationClassification =
+    event.eventType.startsWith("communication.")
+      ? {
+          messageKind: event.provenance.messageKind ?? "one_to_one",
+          sourceRecordType: event.provenance.sourceRecordType ?? "message",
+          sourceRecordId:
+            event.provenance.sourceRecordId ??
+            `${event.provenance.primaryProvider}:${event.id.replace("event:", "")}`,
+          campaignRef: event.provenance.campaignRef ?? null,
+          threadRef: event.provenance.threadRef ?? null,
+          direction: direction ?? "inbound",
+        }
+      : undefined;
 
   return {
     sourceEvidence: buildSourceEvidence({
       key: event.id.replace("event:", ""),
       occurredAt: event.occurredAt,
+      provider: event.provenance.primaryProvider,
+      providerRecordType: event.provenance.sourceRecordType ?? "message",
     }),
     canonicalEvent: {
       id: `${event.id}:replay`,
@@ -186,14 +220,7 @@ function buildReplayInput(event: CanonicalEventRecord): NormalizedCanonicalEvent
       expeditionName: null,
     },
     supportingSources: [],
-    communicationClassification: {
-      messageKind: "one_to_one",
-      sourceRecordType: "message",
-      sourceRecordId: `gmail:${event.id.replace("event:", "")}`,
-      campaignRef: null,
-      threadRef: null,
-      direction,
-    },
+    communicationClassification,
   };
 }
 
@@ -227,8 +254,10 @@ function buildContext(input: {
         ...buildSourceEvidence({
           key: event.id.replace("event:", ""),
           occurredAt: event.occurredAt,
+          provider: event.provenance.primaryProvider,
+          providerRecordType: event.provenance.sourceRecordType ?? "message",
         }),
-        provider: input.sourceProvider ?? "gmail",
+        provider: input.sourceProvider ?? event.provenance.primaryProvider,
       },
     ]),
   );
@@ -804,6 +833,128 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
       bucket: "Opened",
       lastInboundAt: null,
       lastOutboundAt: outbound.occurredAt,
+    });
+  });
+
+  it("creates a projection for campaign-only contacts", async () => {
+    const campaignSent = buildEvent({
+      key: "campaign-only-sent",
+      occurredAt: "2026-04-24T14:45:00.000Z",
+      eventType: "campaign.email.sent",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [campaignSent],
+      existingProjection: null,
+    });
+
+    await expect(replayEvent(context, campaignSent)).resolves.toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: null,
+      lastOutboundAt: campaignSent.occurredAt,
+      lastActivityAt: campaignSent.occurredAt,
+      lastCanonicalEventId: campaignSent.id,
+      lastEventType: "campaign.email.sent",
+    });
+  });
+
+  it("creates a projection for auto-email-only contacts", async () => {
+    const autoOutbound = buildEvent({
+      key: "auto-only-outbound",
+      occurredAt: "2026-04-24T14:50:00.000Z",
+      direction: "outbound",
+      messageKind: "auto",
+    });
+    const context = buildContext({
+      events: [autoOutbound],
+      existingProjection: null,
+    });
+
+    await expect(replayEvent(context, autoOutbound)).resolves.toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: null,
+      lastOutboundAt: autoOutbound.occurredAt,
+      lastActivityAt: autoOutbound.occurredAt,
+      lastCanonicalEventId: autoOutbound.id,
+      lastEventType: "communication.email.outbound",
+    });
+  });
+
+  it("creates a projection for lifecycle-only contacts", async () => {
+    const lifecycle = buildEvent({
+      key: "lifecycle-only-signed-up",
+      occurredAt: "2026-04-24T14:55:00.000Z",
+      eventType: "lifecycle.signed_up",
+      direction: null,
+      provider: "salesforce",
+      sourceRecordType: "contact_membership",
+      messageKind: null,
+    });
+    const context = buildContext({
+      events: [lifecycle],
+      existingProjection: null,
+    });
+
+    await expect(replayEvent(context, lifecycle)).resolves.toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: null,
+      lastOutboundAt: null,
+      lastActivityAt: lifecycle.occurredAt,
+      lastCanonicalEventId: lifecycle.id,
+      lastEventType: "lifecycle.signed_up",
+    });
+  });
+
+  it("derives inbox fields from mixed qualifying events without letting non-inbound activity change the bucket", async () => {
+    const inbound = buildEvent({
+      key: "mixed-inbound",
+      occurredAt: "2026-04-24T15:00:00.000Z",
+      direction: "inbound",
+    });
+    const autoOutbound = buildEvent({
+      key: "mixed-auto-outbound",
+      occurredAt: "2026-04-24T15:05:00.000Z",
+      direction: "outbound",
+      messageKind: "auto",
+    });
+    const campaignSent = buildEvent({
+      key: "mixed-campaign-sent",
+      occurredAt: "2026-04-24T15:10:00.000Z",
+      eventType: "campaign.email.sent",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const lifecycle = buildEvent({
+      key: "mixed-lifecycle",
+      occurredAt: "2026-04-24T15:15:00.000Z",
+      eventType: "lifecycle.received_training",
+      direction: null,
+      provider: "salesforce",
+      sourceRecordType: "contact_membership",
+      messageKind: null,
+    });
+    const context = buildContext({
+      events: [inbound, autoOutbound, campaignSent, lifecycle],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: inbound.occurredAt,
+        lastCanonicalEventId: inbound.id,
+        lastEventType: inbound.eventType,
+      }),
+    });
+
+    await expect(replayEvent(context, lifecycle)).resolves.toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: inbound.occurredAt,
+      lastOutboundAt: campaignSent.occurredAt,
+      lastActivityAt: lifecycle.occurredAt,
+      lastCanonicalEventId: lifecycle.id,
+      lastEventType: "lifecycle.received_training",
     });
   });
 

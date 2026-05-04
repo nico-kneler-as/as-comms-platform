@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CanonicalEventRecord } from "@as-comms/contracts";
 
-import { isInboxDrivingCanonicalEvent } from "../src/inbox-driving.js";
+import { qualifiesForInboxProjection } from "../src/inbox-driving.js";
 
 function buildEvent(
   overrides: Partial<CanonicalEventRecord["provenance"]> & {
@@ -31,53 +31,76 @@ function buildEvent(
   };
 }
 
-describe("inbox-driving predicate", () => {
-  it("treats Gmail transport evidence as inbox-driving even when historical messageKind is null", () => {
+describe("qualifiesForInboxProjection", () => {
+  it("includes auto outbound email events", () => {
     expect(
-      isInboxDrivingCanonicalEvent(
+      qualifiesForInboxProjection(
         buildEvent({
-          primaryProvider: "gmail",
-          sourceRecordType: "message",
-          messageKind: null,
-          direction: null
+          eventType: "communication.email.outbound",
+          messageKind: "auto",
+          direction: "outbound",
         })
       )
     ).toBe(true);
   });
 
-  it("excludes legacy Salesforce task-only email when messageKind is ambiguous", () => {
+  it("includes campaign message-kind events", () => {
     expect(
-      isInboxDrivingCanonicalEvent(
+      qualifiesForInboxProjection(
         buildEvent({
-          primaryProvider: "salesforce",
-          sourceRecordType: "task_communication",
-          messageKind: null,
-          direction: "outbound"
+          eventType: "communication.email.outbound",
+          messageKind: "campaign",
+          direction: "outbound",
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("includes lifecycle events", () => {
+    expect(
+      qualifiesForInboxProjection(
+        buildEvent({
+          eventType: "lifecycle.signed_up",
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("includes campaign email sent events", () => {
+    expect(
+      qualifiesForInboxProjection(
+        buildEvent({
+          eventType: "campaign.email.sent",
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("includes internal notes", () => {
+    expect(
+      qualifiesForInboxProjection(
+        buildEvent({
+          eventType: "note.internal.created",
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("excludes forwarded chains", () => {
+    expect(
+      qualifiesForInboxProjection(
+        buildEvent({
+          inboxProjectionExclusionReason: "forwarded_chain",
         })
       )
     ).toBe(false);
   });
 
-  it("excludes explicit internal-only forwarded staff messages", () => {
+  it("excludes internal-only messages", () => {
     expect(
-      isInboxDrivingCanonicalEvent(
+      qualifiesForInboxProjection(
         buildEvent({
-          primaryProvider: "gmail",
           sourceRecordType: "internal_only_message",
-          messageKind: null
-        })
-      )
-    ).toBe(false);
-  });
-
-  it("excludes canonical events flagged as forwarded chains from queue-driving behavior", () => {
-    expect(
-      isInboxDrivingCanonicalEvent(
-        buildEvent({
-          primaryProvider: "gmail",
-          sourceRecordType: "message",
-          messageKind: "one_to_one",
-          inboxProjectionExclusionReason: "forwarded_chain"
         })
       )
     ).toBe(false);

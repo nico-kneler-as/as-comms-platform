@@ -34,7 +34,6 @@ import {
   type GmailMessageDetailRecord,
   type IdentityAmbiguityInput,
   type IdentityResolutionCase,
-  type InboxDrivingEventType,
   type InboxProjectionApplyInput,
   type InboxProjectionRow,
   type InboxReviewOverlayRefreshInput,
@@ -58,7 +57,7 @@ import {
 } from "@as-comms/contracts";
 
 import {
-  isInboxDrivingCanonicalEvent
+  qualifiesForInboxProjection
 } from "./inbox-driving.js";
 import {
   buildIncomingContentFingerprintSource,
@@ -342,11 +341,51 @@ function assertVolunteerScopedSalesforceContactGraph(
   }
 }
 
-function isInboundEvent(eventType: InboxDrivingEventType): boolean {
+function isInboundEvent(eventType: CanonicalEventRecord["eventType"]): boolean {
   return (
     eventType === "communication.email.inbound" ||
     eventType === "communication.sms.inbound"
   );
+}
+
+function isOutboundProjectionEvent(
+  eventType: CanonicalEventRecord["eventType"]
+): boolean {
+  return (
+    eventType === "communication.email.outbound" ||
+    eventType === "communication.sms.outbound" ||
+    eventType === "campaign.email.sent"
+  );
+}
+
+function compareCanonicalEventRecency(
+  left: Pick<CanonicalEventRecord, "id" | "occurredAt">,
+  right: Pick<CanonicalEventRecord, "id" | "occurredAt">
+): number {
+  if (left.occurredAt !== right.occurredAt) {
+    return left.occurredAt.localeCompare(right.occurredAt);
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function latestTimestampWins(
+  incoming: Pick<CanonicalEventRecord, "id" | "occurredAt">,
+  existing:
+    | Pick<InboxProjectionRow, "lastActivityAt" | "lastCanonicalEventId">
+    | null
+): boolean {
+  if (existing === null) {
+    return true;
+  }
+
+  const existingEventId = existing.lastCanonicalEventId;
+
+  if (incoming.occurredAt !== existing.lastActivityAt) {
+    return incoming.occurredAt > existing.lastActivityAt;
+  }
+
+  return incoming.id.localeCompare(existingEventId) >= 0;
 }
 
 function buildTimelineProjectionId(canonicalEventId: string): string {
@@ -1038,14 +1077,11 @@ async function rebuildInboxProjectionForContact(
   const events = await persistence.repositories.canonicalEvents.listByContactId(
     contactId
   );
-  const inboxDrivingEvents = events.filter(
-    (
-      event
-    ): event is CanonicalEventRecord & { readonly eventType: InboxDrivingEventType } =>
-      isInboxDrivingCanonicalEvent(event)
+  const qualifyingEvents = events.filter((event) =>
+    qualifiesForInboxProjection(event)
   );
 
-  if (inboxDrivingEvents.length === 0) {
+  if (qualifyingEvents.length === 0) {
     if (existing !== null) {
       await persistence.repositories.inboxProjection.deleteByContactId(contactId);
     }
@@ -1055,24 +1091,36 @@ async function rebuildInboxProjectionForContact(
 
   const detailMaps = await loadProviderDetailMaps(
     persistence,
-    inboxDrivingEvents.map((event) => event.sourceEvidenceId)
+    qualifyingEvents.map((event) => event.sourceEvidenceId)
   );
-  const latestEvent = requireValue(
-    inboxDrivingEvents[inboxDrivingEvents.length - 1],
-    "Expected an inbox-driving event when rebuilding inbox projection."
+  const latestEvent = qualifyingEvents.reduce<CanonicalEventRecord | null>(
+    (latest, event) =>
+      latest === null || compareCanonicalEventRecency(event, latest) > 0
+        ? event
+        : latest,
+    null
   );
+
+  if (latestEvent === null) {
+    throw new Error(
+      "Expected a qualifying event when rebuilding inbox projection."
+    );
+  }
   let lastInboundAt: string | null = null;
   let lastOutboundAt: string | null = null;
+  let lastActivityAt: string | null = null;
 
-  for (const event of inboxDrivingEvents) {
+  for (const event of qualifyingEvents) {
     if (isInboundEvent(event.eventType)) {
       lastInboundAt = newestTimestamp(lastInboundAt, event.occurredAt);
-    } else {
+    }
+
+    if (isOutboundProjectionEvent(event.eventType)) {
       lastOutboundAt = newestTimestamp(lastOutboundAt, event.occurredAt);
     }
-  }
 
-  const lastActivityAt = newestTimestamp(lastInboundAt, lastOutboundAt);
+    lastActivityAt = newestTimestamp(lastActivityAt, event.occurredAt);
+  }
 
   if (lastActivityAt === null) {
     return null;
@@ -2130,7 +2178,7 @@ export function createStage1NormalizationService(
     async applyInboxProjection(input) {
       const parsed = inboxProjectionApplyInputSchema.parse(input);
 
-      if (!isInboxDrivingCanonicalEvent(parsed.canonicalEvent)) {
+      if (!qualifiesForInboxProjection(parsed.canonicalEvent)) {
         return persistence.repositories.inboxProjection.findByContactId(
           parsed.canonicalEvent.contactId
         );
@@ -2140,26 +2188,29 @@ export function createStage1NormalizationService(
         parsed.canonicalEvent.contactId
       );
       const incomingIsInbound = isInboundEvent(parsed.canonicalEvent.eventType);
+      const incomingIsOutboundProjectionEvent = isOutboundProjectionEvent(
+        parsed.canonicalEvent.eventType
+      );
       const lastInboundAt = incomingIsInbound
         ? newestTimestamp(
             existing?.lastInboundAt ?? null,
             parsed.canonicalEvent.occurredAt
           )
         : existing?.lastInboundAt ?? null;
-      const lastOutboundAt = incomingIsInbound
-        ? existing?.lastOutboundAt ?? null
-        : newestTimestamp(
+      const lastOutboundAt = incomingIsOutboundProjectionEvent
+        ? newestTimestamp(
             existing?.lastOutboundAt ?? null,
             parsed.canonicalEvent.occurredAt
-          );
-      const currentLatestKnownAt =
-        existing === null
-          ? null
-          : newestTimestamp(existing.lastInboundAt, existing.lastOutboundAt);
-      const incomingIsLatestKnown =
-        currentLatestKnownAt === null ||
-        parsed.canonicalEvent.occurredAt >= currentLatestKnownAt;
-      const lastActivityAt = newestTimestamp(lastInboundAt, lastOutboundAt);
+          )
+        : existing?.lastOutboundAt ?? null;
+      const lastActivityAt = newestTimestamp(
+        existing?.lastActivityAt ?? null,
+        parsed.canonicalEvent.occurredAt
+      );
+      const incomingIsLatestKnown = latestTimestampWins(
+        parsed.canonicalEvent,
+        existing
+      );
 
       if (lastActivityAt === null) {
         return null;
@@ -2173,7 +2224,9 @@ export function createStage1NormalizationService(
           ? incomingIsInbound
             ? "New"
             : "Opened"
-          : incomingIsInbound && incomingIsLatestKnown
+          : incomingIsInbound &&
+              (existing.lastInboundAt === null ||
+                parsed.canonicalEvent.occurredAt > existing.lastInboundAt)
             ? "New"
             : existing.bucket;
 
@@ -2273,7 +2326,7 @@ export function createStage1NormalizationService(
               canonicalEvent: existingCanonicalEvent,
               summary: parsed.canonicalEvent.summary
             }));
-          const inboxProjection = isInboxDrivingCanonicalEvent(
+          const inboxProjection = qualifiesForInboxProjection(
             existingCanonicalEvent
           )
             ? await persistence.repositories.inboxProjection.findByContactId(
@@ -2530,7 +2583,7 @@ export function createStage1NormalizationService(
                   canonicalEvent: persistedEvent,
                   summary: existingTimelineProjection.summary
                 });
-        const inboxProjection = isInboxDrivingCanonicalEvent(persistedEvent)
+        const inboxProjection = qualifiesForInboxProjection(persistedEvent)
           ? await rebuildInboxProjectionForContact(
               persistence,
               persistedEvent.contactId
@@ -2778,7 +2831,7 @@ export function createStage1NormalizationService(
         canonicalEvent: persistedEvent,
         summary: parsed.canonicalEvent.summary
       });
-      const inboxProjection = isInboxDrivingCanonicalEvent(persistedEvent)
+      const inboxProjection = qualifiesForInboxProjection(persistedEvent)
         ? await service.applyInboxProjection({
             canonicalEvent: persistedEvent,
             snippet: parsed.canonicalEvent.snippet
