@@ -39,7 +39,12 @@ import {
 const DEFAULT_MAX_RECORDS = 500
 const MAX_MAILCHIMP_CONCURRENCY = 5
 const MAILCHIMP_PAGE_SIZE = 1_000
-const MAILCHIMP_SENT_SNIPPET_MAX = 280
+// Stored in mailchimp_campaign_activity_details.snippet (DB column type: text,
+// unbounded). 280 was Brief 1's arbitrary default and ended up cropping
+// campaign bodies mid-sentence in the operator timeline. 8000 covers a typical
+// volunteer-facing campaign email body comfortably; the timeline UI applies
+// its own visual clamp on top.
+const MAILCHIMP_SENT_SNIPPET_MAX = 8_000
 const mailchimpCaptureServiceResponseSchema =
   createCapturedBatchResponseSchema(mailchimpRecordSchema)
 const jsonObjectSchema = z.record(z.string(), z.unknown())
