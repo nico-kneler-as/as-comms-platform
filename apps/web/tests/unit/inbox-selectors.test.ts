@@ -1952,7 +1952,7 @@ describe("real inbox selectors", () => {
       total: 2,
     });
     expect(detail?.composerReplyContext).toMatchObject({
-      subject: "Re: Older inbound email",
+      subject: "Re: Amazon Basin equipment list",
     });
   });
 
@@ -2203,7 +2203,7 @@ describe("real inbox selectors", () => {
       total: 2,
     });
     expect(detail?.composerReplyContext).toMatchObject({
-      subject: "Re: Visible inbound email",
+      subject: "Re: Older inbound email",
     });
   });
 
