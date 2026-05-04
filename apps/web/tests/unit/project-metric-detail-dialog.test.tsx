@@ -174,7 +174,9 @@ function renderDialog(
     });
   };
 
-  void renderCurrent();
+  act(() => {
+    root.render(<ProjectMetricDetailDialog {...props} />);
+  });
 
   return {
     container,

@@ -30,6 +30,10 @@ vi.mock("../../app/inbox/_components/icons", () => ({
   RefreshCwIcon: iconMock("RefreshCwIcon"),
 }));
 
+vi.mock("../../app/inbox/_components/project-metric-detail-dialog", () => ({
+  ProjectMetricDetailDialog: () => null,
+}));
+
 vi.mock("../../app/inbox/_components/inbox-avatar", () => ({
   InboxAvatar: ({
     initials,
