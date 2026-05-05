@@ -50,6 +50,59 @@ function iconMock(name: string) {
     createElement("svg", { "data-icon": name, ...props });
 }
 
+vi.mock("@/components/ui/dropdown-menu", () => {
+  const RadioGroupContext = React.createContext<{
+    readonly value: string;
+    readonly onChange: (next: string) => void;
+  } | null>(null);
+
+  return {
+    DropdownMenu: ({ children }: { readonly children?: React.ReactNode }) =>
+      createElement("div", { "data-testid": "dropdown-menu" }, children),
+    DropdownMenuTrigger: ({
+      children,
+      asChild: _asChild,
+    }: {
+      readonly children?: React.ReactNode;
+      readonly asChild?: boolean;
+    }) => createElement(React.Fragment, null, children),
+    DropdownMenuContent: ({ children }: { readonly children?: React.ReactNode }) =>
+      createElement("div", { role: "menu" }, children),
+    DropdownMenuRadioGroup: ({
+      children,
+      value,
+      onValueChange,
+    }: {
+      readonly children?: React.ReactNode;
+      readonly value: string;
+      readonly onValueChange: (value: string) => void;
+    }) =>
+      createElement(
+        RadioGroupContext.Provider,
+        { value: { value, onChange: onValueChange } },
+        children,
+      ),
+    DropdownMenuRadioItem: ({
+      children,
+      value,
+    }: {
+      readonly children?: React.ReactNode;
+      readonly value: string;
+    }) => {
+      const ctx = React.useContext(RadioGroupContext);
+      return createElement(
+        "button",
+        {
+          type: "button",
+          role: "menuitemradio",
+          onClick: () => ctx?.onChange(value),
+        },
+        children,
+      );
+    },
+  };
+});
+
 vi.mock("../../app/inbox/_components/icons", () => ({
   ArchiveBoxIcon: iconMock("ArchiveBoxIcon"),
   ChevronDownIcon: iconMock("ChevronDownIcon"),

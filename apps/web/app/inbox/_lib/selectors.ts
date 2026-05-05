@@ -3459,8 +3459,10 @@ async function readInboxListCacheData(input: {
   const loadProjectionRows = (filter: InboxFilterId) =>
     normalizedQuery === null
       ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
-          filter:
-            filter === "inbox" ? "visible" : filter,
+          // Regular queue: pass the filter through untouched. "inbox"
+          // applies the lastInboundAt IS NOT NULL constraint at the repo
+          // layer; "visible" is reserved for the search-bypass path below.
+          filter,
           order,
           limit: INBOX_LIST_SCAN_LIMIT,
           cursor: null,
@@ -3468,6 +3470,10 @@ async function readInboxListCacheData(input: {
         })
       : runtime.repositories.inboxProjection
           .searchPageOrderedByRecency({
+            // Search-bypass: when the operator types a query, the Inbox
+            // filter widens to "visible" so non-1:1 contacts (the ~4000
+            // hidden by lastInboundAt IS NOT NULL) become findable by name.
+            // Other filters keep their semantics.
             filter:
               filter === "inbox" ? "visible" : filter,
             order,
