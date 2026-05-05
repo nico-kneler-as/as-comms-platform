@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -538,6 +539,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
             </div>
           </div>
 
+          <TooltipProvider delayDuration={200}>
           <div className="flex shrink-0 items-center gap-2">
             {detail.projectionAvailable ? (
               <>
@@ -621,6 +623,7 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
               </Tooltip>
             ) : null}
           </div>
+          </TooltipProvider>
         </header>
 
         {contact.hasUnresolved ? <UnresolvedBanner /> : null}

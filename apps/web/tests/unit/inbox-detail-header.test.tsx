@@ -74,6 +74,8 @@ vi.mock("../../app/inbox/_components/icons", () => ({
 vi.mock("@/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { readonly children: React.ReactNode }) =>
     createElement(React.Fragment, null, children),
+  TooltipProvider: ({ children }: { readonly children: React.ReactNode }) =>
+    createElement(React.Fragment, null, children),
   TooltipTrigger: ({ children }: { readonly children: React.ReactNode }) =>
     children,
   TooltipContent: () => null,
