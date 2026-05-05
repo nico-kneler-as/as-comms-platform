@@ -185,10 +185,6 @@ vi.mock("../../app/inbox/_components/composer-send-from-phone-chip", () => ({
   SendFromPhoneChip: () => createElement("div", null, "Phone alias picker"),
 }));
 
-vi.mock("../../app/inbox/_components/about-this-draft", () => ({
-  AboutThisDraft: () => null,
-}));
-
 vi.mock("../../app/inbox/_components/composer-editor-surface", () => ({
   AttachmentRow: () => null,
   ComposerField: ({
@@ -212,23 +208,44 @@ vi.mock("../../app/inbox/_components/composer-editor-surface", () => ({
   RichTextComposerEditor: ({
     bodyPlaintext,
     onChange,
+    topSlot,
+    bottomSlot,
+    toolbarFooter,
   }: {
     readonly bodyPlaintext: string;
     readonly onChange: (value: {
       readonly bodyPlaintext: string;
       readonly bodyHtml: string;
     }) => void;
+    readonly topSlot?: ReactNode;
+    readonly bottomSlot?: ReactNode;
+    readonly toolbarFooter?: (input: {
+      readonly activeCommands: ReadonlySet<string>;
+      readonly onCommand: (command: string) => void;
+    }) => ReactNode;
   }) =>
-    createElement("textarea", {
-      "aria-label": "Message body",
-      onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-        onChange({
-          bodyPlaintext: event.currentTarget.value,
-          bodyHtml: `<p>${event.currentTarget.value}</p>`,
-        });
-      },
-      value: bodyPlaintext,
-    } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
+    createElement(
+      React.Fragment,
+      null,
+      topSlot ?? null,
+      createElement("textarea", {
+        "aria-label": "Message body",
+        onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+          onChange({
+            bodyPlaintext: event.currentTarget.value,
+            bodyHtml: `<p>${event.currentTarget.value}</p>`,
+          });
+        },
+        value: bodyPlaintext,
+      } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
+      bottomSlot ?? null,
+      toolbarFooter
+        ? toolbarFooter({
+            activeCommands: new Set<string>(),
+            onCommand: () => undefined,
+          })
+        : null,
+    ),
 }));
 
 function iconMock(name: string) {
@@ -238,11 +255,18 @@ function iconMock(name: string) {
 
 vi.mock("../../app/inbox/_components/icons", () => ({
   AlertCircleIcon: iconMock("AlertCircle"),
+  BoldIcon: iconMock("Bold"),
+  BookOpenIcon: iconMock("BookOpen"),
   ChevronDownIcon: iconMock("ChevronDown"),
+  ItalicIcon: iconMock("Italic"),
+  LinkIcon: iconMock("Link"),
+  ListIcon: iconMock("List"),
+  ListOrderedIcon: iconMock("ListOrdered"),
   LoaderIcon: iconMock("Loader"),
   MailIcon: iconMock("Mail"),
   NoteIcon: iconMock("Note"),
   PaperclipIcon: iconMock("Paperclip"),
+  QuoteIcon: iconMock("Quote"),
   SendIcon: iconMock("Send"),
   XIcon: iconMock("X"),
 }));
@@ -258,6 +282,7 @@ const baseProps: ComposerEmailSurfaceProps = {
       alias: "coastal@example.org",
       projectId: "project-1",
       projectName: "Coastal Survey",
+      signature: "Best,\nCoastal Survey",
       isAiReady: true,
     },
   ],
@@ -299,14 +324,13 @@ const baseProps: ComposerEmailSurfaceProps = {
   runAiDraftDisabledReason: null,
   selectedAliasHasCachedContent: true,
   selectedAliasProjectName: "Coastal Survey",
+  selectedAliasSignature: "Best,\nCoastal Survey",
   aiWarningMessage: null,
   inlineError: null,
   canSendAndSaveForAi: true,
   sendAndSaveDisabledReason: null,
   isSendDisabled: false,
   isSending: false,
-  isAboutOpen: false,
-  onAboutOpenChange: vi.fn(),
   onAliasChange: vi.fn(),
   onRecipientChange: vi.fn(),
   onCcChange: vi.fn(),
@@ -406,6 +430,29 @@ describe("composer send menu", () => {
     expect(document.body.textContent).toContain(
       "AI Draft will use voice instructions only",
     );
+  });
+
+  it("renders the selected alias signature below the editor and hides empty signatures", async () => {
+    await mount({
+      selectedAliasSignature: "Best,\nCoastal Survey",
+    });
+
+    const signature = document.querySelector(".whitespace-pre-line");
+    expect(signature?.textContent).toBe("Best,\nCoastal Survey");
+
+    await act(async () => {
+      root?.unmount();
+      await Promise.resolve();
+    });
+    container?.remove();
+    root = null;
+    container = null;
+
+    await mount({
+      selectedAliasSignature: "",
+    });
+
+    expect(document.querySelector(".whitespace-pre-line")).toBeNull();
   });
 
   it("renders send options for send-and-save and save draft", async () => {

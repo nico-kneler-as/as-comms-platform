@@ -12,6 +12,7 @@ function iconMock(name: string) {
 
 vi.mock("lucide-react", () => ({
   AlertCircle: iconMock("AlertCircle"),
+  BookOpen: iconMock("BookOpen"),
   Check: iconMock("Check"),
   Flag: iconMock("Flag"),
   Inbox: iconMock("Inbox"),
@@ -20,6 +21,7 @@ vi.mock("lucide-react", () => ({
   RotateCcw: iconMock("RotateCcw"),
   RotateCw: iconMock("RotateCw"),
   Send: iconMock("Send"),
+  Sparkle: iconMock("Sparkle"),
   Sparkles: iconMock("Sparkles"),
   Trash2: iconMock("Trash2"),
 }));
@@ -289,7 +291,6 @@ function DraftHarness() {
           setBody(aiDraft.generatedText);
           setStatus("inserted");
         }}
-        onAbout={() => undefined}
       />
     </div>
   );

@@ -72,7 +72,7 @@ import {
   RotateCcwIcon,
   SearchXIcon,
   SendIcon,
-  SparkleIcon,
+  SparklesIcon,
   TrashIcon,
   WandIcon,
   WifiOffIcon,
@@ -989,7 +989,7 @@ export default function InboxStatesPage() {
         <Section id="ai-idle" number={20} title="AI — Idle (Button Ready)">
           <div className="flex items-center justify-end px-5 py-3">
             <Button variant="outline" size="sm" className="gap-1.5">
-              <SparkleIcon className="size-3.5 text-violet-600" />
+              <SparklesIcon className="size-3.5 text-violet-600" />
               Draft with AI
             </Button>
           </div>

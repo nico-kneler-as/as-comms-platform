@@ -135,7 +135,6 @@ export function ComposerAiDraftWindow({
   onCancelReprompt,
   onDiscard,
   onApprove,
-  onAbout,
 }: {
   readonly directivePlaceholder?: string;
   readonly aiDraft: AiDraftState;
@@ -152,7 +151,6 @@ export function ComposerAiDraftWindow({
   readonly onCancelReprompt: () => void;
   readonly onDiscard: () => void;
   readonly onApprove: () => void;
-  readonly onAbout: () => void;
 }) {
   const status = aiDraft.status;
   const isReprompting = status === "reprompting";
@@ -167,17 +165,9 @@ export function ComposerAiDraftWindow({
     <section className="mx-4 mt-3 overflow-hidden rounded-xl border border-violet-200 bg-white ring-1 ring-violet-100">
       <div className="flex items-center gap-2 border-b border-violet-100 bg-violet-50/40 px-3 py-2">
         <div className="flex size-5 items-center justify-center rounded-md bg-violet-100 text-violet-700">
-          <SparkleIcon className="size-3.5" />
+          <SparkleIcon className="size-3.5 text-violet-500" />
         </div>
         <p className="text-[12px] font-semibold text-slate-800">AI draft</p>
-        <span className="flex-1" />
-        <button
-          type="button"
-          onClick={onAbout}
-          className={`rounded px-1.5 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-50 ${FOCUS_RING}`}
-        >
-          About
-        </button>
       </div>
 
       <div className="px-3 pb-3 pt-2">

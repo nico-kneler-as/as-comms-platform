@@ -9,7 +9,7 @@ import {
   CheckCircleIcon,
   DatabaseIcon,
   MapPinIcon,
-  SparkleIcon,
+  SparklesIcon,
   WandIcon,
 } from "./icons";
 
@@ -57,7 +57,7 @@ export function classifySystemDivider(body: string): SystemDividerCategory {
     return {
       label: "APPLIED",
       tone: "violet",
-      Icon: SparkleIcon,
+      Icon: SparklesIcon,
     };
   }
 

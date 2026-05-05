@@ -79,6 +79,10 @@ function toOptimisticAttachment(attachment: AttachmentDraft, index: number) {
   };
 }
 
+function appendComposerSignature(body: string, signature: string): string {
+  return signature.length > 0 ? `${body}\n\n${signature}` : body;
+}
+
 export function useComposerSubmit({
   state,
   dispatch,
@@ -357,6 +361,8 @@ export function useComposerSubmit({
         ? null
         : (composerAliases.find((alias) => alias.alias === state.selectedAlias) ??
           null);
+    const signature = selectedAliasRecord?.signature ?? "";
+    const smsBody = appendComposerSignature(body, signature);
     const occurredAt = new Date().toISOString();
     const recipientLabel =
       smsRecipient.kind === "contact"
@@ -375,7 +381,7 @@ export function useComposerSubmit({
       occurredAtLabel: "Just now",
       actorLabel: operatorDisplayName,
       subject: null,
-      body,
+      body: smsBody,
       channel: "sms",
       isUnread: false,
       isPreview: false,
@@ -415,7 +421,7 @@ export function useComposerSubmit({
                   phoneE164: smsRecipient.phoneE164,
                 },
           senderId: smsSenderId,
-          body,
+          body: smsBody,
           clientGeneratedId,
           projectId:
             sendKind === "send-and-save"

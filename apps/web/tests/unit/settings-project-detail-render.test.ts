@@ -12,6 +12,7 @@ vi.mock("next/link", () => ({
 
 vi.mock("lucide-react", () => ({
   ArrowLeft: () => null,
+  BookOpen: () => null,
   Check: () => null,
   ChevronRight: () => null,
   Circle: () => null,
@@ -28,6 +29,7 @@ vi.mock("lucide-react", () => ({
   Search: () => null,
   Send: () => null,
   SlidersHorizontal: () => null,
+  Sparkle: () => null,
   Sparkles: () => null,
   Trash2: () => null,
   UserPlus: () => null,

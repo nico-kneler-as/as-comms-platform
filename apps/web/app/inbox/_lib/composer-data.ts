@@ -53,6 +53,7 @@ export async function getInboxComposerAliases(): Promise<
         alias: alias.alias,
         projectId: alias.projectId,
         projectName: projectDisplayName,
+        signature: alias.signature,
         isAiConfigured,
         hasCachedContent: hasCachedContentByProjectId.has(alias.projectId),
         isAiReady: project.isActive === true && isAiConfigured,
