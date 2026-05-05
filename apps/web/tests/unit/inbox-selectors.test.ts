@@ -3633,7 +3633,7 @@ describe("real inbox selectors", () => {
     ]);
   });
 
-  it("builds right-rail lifecycle activity in canonical milestone order within the active project", async () => {
+  it("builds right-rail lifecycle activity newest-first within the active project", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -3674,19 +3674,19 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Signed up - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
-      "Completed training - Amazon Basin Research",
       "Submitted first data - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
     ]);
     expect(
       detail?.contact.recentActivity.map((entry) => entry.occurredAtLabel),
-    ).toEqual(["Apr 8", "Apr 9", "Apr 10", "Apr 11"]);
+    ).toEqual(["Apr 11", "Apr 10", "Apr 9", "Apr 8"]);
     expect(detail?.contact.recentActivity.map((entry) => entry.isMostRecent)).toEqual([
-      false,
-      false,
-      false,
       true,
+      false,
+      false,
+      false,
     ]);
   });
 
@@ -3748,12 +3748,12 @@ describe("real inbox selectors", () => {
 
     expect(detail?.contact.recentActivity).toHaveLength(6);
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Signed up - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
       "Completed training - Amazon Basin Research",
-      "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
       "Submitted first data - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
     ]);
   });
 
@@ -3782,12 +3782,12 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Signed up - Amazon Basin Research",
       "Completed training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
     ]);
   });
 
-  it("keeps canonical lifecycle order even when Salesforce timestamps disagree", async () => {
+  it("orders lifecycle events faithful to Salesforce, even when its timestamps imply training-before-signup", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -3828,10 +3828,10 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Signed up - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
-      "Completed training - Amazon Basin Research",
       "Submitted first data - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
     ]);
   });
 

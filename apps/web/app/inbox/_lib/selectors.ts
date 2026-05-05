@@ -2080,18 +2080,23 @@ function buildRecentActivity(
     })
     .flatMap((group) =>
       [...group.items].sort((left, right) => {
+        // Display each project's lifecycle events newest-first, faithful to
+        // Salesforce. When two milestones share an occurred_at (typical for
+        // date-only fields stamped on the same day), tiebreak by milestone
+        // ordinal descending so the later canonical step (e.g. completed
+        // training) sits above the earlier one (received training).
+        if (left.occurredAt !== right.occurredAt) {
+          return right.occurredAt.localeCompare(left.occurredAt);
+        }
+
         const leftOrdinal = lifecycleMilestoneOrdinal(left.milestone);
         const rightOrdinal = lifecycleMilestoneOrdinal(right.milestone);
 
         if (leftOrdinal !== rightOrdinal) {
-          return leftOrdinal - rightOrdinal;
+          return rightOrdinal - leftOrdinal;
         }
 
-        if (left.occurredAt !== right.occurredAt) {
-          return left.occurredAt.localeCompare(right.occurredAt);
-        }
-
-        return left.id.localeCompare(right.id);
+        return right.id.localeCompare(left.id);
       }),
     )
     .map((item) => ({
