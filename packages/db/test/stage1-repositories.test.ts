@@ -1325,6 +1325,7 @@ describe("Stage 1 DB repositories", () => {
 
   it("matches project filters against any active membership and excludes inactive project memberships", async () => {
     const { repositories, settings } = await createTestStage1Context();
+    const now = new Date("2026-04-20T00:00:00.000Z");
 
     // Alias required for active rows per migration 0045 CHECK constraint.
     await repositories.projectDimensions.upsert({
@@ -1342,6 +1343,20 @@ describe("Stage 1 DB repositories", () => {
       isActive: true,
     });
     await repositories.projectDimensions.upsert({
+      projectId: "project:forests-a",
+      projectName: "Forests A",
+      projectAlias: "Forests A",
+      source: "salesforce",
+      isActive: true,
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "project:forests-b",
+      projectName: "Forests B",
+      projectAlias: "Forests B",
+      source: "salesforce",
+      isActive: true,
+    });
+    await repositories.projectDimensions.upsert({
       projectId: "project:inactive-c",
       projectName: "Inactive Project",
       projectAlias: "Inactive",
@@ -1349,6 +1364,115 @@ describe("Stage 1 DB repositories", () => {
       isActive: true,
     });
     await settings.projects.setActive("project:inactive-c", false);
+    await settings.aliases.create({
+      id: "alias:forests-a",
+      alias: "forests-a@example.org",
+      signature: "",
+      projectId: "project:forests-a",
+      createdAt: now,
+      updatedAt: now,
+      createdBy: null,
+      updatedBy: null,
+    });
+    await settings.aliases.create({
+      id: "alias:forests-b",
+      alias: "forests-b@example.org",
+      signature: "",
+      projectId: "project:forests-b",
+      createdAt: now,
+      updatedAt: now,
+      createdBy: null,
+      updatedBy: null,
+    });
+
+    const seedInboxContact = async (input: {
+      readonly contactId: string;
+      readonly displayName: string;
+      readonly occurredAt: string;
+      readonly sourceEvidenceId: string;
+      readonly canonicalEventId: string;
+      readonly provider: "gmail" | "salesforce";
+      readonly projectInboxAlias?: string;
+      readonly snippet: string;
+    }) => {
+      await repositories.contacts.upsert({
+        id: input.contactId,
+        salesforceContactId: `003-${input.contactId}`,
+        displayName: input.displayName,
+        primaryEmail: `${input.contactId}@example.org`,
+        primaryPhone: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+      await repositories.sourceEvidence.append({
+        id: input.sourceEvidenceId,
+        provider: input.provider,
+        providerRecordType: input.provider === "gmail" ? "message" : "task",
+        providerRecordId: input.canonicalEventId,
+        receivedAt: input.occurredAt,
+        occurredAt: input.occurredAt,
+        payloadRef: `payloads/${input.provider}/${input.canonicalEventId}.json`,
+        idempotencyKey: `${input.provider}:${input.canonicalEventId}`,
+        checksum: `checksum:${input.canonicalEventId}`,
+      });
+      await repositories.canonicalEvents.upsert({
+        id: input.canonicalEventId,
+        contactId: input.contactId,
+        eventType: "communication.email.inbound",
+        channel: "email",
+        occurredAt: input.occurredAt,
+        contentFingerprint: null,
+        sourceEvidenceId: input.sourceEvidenceId,
+        idempotencyKey: `canonical:${input.canonicalEventId}`,
+        provenance: {
+          primaryProvider: input.provider,
+          primarySourceEvidenceId: input.sourceEvidenceId,
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: input.provider === "gmail" ? "message" : "task",
+          sourceRecordId: input.canonicalEventId,
+          messageKind: "one_to_one",
+          campaignRef: null,
+          threadRef: null,
+          direction: "inbound",
+          notes: null,
+        },
+        reviewState: "clear",
+      });
+
+      if (input.projectInboxAlias !== undefined) {
+        await repositories.gmailMessageDetails.upsert({
+          sourceEvidenceId: input.sourceEvidenceId,
+          providerRecordId: input.canonicalEventId,
+          gmailThreadId: `thread:${input.canonicalEventId}`,
+          rfc822MessageId: `<${input.canonicalEventId}@example.org>`,
+          direction: "inbound",
+          subject: "Project alias inbound",
+          fromHeader: `${input.displayName} <${input.contactId}@example.org>`,
+          toHeader: input.projectInboxAlias,
+          ccHeader: null,
+          labelIds: ["INBOX"],
+          snippetClean: input.snippet,
+          bodyTextPreview: input.snippet,
+          capturedMailbox: "forests@example.org",
+          projectInboxAlias: input.projectInboxAlias,
+        });
+      }
+
+      await repositories.inboxProjection.upsert({
+        contactId: input.contactId,
+        bucket: "New",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt: input.occurredAt,
+        lastOutboundAt: null,
+        lastActivityAt: input.occurredAt,
+        snippet: input.snippet,
+        archivedAt: null,
+        lastCanonicalEventId: input.canonicalEventId,
+        lastEventType: "communication.email.inbound",
+      });
+    };
 
     await repositories.contacts.upsert({
       id: "contact:multi-project",
@@ -1440,6 +1564,57 @@ describe("Stage 1 DB repositories", () => {
       lastCanonicalEventId: "event:multi-project-inbound",
       lastEventType: "communication.email.inbound",
     });
+    await seedInboxContact({
+      contactId: "contact:alias-only",
+      displayName: "Alia Sawyer",
+      occurredAt: "2026-04-20T13:00:00.000Z",
+      sourceEvidenceId: "source:alias-only-inbound",
+      canonicalEventId: "event:alias-only-inbound",
+      provider: "gmail",
+      projectInboxAlias: "forests-a@example.org",
+      snippet: "Alias-only project signal.",
+    });
+    await seedInboxContact({
+      contactId: "contact:cross-project",
+      displayName: "Casey Cross",
+      occurredAt: "2026-04-20T14:00:00.000Z",
+      sourceEvidenceId: "source:cross-project-inbound",
+      canonicalEventId: "event:cross-project-inbound",
+      provider: "gmail",
+      projectInboxAlias: "forests-b@example.org",
+      snippet: "Membership and alias point at different projects.",
+    });
+    await repositories.contactMemberships.upsert({
+      id: "membership:cross:forests-a",
+      contactId: "contact:cross-project",
+      projectId: "project:forests-a",
+      expeditionId: null,
+      salesforceMembershipId: "sf-membership:cross:forests-a",
+      role: "volunteer",
+      status: "lead",
+      source: "salesforce",
+      createdAt: "2026-04-04T10:00:00.000Z",
+    });
+    await seedInboxContact({
+      contactId: "contact:pure-membership",
+      displayName: "Morgan Member",
+      occurredAt: "2026-04-20T15:00:00.000Z",
+      sourceEvidenceId: "source:pure-membership-inbound",
+      canonicalEventId: "event:pure-membership-inbound",
+      provider: "salesforce",
+      snippet: "Membership-only project signal.",
+    });
+    await repositories.contactMemberships.upsert({
+      id: "membership:pure:forests-a",
+      contactId: "contact:pure-membership",
+      projectId: "project:forests-a",
+      expeditionId: null,
+      salesforceMembershipId: "sf-membership:pure:forests-a",
+      role: "volunteer",
+      status: "lead",
+      source: "salesforce",
+      createdAt: "2026-04-05T10:00:00.000Z",
+    });
 
     const pnwRows = await repositories.inboxProjection.listPageOrderedByRecency({
       filter: "visible",
@@ -1470,6 +1645,28 @@ describe("Stage 1 DB repositories", () => {
     const inactiveCounts = await repositories.inboxProjection.countByFilters({
       projectId: "project:inactive-c",
     });
+    const forestsARows =
+      await repositories.inboxProjection.listPageOrderedByRecency({
+        filter: "visible",
+        order: "last-inbound",
+        limit: 10,
+        cursor: null,
+        projectId: "project:forests-a",
+      });
+    const forestsBRows =
+      await repositories.inboxProjection.listPageOrderedByRecency({
+        filter: "visible",
+        order: "last-inbound",
+        limit: 10,
+        cursor: null,
+        projectId: "project:forests-b",
+      });
+    const forestsACounts = await repositories.inboxProjection.countByFilters({
+      projectId: "project:forests-a",
+    });
+    const forestsBCounts = await repositories.inboxProjection.countByFilters({
+      projectId: "project:forests-b",
+    });
 
     expect(pnwRows.map((row) => row.contactId)).toEqual([
       "contact:multi-project",
@@ -1480,5 +1677,15 @@ describe("Stage 1 DB repositories", () => {
     expect(inactiveRows).toEqual([]);
     expect(pnwCounts.all).toBe(1);
     expect(inactiveCounts.all).toBe(0);
+    expect(forestsARows.map((row) => row.contactId)).toEqual([
+      "contact:pure-membership",
+      "contact:cross-project",
+      "contact:alias-only",
+    ]);
+    expect(forestsBRows.map((row) => row.contactId)).toEqual([
+      "contact:cross-project",
+    ]);
+    expect(forestsACounts.all).toBe(3);
+    expect(forestsBCounts.all).toBe(1);
   });
 });
