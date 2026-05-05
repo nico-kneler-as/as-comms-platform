@@ -86,12 +86,12 @@ export function WelcomeWorkloadSkeleton() {
           </div>
         </div>
 
-        {/* Active project workload — 2-col grid */}
+        {/* Active project lifecycle tiles — 3 stacked full-width tiles */}
         <div>
           <Skeleton className="h-3 w-44" />
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <ProjectWorkloadCardSkeleton key={i} />
+          <div className="mt-3 space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <ProjectLifecycleTileSkeleton key={i} />
             ))}
           </div>
         </div>
@@ -117,29 +117,41 @@ export function WelcomeWorkloadSkeleton() {
   );
 }
 
-function ProjectWorkloadCardSkeleton() {
+function ProjectLifecycleTileSkeleton() {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4">
+    <article className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <span
         aria-hidden="true"
-        className="absolute left-0 top-0 h-full w-1 bg-slate-200"
+        className="absolute inset-y-0 left-0 w-1.5 bg-slate-200"
       />
-      <div className="flex items-start justify-between gap-2 pl-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Skeleton className="size-1.5 shrink-0 rounded-full" />
-          <Skeleton className="h-4 w-44 max-w-full" />
+      <div className="grid gap-4 py-5 pl-6 pr-5 lg:grid-cols-[minmax(0,220px)_1fr]">
+        <div className="flex min-w-0 flex-col items-start gap-2 rounded-xl px-2 py-1">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-3 w-20" />
         </div>
-        <Skeleton className="size-3.5 shrink-0 rounded-sm" />
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <ProjectMetricTileSkeleton key={i} />
+          ))}
+        </div>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-2 pl-2">
-        <div className="flex items-baseline gap-1.5">
-          <Skeleton className="h-6 w-8" />
-          <Skeleton className="h-3 w-12" />
-        </div>
-        <div className="flex items-baseline gap-1.5">
-          <Skeleton className="h-6 w-6" />
-          <Skeleton className="h-3 w-14" />
-        </div>
+    </article>
+  );
+}
+
+function ProjectMetricTileSkeleton() {
+  return (
+    <div className="rounded-xl border border-slate-200 px-3 py-3">
+      <Skeleton className="h-3 w-16" />
+      <div className="mt-2 flex items-baseline gap-2">
+        <Skeleton className="h-7 w-12" />
+        <Skeleton className="h-3 w-12" />
+      </div>
+      <div className="mt-3 flex items-end gap-1">
+        {Array.from({ length: 7 }).map((_, i) => (
+          <Skeleton key={i} className="h-3 w-1.5" />
+        ))}
       </div>
     </div>
   );
@@ -171,12 +183,18 @@ export function InboxDetailLoading() {
     <div className="flex min-h-0 flex-1" role="status" aria-label="Loading conversation history">
       <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
         <header className={`flex ${LAYOUT.headerHeight} items-center gap-4 border-b border-slate-200 px-6`}>
-          <div className="min-w-0 flex-1">
-            <Skeleton className="h-5 w-40" />
-            <Skeleton className="mt-2 h-3.5 w-56" />
+          <div className="flex min-w-0 flex-1 items-center gap-3.5">
+            <Skeleton className="size-7 shrink-0 rounded-full" />
+            <div className="min-w-0">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="mt-1 h-3 w-56" />
+            </div>
           </div>
-          <Skeleton className="h-8 w-28 rounded-md" />
-          <Skeleton className="size-8 rounded-md" />
+          <div className="flex shrink-0 items-center gap-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="size-8 rounded-md" />
+            ))}
+          </div>
         </header>
         <div className={`min-h-0 flex-1 overflow-y-auto ${TONE.slate.subtle} ${SPACING.container}`}>
           <TimelineSkeleton />
@@ -259,33 +277,50 @@ export function QueueLoadMoreSkeleton({
 export function TimelineSkeleton() {
   return (
     <div className="flex flex-col gap-3" role="status" aria-label="Loading timeline">
-      {/* Inbound bubble (left) */}
+      {/* Inbound email bubble (left) */}
       <div className="flex w-full flex-col items-start">
         <Skeleton className="mb-1 h-3 w-24" />
         <Skeleton className="h-20 w-[70%] rounded-2xl rounded-bl-md" />
         <Skeleton className="mt-1 h-3 w-16" />
       </div>
 
-      {/* Outbound bubble (right) */}
+      {/* Outbound email bubble (right) */}
       <div className="flex w-full flex-col items-end">
         <Skeleton className="mb-1 h-3 w-20" />
         <Skeleton className="h-16 w-[65%] rounded-2xl rounded-br-md" />
         <Skeleton className="mt-1 h-3 w-14" />
       </div>
 
-      {/* System event (centered-left) */}
-      <div className="flex w-full items-center justify-start">
+      {/* Automated/campaign row */}
+      <div className="flex w-full flex-col items-end pl-16">
+        <div className="w-full max-w-[560px] overflow-hidden rounded-xl border border-slate-200 bg-slate-50/40 px-4 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <Skeleton className="size-6 shrink-0 rounded-md" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-3.5 w-3/4" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* System divider */}
+      <div className="flex w-full items-center justify-center">
         <Skeleton className="h-6 w-56 rounded-full" />
       </div>
 
-      {/* Outbound bubble (right) */}
-      <div className="flex w-full flex-col items-end">
-        <Skeleton className="mb-1 h-3 w-28" />
-        <Skeleton className="h-24 w-[75%] rounded-2xl rounded-br-md" />
-        <Skeleton className="mt-1 h-3 w-16" />
+      {/* Internal note */}
+      <div className="flex w-full flex-col items-start">
+        <div className="w-full max-w-[560px] overflow-hidden rounded-xl border border-amber-200 bg-amber-50/40 px-4 py-3">
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-3/4" />
+          </div>
+        </div>
       </div>
 
-      {/* Inbound bubble (left) */}
+      {/* Inbound email bubble (left) */}
       <div className="flex w-full flex-col items-start">
         <Skeleton className="mb-1 h-3 w-20" />
         <Skeleton className="h-14 w-[60%] rounded-2xl rounded-bl-md" />
