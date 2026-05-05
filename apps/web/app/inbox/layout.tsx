@@ -50,7 +50,7 @@ export default async function InboxLayout({
   const env = readWebEnv();
 
   const [list, composerAliases, smsSenders, healthBanner] = await Promise.all([
-    getInboxList("all"),
+    getInboxList("inbox"),
     getInboxComposerAliases(),
     env.SMS_ENABLED ? getInboxSmsSenders() : Promise.resolve([]),
     getInboxIntegrationHealthBanner(),
@@ -59,7 +59,7 @@ export default async function InboxLayout({
   return (
     <InboxShell
       initialList={list}
-      initialFilterId="all"
+      initialFilterId="inbox"
       composerAliases={composerAliases}
       outboundRateUsdPerSegment={env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT}
       smsEnabled={env.SMS_ENABLED}

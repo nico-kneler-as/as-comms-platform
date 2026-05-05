@@ -944,10 +944,10 @@ const DEFAULT_INTEGRATION_HEALTH_SEED = [
 ] as const;
 
 type InboxProjectionFilter =
-  | "all"
+  | "visible"
+  | "inbox"
   | "unread"
   | "follow-up"
-  | "unresolved"
   | "sent"
   | "archived";
 type InboxProjectionOrder = "last-inbound" | "last-outbound";
@@ -979,21 +979,22 @@ function buildInboxFilterPredicate(
   filter: InboxProjectionFilter,
 ): SQL | undefined {
   const excludeArchived = isNull(contactInboxProjection.archivedAt);
+  const inboxOnly = isNotNull(contactInboxProjection.lastInboundAt);
 
   if (filter === "archived") {
     return isNotNull(contactInboxProjection.archivedAt);
   }
 
   const filterPredicate =
-    filter === "unread"
-      ? eq(contactInboxProjection.bucket, "New")
-      : filter === "follow-up"
-        ? eq(contactInboxProjection.isStarred, true)
-        : filter === "unresolved"
-          ? eq(contactInboxProjection.hasUnresolved, true)
-          : filter === "sent"
-            ? isNotNull(contactInboxProjection.lastOutboundAt)
-            : undefined;
+    filter === "visible"
+      ? undefined
+      : filter === "inbox"
+        ? inboxOnly
+        : filter === "unread"
+          ? eq(contactInboxProjection.bucket, "New")
+        : filter === "follow-up"
+          ? eq(contactInboxProjection.isStarred, true)
+          : isNotNull(contactInboxProjection.lastOutboundAt);
 
   return filterPredicate === undefined
     ? excludeArchived
@@ -3308,6 +3309,11 @@ function createStage1RepositoriesInternal(
           .values(values)
           .onConflictDoUpdate({
             target: contactInboxProjection.contactId,
+            // archivedAt is intentionally omitted from the set clause:
+            // ordinary event-driven projection rebuilds shouldn't clobber
+            // the archived state; archive / unarchive happens through a
+            // separate setArchived path. INSERT path persists archivedAt
+            // via mapInboxProjectionToInsert.
             set: {
               bucket: values.bucket,
               isStarred: values.isStarred,

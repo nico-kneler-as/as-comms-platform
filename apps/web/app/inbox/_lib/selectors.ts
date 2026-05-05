@@ -112,10 +112,9 @@ interface InboxListCacheData {
   >;
   readonly aliasToProjectId: ReadonlyMap<string, string>;
   readonly counts: {
-    readonly all: number;
+    readonly inbox: number;
     readonly unread: number;
     readonly followUp: number;
-    readonly unresolved: number;
     readonly sent: number;
     readonly archived: number;
   };
@@ -3457,7 +3456,14 @@ async function readInboxListCacheData(input: {
   const decodedCursor = decodeInboxListCursor(input.cursor);
   const normalizedQuery = normalizeInlineText(input.query) ?? null;
   const order = orderForInboxFilter(input.filterId);
-  const loadProjectionRows = (filter: InboxFilterId) =>
+  type RepoFilter =
+    | "visible"
+    | "inbox"
+    | "unread"
+    | "follow-up"
+    | "sent"
+    | "archived";
+  const loadProjectionRows = (filter: RepoFilter) =>
     normalizedQuery === null
       ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
           filter,
@@ -3468,7 +3474,12 @@ async function readInboxListCacheData(input: {
         })
       : runtime.repositories.inboxProjection
           .searchPageOrderedByRecency({
-            filter,
+            // Search-bypass: when the operator types a query, the Inbox
+            // filter widens to "visible" so non-1:1 contacts (the ~4000
+            // hidden by lastInboundAt IS NOT NULL) become findable by name.
+            // Other filters keep their semantics.
+            filter:
+              filter === "inbox" ? "visible" : filter,
             order,
             limit: INBOX_LIST_SCAN_LIMIT,
             cursor: null,
@@ -3476,6 +3487,17 @@ async function readInboxListCacheData(input: {
             projectId: input.projectId,
           })
           .then((result) => result.rows);
+  // The primary loader pulls the slice the user is currently viewing.
+  // For "inbox" we apply the inbound-only constraint at the repo layer
+  // (the perf win for large queues); for other filters we fall back to
+  // "visible" so outbound-only / follow-up contacts that don't have an
+  // inbound message still surface in their corresponding queue (sent,
+  // follow-up, unread). The archived loader runs alongside so the rail
+  // counts and the archived view share the same source.
+  const primaryFilterForLoader: RepoFilter =
+    input.filterId === "archived" || input.filterId === "inbox"
+      ? input.filterId
+      : "visible";
   const [
     visibleProjections,
     archivedProjections,
@@ -3483,7 +3505,7 @@ async function readInboxListCacheData(input: {
     activeProjectRecords,
     projectAliasRecords,
   ] = await Promise.all([
-    loadProjectionRows("all"),
+    loadProjectionRows(primaryFilterForLoader),
     loadProjectionRows("archived"),
     runtime.repositories.inboxProjection.getFreshness(),
     runtime.repositories.projectDimensions.listActive(),
@@ -3651,7 +3673,11 @@ async function readInboxListCacheData(input: {
         referenceNowIso,
       ),
     )
-    .filter((item) => matchesServerFilter(item, input.filterId))
+    .filter((item) =>
+      matchesServerFilter(item, input.filterId, {
+        bypassInboxScope: normalizedQuery !== null,
+      }),
+    )
     .sort(
       input.filterId === "sent"
         ? compareInboxOutboundRecency
@@ -3680,8 +3706,11 @@ async function readInboxListCacheData(input: {
     return row === undefined ? [] : [row];
   });
   const counts = {
-    all: allRows.filter((row) => row.inboxProjection.archivedAt === null)
-      .length,
+    inbox: allRows.filter(
+      (row) =>
+        row.inboxProjection.archivedAt === null &&
+        row.inboxProjection.lastInboundAt !== null,
+    ).length,
     unread: allRows.filter(
       (row) => row.inboxProjection.archivedAt === null && row.isUnread,
     ).length,
@@ -3689,11 +3718,6 @@ async function readInboxListCacheData(input: {
       (row) =>
         row.inboxProjection.archivedAt === null &&
         row.inboxProjection.needsFollowUp,
-    ).length,
-    unresolved: allRows.filter(
-      (row) =>
-        row.inboxProjection.archivedAt === null &&
-        row.inboxProjection.hasUnresolved,
     ).length,
     sent: allRows.filter(
       (row) =>
@@ -4613,20 +4637,21 @@ function buildInboxDetailTimelineViewModel(input: {
 function matchesServerFilter(
   item: InboxListItemViewModel,
   filterId: InboxFilterId,
+  input?: {
+    readonly bypassInboxScope?: boolean;
+  },
 ): boolean {
   if (item.isArchived) {
     return filterId === "archived";
   }
 
   switch (filterId) {
-    case "all":
-      return true;
+    case "inbox":
+      return input?.bypassInboxScope === true || item.lastInboundAt !== null;
     case "unread":
       return item.isUnread;
     case "follow-up":
       return item.needsFollowUp;
-    case "unresolved":
-      return item.hasUnresolved;
     case "sent":
       return item.lastOutboundAt !== null;
     case "archived":
@@ -4635,7 +4660,7 @@ function matchesServerFilter(
 }
 
 export async function getInboxList(
-  filterId: InboxFilterId = "all",
+  filterId: InboxFilterId = "inbox",
   input: {
     readonly cursor?: string | null;
     readonly limit?: number;
@@ -4671,17 +4696,18 @@ export async function getInboxList(
     count:
       filter.id === "follow-up"
         ? totals.followUp
-        : filter.id === "unresolved"
-          ? totals.unresolved
-          : filter.id === "sent"
-            ? totals.sent
-            : filter.id === "archived"
-              ? totals.archived
-              : totals[filter.id],
+        : filter.id === "unread"
+          ? totals.unread
+          : null,
   }));
 
   return {
-    items: items.filter((item) => matchesServerFilter(item, filterId)),
+    items: items.filter((item) =>
+      matchesServerFilter(item, filterId, {
+        bypassInboxScope:
+          (input.query?.trim().length ?? 0) > 0,
+      }),
+    ),
     filters,
     totals,
     activeProjects: cachedData.activeProjects,

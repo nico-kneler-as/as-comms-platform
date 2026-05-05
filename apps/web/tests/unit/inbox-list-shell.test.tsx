@@ -50,8 +50,61 @@ function iconMock(name: string) {
     createElement("svg", { "data-icon": name, ...props });
 }
 
+vi.mock("@/components/ui/dropdown-menu", () => {
+  const RadioGroupContext = React.createContext<{
+    readonly value: string;
+    readonly onChange: (next: string) => void;
+  } | null>(null);
+
+  return {
+    DropdownMenu: ({ children }: { readonly children?: React.ReactNode }) =>
+      createElement("div", { "data-testid": "dropdown-menu" }, children),
+    DropdownMenuTrigger: ({
+      children,
+    }: {
+      readonly children?: React.ReactNode;
+      readonly asChild?: boolean;
+    }) => createElement(React.Fragment, null, children),
+    DropdownMenuContent: ({ children }: { readonly children?: React.ReactNode }) =>
+      createElement("div", { role: "menu" }, children),
+    DropdownMenuRadioGroup: ({
+      children,
+      value,
+      onValueChange,
+    }: {
+      readonly children?: React.ReactNode;
+      readonly value: string;
+      readonly onValueChange: (value: string) => void;
+    }) =>
+      createElement(
+        RadioGroupContext.Provider,
+        { value: { value, onChange: onValueChange } },
+        children,
+      ),
+    DropdownMenuRadioItem: ({
+      children,
+      value,
+    }: {
+      readonly children?: React.ReactNode;
+      readonly value: string;
+    }) => {
+      const ctx = React.useContext(RadioGroupContext);
+      return createElement(
+        "button",
+        {
+          type: "button",
+          role: "menuitemradio",
+          onClick: () => ctx?.onChange(value),
+        },
+        children,
+      );
+    },
+  };
+});
+
 vi.mock("../../app/inbox/_components/icons", () => ({
   ArchiveBoxIcon: iconMock("ArchiveBoxIcon"),
+  ChevronDownIcon: iconMock("ChevronDownIcon"),
   FlagIcon: iconMock("FlagIcon"),
   FilterIcon: iconMock("FilterIcon"),
   InboxIcon: iconMock("InboxIcon"),
@@ -181,17 +234,16 @@ function buildList(
       },
     ],
     filters: [
-      { id: "all", label: "All", count: 1289, hint: null },
+      { id: "inbox", label: "Inbox", count: null, hint: null },
       { id: "unread", label: "Unread", count: 3, hint: null },
-      { id: "follow-up", label: "Needs Follow-Up", count: 2, hint: null },
-      { id: "sent", label: "Sent", count: 7, hint: null },
-      { id: "archived", label: "Archived", count: 1, hint: null },
+      { id: "follow-up", label: "Pending", count: 2, hint: null },
+      { id: "archived", label: "Archived", count: null, hint: null },
+      { id: "sent", label: "Sent", count: null, hint: null },
     ],
     totals: {
-      all: 1289,
+      inbox: 1289,
       unread: 3,
       followUp: 2,
-      unresolved: 0,
       sent: 7,
       archived: 1,
     },
@@ -322,12 +374,12 @@ describe("Inbox list shell", () => {
     searchParamsMock.current = "";
   });
 
-  it("renders All when no filter is active", async () => {
+  it("renders Inbox when no filter is active", async () => {
     fetchInboxListPageMock.mockResolvedValue(buildList());
     activeSession = await mountInboxList();
 
     const heading = activeSession.container.querySelector("h1");
-    expect(heading?.textContent).toBe("All");
+    expect(heading?.textContent).toBe("Inbox");
   });
 
   it("renders the selected project alias in the header", async () => {
@@ -337,6 +389,20 @@ describe("Inbox list shell", () => {
 
     const heading = activeSession.container.querySelector("h1");
     expect(heading?.textContent).toBe("PNW Biodiversity");
+  });
+
+  it("falls back old filter=all URLs to inbox", async () => {
+    searchParamsMock.current = "filter=all";
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList();
+    await flushReact();
+
+    expect(routerReplaceMock).toHaveBeenCalledWith("/inbox?filter=inbox", {
+      scroll: false,
+    });
+    expect(activeSession.container.querySelector("h1")?.textContent).toBe(
+      "Inbox",
+    );
   });
 
   it("joins the selected project and state filter with a middot", async () => {
@@ -371,13 +437,13 @@ describe("Inbox list shell", () => {
     });
 
     await act(async () => {
-      findButtonByText(session.container, "Needs Follow-Up").click();
+      findButtonByText(session.container, "Pending").click();
       await Promise.resolve();
     });
     await flushReact();
 
     const heading = session.container.querySelector("h1");
-    expect(heading?.textContent).toBe("Follow-up");
+    expect(heading?.textContent).toBe("Pending");
   });
 
   it("renders Results when search is active", async () => {
@@ -471,7 +537,7 @@ describe("Inbox list shell", () => {
     expect(filterButton.getAttribute("aria-expanded")).toBe("true");
     expect(filterButton.className).toContain("bg-slate-900");
     expect(session.container.textContent).toContain("State");
-    expect(session.container.textContent).toContain("Project");
+    expect(session.container.textContent).toContain("All projects");
     expect(session.container.textContent).not.toContain("Unresolved");
     expect(
       session.container.querySelector("[data-icon='InboxIcon']"),
@@ -492,16 +558,38 @@ describe("Inbox list shell", () => {
     });
     await flushReact();
 
-    act(() => {
-      filterButton.click();
-    });
-
     expect(filterButton.getAttribute("aria-expanded")).toBe("false");
     expect(filterButton.className).toContain("bg-slate-100");
     expect(
       filterButton.querySelector("[data-filter-active-indicator='true']"),
     ).not.toBeNull();
-    expect(session.container.textContent).not.toContain("Project");
+    expect(session.container.textContent).not.toContain("All projects");
+  });
+
+  it("keeps the filter panel open when a project is selected from the dropdown", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildPnwProjectList());
+    activeSession = await mountInboxList(buildPnwProjectList());
+    const session = activeSession;
+
+    await act(async () => {
+      findButtonByLabel(session.container, "Filters").click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findButtonByText(session.container, "All projects").click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findButtonByText(document.body, "Pacific Northwest Biodiversity Survey").click();
+      await Promise.resolve();
+    });
+    await flushReact();
+
+    expect(findButtonByLabel(session.container, "Filters").getAttribute("aria-expanded")).toBe(
+      "true",
+    );
   });
 
   it("replaces the clear-search control with a spinner while search is loading", async () => {

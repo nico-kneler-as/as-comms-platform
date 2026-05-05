@@ -965,6 +965,7 @@ export function mapInboxProjectionToInsert(
       parsed.lastOutboundAt === null ? null : toDate(parsed.lastOutboundAt),
     lastActivityAt: toDate(parsed.lastActivityAt),
     snippet: parsed.snippet,
+    archivedAt: parsed.archivedAt === null ? null : toDate(parsed.archivedAt),
     lastCanonicalEventId: parsed.lastCanonicalEventId,
     lastEventType: parsed.lastEventType,
   };

@@ -54,8 +54,7 @@ interface ListColumnProps {
 
 const STATE_HEADER_LABEL: Partial<Record<InboxFilterId, string>> = {
   unread: "Unread",
-  "follow-up": "Follow-up",
-  unresolved: "Unresolved",
+  "follow-up": "Pending",
   sent: "Sent",
   archived: "Archived",
 };
@@ -80,14 +79,14 @@ function resolveInboxHeaderTitle(input: {
         ? []
         : [input.selectedProjectId];
   const activeStateLabel: string | null =
-    input.activeFilter === "all"
+    input.activeFilter === "inbox"
       ? null
       : STATE_HEADER_LABEL[input.activeFilter] ?? null;
   const activeFacetCount =
     normalizedProjectIds.length + (activeStateLabel === null ? 0 : 1);
 
   if (activeFacetCount === 0) {
-    return "All";
+    return "Inbox";
   }
 
   if (activeFacetCount > 2) {
@@ -114,12 +113,12 @@ function resolveInboxHeaderTitle(input: {
     return `${projectLabel} · ${activeStateLabel}`;
   }
 
-  return projectLabel ?? activeStateLabel ?? "All";
+  return projectLabel ?? activeStateLabel ?? "Inbox";
 }
 
 export function InboxList({
   initialList,
-  initialFilterId = "all",
+  initialFilterId = "inbox",
 }: ListColumnProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -226,6 +225,22 @@ export function InboxList({
       setActiveFilter(parsedFilter);
     }
   }, [urlFilter]);
+
+  useEffect(() => {
+    if (urlFilter !== "all") {
+      return;
+    }
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("filter", "inbox");
+
+    const nextQueryString = nextParams.toString();
+    const nextHref =
+      nextQueryString.length === 0 ? pathname : `${pathname}?${nextQueryString}`;
+
+    previousUrlFilterRef.current = "inbox";
+    router.replace(nextHref, { scroll: false });
+  }, [pathname, router, searchParams, urlFilter]);
 
   useEffect(() => {
     const currentUrlQuery = urlQuery.trim();
@@ -338,7 +353,7 @@ export function InboxList({
     const latestShellState = latestShellStateRef.current;
 
     if (
-      activeFilter === "all" &&
+      activeFilter === "inbox" &&
       selectedProjectId === null &&
       !isServerSearchActive
     ) {
@@ -384,7 +399,7 @@ export function InboxList({
     const latestShellState = latestShellStateRef.current;
 
     if (
-      latestShellState.activeFilter === "all" &&
+      latestShellState.activeFilter === "inbox" &&
       latestShellState.selectedProjectId === null &&
       !isServerSearchActive
     ) {
@@ -416,7 +431,8 @@ export function InboxList({
   const isLoadingMore =
     isQueueLoading && pendingAppendCursorRef.current !== null;
   const activeProjects = currentList.activeProjects;
-  const hasActiveFilters = activeFilter !== "all" || selectedProjectId !== null;
+  const hasActiveFilters =
+    activeFilter !== "inbox" || selectedProjectId !== null;
   const shouldShowSearchSummary = search.isActive && isSearchThresholdMet;
   const headerTitle = useMemo(
     () =>
@@ -633,6 +649,9 @@ export function InboxList({
             filters={currentList.filters}
             activeFilter={activeFilter}
             onFilterChange={handleFilterChange}
+            onCollapse={() => {
+              setFilterPaneOpen(false);
+            }}
             projects={activeProjects}
             selectedProjectId={selectedProjectId}
             onProjectChange={handleProjectChange}
@@ -731,7 +750,7 @@ function QueueEmptyState({
           size="sm"
           onClick={onSwitchToFollowUp}
         >
-          Switch to follow-ups
+          Switch to pending
         </Button>
       }
     />

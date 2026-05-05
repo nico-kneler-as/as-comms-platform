@@ -12,7 +12,7 @@ import type { CanonicalEventType } from "@as-comms/contracts";
  *   - one row per person, not per thread (P-02 / INBX-01)
  *   - "new" and "opened" remain row-state bucket values, not primary tabs
  *   - "needsFollowUp" is a separate operator flag, not derived from bucket
- *   - "unresolved" is an overlay on top of the queue model (INBX-04)
+ *   - unresolved is an overlay on top of the queue model (INBX-04)
  *   - campaign and automated sends are surfaced in the timeline as collapsed
  *     entries so 1:1 history stays readable (INBX-05)
  *   - default list order: lastInboundAt desc nulls last, then lastActivityAt desc
@@ -23,24 +23,27 @@ import type { CanonicalEventType } from "@as-comms/contracts";
 export type InboxBucket = "new" | "opened";
 
 export type InboxFilterId =
-  | "all"
+  | "inbox"
   | "unread"
   | "follow-up"
-  | "unresolved"
   | "sent"
   | "archived";
 
 export const INBOX_FILTER_IDS: readonly InboxFilterId[] = [
-  "all",
+  "inbox",
   "unread",
   "follow-up",
-  "unresolved",
   "sent",
+  "archived",
 ];
 
 export function parseInboxFilterId(
   value: string | null | undefined,
 ): InboxFilterId | null {
+  if (value === "all") {
+    return "inbox";
+  }
+
   return INBOX_FILTER_IDS.includes(value as InboxFilterId)
     ? (value as InboxFilterId)
     : null;
@@ -425,7 +428,7 @@ export interface InboxDetailViewModel
 export interface InboxFilterViewModel {
   readonly id: InboxFilterId;
   readonly label: string;
-  readonly count: number;
+  readonly count: number | null;
   readonly hint: string | null;
 }
 
@@ -469,10 +472,9 @@ export interface InboxListViewModel {
   readonly items: readonly InboxListItemViewModel[];
   readonly filters: readonly InboxFilterViewModel[];
   readonly totals: {
-    readonly all: number;
+    readonly inbox: number;
     readonly unread: number;
     readonly followUp: number;
-    readonly unresolved: number;
     readonly sent: number;
     readonly archived: number;
   };

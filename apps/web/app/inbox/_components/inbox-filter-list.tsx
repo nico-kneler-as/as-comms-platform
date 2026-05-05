@@ -3,6 +3,13 @@
 import { SHADOW, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/ui/section-label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { LucideIcon } from "lucide-react";
 
 import type {
@@ -12,6 +19,7 @@ import type {
 } from "../_lib/view-models";
 import {
   ArchiveBoxIcon,
+  ChevronDownIcon,
   FlagIcon,
   InboxIcon,
   MailOpenIcon,
@@ -19,12 +27,11 @@ import {
 } from "./icons";
 
 const FILTER_ICON: Record<InboxFilterId, LucideIcon | null> = {
-  all: InboxIcon,
+  inbox: InboxIcon,
   unread: MailOpenIcon,
   "follow-up": FlagIcon,
   sent: SendIcon,
   archived: ArchiveBoxIcon,
-  unresolved: null,
 };
 
 interface InboxFilterListProps {
@@ -32,6 +39,7 @@ interface InboxFilterListProps {
   readonly filters: readonly InboxFilterViewModel[];
   readonly activeFilter: InboxFilterId;
   readonly onFilterChange: (id: InboxFilterId) => void;
+  readonly onCollapse: () => void;
   readonly projects: readonly InboxActiveProjectOption[];
   readonly selectedProjectId: string | null;
   readonly onProjectChange: (id: string | null) => void;
@@ -42,10 +50,19 @@ export function InboxFilterList({
   filters,
   activeFilter,
   onFilterChange,
+  onCollapse,
   projects,
   selectedProjectId,
   onProjectChange,
 }: InboxFilterListProps) {
+  const filterById = new Map(filters.map((filter) => [filter.id, filter]));
+  const primaryFilters = ["inbox", "unread", "follow-up"] as const;
+  const secondaryFilters = ["archived", "sent"] as const;
+  const selectedProject =
+    selectedProjectId === null
+      ? null
+      : (projects.find((project) => project.id === selectedProjectId) ?? null);
+
   return (
     <div
       id={id}
@@ -63,47 +80,36 @@ export function InboxFilterList({
         State
       </SectionLabel>
       <ul className="flex flex-col gap-0.5 px-3">
-        {filters.map((filter) => {
-          const isActive = filter.id === activeFilter;
-          const Icon = FILTER_ICON[filter.id];
+        {primaryFilters.map((filterId) => {
+          const filter = filterById.get(filterId);
 
-          if (Icon === null) {
-            return null;
-          }
-
-          return (
+          return filter === undefined ? null : (
             <li key={filter.id}>
-              <button
-                type="button"
-                onClick={() => {
-                  onFilterChange(filter.id);
-                }}
-                aria-pressed={isActive}
-                className={cn(
-                  "group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[12.5px] transition-colors duration-150",
-                  isActive
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-700 hover:bg-slate-50",
-                )}
-              >
-                <Icon aria-hidden="true" className="size-3.5 shrink-0" />
-                <span
-                  className={cn(
-                    "flex-1 truncate",
-                    isActive ? "font-medium" : "",
-                  )}
-                >
-                  {filter.label}
-                </span>
-                <span
-                  className={cn(
-                    "tabular-nums text-[11.5px]",
-                    isActive ? "text-slate-300" : "text-slate-400",
-                  )}
-                >
-                  {filter.count}
-                </span>
-              </button>
+              <FilterRow
+                filter={filter}
+                activeFilter={activeFilter}
+                onFilterChange={onFilterChange}
+                onCollapse={onCollapse}
+              />
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="my-2 border-t border-slate-100" />
+
+      <ul className="flex flex-col gap-0.5 px-3">
+        {secondaryFilters.map((filterId) => {
+          const filter = filterById.get(filterId);
+
+          return filter === undefined ? null : (
+            <li key={filter.id}>
+              <FilterRow
+                filter={filter}
+                activeFilter={activeFilter}
+                onFilterChange={onFilterChange}
+                onCollapse={onCollapse}
+              />
             </li>
           );
         })}
@@ -111,61 +117,110 @@ export function InboxFilterList({
 
       {projects.length > 0 ? (
         <>
-          <SectionLabel
-            as="h2"
-            className="mt-3 border-t border-slate-100 px-5 pb-2 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-400"
-          >
-            Project
-          </SectionLabel>
-          <ul className="flex flex-col gap-0.5 px-3">
-            <li>
-              <button
-                type="button"
-                onClick={() => {
-                  onProjectChange(null);
-                }}
-                aria-pressed={selectedProjectId === null}
-                className={cn(
-                  "group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[12.5px] transition-colors duration-150",
-                  selectedProjectId === null
-                    ? "bg-slate-100 font-medium text-slate-900"
-                    : "text-slate-700 hover:bg-slate-50",
-                )}
-              >
-                <span className="flex-1 truncate">All projects</span>
-              </button>
-            </li>
-            {projects.map((project) => {
-              const isActive = selectedProjectId === project.id;
-              return (
-                <li key={project.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onProjectChange(project.id);
-                    }}
-                    aria-pressed={isActive}
+          <div className="my-2 border-t border-slate-100" />
+          <div className="px-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    "group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[12.5px] text-slate-700 transition-colors duration-150 hover:bg-slate-50",
+                  )}
+                >
+                  <span
                     className={cn(
-                      "group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[12.5px] transition-colors duration-150",
-                      isActive
-                        ? "bg-slate-100 font-medium text-slate-900"
-                        : "text-slate-700 hover:bg-slate-50",
+                      "flex-1 truncate",
+                      selectedProject !== null || selectedProjectId === null
+                        ? "font-medium text-slate-900"
+                        : "",
                     )}
                   >
-                    <span className="flex-1 truncate">{project.name}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {/*
-            TODO(B3): expose per-project unread + follow-up counts in the
-            view-model so we can show them inline. With paginated data we
-            can't compute accurately client-side; rather than show a
-            misleading partial count we omit them.
-          */}
+                    {selectedProject?.name ?? "All projects"}
+                  </span>
+                  <ChevronDownIcon
+                    aria-hidden="true"
+                    className="size-3.5 shrink-0 text-slate-400"
+                  />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 rounded-xl p-1.5"
+                sideOffset={6}
+              >
+                <DropdownMenuRadioGroup
+                  value={selectedProjectId ?? "__all__"}
+                  onValueChange={(value) => {
+                    onProjectChange(value === "__all__" ? null : value);
+                  }}
+                >
+                  <DropdownMenuRadioItem
+                    value="__all__"
+                    className="rounded-lg text-[12.5px]"
+                  >
+                    All projects
+                  </DropdownMenuRadioItem>
+                  {projects.map((project) => (
+                    <DropdownMenuRadioItem
+                      key={project.id}
+                      value={project.id}
+                      className="rounded-lg text-[12.5px]"
+                    >
+                      {project.name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </>
       ) : null}
     </div>
+  );
+}
+
+function FilterRow(input: {
+  readonly filter: InboxFilterViewModel;
+  readonly activeFilter: InboxFilterId;
+  readonly onFilterChange: (id: InboxFilterId) => void;
+  readonly onCollapse: () => void;
+}) {
+  const isActive = input.filter.id === input.activeFilter;
+  const Icon = FILTER_ICON[input.filter.id];
+
+  if (Icon === null) {
+    return null;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        input.onFilterChange(input.filter.id);
+        input.onCollapse();
+      }}
+      aria-pressed={isActive}
+      className={cn(
+        "group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[12.5px] transition-colors duration-150",
+        isActive
+          ? "bg-slate-900 text-white"
+          : "text-slate-700 hover:bg-slate-50",
+      )}
+    >
+      <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+      <span className={cn("flex-1 truncate", isActive ? "font-medium" : "")}>
+        {input.filter.label}
+      </span>
+      {input.filter.count === null ? null : (
+        <span
+          className={cn(
+            "tabular-nums text-[11.5px]",
+            isActive ? "text-slate-300" : "text-slate-400",
+          )}
+        >
+          {input.filter.count}
+        </span>
+      )}
+    </button>
   );
 }
