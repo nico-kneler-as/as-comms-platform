@@ -1726,6 +1726,57 @@ function suppressDuplicateHeadlineBody(
   return body;
 }
 
+// Mailchimp's plain-text campaign content embeds template artifacts that look
+// like noise in the operator timeline:
+//   - Merge tags: *|FNAME|*, *|EMAIL|*, *|UNSUB|*, *|ABOUT_LIST|*, etc. — any
+//     *|TOKEN|* form, including with default values like *|FNAME:Volunteer|*
+//   - Heading markers: lines starting with `** Foo` (Mailchimp's plain-text
+//     rendering of strong text)
+//   - Long divider lines: rows of 30+ dashes used as section separators
+//   - List-management footer: the trailing "This email was sent to *|EMAIL|*"
+//     block and "why did I get this?... unsubscribe from this list..." line
+const MAILCHIMP_MERGE_TAG_PATTERN = /\*\|[^|*]+\|\*/gu;
+const MAILCHIMP_DIVIDER_LINE_PATTERN = /^\s*-{30,}\s*$/u;
+const MAILCHIMP_FOOTER_BOUNDARY_PATTERN =
+  /^(this email was sent to\s|why did i get this\?|=+\s*$|unsubscribe from this list\b)/iu;
+
+function stripMailchimpFooter(body: string): string {
+  const lines = body.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = (lines[index] ?? "").trim();
+    if (line.length > 0 && MAILCHIMP_FOOTER_BOUNDARY_PATTERN.test(line)) {
+      return lines.slice(0, index).join("\n");
+    }
+  }
+  return body;
+}
+
+function sanitizeMailchimpCampaignBody(body: string): string {
+  if (body.length === 0) {
+    return body;
+  }
+
+  return stripMailchimpFooter(body)
+    .replace(MAILCHIMP_MERGE_TAG_PATTERN, "")
+    .split("\n")
+    .map((line) => {
+      // Drop standalone `**` lines (Mailchimp wraps headings in `** ... **`
+      // pairs that come out as a separate line of stars).
+      if (/^\s*\*+\s*$/u.test(line)) {
+        return "";
+      }
+      // Drop pure divider lines.
+      if (MAILCHIMP_DIVIDER_LINE_PATTERN.test(line)) {
+        return "";
+      }
+      // Strip leading `**` heading markers; keep the heading text.
+      return line.replace(/^\s*\*\*\s+/u, "").replace(/\s*\*\*\s*$/u, "");
+    })
+    .join("\n")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim();
+}
+
 function campaignHeadlineAndBody(
   item: Extract<TimelineItem, { family: "campaign_email" | "campaign_sms" }>,
 ): {
@@ -1743,10 +1794,12 @@ function campaignHeadlineAndBody(
         headline,
         body:
           resolveDisplayableOutboundSubject(parsedPreview.subject) === null
-            ? parsedPreview.body
-            : suppressDuplicateHeadlineBody(
-                parsedPreview.subject,
-                parsedPreview.body,
+            ? sanitizeMailchimpCampaignBody(parsedPreview.body)
+            : sanitizeMailchimpCampaignBody(
+                suppressDuplicateHeadlineBody(
+                  parsedPreview.subject,
+                  parsedPreview.body,
+                ),
               ),
       };
     }
@@ -1758,7 +1811,7 @@ function campaignHeadlineAndBody(
 
     return {
       headline,
-      body: cleaned,
+      body: sanitizeMailchimpCampaignBody(cleaned),
     };
   }
 
