@@ -1,8 +1,11 @@
+"use client";
+
 import type {
   InboxContactSummaryViewModel,
   InboxProjectMembershipViewModel,
   InboxProjectStatus,
 } from "../_lib/view-models";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -27,15 +30,22 @@ interface RailProps {
   readonly onClose?: () => void;
 }
 
+const ACTIVITY_COLLAPSED_LIMIT = 5;
+
 /**
- * Server component: renders contact reference data for the detail workspace.
+ * Renders contact reference data for the detail workspace.
  *
  * Header: name + record ID (mono, dim). Then contact details (with phone
- * fallback), active and past project participations, and
- * milestone activity. Visibility is controlled by the parent detail
- * component via conditional render.
+ * fallback), active and past project participations, and milestone activity.
+ * Visibility is controlled by the parent detail component via conditional
+ * render.
  */
 export function InboxContactRail({ contact, onClose }: RailProps) {
+  const [activityExpanded, setActivityExpanded] = useState(false);
+  const visibleActivity = activityExpanded
+    ? contact.recentActivity
+    : contact.recentActivity.slice(0, ACTIVITY_COLLAPSED_LIMIT);
+
   return (
     <aside
       id="inbox-contact-rail"
@@ -64,8 +74,9 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
         ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-      <section className={`border-b border-slate-200 ${SPACING.section}`}>
+      <section
+        className={`shrink-0 border-b border-slate-200 bg-white ${SPACING.section}`}
+      >
         <SectionLabel as="h3">
           Contact
         </SectionLabel>
@@ -93,61 +104,77 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
         </dl>
       </section>
 
-      <ProjectsSection
-        title="Active Projects"
-        projects={contact.activeProjects}
-        emptyLabel="No active projects"
-      />
-      <ProjectsSection
-        title="Past Projects"
-        projects={contact.pastProjects}
-        emptyLabel="No past projects"
-      />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <ProjectsSection
+          title="Active Projects"
+          projects={contact.activeProjects}
+          emptyLabel="No active projects"
+        />
+        <ProjectsSection
+          title="Past Projects"
+          projects={contact.pastProjects}
+          emptyLabel="No past projects"
+        />
 
-      <section className={SPACING.section}>
-        <SectionLabel as="h3">
-          Project activity
-        </SectionLabel>
-        {contact.recentActivity.length === 0 ? (
-          <p className="mt-2 text-[12px] text-slate-400">
-            No project activity recorded.
-          </p>
-        ) : (
-          <ul className="mt-3 space-y-3">
-            {contact.recentActivity.map((entry, index) => (
-              <li
-                key={entry.id}
-                className="relative flex gap-3 pb-1 last:pb-0"
-              >
-                {/* Vertical connector line — passes through dot center (5px) */}
-                {index < contact.recentActivity.length - 1 ? (
-                  <div className="absolute left-[5px] top-3 h-full w-px bg-slate-200" />
-                ) : null}
-                {/* Dot — h-[10px] w-[10px] centers at 5px to match line */}
-                <div
-                  className={`relative mt-1.5 h-[10px] w-[10px] shrink-0 rounded-full border-2 ${
-                    index === 0
-                      ? `border-sky-500 ${TONE_CLASSES.sky.dot}`
-                      : "border-slate-300 bg-white"
-                  }`}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[12.5px] leading-snug text-slate-700">
-                    {entry.label}
-                  </p>
-                  <p
-                    className={`text-[11px] ${
-                      index === 0 ? "text-slate-700" : "text-slate-400"
-                    }`}
+        <section className={SPACING.section}>
+          <SectionLabel as="h3">
+            Project activity
+          </SectionLabel>
+          {contact.recentActivity.length === 0 ? (
+            <p className="mt-2 text-[12px] text-slate-400">
+              No project activity recorded.
+            </p>
+          ) : (
+            <>
+              <ul className="mt-3 space-y-3">
+                {visibleActivity.map((entry, index) => (
+                  <li
+                    key={entry.id}
+                    className="relative flex gap-3 pb-1 last:pb-0"
                   >
-                    {entry.occurredAtLabel}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                    {/* Vertical connector line — passes through dot center (5px) */}
+                    {index < visibleActivity.length - 1 ? (
+                      <div className="absolute left-[5px] top-3 h-full w-px bg-slate-200" />
+                    ) : null}
+                    {/* Dot — h-[10px] w-[10px] centers at 5px to match line */}
+                    <div
+                      className={`relative mt-1.5 h-[10px] w-[10px] shrink-0 rounded-full border-2 ${
+                        index === 0
+                          ? `border-sky-500 ${TONE_CLASSES.sky.dot}`
+                          : "border-slate-300 bg-white"
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12.5px] leading-snug text-slate-700">
+                        {entry.label}
+                      </p>
+                      <p
+                        className={`text-[11px] ${
+                          index === 0 ? "text-slate-700" : "text-slate-400"
+                        }`}
+                      >
+                        {entry.occurredAtLabel}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {contact.recentActivity.length > ACTIVITY_COLLAPSED_LIMIT ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivityExpanded((value) => !value);
+                  }}
+                  className="mt-2 text-[12px] font-medium text-slate-500 transition-colors duration-150 hover:text-slate-700"
+                >
+                  {activityExpanded
+                    ? "Show less"
+                    : `Show all (${contact.recentActivity.length.toString()})`}
+                </button>
+              ) : null}
+            </>
+          )}
+        </section>
       </div>
     </aside>
   );
