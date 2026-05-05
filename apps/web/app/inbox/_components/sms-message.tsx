@@ -68,26 +68,20 @@ export function SmsMessage({
   onReply,
   isRetrying = false,
   onRetryPending,
-  nested = false,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
   readonly direction: "inbound" | "outbound";
   readonly onReply?: (entryId: string) => void;
   readonly isRetrying?: boolean;
   readonly onRetryPending?: (entryId: string) => void;
-  readonly nested?: boolean;
 }) {
   const isOutbound = direction === "outbound";
 
   return (
-    <li
-      className={cn(
-        nested ? "w-full" : cn("col-span-3 grid", TIMELINE_GRID_COLUMNS),
-      )}
-    >
+    <li className={cn("col-span-3 grid", TIMELINE_GRID_COLUMNS)}>
       <div
         className={cn(
-          nested ? "min-w-0 flex" : "col-start-2 min-w-0 flex",
+          "col-start-2 min-w-0 flex",
           isOutbound ? "justify-end" : "justify-start",
         )}
       >
@@ -105,7 +99,8 @@ export function SmsMessage({
 
           <div
             className={cn(
-              nested ? "w-full" : cn("w-fit", SMS_BUBBLE_MAX_W),
+              "w-full",
+              SMS_BUBBLE_MAX_W,
               "rounded-2xl border px-4 py-3 shadow-sm",
               isOutbound
                 ? "rounded-br-md border-sky-600 bg-sky-600 text-white"

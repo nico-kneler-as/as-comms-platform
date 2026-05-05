@@ -3,7 +3,6 @@
 import { useState } from "react";
 import type {
   InboxTimelineEntryKind,
-  InboxTimelinePresentationItem,
   InboxTimelineSystemGroupViewModel,
   InboxTimelineEntryViewModel,
 } from "../_lib/view-models";
@@ -20,7 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { TRANSITION } from "@/app/_lib/design-tokens-v2";
+import { TONE_CLASSES, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { TimelineAutomatedRow } from "./inbox-timeline-automated-row";
 import {
   EMAIL_BUBBLE_MAX_W,
@@ -138,80 +137,61 @@ export function InboxTimeline({
               </div>
             </li>
           ) : null}
-          {presentationItems.map((item) => (
-            <TimelinePresentationItem
-              key={item.id}
-              item={item}
-              volunteerFirstName={volunteerFirstName}
-              currentOperatorUserId={currentOperatorUserId}
-              isExpanded={expanded.has(item.id)}
-              retryingEntryId={retryingEntryId}
-              onRetryPending={onRetryPending}
-              {...(onReply === undefined ? {} : { onReply })}
-              onToggle={() => {
-                toggle(item.id);
-              }}
-              isChildExpanded={(entryId) => expanded.has(entryId)}
-              onToggleChild={toggle}
-            />
-          ))}
+          {presentationItems.flatMap((item) => {
+            if (item.kind !== "system-message-group") {
+              return [
+                <TimelineEntry
+                  key={item.id}
+                  entry={item}
+                  volunteerFirstName={volunteerFirstName}
+                  currentOperatorUserId={currentOperatorUserId}
+                  isExpanded={expanded.has(item.id)}
+                  retryingEntryId={retryingEntryId}
+                  onRetryPending={onRetryPending}
+                  {...(onReply === undefined ? {} : { onReply })}
+                  onToggle={() => {
+                    toggle(item.id);
+                  }}
+                />,
+              ];
+            }
+
+            const rows = [
+              <SystemMessageGroup
+                key={item.id}
+                group={item}
+                isExpanded={expanded.has(item.id)}
+                onToggle={() => {
+                  toggle(item.id);
+                }}
+              />,
+            ];
+
+            if (!expanded.has(item.id)) {
+              return rows;
+            }
+
+            return rows.concat(
+              item.entries.map((entry) => (
+                <TimelineEntry
+                  key={entry.id}
+                  entry={entry}
+                  volunteerFirstName={volunteerFirstName}
+                  currentOperatorUserId={currentOperatorUserId}
+                  isExpanded={expanded.has(entry.id)}
+                  retryingEntryId={retryingEntryId}
+                  onRetryPending={onRetryPending}
+                  {...(onReply === undefined ? {} : { onReply })}
+                  onToggle={() => {
+                    toggle(entry.id);
+                  }}
+                />
+              )),
+            );
+          })}
         </ol>
       </div>
     </TooltipProvider>
-  );
-}
-
-interface PresentationItemProps {
-  readonly item: InboxTimelinePresentationItem;
-  readonly volunteerFirstName: string;
-  readonly currentOperatorUserId: string;
-  readonly isExpanded: boolean;
-  readonly retryingEntryId: string | null;
-  readonly onRetryPending: ((entryId: string) => void) | undefined;
-  readonly onReply?: (entryId: string) => void;
-  readonly onToggle: () => void;
-  readonly isChildExpanded: (entryId: string) => boolean;
-  readonly onToggleChild: (entryId: string) => void;
-}
-
-function TimelinePresentationItem({
-  item,
-  volunteerFirstName,
-  currentOperatorUserId,
-  isExpanded,
-  retryingEntryId,
-  onRetryPending,
-  onReply,
-  onToggle,
-  isChildExpanded,
-  onToggleChild,
-}: PresentationItemProps) {
-  if (item.kind === "system-message-group") {
-    return (
-      <SystemMessageGroup
-        group={item}
-        isExpanded={isExpanded}
-        currentOperatorUserId={currentOperatorUserId}
-        retryingEntryId={retryingEntryId}
-        onRetryPending={onRetryPending}
-        onToggle={onToggle}
-        isChildExpanded={isChildExpanded}
-        onToggleChild={onToggleChild}
-      />
-    );
-  }
-
-  return (
-    <TimelineEntry
-      entry={item}
-      volunteerFirstName={volunteerFirstName}
-      currentOperatorUserId={currentOperatorUserId}
-      isExpanded={isExpanded}
-      retryingEntryId={retryingEntryId}
-      onRetryPending={onRetryPending}
-      {...(onReply === undefined ? {} : { onReply })}
-      onToggle={onToggle}
-    />
   );
 }
 
@@ -278,7 +258,6 @@ interface EntryProps {
   readonly onRetryPending: ((entryId: string) => void) | undefined;
   readonly onReply?: (entryId: string) => void;
   readonly onToggle: () => void;
-  readonly nested?: boolean;
 }
 
 function TimelineEntry({
@@ -290,7 +269,6 @@ function TimelineEntry({
   onRetryPending,
   onReply,
   onToggle,
-  nested = false,
 }: EntryProps) {
   const role = roleForKind(entry.kind);
 
@@ -301,7 +279,6 @@ function TimelineEntry({
           <SmsMessage
             entry={entry}
             direction="inbound"
-            nested={nested}
             {...(onReply === undefined ? {} : { onReply })}
           />
         );
@@ -311,7 +288,6 @@ function TimelineEntry({
         <MessageBubble
           entry={entry}
           direction="inbound"
-          nested={nested}
           {...(onReply === undefined ? {} : { onReply })}
         />
       );
@@ -322,7 +298,6 @@ function TimelineEntry({
             entry={entry}
             direction="outbound"
             isRetrying={retryingEntryId === entry.id}
-            nested={nested}
             {...(onReply === undefined ? {} : { onReply })}
             {...(onRetryPending === undefined ? {} : { onRetryPending })}
           />
@@ -334,7 +309,6 @@ function TimelineEntry({
           entry={entry}
           direction="outbound"
           isRetrying={retryingEntryId === entry.id}
-          nested={nested}
           {...(onReply === undefined ? {} : { onReply })}
           {...(onRetryPending === undefined ? {} : { onRetryPending })}
         />
@@ -348,7 +322,6 @@ function TimelineEntry({
           role={role}
           isExpanded={isExpanded}
           onToggle={onToggle}
-          nested={nested}
         />
       );
     case "note":
@@ -356,7 +329,6 @@ function TimelineEntry({
         <TimelineNoteEntry
           entry={entry}
           currentOperatorUserId={currentOperatorUserId}
-          nested={nested}
         />
       );
     case "system":
@@ -368,105 +340,71 @@ function TimelineEntry({
 
 function SystemMessageGroup({
   group,
-  currentOperatorUserId,
   isExpanded,
-  retryingEntryId,
-  onRetryPending,
   onToggle,
-  isChildExpanded,
-  onToggleChild,
 }: {
   readonly group: InboxTimelineSystemGroupViewModel;
-  readonly currentOperatorUserId: string;
   readonly isExpanded: boolean;
-  readonly retryingEntryId: string | null;
-  readonly onRetryPending: ((entryId: string) => void) | undefined;
   readonly onToggle: () => void;
-  readonly isChildExpanded: (entryId: string) => boolean;
-  readonly onToggleChild: (entryId: string) => void;
 }) {
   const summary = formatSystemGroupSummary(group);
+  const primaryKind = group.campaignCount > 0 ? "campaign" : "automated";
+  const GroupIcon = primaryKind === "campaign" ? MegaphoneIcon : ZapIcon;
 
   return (
     <li className={cn("col-span-3 grid", TIMELINE_GRID_COLUMNS)}>
       <div className="col-start-2 flex justify-end">
-        <div
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          onClick={onToggle}
+          data-group-icon={primaryKind}
           className={cn(
-            "w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm",
+            "group w-full overflow-hidden rounded-xl border px-4 py-3 text-left shadow-sm",
+            "border-violet-200/70 bg-violet-50/40 hover:bg-violet-50/70",
+            "transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.99]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:ring-offset-2",
             EMAIL_BUBBLE_MAX_W,
+            TRANSITION.reduceMotion,
           )}
         >
-          <button
-            type="button"
-            aria-expanded={isExpanded}
-            onClick={onToggle}
-            className={cn(
-              "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-slate-50/60",
-              "transition-[background-color,transform] duration-150 ease-out active:scale-[0.99]",
-              TRANSITION.reduceMotion,
-            )}
-          >
-            <div className="flex min-w-0 items-center gap-2.5">
-              <div className="-space-x-1 flex shrink-0 items-center">
-                {group.entries.slice(0, 3).map((entry) => (
-                  <span
-                    key={entry.id}
-                    className={cn(
-                      "inline-flex size-5 items-center justify-center rounded-full ring-2 ring-white",
-                      roleForKind(entry.kind) === "campaign"
-                        ? "bg-violet-100 text-violet-700"
-                        : "bg-slate-100 text-slate-600",
-                    )}
-                  >
-                    {roleForKind(entry.kind) === "campaign" ? (
-                      <MegaphoneIcon className="size-2.5" />
-                    ) : (
-                      <ZapIcon className="size-2.5" />
-                    )}
-                  </span>
-                ))}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div
+                className={cn(
+                  "inline-flex size-9 shrink-0 items-center justify-center rounded-full",
+                  TONE_CLASSES.violet.avatar,
+                )}
+              >
+                <GroupIcon className="size-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-[12.5px] font-medium text-slate-800">
+                <div className="text-[13px] font-semibold text-slate-900">
                   {summary}
                 </div>
-                <RelativeTimestamp
-                  timestamp={group.occurredAt}
-                  label={group.occurredAtLabel}
-                  asSpan
-                  focusable={false}
-                  className="text-[11px] text-slate-400"
-                />
+                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-violet-700/80 tabular-nums">
+                  <RelativeTimestamp
+                    timestamp={group.occurredAt}
+                    label={group.occurredAtLabel}
+                    asSpan
+                    focusable={false}
+                  />
+                  <span aria-hidden="true" className="text-violet-300">
+                    ·
+                  </span>
+                  <span>{isExpanded ? "Click to collapse" : "Click to expand"}</span>
+                </div>
               </div>
             </div>
             <ChevronRightIcon
               className={cn(
-                "size-3.5 shrink-0 text-slate-400 transition-transform duration-150",
+                "size-3.5 shrink-0 text-violet-500 transition-transform duration-150",
                 isExpanded && "rotate-90",
                 TRANSITION.reduceMotion,
               )}
             />
-          </button>
-          {isExpanded ? (
-            <ol className="space-y-2 border-t border-slate-100 bg-slate-50/30 p-2">
-              {group.entries.map((entry) => (
-                <TimelineEntry
-                  key={entry.id}
-                  entry={entry}
-                  volunteerFirstName=""
-                  currentOperatorUserId={currentOperatorUserId}
-                  isExpanded={isChildExpanded(entry.id)}
-                  retryingEntryId={retryingEntryId}
-                  onRetryPending={onRetryPending}
-                  nested
-                  onToggle={() => {
-                    onToggleChild(entry.id);
-                  }}
-                />
-              ))}
-            </ol>
-          ) : null}
-        </div>
+          </div>
+        </button>
       </div>
     </li>
   );
@@ -475,6 +413,14 @@ function SystemMessageGroup({
 function formatSystemGroupSummary(
   group: InboxTimelineSystemGroupViewModel,
 ): string {
+  if (group.campaignCount > 0 && group.automatedCount === 0) {
+    return `${String(group.campaignCount)} campaign${group.campaignCount === 1 ? "" : "s"}`;
+  }
+
+  if (group.automatedCount > 0 && group.campaignCount === 0) {
+    return `${String(group.automatedCount)} automated send${group.automatedCount === 1 ? "" : "s"}`;
+  }
+
   const parts: string[] = [];
 
   if (group.automatedCount > 0) {
