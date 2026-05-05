@@ -2108,23 +2108,21 @@ function buildRecentActivity(
     })
     .flatMap((group) =>
       [...group.items].sort((left, right) => {
-        // Display each project's lifecycle events newest-first, faithful to
-        // Salesforce. When two milestones share an occurred_at (typical for
-        // date-only fields stamped on the same day), tiebreak by milestone
-        // ordinal descending so the later canonical step (e.g. completed
-        // training) sits above the earlier one (received training).
-        if (left.occurredAt !== right.occurredAt) {
-          return right.occurredAt.localeCompare(left.occurredAt);
+        const leftDate = utcCalendarDate(left.occurredAt);
+        const rightDate = utcCalendarDate(right.occurredAt);
+
+        if (leftDate !== rightDate) {
+          return rightDate.localeCompare(leftDate);
         }
 
         const leftOrdinal = lifecycleMilestoneOrdinal(left.milestone);
         const rightOrdinal = lifecycleMilestoneOrdinal(right.milestone);
 
         if (leftOrdinal !== rightOrdinal) {
-          return rightOrdinal - leftOrdinal;
+          return leftOrdinal - rightOrdinal;
         }
 
-        return right.id.localeCompare(left.id);
+        return left.id.localeCompare(right.id);
       }),
     )
     .map((item) => ({
@@ -2148,6 +2146,61 @@ function lifecycleMilestoneOrdinal(
     case "submitted_first_data":
       return 4;
   }
+}
+
+function utcCalendarDate(occurredAt: string): string {
+  return occurredAt.slice(0, 10);
+}
+
+function reorderSameDayLifecycleTimelineItems(
+  timelineItems: readonly TimelineItem[],
+): readonly TimelineItem[] {
+  const reordered: TimelineItem[] = [];
+
+  for (let index = 0; index < timelineItems.length; ) {
+    const item = timelineItems[index];
+
+    if (item?.family !== "salesforce_event") {
+      if (item !== undefined) {
+        reordered.push(item);
+      }
+      index += 1;
+      continue;
+    }
+
+    const groupDate = utcCalendarDate(item.occurredAt);
+    const lifecycleGroup: Extract<TimelineItem, { family: "salesforce_event" }>[] =
+      [];
+
+    while (index < timelineItems.length) {
+      const candidate = timelineItems[index];
+
+      if (
+        candidate?.family !== "salesforce_event" ||
+        utcCalendarDate(candidate.occurredAt) !== groupDate
+      ) {
+        break;
+      }
+
+      lifecycleGroup.push(candidate);
+      index += 1;
+    }
+
+    reordered.push(
+      ...lifecycleGroup.sort((left, right) => {
+        const leftOrdinal = lifecycleMilestoneOrdinal(left.milestone);
+        const rightOrdinal = lifecycleMilestoneOrdinal(right.milestone);
+
+        if (leftOrdinal !== rightOrdinal) {
+          return leftOrdinal - rightOrdinal;
+        }
+
+        return left.id.localeCompare(right.id);
+      }),
+    );
+  }
+
+  return reordered;
 }
 
 function timelineChannel(item: TimelineItem): InboxChannel | null {
@@ -3853,8 +3906,10 @@ async function readInboxDetailCacheData(
   const visibleTimelineItems = hasPostCutoverActivity
     ? filterItemsAtOrAfterPlatformFullCaptureCutover(smsFilteredTimelineItems)
     : smsFilteredTimelineItems;
+  const orderedTimelineItems =
+    reorderSameDayLifecycleTimelineItems(visibleTimelineItems);
   const timelinePage = paginateTimelineItems({
-    timelineItems: visibleTimelineItems,
+    timelineItems: orderedTimelineItems,
     limit: input.timelineLimit,
     beforeSortKey: input.timelineCursor,
   });

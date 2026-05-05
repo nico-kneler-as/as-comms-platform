@@ -3989,7 +3989,7 @@ describe("real inbox selectors", () => {
     ]);
   });
 
-  it("orders lifecycle events faithful to Salesforce, even when its timestamps imply training-before-signup", async () => {
+  it("orders lifecycle events by UTC day desc + canonical ordinal asc within day, faithful to SF cross-day timestamps", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -4029,11 +4029,64 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:sarah-martinez");
 
+    // Cross-day order is faithful to SF timestamps (SF anomaly: training stamped
+    // before signup). Within the Oct 27 group, both training events share a
+    // UTC day so they sort by canonical ordinal asc (received before completed).
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
       "Submitted first data - Amazon Basin Research",
       "Signed up - Amazon Basin Research",
-      "Completed training - Amazon Basin Research",
       "Received training - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+    ]);
+  });
+
+  it("uses canonical lifecycle order for milestones that share the same UTC day in both rail and timeline", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "same-day-received-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-08T09:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "same-day-signed-up",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-08T17:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "same-day-completed-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-09T08:00:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Completed training",
+      projectId: "project:amazon-basin",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
+      "Completed training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+    ]);
+    // Filter to lifecycle pills only — the shared runtime seeds non-lifecycle
+    // sarah events that are unrelated to this same-day-canonical-order check.
+    expect(
+      detail?.timeline
+        .filter((entry) => entry.kind === "system-event")
+        .map((entry) => entry.id),
+    ).toEqual([
+      "timeline:same-day-signed-up",
+      "timeline:same-day-received-training",
+      "timeline:same-day-completed-training",
     ]);
   });
 
