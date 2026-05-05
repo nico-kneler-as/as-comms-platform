@@ -3989,7 +3989,7 @@ describe("real inbox selectors", () => {
     ]);
   });
 
-  it("orders lifecycle events faithful to Salesforce, even when its timestamps imply training-before-signup", async () => {
+  it("orders lifecycle events by UTC day desc + canonical ordinal asc within day, faithful to SF cross-day timestamps", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -4029,11 +4029,14 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:sarah-martinez");
 
+    // Cross-day order is faithful to SF timestamps (SF anomaly: training stamped
+    // before signup). Within the Oct 27 group, both training events share a
+    // UTC day so they sort by canonical ordinal asc (received before completed).
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
       "Submitted first data - Amazon Basin Research",
       "Signed up - Amazon Basin Research",
-      "Completed training - Amazon Basin Research",
       "Received training - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
     ]);
   });
 
@@ -4074,7 +4077,13 @@ describe("real inbox selectors", () => {
       "Signed up - Amazon Basin Research",
       "Received training - Amazon Basin Research",
     ]);
-    expect(detail?.timeline.map((entry) => entry.id)).toEqual([
+    // Filter to lifecycle pills only — the shared runtime seeds non-lifecycle
+    // sarah events that are unrelated to this same-day-canonical-order check.
+    expect(
+      detail?.timeline
+        .filter((entry) => entry.kind === "system-event")
+        .map((entry) => entry.id),
+    ).toEqual([
       "timeline:same-day-signed-up",
       "timeline:same-day-received-training",
       "timeline:same-day-completed-training",
