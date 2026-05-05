@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { SHADOW, TONE_CLASSES, type ToneNameV2 } from "@/app/_lib/design-tokens-v2";
 
 import type { InboxTimelineEntryViewModel } from "../_lib/view-models";
+import { TIMELINE_GRID_COLUMNS } from "./inbox-timeline-bubble";
 import {
   BookOpenIcon,
   CalendarIcon,
@@ -128,32 +129,34 @@ export function SystemDivider({
   const tone = TONE_CLASSES[category.tone];
 
   return (
-    <li className="flex w-full items-start pr-16">
-      <div
-        className={cn(
-          "inline-flex max-w-[560px] items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5",
-          SHADOW.sm,
-        )}
-      >
-        <span
+    <li className={cn("col-span-3 grid", TIMELINE_GRID_COLUMNS)}>
+      <div className="col-start-2 flex items-start">
+        <div
           className={cn(
-            "inline-flex size-5 shrink-0 items-center justify-center rounded-full",
-            tone.subtle,
+            "inline-flex max-w-[560px] items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5",
+            SHADOW.sm,
           )}
         >
-          <category.Icon className={cn("size-3", tone.text)} />
-        </span>
-        <span className="text-[12.5px] text-slate-700">{body}</span>
-        <span className="text-[11px] text-slate-400 tabular-nums" aria-hidden="true">
-          ·
-        </span>
-        <time
-          dateTime={entry.occurredAt}
-          title={formatExactTimestamp(entry.occurredAt)}
-          className="cursor-help text-[11px] text-slate-400 tabular-nums"
-        >
-          {entry.occurredAtLabel}
-        </time>
+          <span
+            className={cn(
+              "inline-flex size-5 shrink-0 items-center justify-center rounded-full",
+              tone.subtle,
+            )}
+          >
+            <category.Icon className={cn("size-3", tone.text)} />
+          </span>
+          <span className="text-[12.5px] text-slate-700">{body}</span>
+          <span className="text-[11px] text-slate-400 tabular-nums" aria-hidden="true">
+            ·
+          </span>
+          <time
+            dateTime={entry.occurredAt}
+            title={formatExactTimestamp(entry.occurredAt)}
+            className="cursor-help text-[11px] text-slate-400 tabular-nums"
+          >
+            {entry.occurredAtLabel}
+          </time>
+        </div>
       </div>
     </li>
   );

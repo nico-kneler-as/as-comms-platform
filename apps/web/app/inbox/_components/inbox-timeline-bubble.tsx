@@ -37,6 +37,11 @@ import {
 const WRAP_ANYWHERE = "break-words [overflow-wrap:anywhere]";
 const HTML_TAG_PATTERN = /<\/?[a-zA-Z][^>]*>/u;
 const BODY_CLAMP_TEXT_LENGTH = 800;
+export const TIMELINE_OUTER_MAX_W = "max-w-[1024px]";
+export const TIMELINE_GRID_COLUMNS =
+  "grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]";
+export const EMAIL_BUBBLE_MAX_W = "max-w-[560px]";
+export const SMS_BUBBLE_MAX_W = "max-w-[480px]";
 const EMAIL_HTML_BODY_CLASS =
   "text-pretty text-[13px] leading-relaxed text-slate-700 [&_a]:text-sky-700 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_code]:rounded-sm [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_ol]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-100 [&_pre]:p-3 [&_table]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_ul]:ml-5 [&_ul]:list-disc";
 
@@ -379,12 +384,14 @@ export function MessageBubble({
   onReply,
   isRetrying = false,
   onRetryPending,
+  nested = false,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
   readonly direction: "inbound" | "outbound";
   readonly onReply?: (entryId: string) => void;
   readonly isRetrying?: boolean;
   readonly onRetryPending?: (entryId: string) => void;
+  readonly nested?: boolean;
 }) {
   const isEmail = entry.channel === "email";
   // Pre-PR-#170 we rendered every email body as plaintext via
@@ -415,99 +422,115 @@ export function MessageBubble({
     : isOutbound
       ? "border border-sky-600 bg-sky-600 text-white"
       : "border border-slate-200 bg-white";
+  const bubbleWidthClassName = nested
+    ? "w-full"
+    : isEmail
+      ? cn("w-fit", EMAIL_BUBBLE_MAX_W)
+      : cn("w-fit", SMS_BUBBLE_MAX_W);
+  const bubble = (
+    <div
+      className={cn(
+        "min-w-0 overflow-hidden rounded-xl",
+        bubbleWidthClassName,
+        SHADOW.sm,
+        bubbleClassName,
+      )}
+    >
+      {isEmail ? (
+        <EmailParticipantHeader
+          entry={entry}
+          tone={isOutbound ? "sky" : "slate"}
+        />
+      ) : null}
+
+      <div className={cn("px-4", isEmail ? "py-3" : "py-2.5")}>
+        {isOutbound ? (
+          <OutboundStatusBanner
+            entry={entry}
+            isRetrying={isRetrying}
+            {...(onRetryPending === undefined ? {} : { onRetryPending })}
+          />
+        ) : null}
+
+        {isEmail && entry.subject ? (
+          <p
+            className={cn(
+              "mb-1.5 text-balance text-[14px] font-semibold text-slate-900",
+              WRAP_ANYWHERE,
+            )}
+          >
+            {entry.subject}
+          </p>
+        ) : null}
+
+        {sanitizedHtmlBody !== null && sanitizedHtmlBody.length > 0 ? (
+          <CollapsibleBody shouldClamp={shouldClamp}>
+            <div
+              className={cn(EMAIL_HTML_BODY_CLASS, WRAP_ANYWHERE)}
+              dangerouslySetInnerHTML={{ __html: sanitizedHtmlBody }}
+            />
+          </CollapsibleBody>
+        ) : body.length > 0 ? (
+          <CollapsibleBody shouldClamp={shouldClamp}>
+            <p
+              className={cn(
+                "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed",
+                isOutbound && !isEmail ? "text-white" : "text-slate-700",
+                WRAP_ANYWHERE,
+              )}
+            >
+              {autolinkText(body)}
+            </p>
+          </CollapsibleBody>
+        ) : null}
+
+        <MessageAttachments attachments={entry.attachments} />
+      </div>
+
+      <ReplyFooter
+        entryId={entry.id}
+        {...(onReply === undefined ? {} : { onReply })}
+      />
+    </div>
+  );
 
   return (
     <li
       className={cn(
-        "flex w-full flex-col",
-        isOutbound ? "items-end pl-16" : "items-start pr-16",
+        nested ? "w-full" : cn("col-span-3 grid", TIMELINE_GRID_COLUMNS),
       )}
     >
-      {isOutbound && !isEmail ? <OutboundSmsMetaRow entry={entry} /> : null}
+      {!nested ? (
+        !isOutbound ? (
+          <div className="flex justify-start pt-2">{inboundAvatar}</div>
+        ) : (
+          <div aria-hidden="true" />
+        )
+      ) : null}
 
       <div
         className={cn(
-          "flex w-full items-start gap-2.5",
+          nested ? "min-w-0 flex" : "col-start-2 min-w-0 flex",
           isOutbound ? "justify-end" : "justify-start",
         )}
       >
-        {!isOutbound ? (
-          <div className="mt-2 shrink-0">{inboundAvatar}</div>
-        ) : null}
-
-        <div
-          className={cn(
-            "min-w-0 w-full max-w-[640px] overflow-hidden rounded-xl",
-            SHADOW.sm,
-            bubbleClassName,
-          )}
-        >
-          {isEmail ? (
-            <EmailParticipantHeader
-              entry={entry}
-              tone={isOutbound ? "sky" : "slate"}
-            />
+        <div className="min-w-0">
+          {isOutbound && !isEmail ? <OutboundSmsMetaRow entry={entry} /> : null}
+          {bubble}
+          {!isOutbound && entry.channel !== "email" ? (
+            <InboundMetadataRow entry={entry} />
           ) : null}
-
-          <div className={cn("px-4", isEmail ? "py-3" : "py-2.5")}>
-            {isOutbound ? (
-              <OutboundStatusBanner
-                entry={entry}
-                isRetrying={isRetrying}
-                {...(onRetryPending === undefined ? {} : { onRetryPending })}
-              />
-            ) : null}
-
-            {isEmail && entry.subject ? (
-              <p
-                className={cn(
-                  "mb-1.5 text-balance text-[14px] font-semibold text-slate-900",
-                  WRAP_ANYWHERE,
-                )}
-              >
-                {entry.subject}
-              </p>
-            ) : null}
-
-            {sanitizedHtmlBody !== null && sanitizedHtmlBody.length > 0 ? (
-              <CollapsibleBody shouldClamp={shouldClamp}>
-                <div
-                  className={cn(EMAIL_HTML_BODY_CLASS, WRAP_ANYWHERE)}
-                  dangerouslySetInnerHTML={{ __html: sanitizedHtmlBody }}
-                />
-              </CollapsibleBody>
-            ) : body.length > 0 ? (
-              <CollapsibleBody shouldClamp={shouldClamp}>
-                <p
-                  className={cn(
-                    "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed",
-                    isOutbound && !isEmail ? "text-white" : "text-slate-700",
-                    WRAP_ANYWHERE,
-                  )}
-                >
-                  {autolinkText(body)}
-                </p>
-              </CollapsibleBody>
-            ) : null}
-
-            <MessageAttachments attachments={entry.attachments} />
-          </div>
-
-          <ReplyFooter
-            entryId={entry.id}
-            {...(onReply === undefined ? {} : { onReply })}
-          />
         </div>
-
-        {isOutbound ? (
-          <div className="mt-2 shrink-0">
-            <OutboundBrandAvatar />
-          </div>
-        ) : null}
       </div>
 
-      {!isOutbound && entry.channel !== "email" ? (
-        <InboundMetadataRow entry={entry} />
+      {!nested ? (
+        isOutbound ? (
+          <div className="flex justify-end pt-2">
+            <OutboundBrandAvatar />
+          </div>
+        ) : (
+          <div aria-hidden="true" />
+        )
       ) : null}
     </li>
   );
