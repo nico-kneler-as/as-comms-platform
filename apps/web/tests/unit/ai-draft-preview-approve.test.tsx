@@ -15,6 +15,7 @@ vi.mock("lucide-react", () => ({
   BookOpen: iconMock("BookOpen"),
   Check: iconMock("Check"),
   Flag: iconMock("Flag"),
+  Hand: iconMock("Hand"),
   Inbox: iconMock("Inbox"),
   Loader2: iconMock("Loader2"),
   MailOpen: iconMock("MailOpen"),
@@ -23,6 +24,7 @@ vi.mock("lucide-react", () => ({
   Send: iconMock("Send"),
   Sparkle: iconMock("Sparkle"),
   Sparkles: iconMock("Sparkles"),
+  Star: iconMock("Star"),
   Trash2: iconMock("Trash2"),
 }));
 

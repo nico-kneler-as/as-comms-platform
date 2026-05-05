@@ -67,6 +67,12 @@ import {
   shouldHideAutomatedRowBody,
 } from "../../app/inbox/_components/inbox-timeline";
 import { classifySystemDivider } from "../../app/inbox/_components/inbox-timeline-system-divider";
+import {
+  BookOpenIcon,
+  CheckCircleIcon,
+  HandIcon,
+  StarIcon,
+} from "../../app/inbox/_components/icons";
 
 const baseEntry = {
   id: "timeline:auto-email-1",
@@ -248,7 +254,7 @@ describe("InboxTimeline", () => {
     expect(markup).toContain(">Clicked<");
   });
 
-  it("renders lifecycle events as volunteer-side context rows with an icon-led label", () => {
+  it("renders lifecycle events as left-aligned achievement markers without category text", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -267,8 +273,9 @@ describe("InboxTimeline", () => {
       }),
     );
 
-    expect(markup).toContain("APPLIED");
+    expect(markup).toContain('class="flex w-full items-start pr-16"');
     expect(markup).toContain("Alice applied to the Pacific Northwest expedition.");
+    expect(markup).not.toContain(">APPLIED<");
   });
 
   it("only hides automated email body text while a subject-bearing row is collapsed", () => {
@@ -505,12 +512,39 @@ describe("InboxTimeline", () => {
     expect(markup).not.toContain(">YO<");
   });
 
-  it("classifies first-data system dividers into the emerald data category", () => {
+  it("classifies signup system dividers into the violet hand achievement category", () => {
+    expect(
+      classifySystemDivider("Signed up for the Pacific Northwest expedition."),
+    ).toMatchObject({
+      tone: "violet",
+      Icon: HandIcon,
+    });
+  });
+
+  it("classifies training system dividers into the sky book achievement category", () => {
+    expect(
+      classifySystemDivider("Received training for Pacific Northwest expedition."),
+    ).toMatchObject({
+      tone: "sky",
+      Icon: BookOpenIcon,
+    });
+  });
+
+  it("classifies completed training before the generic training branch", () => {
+    expect(
+      classifySystemDivider("Completed training for Pacific Northwest expedition."),
+    ).toMatchObject({
+      tone: "emerald",
+      Icon: CheckCircleIcon,
+    });
+  });
+
+  it("classifies first-data system dividers into the emerald star achievement category", () => {
     expect(
       classifySystemDivider("Submitted first batch from the field."),
     ).toMatchObject({
-      label: "FIRST DATA",
       tone: "emerald",
+      Icon: StarIcon,
     });
   });
 });
