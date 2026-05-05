@@ -3564,7 +3564,17 @@ async function readInboxListCacheData(input: {
     runtime.repositories.projectDimensions.listActive(),
     runtime.settings.aliases.listAll(),
   ]);
-  const matchedProjections = [...visibleProjections, ...archivedProjections];
+  const seenContactIds = new Set<string>();
+  const matchedProjections = [
+    ...visibleProjections,
+    ...archivedProjections,
+  ].filter((projection) => {
+    if (seenContactIds.has(projection.contactId)) {
+      return false;
+    }
+    seenContactIds.add(projection.contactId);
+    return true;
+  });
   const activeProjects: readonly InboxActiveProjectOption[] =
     activeProjectRecords.map((record) => ({
       id: record.projectId,

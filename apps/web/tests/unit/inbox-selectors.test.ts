@@ -841,6 +841,47 @@ describe("real inbox selectors", () => {
     );
   });
 
+  it("dedupes archived rows by contactId when loading the archived filter", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:archived-dedupe",
+      salesforceContactId: "003-archived-dedupe",
+      displayName: "Archived Dedupe",
+      primaryEmail: "archived-dedupe@example.org",
+      primaryPhone: null,
+    });
+    const archivedLatest = await seedInboxEmailEvent(runtime.context, {
+      id: "archived-dedupe-email-1",
+      contactId: "contact:archived-dedupe",
+      occurredAt: "2026-04-24T10:00:00.000Z",
+      direction: "inbound",
+      subject: "Archived dedupe check",
+      snippet: "This archived row should only render once.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:archived-dedupe",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-24T10:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-24T10:00:00.000Z",
+      snippet: "This archived row should only render once.",
+      archivedAt: "2026-04-24T11:00:00.000Z",
+      lastCanonicalEventId: archivedLatest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const list = await getInboxList("archived");
+
+    expect(
+      list.items.filter((item) => item.contactId === "contact:archived-dedupe"),
+    ).toHaveLength(1);
+  });
+
   it("emits count chips only for unread and pending", async () => {
     const list = await getInboxList("inbox");
     const filtersById = new Map(list.filters.map((filter) => [filter.id, filter]));
