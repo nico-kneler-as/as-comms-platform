@@ -112,10 +112,9 @@ interface InboxListCacheData {
   >;
   readonly aliasToProjectId: ReadonlyMap<string, string>;
   readonly counts: {
-    readonly all: number;
+    readonly inbox: number;
     readonly unread: number;
     readonly followUp: number;
-    readonly unresolved: number;
     readonly sent: number;
     readonly archived: number;
   };
@@ -3460,7 +3459,8 @@ async function readInboxListCacheData(input: {
   const loadProjectionRows = (filter: InboxFilterId) =>
     normalizedQuery === null
       ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
-          filter,
+          filter:
+            filter === "inbox" ? "visible" : filter,
           order,
           limit: INBOX_LIST_SCAN_LIMIT,
           cursor: null,
@@ -3468,7 +3468,8 @@ async function readInboxListCacheData(input: {
         })
       : runtime.repositories.inboxProjection
           .searchPageOrderedByRecency({
-            filter,
+            filter:
+              filter === "inbox" ? "visible" : filter,
             order,
             limit: INBOX_LIST_SCAN_LIMIT,
             cursor: null,
@@ -3483,7 +3484,7 @@ async function readInboxListCacheData(input: {
     activeProjectRecords,
     projectAliasRecords,
   ] = await Promise.all([
-    loadProjectionRows("all"),
+    loadProjectionRows("inbox"),
     loadProjectionRows("archived"),
     runtime.repositories.inboxProjection.getFreshness(),
     runtime.repositories.projectDimensions.listActive(),
@@ -3651,7 +3652,11 @@ async function readInboxListCacheData(input: {
         referenceNowIso,
       ),
     )
-    .filter((item) => matchesServerFilter(item, input.filterId))
+    .filter((item) =>
+      matchesServerFilter(item, input.filterId, {
+        bypassInboxScope: normalizedQuery !== null,
+      }),
+    )
     .sort(
       input.filterId === "sent"
         ? compareInboxOutboundRecency
@@ -3680,8 +3685,11 @@ async function readInboxListCacheData(input: {
     return row === undefined ? [] : [row];
   });
   const counts = {
-    all: allRows.filter((row) => row.inboxProjection.archivedAt === null)
-      .length,
+    inbox: allRows.filter(
+      (row) =>
+        row.inboxProjection.archivedAt === null &&
+        row.inboxProjection.lastInboundAt !== null,
+    ).length,
     unread: allRows.filter(
       (row) => row.inboxProjection.archivedAt === null && row.isUnread,
     ).length,
@@ -3689,11 +3697,6 @@ async function readInboxListCacheData(input: {
       (row) =>
         row.inboxProjection.archivedAt === null &&
         row.inboxProjection.needsFollowUp,
-    ).length,
-    unresolved: allRows.filter(
-      (row) =>
-        row.inboxProjection.archivedAt === null &&
-        row.inboxProjection.hasUnresolved,
     ).length,
     sent: allRows.filter(
       (row) =>
@@ -4613,20 +4616,21 @@ function buildInboxDetailTimelineViewModel(input: {
 function matchesServerFilter(
   item: InboxListItemViewModel,
   filterId: InboxFilterId,
+  input?: {
+    readonly bypassInboxScope?: boolean;
+  },
 ): boolean {
   if (item.isArchived) {
     return filterId === "archived";
   }
 
   switch (filterId) {
-    case "all":
-      return true;
+    case "inbox":
+      return input?.bypassInboxScope === true || item.lastInboundAt !== null;
     case "unread":
       return item.isUnread;
     case "follow-up":
       return item.needsFollowUp;
-    case "unresolved":
-      return item.hasUnresolved;
     case "sent":
       return item.lastOutboundAt !== null;
     case "archived":
@@ -4635,7 +4639,7 @@ function matchesServerFilter(
 }
 
 export async function getInboxList(
-  filterId: InboxFilterId = "all",
+  filterId: InboxFilterId = "inbox",
   input: {
     readonly cursor?: string | null;
     readonly limit?: number;
@@ -4671,17 +4675,18 @@ export async function getInboxList(
     count:
       filter.id === "follow-up"
         ? totals.followUp
-        : filter.id === "unresolved"
-          ? totals.unresolved
-          : filter.id === "sent"
-            ? totals.sent
-            : filter.id === "archived"
-              ? totals.archived
-              : totals[filter.id],
+        : filter.id === "unread"
+          ? totals.unread
+          : null,
   }));
 
   return {
-    items: items.filter((item) => matchesServerFilter(item, filterId)),
+    items: items.filter((item) =>
+      matchesServerFilter(item, filterId, {
+        bypassInboxScope:
+          (input.query?.trim().length ?? 0) > 0,
+      }),
+    ),
     filters,
     totals,
     activeProjects: cachedData.activeProjects,

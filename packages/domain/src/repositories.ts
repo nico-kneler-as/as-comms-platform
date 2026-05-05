@@ -449,10 +449,10 @@ export interface InboxProjectionRepository {
   listAllOrderedByRecency(): Promise<readonly InboxProjectionRow[]>;
   searchPageOrderedByRecency(input: {
     readonly filter:
-      | "all"
+      | "visible"
+      | "inbox"
       | "unread"
       | "follow-up"
-      | "unresolved"
       | "sent"
       | "archived";
     readonly order: "last-inbound" | "last-outbound";
@@ -471,10 +471,10 @@ export interface InboxProjectionRepository {
   }>;
   listPageOrderedByRecency(input: {
     readonly filter:
-      | "all"
+      | "visible"
+      | "inbox"
       | "unread"
       | "follow-up"
-      | "unresolved"
       | "sent"
       | "archived";
     readonly order: "last-inbound" | "last-outbound";

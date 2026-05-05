@@ -7,10 +7,10 @@ import { requireApiSession } from "../../../../src/server/auth/api";
 export const dynamic = "force-dynamic";
 
 const filterSchema = z.enum([
+  "inbox",
   "all",
   "unread",
   "follow-up",
-  "unresolved",
   "sent",
   "archived",
 ]);
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const parsedFilter = filterSchema.safeParse(
-    searchParams.get("filter") ?? "all",
+    searchParams.get("filter") ?? "inbox",
   );
   const limit = parseLimit(searchParams.get("limit"));
 
@@ -53,6 +53,8 @@ export async function GET(request: Request) {
     );
   }
 
+  const filter = parsedFilter.data === "all" ? "inbox" : parsedFilter.data;
+
   const rawProjectId = searchParams.get("projectId");
   const projectId =
     rawProjectId === null || rawProjectId.trim().length === 0
@@ -60,7 +62,7 @@ export async function GET(request: Request) {
       : rawProjectId.trim();
 
   return NextResponse.json(
-    await getInboxList(parsedFilter.data, {
+    await getInboxList(filter, {
       cursor: searchParams.get("cursor"),
       ...(limit === undefined ? {} : { limit }),
       query: searchParams.get("q") ?? searchParams.get("query"),

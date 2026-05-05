@@ -1260,7 +1260,7 @@ describe("Stage 1 DB repositories", () => {
 
     const firstPage =
       await repositories.inboxProjection.listPageOrderedByRecency({
-        filter: "all",
+        filter: "visible",
         order: "last-inbound",
         limit: 4,
         cursor: null,
@@ -1272,7 +1272,7 @@ describe("Stage 1 DB repositories", () => {
 
     const secondPage =
       await repositories.inboxProjection.listPageOrderedByRecency({
-        filter: "all",
+        filter: "visible",
         order: "last-inbound",
         limit: 4,
         cursor: {
@@ -1442,7 +1442,7 @@ describe("Stage 1 DB repositories", () => {
     });
 
     const pnwRows = await repositories.inboxProjection.listPageOrderedByRecency({
-      filter: "all",
+      filter: "visible",
       order: "last-inbound",
       limit: 10,
       cursor: null,
@@ -1450,7 +1450,7 @@ describe("Stage 1 DB repositories", () => {
     });
     const whitebarkRows =
       await repositories.inboxProjection.listPageOrderedByRecency({
-        filter: "all",
+        filter: "visible",
         order: "last-inbound",
         limit: 10,
         cursor: null,
@@ -1458,7 +1458,7 @@ describe("Stage 1 DB repositories", () => {
       });
     const inactiveRows =
       await repositories.inboxProjection.listPageOrderedByRecency({
-        filter: "all",
+        filter: "visible",
         order: "last-inbound",
         limit: 10,
         cursor: null,

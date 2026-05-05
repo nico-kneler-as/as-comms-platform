@@ -7,20 +7,21 @@ interface FilterDefinition {
 }
 
 /**
- * Secondary filter chips for the inbox list. The default view shows all
- * contacts sorted by last inbound message. These filters narrow the list
- * to contacts matching a specific row state.
+ * Secondary filter chips for the inbox list. The default view shows only
+ * contacts with at least one inbound 1:1 message, sorted by last inbound
+ * message. These filters narrow the list to contacts matching a specific
+ * row state.
  *
  * The base follow-up state comes from the projection-backed
  * `needsFollowUp` field. The client may layer temporary overrides on top
  * while the shell is still mock-wired.
  */
 export const INBOX_FILTERS: readonly FilterDefinition[] = [
-  { id: "all", label: "All", hint: null },
+  { id: "inbox", label: "Inbox", hint: null },
   { id: "unread", label: "Unread", hint: "New inbound message" },
-  { id: "follow-up", label: "Needs Follow-Up", hint: "Flagged by you" },
-  { id: "sent", label: "Sent", hint: "Last outbound 1:1 message" },
+  { id: "follow-up", label: "Pending", hint: "Flagged by you" },
   { id: "archived", label: "Archived", hint: "Hidden from inbox" },
+  { id: "sent", label: "Sent", hint: "Last outbound 1:1 message" },
 ];
 
 /**

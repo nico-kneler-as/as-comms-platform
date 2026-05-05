@@ -944,10 +944,10 @@ const DEFAULT_INTEGRATION_HEALTH_SEED = [
 ] as const;
 
 type InboxProjectionFilter =
-  | "all"
+  | "visible"
+  | "inbox"
   | "unread"
   | "follow-up"
-  | "unresolved"
   | "sent"
   | "archived";
 type InboxProjectionOrder = "last-inbound" | "last-outbound";
@@ -979,21 +979,22 @@ function buildInboxFilterPredicate(
   filter: InboxProjectionFilter,
 ): SQL | undefined {
   const excludeArchived = isNull(contactInboxProjection.archivedAt);
+  const inboxOnly = isNotNull(contactInboxProjection.lastInboundAt);
 
   if (filter === "archived") {
     return isNotNull(contactInboxProjection.archivedAt);
   }
 
   const filterPredicate =
-    filter === "unread"
-      ? eq(contactInboxProjection.bucket, "New")
-      : filter === "follow-up"
-        ? eq(contactInboxProjection.isStarred, true)
-        : filter === "unresolved"
-          ? eq(contactInboxProjection.hasUnresolved, true)
-          : filter === "sent"
-            ? isNotNull(contactInboxProjection.lastOutboundAt)
-            : undefined;
+    filter === "visible"
+      ? undefined
+      : filter === "inbox"
+        ? inboxOnly
+        : filter === "unread"
+          ? eq(contactInboxProjection.bucket, "New")
+        : filter === "follow-up"
+          ? eq(contactInboxProjection.isStarred, true)
+          : isNotNull(contactInboxProjection.lastOutboundAt);
 
   return filterPredicate === undefined
     ? excludeArchived

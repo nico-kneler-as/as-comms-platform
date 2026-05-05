@@ -765,6 +765,104 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("uses Inbox as the default scope and excludes outbound-only plus archived contacts", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:outbound-only",
+      salesforceContactId: null,
+      displayName: "Outbound Only",
+      primaryEmail: "outbound-only@example.org",
+      primaryPhone: null,
+    });
+    const outboundOnlyLatest = await seedInboxEmailEvent(runtime.context, {
+      id: "outbound-only-email-1",
+      contactId: "contact:outbound-only",
+      occurredAt: "2026-04-21T10:00:00.000Z",
+      direction: "outbound",
+      subject: "Outbound-only touchpoint",
+      snippet: "This contact has only outbound mail so far.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:outbound-only",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-21T10:00:00.000Z",
+      lastActivityAt: "2026-04-21T10:00:00.000Z",
+      snippet: "This contact has only outbound mail so far.",
+      lastCanonicalEventId: outboundOnlyLatest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:archived-inbox",
+      salesforceContactId: "003-archived-inbox",
+      displayName: "Archived Inbox",
+      primaryEmail: "archived-inbox@example.org",
+      primaryPhone: null,
+    });
+    const archivedLatest = await seedInboxEmailEvent(runtime.context, {
+      id: "archived-inbox-email-1",
+      contactId: "contact:archived-inbox",
+      occurredAt: "2026-04-22T10:00:00.000Z",
+      direction: "inbound",
+      subject: "Archived contact",
+      snippet: "I wrote in, but this row is archived.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:archived-inbox",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-22T10:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-22T10:00:00.000Z",
+      snippet: "I wrote in, but this row is archived.",
+      archivedAt: "2026-04-23T10:00:00.000Z",
+      lastCanonicalEventId: archivedLatest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const list = await getInboxList("inbox");
+
+    expect(list.items.map((item) => item.contactId)).not.toContain(
+      "contact:outbound-only",
+    );
+    expect(list.items.map((item) => item.contactId)).not.toContain(
+      "contact:archived-inbox",
+    );
+  });
+
+  it("emits count chips only for unread and pending", async () => {
+    const list = await getInboxList("inbox");
+    const filtersById = new Map(list.filters.map((filter) => [filter.id, filter]));
+
+    expect(filtersById.get("inbox")).toMatchObject({
+      label: "Inbox",
+      count: null,
+    });
+    expect(filtersById.get("unread")).toMatchObject({
+      label: "Unread",
+      count: 1,
+    });
+    expect(filtersById.get("follow-up")).toMatchObject({
+      label: "Pending",
+      count: 1,
+    });
+    expect(filtersById.get("archived")).toMatchObject({
+      label: "Archived",
+      count: null,
+    });
+    expect(filtersById.get("sent")).toMatchObject({
+      label: "Sent",
+      count: null,
+    });
+  });
+
   it("prefers the short project alias for inbox row tags", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
@@ -1017,10 +1115,10 @@ describe("real inbox selectors", () => {
     });
 
     const list = await getInboxList();
-    const activeProjectFilter = await getInboxList("all", {
+    const activeProjectFilter = await getInboxList("inbox", {
       projectId: "project:pnw-bio",
     });
-    const inactiveProjectFilter = await getInboxList("all", {
+    const inactiveProjectFilter = await getInboxList("inbox", {
       projectId: "project:whitebark-pine",
     });
     const ryan = list.items.find(
@@ -1181,10 +1279,10 @@ describe("real inbox selectors", () => {
       lastEventType: "communication.email.inbound",
     });
 
-    const pnwFilter = await getInboxList("all", {
+    const pnwFilter = await getInboxList("inbox", {
       projectId: "project:pnw-bio",
     });
-    const whitebarkFilter = await getInboxList("all", {
+    const whitebarkFilter = await getInboxList("inbox", {
       projectId: "project:whitebark-pine",
     });
     const mattInPnw = pnwFilter.items.find(
@@ -1207,16 +1305,11 @@ describe("real inbox selectors", () => {
   it("uses bucket, needsFollowUp, and hasUnresolved for the secondary filters", async () => {
     const unread = await getInboxList("unread");
     const followUp = await getInboxList("follow-up");
-    const unresolved = await getInboxList("unresolved");
-
     expect(unread.items.map((item) => item.contactId)).toEqual([
       "contact:sarah-martinez",
     ]);
     expect(followUp.items.map((item) => item.contactId)).toEqual([
       "contact:sarah-martinez",
-    ]);
-    expect(unresolved.items.map((item) => item.contactId)).toEqual([
-      "contact:alex-thompson",
     ]);
   });
 
@@ -5113,7 +5206,7 @@ describe("real inbox selectors", () => {
   });
 
   it("pages inbox rows and timeline history instead of loading full history by default", async () => {
-    const firstPage = await getInboxList("all", {
+    const firstPage = await getInboxList("inbox", {
       limit: 2,
     });
 
@@ -5124,7 +5217,7 @@ describe("real inbox selectors", () => {
     expect(firstPage.page.hasMore).toBe(true);
     expect(firstPage.page.nextCursor).not.toBeNull();
 
-    const secondPage = await getInboxList("all", {
+    const secondPage = await getInboxList("inbox", {
       limit: 2,
       cursor: firstPage.page.nextCursor,
     });
@@ -5156,7 +5249,7 @@ describe("real inbox selectors", () => {
   });
 
   it("supports server-backed search beyond the initially loaded page", async () => {
-    const searched = await getInboxList("all", {
+    const searched = await getInboxList("inbox", {
       limit: 1,
       query: "Alex Thompson",
     });
@@ -5170,23 +5263,69 @@ describe("real inbox selectors", () => {
     expect(searched.page.hasMore).toBe(false);
   });
 
+  it("bypasses the inbox inbound-only scope while searching", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:search-only-outbound",
+      salesforceContactId: null,
+      displayName: "Search Only Outbound",
+      primaryEmail: "search-only-outbound@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "search-only-outbound-email-1",
+      contactId: "contact:search-only-outbound",
+      occurredAt: "2026-04-28T12:00:00.000Z",
+      direction: "outbound",
+      subject: "Outbound-only profile",
+      snippet: "This contact should only appear through search.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:search-only-outbound",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-28T12:00:00.000Z",
+      lastActivityAt: "2026-04-28T12:00:00.000Z",
+      snippet: "This contact should only appear through search.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const defaultList = await getInboxList("inbox");
+    const searched = await getInboxList("inbox", {
+      query: "Search Only Outbound",
+    });
+
+    expect(defaultList.items.map((item) => item.contactId)).not.toContain(
+      "contact:search-only-outbound",
+    );
+    expect(searched.items.map((item) => item.contactId)).toContain(
+      "contact:search-only-outbound",
+    );
+  });
+
   it("matches query terms across display name, email, project label, subject, and snippet", async () => {
-    const byDisplayName = await getInboxList("all", {
+    const byDisplayName = await getInboxList("inbox", {
       query: "Alex Thompson",
     });
-    const byEmail = await getInboxList("all", {
+    const byEmail = await getInboxList("inbox", {
       query: "sarah@example.org",
     });
-    const bySubject = await getInboxList("all", {
+    const bySubject = await getInboxList("inbox", {
       query: "Safety protocols",
     });
-    const byProject = await getInboxList("all", {
+    const byProject = await getInboxList("inbox", {
       query: "Searching for Killer Whales",
     });
-    const bySnippet = await getInboxList("all", {
+    const bySnippet = await getInboxList("inbox", {
       query: "weather",
     });
-    const noMatch = await getInboxList("all", {
+    const noMatch = await getInboxList("inbox", {
       query: "Michelle Neitzey",
     });
 
@@ -5261,7 +5400,7 @@ describe("real inbox selectors", () => {
       lastEventType: "communication.email.inbound",
     });
 
-    const searched = await getInboxList("all", {
+    const searched = await getInboxList("inbox", {
       query: "Amazon Basin Expedition",
     });
 
@@ -5270,25 +5409,18 @@ describe("real inbox selectors", () => {
     ]);
   });
 
-  it("composes search with unread, follow-up, and unresolved filters", async () => {
+  it("composes search with unread and follow-up filters", async () => {
     const unread = await getInboxList("unread", {
       query: "sarah@example.org",
     });
     const followUp = await getInboxList("follow-up", {
       query: "Sarah",
     });
-    const unresolved = await getInboxList("unresolved", {
-      query: "weather",
-    });
-
     expect(unread.items.map((item) => item.contactId)).toEqual([
       "contact:sarah-martinez",
     ]);
     expect(followUp.items.map((item) => item.contactId)).toEqual([
       "contact:sarah-martinez",
-    ]);
-    expect(unresolved.items.map((item) => item.contactId)).toEqual([
-      "contact:alex-thompson",
     ]);
   });
 
@@ -5497,8 +5629,8 @@ describe("real inbox selectors", () => {
   });
 
   it("treats an empty query as the default ordered inbox list", async () => {
-    const defaultList = await getInboxList("all");
-    const emptyQueryList = await getInboxList("all", {
+    const defaultList = await getInboxList("inbox");
+    const emptyQueryList = await getInboxList("inbox", {
       query: "   ",
     });
 
@@ -5538,7 +5670,7 @@ describe("real inbox selectors", () => {
       occurredAt: "2026-04-15T16:00:00.000Z",
     });
 
-    const firstPage = await getInboxList("all", {
+    const firstPage = await getInboxList("inbox", {
       query: "ridge",
       limit: 2,
     });
@@ -5551,7 +5683,7 @@ describe("real inbox selectors", () => {
     expect(firstPage.page.hasMore).toBe(true);
     expect(firstPage.page.nextCursor).not.toBeNull();
 
-    const secondPage = await getInboxList("all", {
+    const secondPage = await getInboxList("inbox", {
       query: "ridge",
       limit: 2,
       cursor: firstPage.page.nextCursor,
@@ -5573,7 +5705,7 @@ describe("real inbox selectors", () => {
     runtime = await createInboxTestRuntime();
     await seedSharedInboxRecencyFixture(runtime);
 
-    const firstPage = await getInboxList("all", {
+    const firstPage = await getInboxList("inbox", {
       limit: 3,
     });
 
@@ -5583,7 +5715,7 @@ describe("real inbox selectors", () => {
     expect(firstPage.page.hasMore).toBe(true);
     expect(firstPage.page.nextCursor).not.toBeNull();
 
-    const secondPage = await getInboxList("all", {
+    const secondPage = await getInboxList("inbox", {
       limit: 3,
       cursor: firstPage.page.nextCursor,
     });
