@@ -1,31 +1,32 @@
 "use client";
 
 import type {
-  InboxDetailViewModel,
+  InboxDetailFreshnessViewModel,
+  InboxDetailTimelinePageViewModel,
   InboxFilterId,
   InboxListViewModel,
-  InboxTimelineEntryViewModel
+  InboxTimelineEntryViewModel,
 } from "./view-models";
 
 export interface InboxTimelinePageResponse {
   readonly entries: readonly InboxTimelineEntryViewModel[];
-  readonly page: InboxDetailViewModel["timelinePage"];
+  readonly page: InboxDetailTimelinePageViewModel;
 }
 
 export interface InboxFreshnessResponse {
   readonly list: InboxListViewModel["freshness"];
-  readonly detail:
-    | InboxDetailViewModel["freshness"]
-    | null;
+  readonly detail: InboxDetailFreshnessViewModel | null;
 }
 
 async function readJson<T>(input: RequestInfo | URL): Promise<T> {
   const response = await fetch(input, {
-    cache: "no-store"
+    cache: "no-store",
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status.toString()}.`);
+    throw new Error(
+      `Request failed with status ${response.status.toString()}.`,
+    );
   }
 
   return (await response.json()) as T;
@@ -39,7 +40,7 @@ export function fetchInboxListPage(input: {
   readonly projectId?: string | null;
 }): Promise<InboxListViewModel> {
   const params = new URLSearchParams({
-    filter: input.filterId
+    filter: input.filterId,
   });
 
   if (input.cursor) {
@@ -56,7 +57,11 @@ export function fetchInboxListPage(input: {
     params.set("q", trimmedQuery);
   }
 
-  if (input.projectId !== undefined && input.projectId !== null && input.projectId.length > 0) {
+  if (
+    input.projectId !== undefined &&
+    input.projectId !== null &&
+    input.projectId.length > 0
+  ) {
     params.set("projectId", input.projectId);
   }
 
@@ -79,12 +84,12 @@ export function fetchInboxTimelinePage(input: {
   }
 
   return readJson<InboxTimelinePageResponse>(
-    `/api/inbox/contact/${encodeURIComponent(input.contactId)}/timeline?${params.toString()}`
+    `/api/inbox/contact/${encodeURIComponent(input.contactId)}/timeline?${params.toString()}`,
   );
 }
 
 export function fetchInboxFreshness(
-  contactId?: string
+  contactId?: string,
 ): Promise<InboxFreshnessResponse> {
   const params = new URLSearchParams();
 
@@ -94,6 +99,8 @@ export function fetchInboxFreshness(
 
   const query = params.toString();
   return readJson<InboxFreshnessResponse>(
-    query.length === 0 ? "/api/inbox/freshness" : `/api/inbox/freshness?${query}`
+    query.length === 0
+      ? "/api/inbox/freshness"
+      : `/api/inbox/freshness?${query}`,
   );
 }

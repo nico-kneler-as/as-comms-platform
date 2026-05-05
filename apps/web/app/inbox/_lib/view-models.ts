@@ -382,7 +382,20 @@ export interface InboxComposerReplyContext {
   readonly cc?: readonly string[];
 }
 
-export interface InboxDetailViewModel {
+export interface InboxDetailTimelinePageViewModel {
+  readonly hasMore: boolean;
+  readonly hasHiddenEarlierHistory: boolean;
+  readonly nextCursor: string | null;
+  readonly total: number;
+}
+
+export interface InboxDetailFreshnessViewModel {
+  readonly inboxUpdatedAt: string | null;
+  readonly timelineUpdatedAt: string | null;
+  readonly timelineCount: number;
+}
+
+export interface InboxDetailSummaryViewModel {
   readonly contact: InboxContactSummaryViewModel;
   readonly projectionAvailable: boolean;
   readonly conversationProject: {
@@ -392,25 +405,22 @@ export interface InboxDetailViewModel {
   } | null;
   readonly initials: string;
   readonly avatarTone: InboxAvatarTone;
-  readonly timeline: readonly InboxTimelineEntryViewModel[];
   readonly bucket: InboxBucket;
   readonly needsFollowUp: boolean;
   readonly isArchived: boolean;
   readonly isUnread: boolean;
   readonly smsEligible: boolean;
   readonly composerReplyContext: InboxComposerReplyContext | null;
-  readonly timelinePage: {
-    readonly hasMore: boolean;
-    readonly hasHiddenEarlierHistory: boolean;
-    readonly nextCursor: string | null;
-    readonly total: number;
-  };
-  readonly freshness: {
-    readonly inboxUpdatedAt: string | null;
-    readonly timelineUpdatedAt: string | null;
-    readonly timelineCount: number;
-  };
+  readonly freshness: InboxDetailFreshnessViewModel;
 }
+
+export interface InboxDetailTimelineViewModel {
+  readonly timeline: readonly InboxTimelineEntryViewModel[];
+  readonly timelinePage: InboxDetailTimelinePageViewModel;
+}
+
+export interface InboxDetailViewModel
+  extends InboxDetailSummaryViewModel, InboxDetailTimelineViewModel {}
 
 export interface InboxFilterViewModel {
   readonly id: InboxFilterId;

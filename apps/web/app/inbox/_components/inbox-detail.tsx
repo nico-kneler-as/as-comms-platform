@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   useTransition,
+  type ReactNode,
 } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,8 @@ import { plaintextToComposerHtml } from "@/src/lib/html-sanitizer";
 import { fetchInboxTimelinePage } from "../_lib/client-api";
 import type {
   InboxComposerReplyContext,
-  InboxDetailViewModel,
+  InboxDetailSummaryViewModel,
+  InboxDetailTimelineViewModel,
   InboxTimelineEntryViewModel,
   OptimisticOutbound,
 } from "../_lib/view-models";
@@ -63,7 +65,15 @@ import {
 } from "./icons";
 
 interface DetailProps {
-  readonly detail: InboxDetailViewModel;
+  readonly detail: InboxDetailSummaryViewModel;
+  readonly timelineSlot?: ReactNode;
+  readonly currentOperatorUserId: string;
+}
+
+interface InboxDetailTimelinePanelProps {
+  readonly contact: InboxDetailSummaryViewModel["contact"];
+  readonly composerReplyContext: InboxComposerReplyContext | null;
+  readonly initialTimeline: InboxDetailTimelineViewModel;
   readonly currentOperatorUserId: string;
 }
 
@@ -113,8 +123,7 @@ function buildTimelineReplyContext(input: {
     contactDisplayName: input.contactDisplayName,
     contactPrimaryPhone: input.contactPrimaryPhone,
     subject: buildReplySubject(input.entry.subject),
-    threadCursor:
-      input.entry.kind === "inbound-email" ? input.entry.id : null,
+    threadCursor: input.entry.kind === "inbound-email" ? input.entry.id : null,
     threadId: input.entry.threadId,
     inReplyToRfc822:
       input.entry.kind === "inbound-email"
@@ -156,152 +165,11 @@ function realEntryMatchesOptimistic(
   return realEntry.occurredAt >= optimisticEntry.occurredAt;
 }
 
-export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
+export function InboxDetail({ detail, timelineSlot }: DetailProps) {
   const { contact } = detail;
-  const timelineScrollRef = useRef<HTMLDivElement>(null);
-  const activeTimelineRequestIdRef = useRef(0);
-  const shouldScrollToLatestRef = useRef(true);
-  const previousContactIdRef = useRef(detail.contact.contactId);
-  const {
-    isTimelineLoading,
-    setTimelineLoading,
-    optimisticOutbounds,
-    clearOptimisticForContact,
-    removeOptimisticOutbound,
-    openReplyDraft,
-    showToast,
-  } = useInboxClient();
+  const { openReplyDraft } = useInboxClient();
 
   const [railOpen, setRailOpen] = useState(false);
-  const [timelineEntries, setTimelineEntries] = useState(detail.timeline);
-  const [timelinePage, setTimelinePage] = useState(detail.timelinePage);
-  const [retryingEntryId, setRetryingEntryId] = useState<string | null>(null);
-  const [isRetryPending, startRetryTransition] = useTransition();
-
-  useEffect(() => {
-    activeTimelineRequestIdRef.current += 1;
-    setTimelineLoading(false);
-    setTimelineEntries(detail.timeline);
-    setTimelinePage(detail.timelinePage);
-
-    if (previousContactIdRef.current !== detail.contact.contactId) {
-      clearOptimisticForContact(previousContactIdRef.current);
-      shouldScrollToLatestRef.current = true;
-      previousContactIdRef.current = detail.contact.contactId;
-    }
-  }, [
-    clearOptimisticForContact,
-    detail.contact.contactId,
-    detail.freshness.inboxUpdatedAt,
-    detail.freshness.timelineCount,
-    detail.freshness.timelineUpdatedAt,
-    detail.timeline,
-    detail.timelinePage,
-    setTimelineLoading,
-  ]);
-
-  const activeOptimisticOutbounds = useMemo(
-    () =>
-      optimisticOutbounds.filter(
-        (entry) => entry.contactId === detail.contact.contactId,
-      ),
-    [detail.contact.contactId, optimisticOutbounds],
-  );
-
-  const mergedTimelineEntries = useMemo(
-    () => sortTimelineEntries([...timelineEntries, ...activeOptimisticOutbounds]),
-    [activeOptimisticOutbounds, timelineEntries],
-  );
-
-  useEffect(() => {
-    const matchedSettledIds = activeOptimisticOutbounds
-      .filter(
-        (entry) =>
-          entry.settledAt !== null &&
-          timelineEntries.some((realEntry) =>
-            realEntryMatchesOptimistic(realEntry, entry),
-          ),
-      )
-      .map((entry) => entry.clientGeneratedId);
-
-    if (matchedSettledIds.length === 0) {
-      return;
-    }
-
-    for (const clientGeneratedId of matchedSettledIds) {
-      removeOptimisticOutbound(clientGeneratedId);
-    }
-  }, [activeOptimisticOutbounds, removeOptimisticOutbound, timelineEntries]);
-
-  useEffect(() => {
-    if (!shouldScrollToLatestRef.current) {
-      return;
-    }
-
-    const frame = window.requestAnimationFrame(() => {
-      const container = timelineScrollRef.current;
-
-      if (!container) {
-        return;
-      }
-
-      container.scrollTop = container.scrollHeight;
-      shouldScrollToLatestRef.current = false;
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
-  }, [detail.contact.contactId, mergedTimelineEntries]);
-
-  const loadOlderTimeline = useCallback(async () => {
-    if (!timelinePage.hasMore || timelinePage.nextCursor === null) {
-      return;
-    }
-
-    const requestId = activeTimelineRequestIdRef.current + 1;
-    activeTimelineRequestIdRef.current = requestId;
-    const container = timelineScrollRef.current;
-    const previousScrollHeight = container?.scrollHeight ?? 0;
-    const previousScrollTop = container?.scrollTop ?? 0;
-    setTimelineLoading(true);
-
-    try {
-      const nextPage = await fetchInboxTimelinePage({
-        contactId: contact.contactId,
-        cursor: timelinePage.nextCursor,
-      });
-
-      if (activeTimelineRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      setTimelineEntries((previousEntries) => [
-        ...nextPage.entries,
-        ...previousEntries,
-      ]);
-      setTimelinePage(nextPage.page);
-
-      window.requestAnimationFrame(() => {
-        const nextContainer = timelineScrollRef.current;
-
-        if (!nextContainer) {
-          return;
-        }
-
-        const nextScrollHeight = nextContainer.scrollHeight;
-        nextContainer.scrollTop =
-          previousScrollTop + (nextScrollHeight - previousScrollHeight);
-      });
-    } catch {
-      // Keep the current timeline page visible; polling or the next click can retry.
-    } finally {
-      if (activeTimelineRequestIdRef.current === requestId) {
-        setTimelineLoading(false);
-      }
-    }
-  }, [contact.contactId, setTimelineLoading, timelinePage]);
-
   const followUpToggle = useOptimisticBooleanToggle({
     scopeKey: contact.contactId,
     value: detail.needsFollowUp,
@@ -382,103 +250,8 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   }, [contact.contactId, router]);
 
   const headerProject = contact.activeProjects[0] ?? detail.conversationProject;
-  const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
   const isFollowUp = followUpToggle.value;
   const composerReplyContext = detail.composerReplyContext;
-  const handleReply = useCallback(
-    (entryId: string) => {
-      const entry = mergedTimelineEntries.find((item) => item.id === entryId);
-
-      if (entry === undefined) {
-        if (composerReplyContext !== null) {
-          openReplyDraft(composerReplyContext);
-        }
-        return;
-      }
-
-      const replyContext =
-        buildTimelineReplyContext({
-          contactId: contact.contactId,
-          contactDisplayName: contact.displayName,
-          contactPrimaryPhone: contact.primaryPhone,
-          entry,
-          defaultAlias: composerReplyContext?.defaultAlias ?? null,
-        }) ?? composerReplyContext;
-
-      if (replyContext !== null) {
-        openReplyDraft(replyContext);
-      }
-    },
-    [
-      composerReplyContext,
-      contact.contactId,
-      contact.displayName,
-      mergedTimelineEntries,
-      openReplyDraft,
-    ],
-  );
-
-  const handleRetryPending = useCallback(
-    (entryId: string) => {
-      const entry = mergedTimelineEntries.find((item) => item.id === entryId);
-
-      if (
-        entry?.sendStatus === undefined ||
-        entry.sendStatus === null ||
-        entry.sendStatus === "pending" ||
-        entry.attachmentCount > 0 ||
-        entry.mailbox === null
-      ) {
-        return;
-      }
-
-      const pendingId = entry.id.startsWith("pending-outbound:")
-        ? entry.id.slice("pending-outbound:".length)
-        : entry.id.startsWith("optimistic:")
-          ? null
-          : null;
-
-      if (!entry.id.startsWith("pending-outbound:") && !entry.id.startsWith("optimistic:")) {
-        return;
-      }
-
-      const mailbox = entry.mailbox;
-
-      setRetryingEntryId(entry.id);
-      startRetryTransition(async () => {
-        try {
-          const result = await sendComposerAction({
-            recipient: {
-              kind: "contact",
-              contactId: contact.contactId,
-            },
-            alias: mailbox,
-            subject: entry.subject ?? "",
-            bodyPlaintext: entry.body,
-            bodyHtml: plaintextToComposerHtml(entry.body),
-            attachments: [],
-            ...(entry.threadId === null ? {} : { threadId: entry.threadId }),
-            ...(entry.inReplyToRfc822 === null
-              ? {}
-              : { inReplyToRfc822: entry.inReplyToRfc822 }),
-            ...(pendingId === null
-              ? {}
-              : { supersedesPendingId: pendingId }),
-          });
-
-          if (result.ok) {
-            showToast(`Sent to ${contact.displayName}`, "success");
-          } else {
-            showToast(result.message, "error");
-          }
-        } catch {
-          showToast("We could not retry that email right now.", "error");
-        }
-        setRetryingEntryId(null);
-      });
-    },
-    [contact.contactId, contact.displayName, mergedTimelineEntries, showToast],
-  );
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -540,119 +313,97 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
           </div>
 
           <TooltipProvider delayDuration={200}>
-          <div className="flex shrink-0 items-center gap-2">
-            {detail.projectionAvailable ? (
-              <>
-                <FollowUpToggleControl
-                  needsFollowUp={isFollowUp}
-                  isPending={followUpToggle.isPending}
-                  error={followUpToggle.error}
-                  onToggle={followUpToggle.toggle}
-                />
+            <div className="flex shrink-0 items-center gap-2">
+              {detail.projectionAvailable ? (
+                <>
+                  <FollowUpToggleControl
+                    needsFollowUp={isFollowUp}
+                    isPending={followUpToggle.isPending}
+                    error={followUpToggle.error}
+                    onToggle={followUpToggle.toggle}
+                  />
 
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Mark unread"
+                        data-inbox-mark-unread="true"
+                        disabled={isMarkUnreadPending}
+                        onClick={handleMarkUnread}
+                        className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20"
+                      >
+                        <MailOpenIcon className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Mark unread</TooltipContent>
+                  </Tooltip>
+                </>
+              ) : null}
+
+              {detail.projectionAvailable ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      aria-label="Mark unread"
-                      data-inbox-mark-unread="true"
-                      disabled={isMarkUnreadPending}
-                      onClick={handleMarkUnread}
+                      aria-label={
+                        detail.isArchived
+                          ? "Move back to inbox"
+                          : "Archive conversation"
+                      }
+                      disabled={isArchivePending}
+                      onClick={
+                        detail.isArchived ? handleUnarchive : handleArchive
+                      }
                       className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20"
                     >
-                      <MailOpenIcon className="size-4" />
+                      {detail.isArchived ? (
+                        <ArchiveRestoreIcon className="size-4" />
+                      ) : (
+                        <ArchiveBoxIcon className="size-4" />
+                      )}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Mark unread</TooltipContent>
+                  <TooltipContent side="top">
+                    {detail.isArchived
+                      ? "Move back to inbox"
+                      : "Archive conversation"}
+                  </TooltipContent>
                 </Tooltip>
-              </>
-            ) : null}
+              ) : null}
 
-            {detail.projectionAvailable ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={
-                      detail.isArchived
-                        ? "Move back to inbox"
-                        : "Archive conversation"
-                    }
-                    disabled={isArchivePending}
-                    onClick={detail.isArchived ? handleUnarchive : handleArchive}
-                    className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20"
-                  >
-                    {detail.isArchived ? (
-                      <ArchiveRestoreIcon className="size-4" />
-                    ) : (
-                      <ArchiveBoxIcon className="size-4" />
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  {detail.isArchived
-                    ? "Move back to inbox"
-                    : "Archive conversation"}
-                </TooltipContent>
-              </Tooltip>
-            ) : null}
-
-            {!railOpen ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Volunteer details"
-                    aria-expanded={false}
-                    aria-controls="inbox-contact-rail"
-                    onClick={() => {
-                      setRailOpen(true);
-                    }}
-                    className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20"
-                  >
-                    <UserRoundIcon className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top">Volunteer details</TooltipContent>
-              </Tooltip>
-            ) : null}
-          </div>
+              {!railOpen ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Volunteer details"
+                      aria-expanded={false}
+                      aria-controls="inbox-contact-rail"
+                      onClick={() => {
+                        setRailOpen(true);
+                      }}
+                      className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20"
+                    >
+                      <UserRoundIcon className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Volunteer details</TooltipContent>
+                </Tooltip>
+              ) : null}
+            </div>
           </TooltipProvider>
         </header>
 
         {contact.hasUnresolved ? <UnresolvedBanner /> : null}
 
-        <div
-          ref={timelineScrollRef}
-          className={`min-h-0 flex-1 overflow-y-auto ${TONE_CLASSES.slate.subtle} ${SPACING.container}`}
-        >
-          {isTimelineLoading && mergedTimelineEntries.length === 0 ? (
-            <TimelineSkeleton />
-          ) : (
-            <InboxTimeline
-              entries={mergedTimelineEntries}
-              volunteerFirstName={firstName}
-              currentOperatorUserId={currentOperatorUserId}
-              showEarlierHistoryDivider={
-                timelinePage.hasHiddenEarlierHistory
-              }
-              hasMore={timelinePage.hasMore}
-              isLoadingOlder={isTimelineLoading}
-              retryingEntryId={isRetryPending ? retryingEntryId : null}
-              onRetryPending={handleRetryPending}
-              onReply={handleReply}
-              onLoadOlder={() => {
-                void loadOlderTimeline();
-              }}
-            />
-          )}
-        </div>
+        {timelineSlot ?? <InboxDetailTimelineFallback />}
 
         <div className="shrink-0">
           {composerReplyContext ? (
@@ -686,6 +437,293 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+export function InboxDetailTimelinePanel({
+  contact,
+  composerReplyContext,
+  initialTimeline,
+  currentOperatorUserId,
+}: InboxDetailTimelinePanelProps) {
+  const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const activeTimelineRequestIdRef = useRef(0);
+  const shouldScrollToLatestRef = useRef(true);
+  const previousContactIdRef = useRef(contact.contactId);
+  const {
+    isTimelineLoading,
+    setTimelineLoading,
+    optimisticOutbounds,
+    clearOptimisticForContact,
+    removeOptimisticOutbound,
+    openReplyDraft,
+    showToast,
+  } = useInboxClient();
+  const [timelineEntries, setTimelineEntries] = useState(
+    initialTimeline.timeline,
+  );
+  const [timelinePage, setTimelinePage] = useState(
+    initialTimeline.timelinePage,
+  );
+  const [retryingEntryId, setRetryingEntryId] = useState<string | null>(null);
+  const [isRetryPending, startRetryTransition] = useTransition();
+
+  useEffect(() => {
+    activeTimelineRequestIdRef.current += 1;
+    setTimelineLoading(false);
+    setTimelineEntries(initialTimeline.timeline);
+    setTimelinePage(initialTimeline.timelinePage);
+
+    if (previousContactIdRef.current !== contact.contactId) {
+      clearOptimisticForContact(previousContactIdRef.current);
+      shouldScrollToLatestRef.current = true;
+      previousContactIdRef.current = contact.contactId;
+    }
+  }, [
+    clearOptimisticForContact,
+    contact.contactId,
+    initialTimeline.timeline,
+    initialTimeline.timelinePage,
+    setTimelineLoading,
+  ]);
+
+  const activeOptimisticOutbounds = useMemo(
+    () =>
+      optimisticOutbounds.filter(
+        (entry) => entry.contactId === contact.contactId,
+      ),
+    [contact.contactId, optimisticOutbounds],
+  );
+
+  const mergedTimelineEntries = useMemo(
+    () =>
+      sortTimelineEntries([...timelineEntries, ...activeOptimisticOutbounds]),
+    [activeOptimisticOutbounds, timelineEntries],
+  );
+
+  useEffect(() => {
+    const matchedSettledIds = activeOptimisticOutbounds
+      .filter(
+        (entry) =>
+          entry.settledAt !== null &&
+          timelineEntries.some((realEntry) =>
+            realEntryMatchesOptimistic(realEntry, entry),
+          ),
+      )
+      .map((entry) => entry.clientGeneratedId);
+
+    if (matchedSettledIds.length === 0) {
+      return;
+    }
+
+    for (const clientGeneratedId of matchedSettledIds) {
+      removeOptimisticOutbound(clientGeneratedId);
+    }
+  }, [activeOptimisticOutbounds, removeOptimisticOutbound, timelineEntries]);
+
+  useEffect(() => {
+    if (!shouldScrollToLatestRef.current) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const container = timelineScrollRef.current;
+
+      if (!container) {
+        return;
+      }
+
+      container.scrollTop = container.scrollHeight;
+      shouldScrollToLatestRef.current = false;
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [contact.contactId, mergedTimelineEntries]);
+
+  const loadOlderTimeline = useCallback(async () => {
+    if (!timelinePage.hasMore || timelinePage.nextCursor === null) {
+      return;
+    }
+
+    const requestId = activeTimelineRequestIdRef.current + 1;
+    activeTimelineRequestIdRef.current = requestId;
+    const container = timelineScrollRef.current;
+    const previousScrollHeight = container?.scrollHeight ?? 0;
+    const previousScrollTop = container?.scrollTop ?? 0;
+    setTimelineLoading(true);
+
+    try {
+      const nextPage = await fetchInboxTimelinePage({
+        contactId: contact.contactId,
+        cursor: timelinePage.nextCursor,
+      });
+
+      if (activeTimelineRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setTimelineEntries((previousEntries) => [
+        ...nextPage.entries,
+        ...previousEntries,
+      ]);
+      setTimelinePage(nextPage.page);
+
+      window.requestAnimationFrame(() => {
+        const nextContainer = timelineScrollRef.current;
+
+        if (!nextContainer) {
+          return;
+        }
+
+        const nextScrollHeight = nextContainer.scrollHeight;
+        nextContainer.scrollTop =
+          previousScrollTop + (nextScrollHeight - previousScrollHeight);
+      });
+    } catch {
+      // Keep the current timeline page visible; polling or the next click can retry.
+    } finally {
+      if (activeTimelineRequestIdRef.current === requestId) {
+        setTimelineLoading(false);
+      }
+    }
+  }, [contact.contactId, setTimelineLoading, timelinePage]);
+
+  const handleReply = useCallback(
+    (entryId: string) => {
+      const entry = mergedTimelineEntries.find((item) => item.id === entryId);
+
+      if (entry === undefined) {
+        if (composerReplyContext !== null) {
+          openReplyDraft(composerReplyContext);
+        }
+        return;
+      }
+
+      const replyContext =
+        buildTimelineReplyContext({
+          contactId: contact.contactId,
+          contactDisplayName: contact.displayName,
+          contactPrimaryPhone: contact.primaryPhone,
+          entry,
+          defaultAlias: composerReplyContext?.defaultAlias ?? null,
+        }) ?? composerReplyContext;
+
+      if (replyContext !== null) {
+        openReplyDraft(replyContext);
+      }
+    },
+    [
+      composerReplyContext,
+      contact.contactId,
+      contact.displayName,
+      contact.primaryPhone,
+      mergedTimelineEntries,
+      openReplyDraft,
+    ],
+  );
+
+  const handleRetryPending = useCallback(
+    (entryId: string) => {
+      const entry = mergedTimelineEntries.find((item) => item.id === entryId);
+
+      if (
+        entry?.sendStatus === undefined ||
+        entry.sendStatus === null ||
+        entry.sendStatus === "pending" ||
+        entry.attachmentCount > 0 ||
+        entry.mailbox === null
+      ) {
+        return;
+      }
+
+      const pendingId = entry.id.startsWith("pending-outbound:")
+        ? entry.id.slice("pending-outbound:".length)
+        : entry.id.startsWith("optimistic:")
+          ? null
+          : null;
+
+      if (
+        !entry.id.startsWith("pending-outbound:") &&
+        !entry.id.startsWith("optimistic:")
+      ) {
+        return;
+      }
+
+      const mailbox = entry.mailbox;
+
+      setRetryingEntryId(entry.id);
+      startRetryTransition(async () => {
+        try {
+          const result = await sendComposerAction({
+            recipient: {
+              kind: "contact",
+              contactId: contact.contactId,
+            },
+            alias: mailbox,
+            subject: entry.subject ?? "",
+            bodyPlaintext: entry.body,
+            bodyHtml: plaintextToComposerHtml(entry.body),
+            attachments: [],
+            ...(entry.threadId === null ? {} : { threadId: entry.threadId }),
+            ...(entry.inReplyToRfc822 === null
+              ? {}
+              : { inReplyToRfc822: entry.inReplyToRfc822 }),
+            ...(pendingId === null ? {} : { supersedesPendingId: pendingId }),
+          });
+
+          if (result.ok) {
+            showToast(`Sent to ${contact.displayName}`, "success");
+          } else {
+            showToast(result.message, "error");
+          }
+        } catch {
+          showToast("We could not retry that email right now.", "error");
+        }
+        setRetryingEntryId(null);
+      });
+    },
+    [contact.contactId, contact.displayName, mergedTimelineEntries, showToast],
+  );
+
+  const volunteerFirstName =
+    contact.displayName.split(" ")[0] ?? contact.displayName;
+
+  return (
+    <div
+      ref={timelineScrollRef}
+      className={`min-h-0 flex-1 overflow-y-auto ${TONE_CLASSES.slate.subtle} ${SPACING.container}`}
+    >
+      {isTimelineLoading && mergedTimelineEntries.length === 0 ? (
+        <TimelineSkeleton />
+      ) : (
+        <InboxTimeline
+          entries={mergedTimelineEntries}
+          volunteerFirstName={volunteerFirstName}
+          currentOperatorUserId={currentOperatorUserId}
+          showEarlierHistoryDivider={timelinePage.hasHiddenEarlierHistory}
+          hasMore={timelinePage.hasMore}
+          isLoadingOlder={isTimelineLoading}
+          retryingEntryId={isRetryPending ? retryingEntryId : null}
+          onRetryPending={handleRetryPending}
+          onReply={handleReply}
+          onLoadOlder={() => {
+            void loadOlderTimeline();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+export function InboxDetailTimelineFallback() {
+  return (
+    <div
+      className={`min-h-0 flex-1 overflow-y-auto ${TONE_CLASSES.slate.subtle} ${SPACING.container}`}
+    >
+      <TimelineSkeleton />
     </div>
   );
 }
