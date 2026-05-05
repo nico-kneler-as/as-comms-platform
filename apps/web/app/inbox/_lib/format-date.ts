@@ -1,22 +1,42 @@
 const RAIL_EVENT_TIME_ZONE = "America/Denver";
 
-const RAIL_EVENT_FORMATTER_SAME_YEAR = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  timeZone: RAIL_EVENT_TIME_ZONE,
-});
+function buildRailEventFormatters(timeZone: string) {
+  return {
+    sameYear: new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone,
+    }),
+    withYear: new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone,
+    }),
+    year: new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      timeZone,
+    }),
+  };
+}
 
-const RAIL_EVENT_FORMATTER_WITH_YEAR = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  timeZone: RAIL_EVENT_TIME_ZONE,
-});
+const RAIL_EVENT_FORMATTERS = buildRailEventFormatters(RAIL_EVENT_TIME_ZONE);
+const UTC_RAIL_EVENT_FORMATTERS = buildRailEventFormatters("UTC");
 
-const RAIL_EVENT_YEAR_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-  timeZone: RAIL_EVENT_TIME_ZONE,
-});
+function formatRailEventDateWithFormatters(
+  occurredAt: string,
+  referenceNowIso: string,
+  formatters: ReturnType<typeof buildRailEventFormatters>,
+): string {
+  const occurred = new Date(occurredAt);
+  const reference = new Date(referenceNowIso);
+  const occurredYear = formatters.year.format(occurred);
+  const referenceYear = formatters.year.format(reference);
+
+  return occurredYear === referenceYear
+    ? formatters.sameYear.format(occurred)
+    : formatters.withYear.format(occurred);
+}
 
 /**
  * Returns "Apr 23" if `occurredAt` is in the same Mountain Time calendar year
@@ -26,12 +46,20 @@ export function formatRailEventDate(
   occurredAt: string,
   referenceNowIso: string,
 ): string {
-  const occurred = new Date(occurredAt);
-  const reference = new Date(referenceNowIso);
-  const occurredYear = RAIL_EVENT_YEAR_FORMATTER.format(occurred);
-  const referenceYear = RAIL_EVENT_YEAR_FORMATTER.format(reference);
+  return formatRailEventDateWithFormatters(
+    occurredAt,
+    referenceNowIso,
+    RAIL_EVENT_FORMATTERS,
+  );
+}
 
-  return occurredYear === referenceYear
-    ? RAIL_EVENT_FORMATTER_SAME_YEAR.format(occurred)
-    : RAIL_EVENT_FORMATTER_WITH_YEAR.format(occurred);
+export function formatUtcRailEventDate(
+  occurredAt: string,
+  referenceNowIso: string,
+): string {
+  return formatRailEventDateWithFormatters(
+    occurredAt,
+    referenceNowIso,
+    UTC_RAIL_EVENT_FORMATTERS,
+  );
 }

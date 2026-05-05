@@ -494,6 +494,25 @@ const lifecycleSources = [
   },
 ] as const;
 
+const salesforceDateOnlyPrefixPattern = /^\d{4}-\d{2}-\d{2}(?:$|T)/u;
+
+function toSalesforceDateOnlyOccurredAt(value: string | null): string | null {
+  if (value === null) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (!salesforceDateOnlyPrefixPattern.test(trimmed)) {
+    return toIsoTimestamp(trimmed);
+  }
+
+  // TODO(date-only-display): carry lifecycle source field semantics through to
+  // presentation so the UI can render date-only milestones without relying on
+  // noon-UTC normalization.
+  return toIsoTimestamp(`${trimmed.slice(0, 10)}T12:00:00.000Z`);
+}
+
 function isContactSnapshotRecord(
   record: SalesforceRecord,
 ): record is SalesforceContactSnapshotRecord {
@@ -1043,9 +1062,14 @@ function buildLifecycleRecords(input: {
   const records: SalesforceRecord[] = [];
 
   for (const lifecycleSource of lifecycleSources) {
-    const occurredAt = toIsoTimestamp(
-      getStringField(input.membership, lifecycleSource.rawFieldName),
+    const rawOccurredAt = getStringField(
+      input.membership,
+      lifecycleSource.rawFieldName,
     );
+    const occurredAt =
+      lifecycleSource.rawFieldName === "CreatedDate"
+        ? toIsoTimestamp(rawOccurredAt)
+        : toSalesforceDateOnlyOccurredAt(rawOccurredAt);
 
     if (occurredAt === null) {
       continue;

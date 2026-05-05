@@ -131,6 +131,7 @@ export interface InboxRecentActivityViewModel {
   readonly id: string;
   readonly label: string;
   readonly occurredAtLabel: string;
+  readonly isMostRecent?: boolean;
 }
 
 export interface InboxContactSummaryViewModel {
