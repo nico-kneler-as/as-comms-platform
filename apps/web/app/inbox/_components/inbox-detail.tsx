@@ -9,16 +9,14 @@ import {
   useRef,
   useState,
   useTransition,
-  type ButtonHTMLAttributes,
-  type ReactNode,
 } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import {
@@ -40,9 +38,8 @@ import type {
 } from "../_lib/view-models";
 import type { UiError, UiResult } from "@/src/server/ui-result";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
-import { useInboxClient, type Reminder } from "./inbox-client-provider";
+import { useInboxClient } from "./inbox-client-provider";
 import { InboxAvatar } from "./inbox-avatar";
-import { SectionLabel } from "@/components/ui/section-label";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PROJECT_STATUS_BADGE } from "@/app/_lib/design-tokens";
 import {
@@ -59,21 +56,15 @@ import {
   AlertTriangleIcon,
   ArchiveBoxIcon,
   ArchiveRestoreIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  ClockIcon,
   FlagIcon,
   MailOpenIcon,
   UserRoundIcon,
-  XIcon,
 } from "./icons";
 
 interface DetailProps {
   readonly detail: InboxDetailViewModel;
   readonly currentOperatorUserId: string;
 }
-
-type ReminderUnit = "hours" | "days" | "weeks";
 
 const REPLY_SUBJECT_PREFIX_PATTERN = /^\s*(?:(?:re|fwd?)\s*:\s*)+/i;
 
@@ -171,9 +162,6 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const shouldScrollToLatestRef = useRef(true);
   const previousContactIdRef = useRef(detail.contact.contactId);
   const {
-    reminders,
-    setReminder,
-    clearReminder,
     isTimelineLoading,
     setTimelineLoading,
     optimisticOutbounds,
@@ -184,9 +172,6 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   } = useInboxClient();
 
   const [railOpen, setRailOpen] = useState(false);
-  const [reminderOpen, setReminderOpen] = useState(false);
-  const [reminderValue, setReminderValue] = useState("");
-  const [reminderUnit, setReminderUnit] = useState<ReminderUnit>("hours");
   const [timelineEntries, setTimelineEntries] = useState(detail.timeline);
   const [timelinePage, setTimelinePage] = useState(detail.timelinePage);
   const [retryingEntryId, setRetryingEntryId] = useState<string | null>(null);
@@ -398,7 +383,6 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
   const headerProject = contact.activeProjects[0] ?? detail.conversationProject;
   const firstName = contact.displayName.split(" ")[0] ?? contact.displayName;
   const isFollowUp = followUpToggle.value;
-  const existingReminder = reminders.get(contact.contactId) ?? null;
   const composerReplyContext = detail.composerReplyContext;
   const handleReply = useCallback(
     (entryId: string) => {
@@ -432,19 +416,6 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
       openReplyDraft,
     ],
   );
-
-  const handleSetReminder = () => {
-    const numeric = Number(reminderValue);
-    if (!Number.isFinite(numeric) || numeric <= 0) return;
-    setReminder(contact.contactId, buildReminder(numeric, reminderUnit));
-    setReminderValue("");
-    setReminderOpen(false);
-  };
-
-  const handleClearReminder = () => {
-    clearReminder(contact.contactId);
-    setReminderOpen(false);
-  };
 
   const handleRetryPending = useCallback(
     (entryId: string) => {
@@ -577,93 +548,77 @@ export function InboxDetail({ detail, currentOperatorUserId }: DetailProps) {
                   onToggle={followUpToggle.toggle}
                 />
 
-                <HeaderActionButton
-                  label="Mark Unread"
-                  aria-label="Mark unread"
-                  disabled={isMarkUnreadPending}
-                  onClick={handleMarkUnread}
-                  data-inbox-mark-unread="true"
-                  widthClassName="w-32"
-                >
-                  <MailOpenIcon className="size-4" />
-                </HeaderActionButton>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Mark unread"
+                      data-inbox-mark-unread="true"
+                      disabled={isMarkUnreadPending}
+                      onClick={handleMarkUnread}
+                      className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20"
+                    >
+                      <MailOpenIcon className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Mark unread</TooltipContent>
+                </Tooltip>
               </>
             ) : null}
 
-            <Popover open={reminderOpen} onOpenChange={setReminderOpen}>
-              <PopoverTrigger asChild>
-                <HeaderActionButton
-                  label="Set Reminder"
-                  aria-label={
-                    existingReminder
-                      ? `Set reminder, current reminder ${formatShortReminder(existingReminder)}`
-                      : "Set reminder"
-                  }
-                  title="Set reminder"
-                  widthClassName="w-32"
-                  surfaceClassName={
-                    existingReminder
-                      ? "scale-x-[0.24] bg-sky-50 opacity-100 group-hover/header-action:bg-sky-100 group-focus-visible/header-action:bg-sky-100"
-                      : undefined
-                  }
-                  iconClassName={
-                    existingReminder
-                      ? "text-sky-800"
-                      : undefined
-                  }
-                >
-                  <ClockIcon className="size-4" />
-                </HeaderActionButton>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-72">
-                <ReminderPopoverBody
-                  existing={existingReminder}
-                  value={reminderValue}
-                  unit={reminderUnit}
-                  onChangeValue={setReminderValue}
-                  onChangeUnit={setReminderUnit}
-                  onClose={() => {
-                    setReminderOpen(false);
-                  }}
-                  onSet={handleSetReminder}
-                  onClear={handleClearReminder}
-                />
-              </PopoverContent>
-            </Popover>
-
             {detail.projectionAvailable ? (
-              <HeaderActionButton
-                label={detail.isArchived ? "Unarchive" : "Archive"}
-                aria-label={
-                  detail.isArchived
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={
+                      detail.isArchived
+                        ? "Move back to inbox"
+                        : "Archive conversation"
+                    }
+                    disabled={isArchivePending}
+                    onClick={detail.isArchived ? handleUnarchive : handleArchive}
+                    className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20"
+                  >
+                    {detail.isArchived ? (
+                      <ArchiveRestoreIcon className="size-4" />
+                    ) : (
+                      <ArchiveBoxIcon className="size-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {detail.isArchived
                     ? "Move back to inbox"
-                    : "Archive conversation"
-                }
-                disabled={isArchivePending}
-                onClick={detail.isArchived ? handleUnarchive : handleArchive}
-                widthClassName={detail.isArchived ? "w-28" : "w-24"}
-              >
-                {detail.isArchived ? (
-                  <ArchiveRestoreIcon className="size-4" />
-                ) : (
-                  <ArchiveBoxIcon className="size-4" />
-                )}
-              </HeaderActionButton>
+                    : "Archive conversation"}
+                </TooltipContent>
+              </Tooltip>
             ) : null}
 
             {!railOpen ? (
-              <HeaderActionButton
-                label="Volunteer Details"
-                aria-label="Open volunteer details"
-                aria-expanded={false}
-                aria-controls="inbox-contact-rail"
-                onClick={() => {
-                  setRailOpen(true);
-                }}
-                widthClassName="w-40"
-              >
-                <UserRoundIcon className="size-4" />
-              </HeaderActionButton>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Volunteer details"
+                    aria-expanded={false}
+                    aria-controls="inbox-contact-rail"
+                    onClick={() => {
+                      setRailOpen(true);
+                    }}
+                    className="size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20"
+                  >
+                    <UserRoundIcon className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Volunteer details</TooltipContent>
+              </Tooltip>
             ) : null}
           </div>
         </header>
@@ -773,95 +728,24 @@ function FollowUpToggleButton({
   readonly onToggle: () => void;
 }) {
   return (
-    <HeaderActionButton
-      label="Needs Follow-Up"
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      title="Needs Follow-Up"
       disabled={pending}
       aria-pressed={needsFollowUp}
       aria-label="Needs Follow-Up"
       aria-keyshortcuts="f"
       data-inbox-follow-up-toggle="true"
       onClick={onToggle}
-      widthClassName="w-36"
       className={cn(
+        "size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20",
         needsFollowUp &&
-          "text-rose-800",
+          "bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-900",
       )}
-      surfaceClassName={
-        needsFollowUp
-          ? "scale-x-[0.24] bg-rose-50 opacity-100 group-hover/header-action:bg-rose-100 group-focus-visible/header-action:bg-rose-100"
-          : undefined
-      }
     >
       <FlagIcon className="size-4" />
-    </HeaderActionButton>
-  );
-}
-
-interface HeaderActionButtonProps
-  extends ButtonHTMLAttributes<HTMLButtonElement> {
-  readonly label: string;
-  readonly children: ReactNode;
-  readonly widthClassName?: string;
-  readonly surfaceClassName?: string | undefined;
-  readonly iconClassName?: string | undefined;
-}
-
-function HeaderActionButton({
-  label,
-  children,
-  widthClassName = "w-32",
-  surfaceClassName,
-  iconClassName,
-  className,
-  type = "button",
-  ...props
-}: HeaderActionButtonProps) {
-  return (
-    <Button
-      {...props}
-      type={type}
-      variant="ghost"
-      size="icon"
-      title={props.title ?? label}
-      className={cn(
-        "group/header-action relative size-8 overflow-visible rounded-md px-0 text-slate-900 hover:z-20 hover:bg-transparent hover:text-slate-950 focus-visible:z-20 focus-visible:bg-transparent",
-        "transition-[color,transform] duration-150 ease-out active:scale-[0.96] motion-reduce:transition-none",
-        className,
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute right-0 top-0 z-0 flex h-8 origin-right scale-x-[0.24] items-center rounded-md bg-slate-100/0 pl-2 pr-8 opacity-0",
-          "transition-[transform,opacity,background-color] duration-150 ease-out",
-          "group-hover/header-action:scale-x-100 group-hover/header-action:bg-slate-100 group-hover/header-action:opacity-100",
-          "group-focus-visible/header-action:scale-x-100 group-focus-visible/header-action:bg-slate-100 group-focus-visible/header-action:opacity-100",
-          "motion-reduce:transition-none",
-          widthClassName,
-          surfaceClassName,
-        )}
-      >
-        <span
-          className={cn(
-            "translate-x-1 whitespace-nowrap text-[11px] font-medium text-slate-700 opacity-0",
-            "transition-[transform,opacity] duration-150 ease-out",
-            "group-hover/header-action:translate-x-0 group-hover/header-action:opacity-100",
-            "group-focus-visible/header-action:translate-x-0 group-focus-visible/header-action:opacity-100",
-            "motion-reduce:transition-none",
-          )}
-        >
-          {label}
-        </span>
-      </span>
-      <span
-        aria-hidden="true"
-        className={cn(
-          "relative z-10 flex size-8 items-center justify-center rounded-md",
-          iconClassName,
-        )}
-      >
-        {children}
-      </span>
     </Button>
   );
 }
@@ -933,240 +817,5 @@ function UnresolvedBanner() {
         Unresolved items need attention
       </span>
     </div>
-  );
-}
-
-interface ReminderPopoverBodyProps {
-  readonly existing: Reminder | null;
-  readonly value: string;
-  readonly unit: ReminderUnit;
-  readonly onChangeValue: (value: string) => void;
-  readonly onChangeUnit: (unit: ReminderUnit) => void;
-  readonly onClose: () => void;
-  readonly onSet: () => void;
-  readonly onClear: () => void;
-}
-
-const REMINDER_UNITS: readonly ReminderUnit[] = ["hours", "days", "weeks"];
-
-function ReminderPopoverBody({
-  existing,
-  value,
-  unit,
-  onChangeValue,
-  onChangeUnit,
-  onClose,
-  onSet,
-  onClear,
-}: ReminderPopoverBodyProps) {
-  const numeric = Number(value);
-  const canSet = value.length > 0 && Number.isFinite(numeric) && numeric > 0;
-  const preview = canSet ? previewForDelta(numeric, unit) : null;
-
-  if (existing) {
-    return (
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <SectionLabel as="p">Reminder set</SectionLabel>
-          <p className="mt-1 text-sm font-medium text-slate-900">
-            {formatLongReminder(existing)}
-          </p>
-          <p className="mt-0.5 text-[11px] text-slate-500">
-            In {formatShortReminder(existing)}
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7 shrink-0 text-slate-400 hover:text-slate-700"
-          aria-label="Cancel reminder"
-          onClick={onClear}
-        >
-          <XIcon className="size-3.5" />
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <SectionLabel as="p">Remind me in</SectionLabel>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="flex h-9 w-16 items-center overflow-hidden rounded-md border border-slate-200 shadow-sm">
-          <span
-            className="flex-1 select-none text-center text-sm font-semibold tabular-nums text-slate-900"
-            aria-live="polite"
-          >
-            {value || "0"}
-          </span>
-          <div className="flex flex-col border-l border-slate-200">
-            <button
-              type="button"
-              aria-label="Increase"
-              onClick={() => {
-                const nextValue = Math.min(99, (Number(value) || 0) + 1);
-                onChangeValue(nextValue.toString());
-              }}
-              className="flex h-[18px] w-6 items-center justify-center text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
-            >
-              <ChevronUpIcon className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              aria-label="Decrease"
-              onClick={() => {
-                const nextValue = Math.max(0, (Number(value) || 0) - 1);
-                onChangeValue(nextValue.toString());
-              }}
-              className="flex h-[18px] w-6 items-center justify-center border-t border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
-            >
-              <ChevronDownIcon className="size-3.5" />
-            </button>
-          </div>
-        </div>
-        <div className="flex flex-1 items-center gap-1 rounded-lg bg-slate-100 p-0.5 text-[11px] font-medium">
-          {REMINDER_UNITS.map((option) => {
-            const isActive = option === unit;
-            return (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={isActive}
-                onClick={() => {
-                  onChangeUnit(option);
-                }}
-                className={cn(
-                  "flex-1 rounded-md px-1.5 py-1 capitalize transition-colors duration-150",
-                  isActive
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-900",
-                )}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <p
-        className={cn(
-          "mt-2 min-h-4 text-[11px]",
-          preview ? "text-slate-500" : "text-transparent",
-        )}
-        aria-live="polite"
-      >
-        {preview ?? "—"}
-      </p>
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button size="sm" disabled={!canSet} onClick={onSet}>
-          Set reminder
-        </Button>
-      </div>
-    </>
-  );
-}
-
-function buildReminder(value: number, unit: ReminderUnit): Reminder {
-  const ms = value * millisPerUnit(unit);
-  const firesAt = new Date(Date.now() + ms).toISOString();
-  return { value, unit, firesAt };
-}
-
-function millisPerUnit(unit: ReminderUnit): number {
-  switch (unit) {
-    case "hours":
-      return 60 * 60 * 1000;
-    case "days":
-      return 24 * 60 * 60 * 1000;
-    case "weeks":
-      return 7 * 24 * 60 * 60 * 1000;
-  }
-}
-
-function previewForDelta(value: number, unit: ReminderUnit): string {
-  const ms = value * millisPerUnit(unit);
-  const target = new Date(Date.now() + ms);
-  return formatAbsolute(target);
-}
-
-function formatShortReminder(reminder: Reminder): string {
-  const unitLabel =
-    reminder.value === 1 ? reminder.unit.slice(0, -1) : reminder.unit;
-  return `${reminder.value.toString()} ${unitLabel}`;
-}
-
-function formatLongReminder(reminder: Reminder): string {
-  return formatAbsolute(new Date(reminder.firesAt));
-}
-
-function formatAbsolute(target: Date): string {
-  const now = new Date();
-  const startOfToday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  ).getTime();
-  const startOfTarget = new Date(
-    target.getFullYear(),
-    target.getMonth(),
-    target.getDate(),
-  ).getTime();
-  const dayDelta = Math.round(
-    (startOfTarget - startOfToday) / (24 * 60 * 60 * 1000),
-  );
-
-  const time = formatTime(target);
-
-  if (dayDelta === 0) return `Today at ${time}`;
-  if (dayDelta === 1) return `Tomorrow at ${time}`;
-  if (dayDelta > 1 && dayDelta < 7) {
-    return `${weekdayName(target.getDay())} at ${time}`;
-  }
-  return `${monthName(target.getMonth())} ${target.getDate().toString()} at ${time}`;
-}
-
-function formatTime(target: Date): string {
-  const hours24 = target.getHours();
-  const minutes = target.getMinutes();
-  const ampm = hours24 >= 12 ? "pm" : "am";
-  const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
-  if (minutes === 0) return `${hours12.toString()} ${ampm}`;
-  const padded = minutes < 10 ? `0${minutes.toString()}` : minutes.toString();
-  return `${hours12.toString()}:${padded} ${ampm}`;
-}
-
-function weekdayName(day: number): string {
-  return (
-    [
-      "Sunday",
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday",
-    ][day] ?? "Unknown"
-  );
-}
-
-function monthName(month: number): string {
-  return (
-    [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ][month] ?? "Unknown"
   );
 }
