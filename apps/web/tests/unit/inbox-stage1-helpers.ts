@@ -17,6 +17,7 @@ export async function seedInboxContact(
     readonly displayName: string;
     readonly primaryEmail: string | null;
     readonly primaryPhone: string | null;
+    readonly contactCreatedAt?: string;
     readonly projectId?: string;
     readonly projectName?: string;
     readonly projectAlias?: string | null;
@@ -32,8 +33,8 @@ export async function seedInboxContact(
     displayName: input.displayName,
     primaryEmail: input.primaryEmail,
     primaryPhone: input.primaryPhone,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
+    createdAt: input.contactCreatedAt ?? "2026-01-01T00:00:00.000Z",
+    updatedAt: input.contactCreatedAt ?? "2026-01-01T00:00:00.000Z",
   });
 
   if (input.projectId !== undefined) {

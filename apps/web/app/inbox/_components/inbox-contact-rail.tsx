@@ -209,7 +209,7 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
                     {project.projectName}
                   </p>
                   <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-                    {isPastSection ? (
+                    {isPastSection && project.signupYear !== null ? (
                       <>
                         <span className="tabular-nums">
                           {project.signupYear.toString()}
