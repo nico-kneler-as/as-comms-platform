@@ -3633,7 +3633,7 @@ describe("real inbox selectors", () => {
     ]);
   });
 
-  it("builds right-rail lifecycle activity for all four locked milestones in newest-first order", async () => {
+  it("builds right-rail lifecycle activity newest-first within the active project", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -3682,6 +3682,12 @@ describe("real inbox selectors", () => {
     expect(
       detail?.contact.recentActivity.map((entry) => entry.occurredAtLabel),
     ).toEqual(["Apr 11", "Apr 10", "Apr 9", "Apr 8"]);
+    expect(detail?.contact.recentActivity.map((entry) => entry.isMostRecent)).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
   });
 
   it("returns all lifecycle activity items and does not hard-cap the rail feed at five", async () => {
@@ -3741,9 +3747,14 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     expect(detail?.contact.recentActivity).toHaveLength(6);
-    expect(
-      detail?.contact.recentActivity.map((entry) => entry.occurredAtLabel),
-    ).toEqual(["Apr 11", "Apr 10", "Apr 9", "Apr 8", "Apr 7", "Apr 6"]);
+    expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
+      "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Submitted first data - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
+    ]);
   });
 
   it("shows only the lifecycle milestones that exist for a contact", async () => {
@@ -3773,6 +3784,78 @@ describe("real inbox selectors", () => {
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
       "Completed training - Amazon Basin Research",
       "Signed up - Amazon Basin Research",
+    ]);
+  });
+
+  it("orders lifecycle events faithful to Salesforce, even when its timestamps imply training-before-signup", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "heidi-received-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2025-10-27T12:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "heidi-completed-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2025-10-27T16:00:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Completed training",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "heidi-signed-up",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2025-10-28T00:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "heidi-first-data",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2025-11-21T12:00:00.000Z",
+      eventType: "lifecycle.submitted_first_data",
+      summary: "Submitted first data",
+      projectId: "project:amazon-basin",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
+      "Submitted first data - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+    ]);
+  });
+
+  it("formats lifecycle rail dates by UTC calendar day to avoid midnight drift", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "sarah-midnight-lifecycle",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-09T00:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+      projectId: "project:amazon-basin",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.contact.recentActivity).toMatchObject([
+      {
+        label: "Received training - Amazon Basin Research",
+        occurredAtLabel: "Apr 9",
+      },
     ]);
   });
 
@@ -3871,13 +3954,14 @@ describe("real inbox selectors", () => {
           recentActivity: [
             {
               id: "recent-1",
-              label: "Submitted first data - Amazon Basin",
-              occurredAtLabel: "Apr 11",
+              label: "Signed up - Amazon Basin",
+              occurredAtLabel: "Apr 8",
             },
             {
               id: "recent-2",
-              label: "Received training - Amazon Basin",
-              occurredAtLabel: "Apr 9",
+              label: "Submitted first data - Amazon Basin",
+              occurredAtLabel: "Apr 11",
+              isMostRecent: true,
             },
           ],
         },

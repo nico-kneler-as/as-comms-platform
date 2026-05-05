@@ -231,4 +231,32 @@ describe("InboxContactRail", () => {
     ).toBe(5);
     expect(activeSession.container.textContent).not.toContain("Lifecycle event 6");
   });
+
+  it("highlights the explicitly most recent lifecycle item instead of assuming the first row is newest", async () => {
+    activeSession = await renderRail({
+      ...buildContact(2),
+      recentActivity: [
+        {
+          id: "activity-1",
+          label: "Signed up",
+          occurredAtLabel: "Apr 8",
+        },
+        {
+          id: "activity-2",
+          label: "Submitted first data",
+          occurredAtLabel: "Apr 11",
+          isMostRecent: true,
+        },
+      ],
+    });
+
+    const items = Array.from(
+      activeSession.container.querySelectorAll("section:last-of-type ul li"),
+    );
+    const firstDot = items[0]?.querySelector("div.rounded-full");
+    const secondDot = items[1]?.querySelector("div.rounded-full");
+
+    expect(firstDot?.className).toContain("border-slate-300");
+    expect(secondDot?.className).toContain("border-sky-500");
+  });
 });

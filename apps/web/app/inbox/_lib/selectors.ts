@@ -19,7 +19,7 @@ import {
 } from "@/app/_lib/cutover";
 
 import { INBOX_FILTERS } from "./filters";
-import { formatRailEventDate } from "./format-date";
+import { formatUtcRailEventDate } from "./format-date";
 import type {
   InboxActiveProjectOption,
   InboxAvatarTone,
@@ -2018,17 +2018,108 @@ function buildRecentActivity(
   timelineItems: readonly TimelineItem[],
   referenceNowIso: string,
 ): readonly InboxRecentActivityViewModel[] {
-  return [...timelineItems]
-    .filter(
-      (item): item is Extract<TimelineItem, { family: "salesforce_event" }> =>
-        item.family === "salesforce_event",
+  const lifecycleItems = timelineItems.filter(
+    (item): item is Extract<TimelineItem, { family: "salesforce_event" }> =>
+      item.family === "salesforce_event",
+  );
+
+  let mostRecentItemId: string | null = null;
+  let mostRecentOccurredAt: string | null = null;
+
+  for (const item of lifecycleItems) {
+    if (
+      mostRecentOccurredAt === null ||
+      item.occurredAt > mostRecentOccurredAt ||
+      (item.occurredAt === mostRecentOccurredAt &&
+        item.id.localeCompare(mostRecentItemId ?? "") > 0)
+    ) {
+      mostRecentOccurredAt = item.occurredAt;
+      mostRecentItemId = item.id;
+    }
+  }
+
+  const groups = new Map<
+    string,
+    {
+      readonly groupKey: string;
+      readonly items: Extract<TimelineItem, { family: "salesforce_event" }>[];
+      latestOccurredAt: string;
+    }
+  >();
+
+  for (const item of lifecycleItems) {
+    const groupKey = item.projectId ?? `event:${item.id}`;
+    const existingGroup = groups.get(groupKey);
+
+    if (existingGroup === undefined) {
+      groups.set(groupKey, {
+        groupKey,
+        items: [item],
+        latestOccurredAt: item.occurredAt,
+      });
+      continue;
+    }
+
+    existingGroup.items.push(item);
+    if (item.occurredAt > existingGroup.latestOccurredAt) {
+      existingGroup.latestOccurredAt = item.occurredAt;
+    }
+  }
+
+  return [...groups.values()]
+    .sort((left, right) => {
+      const activityDifference = right.latestOccurredAt.localeCompare(
+        left.latestOccurredAt,
+      );
+
+      if (activityDifference !== 0) {
+        return activityDifference;
+      }
+
+      return left.groupKey.localeCompare(right.groupKey);
+    })
+    .flatMap((group) =>
+      [...group.items].sort((left, right) => {
+        // Display each project's lifecycle events newest-first, faithful to
+        // Salesforce. When two milestones share an occurred_at (typical for
+        // date-only fields stamped on the same day), tiebreak by milestone
+        // ordinal descending so the later canonical step (e.g. completed
+        // training) sits above the earlier one (received training).
+        if (left.occurredAt !== right.occurredAt) {
+          return right.occurredAt.localeCompare(left.occurredAt);
+        }
+
+        const leftOrdinal = lifecycleMilestoneOrdinal(left.milestone);
+        const rightOrdinal = lifecycleMilestoneOrdinal(right.milestone);
+
+        if (leftOrdinal !== rightOrdinal) {
+          return rightOrdinal - leftOrdinal;
+        }
+
+        return right.id.localeCompare(left.id);
+      }),
     )
-    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
     .map((item) => ({
       id: item.id,
       label: lifecycleRailActivityLabel(item),
-      occurredAtLabel: formatRailEventDate(item.occurredAt, referenceNowIso),
+      occurredAtLabel: formatUtcRailEventDate(item.occurredAt, referenceNowIso),
+      isMostRecent: item.id === mostRecentItemId,
     }));
+}
+
+function lifecycleMilestoneOrdinal(
+  milestone: Extract<TimelineItem, { family: "salesforce_event" }>["milestone"],
+): number {
+  switch (milestone) {
+    case "signed_up":
+      return 1;
+    case "received_training":
+      return 2;
+    case "completed_training":
+      return 3;
+    case "submitted_first_data":
+      return 4;
+  }
 }
 
 function timelineChannel(item: TimelineItem): InboxChannel | null {

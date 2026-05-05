@@ -125,9 +125,9 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
     Status__c: "active",
     CreatedDate: "2026-01-02T00:00:00.000Z",
     LastModifiedDate: "2026-01-05T00:01:00.000Z",
-    Date_Training_Sent__c: "2026-01-03T00:00:00.000Z",
-    Date_Training_Completed__c: "2026-01-04T00:00:00.000Z",
-    Date_First_Sample_Collected__c: "2026-01-05T00:00:00.000Z",
+    Date_Training_Sent__c: "2026-01-03",
+    Date_Training_Completed__c: "2026-01-04",
+    Date_First_Sample_Collected__c: "2026-01-05",
   };
   const taskRow = {
     Id: "00T-task-1",
@@ -711,7 +711,7 @@ describe("Salesforce capture service", () => {
           recordId:
             "a01-membership-1:Expedition_Members__c.Date_Training_Sent__c",
           milestone: "received_training",
-          occurredAt: "2026-01-03T00:00:00.000Z",
+          occurredAt: "2026-01-03T12:00:00.000Z",
         }),
       ]),
     );
