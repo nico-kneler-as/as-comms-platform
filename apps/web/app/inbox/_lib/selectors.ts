@@ -19,6 +19,7 @@ import {
 } from "@/app/_lib/cutover";
 
 import { INBOX_FILTERS } from "./filters";
+import { formatRailEventDate } from "./format-date";
 import type {
   InboxActiveProjectOption,
   InboxAvatarTone,
@@ -1970,14 +1971,10 @@ function buildRecentActivity(
         item.family === "salesforce_event",
     )
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
-    .slice(0, 5)
     .map((item) => ({
       id: item.id,
       label: lifecycleRailActivityLabel(item),
-      occurredAtLabel: formatRelativeTimestamp(
-        item.occurredAt,
-        referenceNowIso,
-      ),
+      occurredAtLabel: formatRailEventDate(item.occurredAt, referenceNowIso),
     }));
 }
 
