@@ -39,11 +39,9 @@ function formatExactTimestamp(timestamp: string): string {
 export function TimelineNoteEntry({
   entry,
   currentOperatorUserId,
-  nested = false,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
   readonly currentOperatorUserId: string;
-  readonly nested?: boolean;
 }) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
@@ -118,19 +116,12 @@ export function TimelineNoteEntry({
   };
 
   return (
-    <li
-      className={cn(
-        nested ? "w-full" : cn("col-span-3 grid", TIMELINE_GRID_COLUMNS),
-      )}
-    >
-      <div
-        className={cn(
-          nested ? "flex w-full justify-end" : "col-start-2 flex justify-end",
-        )}
-      >
+    <li className={cn("col-span-3 grid", TIMELINE_GRID_COLUMNS)}>
+      <div className="col-start-2 flex justify-end">
         <div
           className={cn(
-            nested ? "w-full" : cn("w-fit", EMAIL_BUBBLE_MAX_W),
+            "w-full",
+            EMAIL_BUBBLE_MAX_W,
             "rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2.5 shadow-sm",
           )}
         >

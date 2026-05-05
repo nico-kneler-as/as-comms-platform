@@ -11,6 +11,17 @@ vi.mock("../../app/inbox/actions", () => ({
   deleteNoteAction: vi.fn(),
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    refresh: vi.fn(),
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+}));
+
 vi.mock("@/components/ui/tooltip", () => ({
   TooltipProvider: ({ children }: { readonly children?: React.ReactNode }) =>
     createElement("div", null, children),
@@ -384,6 +395,58 @@ describe("InboxTimeline", () => {
     expect(markup).not.toContain("April field update");
   });
 
+  it("renders the collapsed group pill as a violet card with one campaign icon", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          baseEntry,
+          {
+            ...baseEntry,
+            id: "timeline:auto-email-2",
+            occurredAtLabel: "90m ago",
+            subject: "Reminder details",
+          },
+          {
+            ...baseEntry,
+            id: "timeline:campaign-email-1",
+            kind: "outbound-campaign-email" as const,
+            occurredAtLabel: "1h ago",
+            subject: "April field update",
+          },
+        ],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain('data-group-icon="campaign"');
+    expect(markup).toContain("border-violet-200/70 bg-violet-50/40");
+    expect(markup).toContain("Click to expand");
+    expect(markup).not.toContain("-space-x-1");
+    expect(markup).not.toContain("ring-2 ring-white");
+  });
+
+  it("uses the automated icon for automated-only group pills", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          baseEntry,
+          {
+            ...baseEntry,
+            id: "timeline:auto-email-2",
+            occurredAtLabel: "90m ago",
+            subject: "Reminder details",
+          },
+        ],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain('data-group-icon="automated"');
+    expect(markup).toContain("2 automated sends");
+  });
+
   it("does not collapse a single automated row", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
@@ -397,7 +460,7 @@ describe("InboxTimeline", () => {
     expect(markup).not.toContain("1 automated");
   });
 
-  it("renders sms rows with a fit-content bubble capped at 480px", () => {
+  it("renders sms rows with the shared 560px bubble width", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -419,8 +482,33 @@ describe("InboxTimeline", () => {
       }),
     );
 
-    expect(markup).toContain("w-fit max-w-[480px]");
-    expect(markup).not.toContain("max-w-[440px]");
+    expect(markup).toContain("w-full max-w-[560px]");
+    expect(markup).not.toContain("w-fit max-w-[480px]");
+  });
+
+  it("renders note rows at the shared 560px width instead of fit-content", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            id: "timeline:note-1",
+            kind: "internal-note" as const,
+            actorLabel: "Alex Operator",
+            subject: null,
+            body: "Check prior field history before replying.",
+            channel: null,
+            noteId: "note-1",
+            authorId: "user:operator",
+          },
+        ],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("w-full max-w-[560px]");
+    expect(markup).not.toContain("w-fit max-w-[560px]");
   });
 
   it("renders the earlier-history divider when pre-cutover events exist", () => {
@@ -491,7 +579,7 @@ describe("InboxTimeline", () => {
     expect(markup).toContain(">Clicked<");
   });
 
-  it("keeps expanded system-group children flush with the parent card interior", async () => {
+  it("renders expanded system-group children as sibling timeline rows instead of nested cards", async () => {
     const session = await mountTimeline([
       baseEntry,
       {
@@ -517,9 +605,13 @@ describe("InboxTimeline", () => {
       await Promise.resolve();
     });
 
-    expect(session.container.innerHTML).toContain("space-y-2 border-t border-slate-100 bg-slate-50/30 p-2");
-    expect(session.container.innerHTML).not.toContain("bg-slate-50/30 p-3");
-    expect(session.container.innerHTML.match(/max-w-\[560px\]/g)?.length ?? 0).toBe(1);
+    expect(button?.getAttribute("aria-expanded")).toBe("true");
+    expect(session.container.textContent).toContain("Reminder details");
+    expect(session.container.textContent).toContain("April field update");
+    expect(session.container.querySelectorAll("ol > li")).toHaveLength(4);
+    expect(session.container.querySelectorAll("ol ol")).toHaveLength(0);
+    expect(session.container.innerHTML).not.toContain("space-y-2 border-t border-slate-100 bg-slate-50/30 p-2");
+    expect(session.container.innerHTML.match(/max-w-\[560px\]/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
     expect(session.container.innerHTML).not.toContain("pl-16");
   });
 

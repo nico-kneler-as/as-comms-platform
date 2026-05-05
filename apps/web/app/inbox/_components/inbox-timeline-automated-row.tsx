@@ -196,13 +196,11 @@ export function TimelineAutomatedRow({
   role,
   isExpanded,
   onToggle,
-  nested = false,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
   readonly role: "automated" | "campaign" | "activity";
   readonly isExpanded: boolean;
   readonly onToggle: () => void;
-  readonly nested?: boolean;
 }) {
   const isEmail = entry.channel === "email";
   const campaignActivity =
@@ -224,23 +222,14 @@ export function TimelineAutomatedRow({
   });
 
   return (
-    <li
-      className={cn(
-        nested ? "w-full" : cn("col-span-3 grid", TIMELINE_GRID_COLUMNS),
-      )}
-    >
+    <li className={cn("col-span-3 grid", TIMELINE_GRID_COLUMNS)}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div
-            className={cn(
-              nested ? "flex w-full justify-end" : "col-start-2 flex justify-end",
-            )}
-          >
+          <div className="col-start-2 flex justify-end">
             <div
               className={cn(
-                nested
-                  ? "w-full overflow-hidden rounded-xl border"
-                  : cn("w-full overflow-hidden rounded-xl border", EMAIL_BUBBLE_MAX_W),
+                "w-full overflow-hidden rounded-xl border",
+                EMAIL_BUBBLE_MAX_W,
                 descriptor.shellClassName,
               )}
             >

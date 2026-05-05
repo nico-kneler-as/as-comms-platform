@@ -272,7 +272,7 @@ describe("MessageBubble attachments", () => {
 });
 
 describe("MessageBubble metadata and polish", () => {
-  it("uses the shared gutter grid and 560px email cap instead of padded rows", () => {
+  it("uses the shared gutter grid and full-width 560px email cap instead of padded rows", () => {
     const markup = renderToStaticMarkup(
       createElement(MessageBubble, {
         entry: buildEntry({
@@ -286,13 +286,14 @@ describe("MessageBubble metadata and polish", () => {
     expect(markup).toContain("col-span-3 grid");
     expect(markup).toContain("grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]");
     expect(markup).toContain("col-start-2 min-w-0 flex justify-end");
-    expect(markup).toContain("w-fit max-w-[560px]");
+    expect(markup).toContain("w-full max-w-[560px]");
+    expect(markup).not.toContain("w-fit");
     expect(markup).not.toContain("max-w-[640px]");
     expect(markup).not.toContain("pl-16");
     expect(markup).not.toContain("pr-16");
   });
 
-  it("caps compact sms bubbles at 480px", () => {
+  it("uses the shared 560px width for sms bubbles too", () => {
     const markup = renderToStaticMarkup(
       createElement(MessageBubble, {
         entry: buildEntry({
@@ -307,7 +308,8 @@ describe("MessageBubble metadata and polish", () => {
       }),
     );
 
-    expect(markup).toContain("w-fit max-w-[480px]");
+    expect(markup).toContain("w-full max-w-[560px]");
+    expect(markup).not.toContain("w-fit");
     expect(markup).not.toContain("max-w-[640px]");
   });
 

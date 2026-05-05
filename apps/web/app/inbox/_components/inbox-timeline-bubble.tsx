@@ -41,7 +41,7 @@ export const TIMELINE_OUTER_MAX_W = "max-w-[1024px]";
 export const TIMELINE_GRID_COLUMNS =
   "grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]";
 export const EMAIL_BUBBLE_MAX_W = "max-w-[560px]";
-export const SMS_BUBBLE_MAX_W = "max-w-[480px]";
+export const SMS_BUBBLE_MAX_W = "max-w-[560px]";
 const EMAIL_HTML_BODY_CLASS =
   "text-pretty text-[13px] leading-relaxed text-slate-700 [&_a]:text-sky-700 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_code]:rounded-sm [&_code]:bg-slate-100 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_ol]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-100 [&_pre]:p-3 [&_table]:my-2 [&_table]:border-collapse [&_td]:border [&_td]:border-slate-200 [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-slate-200 [&_th]:px-2 [&_th]:py-1 [&_ul]:ml-5 [&_ul]:list-disc";
 
@@ -384,14 +384,12 @@ export function MessageBubble({
   onReply,
   isRetrying = false,
   onRetryPending,
-  nested = false,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
   readonly direction: "inbound" | "outbound";
   readonly onReply?: (entryId: string) => void;
   readonly isRetrying?: boolean;
   readonly onRetryPending?: (entryId: string) => void;
-  readonly nested?: boolean;
 }) {
   const isEmail = entry.channel === "email";
   // Pre-PR-#170 we rendered every email body as plaintext via
@@ -422,11 +420,10 @@ export function MessageBubble({
     : isOutbound
       ? "border border-sky-600 bg-sky-600 text-white"
       : "border border-slate-200 bg-white";
-  const bubbleWidthClassName = nested
-    ? "w-full"
-    : isEmail
-      ? cn("w-fit", EMAIL_BUBBLE_MAX_W)
-      : cn("w-fit", SMS_BUBBLE_MAX_W);
+  const bubbleWidthClassName = cn(
+    "w-full",
+    isEmail ? EMAIL_BUBBLE_MAX_W : SMS_BUBBLE_MAX_W,
+  );
   const bubble = (
     <div
       className={cn(
@@ -495,22 +492,16 @@ export function MessageBubble({
   );
 
   return (
-    <li
-      className={cn(
-        nested ? "w-full" : cn("col-span-3 grid", TIMELINE_GRID_COLUMNS),
+    <li className={cn("col-span-3 grid", TIMELINE_GRID_COLUMNS)}>
+      {!isOutbound ? (
+        <div className="flex justify-start pt-2">{inboundAvatar}</div>
+      ) : (
+        <div aria-hidden="true" />
       )}
-    >
-      {!nested ? (
-        !isOutbound ? (
-          <div className="flex justify-start pt-2">{inboundAvatar}</div>
-        ) : (
-          <div aria-hidden="true" />
-        )
-      ) : null}
 
       <div
         className={cn(
-          nested ? "min-w-0 flex" : "col-start-2 min-w-0 flex",
+          "col-start-2 min-w-0 flex",
           isOutbound ? "justify-end" : "justify-start",
         )}
       >
@@ -523,15 +514,13 @@ export function MessageBubble({
         </div>
       </div>
 
-      {!nested ? (
-        isOutbound ? (
-          <div className="flex justify-end pt-2">
-            <OutboundBrandAvatar />
-          </div>
-        ) : (
-          <div aria-hidden="true" />
-        )
-      ) : null}
+      {isOutbound ? (
+        <div className="flex justify-end pt-2">
+          <OutboundBrandAvatar />
+        </div>
+      ) : (
+        <div aria-hidden="true" />
+      )}
     </li>
   );
 }
