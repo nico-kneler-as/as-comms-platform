@@ -22,7 +22,12 @@ import {
 import { cn } from "@/lib/utils";
 import { TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { TimelineAutomatedRow } from "./inbox-timeline-automated-row";
-import { MessageBubble } from "./inbox-timeline-bubble";
+import {
+  EMAIL_BUBBLE_MAX_W,
+  MessageBubble,
+  TIMELINE_GRID_COLUMNS,
+  TIMELINE_OUTER_MAX_W,
+} from "./inbox-timeline-bubble";
 import { TimelineNoteEntry } from "./inbox-timeline-note-entry";
 import { SmsMessage } from "./sms-message";
 import { SystemDivider } from "./inbox-timeline-system-divider";
@@ -112,10 +117,19 @@ export function InboxTimeline({
           </div>
         ) : null}
 
-        <ol className="mx-auto flex w-full max-w-[920px] flex-col gap-3">
+        <ol
+          className={cn(
+            "mx-auto grid w-full gap-x-2.5 gap-y-3",
+            TIMELINE_OUTER_MAX_W,
+            TIMELINE_GRID_COLUMNS,
+          )}
+        >
           {showEarlierHistoryDivider ? (
-            <li aria-label="Earlier history not shown" className="list-none">
-              <div className="flex items-center gap-3 py-1 text-xs text-muted-foreground">
+            <li
+              aria-label="Earlier history not shown"
+              className={cn("col-span-3 list-none grid", TIMELINE_GRID_COLUMNS)}
+            >
+              <div className="col-start-2 flex items-center gap-3 py-1 text-xs text-muted-foreground">
                 <div className="h-px flex-1 bg-border" />
                 <span className="whitespace-nowrap">
                   Earlier history not shown - full capture began Jan 1, 2025
@@ -264,6 +278,7 @@ interface EntryProps {
   readonly onRetryPending: ((entryId: string) => void) | undefined;
   readonly onReply?: (entryId: string) => void;
   readonly onToggle: () => void;
+  readonly nested?: boolean;
 }
 
 function TimelineEntry({
@@ -275,6 +290,7 @@ function TimelineEntry({
   onRetryPending,
   onReply,
   onToggle,
+  nested = false,
 }: EntryProps) {
   const role = roleForKind(entry.kind);
 
@@ -285,6 +301,7 @@ function TimelineEntry({
           <SmsMessage
             entry={entry}
             direction="inbound"
+            nested={nested}
             {...(onReply === undefined ? {} : { onReply })}
           />
         );
@@ -294,6 +311,7 @@ function TimelineEntry({
         <MessageBubble
           entry={entry}
           direction="inbound"
+          nested={nested}
           {...(onReply === undefined ? {} : { onReply })}
         />
       );
@@ -304,6 +322,7 @@ function TimelineEntry({
             entry={entry}
             direction="outbound"
             isRetrying={retryingEntryId === entry.id}
+            nested={nested}
             {...(onReply === undefined ? {} : { onReply })}
             {...(onRetryPending === undefined ? {} : { onRetryPending })}
           />
@@ -315,6 +334,7 @@ function TimelineEntry({
           entry={entry}
           direction="outbound"
           isRetrying={retryingEntryId === entry.id}
+          nested={nested}
           {...(onReply === undefined ? {} : { onReply })}
           {...(onRetryPending === undefined ? {} : { onRetryPending })}
         />
@@ -328,6 +348,7 @@ function TimelineEntry({
           role={role}
           isExpanded={isExpanded}
           onToggle={onToggle}
+          nested={nested}
         />
       );
     case "note":
@@ -335,6 +356,7 @@ function TimelineEntry({
         <TimelineNoteEntry
           entry={entry}
           currentOperatorUserId={currentOperatorUserId}
+          nested={nested}
         />
       );
     case "system":
@@ -366,77 +388,85 @@ function SystemMessageGroup({
   const summary = formatSystemGroupSummary(group);
 
   return (
-    <li className="flex w-full justify-end pl-16">
-      <div className="w-full max-w-[560px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <button
-          type="button"
-          aria-expanded={isExpanded}
-          onClick={onToggle}
+    <li className={cn("col-span-3 grid", TIMELINE_GRID_COLUMNS)}>
+      <div className="col-start-2 flex justify-end">
+        <div
           className={cn(
-            "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-slate-50/60",
-            "transition-[background-color,transform] duration-150 ease-out active:scale-[0.99]",
-            TRANSITION.reduceMotion,
+            "w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm",
+            EMAIL_BUBBLE_MAX_W,
           )}
         >
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="-space-x-1 flex shrink-0 items-center">
-              {group.entries.slice(0, 3).map((entry) => (
-                <span
-                  key={entry.id}
-                  className={cn(
-                    "inline-flex size-5 items-center justify-center rounded-full ring-2 ring-white",
-                    roleForKind(entry.kind) === "campaign"
-                      ? "bg-violet-100 text-violet-700"
-                      : "bg-slate-100 text-slate-600",
-                  )}
-                >
-                  {roleForKind(entry.kind) === "campaign" ? (
-                    <MegaphoneIcon className="size-2.5" />
-                  ) : (
-                    <ZapIcon className="size-2.5" />
-                  )}
-                </span>
-              ))}
-            </div>
-            <div className="min-w-0">
-              <div className="text-[12.5px] font-medium text-slate-800">
-                {summary}
-              </div>
-              <RelativeTimestamp
-                timestamp={group.occurredAt}
-                label={group.occurredAtLabel}
-                asSpan
-                focusable={false}
-                className="text-[11px] text-slate-400"
-              />
-            </div>
-          </div>
-          <ChevronRightIcon
+          <button
+            type="button"
+            aria-expanded={isExpanded}
+            onClick={onToggle}
             className={cn(
-              "size-3.5 shrink-0 text-slate-400 transition-transform duration-150",
-              isExpanded && "rotate-90",
+              "flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-slate-50/60",
+              "transition-[background-color,transform] duration-150 ease-out active:scale-[0.99]",
               TRANSITION.reduceMotion,
             )}
-          />
-        </button>
-        {isExpanded ? (
-          <ol className="space-y-2 border-t border-slate-100 bg-slate-50/30 p-3">
-            {group.entries.map((entry) => (
-              <TimelineEntry
-                key={entry.id}
-                entry={entry}
-                volunteerFirstName=""
-                currentOperatorUserId={currentOperatorUserId}
-                isExpanded={isChildExpanded(entry.id)}
-                retryingEntryId={retryingEntryId}
-                onRetryPending={onRetryPending}
-                onToggle={() => {
-                  onToggleChild(entry.id);
-                }}
-              />
-            ))}
-          </ol>
-        ) : null}
+          >
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="-space-x-1 flex shrink-0 items-center">
+                {group.entries.slice(0, 3).map((entry) => (
+                  <span
+                    key={entry.id}
+                    className={cn(
+                      "inline-flex size-5 items-center justify-center rounded-full ring-2 ring-white",
+                      roleForKind(entry.kind) === "campaign"
+                        ? "bg-violet-100 text-violet-700"
+                        : "bg-slate-100 text-slate-600",
+                    )}
+                  >
+                    {roleForKind(entry.kind) === "campaign" ? (
+                      <MegaphoneIcon className="size-2.5" />
+                    ) : (
+                      <ZapIcon className="size-2.5" />
+                    )}
+                  </span>
+                ))}
+              </div>
+              <div className="min-w-0">
+                <div className="text-[12.5px] font-medium text-slate-800">
+                  {summary}
+                </div>
+                <RelativeTimestamp
+                  timestamp={group.occurredAt}
+                  label={group.occurredAtLabel}
+                  asSpan
+                  focusable={false}
+                  className="text-[11px] text-slate-400"
+                />
+              </div>
+            </div>
+            <ChevronRightIcon
+              className={cn(
+                "size-3.5 shrink-0 text-slate-400 transition-transform duration-150",
+                isExpanded && "rotate-90",
+                TRANSITION.reduceMotion,
+              )}
+            />
+          </button>
+          {isExpanded ? (
+            <ol className="space-y-2 border-t border-slate-100 bg-slate-50/30 p-2">
+              {group.entries.map((entry) => (
+                <TimelineEntry
+                  key={entry.id}
+                  entry={entry}
+                  volunteerFirstName=""
+                  currentOperatorUserId={currentOperatorUserId}
+                  isExpanded={isChildExpanded(entry.id)}
+                  retryingEntryId={retryingEntryId}
+                  onRetryPending={onRetryPending}
+                  nested
+                  onToggle={() => {
+                    onToggleChild(entry.id);
+                  }}
+                />
+              ))}
+            </ol>
+          ) : null}
+        </div>
       </div>
     </li>
   );

@@ -1,12 +1,25 @@
+import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import React, { createElement } from "react";
+import React, { act, createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createRoot, type Root } from "react-dom/client";
 
 Object.assign(globalThis, { React });
 
 vi.mock("../../app/inbox/actions", () => ({
   updateNoteAction: vi.fn(),
   deleteNoteAction: vi.fn(),
+}));
+
+vi.mock("@/components/ui/tooltip", () => ({
+  TooltipProvider: ({ children }: { readonly children?: React.ReactNode }) =>
+    createElement("div", null, children),
+  Tooltip: ({ children }: { readonly children?: React.ReactNode }) =>
+    createElement("div", null, children),
+  TooltipTrigger: ({ children }: { readonly children?: React.ReactNode }) =>
+    createElement("div", null, children),
+  TooltipContent: ({ children }: { readonly children?: React.ReactNode }) =>
+    createElement("div", null, children),
 }));
 
 vi.mock("@/components/ui/divider-label", () => ({
@@ -66,6 +79,7 @@ import {
   InboxTimeline,
   shouldHideAutomatedRowBody,
 } from "../../app/inbox/_components/inbox-timeline";
+import type { InboxTimelineEntryViewModel } from "../../app/inbox/_lib/view-models";
 import { classifySystemDivider } from "../../app/inbox/_components/inbox-timeline-system-divider";
 import {
   BookOpenIcon,
@@ -73,6 +87,21 @@ import {
   HandIcon,
   StarIcon,
 } from "../../app/inbox/_components/icons";
+
+const workerRequire = createRequire(
+  new URL("../../../worker/package.json", import.meta.url),
+);
+const { JSDOM } = workerRequire("jsdom") as {
+  readonly JSDOM: new (
+    html: string,
+    options: { readonly url: string },
+  ) => {
+    readonly window: Window &
+      typeof globalThis & {
+        close: () => void;
+      };
+  };
+};
 
 const baseEntry = {
   id: "timeline:auto-email-1",
@@ -100,9 +129,191 @@ const baseEntry = {
   campaignActivity: [],
 };
 
+interface RenderSession {
+  readonly container: HTMLElement;
+  readonly root: Root;
+  readonly cleanup: () => Promise<void>;
+}
+
+type DomGlobalKey =
+  | "window"
+  | "document"
+  | "HTMLElement"
+  | "Node"
+  | "Event"
+  | "MouseEvent"
+  | "navigator"
+  | "IS_REACT_ACT_ENVIRONMENT";
+
+interface DomGlobalSnapshotEntry {
+  readonly exists: boolean;
+  readonly value: unknown;
+}
+
+type DomGlobalSnapshot = Record<DomGlobalKey, DomGlobalSnapshotEntry>;
+
+let activeSession: RenderSession | null = null;
+
+function captureDomGlobals(): DomGlobalSnapshot {
+  const globalKeys = [
+    "window",
+    "document",
+    "HTMLElement",
+    "Node",
+    "Event",
+    "MouseEvent",
+    "navigator",
+    "IS_REACT_ACT_ENVIRONMENT",
+  ] as const satisfies readonly DomGlobalKey[];
+
+  return Object.fromEntries(
+    globalKeys.map((key) => [
+      key,
+      {
+        exists: key in globalThis,
+        value: (globalThis as Record<string, unknown>)[key],
+      },
+    ]),
+  ) as DomGlobalSnapshot;
+}
+
+function clearDomGlobal(key: DomGlobalKey) {
+  switch (key) {
+    case "window":
+      delete (globalThis as { window?: Window }).window;
+      return;
+    case "document":
+      delete (globalThis as { document?: Document }).document;
+      return;
+    case "HTMLElement":
+      delete (globalThis as { HTMLElement?: typeof HTMLElement }).HTMLElement;
+      return;
+    case "Node":
+      delete (globalThis as { Node?: typeof Node }).Node;
+      return;
+    case "Event":
+      delete (globalThis as { Event?: typeof Event }).Event;
+      return;
+    case "MouseEvent":
+      delete (globalThis as { MouseEvent?: typeof MouseEvent }).MouseEvent;
+      return;
+    case "navigator":
+      delete (globalThis as { navigator?: Navigator }).navigator;
+      return;
+    case "IS_REACT_ACT_ENVIRONMENT":
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+        .IS_REACT_ACT_ENVIRONMENT;
+  }
+}
+
+function restoreDomGlobals(snapshot: DomGlobalSnapshot) {
+  for (const [key, entry] of Object.entries(snapshot) as [
+    DomGlobalKey,
+    DomGlobalSnapshotEntry,
+  ][]) {
+    if (!entry.exists) {
+      clearDomGlobal(key);
+      continue;
+    }
+
+    Object.defineProperty(globalThis, key, {
+      configurable: true,
+      value: entry.value,
+    });
+  }
+}
+
+function setDomGlobals(window: Window & typeof globalThis) {
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: window,
+  });
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: window.document,
+  });
+  Object.defineProperty(globalThis, "HTMLElement", {
+    configurable: true,
+    value: window.HTMLElement,
+  });
+  Object.defineProperty(globalThis, "Node", {
+    configurable: true,
+    value: window.Node,
+  });
+  Object.defineProperty(globalThis, "Event", {
+    configurable: true,
+    value: window.Event,
+  });
+  Object.defineProperty(globalThis, "MouseEvent", {
+    configurable: true,
+    value: window.MouseEvent,
+  });
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: window.navigator,
+  });
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+    true;
+}
+
+async function mountTimeline(
+  entries: readonly InboxTimelineEntryViewModel[],
+): Promise<RenderSession> {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    url: "http://localhost/inbox",
+  });
+  const globalSnapshot = captureDomGlobals();
+  setDomGlobals(dom.window);
+
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  await act(async () => {
+    root.render(
+      createElement(InboxTimeline, {
+        entries,
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+    await Promise.resolve();
+  });
+
+  const cleanup = async () => {
+    await act(async () => {
+      root.unmount();
+      await Promise.resolve();
+    });
+    container.remove();
+    dom.window.close();
+    restoreDomGlobals(globalSnapshot);
+  };
+
+  activeSession = { container, root, cleanup };
+  return activeSession;
+}
+
 describe("InboxTimeline", () => {
-  afterEach(() => {
+  afterEach(async () => {
+    await activeSession?.cleanup();
+    activeSession = null;
     vi.restoreAllMocks();
+  });
+
+  it("uses a shared three-column grid instead of padded timeline rows", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [baseEntry],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("max-w-[1024px]");
+    expect(markup).toContain("grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]");
+    expect(markup).not.toContain("pl-16");
+    expect(markup).not.toContain("pr-16");
   });
 
   it("keeps auto-email rows collapsed to the subject line by default", () => {
@@ -186,6 +397,32 @@ describe("InboxTimeline", () => {
     expect(markup).not.toContain("1 automated");
   });
 
+  it("renders sms rows with a fit-content bubble capped at 480px", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            id: "timeline:outbound-sms-1",
+            kind: "outbound-sms" as const,
+            channel: "sms" as const,
+            actorLabel: "You",
+            subject: null,
+            fromHeader: null,
+            toHeader: null,
+            mailbox: null,
+            body: "See you at 9.",
+          },
+        ],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("w-fit max-w-[480px]");
+    expect(markup).not.toContain("max-w-[440px]");
+  });
+
   it("renders the earlier-history divider when pre-cutover events exist", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
@@ -254,6 +491,38 @@ describe("InboxTimeline", () => {
     expect(markup).toContain(">Clicked<");
   });
 
+  it("keeps expanded system-group children flush with the parent card interior", async () => {
+    const session = await mountTimeline([
+      baseEntry,
+      {
+        ...baseEntry,
+        id: "timeline:auto-email-2",
+        occurredAtLabel: "90m ago",
+        subject: "Reminder details",
+      },
+      {
+        ...baseEntry,
+        id: "timeline:campaign-email-1",
+        kind: "outbound-campaign-email" as const,
+        occurredAtLabel: "1h ago",
+        subject: "April field update",
+      },
+    ]);
+
+    const button = session.container.querySelector("button");
+    expect(button?.textContent).toContain("2 automated · 1 campaign");
+
+    await act(async () => {
+      button?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(session.container.innerHTML).toContain("space-y-2 border-t border-slate-100 bg-slate-50/30 p-2");
+    expect(session.container.innerHTML).not.toContain("bg-slate-50/30 p-3");
+    expect(session.container.innerHTML.match(/max-w-\[560px\]/g)?.length ?? 0).toBe(1);
+    expect(session.container.innerHTML).not.toContain("pl-16");
+  });
+
   it("renders lifecycle events as left-aligned achievement markers without category text", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
@@ -273,7 +542,7 @@ describe("InboxTimeline", () => {
       }),
     );
 
-    expect(markup).toContain('class="flex w-full items-start pr-16"');
+    expect(markup).toContain("col-span-3 grid");
     expect(markup).toContain("Alice applied to the Pacific Northwest expedition.");
     expect(markup).not.toContain(">APPLIED<");
   });

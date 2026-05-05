@@ -16,6 +16,10 @@ import type {
 } from "../_lib/view-models";
 import { autolinkText } from "./_autolink";
 import {
+  EMAIL_BUBBLE_MAX_W,
+  TIMELINE_GRID_COLUMNS,
+} from "./inbox-timeline-bubble";
+import {
   CheckCircleIcon,
   ChevronRightIcon,
   EyeIcon,
@@ -192,11 +196,13 @@ export function TimelineAutomatedRow({
   role,
   isExpanded,
   onToggle,
+  nested = false,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
   readonly role: "automated" | "campaign" | "activity";
   readonly isExpanded: boolean;
   readonly onToggle: () => void;
+  readonly nested?: boolean;
 }) {
   const isEmail = entry.channel === "email";
   const campaignActivity =
@@ -218,106 +224,118 @@ export function TimelineAutomatedRow({
   });
 
   return (
-    <li className="flex w-full flex-col items-end pl-16">
+    <li
+      className={cn(
+        nested ? "w-full" : cn("col-span-3 grid", TIMELINE_GRID_COLUMNS),
+      )}
+    >
       <Tooltip>
         <TooltipTrigger asChild>
           <div
             className={cn(
-              "w-full max-w-[560px] overflow-hidden rounded-xl border",
-              descriptor.shellClassName,
+              nested ? "flex w-full justify-end" : "col-start-2 flex justify-end",
             )}
           >
-            <button
-              type="button"
-              aria-expanded={isExpanded}
-              title={formatExactTimestamp(entry.occurredAt)}
-              onClick={onToggle}
-              data-event-role={role}
-              data-campaign-state={campaignState}
+            <div
               className={cn(
-                "group flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left",
-                "transition-[background-color,transform] duration-150 ease-out active:scale-[0.99]",
-                descriptor.hoverClassName,
-                TRANSITION.reduceMotion,
+                nested
+                  ? "w-full overflow-hidden rounded-xl border"
+                  : cn("w-full overflow-hidden rounded-xl border", EMAIL_BUBBLE_MAX_W),
+                descriptor.shellClassName,
               )}
             >
-              <div className="flex min-w-0 items-center gap-2.5">
-                <div
-                  className={cn(
-                    "inline-flex size-6 shrink-0 items-center justify-center rounded-md",
-                    descriptor.iconClassName,
-                  )}
-                >
-                  <descriptor.Icon className="size-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={cn(
-                        "text-[9.5px] font-semibold uppercase tracking-wider",
-                        descriptor.labelClassName,
-                      )}
-                    >
-                      {descriptor.label}
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      className="text-[11px] text-slate-400 tabular-nums"
-                    >
-                      ·
-                    </span>
-                    <RelativeTimestamp
-                      timestamp={entry.occurredAt}
-                      label={entry.occurredAtLabel}
-                      className="text-[11px] text-slate-400 tabular-nums"
-                    />
+              <button
+                type="button"
+                aria-expanded={isExpanded}
+                title={formatExactTimestamp(entry.occurredAt)}
+                onClick={onToggle}
+                data-event-role={role}
+                data-campaign-state={campaignState}
+                className={cn(
+                  "group flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left",
+                  "transition-[background-color,transform] duration-150 ease-out active:scale-[0.99]",
+                  descriptor.hoverClassName,
+                  TRANSITION.reduceMotion,
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div
+                    className={cn(
+                      "inline-flex size-6 shrink-0 items-center justify-center rounded-md",
+                      descriptor.iconClassName,
+                    )}
+                  >
+                    <descriptor.Icon className="size-4" />
                   </div>
-                  {headline ? (
-                    <p
-                      className={cn(
-                        "mt-0.5 truncate text-[12.5px] font-medium text-slate-800",
-                        WRAP_ANYWHERE,
-                      )}
-                    >
-                      {headline}
-                    </p>
-                  ) : null}
-                  {!hideCollapsedBody && body.length > 0 ? (
-                    <p
-                      className={cn(
-                        "mt-0.5 line-clamp-1 text-[13.5px] leading-relaxed text-slate-700",
-                        WRAP_ANYWHERE,
-                      )}
-                    >
-                      {body}
-                    </p>
-                  ) : null}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "text-[9.5px] font-semibold uppercase tracking-wider",
+                          descriptor.labelClassName,
+                        )}
+                      >
+                        {descriptor.label}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="text-[11px] text-slate-400 tabular-nums"
+                      >
+                        ·
+                      </span>
+                      <RelativeTimestamp
+                        timestamp={entry.occurredAt}
+                        label={entry.occurredAtLabel}
+                        className="text-[11px] text-slate-400 tabular-nums"
+                      />
+                    </div>
+                    {headline ? (
+                      <p
+                        className={cn(
+                          "mt-0.5 truncate text-[12.5px] font-medium text-slate-800",
+                          WRAP_ANYWHERE,
+                        )}
+                      >
+                        {headline}
+                      </p>
+                    ) : null}
+                    {!hideCollapsedBody && body.length > 0 ? (
+                      <p
+                        className={cn(
+                          "mt-0.5 line-clamp-1 text-[13.5px] leading-relaxed text-slate-700",
+                          WRAP_ANYWHERE,
+                        )}
+                      >
+                        {body}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {role === "campaign" && campaignState !== undefined ? (
-                  <CampaignStateBadge state={campaignState} />
-                ) : null}
-                <ChevronRightIcon
-                  className={cn(
-                    "size-3.5 text-slate-500 transition-transform duration-150",
-                    isExpanded && "rotate-90",
-                  )}
-                />
-              </div>
-            </button>
-            {isExpanded && body.length > 0 ? (
-              <div className="border-t border-slate-200 bg-white px-4 py-3">
-                <p
-                  className={cn(
-                    "whitespace-pre-wrap text-pretty text-[13.5px] leading-relaxed text-slate-700",
-                    WRAP_ANYWHERE,
-                  )}
-                >
-                  {autolinkText(body, "text-sky-600")}
-                </p>
-              </div>
-            ) : null}
+                <div className="flex shrink-0 items-center gap-2">
+                  {role === "campaign" && campaignState !== undefined ? (
+                    <CampaignStateBadge state={campaignState} />
+                  ) : null}
+                  <ChevronRightIcon
+                    className={cn(
+                      "size-3.5 text-slate-500 transition-transform duration-150",
+                      isExpanded && "rotate-90",
+                    )}
+                  />
+                </div>
+              </button>
+              {isExpanded && body.length > 0 ? (
+                <div className="border-t border-slate-200 bg-white px-4 py-3">
+                  <p
+                    className={cn(
+                      "whitespace-pre-wrap text-pretty text-[13.5px] leading-relaxed text-slate-700",
+                      WRAP_ANYWHERE,
+                    )}
+                  >
+                    {autolinkText(body, "text-sky-600")}
+                  </p>
+                </div>
+              ) : null}
+            </div>
           </div>
         </TooltipTrigger>
         <TooltipContent side="top">
