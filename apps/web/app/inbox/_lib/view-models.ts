@@ -119,7 +119,7 @@ export interface InboxProjectMembershipViewModel {
   readonly membershipId: string;
   readonly projectId: string;
   readonly projectName: string;
-  readonly signupYear: number;
+  readonly signupYear: number | null;
   readonly projectIsActive: boolean;
   readonly status: InboxProjectStatus;
   readonly statusLabel: string;

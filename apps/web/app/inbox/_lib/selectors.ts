@@ -655,13 +655,26 @@ function buildProjectActivityIndex(
   timelineItems: readonly TimelineItem[],
 ): {
   readonly firstOccurredAtByProjectId: ReadonlyMap<string, string>;
+  readonly firstOccurredAtForContact: string | null;
   readonly lastOccurredAtByProjectId: ReadonlyMap<string, string>;
 } {
   const firstOccurredAtByProjectId = new Map<string, string>();
+  let firstOccurredAtForContact: string | null = null;
   const lastOccurredAtByProjectId = new Map<string, string>();
 
   for (const item of timelineItems) {
-    if (item.family !== "salesforce_event" || item.projectId === null) {
+    if (item.family !== "salesforce_event") {
+      continue;
+    }
+
+    if (
+      firstOccurredAtForContact === null ||
+      item.occurredAt < firstOccurredAtForContact
+    ) {
+      firstOccurredAtForContact = item.occurredAt;
+    }
+
+    if (item.projectId === null) {
       continue;
     }
 
@@ -681,6 +694,7 @@ function buildProjectActivityIndex(
 
   return {
     firstOccurredAtByProjectId,
+    firstOccurredAtForContact,
     lastOccurredAtByProjectId,
   };
 }
@@ -861,6 +875,9 @@ function buildProjectMembershipViewModel(
     >
   >,
   firstOccurredAtByProjectId: ReadonlyMap<string, string>,
+  firstOccurredAtForContact: string | null,
+  contactCreatedAt: string,
+  referenceNowIso: string,
 ): InboxProjectMembershipViewModel | null {
   const projectName =
     membership.projectId === null
@@ -872,13 +889,27 @@ function buildProjectMembershipViewModel(
     return null;
   }
 
+  const projectOccurredAt =
+    firstOccurredAtByProjectId.get(membership.projectId) ?? null;
+  const signupYearSource =
+    projectOccurredAt !== null
+      ? "project-event"
+      : firstOccurredAtForContact !== null
+        ? "contact-event"
+        : "contact-created-at";
+  const signupYearTimestamp =
+    projectOccurredAt ?? firstOccurredAtForContact ?? contactCreatedAt;
+  const signupYear = new Date(signupYearTimestamp).getUTCFullYear();
+  const referenceYear = new Date(referenceNowIso).getUTCFullYear();
+
   return {
     membershipId: membership.id,
     projectId: membership.projectId,
     projectName,
-    signupYear: new Date(
-      firstOccurredAtByProjectId.get(membership.projectId) ?? membership.createdAt,
-    ).getUTCFullYear(),
+    signupYear:
+      signupYearSource === "contact-created-at" && signupYear === referenceYear
+        ? null
+        : signupYear,
     projectIsActive:
       projectMetadataById[membership.projectId]?.isActive ?? false,
     status: mapProjectStatus(membership.status),
@@ -4054,6 +4085,9 @@ function buildContactSummary(input: {
         membership,
         input.projectMetadataById,
         projectActivityIndex.firstOccurredAtByProjectId,
+        projectActivityIndex.firstOccurredAtForContact,
+        input.contact.createdAt,
+        input.referenceNowIso,
       ),
     )
     .filter(
@@ -4067,6 +4101,9 @@ function buildContactSummary(input: {
         membership,
         input.projectMetadataById,
         projectActivityIndex.firstOccurredAtByProjectId,
+        projectActivityIndex.firstOccurredAtForContact,
+        input.contact.createdAt,
+        input.referenceNowIso,
       ),
     )
     .filter(

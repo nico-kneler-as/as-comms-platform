@@ -738,6 +738,7 @@ describe("real inbox selectors", () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await runtime?.dispose();
     runtime = null;
   });
@@ -2470,6 +2471,7 @@ describe("real inbox selectors", () => {
       displayName: "Membership All Time",
       primaryEmail: "membership-all-time@example.org",
       primaryPhone: null,
+      contactCreatedAt: "2023-06-01T12:00:00.000Z",
       projectId: "project:all-time-membership",
       projectName: "All-Time Membership Project",
       membershipId: "membership:all-time-membership",
@@ -2558,7 +2560,7 @@ describe("real inbox selectors", () => {
       projectIsActive: false,
       status: "applied",
       statusLabel: "Applied",
-      signupYear: 2024,
+      signupYear: null,
       expeditionMemberUrl:
         "https://adventurescientists.lightning.force.com/lightning/r/Expedition_Members__c/a0B-ryan-parks/view",
     });
@@ -2625,8 +2627,8 @@ describe("real inbox selectors", () => {
       "Older Project",
     ]);
     expect(detail?.contact.pastProjects.map((project) => project.signupYear)).toEqual([
-      2025,
-      2022,
+      null,
+      null,
     ]);
   });
 
@@ -2896,7 +2898,7 @@ describe("real inbox selectors", () => {
     expect(detail).not.toBeNull();
     expect(detail?.contact.pastProjects[0]).toMatchObject({
       projectIsActive: false,
-      signupYear: 2026,
+      signupYear: null,
       status: "successful",
       statusLabel: "Successful",
       crmUrl:
@@ -2906,7 +2908,7 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("derives past-project signup year from the earliest lifecycle event and falls back to membership createdAt", async () => {
+  it("derives past-project signup year from project events, contact-level events, and suppresses backfill-year fallbacks", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -2925,24 +2927,61 @@ describe("real inbox selectors", () => {
       membershipCreatedAt: "2026-02-01T00:00:00.000Z",
     });
     await seedInboxContact(runtime.context, {
-      contactId: "contact:past-signup-year",
-      salesforceContactId: "003-past-signup-year",
-      displayName: "Past Signup Year",
-      primaryEmail: "past-signup-year@example.org",
+      contactId: "contact:contact-event-signup-year",
+      salesforceContactId: "003-contact-event-signup-year",
+      displayName: "Contact Event Signup Year",
+      primaryEmail: "contact-event-signup-year@example.org",
       primaryPhone: null,
-      projectId: "project:fallback-membership-year",
-      projectName: "Fallback Membership Year",
-      membershipId: "membership:past:fallback-membership-year",
-      salesforceMembershipId: "a0B-past-fallback-membership-year",
+      contactCreatedAt: "2018-01-01T00:00:00.000Z",
+      projectId: "project:contact-event-fallback-year",
+      projectName: "Contact Event Fallback Year",
+      membershipId: "membership:contact-event-fallback-year",
+      salesforceMembershipId: "a0B-contact-event-fallback-year",
       membershipStatus: "completed",
-      membershipCreatedAt: "2024-05-01T00:00:00.000Z",
+      membershipCreatedAt: "2026-04-15T00:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:null-project-fallback-year",
+      salesforceContactId: "003-null-project-fallback-year",
+      displayName: "Null Project Fallback Year",
+      primaryEmail: "null-project-fallback-year@example.org",
+      primaryPhone: null,
+      contactCreatedAt: "2019-01-01T00:00:00.000Z",
+      projectId: "project:null-project-fallback-year",
+      projectName: "Null Project Fallback Year",
+      membershipId: "membership:null-project-fallback-year",
+      salesforceMembershipId: "a0B-null-project-fallback-year",
+      membershipStatus: "successful",
+      membershipCreatedAt: "2026-04-15T00:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:suppressed-signup-year",
+      salesforceContactId: "003-suppressed-signup-year",
+      displayName: "Suppressed Signup Year",
+      primaryEmail: "suppressed-signup-year@example.org",
+      primaryPhone: null,
+      contactCreatedAt: "2026-01-05T00:00:00.000Z",
+      projectId: "project:suppressed-signup-year",
+      projectName: "Suppressed Signup Year",
+      membershipId: "membership:suppressed-signup-year",
+      salesforceMembershipId: "a0B-suppressed-signup-year",
+      membershipStatus: "completed",
+      membershipCreatedAt: "2026-04-15T00:00:00.000Z",
     });
     await runtime.context.settings.projects.setActive(
       "project:old-ledger-year",
       false,
     );
     await runtime.context.settings.projects.setActive(
-      "project:fallback-membership-year",
+      "project:contact-event-fallback-year",
+      false,
+    );
+    await runtime.context.settings.projects.setActive(
+      "project:null-project-fallback-year",
+      false,
+    );
+    await runtime.context.settings.projects.setActive(
+      "project:suppressed-signup-year",
       false,
     );
     await seedInboxLifecycleEvent(runtime.context, {
@@ -2960,6 +2999,22 @@ describe("real inbox selectors", () => {
       eventType: "lifecycle.completed_training",
       summary: "Completed training",
       projectId: "project:old-ledger-year",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "contact-event-fallback-year-earliest",
+      contactId: "contact:contact-event-signup-year",
+      occurredAt: "2020-05-09T00:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:other-contact-project",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "null-project-fallback-year-earliest",
+      contactId: "contact:null-project-fallback-year",
+      occurredAt: "2022-09-10T00:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: null,
     });
     const latest = await seedInboxEmailEvent(runtime.context, {
       id: "past-signup-year-inbound",
@@ -2981,22 +3036,104 @@ describe("real inbox selectors", () => {
       lastCanonicalEventId: latest.canonicalEventId,
       lastEventType: "communication.email.inbound",
     });
+    const contactFallbackLatest = await seedInboxEmailEvent(runtime.context, {
+      id: "contact-event-signup-year-inbound",
+      contactId: "contact:contact-event-signup-year",
+      occurredAt: "2026-04-25T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Contact event signup year check",
+      snippet: "Checking contact-level signup year fallback.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:contact-event-signup-year",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-25T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-25T13:00:00.000Z",
+      snippet: "Checking contact-level signup year fallback.",
+      lastCanonicalEventId: contactFallbackLatest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+    const nullProjectLatest = await seedInboxEmailEvent(runtime.context, {
+      id: "null-project-fallback-year-inbound",
+      contactId: "contact:null-project-fallback-year",
+      occurredAt: "2026-04-25T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Null project signup year check",
+      snippet: "Checking null-project contact-level signup year fallback.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:null-project-fallback-year",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-25T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-25T13:00:00.000Z",
+      snippet: "Checking null-project contact-level signup year fallback.",
+      lastCanonicalEventId: nullProjectLatest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+    const suppressedLatest = await seedInboxEmailEvent(runtime.context, {
+      id: "suppressed-signup-year-inbound",
+      contactId: "contact:suppressed-signup-year",
+      occurredAt: "2026-04-25T13:00:00.000Z",
+      direction: "inbound",
+      subject: "Suppressed signup year check",
+      snippet: "Checking backfill-year suppression.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:suppressed-signup-year",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-25T13:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-25T13:00:00.000Z",
+      snippet: "Checking backfill-year suppression.",
+      lastCanonicalEventId: suppressedLatest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
 
     const detail = await getInboxDetail("contact:past-signup-year");
+    const contactEventDetail = await getInboxDetail(
+      "contact:contact-event-signup-year",
+    );
+    const nullProjectDetail = await getInboxDetail(
+      "contact:null-project-fallback-year",
+    );
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-04T12:00:00.000Z"));
+    const suppressedDetail = await getInboxDetail("contact:suppressed-signup-year");
 
     // Past projects sort by membership.createdAt desc (newest first).
-    // Old Ledger Year has membershipCreatedAt 2026-02-01, Fallback has 2024-05-01.
-    // signupYear is independent of sort: derived from earliest project event
-    // (2021 for Old Ledger via lifecycle event), or falls back to membership
-    // year (2024 for Fallback Membership Year, no events).
+    // signupYear is independent of sort and resolves via:
+    // project-linked event -> contact-level event -> contact createdAt.
     expect(detail?.contact.pastProjects).toMatchObject([
       {
         projectName: "Old Ledger Year",
         signupYear: 2021,
       },
+    ]);
+    expect(contactEventDetail?.contact.pastProjects).toMatchObject([
       {
-        projectName: "Fallback Membership Year",
-        signupYear: 2024,
+        projectName: "Contact Event Fallback Year",
+        signupYear: 2020,
+      },
+    ]);
+    expect(nullProjectDetail?.contact.pastProjects).toMatchObject([
+      {
+        projectName: "Null Project Fallback Year",
+        signupYear: 2022,
+      },
+    ]);
+    expect(suppressedDetail?.contact.pastProjects).toMatchObject([
+      {
+        projectName: "Suppressed Signup Year",
+        signupYear: null,
       },
     ]);
   });
