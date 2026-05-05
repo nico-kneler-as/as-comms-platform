@@ -132,34 +132,6 @@ function describeCampaignVisualState(
   return "sent";
 }
 
-function CampaignStateIcon({
-  state,
-}: {
-  readonly state: ReturnType<typeof describeCampaignVisualState>;
-}) {
-  const AccentIcon =
-    state === "clicked"
-      ? MousePointerClickIcon
-      : state === "opened"
-        ? EyeIcon
-        : state === "unsubscribed"
-          ? XIcon
-          : null;
-
-  return (
-    <span className="relative inline-flex">
-      <MegaphoneIcon className="size-4" />
-      {AccentIcon ? (
-        <span className="absolute -right-1 -top-1 inline-flex size-3.5 items-center justify-center rounded-full border border-violet-200 bg-white text-violet-700 shadow-sm">
-          <AccentIcon className="size-2" />
-        </span>
-      ) : (
-        <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-violet-500 ring-2 ring-white" />
-      )}
-    </span>
-  );
-}
-
 function CampaignStateBadge({
   state,
 }: {
@@ -276,11 +248,7 @@ export function TimelineAutomatedRow({
                     descriptor.iconClassName,
                   )}
                 >
-                  {role === "campaign" ? (
-                    <CampaignStateIcon state={campaignState ?? "sent"} />
-                  ) : (
-                    <descriptor.Icon className="size-4" />
-                  )}
+                  <descriptor.Icon className="size-4" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
