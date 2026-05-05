@@ -208,6 +208,8 @@ vi.mock("../../app/inbox/_components/composer-editor-surface", () => ({
   RichTextComposerEditor: ({
     bodyPlaintext,
     onChange,
+    topSlot,
+    bottomSlot,
     toolbarFooter,
   }: {
     readonly bodyPlaintext: string;
@@ -215,6 +217,8 @@ vi.mock("../../app/inbox/_components/composer-editor-surface", () => ({
       readonly bodyPlaintext: string;
       readonly bodyHtml: string;
     }) => void;
+    readonly topSlot?: ReactNode;
+    readonly bottomSlot?: ReactNode;
     readonly toolbarFooter?: (input: {
       readonly activeCommands: ReadonlySet<string>;
       readonly onCommand: (command: string) => void;
@@ -223,6 +227,7 @@ vi.mock("../../app/inbox/_components/composer-editor-surface", () => ({
     createElement(
       React.Fragment,
       null,
+      topSlot ?? null,
       createElement("textarea", {
         "aria-label": "Message body",
         onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -233,6 +238,7 @@ vi.mock("../../app/inbox/_components/composer-editor-surface", () => ({
         },
         value: bodyPlaintext,
       } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
+      bottomSlot ?? null,
       toolbarFooter
         ? toolbarFooter({
             activeCommands: new Set<string>(),
