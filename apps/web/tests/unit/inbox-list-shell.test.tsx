@@ -61,7 +61,6 @@ vi.mock("@/components/ui/dropdown-menu", () => {
       createElement("div", { "data-testid": "dropdown-menu" }, children),
     DropdownMenuTrigger: ({
       children,
-      asChild: _asChild,
     }: {
       readonly children?: React.ReactNode;
       readonly asChild?: boolean;

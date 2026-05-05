@@ -277,7 +277,10 @@ async function seedInboxFixture(runtime: InboxTestRuntime): Promise<void> {
     bucket: "Opened",
     needsFollowUp: false,
     hasUnresolved: false,
-    lastInboundAt: null,
+    // PR #329: Inbox default scope requires lastInboundAt IS NOT NULL.
+    // Synthesize an older inbound timestamp so this fixture qualifies for
+    // the inbox view; the outbound stays the latest activity.
+    lastInboundAt: "2026-04-13T00:00:00.000Z",
     lastOutboundAt: "2026-04-14T15:00:00.000Z",
     lastActivityAt: "2026-04-14T15:00:00.000Z",
     snippet: "Sending the final safety protocol packet for review.",
@@ -4400,7 +4403,10 @@ describe("real inbox selectors", () => {
       bucket: "Opened",
       needsFollowUp: false,
       hasUnresolved: false,
-      lastInboundAt: null,
+      // PR #329: Inbox default scope requires lastInboundAt IS NOT NULL.
+      // Synthesize an older inbound timestamp so this snippet-rendering
+      // fixture appears in the inbox list. The outbound stays the latest.
+      lastInboundAt: "2026-04-15T00:00:00.000Z",
       lastOutboundAt: "2026-04-16T09:00:00.000Z",
       lastActivityAt: "2026-04-16T09:00:00.000Z",
       snippet:
@@ -4452,7 +4458,8 @@ describe("real inbox selectors", () => {
       bucket: "Opened",
       needsFollowUp: false,
       hasUnresolved: false,
-      lastInboundAt: null,
+      // PR #329: see lisa-zhang note above.
+      lastInboundAt: "2026-04-15T00:00:00.000Z",
       lastOutboundAt: "2026-04-16T10:00:00.000Z",
       lastActivityAt: "2026-04-16T10:00:00.000Z",
       snippet: [
@@ -4720,7 +4727,8 @@ describe("real inbox selectors", () => {
       bucket: "Opened",
       needsFollowUp: true,
       hasUnresolved: false,
-      lastInboundAt: null,
+      // PR #329: see lisa-zhang note above.
+      lastInboundAt: "2026-04-15T00:00:00.000Z",
       lastOutboundAt: "2026-04-16T12:00:00.000Z",
       lastActivityAt: "2026-04-16T12:00:00.000Z",
       snippet: [
@@ -4833,7 +4841,8 @@ describe("real inbox selectors", () => {
       bucket: "Opened",
       needsFollowUp: false,
       hasUnresolved: false,
-      lastInboundAt: null,
+      // PR #329: see lisa-zhang note above.
+      lastInboundAt: "2026-04-15T00:00:00.000Z",
       lastOutboundAt: "2026-04-16T13:00:00.000Z",
       lastActivityAt: "2026-04-16T13:00:00.000Z",
       snippet: [
@@ -5696,7 +5705,12 @@ describe("real inbox selectors", () => {
     expect(secondPage.page.hasMore).toBe(false);
   });
 
-  it("paginates cleanly across the null-inbound boundary", async () => {
+  it("paginates cleanly through inbound-only inbox rows", async () => {
+    // PR #329: the new "inbox" filter excludes contacts with
+    // lastInboundAt IS NULL, so the original "across the null-inbound
+    // boundary" premise is moot. The recency fixture has 4 inbound rows
+    // at indices 0-3 and 2 outbound-only rows at 4-5; under the new
+    // scope only the 4 inbound rows show up.
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -5721,13 +5735,14 @@ describe("real inbox selectors", () => {
     });
 
     expect(secondPage.items.map((item) => item.contactId)).toEqual(
-      inboxRecencyExpectedOrder.slice(3),
+      inboxRecencyExpectedOrder.slice(3, 4),
     );
+    // Only 4 inbound rows pass the new lastInboundAt IS NOT NULL filter.
     expect(
       new Set(
         [...firstPage.items, ...secondPage.items].map((item) => item.contactId),
-      ),
-    ).toHaveLength(inboxRecencyExpectedOrder.length);
+      ).size,
+    ).toBe(4);
     expect(secondPage.page.hasMore).toBe(false);
     expect(secondPage.page.nextCursor).toBeNull();
   });
