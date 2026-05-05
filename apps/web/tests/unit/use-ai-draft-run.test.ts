@@ -74,6 +74,7 @@ function setup(input?: {
       alias: "forest@adventuresci.org",
       projectId: "project-1",
       projectName: "Forest",
+      signature: "Best,\nForest Team",
       isAiReady: true,
       isAiConfigured: true,
       hasCachedContent: true,

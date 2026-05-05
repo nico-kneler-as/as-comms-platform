@@ -349,6 +349,7 @@ export interface InboxComposerAliasOption {
   readonly alias: string;
   readonly projectId: string;
   readonly projectName: string;
+  readonly signature: string;
   /**
    * AI generation is available for this alias: the provider is configured and
    * the project is active.

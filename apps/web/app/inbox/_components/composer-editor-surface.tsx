@@ -146,6 +146,7 @@ export function RichTextComposerEditor({
   errorMessage,
   topSlot,
   bottomSlot,
+  toolbarFooter,
   onChange,
   onClearErrors,
 }: {
@@ -153,6 +154,10 @@ export function RichTextComposerEditor({
   readonly errorMessage: string | undefined;
   readonly topSlot?: React.ReactNode;
   readonly bottomSlot?: React.ReactNode;
+  readonly toolbarFooter?: (input: {
+    readonly activeCommands: ReadonlySet<ComposerToolbarCommand>;
+    readonly onCommand: (command: ComposerToolbarCommand) => void;
+  }) => React.ReactNode;
   readonly onChange: (value: {
     readonly bodyPlaintext: string;
     readonly bodyHtml: string;
@@ -279,18 +284,28 @@ export function RichTextComposerEditor({
   const showPlaceholder = bodyPlaintext.length === 0;
 
   return (
-    <div className={`border border-slate-200 bg-white ${SHADOW.sm}`}>
-      <ComposerToolbar activeCommands={activeCommands} onCommand={runCommand} />
-      {topSlot}
-      <div className="relative min-h-48" onKeyDown={handleKeyDown}>
-        <EditorContent editor={editor} />
-        {showPlaceholder ? (
-          <span className="pointer-events-none absolute left-4 top-4 text-sm leading-6 text-slate-400">
-            Write your message
-          </span>
-        ) : null}
+    <>
+      <div className={`border border-slate-200 bg-white ${SHADOW.sm}`}>
+        {toolbarFooter ? null : (
+          <ComposerToolbar activeCommands={activeCommands} onCommand={runCommand} />
+        )}
+        {topSlot}
+        <div className="relative min-h-48" onKeyDown={handleKeyDown}>
+          <EditorContent editor={editor} />
+          {showPlaceholder ? (
+            <span className="pointer-events-none absolute left-4 top-4 text-sm leading-6 text-slate-400">
+              Write your message
+            </span>
+          ) : null}
+        </div>
+        {bottomSlot}
       </div>
-      {bottomSlot}
-    </div>
+      {toolbarFooter
+        ? toolbarFooter({
+            activeCommands,
+            onCommand: runCommand,
+          })
+        : null}
+    </>
   );
 }

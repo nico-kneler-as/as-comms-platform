@@ -38,6 +38,7 @@ vi.mock("lucide-react", () => ({
   ArrowRight: iconMock("ArrowRight"),
   ArrowUpRight: iconMock("ArrowUpRight"),
   Bold: iconMock("Bold"),
+  BookOpen: iconMock("BookOpen"),
   Bot: iconMock("Bot"),
   Calendar: iconMock("Calendar"),
   Check: iconMock("Check"),
@@ -80,6 +81,7 @@ vi.mock("lucide-react", () => ({
   Send: iconMock("Send"),
   Settings: iconMock("Settings"),
   SlidersHorizontal: iconMock("SlidersHorizontal"),
+  Sparkle: iconMock("Sparkle"),
   Sparkles: iconMock("Sparkles"),
   Trash2: iconMock("Trash2"),
   Upload: iconMock("Upload"),
@@ -441,6 +443,31 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
       },
       value: body,
     } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
+  ComposerSmsSurface: ({
+    onSend,
+    sendDisabledReason,
+    smsEnabled,
+  }: {
+    readonly onSend: () => void;
+    readonly sendDisabledReason: string | null;
+    readonly smsEnabled: boolean;
+  }) =>
+    createElement(
+      "div",
+      { "data-testid": "sms-surface" },
+      createElement(
+        "button",
+        {
+          disabled: !smsEnabled || sendDisabledReason !== null,
+          title: !smsEnabled
+            ? "SMS sending isn't wired up yet — coming soon"
+            : (sendDisabledReason ?? undefined),
+          type: "button",
+          onClick: onSend,
+        },
+        "Send SMS",
+      ),
+    ),
 }));
 
 import type { InboxComposerAliasOption } from "../../app/inbox/_lib/view-models";
@@ -472,6 +499,7 @@ const composerAliases: readonly InboxComposerAliasOption[] = [
     alias: "whitebark@adventurescientists.org",
     projectId: "project:whitebark",
     projectName: "Whitebark Pine",
+    signature: "Thanks,\nWhitebark Pine",
     isAiReady: true,
     isAiConfigured: true,
     hasCachedContent: true,
@@ -801,7 +829,21 @@ describe("composer canonical modal", () => {
       document.querySelector("[data-testid='underlying-conversation']"),
     ).not.toBeNull();
     expect(getStateText()).toBe("new-draft:modal");
-    expect(document.body.textContent).toContain("New message");
+    expect(document.body.textContent).not.toContain("New message");
+    expect(document.body.textContent).toContain("SMS");
+  });
+
+  it("keeps the SMS tab visible when SMS sending is disabled and disables send", async () => {
+    await mount(<TestApp />);
+
+    await click(getByText("Open new draft"));
+    await click(getByText("SMS"));
+
+    const sendSmsButton = getByText("Send SMS");
+    expect(sendSmsButton.getAttribute("disabled")).not.toBeNull();
+    expect(sendSmsButton.getAttribute("title")).toBe(
+      "SMS sending isn't wired up yet — coming soon",
+    );
   });
 
   it("opens reply and note entry points in the same modal state machine", async () => {

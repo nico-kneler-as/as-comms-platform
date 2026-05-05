@@ -65,14 +65,6 @@ describe("composer draft reducer sms", () => {
     expect(state.smsBody).toBe("Checking in about your field dates.");
   });
 
-  it("toggles sms signature", () => {
-    const toggled = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
-      type: "TOGGLE_SMS_SIGNATURE",
-    });
-
-    expect(toggled.smsIncludeSignature).toBe(false);
-  });
-
   it("sets sms sender", () => {
     const state = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
       type: "SET_SMS_SENDER",

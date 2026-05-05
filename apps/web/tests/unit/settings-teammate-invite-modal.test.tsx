@@ -36,10 +36,12 @@ function iconMock(name: string) {
 }
 
 vi.mock("lucide-react", () => ({
+  BookOpen: iconMock("BookOpen"),
   Flag: iconMock("Flag"),
   Inbox: iconMock("Inbox"),
   MailOpen: iconMock("MailOpen"),
   Send: iconMock("Send"),
+  Sparkle: iconMock("Sparkle"),
   UserPlus: iconMock("UserPlus"),
   X: iconMock("X"),
 }));

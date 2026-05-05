@@ -31,14 +31,15 @@ import {
   type ComposerRecipientValue,
 } from "./composer-recipient-picker";
 import { ComposerSendFromChip } from "./composer-send-from-chip";
-import { AboutThisDraft } from "./about-this-draft";
 import {
   AttachmentRow,
   ComposerField,
   InlineErrorBanner,
   RichTextComposerEditor,
 } from "./composer-editor-surface";
+import { ComposerToolbar } from "./composer-toolbar";
 import {
+  BookOpenIcon,
   ChevronDownIcon,
   LoaderIcon,
   MailIcon,
@@ -228,14 +229,13 @@ export function ComposerEmailSurface({
   runAiDraftDisabledReason,
   selectedAliasHasCachedContent,
   selectedAliasProjectName,
+  selectedAliasSignature,
   aiWarningMessage,
   inlineError,
   canSendAndSaveForAi,
   sendAndSaveDisabledReason,
   isSendDisabled,
   isSending,
-  isAboutOpen,
-  onAboutOpenChange,
   onAliasChange,
   onRecipientChange,
   onCcChange,
@@ -286,14 +286,13 @@ export function ComposerEmailSurface({
   readonly runAiDraftDisabledReason: string | null;
   readonly selectedAliasHasCachedContent: boolean;
   readonly selectedAliasProjectName: string | null;
+  readonly selectedAliasSignature: string;
   readonly aiWarningMessage: string | null;
   readonly inlineError: InlineComposerError | null;
   readonly canSendAndSaveForAi: boolean;
   readonly sendAndSaveDisabledReason: string | null;
   readonly isSendDisabled: boolean;
   readonly isSending: boolean;
-  readonly isAboutOpen: boolean;
-  readonly onAboutOpenChange: (open: boolean) => void;
   readonly onAliasChange: (value: string | null) => void;
   readonly onRecipientChange: (
     recipient: ComposerRecipientValue | null,
@@ -481,11 +480,153 @@ export function ComposerEmailSurface({
             onCancelReprompt={onCancelReprompt}
             onDiscard={onDiscardAi}
             onApprove={onApproveAi}
-            onAbout={() => {
-              onAboutOpenChange(true);
-            }}
           />
         }
+        bottomSlot={
+          selectedAliasSignature.length > 0 ? (
+            <div className="px-4 pb-4 pt-3 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
+              {selectedAliasSignature}
+            </div>
+          ) : undefined
+        }
+        toolbarFooter={({ activeCommands, onCommand }) => (
+          <div className="border-t border-slate-100 bg-slate-50/40 px-3 py-2">
+            <AttachmentRow
+              attachments={attachments}
+              onRemove={onAttachmentRemove}
+            />
+            {attachmentError ? (
+              <div className="px-1 pb-3 text-xs text-rose-700">
+                {attachmentError.message}
+              </div>
+            ) : null}
+
+            {inlineError || recipientError || ccError || bccError || attachmentError ? (
+              <InlineErrorBanner
+                message={
+                  inlineError?.message ??
+                  recipientError?.message ??
+                  ccError?.message ??
+                  bccError?.message ??
+                  attachmentError?.message ??
+                  "Something went wrong."
+                }
+                retryable={inlineError?.retryable === true}
+                onRetry={() => {
+                  onSend("send");
+                }}
+              />
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <ComposerToolbar
+                activeCommands={activeCommands}
+                onCommand={onCommand}
+              />
+
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="gap-1.5 border-l border-slate-200 pl-3 text-[11.5px] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  onClick={onAttachmentClick}
+                >
+                  <PaperclipIcon className="size-3.5" />
+                  Attach
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-[12px] text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                  onClick={onCancel}
+                >
+                  Cancel
+                </Button>
+                <div className="inline-flex items-stretch overflow-hidden rounded-md shadow-sm">
+                  <Button
+                    type="button"
+                    disabled={isSendDisabled}
+                    className="h-9 rounded-none rounded-l-md bg-slate-900 px-3 text-[12.5px] font-medium text-white shadow-none hover:bg-slate-800"
+                    onClick={() => {
+                      onSend("send");
+                    }}
+                  >
+                    {isSending ? (
+                      <>
+                        <LoaderIcon className="size-4 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <SendIcon className="size-4" />
+                        Send
+                      </>
+                    )}
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        aria-label="Send options"
+                        disabled={isSending}
+                        className="h-9 rounded-none rounded-r-md border-l border-slate-700 bg-slate-900 px-2 text-white shadow-none hover:bg-slate-800"
+                      >
+                        <ChevronDownIcon className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      className="w-72 rounded-xl p-1.5"
+                    >
+                      <SendAndSaveMenuItem
+                        disabled={sendAndSaveDisabled}
+                        tooltipMessage={sendAndSaveTooltipMessage}
+                        onSelect={() => {
+                          onSend("send-and-save");
+                        }}
+                      />
+                      <DropdownMenuItem
+                        className="rounded-md"
+                        onSelect={() => {
+                          onSaveDraft();
+                        }}
+                      >
+                        <div className="flex min-w-0 flex-col">
+                          <span className="text-sm font-medium text-slate-900">
+                            Save draft
+                          </span>
+                          <span className={TYPE.caption}>
+                            Collapse this draft to the floating pill without sending
+                          </span>
+                        </div>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            </div>
+
+            {selectedAliasHasCachedContent && selectedAliasProjectName !== null ? (
+              <span
+                className={`mt-2 hidden items-center gap-1.5 ${TYPE.caption} md:inline-flex`}
+              >
+                <BookOpenIcon className="size-3.5" />
+                Uses {selectedAliasProjectName} knowledge
+              </span>
+            ) : selectedAliasProjectName !== null ? (
+              <div className="mt-2 hidden md:block">
+                <KnowledgeIndicator tooltipMessage={knowledgeTooltip} />
+              </div>
+            ) : null}
+
+            {!selectedAliasHasCachedContent && selectedAliasProjectName !== null ? (
+              <div className="mt-2 md:hidden">
+                <KnowledgeIndicator tooltipMessage={knowledgeTooltip} />
+              </div>
+            ) : null}
+          </div>
+        )}
       />
 
       {aiWarningMessage ? (
@@ -498,135 +639,6 @@ export function ComposerEmailSurface({
           {bodyError.message}
         </div>
       ) : null}
-
-      <AttachmentRow attachments={attachments} onRemove={onAttachmentRemove} />
-      {attachmentError ? (
-        <div className="px-4 pb-3 text-xs text-rose-700">
-          {attachmentError.message}
-        </div>
-      ) : null}
-
-      <div className="border-t border-slate-100 bg-slate-50/40 px-3 py-2">
-        {inlineError || recipientError || ccError || bccError || attachmentError ? (
-          <InlineErrorBanner
-            message={
-              inlineError?.message ??
-              recipientError?.message ??
-              ccError?.message ??
-              bccError?.message ??
-              attachmentError?.message ??
-              "Something went wrong."
-            }
-            retryable={inlineError?.retryable === true}
-            onRetry={() => {
-              onSend("send");
-            }}
-          />
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            className="gap-1.5 border-l border-slate-200 pl-3 text-[11.5px] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            onClick={onAttachmentClick}
-          >
-            <PaperclipIcon className="size-3.5" />
-            Attach
-          </Button>
-
-          <div className="ml-auto flex items-center gap-2">
-            {selectedAliasHasCachedContent && selectedAliasProjectName !== null ? (
-              <span className={`hidden items-center ${TYPE.caption} md:inline-flex`}>
-                Uses {selectedAliasProjectName} knowledge
-              </span>
-            ) : selectedAliasProjectName !== null ? (
-              <div className="hidden md:block">
-                <KnowledgeIndicator tooltipMessage={knowledgeTooltip} />
-              </div>
-            ) : null}
-
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-[12px] text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-              onClick={onCancel}
-            >
-              Cancel
-            </Button>
-            <div className="inline-flex items-stretch overflow-hidden rounded-md shadow-sm">
-              <Button
-                type="button"
-                disabled={isSendDisabled}
-                className="h-9 rounded-none rounded-l-md bg-slate-900 px-3 text-[12.5px] font-medium text-white shadow-none hover:bg-slate-800"
-                onClick={() => {
-                  onSend("send");
-                }}
-              >
-                {isSending ? (
-                  <>
-                    <LoaderIcon className="size-4 animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <SendIcon className="size-4" />
-                    Send
-                  </>
-                )}
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    aria-label="Send options"
-                    disabled={isSending}
-                    className="h-9 rounded-none rounded-r-md border-l border-slate-700 bg-slate-900 px-2 text-white shadow-none hover:bg-slate-800"
-                  >
-                    <ChevronDownIcon className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-72 rounded-xl p-1.5">
-                  <SendAndSaveMenuItem
-                    disabled={sendAndSaveDisabled}
-                    tooltipMessage={sendAndSaveTooltipMessage}
-                    onSelect={() => {
-                      onSend("send-and-save");
-                    }}
-                  />
-                  <DropdownMenuItem
-                    className="rounded-md"
-                    onSelect={() => {
-                      onSaveDraft();
-                    }}
-                  >
-                    <div className="flex min-w-0 flex-col">
-                      <span className="text-sm font-medium text-slate-900">
-                        Save draft
-                      </span>
-                      <span className={TYPE.caption}>
-                        Collapse this draft to the floating pill without sending
-                      </span>
-                    </div>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-        </div>
-
-        {!selectedAliasHasCachedContent && selectedAliasProjectName !== null ? (
-          <div className="mt-2 md:hidden">
-            <KnowledgeIndicator tooltipMessage={knowledgeTooltip} />
-          </div>
-        ) : null}
-      </div>
-
-      <AboutThisDraft
-        aiDraft={aiDraft}
-        open={isAboutOpen}
-        onOpenChange={onAboutOpenChange}
-      />
     </TooltipProvider>
   );
 }
@@ -643,11 +655,12 @@ function resolveSmsRecipientLabel(recipient: ComposerSmsRecipient | null): strin
 
 export function ComposerSmsSurface({
   smsSenders,
+  smsEnabled,
   selectedSenderId,
   recipient,
   lockedRecipient,
   body,
-  includeSignature,
+  selectedAliasSignature,
   segmentMetrics,
   outboundRateUsdPerSegment,
   aiDraft,
@@ -664,8 +677,6 @@ export function ComposerSmsSurface({
   senderError,
   bodyError,
   isSending,
-  isAboutOpen,
-  onAboutOpenChange,
   onRecipientChange,
   onBodyChange,
   onAiDirectiveChange,
@@ -677,16 +688,16 @@ export function ComposerSmsSurface({
   onRunAiDraft,
   onRepromptTextChange,
   onReprompt,
-  onToggleSignature,
   onSend,
   onCancel,
 }: {
   readonly smsSenders: readonly InboxSmsSenderOption[];
+  readonly smsEnabled: boolean;
   readonly selectedSenderId: string | null;
   readonly recipient: ComposerSmsRecipient | null;
   readonly lockedRecipient: boolean;
   readonly body: string;
-  readonly includeSignature: boolean;
+  readonly selectedAliasSignature: string;
   readonly segmentMetrics: SmsMetrics;
   readonly outboundRateUsdPerSegment: number;
   readonly aiDraft: AiDraftState;
@@ -703,8 +714,6 @@ export function ComposerSmsSurface({
   readonly senderError?: ComposerValidationError;
   readonly bodyError?: ComposerValidationError;
   readonly isSending: boolean;
-  readonly isAboutOpen: boolean;
-  readonly onAboutOpenChange: (open: boolean) => void;
   readonly onRecipientChange: (recipient: ComposerSmsRecipient | null) => void;
   readonly onBodyChange: (value: string) => void;
   readonly onAiDirectiveChange: (value: string) => void;
@@ -716,7 +725,6 @@ export function ComposerSmsSurface({
   readonly onRunAiDraft: () => void;
   readonly onRepromptTextChange: (value: string) => void;
   readonly onReprompt: () => void;
-  readonly onToggleSignature: () => void;
   readonly onSend: (sendKind?: ComposerSendKind) => void;
   readonly onCancel: () => void;
 }) {
@@ -735,11 +743,14 @@ export function ComposerSmsSurface({
   const sendAndSaveTooltipMessage =
     sendAndSaveDisabledReason ??
     (!canSendAndSaveForAi ? "Project knowledge capture is unavailable." : null);
+  const sendSmsDisabledReason = !smsEnabled
+    ? "SMS sending isn't wired up yet — coming soon"
+    : sendDisabledReason;
   const sendButton = (
     <div className="inline-flex items-stretch overflow-hidden rounded-md shadow-sm">
       <Button
         type="button"
-        disabled={sendDisabledReason !== null || isSending}
+        disabled={sendSmsDisabledReason !== null || isSending}
         className="h-9 rounded-none rounded-l-md bg-slate-900 px-3 text-[12.5px] font-medium text-white shadow-none hover:bg-slate-800"
         onClick={() => {
           onSend("send");
@@ -762,7 +773,7 @@ export function ComposerSmsSurface({
           <Button
             type="button"
             aria-label="SMS send options"
-            disabled={isSending}
+            disabled={!smsEnabled || isSending}
             className="h-9 rounded-none rounded-r-md border-l border-slate-700 bg-slate-900 px-2 text-white shadow-none hover:bg-slate-800"
           >
             <ChevronDownIcon className="size-4" />
@@ -814,18 +825,6 @@ export function ComposerSmsSurface({
         />
       </ComposerField>
 
-      <div className="px-4 pt-4">
-        <label className="flex items-center gap-2 text-[12px] font-medium text-slate-600">
-          <input
-            type="checkbox"
-            checked={includeSignature}
-            onChange={onToggleSignature}
-            className="size-4 rounded border-slate-300 text-slate-900"
-          />
-          Include sender signature
-        </label>
-      </div>
-
       <div className="px-4 py-4">
         <ComposerAiDraftWindow
           directivePlaceholder='Optional: nudge the SMS draft (e.g. "remind them about Wed training, keep under 140 chars"). Or just click Draft with AI.'
@@ -843,9 +842,6 @@ export function ComposerSmsSurface({
           onCancelReprompt={onCancelReprompt}
           onDiscard={onDiscardAi}
           onApprove={onApproveAi}
-          onAbout={() => {
-            onAboutOpenChange(true);
-          }}
         />
         <textarea
           rows={8}
@@ -864,6 +860,11 @@ export function ComposerSmsSurface({
         />
         {bodyError ? (
           <p className="mt-2 text-xs text-rose-700">{bodyError.message}</p>
+        ) : null}
+        {selectedAliasSignature.length > 0 ? (
+          <div className="mt-3 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
+            {selectedAliasSignature}
+          </div>
         ) : null}
       </div>
 
@@ -904,24 +905,21 @@ export function ComposerSmsSurface({
             >
               Cancel
             </Button>
-            {sendDisabledReason === null ? (
+            {sendSmsDisabledReason === null ? (
               sendButton
             ) : (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div>{sendButton}</div>
                 </TooltipTrigger>
-                <TooltipContent side="top">{sendDisabledReason}</TooltipContent>
+                <TooltipContent side="top">
+                  {sendSmsDisabledReason}
+                </TooltipContent>
               </Tooltip>
             )}
           </div>
         </div>
       </div>
-      <AboutThisDraft
-        aiDraft={aiDraft}
-        open={isAboutOpen}
-        onOpenChange={onAboutOpenChange}
-      />
     </TooltipProvider>
   );
 }

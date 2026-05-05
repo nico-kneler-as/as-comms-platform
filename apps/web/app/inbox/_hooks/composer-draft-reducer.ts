@@ -47,12 +47,10 @@ export interface ComposerDraftState {
   readonly repromptText: string;
   readonly inlineError: InlineComposerError | null;
   readonly fieldErrors: ComposerFieldErrors;
-  readonly isAboutOpen: boolean;
   readonly activeTab: "email" | "sms" | "note";
   readonly smsRecipient: ComposerSmsRecipient | null;
   readonly smsConsent: SmsRecipientConsentState | null;
   readonly smsBody: string;
-  readonly smsIncludeSignature: boolean;
   readonly smsSelectedSenderId: string | null;
 }
 
@@ -85,7 +83,6 @@ export type ComposerDraftAction =
     }
   | { readonly type: "SET_AI_DIRECTIVE"; readonly value: string }
   | { readonly type: "SET_REPROMPT_TEXT"; readonly value: string }
-  | { readonly type: "SET_ABOUT_OPEN"; readonly open: boolean }
   | { readonly type: "SET_ACTIVE_TAB"; readonly tab: "email" | "sms" | "note" }
   | { readonly type: "ADD_ATTACHMENTS"; readonly attachments: readonly AttachmentDraft[] }
   | { readonly type: "REMOVE_ATTACHMENT"; readonly id: string }
@@ -108,7 +105,6 @@ export type ComposerDraftAction =
       readonly consent: SmsRecipientConsentState;
     }
   | { readonly type: "SET_SMS_BODY"; readonly body: string }
-  | { readonly type: "TOGGLE_SMS_SIGNATURE" }
   | { readonly type: "SET_SMS_SENDER"; readonly senderId: string | null }
   | { readonly type: "CLEAR_ERRORS" };
 
@@ -127,12 +123,10 @@ export const INITIAL_COMPOSER_DRAFT_STATE: ComposerDraftState = {
   repromptText: "",
   inlineError: null,
   fieldErrors: [],
-  isAboutOpen: false,
   activeTab: "email",
   smsRecipient: null,
   smsConsent: null,
   smsBody: "",
-  smsIncludeSignature: true,
   smsSelectedSenderId: null,
 };
 
@@ -280,8 +274,6 @@ export function reduceComposerDraft(
       return { ...state, aiDirective: action.value };
     case "SET_REPROMPT_TEXT":
       return { ...state, repromptText: action.value };
-    case "SET_ABOUT_OPEN":
-      return { ...state, isAboutOpen: action.open };
     case "SET_ACTIVE_TAB":
       return {
         ...state,
@@ -299,11 +291,6 @@ export function reduceComposerDraft(
       return clearErrors({
         ...state,
         smsBody: action.body,
-      });
-    case "TOGGLE_SMS_SIGNATURE":
-      return clearErrors({
-        ...state,
-        smsIncludeSignature: !state.smsIncludeSignature,
       });
     case "SET_SMS_SENDER":
       return clearErrors({
