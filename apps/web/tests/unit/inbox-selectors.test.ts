@@ -4037,6 +4037,50 @@ describe("real inbox selectors", () => {
     ]);
   });
 
+  it("uses canonical lifecycle order for milestones that share the same UTC day in both rail and timeline", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "same-day-received-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-08T09:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "same-day-signed-up",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-08T17:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "same-day-completed-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-09T08:00:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Completed training",
+      projectId: "project:amazon-basin",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
+      "Completed training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+    ]);
+    expect(detail?.timeline.map((entry) => entry.id)).toEqual([
+      "timeline:same-day-signed-up",
+      "timeline:same-day-received-training",
+      "timeline:same-day-completed-training",
+    ]);
+  });
+
   it("formats lifecycle rail dates by UTC calendar day to avoid midnight drift", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");

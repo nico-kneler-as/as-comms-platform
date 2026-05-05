@@ -85,7 +85,7 @@ export function SmsMessage({
           isOutbound ? "justify-end" : "justify-start",
         )}
       >
-        <div className="min-w-0">
+        <div className={cn("min-w-0 w-full", SMS_BUBBLE_MAX_W)}>
           <div className="mb-1 px-1">
             <span
               className={cn(
