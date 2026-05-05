@@ -336,6 +336,52 @@ export async function backfillInboxProjectionCoverage(input: {
           error instanceof Error ? error.message : String(error)
         }`
       );
+      if (error instanceof Error) {
+        logger.error(`  stack: ${error.stack ?? "(no stack)"}`);
+        const anyError = error as unknown as Record<string, unknown>;
+        for (const key of [
+          "cause",
+          "code",
+          "detail",
+          "constraint",
+          "column",
+          "table",
+          "schema",
+          "severity",
+          "position",
+          "where",
+          "hint",
+          "errno",
+          "syscall",
+        ]) {
+          if (anyError[key] !== undefined) {
+            logger.error(`  ${key}: ${JSON.stringify(anyError[key])}`);
+          }
+        }
+        if (anyError.cause instanceof Error) {
+          const causeError = anyError.cause as Error & Record<string, unknown>;
+          logger.error(`  cause.message: ${causeError.message}`);
+          logger.error(`  cause.stack: ${causeError.stack ?? "(no stack)"}`);
+          for (const key of [
+            "code",
+            "detail",
+            "constraint",
+            "column",
+            "table",
+            "schema",
+            "severity",
+            "position",
+            "where",
+            "hint",
+          ]) {
+            if (causeError[key] !== undefined) {
+              logger.error(
+                `  cause.${key}: ${JSON.stringify(causeError[key])}`
+              );
+            }
+          }
+        }
+      }
     }
   }
 
