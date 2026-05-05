@@ -781,6 +781,7 @@ describe("InboxTimeline", () => {
     expect(markup).not.toContain(">YO<");
   });
 
+<<<<<<< HEAD
   it("classifies signup system dividers into the violet hand achievement category", () => {
     expect(
       classifySystemDivider("Signed up for the Pacific Northwest expedition."),
@@ -809,6 +810,9 @@ describe("InboxTimeline", () => {
   });
 
   it("classifies first-data system dividers into the emerald star achievement category", () => {
+=======
+  it("classifies first-data system dividers into the emerald star category", () => {
+>>>>>>> 5ecc91a4 (chore(inbox): harmonize system-divider with PR #322 lifecycle pills)
     expect(
       classifySystemDivider("Submitted first batch from the field."),
     ).toMatchObject({

@@ -75,4 +75,6 @@ export {
   Database as DatabaseIcon,
   Archive as ArchiveBoxIcon,
   ArchiveRestore as ArchiveRestoreIcon,
+  Hand as HandIcon,
+  Star as StarIcon,
 } from "lucide-react";
