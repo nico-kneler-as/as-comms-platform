@@ -3309,6 +3309,11 @@ function createStage1RepositoriesInternal(
           .values(values)
           .onConflictDoUpdate({
             target: contactInboxProjection.contactId,
+            // archivedAt is intentionally omitted from the set clause:
+            // ordinary event-driven projection rebuilds shouldn't clobber
+            // the archived state; archive / unarchive happens through a
+            // separate setArchived path. INSERT path persists archivedAt
+            // via mapInboxProjectionToInsert.
             set: {
               bucket: values.bucket,
               isStarred: values.isStarred,

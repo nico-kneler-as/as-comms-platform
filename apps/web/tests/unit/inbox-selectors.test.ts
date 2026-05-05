@@ -278,9 +278,10 @@ async function seedInboxFixture(runtime: InboxTestRuntime): Promise<void> {
     needsFollowUp: false,
     hasUnresolved: false,
     // PR #329: Inbox default scope requires lastInboundAt IS NOT NULL.
-    // Synthesize an older inbound timestamp so this fixture qualifies for
-    // the inbox view; the outbound stays the latest activity.
-    lastInboundAt: "2026-04-13T00:00:00.000Z",
+    // Synthesize an inbound timestamp older than alex's (2026-04-12T19:00Z)
+    // so the [sarah, alex, lisa] ordering is preserved under inbound-first
+    // sort. Outbound stays the latest activity.
+    lastInboundAt: "2026-04-10T00:00:00.000Z",
     lastOutboundAt: "2026-04-14T15:00:00.000Z",
     lastActivityAt: "2026-04-14T15:00:00.000Z",
     snippet: "Sending the final safety protocol packet for review.",

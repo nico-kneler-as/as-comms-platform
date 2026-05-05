@@ -3456,12 +3456,16 @@ async function readInboxListCacheData(input: {
   const decodedCursor = decodeInboxListCursor(input.cursor);
   const normalizedQuery = normalizeInlineText(input.query) ?? null;
   const order = orderForInboxFilter(input.filterId);
-  const loadProjectionRows = (filter: InboxFilterId) =>
+  type RepoFilter =
+    | "visible"
+    | "inbox"
+    | "unread"
+    | "follow-up"
+    | "sent"
+    | "archived";
+  const loadProjectionRows = (filter: RepoFilter) =>
     normalizedQuery === null
       ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
-          // Regular queue: pass the filter through untouched. "inbox"
-          // applies the lastInboundAt IS NOT NULL constraint at the repo
-          // layer; "visible" is reserved for the search-bypass path below.
           filter,
           order,
           limit: INBOX_LIST_SCAN_LIMIT,
@@ -3483,6 +3487,17 @@ async function readInboxListCacheData(input: {
             projectId: input.projectId,
           })
           .then((result) => result.rows);
+  // The primary loader pulls the slice the user is currently viewing.
+  // For "inbox" we apply the inbound-only constraint at the repo layer
+  // (the perf win for large queues); for other filters we fall back to
+  // "visible" so outbound-only / follow-up contacts that don't have an
+  // inbound message still surface in their corresponding queue (sent,
+  // follow-up, unread). The archived loader runs alongside so the rail
+  // counts and the archived view share the same source.
+  const primaryFilterForLoader: RepoFilter =
+    input.filterId === "archived" || input.filterId === "inbox"
+      ? input.filterId
+      : "visible";
   const [
     visibleProjections,
     archivedProjections,
@@ -3490,7 +3505,7 @@ async function readInboxListCacheData(input: {
     activeProjectRecords,
     projectAliasRecords,
   ] = await Promise.all([
-    loadProjectionRows("inbox"),
+    loadProjectionRows(primaryFilterForLoader),
     loadProjectionRows("archived"),
     runtime.repositories.inboxProjection.getFreshness(),
     runtime.repositories.projectDimensions.listActive(),
