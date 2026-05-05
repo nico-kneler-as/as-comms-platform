@@ -1,17 +1,17 @@
 import type { ComponentType } from "react";
 
 import { cn } from "@/lib/utils";
-import { SHADOW, TONE_CLASSES, TYPE, type ToneNameV2 } from "@/app/_lib/design-tokens-v2";
+import { SHADOW, TONE_CLASSES, type ToneNameV2 } from "@/app/_lib/design-tokens-v2";
 
 import type { InboxTimelineEntryViewModel } from "../_lib/view-models";
 import { TIMELINE_GRID_COLUMNS } from "./inbox-timeline-bubble";
 import {
+  BookOpenIcon,
   CalendarIcon,
   CheckCircleIcon,
-  DatabaseIcon,
+  HandIcon,
   MapPinIcon,
-  SparklesIcon,
-  WandIcon,
+  StarIcon,
 } from "./icons";
 
 const EXACT_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
@@ -39,14 +39,6 @@ function personalizeSystemBody(body: string, firstName: string): string {
 }
 
 export interface SystemDividerCategory {
-  readonly label:
-    | "LIFECYCLE"
-    | "APPLIED"
-    | "TRAINING"
-    | "TRIP PLANNING"
-    | "IN FIELD"
-    | "FIRST DATA"
-    | "COMPLETED";
   readonly tone: ToneNameV2;
   readonly Icon: ComponentType<{ className?: string }>;
 }
@@ -54,59 +46,75 @@ export interface SystemDividerCategory {
 export function classifySystemDivider(body: string): SystemDividerCategory {
   const normalized = body.toLowerCase();
 
-  if (normalized.includes("applied")) {
+  if (
+    normalized.includes("completed training") ||
+    normalized.includes("training completed") ||
+    normalized.includes("training successful")
+  ) {
     return {
-      label: "APPLIED",
-      tone: "violet",
-      Icon: SparklesIcon,
-    };
-  }
-
-  if (normalized.includes("trip planning") || normalized.includes("moved to trip")) {
-    return {
-      label: "TRIP PLANNING",
-      tone: "amber",
-      Icon: CalendarIcon,
-    };
-  }
-
-  if (normalized.includes("training")) {
-    return {
-      label: "TRAINING",
-      tone: "sky",
-      Icon: WandIcon,
-    };
-  }
-
-  if (normalized.includes("first data") || normalized.includes("submitted first") || normalized.includes("batch")) {
-    return {
-      label: "FIRST DATA",
-      tone: "emerald",
-      Icon: DatabaseIcon,
-    };
-  }
-
-  if (normalized.includes("field") || normalized.includes("in the field")) {
-    return {
-      label: "IN FIELD",
-      tone: "emerald",
-      Icon: MapPinIcon,
-    };
-  }
-
-  if (normalized.includes("completed") || normalized.includes("successful") || normalized.includes("complete")) {
-    return {
-      label: "COMPLETED",
       tone: "emerald",
       Icon: CheckCircleIcon,
     };
   }
 
-  return {
-    label: "LIFECYCLE",
-    tone: "violet",
-    Icon: CalendarIcon,
-  };
+  if (normalized.includes("training")) {
+    return {
+      tone: "sky",
+      Icon: BookOpenIcon,
+    };
+  }
+
+  if (
+    normalized.includes("first data") ||
+    normalized.includes("submitted first") ||
+    normalized.includes("batch")
+  ) {
+    return {
+      tone: "emerald",
+      Icon: StarIcon,
+    };
+  }
+
+  if (
+    normalized.includes("signed up") ||
+    normalized.includes("applied") ||
+    normalized.includes("signup")
+  ) {
+    return {
+      tone: "violet",
+      Icon: HandIcon,
+    };
+  }
+
+  if (
+    normalized.includes("trip planning") ||
+    normalized.includes("moved to trip")
+  ) {
+    return {
+      tone: "amber",
+      Icon: CalendarIcon,
+    };
+  }
+
+  if (normalized.includes("field") || normalized.includes("in the field")) {
+    return {
+      tone: "emerald",
+      Icon: MapPinIcon,
+    };
+  }
+
+  if (
+    normalized.includes("completed") ||
+    normalized.includes("successful") ||
+    normalized.includes("complete")
+  ) {
+    return {
+      tone: "emerald",
+      Icon: CheckCircleIcon,
+    };
+  }
+
+  return { tone: "slate", Icon: CalendarIcon };
 }
 
 export function SystemDivider({
@@ -122,11 +130,10 @@ export function SystemDivider({
 
   return (
     <li className={cn("col-span-3 grid", TIMELINE_GRID_COLUMNS)}>
-      <div className="col-start-2 flex items-center gap-3 py-1.5">
-        <div className="h-px flex-1 bg-slate-200" />
+      <div className="col-start-2 flex items-start">
         <div
           className={cn(
-            "inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1",
+            "inline-flex max-w-[560px] items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5",
             SHADOW.sm,
           )}
         >
@@ -138,8 +145,7 @@ export function SystemDivider({
           >
             <category.Icon className={cn("size-3", tone.text)} />
           </span>
-          <span className={cn(TYPE.label, tone.text)}>{category.label}</span>
-          <span className="text-[11.5px] text-slate-600">{body}</span>
+          <span className="text-[12.5px] text-slate-700">{body}</span>
           <span className="text-[11px] text-slate-400 tabular-nums" aria-hidden="true">
             ·
           </span>
@@ -151,7 +157,6 @@ export function SystemDivider({
             {entry.occurredAtLabel}
           </time>
         </div>
-        <div className="h-px flex-1 bg-slate-200" />
       </div>
     </li>
   );

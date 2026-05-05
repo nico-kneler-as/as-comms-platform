@@ -81,6 +81,7 @@ import {
 } from "../../app/inbox/_components/inbox-timeline";
 import type { InboxTimelineEntryViewModel } from "../../app/inbox/_lib/view-models";
 import { classifySystemDivider } from "../../app/inbox/_components/inbox-timeline-system-divider";
+import { StarIcon } from "../../app/inbox/_components/icons";
 
 const workerRequire = createRequire(
   new URL("../../../worker/package.json", import.meta.url),
@@ -536,8 +537,9 @@ describe("InboxTimeline", () => {
       }),
     );
 
-    expect(markup).toContain("APPLIED");
+    expect(markup).toContain("col-span-3 grid");
     expect(markup).toContain("Alice applied to the Pacific Northwest expedition.");
+    expect(markup).not.toContain(">APPLIED<");
   });
 
   it("only hides automated email body text while a subject-bearing row is collapsed", () => {
@@ -774,12 +776,12 @@ describe("InboxTimeline", () => {
     expect(markup).not.toContain(">YO<");
   });
 
-  it("classifies first-data system dividers into the emerald data category", () => {
+  it("classifies first-data system dividers into the emerald star category", () => {
     expect(
       classifySystemDivider("Submitted first batch from the field."),
     ).toMatchObject({
-      label: "FIRST DATA",
       tone: "emerald",
+      Icon: StarIcon,
     });
   });
 });
