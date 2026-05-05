@@ -2712,6 +2712,20 @@ describe("real inbox selectors", () => {
       "project:killer-whales",
       false,
     );
+
+    // Seed a project-linked lifecycle event so signupYear resolves to a real
+    // historical year (otherwise the fallback chain reaches contact.createdAt
+    // which equals the current/backfill year and is intentionally suppressed —
+    // see "correct past-project signup year").
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "lisa-killer-whales-signup",
+      contactId: "contact:lisa-zhang",
+      occurredAt: "2023-06-15T15:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up - Searching for Killer Whales",
+      projectId: "project:killer-whales",
+    });
+
     const [activeDetail, pastDetail] = await Promise.all([
       getInboxDetail("contact:sarah-martinez"),
       getInboxDetail("contact:lisa-zhang"),
@@ -2737,7 +2751,7 @@ describe("real inbox selectors", () => {
 
     expect(activeSection).not.toContain("tabular-nums");
     expect(pastSection).toContain("tabular-nums");
-    expect(pastSection).toContain("2026");
+    expect(pastSection).toContain("2023");
   });
 
   it("uses the most recent internal note as the pinned note proxy", async () => {
