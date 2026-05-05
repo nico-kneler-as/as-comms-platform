@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { SHADOW, TONE_CLASSES, TYPE, type ToneNameV2 } from "@/app/_lib/design-tokens-v2";
 
 import type { InboxTimelineEntryViewModel } from "../_lib/view-models";
+import { TIMELINE_GRID_COLUMNS } from "./inbox-timeline-bubble";
 import {
   CalendarIcon,
   CheckCircleIcon,
@@ -120,36 +121,38 @@ export function SystemDivider({
   const tone = TONE_CLASSES[category.tone];
 
   return (
-    <li className="flex w-full items-center justify-center gap-3 py-1.5">
-      <div className="h-px flex-1 bg-slate-200" />
-      <div
-        className={cn(
-          "inline-flex max-w-[720px] items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1",
-          SHADOW.sm,
-        )}
-      >
-        <span
+    <li className={cn("col-span-3 grid", TIMELINE_GRID_COLUMNS)}>
+      <div className="col-start-2 flex items-center gap-3 py-1.5">
+        <div className="h-px flex-1 bg-slate-200" />
+        <div
           className={cn(
-            "inline-flex size-5 shrink-0 items-center justify-center rounded-full",
-            tone.subtle,
+            "inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1",
+            SHADOW.sm,
           )}
         >
-          <category.Icon className={cn("size-3", tone.text)} />
-        </span>
-        <span className={cn(TYPE.label, tone.text)}>{category.label}</span>
-        <span className="text-[11.5px] text-slate-600">{body}</span>
-        <span className="text-[11px] text-slate-400 tabular-nums" aria-hidden="true">
-          ·
-        </span>
-        <time
-          dateTime={entry.occurredAt}
-          title={formatExactTimestamp(entry.occurredAt)}
-          className="cursor-help text-[11px] text-slate-400 tabular-nums"
-        >
-          {entry.occurredAtLabel}
-        </time>
+          <span
+            className={cn(
+              "inline-flex size-5 shrink-0 items-center justify-center rounded-full",
+              tone.subtle,
+            )}
+          >
+            <category.Icon className={cn("size-3", tone.text)} />
+          </span>
+          <span className={cn(TYPE.label, tone.text)}>{category.label}</span>
+          <span className="text-[11.5px] text-slate-600">{body}</span>
+          <span className="text-[11px] text-slate-400 tabular-nums" aria-hidden="true">
+            ·
+          </span>
+          <time
+            dateTime={entry.occurredAt}
+            title={formatExactTimestamp(entry.occurredAt)}
+            className="cursor-help text-[11px] text-slate-400 tabular-nums"
+          >
+            {entry.occurredAtLabel}
+          </time>
+        </div>
+        <div className="h-px flex-1 bg-slate-200" />
       </div>
-      <div className="h-px flex-1 bg-slate-200" />
     </li>
   );
 }

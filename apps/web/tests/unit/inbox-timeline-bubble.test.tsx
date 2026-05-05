@@ -272,6 +272,45 @@ describe("MessageBubble attachments", () => {
 });
 
 describe("MessageBubble metadata and polish", () => {
+  it("uses the shared gutter grid and 560px email cap instead of padded rows", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MessageBubble, {
+        entry: buildEntry({
+          kind: "outbound-email",
+          actorLabel: "You",
+        }),
+        direction: "outbound",
+      }),
+    );
+
+    expect(markup).toContain("col-span-3 grid");
+    expect(markup).toContain("grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]");
+    expect(markup).toContain("col-start-2 min-w-0 flex justify-end");
+    expect(markup).toContain("w-fit max-w-[560px]");
+    expect(markup).not.toContain("max-w-[640px]");
+    expect(markup).not.toContain("pl-16");
+    expect(markup).not.toContain("pr-16");
+  });
+
+  it("caps compact sms bubbles at 480px", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MessageBubble, {
+        entry: buildEntry({
+          channel: "sms",
+          kind: "inbound-sms",
+          subject: null,
+          fromHeader: null,
+          toHeader: null,
+          body: "SMS body",
+        }),
+        direction: "inbound",
+      }),
+    );
+
+    expect(markup).toContain("w-fit max-w-[480px]");
+    expect(markup).not.toContain("max-w-[640px]");
+  });
+
   it("hides the inbound metadata row for email bubbles", () => {
     const markup = renderToStaticMarkup(
       createElement(MessageBubble, {
