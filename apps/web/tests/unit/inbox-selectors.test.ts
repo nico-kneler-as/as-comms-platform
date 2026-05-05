@@ -64,6 +64,8 @@ import {
   compareInboxRecency,
   formatBubbleTimestamp,
   getInboxDetail,
+  getInboxDetailSummary,
+  getInboxDetailTimeline,
   getInboxList,
   getInboxTimelinePage,
   getInboxWelcomeWorkload,
@@ -112,8 +114,7 @@ function buildItem(
     snippet: overrides.snippet ?? "Snippet",
     latestChannel: overrides.latestChannel ?? "email",
     projectLabel: overrides.projectLabel ?? null,
-    additionalActiveProjectsCount:
-      overrides.additionalActiveProjectsCount ?? 0,
+    additionalActiveProjectsCount: overrides.additionalActiveProjectsCount ?? 0,
     volunteerStage: overrides.volunteerStage ?? "active",
     bucket: overrides.bucket ?? "opened",
     needsFollowUp: overrides.needsFollowUp ?? false,
@@ -658,11 +659,11 @@ describe("sortMembershipsByCreatedAt", () => {
       }),
     ];
 
-    expect(sortMembershipsByCreatedAt(memberships).map((membership) => membership.id)).toEqual([
-      "membership:2",
-      "membership:3",
-      "membership:1",
-    ]);
+    expect(
+      sortMembershipsByCreatedAt(memberships).map(
+        (membership) => membership.id,
+      ),
+    ).toEqual(["membership:2", "membership:3", "membership:1"]);
   });
 });
 
@@ -1022,7 +1023,9 @@ describe("real inbox selectors", () => {
     const inactiveProjectFilter = await getInboxList("all", {
       projectId: "project:whitebark-pine",
     });
-    const ryan = list.items.find((item) => item.contactId === "contact:ryan-davis");
+    const ryan = list.items.find(
+      (item) => item.contactId === "contact:ryan-davis",
+    );
 
     expect(ryan).toMatchObject({
       projectLabel: "PNW Biodiversity",
@@ -1689,7 +1692,9 @@ describe("real inbox selectors", () => {
 
     expect(workload.followUpRail.totalCount).toBe(5);
     expect(workload.followUpRail.entries).toHaveLength(3);
-    expect(workload.followUpRail.entries.map((entry) => entry.contactId)).toEqual([
+    expect(
+      workload.followUpRail.entries.map((entry) => entry.contactId),
+    ).toEqual([
       "contact:follow-up-a",
       "contact:follow-up-b",
       "contact:follow-up-c",
@@ -1770,11 +1775,9 @@ describe("real inbox selectors", () => {
 
     const workload = await getInboxWelcomeWorkload();
 
-    expect(workload.followUpRail.entries.map((entry) => entry.contactId)).toEqual([
-      "contact:alpha",
-      "contact:zeta",
-      "contact:middle",
-    ]);
+    expect(
+      workload.followUpRail.entries.map((entry) => entry.contactId),
+    ).toEqual(["contact:alpha", "contact:zeta", "contact:middle"]);
   });
 
   it("uses one active project label per row based on the newest active membership", async () => {
@@ -1956,6 +1959,103 @@ describe("real inbox selectors", () => {
     expect(detail?.composerReplyContext).toMatchObject({
       subject: "Re: Amazon Basin equipment list",
     });
+  });
+
+  it("splits the summary and streamed timeline selectors into disjoint payloads", async () => {
+    const summary = await getInboxDetailSummary("contact:sarah-martinez");
+    const timeline = await getInboxDetailTimeline("contact:sarah-martinez", {
+      limit: 1,
+    });
+
+    expect(summary).not.toBeNull();
+    expect(summary).toMatchObject({
+      projectionAvailable: true,
+      bucket: "new",
+      needsFollowUp: true,
+      contact: {
+        contactId: "contact:sarah-martinez",
+        displayName: "Sarah Martinez",
+      },
+      composerReplyContext: {
+        subject: "Re: Amazon Basin equipment list",
+      },
+    });
+    expect("timeline" in (summary ?? {})).toBe(false);
+    expect("timelinePage" in (summary ?? {})).toBe(false);
+
+    expect(timeline).not.toBeNull();
+    expect(timeline?.timeline).toHaveLength(1);
+    expect(timeline?.timeline[0]).toMatchObject({
+      kind: "inbound-email",
+      subject: "Re: Amazon Basin equipment list",
+    });
+    expect(timeline?.timelinePage.hasMore).toBe(true);
+    expect(timeline?.timelinePage.hasHiddenEarlierHistory).toBe(false);
+    expect(typeof timeline?.timelinePage.nextCursor).toBe("string");
+    expect(timeline?.timelinePage.total).toBe(2);
+  });
+
+  it("defaults the initial streamed timeline page size to twenty entries", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:timeline-page-size",
+      salesforceContactId: "003-timeline-page-size",
+      displayName: "Timeline Page Size",
+      primaryEmail: "timeline-page-size@example.org",
+      primaryPhone: null,
+    });
+
+    let newestEventId: string | null = null;
+
+    for (let index = 0; index < 21; index += 1) {
+      const occurredAt = new Date(
+        Date.UTC(2026, 3, 1, 12, index, 0, 0),
+      ).toISOString();
+      const seeded = await seedInboxEmailEvent(runtime.context, {
+        id: `timeline-page-size-${index.toString().padStart(2, "0")}`,
+        contactId: "contact:timeline-page-size",
+        occurredAt,
+        direction: index % 2 === 0 ? "inbound" : "outbound",
+        subject: `Timeline page size ${index.toString()}`,
+        snippet: `Timeline page size ${index.toString()}`,
+      });
+
+      newestEventId = seeded.canonicalEventId;
+    }
+
+    if (newestEventId === null) {
+      throw new Error("Expected newest timeline event id");
+    }
+
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:timeline-page-size",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-01T12:20:00.000Z",
+      lastOutboundAt: "2026-04-01T12:19:00.000Z",
+      lastActivityAt: "2026-04-01T12:20:00.000Z",
+      snippet: "Timeline page size 20",
+      lastCanonicalEventId: newestEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:timeline-page-size");
+    const timeline = await getInboxDetailTimeline("contact:timeline-page-size");
+
+    expect(detail?.timeline).toHaveLength(20);
+    expect(detail?.timelinePage.hasMore).toBe(true);
+    expect(detail?.timelinePage.hasHiddenEarlierHistory).toBe(false);
+    expect(typeof detail?.timelinePage.nextCursor).toBe("string");
+    expect(detail?.timelinePage.total).toBe(21);
+    expect(timeline?.timeline).toHaveLength(20);
+    expect(timeline?.timelinePage.hasMore).toBe(true);
+    expect(timeline?.timelinePage.hasHiddenEarlierHistory).toBe(false);
+    expect(typeof timeline?.timelinePage.nextCursor).toBe("string");
+    expect(timeline?.timelinePage.total).toBe(21);
   });
 
   it("synthesizes a degraded detail view when the projection row is missing but canonical events exist", async () => {
@@ -2622,14 +2722,12 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:past-order");
 
-    expect(detail?.contact.pastProjects.map((project) => project.projectName)).toEqual([
-      "Newer Project",
-      "Older Project",
-    ]);
-    expect(detail?.contact.pastProjects.map((project) => project.signupYear)).toEqual([
-      null,
-      null,
-    ]);
+    expect(
+      detail?.contact.pastProjects.map((project) => project.projectName),
+    ).toEqual(["Newer Project", "Older Project"]);
+    expect(
+      detail?.contact.pastProjects.map((project) => project.signupYear),
+    ).toEqual([null, null]);
   });
 
   it("normalizes the full Salesforce membership-status label surface for rail badges", async () => {
@@ -2699,7 +2797,9 @@ describe("real inbox selectors", () => {
 
     expect(detail).not.toBeNull();
     expect(
-      new Set(detail?.contact.pastProjects.map((project) => project.statusLabel)),
+      new Set(
+        detail?.contact.pastProjects.map((project) => project.statusLabel),
+      ),
     ).toEqual(new Set(statuses.map(([, label]) => label)));
   });
 
@@ -2746,7 +2846,8 @@ describe("real inbox selectors", () => {
       }),
     );
 
-    const activeSection = activeMarkup.split("Past Projects")[0] ?? activeMarkup;
+    const activeSection =
+      activeMarkup.split("Past Projects")[0] ?? activeMarkup;
     const pastSection = pastMarkup.split("Past Projects")[1] ?? pastMarkup;
 
     expect(activeSection).not.toContain("tabular-nums");
@@ -2884,11 +2985,9 @@ describe("real inbox selectors", () => {
       throw new Error("Expected inbox detail for Steve Herman");
     }
 
-    expect(detail.contact.activeProjects.map((project) => project.projectName)).toEqual([
-      "Passive Acoustic",
-      "Whitebark Pine",
-      "Illegal Timber",
-    ]);
+    expect(
+      detail.contact.activeProjects.map((project) => project.projectName),
+    ).toEqual(["Passive Acoustic", "Whitebark Pine", "Illegal Timber"]);
     expect(
       renderToStaticMarkup(
         createElement(InboxContactRail, {
@@ -3121,7 +3220,9 @@ describe("real inbox selectors", () => {
 
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-04T12:00:00.000Z"));
-    const suppressedDetail = await getInboxDetail("contact:suppressed-signup-year");
+    const suppressedDetail = await getInboxDetail(
+      "contact:suppressed-signup-year",
+    );
 
     // Past projects sort by membership.createdAt desc (newest first).
     // signupYear is independent of sort and resolves via:
@@ -3422,7 +3523,10 @@ describe("real inbox selectors", () => {
       });
     }
 
-    const detailByContactId = new Map<string, Awaited<ReturnType<typeof getInboxDetail>>>(
+    const detailByContactId = new Map<
+      string,
+      Awaited<ReturnType<typeof getInboxDetail>>
+    >(
       await Promise.all(
         cases.map(async (entry) => {
           const detail = await getInboxDetail(entry.contactId);
@@ -3431,14 +3535,18 @@ describe("real inbox selectors", () => {
       ),
     );
 
-    expect(detailByContactId.get("contact:normalized-last-first")?.timeline.at(-1))
-      .toMatchObject({ actorLabel: "Joe Rutledge" });
-    expect(detailByContactId.get("contact:normalized-all-caps")?.timeline.at(-1))
-      .toMatchObject({ actorLabel: "Joe Rutledge" });
-    expect(detailByContactId.get("contact:normalized-lowercase")?.timeline.at(-1))
-      .toMatchObject({ actorLabel: "Joe Rutledge" });
-    expect(detailByContactId.get("contact:normalized-username")?.timeline.at(-1))
-      .toMatchObject({ actorLabel: "jrutle" });
+    expect(
+      detailByContactId.get("contact:normalized-last-first")?.timeline.at(-1),
+    ).toMatchObject({ actorLabel: "Joe Rutledge" });
+    expect(
+      detailByContactId.get("contact:normalized-all-caps")?.timeline.at(-1),
+    ).toMatchObject({ actorLabel: "Joe Rutledge" });
+    expect(
+      detailByContactId.get("contact:normalized-lowercase")?.timeline.at(-1),
+    ).toMatchObject({ actorLabel: "Joe Rutledge" });
+    expect(
+      detailByContactId.get("contact:normalized-username")?.timeline.at(-1),
+    ).toMatchObject({ actorLabel: "jrutle" });
   });
 
   it("uses a known sender contact record for inbound actor labels when the sender already exists", async () => {
@@ -3682,12 +3790,9 @@ describe("real inbox selectors", () => {
     expect(
       detail?.contact.recentActivity.map((entry) => entry.occurredAtLabel),
     ).toEqual(["Apr 11", "Apr 10", "Apr 9", "Apr 8"]);
-    expect(detail?.contact.recentActivity.map((entry) => entry.isMostRecent)).toEqual([
-      true,
-      false,
-      false,
-      false,
-    ]);
+    expect(
+      detail?.contact.recentActivity.map((entry) => entry.isMostRecent),
+    ).toEqual([true, false, false, false]);
   });
 
   it("returns all lifecycle activity items and does not hard-cap the rail feed at five", async () => {
@@ -5801,7 +5906,9 @@ describe("real inbox selectors", () => {
       attemptedAt: "2026-04-20T12:59:00.000Z",
     });
 
-    const detail = await getInboxDetail("contact:canonical-attachment-preferred");
+    const detail = await getInboxDetail(
+      "contact:canonical-attachment-preferred",
+    );
 
     const canonicalEntry = detail?.timeline.find((entry) =>
       entry.attachments.some((attachment) => attachment.proxyUrl !== null),

@@ -27,6 +27,10 @@ import type {
   InboxChannel,
   InboxComposerReplyContext,
   InboxContactSummaryViewModel,
+  InboxDetailFreshnessViewModel,
+  InboxDetailSummaryViewModel,
+  InboxDetailTimelinePageViewModel,
+  InboxDetailTimelineViewModel,
   InboxDetailViewModel,
   InboxFilterId,
   InboxFilterViewModel,
@@ -166,17 +170,40 @@ interface InboxDetailCacheData {
     string,
     readonly MessageAttachmentRecord[]
   >;
-  readonly timelinePage: {
-    readonly hasMore: boolean;
-    readonly hasHiddenEarlierHistory: boolean;
-    readonly nextCursor: string | null;
-    readonly total: number;
-  };
-  readonly freshness: {
-    readonly inboxUpdatedAt: string | null;
-    readonly timelineUpdatedAt: string | null;
-    readonly timelineCount: number;
-  };
+  readonly timelinePage: InboxDetailTimelinePageViewModel;
+  readonly freshness: InboxDetailFreshnessViewModel;
+}
+
+interface InboxDetailSummaryCacheData {
+  readonly contact: ContactRecord;
+  readonly inboxProjection: InboxDetailProjection;
+  readonly projectionAvailable: boolean;
+  readonly isUnread: boolean;
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly latestNote: {
+    readonly body: string;
+    readonly authorDisplayName: string | null;
+    readonly authorId: string | null;
+    readonly createdAt: string;
+  } | null;
+  readonly activityTimelineItems: readonly TimelineItem[];
+  readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
+  readonly projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >;
+  readonly salesforceEventContextBySourceEvidenceId: ReadonlyMap<
+    string,
+    {
+      readonly projectId: string | null;
+    }
+  >;
+  readonly freshness: InboxDetailFreshnessViewModel;
 }
 
 interface InboxWelcomeWorkloadCacheData {
@@ -186,7 +213,7 @@ interface InboxWelcomeWorkloadCacheData {
 }
 
 const DEFAULT_INBOX_LIST_PAGE_SIZE = 50;
-const DEFAULT_INBOX_TIMELINE_PAGE_SIZE = 40;
+const DEFAULT_INBOX_TIMELINE_PAGE_SIZE = 20;
 const INBOX_LIST_SCAN_LIMIT = 5_000;
 const WELCOME_FOLLOW_UP_INLINE_LIMIT = 3;
 
@@ -293,7 +320,8 @@ function buildAliasSetForMemberships(input: {
       continue;
     }
 
-    for (const alias of input.aliasesByProjectId.get(membership.projectId) ?? []) {
+    for (const alias of input.aliasesByProjectId.get(membership.projectId) ??
+      []) {
       aliases.add(alias);
     }
   }
@@ -332,7 +360,8 @@ function findLastNonAliasMessageAt(input: {
     }
 
     const fromAddresses = extractEmailAddresses(
-      input.gmailDetailBySourceEvidenceId.get(event.sourceEvidenceId)?.fromHeader,
+      input.gmailDetailBySourceEvidenceId.get(event.sourceEvidenceId)
+        ?.fromHeader,
     );
 
     if (fromAddresses.length === 0) {
@@ -376,7 +405,8 @@ function findLastNonAliasOutboundAt(input: {
     }
 
     const fromAddresses = extractEmailAddresses(
-      input.gmailDetailBySourceEvidenceId.get(event.sourceEvidenceId)?.fromHeader,
+      input.gmailDetailBySourceEvidenceId.get(event.sourceEvidenceId)
+        ?.fromHeader,
     );
 
     if (fromAddresses.length === 0) {
@@ -494,7 +524,8 @@ async function loadCampaignActivitySummaryByCampaignId(input: {
 
     const key = campaignId.trim();
     const summary =
-      summaryByCampaignId[key] ?? (summaryByCampaignId[key] = emptyCampaignActivitySummary());
+      summaryByCampaignId[key] ??
+      (summaryByCampaignId[key] = emptyCampaignActivitySummary());
     const summaryKey = campaignActivitySummaryKey(detail.activityType);
 
     summary[summaryKey] = keepMostRecentTimestamp(
@@ -535,10 +566,8 @@ function decodeInboxListCursor(cursor: string | null): {
     const lastActivityAt = parsed.lastActivityAt;
     const contactId = parsed.contactId;
 
-    return (
-      lastNonAliasMessageAt === null ||
-      typeof lastNonAliasMessageAt === "string"
-    ) &&
+    return (lastNonAliasMessageAt === null ||
+      typeof lastNonAliasMessageAt === "string") &&
       (lastOutboundAt === null || typeof lastOutboundAt === "string") &&
       typeof lastActivityAt === "string" &&
       typeof contactId === "string"
@@ -652,9 +681,7 @@ function sortMemberships(
   });
 }
 
-function buildProjectActivityIndex(
-  timelineItems: readonly TimelineItem[],
-): {
+function buildProjectActivityIndex(timelineItems: readonly TimelineItem[]): {
   readonly firstOccurredAtByProjectId: ReadonlyMap<string, string>;
   readonly firstOccurredAtForContact: string | null;
   readonly lastOccurredAtByProjectId: ReadonlyMap<string, string>;
@@ -686,7 +713,8 @@ function buildProjectActivityIndex(
       firstOccurredAtByProjectId.set(item.projectId, item.occurredAt);
     }
 
-    const lastOccurredAt = lastOccurredAtByProjectId.get(item.projectId) ?? null;
+    const lastOccurredAt =
+      lastOccurredAtByProjectId.get(item.projectId) ?? null;
 
     if (lastOccurredAt === null || item.occurredAt > lastOccurredAt) {
       lastOccurredAtByProjectId.set(item.projectId, item.occurredAt);
@@ -706,13 +734,15 @@ function sortMembershipsByLastActivity(
 ): readonly ContactMembershipRecord[] {
   return [...memberships].sort((left, right) => {
     const leftLastActivityAt =
-      (left.projectId === null ? null : lastOccurredAtByProjectId.get(left.projectId)) ??
-      left.createdAt;
+      (left.projectId === null
+        ? null
+        : lastOccurredAtByProjectId.get(left.projectId)) ?? left.createdAt;
     const rightLastActivityAt =
       (right.projectId === null
         ? null
         : lastOccurredAtByProjectId.get(right.projectId)) ?? right.createdAt;
-    const activityDifference = rightLastActivityAt.localeCompare(leftLastActivityAt);
+    const activityDifference =
+      rightLastActivityAt.localeCompare(leftLastActivityAt);
 
     if (activityDifference !== 0) {
       return activityDifference;
@@ -1063,11 +1093,15 @@ export function formatBubbleTimestamp(
   const yesterdayReference = new Date(referenceDate);
   yesterdayReference.setDate(referenceDate.getDate() - 1);
 
-  if (targetDayKey === bubbleDayKey(yesterdayReference.toISOString(), timeZone)) {
+  if (
+    targetDayKey === bubbleDayKey(yesterdayReference.toISOString(), timeZone)
+  ) {
     return BUBBLE_MONTH_DAY_FORMATTER.format(new Date(timestamp));
   }
 
-  if (bubbleYear(timestamp, timeZone) === bubbleYear(referenceNowIso, timeZone)) {
+  if (
+    bubbleYear(timestamp, timeZone) === bubbleYear(referenceNowIso, timeZone)
+  ) {
     return BUBBLE_MONTH_DAY_FORMATTER.format(new Date(timestamp));
   }
 
@@ -1205,12 +1239,7 @@ function isLikelyPreviewNoise(value: string): boolean {
 
     const code = character.codePointAt(0) ?? 0;
 
-    if (
-      code < 0x20 &&
-      code !== 0x09 &&
-      code !== 0x0a &&
-      code !== 0x0d
-    ) {
+    if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) {
       suspicious += 1;
     }
   }
@@ -2195,7 +2224,9 @@ function timelineActorLabel(
   switch (item.family) {
     case "one_to_one_email":
     case "one_to_one_sms":
-      return normalizeDisplayName(operatorDisplayName) || "Adventure Scientists";
+      return (
+        normalizeDisplayName(operatorDisplayName) || "Adventure Scientists"
+      );
     case "auto_email":
     case "auto_sms":
       return item.sourceLabel;
@@ -2283,10 +2314,7 @@ function normalizeDisplayName(raw: string): string {
       .join(" ");
   }
 
-  return trimmed
-    .split(/\s+/u)
-    .map(titleCaseSimpleToken)
-    .join(" ");
+  return trimmed.split(/\s+/u).map(titleCaseSimpleToken).join(" ");
 }
 
 function participantHeaderLabel(headerValue: string | null): string | null {
@@ -2307,7 +2335,8 @@ function participantHeaderLabel(headerValue: string | null): string | null {
     return name;
   }
 
-  const emailMatch = PARTICIPANT_HEADER_EMAIL_PATTERN.exec(trimmed)?.[0]?.trim();
+  const emailMatch =
+    PARTICIPANT_HEADER_EMAIL_PATTERN.exec(trimmed)?.[0]?.trim();
 
   if (emailMatch !== undefined && emailMatch.length > 0) {
     return emailMatch;
@@ -2697,9 +2726,9 @@ function buildTimelineEntry(input: {
       : null;
   const canonicalSenderDisplayName =
     input.item.family === "one_to_one_email"
-      ? input.contactDisplayNameByEmail.get(
+      ? (input.contactDisplayNameByEmail.get(
           participantHeaderEmail(input.item.fromHeader ?? null) ?? "",
-        ) ?? null
+        ) ?? null)
       : null;
 
   return {
@@ -2856,11 +2885,7 @@ function resolveVolunteerParticipantName(input: {
 }): string | null {
   if (input.emailAddress !== null) {
     const lookup = input.contactDisplayNameByEmail.get(input.emailAddress);
-    if (
-      lookup !== undefined &&
-      lookup.length > 0 &&
-      !isEmailLikeName(lookup)
-    ) {
+    if (lookup !== undefined && lookup.length > 0 && !isEmailLikeName(lookup)) {
       const normalized = normalizeDisplayName(lookup);
       if (normalized.length > 0) {
         return normalized;
@@ -2934,8 +2959,7 @@ function buildParticipantRows(input: {
     // name appears on the wire (handles legacy / non-aliased sends
     // like "PNW Project <pnwbio@…>") → operator name → fallback.
     const fromHeaderName =
-      fromHeaderDisplayName !== null &&
-      !isEmailLikeName(fromHeaderDisplayName)
+      fromHeaderDisplayName !== null && !isEmailLikeName(fromHeaderDisplayName)
         ? normalizeDisplayName(fromHeaderDisplayName) || fromHeaderDisplayName
         : null;
     rows.push({
@@ -2983,10 +3007,7 @@ function buildParticipantRows(input: {
     });
   }
 
-  if (
-    input.item.ccHeader !== null &&
-    input.item.ccHeader.trim().length > 0
-  ) {
+  if (input.item.ccHeader !== null && input.item.ccHeader.trim().length > 0) {
     rows.push({
       label: "Cc",
       name: input.item.ccHeader.trim(),
@@ -3024,9 +3045,7 @@ function resolveHeaderProjectLabel(input: {
   }
 
   const toMatch =
-    toEmail !== null
-      ? (input.projectLabelByAlias.get(toEmail) ?? null)
-      : null;
+    toEmail !== null ? (input.projectLabelByAlias.get(toEmail) ?? null) : null;
   if (toMatch !== null) {
     return toMatch;
   }
@@ -3128,7 +3147,7 @@ function paginateTimelineItems(input: {
   return {
     items,
     hasMore,
-    nextCursor: hasMore ? items[0]?.sortKey ?? null : null,
+    nextCursor: hasMore ? (items[0]?.sortKey ?? null) : null,
     total,
   };
 }
@@ -3167,7 +3186,7 @@ function pickPrimaryActiveProjectName(input: {
 
   return membership?.projectId == null
     ? null
-    : input.projectLabelById.get(membership.projectId) ?? null;
+    : (input.projectLabelById.get(membership.projectId) ?? null);
 }
 
 async function loadProjectMetadataById(
@@ -3208,10 +3227,9 @@ async function loadProjectMetadataById(
     dimensions.map((dimension) => [
       dimension.projectId,
       {
-        projectName:
-          dimension.projectAlias?.trim().length
-            ? dimension.projectAlias
-            : dimension.projectName,
+        projectName: dimension.projectAlias?.trim().length
+          ? dimension.projectAlias
+          : dimension.projectName,
         isActive: dimension.isActive ?? false,
       },
     ]),
@@ -3477,7 +3495,8 @@ async function readInboxListCacheData(input: {
       id: record.projectId,
       name: record.projectName,
       alias:
-        record.projectAlias?.trim().length && record.projectAlias.trim().length > 0
+        record.projectAlias?.trim().length &&
+        record.projectAlias.trim().length > 0
           ? record.projectAlias.trim()
           : null,
     }));
@@ -3501,19 +3520,27 @@ async function readInboxListCacheData(input: {
       candidateContactIds,
     ),
     Promise.all(
-      candidateContactIds.map(async (contactId) => [
-        contactId,
-        await runtime.repositories.canonicalEvents.listByContactId(contactId),
-      ] as const),
+      candidateContactIds.map(
+        async (contactId) =>
+          [
+            contactId,
+            await runtime.repositories.canonicalEvents.listByContactId(
+              contactId,
+            ),
+          ] as const,
+      ),
     ),
     Promise.all(
-      candidateContactIds.map(async (contactId) => [
-        contactId,
-        await runtime.repositories.auditEvidence.listByEntity({
-          entityType: "contact",
-          entityId: contactId,
-        }),
-      ] as const),
+      candidateContactIds.map(
+        async (contactId) =>
+          [
+            contactId,
+            await runtime.repositories.auditEvidence.listByEntity({
+              entityType: "contact",
+              entityId: contactId,
+            }),
+          ] as const,
+      ),
     ),
   ]);
   const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
@@ -3636,7 +3663,8 @@ async function readInboxListCacheData(input: {
       : allItems.findIndex(
           (item) =>
             item.contactId === decodedCursor.contactId &&
-            item.lastNonAliasMessageAt === decodedCursor.lastNonAliasMessageAt &&
+            item.lastNonAliasMessageAt ===
+              decodedCursor.lastNonAliasMessageAt &&
             item.lastOutboundAt === decodedCursor.lastOutboundAt &&
             item.lastActivityAt === decodedCursor.lastActivityAt,
         );
@@ -3652,7 +3680,8 @@ async function readInboxListCacheData(input: {
     return row === undefined ? [] : [row];
   });
   const counts = {
-    all: allRows.filter((row) => row.inboxProjection.archivedAt === null).length,
+    all: allRows.filter((row) => row.inboxProjection.archivedAt === null)
+      .length,
     unread: allRows.filter(
       (row) => row.inboxProjection.archivedAt === null && row.isUnread,
     ).length,
@@ -3691,8 +3720,8 @@ async function readInboxListCacheData(input: {
               lastNonAliasMessageAt:
                 pageRows[pageRows.length - 1]?.lastNonAliasMessageAt ?? null,
               lastOutboundAt:
-                pageRows[pageRows.length - 1]?.inboxProjection
-                  .lastOutboundAt ?? null,
+                pageRows[pageRows.length - 1]?.inboxProjection.lastOutboundAt ??
+                null,
               lastActivityAt:
                 pageRows[pageRows.length - 1]?.inboxProjection.lastActivityAt ??
                 "",
@@ -3758,20 +3787,19 @@ async function readInboxDetailCacheData(
 
   const newestCanonicalEvent = findNewestCanonicalEvent(canonicalEvents);
   const projectionAvailable = inboxProjection !== null;
-  const detailProjection: InboxDetailProjection =
-    inboxProjection ?? {
-      contactId,
-      bucket: "Opened",
-      needsFollowUp: false,
-      hasUnresolved: false,
-      archivedAt: null,
-      lastInboundAt: null,
-      lastOutboundAt: null,
-      lastActivityAt: newestCanonicalEvent?.occurredAt ?? contact.updatedAt,
-      snippet: "",
-      lastCanonicalEventId: newestCanonicalEvent?.id ?? null,
-      lastEventType: newestCanonicalEvent?.eventType ?? null,
-    };
+  const detailProjection: InboxDetailProjection = inboxProjection ?? {
+    contactId,
+    bucket: "Opened",
+    needsFollowUp: false,
+    hasUnresolved: false,
+    archivedAt: null,
+    lastInboundAt: null,
+    lastOutboundAt: null,
+    lastActivityAt: newestCanonicalEvent?.occurredAt ?? contact.updatedAt,
+    snippet: "",
+    lastCanonicalEventId: newestCanonicalEvent?.id ?? null,
+    lastEventType: newestCanonicalEvent?.eventType ?? null,
+  };
 
   const aliasesByProjectId = new Map<string, string[]>();
 
@@ -3848,7 +3876,9 @@ async function readInboxDetailCacheData(
   );
   const timelineSourceEvidenceIds = uniqueStrings(
     timelinePage.items
-      .map((item) => sourceEvidenceIdByCanonicalEventId.get(item.canonicalEventId))
+      .map((item) =>
+        sourceEvidenceIdByCanonicalEventId.get(item.canonicalEventId),
+      )
       .filter((value): value is string => typeof value === "string"),
   );
   const senderEmails = uniqueStrings(
@@ -3938,7 +3968,9 @@ async function readInboxDetailCacheData(
         runtime,
         canonicalEvents,
       }),
-    canonicalEventById: new Map(canonicalEvents.map((event) => [event.id, event])),
+    canonicalEventById: new Map(
+      canonicalEvents.map((event) => [event.id, event]),
+    ),
     projectMetadataById: await loadProjectMetadataById(
       memberships,
       salesforceEventContexts.map((context) => context.projectId),
@@ -3978,6 +4010,156 @@ async function readInboxDetailCacheData(
   };
 }
 
+async function readInboxDetailSummaryCacheData(
+  contactId: string,
+): Promise<InboxDetailSummaryCacheData | null> {
+  const runtime = await getStage1WebRuntime();
+  const [
+    contact,
+    inboxProjection,
+    memberships,
+    latestNote,
+    activityTimelineItems,
+    inboxFreshness,
+    timelineFreshness,
+    canonicalEvents,
+    projectAliasRecords,
+    attentionReadAudits,
+  ] = await Promise.all([
+    runtime.repositories.contacts.findById(contactId),
+    runtime.repositories.inboxProjection.findByContactId(contactId),
+    runtime.repositories.contactMemberships.listByContactId(contactId),
+    runtime.repositories.internalNotes
+      .findByContactId(contactId, 1)
+      .then((rows) => {
+        const newestNote = rows[0];
+        return newestNote === undefined
+          ? null
+          : {
+              body: newestNote.body,
+              authorDisplayName: newestNote.authorDisplayName,
+              authorId: newestNote.authorId,
+              createdAt: newestNote.createdAt.toISOString(),
+            };
+      }),
+    runtime.timelinePresentation.listTimelineItemsByContactId(contactId),
+    runtime.repositories.inboxProjection.getFreshnessByContactId(contactId),
+    runtime.repositories.timelineProjection.getFreshnessByContactId(contactId),
+    runtime.repositories.canonicalEvents.listByContactId(contactId),
+    runtime.settings.aliases.listAssigned(),
+    runtime.repositories.auditEvidence.listByEntity({
+      entityType: "contact",
+      entityId: contactId,
+    }),
+  ]);
+
+  if (contact === null) {
+    return null;
+  }
+
+  const newestCanonicalEvent = findNewestCanonicalEvent(canonicalEvents);
+  const projectionAvailable = inboxProjection !== null;
+  const detailProjection: InboxDetailProjection = inboxProjection ?? {
+    contactId,
+    bucket: "Opened",
+    needsFollowUp: false,
+    hasUnresolved: false,
+    archivedAt: null,
+    lastInboundAt: null,
+    lastOutboundAt: null,
+    lastActivityAt: newestCanonicalEvent?.occurredAt ?? contact.updatedAt,
+    snippet: "",
+    lastCanonicalEventId: newestCanonicalEvent?.id ?? null,
+    lastEventType: newestCanonicalEvent?.eventType ?? null,
+  };
+
+  const aliasesByProjectId = new Map<string, string[]>();
+
+  for (const aliasRecord of projectAliasRecords) {
+    if (aliasRecord.projectId === null) {
+      continue;
+    }
+
+    const normalizedAlias = normalizeEmailAddress(aliasRecord.alias);
+
+    if (normalizedAlias === null) {
+      continue;
+    }
+
+    const aliases = aliasesByProjectId.get(aliasRecord.projectId) ?? [];
+    aliases.push(normalizedAlias);
+    aliasesByProjectId.set(aliasRecord.projectId, aliases);
+  }
+
+  const gmailSourceEvidenceIds = uniqueStrings(
+    canonicalEvents
+      .filter((event) => event.eventType === "communication.email.outbound")
+      .map((event) => event.sourceEvidenceId),
+  );
+  const canonicalSourceEvidenceIds = uniqueStrings(
+    canonicalEvents.map((event) => event.sourceEvidenceId),
+  );
+  const [gmailDetails, salesforceEventContexts] = await Promise.all([
+    gmailSourceEvidenceIds.length === 0
+      ? Promise.resolve([])
+      : runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
+          gmailSourceEvidenceIds,
+        ),
+    canonicalSourceEvidenceIds.length === 0
+      ? Promise.resolve([])
+      : runtime.repositories.salesforceEventContext.listBySourceEvidenceIds(
+          canonicalSourceEvidenceIds,
+        ),
+  ]);
+  const gmailDetailBySourceEvidenceId = new Map(
+    gmailDetails.map((detail) => [detail.sourceEvidenceId, detail]),
+  );
+  const lastNonAliasOutboundAt = findLastNonAliasOutboundAt({
+    events: canonicalEvents,
+    aliasSet: buildAliasSetForMemberships({
+      memberships,
+      aliasesByProjectId,
+    }),
+    gmailDetailBySourceEvidenceId,
+  });
+  const latestReadAt = latestAttentionReadAt(attentionReadAudits);
+  const isUnread =
+    detailProjection.bucket === "New" ||
+    (lastNonAliasOutboundAt !== null &&
+      (latestReadAt === null || lastNonAliasOutboundAt > latestReadAt));
+  const projectMetadataById = await loadProjectMetadataById(
+    memberships,
+    salesforceEventContexts.map((context) => context.projectId),
+  );
+
+  return {
+    contact,
+    inboxProjection: detailProjection,
+    projectionAvailable,
+    isUnread,
+    memberships,
+    latestNote,
+    activityTimelineItems,
+    canonicalEventById: new Map(
+      canonicalEvents.map((event) => [event.id, event]),
+    ),
+    projectMetadataById,
+    salesforceEventContextBySourceEvidenceId: new Map(
+      salesforceEventContexts.map((context) => [
+        context.sourceEvidenceId,
+        {
+          projectId: context.projectId,
+        },
+      ]),
+    ),
+    freshness: {
+      inboxUpdatedAt: inboxFreshness?.updatedAt ?? null,
+      timelineUpdatedAt: timelineFreshness.latestUpdatedAt ?? null,
+      timelineCount: timelineFreshness.total,
+    },
+  };
+}
+
 function loadInboxListCacheData(input: {
   readonly filterId: InboxFilterId;
   readonly cursor: string | null;
@@ -3998,9 +4180,14 @@ function loadInboxDetailCacheData(
   return readInboxDetailCacheData(contactId, input);
 }
 
+function loadInboxDetailSummaryCacheData(contactId: string) {
+  return readInboxDetailSummaryCacheData(contactId);
+}
+
 async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkloadCacheData> {
   const runtime = await getStage1WebRuntime();
-  const activeProjects = await runtime.repositories.projectDimensions.listActive();
+  const activeProjects =
+    await runtime.repositories.projectDimensions.listActive();
   const activeProjectIds = new Set(
     activeProjects.map((project) => project.projectId),
   );
@@ -4048,7 +4235,9 @@ async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkload
     inlineContactIds.length === 0
       ? []
       : await runtime.repositories.contacts.listByIds(inlineContactIds);
-  const contactById = new Map(inlineContacts.map((contact) => [contact.id, contact]));
+  const contactById = new Map(
+    inlineContacts.map((contact) => [contact.id, contact]),
+  );
   // Operator-facing label: prefer the alias (e.g. "PNW Biodiversity")
   // over the verbose Salesforce projectName. Falls back to projectName
   // when alias is null/empty so we never show a blank label.
@@ -4060,7 +4249,10 @@ async function readInboxWelcomeWorkloadCacheData(): Promise<InboxWelcomeWorkload
     return trimmedAlias.length > 0 ? trimmedAlias : project.projectName;
   };
   const projectLabelById = new Map(
-    activeProjects.map((project) => [project.projectId, projectDisplayName(project)]),
+    activeProjects.map((project) => [
+      project.projectId,
+      projectDisplayName(project),
+    ]),
   );
   const referenceNowIso = new Date().toISOString();
 
@@ -4177,8 +4369,7 @@ function toListItemViewModel(
     isUnanswered:
       row.inboxProjection.lastInboundAt !== null &&
       (row.inboxProjection.lastOutboundAt === null ||
-        row.inboxProjection.lastInboundAt >
-          row.inboxProjection.lastOutboundAt),
+        row.inboxProjection.lastInboundAt > row.inboxProjection.lastOutboundAt),
     lastInboundAt: row.inboxProjection.lastInboundAt,
     lastNonAliasMessageAt: row.lastNonAliasMessageAt,
     lastOutboundAt: row.inboxProjection.lastOutboundAt,
@@ -4220,7 +4411,9 @@ function buildContactSummary(input: {
     input.memberships,
     projectActivityIndex.lastOccurredAtByProjectId,
   )
-    .filter((membership) => !isPastProject(membership, input.projectMetadataById))
+    .filter(
+      (membership) => !isPastProject(membership, input.projectMetadataById),
+    )
     .map((membership) =>
       buildProjectMembershipViewModel(
         membership,
@@ -4236,7 +4429,9 @@ function buildContactSummary(input: {
         membership !== null,
     );
   const pastProjects = sortMembershipsByCreatedAt(input.memberships)
-    .filter((membership) => isPastProject(membership, input.projectMetadataById))
+    .filter((membership) =>
+      isPastProject(membership, input.projectMetadataById),
+    )
     .map((membership) =>
       buildProjectMembershipViewModel(
         membership,
@@ -4313,8 +4508,9 @@ function buildConversationProject(input: {
   for (const item of [...input.timelineItems].sort((left, right) =>
     right.occurredAt.localeCompare(left.occurredAt),
   )) {
-    const sourceEvidenceId =
-      input.canonicalEventById.get(item.canonicalEventId)?.sourceEvidenceId;
+    const sourceEvidenceId = input.canonicalEventById.get(
+      item.canonicalEventId,
+    )?.sourceEvidenceId;
 
     if (sourceEvidenceId === undefined) {
       continue;
@@ -4342,6 +4538,76 @@ function buildConversationProject(input: {
   }
 
   return null;
+}
+
+function buildInboxDetailSummaryViewModel(input: {
+  readonly cachedData: InboxDetailSummaryCacheData | InboxDetailCacheData;
+  readonly defaultAlias: string | null;
+  readonly referenceNowIso: string;
+}): InboxDetailSummaryViewModel {
+  const contactSummary = buildContactSummary({
+    contact: input.cachedData.contact,
+    inboxProjection: input.cachedData.inboxProjection,
+    memberships: input.cachedData.memberships,
+    latestNote: input.cachedData.latestNote,
+    activityTimelineItems: input.cachedData.activityTimelineItems,
+    projectMetadataById: input.cachedData.projectMetadataById,
+    referenceNowIso: input.referenceNowIso,
+  });
+
+  return {
+    contact: contactSummary,
+    projectionAvailable: input.cachedData.projectionAvailable,
+    conversationProject: buildConversationProject({
+      contact: contactSummary,
+      timelineItems: input.cachedData.activityTimelineItems,
+      canonicalEventById: input.cachedData.canonicalEventById,
+      salesforceEventContextBySourceEvidenceId:
+        input.cachedData.salesforceEventContextBySourceEvidenceId,
+      projectMetadataById: input.cachedData.projectMetadataById,
+    }),
+    initials: toInitials(input.cachedData.contact.displayName),
+    avatarTone: avatarToneForContact(input.cachedData.contact.id),
+    bucket: mapBucket(input.cachedData.inboxProjection.bucket),
+    needsFollowUp: input.cachedData.inboxProjection.needsFollowUp,
+    isArchived: input.cachedData.inboxProjection.archivedAt !== null,
+    isUnread: input.cachedData.isUnread,
+    smsEligible: input.cachedData.contact.primaryPhone !== null,
+    composerReplyContext: buildComposerReplyContext({
+      contact: input.cachedData.contact,
+      timelineItems: input.cachedData.activityTimelineItems,
+      defaultAlias: input.defaultAlias,
+    }),
+    freshness: input.cachedData.freshness,
+  };
+}
+
+function buildInboxDetailTimelineViewModel(input: {
+  readonly cachedData: InboxDetailCacheData;
+  readonly operatorDisplayName: string;
+  readonly referenceNowIso: string;
+}): InboxDetailTimelineViewModel {
+  return {
+    timeline: input.cachedData.timelineItems.map((item) =>
+      buildTimelineEntry({
+        contactDisplayName: input.cachedData.contact.displayName,
+        contactPrimaryEmail: input.cachedData.contact.primaryEmail,
+        contactDisplayNameByEmail: input.cachedData.contactDisplayNameByEmail,
+        operatorDisplayName: input.operatorDisplayName,
+        inboxProjection: input.cachedData.inboxProjection,
+        item,
+        campaignActivitySummaryByCampaignId:
+          input.cachedData.campaignActivitySummaryByCampaignId,
+        memberships: input.cachedData.memberships,
+        projectMetadataById: input.cachedData.projectMetadataById,
+        projectLabelByAlias: input.cachedData.projectLabelByAlias,
+        referenceNowIso: input.referenceNowIso,
+        attachmentsByCanonicalEventId:
+          input.cachedData.attachmentsByCanonicalEventId,
+      }),
+    ),
+    timelinePage: input.cachedData.timelinePage,
+  };
 }
 
 function matchesServerFilter(
@@ -4411,7 +4677,7 @@ export async function getInboxList(
             ? totals.sent
             : filter.id === "archived"
               ? totals.archived
-            : totals[filter.id],
+              : totals[filter.id],
   }));
 
   return {
@@ -4433,6 +4699,67 @@ export async function getInboxWelcomeWorkload(): Promise<InboxWelcomeWorkloadVie
     totals: cachedData.totals,
     followUpRail: cachedData.followUpRail,
   };
+}
+
+export async function getInboxDetailSummary(
+  contactId: string,
+): Promise<InboxDetailSummaryViewModel | null> {
+  const [cachedData, runtime] = await Promise.all([
+    loadInboxDetailSummaryCacheData(contactId),
+    getStage1WebRuntime(),
+  ]);
+
+  if (cachedData === null) {
+    return null;
+  }
+
+  const [referenceNowIso, defaultAlias] = await Promise.all([
+    Promise.resolve(new Date().toISOString()),
+    runtime.timelinePresentation.findLastInboundAliasForContact(contactId),
+  ]);
+
+  return buildInboxDetailSummaryViewModel({
+    cachedData,
+    defaultAlias,
+    referenceNowIso,
+  });
+}
+
+export async function getInboxDetailTimeline(
+  contactId: string,
+  input: {
+    readonly limit?: number;
+    readonly recordReadAudit?: boolean;
+  } = {},
+): Promise<InboxDetailTimelineViewModel | null> {
+  const cachedData = await loadInboxDetailCacheData(contactId, {
+    timelineLimit: input.limit ?? DEFAULT_INBOX_TIMELINE_PAGE_SIZE,
+    timelineCursor: null,
+  });
+
+  if (cachedData === null) {
+    return null;
+  }
+
+  if (input.recordReadAudit === true) {
+    recordSensitiveReadForCurrentUserDetached({
+      action: "contact.timeline.read",
+      entityType: "contact",
+      entityId: contactId,
+      metadataJson: {
+        timelineCount: cachedData.timelinePage.total,
+      },
+    });
+  }
+
+  const currentUser = await getCurrentUser();
+
+  return buildInboxDetailTimelineViewModel({
+    cachedData,
+    operatorDisplayName:
+      normalizeDisplayName(currentUser?.name ?? "") || "Adventure Scientists",
+    referenceNowIso: new Date().toISOString(),
+  });
 }
 
 export async function getInboxTimelinePage(
@@ -4462,23 +4789,11 @@ export async function getInboxTimelinePage(
   const operatorDisplayName = "Adventure Scientists";
 
   return {
-    entries: cachedData.timelineItems.map((item) =>
-      buildTimelineEntry({
-        contactDisplayName: cachedData.contact.displayName,
-        contactPrimaryEmail: cachedData.contact.primaryEmail,
-        contactDisplayNameByEmail: cachedData.contactDisplayNameByEmail,
-        operatorDisplayName,
-        inboxProjection: cachedData.inboxProjection,
-        item,
-        campaignActivitySummaryByCampaignId:
-          cachedData.campaignActivitySummaryByCampaignId,
-        memberships: cachedData.memberships,
-        projectMetadataById: cachedData.projectMetadataById,
-        projectLabelByAlias: cachedData.projectLabelByAlias,
-        referenceNowIso,
-        attachmentsByCanonicalEventId: cachedData.attachmentsByCanonicalEventId,
-      }),
-    ),
+    entries: buildInboxDetailTimelineViewModel({
+      cachedData,
+      operatorDisplayName,
+      referenceNowIso,
+    }).timeline,
     page: cachedData.timelinePage,
   };
 }
@@ -4546,64 +4861,22 @@ export async function getInboxDetail(
 
   const runtime = await getStage1WebRuntime();
   const referenceNowIso = new Date().toISOString();
-  const currentUser = await getCurrentUser();
-  const operatorDisplayName =
-    normalizeDisplayName(currentUser?.name ?? "") || "Adventure Scientists";
-  const contactSummary = buildContactSummary({
-    contact: cachedData.contact,
-    inboxProjection: cachedData.inboxProjection,
-    memberships: cachedData.memberships,
-    latestNote: cachedData.latestNote,
-    activityTimelineItems: cachedData.activityTimelineItems,
-    projectMetadataById: cachedData.projectMetadataById,
-    referenceNowIso,
-  });
-  const composerReplyContext = buildComposerReplyContext({
-    contact: cachedData.contact,
-    timelineItems: cachedData.timelineItems,
-    defaultAlias:
-      await runtime.timelinePresentation.findLastInboundAliasForContact(
-        contactId,
-      ),
-  });
+  const [currentUser, defaultAlias] = await Promise.all([
+    getCurrentUser(),
+    runtime.timelinePresentation.findLastInboundAliasForContact(contactId),
+  ]);
 
   return {
-    contact: contactSummary,
-    projectionAvailable: cachedData.projectionAvailable,
-    conversationProject: buildConversationProject({
-      contact: contactSummary,
-      timelineItems: cachedData.activityTimelineItems,
-      canonicalEventById: cachedData.canonicalEventById,
-      salesforceEventContextBySourceEvidenceId:
-        cachedData.salesforceEventContextBySourceEvidenceId,
-      projectMetadataById: cachedData.projectMetadataById,
+    ...buildInboxDetailSummaryViewModel({
+      cachedData,
+      defaultAlias,
+      referenceNowIso,
     }),
-    initials: toInitials(cachedData.contact.displayName),
-    avatarTone: avatarToneForContact(cachedData.contact.id),
-    timeline: cachedData.timelineItems.map((item) =>
-      buildTimelineEntry({
-        contactDisplayName: cachedData.contact.displayName,
-        contactPrimaryEmail: cachedData.contact.primaryEmail,
-        contactDisplayNameByEmail: cachedData.contactDisplayNameByEmail,
-        operatorDisplayName,
-        inboxProjection: cachedData.inboxProjection,
-        item,
-        campaignActivitySummaryByCampaignId:
-          cachedData.campaignActivitySummaryByCampaignId,
-        memberships: cachedData.memberships,
-        projectMetadataById: cachedData.projectMetadataById,
-        projectLabelByAlias: cachedData.projectLabelByAlias,
-        referenceNowIso,
-        attachmentsByCanonicalEventId: cachedData.attachmentsByCanonicalEventId,
-      }),
-    ),
-    bucket: mapBucket(cachedData.inboxProjection.bucket),
-    needsFollowUp: cachedData.inboxProjection.needsFollowUp,
-    isArchived: cachedData.inboxProjection.archivedAt !== null,
-    isUnread: cachedData.isUnread,
-    smsEligible: cachedData.contact.primaryPhone !== null,
-    composerReplyContext,
-    timelinePage: cachedData.timelinePage,
-    freshness: cachedData.freshness,
+    ...buildInboxDetailTimelineViewModel({
+      cachedData,
+      operatorDisplayName:
+        normalizeDisplayName(currentUser?.name ?? "") || "Adventure Scientists",
+      referenceNowIso,
+    }),
   };
 }
