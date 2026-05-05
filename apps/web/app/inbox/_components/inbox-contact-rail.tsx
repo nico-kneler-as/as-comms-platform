@@ -127,13 +127,14 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
           ) : (
             <>
               <ul className="mt-3 space-y-3">
-                {visibleActivity.map((entry, index) => {
-                  /*
-                    Canonical lifecycle ordering is not always recency ordering,
-                    so the highlighted dot follows the most recent event
-                    explicitly instead of assuming the first row is newest.
-                  */
-                  const isMostRecent = entry.isMostRecent ?? index === 0;
+                {(() => {
+                  const hasExplicitMostRecent = contact.recentActivity.some(
+                    (entry) => entry.isMostRecent === true,
+                  );
+                  return visibleActivity.map((entry, index) => {
+                    const isMostRecent = hasExplicitMostRecent
+                      ? entry.isMostRecent === true
+                      : index === 0;
 
                   return (
                     <li key={entry.id} className="relative flex gap-3 pb-1 last:pb-0">
@@ -163,7 +164,8 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
                       </div>
                     </li>
                   );
-                })}
+                });
+                })()}
               </ul>
               {contact.recentActivity.length > ACTIVITY_COLLAPSED_LIMIT ? (
                 <button
