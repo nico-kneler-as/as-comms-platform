@@ -839,9 +839,15 @@ describe("composer canonical modal", () => {
     await click(getByText("Open new draft"));
     await click(getByText("SMS"));
 
-    const sendSmsButton = getByText("Send SMS");
-    expect(sendSmsButton.getAttribute("disabled")).not.toBeNull();
-    expect(sendSmsButton.getAttribute("title")).toBe(
+    // Query the actual <button> inside the sms-surface mock — getByText would
+    // match the wrapper <div data-testid="sms-surface"> first, since it's
+    // earlier in document order and its textContent === "Send SMS".
+    const sendSmsButton = document.querySelector<HTMLButtonElement>(
+      "[data-testid='sms-surface'] button",
+    );
+    expect(sendSmsButton).not.toBeNull();
+    expect(sendSmsButton?.getAttribute("disabled")).not.toBeNull();
+    expect(sendSmsButton?.getAttribute("title")).toBe(
       "SMS sending isn't wired up yet — coming soon",
     );
   });

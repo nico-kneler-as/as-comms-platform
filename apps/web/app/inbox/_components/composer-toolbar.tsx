@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ComponentType } from "react";
 
 import { FOCUS_RING, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
@@ -30,26 +30,14 @@ interface ComposerToolbarProps {
 const TOOLBAR_ITEMS: readonly {
   readonly command: ComposerToolbarCommand;
   readonly label: string;
-  readonly icon: ReactNode;
+  readonly Icon: ComponentType<{ className?: string }>;
 }[] = [
-  { command: "bold", label: "Bold", icon: <BoldIcon className="size-4" /> },
-  { command: "italic", label: "Italic", icon: <ItalicIcon className="size-4" /> },
-  {
-    command: "bulletList",
-    label: "Bulleted list",
-    icon: <ListIcon className="size-4" />,
-  },
-  {
-    command: "orderedList",
-    label: "Numbered list",
-    icon: <ListOrderedIcon className="size-4" />,
-  },
-  { command: "link", label: "Link", icon: <LinkIcon className="size-4" /> },
-  {
-    command: "blockquote",
-    label: "Quote",
-    icon: <QuoteIcon className="size-4" />,
-  },
+  { command: "bold", label: "Bold", Icon: BoldIcon },
+  { command: "italic", label: "Italic", Icon: ItalicIcon },
+  { command: "bulletList", label: "Bulleted list", Icon: ListIcon },
+  { command: "orderedList", label: "Numbered list", Icon: ListOrderedIcon },
+  { command: "link", label: "Link", Icon: LinkIcon },
+  { command: "blockquote", label: "Quote", Icon: QuoteIcon },
 ];
 
 export function ComposerToolbar({
@@ -79,7 +67,7 @@ export function ComposerToolbar({
               active ? "bg-slate-200 text-slate-900" : "",
             )}
           >
-            {item.icon}
+            <item.Icon className="size-4" />
           </button>
         );
       })}
