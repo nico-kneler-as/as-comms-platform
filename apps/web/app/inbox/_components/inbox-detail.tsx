@@ -318,7 +318,6 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
                 <>
                   <FollowUpToggleControl
                     needsFollowUp={isFollowUp}
-                    isPending={followUpToggle.isPending}
                     error={followUpToggle.error}
                     onToggle={followUpToggle.toggle}
                   />
@@ -730,22 +729,16 @@ export function InboxDetailTimelineFallback() {
 
 function FollowUpToggleControl({
   needsFollowUp,
-  isPending,
   error,
   onToggle,
 }: {
   readonly needsFollowUp: boolean;
-  readonly isPending: boolean;
   readonly error: UiError | null;
   readonly onToggle: () => void;
 }) {
   return (
     <div className="relative">
-      <FollowUpToggleButton
-        needsFollowUp={needsFollowUp}
-        pending={isPending}
-        onToggle={onToggle}
-      />
+      <FollowUpToggleButton needsFollowUp={needsFollowUp} onToggle={onToggle} />
 
       {error ? (
         <div
@@ -761,33 +754,38 @@ function FollowUpToggleControl({
 
 function FollowUpToggleButton({
   needsFollowUp,
-  pending,
   onToggle,
 }: {
   readonly needsFollowUp: boolean;
-  readonly pending: boolean;
   readonly onToggle: () => void;
 }) {
+  const tooltipLabel = needsFollowUp
+    ? "Pending — click to clear"
+    : "Needs Follow-Up";
+
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      title="Needs Follow-Up"
-      disabled={pending}
-      aria-pressed={needsFollowUp}
-      aria-label="Needs Follow-Up"
-      aria-keyshortcuts="f"
-      data-inbox-follow-up-toggle="true"
-      onClick={onToggle}
-      className={cn(
-        "size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20",
-        needsFollowUp &&
-          "bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-900",
-      )}
-    >
-      <FlagIcon className="size-4" />
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-pressed={needsFollowUp}
+          aria-label="Needs Follow-Up"
+          aria-keyshortcuts="f"
+          data-inbox-follow-up-toggle="true"
+          onClick={onToggle}
+          className={cn(
+            "size-8 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:z-20",
+            needsFollowUp &&
+              "bg-rose-50 text-rose-800 hover:bg-rose-100 hover:text-rose-900",
+          )}
+        >
+          <FlagIcon className="size-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{tooltipLabel}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -802,6 +800,9 @@ function useOptimisticBooleanToggle({
 }) {
   const router = useRouter();
   const serverValueRef = useRef(value);
+  const optimisticValueRef = useRef(value);
+  const desiredValueRef = useRef(value);
+  const inFlightRef = useRef(false);
   const [committedValue, setCommittedValue] = useState(value);
   const [error, setError] = useState<UiError | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -812,32 +813,64 @@ function useOptimisticBooleanToggle({
 
   useEffect(() => {
     serverValueRef.current = value;
+    optimisticValueRef.current = value;
+    desiredValueRef.current = value;
+    inFlightRef.current = false;
     setCommittedValue(value);
     setError(null);
   }, [scopeKey, value]);
 
   const toggle = useCallback(() => {
-    const nextValue = !optimisticValue;
+    const nextValue = !optimisticValueRef.current;
+
+    if (inFlightRef.current) {
+      startTransition(() => {
+        optimisticValueRef.current = nextValue;
+        desiredValueRef.current = nextValue;
+        setError(null);
+        setOptimisticValue(nextValue);
+      });
+      return;
+    }
 
     startTransition(async () => {
+      optimisticValueRef.current = nextValue;
+      desiredValueRef.current = nextValue;
       setError(null);
       setOptimisticValue(nextValue);
-      const result = await perform(nextValue);
+      inFlightRef.current = true;
+      let hasCommittedUpdate = false;
 
-      if (result.ok) {
-        serverValueRef.current = nextValue;
-        setCommittedValue(nextValue);
+      while (serverValueRef.current !== desiredValueRef.current) {
+        const valueToPersist = desiredValueRef.current;
+        const result = await perform(valueToPersist);
+
+        if (!result.ok) {
+          optimisticValueRef.current = serverValueRef.current;
+          desiredValueRef.current = serverValueRef.current;
+          setCommittedValue(serverValueRef.current);
+          setOptimisticValue(serverValueRef.current);
+          setError(result);
+          inFlightRef.current = false;
+          return;
+        }
+
+        hasCommittedUpdate = true;
+        serverValueRef.current = valueToPersist;
+        optimisticValueRef.current = valueToPersist;
+        setCommittedValue(valueToPersist);
+      }
+
+      inFlightRef.current = false;
+
+      if (hasCommittedUpdate) {
         // Re-render the RSC tree so the inbox list row reflects the new
         // value. Layout is `force-dynamic` (D-040), so this is a real
         // refetch, not a cache hit.
         router.refresh();
-        return;
       }
-
-      setCommittedValue(serverValueRef.current);
-      setError(result);
     });
-  }, [optimisticValue, perform, router, setOptimisticValue]);
+  }, [perform, router, setOptimisticValue]);
 
   return {
     value: optimisticValue,

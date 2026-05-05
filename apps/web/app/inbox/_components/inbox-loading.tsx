@@ -324,13 +324,11 @@ function TimelineBubbleSkeleton({
         <div aria-hidden="true" className="size-9 rounded-full bg-slate-200" />
       </div>
       <div
-        className={`${
-          isInbound
-            ? "col-start-2 justify-self-start"
-            : "col-start-2 justify-self-end"
-        } w-full ${EMAIL_BUBBLE_MAX_W}`}
+        className={`col-start-2 ${
+          isInbound ? "justify-self-start" : "justify-self-end"
+        } ${EMAIL_BUBBLE_MAX_W}`}
       >
-        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <div className="space-y-2">
             {lineWidths.map((width, index) => (
               <Skeleton

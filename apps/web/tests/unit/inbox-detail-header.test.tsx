@@ -78,7 +78,8 @@ vi.mock("@/components/ui/tooltip", () => ({
     createElement(React.Fragment, null, children),
   TooltipTrigger: ({ children }: { readonly children: React.ReactNode }) =>
     children,
-  TooltipContent: () => null,
+  TooltipContent: ({ children }: { readonly children?: React.ReactNode }) =>
+    createElement("div", { "data-tooltip-content": true }, children),
 }));
 
 vi.mock("../../app/inbox/_components/inbox-avatar", () => ({
@@ -306,6 +307,10 @@ describe("Inbox detail header", () => {
     activeSession = await renderDetail(buildDetail());
     const session = activeSession;
 
+    const followUpButton = findButtonByLabel(
+      session.container,
+      "Needs Follow-Up",
+    );
     const markUnreadButton = findButtonByLabel(session.container, "Mark unread");
     const archiveButton = findButtonByLabel(
       session.container,
@@ -316,6 +321,9 @@ describe("Inbox detail header", () => {
       "Volunteer details",
     );
 
+    expect(followUpButton.dataset.inboxFollowUpToggle).toBe("true");
+    expect(followUpButton.getAttribute("title")).toBeNull();
+    expect(followUpButton.disabled).toBe(false);
     expect(markUnreadButton.dataset.inboxMarkUnread).toBe("true");
     expect(markUnreadButton.textContent).toBe("");
     expect(archiveButton.textContent).toBe("");
@@ -325,6 +333,7 @@ describe("Inbox detail header", () => {
     ).toBeNull();
     expect(session.container.textContent).not.toContain("Set Reminder");
     expect(session.container.textContent).not.toContain("Volunteer Details");
+    expect(session.container.textContent).toContain("Needs Follow-Up");
   });
 
   it("uses the archived header label and hides the volunteer trigger once the rail opens", async () => {
@@ -350,5 +359,85 @@ describe("Inbox detail header", () => {
     expect(
       session.container.querySelector('button[aria-label="Volunteer details"]'),
     ).toBeNull();
+  });
+
+  it("updates the follow-up tooltip copy from the current optimistic state", async () => {
+    activeSession = await renderDetail(
+      buildDetail({
+        needsFollowUp: true,
+      }),
+    );
+    const session = activeSession;
+
+    expect(session.container.textContent).toContain("Pending — click to clear");
+    expect(
+      session.container.querySelector(
+        '[data-tooltip-content="true"]',
+      )?.textContent,
+    ).toContain("Pending — click to clear");
+  });
+
+  it("keeps the follow-up toggle clickable while a request is in flight and queues the latest intent", async () => {
+    let resolveMark:
+      | ((value: { ok: true; data: null; requestId: string }) => void)
+      | null = null;
+    let resolveClear:
+      | ((value: { ok: true; data: null; requestId: string }) => void)
+      | null = null;
+
+    markInboxNeedsFollowUpActionMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveMark = resolve;
+        }),
+    );
+    clearInboxNeedsFollowUpActionMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveClear = resolve;
+        }),
+    );
+
+    activeSession = await renderDetail(buildDetail());
+    const session = activeSession;
+    const followUpButton = findButtonByLabel(
+      session.container,
+      "Needs Follow-Up",
+    );
+
+    await act(async () => {
+      followUpButton.click();
+      await Promise.resolve();
+    });
+
+    expect(followUpButton.disabled).toBe(false);
+    expect(followUpButton.getAttribute("aria-pressed")).toBe("true");
+    expect(markInboxNeedsFollowUpActionMock).toHaveBeenCalledTimes(1);
+    expect(clearInboxNeedsFollowUpActionMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      followUpButton.click();
+      await Promise.resolve();
+    });
+
+    expect(followUpButton.disabled).toBe(false);
+    expect(followUpButton.getAttribute("aria-pressed")).toBe("false");
+    expect(markInboxNeedsFollowUpActionMock).toHaveBeenCalledTimes(1);
+    expect(clearInboxNeedsFollowUpActionMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveMark?.({ ok: true, data: null, requestId: "req-mark" });
+      await Promise.resolve();
+    });
+
+    expect(clearInboxNeedsFollowUpActionMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveClear?.({ ok: true, data: null, requestId: "req-clear" });
+      await Promise.resolve();
+    });
+
+    expect(routerRefreshMock).toHaveBeenCalledTimes(1);
+    expect(followUpButton.getAttribute("aria-pressed")).toBe("false");
   });
 });
