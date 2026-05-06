@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import type { InboxSmsSenderOption } from "../_lib/view-models";
 import { ComposerFloatingPill } from "./composer-floating-pill";
 import { useInboxClient } from "./inbox-client-provider";
 import { InboxComposerDetailPane } from "./inbox-composer";
+import { extractInboxContactId } from "./inbox-keyboard-helpers";
 import { XIcon } from "./icons";
 
 export function InboxWorkspace({
@@ -21,7 +24,9 @@ export function InboxWorkspace({
   readonly smsEnabled?: boolean;
   readonly smsSenders?: readonly InboxSmsSenderOption[];
 }) {
+  const pathname = usePathname();
   const { composerPane, toast, clearToast } = useInboxClient();
+  const activeContactId = extractInboxContactId(pathname);
 
   useEffect(() => {
     if (toast === null) {
@@ -38,7 +43,12 @@ export function InboxWorkspace({
   }, [clearToast, toast]);
 
   return (
-    <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+    <main
+      className={cn(
+        "relative min-w-0 flex-1 flex-col overflow-hidden",
+        activeContactId === null ? "hidden lg:flex" : "flex",
+      )}
+    >
       {children}
       {composerPane.mode === "closed" ? null : (
         <InboxComposerDetailPane

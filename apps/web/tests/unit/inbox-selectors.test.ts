@@ -769,6 +769,58 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("batches list-side canonical event and audit reads per page load", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const canonicalBatchSpy = vi.spyOn(
+      runtime.context.repositories.canonicalEvents,
+      "listByContactIds",
+    );
+    const canonicalSingleSpy = vi.spyOn(
+      runtime.context.repositories.canonicalEvents,
+      "listByContactId",
+    );
+    const auditBatchSpy = vi.spyOn(
+      runtime.context.repositories.auditEvidence,
+      "listByEntities",
+    );
+    const auditSingleSpy = vi.spyOn(
+      runtime.context.repositories.auditEvidence,
+      "listByEntity",
+    );
+
+    const list = await getInboxList();
+
+    expect(list.items.map((item) => item.contactId)).toEqual([
+      "contact:sarah-martinez",
+      "contact:alex-thompson",
+      "contact:lisa-zhang",
+    ]);
+    expect(canonicalBatchSpy).toHaveBeenCalledTimes(1);
+    expect(new Set(canonicalBatchSpy.mock.calls[0]?.[0] ?? [])).toEqual(
+      new Set([
+        "contact:sarah-martinez",
+        "contact:alex-thompson",
+        "contact:lisa-zhang",
+      ]),
+    );
+    expect(canonicalSingleSpy).not.toHaveBeenCalled();
+    expect(auditBatchSpy).toHaveBeenCalledTimes(1);
+    expect(auditBatchSpy.mock.calls[0]?.[0]).toMatchObject({
+      entityType: "contact",
+    });
+    expect(new Set(auditBatchSpy.mock.calls[0]?.[0].entityIds ?? [])).toEqual(
+      new Set([
+        "contact:sarah-martinez",
+        "contact:alex-thompson",
+        "contact:lisa-zhang",
+      ]),
+    );
+    expect(auditSingleSpy).not.toHaveBeenCalled();
+  });
+
   it("uses Inbox as the default scope and excludes outbound-only plus archived contacts", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
@@ -843,7 +895,9 @@ describe("real inbox selectors", () => {
 
   it("emits count chips only for unread and pending", async () => {
     const list = await getInboxList("inbox");
-    const filtersById = new Map(list.filters.map((filter) => [filter.id, filter]));
+    const filtersById = new Map(
+      list.filters.map((filter) => [filter.id, filter]),
+    );
 
     expect(filtersById.get("inbox")).toMatchObject({
       label: "Inbox",

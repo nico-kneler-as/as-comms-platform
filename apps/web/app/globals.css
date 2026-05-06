@@ -25,6 +25,11 @@
     --destructive-foreground: 210 40% 98%;
     --ring: 215 20.2% 65.1%;
     --radius: 0.5rem;
+    --font-inter:
+      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif;
+    --font-source-serif-4:
+      "Source Serif 4", Georgia, Cambria, "Times New Roman", serif;
   }
 }
 
@@ -35,7 +40,7 @@ body {
     radial-gradient(circle at top, rgba(14, 165, 233, 0.12), transparent 36%),
     linear-gradient(180deg, #ffffff 0%, #eef4ff 100%);
   color: #0f172a;
-  font-family: var(--font-inter), "Segoe UI", "Helvetica Neue", sans-serif;
+  font-family: var(--font-inter);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -49,7 +54,7 @@ a {
 }
 
 .font-message-body {
-  font-family: var(--font-source-serif-4), Georgia, serif;
+  font-family: var(--font-source-serif-4);
 }
 
 @keyframes popIn {

@@ -256,7 +256,8 @@ interface MailchimpCampaignActivityDetailRecord {
   readonly snippet: string;
 }
 
-type MailchimpCampaignTailStateRow = typeof mailchimpCampaignTailState.$inferSelect;
+type MailchimpCampaignTailStateRow =
+  typeof mailchimpCampaignTailState.$inferSelect;
 
 interface ManualNoteDetailRecord {
   readonly sourceEvidenceId: string;
@@ -352,7 +353,10 @@ function mapSourceEvidenceCollisionEntries(input: {
   readonly groups: readonly SourceEvidenceCollisionGroupRow[];
   readonly rows: readonly SourceEvidenceCollisionJoinedRow[];
 }): readonly SourceEvidenceCollisionEntry[] {
-  const rowsByCollisionKey = new Map<string, SourceEvidenceCollisionJoinedRow[]>();
+  const rowsByCollisionKey = new Map<
+    string,
+    SourceEvidenceCollisionJoinedRow[]
+  >();
 
   for (const row of input.rows) {
     const collisionKey = buildSourceEvidenceCollisionKey(
@@ -695,10 +699,7 @@ function createSmsRepositorySlices(db: Stage1Database) {
     smsMessages: {
       async insert(record) {
         const values = mapSmsMessageToInsert(record);
-        const [row] = await db
-          .insert(smsMessages)
-          .values(values)
-          .returning();
+        const [row] = await db.insert(smsMessages).values(values).returning();
 
         return mapSmsMessageRow(
           requireRow(row, "Expected SMS message row to be returned."),
@@ -866,6 +867,7 @@ function createSmsRepositorySlices(db: Stage1Database) {
       },
 
       async getActiveUsageSnapshot(input) {
+        const monthStartIso = input.monthStart.toISOString();
         const [row] = await db
           .select({
             monthlyCap: smsSenders.monthlyCap,
@@ -880,7 +882,7 @@ function createSmsRepositorySlices(db: Stage1Database) {
             and(
               eq(smsMessages.senderId, smsSenders.id),
               eq(smsMessages.direction, "outbound"),
-              sql`${smsMessages.createdAt} >= ${input.monthStart}`,
+              sql`${smsMessages.createdAt} >= ${monthStartIso}::timestamptz`,
             ),
           )
           .where(eq(smsSenders.isActive, true))
@@ -992,9 +994,9 @@ function buildInboxFilterPredicate(
         ? inboxOnly
         : filter === "unread"
           ? eq(contactInboxProjection.bucket, "New")
-        : filter === "follow-up"
-          ? eq(contactInboxProjection.isStarred, true)
-          : isNotNull(contactInboxProjection.lastOutboundAt);
+          : filter === "follow-up"
+            ? eq(contactInboxProjection.isStarred, true)
+            : isNotNull(contactInboxProjection.lastOutboundAt);
 
   return filterPredicate === undefined
     ? excludeArchived
@@ -1026,20 +1028,26 @@ function buildInboxCursorPredicate(input: {
     return undefined;
   }
 
+  const lastActivityAtIso = new Date(input.cursor.lastActivityAt).toISOString();
+
   if (input.order === "last-outbound") {
     if (input.cursor.lastOutboundAt === null) {
       return undefined;
     }
 
+    const lastOutboundAtIso = new Date(
+      input.cursor.lastOutboundAt,
+    ).toISOString();
+
     return sql`(
-      ${contactInboxProjection.lastOutboundAt} < ${new Date(input.cursor.lastOutboundAt)}
+      ${contactInboxProjection.lastOutboundAt} < ${lastOutboundAtIso}::timestamptz
       or (
-        ${contactInboxProjection.lastOutboundAt} = ${new Date(input.cursor.lastOutboundAt)}
-        and ${contactInboxProjection.lastActivityAt} < ${new Date(input.cursor.lastActivityAt)}
+        ${contactInboxProjection.lastOutboundAt} = ${lastOutboundAtIso}::timestamptz
+        and ${contactInboxProjection.lastActivityAt} < ${lastActivityAtIso}::timestamptz
       )
       or (
-        ${contactInboxProjection.lastOutboundAt} = ${new Date(input.cursor.lastOutboundAt)}
-        and ${contactInboxProjection.lastActivityAt} = ${new Date(input.cursor.lastActivityAt)}
+        ${contactInboxProjection.lastOutboundAt} = ${lastOutboundAtIso}::timestamptz
+        and ${contactInboxProjection.lastActivityAt} = ${lastActivityAtIso}::timestamptz
         and ${contactInboxProjection.contactId} > ${input.cursor.contactId}
       )
     )`;
@@ -1049,25 +1057,27 @@ function buildInboxCursorPredicate(input: {
     return sql`(
       ${contactInboxProjection.lastInboundAt} is null
       and (
-        ${contactInboxProjection.lastActivityAt} < ${new Date(input.cursor.lastActivityAt)}
+        ${contactInboxProjection.lastActivityAt} < ${lastActivityAtIso}::timestamptz
         or (
-          ${contactInboxProjection.lastActivityAt} = ${new Date(input.cursor.lastActivityAt)}
+          ${contactInboxProjection.lastActivityAt} = ${lastActivityAtIso}::timestamptz
           and ${contactInboxProjection.contactId} > ${input.cursor.contactId}
         )
       )
     )`;
   }
 
+  const lastInboundAtIso = new Date(input.cursor.lastInboundAt).toISOString();
+
   return sql`(
     ${contactInboxProjection.lastInboundAt} is null
-    or ${contactInboxProjection.lastInboundAt} < ${new Date(input.cursor.lastInboundAt)}
+    or ${contactInboxProjection.lastInboundAt} < ${lastInboundAtIso}::timestamptz
     or (
-      ${contactInboxProjection.lastInboundAt} = ${new Date(input.cursor.lastInboundAt)}
-      and ${contactInboxProjection.lastActivityAt} < ${new Date(input.cursor.lastActivityAt)}
+      ${contactInboxProjection.lastInboundAt} = ${lastInboundAtIso}::timestamptz
+      and ${contactInboxProjection.lastActivityAt} < ${lastActivityAtIso}::timestamptz
     )
     or (
-      ${contactInboxProjection.lastInboundAt} = ${new Date(input.cursor.lastInboundAt)}
-      and ${contactInboxProjection.lastActivityAt} = ${new Date(input.cursor.lastActivityAt)}
+      ${contactInboxProjection.lastInboundAt} = ${lastInboundAtIso}::timestamptz
+      and ${contactInboxProjection.lastActivityAt} = ${lastActivityAtIso}::timestamptz
       and ${contactInboxProjection.contactId} > ${input.cursor.contactId}
     )
   )`;
@@ -1326,7 +1336,10 @@ function createStage1RepositoriesInternal(
             .innerJoin(
               sourceEvidenceLog,
               and(
-                eq(sourceEvidenceLog.provider, sourceEvidenceQuarantine.provider),
+                eq(
+                  sourceEvidenceLog.provider,
+                  sourceEvidenceQuarantine.provider,
+                ),
                 eq(
                   sourceEvidenceLog.idempotencyKey,
                   sourceEvidenceQuarantine.idempotencyKey,
@@ -1403,7 +1416,10 @@ function createStage1RepositoriesInternal(
           .returning();
 
         return mapSourceEvidenceQuarantineRow(
-          requireRow(row, "Expected source evidence quarantine row after insert."),
+          requireRow(
+            row,
+            "Expected source evidence quarantine row after insert.",
+          ),
         );
       },
 
@@ -1424,7 +1440,9 @@ function createStage1RepositoriesInternal(
           )
           .limit(limit + 1);
 
-        const visibleRows = rows.slice(0, limit).map(mapSourceEvidenceQuarantineRow);
+        const visibleRows = rows
+          .slice(0, limit)
+          .map(mapSourceEvidenceQuarantineRow);
 
         return {
           entries: visibleRows,
@@ -1555,6 +1573,24 @@ function createStage1RepositoriesInternal(
         return rows.map(mapCanonicalEventRow);
       },
 
+      async listByContactIds(contactIds) {
+        if (contactIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(canonicalEventLedger)
+          .where(inArray(canonicalEventLedger.contactId, [...contactIds]))
+          .orderBy(
+            asc(canonicalEventLedger.contactId),
+            asc(canonicalEventLedger.occurredAt),
+            asc(canonicalEventLedger.createdAt),
+          );
+
+        return rows.map(mapCanonicalEventRow);
+      },
+
       async upsert(record) {
         const values = mapCanonicalEventToInsert(record);
         const [row] = await db
@@ -1596,7 +1632,10 @@ function createStage1RepositoriesInternal(
           .where(
             and(eq(aiKnowledgeEntries.scope, input.scope), scopeKeyPredicate),
           )
-          .orderBy(desc(aiKnowledgeEntries.syncedAt), asc(aiKnowledgeEntries.id))
+          .orderBy(
+            desc(aiKnowledgeEntries.syncedAt),
+            asc(aiKnowledgeEntries.id),
+          )
           .limit(1);
 
         return row === undefined ? null : mapAiKnowledgeEntryRow(row);
@@ -1613,7 +1652,10 @@ function createStage1RepositoriesInternal(
               eq(aiKnowledgeEntries.sourceProvider, "notion"),
             ),
           )
-          .orderBy(desc(aiKnowledgeEntries.syncedAt), asc(aiKnowledgeEntries.id))
+          .orderBy(
+            desc(aiKnowledgeEntries.syncedAt),
+            asc(aiKnowledgeEntries.id),
+          )
           .limit(1);
 
         return row === undefined ? null : mapAiKnowledgeEntryRow(row);
@@ -2190,12 +2232,14 @@ function createStage1RepositoriesInternal(
               readonly contactId: string;
               readonly projectInboxAlias: string;
             }[])
-          : ((result as {
-              readonly rows?: readonly {
-                readonly contactId: string;
-                readonly projectInboxAlias: string;
-              }[];
-            }).rows ?? []);
+          : ((
+              result as {
+                readonly rows?: readonly {
+                  readonly contactId: string;
+                  readonly projectInboxAlias: string;
+                }[];
+              }
+            ).rows ?? []);
 
         return new Map(
           rows.map((row) => [row.contactId, row.projectInboxAlias]),
@@ -2254,7 +2298,11 @@ function createStage1RepositoriesInternal(
         const rows = await db
           .select()
           .from(messageAttachments)
-          .where(inArray(messageAttachments.sourceEvidenceId, [...sourceEvidenceIds]))
+          .where(
+            inArray(messageAttachments.sourceEvidenceId, [
+              ...sourceEvidenceIds,
+            ]),
+          )
           .orderBy(
             asc(messageAttachments.sourceEvidenceId),
             asc(messageAttachments.id),
@@ -2667,7 +2715,9 @@ function createStage1RepositoriesInternal(
           .where(eq(internalNotes.id, id))
           .limit(1);
 
-        return row === undefined ? undefined : mapInternalNoteWithAuthorRow(row);
+        return row === undefined
+          ? undefined
+          : mapInternalNoteWithAuthorRow(row);
       },
 
       async findByContactId(contactId, limit) {
@@ -2728,10 +2778,7 @@ function createStage1RepositoriesInternal(
           .limit(1);
 
         return mapInternalNoteWithAuthorRow(
-          requireRow(
-            row,
-            `Expected internal_notes row ${input.id} to update.`,
-          ),
+          requireRow(row, `Expected internal_notes row ${input.id} to update.`),
         );
       },
 
@@ -3552,6 +3599,29 @@ function createStage1RepositoriesInternal(
 
         return rows.map(mapAuditEvidenceRow);
       },
+
+      async listByEntities(input) {
+        if (input.entityIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(auditPolicyEvidence)
+          .where(
+            and(
+              eq(auditPolicyEvidence.entityType, input.entityType),
+              inArray(auditPolicyEvidence.entityId, [...input.entityIds]),
+            ),
+          )
+          .orderBy(
+            asc(auditPolicyEvidence.entityId),
+            asc(auditPolicyEvidence.occurredAt),
+            asc(auditPolicyEvidence.createdAt),
+          );
+
+        return rows.map(mapAuditEvidenceRow);
+      },
     },
   });
 }
@@ -3896,10 +3966,7 @@ function createStage2RepositoriesInternal(
         return project ?? null;
       },
 
-      async setProjectAlias(
-        projectId: string,
-        projectAlias: string | null,
-      ) {
+      async setProjectAlias(projectId: string, projectAlias: string | null) {
         const [row] = await db
           .update(projectDimensions)
           .set({
