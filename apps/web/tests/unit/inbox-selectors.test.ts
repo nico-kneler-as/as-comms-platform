@@ -1150,6 +1150,104 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("prefers a known teammate identity over a project alias in outbound email headers", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:darrel-robertson",
+      salesforceContactId: null,
+      displayName: "Darrel Robertson",
+      primaryEmail: "darrel@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-bio",
+      projectName: "PNW Biodiversity",
+      projectAlias: "PNW Biodiversity",
+      membershipId: "membership:darrel:pnw-bio",
+      membershipStatus: "active",
+      membershipCreatedAt: "2026-04-01T10:00:00.000Z",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:scotty-stalp",
+      salesforceContactId: null,
+      displayName: "Scotty Stalp",
+      primaryEmail: "or-rural-coordinator@adventurescientists.org",
+      primaryPhone: null,
+    });
+    await runtime.context.repositories.contactIdentities.upsert({
+      id: "identity:scotty-or-rural",
+      contactId: "contact:scotty-stalp",
+      kind: "email",
+      normalizedValue: "or-rural-coordinator@adventurescientists.org",
+      isPrimary: true,
+      source: "gmail",
+      verifiedAt: null,
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:or-rural-coordinator",
+      alias: "or-rural-coordinator@adventurescientists.org",
+      signature: "",
+      projectId: "project:pnw-bio",
+      createdAt: new Date("2026-05-03T12:00:00.000Z"),
+      updatedAt: new Date("2026-05-03T12:00:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "darrel-scotty-alias-gmail-1",
+      contactId: "contact:darrel-robertson",
+      occurredAt: "2026-05-03T16:00:00.000Z",
+      direction: "outbound",
+      subject: "Re: Shipping ARUs",
+      snippet: "Hey Darrel, I shipped 8 ARUs via FedEx today.",
+      bodyTextPreview: "Hey Darrel, I shipped 8 ARUs via FedEx today.",
+      fromHeader:
+        "PNW Biodiversity <or-rural-coordinator@adventurescientists.org>",
+      toHeader: "Darrel Robertson <darrel@example.org>",
+      ccHeader: "Adventure Scientists <pnwbio@adventurescientists.org>",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:darrel-robertson",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-05-03T16:00:00.000Z",
+      lastActivityAt: "2026-05-03T16:00:00.000Z",
+      snippet: "Hey Darrel, I shipped 8 ARUs via FedEx today.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:darrel-robertson");
+    const entry = detail?.timeline.at(-1);
+
+    expect(entry).toMatchObject({
+      kind: "outbound-email",
+      actorLabel: "Scotty Stalp",
+      headerProjectLabel: "PNW Biodiversity",
+      body: "Hey Darrel, I shipped 8 ARUs via FedEx today.",
+      participantRows: [
+        {
+          label: "From",
+          name: "Scotty Stalp",
+          email: "or-rural-coordinator@adventurescientists.org",
+        },
+        {
+          label: "To",
+          name: "Darrel Robertson",
+          email: "darrel@example.org",
+        },
+        {
+          label: "Cc",
+          name: "Adventure Scientists <pnwbio@adventurescientists.org>",
+          email: null,
+        },
+      ],
+    });
+  });
+
   it("batches list-side canonical event and audit reads per page load", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
