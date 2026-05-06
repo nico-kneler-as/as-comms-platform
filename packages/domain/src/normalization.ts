@@ -1962,6 +1962,28 @@ async function upsertProviderPresentationDetails(
   }
 }
 
+async function upsertMissingDuplicateGmailMessageDetail(
+  persistence: Stage1PersistenceService,
+  gmailMessageDetail: NormalizedCanonicalEventIntake["gmailMessageDetail"]
+): Promise<void> {
+  if (gmailMessageDetail === undefined) {
+    return;
+  }
+
+  const existingDetails =
+    await persistence.repositories.gmailMessageDetails.listBySourceEvidenceIds([
+      gmailMessageDetail.sourceEvidenceId
+    ]);
+
+  if (existingDetails.length > 0) {
+    return;
+  }
+
+  await persistence.upsertGmailMessageDetail(
+    gmailMessageDetailSchema.parse(gmailMessageDetail)
+  );
+}
+
 export function createStage1NormalizationService(
   persistence: Stage1PersistenceService
 ): Stage1NormalizationService {
@@ -2304,6 +2326,11 @@ export function createStage1NormalizationService(
         sourceEvidenceResult.outcome === "duplicate" &&
         options?.overwriteDuplicateGmailMessageDetail === false
       ) {
+        await upsertMissingDuplicateGmailMessageDetail(
+          persistence,
+          parsed.gmailMessageDetail
+        );
+
         const existingCanonicalEvent =
           await persistence.findCanonicalEventByIdempotencyKey(
             parsed.canonicalEvent.idempotencyKey
