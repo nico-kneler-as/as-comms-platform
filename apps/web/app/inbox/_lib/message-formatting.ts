@@ -16,6 +16,10 @@ const PREVIEW_NOISE_THRESHOLD = 0.3;
 const PREVIEW_NOISE_MIN_LENGTH = 32;
 const SHORT_PREVIEW_NOISE_MIN_SUSPICIOUS = 3;
 const REPLACEMENT_CHARACTER = "�";
+const WORD_JOINED_CONTROL_PATTERN = /([\p{L}\p{N}])[\u0018\u0019]([\p{L}\p{N}])/gu;
+const CONTROL_CHARACTER_PATTERN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+const GLUED_SIGN_OFF_PATTERN =
+  /([\p{Ll}\p{N}])((?:Best|Thanks|Warmly|Cheers|Sincerely|Regards|Saludos)\b,?)/gu;
 
 const STRUCTURED_EMAIL_TRANSLATION_MARKER_PATTERN =
   /\b(?:en|es|fr|de|pt):(?=[A-ZÀ-Ý])/g;
@@ -41,7 +45,9 @@ const STRUCTURED_EMAIL_PARAGRAPH_STARTERS = [
 const SIGNATURE_SEPARATOR_PATTERN = /^(?:---|--\s)$/;
 const SENT_WITH_SIGNATURE_PATTERN = /^Sent with\b/i;
 const SIGN_OFF_PREFIX_PATTERN =
-  /^(?:Best|Thanks|Warmly|Cheers|Sincerely|Saludos),/i;
+  /^(?:Best|Thanks|Warmly|Cheers|Sincerely|Regards|Saludos),?/i;
+const HTML_TAG_PATTERN = /<\/?[a-z][\w:-]*(?:\s[^>]*)?>/i;
+const HTML_TAG_GLOBAL_PATTERN = /<\/?[a-z][\w:-]*(?:\s[^>]*)?>/gi;
 
 const MIME_HEADER_LINE_PATTERN =
   /^(Content-Type|Content-Transfer-Encoding|Content-Disposition|MIME-Version|charset|boundary|name|filename):/i;
@@ -74,8 +80,18 @@ export function normalizeInlineText(
     return null;
   }
 
-  const normalized = value.replace(/\s+/g, " ").trim();
+  const normalized = normalizeDisplayTextArtifacts(value)
+    .replace(/\s+/g, " ")
+    .trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeDisplayTextArtifacts(value: string): string {
+  return value
+    .replace(WORD_JOINED_CONTROL_PATTERN, "$1'$2")
+    .replace(CONTROL_CHARACTER_PATTERN, " ")
+    .replace(new RegExp(REPLACEMENT_CHARACTER, "g"), "\n")
+    .replace(GLUED_SIGN_OFF_PATTERN, "$1\n$2");
 }
 
 function decodeHtmlEntities(value: string): string {
@@ -154,7 +170,7 @@ export function stripMimeScaffolding(value: string): string {
 
 export function sanitizePreviewText(value: string): string {
   const mimeAware = stripMimeScaffolding(decodeQuotedPrintable(value));
-  const htmlAware = /<[^>]+>/.test(mimeAware)
+  const htmlAware = HTML_TAG_PATTERN.test(mimeAware)
     ? mimeAware
         .replace(/<\s*br\s*\/?>/gi, "\n")
         .replace(
@@ -163,10 +179,10 @@ export function sanitizePreviewText(value: string): string {
         )
         .replace(/<li[^>]*>/gi, "- ")
         .replace(/<\/li\s*>/gi, "\n")
-        .replace(/<[^>]+>/g, " ")
+        .replace(HTML_TAG_GLOBAL_PATTERN, " ")
     : mimeAware;
 
-  return decodeHtmlEntities(htmlAware)
+  return normalizeDisplayTextArtifacts(decodeHtmlEntities(htmlAware))
     .replace(/\r\n?/g, "\n")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n[ \t]+/g, "\n")
@@ -205,6 +221,18 @@ function isLikelyPreviewNoise(value: string): boolean {
   }
 
   const ratio = suspicious / total;
+  const shortFragments = normalized
+    .split(/\s+/)
+    .filter((fragment) => fragment.length > 0 && fragment.length <= 2);
+  const asciiLetterCount = normalized.match(/[A-Za-z]/g)?.length ?? 0;
+
+  if (
+    total < PREVIEW_NOISE_MIN_LENGTH &&
+    shortFragments.length >= 4 &&
+    asciiLetterCount <= 5
+  ) {
+    return true;
+  }
 
   if (total < PREVIEW_NOISE_MIN_LENGTH) {
     return (
@@ -468,7 +496,7 @@ export function stripSignature(body: string): string {
   }
 
   const inlineClosingMatch =
-    /([.!?])\s*(?:Best|Thanks|Warmly|Cheers|Sincerely|Saludos),\s*(?:[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*){0,4})?\s*$/iu.exec(
+    /([.!?])\s*(?:Best|Thanks|Warmly|Cheers|Sincerely|Regards|Saludos),?\s*(?:[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*){0,4})?\s*$/iu.exec(
       normalized,
     );
 
@@ -480,7 +508,7 @@ export function stripSignature(body: string): string {
   }
 
   const trailingSignatureMatch =
-    /\n+\s*(?:Best|Thanks|Warmly|Cheers|Sincerely|Saludos),\s*(?:[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*){0,4})?\s*$/iu.exec(
+    /\n+\s*(?:Best|Thanks|Warmly|Cheers|Sincerely|Regards|Saludos),?\s*(?:[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*(?:\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ'’.&-]*){0,4})?\s*$/iu.exec(
       normalized,
     );
 
@@ -508,11 +536,21 @@ export function parseCommunicationPreview(raw: string): ParsedPreview {
   }
 
   const structuredEmail = STRUCTURED_EMAIL_HEADER_PATTERN.test(sanitized);
-  const fromMatch = FROM_HEADER_PATTERN.exec(sanitized);
-  const recipientsMatch = RECIPIENTS_HEADER_PATTERN.exec(sanitized);
-  const ccMatch = CC_HEADER_PATTERN.exec(sanitized);
-  const bccMatch = BCC_HEADER_PATTERN.exec(sanitized);
-  const replyToMatch = REPLY_TO_HEADER_PATTERN.exec(sanitized);
+  const forwardedHeaderBlockStart = findForwardedHeaderBlockStart(sanitized);
+  const headerMetadataAllowed = forwardedHeaderBlockStart <= 0;
+  const fromMatch = headerMetadataAllowed
+    ? FROM_HEADER_PATTERN.exec(sanitized)
+    : null;
+  const recipientsMatch = headerMetadataAllowed
+    ? RECIPIENTS_HEADER_PATTERN.exec(sanitized)
+    : null;
+  const ccMatch = headerMetadataAllowed ? CC_HEADER_PATTERN.exec(sanitized) : null;
+  const bccMatch = headerMetadataAllowed
+    ? BCC_HEADER_PATTERN.exec(sanitized)
+    : null;
+  const replyToMatch = headerMetadataAllowed
+    ? REPLY_TO_HEADER_PATTERN.exec(sanitized)
+    : null;
   const subjectMatch = SUBJECT_HEADER_PATTERN.exec(sanitized);
   const subject = normalizeInlineText(subjectMatch?.[1] ?? null);
   const fromAddresses = extractEmailAddresses(fromMatch?.[1]);

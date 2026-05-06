@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderOpen, Pencil, Plus } from "lucide-react";
+import { FolderOpen, Plus } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -87,21 +87,6 @@ export function ProjectsSection({
                   colorClasses="bg-emerald-50 text-emerald-700 ring-emerald-200"
                   variant="soft"
                 />
-              )}
-              renderAction={(project) => (
-                <Link
-                  href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
-                  aria-label={`Open ${project.projectName}`}
-                  className={cn(
-                    "flex size-8 shrink-0 items-center justify-center",
-                    RADIUS.sm,
-                    "text-slate-400 hover:bg-slate-100 hover:text-slate-700",
-                    TRANSITION.fast,
-                    FOCUS_RING
-                  )}
-                >
-                  <Pencil className="size-4" aria-hidden="true" />
-                </Link>
               )}
             />
           </div>

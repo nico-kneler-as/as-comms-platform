@@ -102,18 +102,18 @@ function formatMailchimpStatus(
   switch (integration.mailchimp?.status) {
     case "connected":
       return {
-        label: "✓ Connected",
+        label: "Connected",
         colorClasses: "bg-emerald-50 text-emerald-700 ring-emerald-200"
       };
     case "stale":
       return {
-        label: "✗ Stale",
+        label: "Sync stale",
         colorClasses: "bg-rose-50 text-rose-700 ring-rose-200"
       };
     case "unconfigured":
     default:
       return {
-        label: "⚠ Unconfigured",
+        label: "Not configured",
         colorClasses: "bg-amber-50 text-amber-800 ring-amber-200"
       };
   }
