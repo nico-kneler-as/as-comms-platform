@@ -2978,7 +2978,8 @@ async function readInboxListCacheData(input: {
   const runtime = await getStage1WebRuntime();
   const decodedCursor = decodeInboxListCursor(input.cursor);
   const normalizedQuery = normalizeInlineText(input.query) ?? null;
-  const order = orderForInboxFilter(input.filterId);
+  const isSearchActive = normalizedQuery !== null;
+  const order = orderForInboxFilter(isSearchActive ? "inbox" : input.filterId);
   const projectionScanLimit = Math.min(INBOX_LIST_SCAN_LIMIT, input.limit + 1);
   type RepoFilter =
     | "visible"
@@ -2987,34 +2988,39 @@ async function readInboxListCacheData(input: {
     | "follow-up"
     | "sent"
     | "archived";
-  const loadProjectionRows = (filter: RepoFilter) =>
-    normalizedQuery === null
+  const loadProjectionRows = (filter: RepoFilter) => {
+    const effectiveProjectId = isSearchActive ? null : input.projectId;
+
+    return normalizedQuery === null
       ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
           filter,
           order,
           limit: projectionScanLimit,
           cursor: null,
-          projectId: input.projectId,
+          projectId: effectiveProjectId,
         })
       : runtime.repositories.inboxProjection
           .searchPageOrderedByRecency({
-            // Search-bypass: when the operator types a query, the Inbox
-            // filter widens to "visible" so non-1:1 contacts (the ~4000
-            // hidden by lastInboundAt IS NOT NULL) become findable by name.
-            // Other filters keep their semantics.
-            filter: filter === "inbox" ? "visible" : filter,
+            // Search-bypass: a typed query searches the full visible inbox,
+            // ignoring the currently selected state/project facets.
+            filter: "visible",
             order,
             limit: projectionScanLimit,
             cursor: null,
             query: normalizedQuery,
-            projectId: input.projectId,
+            projectId: effectiveProjectId,
           })
           .then((result) => result.rows);
+  };
   // The primary loader pulls only the active filter slice. Counts come from
   // the aggregate repo method below, so opening a conversation does not hydrate
   // unrelated inbox or archived rows.
   const primaryFilterForLoader: RepoFilter =
-    input.filterId === "unread" ? "inbox" : input.filterId;
+    isSearchActive
+      ? "visible"
+      : input.filterId === "unread"
+        ? "inbox"
+        : input.filterId;
   const [
     visibleProjections,
     projectionCounts,
@@ -3034,7 +3040,11 @@ async function readInboxListCacheData(input: {
   const activeProjects: readonly InboxActiveProjectOption[] =
     activeProjectRecords.map((record) => ({
       id: record.projectId,
-      name: record.projectName,
+      name:
+        record.projectAlias?.trim().length &&
+        record.projectAlias.trim().length > 0
+          ? record.projectAlias.trim()
+          : record.projectName,
       alias:
         record.projectAlias?.trim().length &&
         record.projectAlias.trim().length > 0
@@ -3175,7 +3185,7 @@ async function readInboxListCacheData(input: {
     )
     .filter((item) =>
       matchesServerFilter(item, input.filterId, {
-        bypassInboxScope: normalizedQuery !== null,
+        bypassAllFilters: isSearchActive,
       }),
     )
     .sort(
@@ -4120,9 +4130,14 @@ function matchesServerFilter(
   item: InboxListItemViewModel,
   filterId: InboxFilterId,
   input?: {
+    readonly bypassAllFilters?: boolean;
     readonly bypassInboxScope?: boolean;
   },
 ): boolean {
+  if (input?.bypassAllFilters === true) {
+    return !item.isArchived;
+  }
+
   if (item.isArchived) {
     return filterId === "archived";
   }
@@ -4186,7 +4201,7 @@ export async function getInboxList(
   return {
     items: items.filter((item) =>
       matchesServerFilter(item, filterId, {
-        bypassInboxScope: (input.query?.trim().length ?? 0) > 0,
+        bypassAllFilters: (input.query?.trim().length ?? 0) > 0,
       }),
     ),
     filters,

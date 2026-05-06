@@ -770,6 +770,31 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("uses project aliases in inbox project filter options", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:killer-whales",
+      projectName: "Searching For Killer Whales 2025/2026",
+      projectAlias: "Killer Whales",
+      source: "salesforce",
+      isActive: true,
+    });
+
+    const list = await getInboxList();
+    const project = list.activeProjects.find(
+      (option) => option.id === "project:killer-whales",
+    );
+
+    expect(project).toMatchObject({
+      id: "project:killer-whales",
+      name: "Killer Whales",
+      alias: "Killer Whales",
+    });
+  });
+
   it("keeps one-to-one SMS visible in the timeline regardless of SMS compose availability", async () => {
     const originalSmsEnabled = process.env.SMS_ENABLED;
     process.env.SMS_ENABLED = "false";
@@ -6046,18 +6071,26 @@ describe("real inbox selectors", () => {
     ]);
   });
 
-  it("composes search with unread and follow-up filters", async () => {
+  it("ignores state and project facets while searching", async () => {
     const unread = await getInboxList("unread", {
-      query: "sarah@example.org",
+      query: "Alex Thompson",
     });
     const followUp = await getInboxList("follow-up", {
-      query: "Sarah",
+      query: "Alex Thompson",
     });
+    const projectFiltered = await getInboxList("inbox", {
+      query: "Alex Thompson",
+      projectId: "project:amazon-basin",
+    });
+
     expect(unread.items.map((item) => item.contactId)).toEqual([
-      "contact:sarah-martinez",
+      "contact:alex-thompson",
     ]);
     expect(followUp.items.map((item) => item.contactId)).toEqual([
-      "contact:sarah-martinez",
+      "contact:alex-thompson",
+    ]);
+    expect(projectFiltered.items.map((item) => item.contactId)).toEqual([
+      "contact:alex-thompson",
     ]);
   });
 
