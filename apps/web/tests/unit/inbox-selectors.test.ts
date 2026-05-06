@@ -4102,7 +4102,7 @@ describe("real inbox selectors", () => {
     );
   });
 
-  it("uses the Gmail From header as the inbound actor label when present", async () => {
+  it("uses the Gmail From header as the actor label for copied team email", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -4143,7 +4143,7 @@ describe("real inbox selectors", () => {
     const latestEntry = detail?.timeline.at(-1);
 
     expect(latestEntry).toMatchObject({
-      kind: "inbound-email",
+      kind: "outbound-email",
       actorLabel: "Ricky Jones",
       fromHeader: "Ricky Jones <ricky@adventurescientists.org>",
       toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",

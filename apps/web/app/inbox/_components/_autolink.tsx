@@ -46,10 +46,7 @@ function splitTrailingPunctuation(segment: string): {
   };
 }
 
-export function autolinkText(
-  body: string,
-  linkClassName?: string,
-): ReactNode {
+export function autolinkText(body: string, linkClassName?: string): ReactNode {
   return renderLinks(body, linkClassName);
 }
 
@@ -179,10 +176,7 @@ function findParentheticalLabel(
   openParenthesisIndex: number,
 ): { start: number; text: string } | null {
   const labelEnd = openParenthesisIndex - 1;
-  const searchStart = Math.max(
-    0,
-    labelEnd - MAX_PARENTHETICAL_LABEL_LOOKBACK,
-  );
+  const searchStart = Math.max(0, labelEnd - MAX_PARENTHETICAL_LABEL_LOOKBACK);
 
   for (let index = labelEnd - 1; index >= searchStart; index -= 1) {
     const boundaryStart = getBoundaryStart(segment, index, labelEnd);
@@ -309,7 +303,7 @@ function renderLink(
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className={cn(linkClassName, LINK_CLASS_NAME)}
+        className={cn(LINK_CLASS_NAME, linkClassName)}
       >
         {label}
       </a>

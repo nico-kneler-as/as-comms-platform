@@ -12,6 +12,7 @@ vi.mock("../../app/inbox/actions", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/inbox",
   useRouter: () => ({
     refresh: vi.fn(),
     push: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("next/navigation", () => ({
     forward: vi.fn(),
     prefetch: vi.fn(),
   }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/components/ui/tooltip", () => ({
@@ -263,8 +265,9 @@ function setDomGlobals(window: Window & typeof globalThis) {
     configurable: true,
     value: window.navigator,
   });
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true;
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
 }
 
 async function mountTimeline(
@@ -483,8 +486,12 @@ describe("InboxTimeline", () => {
     );
 
     expect(markup).toContain("w-full max-w-[560px]");
-    expect(markup).toContain("rounded-br-md border-sky-200 bg-sky-50 text-slate-800");
-    expect(markup).toContain("font-medium text-sky-800 underline decoration-sky-300");
+    expect(markup).toContain(
+      "rounded-br-md border-sky-200 bg-sky-50 text-slate-800",
+    );
+    expect(markup).toContain(
+      "font-medium text-sky-800 underline decoration-sky-300",
+    );
     expect(markup).toContain('href="https://example.org/field-brief"');
     expect(markup).not.toContain("w-fit max-w-[480px]");
     expect(markup).not.toContain("border-sky-600 bg-sky-600 text-white");
@@ -614,8 +621,12 @@ describe("InboxTimeline", () => {
     expect(session.container.textContent).toContain("April field update");
     expect(session.container.querySelectorAll("ol > li")).toHaveLength(4);
     expect(session.container.querySelectorAll("ol ol")).toHaveLength(0);
-    expect(session.container.innerHTML).not.toContain("space-y-2 border-t border-slate-100 bg-slate-50/30 p-2");
-    expect(session.container.innerHTML.match(/max-w-\[560px\]/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(session.container.innerHTML).not.toContain(
+      "space-y-2 border-t border-slate-100 bg-slate-50/30 p-2",
+    );
+    expect(
+      session.container.innerHTML.match(/max-w-\[560px\]/g)?.length ?? 0,
+    ).toBeGreaterThanOrEqual(4);
     expect(session.container.innerHTML).not.toContain("pl-16");
   });
 
@@ -639,7 +650,9 @@ describe("InboxTimeline", () => {
     );
 
     expect(markup).toContain("col-span-3 grid");
-    expect(markup).toContain("Alice applied to the Pacific Northwest expedition.");
+    expect(markup).toContain(
+      "Alice applied to the Pacific Northwest expedition.",
+    );
     expect(markup).not.toContain(">APPLIED<");
   });
 
@@ -888,7 +901,9 @@ describe("InboxTimeline", () => {
 
   it("classifies training system dividers into the sky book achievement category", () => {
     expect(
-      classifySystemDivider("Received training for Pacific Northwest expedition."),
+      classifySystemDivider(
+        "Received training for Pacific Northwest expedition.",
+      ),
     ).toMatchObject({
       tone: "sky",
       Icon: BookOpenIcon,
@@ -897,7 +912,9 @@ describe("InboxTimeline", () => {
 
   it("classifies completed training before the generic training branch", () => {
     expect(
-      classifySystemDivider("Completed training for Pacific Northwest expedition."),
+      classifySystemDivider(
+        "Completed training for Pacific Northwest expedition.",
+      ),
     ).toMatchObject({
       tone: "emerald",
       Icon: CheckCircleIcon,

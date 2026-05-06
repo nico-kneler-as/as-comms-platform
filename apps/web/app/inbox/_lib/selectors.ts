@@ -2208,7 +2208,7 @@ function buildTimelineEntry(input: {
   const kind =
     input.item.family === "one_to_one_email" &&
     isLegacySalesforceEmail &&
-    visualEmailDirection === null
+    visualEmailDirection !== "inbound"
       ? "email-activity"
       : input.item.family === "one_to_one_email" &&
           visualEmailDirection !== null
@@ -3080,29 +3080,46 @@ async function readInboxListCacheData(input: {
     | "follow-up"
     | "sent"
     | "archived";
-  const loadProjectionRows = (filter: RepoFilter) => {
+  const loadProjectionPage = async (
+    filter: RepoFilter,
+  ): Promise<{
+    readonly rows: readonly InboxProjectionRow[];
+    readonly total: number | null;
+  }> => {
     const effectiveProjectId = isSearchActive ? null : input.projectId;
 
-    return normalizedQuery === null
-      ? runtime.repositories.inboxProjection.listPageOrderedByRecency({
+    if (normalizedQuery === null) {
+      const rows =
+        await runtime.repositories.inboxProjection.listPageOrderedByRecency({
           filter,
           order,
           limit: projectionScanLimit,
           cursor: repositoryCursor,
           projectId: effectiveProjectId,
-        })
-      : runtime.repositories.inboxProjection
-          .searchPageOrderedByRecency({
-            // Search-bypass: a typed query searches the full visible inbox,
-            // ignoring the currently selected state/project facets.
-            filter: "visible",
-            order,
-            limit: projectionScanLimit,
-            cursor: repositoryCursor,
-            query: normalizedQuery,
-            projectId: effectiveProjectId,
-          })
-          .then((result) => result.rows);
+        });
+
+      return {
+        rows,
+        total: null,
+      };
+    }
+
+    const result =
+      await runtime.repositories.inboxProjection.searchPageOrderedByRecency({
+        // Search-bypass: a typed query searches the full visible inbox,
+        // ignoring the currently selected state/project facets.
+        filter: "visible",
+        order,
+        limit: projectionScanLimit,
+        cursor: repositoryCursor,
+        query: normalizedQuery,
+        projectId: effectiveProjectId,
+      });
+
+    return {
+      rows: result.rows,
+      total: result.total,
+    };
   };
   // The primary loader pulls only the active filter slice. Counts come from
   // the aggregate repo method below, so opening a conversation does not hydrate
@@ -3111,17 +3128,17 @@ async function readInboxListCacheData(input: {
     ? "visible"
     : input.filterId;
   const [
-    primaryProjections,
-    attentionScanProjections,
+    primaryProjectionPage,
+    attentionScanProjectionPage,
     projectionCounts,
     freshness,
     activeProjectRecords,
     projectAliasRecords,
   ] = await Promise.all([
-    loadProjectionRows(primaryFilterForLoader),
+    loadProjectionPage(primaryFilterForLoader),
     !isSearchActive && input.filterId === "unread"
-      ? loadProjectionRows("inbox")
-      : Promise.resolve([]),
+      ? loadProjectionPage("inbox")
+      : Promise.resolve({ rows: [], total: null }),
     runtime.repositories.inboxProjection.countByFilters({
       projectId: input.projectId,
     }),
@@ -3130,8 +3147,8 @@ async function readInboxListCacheData(input: {
     runtime.settings.aliases.listAll(),
   ]);
   const matchedProjections = uniqueInboxProjectionsByContactId([
-    ...primaryProjections,
-    ...attentionScanProjections,
+    ...primaryProjectionPage.rows,
+    ...attentionScanProjectionPage.rows,
   ]);
   const activeProjects: readonly InboxActiveProjectOption[] =
     activeProjectRecords.map((record) => ({
@@ -3330,7 +3347,7 @@ async function readInboxListCacheData(input: {
                 "",
               contactId: pageRows[pageRows.length - 1]?.contact.id ?? "",
             }),
-      total: allItems.length,
+      total: primaryProjectionPage.total ?? allItems.length,
     },
     freshness,
   };

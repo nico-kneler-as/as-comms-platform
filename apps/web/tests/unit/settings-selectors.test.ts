@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/cache", () => ({
-  unstable_cache: (loader: () => unknown) => loader
+  unstable_cache: (loader: () => unknown) => loader,
 }));
 
 const getCurrentUser = vi.hoisted(() => vi.fn());
 
 vi.mock("@/src/server/auth/session", () => ({
-  getCurrentUser
+  getCurrentUser,
 }));
 
 import {
@@ -15,12 +15,12 @@ import {
   loadIntegrationHealth,
   loadLogsSettings,
   loadProjectSettingsDetail,
-  loadProjectsSettings
+  loadProjectsSettings,
 } from "../../src/server/settings/selectors";
 import { waitForPendingSecurityAuditTasksForTests } from "../../src/server/security/audit";
 import {
   createStage1WebTestRuntime,
-  type Stage1WebTestRuntime
+  type Stage1WebTestRuntime,
 } from "../../src/server/stage1-runtime.test-support";
 
 function buildUser(input: {
@@ -45,12 +45,13 @@ function buildUser(input: {
     id: input.id,
     name: input.email.split("@")[0] ?? input.email,
     email: input.email,
-    emailVerified: input.emailVerified ?? now,
+    emailVerified:
+      input.emailVerified === undefined ? now : input.emailVerified,
     image: null,
     role: input.role,
     deactivatedAt: input.deactivatedAt ?? null,
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
   };
 }
 
@@ -65,7 +66,7 @@ async function seedProject(
     readonly aiKnowledgeSyncedAt?: string | null;
     readonly emails: readonly string[];
     readonly memberCount: number;
-  }
+  },
 ): Promise<void> {
   await runtime.context.repositories.projectDimensions.upsert({
     projectId: input.projectId,
@@ -75,7 +76,7 @@ async function seedProject(
     source: "salesforce",
     isActive: input.isActive,
     aiKnowledgeUrl: input.aiKnowledgeUrl,
-    aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt ?? null
+    aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt ?? null,
   });
 
   if (
@@ -94,10 +95,9 @@ async function seedProject(
       contentHash: "hash",
       metadataJson: {},
       sourceLastEditedAt: null,
-      syncedAt:
-        input.aiKnowledgeSyncedAt ?? "2026-04-20T15:00:00.000Z",
+      syncedAt: input.aiKnowledgeSyncedAt ?? "2026-04-20T15:00:00.000Z",
       createdAt: "2026-04-20T15:00:00.000Z",
-      updatedAt: "2026-04-20T15:00:00.000Z"
+      updatedAt: "2026-04-20T15:00:00.000Z",
     });
   }
 
@@ -110,7 +110,7 @@ async function seedProject(
       createdAt: new Date(`2026-04-20T15:0${String(index)}:00.000Z`),
       updatedAt: new Date(`2026-04-20T15:0${String(index)}:00.000Z`),
       createdBy: null,
-      updatedBy: null
+      updatedBy: null,
     });
   }
 
@@ -123,7 +123,7 @@ async function seedProject(
       primaryEmail: null,
       primaryPhone: null,
       createdAt: "2026-04-20T15:00:00.000Z",
-      updatedAt: "2026-04-20T15:00:00.000Z"
+      updatedAt: "2026-04-20T15:00:00.000Z",
     });
     await runtime.context.repositories.contactMemberships.upsert({
       id: `${input.projectId}:membership:${String(index)}`,
@@ -148,7 +148,7 @@ async function seedSourceEvidenceCollision(
     readonly losingId: string;
     readonly winningReceivedAt: string;
     readonly losingAttemptedAt: string;
-  }
+  },
 ): Promise<void> {
   await runtime.context.repositories.sourceEvidence.append({
     id: input.winningId,
@@ -159,7 +159,7 @@ async function seedSourceEvidenceCollision(
     occurredAt: input.winningReceivedAt,
     payloadRef: `payloads/${input.provider}/${input.winningId}.json`,
     idempotencyKey: input.idempotencyKey,
-    checksum: `${input.winningId}:checksum`
+    checksum: `${input.winningId}:checksum`,
   });
   await runtime.context.repositories.sourceEvidenceQuarantine.record({
     provider: input.provider,
@@ -177,8 +177,8 @@ async function seedSourceEvidenceCollision(
       occurredAt: input.losingAttemptedAt,
       payloadRef: `payloads/${input.provider}/${input.losingId}.json`,
       idempotencyKey: input.idempotencyKey,
-      checksum: `${input.losingId}:checksum`
-    }
+      checksum: `${input.losingId}:checksum`,
+    },
   });
 }
 
@@ -197,7 +197,7 @@ async function seedMailchimpCampaignEvent(
     readonly campaignId: string;
     readonly campaignName: string;
     readonly occurredAt: string;
-  }
+  },
 ): Promise<void> {
   await runtime.context.normalization.applyNormalizedCanonicalEvent({
     sourceEvidence: {
@@ -209,7 +209,7 @@ async function seedMailchimpCampaignEvent(
       occurredAt: input.occurredAt,
       payloadRef: `payloads/mailchimp/${input.providerRecordId}.json`,
       idempotencyKey: `mailchimp:${input.providerRecordId}`,
-      checksum: `checksum:${input.providerRecordId}`
+      checksum: `checksum:${input.providerRecordId}`,
     },
     canonicalEvent: {
       id: input.canonicalEventId,
@@ -217,7 +217,7 @@ async function seedMailchimpCampaignEvent(
       occurredAt: input.occurredAt,
       idempotencyKey: `canonical:${input.providerRecordId}`,
       summary: `Mailchimp ${input.activityType}`,
-      snippet: ""
+      snippet: "",
     },
     identity: {
       salesforceContactId: null,
@@ -243,7 +243,8 @@ describe("settings selectors", () => {
   let runtime: Stage1WebTestRuntime | null = null;
   const originalSmsEnabled = process.env.SMS_ENABLED;
   const originalTwilioRate = process.env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT;
-  const originalMailchimpCaptureBaseUrl = process.env.MAILCHIMP_CAPTURE_BASE_URL;
+  const originalMailchimpCaptureBaseUrl =
+    process.env.MAILCHIMP_CAPTURE_BASE_URL;
 
   beforeEach(async () => {
     vi.useFakeTimers();
@@ -252,7 +253,7 @@ describe("settings selectors", () => {
     getCurrentUser.mockReset();
     getCurrentUser.mockResolvedValue({
       id: "user:admin",
-      role: "admin"
+      role: "admin",
     });
     process.env.SMS_ENABLED = "true";
     process.env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT = "0.0079";
@@ -291,7 +292,7 @@ describe("settings selectors", () => {
       isActive: true,
       aiKnowledgeUrl: "https://www.notion.so/ready",
       emails: ["ready@asc.internal"],
-      memberCount: 2
+      memberCount: 2,
     });
     await seedProject(runtime, {
       projectId: "project:active-missing-knowledge",
@@ -299,7 +300,7 @@ describe("settings selectors", () => {
       isActive: true,
       aiKnowledgeUrl: null,
       emails: ["missing@asc.internal"],
-      memberCount: 1
+      memberCount: 1,
     });
     await seedProject(runtime, {
       projectId: "project:inactive",
@@ -307,11 +308,11 @@ describe("settings selectors", () => {
       isActive: false,
       aiKnowledgeUrl: "https://www.notion.so/inactive",
       emails: ["inactive@asc.internal"],
-      memberCount: 3
+      memberCount: 3,
     });
 
     const viewModel = await loadProjectsSettings({
-      filter: "active"
+      filter: "active",
     });
 
     expect(viewModel.active).toHaveLength(2);
@@ -320,7 +321,7 @@ describe("settings selectors", () => {
     expect(viewModel.counts).toEqual({
       active: 2,
       inactive: 0,
-      total: 2
+      total: 2,
     });
   });
 
@@ -336,7 +337,7 @@ describe("settings selectors", () => {
       aiKnowledgeUrl: "https://www.notion.so/ready",
       aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: ["ready@asc.internal"],
-      memberCount: 1
+      memberCount: 1,
     });
     await seedProject(runtime, {
       projectId: "project:no-knowledge",
@@ -344,7 +345,7 @@ describe("settings selectors", () => {
       isActive: true,
       aiKnowledgeUrl: "https://www.notion.so/no-knowledge",
       emails: ["knowledge-missing@asc.internal"],
-      memberCount: 1
+      memberCount: 1,
     });
     await seedProject(runtime, {
       projectId: "project:no-email",
@@ -354,33 +355,33 @@ describe("settings selectors", () => {
       aiKnowledgeUrl: "https://www.notion.so/no-email",
       aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: [],
-      memberCount: 0
+      memberCount: 0,
     });
 
     const viewModel = await loadProjectsSettings({
-      filter: "all"
+      filter: "all",
     });
     const projects = [...viewModel.active, ...viewModel.inactive];
 
     expect(
       projects.find((project) => project.projectId === "project:ready")
-        ?.activationRequirementsMet
+        ?.activationRequirementsMet,
     ).toBe(true);
     expect(
       projects.find((project) => project.projectId === "project:ready")
-        ?.projectAlias
+        ?.projectAlias,
     ).toBe("Ready Project");
     expect(
       projects.find((project) => project.projectId === "project:ready")
-        ?.suggestedAlias
+        ?.suggestedAlias,
     ).toBe("Ready Project");
     expect(
       projects.find((project) => project.projectId === "project:no-knowledge")
-        ?.activationRequirementsMet
+        ?.activationRequirementsMet,
     ).toBe(false);
     expect(
       projects.find((project) => project.projectId === "project:no-email")
-        ?.activationRequirementsMet
+        ?.activationRequirementsMet,
     ).toBe(false);
   });
 
@@ -397,16 +398,16 @@ describe("settings selectors", () => {
       aiKnowledgeUrl: "https://www.notion.so/whales",
       aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: ["whales@asc.internal"],
-      memberCount: 1
+      memberCount: 1,
     });
 
     const byAlias = await loadProjectsSettings({
       filter: "all",
-      search: "sfkw"
+      search: "sfkw",
     });
 
     expect(byAlias.active.map((project) => project.projectId)).toEqual([
-      "project:alias-search"
+      "project:alias-search",
     ]);
   });
 
@@ -422,7 +423,7 @@ describe("settings selectors", () => {
       aiKnowledgeUrl: "https://www.notion.so/white-oak",
       aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
       emails: ["white-oak@asc.internal"],
-      memberCount: 1
+      memberCount: 1,
     });
     await seedProject(runtime, {
       projectId: "project:prefix",
@@ -430,26 +431,27 @@ describe("settings selectors", () => {
       isActive: false,
       aiKnowledgeUrl: "https://www.notion.so/whales",
       emails: ["whales@asc.internal"],
-      memberCount: 0
+      memberCount: 0,
     });
 
     const viewModel = await loadProjectsSettings({
-      filter: "all"
+      filter: "all",
     });
 
     expect(
       viewModel.active.find((project) => project.projectId === "project:colon")
-        ?.suggestedAlias
+        ?.suggestedAlias,
     ).toBe("White Oak Savanna");
     expect(
-      viewModel.inactive.find((project) => project.projectId === "project:prefix")
-        ?.suggestedAlias
+      viewModel.inactive.find(
+        (project) => project.projectId === "project:prefix",
+      )?.suggestedAlias,
     ).toBe("Killer Whales 2025/2026");
   });
 
   it("returns null when project detail is requested for an unknown id", async () => {
     await expect(
-      loadProjectSettingsDetail("project:does-not-exist")
+      loadProjectSettingsDetail("project:does-not-exist"),
     ).resolves.toBeNull();
   });
 
@@ -463,61 +465,61 @@ describe("settings selectors", () => {
         id: "user:admin",
         email: "admin@adventurescientists.org",
         role: "admin",
-        emailVerified: null
-      })
+        emailVerified: null,
+      }),
     );
     await runtime.context.settings.users.upsert(
       buildUser({
         id: "user:admin-secondary",
         email: "admin.secondary@adventurescientists.org",
         role: "admin",
-        emailVerified: null
-      })
+        emailVerified: null,
+      }),
     );
     await runtime.context.settings.users.upsert(
       buildUser({
         id: "user:operator-active",
         email: "operator.active@adventurescientists.org",
-        role: "operator"
-      })
+        role: "operator",
+      }),
     );
     await runtime.context.settings.users.upsert(
       buildUser({
         id: "user:operator-pending",
         email: "operator.pending@adventurescientists.org",
         role: "operator",
-        emailVerified: null
-      })
+        emailVerified: null,
+      }),
     );
 
     const viewModel = await loadAccessSettings();
 
     expect(viewModel.admins.map((user) => user.userId)).toEqual([
       "user:admin",
-      "user:admin-secondary"
+      "user:admin-secondary",
     ]);
     expect(viewModel.admins.map((user) => user.status)).toEqual([
       "active",
-      "active"
+      "active",
     ]);
     expect(viewModel.internalUsers.map((user) => user.userId)).toEqual([
       "user:operator-active",
-      "user:operator-pending"
+      "user:operator-pending",
     ]);
     expect(viewModel.internalUsers.map((user) => user.role)).toEqual([
       "internal_user",
-      "internal_user"
+      "internal_user",
     ]);
     expect(viewModel.internalUsers.map((user) => user.status)).toEqual([
       "active",
-      "pending"
+      "pending",
     ]);
   });
 
   it("rejects non-admin callers from loading access settings", async () => {
     getCurrentUser.mockResolvedValueOnce({
       id: "user:operator",
-      role: "operator"
+      role: "operator",
     });
 
     await expect(loadAccessSettings()).rejects.toThrow("FORBIDDEN");
@@ -526,24 +528,18 @@ describe("settings selectors", () => {
   it("returns the visible seeded integrations in stable order on first read", async () => {
     const viewModel = await loadIntegrationHealth();
 
-    expect(viewModel.integrations.map((integration) => integration.serviceName)).toEqual(
-      [
-        "salesforce",
-        "gmail",
-        "mailchimp",
-        "notion",
-        "openai"
-      ]
-    );
-    expect(viewModel.integrations.map((integration) => integration.status)).toEqual(
-      [
-        "not_checked",
-        "not_checked",
-        "not_configured",
-        "not_configured",
-        "not_configured"
-      ]
-    );
+    expect(
+      viewModel.integrations.map((integration) => integration.serviceName),
+    ).toEqual(["salesforce", "gmail", "mailchimp", "notion", "openai"]);
+    expect(
+      viewModel.integrations.map((integration) => integration.status),
+    ).toEqual([
+      "not_checked",
+      "not_checked",
+      "not_configured",
+      "not_configured",
+      "not_configured",
+    ]);
   });
 
   it("derives Mailchimp connected health from the latest successful transition sync and canonical events", async () => {
@@ -594,7 +590,7 @@ describe("settings selectors", () => {
 
     const viewModel = await loadIntegrationHealth();
     const mailchimp = viewModel.integrations.find(
-      (integration) => integration.serviceName === "mailchimp"
+      (integration) => integration.serviceName === "mailchimp",
     );
 
     expect(mailchimp).toMatchObject({
@@ -630,7 +626,7 @@ describe("settings selectors", () => {
 
     const viewModel = await loadIntegrationHealth();
     const mailchimp = viewModel.integrations.find(
-      (integration) => integration.serviceName === "mailchimp"
+      (integration) => integration.serviceName === "mailchimp",
     );
 
     expect(mailchimp).toMatchObject({
@@ -650,7 +646,8 @@ describe("settings selectors", () => {
       throw new Error("runtime not initialized");
     }
 
-    process.env.MAILCHIMP_CAPTURE_BASE_URL = "https://mailchimp-capture.internal";
+    process.env.MAILCHIMP_CAPTURE_BASE_URL =
+      "https://mailchimp-capture.internal";
 
     await runtime.context.repositories.syncState.upsert({
       id: "sync:mailchimp:transition:stale",
@@ -673,7 +670,7 @@ describe("settings selectors", () => {
 
     const viewModel = await loadIntegrationHealth();
     const mailchimp = viewModel.integrations.find(
-      (integration) => integration.serviceName === "mailchimp"
+      (integration) => integration.serviceName === "mailchimp",
     );
 
     expect(mailchimp).toMatchObject({
@@ -716,14 +713,16 @@ describe("settings selectors", () => {
       primaryEmail: null,
       primaryPhone: "+14065550123",
       createdAt: "2026-05-01T00:00:00.000Z",
-      updatedAt: "2026-05-01T00:00:00.000Z"
+      updatedAt: "2026-05-01T00:00:00.000Z",
     });
 
-    await runtime.context.settings.users.upsert(buildUser({
-      id: "user:admin",
-      email: "admin@example.org",
-      role: "admin"
-    }));
+    await runtime.context.settings.users.upsert(
+      buildUser({
+        id: "user:admin",
+        email: "admin@example.org",
+        role: "admin",
+      }),
+    );
 
     await runtime.context.repositories.smsMessages.insert({
       id: "sms:outbound:current-month",
@@ -817,7 +816,7 @@ describe("settings selectors", () => {
       winningId: "sev-newer-winning",
       losingId: "sev-newer-losing",
       winningReceivedAt: "2026-04-20T14:00:00.000Z",
-      losingAttemptedAt: "2026-04-20T14:05:00.000Z"
+      losingAttemptedAt: "2026-04-20T14:05:00.000Z",
     });
     await seedSourceEvidenceCollision(runtime, {
       provider: "salesforce",
@@ -825,7 +824,7 @@ describe("settings selectors", () => {
       winningId: "sev-older-winning",
       losingId: "sev-older-losing",
       winningReceivedAt: "2026-04-20T13:00:00.000Z",
-      losingAttemptedAt: "2026-04-20T13:05:00.000Z"
+      losingAttemptedAt: "2026-04-20T13:05:00.000Z",
     });
     for (let index = 0; index < 24; index += 1) {
       const minute = String(index).padStart(2, "0");
@@ -835,21 +834,22 @@ describe("settings selectors", () => {
         winningId: `sev-extra-winning-${minute}`,
         losingId: `sev-extra-losing-${minute}`,
         winningReceivedAt: `2026-04-20T12:${minute}:00.000Z`,
-        losingAttemptedAt: `2026-04-20T12:${minute}:30.000Z`
+        losingAttemptedAt: `2026-04-20T12:${minute}:30.000Z`,
       });
     }
 
     const viewModel = await loadLogsSettings({
       streamId: "source-evidence-quarantine",
-      beforeTimestamp: null
+      beforeTimestamp: null,
     });
 
     expect(viewModel.streams).toEqual([
       {
         id: "source-evidence-quarantine",
         label: "Source-evidence duplicates",
-        description: "Provider replay collisions kept out of canonical history."
-      }
+        description:
+          "Provider replay collisions kept out of canonical history.",
+      },
     ]);
     expect(viewModel.activeStreamId).toBe("source-evidence-quarantine");
     expect(viewModel.entries[0]).toMatchObject({
@@ -864,15 +864,15 @@ describe("settings selectors", () => {
         winning: {
           sourceEvidenceId: "sev-newer-winning",
           checksum: "sev-newer-winning:checksum",
-          receivedAt: "2026-04-20T14:00:00.000Z"
+          receivedAt: "2026-04-20T14:00:00.000Z",
         },
         losing: [
           {
             checksum: "sev-newer-losing:checksum",
-            attemptedAt: "2026-04-20T14:05:00.000Z"
-          }
-        ]
-      }
+            attemptedAt: "2026-04-20T14:05:00.000Z",
+          },
+        ],
+      },
     });
     const firstLosingDetail = (
       viewModel.entries[0]?.detail as {
