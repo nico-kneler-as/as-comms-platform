@@ -505,7 +505,12 @@ export function MessageBubble({
           isOutbound ? "justify-end" : "justify-start",
         )}
       >
-        <div className="min-w-0">
+        <div
+          className={cn(
+            "min-w-0 w-full",
+            isEmail ? EMAIL_BUBBLE_MAX_W : SMS_BUBBLE_MAX_W,
+          )}
+        >
           {isOutbound && !isEmail ? <OutboundSmsMetaRow entry={entry} /> : null}
           {bubble}
           {!isOutbound && entry.channel !== "email" ? (

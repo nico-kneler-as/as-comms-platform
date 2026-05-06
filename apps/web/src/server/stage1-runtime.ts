@@ -59,7 +59,16 @@ export interface Stage1WebRuntime {
 }
 
 let runtimeOverride: Stage1WebRuntime | null = null;
-let runtimePromise: Promise<Stage1WebRuntime> | null = null;
+
+const STAGE1_RUNTIME_PROMISE_KEY = "__asCommsWebStage1RuntimePromise";
+
+type Stage1RuntimeGlobal = typeof globalThis & {
+  [STAGE1_RUNTIME_PROMISE_KEY]?: Promise<Stage1WebRuntime> | undefined;
+};
+
+function getRuntimeGlobal(): Stage1RuntimeGlobal {
+  return globalThis as Stage1RuntimeGlobal;
+}
 
 function createRuntime(): Stage1WebRuntime {
   const connectionString = process.env.DATABASE_URL;
@@ -97,8 +106,10 @@ export async function getStage1WebRuntime(): Promise<Stage1WebRuntime> {
     return runtimeOverride;
   }
 
-  runtimePromise ??= Promise.resolve(createRuntime());
-  return runtimePromise;
+  const runtimeGlobal = getRuntimeGlobal();
+  runtimeGlobal[STAGE1_RUNTIME_PROMISE_KEY] ??=
+    Promise.resolve(createRuntime());
+  return runtimeGlobal[STAGE1_RUNTIME_PROMISE_KEY];
 }
 
 export async function getSettingsRepositories(): Promise<Stage2RepositoryBundle> {
@@ -110,5 +121,5 @@ export function setStage1WebRuntimeForTests(
   runtime: Stage1WebRuntime | null,
 ): void {
   runtimeOverride = runtime;
-  runtimePromise = null;
+  getRuntimeGlobal()[STAGE1_RUNTIME_PROMISE_KEY] = undefined;
 }

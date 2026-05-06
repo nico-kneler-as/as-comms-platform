@@ -49,6 +49,7 @@ describe("defineStage1RepositoryBundle", () => {
         countDistinctInboxContacts: () => Promise.resolve(0),
         listByIds: () => Promise.resolve([]),
         listByContactId: () => Promise.resolve([]),
+        listByContactIds: () => Promise.resolve([]),
         upsert: (record) => Promise.resolve(record),
       },
       aiKnowledge: {
@@ -251,6 +252,7 @@ describe("defineStage1RepositoryBundle", () => {
       auditEvidence: {
         append: (record) => Promise.resolve(record),
         listByEntity: () => Promise.resolve([]),
+        listByEntities: () => Promise.resolve([]),
       },
     });
 

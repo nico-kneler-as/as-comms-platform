@@ -769,6 +769,58 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("batches list-side canonical event and audit reads per page load", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const canonicalBatchSpy = vi.spyOn(
+      runtime.context.repositories.canonicalEvents,
+      "listByContactIds",
+    );
+    const canonicalSingleSpy = vi.spyOn(
+      runtime.context.repositories.canonicalEvents,
+      "listByContactId",
+    );
+    const auditBatchSpy = vi.spyOn(
+      runtime.context.repositories.auditEvidence,
+      "listByEntities",
+    );
+    const auditSingleSpy = vi.spyOn(
+      runtime.context.repositories.auditEvidence,
+      "listByEntity",
+    );
+
+    const list = await getInboxList();
+
+    expect(list.items.map((item) => item.contactId)).toEqual([
+      "contact:sarah-martinez",
+      "contact:alex-thompson",
+      "contact:lisa-zhang",
+    ]);
+    expect(canonicalBatchSpy).toHaveBeenCalledTimes(1);
+    expect(new Set(canonicalBatchSpy.mock.calls[0]?.[0] ?? [])).toEqual(
+      new Set([
+        "contact:sarah-martinez",
+        "contact:alex-thompson",
+        "contact:lisa-zhang",
+      ]),
+    );
+    expect(canonicalSingleSpy).not.toHaveBeenCalled();
+    expect(auditBatchSpy).toHaveBeenCalledTimes(1);
+    expect(auditBatchSpy.mock.calls[0]?.[0]).toMatchObject({
+      entityType: "contact",
+    });
+    expect(new Set(auditBatchSpy.mock.calls[0]?.[0].entityIds ?? [])).toEqual(
+      new Set([
+        "contact:sarah-martinez",
+        "contact:alex-thompson",
+        "contact:lisa-zhang",
+      ]),
+    );
+    expect(auditSingleSpy).not.toHaveBeenCalled();
+  });
+
   it("uses Inbox as the default scope and excludes outbound-only plus archived contacts", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
@@ -841,9 +893,52 @@ describe("real inbox selectors", () => {
     );
   });
 
+  it("dedupes archived rows by contactId when loading the archived filter", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:archived-dedupe",
+      salesforceContactId: "003-archived-dedupe",
+      displayName: "Archived Dedupe",
+      primaryEmail: "archived-dedupe@example.org",
+      primaryPhone: null,
+    });
+    const archivedLatest = await seedInboxEmailEvent(runtime.context, {
+      id: "archived-dedupe-email-1",
+      contactId: "contact:archived-dedupe",
+      occurredAt: "2026-04-24T10:00:00.000Z",
+      direction: "inbound",
+      subject: "Archived dedupe check",
+      snippet: "This archived row should only render once.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:archived-dedupe",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-24T10:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-24T10:00:00.000Z",
+      snippet: "This archived row should only render once.",
+      archivedAt: "2026-04-24T11:00:00.000Z",
+      lastCanonicalEventId: archivedLatest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const list = await getInboxList("archived");
+
+    expect(
+      list.items.filter((item) => item.contactId === "contact:archived-dedupe"),
+    ).toHaveLength(1);
+  });
+
   it("emits count chips only for unread and pending", async () => {
     const list = await getInboxList("inbox");
-    const filtersById = new Map(list.filters.map((filter) => [filter.id, filter]));
+    const filtersById = new Map(
+      list.filters.map((filter) => [filter.id, filter]),
+    );
 
     expect(filtersById.get("inbox")).toMatchObject({
       label: "Inbox",
@@ -3989,7 +4084,7 @@ describe("real inbox selectors", () => {
     ]);
   });
 
-  it("orders lifecycle events faithful to Salesforce, even when its timestamps imply training-before-signup", async () => {
+  it("orders lifecycle events by UTC day desc + canonical ordinal asc within day, faithful to SF cross-day timestamps", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -4029,11 +4124,64 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:sarah-martinez");
 
+    // Cross-day order is faithful to SF timestamps (SF anomaly: training stamped
+    // before signup). Within the Oct 27 group, both training events share a
+    // UTC day so they sort by canonical ordinal asc (received before completed).
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
       "Submitted first data - Amazon Basin Research",
       "Signed up - Amazon Basin Research",
-      "Completed training - Amazon Basin Research",
       "Received training - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+    ]);
+  });
+
+  it("uses canonical lifecycle order for milestones that share the same UTC day in both rail and timeline", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "same-day-received-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-08T09:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "same-day-signed-up",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-08T17:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+      projectId: "project:amazon-basin",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "same-day-completed-training",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-09T08:00:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Completed training",
+      projectId: "project:amazon-basin",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
+      "Completed training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+    ]);
+    // Filter to lifecycle pills only — the shared runtime seeds non-lifecycle
+    // sarah events that are unrelated to this same-day-canonical-order check.
+    expect(
+      detail?.timeline
+        .filter((entry) => entry.kind === "system-event")
+        .map((entry) => entry.id),
+    ).toEqual([
+      "timeline:same-day-signed-up",
+      "timeline:same-day-received-training",
+      "timeline:same-day-completed-training",
     ]);
   });
 
