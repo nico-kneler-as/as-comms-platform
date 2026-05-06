@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React, { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ContactMembershipRecord } from "@as-comms/contracts";
+import { smsSenders } from "@as-comms/db";
 
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
@@ -792,6 +793,305 @@ describe("real inbox selectors", () => {
           }),
         ]),
       );
+    } finally {
+      if (originalSmsEnabled === undefined) {
+        delete process.env.SMS_ENABLED;
+      } else {
+        process.env.SMS_ENABLED = originalSmsEnabled;
+      }
+    }
+  });
+
+  it("renders historical SimpleTexting SMS from canonical timeline details even without sms_messages rows", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const originalSmsEnabled = process.env.SMS_ENABLED;
+    process.env.SMS_ENABLED = "false";
+
+    try {
+      await seedInboxContact(runtime.context, {
+        contactId: "contact:keyla-chavarria",
+        salesforceContactId: "003-keyla",
+        displayName: "Keyla Chavarria",
+        primaryEmail: null,
+        primaryPhone: "+15550000007",
+      });
+
+      const sourceEvidenceId = "source:keyla-simpletexting-1";
+      const canonicalEventId = "event:keyla-simpletexting-1";
+      const occurredAt = "2026-04-06T16:33:00.000Z";
+      const body =
+        "Hi Keyla. We had an issue with this number and only now recovered it.";
+
+      await runtime.context.repositories.sourceEvidence.append({
+        id: sourceEvidenceId,
+        provider: "simpletexting",
+        providerRecordType: "message",
+        providerRecordId: "export:keyla-simpletexting-1",
+        receivedAt: occurredAt,
+        occurredAt,
+        payloadRef: "payloads/simpletexting/keyla-simpletexting-1.json",
+        idempotencyKey: "simpletexting:keyla-simpletexting-1",
+        checksum: "checksum:keyla-simpletexting-1",
+      });
+      await runtime.context.repositories.canonicalEvents.upsert({
+        id: canonicalEventId,
+        contactId: "contact:keyla-chavarria",
+        eventType: "communication.sms.outbound",
+        channel: "sms",
+        occurredAt,
+        sourceEvidenceId,
+        idempotencyKey: "canonical:keyla-simpletexting-1",
+        contentFingerprint: null,
+        provenance: {
+          primaryProvider: "simpletexting",
+          primarySourceEvidenceId: sourceEvidenceId,
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "message",
+          sourceRecordId: "export:keyla-simpletexting-1",
+          messageKind: "one_to_one",
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: "sms-thread:keyla",
+            providerThreadId: "st-thread:keyla",
+          },
+          direction: "outbound",
+          notes: null,
+        },
+        reviewState: "clear",
+      });
+      await runtime.context.repositories.simpleTextingMessageDetails.upsert({
+        sourceEvidenceId,
+        providerRecordId: "export:keyla-simpletexting-1",
+        direction: "outbound",
+        messageKind: "one_to_one",
+        messageTextPreview: body,
+        normalizedPhone: "+15550000007",
+        campaignId: null,
+        campaignName: null,
+        providerThreadId: "st-thread:keyla",
+        threadKey: "sms-thread:keyla",
+      });
+      await runtime.context.repositories.timelineProjection.upsert({
+        id: "timeline:keyla-simpletexting-1",
+        contactId: "contact:keyla-chavarria",
+        canonicalEventId,
+        occurredAt,
+        sortKey: `${occurredAt}::${canonicalEventId}`,
+        eventType: "communication.sms.outbound",
+        summary: body,
+        channel: "sms",
+        primaryProvider: "simpletexting",
+        reviewState: "clear",
+      });
+      await seedInboxProjection(runtime.context, {
+        contactId: "contact:keyla-chavarria",
+        bucket: "Opened",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt: null,
+        lastOutboundAt: occurredAt,
+        lastActivityAt: occurredAt,
+        snippet: body,
+        lastCanonicalEventId: canonicalEventId,
+        lastEventType: "communication.sms.outbound",
+      });
+
+      const detail = await getInboxDetailTimeline("contact:keyla-chavarria");
+
+      expect(detail?.timeline).toEqual([
+        expect.objectContaining({
+          kind: "outbound-sms",
+          actorLabel: "Adventure Scientists",
+          body,
+          channel: "sms",
+        }),
+      ]);
+    } finally {
+      if (originalSmsEnabled === undefined) {
+        delete process.env.SMS_ENABLED;
+      } else {
+        process.env.SMS_ENABLED = originalSmsEnabled;
+      }
+    }
+  });
+
+  it("renders future Twilio SMS from sms_messages rows even when SMS compose is disabled", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const originalSmsEnabled = process.env.SMS_ENABLED;
+    process.env.SMS_ENABLED = "false";
+
+    try {
+      await seedInboxContact(runtime.context, {
+        contactId: "contact:twilio-sms-thread",
+        salesforceContactId: null,
+        displayName: "Twilio Volunteer",
+        primaryEmail: null,
+        primaryPhone: "+15550000008",
+      });
+      await runtime.context.db.insert(smsSenders).values({
+        id: "sender:twilio-ui",
+        phoneE164: "+15550000001",
+        displayName: "Adventure Scientists SMS",
+        monthlyCap: null,
+        isActive: true,
+        createdAt: new Date("2026-05-03T12:00:00.000Z"),
+        updatedAt: new Date("2026-05-03T12:00:00.000Z"),
+      });
+      await runtime.context.repositories.sourceEvidence.append({
+        id: "source:twilio-inbound-visible",
+        provider: "twilio",
+        providerRecordType: "message",
+        providerRecordId: "SMinboundvisible",
+        receivedAt: "2026-05-03T12:01:00.000Z",
+        occurredAt: "2026-05-03T12:01:00.000Z",
+        payloadRef: "twilio:webhooks/inbound:SMinboundvisible",
+        idempotencyKey: "twilio:message:SMinboundvisible",
+        checksum: "checksum:twilio-inbound-visible",
+      });
+      await runtime.context.repositories.canonicalEvents.upsert({
+        id: "event:twilio-inbound-visible",
+        contactId: "contact:twilio-sms-thread",
+        eventType: "communication.sms.inbound",
+        channel: "sms",
+        occurredAt: "2026-05-03T12:01:00.000Z",
+        sourceEvidenceId: "source:twilio-inbound-visible",
+        idempotencyKey:
+          "twilio:message:SMinboundvisible:communication.sms.inbound",
+        contentFingerprint: null,
+        provenance: {
+          primaryProvider: "twilio",
+          primarySourceEvidenceId: "source:twilio-inbound-visible",
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "message",
+          sourceRecordId: "SMinboundvisible",
+          messageKind: "one_to_one",
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: "+15550000008",
+            providerThreadId: "+15550000008",
+          },
+          direction: "inbound",
+          notes: null,
+        },
+        reviewState: "clear",
+      });
+      await runtime.context.repositories.sourceEvidence.append({
+        id: "source:twilio-outbound-visible",
+        provider: "twilio",
+        providerRecordType: "message",
+        providerRecordId: "SMoutboundvisible",
+        receivedAt: "2026-05-03T12:03:00.000Z",
+        occurredAt: "2026-05-03T12:03:00.000Z",
+        payloadRef: "twilio:messages:SMoutboundvisible",
+        idempotencyKey: "twilio:message:SMoutboundvisible",
+        checksum: "checksum:twilio-outbound-visible",
+      });
+      await runtime.context.repositories.canonicalEvents.upsert({
+        id: "event:twilio-outbound-visible",
+        contactId: "contact:twilio-sms-thread",
+        eventType: "communication.sms.outbound",
+        channel: "sms",
+        occurredAt: "2026-05-03T12:03:00.000Z",
+        sourceEvidenceId: "source:twilio-outbound-visible",
+        idempotencyKey:
+          "twilio:message:SMoutboundvisible:communication.sms.outbound",
+        contentFingerprint: null,
+        provenance: {
+          primaryProvider: "twilio",
+          primarySourceEvidenceId: "source:twilio-outbound-visible",
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "message",
+          sourceRecordId: "SMoutboundvisible",
+          messageKind: "one_to_one",
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: "+15550000008",
+            providerThreadId: "+15550000008",
+          },
+          direction: "outbound",
+          notes: null,
+        },
+        reviewState: "clear",
+      });
+      await runtime.context.repositories.smsMessages.insert({
+        id: "sms-message:twilio-inbound",
+        twilioMessageSid: "SMinboundvisible",
+        direction: "inbound",
+        contactId: "contact:twilio-sms-thread",
+        phoneE164: "+15550000008",
+        senderId: "sender:twilio-ui",
+        body: "Can you text me the pickup instructions?",
+        segments: 1,
+        encoding: "GSM-7",
+        mediaUrls: null,
+        sendStatus: "received",
+        failedReason: null,
+        failedDetail: null,
+        sentAt: null,
+        receivedAt: new Date("2026-05-03T12:01:00.000Z"),
+        actorId: null,
+        createdAt: new Date("2026-05-03T12:01:00.000Z"),
+        updatedAt: new Date("2026-05-03T12:01:00.000Z"),
+      });
+      await runtime.context.repositories.smsMessages.insert({
+        id: "sms-message:twilio-outbound",
+        twilioMessageSid: "SMoutboundvisible",
+        direction: "outbound",
+        contactId: "contact:twilio-sms-thread",
+        phoneE164: "+15550000008",
+        senderId: "sender:twilio-ui",
+        body: "Absolutely, I will send those pickup details now.",
+        segments: 1,
+        encoding: "GSM-7",
+        mediaUrls: null,
+        sendStatus: "delivered",
+        failedReason: null,
+        failedDetail: null,
+        sentAt: new Date("2026-05-03T12:03:00.000Z"),
+        receivedAt: null,
+        actorId: null,
+        createdAt: new Date("2026-05-03T12:03:00.000Z"),
+        updatedAt: new Date("2026-05-03T12:03:00.000Z"),
+      });
+      await seedInboxProjection(runtime.context, {
+        contactId: "contact:twilio-sms-thread",
+        bucket: "Opened",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt: "2026-05-03T12:01:00.000Z",
+        lastOutboundAt: "2026-05-03T12:03:00.000Z",
+        lastActivityAt: "2026-05-03T12:03:00.000Z",
+        snippet: "Absolutely, I will send those pickup details now.",
+        lastCanonicalEventId: "event:twilio-outbound-visible",
+        lastEventType: "communication.sms.outbound",
+      });
+
+      const detail = await getInboxDetailTimeline("contact:twilio-sms-thread");
+
+      expect(detail?.timeline).toEqual([
+        expect.objectContaining({
+          kind: "inbound-sms",
+          actorLabel: "Twilio Volunteer",
+          body: "Can you text me the pickup instructions?",
+          channel: "sms",
+        }),
+        expect.objectContaining({
+          kind: "outbound-sms",
+          actorLabel: "Adventure Scientists",
+          body: "Absolutely, I will send those pickup details now.",
+          channel: "sms",
+          sendStatus: "confirmed",
+        }),
+      ]);
     } finally {
       if (originalSmsEnabled === undefined) {
         delete process.env.SMS_ENABLED;

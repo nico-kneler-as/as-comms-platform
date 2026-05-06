@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 import {
   createStage1NormalizationService,
@@ -6,6 +7,7 @@ import {
 } from "@as-comms/domain";
 
 import { createTestStage1Context } from "./helpers.js";
+import { gmailMessageDetails } from "../src/schema/tables.js";
 
 async function seedMembershipDimensions(
   context: Awaited<ReturnType<typeof createTestStage1Context>>,
@@ -1417,6 +1419,51 @@ describe("Stage 1 normalization service", () => {
       "sev_monica-gmail",
       "sev_monica-salesforce"
     ]);
+  });
+
+  it("fills missing Gmail details on duplicate live ingest without overwriting existing details", async () => {
+    const context = await seedContactWithEmail("darrel@example.org", {
+      contactId: "contact_darrel",
+      salesforceContactId: "003-darrel",
+      displayName: "Darrel Robertson"
+    });
+    const gmail = buildGmailOutboundEmailFixture({
+      key: "darrel-scotty",
+      email: "darrel@example.org",
+      salesforceContactId: "003-darrel",
+      occurredAt: "2026-05-03T01:58:21.000Z",
+      receivedAt: "2026-05-03T01:59:00.000Z",
+      subject: "Re: Shipping ARUs",
+      bodyTextPreview:
+        "Will do. Thanks! I'm looking forward to checking out that stretch.",
+      snippetClean: "Will do. Thanks!"
+    });
+
+    await context.normalization.applyNormalizedCanonicalEvent(gmail);
+    await context.db
+      .delete(gmailMessageDetails)
+      .where(eq(gmailMessageDetails.sourceEvidenceId, "sev_darrel-scotty"));
+
+    await context.normalization.applyNormalizedCanonicalEvent(gmail, {
+      overwriteDuplicateGmailMessageDetail: false
+    });
+
+    const details =
+      await context.repositories.gmailMessageDetails.listBySourceEvidenceIds([
+        "sev_darrel-scotty"
+      ]);
+
+    expect(details).toHaveLength(1);
+    expect(details[0]).toMatchObject({
+      sourceEvidenceId: "sev_darrel-scotty",
+      providerRecordId: "gmail-darrel-scotty",
+      direction: "outbound",
+      subject: "Re: Shipping ARUs",
+      fromHeader: "volunteers@example.org",
+      toHeader: "darrel@example.org",
+      bodyTextPreview:
+        "Will do. Thanks! I'm looking forward to checking out that stretch."
+    });
   });
 
   it("collapses Salesforce Flow double-fire rows to the earliest task when subject and snippet are identical", async () => {
