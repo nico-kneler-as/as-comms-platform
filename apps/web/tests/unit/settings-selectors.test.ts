@@ -794,8 +794,8 @@ describe("settings selectors", () => {
     expect(viewModel.streams).toEqual([
       {
         id: "source-evidence-quarantine",
-        label: "Source-evidence quarantines",
-        description: "Checksum collisions for provider idempotency keys."
+        label: "Source-evidence duplicates",
+        description: "Provider replay collisions kept out of canonical history."
       }
     ]);
     expect(viewModel.activeStreamId).toBe("source-evidence-quarantine");
@@ -804,7 +804,7 @@ describe("settings selectors", () => {
       streamId: "source-evidence-quarantine",
       timestamp: "2026-04-20T14:05:00.000Z",
       summary:
-        "Gmail • 2 different checksums for idempotency key gmail:collision:newer",
+        "Gmail • 2 payload versions for one idempotency key; canonical winner preserved",
       detail: {
         provider: "gmail",
         idempotencyKey: "gmail:collision:newer",

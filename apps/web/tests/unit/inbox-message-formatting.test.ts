@@ -125,4 +125,21 @@ describe("inbox message formatting", () => {
       "Ready =ZZ still visible",
     );
   });
+
+  it("normalizes control characters and glued sign-offs in previews", () => {
+    expect(sanitizePreviewText("I don\u0019t see raw controls.")).toBe(
+      "I don't see raw controls.",
+    );
+
+    const resolved = resolvePreferredMessagePreview({
+      rawCandidates: [
+        "Please can you send me a link to log inRegards�Tony Hoult�",
+      ],
+    });
+
+    expect(resolved.body).toBe(
+      "Please can you send me a link to log in",
+    );
+    expect(resolved.body).not.toContain("�");
+  });
 });

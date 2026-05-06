@@ -199,8 +199,8 @@ const LOGS_PAGE_SIZE = 25;
 const LOG_STREAMS: readonly LogStreamDescriptorViewModel[] = [
   {
     id: DEFAULT_LOG_STREAM_ID,
-    label: "Source-evidence quarantines",
-    description: "Checksum collisions for provider idempotency keys."
+    label: "Source-evidence duplicates",
+    description: "Provider replay collisions kept out of canonical history."
   }
 ];
 const PROVIDER_LABEL: Record<Provider, string> = {
@@ -402,7 +402,7 @@ function buildSourceEvidenceCollisionSummary(
   detail: SourceEvidenceCollisionDetailViewModel
 ): string {
   const checksumCount = detail.losing.length + 1;
-  return `${PROVIDER_LABEL[detail.provider]} • ${String(checksumCount)} different checksums for idempotency key ${detail.idempotencyKey}`;
+  return `${PROVIDER_LABEL[detail.provider]} • ${String(checksumCount)} payload versions for one idempotency key; canonical winner preserved`;
 }
 
 function hasActivationRequirements(input: {
