@@ -1176,7 +1176,7 @@ function buildTimelineItemsFromRows(input: {
           messageTextPreview:
             simpleTextingDetail?.messageTextPreview ??
             salesforceCommunicationDetail?.snippet ??
-            "",
+            row.summary,
           phone: simpleTextingDetail?.normalizedPhone ?? null,
           threadKey:
             simpleTextingDetail?.threadKey ??

@@ -769,6 +769,87 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("keeps one-to-one SMS visible in the timeline regardless of SMS compose availability", async () => {
+    const originalSmsEnabled = process.env.SMS_ENABLED;
+    process.env.SMS_ENABLED = "false";
+
+    try {
+      const detail = await getInboxDetail("contact:alex-thompson");
+
+      expect(detail?.timeline).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "outbound-sms",
+            actorLabel: "Adventure Scientists",
+            body: "We can shift the mountain research dates if weather stays rough.",
+            channel: "sms",
+          }),
+          expect.objectContaining({
+            kind: "inbound-sms",
+            actorLabel: "Alex Thompson",
+            body: "Had to postpone due to weather. Proposing new dates.",
+            channel: "sms",
+          }),
+        ]),
+      );
+    } finally {
+      if (originalSmsEnabled === undefined) {
+        delete process.env.SMS_ENABLED;
+      } else {
+        process.env.SMS_ENABLED = originalSmsEnabled;
+      }
+    }
+  });
+
+  it("renders third-party Gmail outbound body and sender identity instead of a generic event label", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:darrel-robertson",
+      salesforceContactId: null,
+      displayName: "Darrel Robertson",
+      primaryEmail: "darrel@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "darrel-scotty-gmail-1",
+      contactId: "contact:darrel-robertson",
+      occurredAt: "2026-04-16T16:00:00.000Z",
+      direction: "outbound",
+      subject: "Adventure Scientists follow-up",
+      snippet: "Hi Darrel, looping back with the details we discussed.",
+      bodyTextPreview: "Hi Darrel, looping back with the details we discussed.",
+      fromHeader: "Scotty Stalp <scotty@adventurescientists.org>",
+      toHeader: "Darrel Robertson <darrel@example.org>",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:darrel-robertson",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-16T16:00:00.000Z",
+      lastActivityAt: "2026-04-16T16:00:00.000Z",
+      snippet: "Outbound email sent",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:darrel-robertson");
+    const entry = detail?.timeline.at(-1);
+
+    expect(entry).toMatchObject({
+      kind: "outbound-email",
+      actorLabel: "Scotty Stalp",
+      subject: "Adventure Scientists follow-up",
+      body: "Hi Darrel, looping back with the details we discussed.",
+      fromHeader: "Scotty Stalp <scotty@adventurescientists.org>",
+      toHeader: "Darrel Robertson <darrel@example.org>",
+    });
+  });
+
   it("batches list-side canonical event and audit reads per page load", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");

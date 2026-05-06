@@ -10,7 +10,6 @@ import type {
 } from "@as-comms/contracts";
 
 import { getCurrentUser } from "@/src/server/auth/session";
-import { readWebEnv } from "@/src/server/env";
 import { recordSensitiveReadForCurrentUserDetached } from "@/src/server/security/audit";
 import { getStage1WebRuntime } from "../../../src/server/stage1-runtime";
 import {
@@ -68,17 +67,6 @@ type InboxDetailProjection = Omit<
   readonly lastCanonicalEventId: string | null;
   readonly lastEventType: CanonicalEventRecord["eventType"] | null;
 };
-
-function filterSmsTimelineItems(
-  items: readonly TimelineItem[],
-  smsEnabled: boolean,
-): readonly TimelineItem[] {
-  if (smsEnabled) {
-    return items;
-  }
-
-  return items.filter((item) => item.family !== "one_to_one_sms");
-}
 
 function findNewestCanonicalEvent(
   events: readonly CanonicalEventRecord[],
@@ -1267,11 +1255,10 @@ function fallbackOneToOneEmailBody(
 ): string {
   const normalizedSummary = normalizeInlineText(item.summary) ?? "";
 
-  if (
-    item.primaryProvider === "salesforce" &&
-    /^(outbound|inbound) email (sent|received)$/i.test(normalizedSummary)
-  ) {
-    return "Email body not cached - open in Salesforce";
+  if (/^(outbound|inbound) email (sent|received)$/i.test(normalizedSummary)) {
+    return item.primaryProvider === "gmail"
+      ? "Email body not cached - open in Gmail"
+      : "Email body not cached - open in Salesforce";
   }
 
   return normalizedSummary;
@@ -1668,6 +1655,19 @@ function timelineActorLabel(
     return normalizeDisplayName(contactDisplayName) || contactDisplayName;
   }
 
+  if (kind === "outbound-email" && item.family === "one_to_one_email") {
+    const senderLabel = participantHeaderLabel(item.fromHeader ?? null);
+    const normalizedSenderLabel =
+      senderLabel === null ? "" : normalizeDisplayName(senderLabel);
+
+    if (
+      normalizedSenderLabel.length > 0 &&
+      !isEmailLikeName(normalizedSenderLabel)
+    ) {
+      return normalizedSenderLabel;
+    }
+  }
+
   if (kind === "outbound-email" || kind === "outbound-sms") {
     return normalizeDisplayName(operatorDisplayName) || "Adventure Scientists";
   }
@@ -1891,7 +1891,7 @@ function timelineBody(item: TimelineItem): string {
           fallbackOneToOneEmailBody(item),
       );
     case "one_to_one_sms":
-      return item.messageTextPreview;
+      return item.messageTextPreview || item.summary;
     case "auto_email":
       return stripSignature(
         parseCommunicationPreview(item.snippet).body || item.summary,
@@ -2984,7 +2984,8 @@ async function readInboxListCacheData(input: {
   // The primary loader pulls only the active filter slice. Counts come from
   // the aggregate repo method below, so opening a conversation does not hydrate
   // unrelated inbox or archived rows.
-  const primaryFilterForLoader: RepoFilter = input.filterId;
+  const primaryFilterForLoader: RepoFilter =
+    input.filterId === "unread" ? "inbox" : input.filterId;
   const [
     visibleProjections,
     projectionCounts,
@@ -3220,7 +3221,6 @@ async function readInboxDetailCacheData(
   },
 ): Promise<InboxDetailCacheData | null> {
   const runtime = await getStage1WebRuntime();
-  const env = readWebEnv();
   const [
     contact,
     inboxProjection,
@@ -3298,16 +3298,12 @@ async function readInboxDetailCacheData(
     aliasesByProjectId.set(aliasRecord.projectId, aliases);
   }
 
-  const smsFilteredTimelineItems = filterSmsTimelineItems(
-    activityTimelineItems,
-    env.SMS_ENABLED,
-  );
   const hasPostCutoverActivity = canonicalEvents.some((event) =>
     occurredAtIsOnOrAfterPlatformFullCaptureCutover(event.occurredAt),
   );
   const visibleTimelineItems = hasPostCutoverActivity
-    ? filterItemsAtOrAfterPlatformFullCaptureCutover(smsFilteredTimelineItems)
-    : smsFilteredTimelineItems;
+    ? filterItemsAtOrAfterPlatformFullCaptureCutover(activityTimelineItems)
+    : activityTimelineItems;
   const orderedTimelineItems =
     reorderSameDayLifecycleTimelineItems(visibleTimelineItems);
   const timelinePage = paginateTimelineItems({
