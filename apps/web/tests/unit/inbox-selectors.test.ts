@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React, { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ContactMembershipRecord } from "@as-comms/contracts";
-import { smsSenders } from "@as-comms/db";
 
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
@@ -960,15 +959,25 @@ describe("real inbox selectors", () => {
         primaryEmail: null,
         primaryPhone: "+15550000008",
       });
-      await runtime.context.db.insert(smsSenders).values({
-        id: "sender:twilio-ui",
-        phoneE164: "+15550000001",
-        displayName: "Adventure Scientists SMS",
-        monthlyCap: null,
-        isActive: true,
-        createdAt: new Date("2026-05-03T12:00:00.000Z"),
-        updatedAt: new Date("2026-05-03T12:00:00.000Z"),
-      });
+      await runtime.context.client.exec(`
+        insert into sms_senders (
+          id,
+          phone_e164,
+          display_name,
+          monthly_cap,
+          is_active,
+          created_at,
+          updated_at
+        ) values (
+          'sender:twilio-ui',
+          '+15550000001',
+          'Adventure Scientists SMS',
+          null,
+          true,
+          '2026-05-03T12:00:00.000Z',
+          '2026-05-03T12:00:00.000Z'
+        );
+      `);
       await runtime.context.repositories.sourceEvidence.append({
         id: "source:twilio-inbound-visible",
         provider: "twilio",
