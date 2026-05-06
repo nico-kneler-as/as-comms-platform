@@ -543,7 +543,12 @@ export function InboxList({
   return (
     <section
       data-inbox-list-root="true"
-      className={`relative flex ${LAYOUT.listWidth} shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white`}
+      className={cn(
+        "relative shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white",
+        activeContactId === null
+          ? "flex w-full lg:w-[22rem]"
+          : "hidden w-full lg:flex lg:w-[22rem]",
+      )}
     >
       <div className="sticky top-0 z-10 bg-white/95 backdrop-blur">
         <div

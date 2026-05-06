@@ -66,9 +66,13 @@ function createRepositoryBundle(input: {
   >();
   for (const attachment of input.messageAttachments ?? []) {
     const existing =
-      messageAttachmentsBySourceEvidenceId.get(attachment.sourceEvidenceId) ?? [];
+      messageAttachmentsBySourceEvidenceId.get(attachment.sourceEvidenceId) ??
+      [];
     existing.push(attachment);
-    messageAttachmentsBySourceEvidenceId.set(attachment.sourceEvidenceId, existing);
+    messageAttachmentsBySourceEvidenceId.set(
+      attachment.sourceEvidenceId,
+      existing,
+    );
   }
   const mailchimpCampaignActivityDetailsBySourceEvidenceId = new Map(
     (input.mailchimpCampaignActivityDetails ?? []).map((detail) => [
@@ -134,6 +138,12 @@ function createRepositoryBundle(input: {
         Promise.resolve(
           input.canonicalEvents.filter(
             (event) => event.contactId === contactId,
+          ),
+        ),
+      listByContactIds: (contactIds) =>
+        Promise.resolve(
+          input.canonicalEvents.filter((event) =>
+            contactIds.includes(event.contactId),
           ),
         ),
       upsert: (record) => Promise.resolve(record),
@@ -216,8 +226,9 @@ function createRepositoryBundle(input: {
     messageAttachments: {
       findById: (id) =>
         Promise.resolve(
-          (input.messageAttachments ?? []).find((attachment) => attachment.id === id) ??
-            null,
+          (input.messageAttachments ?? []).find(
+            (attachment) => attachment.id === id,
+          ) ?? null,
         ),
       findByMessageIds: (sourceEvidenceIds) =>
         Promise.resolve(
@@ -409,6 +420,7 @@ function createRepositoryBundle(input: {
     auditEvidence: {
       append: (record: AuditEvidenceRecord) => Promise.resolve(record),
       listByEntity: () => Promise.resolve([]),
+      listByEntities: () => Promise.resolve([]),
     },
   });
 }
@@ -949,7 +961,9 @@ describe("Stage 1 timeline presenter", () => {
 
     const items = await presenter.listTimelineItemsByContactId("contact_1");
 
-    expect(items.filter((item) => item.family === "one_to_one_email")).toHaveLength(1);
+    expect(
+      items.filter((item) => item.family === "one_to_one_email"),
+    ).toHaveLength(1);
     expect(items.map((item) => item.canonicalEventId)).toEqual([
       "canonical-event:gmail%3Amessage%3Atest123",
     ]);
@@ -1160,10 +1174,7 @@ describe("Stage 1 timeline presenter", () => {
       projectInboxAlias: "pnwbio@adventurescientists.org",
     });
     const repositories = createRepositoryBundle({
-      canonicalEvents: [
-        firstGmail.canonicalEvent,
-        secondGmail.canonicalEvent,
-      ],
+      canonicalEvents: [firstGmail.canonicalEvent, secondGmail.canonicalEvent],
       sourceEvidence: [
         buildSourceEvidence({
           id: "sev_gmail_same_day_first",
@@ -1312,7 +1323,8 @@ describe("Stage 1 timeline presenter", () => {
       occurredAt: "2026-01-01T00:10:00.000Z",
       activityType: "sent",
       campaignName: "April Volunteer Update",
-      snippet: "Subject: April Volunteer Update\n\nBody:\nBring your field notebook.",
+      snippet:
+        "Subject: April Volunteer Update\n\nBody:\nBring your field notebook.",
       contentFingerprint: duplicateFingerprint,
     });
     const secondCampaign = buildMailchimpCampaignEmailEvent({
@@ -1321,7 +1333,8 @@ describe("Stage 1 timeline presenter", () => {
       occurredAt: "2026-01-01T00:10:30.000Z",
       activityType: "sent",
       campaignName: "April Volunteer Update",
-      snippet: "Subject: April Volunteer Update\n\nBody:\nBring your field notebook.",
+      snippet:
+        "Subject: April Volunteer Update\n\nBody:\nBring your field notebook.",
       contentFingerprint: duplicateFingerprint,
     });
     const repositories = createRepositoryBundle({
@@ -1695,22 +1708,35 @@ describe("Stage 1 timeline presenter", () => {
           createdAt: "2026-01-01T00:00:03.000Z",
         }),
       ],
-      timelineRows: [event0.timelineRow, event2.timelineRow, event4.timelineRow],
+      timelineRows: [
+        event0.timelineRow,
+        event2.timelineRow,
+        event4.timelineRow,
+      ],
     });
     const presenter = createStage1TimelinePresentationService(repositories);
 
-    const page1 = await presenter.listTimelineItemsPageByContactId("contact_1", {
-      limit: 2,
-      beforeSortKey: null,
-    });
-    const page2 = await presenter.listTimelineItemsPageByContactId("contact_1", {
-      limit: 2,
-      beforeSortKey: page1.nextBeforeSortKey,
-    });
-    const page3 = await presenter.listTimelineItemsPageByContactId("contact_1", {
-      limit: 2,
-      beforeSortKey: page2.nextBeforeSortKey,
-    });
+    const page1 = await presenter.listTimelineItemsPageByContactId(
+      "contact_1",
+      {
+        limit: 2,
+        beforeSortKey: null,
+      },
+    );
+    const page2 = await presenter.listTimelineItemsPageByContactId(
+      "contact_1",
+      {
+        limit: 2,
+        beforeSortKey: page1.nextBeforeSortKey,
+      },
+    );
+    const page3 = await presenter.listTimelineItemsPageByContactId(
+      "contact_1",
+      {
+        limit: 2,
+        beforeSortKey: page2.nextBeforeSortKey,
+      },
+    );
 
     expect(page1.total).toBe(5);
     expect(page1.items.map((item) => item.canonicalEventId)).toEqual([
@@ -1724,11 +1750,11 @@ describe("Stage 1 timeline presenter", () => {
     expect(page3.items.map((item) => item.canonicalEventId)).toEqual([
       "evt_page_0",
     ]);
-    expect([
-      ...page1.items,
-      ...page2.items,
-      ...page3.items,
-    ].map((item) => item.canonicalEventId)).toEqual([
+    expect(
+      [...page1.items, ...page2.items, ...page3.items].map(
+        (item) => item.canonicalEventId,
+      ),
+    ).toEqual([
       "note:note_page_3",
       "evt_page_4",
       "note:note_page_1",

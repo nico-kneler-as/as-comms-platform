@@ -63,7 +63,10 @@ export default async function InboxContactPage({ params }: PageProps) {
       detail={detail}
       currentOperatorUserId={currentUser.id}
       timelineSlot={
-        <Suspense fallback={<InboxDetailTimelineFallback />}>
+        <Suspense
+          key={decodedContactId}
+          fallback={<InboxDetailTimelineFallback />}
+        >
           <InboxContactTimelineSection
             contactId={decodedContactId}
             contact={detail.contact}

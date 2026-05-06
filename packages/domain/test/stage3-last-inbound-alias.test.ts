@@ -63,6 +63,12 @@ function buildRepositoryBundle(input: {
             (event) => event.contactId === contactId,
           ),
         ),
+      listByContactIds: (contactIds) =>
+        Promise.resolve(
+          input.canonicalEvents.filter((event) =>
+            contactIds.includes(event.contactId),
+          ),
+        ),
       upsert: (record) => Promise.resolve(record),
     },
     aiKnowledge: {
@@ -270,6 +276,7 @@ function buildRepositoryBundle(input: {
     auditEvidence: {
       append: (record) => Promise.resolve(record),
       listByEntity: () => Promise.resolve([]),
+      listByEntities: () => Promise.resolve([]),
     },
   });
 }
