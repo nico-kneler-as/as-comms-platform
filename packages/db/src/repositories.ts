@@ -1011,12 +1011,31 @@ function buildInboxProjectPredicate(
   }
 
   return sql`exists (
-    select 1 from ${contactMemberships}
-    inner join ${projectDimensions}
-      on ${contactMemberships.projectId} = ${projectDimensions.projectId}
-    where ${contactMemberships.contactId} = ${contactInboxProjection.contactId}
-      and ${contactMemberships.projectId} = ${projectId}
-      and ${projectDimensions.isActive} = true
+    select 1
+    from (
+      select 1
+      from ${contactMemberships}
+      inner join ${projectDimensions}
+        on ${contactMemberships.projectId} = ${projectDimensions.projectId}
+      where ${contactMemberships.contactId} = ${contactInboxProjection.contactId}
+        and ${contactMemberships.projectId} = ${projectId}
+        and ${projectDimensions.isActive} = true
+
+      union all
+
+      select 1
+      from ${canonicalEventLedger}
+      inner join ${gmailMessageDetails}
+        on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+      inner join ${projectAliases}
+        on ${gmailMessageDetails.projectInboxAlias} = ${projectAliases.alias}
+      inner join ${projectDimensions}
+        on ${projectAliases.projectId} = ${projectDimensions.projectId}
+      where ${canonicalEventLedger.contactId} = ${contactInboxProjection.contactId}
+        and ${gmailMessageDetails.direction} = 'inbound'
+        and ${projectAliases.projectId} = ${projectId}
+        and ${projectDimensions.isActive} = true
+    ) inbox_project_match
   )`;
 }
 
