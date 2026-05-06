@@ -3,7 +3,6 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -103,8 +102,6 @@ function resolveInboxHeaderTitle(input: {
     );
 
     if (selectedProject !== undefined) {
-      // TODO(feat/inbox-header-dynamic-label): Once the alias bug-fix branch is
-      // merged everywhere, remove the name fallback and rely on alias only.
       projectLabel = selectedProject.alias ?? selectedProject.name;
     }
   }
@@ -137,11 +134,8 @@ export function InboxList({
   const urlProjectId = searchParams.get("projectId");
   const urlProjectIds = searchParams.getAll("projectId");
   const rawSearchQuery = search.query.trim();
-  const deferredQuery = useDeferredValue(search.query);
-  const normalizedQuery = deferredQuery.trim();
+  const normalizedQuery = rawSearchQuery;
   const isSearchThresholdMet = rawSearchQuery.length >= 3;
-  const isDeferredSearchPending =
-    isSearchThresholdMet && rawSearchQuery !== normalizedQuery;
   const isServerSearchActive =
     isSearchThresholdMet && normalizedQuery.length >= 3;
   const serverQuery = isServerSearchActive ? normalizedQuery : null;
@@ -191,6 +185,7 @@ export function InboxList({
       !shouldApplyUrlSearchQuery({
         urlQuery,
         previousUrlQuery: previousUrlQueryRef.current,
+        currentQuery: search.query,
       })
     ) {
       return;
@@ -243,6 +238,10 @@ export function InboxList({
   }, [pathname, router, searchParams, urlFilter]);
 
   useEffect(() => {
+    if (normalizedQuery.length > 0 && normalizedQuery.length < 3) {
+      return;
+    }
+
     const currentUrlQuery = urlQuery.trim();
 
     if (normalizedQuery === currentUrlQuery) {
@@ -265,13 +264,13 @@ export function InboxList({
           : `${pathname}?${nextQueryString}`;
 
       previousUrlQueryRef.current = normalizedQuery;
-      router.replace(nextHref, { scroll: false });
+      window.history.replaceState(window.history.state, "", nextHref);
     }, 400);
 
     return () => {
       window.clearTimeout(handle);
     };
-  }, [normalizedQuery, pathname, router, searchParams, urlQuery]);
+  }, [normalizedQuery, pathname, searchParams, urlQuery]);
 
   const loadFilterPage = useCallback(
     async (input: {
@@ -422,8 +421,7 @@ export function InboxList({
     isServerSearchActive &&
     isQueueLoading &&
     pendingAppendCursorRef.current === null;
-  const shouldShowSearchSkeleton =
-    isSearchThresholdMet && (isDeferredSearchPending || isSearchInFlight);
+  const shouldShowSearchSkeleton = isSearchThresholdMet && isSearchInFlight;
   const shouldShowInitialSkeleton =
     isQueueLoading && currentList.items.length === 0 && !shouldShowSearchSkeleton;
   const canLoadMore =
@@ -462,6 +460,14 @@ export function InboxList({
       });
 
       const nextParams = new URLSearchParams(searchParams.toString());
+      const currentSearchQuery = search.query.trim();
+
+      if (currentSearchQuery.length < 3) {
+        nextParams.delete("q");
+      } else {
+        nextParams.set("q", currentSearchQuery);
+      }
+
       if (id === null) {
         nextParams.delete("projectId");
       } else {
@@ -473,9 +479,10 @@ export function InboxList({
         nextQueryString.length === 0 ? pathname : `${pathname}?${nextQueryString}`;
 
       previousUrlProjectIdRef.current = id;
+      previousUrlQueryRef.current = currentSearchQuery;
       router.replace(nextHref, { scroll: false });
     },
-    [pathname, router, searchParams, startFilterTransition],
+    [pathname, router, search.query, searchParams, startFilterTransition],
   );
 
   const toggleFilterPane = useCallback(() => {

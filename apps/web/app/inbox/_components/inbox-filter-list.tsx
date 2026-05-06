@@ -62,6 +62,10 @@ export function InboxFilterList({
     selectedProjectId === null
       ? null
       : (projects.find((project) => project.id === selectedProjectId) ?? null);
+  const selectedProjectLabel =
+    selectedProject === null
+      ? "All projects"
+      : (selectedProject.alias ?? selectedProject.name);
 
   return (
     <div
@@ -135,7 +139,7 @@ export function InboxFilterList({
                         : "",
                     )}
                   >
-                    {selectedProject?.name ?? "All projects"}
+                    {selectedProjectLabel}
                   </span>
                   <ChevronDownIcon
                     aria-hidden="true"
@@ -166,7 +170,7 @@ export function InboxFilterList({
                       value={project.id}
                       className="rounded-lg text-[12.5px]"
                     >
-                      {project.name}
+                      {project.alias ?? project.name}
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>

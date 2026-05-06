@@ -8,6 +8,7 @@ describe("inbox search sync", () => {
       shouldApplyUrlSearchQuery({
         urlQuery: "",
         previousUrlQuery: "",
+        currentQuery: "",
       }),
     ).toBe(false);
   });
@@ -17,7 +18,18 @@ describe("inbox search sync", () => {
       shouldApplyUrlSearchQuery({
         urlQuery: "alex",
         previousUrlQuery: "",
+        currentQuery: "",
       }),
     ).toBe(true);
+  });
+
+  it("does not apply stale delayed URL writes over newer local input", () => {
+    expect(
+      shouldApplyUrlSearchQuery({
+        urlQuery: "d",
+        previousUrlQuery: "",
+        currentQuery: "darrel",
+      }),
+    ).toBe(false);
   });
 });

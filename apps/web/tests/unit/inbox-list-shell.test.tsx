@@ -582,7 +582,7 @@ describe("Inbox list shell", () => {
     });
 
     await act(async () => {
-      findButtonByText(document.body, "Pacific Northwest Biodiversity Survey").click();
+      findButtonByText(document.body, "PNW Biodiversity").click();
       await Promise.resolve();
     });
     await flushReact();
@@ -590,6 +590,40 @@ describe("Inbox list shell", () => {
     expect(findButtonByLabel(session.container, "Filters").getAttribute("aria-expanded")).toBe(
       "true",
     );
+  });
+
+  it("keeps the current typed search query when project changes update the URL", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildPnwProjectList());
+    activeSession = await mountInboxList(buildPnwProjectList(), {
+      query: "darrel",
+      isQueueLoading: false,
+    });
+    const session = activeSession;
+
+    await act(async () => {
+      findButtonByLabel(session.container, "Filters").click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findButtonByText(session.container, "All projects").click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findButtonByText(document.body, "PNW Biodiversity").click();
+      await Promise.resolve();
+    });
+
+    expect(routerReplaceMock).toHaveBeenLastCalledWith(
+      "/inbox?q=darrel&projectId=project-pnw",
+      { scroll: false },
+    );
+    expect(
+      session.container.querySelector<HTMLInputElement>(
+        "[data-inbox-search-input='true']",
+      )?.value,
+    ).toBe("darrel");
   });
 
   it("replaces the clear-search control with a spinner while search is loading", async () => {
@@ -665,6 +699,22 @@ describe("Inbox list shell", () => {
       ),
     ).toBeNull();
     expect(activeSession.container.textContent).toContain("Riley Carter");
+  });
+
+  it("does not write below-threshold search text into the URL", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList(buildList(), {
+      query: "da",
+      isQueueLoading: false,
+    });
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 450));
+    });
+
+    expect(routerReplaceMock).not.toHaveBeenCalledWith(
+      "/inbox?q=da",
+      expect.anything(),
+    );
   });
 
   it("renders the primary project chip without the overflow count badge", async () => {
