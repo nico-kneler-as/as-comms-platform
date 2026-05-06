@@ -27,6 +27,7 @@ import {
   draftWithAiAction,
   markInboxOpenedAction,
   markInboxNeedsFollowUpAction,
+  unarchiveInboxContactAction,
 } from "../../app/inbox/actions";
 import { resetSecurityRateLimiterForTests } from "../../src/server/security/rate-limit";
 import { getInboxDetail, getInboxList } from "../../app/inbox/_lib/selectors";
@@ -292,6 +293,79 @@ describe("server-backed follow-up actions", () => {
     expect(after.items.map((item) => item.contactId)).not.toContain(
       "contact:cross-dept",
     );
+  });
+
+  it("moves a contact cleanly from archived back into the inbox", async () => {
+    if (runtime === null) {
+      throw new Error("runtime not initialized");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:archived-restore",
+      salesforceContactId: "003-archived-restore",
+      displayName: "Archived Restore",
+      primaryEmail: "archived-restore@example.org",
+      primaryPhone: null,
+      projectId: "project:amazon-basin",
+      projectName: "Amazon Basin Research",
+      membershipId: "membership:archived-restore",
+      membershipStatus: "active",
+    });
+    const archivedLatest = await seedInboxEmailEvent(runtime.context, {
+      id: "archived-restore-inbound-1",
+      contactId: "contact:archived-restore",
+      occurredAt: "2026-04-15T11:00:00.000Z",
+      direction: "inbound",
+      subject: "Archived restore check",
+      snippet: "This contact should return to the inbox once unarchived.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:archived-restore",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-15T11:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-15T11:00:00.000Z",
+      snippet: "This contact should return to the inbox once unarchived.",
+      archivedAt: "2026-04-15T12:00:00.000Z",
+      lastCanonicalEventId: archivedLatest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const formData = new FormData();
+    formData.set("contactId", "contact:archived-restore");
+
+    const archivedBefore = await getInboxList("archived");
+    expect(
+      archivedBefore.items.filter(
+        (item) => item.contactId === "contact:archived-restore",
+      ),
+    ).toHaveLength(1);
+
+    const unarchiveResult = await unarchiveInboxContactAction(formData);
+    const projection =
+      await runtime.context.repositories.inboxProjection.findByContactId(
+        "contact:archived-restore",
+      );
+    const inboxAfter = await getInboxList("inbox");
+    const archivedAfter = await getInboxList("archived");
+
+    expect(unarchiveResult).toMatchObject({
+      ok: true,
+      data: {
+        contactId: "contact:archived-restore",
+      },
+    });
+    expect(projection?.archivedAt).toBeNull();
+    expect(
+      inboxAfter.items.filter(
+        (item) => item.contactId === "contact:archived-restore",
+      ),
+    ).toHaveLength(1);
+    expect(
+      archivedAfter.items.map((item) => item.contactId),
+    ).not.toContain("contact:archived-restore");
   });
 
   it("does not clobber fresher projection state when follow-up is toggled", async () => {

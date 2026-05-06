@@ -69,8 +69,7 @@ export interface SourceEvidenceQuarantineInput {
   readonly details: Readonly<Record<string, unknown>>;
 }
 
-export interface SourceEvidenceQuarantineRecord
-  extends SourceEvidenceQuarantineInput {
+export interface SourceEvidenceQuarantineRecord extends SourceEvidenceQuarantineInput {
   readonly id: string;
   readonly createdAt: Date;
 }
@@ -121,6 +120,9 @@ export interface CanonicalEventRepository {
   countDistinctInboxContacts(): Promise<number>;
   listByIds(ids: readonly string[]): Promise<readonly CanonicalEventRecord[]>;
   listByContactId(contactId: string): Promise<readonly CanonicalEventRecord[]>;
+  listByContactIds(
+    contactIds: readonly string[],
+  ): Promise<readonly CanonicalEventRecord[]>;
   upsert(record: CanonicalEventRecord): Promise<CanonicalEventRecord>;
 }
 
@@ -129,7 +131,9 @@ export interface AiKnowledgeRepository {
     readonly scope: "global" | "project";
     readonly scopeKey: string | null;
   }): Promise<AiKnowledgeEntryRecord | null>;
-  findProjectNotionContent(projectId: string): Promise<AiKnowledgeEntryRecord | null>;
+  findProjectNotionContent(
+    projectId: string,
+  ): Promise<AiKnowledgeEntryRecord | null>;
   hasProjectNotionContent(projectId: string): Promise<boolean>;
   findProjectIdsWithNotionContent(
     projectIds: readonly string[],
@@ -231,15 +235,10 @@ export interface SmsSenderRepository {
   listActive(): Promise<readonly SmsSenderRecord[]>;
   findById(id: string): Promise<SmsSenderRecord | null>;
   findByPhone(phoneE164: string): Promise<SmsSenderRecord | null>;
-  getActiveUsageSnapshot(input: {
-    readonly monthStart: Date;
-  }): Promise<
-    | {
-        readonly monthlyCap: number | null;
-        readonly monthToDateSegments: number;
-      }
-    | null
-  >;
+  getActiveUsageSnapshot(input: { readonly monthStart: Date }): Promise<{
+    readonly monthlyCap: number | null;
+    readonly monthToDateSegments: number;
+  } | null>;
 }
 
 export interface ProjectDimensionRepository {
@@ -556,6 +555,10 @@ export interface AuditEvidenceRepository {
   listByEntity(input: {
     readonly entityType: string;
     readonly entityId: string;
+  }): Promise<readonly AuditEvidenceRecord[]>;
+  listByEntities(input: {
+    readonly entityType: string;
+    readonly entityIds: readonly string[];
   }): Promise<readonly AuditEvidenceRecord[]>;
 }
 

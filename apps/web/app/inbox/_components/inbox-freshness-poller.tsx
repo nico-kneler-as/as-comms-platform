@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, startTransition } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import type {
   InboxDetailViewModel,
-  InboxListViewModel
+  InboxListViewModel,
 } from "../_lib/view-models";
 import { fetchInboxFreshness } from "../_lib/client-api";
+import { extractInboxContactId } from "./inbox-keyboard-helpers";
 
 interface FreshnessPollerProps {
   readonly listFreshness?: InboxListViewModel["freshness"];
@@ -18,7 +19,7 @@ interface FreshnessPollerProps {
 
 export function listFreshnessChanged(
   current: InboxListViewModel["freshness"] | undefined,
-  next: InboxListViewModel["freshness"]
+  next: InboxListViewModel["freshness"],
 ): boolean {
   if (current === undefined) {
     return false;
@@ -32,7 +33,7 @@ export function listFreshnessChanged(
 
 export function detailFreshnessChanged(
   current: InboxDetailViewModel["freshness"] | undefined,
-  next: InboxDetailViewModel["freshness"] | null
+  next: InboxDetailViewModel["freshness"] | null,
 ): boolean {
   if (current === undefined) {
     return false;
@@ -53,25 +54,38 @@ export function InboxFreshnessPoller({
   listFreshness,
   detailFreshness,
   contactId,
-  intervalMs = 30000
+  intervalMs = 60000,
 }: FreshnessPollerProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const activeRouteContactId = extractInboxContactId(pathname);
+  const shouldPauseListPoller =
+    contactId === undefined && activeRouteContactId !== null;
   const latestRef = useRef({
     listFreshness,
     detailFreshness,
-    contactId
+    contactId,
+    shouldPauseListPoller,
   });
+  const isPollingRef = useRef(false);
+  const hasRefreshInFlightRef = useRef(false);
 
   useEffect(() => {
     latestRef.current = {
       listFreshness,
       detailFreshness,
-      contactId
+      contactId,
+      shouldPauseListPoller,
     };
-  }, [contactId, detailFreshness, listFreshness]);
+    hasRefreshInFlightRef.current = false;
+  }, [contactId, detailFreshness, listFreshness, shouldPauseListPoller]);
 
   useEffect(() => {
     const pollFreshness = async () => {
+      if (isPollingRef.current || hasRefreshInFlightRef.current) {
+        return;
+      }
+
       if (
         typeof document !== "undefined" &&
         document.visibilityState !== "visible"
@@ -79,20 +93,29 @@ export function InboxFreshnessPoller({
         return;
       }
 
+      isPollingRef.current = true;
+
       try {
         const current = latestRef.current;
+        if (current.shouldPauseListPoller) {
+          return;
+        }
+
         const next = await fetchInboxFreshness(current.contactId);
 
         if (
           listFreshnessChanged(current.listFreshness, next.list) ||
           detailFreshnessChanged(current.detailFreshness, next.detail)
         ) {
+          hasRefreshInFlightRef.current = true;
           startTransition(() => {
             router.refresh();
           });
         }
       } catch {
         // Polling is best effort. The next interval or user navigation will retry.
+      } finally {
+        isPollingRef.current = false;
       }
     };
 
@@ -100,17 +123,8 @@ export function InboxFreshnessPoller({
       void pollFreshness();
     }, intervalMs);
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void pollFreshness();
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
     return () => {
       window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [intervalMs, router]);
 

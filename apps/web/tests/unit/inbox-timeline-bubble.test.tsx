@@ -286,7 +286,7 @@ describe("MessageBubble metadata and polish", () => {
     expect(markup).toContain("col-span-3 grid");
     expect(markup).toContain("grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]");
     expect(markup).toContain("col-start-2 min-w-0 flex justify-end");
-    expect(markup).toContain("w-full max-w-[560px]");
+    expect(markup.match(/w-full max-w-\[560px\]/g)).toHaveLength(2);
     expect(markup).not.toContain("w-fit");
     expect(markup).not.toContain("max-w-[640px]");
     expect(markup).not.toContain("pl-16");
@@ -308,7 +308,7 @@ describe("MessageBubble metadata and polish", () => {
       }),
     );
 
-    expect(markup).toContain("w-full max-w-[560px]");
+    expect(markup.match(/w-full max-w-\[560px\]/g)).toHaveLength(2);
     expect(markup).not.toContain("w-fit");
     expect(markup).not.toContain("max-w-[640px]");
   });

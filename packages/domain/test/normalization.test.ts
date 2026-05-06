@@ -175,21 +175,24 @@ function buildExistingProjection(input: {
   };
 }
 
-function buildReplayInput(event: CanonicalEventRecord): NormalizedCanonicalEventIntake {
+function buildReplayInput(
+  event: CanonicalEventRecord,
+): NormalizedCanonicalEventIntake {
   const direction = event.provenance.direction;
-  const communicationClassification =
-    event.eventType.startsWith("communication.")
-      ? {
-          messageKind: event.provenance.messageKind ?? "one_to_one",
-          sourceRecordType: event.provenance.sourceRecordType ?? "message",
-          sourceRecordId:
-            event.provenance.sourceRecordId ??
-            `${event.provenance.primaryProvider}:${event.id.replace("event:", "")}`,
-          campaignRef: event.provenance.campaignRef ?? null,
-          threadRef: event.provenance.threadRef ?? null,
-          direction: direction ?? "inbound",
-        }
-      : undefined;
+  const communicationClassification = event.eventType.startsWith(
+    "communication.",
+  )
+    ? {
+        messageKind: event.provenance.messageKind ?? "one_to_one",
+        sourceRecordType: event.provenance.sourceRecordType ?? "message",
+        sourceRecordId:
+          event.provenance.sourceRecordId ??
+          `${event.provenance.primaryProvider}:${event.id.replace("event:", "")}`,
+        campaignRef: event.provenance.campaignRef ?? null,
+        threadRef: event.provenance.threadRef ?? null,
+        direction: direction ?? "inbound",
+      }
+    : undefined;
 
   return {
     sourceEvidence: buildSourceEvidence({
@@ -231,10 +234,14 @@ function buildContext(input: {
   readonly contactIdentities?: readonly ContactIdentityRecord[];
   readonly sourceProvider?: SourceEvidenceRecord["provider"];
   readonly onContactIdentityUpsert?: (record: ContactIdentityRecord) => void;
-  readonly onContactMembershipUpsert?: (record: ContactMembershipRecord) => void;
+  readonly onContactMembershipUpsert?: (
+    record: ContactMembershipRecord,
+  ) => void;
   readonly onProjectDimensionUpsert?: (record: ProjectDimensionRecord) => void;
   readonly onExpeditionDimensionUpsert?: (
-    record: Parameters<Stage1RepositoryBundle["expeditionDimensions"]["upsert"]>[0],
+    record: Parameters<
+      Stage1RepositoryBundle["expeditionDimensions"]["upsert"]
+    >[0],
   ) => void;
 }): TestContext {
   const contacts = input.contacts ?? [contact];
@@ -242,8 +249,9 @@ function buildContext(input: {
   const contactsById = new Map(contacts.map((entry) => [entry.id, entry]));
   const contactsBySalesforceContactId = new Map(
     contacts
-      .filter((entry): entry is ContactRecord & { salesforceContactId: string } =>
-        entry.salesforceContactId !== null
+      .filter(
+        (entry): entry is ContactRecord & { salesforceContactId: string } =>
+          entry.salesforceContactId !== null,
       )
       .map((entry) => [entry.salesforceContactId, entry]),
   );
@@ -273,8 +281,14 @@ function buildContext(input: {
   const canonicalEventsById = new Map(
     input.events.map((event) => [event.id, event]),
   );
-  const timelineRowsByCanonicalEventId = new Map<string, TimelineProjectionRow>();
-  const gmailDetailsBySourceEvidenceId = new Map<string, GmailMessageDetailRecord>();
+  const timelineRowsByCanonicalEventId = new Map<
+    string,
+    TimelineProjectionRow
+  >();
+  const gmailDetailsBySourceEvidenceId = new Map<
+    string,
+    GmailMessageDetailRecord
+  >();
   const sourceEvidenceQuarantineEntries = new Array<{
     id: string;
     provider: SourceEvidenceRecord["provider"];
@@ -301,14 +315,22 @@ function buildContext(input: {
         Promise.resolve(
           ids
             .map((id) => sourceEvidenceById.get(id))
-            .filter((record): record is SourceEvidenceRecord => record !== undefined),
+            .filter(
+              (record): record is SourceEvidenceRecord => record !== undefined,
+            ),
         ),
       findByIdempotencyKey: (idempotencyKey) =>
-        Promise.resolve(sourceEvidenceByIdempotencyKey.get(idempotencyKey) ?? null),
+        Promise.resolve(
+          sourceEvidenceByIdempotencyKey.get(idempotencyKey) ?? null,
+        ),
       listIdempotencyChecksumCollisions: () =>
         Promise.resolve({ entries: [], hasMore: false }),
       countByProvider: () => Promise.resolve(sourceEvidenceById.size),
-      listByProviderRecord: ({ provider, providerRecordType, providerRecordId }) =>
+      listByProviderRecord: ({
+        provider,
+        providerRecordType,
+        providerRecordId,
+      }) =>
         Promise.resolve(
           [...sourceEvidenceById.values()].filter(
             (record) =>
@@ -335,7 +357,10 @@ function buildContext(input: {
               ? true
               : entry.attemptedAt < beforeTimestamp,
           )
-          .sort((left, right) => right.attemptedAt.getTime() - left.attemptedAt.getTime());
+          .sort(
+            (left, right) =>
+              right.attemptedAt.getTime() - left.attemptedAt.getTime(),
+          );
 
         return Promise.resolve({
           entries: entries.slice(0, limit),
@@ -346,7 +371,9 @@ function buildContext(input: {
     canonicalEvents: {
       findById: (id) => Promise.resolve(canonicalEventsById.get(id) ?? null),
       findByIdempotencyKey: (idempotencyKey) =>
-        Promise.resolve(canonicalEventsByIdempotencyKey.get(idempotencyKey) ?? null),
+        Promise.resolve(
+          canonicalEventsByIdempotencyKey.get(idempotencyKey) ?? null,
+        ),
       listByContentFingerprintWindow: () => Promise.resolve([]),
       countAll: () => Promise.resolve(input.events.length),
       countByPrimaryProvider: () => Promise.resolve(input.events.length),
@@ -355,12 +382,22 @@ function buildContext(input: {
         Promise.resolve(
           ids
             .map((id) => canonicalEventsById.get(id))
-            .filter((event): event is CanonicalEventRecord => event !== undefined),
+            .filter(
+              (event): event is CanonicalEventRecord => event !== undefined,
+            ),
         ),
       listByContactId: (contactId) =>
         Promise.resolve(
           sortEvents(
             input.events.filter((event) => event.contactId === contactId),
+          ),
+        ),
+      listByContactIds: (contactIds) =>
+        Promise.resolve(
+          sortEvents(
+            input.events.filter((event) =>
+              contactIds.includes(event.contactId),
+            ),
           ),
         ),
       upsert: (record) => {
@@ -386,10 +423,13 @@ function buildContext(input: {
     contacts: {
       findById: (id) => Promise.resolve(contactsById.get(id) ?? null),
       findBySalesforceContactId: (salesforceContactId) =>
-        Promise.resolve(contactsBySalesforceContactId.get(salesforceContactId) ?? null),
+        Promise.resolve(
+          contactsBySalesforceContactId.get(salesforceContactId) ?? null,
+        ),
       findByPrimaryPhone: (phoneE164) =>
         Promise.resolve(
-          contacts.find((contact) => contact.primaryPhone === phoneE164) ?? null,
+          contacts.find((contact) => contact.primaryPhone === phoneE164) ??
+            null,
         ),
       listAll: () => Promise.resolve([...contacts]),
       listByIds: (ids) =>
@@ -404,7 +444,9 @@ function buildContext(input: {
     contactIdentities: {
       listByContactId: (contactId) =>
         Promise.resolve(
-          contactIdentities.filter((identity) => identity.contactId === contactId),
+          contactIdentities.filter(
+            (identity) => identity.contactId === contactId,
+          ),
         ),
       listByNormalizedValue: ({ normalizedValue }) =>
         Promise.resolve(
@@ -467,7 +509,8 @@ function buildContext(input: {
           ids
             .map((id) => gmailDetailsBySourceEvidenceId.get(id))
             .filter(
-              (record): record is GmailMessageDetailRecord => record !== undefined,
+              (record): record is GmailMessageDetailRecord =>
+                record !== undefined,
             ),
         ),
       listLastInboundAliasByContactIds: () => Promise.resolve(new Map()),
@@ -629,12 +672,15 @@ function buildContext(input: {
     timelineProjection: {
       countAll: () => Promise.resolve(timelineRowsByCanonicalEventId.size),
       findByCanonicalEventId: (canonicalEventId) =>
-        Promise.resolve(timelineRowsByCanonicalEventId.get(canonicalEventId) ?? null),
+        Promise.resolve(
+          timelineRowsByCanonicalEventId.get(canonicalEventId) ?? null,
+        ),
       listByContactId: () =>
         Promise.resolve([...timelineRowsByCanonicalEventId.values()]),
       listRecentByContactId: () =>
         Promise.resolve([...timelineRowsByCanonicalEventId.values()]),
-      countByContactId: () => Promise.resolve(timelineRowsByCanonicalEventId.size),
+      countByContactId: () =>
+        Promise.resolve(timelineRowsByCanonicalEventId.size),
       getFreshnessByContactId: () =>
         Promise.resolve({
           contactId: contacts[0]?.id ?? contact.id,
@@ -656,6 +702,7 @@ function buildContext(input: {
     auditEvidence: {
       append: (record: AuditEvidenceRecord) => Promise.resolve(record),
       listByEntity: () => Promise.resolve([]),
+      listByEntities: () => Promise.resolve([]),
     },
   });
 
@@ -829,11 +876,13 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
       lastInboundAt: inbound.occurredAt,
       lastOutboundAt: null,
     });
-    await expect(replayEvent(outboundContext, outbound)).resolves.toMatchObject({
-      bucket: "Opened",
-      lastInboundAt: null,
-      lastOutboundAt: outbound.occurredAt,
-    });
+    await expect(replayEvent(outboundContext, outbound)).resolves.toMatchObject(
+      {
+        bucket: "Opened",
+        lastInboundAt: null,
+        lastOutboundAt: outbound.occurredAt,
+      },
+    );
   });
 
   it("creates a projection for campaign-only contacts", async () => {
@@ -1009,11 +1058,14 @@ describe("upsertNormalizedContactGraph write ordering", () => {
         callOrder.push({ kind: "projectDimension", id: record.projectId });
       },
       onExpeditionDimensionUpsert: (record) => {
-        callOrder.push({ kind: "expeditionDimension", id: record.expeditionId });
+        callOrder.push({
+          kind: "expeditionDimension",
+          id: record.expeditionId,
+        });
       },
       onContactMembershipUpsert: (record) => {
         callOrder.push({ kind: "contactMembership", id: record.id });
-      }
+      },
     });
     const input: NormalizedContactGraphUpsertInput = {
       contact: {
@@ -1023,7 +1075,7 @@ describe("upsertNormalizedContactGraph write ordering", () => {
         primaryEmail: "new-expedition@example.org",
         primaryPhone: null,
         createdAt: "2026-04-29T00:00:00.000Z",
-        updatedAt: "2026-04-29T00:00:00.000Z"
+        updatedAt: "2026-04-29T00:00:00.000Z",
       },
       identities: [
         {
@@ -1033,8 +1085,8 @@ describe("upsertNormalizedContactGraph write ordering", () => {
           normalizedValue: "003-new-expedition",
           isPrimary: true,
           source: "salesforce",
-          verifiedAt: "2026-04-29T00:00:00.000Z"
-        }
+          verifiedAt: "2026-04-29T00:00:00.000Z",
+        },
       ],
       memberships: [
         {
@@ -1046,37 +1098,37 @@ describe("upsertNormalizedContactGraph write ordering", () => {
           role: "volunteer",
           status: "active",
           source: "salesforce",
-          createdAt: "2026-04-29T00:00:00.000Z"
-        }
+          createdAt: "2026-04-29T00:00:00.000Z",
+        },
       ],
       projectDimensions: [
         {
           projectId: "sf-project-NEW-1",
           projectName: "New Project",
           source: "salesforce",
-          isActive: false
-        }
+          isActive: false,
+        },
       ],
       expeditionDimensions: [
         {
           expeditionId: "sf-expedition-NEW-1",
           projectId: "sf-project-NEW-1",
           expeditionName: "New Expedition",
-          source: "salesforce"
-        }
-      ]
+          source: "salesforce",
+        },
+      ],
     };
 
     await context.normalization.upsertNormalizedContactGraph(input);
 
     const firstProjectDimensionIndex = callOrder.findIndex(
-      (entry) => entry.kind === "projectDimension"
+      (entry) => entry.kind === "projectDimension",
     );
     const firstExpeditionDimensionIndex = callOrder.findIndex(
-      (entry) => entry.kind === "expeditionDimension"
+      (entry) => entry.kind === "expeditionDimension",
     );
     const firstMembershipIndex = callOrder.findIndex(
-      (entry) => entry.kind === "contactMembership"
+      (entry) => entry.kind === "contactMembership",
     );
 
     expect(firstProjectDimensionIndex).toBeGreaterThanOrEqual(0);
