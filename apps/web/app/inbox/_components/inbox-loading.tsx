@@ -1,8 +1,9 @@
 import { Skeleton } from "@/components/ui/skeleton";
-import { SPACING, TONE } from "@/app/_lib/design-tokens";
+import { SPACING } from "@/app/_lib/design-tokens";
 import { LAYOUT } from "@/app/_lib/design-tokens-v2";
 import {
   EMAIL_BUBBLE_MAX_W,
+  SMS_BUBBLE_MAX_W,
   TIMELINE_GRID_COLUMNS,
   TIMELINE_OUTER_MAX_W,
 } from "./inbox-timeline-bubble";
@@ -195,10 +196,38 @@ export function InboxDetailLoading() {
       aria-label="Loading conversation history"
     >
       <section className="flex min-w-0 flex-1 flex-col border-r border-slate-200 bg-white">
+        <header
+          className={`flex ${LAYOUT.headerHeight} shrink-0 items-center justify-between gap-4 border-b border-slate-200 px-5`}
+        >
+          <div className="flex min-w-0 items-center gap-3.5">
+            <Skeleton className="size-7 shrink-0 rounded-full bg-slate-200/80" />
+            <div className="min-w-0 space-y-1.5">
+              <Skeleton className="h-4 w-40 max-w-[42vw] bg-slate-200/80" />
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-3 w-32 bg-slate-200/70" />
+                <Skeleton className="h-5 w-16 rounded-full bg-slate-200/70" />
+              </div>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Skeleton className="size-8 rounded-md bg-slate-200/70" />
+            <Skeleton className="size-8 rounded-md bg-slate-200/70" />
+            <Skeleton className="size-8 rounded-md bg-slate-200/70" />
+          </div>
+        </header>
         <div
-          className={`min-h-0 flex-1 overflow-y-auto ${TONE.slate.subtle} ${SPACING.container}`}
+          className={`min-h-0 flex-1 overflow-y-auto bg-slate-50/40 ${SPACING.container}`}
         >
           <TimelineSkeleton />
+        </div>
+        <div className="shrink-0 border-t border-slate-200 bg-white px-5 py-3">
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+            <div className="min-w-0 space-y-1.5">
+              <Skeleton className="h-3.5 w-48 max-w-full bg-slate-200/70" />
+              <Skeleton className="h-3 w-32 max-w-full bg-slate-200/60" />
+            </div>
+            <Skeleton className="h-8 w-24 shrink-0 rounded-md bg-slate-200/70" />
+          </div>
         </div>
       </section>
     </div>
@@ -211,15 +240,24 @@ export function InboxDetailLoading() {
  */
 export function QueueRowSkeleton() {
   return (
-    <div className={`flex gap-3 border-b border-slate-100 ${SPACING.listItem}`}>
-      <Skeleton className="size-10 shrink-0 rounded-full" />
-      <div className="min-w-0 flex-1 space-y-2">
+    <div
+      className={`flex min-h-[88px] gap-3 border-b border-slate-100 ${SPACING.listItem}`}
+    >
+      <Skeleton className="size-9 shrink-0 rounded-full bg-slate-200/80" />
+      <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <Skeleton className="h-3.5 w-28" />
-          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-3.5 w-36 bg-slate-200/80" />
+          <Skeleton className="h-3 w-11 shrink-0 bg-slate-200/70" />
         </div>
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-2.5 w-3/4" />
+        <div className="mt-2 flex items-center gap-1.5">
+          <Skeleton className="size-3 shrink-0 rounded-sm bg-slate-200/70" />
+          <Skeleton className="h-3 w-40 max-w-[72%] bg-slate-200/70" />
+        </div>
+        <Skeleton className="mt-2 h-2.5 w-52 max-w-[86%] bg-slate-200/60" />
+        <div className="mt-2 flex items-center gap-1.5">
+          <Skeleton className="h-5 w-20 rounded bg-slate-200/60" />
+          <Skeleton className="h-5 w-16 rounded bg-slate-200/50" />
+        </div>
       </div>
     </div>
   );
@@ -258,14 +296,7 @@ export function QueueLoadMoreSkeleton({
     <div className="pt-3" role="status" aria-label="Loading more conversations">
       <div className="space-y-0">
         {Array.from({ length: rowCount }).map((_, i) => (
-          <div key={i} className="flex gap-3 px-4 py-3">
-            <Skeleton className="size-9 shrink-0 rounded-full" />
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Skeleton className="h-3 w-32" />
-              <Skeleton className="h-3 w-48 max-w-full" />
-              <Skeleton className="h-3 w-40 max-w-full" />
-            </div>
-          </div>
+          <QueueRowSkeleton key={i} />
         ))}
       </div>
     </div>
@@ -278,24 +309,24 @@ export function TimelineSkeleton() {
       <div
         className={`mx-auto grid w-full gap-x-2.5 gap-y-3 ${TIMELINE_OUTER_MAX_W} ${TIMELINE_GRID_COLUMNS}`}
       >
-        <TimelineBubbleSkeleton
+        <TimelineEmailBubbleSkeleton
           direction="inbound"
           lineWidths={["w-full", "w-5/6", "w-3/4"]}
         />
-        <TimelineBubbleSkeleton
+        <TimelineSmsBubbleSkeleton
           direction="outbound"
-          lineWidths={["w-full", "w-5/6", "w-2/3"]}
+          lineWidths={["w-11/12", "w-3/4"]}
         />
         <li className={`col-span-3 grid ${TIMELINE_GRID_COLUMNS}`}>
           <div className="col-start-2 flex py-1">
-            <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2">
-              <Skeleton className="h-3 w-40 rounded-full" />
+            <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
+              <Skeleton className="h-3 w-40 rounded-full bg-slate-200/70" />
             </div>
           </div>
         </li>
-        <TimelineBubbleSkeleton
+        <TimelineSmsBubbleSkeleton
           direction="inbound"
-          lineWidths={["w-full", "w-4/5", "w-3/5"]}
+          lineWidths={["w-4/5", "w-3/5"]}
         />
       </div>
       <span className="sr-only">Loading conversation...</span>
@@ -303,7 +334,7 @@ export function TimelineSkeleton() {
   );
 }
 
-function TimelineBubbleSkeleton({
+function TimelineEmailBubbleSkeleton({
   direction,
   lineWidths,
 }: {
@@ -321,24 +352,79 @@ function TimelineBubbleSkeleton({
             : "col-start-3 flex justify-center"
         }`}
       >
-        <div aria-hidden="true" className="size-9 rounded-full bg-slate-200" />
+        <Skeleton
+          aria-hidden="true"
+          className="size-8 rounded-full bg-slate-200/80"
+        />
       </div>
       <div
         className={`col-start-2 ${
           isInbound ? "justify-self-start" : "justify-self-end"
-        } ${EMAIL_BUBBLE_MAX_W}`}
+        } w-full ${EMAIL_BUBBLE_MAX_W}`}
       >
-        <div className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <div className="space-y-2">
+        <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-2.5">
+            <Skeleton className="h-3 w-44 max-w-full bg-slate-200/70" />
+          </div>
+          <div className="space-y-2 px-4 py-3">
             {lineWidths.map((width, index) => (
               <Skeleton
                 key={`${direction}-${index.toString()}`}
-                className={`h-3 ${width}`}
+                className={`h-3 ${width} bg-slate-200/70`}
               />
             ))}
           </div>
         </div>
       </div>
+    </li>
+  );
+}
+
+function TimelineSmsBubbleSkeleton({
+  direction,
+  lineWidths,
+}: {
+  readonly direction: "inbound" | "outbound";
+  readonly lineWidths: readonly string[];
+}) {
+  const isInbound = direction === "inbound";
+
+  return (
+    <li className={`col-span-3 grid ${TIMELINE_GRID_COLUMNS}`}>
+      <div aria-hidden="true" />
+      <div
+        className={`col-start-2 min-w-0 ${
+          isInbound ? "justify-self-start" : "justify-self-end"
+        } w-full ${SMS_BUBBLE_MAX_W}`}
+      >
+        <div className="mb-1 px-1">
+          <Skeleton className="h-3 w-10 bg-slate-200/70" />
+        </div>
+        <div
+          className={`w-full rounded-2xl border px-4 py-3 shadow-sm ${
+            isInbound
+              ? "rounded-bl-md border-slate-200 bg-white"
+              : "rounded-br-md border-sky-200 bg-sky-50"
+          }`}
+        >
+          <div className="space-y-2">
+            {lineWidths.map((width, index) => (
+              <Skeleton
+                key={`${direction}-sms-${index.toString()}`}
+                className={`h-3 ${width} ${
+                  isInbound ? "bg-slate-200/70" : "bg-sky-200/70"
+                }`}
+              />
+            ))}
+          </div>
+          <Skeleton
+            className={`mt-3 h-3 w-16 ${
+              isInbound ? "bg-slate-200/60" : "bg-sky-200/60"
+            }`}
+          />
+        </div>
+      </div>
+      <div aria-hidden="true" />
     </li>
   );
 }

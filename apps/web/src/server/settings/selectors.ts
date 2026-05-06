@@ -148,7 +148,6 @@ export interface LogsSettingsViewModel {
 const INTEGRATION_ORDER = [
   "salesforce",
   "gmail",
-  "simpletexting",
   "mailchimp",
   "notion",
   "openai"
@@ -164,11 +163,6 @@ const INTEGRATION_META = {
     displayName: "Gmail",
     description: "Inbound and outbound email",
     supportsRefresh: true
-  },
-  simpletexting: {
-    displayName: "SimpleTexting",
-    description: "Volunteer SMS delivery",
-    supportsRefresh: false
   },
   mailchimp: {
     displayName: "Mailchimp",
@@ -570,9 +564,9 @@ function toUserViewModel(user: {
   const status =
     user.deactivatedAt !== null
       ? "deactivated"
-      : user.emailVerified === null
-        ? "pending"
-        : "active";
+      : user.role === "admin" || user.emailVerified !== null
+        ? "active"
+        : "pending";
 
   return {
     userId: user.id,
@@ -650,14 +644,25 @@ async function readIntegrationHealth(): Promise<
   const latestMailchimpSync = getLatestSuccessfulMailchimpTransitionSync(syncStates);
   const latestMailchimpSyncAt = latestMailchimpSync?.lastSuccessfulAt ?? null;
   const mailchimpBaseUrl = readMailchimpCaptureBaseUrl();
+  const latestMailchimpSyncAgeMs =
+    latestMailchimpSyncAt === null
+      ? null
+      : Date.now() - Date.parse(latestMailchimpSyncAt);
   const mailchimpActivityAgeMs =
     mailchimpSnapshot.latestActivityAt === null
       ? null
       : Date.now() - Date.parse(mailchimpSnapshot.latestActivityAt);
+  const hasFreshMailchimpSync =
+    latestMailchimpSyncAgeMs !== null &&
+    Number.isFinite(latestMailchimpSyncAgeMs) &&
+    latestMailchimpSyncAgeMs <= MAILCHIMP_HEALTHY_WINDOW_MS;
+  const hasMailchimpEvidence =
+    latestMailchimpSyncAt !== null || mailchimpSnapshot.latestActivityAt !== null;
   const shouldHideMailchimp =
     mailchimpBaseUrl === null &&
     mailchimpSnapshot.latestActivityAt !== null &&
     mailchimpActivityAgeMs !== null &&
+    Number.isFinite(mailchimpActivityAgeMs) &&
     mailchimpActivityAgeMs > MAILCHIMP_AUTO_HIDE_WINDOW_MS;
   const mailchimpBatchRecipientCount = await readMailchimpLastBatchRecipientCount(
     runtime,
@@ -677,13 +682,11 @@ async function readIntegrationHealth(): Promise<
     const meta = INTEGRATION_META[serviceName];
     if (serviceName === "mailchimp") {
       const mailchimpStatus: MailchimpTileStatus =
-        mailchimpBaseUrl === null
-          ? "unconfigured"
-          : latestMailchimpSyncAt !== null &&
-              Date.now() - Date.parse(latestMailchimpSyncAt) <=
-                MAILCHIMP_HEALTHY_WINDOW_MS
-            ? "connected"
-            : "stale";
+        hasFreshMailchimpSync
+          ? "connected"
+          : mailchimpBaseUrl !== null || hasMailchimpEvidence
+            ? "stale"
+            : "unconfigured";
 
       integrations.push({
         serviceName: record.serviceName,

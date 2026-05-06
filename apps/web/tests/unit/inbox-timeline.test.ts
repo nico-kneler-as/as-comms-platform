@@ -460,7 +460,7 @@ describe("InboxTimeline", () => {
     expect(markup).not.toContain("1 automated");
   });
 
-  it("renders sms rows with the shared 560px bubble width", () => {
+  it("renders sms rows with the shared 560px bubble width and quieter outbound styling", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -474,7 +474,7 @@ describe("InboxTimeline", () => {
             fromHeader: null,
             toHeader: null,
             mailbox: null,
-            body: "See you at 9.",
+            body: "See you at 9: https://example.org/field-brief",
           },
         ],
         volunteerFirstName: "Alice",
@@ -483,7 +483,11 @@ describe("InboxTimeline", () => {
     );
 
     expect(markup).toContain("w-full max-w-[560px]");
+    expect(markup).toContain("rounded-br-md border-sky-200 bg-sky-50 text-slate-800");
+    expect(markup).toContain("font-medium text-sky-800 underline decoration-sky-300");
+    expect(markup).toContain('href="https://example.org/field-brief"');
     expect(markup).not.toContain("w-fit max-w-[480px]");
+    expect(markup).not.toContain("border-sky-600 bg-sky-600 text-white");
   });
 
   it("renders note rows at the shared 560px width instead of fit-content", () => {

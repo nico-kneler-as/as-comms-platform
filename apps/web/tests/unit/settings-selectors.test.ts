@@ -462,7 +462,16 @@ describe("settings selectors", () => {
       buildUser({
         id: "user:admin",
         email: "admin@adventurescientists.org",
-        role: "admin"
+        role: "admin",
+        emailVerified: null
+      })
+    );
+    await runtime.context.settings.users.upsert(
+      buildUser({
+        id: "user:admin-secondary",
+        email: "admin.secondary@adventurescientists.org",
+        role: "admin",
+        emailVerified: null
       })
     );
     await runtime.context.settings.users.upsert(
@@ -483,7 +492,14 @@ describe("settings selectors", () => {
 
     const viewModel = await loadAccessSettings();
 
-    expect(viewModel.admins.map((user) => user.userId)).toEqual(["user:admin"]);
+    expect(viewModel.admins.map((user) => user.userId)).toEqual([
+      "user:admin",
+      "user:admin-secondary"
+    ]);
+    expect(viewModel.admins.map((user) => user.status)).toEqual([
+      "active",
+      "active"
+    ]);
     expect(viewModel.internalUsers.map((user) => user.userId)).toEqual([
       "user:operator-active",
       "user:operator-pending"
@@ -491,6 +507,10 @@ describe("settings selectors", () => {
     expect(viewModel.internalUsers.map((user) => user.role)).toEqual([
       "internal_user",
       "internal_user"
+    ]);
+    expect(viewModel.internalUsers.map((user) => user.status)).toEqual([
+      "active",
+      "pending"
     ]);
   });
 
@@ -503,14 +523,13 @@ describe("settings selectors", () => {
     await expect(loadAccessSettings()).rejects.toThrow("FORBIDDEN");
   });
 
-  it("returns the six seeded integrations in stable order on first read", async () => {
+  it("returns the visible seeded integrations in stable order on first read", async () => {
     const viewModel = await loadIntegrationHealth();
 
     expect(viewModel.integrations.map((integration) => integration.serviceName)).toEqual(
       [
         "salesforce",
         "gmail",
-        "simpletexting",
         "mailchimp",
         "notion",
         "openai"
@@ -520,7 +539,6 @@ describe("settings selectors", () => {
       [
         "not_checked",
         "not_checked",
-        "not_configured",
         "not_configured",
         "not_configured",
         "not_configured"
@@ -533,7 +551,7 @@ describe("settings selectors", () => {
       throw new Error("runtime not initialized");
     }
 
-    process.env.MAILCHIMP_CAPTURE_BASE_URL = "https://mailchimp-capture.internal";
+    delete process.env.MAILCHIMP_CAPTURE_BASE_URL;
 
     await seedMailchimpCampaignEvent(runtime, {
       sourceEvidenceId: "sev-mailchimp-sent",
@@ -588,6 +606,41 @@ describe("settings selectors", () => {
         lastCampaignName: "Spring Update",
         lastCampaignSentAt: "2026-05-03T11:15:00.000Z",
         lastBatchRecipientCount: 2,
+      },
+    });
+  });
+
+  it("keeps recent Mailchimp campaign evidence stale instead of not configured when web env is unset", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    delete process.env.MAILCHIMP_CAPTURE_BASE_URL;
+
+    await seedMailchimpCampaignEvent(runtime, {
+      sourceEvidenceId: "sev-mailchimp-recent-sent",
+      providerRecordId: "campaign-recent:member-1:sent",
+      canonicalEventId: "evt-mailchimp-recent-sent",
+      activityType: "sent",
+      eventType: "campaign.email.sent",
+      campaignId: "campaign-recent",
+      campaignName: "Recent Campaign",
+      occurredAt: "2026-05-01T12:00:00.000Z",
+    });
+
+    const viewModel = await loadIntegrationHealth();
+    const mailchimp = viewModel.integrations.find(
+      (integration) => integration.serviceName === "mailchimp"
+    );
+
+    expect(mailchimp).toMatchObject({
+      status: "needs_attention",
+      mailchimp: {
+        status: "stale",
+        lastSuccessfulSyncAt: null,
+        lastCampaignName: "Recent Campaign",
+        lastCampaignSentAt: "2026-05-01T12:00:00.000Z",
+        lastBatchRecipientCount: null,
       },
     });
   });

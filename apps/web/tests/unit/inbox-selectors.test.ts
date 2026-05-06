@@ -6408,6 +6408,81 @@ describe("real inbox selectors", () => {
     expect(secondPage.page.nextCursor).toBeNull();
   });
 
+  it("loads unread rows from the unread slice instead of filtering the first inbox page", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.dispose();
+    runtime = await createInboxTestRuntime();
+
+    for (let index = 0; index < 6; index += 1) {
+      const contactId = `contact:opened-recent-${index.toString()}`;
+      const occurredAt = `2026-04-20T1${index.toString()}:00:00.000Z`;
+
+      await seedInboxContact(runtime.context, {
+        contactId,
+        salesforceContactId: `003-opened-recent-${index.toString()}`,
+        displayName: `Opened Recent ${index.toString()}`,
+        primaryEmail: `${contactId}@example.org`,
+        primaryPhone: null,
+      });
+      const latest = await seedInboxEmailEvent(runtime.context, {
+        id: `${contactId}-email-1`,
+        contactId,
+        occurredAt,
+        direction: "inbound",
+        subject: "Already opened",
+        snippet: "This row should stay out of unread.",
+      });
+      await seedInboxProjection(runtime.context, {
+        contactId,
+        bucket: "Opened",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt: occurredAt,
+        lastOutboundAt: null,
+        lastActivityAt: occurredAt,
+        snippet: "This row should stay out of unread.",
+        lastCanonicalEventId: latest.canonicalEventId,
+        lastEventType: "communication.email.inbound",
+      });
+    }
+
+    for (let index = 0; index < 4; index += 1) {
+      await seedInboxEmailOnlyContact(runtime, {
+        contactId: `contact:unread-older-${index.toString()}`,
+        displayName: `Unread Older ${index.toString()}`,
+        salesforceContactId: `003-unread-older-${index.toString()}`,
+        subject: "Unread older",
+        snippet: "This row should appear in unread.",
+        occurredAt: `2026-04-19T1${index.toString()}:00:00.000Z`,
+      });
+    }
+
+    const firstPage = await getInboxList("unread", {
+      limit: 3,
+    });
+
+    expect(firstPage.items.map((item) => item.contactId)).toEqual([
+      "contact:unread-older-3",
+      "contact:unread-older-2",
+      "contact:unread-older-1",
+    ]);
+    expect(firstPage.page.hasMore).toBe(true);
+    expect(firstPage.page.nextCursor).not.toBeNull();
+
+    const secondPage = await getInboxList("unread", {
+      limit: 3,
+      cursor: firstPage.page.nextCursor,
+    });
+
+    expect(secondPage.items.map((item) => item.contactId)).toEqual([
+      "contact:unread-older-0",
+    ]);
+    expect(secondPage.page.hasMore).toBe(false);
+  });
+
   it("orders and paginates sent mode by last outbound 1:1 message", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
@@ -6497,6 +6572,174 @@ describe("real inbox selectors", () => {
     expect(sentList.items.map((item) => item.contactId)).not.toContain(
       "contact:campaign-only-outbound",
     );
+  });
+
+  it("orders same-day lifecycle milestones by product lifecycle order in timeline and rail", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:lifecycle-order",
+      salesforceContactId: "003-lifecycle-order",
+      displayName: "Lifecycle Order",
+      primaryEmail: "lifecycle.order@example.org",
+      primaryPhone: null,
+      projectId: "project:pnw-biodiversity",
+      projectName: "PNW Biodiversity",
+      projectAlias: "PNW Biodiversity",
+      membershipId: "membership:lifecycle-order",
+      membershipStatus: "in_training",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "lifecycle-order-completed",
+      contactId: "contact:lifecycle-order",
+      occurredAt: "2026-04-18T08:30:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Volunteer completed training",
+      projectId: "project:pnw-biodiversity",
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "lifecycle-order-email",
+      contactId: "contact:lifecycle-order",
+      occurredAt: "2026-04-18T12:00:00.000Z",
+      direction: "inbound",
+      subject: "Training question",
+      snippet: "Can you confirm the training status?",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "lifecycle-order-signed",
+      contactId: "contact:lifecycle-order",
+      occurredAt: "2026-04-18T18:45:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Volunteer signed up",
+      projectId: "project:pnw-biodiversity",
+    });
+    const latest = await seedInboxLifecycleEvent(runtime.context, {
+      id: "lifecycle-order-received",
+      contactId: "contact:lifecycle-order",
+      occurredAt: "2026-04-18T23:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Volunteer received training",
+      projectId: "project:pnw-biodiversity",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:lifecycle-order",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-18T12:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-18T23:00:00.000Z",
+      snippet: "Volunteer received training",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "lifecycle.received_training",
+    });
+
+    const detail = await getInboxDetail("contact:lifecycle-order");
+    const lifecycleTimelineLabels =
+      detail?.timeline
+        .filter((entry) => entry.kind === "system-event")
+        .map((entry) => entry.body) ?? [];
+
+    expect(lifecycleTimelineLabels).toEqual([
+      "Signed up for PNW Biodiversity",
+      "Received training for PNW Biodiversity",
+      "Completed training for PNW Biodiversity",
+    ]);
+    expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
+      "Signed up - PNW Biodiversity",
+      "Received training - PNW Biodiversity",
+      "Completed training - PNW Biodiversity",
+    ]);
+  });
+
+  it("renders project-inbox team copies as outbound-style unread attention", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:team-copy",
+      salesforceContactId: "003-team-copy",
+      displayName: "Shaina Dotson",
+      primaryEmail: "shaina.dotson@gmail.com",
+      primaryPhone: null,
+      projectId: "project:pnw-biodiversity",
+      projectName: "Passive Acoustic Monitoring of Pacific Northwest Forests",
+      projectAlias: "PNW Biodiversity",
+      membershipId: "membership:team-copy",
+      membershipStatus: "active",
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:pnw-biodiversity",
+      alias: "pnwbio@adventurescientists.org",
+      signature: "",
+      projectId: "project:pnw-biodiversity",
+      createdAt: new Date("2026-04-18T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-18T00:00:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
+    });
+    const copiedMessage = await seedInboxEmailEvent(runtime.context, {
+      id: "team-copy-latest",
+      contactId: "contact:team-copy",
+      occurredAt: "2026-04-18T15:00:00.000Z",
+      direction: "inbound",
+      subject: "Re: Update on Hex 43191",
+      snippet: "Scotty copied the project inbox on this volunteer thread.",
+      bodyTextPreview:
+        "Scotty copied the project inbox on this volunteer thread.",
+      fromHeader: "Scotty <scotty@adventurescientists.org>",
+      toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+      ccHeader: "PNW Biodiversity <pnwbio@adventurescientists.org>",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:team-copy",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-04-18T15:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-04-18T15:00:00.000Z",
+      snippet: "Scotty copied the project inbox on this volunteer thread.",
+      lastCanonicalEventId: copiedMessage.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const list = await getInboxList();
+    const detail = await getInboxDetail("contact:team-copy");
+    const entry = detail?.timeline.at(-1);
+
+    expect(list.items[0]).toMatchObject({
+      contactId: "contact:team-copy",
+      bucket: "new",
+      isUnread: true,
+    });
+    expect(entry).toMatchObject({
+      kind: "outbound-email",
+      actorLabel: "Scotty",
+      isUnread: true,
+      headerProjectLabel: "PNW Biodiversity",
+      participantRows: [
+        {
+          label: "From",
+          name: "Scotty",
+          email: "scotty@adventurescientists.org",
+        },
+        {
+          label: "To",
+          name: "Shaina Dotson",
+          email: "shaina.dotson@gmail.com",
+        },
+        {
+          label: "Cc",
+          name: "PNW Biodiversity <pnwbio@adventurescientists.org>",
+          email: null,
+        },
+      ],
+    });
   });
 
   it("batch-loads timeline attachments once and groups them by source evidence id", async () => {

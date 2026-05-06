@@ -14,6 +14,9 @@ import {
   RefreshCwIcon,
 } from "./icons";
 
+const SMS_OUTBOUND_LINK_CLASS_NAME =
+  "font-medium text-sky-800 underline decoration-sky-300 underline-offset-2 hover:text-sky-950 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 [overflow-wrap:anywhere]";
+
 function StatusBanner({
   entry,
   isRetrying,
@@ -25,7 +28,7 @@ function StatusBanner({
 }) {
   if (entry.sendStatus === "pending") {
     return (
-      <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-white/20 px-2 py-1 text-[11px] font-medium text-white/90">
+      <div className="mb-2 inline-flex items-center gap-1 rounded-full border border-sky-200 bg-white/70 px-2 py-1 text-[11px] font-medium text-sky-700">
         <LoaderIcon className="size-3 animate-spin" />
         Sending...
       </div>
@@ -37,7 +40,7 @@ function StatusBanner({
   }
 
   return (
-    <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-white/12 px-2.5 py-2 text-[11px] text-white/90">
+    <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-[11px] text-rose-800">
       <span>
         {entry.sendStatus === "failed" ? "Send failed." : "Send stalled."}
       </span>
@@ -48,7 +51,7 @@ function StatusBanner({
             onRetryPending(entry.id);
           }}
           disabled={isRetrying}
-          className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-1 font-medium text-sky-700 disabled:opacity-60"
+          className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 font-medium text-rose-800 shadow-sm hover:bg-rose-100 disabled:opacity-60"
         >
           {isRetrying ? (
             <LoaderIcon className="size-3 animate-spin" />
@@ -103,7 +106,7 @@ export function SmsMessage({
               SMS_BUBBLE_MAX_W,
               "rounded-2xl border px-4 py-3 shadow-sm",
               isOutbound
-                ? "rounded-br-md border-sky-600 bg-sky-600 text-white"
+                ? "rounded-br-md border-sky-200 bg-sky-50 text-slate-800"
                 : "rounded-bl-md border-slate-200 bg-white text-slate-900",
             )}
           >
@@ -118,20 +121,18 @@ export function SmsMessage({
             {entry.body.trim().length > 0 ? (
               <p
                 className={cn(
-                  "whitespace-pre-wrap text-[13px] leading-relaxed [overflow-wrap:anywhere]",
-                  isOutbound ? "text-white" : "text-slate-700",
+                  "whitespace-pre-wrap text-pretty text-[13px] leading-relaxed [overflow-wrap:anywhere]",
+                  isOutbound ? "text-slate-800" : "text-slate-700",
                 )}
               >
-                {autolinkText(entry.body)}
+                {autolinkText(
+                  entry.body,
+                  isOutbound ? SMS_OUTBOUND_LINK_CLASS_NAME : undefined,
+                )}
               </p>
             ) : null}
 
-            <div
-              className={cn(
-                "mt-2 text-[11px]",
-                isOutbound ? "text-white/75" : "text-slate-500",
-              )}
-            >
+            <div className="mt-2 text-[11px] text-slate-500">
               {entry.occurredAtLabel}
             </div>
           </div>

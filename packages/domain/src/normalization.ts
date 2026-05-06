@@ -50,15 +50,14 @@ import {
   type SalesforceCommunicationDetailRecord,
   type SimpleTextingMessageDetailRecord,
   type SourceEvidenceRecord,
+  type SupportingSourceReference,
   type SyncStateRecord,
   type SyncStateUpdateInput,
   type TimelineProjectionApplyInput,
-  type TimelineProjectionRow
+  type TimelineProjectionRow,
 } from "@as-comms/contracts";
 
-import {
-  qualifiesForInboxProjection
-} from "./inbox-driving.js";
+import { qualifiesForInboxProjection } from "./inbox-driving.js";
 import {
   buildIncomingContentFingerprintSource,
   buildIncomingOutboundEmailFingerprintSource,
@@ -71,7 +70,7 @@ import {
   resolveOutboundEmailMergedWinnerDecision,
   salesforceSnippetClusterWindowMs,
   selectOutboundEmailDuplicateWinner,
-  selectSalesforceSelfDuplicateWinner
+  selectSalesforceSelfDuplicateWinner,
 } from "./outbound-email-dedup.js";
 import type { Stage1PersistenceService } from "./persistence.js";
 
@@ -87,7 +86,7 @@ const [
   lifecycleSignedUpEventType,
   lifecycleReceivedTrainingEventType,
   lifecycleCompletedTrainingEventType,
-  lifecycleSubmittedFirstDataEventType
+  lifecycleSubmittedFirstDataEventType,
 ] = canonicalEventTypeValues;
 
 const lifecycleTimelineOrdinalByEventType: Partial<
@@ -96,15 +95,17 @@ const lifecycleTimelineOrdinalByEventType: Partial<
   [lifecycleSignedUpEventType]: "01",
   [lifecycleReceivedTrainingEventType]: "02",
   [lifecycleCompletedTrainingEventType]: "03",
-  [lifecycleSubmittedFirstDataEventType]: "04"
+  [lifecycleSubmittedFirstDataEventType]: "04",
 };
 
 interface IdentityResolutionContext {
   loadContactsForIdentityKind(
     kind: ContactIdentityKind,
-    values: readonly string[]
+    values: readonly string[],
   ): Promise<ContactLookupMap>;
-  findAnchoredContact(salesforceContactId: string): Promise<ContactRecord | null>;
+  findAnchoredContact(
+    salesforceContactId: string,
+  ): Promise<ContactRecord | null>;
   clear(): void;
 }
 
@@ -122,7 +123,7 @@ export class CanonicalContactAmbiguityError extends Error {
     readonly candidateContactIds: readonly string[];
   }) {
     super(
-      `Normalized email ${input.normalizedEmail} maps to multiple contacts.`
+      `Normalized email ${input.normalizedEmail} maps to multiple contacts.`,
     );
     this.name = "CanonicalContactAmbiguityError";
     this.normalizedEmail = input.normalizedEmail;
@@ -251,7 +252,7 @@ export type NormalizedCanonicalEventResult =
 export interface Stage1NormalizationService {
   readonly persistence: Stage1PersistenceService;
   recordNormalizedSourceEvidence(
-    input: NormalizedSourceEvidenceIntake
+    input: NormalizedSourceEvidenceIntake,
   ): Promise<NormalizedSourceEvidenceResult>;
   ensureCanonicalContactForEmail(input: {
     readonly emailAddress: string;
@@ -259,40 +260,40 @@ export interface Stage1NormalizationService {
     readonly source?: ContactIdentityRecord["source"];
   }): Promise<ContactRecord>;
   upsertNormalizedContactGraph(
-    input: NormalizedContactGraphUpsertInput
+    input: NormalizedContactGraphUpsertInput,
   ): Promise<NormalizedContactGraphResult>;
   saveIdentityAmbiguityCase(
-    input: IdentityAmbiguityInput
+    input: IdentityAmbiguityInput,
   ): Promise<ReviewCaseSaveResult<IdentityResolutionCase>>;
   saveRoutingAmbiguityCase(
-    input: RoutingAmbiguityInput
+    input: RoutingAmbiguityInput,
   ): Promise<ReviewCaseSaveResult<RoutingReviewCase>>;
   applyTimelineProjection(
-    input: TimelineProjectionApplyInput
+    input: TimelineProjectionApplyInput,
   ): Promise<TimelineProjectionRow>;
   applyInboxProjection(
-    input: InboxProjectionApplyInput
+    input: InboxProjectionApplyInput,
   ): Promise<InboxProjectionRow | null>;
   refreshInboxReviewOverlay(
-    input: InboxReviewOverlayRefreshInput
+    input: InboxReviewOverlayRefreshInput,
   ): Promise<InboxProjectionRow | null>;
   updateSyncState(input: SyncStateUpdateInput): Promise<SyncStateRecord>;
   applyNormalizedCanonicalEvent(
     input: NormalizedCanonicalEventIntake,
     options?: {
       readonly overwriteDuplicateGmailMessageDetail?: boolean;
-    }
+    },
   ): Promise<NormalizedCanonicalEventResult>;
 }
 
 function uniqueStrings(values: readonly string[]): string[] {
   return Array.from(new Set(values)).sort((left, right) =>
-    left.localeCompare(right)
+    left.localeCompare(right),
   );
 }
 
 function uniqueById<T extends { readonly id: string }>(
-  values: readonly T[]
+  values: readonly T[],
 ): T[] {
   const deduped = new Map<string, T>();
 
@@ -301,13 +302,13 @@ function uniqueById<T extends { readonly id: string }>(
   }
 
   return Array.from(deduped.values()).sort((left, right) =>
-    left.id.localeCompare(right.id)
+    left.id.localeCompare(right.id),
   );
 }
 
 function uniqueByKey<T>(
   values: readonly T[],
-  getKey: (value: T) => string
+  getKey: (value: T) => string,
 ): T[] {
   const deduped = new Map<string, T>();
 
@@ -327,16 +328,13 @@ function requireValue<T>(value: T | undefined, message: string): T {
 }
 
 function assertVolunteerScopedSalesforceContactGraph(
-  input: NormalizedContactGraphUpsertInput
+  input: NormalizedContactGraphUpsertInput,
 ): void {
   const memberships = input.memberships ?? [];
 
-  if (
-    input.contact.salesforceContactId !== null &&
-    memberships.length === 0
-  ) {
+  if (input.contact.salesforceContactId !== null && memberships.length === 0) {
     throw new Error(
-      `Salesforce contact ${input.contact.salesforceContactId} is missing expedition memberships and cannot be upserted into the Stage 1 volunteer contact graph.`
+      `Salesforce contact ${input.contact.salesforceContactId} is missing expedition memberships and cannot be upserted into the Stage 1 volunteer contact graph.`,
     );
   }
 }
@@ -349,7 +347,7 @@ function isInboundEvent(eventType: CanonicalEventRecord["eventType"]): boolean {
 }
 
 function isOutboundProjectionEvent(
-  eventType: CanonicalEventRecord["eventType"]
+  eventType: CanonicalEventRecord["eventType"],
 ): boolean {
   return (
     eventType === "communication.email.outbound" ||
@@ -360,7 +358,7 @@ function isOutboundProjectionEvent(
 
 function compareCanonicalEventRecency(
   left: Pick<CanonicalEventRecord, "id" | "occurredAt">,
-  right: Pick<CanonicalEventRecord, "id" | "occurredAt">
+  right: Pick<CanonicalEventRecord, "id" | "occurredAt">,
 ): number {
   if (left.occurredAt !== right.occurredAt) {
     return left.occurredAt.localeCompare(right.occurredAt);
@@ -371,9 +369,10 @@ function compareCanonicalEventRecency(
 
 function latestTimestampWins(
   incoming: Pick<CanonicalEventRecord, "id" | "occurredAt">,
-  existing:
-    | Pick<InboxProjectionRow, "lastActivityAt" | "lastCanonicalEventId">
-    | null
+  existing: Pick<
+    InboxProjectionRow,
+    "lastActivityAt" | "lastCanonicalEventId"
+  > | null,
 ): boolean {
   if (existing === null) {
     return true;
@@ -393,22 +392,33 @@ function buildTimelineProjectionId(canonicalEventId: string): string {
 }
 
 function resolveTimelineSortOrdinal(
-  eventType: CanonicalEventRecord["eventType"]
+  eventType: CanonicalEventRecord["eventType"],
 ): string {
   return lifecycleTimelineOrdinalByEventType[eventType] ?? "00";
+}
+
+function resolveTimelineSortOccurredAt(
+  occurredAt: string,
+  eventType: CanonicalEventRecord["eventType"],
+): string {
+  if (lifecycleTimelineOrdinalByEventType[eventType] === undefined) {
+    return occurredAt;
+  }
+
+  return `${occurredAt.slice(0, 10)}T00:00:00.000Z`;
 }
 
 export function buildTimelineSortKey(
   canonicalEventId: string,
   occurredAt: string,
-  eventType: CanonicalEventRecord["eventType"]
+  eventType: CanonicalEventRecord["eventType"],
 ): string {
-  return `${occurredAt}::${resolveTimelineSortOrdinal(eventType)}::${canonicalEventId}`;
+  return `${resolveTimelineSortOccurredAt(occurredAt, eventType)}::${resolveTimelineSortOrdinal(eventType)}::${canonicalEventId}`;
 }
 
 function buildIdentityCaseId(
   sourceEvidenceId: string,
-  reasonCode: IdentityResolutionCase["reasonCode"]
+  reasonCode: IdentityResolutionCase["reasonCode"],
 ): string {
   return `identity-review:${sourceEvidenceId}:${reasonCode}`;
 }
@@ -416,7 +426,7 @@ function buildIdentityCaseId(
 function buildRoutingCaseId(
   sourceEvidenceId: string,
   contactId: string,
-  reasonCode: RoutingReviewCase["reasonCode"]
+  reasonCode: RoutingReviewCase["reasonCode"],
 ): string {
   return `routing-review:${sourceEvidenceId}:${contactId}:${reasonCode}`;
 }
@@ -424,7 +434,7 @@ function buildRoutingCaseId(
 function buildQuarantineAuditId(
   entityType: string,
   entityId: string,
-  reasonCode: QuarantineReasonCode
+  reasonCode: QuarantineReasonCode,
 ): string {
   return `audit:${entityType}:${entityId}:${reasonCode}`;
 }
@@ -432,7 +442,7 @@ function buildQuarantineAuditId(
 function buildSkipAuditId(
   entityType: string,
   entityId: string,
-  action: "skipped_non_volunteer_task"
+  action: "skipped_non_volunteer_task",
 ): string {
   return `audit:${entityType}:${entityId}:${action}`;
 }
@@ -449,7 +459,9 @@ function buildSyntheticContactId(input: {
     return `contact:phone:${input.normalizedPhone}`;
   }
 
-  throw new Error("Cannot build a synthetic contact id without an email or phone.");
+  throw new Error(
+    "Cannot build a synthetic contact id without an email or phone.",
+  );
 }
 
 function buildSyntheticContactGraphInput(input: {
@@ -460,7 +472,7 @@ function buildSyntheticContactGraphInput(input: {
 }): NormalizedContactGraphUpsertInput {
   const contactId = buildSyntheticContactId({
     normalizedEmail: input.normalizedEmail,
-    normalizedPhone: input.normalizedPhone
+    normalizedPhone: input.normalizedPhone,
   });
 
   const identities: ContactIdentityRecord[] = [];
@@ -474,8 +486,8 @@ function buildSyntheticContactGraphInput(input: {
         normalizedValue: input.normalizedEmail,
         isPrimary: true,
         source: input.source,
-        verifiedAt: input.createdAt
-      })
+        verifiedAt: input.createdAt,
+      }),
     );
   }
 
@@ -488,8 +500,8 @@ function buildSyntheticContactGraphInput(input: {
         normalizedValue: input.normalizedPhone,
         isPrimary: true,
         source: input.source,
-        verifiedAt: input.createdAt
-      })
+        verifiedAt: input.createdAt,
+      }),
     );
   }
 
@@ -497,14 +509,15 @@ function buildSyntheticContactGraphInput(input: {
     contact: contactSchema.parse({
       id: contactId,
       salesforceContactId: null,
-      displayName: input.normalizedEmail ?? input.normalizedPhone ?? "(unknown)",
+      displayName:
+        input.normalizedEmail ?? input.normalizedPhone ?? "(unknown)",
       primaryEmail: input.normalizedEmail,
       primaryPhone: input.normalizedPhone,
       createdAt: input.createdAt,
-      updatedAt: input.createdAt
+      updatedAt: input.createdAt,
     }),
     identities,
-    memberships: []
+    memberships: [],
   };
 }
 
@@ -520,8 +533,8 @@ function logStructuredEvent(input: {
   console.log(
     JSON.stringify({
       event: input.event,
-      ...input.metadata
-    })
+      ...input.metadata,
+    }),
   );
 }
 
@@ -530,7 +543,7 @@ async function reconcilePendingComposerOutbound(
   input: {
     readonly sourceEvidence: SourceEvidenceRecord;
     readonly canonicalEvent: CanonicalEventRecord;
-  }
+  },
 ): Promise<void> {
   if (
     input.sourceEvidence.provider !== "gmail" ||
@@ -548,15 +561,16 @@ async function reconcilePendingComposerOutbound(
         reason: "missing_fingerprint",
         canonicalEventId: input.canonicalEvent.id,
         sourceEvidenceId: input.sourceEvidence.id,
-        providerRecordId: input.sourceEvidence.providerRecordId
-      }
+        providerRecordId: input.sourceEvidence.providerRecordId,
+      },
     });
     return;
   }
 
-  const pending = await persistence.repositories.pendingOutbounds.findByFingerprint(
-    fingerprint
-  );
+  const pending =
+    await persistence.repositories.pendingOutbounds.findByFingerprint(
+      fingerprint,
+    );
 
   if (
     pending !== null &&
@@ -565,7 +579,7 @@ async function reconcilePendingComposerOutbound(
   ) {
     const via = pending.status === "pending" ? "fingerprint" : "event_link";
     await persistence.repositories.pendingOutbounds.markConfirmed(pending.id, {
-      reconciledEventId: input.canonicalEvent.id
+      reconciledEventId: input.canonicalEvent.id,
     });
     logStructuredEvent({
       event: "composer.reconciliation.matched",
@@ -575,8 +589,8 @@ async function reconcilePendingComposerOutbound(
         canonicalEventId: input.canonicalEvent.id,
         sourceEvidenceId: input.sourceEvidence.id,
         providerRecordId: input.sourceEvidence.providerRecordId,
-        via
-      }
+        via,
+      },
     });
     return;
   }
@@ -589,14 +603,14 @@ async function reconcilePendingComposerOutbound(
       sourceEvidenceId: input.sourceEvidence.id,
       providerRecordId: input.sourceEvidence.providerRecordId,
       pendingOutboundId: pending?.id ?? null,
-      pendingStatus: pending?.status ?? null
-    }
+      pendingStatus: pending?.status ?? null,
+    },
   });
 }
 
 function newestTimestamp(
   left: string | null,
-  right: string | null
+  right: string | null,
 ): string | null {
   if (left === null) {
     return right;
@@ -613,14 +627,14 @@ const FORWARDED_SUBJECT_PATTERN = /^\s*fwd?:/i;
 const FORWARDED_BODY_PATTERNS = [
   /(?:\n|^)\s*-{2,}\s*forwarded message\s*-{2,}\s*(?:\n|$)/i,
   /(?:\n|^)\s*forwarded message:/i,
-  /(?:\n|^)\s*begin forwarded message:/i
+  /(?:\n|^)\s*begin forwarded message:/i,
 ];
 
 function detectInboxProjectionExclusionReason(
   input: Pick<
     NormalizedCanonicalEventIntake,
     "canonicalEvent" | "gmailMessageDetail" | "sourceEvidence"
-  >
+  >,
 ): "forwarded_chain" | null {
   if (
     input.sourceEvidence.provider !== "gmail" ||
@@ -645,7 +659,7 @@ function detectInboxProjectionExclusionReason(
 
   const previewCandidates = [
     gmailMessageDetail.bodyTextPreview,
-    gmailMessageDetail.snippetClean
+    gmailMessageDetail.snippetClean,
   ];
 
   for (const preview of previewCandidates) {
@@ -660,13 +674,15 @@ function detectInboxProjectionExclusionReason(
 }
 
 function buildNormalizedIdentityValues(
-  identity: NormalizedIdentityEvidence
+  identity: NormalizedIdentityEvidence,
 ): string[] {
   return uniqueStrings([
-    ...(identity.salesforceContactId === null ? [] : [identity.salesforceContactId]),
+    ...(identity.salesforceContactId === null
+      ? []
+      : [identity.salesforceContactId]),
     ...identity.volunteerIdPlainValues,
     ...identity.normalizedEmails,
-    ...identity.normalizedPhones
+    ...identity.normalizedPhones,
   ]);
 }
 
@@ -687,16 +703,13 @@ function pickCanonicalReviewState(input: {
 
 function mergeCanonicalReviewState(
   left: CanonicalEventRecord["reviewState"],
-  right: CanonicalEventRecord["reviewState"]
+  right: CanonicalEventRecord["reviewState"],
 ): CanonicalEventRecord["reviewState"] {
   if (left === "quarantined" || right === "quarantined") {
     return "quarantined";
   }
 
-  if (
-    left === "needs_identity_review" ||
-    right === "needs_identity_review"
-  ) {
+  if (left === "needs_identity_review" || right === "needs_identity_review") {
     return "needs_identity_review";
   }
 
@@ -707,61 +720,63 @@ function mergeCanonicalReviewState(
   return "clear";
 }
 
-function mapBySourceEvidenceId<TValue extends { readonly sourceEvidenceId: string }>(
-  values: readonly TValue[]
-): ReadonlyMap<string, TValue> {
+function mapBySourceEvidenceId<
+  TValue extends { readonly sourceEvidenceId: string },
+>(values: readonly TValue[]): ReadonlyMap<string, TValue> {
   return new Map(values.map((value) => [value.sourceEvidenceId, value]));
 }
 
 async function loadProviderDetailMaps(
   persistence: Stage1PersistenceService,
-  sourceEvidenceIds: readonly string[]
+  sourceEvidenceIds: readonly string[],
 ): Promise<ProviderDetailMaps> {
   const uniqueSourceEvidenceIds = uniqueStrings(sourceEvidenceIds);
-  const [gmailMessageDetails, salesforceCommunicationDetails, simpleTextingMessageDetails] =
-    await Promise.all([
-      persistence.repositories.gmailMessageDetails.listBySourceEvidenceIds(
-        uniqueSourceEvidenceIds
-      ),
-      persistence.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds(
-        uniqueSourceEvidenceIds
-      ),
-      persistence.repositories.simpleTextingMessageDetails.listBySourceEvidenceIds(
-        uniqueSourceEvidenceIds
-      )
-    ]);
+  const [
+    gmailMessageDetails,
+    salesforceCommunicationDetails,
+    simpleTextingMessageDetails,
+  ] = await Promise.all([
+    persistence.repositories.gmailMessageDetails.listBySourceEvidenceIds(
+      uniqueSourceEvidenceIds,
+    ),
+    persistence.repositories.salesforceCommunicationDetails.listBySourceEvidenceIds(
+      uniqueSourceEvidenceIds,
+    ),
+    persistence.repositories.simpleTextingMessageDetails.listBySourceEvidenceIds(
+      uniqueSourceEvidenceIds,
+    ),
+  ]);
 
   return {
-    gmailMessageDetailBySourceEvidenceId: mapBySourceEvidenceId(gmailMessageDetails),
+    gmailMessageDetailBySourceEvidenceId:
+      mapBySourceEvidenceId(gmailMessageDetails),
     salesforceCommunicationDetailBySourceEvidenceId: mapBySourceEvidenceId(
-      salesforceCommunicationDetails
+      salesforceCommunicationDetails,
     ),
     simpleTextingMessageDetailBySourceEvidenceId: mapBySourceEvidenceId(
-      simpleTextingMessageDetails
-    )
+      simpleTextingMessageDetails,
+    ),
   };
 }
 
 function findCanonicalEventForSourceEvidence(
   events: readonly CanonicalEventRecord[],
-  sourceEvidenceId: string
+  sourceEvidenceId: string,
 ): CanonicalEventRecord | null {
   return (
     events.find(
       (event) =>
         event.sourceEvidenceId === sourceEvidenceId ||
-        event.provenance.supportingSourceEvidenceIds.includes(sourceEvidenceId)
+        event.provenance.supportingSourceEvidenceIds.includes(sourceEvidenceId),
     ) ?? null
   );
 }
 
 function compareDuplicateCandidateEvents(
   left: CanonicalEventRecord,
-  right: CanonicalEventRecord
+  right: CanonicalEventRecord,
 ): number {
-  if (
-    left.provenance.primaryProvider !== right.provenance.primaryProvider
-  ) {
+  if (left.provenance.primaryProvider !== right.provenance.primaryProvider) {
     return left.provenance.primaryProvider === "gmail" ? -1 : 1;
   }
 
@@ -785,7 +800,7 @@ async function findOutboundEmailDuplicateMatch(
       | "gmailMessageDetail"
       | "salesforceCommunicationDetail"
     >;
-  }
+  },
 ): Promise<OutboundEmailDuplicateMatch | null> {
   if (
     input.incoming.canonicalEvent.eventType !== "communication.email.outbound"
@@ -794,7 +809,7 @@ async function findOutboundEmailDuplicateMatch(
   }
 
   const incomingSource = buildIncomingOutboundEmailFingerprintSource(
-    input.incoming
+    input.incoming,
   );
 
   if (incomingSource === null) {
@@ -803,7 +818,7 @@ async function findOutboundEmailDuplicateMatch(
 
   const incomingFingerprint = buildOutboundEmailDuplicateFingerprint({
     subject: incomingSource.subject,
-    body: incomingSource.body
+    body: incomingSource.body,
   });
 
   if (incomingFingerprint === null) {
@@ -818,8 +833,8 @@ async function findOutboundEmailDuplicateMatch(
           event.provenance.primaryProvider === "salesforce") &&
         isWithinOutboundEmailFingerprintWindow({
           leftOccurredAt: event.occurredAt,
-          rightOccurredAt: input.incoming.canonicalEvent.occurredAt
-        })
+          rightOccurredAt: input.incoming.canonicalEvent.occurredAt,
+        }),
     )
     .sort(compareDuplicateCandidateEvents);
 
@@ -829,7 +844,7 @@ async function findOutboundEmailDuplicateMatch(
 
   const detailMaps = await loadProviderDetailMaps(
     persistence,
-    candidateEvents.map((event) => event.sourceEvidenceId)
+    candidateEvents.map((event) => event.sourceEvidenceId),
   );
 
   for (const existingEvent of candidateEvents) {
@@ -838,7 +853,7 @@ async function findOutboundEmailDuplicateMatch(
       gmailMessageDetailBySourceEvidenceId:
         detailMaps.gmailMessageDetailBySourceEvidenceId,
       salesforceCommunicationDetailBySourceEvidenceId:
-        detailMaps.salesforceCommunicationDetailBySourceEvidenceId
+        detailMaps.salesforceCommunicationDetailBySourceEvidenceId,
     });
 
     if (existingSource === null) {
@@ -847,22 +862,25 @@ async function findOutboundEmailDuplicateMatch(
 
     const existingFingerprint = buildOutboundEmailDuplicateFingerprint({
       subject: existingSource.subject,
-      body: existingSource.body
+      body: existingSource.body,
     });
 
-    if (existingFingerprint === null || existingFingerprint !== incomingFingerprint) {
+    if (
+      existingFingerprint === null ||
+      existingFingerprint !== incomingFingerprint
+    ) {
       continue;
     }
 
     const winnerSelection = selectOutboundEmailDuplicateWinner({
       incoming: {
         provider: input.incoming.sourceEvidence.provider,
-        occurredAt: input.incoming.canonicalEvent.occurredAt
+        occurredAt: input.incoming.canonicalEvent.occurredAt,
       },
       existing: {
         provider: existingEvent.provenance.primaryProvider,
-        occurredAt: existingEvent.occurredAt
-      }
+        occurredAt: existingEvent.occurredAt,
+      },
     });
 
     if (winnerSelection === null) {
@@ -873,49 +891,50 @@ async function findOutboundEmailDuplicateMatch(
       existingEvent,
       existingTimelineProjection:
         await persistence.repositories.timelineProjection.findByCanonicalEventId(
-          existingEvent.id
+          existingEvent.id,
         ),
       winner: {
         winnerReason: winnerSelection.winnerReason,
         notes: winnerSelection.notes,
-        keepIncomingAsPrimary: winnerSelection.winner === "incoming"
-      }
+        keepIncomingAsPrimary: winnerSelection.winner === "incoming",
+      },
     };
   }
 
-  const incomingContentFingerprintSource = buildIncomingContentFingerprintSource(
-    input.incoming
-  );
+  const incomingContentFingerprintSource =
+    buildIncomingContentFingerprintSource(input.incoming);
   const incomingContentFingerprint =
     incomingContentFingerprintSource === null
       ? null
       : computeContentFingerprint({
           ...incomingContentFingerprintSource,
-          contactId: input.contactId
+          contactId: input.contactId,
         });
 
   if (incomingContentFingerprint !== null) {
     const fingerprintCandidates =
-      await persistence.repositories.canonicalEvents.listByContentFingerprintWindow({
-        contactId: input.contactId,
-        channel: "email",
-        contentFingerprint: incomingContentFingerprint,
-        occurredAt: input.incoming.canonicalEvent.occurredAt,
-        windowMinutes: 5
-      });
+      await persistence.repositories.canonicalEvents.listByContentFingerprintWindow(
+        {
+          contactId: input.contactId,
+          channel: "email",
+          contentFingerprint: incomingContentFingerprint,
+          occurredAt: input.incoming.canonicalEvent.occurredAt,
+          windowMinutes: 5,
+        },
+      );
 
     for (const existingEvent of [...fingerprintCandidates].sort(
-      compareDuplicateCandidateEvents
+      compareDuplicateCandidateEvents,
     )) {
       const winnerSelection = selectOutboundEmailDuplicateWinner({
         incoming: {
           provider: input.incoming.sourceEvidence.provider,
-          occurredAt: input.incoming.canonicalEvent.occurredAt
+          occurredAt: input.incoming.canonicalEvent.occurredAt,
         },
         existing: {
           provider: existingEvent.provenance.primaryProvider,
-          occurredAt: existingEvent.occurredAt
-        }
+          occurredAt: existingEvent.occurredAt,
+        },
       });
 
       if (winnerSelection === null) {
@@ -926,13 +945,13 @@ async function findOutboundEmailDuplicateMatch(
         existingEvent,
         existingTimelineProjection:
           await persistence.repositories.timelineProjection.findByCanonicalEventId(
-            existingEvent.id
+            existingEvent.id,
           ),
         winner: {
           winnerReason: winnerSelection.winnerReason,
           notes: winnerSelection.notes,
-          keepIncomingAsPrimary: winnerSelection.winner === "incoming"
-        }
+          keepIncomingAsPrimary: winnerSelection.winner === "incoming",
+        },
       };
     }
   }
@@ -950,7 +969,7 @@ async function findOutboundEmailDuplicateMatch(
         "",
       contactId: input.contactId,
       channel: "email",
-      direction: input.incoming.communicationClassification?.direction ?? null
+      direction: input.incoming.communicationClassification?.direction ?? null,
     });
 
   if (salesforceSnippetClusterFingerprint === null) {
@@ -965,8 +984,8 @@ async function findOutboundEmailDuplicateMatch(
         isWithinContentFingerprintWindow({
           leftOccurredAt: event.occurredAt,
           rightOccurredAt: input.incoming.canonicalEvent.occurredAt,
-          windowMs: salesforceSnippetClusterWindowMs
-        })
+          windowMs: salesforceSnippetClusterWindowMs,
+        }),
     )
     .sort(compareDuplicateCandidateEvents);
 
@@ -976,13 +995,13 @@ async function findOutboundEmailDuplicateMatch(
 
   const salesforceDetailMaps = await loadProviderDetailMaps(
     persistence,
-    salesforceCandidateEvents.map((event) => event.sourceEvidenceId)
+    salesforceCandidateEvents.map((event) => event.sourceEvidenceId),
   );
 
   for (const existingEvent of salesforceCandidateEvents) {
     const existingDetail =
       salesforceDetailMaps.salesforceCommunicationDetailBySourceEvidenceId.get(
-        existingEvent.sourceEvidenceId
+        existingEvent.sourceEvidenceId,
       );
 
     if (existingDetail === undefined) {
@@ -995,7 +1014,7 @@ async function findOutboundEmailDuplicateMatch(
         snippet: existingDetail.snippet,
         contactId: input.contactId,
         channel: existingEvent.channel,
-        direction: existingEvent.provenance.direction
+        direction: existingEvent.provenance.direction,
       });
 
     if (
@@ -1009,21 +1028,21 @@ async function findOutboundEmailDuplicateMatch(
     const keepIncomingAsPrimary =
       selectSalesforceSelfDuplicateWinner({
         incomingOccurredAt: input.incoming.canonicalEvent.occurredAt,
-        existingOccurredAt: existingEvent.occurredAt
+        existingOccurredAt: existingEvent.occurredAt,
       }) === "incoming";
 
     return {
       existingEvent,
       existingTimelineProjection:
         await persistence.repositories.timelineProjection.findByCanonicalEventId(
-          existingEvent.id
+          existingEvent.id,
         ),
       winner: {
         winnerReason: "salesforce_only_best_evidence",
         notes:
           "The earliest Salesforce Task remained canonical for the same subject and snippet within the 10 minute Flow double-fire window.",
-        keepIncomingAsPrimary
-      }
+        keepIncomingAsPrimary,
+      },
     };
   }
 
@@ -1032,11 +1051,11 @@ async function findOutboundEmailDuplicateMatch(
 
 function resolveInboxSnippet(
   event: CanonicalEventRecord,
-  detailMaps: ProviderDetailMaps
+  detailMaps: ProviderDetailMaps,
 ): string {
   if (event.provenance.primaryProvider === "gmail") {
     const detail = detailMaps.gmailMessageDetailBySourceEvidenceId.get(
-      event.sourceEvidenceId
+      event.sourceEvidenceId,
     );
 
     if (detail === undefined) {
@@ -1051,7 +1070,7 @@ function resolveInboxSnippet(
   if (event.provenance.primaryProvider === "salesforce") {
     return (
       detailMaps.salesforceCommunicationDetailBySourceEvidenceId.get(
-        event.sourceEvidenceId
+        event.sourceEvidenceId,
       )?.snippet ?? ""
     );
   }
@@ -1059,7 +1078,7 @@ function resolveInboxSnippet(
   if (event.provenance.primaryProvider === "simpletexting") {
     return (
       detailMaps.simpleTextingMessageDetailBySourceEvidenceId.get(
-        event.sourceEvidenceId
+        event.sourceEvidenceId,
       )?.messageTextPreview ?? ""
     );
   }
@@ -1069,21 +1088,21 @@ function resolveInboxSnippet(
 
 async function rebuildInboxProjectionForContact(
   persistence: Stage1PersistenceService,
-  contactId: string
+  contactId: string,
 ): Promise<InboxProjectionRow | null> {
-  const existing = await persistence.repositories.inboxProjection.findByContactId(
-    contactId
-  );
-  const events = await persistence.repositories.canonicalEvents.listByContactId(
-    contactId
-  );
+  const existing =
+    await persistence.repositories.inboxProjection.findByContactId(contactId);
+  const events =
+    await persistence.repositories.canonicalEvents.listByContactId(contactId);
   const qualifyingEvents = events.filter((event) =>
-    qualifiesForInboxProjection(event)
+    qualifiesForInboxProjection(event),
   );
 
   if (qualifyingEvents.length === 0) {
     if (existing !== null) {
-      await persistence.repositories.inboxProjection.deleteByContactId(contactId);
+      await persistence.repositories.inboxProjection.deleteByContactId(
+        contactId,
+      );
     }
 
     return null;
@@ -1091,19 +1110,19 @@ async function rebuildInboxProjectionForContact(
 
   const detailMaps = await loadProviderDetailMaps(
     persistence,
-    qualifyingEvents.map((event) => event.sourceEvidenceId)
+    qualifyingEvents.map((event) => event.sourceEvidenceId),
   );
   const latestEvent = qualifyingEvents.reduce<CanonicalEventRecord | null>(
     (latest, event) =>
       latest === null || compareCanonicalEventRecency(event, latest) > 0
         ? event
         : latest,
-    null
+    null,
   );
 
   if (latestEvent === null) {
     throw new Error(
-      "Expected a qualifying event when rebuilding inbox projection."
+      "Expected a qualifying event when rebuilding inbox projection.",
     );
   }
   let lastInboundAt: string | null = null;
@@ -1134,8 +1153,8 @@ async function rebuildInboxProjectionForContact(
     contactId,
     bucket: hasNewerInbound
       ? "New"
-      : existing?.bucket ??
-        (isInboundEvent(latestEvent.eventType) ? "New" : "Opened"),
+      : (existing?.bucket ??
+        (isInboundEvent(latestEvent.eventType) ? "New" : "Opened")),
     needsFollowUp: existing?.needsFollowUp ?? false,
     hasUnresolved: await contactHasUnresolved(persistence, contactId),
     lastInboundAt,
@@ -1144,12 +1163,12 @@ async function rebuildInboxProjectionForContact(
     snippet: resolveInboxSnippet(latestEvent, detailMaps),
     archivedAt: existing?.archivedAt ?? null,
     lastCanonicalEventId: latestEvent.id,
-    lastEventType: latestEvent.eventType
+    lastEventType: latestEvent.eventType,
   });
 }
 
 function buildIdentityMissingAnchorExplanation(
-  identity: NormalizedIdentityEvidence
+  identity: NormalizedIdentityEvidence,
 ): string {
   if (identity.salesforceContactId !== null) {
     return `Salesforce Contact ID ${identity.salesforceContactId} did not resolve to an existing canonical contact.`;
@@ -1159,7 +1178,7 @@ function buildIdentityMissingAnchorExplanation(
 }
 
 function buildIdentityConflictExplanation(
-  reasonCode: IdentityResolutionCase["reasonCode"]
+  reasonCode: IdentityResolutionCase["reasonCode"],
 ): string {
   switch (reasonCode) {
     case "identity_multi_candidate":
@@ -1170,11 +1189,13 @@ function buildIdentityConflictExplanation(
       return "Salesforce Contact ID resolved safely, but weaker identity evidence points at a different canonical contact.";
     case "identity_missing_anchor":
       return "No safe canonical contact could be selected from the available identity evidence.";
+    default:
+      return "Identity evidence could not be safely resolved.";
   }
 }
 
 function buildRoutingExplanation(
-  reasonCode: RoutingReviewCase["reasonCode"]
+  reasonCode: RoutingReviewCase["reasonCode"],
 ): string {
   switch (reasonCode) {
     case "routing_missing_membership":
@@ -1183,11 +1204,13 @@ function buildRoutingExplanation(
       return "More than one canonical membership is plausible for this activity.";
     case "routing_context_conflict":
       return "Provider-supplied routing context conflicts with canonical membership state.";
+    default:
+      return "Routing could not be safely resolved.";
   }
 }
 
 function isSalesforceTaskCommunicationIntake(
-  input: Pick<NormalizedCanonicalEventIntake, "sourceEvidence">
+  input: Pick<NormalizedCanonicalEventIntake, "sourceEvidence">,
 ): boolean {
   return (
     input.sourceEvidence.provider === "salesforce" &&
@@ -1200,10 +1223,12 @@ function buildSkippedNonVolunteerTaskExplanation(): string {
 }
 
 function decideDuplicateCollapse(
-  input: NormalizedCanonicalEventIntake
+  input: NormalizedCanonicalEventIntake,
 ): DuplicateCollapseDecision {
   const supportingProviders = new Set(
-    (input.supportingSources ?? []).map((entry) => entry.provider)
+    (
+      (input.supportingSources ?? []) as readonly SupportingSourceReference[]
+    ).map((entry) => entry.provider),
   );
   const primaryProvider = input.sourceEvidence.provider;
   const { eventType } = input.canonicalEvent;
@@ -1215,8 +1240,8 @@ function decideDuplicateCollapse(
         winner: {
           winnerReason: "gmail_wins_duplicate_collapse",
           notes:
-            "Gmail remained the primary provenance winner over Salesforce for the same outbound one-to-one email."
-        }
+            "Gmail remained the primary provenance winner over Salesforce for the same outbound one-to-one email.",
+        },
       };
     }
 
@@ -1225,7 +1250,7 @@ function decideDuplicateCollapse(
         outcome: "quarantined",
         reasonCode: "duplicate_collapse_conflict",
         explanation:
-          "Gmail must win duplicate collapse when Gmail and Salesforce describe the same outbound one-to-one email."
+          "Gmail must win duplicate collapse when Gmail and Salesforce describe the same outbound one-to-one email.",
       };
     }
   }
@@ -1240,8 +1265,8 @@ function decideDuplicateCollapse(
         winner: {
           winnerReason: "simpletexting_wins_duplicate_collapse",
           notes:
-            "SimpleTexting remained the primary provenance winner over Salesforce for the same outbound SMS."
-        }
+            "SimpleTexting remained the primary provenance winner over Salesforce for the same outbound SMS.",
+        },
       };
     }
 
@@ -1253,7 +1278,7 @@ function decideDuplicateCollapse(
         outcome: "quarantined",
         reasonCode: "duplicate_collapse_conflict",
         explanation:
-          "SimpleTexting must remain the primary transport winner when Salesforce also describes the same outbound SMS."
+          "SimpleTexting must remain the primary transport winner when Salesforce also describes the same outbound SMS.",
       };
     }
   }
@@ -1269,8 +1294,8 @@ function decideDuplicateCollapse(
       winner: {
         winnerReason: "salesforce_only_best_evidence",
         notes:
-          "Salesforce was retained because no stronger transport evidence was attached."
-      }
+          "Salesforce was retained because no stronger transport evidence was attached.",
+      },
     };
   }
 
@@ -1278,13 +1303,13 @@ function decideDuplicateCollapse(
     outcome: "accepted",
     winner: {
       winnerReason: "single_source",
-      notes: null
-    }
+      notes: null,
+    },
   };
 }
 
 function createIdentityResolutionContext(
-  persistence: Stage1PersistenceService
+  persistence: Stage1PersistenceService,
 ): IdentityResolutionContext {
   const contactByIdCache = new Map<string, Promise<ContactRecord | null>>();
   const contactsByIdentityValueCache = new Map<
@@ -1293,7 +1318,9 @@ function createIdentityResolutionContext(
   >();
   const anchoredContactCache = new Map<string, Promise<ContactRecord | null>>();
 
-  const loadContactById = (contactId: string): Promise<ContactRecord | null> => {
+  const loadContactById = (
+    contactId: string,
+  ): Promise<ContactRecord | null> => {
     const cached = contactByIdCache.get(contactId);
 
     if (cached !== undefined) {
@@ -1318,30 +1345,35 @@ function createIdentityResolutionContext(
 
           const lookup = (async () => {
             const identities =
-              await persistence.repositories.contactIdentities.listByNormalizedValue({
-                kind,
-                normalizedValue
-              });
+              await persistence.repositories.contactIdentities.listByNormalizedValue(
+                {
+                  kind,
+                  normalizedValue,
+                },
+              );
             const contacts = await Promise.all(
-              uniqueStrings(identities.map((identity) => identity.contactId)).map(
-                loadContactById
-              )
+              uniqueStrings(
+                identities.map((identity) => identity.contactId),
+              ).map(loadContactById),
             );
 
             return uniqueById(
               contacts.filter(
-                (contact): contact is ContactRecord => contact !== null
-              )
+                (contact: ContactRecord | null): contact is ContactRecord =>
+                  contact !== null,
+              ),
             );
           })();
 
           contactsByIdentityValueCache.set(cacheKey, lookup);
           return lookup;
-        })
+        }),
       );
 
       return new Map(
-        uniqueById(contactGroups.flat()).map((contact) => [contact.id, contact] as const)
+        uniqueById(contactGroups.flat()).map(
+          (contact) => [contact.id, contact] as const,
+        ),
       );
     },
 
@@ -1354,7 +1386,7 @@ function createIdentityResolutionContext(
 
       const lookup =
         persistence.repositories.contacts.findBySalesforceContactId(
-          salesforceContactId
+          salesforceContactId,
         );
       anchoredContactCache.set(salesforceContactId, lookup);
       return lookup;
@@ -1364,7 +1396,7 @@ function createIdentityResolutionContext(
       contactByIdCache.clear();
       contactsByIdentityValueCache.clear();
       anchoredContactCache.clear();
-    }
+    },
   };
 }
 
@@ -1373,28 +1405,25 @@ async function resolveIdentityDecision(
   sourceEvidenceId: string,
   openedAt: string,
   identity: NormalizedIdentityEvidence,
-  provider: Provider
+  provider: Provider,
 ): Promise<IdentityResolutionDecision> {
   const emailMatches = await context.loadContactsForIdentityKind(
     "email",
-    identity.normalizedEmails
+    identity.normalizedEmails,
   );
   const phoneMatches = await context.loadContactsForIdentityKind(
     "phone",
-    identity.normalizedPhones
+    identity.normalizedPhones,
   );
   const volunteerMatches = await context.loadContactsForIdentityKind(
     "volunteer_id_plain",
-    identity.volunteerIdPlainValues
+    identity.volunteerIdPlainValues,
   );
   const normalizedIdentityValues = buildNormalizedIdentityValues(identity);
 
-  if (
-    identity.salesforceContactId !== null &&
-    provider === "salesforce"
-  ) {
+  if (identity.salesforceContactId !== null && provider === "salesforce") {
     const anchored = await context.findAnchoredContact(
-      identity.salesforceContactId
+      identity.salesforceContactId,
     );
 
     if (anchored === null) {
@@ -1405,21 +1434,23 @@ async function resolveIdentityDecision(
           candidateContactIds: uniqueStrings([
             ...emailMatches.keys(),
             ...phoneMatches.keys(),
-            ...volunteerMatches.keys()
+            ...volunteerMatches.keys(),
           ]),
           reasonCode: "identity_missing_anchor",
           openedAt,
           normalizedIdentityValues,
           anchoredContactId: null,
-          explanation: buildIdentityMissingAnchorExplanation(identity)
-        })
+          explanation: buildIdentityMissingAnchorExplanation(identity),
+        }),
       };
     }
 
     const conflictingContactIds = uniqueStrings(
-      [...emailMatches.keys(), ...phoneMatches.keys(), ...volunteerMatches.keys()].filter(
-        (contactId) => contactId !== anchored.id
-      )
+      [
+        ...emailMatches.keys(),
+        ...phoneMatches.keys(),
+        ...volunteerMatches.keys(),
+      ].filter((contactId) => contactId !== anchored.id),
     );
 
     if (conflictingContactIds.length > 0) {
@@ -1434,16 +1465,16 @@ async function resolveIdentityDecision(
           normalizedIdentityValues,
           anchoredContactId: anchored.id,
           explanation: buildIdentityConflictExplanation(
-            "identity_anchor_mismatch"
-          )
-        })
+            "identity_anchor_mismatch",
+          ),
+        }),
       };
     }
 
     return {
       outcome: "resolved",
       contact: anchored,
-      reviewInput: null
+      reviewInput: null,
     };
   }
 
@@ -1460,15 +1491,17 @@ async function resolveIdentityDecision(
         openedAt,
         normalizedIdentityValues,
         anchoredContactId: null,
-        explanation: buildIdentityConflictExplanation("identity_multi_candidate")
-      })
+        explanation: buildIdentityConflictExplanation(
+          "identity_multi_candidate",
+        ),
+      }),
     };
   }
 
   if (emailMatchesList.length === 1) {
     const emailContact = requireValue(
       emailMatchesList[0],
-      "Expected a single email-matched contact."
+      "Expected a single email-matched contact.",
     );
 
     if (
@@ -1476,19 +1509,19 @@ async function resolveIdentityDecision(
       (phoneMatchesList.length === 1 &&
         requireValue(
           phoneMatchesList[0],
-          "Expected a single phone-matched contact."
+          "Expected a single phone-matched contact.",
         ).id === emailContact.id)
     ) {
       return {
         outcome: "resolved",
         contact: emailContact,
-        reviewInput: null
+        reviewInput: null,
       };
     }
 
     const candidateContactIds = uniqueStrings([
       emailContact.id,
-      ...phoneMatchesList.map((contact) => contact.id)
+      ...phoneMatchesList.map((contact) => contact.id),
     ]);
 
     return {
@@ -1506,9 +1539,9 @@ async function resolveIdentityDecision(
         explanation: buildIdentityConflictExplanation(
           phoneMatchesList.length === 1
             ? "identity_conflict"
-            : "identity_multi_candidate"
-        )
-      })
+            : "identity_multi_candidate",
+        ),
+      }),
     };
   }
 
@@ -1522,21 +1555,23 @@ async function resolveIdentityDecision(
         openedAt,
         normalizedIdentityValues,
         anchoredContactId: null,
-        explanation: buildIdentityConflictExplanation("identity_multi_candidate")
-      })
+        explanation: buildIdentityConflictExplanation(
+          "identity_multi_candidate",
+        ),
+      }),
     };
   }
 
   if (phoneMatchesList.length === 1) {
     const phoneContact = requireValue(
       phoneMatchesList[0],
-      "Expected a single phone-matched contact."
+      "Expected a single phone-matched contact.",
     );
 
     return {
       outcome: "resolved",
       contact: phoneContact,
-      reviewInput: null
+      reviewInput: null,
     };
   }
 
@@ -1551,8 +1586,8 @@ async function resolveIdentityDecision(
         normalizedIdentityValues,
         anchoredContactId: null,
         explanation:
-          "More than one external email participant was present and no safe canonical contact could be selected."
-      })
+          "More than one external email participant was present and no safe canonical contact could be selected.",
+      }),
     };
   }
 
@@ -1563,7 +1598,7 @@ async function resolveIdentityDecision(
     return {
       outcome: "create_new_contact",
       normalizedEmail: fallbackNormalizedEmail,
-      normalizedPhone: fallbackNormalizedPhone
+      normalizedPhone: fallbackNormalizedPhone,
     };
   }
 
@@ -1576,8 +1611,8 @@ async function resolveIdentityDecision(
       openedAt,
       normalizedIdentityValues,
       anchoredContactId: null,
-      explanation: buildIdentityMissingAnchorExplanation(identity)
-    })
+      explanation: buildIdentityMissingAnchorExplanation(identity),
+    }),
   };
 }
 
@@ -1590,18 +1625,19 @@ async function resolveRoutingDecision(
     readonly routing:
       | NonNullable<NormalizedCanonicalEventIntake["routing"]>
       | undefined;
-  }
+  },
 ): Promise<RoutingResolutionDecision> {
   if (!input.routing?.required) {
     return {
       outcome: "clear",
-      reviewInput: null
+      reviewInput: null,
     };
   }
 
-  const memberships = await persistence.repositories.contactMemberships.listByContactId(
-    input.contactId
-  );
+  const memberships =
+    await persistence.repositories.contactMemberships.listByContactId(
+      input.contactId,
+    );
 
   if (memberships.length === 0) {
     return {
@@ -1612,8 +1648,8 @@ async function resolveRoutingDecision(
         reasonCode: "routing_missing_membership",
         openedAt: input.openedAt,
         candidateMembershipIds: [],
-        explanation: buildRoutingExplanation("routing_missing_membership")
-      })
+        explanation: buildRoutingExplanation("routing_missing_membership"),
+      }),
     };
   }
 
@@ -1636,7 +1672,7 @@ async function resolveRoutingDecision(
     if (matchingMemberships.length === 1) {
       return {
         outcome: "clear",
-        reviewInput: null
+        reviewInput: null,
       };
     }
 
@@ -1649,10 +1685,10 @@ async function resolveRoutingDecision(
           reasonCode: "routing_multiple_memberships",
           openedAt: input.openedAt,
           candidateMembershipIds: matchingMemberships.map(
-            (membership) => membership.id
+            (membership) => membership.id,
           ),
-          explanation: buildRoutingExplanation("routing_multiple_memberships")
-        })
+          explanation: buildRoutingExplanation("routing_multiple_memberships"),
+        }),
       };
     }
 
@@ -1664,15 +1700,15 @@ async function resolveRoutingDecision(
         reasonCode: "routing_context_conflict",
         openedAt: input.openedAt,
         candidateMembershipIds: memberships.map((membership) => membership.id),
-        explanation: buildRoutingExplanation("routing_context_conflict")
-      })
+        explanation: buildRoutingExplanation("routing_context_conflict"),
+      }),
     };
   }
 
   if (memberships.length === 1) {
     return {
       outcome: "clear",
-      reviewInput: null
+      reviewInput: null,
     };
   }
 
@@ -1684,8 +1720,8 @@ async function resolveRoutingDecision(
       reasonCode: "routing_multiple_memberships",
       openedAt: input.openedAt,
       candidateMembershipIds: memberships.map((membership) => membership.id),
-      explanation: buildRoutingExplanation("routing_multiple_memberships")
-    })
+      explanation: buildRoutingExplanation("routing_multiple_memberships"),
+    }),
   };
 }
 
@@ -1695,7 +1731,7 @@ async function resolveNonVolunteerSalesforceTaskSkip(
   input: Pick<
     NormalizedCanonicalEventIntake,
     "identity" | "salesforceEventContext" | "sourceEvidence"
-  >
+  >,
 ): Promise<
   | {
       readonly outcome: "continue";
@@ -1707,7 +1743,7 @@ async function resolveNonVolunteerSalesforceTaskSkip(
 > {
   if (!isSalesforceTaskCommunicationIntake(input)) {
     return {
-      outcome: "continue"
+      outcome: "continue",
     };
   }
 
@@ -1718,7 +1754,7 @@ async function resolveNonVolunteerSalesforceTaskSkip(
 
   if (whoId === null) {
     return {
-      outcome: "continue"
+      outcome: "continue",
     };
   }
 
@@ -1727,67 +1763,70 @@ async function resolveNonVolunteerSalesforceTaskSkip(
   if (anchoredContact === null) {
     return {
       outcome: "skipped",
-      whoId
+      whoId,
     };
   }
 
-  const memberships = await persistence.repositories.contactMemberships.listByContactId(
-    anchoredContact.id
-  );
+  const memberships =
+    await persistence.repositories.contactMemberships.listByContactId(
+      anchoredContact.id,
+    );
 
   if (memberships.length > 0) {
     return {
-      outcome: "continue"
+      outcome: "continue",
     };
   }
 
   return {
     outcome: "skipped",
-    whoId
+    whoId,
   };
 }
 
 async function listOpenIdentityCasesForContact(
   persistence: Stage1PersistenceService,
-  contactId: string
+  contactId: string,
 ): Promise<readonly IdentityResolutionCase[]> {
   const casesByReason = await Promise.all(
     identityResolutionReasonCodeValues.map((reasonCode) =>
       persistence.repositories.identityResolutionQueue.listOpenByReasonCode(
-        reasonCode
-      )
-    )
+        reasonCode,
+      ),
+    ),
   );
 
   return uniqueById(
     casesByReason
       .flat()
-      .filter((record) => record.anchoredContactId === contactId)
+      .filter((record) => record.anchoredContactId === contactId),
   );
 }
 
 async function listOpenRoutingCasesForContact(
   persistence: Stage1PersistenceService,
-  contactId: string
+  contactId: string,
 ): Promise<readonly RoutingReviewCase[]> {
   const casesByReason = await Promise.all(
     routingReviewReasonCodeValues.map((reasonCode) =>
-      persistence.repositories.routingReviewQueue.listOpenByReasonCode(reasonCode)
-    )
+      persistence.repositories.routingReviewQueue.listOpenByReasonCode(
+        reasonCode,
+      ),
+    ),
   );
 
   return uniqueById(
-    casesByReason.flat().filter((record) => record.contactId === contactId)
+    casesByReason.flat().filter((record) => record.contactId === contactId),
   );
 }
 
 async function contactHasUnresolved(
   persistence: Stage1PersistenceService,
-  contactId: string
+  contactId: string,
 ): Promise<boolean> {
   const [identityCases, routingCases] = await Promise.all([
     listOpenIdentityCasesForContact(persistence, contactId),
-    listOpenRoutingCasesForContact(persistence, contactId)
+    listOpenRoutingCasesForContact(persistence, contactId),
   ]);
 
   return identityCases.length > 0 || routingCases.length > 0;
@@ -1802,15 +1841,16 @@ async function recordQuarantineAuditOnce(
     readonly reasonCode: QuarantineReasonCode;
     readonly action: string;
     readonly metadataJson: Record<string, unknown>;
-  }
+  },
 ): Promise<AuditEvidenceRecord> {
   const policyCode = `stage1.quarantine.${input.reasonCode}`;
-  const existingRecords = await persistence.repositories.auditEvidence.listByEntity({
-    entityType: input.entityType,
-    entityId: input.entityId
-  });
+  const existingRecords =
+    await persistence.repositories.auditEvidence.listByEntity({
+      entityType: input.entityType,
+      entityId: input.entityId,
+    });
   const existingRecord = existingRecords.find(
-    (record) => record.policyCode === policyCode
+    (record) => record.policyCode === policyCode,
   );
 
   if (existingRecord !== undefined) {
@@ -1821,7 +1861,7 @@ async function recordQuarantineAuditOnce(
     id: buildQuarantineAuditId(
       input.entityType,
       input.entityId,
-      input.reasonCode
+      input.reasonCode,
     ),
     actorType: "system",
     actorId: "stage1-normalization",
@@ -1831,7 +1871,7 @@ async function recordQuarantineAuditOnce(
     occurredAt: input.occurredAt,
     result: "recorded",
     policyCode,
-    metadataJson: input.metadataJson
+    metadataJson: input.metadataJson,
   });
 }
 
@@ -1843,15 +1883,16 @@ async function recordSkipAuditOnce(
     readonly occurredAt: string;
     readonly action: "skipped_non_volunteer_task";
     readonly metadataJson: Record<string, unknown>;
-  }
+  },
 ): Promise<AuditEvidenceRecord> {
   const policyCode = `stage1.skip.${input.action}`;
-  const existingRecords = await persistence.repositories.auditEvidence.listByEntity({
-    entityType: input.entityType,
-    entityId: input.entityId
-  });
+  const existingRecords =
+    await persistence.repositories.auditEvidence.listByEntity({
+      entityType: input.entityType,
+      entityId: input.entityId,
+    });
   const existingRecord = existingRecords.find(
-    (record) => record.policyCode === policyCode
+    (record) => record.policyCode === policyCode,
   );
 
   if (existingRecord !== undefined) {
@@ -1868,7 +1909,7 @@ async function recordSkipAuditOnce(
     occurredAt: input.occurredAt,
     result: "recorded",
     policyCode,
-    metadataJson: input.metadataJson
+    metadataJson: input.metadataJson,
   });
 }
 
@@ -1877,23 +1918,23 @@ async function upsertProjectAndExpeditionDimensions(
   input: {
     readonly projectDimensions: readonly ProjectDimensionRecord[];
     readonly expeditionDimensions: readonly ExpeditionDimensionRecord[];
-  }
+  },
 ): Promise<void> {
   for (const projectDimension of uniqueByKey(
     input.projectDimensions,
-    (record) => record.projectId
+    (record) => record.projectId,
   )) {
     await persistence.upsertProjectDimension(
-      projectDimensionSchema.parse(projectDimension)
+      projectDimensionSchema.parse(projectDimension),
     );
   }
 
   for (const expeditionDimension of uniqueByKey(
     input.expeditionDimensions,
-    (record) => record.expeditionId
+    (record) => record.expeditionId,
   )) {
     await persistence.upsertExpeditionDimension(
-      expeditionDimensionSchema.parse(expeditionDimension)
+      expeditionDimensionSchema.parse(expeditionDimension),
     );
   }
 }
@@ -1913,11 +1954,11 @@ async function upsertProviderPresentationDetails(
   >,
   options?: {
     readonly allowDuplicateGmailMessageDetailOverwrite?: boolean;
-  }
+  },
 ): Promise<void> {
   await upsertProjectAndExpeditionDimensions(persistence, {
     projectDimensions: input.projectDimensions ?? [],
-    expeditionDimensions: input.expeditionDimensions ?? []
+    expeditionDimensions: input.expeditionDimensions ?? [],
   });
 
   if (
@@ -1925,46 +1966,48 @@ async function upsertProviderPresentationDetails(
     (options?.allowDuplicateGmailMessageDetailOverwrite ?? true)
   ) {
     await persistence.upsertGmailMessageDetail(
-      gmailMessageDetailSchema.parse(input.gmailMessageDetail)
+      gmailMessageDetailSchema.parse(input.gmailMessageDetail),
     );
   }
 
   if (input.salesforceCommunicationDetail !== undefined) {
     await persistence.upsertSalesforceCommunicationDetail(
-      salesforceCommunicationDetailSchema.parse(input.salesforceCommunicationDetail)
+      salesforceCommunicationDetailSchema.parse(
+        input.salesforceCommunicationDetail,
+      ),
     );
   }
 
   if (input.simpleTextingMessageDetail !== undefined) {
     await persistence.upsertSimpleTextingMessageDetail(
-      simpleTextingMessageDetailSchema.parse(input.simpleTextingMessageDetail)
+      simpleTextingMessageDetailSchema.parse(input.simpleTextingMessageDetail),
     );
   }
 
   if (input.mailchimpCampaignActivityDetail !== undefined) {
     await persistence.upsertMailchimpCampaignActivityDetail(
       mailchimpCampaignActivityDetailSchema.parse(
-        input.mailchimpCampaignActivityDetail
-      )
+        input.mailchimpCampaignActivityDetail,
+      ),
     );
   }
 
   if (input.manualNoteDetail !== undefined) {
     await persistence.upsertManualNoteDetail(
-      manualNoteDetailSchema.parse(input.manualNoteDetail)
+      manualNoteDetailSchema.parse(input.manualNoteDetail),
     );
   }
 
   if (input.salesforceEventContext !== undefined) {
     await persistence.upsertSalesforceEventContext(
-      salesforceEventContextSchema.parse(input.salesforceEventContext)
+      salesforceEventContextSchema.parse(input.salesforceEventContext),
     );
   }
 }
 
 async function upsertMissingDuplicateGmailMessageDetail(
   persistence: Stage1PersistenceService,
-  gmailMessageDetail: NormalizedCanonicalEventIntake["gmailMessageDetail"]
+  gmailMessageDetail: NormalizedCanonicalEventIntake["gmailMessageDetail"],
 ): Promise<void> {
   if (gmailMessageDetail === undefined) {
     return;
@@ -1972,7 +2015,7 @@ async function upsertMissingDuplicateGmailMessageDetail(
 
   const existingDetails =
     await persistence.repositories.gmailMessageDetails.listBySourceEvidenceIds([
-      gmailMessageDetail.sourceEvidenceId
+      gmailMessageDetail.sourceEvidenceId,
     ]);
 
   if (existingDetails.length > 0) {
@@ -1980,20 +2023,23 @@ async function upsertMissingDuplicateGmailMessageDetail(
   }
 
   await persistence.upsertGmailMessageDetail(
-    gmailMessageDetailSchema.parse(gmailMessageDetail)
+    gmailMessageDetailSchema.parse(gmailMessageDetail),
   );
 }
 
 export function createStage1NormalizationService(
-  persistence: Stage1PersistenceService
+  persistence: Stage1PersistenceService,
 ): Stage1NormalizationService {
-  const identityResolutionContext = createIdentityResolutionContext(persistence);
+  const identityResolutionContext =
+    createIdentityResolutionContext(persistence);
   const service: Stage1NormalizationService = {
     persistence,
 
     async recordNormalizedSourceEvidence(input) {
       const parsed = normalizedSourceEvidenceIntakeSchema.parse(input);
-      const result = await persistence.recordSourceEvidence(parsed.sourceEvidence);
+      const result = await persistence.recordSourceEvidence(
+        parsed.sourceEvidence,
+      );
 
       if (result.outcome === "conflict") {
         const auditEvidence = await recordQuarantineAuditOnce(persistence, {
@@ -2006,10 +2052,10 @@ export function createStage1NormalizationService(
             incomingId: parsed.sourceEvidence.id,
             incomingIdempotencyKey: parsed.sourceEvidence.idempotencyKey,
             conflictingRecordIds: result.conflictingRecords.map(
-              (record) => record.id
+              (record) => record.id,
             ),
-            conflictReason: result.reason
-          }
+            conflictReason: result.reason,
+          },
         });
 
         return {
@@ -2017,14 +2063,14 @@ export function createStage1NormalizationService(
           incoming: parsed.sourceEvidence,
           conflictingRecords: result.conflictingRecords,
           reasonCode: "replay_checksum_mismatch",
-          auditEvidence
+          auditEvidence,
         };
       }
 
       return {
         outcome: result.outcome,
         record: result.record,
-        auditEvidence: null
+        auditEvidence: null,
       };
     },
 
@@ -2032,7 +2078,7 @@ export function createStage1NormalizationService(
       const parsed = normalizedContactGraphUpsertInputSchema.parse(input);
       assertVolunteerScopedSalesforceContactGraph(parsed);
       const contact = await persistence.upsertCanonicalContact(
-        contactSchema.parse(parsed.contact)
+        contactSchema.parse(parsed.contact),
       );
 
       const identities: ContactIdentityRecord[] = [];
@@ -2041,21 +2087,21 @@ export function createStage1NormalizationService(
 
         if (parsedIdentity.contactId !== parsed.contact.id) {
           throw new Error(
-            `Contact identity ${parsedIdentity.id} does not belong to contact ${parsed.contact.id}.`
+            `Contact identity ${parsedIdentity.id} does not belong to contact ${parsed.contact.id}.`,
           );
         }
 
         identities.push(
           await persistence.upsertContactIdentity({
             ...parsedIdentity,
-            contactId: contact.id
-          })
+            contactId: contact.id,
+          }),
         );
       }
 
       await upsertProjectAndExpeditionDimensions(persistence, {
         projectDimensions: parsed.projectDimensions,
-        expeditionDimensions: parsed.expeditionDimensions
+        expeditionDimensions: parsed.expeditionDimensions,
       });
 
       const memberships: ContactMembershipRecord[] = [];
@@ -2064,15 +2110,15 @@ export function createStage1NormalizationService(
 
         if (parsedMembership.contactId !== parsed.contact.id) {
           throw new Error(
-            `Contact membership ${parsedMembership.id} does not belong to contact ${parsed.contact.id}.`
+            `Contact membership ${parsedMembership.id} does not belong to contact ${parsed.contact.id}.`,
           );
         }
 
         memberships.push(
           await persistence.upsertContactMembership({
             ...parsedMembership,
-            contactId: contact.id
-          })
+            contactId: contact.id,
+          }),
         );
       }
       identityResolutionContext.clear();
@@ -2080,7 +2126,7 @@ export function createStage1NormalizationService(
       return {
         contact,
         identities,
-        memberships
+        memberships,
       };
     },
 
@@ -2100,30 +2146,34 @@ export function createStage1NormalizationService(
         (
           await Promise.all(
             uniqueStrings(identities.map((identity) => identity.contactId)).map(
-              (contactId) => persistence.repositories.contacts.findById(contactId)
-            )
+              (contactId) =>
+                persistence.repositories.contacts.findById(contactId),
+            ),
           )
-        ).filter((contact): contact is ContactRecord => contact !== null)
+        ).filter(
+          (contact: ContactRecord | null): contact is ContactRecord =>
+            contact !== null,
+        ),
       );
 
       if (existingContacts.length > 0) {
         const [existingContact] = existingContacts;
 
-      if (existingContact === undefined) {
-        throw new Error(
-          "Expected an existing contact when normalized email matches."
-        );
-      }
+        if (existingContact === undefined) {
+          throw new Error(
+            "Expected an existing contact when normalized email matches.",
+          );
+        }
 
-      if (existingContacts.length > 1) {
-        throw new CanonicalContactAmbiguityError({
-          normalizedEmail,
-          candidateContactIds: existingContacts.map((contact) => contact.id)
-        });
-      }
+        if (existingContacts.length > 1) {
+          throw new CanonicalContactAmbiguityError({
+            normalizedEmail,
+            candidateContactIds: existingContacts.map((contact) => contact.id),
+          });
+        }
 
-      return existingContact;
-    }
+        return existingContact;
+      }
 
       return (
         await service.upsertNormalizedContactGraph(
@@ -2132,7 +2182,7 @@ export function createStage1NormalizationService(
             normalizedPhone: null,
             createdAt: input.createdAt ?? new Date().toISOString(),
             source: input.source ?? "manual",
-          })
+          }),
         )
       ).contact;
     },
@@ -2141,18 +2191,18 @@ export function createStage1NormalizationService(
       const parsed = identityAmbiguityInputSchema.parse(input);
       const caseRecord = await persistence.saveIdentityResolutionCase({
         id: buildIdentityCaseId(parsed.sourceEvidenceId, parsed.reasonCode),
-        ...parsed
+        ...parsed,
       });
       const inboxProjection =
         parsed.anchoredContactId === null
           ? null
           : await service.refreshInboxReviewOverlay({
-              contactId: parsed.anchoredContactId
+              contactId: parsed.anchoredContactId,
             });
 
       return {
         caseRecord,
-        inboxProjection
+        inboxProjection,
       };
     },
 
@@ -2162,17 +2212,17 @@ export function createStage1NormalizationService(
         id: buildRoutingCaseId(
           parsed.sourceEvidenceId,
           parsed.contactId,
-          parsed.reasonCode
+          parsed.reasonCode,
         ),
-        ...parsed
+        ...parsed,
       });
       const inboxProjection = await service.refreshInboxReviewOverlay({
-        contactId: parsed.contactId
+        contactId: parsed.contactId,
       });
 
       return {
         caseRecord,
-        inboxProjection
+        inboxProjection,
       };
     },
 
@@ -2187,13 +2237,13 @@ export function createStage1NormalizationService(
         sortKey: buildTimelineSortKey(
           parsed.canonicalEvent.id,
           parsed.canonicalEvent.occurredAt,
-          parsed.canonicalEvent.eventType
+          parsed.canonicalEvent.eventType,
         ),
         eventType: parsed.canonicalEvent.eventType,
         summary: parsed.summary,
         channel: parsed.canonicalEvent.channel,
         primaryProvider: parsed.canonicalEvent.provenance.primaryProvider,
-        reviewState: parsed.canonicalEvent.reviewState
+        reviewState: parsed.canonicalEvent.reviewState,
       });
     },
 
@@ -2202,36 +2252,37 @@ export function createStage1NormalizationService(
 
       if (!qualifiesForInboxProjection(parsed.canonicalEvent)) {
         return persistence.repositories.inboxProjection.findByContactId(
-          parsed.canonicalEvent.contactId
+          parsed.canonicalEvent.contactId,
         );
       }
 
-      const existing = await persistence.repositories.inboxProjection.findByContactId(
-        parsed.canonicalEvent.contactId
-      );
+      const existing =
+        await persistence.repositories.inboxProjection.findByContactId(
+          parsed.canonicalEvent.contactId,
+        );
       const incomingIsInbound = isInboundEvent(parsed.canonicalEvent.eventType);
       const incomingIsOutboundProjectionEvent = isOutboundProjectionEvent(
-        parsed.canonicalEvent.eventType
+        parsed.canonicalEvent.eventType,
       );
       const lastInboundAt = incomingIsInbound
         ? newestTimestamp(
             existing?.lastInboundAt ?? null,
-            parsed.canonicalEvent.occurredAt
+            parsed.canonicalEvent.occurredAt,
           )
-        : existing?.lastInboundAt ?? null;
+        : (existing?.lastInboundAt ?? null);
       const lastOutboundAt = incomingIsOutboundProjectionEvent
         ? newestTimestamp(
             existing?.lastOutboundAt ?? null,
-            parsed.canonicalEvent.occurredAt
+            parsed.canonicalEvent.occurredAt,
           )
-        : existing?.lastOutboundAt ?? null;
+        : (existing?.lastOutboundAt ?? null);
       const lastActivityAt = newestTimestamp(
         existing?.lastActivityAt ?? null,
-        parsed.canonicalEvent.occurredAt
+        parsed.canonicalEvent.occurredAt,
       );
       const incomingIsLatestKnown = latestTimestampWins(
         parsed.canonicalEvent,
-        existing
+        existing,
       );
 
       if (lastActivityAt === null) {
@@ -2239,7 +2290,7 @@ export function createStage1NormalizationService(
       }
       const hasUnresolved = await contactHasUnresolved(
         persistence,
-        parsed.canonicalEvent.contactId
+        parsed.canonicalEvent.contactId,
       );
       const bucket =
         existing === null
@@ -2262,22 +2313,23 @@ export function createStage1NormalizationService(
         lastActivityAt,
         snippet: incomingIsLatestKnown
           ? parsed.snippet
-          : existing?.snippet ?? parsed.snippet,
+          : (existing?.snippet ?? parsed.snippet),
         archivedAt: existing?.archivedAt ?? null,
         lastCanonicalEventId: incomingIsLatestKnown
           ? parsed.canonicalEvent.id
-          : existing?.lastCanonicalEventId ?? parsed.canonicalEvent.id,
+          : (existing?.lastCanonicalEventId ?? parsed.canonicalEvent.id),
         lastEventType: incomingIsLatestKnown
           ? parsed.canonicalEvent.eventType
-          : existing?.lastEventType ?? parsed.canonicalEvent.eventType
+          : (existing?.lastEventType ?? parsed.canonicalEvent.eventType),
       });
     },
 
     async refreshInboxReviewOverlay(input) {
       const parsed = inboxReviewOverlayRefreshInputSchema.parse(input);
-      const existing = await persistence.repositories.inboxProjection.findByContactId(
-        parsed.contactId
-      );
+      const existing =
+        await persistence.repositories.inboxProjection.findByContactId(
+          parsed.contactId,
+        );
 
       if (existing === null) {
         return null;
@@ -2285,7 +2337,7 @@ export function createStage1NormalizationService(
 
       const hasUnresolved = await contactHasUnresolved(
         persistence,
-        parsed.contactId
+        parsed.contactId,
       );
 
       if (existing.hasUnresolved === hasUnresolved) {
@@ -2294,7 +2346,7 @@ export function createStage1NormalizationService(
 
       return persistence.saveInboxProjection({
         ...existing,
-        hasUnresolved
+        hasUnresolved,
       });
     },
 
@@ -2306,9 +2358,11 @@ export function createStage1NormalizationService(
 
     async applyNormalizedCanonicalEvent(input, options) {
       const parsed = normalizedCanonicalEventIntakeSchema.parse(input);
-      const sourceEvidenceResult = await service.recordNormalizedSourceEvidence({
-        sourceEvidence: parsed.sourceEvidence
-      });
+      const sourceEvidenceResult = await service.recordNormalizedSourceEvidence(
+        {
+          sourceEvidence: parsed.sourceEvidence,
+        },
+      );
 
       if (sourceEvidenceResult.outcome === "quarantined") {
         return {
@@ -2318,7 +2372,7 @@ export function createStage1NormalizationService(
           explanation:
             "The incoming source evidence replay conflicted with previously recorded evidence.",
           existingCanonicalEvent: null,
-          auditEvidence: sourceEvidenceResult.auditEvidence
+          auditEvidence: sourceEvidenceResult.auditEvidence,
         };
       }
 
@@ -2328,39 +2382,39 @@ export function createStage1NormalizationService(
       ) {
         await upsertMissingDuplicateGmailMessageDetail(
           persistence,
-          parsed.gmailMessageDetail
+          parsed.gmailMessageDetail,
         );
 
         const existingCanonicalEvent =
           await persistence.findCanonicalEventByIdempotencyKey(
-            parsed.canonicalEvent.idempotencyKey
+            parsed.canonicalEvent.idempotencyKey,
           );
 
         if (
           existingCanonicalEvent !== null &&
           findCanonicalEventForSourceEvidence(
             [existingCanonicalEvent],
-            sourceEvidenceResult.record.id
+            sourceEvidenceResult.record.id,
           ) !== null
         ) {
           const existingTimelineProjection =
             await persistence.repositories.timelineProjection.findByCanonicalEventId(
-              existingCanonicalEvent.id
+              existingCanonicalEvent.id,
             );
           const timelineProjection =
             existingTimelineProjection ??
             (await service.applyTimelineProjection({
               canonicalEvent: existingCanonicalEvent,
-              summary: parsed.canonicalEvent.summary
+              summary: parsed.canonicalEvent.summary,
             }));
           const inboxProjection = qualifiesForInboxProjection(
-            existingCanonicalEvent
+            existingCanonicalEvent,
           )
             ? await persistence.repositories.inboxProjection.findByContactId(
-                existingCanonicalEvent.contactId
+                existingCanonicalEvent.contactId,
               )
             : await service.refreshInboxReviewOverlay({
-                contactId: existingCanonicalEvent.contactId
+                contactId: existingCanonicalEvent.contactId,
               });
 
           return {
@@ -2371,7 +2425,7 @@ export function createStage1NormalizationService(
             inboxProjection,
             identityCase: null,
             routingCase: null,
-            auditEvidence: null
+            auditEvidence: null,
           };
         }
       }
@@ -2380,7 +2434,7 @@ export function createStage1NormalizationService(
         await resolveNonVolunteerSalesforceTaskSkip(
           persistence,
           identityResolutionContext,
-          parsed
+          parsed,
         );
 
       if (nonVolunteerTaskDecision.outcome === "skipped") {
@@ -2391,8 +2445,8 @@ export function createStage1NormalizationService(
           action: "skipped_non_volunteer_task",
           metadataJson: {
             salesforceTaskId: parsed.sourceEvidence.providerRecordId,
-            whoId: nonVolunteerTaskDecision.whoId
-          }
+            whoId: nonVolunteerTaskDecision.whoId,
+          },
         });
 
         return {
@@ -2400,24 +2454,29 @@ export function createStage1NormalizationService(
           sourceEvidence: sourceEvidenceResult.record,
           reasonCode: "skipped_non_volunteer_task",
           explanation: buildSkippedNonVolunteerTaskExplanation(),
-          auditEvidence
+          auditEvidence,
         };
       }
 
-      await upsertProviderPresentationDetails(persistence, {
-        gmailMessageDetail: parsed.gmailMessageDetail,
-        salesforceCommunicationDetail: parsed.salesforceCommunicationDetail,
-        simpleTextingMessageDetail: parsed.simpleTextingMessageDetail,
-        mailchimpCampaignActivityDetail: parsed.mailchimpCampaignActivityDetail,
-        manualNoteDetail: parsed.manualNoteDetail,
-        salesforceEventContext: parsed.salesforceEventContext,
-        projectDimensions: parsed.projectDimensions,
-        expeditionDimensions: parsed.expeditionDimensions
-      }, {
-        allowDuplicateGmailMessageDetailOverwrite:
-          sourceEvidenceResult.outcome !== "duplicate" ||
-          (options?.overwriteDuplicateGmailMessageDetail ?? true)
-      });
+      await upsertProviderPresentationDetails(
+        persistence,
+        {
+          gmailMessageDetail: parsed.gmailMessageDetail,
+          salesforceCommunicationDetail: parsed.salesforceCommunicationDetail,
+          simpleTextingMessageDetail: parsed.simpleTextingMessageDetail,
+          mailchimpCampaignActivityDetail:
+            parsed.mailchimpCampaignActivityDetail,
+          manualNoteDetail: parsed.manualNoteDetail,
+          salesforceEventContext: parsed.salesforceEventContext,
+          projectDimensions: parsed.projectDimensions,
+          expeditionDimensions: parsed.expeditionDimensions,
+        },
+        {
+          allowDuplicateGmailMessageDetailOverwrite:
+            sourceEvidenceResult.outcome !== "duplicate" ||
+            (options?.overwriteDuplicateGmailMessageDetail ?? true),
+        },
+      );
 
       const duplicateCollapseDecision = decideDuplicateCollapse(parsed);
 
@@ -2432,10 +2491,10 @@ export function createStage1NormalizationService(
             canonicalEventId: parsed.canonicalEvent.id,
             eventType: parsed.canonicalEvent.eventType,
             primaryProvider: parsed.sourceEvidence.provider,
-            supportingProviders: parsed.supportingSources.map(
-              (entry) => entry.provider
-            )
-          }
+            supportingProviders: (
+              parsed.supportingSources as readonly SupportingSourceReference[]
+            ).map((entry) => entry.provider),
+          },
         });
 
         return {
@@ -2444,7 +2503,7 @@ export function createStage1NormalizationService(
           reasonCode: duplicateCollapseDecision.reasonCode,
           explanation: duplicateCollapseDecision.explanation,
           existingCanonicalEvent: null,
-          auditEvidence
+          auditEvidence,
         };
       }
 
@@ -2453,19 +2512,19 @@ export function createStage1NormalizationService(
         sourceEvidenceResult.record.id,
         parsed.sourceEvidence.receivedAt,
         parsed.identity,
-        parsed.sourceEvidence.provider
+        parsed.sourceEvidence.provider,
       );
 
       if (identityDecision.outcome === "needs_identity_review") {
         const { caseRecord } = await service.saveIdentityAmbiguityCase(
-          identityDecision.reviewInput
+          identityDecision.reviewInput,
         );
 
         return {
           outcome: "needs_identity_review",
           sourceEvidence: sourceEvidenceResult.record,
           identityCase: caseRecord,
-          auditEvidence: null
+          auditEvidence: null,
         };
       }
 
@@ -2477,8 +2536,8 @@ export function createStage1NormalizationService(
                   normalizedEmail: identityDecision.normalizedEmail,
                   normalizedPhone: identityDecision.normalizedPhone,
                   createdAt: parsed.sourceEvidence.receivedAt,
-                  source: parsed.sourceEvidence.provider
-                })
+                  source: parsed.sourceEvidence.provider,
+                }),
               )
             ).contact
           : identityDecision.contact;
@@ -2491,28 +2550,29 @@ export function createStage1NormalizationService(
         contactId: resolvedContact.id,
         sourceEvidenceId: sourceEvidenceResult.record.id,
         openedAt: parsed.sourceEvidence.receivedAt,
-        routing: parsed.routing
+        routing: parsed.routing,
       });
       const reviewState = pickCanonicalReviewState({
         hasIdentityReview: identityReviewInput !== null,
-        hasRoutingReview: routingDecision.reviewInput !== null
+        hasRoutingReview: routingDecision.reviewInput !== null,
       });
       const supportingSourceEvidenceIds = uniqueStrings(
-        parsed.supportingSources.map((entry) => entry.sourceEvidenceId)
+        (parsed.supportingSources as readonly SupportingSourceReference[]).map(
+          (entry) => entry.sourceEvidenceId,
+        ),
       );
       const communicationClassification =
         parsed.communicationClassification ?? null;
       const inboxProjectionExclusionReason =
         detectInboxProjectionExclusionReason(parsed);
-      const contentFingerprintSource = buildIncomingContentFingerprintSource(
-        parsed
-      );
+      const contentFingerprintSource =
+        buildIncomingContentFingerprintSource(parsed);
       const contentFingerprint =
         contentFingerprintSource === null
           ? null
           : computeContentFingerprint({
               ...contentFingerprintSource,
-              contactId: resolvedContact.id
+              contactId: resolvedContact.id,
             });
       const canonicalEvent = canonicalEventSchema.parse({
         id: parsed.canonicalEvent.id,
@@ -2541,9 +2601,9 @@ export function createStage1NormalizationService(
           ...(inboxProjectionExclusionReason === null
             ? {}
             : { inboxProjectionExclusionReason }),
-          notes: duplicateCollapseDecision.winner.notes
+          notes: duplicateCollapseDecision.winner.notes,
         },
-        reviewState
+        reviewState,
       });
       let contactEvents: readonly CanonicalEventRecord[] | null = null;
       const getContactEvents = async (): Promise<
@@ -2553,16 +2613,17 @@ export function createStage1NormalizationService(
           return contactEvents;
         }
 
-        contactEvents = await persistence.repositories.canonicalEvents.listByContactId(
-          resolvedContact.id
-        );
+        contactEvents =
+          await persistence.repositories.canonicalEvents.listByContactId(
+            resolvedContact.id,
+          );
         return contactEvents;
       };
       const alreadyMergedEvent =
         sourceEvidenceResult.outcome === "duplicate"
           ? findCanonicalEventForSourceEvidence(
               await getContactEvents(),
-              sourceEvidenceResult.record.id
+              sourceEvidenceResult.record.id,
             )
           : null;
 
@@ -2574,53 +2635,49 @@ export function createStage1NormalizationService(
                 ...alreadyMergedEvent,
                 reviewState: mergeCanonicalReviewState(
                   alreadyMergedEvent.reviewState,
-                  reviewState
-                )
+                  reviewState,
+                ),
               });
         const identityCase =
           identityReviewInput === null
             ? null
-            : (
-                await service.saveIdentityAmbiguityCase(
-                  identityReviewInput
-                )
-              ).caseRecord;
+            : (await service.saveIdentityAmbiguityCase(identityReviewInput))
+                .caseRecord;
         const routingCase =
           routingDecision.reviewInput === null
             ? null
             : (
                 await service.saveRoutingAmbiguityCase(
-                  routingDecision.reviewInput
+                  routingDecision.reviewInput,
                 )
-              )
-                .caseRecord;
+              ).caseRecord;
         const existingTimelineProjection =
           await persistence.repositories.timelineProjection.findByCanonicalEventId(
-            persistedEvent.id
+            persistedEvent.id,
           );
         const timelineProjection =
           existingTimelineProjection === null
             ? await service.applyTimelineProjection({
                 canonicalEvent: persistedEvent,
-                summary: parsed.canonicalEvent.summary
+                summary: parsed.canonicalEvent.summary,
               })
             : persistedEvent.reviewState === alreadyMergedEvent.reviewState
               ? existingTimelineProjection
               : await service.applyTimelineProjection({
                   canonicalEvent: persistedEvent,
-                  summary: existingTimelineProjection.summary
+                  summary: existingTimelineProjection.summary,
                 });
         const inboxProjection = qualifiesForInboxProjection(persistedEvent)
           ? await rebuildInboxProjectionForContact(
               persistence,
-              persistedEvent.contactId
+              persistedEvent.contactId,
             )
           : await service.refreshInboxReviewOverlay({
-              contactId: persistedEvent.contactId
+              contactId: persistedEvent.contactId,
             });
         await reconcilePendingComposerOutbound(persistence, {
           sourceEvidence: sourceEvidenceResult.record,
-          canonicalEvent: persistedEvent
+          canonicalEvent: persistedEvent,
         });
 
         return {
@@ -2631,7 +2688,7 @@ export function createStage1NormalizationService(
           inboxProjection,
           identityCase,
           routingCase,
-          auditEvidence: null
+          auditEvidence: null,
         };
       }
 
@@ -2643,39 +2700,41 @@ export function createStage1NormalizationService(
               incoming: {
                 canonicalEvent: {
                   ...parsed.canonicalEvent,
-                  contentFingerprint
+                  contentFingerprint,
                 },
-                ...(communicationClassification === null
-                  ? {}
-                  : { communicationClassification }),
+                communicationClassification:
+                  communicationClassification ?? undefined,
                 sourceEvidence: sourceEvidenceResult.record,
                 gmailMessageDetail: parsed.gmailMessageDetail,
                 salesforceCommunicationDetail:
-                  parsed.salesforceCommunicationDetail
-              }
+                  parsed.salesforceCommunicationDetail,
+              },
             })
           : null;
 
       if (duplicateMatch !== null) {
         const mergedSupportingSourceEvidenceIds = uniqueStrings([
-          ...duplicateMatch.existingEvent.provenance.supportingSourceEvidenceIds,
+          ...duplicateMatch.existingEvent.provenance
+            .supportingSourceEvidenceIds,
           ...supportingSourceEvidenceIds,
           duplicateMatch.existingEvent.sourceEvidenceId,
-          sourceEvidenceResult.record.id
+          sourceEvidenceResult.record.id,
         ]).filter(
           (sourceEvidenceId) =>
             sourceEvidenceId !==
             (duplicateMatch.winner.keepIncomingAsPrimary
               ? sourceEvidenceResult.record.id
-              : duplicateMatch.existingEvent.sourceEvidenceId)
+              : duplicateMatch.existingEvent.sourceEvidenceId),
         );
         const supportingProviders = new Set<
           CanonicalEventRecord["provenance"]["primaryProvider"]
         >([
-          ...parsed.supportingSources.map((entry) => entry.provider),
+          ...(
+            parsed.supportingSources as readonly SupportingSourceReference[]
+          ).map((entry) => entry.provider),
           duplicateMatch.winner.keepIncomingAsPrimary
             ? duplicateMatch.existingEvent.provenance.primaryProvider
-            : parsed.sourceEvidence.provider
+            : parsed.sourceEvidence.provider,
         ]);
 
         if (
@@ -2697,104 +2756,103 @@ export function createStage1NormalizationService(
             ? canonicalEvent.provenance.primaryProvider
             : duplicateMatch.existingEvent.provenance.primaryProvider,
           supportingProviders: [...supportingProviders],
-          fallback: duplicateMatch.winner
+          fallback: duplicateMatch.winner,
         });
-        const persistedEvent = await persistence.repositories.canonicalEvents.upsert(
-          canonicalEventSchema.parse({
-            id: duplicateMatch.existingEvent.id,
-            contactId: resolvedContact.id,
-            eventType: canonicalEvent.eventType,
-            channel: canonicalEvent.channel,
-            occurredAt: duplicateMatch.winner.keepIncomingAsPrimary
-              ? canonicalEvent.occurredAt
-              : duplicateMatch.existingEvent.occurredAt,
-            contentFingerprint: duplicateMatch.winner.keepIncomingAsPrimary
-              ? canonicalEvent.contentFingerprint
-              : duplicateMatch.existingEvent.contentFingerprint,
-            sourceEvidenceId: duplicateMatch.winner.keepIncomingAsPrimary
-              ? sourceEvidenceResult.record.id
-              : duplicateMatch.existingEvent.sourceEvidenceId,
-            idempotencyKey: duplicateMatch.winner.keepIncomingAsPrimary
-              ? canonicalEvent.idempotencyKey
-              : duplicateMatch.existingEvent.idempotencyKey,
-            provenance: {
-              primaryProvider: duplicateMatch.winner.keepIncomingAsPrimary
-                ? canonicalEvent.provenance.primaryProvider
-                : duplicateMatch.existingEvent.provenance.primaryProvider,
-              primarySourceEvidenceId: duplicateMatch.winner.keepIncomingAsPrimary
+        const persistedEvent =
+          await persistence.repositories.canonicalEvents.upsert(
+            canonicalEventSchema.parse({
+              id: duplicateMatch.existingEvent.id,
+              contactId: resolvedContact.id,
+              eventType: canonicalEvent.eventType,
+              channel: canonicalEvent.channel,
+              occurredAt: duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.occurredAt
+                : duplicateMatch.existingEvent.occurredAt,
+              contentFingerprint: duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.contentFingerprint
+                : duplicateMatch.existingEvent.contentFingerprint,
+              sourceEvidenceId: duplicateMatch.winner.keepIncomingAsPrimary
                 ? sourceEvidenceResult.record.id
                 : duplicateMatch.existingEvent.sourceEvidenceId,
-              supportingSourceEvidenceIds: mergedSupportingSourceEvidenceIds,
-              winnerReason: mergedWinner.winnerReason,
-              sourceRecordType: duplicateMatch.winner.keepIncomingAsPrimary
-                ? canonicalEvent.provenance.sourceRecordType
-                : duplicateMatch.existingEvent.provenance.sourceRecordType,
-              sourceRecordId: duplicateMatch.winner.keepIncomingAsPrimary
-                ? canonicalEvent.provenance.sourceRecordId
-                : duplicateMatch.existingEvent.provenance.sourceRecordId,
-              messageKind: duplicateMatch.winner.keepIncomingAsPrimary
-                ? canonicalEvent.provenance.messageKind
-                : duplicateMatch.existingEvent.provenance.messageKind,
-              campaignRef: duplicateMatch.winner.keepIncomingAsPrimary
-                ? canonicalEvent.provenance.campaignRef
-                : duplicateMatch.existingEvent.provenance.campaignRef,
-              threadRef: duplicateMatch.winner.keepIncomingAsPrimary
-                ? canonicalEvent.provenance.threadRef
-                : duplicateMatch.existingEvent.provenance.threadRef,
-              direction: duplicateMatch.winner.keepIncomingAsPrimary
-                ? canonicalEvent.provenance.direction
-                : duplicateMatch.existingEvent.provenance.direction,
-              ...((duplicateMatch.winner.keepIncomingAsPrimary
-                ? canonicalEvent.provenance.inboxProjectionExclusionReason
-                : duplicateMatch.existingEvent.provenance
-                    .inboxProjectionExclusionReason) === undefined
-                ? {}
-                : {
-                    inboxProjectionExclusionReason:
-                      duplicateMatch.winner.keepIncomingAsPrimary
-                        ? canonicalEvent.provenance.inboxProjectionExclusionReason
-                        : duplicateMatch.existingEvent.provenance
+              idempotencyKey: duplicateMatch.winner.keepIncomingAsPrimary
+                ? canonicalEvent.idempotencyKey
+                : duplicateMatch.existingEvent.idempotencyKey,
+              provenance: {
+                primaryProvider: duplicateMatch.winner.keepIncomingAsPrimary
+                  ? canonicalEvent.provenance.primaryProvider
+                  : duplicateMatch.existingEvent.provenance.primaryProvider,
+                primarySourceEvidenceId: duplicateMatch.winner
+                  .keepIncomingAsPrimary
+                  ? sourceEvidenceResult.record.id
+                  : duplicateMatch.existingEvent.sourceEvidenceId,
+                supportingSourceEvidenceIds: mergedSupportingSourceEvidenceIds,
+                winnerReason: mergedWinner.winnerReason,
+                sourceRecordType: duplicateMatch.winner.keepIncomingAsPrimary
+                  ? canonicalEvent.provenance.sourceRecordType
+                  : duplicateMatch.existingEvent.provenance.sourceRecordType,
+                sourceRecordId: duplicateMatch.winner.keepIncomingAsPrimary
+                  ? canonicalEvent.provenance.sourceRecordId
+                  : duplicateMatch.existingEvent.provenance.sourceRecordId,
+                messageKind: duplicateMatch.winner.keepIncomingAsPrimary
+                  ? canonicalEvent.provenance.messageKind
+                  : duplicateMatch.existingEvent.provenance.messageKind,
+                campaignRef: duplicateMatch.winner.keepIncomingAsPrimary
+                  ? canonicalEvent.provenance.campaignRef
+                  : duplicateMatch.existingEvent.provenance.campaignRef,
+                threadRef: duplicateMatch.winner.keepIncomingAsPrimary
+                  ? canonicalEvent.provenance.threadRef
+                  : duplicateMatch.existingEvent.provenance.threadRef,
+                direction: duplicateMatch.winner.keepIncomingAsPrimary
+                  ? canonicalEvent.provenance.direction
+                  : duplicateMatch.existingEvent.provenance.direction,
+                ...((duplicateMatch.winner.keepIncomingAsPrimary
+                  ? canonicalEvent.provenance.inboxProjectionExclusionReason
+                  : duplicateMatch.existingEvent.provenance
+                      .inboxProjectionExclusionReason) === undefined
+                  ? {}
+                  : {
+                      inboxProjectionExclusionReason: duplicateMatch.winner
+                        .keepIncomingAsPrimary
+                        ? canonicalEvent.provenance
                             .inboxProjectionExclusionReason
-                  }),
-              notes: mergedWinner.notes
-            },
-            reviewState: mergeCanonicalReviewState(
-              duplicateMatch.existingEvent.reviewState,
-              canonicalEvent.reviewState
-            )
-          })
-        );
+                        : duplicateMatch.existingEvent.provenance
+                            .inboxProjectionExclusionReason,
+                    }),
+                notes: mergedWinner.notes,
+              },
+              reviewState: mergeCanonicalReviewState(
+                duplicateMatch.existingEvent.reviewState,
+                canonicalEvent.reviewState,
+              ),
+            }),
+          );
         const identityCase =
           identityReviewInput === null
             ? null
-            : (
-                await service.saveIdentityAmbiguityCase(
-                  identityReviewInput
-                )
-              ).caseRecord;
+            : (await service.saveIdentityAmbiguityCase(identityReviewInput))
+                .caseRecord;
         const routingCase =
           routingDecision.reviewInput === null
             ? null
             : (
                 await service.saveRoutingAmbiguityCase(
-                  routingDecision.reviewInput
+                  routingDecision.reviewInput,
                 )
-              )
-                .caseRecord;
+              ).caseRecord;
         const timelineProjection = await service.applyTimelineProjection({
           canonicalEvent: persistedEvent,
           summary: duplicateMatch.winner.keepIncomingAsPrimary
             ? parsed.canonicalEvent.summary
-            : duplicateMatch.existingTimelineProjection?.summary ??
-              parsed.canonicalEvent.summary
+            : (duplicateMatch.existingTimelineProjection?.summary ??
+              parsed.canonicalEvent.summary),
         });
         const inboxProjection = await rebuildInboxProjectionForContact(
           persistence,
-          persistedEvent.contactId
+          persistedEvent.contactId,
         );
         await reconcilePendingComposerOutbound(persistence, {
           sourceEvidence: sourceEvidenceResult.record,
-          canonicalEvent: persistedEvent
+          canonicalEvent: persistedEvent,
         });
 
         return {
@@ -2805,11 +2863,12 @@ export function createStage1NormalizationService(
           inboxProjection,
           identityCase,
           routingCase,
-          auditEvidence: null
+          auditEvidence: null,
         };
       }
 
-      const eventWriteResult = await persistence.persistCanonicalEvent(canonicalEvent);
+      const eventWriteResult =
+        await persistence.persistCanonicalEvent(canonicalEvent);
 
       if (eventWriteResult.outcome === "conflict") {
         const auditEvidence = await recordQuarantineAuditOnce(persistence, {
@@ -2821,8 +2880,8 @@ export function createStage1NormalizationService(
           metadataJson: {
             incomingCanonicalEventId: parsed.canonicalEvent.id,
             existingCanonicalEventId: eventWriteResult.existing.id,
-            reason: eventWriteResult.reason
-          }
+            reason: eventWriteResult.reason,
+          },
         });
 
         return {
@@ -2832,7 +2891,7 @@ export function createStage1NormalizationService(
           explanation:
             "The canonical event idempotency key already exists with a different canonical interpretation.",
           existingCanonicalEvent: eventWriteResult.existing,
-          auditEvidence
+          auditEvidence,
         };
       }
 
@@ -2840,48 +2899,45 @@ export function createStage1NormalizationService(
       const identityCase =
         identityReviewInput === null
           ? null
-          : (
-              await service.saveIdentityAmbiguityCase(
-                identityReviewInput
-              )
-            ).caseRecord;
+          : (await service.saveIdentityAmbiguityCase(identityReviewInput))
+              .caseRecord;
       const routingCase =
         routingDecision.reviewInput === null
           ? null
           : (
               await service.saveRoutingAmbiguityCase(
-                routingDecision.reviewInput
+                routingDecision.reviewInput,
               )
-            )
-              .caseRecord;
+            ).caseRecord;
       const timelineProjection = await service.applyTimelineProjection({
         canonicalEvent: persistedEvent,
-        summary: parsed.canonicalEvent.summary
+        summary: parsed.canonicalEvent.summary,
       });
       const inboxProjection = qualifiesForInboxProjection(persistedEvent)
         ? await service.applyInboxProjection({
             canonicalEvent: persistedEvent,
-            snippet: parsed.canonicalEvent.snippet
+            snippet: parsed.canonicalEvent.snippet,
           })
         : await service.refreshInboxReviewOverlay({
-            contactId: persistedEvent.contactId
+            contactId: persistedEvent.contactId,
           });
       await reconcilePendingComposerOutbound(persistence, {
         sourceEvidence: sourceEvidenceResult.record,
-        canonicalEvent: persistedEvent
+        canonicalEvent: persistedEvent,
       });
 
       return {
-        outcome: eventWriteResult.outcome === "inserted" ? "applied" : "duplicate",
+        outcome:
+          eventWriteResult.outcome === "inserted" ? "applied" : "duplicate",
         sourceEvidence: sourceEvidenceResult.record,
         canonicalEvent: persistedEvent,
         timelineProjection,
         inboxProjection,
         identityCase,
         routingCase,
-        auditEvidence: null
+        auditEvidence: null,
       };
-    }
+    },
   };
 
   return service;

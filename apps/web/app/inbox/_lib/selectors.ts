@@ -300,6 +300,24 @@ function uniqueStrings(
   );
 }
 
+function uniqueInboxProjectionsByContactId(
+  rows: readonly InboxProjectionRow[],
+): InboxProjectionRow[] {
+  const seen = new Set<string>();
+  const uniqueRows: InboxProjectionRow[] = [];
+
+  for (const row of rows) {
+    if (seen.has(row.contactId)) {
+      continue;
+    }
+
+    seen.add(row.contactId);
+    uniqueRows.push(row);
+  }
+
+  return uniqueRows;
+}
+
 function isInboundInboxEvent(
   eventType: CanonicalEventRecord["eventType"],
 ): boolean {
@@ -468,6 +486,8 @@ function campaignActivitySummaryKey(
       return "clickedAt";
     case "unsubscribed":
       return "unsubscribedAt";
+    default:
+      return "sentAt";
   }
 }
 
@@ -538,6 +558,7 @@ async function loadCampaignActivitySummaryByCampaignId(input: {
 }
 
 function encodeInboxListCursor(input: {
+  readonly lastInboundAt: string | null;
   readonly lastNonAliasMessageAt: string | null;
   readonly lastOutboundAt: string | null;
   readonly lastActivityAt: string;
@@ -547,6 +568,7 @@ function encodeInboxListCursor(input: {
 }
 
 function decodeInboxListCursor(cursor: string | null): {
+  readonly lastInboundAt: string | null;
   readonly lastNonAliasMessageAt: string | null;
   readonly lastOutboundAt: string | null;
   readonly lastActivityAt: string;
@@ -560,18 +582,21 @@ function decodeInboxListCursor(cursor: string | null): {
     const parsed = JSON.parse(
       Buffer.from(cursor, "base64url").toString("utf8"),
     ) as Record<string, unknown>;
+    const lastInboundAt = parsed.lastInboundAt ?? null;
     const lastNonAliasMessageAt =
       parsed.lastNonAliasMessageAt ?? parsed.lastInboundAt;
     const lastOutboundAt = parsed.lastOutboundAt ?? null;
     const lastActivityAt = parsed.lastActivityAt;
     const contactId = parsed.contactId;
 
-    return (lastNonAliasMessageAt === null ||
-      typeof lastNonAliasMessageAt === "string") &&
+    return (lastInboundAt === null || typeof lastInboundAt === "string") &&
+      (lastNonAliasMessageAt === null ||
+        typeof lastNonAliasMessageAt === "string") &&
       (lastOutboundAt === null || typeof lastOutboundAt === "string") &&
       typeof lastActivityAt === "string" &&
       typeof contactId === "string"
       ? {
+          lastInboundAt,
           lastNonAliasMessageAt: lastNonAliasMessageAt ?? null,
           lastOutboundAt,
           lastActivityAt,
@@ -581,6 +606,26 @@ function decodeInboxListCursor(cursor: string | null): {
   } catch {
     return null;
   }
+}
+
+function toInboxRepositoryCursor(
+  cursor: ReturnType<typeof decodeInboxListCursor>,
+): {
+  readonly lastInboundAt: string | null;
+  readonly lastOutboundAt: string | null;
+  readonly lastActivityAt: string;
+  readonly contactId: string;
+} | null {
+  if (cursor === null) {
+    return null;
+  }
+
+  return {
+    lastInboundAt: cursor.lastInboundAt,
+    lastOutboundAt: cursor.lastOutboundAt,
+    lastActivityAt: cursor.lastActivityAt,
+    contactId: cursor.contactId,
+  };
 }
 
 function toInitials(displayName: string): string {
@@ -1286,6 +1331,10 @@ function timelineLifecycleBodyLabel(
       return context === null
         ? "Submitted first data"
         : `Submitted first data for ${context}`;
+    default:
+      return context === null
+        ? "Project activity"
+        : `Project activity for ${context}`;
   }
 }
 
@@ -1313,6 +1362,10 @@ function lifecycleRailActivityLabel(
       return projectContext === null
         ? "Submitted first data"
         : `Submitted first data - ${projectContext}`;
+    default:
+      return projectContext === null
+        ? "Project activity"
+        : `Project activity - ${projectContext}`;
   }
 }
 
@@ -1348,6 +1401,8 @@ function fallbackLatestSubject(eventType: CanonicalEventType): string {
       return "Campaign email unsubscribed";
     case "note.internal.created":
       return "Internal note created";
+    default:
+      return "Activity recorded";
   }
 }
 
@@ -1387,6 +1442,8 @@ function mapTimelineKind(item: TimelineItem): InboxTimelineEntryKind {
       return "internal-note";
     case "salesforce_event":
       return "system-event";
+    default:
+      return "system-event";
   }
 }
 
@@ -1406,6 +1463,49 @@ function inferPreviewDirection(
 
   const fromContact = preview.fromAddresses.includes(contactEmail);
   const recipientContact = preview.recipientAddresses.includes(contactEmail);
+
+  if (fromContact && !recipientContact) {
+    return "inbound";
+  }
+
+  if (recipientContact && !fromContact) {
+    return "outbound";
+  }
+
+  return null;
+}
+
+function participantHeaderEmails(
+  headerValue: string | null,
+): readonly string[] {
+  if (headerValue === null) {
+    return [];
+  }
+
+  return uniqueStrings(
+    Array.from(headerValue.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu))
+      .map((match) => normalizeEmailAddress(match[0]))
+      .filter((value): value is string => value !== null),
+  );
+}
+
+function inferHeaderDirection(input: {
+  readonly item: Extract<TimelineItem, { family: "one_to_one_email" }>;
+  readonly contactPrimaryEmail: string | null;
+}): "inbound" | "outbound" | null {
+  const contactEmail = normalizeEmailAddress(input.contactPrimaryEmail);
+
+  if (contactEmail === null) {
+    return null;
+  }
+
+  const fromEmails = participantHeaderEmails(input.item.fromHeader ?? null);
+  const recipientEmails = uniqueStrings([
+    ...participantHeaderEmails(input.item.toHeader ?? null),
+    ...participantHeaderEmails(input.item.ccHeader ?? null),
+  ]);
+  const fromContact = fromEmails.includes(contactEmail);
+  const recipientContact = recipientEmails.includes(contactEmail);
 
   if (fromContact && !recipientContact) {
     return "inbound";
@@ -1439,86 +1539,19 @@ function buildRecentActivity(
       item.family === "salesforce_event",
   );
 
-  let mostRecentItemId: string | null = null;
-  let mostRecentOccurredAt: string | null = null;
+  const orderedLifecycleItems = [...lifecycleItems].sort((left, right) =>
+    compareLifecycleActivityForRail(left, right),
+  );
+  const mostRecentItemId =
+    [...lifecycleItems].sort(compareLifecycleActivityAscending).at(-1)?.id ??
+    null;
 
-  for (const item of lifecycleItems) {
-    if (
-      mostRecentOccurredAt === null ||
-      item.occurredAt > mostRecentOccurredAt ||
-      (item.occurredAt === mostRecentOccurredAt &&
-        item.id.localeCompare(mostRecentItemId ?? "") > 0)
-    ) {
-      mostRecentOccurredAt = item.occurredAt;
-      mostRecentItemId = item.id;
-    }
-  }
-
-  const groups = new Map<
-    string,
-    {
-      readonly groupKey: string;
-      readonly items: Extract<TimelineItem, { family: "salesforce_event" }>[];
-      latestOccurredAt: string;
-    }
-  >();
-
-  for (const item of lifecycleItems) {
-    const groupKey = item.projectId ?? `event:${item.id}`;
-    const existingGroup = groups.get(groupKey);
-
-    if (existingGroup === undefined) {
-      groups.set(groupKey, {
-        groupKey,
-        items: [item],
-        latestOccurredAt: item.occurredAt,
-      });
-      continue;
-    }
-
-    existingGroup.items.push(item);
-    if (item.occurredAt > existingGroup.latestOccurredAt) {
-      existingGroup.latestOccurredAt = item.occurredAt;
-    }
-  }
-
-  return [...groups.values()]
-    .sort((left, right) => {
-      const activityDifference = right.latestOccurredAt.localeCompare(
-        left.latestOccurredAt,
-      );
-
-      if (activityDifference !== 0) {
-        return activityDifference;
-      }
-
-      return left.groupKey.localeCompare(right.groupKey);
-    })
-    .flatMap((group) =>
-      [...group.items].sort((left, right) => {
-        const leftDate = utcCalendarDate(left.occurredAt);
-        const rightDate = utcCalendarDate(right.occurredAt);
-
-        if (leftDate !== rightDate) {
-          return rightDate.localeCompare(leftDate);
-        }
-
-        const leftOrdinal = lifecycleMilestoneOrdinal(left.milestone);
-        const rightOrdinal = lifecycleMilestoneOrdinal(right.milestone);
-
-        if (leftOrdinal !== rightOrdinal) {
-          return leftOrdinal - rightOrdinal;
-        }
-
-        return left.id.localeCompare(right.id);
-      }),
-    )
-    .map((item) => ({
-      id: item.id,
-      label: lifecycleRailActivityLabel(item),
-      occurredAtLabel: formatUtcRailEventDate(item.occurredAt, referenceNowIso),
-      isMostRecent: item.id === mostRecentItemId,
-    }));
+  return orderedLifecycleItems.map((item) => ({
+    id: item.id,
+    label: lifecycleRailActivityLabel(item),
+    occurredAtLabel: formatUtcRailEventDate(item.occurredAt, referenceNowIso),
+    isMostRecent: item.id === mostRecentItemId,
+  }));
 }
 
 function lifecycleMilestoneOrdinal(
@@ -1540,57 +1573,81 @@ function utcCalendarDate(occurredAt: string): string {
   return occurredAt.slice(0, 10);
 }
 
+function compareLifecycleActivityAscending(
+  left: Extract<TimelineItem, { family: "salesforce_event" }>,
+  right: Extract<TimelineItem, { family: "salesforce_event" }>,
+): number {
+  const leftDate = utcCalendarDate(left.occurredAt);
+  const rightDate = utcCalendarDate(right.occurredAt);
+
+  if (leftDate !== rightDate) {
+    return leftDate.localeCompare(rightDate);
+  }
+
+  const leftOrdinal = lifecycleMilestoneOrdinal(left.milestone);
+  const rightOrdinal = lifecycleMilestoneOrdinal(right.milestone);
+
+  if (leftOrdinal !== rightOrdinal) {
+    return leftOrdinal - rightOrdinal;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function compareLifecycleActivityForRail(
+  left: Extract<TimelineItem, { family: "salesforce_event" }>,
+  right: Extract<TimelineItem, { family: "salesforce_event" }>,
+): number {
+  const leftDate = utcCalendarDate(left.occurredAt);
+  const rightDate = utcCalendarDate(right.occurredAt);
+
+  if (leftDate !== rightDate) {
+    return rightDate.localeCompare(leftDate);
+  }
+
+  return compareLifecycleActivityAscending(left, right);
+}
+
 function reorderSameDayLifecycleTimelineItems(
   timelineItems: readonly TimelineItem[],
 ): readonly TimelineItem[] {
-  const reordered: TimelineItem[] = [];
+  const lifecycleByDate = new Map<
+    string,
+    Extract<TimelineItem, { family: "salesforce_event" }>[]
+  >();
 
-  for (let index = 0; index < timelineItems.length; ) {
-    const item = timelineItems[index];
-
-    if (item?.family !== "salesforce_event") {
-      if (item !== undefined) {
-        reordered.push(item);
-      }
-      index += 1;
+  for (const item of timelineItems) {
+    if (item.family !== "salesforce_event") {
       continue;
     }
 
-    const groupDate = utcCalendarDate(item.occurredAt);
-    const lifecycleGroup: Extract<
-      TimelineItem,
-      { family: "salesforce_event" }
-    >[] = [];
+    const date = utcCalendarDate(item.occurredAt);
+    const existing = lifecycleByDate.get(date) ?? [];
+    existing.push(item);
+    lifecycleByDate.set(date, existing);
+  }
 
-    while (index < timelineItems.length) {
-      const candidate = timelineItems[index];
+  const orderedLifecycleByDate = new Map<
+    string,
+    Extract<TimelineItem, { family: "salesforce_event" }>[]
+  >();
 
-      if (
-        candidate?.family !== "salesforce_event" ||
-        utcCalendarDate(candidate.occurredAt) !== groupDate
-      ) {
-        break;
-      }
-
-      lifecycleGroup.push(candidate);
-      index += 1;
-    }
-
-    reordered.push(
-      ...lifecycleGroup.sort((left, right) => {
-        const leftOrdinal = lifecycleMilestoneOrdinal(left.milestone);
-        const rightOrdinal = lifecycleMilestoneOrdinal(right.milestone);
-
-        if (leftOrdinal !== rightOrdinal) {
-          return leftOrdinal - rightOrdinal;
-        }
-
-        return left.id.localeCompare(right.id);
-      }),
+  for (const [date, items] of lifecycleByDate) {
+    orderedLifecycleByDate.set(
+      date,
+      [...items].sort(compareLifecycleActivityAscending),
     );
   }
 
-  return reordered;
+  return timelineItems.map((item) => {
+    if (item.family !== "salesforce_event") {
+      return item;
+    }
+
+    const date = utcCalendarDate(item.occurredAt);
+    const next = orderedLifecycleByDate.get(date)?.shift();
+    return next ?? item;
+  });
 }
 
 function timelineChannel(item: TimelineItem): InboxChannel | null {
@@ -1605,6 +1662,8 @@ function timelineChannel(item: TimelineItem): InboxChannel | null {
       return "sms";
     case "internal_note":
     case "salesforce_event":
+      return null;
+    default:
       return null;
   }
 }
@@ -1875,6 +1934,8 @@ function timelineSubject(item: TimelineItem): string | null {
     case "internal_note":
     case "salesforce_event":
       return null;
+    default:
+      return null;
   }
 }
 
@@ -1918,6 +1979,8 @@ function timelineBody(item: TimelineItem): string {
       return item.body;
     case "salesforce_event":
       return timelineLifecycleBodyLabel(item);
+    default:
+      return "";
   }
 }
 
@@ -1948,6 +2011,7 @@ function resolveRecipientLabel(input: {
   readonly contactDisplayName: string;
   readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
+  readonly visualDirection: "inbound" | "outbound" | null;
 }): string | null {
   if (input.item.family !== "one_to_one_email") {
     return null;
@@ -1962,7 +2026,7 @@ function resolveRecipientLabel(input: {
   // when the recipient email isn't a known contact, then the bare
   // email. Notably, we don't fall back to the conversation's canonical
   // contact name — that contact may not match the actual To address.
-  if (input.item.direction === "outbound") {
+  if (input.visualDirection === "outbound") {
     const contactName =
       toEmail !== null ? input.contactDisplayNameByEmail.get(toEmail) : null;
     if (contactName !== null && contactName !== undefined) {
@@ -2005,6 +2069,8 @@ function formatCampaignActivityLabel(
       return `Clicked ${occurredAtLabel}`;
     case "unsubscribed":
       return `Unsubscribed ${occurredAtLabel}`;
+    default:
+      return `Activity ${occurredAtLabel}`;
   }
 }
 
@@ -2073,6 +2139,8 @@ function isPreviewTimelineItem(item: TimelineItem): boolean {
     case "one_to_one_email":
     case "one_to_one_sms":
       return true;
+    default:
+      return false;
   }
 }
 
@@ -2123,16 +2191,28 @@ function buildTimelineEntry(input: {
           input.contactPrimaryEmail,
         )
       : null;
+  const headerDirection =
+    input.item.family === "one_to_one_email"
+      ? inferHeaderDirection({
+          item: input.item,
+          contactPrimaryEmail: input.contactPrimaryEmail,
+        })
+      : null;
+  const visualEmailDirection =
+    input.item.family === "one_to_one_email"
+      ? (inferredDirection ?? headerDirection ?? input.item.direction)
+      : null;
   const isLegacySalesforceEmail = isLegacySalesforceEmailWithoutMessageDetail(
     input.item,
   );
   const kind =
     input.item.family === "one_to_one_email" &&
     isLegacySalesforceEmail &&
-    inferredDirection === null
+    visualEmailDirection === null
       ? "email-activity"
-      : input.item.family === "one_to_one_email" && inferredDirection !== null
-        ? inferredDirection === "inbound"
+      : input.item.family === "one_to_one_email" &&
+          visualEmailDirection !== null
+        ? visualEmailDirection === "inbound"
           ? "inbound-email"
           : "outbound-email"
         : mapTimelineKind(input.item);
@@ -2168,10 +2248,13 @@ function buildTimelineEntry(input: {
       ? input.inboxProjection.bucket === "New" &&
         input.inboxProjection.lastEventType === "communication.sms.inbound" &&
         input.inboxProjection.lastInboundAt === input.item.occurredAt
-      : input.inboxProjection.bucket === "New" &&
-        input.item.canonicalEventId ===
-          input.inboxProjection.lastCanonicalEventId &&
-        finalKind === "inbound-email";
+      : input.item.family === "one_to_one_email" &&
+          (finalKind === "inbound-email" || finalKind === "outbound-email")
+        ? input.inboxProjection.bucket === "New" &&
+          input.item.direction === "inbound" &&
+          input.item.canonicalEventId ===
+            input.inboxProjection.lastCanonicalEventId
+        : false;
   const attachments =
     input.item.family === "one_to_one_email"
       ? buildEmailAttachmentsForEntry({
@@ -2233,6 +2316,7 @@ function buildTimelineEntry(input: {
       contactDisplayName: input.contactDisplayName,
       contactDisplayNameByEmail: input.contactDisplayNameByEmail,
       projectLabelByAlias: input.projectLabelByAlias,
+      visualDirection: visualEmailDirection,
     }),
     ccHeader:
       input.item.family === "one_to_one_email"
@@ -2292,6 +2376,7 @@ function buildTimelineEntry(input: {
             projectLabelByAlias: input.projectLabelByAlias,
             operatorDisplayName: input.operatorDisplayName,
             headerProjectLabel,
+            visualDirection: visualEmailDirection ?? input.item.direction,
           }),
         }
       : {}),
@@ -2402,10 +2487,11 @@ function buildParticipantRows(input: {
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly operatorDisplayName: string;
   readonly headerProjectLabel: string | null;
+  readonly visualDirection: "inbound" | "outbound";
 }): readonly InboxTimelineEntryParticipantRowViewModel[] {
   const fromEmail =
     participantHeaderEmail(input.item.fromHeader ?? null) ??
-    (input.item.direction === "inbound"
+    (input.visualDirection === "inbound"
       ? normalizeEmailAddress(input.contactPrimaryEmail)
       : null);
   const toEmail = participantHeaderEmail(input.item.toHeader ?? null);
@@ -2421,7 +2507,7 @@ function buildParticipantRows(input: {
 
   const rows: InboxTimelineEntryParticipantRowViewModel[] = [];
 
-  if (input.item.direction === "outbound") {
+  if (input.visualDirection === "outbound") {
     // For outbound the From slot holds whatever the operator was
     // sending AS. Order: known sender identity behind the alias →
     // resolved project alias → whatever display name appears on the
@@ -2442,12 +2528,17 @@ function buildParticipantRows(input: {
       fromHeaderDisplayName !== null && !isEmailLikeName(fromHeaderDisplayName)
         ? normalizeDisplayName(fromHeaderDisplayName) || fromHeaderDisplayName
         : null;
+    const fromProjectAliasLabel =
+      fromEmail === null
+        ? null
+        : (input.projectLabelByAlias.get(fromEmail) ?? null);
     rows.push({
       label: "From",
       name:
         senderContactName ??
-        input.headerProjectLabel ??
+        fromProjectAliasLabel ??
         fromHeaderName ??
+        input.headerProjectLabel ??
         operatorLabel,
       email: fromEmail,
     });
@@ -2977,6 +3068,7 @@ async function readInboxListCacheData(input: {
 }): Promise<InboxListCacheData> {
   const runtime = await getStage1WebRuntime();
   const decodedCursor = decodeInboxListCursor(input.cursor);
+  const repositoryCursor = toInboxRepositoryCursor(decodedCursor);
   const normalizedQuery = normalizeInlineText(input.query) ?? null;
   const isSearchActive = normalizedQuery !== null;
   const order = orderForInboxFilter(isSearchActive ? "inbox" : input.filterId);
@@ -2996,7 +3088,7 @@ async function readInboxListCacheData(input: {
           filter,
           order,
           limit: projectionScanLimit,
-          cursor: null,
+          cursor: repositoryCursor,
           projectId: effectiveProjectId,
         })
       : runtime.repositories.inboxProjection
@@ -3006,7 +3098,7 @@ async function readInboxListCacheData(input: {
             filter: "visible",
             order,
             limit: projectionScanLimit,
-            cursor: null,
+            cursor: repositoryCursor,
             query: normalizedQuery,
             projectId: effectiveProjectId,
           })
@@ -3015,20 +3107,21 @@ async function readInboxListCacheData(input: {
   // The primary loader pulls only the active filter slice. Counts come from
   // the aggregate repo method below, so opening a conversation does not hydrate
   // unrelated inbox or archived rows.
-  const primaryFilterForLoader: RepoFilter =
-    isSearchActive
-      ? "visible"
-      : input.filterId === "unread"
-        ? "inbox"
-        : input.filterId;
+  const primaryFilterForLoader: RepoFilter = isSearchActive
+    ? "visible"
+    : input.filterId;
   const [
-    visibleProjections,
+    primaryProjections,
+    attentionScanProjections,
     projectionCounts,
     freshness,
     activeProjectRecords,
     projectAliasRecords,
   ] = await Promise.all([
     loadProjectionRows(primaryFilterForLoader),
+    !isSearchActive && input.filterId === "unread"
+      ? loadProjectionRows("inbox")
+      : Promise.resolve([]),
     runtime.repositories.inboxProjection.countByFilters({
       projectId: input.projectId,
     }),
@@ -3036,7 +3129,10 @@ async function readInboxListCacheData(input: {
     runtime.repositories.projectDimensions.listActive(),
     runtime.settings.aliases.listAll(),
   ]);
-  const matchedProjections = visibleProjections;
+  const matchedProjections = uniqueInboxProjectionsByContactId([
+    ...primaryProjections,
+    ...attentionScanProjections,
+  ]);
   const activeProjects: readonly InboxActiveProjectOption[] =
     activeProjectRecords.map((record) => ({
       id: record.projectId,
@@ -3193,23 +3289,8 @@ async function readInboxListCacheData(input: {
         ? compareInboxOutboundRecency
         : compareInboxRecency,
     );
-  const cursorIndex =
-    decodedCursor === null
-      ? -1
-      : allItems.findIndex(
-          (item) =>
-            item.contactId === decodedCursor.contactId &&
-            item.lastNonAliasMessageAt ===
-              decodedCursor.lastNonAliasMessageAt &&
-            item.lastOutboundAt === decodedCursor.lastOutboundAt &&
-            item.lastActivityAt === decodedCursor.lastActivityAt,
-        );
-  const itemsAfterCursor =
-    cursorIndex < 0 ? allItems : allItems.slice(cursorIndex + 1);
-  const hasMore = itemsAfterCursor.length > input.limit;
-  const pageItems = hasMore
-    ? itemsAfterCursor.slice(0, input.limit)
-    : itemsAfterCursor;
+  const hasMore = allItems.length > input.limit;
+  const pageItems = hasMore ? allItems.slice(0, input.limit) : allItems;
   const rowByContactId = new Map(allRows.map((row) => [row.contact.id, row]));
   const pageRows = pageItems.flatMap((item) => {
     const row = rowByContactId.get(item.contactId);
@@ -3236,6 +3317,9 @@ async function readInboxListCacheData(input: {
         !hasMore || pageRows.length === 0
           ? null
           : encodeInboxListCursor({
+              lastInboundAt:
+                pageRows[pageRows.length - 1]?.inboxProjection.lastInboundAt ??
+                null,
               lastNonAliasMessageAt:
                 pageRows[pageRows.length - 1]?.lastNonAliasMessageAt ?? null,
               lastOutboundAt:

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildGmailMessageRecord,
   importGmailMboxRecords,
-  mapGmailRecord
+  mapGmailRecord,
 } from "../src/index.js";
 
 const mboxText = `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
@@ -24,7 +24,7 @@ describe("Stage 1 Gmail .mbox import", () => {
       capturedMailbox: "project-antarctica@example.org",
       liveAccount: "volunteers@adventurescientists.org",
       projectInboxAliases: ["project-antarctica@example.org"],
-      receivedAt: "2026-01-03T00:05:00.000Z"
+      receivedAt: "2026-01-03T00:05:00.000Z",
     });
 
     expect(records).toEqual([
@@ -37,24 +37,28 @@ describe("Stage 1 Gmail .mbox import", () => {
         capturedMailbox: "project-antarctica@example.org",
         projectInboxAlias: "project-antarctica@example.org",
         normalizedParticipantEmails: ["volunteer@example.org"],
-        crossProviderCollapseKey: "rfc822:<gmail-mbox-1@example.org>"
-      })
+        crossProviderCollapseKey: "rfc822:<gmail-mbox-1@example.org>",
+      }),
     ]);
   });
 
   it("converges with live Gmail API records through the same downstream mapper contract", async () => {
-    const historicalRecord = (await importGmailMboxRecords({
-      mboxText,
-      mboxPath: "/tmp/project-antarctica.mbox",
-      capturedMailbox: "project-antarctica@example.org",
-      liveAccount: "volunteers@adventurescientists.org",
-      projectInboxAliases: ["project-antarctica@example.org"],
-      receivedAt: "2026-01-03T00:05:00.000Z"
-    }))[0];
+    const historicalRecord = (
+      await importGmailMboxRecords({
+        mboxText,
+        mboxPath: "/tmp/project-antarctica.mbox",
+        capturedMailbox: "project-antarctica@example.org",
+        liveAccount: "volunteers@adventurescientists.org",
+        projectInboxAliases: ["project-antarctica@example.org"],
+        receivedAt: "2026-01-03T00:05:00.000Z",
+      })
+    )[0];
 
     expect(historicalRecord).toBeDefined();
     if (historicalRecord === undefined) {
-      throw new Error("Expected a historical Gmail record from the .mbox import.");
+      throw new Error(
+        "Expected a historical Gmail record from the .mbox import.",
+      );
     }
 
     const liveRecord = buildGmailMessageRecord({
@@ -66,17 +70,18 @@ describe("Stage 1 Gmail .mbox import", () => {
         Date: "Fri, 03 Jan 2026 00:00:00 +0000",
         From: "Volunteer <volunteer@example.org>",
         To: "Project Antarctica <project-antarctica@example.org>",
-        "Message-ID": "<gmail-mbox-1@example.org>"
+        "Message-ID": "<gmail-mbox-1@example.org>",
       },
-      payloadRef: "gmail://volunteers@adventurescientists.org/messages/gmail-live-1",
+      payloadRef:
+        "gmail://volunteers@adventurescientists.org/messages/gmail-live-1",
       checksum: "checksum-live-1",
       capturedMailbox: "volunteers@adventurescientists.org",
       receivedAt: "2026-01-03T00:05:00.000Z",
       internalAddresses: [
         "volunteers@adventurescientists.org",
-        "project-antarctica@example.org"
+        "project-antarctica@example.org",
       ],
-      projectInboxAliases: ["project-antarctica@example.org"]
+      projectInboxAliases: ["project-antarctica@example.org"],
     });
 
     const historicalResult = mapGmailRecord(historicalRecord);
@@ -84,7 +89,10 @@ describe("Stage 1 Gmail .mbox import", () => {
 
     expect(historicalResult.outcome).toBe("command");
     expect(liveResult.outcome).toBe("command");
-    if (historicalResult.outcome === "command" && liveResult.outcome === "command") {
+    if (
+      historicalResult.outcome === "command" &&
+      liveResult.outcome === "command"
+    ) {
       expect(historicalResult.command.kind).toBe("canonical_event");
       expect(liveResult.command.kind).toBe("canonical_event");
 
@@ -93,16 +101,16 @@ describe("Stage 1 Gmail .mbox import", () => {
         liveResult.command.kind === "canonical_event"
       ) {
         expect(historicalResult.command.input.canonicalEvent.eventType).toBe(
-          "communication.email.inbound"
+          "communication.email.inbound",
         );
         expect(liveResult.command.input.canonicalEvent.eventType).toBe(
-          historicalResult.command.input.canonicalEvent.eventType
+          historicalResult.command.input.canonicalEvent.eventType,
         );
         expect(liveResult.command.input.canonicalEvent.idempotencyKey).toBe(
-          historicalResult.command.input.canonicalEvent.idempotencyKey
+          historicalResult.command.input.canonicalEvent.idempotencyKey,
         );
         expect(liveResult.command.input.identity.normalizedEmails).toEqual(
-          historicalResult.command.input.identity.normalizedEmails
+          historicalResult.command.input.identity.normalizedEmails,
         );
       }
     }
@@ -122,14 +130,14 @@ Hello from an exported mailbox.
       capturedMailbox: "project-antarctica@example.org",
       liveAccount: "volunteers@adventurescientists.org",
       projectInboxAliases: ["project-antarctica@example.org"],
-      receivedAt: "2026-01-03T00:05:00.000Z"
+      receivedAt: "2026-01-03T00:05:00.000Z",
     });
 
     expect(records).toEqual([
       expect.objectContaining({
         recordType: "message",
-        subject: null
-      })
+        subject: null,
+      }),
     ]);
   });
 
@@ -146,10 +154,10 @@ Hello from an exported mailbox.
         Cc: [
           "Ricky Jones <ricky@adventurescientists.org>",
           "Samantha Doe <samantha@adventurescientists.org>",
-          "Outside Partner <partner@example.org>"
+          "Outside Partner <partner@example.org>",
         ].join(", "),
         Subject: "Re: Update on Hex 43191",
-        "Message-ID": "<gmail-third-party-1@example.org>"
+        "Message-ID": "<gmail-third-party-1@example.org>",
       },
       payloadRef:
         "gmail://volunteers@adventurescientists.org/messages/gmail-third-party-1",
@@ -158,9 +166,9 @@ Hello from an exported mailbox.
       receivedAt: "2026-04-22T00:01:00.000Z",
       internalAddresses: [
         "volunteers@adventurescientists.org",
-        "pnwbio@adventurescientists.org"
+        "pnwbio@adventurescientists.org",
       ],
-      projectInboxAliases: ["pnwbio@adventurescientists.org"]
+      projectInboxAliases: ["pnwbio@adventurescientists.org"],
     });
 
     expect(record).toMatchObject({
@@ -170,12 +178,74 @@ Hello from an exported mailbox.
       ccHeader: [
         "Ricky Jones <ricky@adventurescientists.org>",
         "Samantha Doe <samantha@adventurescientists.org>",
-        "Outside Partner <partner@example.org>"
+        "Outside Partner <partner@example.org>",
       ].join(", "),
       normalizedParticipantEmails: [
         "partner@example.org",
-        "shaina.dotson@gmail.com"
-      ]
+        "shaina.dotson@gmail.com",
+      ],
+    });
+  });
+
+  it("treats team-originated messages copied to a project inbox as inbound attention", () => {
+    const copiedRecord = buildGmailMessageRecord({
+      recordId: "gmail-team-copy-1",
+      threadId: "thread-team-copy-1",
+      snippet: "Scotty looped the project inbox into the volunteer thread.",
+      internalDate: "2026-04-22T00:00:00.000Z",
+      headers: {
+        Date: "Wed, 22 Apr 2026 00:00:00 +0000",
+        From: "Scotty <scotty@adventurescientists.org>",
+        To: "Shaina Dotson <shaina.dotson@gmail.com>",
+        Cc: "PNW Biodiversity <pnwbio@adventurescientists.org>",
+        Subject: "Re: Update on Hex 43191",
+        "Message-ID": "<gmail-team-copy-1@example.org>",
+      },
+      payloadRef:
+        "gmail://pnwbio@adventurescientists.org/messages/gmail-team-copy-1",
+      checksum: "checksum-team-copy-1",
+      capturedMailbox: "pnwbio@adventurescientists.org",
+      receivedAt: "2026-04-22T00:01:00.000Z",
+      internalAddresses: [
+        "volunteers@adventurescientists.org",
+        "pnwbio@adventurescientists.org",
+      ],
+      projectInboxAliases: ["pnwbio@adventurescientists.org"],
+    });
+    const platformSentRecord = buildGmailMessageRecord({
+      recordId: "gmail-platform-sent-1",
+      threadId: "thread-platform-sent-1",
+      snippet: "The platform sent from the project inbox.",
+      internalDate: "2026-04-22T00:02:00.000Z",
+      headers: {
+        Date: "Wed, 22 Apr 2026 00:02:00 +0000",
+        From: "PNW Biodiversity <pnwbio@adventurescientists.org>",
+        To: "Shaina Dotson <shaina.dotson@gmail.com>",
+        Subject: "Re: Update on Hex 43191",
+        "Message-ID": "<gmail-platform-sent-1@example.org>",
+      },
+      payloadRef:
+        "gmail://pnwbio@adventurescientists.org/messages/gmail-platform-sent-1",
+      checksum: "checksum-platform-sent-1",
+      capturedMailbox: "pnwbio@adventurescientists.org",
+      receivedAt: "2026-04-22T00:03:00.000Z",
+      internalAddresses: [
+        "volunteers@adventurescientists.org",
+        "pnwbio@adventurescientists.org",
+      ],
+      projectInboxAliases: ["pnwbio@adventurescientists.org"],
+    });
+
+    expect(copiedRecord).toMatchObject({
+      recordType: "message",
+      direction: "inbound",
+      fromHeader: "Scotty <scotty@adventurescientists.org>",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    expect(platformSentRecord).toMatchObject({
+      recordType: "message",
+      direction: "outbound",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
     });
   });
 
@@ -184,29 +254,29 @@ Hello from an exported mailbox.
       {
         name: "quoted-printable",
         subjectHeader: "=?utf-8?Q?Re:_Training_=3D_=E2=9C=85?=",
-        expectedSubject: "Re: Training = ✅"
+        expectedSubject: "Re: Training = ✅",
       },
       {
         name: "base64",
         subjectHeader: "=?utf-8?B?UmU6IEludml0YXRpb24=?=",
-        expectedSubject: "Re: Invitation"
+        expectedSubject: "Re: Invitation",
       },
       {
         name: "chained-words",
         subjectHeader: "=?utf-8?Q?Hi?= =?utf-8?Q?_world?=",
-        expectedSubject: "Hi world"
+        expectedSubject: "Hi world",
       },
       {
         name: "mixed-charsets",
         subjectHeader:
           "=?iso-8859-1?Q?Ol=E1?= =?windows-1252?Q?_price_=80100?=",
-        expectedSubject: "Olá price €100"
+        expectedSubject: "Olá price €100",
       },
       {
         name: "unknown-charset-fallback",
         subjectHeader: "=?x-unknown?Q?Re:_caf=C3=A9?=",
-        expectedSubject: "Re: café"
-      }
+        expectedSubject: "Re: café",
+      },
     ] as const;
 
     for (const testCase of cases) {
@@ -223,7 +293,7 @@ Message-ID: <gmail-mbox-${testCase.name}@example.org>
         capturedMailbox: "project-antarctica@example.org",
         liveAccount: "volunteers@adventurescientists.org",
         projectInboxAliases: ["project-antarctica@example.org"],
-        receivedAt: "2026-01-03T00:05:00.000Z"
+        receivedAt: "2026-01-03T00:05:00.000Z",
       });
 
       expect(records).toEqual([
@@ -231,35 +301,39 @@ Message-ID: <gmail-mbox-${testCase.name}@example.org>
           recordType: "message",
           subject: testCase.expectedSubject,
           snippet: testCase.expectedSubject,
-          snippetClean: testCase.expectedSubject
-        })
+          snippetClean: testCase.expectedSubject,
+        }),
       ]);
     }
   });
 
   it("uses Message-ID to keep mbox record ids stable across captured mailbox changes", async () => {
-    const firstRecord = (await importGmailMboxRecords({
-      mboxText,
-      mboxPath: "/tmp/project-antarctica-a.mbox",
-      capturedMailbox: "project-antarctica@example.org",
-      liveAccount: "volunteers@adventurescientists.org",
-      projectInboxAliases: ["project-antarctica@example.org"],
-      receivedAt: "2026-01-03T00:05:00.000Z"
-    }))[0];
-    const secondRecord = (await importGmailMboxRecords({
-      mboxText,
-      mboxPath: "/tmp/project-antarctica-b.mbox",
-      capturedMailbox: "volunteers@adventurescientists.org",
-      liveAccount: "volunteers@adventurescientists.org",
-      projectInboxAliases: ["project-antarctica@example.org"],
-      receivedAt: "2026-01-03T00:06:00.000Z"
-    }))[0];
+    const firstRecord = (
+      await importGmailMboxRecords({
+        mboxText,
+        mboxPath: "/tmp/project-antarctica-a.mbox",
+        capturedMailbox: "project-antarctica@example.org",
+        liveAccount: "volunteers@adventurescientists.org",
+        projectInboxAliases: ["project-antarctica@example.org"],
+        receivedAt: "2026-01-03T00:05:00.000Z",
+      })
+    )[0];
+    const secondRecord = (
+      await importGmailMboxRecords({
+        mboxText,
+        mboxPath: "/tmp/project-antarctica-b.mbox",
+        capturedMailbox: "volunteers@adventurescientists.org",
+        liveAccount: "volunteers@adventurescientists.org",
+        projectInboxAliases: ["project-antarctica@example.org"],
+        receivedAt: "2026-01-03T00:06:00.000Z",
+      })
+    )[0];
 
     expect(firstRecord).toMatchObject({
-      recordType: "message"
+      recordType: "message",
     });
     expect(secondRecord).toMatchObject({
-      recordType: "message"
+      recordType: "message",
     });
 
     if (
@@ -276,8 +350,9 @@ Message-ID: <gmail-mbox-${testCase.name}@example.org>
   });
 
   it("falls back to content hashing when Message-ID is absent", async () => {
-    const firstRecord = (await importGmailMboxRecords({
-      mboxText: `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
+    const firstRecord = (
+      await importGmailMboxRecords({
+        mboxText: `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
 Date: Fri, 03 Jan 2026 00:00:00 +0000
 From: Volunteer <volunteer@example.org>
 To: Project Antarctica <project-antarctica@example.org>
@@ -285,14 +360,16 @@ Subject: Historical volunteer reply
 
 Hello from an exported mailbox.
 `,
-      mboxPath: "/tmp/project-antarctica-no-id-a.mbox",
-      capturedMailbox: "project-antarctica@example.org",
-      liveAccount: "volunteers@adventurescientists.org",
-      projectInboxAliases: ["project-antarctica@example.org"],
-      receivedAt: "2026-01-03T00:05:00.000Z"
-    }))[0];
-    const secondRecord = (await importGmailMboxRecords({
-      mboxText: `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
+        mboxPath: "/tmp/project-antarctica-no-id-a.mbox",
+        capturedMailbox: "project-antarctica@example.org",
+        liveAccount: "volunteers@adventurescientists.org",
+        projectInboxAliases: ["project-antarctica@example.org"],
+        receivedAt: "2026-01-03T00:05:00.000Z",
+      })
+    )[0];
+    const secondRecord = (
+      await importGmailMboxRecords({
+        mboxText: `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
 Date: Fri, 03 Jan 2026 00:00:00 +0000
 From: Volunteer <volunteer@example.org>
 To: Project Antarctica <project-antarctica@example.org>
@@ -300,18 +377,19 @@ Subject: Historical volunteer reply
 
 Hello from a different exported mailbox body.
 `,
-      mboxPath: "/tmp/project-antarctica-no-id-b.mbox",
-      capturedMailbox: "project-antarctica@example.org",
-      liveAccount: "volunteers@adventurescientists.org",
-      projectInboxAliases: ["project-antarctica@example.org"],
-      receivedAt: "2026-01-03T00:06:00.000Z"
-    }))[0];
+        mboxPath: "/tmp/project-antarctica-no-id-b.mbox",
+        capturedMailbox: "project-antarctica@example.org",
+        liveAccount: "volunteers@adventurescientists.org",
+        projectInboxAliases: ["project-antarctica@example.org"],
+        receivedAt: "2026-01-03T00:06:00.000Z",
+      })
+    )[0];
 
     expect(firstRecord).toMatchObject({
-      recordType: "message"
+      recordType: "message",
     });
     expect(secondRecord).toMatchObject({
-      recordType: "message"
+      recordType: "message",
     });
 
     if (
@@ -335,9 +413,9 @@ Hello from a different exported mailbox body.
           Date: "Fri, 03 Jan 2026 00:00:00 +0000",
           From: "Project Antarctica <project-antarctica@example.org>",
           To: "Volunteer <volunteer@example.org>",
-          "Message-ID": "<gmail-live-missing@example.org>"
+          "Message-ID": "<gmail-live-missing@example.org>",
         },
-        expectedSubject: null
+        expectedSubject: null,
       },
       {
         name: "empty subject",
@@ -346,9 +424,9 @@ Hello from a different exported mailbox body.
           From: "Project Antarctica <project-antarctica@example.org>",
           To: "Volunteer <volunteer@example.org>",
           Subject: "",
-          "Message-ID": "<gmail-live-empty@example.org>"
+          "Message-ID": "<gmail-live-empty@example.org>",
         },
-        expectedSubject: null
+        expectedSubject: null,
       },
       {
         name: "whitespace-only subject",
@@ -357,9 +435,9 @@ Hello from a different exported mailbox body.
           From: "Project Antarctica <project-antarctica@example.org>",
           To: "Volunteer <volunteer@example.org>",
           Subject: "   ",
-          "Message-ID": "<gmail-live-whitespace@example.org>"
+          "Message-ID": "<gmail-live-whitespace@example.org>",
         },
-        expectedSubject: null
+        expectedSubject: null,
       },
       {
         name: "normal subject",
@@ -368,9 +446,9 @@ Hello from a different exported mailbox body.
           From: "Project Antarctica <project-antarctica@example.org>",
           To: "Volunteer <volunteer@example.org>",
           Subject: "Status update",
-          "Message-ID": "<gmail-live-normal@example.org>"
+          "Message-ID": "<gmail-live-normal@example.org>",
         },
-        expectedSubject: "Status update"
+        expectedSubject: "Status update",
       },
       {
         name: "quoted-printable",
@@ -379,9 +457,9 @@ Hello from a different exported mailbox body.
           From: "Project Antarctica <project-antarctica@example.org>",
           To: "Volunteer <volunteer@example.org>",
           Subject: "=?utf-8?Q?Re:_Training_=3D_=E2=9C=85?=",
-          "Message-ID": "<gmail-live-qp@example.org>"
+          "Message-ID": "<gmail-live-qp@example.org>",
         },
-        expectedSubject: "Re: Training = ✅"
+        expectedSubject: "Re: Training = ✅",
       },
       {
         name: "base64",
@@ -390,9 +468,9 @@ Hello from a different exported mailbox body.
           From: "Project Antarctica <project-antarctica@example.org>",
           To: "Volunteer <volunteer@example.org>",
           Subject: "=?utf-8?B?UmU6IEludml0YXRpb24=?=",
-          "Message-ID": "<gmail-live-b64@example.org>"
+          "Message-ID": "<gmail-live-b64@example.org>",
         },
-        expectedSubject: "Re: Invitation"
+        expectedSubject: "Re: Invitation",
       },
       {
         name: "chained-words",
@@ -401,9 +479,9 @@ Hello from a different exported mailbox body.
           From: "Project Antarctica <project-antarctica@example.org>",
           To: "Volunteer <volunteer@example.org>",
           Subject: "=?utf-8?Q?Hi?= =?utf-8?Q?_world?=",
-          "Message-ID": "<gmail-live-chained@example.org>"
+          "Message-ID": "<gmail-live-chained@example.org>",
         },
-        expectedSubject: "Hi world"
+        expectedSubject: "Hi world",
       },
       {
         name: "mixed-charsets",
@@ -411,11 +489,10 @@ Hello from a different exported mailbox body.
           Date: "Fri, 03 Jan 2026 00:00:00 +0000",
           From: "Project Antarctica <project-antarctica@example.org>",
           To: "Volunteer <volunteer@example.org>",
-          Subject:
-            "=?iso-8859-1?Q?Ol=E1?= =?windows-1252?Q?_price_=80100?=",
-          "Message-ID": "<gmail-live-mixed@example.org>"
+          Subject: "=?iso-8859-1?Q?Ol=E1?= =?windows-1252?Q?_price_=80100?=",
+          "Message-ID": "<gmail-live-mixed@example.org>",
         },
-        expectedSubject: "Olá price €100"
+        expectedSubject: "Olá price €100",
       },
       {
         name: "unknown-charset-fallback",
@@ -424,10 +501,10 @@ Hello from a different exported mailbox body.
           From: "Project Antarctica <project-antarctica@example.org>",
           To: "Volunteer <volunteer@example.org>",
           Subject: "=?x-unknown?Q?Re:_caf=C3=A9?=",
-          "Message-ID": "<gmail-live-unknown@example.org>"
+          "Message-ID": "<gmail-live-unknown@example.org>",
         },
-        expectedSubject: "Re: café"
-      }
+        expectedSubject: "Re: café",
+      },
     ] as const;
 
     for (const testCase of cases) {
@@ -438,21 +515,21 @@ Hello from a different exported mailbox body.
         internalDate: "2026-01-03T00:00:00.000Z",
         headers: testCase.headers,
         payloadRef: `gmail://volunteers@adventurescientists.org/messages/${encodeURIComponent(
-          testCase.name
+          testCase.name,
         )}`,
         checksum: `checksum:${testCase.name}`,
         capturedMailbox: "volunteers@adventurescientists.org",
         receivedAt: "2026-01-03T00:05:00.000Z",
         internalAddresses: [
           "volunteers@adventurescientists.org",
-          "project-antarctica@example.org"
+          "project-antarctica@example.org",
         ],
-        projectInboxAliases: ["project-antarctica@example.org"]
+        projectInboxAliases: ["project-antarctica@example.org"],
       });
 
       expect(record).toMatchObject({
         recordType: "message",
-        subject: testCase.expectedSubject
+        subject: testCase.expectedSubject,
       });
     }
   });
