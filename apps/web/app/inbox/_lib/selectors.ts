@@ -1656,6 +1656,18 @@ function timelineActorLabel(
   }
 
   if (kind === "outbound-email" && item.family === "one_to_one_email") {
+    const normalizedCanonicalContactName =
+      canonicalContactDisplayName === null
+        ? ""
+        : normalizeDisplayName(canonicalContactDisplayName);
+
+    if (
+      normalizedCanonicalContactName.length > 0 &&
+      !isEmailLikeName(normalizedCanonicalContactName)
+    ) {
+      return normalizedCanonicalContactName;
+    }
+
     const senderLabel = participantHeaderLabel(item.fromHeader ?? null);
     const normalizedSenderLabel =
       senderLabel === null ? "" : normalizeDisplayName(senderLabel);
@@ -2375,9 +2387,10 @@ function resolveVolunteerParticipantName(input: {
  * compact bubble header and the expanded debug view. Direction is
  * baked in so the component can render
  * `participantRows[0].name → participantRows[1].name` without
- * branching: the From slot for outbound is the project alias, for
- * inbound it is the volunteer's resolved name (and vice versa for
- * To). When toHeader is missing on an inbound capture the To row
+ * branching: the From slot for outbound is the known sender behind
+ * an alias when we have one, then the project alias; for inbound it
+ * is the volunteer's resolved name (and vice versa for To). When
+ * toHeader is missing on an inbound capture the To row
  * falls back to `item.mailbox` so we never render an empty right
  * side.
  */
@@ -2410,16 +2423,32 @@ function buildParticipantRows(input: {
 
   if (input.item.direction === "outbound") {
     // For outbound the From slot holds whatever the operator was
-    // sending AS. Order: resolved project alias → whatever display
-    // name appears on the wire (handles legacy / non-aliased sends
-    // like "PNW Project <pnwbio@…>") → operator name → fallback.
+    // sending AS. Order: known sender identity behind the alias →
+    // resolved project alias → whatever display name appears on the
+    // wire (handles legacy / non-aliased sends like
+    // "PNW Project <pnwbio@…>") → operator name → fallback.
+    const fromContactName =
+      fromEmail === null
+        ? null
+        : (input.contactDisplayNameByEmail.get(fromEmail) ?? null);
+    const normalizedFromContactName =
+      fromContactName === null ? "" : normalizeDisplayName(fromContactName);
+    const senderContactName =
+      normalizedFromContactName.length > 0 &&
+      !isEmailLikeName(normalizedFromContactName)
+        ? normalizedFromContactName
+        : null;
     const fromHeaderName =
       fromHeaderDisplayName !== null && !isEmailLikeName(fromHeaderDisplayName)
         ? normalizeDisplayName(fromHeaderDisplayName) || fromHeaderDisplayName
         : null;
     rows.push({
       label: "From",
-      name: input.headerProjectLabel ?? fromHeaderName ?? operatorLabel,
+      name:
+        senderContactName ??
+        input.headerProjectLabel ??
+        fromHeaderName ??
+        operatorLabel,
       email: fromEmail,
     });
     rows.push({

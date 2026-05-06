@@ -214,7 +214,7 @@ export interface InboxTimelineEntryViewModel {
    * non-email entries or when the alias email can't be matched.
    *
    * Used by `EmailParticipantHeader` to render headers as
-   *   outbound: <projectAlias> → <volunteer>
+   *   outbound: <sender or projectAlias> → <volunteer>
    *   inbound:  <volunteer>     → <projectAlias>
    * without the bubble component needing access to the alias map.
    */
