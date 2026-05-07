@@ -4,26 +4,23 @@ import { useState, useTransition } from "react";
 import Image from "next/image";
 import { RefreshCw } from "lucide-react";
 
-import {
-  RADIUS,
-  SHADOW
-} from "@/app/_lib/design-tokens-v2";
+import { RADIUS, SHADOW } from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger
+  TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   formatSmsEstimatedCostUsd,
-  formatUsdAmount
+  formatUsdAmount,
 } from "@/src/lib/sms-pricing";
 import type {
   IntegrationHealthViewModel,
-  IntegrationsSettingsViewModel
+  IntegrationsSettingsViewModel,
 } from "@/src/server/settings/selectors";
 
 import { refreshIntegrationHealthAction } from "../actions";
@@ -42,7 +39,7 @@ const CATEGORY_LABEL: Record<IntegrationHealthViewModel["category"], string> = {
   crm: "CRM",
   messaging: "Messaging",
   knowledge: "Knowledge",
-  ai: "AI"
+  ai: "AI",
 };
 
 const STATUS_META: Record<
@@ -51,24 +48,24 @@ const STATUS_META: Record<
 > = {
   healthy: {
     label: "Healthy",
-    colorClasses: "bg-emerald-50 text-emerald-700 ring-emerald-200"
+    colorClasses: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   },
   needs_attention: {
     label: "Needs attention",
-    colorClasses: "bg-amber-50 text-amber-800 ring-amber-200"
+    colorClasses: "bg-amber-50 text-amber-800 ring-amber-200",
   },
   disconnected: {
     label: "Disconnected",
-    colorClasses: "bg-rose-50 text-rose-700 ring-rose-200"
+    colorClasses: "bg-rose-50 text-rose-700 ring-rose-200",
   },
   not_configured: {
     label: "Not configured",
-    colorClasses: "bg-slate-100 text-slate-600 ring-slate-200"
+    colorClasses: "bg-slate-100 text-slate-600 ring-slate-200",
   },
   not_checked: {
     label: "Not checked",
-    colorClasses: "bg-slate-100 text-slate-700 ring-slate-200"
-  }
+    colorClasses: "bg-slate-100 text-slate-700 ring-slate-200",
+  },
 };
 
 function formatRelative(iso: string | null): string {
@@ -97,24 +94,24 @@ function formatMailchimpCount(value: number | null): string {
 }
 
 function formatMailchimpStatus(
-  integration: Extract<IntegrationHealthViewModel, { mailchimp: unknown }>
+  integration: Extract<IntegrationHealthViewModel, { mailchimp: unknown }>,
 ): { readonly label: string; readonly colorClasses: string } {
   switch (integration.mailchimp?.status) {
     case "connected":
       return {
         label: "Connected",
-        colorClasses: "bg-emerald-50 text-emerald-700 ring-emerald-200"
+        colorClasses: "bg-emerald-50 text-emerald-700 ring-emerald-200",
       };
     case "stale":
       return {
         label: "Sync stale",
-        colorClasses: "bg-rose-50 text-rose-700 ring-rose-200"
+        colorClasses: "bg-rose-50 text-rose-700 ring-rose-200",
       };
     case "unconfigured":
     default:
       return {
         label: "Not configured",
-        colorClasses: "bg-amber-50 text-amber-800 ring-amber-200"
+        colorClasses: "bg-amber-50 text-amber-800 ring-amber-200",
       };
   }
 }
@@ -133,14 +130,14 @@ function buildTwilioUsageState(input: {
   if (input.spendUsd >= input.capUsd) {
     return {
       label: "Cap exceeded — sends still allowed in v1, no hard enforcement",
-      className: "bg-rose-50 text-rose-700 ring-rose-200"
+      className: "bg-rose-50 text-rose-700 ring-rose-200",
     };
   }
 
   if (input.spendUsd >= input.capUsd * 0.8) {
     return {
       label: "Approaching cap",
-      className: "bg-amber-50 text-amber-800 ring-amber-200"
+      className: "bg-amber-50 text-amber-800 ring-amber-200",
     };
   }
 
@@ -163,7 +160,9 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
   function handleRefresh(integration: IntegrationHealthViewModel) {
     setPendingId(integration.serviceName);
     startTransition(async () => {
-      const result = await refreshIntegrationHealthAction(integration.serviceName);
+      const result = await refreshIntegrationHealthAction(
+        integration.serviceName,
+      );
       setPendingId(null);
 
       if (result.ok) {
@@ -174,10 +173,10 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
                   ...item,
                   status: result.data.status,
                   detail: result.data.detail,
-                  lastCheckedAt: result.data.lastCheckedAt
+                  lastCheckedAt: result.data.lastCheckedAt,
                 }
-              : item
-          )
+              : item,
+          ),
         );
         announce(`Refreshed ${integration.displayName}.`);
         return;
@@ -197,13 +196,13 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {items.map((integration) => {
             const statusMeta =
-              integration.serviceName === "mailchimp" && integration.mailchimp !== null
+              integration.serviceName === "mailchimp" &&
+              integration.mailchimp !== null
                 ? formatMailchimpStatus(integration)
                 : STATUS_META[integration.status];
             const isRowPending =
               pending && pendingId === integration.serviceName;
-            const isSyncDisabled =
-              !integration.supportsRefresh || isRowPending;
+            const isSyncDisabled = !integration.supportsRefresh || isRowPending;
             const descriptionTerminator = /[.!?]$/.test(integration.description)
               ? ""
               : ".";
@@ -218,7 +217,7 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
                   "flex min-h-full flex-col gap-3 border border-slate-200 bg-white p-4",
                   RADIUS.lg,
                   SHADOW.sm,
-                  isRowPending && "opacity-60"
+                  isRowPending && "opacity-60",
                 )}
               >
                 <div className="flex items-start gap-3">
@@ -302,14 +301,17 @@ function MailchimpTileDetails({
             {integration.mailchimp.lastCampaignName === null
               ? "—"
               : `${integration.mailchimp.lastCampaignName} · ${formatRelative(
-                  integration.mailchimp.lastCampaignSentAt
+                  integration.mailchimp.lastCampaignSentAt,
                 )}`}
           </dd>
         </div>
         <div className="flex items-start justify-between gap-3">
           <dt className="font-medium text-slate-900">Last batch</dt>
           <dd className="text-right tabular-nums">
-            {formatMailchimpCount(integration.mailchimp.lastBatchRecipientCount)} recipients
+            {formatMailchimpCount(
+              integration.mailchimp.lastBatchRecipientCount,
+            )}{" "}
+            recipients
           </dd>
         </div>
       </dl>
@@ -338,7 +340,7 @@ function TwilioConnectorCard({
   }[viewModel.status];
   const usageState = buildTwilioUsageState({
     spendUsd: viewModel.monthToDateSpendUsd,
-    capUsd: viewModel.monthlyCapUsd
+    capUsd: viewModel.monthlyCapUsd,
   });
   const showUsageRows =
     viewModel.smsEnabled &&
@@ -407,9 +409,8 @@ function TwilioConnectorCard({
               </dd>
             </div>
             <div className="-mt-1 text-right text-[11.5px] text-slate-500 tabular-nums">
-              (${formatSmsEstimatedCostUsd(viewModel.outboundRateUsdPerSegment)} /
-              {" "}
-              segment, {String(viewModel.monthToDateSegments)} segments)
+              (${formatSmsEstimatedCostUsd(viewModel.outboundRateUsdPerSegment)}{" "}
+              / segment, {String(viewModel.monthToDateSegments)} segments)
             </div>
             <div className="flex items-start justify-between gap-3">
               <dt className="font-medium text-slate-900">Monthly cap</dt>
@@ -441,14 +442,13 @@ const BRAND_LOGO: Partial<
 > = {
   salesforce: "/integrations/salesforce.png",
   gmail: "/integrations/gmail.png",
-  simpletexting: "/integrations/simpletexting.png",
   mailchimp: "/integrations/mailchimp.png",
   notion: "/integrations/notion.png",
-  openai: "/integrations/anthropic.png"
+  openai: "/integrations/anthropic.png",
 };
 
 function IntegrationLogoMark({
-  integration
+  integration,
 }: {
   readonly integration: IntegrationHealthViewModel;
 }) {
@@ -491,7 +491,7 @@ function SyncButton({
   supportsRefresh,
   pending,
   integrationName,
-  onSync
+  onSync,
 }: SyncButtonProps) {
   const button = (
     <Button

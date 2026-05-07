@@ -2,10 +2,7 @@ import { createHash } from "node:crypto";
 
 import libmime from "libmime";
 
-import {
-  gmailMessageRecordSchema,
-  type GmailRecord
-} from "./gmail.js";
+import { gmailMessageRecordSchema, type GmailRecord } from "./gmail.js";
 import type { GmailAttachmentMetadata } from "./gmail-body.js";
 
 export interface GmailProviderCloseMessageInput {
@@ -51,18 +48,16 @@ function uniqueEmails(values: readonly string[]): string[] {
     new Set(
       values
         .map((value) => normalizeEmail(value))
-        .filter((value): value is string => value !== null)
-    )
+        .filter((value): value is string => value !== null),
+    ),
   ).sort((left, right) => left.localeCompare(right));
 }
 
 function uniqueLabelIds(values: readonly string[]): string[] {
   return Array.from(
     new Set(
-      values
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0)
-    )
+      values.map((value) => value.trim()).filter((value) => value.length > 0),
+    ),
   ).sort((left, right) => left.localeCompare(right));
 }
 
@@ -81,7 +76,7 @@ function normalizeHeaderValue(value: string | null | undefined): string | null {
 
 function isInternalEmail(
   email: string,
-  internalAddresses: ReadonlySet<string>
+  internalAddresses: ReadonlySet<string>,
 ): boolean {
   const normalized = email.toLowerCase();
 
@@ -89,6 +84,14 @@ function isInternalEmail(
     internalAddresses.has(normalized) ||
     normalized.endsWith(ADVENTURE_SCIENTISTS_DOMAIN)
   );
+}
+
+function hasEmail(values: readonly string[], value: string | null): boolean {
+  if (value === null) {
+    return false;
+  }
+
+  return values.some((email) => email.toLowerCase() === value.toLowerCase());
 }
 
 export function parseHeaderEmailList(value: string | undefined): string[] {
@@ -99,8 +102,8 @@ export function parseHeaderEmailList(value: string | undefined): string[] {
   return uniqueEmails(
     Array.from(
       value.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu),
-      (match) => match[0]
-    )
+      (match) => match[0],
+    ),
   );
 }
 
@@ -119,13 +122,13 @@ function resolveProjectInboxAlias(input: {
   }
 
   const aliasSet = new Set(
-    uniqueEmails(input.projectInboxAliases).map((alias) => alias.toLowerCase())
+    uniqueEmails(input.projectInboxAliases).map((alias) => alias.toLowerCase()),
   );
   const candidateAddresses = [
     ...input.fromEmails,
     ...input.toEmails,
     ...input.ccEmails,
-    ...input.bccEmails
+    ...input.bccEmails,
   ];
 
   for (const address of candidateAddresses) {
@@ -143,7 +146,9 @@ function resolveProjectInboxAlias(input: {
     : null;
 }
 
-export function toSafeIsoTimestamp(value: string | number | undefined): string | null {
+export function toSafeIsoTimestamp(
+  value: string | number | undefined,
+): string | null {
   if (value === undefined) {
     return null;
   }
@@ -166,7 +171,7 @@ export function sha256Text(value: string): string {
 }
 
 export function normalizeGmailSubject(
-  value: string | null | undefined
+  value: string | null | undefined,
 ): string | null {
   if (typeof value !== "string") {
     return null;
@@ -187,7 +192,7 @@ export function normalizeGmailSubject(
 }
 
 export function buildGmailMessageRecord(
-  input: GmailProviderCloseMessageInput
+  input: GmailProviderCloseMessageInput,
 ): GmailRecord {
   const fromHeader = normalizeHeaderValue(input.headers.From);
   const toHeader = normalizeHeaderValue(input.headers.To);
@@ -197,7 +202,7 @@ export function buildGmailMessageRecord(
   const ccEmails = parseHeaderEmailList(input.headers.Cc);
   const bccEmails = parseHeaderEmailList(input.headers.Bcc);
   const internalAddresses = new Set(
-    uniqueEmails(input.internalAddresses).map((value) => value.toLowerCase())
+    uniqueEmails(input.internalAddresses).map((value) => value.toLowerCase()),
   );
   const projectInboxAlias = resolveProjectInboxAlias({
     capturedMailbox: input.capturedMailbox,
@@ -206,29 +211,36 @@ export function buildGmailMessageRecord(
     ccEmails,
     bccEmails,
     projectInboxAliases: input.projectInboxAliases,
-    projectInboxAliasOverride:
-      normalizeEmail(input.projectInboxAliasOverride ?? null),
+    projectInboxAliasOverride: normalizeEmail(
+      input.projectInboxAliasOverride ?? null,
+    ),
     treatCapturedMailboxAsProjectInbox:
-      input.treatCapturedMailboxAsProjectInbox ?? false
+      input.treatCapturedMailboxAsProjectInbox ?? false,
   });
   const externalParticipantEmails = uniqueEmails(
     [...fromEmails, ...toEmails, ...ccEmails, ...bccEmails].filter(
-      (email) => !isInternalEmail(email, internalAddresses)
-    )
+      (email) => !isInternalEmail(email, internalAddresses),
+    ),
   );
 
   if (externalParticipantEmails.length === 0) {
     return {
       recordType: "internal_only_message",
-      recordId: input.recordId
+      recordId: input.recordId,
     };
   }
 
-  const direction = fromEmails.some((email) =>
-    isInternalEmail(email, internalAddresses)
-  )
-    ? "outbound"
-    : "inbound";
+  const senderIsInternal = fromEmails.some((email) =>
+    isInternalEmail(email, internalAddresses),
+  );
+  const projectInboxCopyRecipient =
+    projectInboxAlias !== null &&
+    !hasEmail(fromEmails, projectInboxAlias) &&
+    (hasEmail(toEmails, projectInboxAlias) ||
+      hasEmail(ccEmails, projectInboxAlias) ||
+      hasEmail(bccEmails, projectInboxAlias));
+  const direction =
+    senderIsInternal && !projectInboxCopyRecipient ? "outbound" : "inbound";
   const labelIds =
     input.labelIds === undefined || input.labelIds === null
       ? null
@@ -272,7 +284,9 @@ export function buildGmailMessageRecord(
     normalizedPhones: [],
     supportingRecords: [],
     crossProviderCollapseKey:
-      rfc822MessageId === null ? null : `rfc822:${rfc822MessageId.toLowerCase()}`,
+      rfc822MessageId === null
+        ? null
+        : `rfc822:${rfc822MessageId.toLowerCase()}`,
     attachmentMetadata: input.attachmentMetadata ?? [],
     htmlBodyCidReferences: input.htmlBodyCidReferences ?? [],
   });

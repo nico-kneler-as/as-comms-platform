@@ -9,9 +9,11 @@ const fetchInboxFreshnessMock = vi.hoisted(() => vi.fn());
 const routerRefreshMock = vi.hoisted(() => vi.fn());
 
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/inbox",
   useRouter: () => ({
     refresh: routerRefreshMock,
   }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("../../app/inbox/_lib/client-api", () => ({

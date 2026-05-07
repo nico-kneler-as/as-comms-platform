@@ -13,7 +13,7 @@ const [
   ,
   lifecycleSignedUpEventType,
   lifecycleReceivedTrainingEventType,
-  lifecycleCompletedTrainingEventType
+  lifecycleCompletedTrainingEventType,
 ] = canonicalEventTypeValues;
 
 describe("buildTimelineSortKey", () => {
@@ -25,17 +25,17 @@ describe("buildTimelineSortKey", () => {
         sortKey: buildTimelineSortKey(
           "evt:received-training",
           occurredAt,
-          lifecycleReceivedTrainingEventType
-        )
+          lifecycleReceivedTrainingEventType,
+        ),
       },
       {
         canonicalEventId: "evt:signed-up",
         sortKey: buildTimelineSortKey(
           "evt:signed-up",
           occurredAt,
-          lifecycleSignedUpEventType
-        )
-      }
+          lifecycleSignedUpEventType,
+        ),
+      },
     ];
 
     const orderedIds = rows
@@ -46,32 +46,31 @@ describe("buildTimelineSortKey", () => {
   });
 
   it("orders multiple same-day lifecycle events by the locked lifecycle sequence", () => {
-    const occurredAt = "2025-11-17T00:00:00.000Z";
     const rows = [
       {
         canonicalEventId: "evt:completed-training",
         sortKey: buildTimelineSortKey(
           "evt:completed-training",
-          occurredAt,
-          lifecycleCompletedTrainingEventType
-        )
+          "2025-11-17T08:30:00.000Z",
+          lifecycleCompletedTrainingEventType,
+        ),
       },
       {
         canonicalEventId: "evt:signed-up",
         sortKey: buildTimelineSortKey(
           "evt:signed-up",
-          occurredAt,
-          lifecycleSignedUpEventType
-        )
+          "2025-11-17T18:45:00.000Z",
+          lifecycleSignedUpEventType,
+        ),
       },
       {
         canonicalEventId: "evt:received-training",
         sortKey: buildTimelineSortKey(
           "evt:received-training",
-          occurredAt,
-          lifecycleReceivedTrainingEventType
-        )
-      }
+          "2025-11-17T23:00:00.000Z",
+          lifecycleReceivedTrainingEventType,
+        ),
+      },
     ];
 
     const orderedIds = rows
@@ -81,20 +80,28 @@ describe("buildTimelineSortKey", () => {
     expect(orderedIds).toEqual([
       "evt:signed-up",
       "evt:received-training",
-      "evt:completed-training"
+      "evt:completed-training",
     ]);
   });
 
   it("preserves non-lifecycle ordering by occurredAt then canonicalEventId", () => {
     const occurredAt = "2025-11-17T00:00:00.000Z";
     const rows = [
-      buildTimelineSortKey("evt:b", occurredAt, communicationEmailInboundEventType),
-      buildTimelineSortKey("evt:a", occurredAt, communicationEmailInboundEventType)
+      buildTimelineSortKey(
+        "evt:b",
+        occurredAt,
+        communicationEmailInboundEventType,
+      ),
+      buildTimelineSortKey(
+        "evt:a",
+        occurredAt,
+        communicationEmailInboundEventType,
+      ),
     ].sort((left, right) => left.localeCompare(right));
 
     expect(rows).toEqual([
       `${occurredAt}::00::evt:a`,
-      `${occurredAt}::00::evt:b`
+      `${occurredAt}::00::evt:b`,
     ]);
   });
 
@@ -104,18 +111,18 @@ describe("buildTimelineSortKey", () => {
       buildTimelineSortKey(
         "evt:lifecycle",
         occurredAt,
-        lifecycleSignedUpEventType
+        lifecycleSignedUpEventType,
       ),
       buildTimelineSortKey(
         "evt:email",
         occurredAt,
-        communicationEmailInboundEventType
-      )
+        communicationEmailInboundEventType,
+      ),
     ].sort((left, right) => left.localeCompare(right));
 
     expect(rows).toEqual([
       `${occurredAt}::00::evt:email`,
-      `${occurredAt}::01::evt:lifecycle`
+      `${occurredAt}::01::evt:lifecycle`,
     ]);
   });
 });
