@@ -4446,7 +4446,7 @@ describe("real inbox selectors", () => {
     ]);
   });
 
-  it("builds right-rail lifecycle activity newest-first within the active project", async () => {
+  it("builds right-rail lifecycle activity in visible lifecycle order within the active project", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -4487,17 +4487,17 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Submitted first data - Amazon Basin Research",
-      "Completed training - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
       "Signed up - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+      "Submitted first data - Amazon Basin Research",
     ]);
     expect(
       detail?.contact.recentActivity.map((entry) => entry.occurredAtLabel),
-    ).toEqual(["Apr 11", "Apr 10", "Apr 9", "Apr 8"]);
+    ).toEqual(["Apr 8", "Apr 9", "Apr 10", "Apr 11"]);
     expect(
       detail?.contact.recentActivity.map((entry) => entry.isMostRecent),
-    ).toEqual([true, false, false, false]);
+    ).toEqual([false, false, false, true]);
   });
 
   it("returns all lifecycle activity items and does not hard-cap the rail feed at five", async () => {
@@ -4558,12 +4558,12 @@ describe("real inbox selectors", () => {
 
     expect(detail?.contact.recentActivity).toHaveLength(6);
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Completed training - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
-      "Submitted first data - Amazon Basin Research",
-      "Completed training - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
       "Signed up - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+      "Submitted first data - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
     ]);
   });
 
@@ -4592,12 +4592,12 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Completed training - Amazon Basin Research",
       "Signed up - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
     ]);
   });
 
-  it("orders lifecycle events by UTC day desc + canonical ordinal asc within day, faithful to SF cross-day timestamps", async () => {
+  it("orders lifecycle events by UTC day asc + canonical ordinal asc within day", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -4637,14 +4637,13 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:sarah-martinez");
 
-    // Cross-day order is faithful to SF timestamps (SF anomaly: training stamped
-    // before signup). Within the Oct 27 group, both training events share a
-    // UTC day so they sort by canonical ordinal asc (received before completed).
+    // Cross-day order follows the recorded Salesforce day. Within the Oct 27
+    // group, training events share a UTC day so they sort by canonical ordinal.
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Submitted first data - Amazon Basin Research",
-      "Signed up - Amazon Basin Research",
       "Received training - Amazon Basin Research",
       "Completed training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
+      "Submitted first data - Amazon Basin Research",
     ]);
   });
 
@@ -4681,9 +4680,9 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Completed training - Amazon Basin Research",
       "Signed up - Amazon Basin Research",
       "Received training - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
     ]);
     // Filter to lifecycle pills only — the shared runtime seeds non-lifecycle
     // sarah events that are unrelated to this same-day-canonical-order check.
