@@ -180,10 +180,40 @@ Hello from an exported mailbox.
         "Samantha Doe <samantha@adventurescientists.org>",
         "Outside Partner <partner@example.org>",
       ].join(", "),
-      normalizedParticipantEmails: [
-        "partner@example.org",
-        "shaina.dotson@gmail.com",
+      normalizedParticipantEmails: ["shaina.dotson@gmail.com"],
+    });
+  });
+
+  it("uses the external sender as identity evidence for inbound mail with external cc recipients", () => {
+    const record = buildGmailMessageRecord({
+      recordId: "gmail-inbound-with-external-cc-1",
+      threadId: "thread-inbound-with-external-cc-1",
+      snippet: "Chris is writing from Kirsten's email account.",
+      internalDate: "2026-05-07T02:53:27.000Z",
+      headers: {
+        Date: "Wed, 6 May 2026 19:53:27 -0700",
+        From: "Kirsten Wert <kirsten.wert@gmail.com>",
+        To: "PNW Forest Biodiversity <pnwbio@adventurescientists.org>",
+        Cc: "Christopher McCafferty <christopher.e.mccafferty@gmail.com>",
+        Subject: "Re: Hex 11142 (Date Pending)",
+        "Message-ID": "<gmail-inbound-with-external-cc-1@example.org>",
+      },
+      payloadRef:
+        "gmail://volunteers@adventurescientists.org/messages/gmail-inbound-with-external-cc-1",
+      checksum: "checksum-inbound-with-external-cc-1",
+      capturedMailbox: "volunteers@adventurescientists.org",
+      receivedAt: "2026-05-07T02:54:00.000Z",
+      internalAddresses: [
+        "volunteers@adventurescientists.org",
+        "pnwbio@adventurescientists.org",
       ],
+      projectInboxAliases: ["pnwbio@adventurescientists.org"],
+    });
+
+    expect(record).toMatchObject({
+      recordType: "message",
+      direction: "inbound",
+      normalizedParticipantEmails: ["kirsten.wert@gmail.com"],
     });
   });
 
