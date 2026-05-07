@@ -1539,8 +1539,8 @@ function buildRecentActivity(
       item.family === "salesforce_event",
   );
 
-  const orderedLifecycleItems = [...lifecycleItems].sort((left, right) =>
-    compareLifecycleActivityForRail(left, right),
+  const orderedLifecycleItems = [...lifecycleItems].sort(
+    compareLifecycleActivityAscending,
   );
   const mostRecentItemId =
     [...lifecycleItems].sort(compareLifecycleActivityAscending).at(-1)?.id ??
@@ -1594,58 +1594,32 @@ function compareLifecycleActivityAscending(
   return left.id.localeCompare(right.id);
 }
 
-function compareLifecycleActivityForRail(
-  left: Extract<TimelineItem, { family: "salesforce_event" }>,
-  right: Extract<TimelineItem, { family: "salesforce_event" }>,
-): number {
-  const leftDate = utcCalendarDate(left.occurredAt);
-  const rightDate = utcCalendarDate(right.occurredAt);
-
-  if (leftDate !== rightDate) {
-    return rightDate.localeCompare(leftDate);
-  }
-
-  return compareLifecycleActivityAscending(left, right);
-}
-
-function reorderSameDayLifecycleTimelineItems(
+function reorderLifecycleTimelineItems(
   timelineItems: readonly TimelineItem[],
 ): readonly TimelineItem[] {
-  const lifecycleByDate = new Map<
-    string,
-    Extract<TimelineItem, { family: "salesforce_event" }>[]
-  >();
+  const lifecycleItems: Extract<
+    TimelineItem,
+    { family: "salesforce_event" }
+  >[] = [];
 
   for (const item of timelineItems) {
     if (item.family !== "salesforce_event") {
       continue;
     }
 
-    const date = utcCalendarDate(item.occurredAt);
-    const existing = lifecycleByDate.get(date) ?? [];
-    existing.push(item);
-    lifecycleByDate.set(date, existing);
+    lifecycleItems.push(item);
   }
 
-  const orderedLifecycleByDate = new Map<
-    string,
-    Extract<TimelineItem, { family: "salesforce_event" }>[]
-  >();
-
-  for (const [date, items] of lifecycleByDate) {
-    orderedLifecycleByDate.set(
-      date,
-      [...items].sort(compareLifecycleActivityAscending),
-    );
-  }
+  const orderedLifecycleItems = lifecycleItems.sort(
+    compareLifecycleActivityAscending,
+  );
 
   return timelineItems.map((item) => {
     if (item.family !== "salesforce_event") {
       return item;
     }
 
-    const date = utcCalendarDate(item.occurredAt);
-    const next = orderedLifecycleByDate.get(date)?.shift();
+    const next = orderedLifecycleItems.shift();
     return next ?? item;
   });
 }
@@ -3444,8 +3418,9 @@ async function readInboxDetailCacheData(
   const visibleTimelineItems = hasPostCutoverActivity
     ? filterItemsAtOrAfterPlatformFullCaptureCutover(activityTimelineItems)
     : activityTimelineItems;
-  const orderedTimelineItems =
-    reorderSameDayLifecycleTimelineItems(visibleTimelineItems);
+  const orderedTimelineItems = reorderLifecycleTimelineItems(
+    visibleTimelineItems,
+  );
   const timelinePage = paginateTimelineItems({
     timelineItems: orderedTimelineItems,
     limit: input.timelineLimit,
