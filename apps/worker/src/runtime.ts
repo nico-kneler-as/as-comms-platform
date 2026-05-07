@@ -421,6 +421,7 @@ export async function createStage1WorkerRuntimeServices(
         captureBaseUrls: {
           gmail: config.capture.gmail.baseUrl,
           salesforce: config.capture.salesforce.baseUrl,
+          mailchimp: config.capture.mailchimp?.baseUrl ?? null,
         },
         fetchImplementation,
       },
