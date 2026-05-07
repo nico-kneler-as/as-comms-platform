@@ -265,6 +265,29 @@ Hello from an exported mailbox.
       ],
       projectInboxAliases: ["pnwbio@adventurescientists.org"],
     });
+    const hiddenMailboxCopyRecord = buildGmailMessageRecord({
+      recordId: "gmail-hidden-mailbox-copy-1",
+      threadId: "thread-hidden-mailbox-copy-1",
+      snippet: "Scotty emailed the volunteer and the monitored mailbox received a copy.",
+      internalDate: "2026-04-22T00:04:00.000Z",
+      headers: {
+        Date: "Wed, 22 Apr 2026 00:04:00 +0000",
+        From: "Scotty <scotty@adventurescientists.org>",
+        To: "Shaina Dotson <shaina.dotson@gmail.com>",
+        Subject: "Re: Update on Hex 43191",
+        "Message-ID": "<gmail-hidden-mailbox-copy-1@example.org>",
+      },
+      payloadRef:
+        "gmail://volunteers@adventurescientists.org/messages/gmail-hidden-mailbox-copy-1",
+      checksum: "checksum-hidden-mailbox-copy-1",
+      capturedMailbox: "volunteers@adventurescientists.org",
+      receivedAt: "2026-04-22T00:05:00.000Z",
+      internalAddresses: [
+        "volunteers@adventurescientists.org",
+        "pnwbio@adventurescientists.org",
+      ],
+      projectInboxAliases: ["pnwbio@adventurescientists.org"],
+    });
 
     expect(copiedRecord).toMatchObject({
       recordType: "message",
@@ -276,6 +299,90 @@ Hello from an exported mailbox.
       recordType: "message",
       direction: "outbound",
       projectInboxAlias: "pnwbio@adventurescientists.org",
+    });
+    expect(hiddenMailboxCopyRecord).toMatchObject({
+      recordType: "message",
+      direction: "inbound",
+      normalizedParticipantEmails: ["shaina.dotson@gmail.com"],
+    });
+  });
+
+  it("keeps staff-originated monitored-mailbox messages inbox-visible without external participants", () => {
+    const adminRecord = buildGmailMessageRecord({
+      recordId: "gmail-admin-notice-1",
+      threadId: "thread-admin-notice-1",
+      snippet: "Kirsten claimed Hex 11142.",
+      internalDate: "2026-05-07T02:26:39.000Z",
+      headers: {
+        Date: "Thu, 7 May 2026 02:26:39 +0000",
+        From: "Admin <admin@adventurescientists.org>",
+        To: "PNW Biodiversity <pnwbio@adventurescientists.org>",
+        Subject: "Hex Claimed - Required Further Coordination",
+        "Message-ID": "<gmail-admin-notice-1@example.org>",
+      },
+      payloadRef:
+        "gmail://volunteers@adventurescientists.org/messages/gmail-admin-notice-1",
+      checksum: "checksum-admin-notice-1",
+      capturedMailbox: "volunteers@adventurescientists.org",
+      receivedAt: "2026-05-07T02:27:00.000Z",
+      internalAddresses: [
+        "volunteers@adventurescientists.org",
+        "pnwbio@adventurescientists.org",
+      ],
+      projectInboxAliases: ["pnwbio@adventurescientists.org"],
+    });
+
+    expect(adminRecord).toMatchObject({
+      recordType: "message",
+      direction: "inbound",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+      normalizedParticipantEmails: ["admin@adventurescientists.org"],
+    });
+
+    const mapped = mapGmailRecord(adminRecord);
+
+    expect(mapped.outcome).toBe("command");
+    if (mapped.outcome === "command") {
+      expect(mapped.command.kind).toBe("canonical_event");
+      if (mapped.command.kind === "canonical_event") {
+        expect(mapped.command.input.canonicalEvent.eventType).toBe(
+          "communication.email.inbound",
+        );
+        expect(mapped.command.input.identity.normalizedEmails).toEqual([
+          "admin@adventurescientists.org",
+        ]);
+      }
+    }
+  });
+
+  it("does not turn platform-originated internal mail into unread inbox work", () => {
+    const platformInternalRecord = buildGmailMessageRecord({
+      recordId: "gmail-platform-internal-1",
+      threadId: "thread-platform-internal-1",
+      snippet: "Internal copy from the shared mailbox.",
+      internalDate: "2026-05-07T02:30:00.000Z",
+      headers: {
+        Date: "Thu, 7 May 2026 02:30:00 +0000",
+        From: "PNW Biodiversity <pnwbio@adventurescientists.org>",
+        To: "Admin <admin@adventurescientists.org>",
+        Subject: "Internal copy",
+        "Message-ID": "<gmail-platform-internal-1@example.org>",
+      },
+      payloadRef:
+        "gmail://pnwbio@adventurescientists.org/messages/gmail-platform-internal-1",
+      checksum: "checksum-platform-internal-1",
+      capturedMailbox: "pnwbio@adventurescientists.org",
+      receivedAt: "2026-05-07T02:31:00.000Z",
+      internalAddresses: [
+        "volunteers@adventurescientists.org",
+        "pnwbio@adventurescientists.org",
+      ],
+      projectInboxAliases: ["pnwbio@adventurescientists.org"],
+    });
+
+    expect(platformInternalRecord).toEqual({
+      recordType: "internal_only_message",
+      recordId: "gmail-platform-internal-1",
     });
   });
 

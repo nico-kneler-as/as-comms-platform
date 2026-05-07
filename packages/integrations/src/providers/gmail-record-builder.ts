@@ -222,8 +222,24 @@ export function buildGmailMessageRecord(
       (email) => !isInternalEmail(email, internalAddresses),
     ),
   );
+  const mailboxAddresses = new Set(
+    uniqueEmails([
+      input.capturedMailbox,
+      ...input.projectInboxAliases,
+      ...input.internalAddresses,
+    ]).map((email) => email.toLowerCase()),
+  );
   const senderIsInternal = fromEmails.some((email) =>
     isInternalEmail(email, internalAddresses),
+  );
+  const senderIsMailbox = fromEmails.some((email) =>
+    mailboxAddresses.has(email.toLowerCase()),
+  );
+  const internalSenderEmails = uniqueEmails(
+    fromEmails.filter((email) => isInternalEmail(email, internalAddresses)),
+  );
+  const staffSenderEmails = internalSenderEmails.filter(
+    (email) => !mailboxAddresses.has(email.toLowerCase()),
   );
   const externalSenderEmails = uniqueEmails(
     fromEmails.filter((email) => !isInternalEmail(email, internalAddresses)),
@@ -246,22 +262,47 @@ export function buildGmailMessageRecord(
       : externalSenderEmails.length > 0
         ? externalSenderEmails
         : externalParticipantEmails;
-
-  if (externalParticipantEmails.length === 0) {
-    return {
-      recordType: "internal_only_message",
-      recordId: input.recordId,
-    };
-  }
-
   const projectInboxCopyRecipient =
     projectInboxAlias !== null &&
     !hasEmail(fromEmails, projectInboxAlias) &&
     (hasEmail(toEmails, projectInboxAlias) ||
       hasEmail(ccEmails, projectInboxAlias) ||
       hasEmail(bccEmails, projectInboxAlias));
+  const capturedMailboxRecipient =
+    !hasEmail(fromEmails, input.capturedMailbox) &&
+    (hasEmail(toEmails, input.capturedMailbox) ||
+      hasEmail(ccEmails, input.capturedMailbox) ||
+      hasEmail(bccEmails, input.capturedMailbox) ||
+      // Gmail only exposes the current mailbox as capture context when a
+      // monitored address was Bcc'd or reached through a routing rule.
+      input.capturedMailbox.trim().length > 0);
+  const staffOriginatedMailboxMessage =
+    senderIsInternal &&
+    staffSenderEmails.length > 0 &&
+    !senderIsMailbox &&
+    (projectInboxCopyRecipient || capturedMailboxRecipient);
+
+  if (
+    externalParticipantEmails.length === 0 &&
+    !staffOriginatedMailboxMessage
+  ) {
+    return {
+      recordType: "internal_only_message",
+      recordId: input.recordId,
+    };
+  }
+
   const direction =
-    senderIsInternal && !projectInboxCopyRecipient ? "outbound" : "inbound";
+    staffOriginatedMailboxMessage ||
+    (projectInboxCopyRecipient && !senderIsMailbox)
+      ? "inbound"
+      : senderIsInternal
+        ? "outbound"
+        : "inbound";
+  const normalizedParticipantEmails =
+    staffOriginatedMailboxMessage && identityParticipantEmails.length === 0
+      ? staffSenderEmails
+      : identityParticipantEmails;
   const labelIds =
     input.labelIds === undefined || input.labelIds === null
       ? null
@@ -299,7 +340,7 @@ export function buildGmailMessageRecord(
     rfc822MessageId,
     capturedMailbox: input.capturedMailbox,
     projectInboxAlias,
-    normalizedParticipantEmails: identityParticipantEmails,
+    normalizedParticipantEmails,
     salesforceContactId: null,
     volunteerIdPlainValues: [],
     normalizedPhones: [],
