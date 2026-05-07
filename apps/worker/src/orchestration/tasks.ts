@@ -42,7 +42,8 @@ export const pollSalesforceLiveJobName = "poll-salesforce-live" as const;
 export const pollIntegrationHealthJobName = "poll-integration-health" as const;
 const polledIntegrationServices = [
   "salesforce",
-  "gmail"
+  "gmail",
+  "mailchimp"
 ] as const satisfies readonly IntegrationHealthRecord["id"][];
 const integrationHealthAlertCooldownMs = 60 * 60 * 1000;
 
@@ -51,6 +52,7 @@ export interface IntegrationHealthTaskDependencies {
   readonly captureBaseUrls: {
     readonly gmail: string;
     readonly salesforce: string;
+    readonly mailchimp: string | null;
   };
   readonly fetchImplementation?: typeof fetch;
   readonly alertSender?: IntegrationHealthAlertSender;
@@ -156,6 +158,11 @@ function readCaptureBaseUrl(
     case "salesforce":
       return captureBaseUrls.salesforce.trim().length > 0
         ? captureBaseUrls.salesforce
+        : null;
+    case "mailchimp":
+      return captureBaseUrls.mailchimp !== null &&
+        captureBaseUrls.mailchimp.trim().length > 0
+        ? captureBaseUrls.mailchimp
         : null;
     default:
       return null;

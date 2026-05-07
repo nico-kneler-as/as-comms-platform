@@ -259,6 +259,7 @@ describe("Mailchimp capture service", () => {
 
   it("filters transition batches to activity strictly after windowStart", async () => {
     const fixtures = await createMailchimpFixtureResponses()
+    const fetchImplementation = createFetchFromFixtures(fixtures)
     const service = createMailchimpCaptureService(
       {
         bearerToken: "mailchimp-token",
@@ -266,9 +267,7 @@ describe("Mailchimp capture service", () => {
         activityPageSize: 1,
       },
       {
-        fetchImplementation: createFetchFromFixtures(
-          fixtures,
-        ) as unknown as typeof fetch,
+        fetchImplementation: fetchImplementation as unknown as typeof fetch,
         now: () => new Date("2026-02-03T00:00:00.000Z"),
       },
     )
@@ -297,5 +296,23 @@ describe("Mailchimp capture service", () => {
       "clicked",
       "unsubscribed",
     ])
+    const campaignRequest = fetchImplementation.mock.calls.find((call) => {
+      const url = new URL(resolveRequestUrl(call[0]))
+
+      return url.pathname === "/3.0/campaigns"
+    })
+
+    expect(campaignRequest).toBeDefined()
+    if (campaignRequest === undefined) {
+      throw new Error("Expected transition capture to list campaigns.")
+    }
+
+    const campaignRequestUrl = new URL(resolveRequestUrl(campaignRequest[0]))
+    expect(campaignRequestUrl.searchParams.get("since_send_time")).toBe(
+      "2026-02-01T15:11:00.000Z",
+    )
+    expect(campaignRequestUrl.searchParams.get("before_send_time")).toBe(
+      "2026-02-03T00:00:00.000Z",
+    )
   })
 })

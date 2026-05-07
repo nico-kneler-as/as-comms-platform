@@ -1067,8 +1067,20 @@ function buildTransitionCampaignWindow(
     throw new CaptureServiceBadRequestError("windowEnd must be a valid timestamp.")
   }
 
-  const windowStart = new Date(windowEnd.getTime())
-  windowStart.setUTCDate(windowStart.getUTCDate() - 30)
+  const windowStart =
+    payload.windowStart === null
+      ? new Date(windowEnd.getTime() - 30 * 24 * 60 * 60 * 1000)
+      : new Date(payload.windowStart)
+
+  if (Number.isNaN(windowStart.getTime())) {
+    throw new CaptureServiceBadRequestError("windowStart must be a valid timestamp.")
+  }
+
+  if (windowStart >= windowEnd) {
+    throw new CaptureServiceBadRequestError(
+      "windowStart must be earlier than windowEnd.",
+    )
+  }
 
   return {
     windowStart: windowStart.toISOString(),

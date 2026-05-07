@@ -51,6 +51,26 @@ describe("integration health poller task", () => {
           );
         }
 
+        if (url === "https://mailchimp-capture.example.test/health") {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                service: "mailchimp",
+                status: "healthy",
+                checkedAt: "2026-04-20T16:00:00.000Z",
+                detail: null,
+                version: "mailchimp-sha"
+              }),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json"
+                }
+              }
+            )
+          );
+        }
+
         return Promise.reject(new Error(`Unexpected health request: ${url}`));
       }
     );
@@ -62,7 +82,8 @@ describe("integration health poller task", () => {
           integrationHealth: context.settings.integrationHealth,
           captureBaseUrls: {
             gmail: "https://gmail-capture.example.test",
-            salesforce: "https://salesforce-capture.example.test"
+            salesforce: "https://salesforce-capture.example.test",
+            mailchimp: "https://mailchimp-capture.example.test"
           },
           fetchImplementation
         }
@@ -106,7 +127,15 @@ describe("integration health poller task", () => {
       expect(salesforceRecord.lastAlertSentAt).toBeNull();
       expect(salesforceRecord.detail).toBe("Health endpoint returned status 503.");
       expect(typeof salesforceRecord.lastCheckedAt).toBe("string");
-      expect(fetchImplementation).toHaveBeenCalledTimes(2);
+      const mailchimpRecord =
+        await context.settings.integrationHealth.findById("mailchimp");
+      expect(mailchimpRecord).not.toBeNull();
+      expect(mailchimpRecord?.status).toBe("healthy");
+      expect(mailchimpRecord?.metadataJson).toMatchObject({
+        checkedAt: "2026-04-20T16:00:00.000Z",
+        version: "mailchimp-sha"
+      });
+      expect(fetchImplementation).toHaveBeenCalledTimes(3);
     } finally {
       await context.dispose();
     }
@@ -116,7 +145,11 @@ describe("integration health poller task", () => {
     const fetchImplementation = vi.fn(
       (input: string | URL | Request): Promise<Response> => {
         const url = toRequestUrl(input);
-        const service = url.includes("gmail") ? "gmail" : "salesforce";
+        const service = url.includes("gmail")
+          ? "gmail"
+          : url.includes("mailchimp")
+            ? "mailchimp"
+            : "salesforce";
 
         return Promise.resolve(
           new Response(
@@ -170,7 +203,8 @@ describe("integration health poller task", () => {
           integrationHealth: context.settings.integrationHealth,
           captureBaseUrls: {
             gmail: "https://gmail-capture.example.test",
-            salesforce: "https://salesforce-capture.example.test"
+            salesforce: "https://salesforce-capture.example.test",
+            mailchimp: "https://mailchimp-capture.example.test"
           },
           fetchImplementation,
           alertSender,
