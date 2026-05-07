@@ -97,7 +97,7 @@ const gmailApiMessagePartSchema: GmailApiMessagePartSchema = z.lazy(
     body: z
       .object({
         attachmentId: z.string().min(1).nullable().optional(),
-        data: z.string().min(1).nullable().optional(),
+        data: z.string().nullable().optional(),
         size: z.number().int().nonnegative().nullable().optional()
       })
       .nullable()

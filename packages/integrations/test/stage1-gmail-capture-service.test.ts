@@ -537,4 +537,111 @@ describe("Gmail capture service", () => {
       "/gmail/v1/users/volunteers%40example.org/messages"
     );
   });
+
+  it("accepts Gmail API message parts with empty body data", async () => {
+    const client = createGmailMailboxApiClient(
+      {
+        bearerToken: "gmail-token",
+        liveAccount: "volunteers@example.org",
+        projectInboxAliases: ["project-antarctica@example.org"],
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
+      },
+      {
+        fetchImplementation: (input) => {
+          const url = resolveRequestUrl(input);
+
+          if (url === "https://oauth2.googleapis.com/token") {
+            return Promise.resolve(
+              new Response(
+                JSON.stringify({
+                  access_token: "gmail-access-token",
+                  expires_in: 3600
+                }),
+                {
+                  status: 200,
+                  headers: {
+                    "content-type": "application/json"
+                  }
+                }
+              )
+            );
+          }
+
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: "gmail-empty-part-1",
+                threadId: "thread-empty-part-1",
+                labelIds: ["INBOX"],
+                snippet: "Kirsten claimed Hex 11142.",
+                internalDate: String(Date.parse("2026-05-07T02:26:39.000Z")),
+                payload: {
+                  mimeType: "multipart/alternative",
+                  filename: "",
+                  headers: [
+                    {
+                      name: "Date",
+                      value: "Thu, 7 May 2026 02:26:39 +0000"
+                    },
+                    {
+                      name: "From",
+                      value: "Admin <admin@adventurescientists.org>"
+                    },
+                    {
+                      name: "To",
+                      value: "PNW <project-antarctica@example.org>"
+                    },
+                    {
+                      name: "Subject",
+                      value: "Hex Claimed - Required Further Coordination"
+                    }
+                  ],
+                  body: {
+                    size: 0
+                  },
+                  parts: [
+                    {
+                      mimeType: "text/plain",
+                      filename: "",
+                      headers: [],
+                      body: {
+                        data: "",
+                        size: 0
+                      }
+                    }
+                  ]
+                }
+              }),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json"
+                }
+              }
+            )
+          );
+        }
+      }
+    );
+
+    await expect(
+      client.getMessage({
+        mailbox: "volunteers@example.org",
+        messageId: "gmail-empty-part-1"
+      })
+    ).resolves.toMatchObject({
+      id: "gmail-empty-part-1",
+      payload: {
+        parts: [
+          {
+            body: {
+              data: ""
+            }
+          }
+        ]
+      }
+    });
+  });
 });

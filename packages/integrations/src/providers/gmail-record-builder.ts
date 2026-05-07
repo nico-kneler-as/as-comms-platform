@@ -222,6 +222,30 @@ export function buildGmailMessageRecord(
       (email) => !isInternalEmail(email, internalAddresses),
     ),
   );
+  const senderIsInternal = fromEmails.some((email) =>
+    isInternalEmail(email, internalAddresses),
+  );
+  const externalSenderEmails = uniqueEmails(
+    fromEmails.filter((email) => !isInternalEmail(email, internalAddresses)),
+  );
+  const externalPrimaryRecipientEmails = uniqueEmails(
+    toEmails.filter((email) => !isInternalEmail(email, internalAddresses)),
+  );
+  const externalCopiedRecipientEmails = uniqueEmails(
+    [...ccEmails, ...bccEmails].filter(
+      (email) => !isInternalEmail(email, internalAddresses),
+    ),
+  );
+  const externalRecipientEmails =
+    externalPrimaryRecipientEmails.length > 0
+      ? externalPrimaryRecipientEmails
+      : externalCopiedRecipientEmails;
+  const identityParticipantEmails =
+    senderIsInternal && externalRecipientEmails.length > 0
+      ? externalRecipientEmails
+      : externalSenderEmails.length > 0
+        ? externalSenderEmails
+        : externalParticipantEmails;
 
   if (externalParticipantEmails.length === 0) {
     return {
@@ -230,9 +254,6 @@ export function buildGmailMessageRecord(
     };
   }
 
-  const senderIsInternal = fromEmails.some((email) =>
-    isInternalEmail(email, internalAddresses),
-  );
   const projectInboxCopyRecipient =
     projectInboxAlias !== null &&
     !hasEmail(fromEmails, projectInboxAlias) &&
@@ -278,7 +299,7 @@ export function buildGmailMessageRecord(
     rfc822MessageId,
     capturedMailbox: input.capturedMailbox,
     projectInboxAlias,
-    normalizedParticipantEmails: externalParticipantEmails,
+    normalizedParticipantEmails: identityParticipantEmails,
     salesforceContactId: null,
     volunteerIdPlainValues: [],
     normalizedPhones: [],
