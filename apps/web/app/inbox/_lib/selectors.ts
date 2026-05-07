@@ -4179,27 +4179,98 @@ function buildInboxDetailTimelineViewModel(input: {
   readonly operatorDisplayName: string;
   readonly referenceNowIso: string;
 }): InboxDetailTimelineViewModel {
+  const timeline = input.cachedData.timelineItems.map((item) =>
+    buildTimelineEntry({
+      contactDisplayName: input.cachedData.contact.displayName,
+      contactPrimaryEmail: input.cachedData.contact.primaryEmail,
+      contactDisplayNameByEmail: input.cachedData.contactDisplayNameByEmail,
+      operatorDisplayName: input.operatorDisplayName,
+      inboxProjection: input.cachedData.inboxProjection,
+      item,
+      campaignActivitySummaryByCampaignId:
+        input.cachedData.campaignActivitySummaryByCampaignId,
+      memberships: input.cachedData.memberships,
+      projectMetadataById: input.cachedData.projectMetadataById,
+      projectLabelByAlias: input.cachedData.projectLabelByAlias,
+      referenceNowIso: input.referenceNowIso,
+      attachmentsByCanonicalEventId:
+        input.cachedData.attachmentsByCanonicalEventId,
+    }),
+  );
+
   return {
-    timeline: input.cachedData.timelineItems.map((item) =>
-      buildTimelineEntry({
-        contactDisplayName: input.cachedData.contact.displayName,
-        contactPrimaryEmail: input.cachedData.contact.primaryEmail,
-        contactDisplayNameByEmail: input.cachedData.contactDisplayNameByEmail,
-        operatorDisplayName: input.operatorDisplayName,
-        inboxProjection: input.cachedData.inboxProjection,
-        item,
-        campaignActivitySummaryByCampaignId:
-          input.cachedData.campaignActivitySummaryByCampaignId,
-        memberships: input.cachedData.memberships,
-        projectMetadataById: input.cachedData.projectMetadataById,
-        projectLabelByAlias: input.cachedData.projectLabelByAlias,
-        referenceNowIso: input.referenceNowIso,
-        attachmentsByCanonicalEventId:
-          input.cachedData.attachmentsByCanonicalEventId,
-      }),
-    ),
+    timeline: reorderLifecycleTimelineEntries(timeline),
     timelinePage: input.cachedData.timelinePage,
   };
+}
+
+function timelineLifecycleEntryOrdinal(
+  entry: InboxTimelineEntryViewModel,
+): number | null {
+  if (entry.kind !== "system-event") {
+    return null;
+  }
+
+  const normalized = entry.body.toLowerCase();
+
+  if (normalized.startsWith("signed up")) {
+    return 1;
+  }
+
+  if (normalized.startsWith("received training")) {
+    return 2;
+  }
+
+  if (normalized.startsWith("completed training")) {
+    return 3;
+  }
+
+  if (normalized.startsWith("submitted first data")) {
+    return 4;
+  }
+
+  return null;
+}
+
+function compareLifecycleTimelineEntries(
+  left: InboxTimelineEntryViewModel,
+  right: InboxTimelineEntryViewModel,
+): number {
+  const leftDate = utcCalendarDate(left.occurredAt);
+  const rightDate = utcCalendarDate(right.occurredAt);
+
+  if (leftDate !== rightDate) {
+    return leftDate.localeCompare(rightDate);
+  }
+
+  const leftOrdinal = timelineLifecycleEntryOrdinal(left) ?? 0;
+  const rightOrdinal = timelineLifecycleEntryOrdinal(right) ?? 0;
+
+  if (leftOrdinal !== rightOrdinal) {
+    return leftOrdinal - rightOrdinal;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function reorderLifecycleTimelineEntries(
+  entries: readonly InboxTimelineEntryViewModel[],
+): readonly InboxTimelineEntryViewModel[] {
+  const lifecycleEntries = entries.filter(
+    (entry) => timelineLifecycleEntryOrdinal(entry) !== null,
+  );
+  const orderedLifecycleEntries = lifecycleEntries.sort(
+    compareLifecycleTimelineEntries,
+  );
+
+  return entries.map((entry) => {
+    if (timelineLifecycleEntryOrdinal(entry) === null) {
+      return entry;
+    }
+
+    const next = orderedLifecycleEntries.shift();
+    return next ?? entry;
+  });
 }
 
 function matchesServerFilter(
