@@ -741,4 +741,33 @@ describe("Inbox list shell", () => {
     expect(row?.textContent).toContain("Amazon Basin");
     expect(row?.textContent).not.toContain("+2");
   });
+
+  it("renders non-volunteer rows with an External chip", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    const baseItem = buildList().items[0];
+
+    if (baseItem === undefined) {
+      throw new Error("Expected an inbox list fixture item");
+    }
+
+    activeSession = await mountInboxList(
+      buildList({
+        items: [
+          {
+            ...baseItem,
+            contactId: "contact:email:admin@adventurescientists.org",
+            displayName: "admin@adventurescientists.org",
+            initials: "AD",
+            projectLabel: null,
+            volunteerStage: "non-volunteer",
+          },
+        ],
+      }),
+    );
+
+    const row = activeSession.container.querySelector("[data-inbox-row='true']");
+
+    expect(row?.textContent).toContain("External");
+    expect(row?.textContent).not.toContain("Amazon Basin");
+  });
 });

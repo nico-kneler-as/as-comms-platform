@@ -260,6 +260,14 @@ These entries were recorded on `2026-04-05` from the current repo canon and the 
 - Impact: DB is queried on every inbox page view. At MVP scale (1–3 operators, 20–80 inbound/day) this is negligible. If operator count or query complexity ever grows ~10×, the upgrade path is event-driven invalidation: worker posts to an internal `/api/internal/revalidate` endpoint with a shared secret, that endpoint calls `revalidateTag`. The `revalidateInboxContact` helper is preserved as the integration point for that future work; its body is a no-op now.
 - Related refs: [../../apps/web/app/inbox/layout.tsx](../../apps/web/app/inbox/layout.tsx), [../../apps/web/app/inbox/actions.ts](../../apps/web/app/inbox/actions.ts), [../../apps/web/src/server/inbox/revalidate.ts](../../apps/web/src/server/inbox/revalidate.ts), `.handoff-architect-2026-04-23.md`.
 
+### 2026-05-07 - Staff-origin Gmail delivered to monitored inbox is inbound attention
+
+- Status: `locked`
+- Decision: Gmail messages from staff/admin addresses delivered into `volunteers@...` or a project inbox alias are Inbox-visible inbound one-to-one communication when the sender is not the monitored mailbox/project alias itself. Drafts, DSNs, forwarded-chain exclusions, and platform-sent alias mail remain excluded or outbound according to their existing rules.
+- Why: operators need to know that staff/admin notices reached the shared inbox, including messages from `@adventurescientists.org` accounts such as `admin@`. Treating those as internal-only deferred records hid real incoming work, while broadening the default Inbox beyond inbound 1:1 rows would reintroduce lifecycle/campaign/outbound-only noise.
+- Impact: Gmail classification must anchor staff-origin monitored-mailbox messages to the staff sender email as a non-Salesforce contact, set the canonical event direction to inbound, and let normal projection bucket semantics reset the row to `New`. Default Inbox remains scoped to rows with `lastInboundAt IS NOT NULL`; non-volunteer rows show a soft external indicator rather than an unresolved manual-link requirement.
+- Related refs: [decision-core.md](./decision-core.md), [data-core.md](./data-core.md), [../02-bundles/inbox-bundle.md](../02-bundles/inbox-bundle.md), [../../packages/integrations/src/providers/gmail-record-builder.ts](../../packages/integrations/src/providers/gmail-record-builder.ts).
+
 ### 2026-04-27 - AI knowledge architecture collapses to raw Notion-page cache + approved-reply memory
 
 - Status: `locked`
