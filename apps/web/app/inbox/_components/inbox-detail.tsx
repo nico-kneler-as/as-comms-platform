@@ -137,9 +137,61 @@ function buildTimelineReplyContext(input: {
 function sortTimelineEntries(
   entries: readonly InboxTimelineEntryViewModel[],
 ): readonly InboxTimelineEntryViewModel[] {
-  return [...entries].sort((left, right) =>
-    left.occurredAt.localeCompare(right.occurredAt),
-  );
+  return [...entries].sort(compareTimelineEntries);
+}
+
+function timelineLifecycleOrdinal(
+  entry: InboxTimelineEntryViewModel,
+): number | null {
+  if (entry.kind !== "system-event") {
+    return null;
+  }
+
+  const normalized = entry.body.toLowerCase();
+
+  if (normalized.startsWith("signed up")) {
+    return 1;
+  }
+
+  if (normalized.startsWith("received training")) {
+    return 2;
+  }
+
+  if (normalized.startsWith("completed training")) {
+    return 3;
+  }
+
+  if (normalized.startsWith("submitted first data")) {
+    return 4;
+  }
+
+  return null;
+}
+
+function compareTimelineEntries(
+  left: InboxTimelineEntryViewModel,
+  right: InboxTimelineEntryViewModel,
+): number {
+  const leftDate = left.occurredAt.slice(0, 10);
+  const rightDate = right.occurredAt.slice(0, 10);
+
+  if (leftDate !== rightDate) {
+    return left.occurredAt.localeCompare(right.occurredAt);
+  }
+
+  const leftLifecycleOrdinal = timelineLifecycleOrdinal(left);
+  const rightLifecycleOrdinal = timelineLifecycleOrdinal(right);
+
+  if (leftLifecycleOrdinal !== null && rightLifecycleOrdinal !== null) {
+    const lifecycleDifference =
+      leftLifecycleOrdinal - rightLifecycleOrdinal;
+
+    if (lifecycleDifference !== 0) {
+      return lifecycleDifference;
+    }
+  }
+
+  return left.occurredAt.localeCompare(right.occurredAt);
 }
 
 function realEntryMatchesOptimistic(
