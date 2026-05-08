@@ -70,15 +70,17 @@ function normalizeContentId(value: string | null | undefined): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function hasInlineContentDisposition(
+function resolveContentDispositionType(
   contentDisposition: string | null | undefined,
-): boolean {
+): string | null {
   if (typeof contentDisposition !== "string") {
-    return false;
+    return null;
   }
 
   const dispositionType = contentDisposition.split(";")[0]?.trim().toLowerCase();
-  return dispositionType === "inline";
+  return dispositionType && dispositionType.length > 0
+    ? dispositionType
+    : null;
 }
 
 function isInlineAttachment(input: {
@@ -88,14 +90,17 @@ function isInlineAttachment(input: {
   };
   readonly htmlBodyCidReferences: ReadonlySet<string>;
 }): boolean {
-  if (hasInlineContentDisposition(input.attachment.contentDisposition)) {
-    return true;
+  const normalizedContentId = normalizeContentId(input.attachment.contentId);
+  if (
+    normalizedContentId === null ||
+    !input.htmlBodyCidReferences.has(normalizedContentId)
+  ) {
+    return false;
   }
 
-  const normalizedContentId = normalizeContentId(input.attachment.contentId);
   return (
-    normalizedContentId !== null &&
-    input.htmlBodyCidReferences.has(normalizedContentId)
+    resolveContentDispositionType(input.attachment.contentDisposition) !==
+    "attachment"
   );
 }
 
