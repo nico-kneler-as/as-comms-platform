@@ -713,12 +713,26 @@ async function readIntegrationHealth(): Promise<
       continue;
     }
 
+    // TODO(anthropic-health-probe): The `openai` (Anthropic) row stays at
+    // `not_configured` seed status because there is no HTTP capture-service
+    // endpoint to poll — Anthropic is a direct API client. A real probe would
+    // need to hit the Anthropic API directly (e.g. GET /v1/models) or check
+    // the AI draft ledger for a successful call within a rolling window.
+    // Until that worker probe lands, we surface `not_checked` when the API key
+    // is present so the card doesn't falsely show "Not configured".
+    const effectiveStatus =
+      serviceName === "openai" &&
+      record.status === "not_configured" &&
+      (process.env.ANTHROPIC_API_KEY?.trim().length ?? 0) > 0
+        ? ("not_checked" as const)
+        : record.status;
+
     integrations.push({
       serviceName: record.serviceName,
       displayName: meta.displayName,
       description: meta.description,
       category: record.category,
-      status: record.status,
+      status: effectiveStatus,
       lastCheckedAt: record.lastCheckedAt,
       detail: record.detail,
       supportsRefresh: meta.supportsRefresh,
