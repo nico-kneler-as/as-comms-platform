@@ -1539,14 +1539,13 @@ function buildRecentActivity(
       item.family === "salesforce_event",
   );
 
-  const orderedLifecycleItems = [...lifecycleItems].sort(
+  const ascendingLifecycleItems = [...lifecycleItems].sort(
     compareLifecycleActivityAscending,
   );
-  const mostRecentItemId =
-    [...lifecycleItems].sort(compareLifecycleActivityAscending).at(-1)?.id ??
-    null;
+  const mostRecentItemId = ascendingLifecycleItems.at(-1)?.id ?? null;
 
-  return orderedLifecycleItems.map((item) => ({
+  // Reverse to newest-first for the rail display.
+  return [...ascendingLifecycleItems].reverse().map((item) => ({
     id: item.id,
     label: lifecycleRailActivityLabel(item),
     occurredAtLabel: formatUtcRailEventDate(item.occurredAt, referenceNowIso),
