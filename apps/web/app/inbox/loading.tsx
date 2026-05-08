@@ -1,5 +1,5 @@
-import { InboxAppLoading } from "./_components/inbox-loading";
+import { WelcomeWorkloadSkeleton } from "./_components/inbox-loading";
 
 export default function InboxLoading() {
-  return <InboxAppLoading />;
+  return <WelcomeWorkloadSkeleton />;
 }
