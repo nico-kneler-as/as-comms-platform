@@ -4488,17 +4488,17 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Signed up - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
-      "Completed training - Amazon Basin Research",
       "Submitted first data - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
     ]);
     expect(
       detail?.contact.recentActivity.map((entry) => entry.occurredAtLabel),
-    ).toEqual(["Apr 8", "Apr 9", "Apr 10", "Apr 11"]);
+    ).toEqual(["Apr 11", "Apr 10", "Apr 9", "Apr 8"]);
     expect(
       detail?.contact.recentActivity.map((entry) => entry.isMostRecent),
-    ).toEqual([false, false, false, true]);
+    ).toEqual([true, false, false, false]);
   });
 
   it("returns all lifecycle activity items and does not hard-cap the rail feed at five", async () => {
@@ -4559,12 +4559,12 @@ describe("real inbox selectors", () => {
 
     expect(detail?.contact.recentActivity).toHaveLength(6);
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Signed up - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
       "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
       "Submitted first data - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
       "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
     ]);
   });
 
@@ -4593,8 +4593,8 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Signed up - Amazon Basin Research",
       "Completed training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
     ]);
   });
 
@@ -4638,13 +4638,14 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:sarah-martinez");
 
-    // Cross-day order follows the recorded Salesforce day. Within the Oct 27
-    // group, training events share a UTC day so they sort by canonical ordinal.
+    // Rail renders newest-first. Underlying sort is by Salesforce day with a
+    // canonical-ordinal tiebreak for same-UTC-day events, then reversed for
+    // display.
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Received training - Amazon Basin Research",
-      "Completed training - Amazon Basin Research",
-      "Signed up - Amazon Basin Research",
       "Submitted first data - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
+      "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
     ]);
   });
 
@@ -4681,9 +4682,9 @@ describe("real inbox selectors", () => {
     const detail = await getInboxDetail("contact:sarah-martinez");
 
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Signed up - Amazon Basin Research",
-      "Received training - Amazon Basin Research",
       "Completed training - Amazon Basin Research",
+      "Received training - Amazon Basin Research",
+      "Signed up - Amazon Basin Research",
     ]);
     // Filter to lifecycle pills only — the shared runtime seeds non-lifecycle
     // sarah events that are unrelated to this same-day-canonical-order check.
@@ -6657,9 +6658,9 @@ describe("real inbox selectors", () => {
       "Completed training for PNW Biodiversity",
     ]);
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
-      "Signed up - PNW Biodiversity",
-      "Received training - PNW Biodiversity",
       "Completed training - PNW Biodiversity",
+      "Received training - PNW Biodiversity",
+      "Signed up - PNW Biodiversity",
     ]);
   });
 
