@@ -967,15 +967,23 @@ function buildProjectMembershipViewModel(
 
   const projectOccurredAt =
     firstOccurredAtByProjectId.get(membership.projectId) ?? null;
+  const parsedProjectNameYear = parseTrailingProjectYear(
+    projectName,
+    referenceNowIso,
+  );
   const signupYearSource =
     projectOccurredAt !== null
       ? "project-event"
+      : parsedProjectNameYear !== null
+        ? "project-name"
       : firstOccurredAtForContact !== null
         ? "contact-event"
         : "contact-created-at";
-  const signupYearTimestamp =
-    projectOccurredAt ?? firstOccurredAtForContact ?? contactCreatedAt;
-  const signupYear = new Date(signupYearTimestamp).getUTCFullYear();
+  const signupYear =
+    projectOccurredAt !== null
+      ? new Date(projectOccurredAt).getUTCFullYear()
+      : parsedProjectNameYear ??
+        new Date(firstOccurredAtForContact ?? contactCreatedAt).getUTCFullYear();
   const referenceYear = new Date(referenceNowIso).getUTCFullYear();
 
   return {
@@ -999,6 +1007,32 @@ function buildProjectMembershipViewModel(
         )}/view`
       : null,
   };
+}
+
+function parseTrailingProjectYear(
+  projectName: string,
+  referenceNowIso: string,
+): number | null {
+  const match = /\((\d{4})\)\s*$/.exec(projectName);
+
+  if (match === null) {
+    return null;
+  }
+
+  const yearText = match[1];
+
+  if (yearText === undefined) {
+    return null;
+  }
+
+  const year = Number.parseInt(yearText, 10);
+  const maxYear = new Date(referenceNowIso).getUTCFullYear() + 1;
+
+  if (!Number.isFinite(year) || year < 2015 || year > maxYear) {
+    return null;
+  }
+
+  return year;
 }
 
 function isPastProject(

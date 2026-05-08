@@ -3753,7 +3753,7 @@ describe("real inbox selectors", () => {
       primaryPhone: null,
       contactCreatedAt: "2018-01-01T00:00:00.000Z",
       projectId: "project:contact-event-fallback-year",
-      projectName: "Contact Event Fallback Year",
+      projectName: "Contact Event Fallback Year (2024)",
       membershipId: "membership:contact-event-fallback-year",
       salesforceMembershipId: "a0B-contact-event-fallback-year",
       membershipStatus: "completed",
@@ -3767,7 +3767,7 @@ describe("real inbox selectors", () => {
       primaryPhone: null,
       contactCreatedAt: "2019-01-01T00:00:00.000Z",
       projectId: "project:null-project-fallback-year",
-      projectName: "Null Project Fallback Year",
+      projectName: "Null Project Fallback Year (2022)",
       membershipId: "membership:null-project-fallback-year",
       salesforceMembershipId: "a0B-null-project-fallback-year",
       membershipStatus: "successful",
@@ -3941,13 +3941,13 @@ describe("real inbox selectors", () => {
     ]);
     expect(contactEventDetail?.contact.pastProjects).toMatchObject([
       {
-        projectName: "Contact Event Fallback Year",
-        signupYear: 2020,
+        projectName: "Contact Event Fallback Year (2024)",
+        signupYear: 2024,
       },
     ]);
     expect(nullProjectDetail?.contact.pastProjects).toMatchObject([
       {
-        projectName: "Null Project Fallback Year",
+        projectName: "Null Project Fallback Year (2022)",
         signupYear: 2022,
       },
     ]);
