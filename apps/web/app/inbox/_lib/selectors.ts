@@ -3930,6 +3930,7 @@ function toListItemViewModel(
   return {
     contactId: row.contact.id,
     displayName: row.contact.displayName,
+    primaryEmail: row.contact.primaryEmail,
     initials: toInitials(row.contact.displayName),
     avatarTone: avatarToneForContact(row.contact.id),
     latestSubject: defaultLatestSubject(
