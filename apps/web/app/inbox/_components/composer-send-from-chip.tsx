@@ -49,8 +49,12 @@ export function ComposerSendFromChip({
             <span className="min-w-0">
               {selectedAlias ? (
                 <span className="block min-w-0">
-                  <span className="block truncate text-[13px] font-medium text-slate-900">
-                    {selectedAlias.alias}
+                  <span className="flex items-center gap-1.5 truncate text-[13px] font-medium text-slate-900">
+                    <span
+                      aria-hidden="true"
+                      className="inline-block size-2 shrink-0 rounded-full bg-emerald-500"
+                    />
+                    <span className="truncate">{selectedAlias.alias}</span>
                   </span>
                   <span className={`mt-0.5 flex items-center gap-1.5 ${TYPE.caption}`}>
                     <span className="truncate">{selectedAlias.projectName}</span>

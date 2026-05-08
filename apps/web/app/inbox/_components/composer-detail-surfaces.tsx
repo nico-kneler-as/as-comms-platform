@@ -524,17 +524,28 @@ export function ComposerEmailSurface({
                 onCommand={onCommand}
               />
 
-              <div className="ml-auto flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="gap-1.5 border-l border-slate-200 pl-3 text-[11.5px] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                  onClick={onAttachmentClick}
-                >
-                  <PaperclipIcon className="size-3.5" />
-                  Attach
-                </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="gap-1.5 border-l border-slate-200 pl-3 text-[11.5px] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                onClick={onAttachmentClick}
+              >
+                <PaperclipIcon className="size-3.5" />
+                Attach
+              </Button>
 
+              {selectedAliasHasCachedContent && selectedAliasProjectName !== null ? (
+                <span
+                  className={`inline-flex items-center gap-1.5 ${TYPE.caption} text-slate-500`}
+                >
+                  <BookOpenIcon className="size-3.5" />
+                  Uses {selectedAliasProjectName} knowledge
+                </span>
+              ) : selectedAliasProjectName !== null ? (
+                <KnowledgeIndicator tooltipMessage={knowledgeTooltip} />
+              ) : null}
+
+              <div className="ml-auto flex items-center gap-2">
                 <Button
                   type="button"
                   variant="ghost"
@@ -606,25 +617,6 @@ export function ComposerEmailSurface({
                 </div>
               </div>
             </div>
-
-            {selectedAliasHasCachedContent && selectedAliasProjectName !== null ? (
-              <span
-                className={`mt-2 hidden items-center gap-1.5 ${TYPE.caption} md:inline-flex`}
-              >
-                <BookOpenIcon className="size-3.5" />
-                Uses {selectedAliasProjectName} knowledge
-              </span>
-            ) : selectedAliasProjectName !== null ? (
-              <div className="mt-2 hidden md:block">
-                <KnowledgeIndicator tooltipMessage={knowledgeTooltip} />
-              </div>
-            ) : null}
-
-            {!selectedAliasHasCachedContent && selectedAliasProjectName !== null ? (
-              <div className="mt-2 md:hidden">
-                <KnowledgeIndicator tooltipMessage={knowledgeTooltip} />
-              </div>
-            ) : null}
           </div>
         )}
       />

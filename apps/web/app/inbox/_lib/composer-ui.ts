@@ -121,6 +121,12 @@ export function resolveDefaultAlias(input: {
     | null;
   readonly aliases: readonly InboxComposerAliasOption[];
 }): string | null {
+  // When exactly one alias is available, always auto-select it —
+  // the operator can't send from anywhere else.
+  if (input.aliases.length === 1) {
+    return input.aliases[0]?.alias ?? null;
+  }
+
   const recipient = input.recipient;
 
   if (recipient?.kind !== "contact" || recipient.primaryProjectName === null) {
