@@ -49,7 +49,7 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
   return (
     <aside
       id="inbox-contact-rail"
-      className={`flex min-h-0 ${LAYOUT.railWidth} shrink-0 flex-col ${TONE_CLASSES.slate.subtle}`}
+      className={`flex h-full min-h-0 ${LAYOUT.railWidth} shrink-0 flex-col ${TONE_CLASSES.slate.subtle}`}
       aria-label="Contact details"
     >
       <header className={`flex ${LAYOUT.headerHeight} shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-5`}>

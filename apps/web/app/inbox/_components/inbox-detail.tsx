@@ -479,7 +479,7 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
             : "w-0 border-transparent opacity-0",
         )}
       >
-        <div className={`min-h-0 ${LAYOUT.railWidth}`}>
+        <div className={`flex h-full min-h-0 flex-col ${LAYOUT.railWidth}`}>
           <InboxContactRail
             contact={contact}
             onClose={() => {
