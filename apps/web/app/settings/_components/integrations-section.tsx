@@ -270,8 +270,9 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
               </li>
             );
           })}
+          {/* Twilio is rendered inside the same grid so all 6 cards share equal column widths */}
+          <TwilioConnectorCard viewModel={viewModel.twilioCard} />
         </ul>
-        <TwilioConnectorCard viewModel={viewModel.twilioCard} />
       </SettingsSection>
     </TooltipProvider>
   );
@@ -348,9 +349,9 @@ function TwilioConnectorCard({
     viewModel.monthToDateSegments !== null;
 
   return (
-    <div
+    <li
       className={cn(
-        "mt-4 flex min-h-full flex-col gap-3 border border-slate-200 bg-white p-4",
+        "flex min-h-full flex-col gap-3 border border-slate-200 bg-white p-4",
         RADIUS.lg,
         SHADOW.sm,
       )}
@@ -433,7 +434,7 @@ function TwilioConnectorCard({
           ) : null}
         </div>
       ) : null}
-    </div>
+    </li>
   );
 }
 
