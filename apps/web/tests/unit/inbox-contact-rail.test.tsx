@@ -259,4 +259,27 @@ describe("InboxContactRail", () => {
     expect(firstDot?.className).toContain("border-slate-300");
     expect(secondDot?.className).toContain("border-sky-500");
   });
+
+  it("shows past project name and status without rendering the signup year", async () => {
+    activeSession = await renderRail({
+      ...buildContact(0),
+      pastProjects: [
+        {
+          membershipId: "membership-1",
+          projectId: "project-1",
+          projectName: "Alpine Stream Survey",
+          expeditionMemberUrl: null,
+          crmUrl: "https://salesforce.example.com/member/1",
+          projectIsActive: false,
+          status: "successful",
+          statusLabel: "Successful",
+          signupYear: 2021,
+        },
+      ],
+    });
+
+    expect(activeSession.container.textContent).toContain("Alpine Stream Survey");
+    expect(activeSession.container.textContent).toContain("Successful");
+    expect(activeSession.container.textContent).not.toContain("2021");
+  });
 });
