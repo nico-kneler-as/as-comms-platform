@@ -28,6 +28,11 @@ import {
   type ReconcileStaleRunningTaskDependencies,
 } from "./jobs/reconcile-stale-running.js";
 import {
+  createReconcileCaptureGapsTask,
+  reconcileCaptureGapsJobName,
+  type ReconcileCaptureGapsTaskDependencies,
+} from "./jobs/reconcile-capture-gaps.js";
+import {
   createNotionKnowledgeSyncTask,
   notionKnowledgeSyncJobName,
   type NotionKnowledgeSyncDependencies,
@@ -48,6 +53,7 @@ export function createTaskList(
     readonly pendingOutboundSweep?: PendingOutboundSweepTaskDependencies;
     readonly reconcileIdentityQueue?: ReconcileIdentityQueueTaskDependencies;
     readonly reconcileRoutingReviewQueue?: ReconcileRoutingReviewQueueTaskDependencies;
+    readonly reconcileCaptureGaps?: ReconcileCaptureGapsTaskDependencies;
     readonly reconcileStaleRunning?: ReconcileStaleRunningTaskDependencies;
   },
 ): TaskList {
@@ -81,6 +87,13 @@ export function createTaskList(
             createReconcileRoutingReviewQueueTask(
               input.reconcileRoutingReviewQueue,
             ),
+        }),
+    ...(input?.reconcileCaptureGaps === undefined
+      ? {}
+      : {
+          [reconcileCaptureGapsJobName]: createReconcileCaptureGapsTask(
+            input.reconcileCaptureGaps
+          )
         }),
     ...(input?.reconcileStaleRunning === undefined
       ? {}
