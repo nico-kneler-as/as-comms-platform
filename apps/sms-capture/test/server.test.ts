@@ -3,8 +3,10 @@ import type { Server } from "node:http";
 import {
   canonicalEventLedger,
   consentRecords,
+  contactIdentities,
   contactInboxProjection,
   contacts,
+  identityResolutionQueue,
   smsMessages,
   smsSenders,
   sourceEvidenceLog,
@@ -114,6 +116,34 @@ async function seedSender(context: TestStage1Context) {
     isActive: true,
     createdAt: timestamp,
     updatedAt: timestamp,
+  });
+}
+
+async function seedContactWithPhoneIdentity(input: {
+  readonly context: TestStage1Context;
+  readonly contactId: string;
+  readonly displayName: string;
+  readonly phoneE164: string;
+  readonly createdAt?: string;
+}) {
+  const createdAt = input.createdAt ?? "2026-05-03T12:00:00.000Z";
+  await input.context.repositories.contacts.upsert({
+    id: input.contactId,
+    salesforceContactId: null,
+    displayName: input.displayName,
+    primaryEmail: null,
+    primaryPhone: input.phoneE164,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  await input.context.repositories.contactIdentities.upsert({
+    id: `identity:${input.contactId}:phone`,
+    contactId: input.contactId,
+    kind: "phone",
+    normalizedValue: input.phoneE164,
+    isPrimary: true,
+    source: "manual",
+    verifiedAt: null,
   });
 }
 
@@ -298,23 +328,30 @@ describe("SMS capture server", () => {
     expect(projectionRows[0]).toMatchObject({
       contactId: contactRows[0]?.id,
       bucket: "New",
+      hasUnresolved: false,
       snippet: "Need help with my trip",
       lastCanonicalEventId: canonicalRows[0]?.id,
       lastEventType: "communication.sms.inbound",
+    });
+
+    const identityRows = await context.db.select().from(contactIdentities);
+    expect(identityRows).toHaveLength(1);
+    expect(identityRows[0]).toMatchObject({
+      contactId: contactRows[0]?.id,
+      kind: "phone",
+      normalizedValue: "+14065550143",
+      isPrimary: true,
     });
   });
 
   it("reuses an existing contact for signed inbound sms", async () => {
     const context = await createContext();
     await seedSender(context);
-    await context.repositories.contacts.upsert({
-      id: "contact-existing",
-      salesforceContactId: null,
+    await seedContactWithPhoneIdentity({
+      context,
+      contactId: "contact-existing",
       displayName: "Existing Contact",
-      primaryEmail: null,
-      primaryPhone: "+14065550143",
-      createdAt: "2026-05-03T12:00:00.000Z",
-      updatedAt: "2026-05-03T12:00:00.000Z",
+      phoneE164: "+14065550143",
     });
 
     const baseUrl = await listen(
@@ -440,14 +477,11 @@ describe("SMS capture server", () => {
 
   it("records STOP as revoked consent", async () => {
     const context = await createContext();
-    await context.repositories.contacts.upsert({
-      id: "contact-stop",
-      salesforceContactId: null,
+    await seedContactWithPhoneIdentity({
+      context,
+      contactId: "contact-stop",
       displayName: "Contact Stop",
-      primaryEmail: null,
-      primaryPhone: "+14065550143",
-      createdAt: "2026-05-03T12:00:00.000Z",
-      updatedAt: "2026-05-03T12:00:00.000Z",
+      phoneE164: "+14065550143",
     });
     const baseUrl = await listen(
       createSmsCaptureServer({
@@ -479,6 +513,224 @@ describe("SMS capture server", () => {
       source: "sms_reply_yes",
       sourceDetail: "STOP",
     });
+  });
+
+  it("opens an identity queue case for inbound sms when one phone matches multiple contacts", async () => {
+    const context = await createContext();
+    await seedSender(context);
+    await seedContactWithPhoneIdentity({
+      context,
+      contactId: "contact-a",
+      displayName: "Contact A",
+      phoneE164: "+14065550143",
+    });
+    await seedContactWithPhoneIdentity({
+      context,
+      contactId: "contact-b",
+      displayName: "Contact B",
+      phoneE164: "+14065550143",
+    });
+    await context.repositories.inboxProjection.upsert({
+      contactId: "contact-b",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-04T08:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-04T08:00:00.000Z",
+      snippet: "Older inbound",
+      archivedAt: null,
+      lastCanonicalEventId: "event-existing",
+      lastEventType: "communication.sms.inbound",
+    });
+
+    const baseUrl = await listen(
+      createSmsCaptureServer({
+        config: buildConfig(),
+        provider: buildProvider({
+          inbound: {
+            messageSid: "SMinbound-ambiguous",
+            fromE164: "+14065550143",
+            toE164: "+14065550142",
+            body: "which contact is this?",
+            numMediaUrls: 0,
+            mediaUrls: [],
+          },
+        }),
+        db: context.db,
+      }),
+    );
+
+    const response = await fetch(`${baseUrl}/webhooks/inbound`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-twilio-signature": "signed",
+      },
+      body: new URLSearchParams({
+        MessageSid: "SMinbound-ambiguous",
+        From: "+14065550143",
+        To: "+14065550142",
+        Body: "which contact is this?",
+        NumMedia: "0",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+
+    const smsRows = await context.db.select().from(smsMessages);
+    expect(smsRows).toHaveLength(1);
+    expect(smsRows[0]?.contactId).toBe("contact-b");
+
+    const canonicalRows = await context.db.select().from(canonicalEventLedger);
+    expect(canonicalRows).toHaveLength(1);
+    expect(canonicalRows[0]).toMatchObject({
+      contactId: "contact-b",
+      reviewState: "needs_identity_review",
+    });
+
+    const projection = await context.repositories.inboxProjection.findByContactId(
+      "contact-b",
+    );
+    expect(projection).toMatchObject({
+      contactId: "contact-b",
+      hasUnresolved: true,
+    });
+
+    const identityCases = await context.db.select().from(identityResolutionQueue);
+    expect(identityCases).toHaveLength(1);
+    expect(identityCases[0]).toMatchObject({
+      sourceEvidenceId: canonicalRows[0]?.sourceEvidenceId,
+      reasonCode: "identity_multi_candidate",
+      anchoredContactId: "contact-b",
+    });
+    expect(identityCases[0]?.candidateContactIds).toEqual([
+      "contact-a",
+      "contact-b",
+    ]);
+  });
+
+  it("falls back to alphabetical contact id for inbound sms ambiguity with no inbox activity", async () => {
+    const context = await createContext();
+    await seedSender(context);
+    await seedContactWithPhoneIdentity({
+      context,
+      contactId: "contact-a",
+      displayName: "Contact A",
+      phoneE164: "+14065550143",
+    });
+    await seedContactWithPhoneIdentity({
+      context,
+      contactId: "contact-b",
+      displayName: "Contact B",
+      phoneE164: "+14065550143",
+    });
+
+    const baseUrl = await listen(
+      createSmsCaptureServer({
+        config: buildConfig(),
+        provider: buildProvider({
+          inbound: {
+            messageSid: "SMinbound-alpha-fallback",
+            fromE164: "+14065550143",
+            toE164: "+14065550142",
+            body: "alphabetical fallback",
+            numMediaUrls: 0,
+            mediaUrls: [],
+          },
+        }),
+        db: context.db,
+      }),
+    );
+
+    const response = await fetch(`${baseUrl}/webhooks/inbound`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-twilio-signature": "signed",
+      },
+      body: new URLSearchParams({
+        MessageSid: "SMinbound-alpha-fallback",
+        From: "+14065550143",
+        To: "+14065550142",
+        Body: "alphabetical fallback",
+        NumMedia: "0",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+
+    const smsRows = await context.db.select().from(smsMessages);
+    expect(smsRows).toHaveLength(1);
+    expect(smsRows[0]?.contactId).toBe("contact-a");
+
+    const identityCases = await context.db.select().from(identityResolutionQueue);
+    expect(identityCases).toHaveLength(1);
+    expect(identityCases[0]).toMatchObject({
+      reasonCode: "identity_multi_candidate",
+      anchoredContactId: "contact-a",
+    });
+    expect(identityCases[0]?.candidateContactIds).toEqual([
+      "contact-a",
+      "contact-b",
+    ]);
+  });
+
+  it("does not open an identity queue case for inbound sms when the phone matches one contact", async () => {
+    const context = await createContext();
+    await seedSender(context);
+    await seedContactWithPhoneIdentity({
+      context,
+      contactId: "contact-single",
+      displayName: "Single Contact",
+      phoneE164: "+14065550143",
+    });
+
+    const baseUrl = await listen(
+      createSmsCaptureServer({
+        config: buildConfig(),
+        provider: buildProvider({
+          inbound: {
+            messageSid: "SMinbound-single-match",
+            fromE164: "+14065550143",
+            toE164: "+14065550142",
+            body: "single contact",
+            numMediaUrls: 0,
+            mediaUrls: [],
+          },
+        }),
+        db: context.db,
+      }),
+    );
+
+    const response = await fetch(`${baseUrl}/webhooks/inbound`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-twilio-signature": "signed",
+      },
+      body: new URLSearchParams({
+        MessageSid: "SMinbound-single-match",
+        From: "+14065550143",
+        To: "+14065550142",
+        Body: "single contact",
+        NumMedia: "0",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+
+    const canonicalRows = await context.db.select().from(canonicalEventLedger);
+    expect(canonicalRows).toHaveLength(1);
+    expect(canonicalRows[0]?.reviewState).toBe("clear");
+
+    const projection = await context.repositories.inboxProjection.findByContactId(
+      "contact-single",
+    );
+    expect(projection?.hasUnresolved).toBe(false);
+
+    const identityCases = await context.db.select().from(identityResolutionQueue);
+    expect(identityCases).toHaveLength(0);
   });
 
   it("treats HELP as a no-op", async () => {

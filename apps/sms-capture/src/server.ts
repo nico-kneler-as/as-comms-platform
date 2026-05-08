@@ -12,7 +12,9 @@ import {
   type Stage1Database,
 } from "@as-comms/db";
 import {
-  resolveContactByPhone,
+  createStage1NormalizationService,
+  createStage1PersistenceService,
+  resolveContactByPhoneFromIdentities,
   smsMetrics,
   type Stage1RepositoryBundle,
 } from "@as-comms/domain";
@@ -413,14 +415,30 @@ async function handleInboundWebhook(input: {
 
         const now = new Date();
         const occurredAtIso = now.toISOString();
-        const resolution = await resolveContactByPhone({
+        const normalization = createStage1NormalizationService(
+          createStage1PersistenceService(repositories),
+        );
+        const resolution = await resolveContactByPhoneFromIdentities({
           phoneE164: parsed.fromE164,
+          readContactIdentities: {
+            listByNormalizedValue: (identity) =>
+              repositories.contactIdentities.listByNormalizedValue(identity),
+          },
           readContacts: {
+            findById: (id) => repositories.contacts.findById(id),
+            listByIds: (ids) => repositories.contacts.listByIds(ids),
             findByPrimaryPhone: (phoneE164) =>
               repositories.contacts.findByPrimaryPhone(phoneE164),
           },
+          readInboxProjection: {
+            findByContactId: (contactId) =>
+              repositories.inboxProjection.findByContactId(contactId),
+          },
           writeContacts: {
             upsert: (record) => repositories.contacts.upsert(record),
+          },
+          writeContactIdentities: {
+            upsert: (record) => repositories.contactIdentities.upsert(record),
           },
           clock: {
             now: () => now,
@@ -478,7 +496,10 @@ async function handleInboundWebhook(input: {
             notes: null,
             inboxProjectionExclusionReason: null,
           },
-          reviewState: "clear",
+          reviewState:
+            resolution.ambiguousCandidateContactIds.length > 1
+              ? "needs_identity_review"
+              : "clear",
         });
         await repositories.smsMessages.insert({
           id: inboundMessageId,
@@ -515,7 +536,10 @@ async function handleInboundWebhook(input: {
           contactId: resolution.contact.id,
           bucket: "New",
           needsFollowUp: existingInboxProjection?.needsFollowUp ?? false,
-          hasUnresolved: existingInboxProjection?.hasUnresolved ?? false,
+          hasUnresolved:
+            resolution.ambiguousCandidateContactIds.length > 1
+              ? true
+              : (existingInboxProjection?.hasUnresolved ?? false),
           lastInboundAt: isLatest
             ? occurredAtIso
             : existingInboxProjection?.lastInboundAt ?? occurredAtIso,
@@ -555,6 +579,29 @@ async function handleInboundWebhook(input: {
             createdAt: now,
             updatedAt: now,
           });
+        }
+
+        if (resolution.ambiguousCandidateContactIds.length > 1) {
+          try {
+            await normalization.saveIdentityAmbiguityCase({
+              sourceEvidenceId,
+              candidateContactIds: [
+                ...resolution.ambiguousCandidateContactIds,
+              ],
+              reasonCode: "identity_multi_candidate",
+              status: "open",
+              openedAt: occurredAtIso,
+              resolvedAt: null,
+              normalizedIdentityValues: [parsed.fromE164],
+              anchoredContactId: resolution.contact.id,
+              explanation: `Inbound SMS from ${parsed.fromE164} matched ${resolution.ambiguousCandidateContactIds.length.toString()} contacts; anchored to ${resolution.contact.id} pending operator review.`,
+            });
+          } catch (error) {
+            console.error(
+              `Failed to persist inbound SMS identity ambiguity case for ${parsed.messageSid}.`,
+            );
+            throw error;
+          }
         }
       },
     });
@@ -596,11 +643,6 @@ async function handleOptOutWebhook(input: {
     repositories: input.repositories,
     transactional: true,
     run: async (repositories) => {
-      const contact = await repositories.contacts.findByPrimaryPhone(
-        parsed.data.From,
-      );
-      const now = new Date();
-
       if (optOutType === "HELP") {
         console.info(`SMS HELP webhook acknowledged for ${parsed.data.From}`);
         return;
@@ -613,9 +655,38 @@ async function handleOptOutWebhook(input: {
         return;
       }
 
+      const now = new Date();
+      const resolution = await resolveContactByPhoneFromIdentities({
+        phoneE164: parsed.data.From,
+        readContactIdentities: {
+          listByNormalizedValue: (identity) =>
+            repositories.contactIdentities.listByNormalizedValue(identity),
+        },
+        readContacts: {
+          findById: (id) => repositories.contacts.findById(id),
+          listByIds: (ids) => repositories.contacts.listByIds(ids),
+          findByPrimaryPhone: (phoneE164) =>
+            repositories.contacts.findByPrimaryPhone(phoneE164),
+        },
+        readInboxProjection: {
+          findByContactId: (contactId) =>
+            repositories.inboxProjection.findByContactId(contactId),
+        },
+        writeContacts: {
+          upsert: (record) => repositories.contacts.upsert(record),
+        },
+        writeContactIdentities: {
+          upsert: (record) => repositories.contactIdentities.upsert(record),
+        },
+        clock: {
+          now: () => now,
+        },
+        idGenerator: () => randomUUID(),
+      });
+
       await repositories.consentRecords.insert({
         id: randomUUID(),
-        contactId: contact?.id ?? null,
+        contactId: resolution.contact.id,
         phoneE164: parsed.data.From,
         status:
           optOutType === "STOP"
