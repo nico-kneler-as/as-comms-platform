@@ -108,6 +108,7 @@ function buildItem(
   return {
     contactId: overrides.contactId ?? "contact_1",
     displayName: overrides.displayName ?? "Contact One",
+    primaryEmail: overrides.primaryEmail ?? "contact.one@example.org",
     initials: overrides.initials ?? "CO",
     avatarTone: overrides.avatarTone ?? "indigo",
     latestSubject: overrides.latestSubject ?? "Subject",

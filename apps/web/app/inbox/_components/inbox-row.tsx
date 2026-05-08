@@ -31,15 +31,25 @@ export function InboxRow({ item, isActive }: RowProps) {
   const prefetchedRef = useRef(false);
   const isUnread = item.isUnread;
   const ChannelIcon = item.latestChannel === "email" ? MailIcon : PhoneIcon;
-  const showExternalBadge =
+  const isNonVolunteerWithoutProject =
     item.projectLabel === null && item.volunteerStage === "non-volunteer";
+  const isAdventuresScientistsContact =
+    item.primaryEmail !== null &&
+    /@adventurescientists\.org$/i.test(item.primaryEmail);
+  const showAsBadge =
+    isNonVolunteerWithoutProject && isAdventuresScientistsContact;
+  const showExternalBadge =
+    isNonVolunteerWithoutProject && !isAdventuresScientistsContact;
   const queryString = searchParams.toString();
   const href = queryString.length > 0
     ? `/inbox/${encodeURIComponent(item.contactId)}?${queryString}`
     : `/inbox/${encodeURIComponent(item.contactId)}`;
 
   const showBadges =
-    Boolean(item.projectLabel) || showExternalBadge || item.needsFollowUp;
+    Boolean(item.projectLabel) ||
+    showAsBadge ||
+    showExternalBadge ||
+    item.needsFollowUp;
 
   const prefetchDetail = useCallback(() => {
     if (prefetchedRef.current) {
@@ -119,6 +129,11 @@ export function InboxRow({ item, isActive }: RowProps) {
               {item.projectLabel ? (
                 <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
                   {item.projectLabel}
+                </span>
+              ) : null}
+              {showAsBadge ? (
+                <span className="inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                  AS
                 </span>
               ) : null}
               {showExternalBadge ? (

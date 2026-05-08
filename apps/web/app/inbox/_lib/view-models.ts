@@ -72,6 +72,7 @@ export type InboxAvatarTone =
 export interface InboxListItemViewModel {
   readonly contactId: string;
   readonly displayName: string;
+  readonly primaryEmail: string | null;
   readonly initials: string;
   readonly avatarTone: InboxAvatarTone;
   readonly latestSubject: string;

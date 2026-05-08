@@ -210,6 +210,7 @@ function buildList(
       {
         contactId: "contact-1",
         displayName: "Riley Carter",
+        primaryEmail: "riley@example.org",
         initials: "RC",
         avatarTone: "sky",
         latestSubject: "Re: Field report",
@@ -742,7 +743,7 @@ describe("Inbox list shell", () => {
     expect(row?.textContent).not.toContain("+2");
   });
 
-  it("renders non-volunteer rows with an External chip", async () => {
+  it("renders staff-origin non-volunteer rows with an AS chip", async () => {
     fetchInboxListPageMock.mockResolvedValue(buildList());
     const baseItem = buildList().items[0];
 
@@ -757,6 +758,7 @@ describe("Inbox list shell", () => {
             ...baseItem,
             contactId: "contact:email:admin@adventurescientists.org",
             displayName: "admin@adventurescientists.org",
+            primaryEmail: "admin@adventurescientists.org",
             initials: "AD",
             projectLabel: null,
             volunteerStage: "non-volunteer",
@@ -767,7 +769,40 @@ describe("Inbox list shell", () => {
 
     const row = activeSession.container.querySelector("[data-inbox-row='true']");
 
-    expect(row?.textContent).toContain("External");
+    expect(row?.textContent).toContain("AS");
     expect(row?.textContent).not.toContain("Amazon Basin");
+    expect(row?.innerHTML).toContain("bg-emerald-50");
+    expect(row?.innerHTML).not.toContain("External");
+  });
+
+  it("keeps genuine non-volunteer external rows on the External chip", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    const baseItem = buildList().items[0];
+
+    if (baseItem === undefined) {
+      throw new Error("Expected an inbox list fixture item");
+    }
+
+    activeSession = await mountInboxList(
+      buildList({
+        items: [
+          {
+            ...baseItem,
+            contactId: "contact:email:partner@example.org",
+            displayName: "Pat Partner",
+            primaryEmail: "partner@example.org",
+            initials: "PP",
+            projectLabel: null,
+            volunteerStage: "non-volunteer",
+          },
+        ],
+      }),
+    );
+
+    const row = activeSession.container.querySelector("[data-inbox-row='true']");
+
+    expect(row?.textContent).toContain("External");
+    expect(row?.innerHTML).toContain("bg-amber-50");
+    expect(row?.innerHTML).not.toContain(">AS<");
   });
 });

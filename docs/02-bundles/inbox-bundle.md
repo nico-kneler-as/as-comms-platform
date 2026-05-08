@@ -70,6 +70,7 @@ Build the one-to-one operator workspace on top of canonical projections.
 - campaign events do not mutate Inbox bucket state
 - inbox server views render dynamically (D-040): `revalidateInboxContact` is preserved as an integration point but currently a no-op; interactive actions call `router.refresh()` to re-read fresh server-rendered state without disturbing client editor / composer state
 - staff/admin Gmail delivered to the monitored inbox counts as inbound attention unless it is sent from the monitored mailbox/project alias itself (D-041); do not broaden the default Inbox beyond inbound 1:1 communication rows
+- non-volunteer rows render as `AS` (green) when the contact's primary email is `@adventurescientists.org`, otherwise as `External` (amber)
 
 ## Common Failure Modes
 
