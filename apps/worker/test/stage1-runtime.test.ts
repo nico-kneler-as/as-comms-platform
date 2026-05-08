@@ -7,6 +7,7 @@ import {
 
 import { buildWorkerCrontab, readWorkerConfig } from "../src/runtime.js";
 import { dedupHistoricalLedgerJobName } from "../src/jobs/dedup-historical-ledger.js";
+import { reconcileCaptureGapsJobName } from "../src/jobs/reconcile-capture-gaps.js";
 import {
   pollGmailLiveJobName,
   pollIntegrationHealthJobName,
@@ -153,6 +154,7 @@ describe("Stage 1 worker runtime task registration", () => {
         `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
         "*/15 * * * * reconcile-identity-queue ?id=identity-queue-reconcile&max=1",
         `0 10 * * * ${dedupHistoricalLedgerJobName} ?id=dedup-historical-ledger&max=1`,
+        `30 10 * * * ${reconcileCaptureGapsJobName} ?id=capture-gap-reconcile&max=1`,
         "*/15 * * * * reconcile-routing-review-queue ?id=routing-review-queue-reconcile&max=1",
       ].join("\n"),
     );
