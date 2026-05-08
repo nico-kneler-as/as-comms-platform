@@ -260,7 +260,7 @@ describe("InboxContactRail", () => {
     expect(secondDot?.className).toContain("border-sky-500");
   });
 
-  it("shows past project name and status without rendering the signup year", async () => {
+  it("renders past project name and status", async () => {
     activeSession = await renderRail({
       ...buildContact(0),
       pastProjects: [
@@ -273,13 +273,11 @@ describe("InboxContactRail", () => {
           projectIsActive: false,
           status: "successful",
           statusLabel: "Successful",
-          signupYear: 2021,
         },
       ],
     });
 
     expect(activeSession.container.textContent).toContain("Alpine Stream Survey");
     expect(activeSession.container.textContent).toContain("Successful");
-    expect(activeSession.container.textContent).not.toContain("2021");
   });
 });
