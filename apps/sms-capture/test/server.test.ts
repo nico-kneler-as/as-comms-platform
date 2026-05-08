@@ -530,6 +530,48 @@ describe("SMS capture server", () => {
       displayName: "Contact B",
       phoneE164: "+14065550143",
     });
+
+    // Seed FK parents for the existing inbox projection: a prior source-evidence row
+    // and canonical event representing contact-b's older inbound activity.
+    await context.db.insert(sourceEvidenceLog).values({
+      id: "source-existing",
+      provider: "twilio",
+      providerRecordType: "message",
+      providerRecordId: "SMolder-existing",
+      receivedAt: new Date("2026-05-04T08:00:00.000Z"),
+      occurredAt: new Date("2026-05-04T08:00:00.000Z"),
+      payloadRef: "twilio:webhooks/inbound:SMolder-existing",
+      idempotencyKey: "twilio:message:SMolder-existing",
+      checksum: "older-checksum",
+    });
+    await context.repositories.canonicalEvents.upsert({
+      id: "event-existing",
+      contactId: "contact-b",
+      eventType: "communication.sms.inbound",
+      channel: "sms",
+      occurredAt: "2026-05-04T08:00:00.000Z",
+      contentFingerprint: null,
+      sourceEvidenceId: "source-existing",
+      idempotencyKey: "twilio:message:SMolder-existing:communication.sms.inbound",
+      provenance: {
+        primaryProvider: "twilio",
+        primarySourceEvidenceId: "source-existing",
+        supportingSourceEvidenceIds: [],
+        winnerReason: "single_source",
+        sourceRecordType: "message",
+        sourceRecordId: "SMolder-existing",
+        messageKind: "one_to_one",
+        campaignRef: null,
+        threadRef: {
+          crossProviderCollapseKey: "+14065550143",
+          providerThreadId: "+14065550143",
+        },
+        direction: "inbound",
+        notes: null,
+        inboxProjectionExclusionReason: null,
+      },
+      reviewState: "clear",
+    });
     await context.repositories.inboxProjection.upsert({
       contactId: "contact-b",
       bucket: "Opened",
@@ -583,8 +625,11 @@ describe("SMS capture server", () => {
     expect(smsRows[0]?.contactId).toBe("contact-b");
 
     const canonicalRows = await context.db.select().from(canonicalEventLedger);
-    expect(canonicalRows).toHaveLength(1);
-    expect(canonicalRows[0]).toMatchObject({
+    expect(canonicalRows).toHaveLength(2);
+    const ambiguousEvent = canonicalRows.find(
+      (row) => row.reviewState === "needs_identity_review",
+    );
+    expect(ambiguousEvent).toMatchObject({
       contactId: "contact-b",
       reviewState: "needs_identity_review",
     });
@@ -600,7 +645,7 @@ describe("SMS capture server", () => {
     const identityCases = await context.db.select().from(identityResolutionQueue);
     expect(identityCases).toHaveLength(1);
     expect(identityCases[0]).toMatchObject({
-      sourceEvidenceId: canonicalRows[0]?.sourceEvidenceId,
+      sourceEvidenceId: ambiguousEvent?.sourceEvidenceId,
       reasonCode: "identity_multi_candidate",
       anchoredContactId: "contact-b",
     });
