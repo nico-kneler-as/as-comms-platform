@@ -2121,6 +2121,16 @@ function createStage1RepositoriesInternal(
     ...smsRepositories,
 
     projectDimensions: {
+      async findById(projectId) {
+        const [row] = await db
+          .select()
+          .from(projectDimensions)
+          .where(eq(projectDimensions.projectId, projectId))
+          .limit(1);
+
+        return row === undefined ? null : mapProjectDimensionRow(row);
+      },
+
       async listAll() {
         const rows = await db
           .select()

@@ -37,6 +37,11 @@ import {
   notionKnowledgeSyncJobName,
   type NotionKnowledgeSyncDependencies,
 } from "./jobs/notion-knowledge-sync/index.js";
+import {
+  createSynthesizeProjectKnowledgeTask,
+  synthesizeProjectKnowledgeJobName,
+  type SynthesizeProjectKnowledgeDependencies,
+} from "./jobs/synthesize-project-knowledge/index.js";
 import { runStage0NoopJob } from "./jobs/noop.js";
 import {
   createStage1TaskList,
@@ -55,6 +60,7 @@ export function createTaskList(
     readonly reconcileRoutingReviewQueue?: ReconcileRoutingReviewQueueTaskDependencies;
     readonly reconcileCaptureGaps?: ReconcileCaptureGapsTaskDependencies;
     readonly reconcileStaleRunning?: ReconcileStaleRunningTaskDependencies;
+    readonly synthesizeProjectKnowledge?: SynthesizeProjectKnowledgeDependencies;
   },
 ): TaskList {
   return {
@@ -108,6 +114,14 @@ export function createTaskList(
           [notionKnowledgeSyncJobName]: createNotionKnowledgeSyncTask(
             input.notionKnowledgeSync,
           ),
+        }),
+    ...(input?.synthesizeProjectKnowledge === undefined
+      ? {}
+      : {
+          [synthesizeProjectKnowledgeJobName]:
+            createSynthesizeProjectKnowledgeTask(
+              input.synthesizeProjectKnowledge,
+            ),
         }),
     ...(orchestration ? createStage1TaskList(orchestration, input) : {}),
   };

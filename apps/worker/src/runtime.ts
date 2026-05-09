@@ -15,12 +15,17 @@ import {
 } from "@as-comms/domain";
 import {
   capturePortHttpConfigSchema,
+  createAnthropicClient,
   createGmailCapturePort,
   createMailchimpCapturePort,
+  InlineTextFetcher,
+  invokeModel,
+  NotionPageFetcher,
   createSalesforceCapturePort,
   createSimpleTextingCapturePort,
   ProviderCaptureConfigError,
   type FetchImplementation,
+  WebPageFetcher,
 } from "@as-comms/integrations";
 
 import { createStage1IngestService } from "./ingest/index.js";
@@ -35,6 +40,7 @@ import { readNotionKnowledgeSyncConfig } from "./jobs/notion-knowledge-sync/inde
 import { dedupHistoricalLedgerJobName } from "./jobs/dedup-historical-ledger.js";
 import { reconcileCaptureGapsJobName } from "./jobs/reconcile-capture-gaps.js";
 import { reconcileRoutingReviewQueueJobName } from "./jobs/reconcile-routing-review-queue.js";
+import { type SynthesizeProjectKnowledgeDependencies } from "./jobs/synthesize-project-knowledge/index.js";
 import {
   createStage1SyncStateService,
   createStage1WorkerOrchestrationService,
@@ -53,6 +59,7 @@ import { sweepPendingOutboundsJobName } from "./jobs/sweep-pending-outbounds.js"
 
 const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
 const mailchimpTransitionDiscoverySeedLookbackDays = 35;
+const defaultSynthesisRootPageId = "3278a912921180598688fce711ab0509";
 
 function parseBooleanEnv(value: unknown): boolean {
   // Pass booleans through unchanged. The schema this preprocess feeds is
@@ -159,6 +166,62 @@ function buildDefaultMailchimpTransitionDiscoverySeed(now = new Date()): string 
     now.getTime() -
       mailchimpTransitionDiscoverySeedLookbackDays * 24 * 60 * 60 * 1000,
   ).toISOString();
+}
+
+function readOptionalTrimmedEnv(
+  value: string | undefined,
+): string | null {
+  if (value === undefined) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function buildSynthesizeProjectKnowledgeDependencies(input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly fetchImplementation: FetchImplementation;
+  readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
+  readonly settings: ReturnType<typeof createStage2RepositoryBundleFromConnection>;
+}): SynthesizeProjectKnowledgeDependencies | undefined {
+  const notionApiKey = readOptionalTrimmedEnv(input.env.NOTION_API_KEY);
+  const anthropicApiKey = readOptionalTrimmedEnv(input.env.ANTHROPIC_API_KEY);
+
+  if (notionApiKey === null || anthropicApiKey === null) {
+    console.warn(
+      "Skipping synthesize-project-knowledge wiring because NOTION_API_KEY or ANTHROPIC_API_KEY is missing.",
+    );
+    return undefined;
+  }
+
+  const anthropicClient = createAnthropicClient({
+    ANTHROPIC_API_KEY: anthropicApiKey,
+  });
+  const model =
+    readOptionalTrimmedEnv(input.env.ANTHROPIC_MODEL) ?? "claude-sonnet-4-6";
+
+  return {
+    repositories: {
+      projectDimensions: input.repositories.projectDimensions,
+      settingsProjects: input.settings.projects,
+    },
+    fetchers: {
+      notion: new NotionPageFetcher({ apiKey: notionApiKey }),
+      web_page: new WebPageFetcher({
+        fetchImplementation: input.fetchImplementation,
+      }),
+      inline_text: new InlineTextFetcher(),
+    },
+    notion: {
+      apiKey: notionApiKey,
+      rootPageId:
+        readOptionalTrimmedEnv(input.env.AI_ASSISTANT_TRAINING_ROOT_PAGE_ID) ??
+        defaultSynthesisRootPageId,
+    },
+    model,
+    invokeModel: (payload) => invokeModel(anthropicClient, payload),
+  };
 }
 
 function readMailchimpTransitionConfig(
@@ -369,6 +432,14 @@ export async function createStage1WorkerRuntimeServices(
         };
   const fetchImplementation = input?.fetchImplementation ?? fetch;
   const leaseThresholdMs = readSyncStateLeaseThresholdMs(input?.env ?? process.env);
+  const synthesizeProjectKnowledge = buildSynthesizeProjectKnowledgeDependencies(
+    {
+      env: input?.env ?? process.env,
+      fetchImplementation,
+      repositories,
+      settings,
+    },
+  );
   const capture = {
     gmail: createGmailCapturePort(config.capture.gmail, fetchOptions),
     salesforce: createSalesforceCapturePort(
@@ -432,6 +503,11 @@ export async function createStage1WorkerRuntimeServices(
         integrationHealth: settings.integrationHealth,
         notion: notionKnowledgeSync,
       },
+      ...(synthesizeProjectKnowledge === undefined
+        ? {}
+        : {
+            synthesizeProjectKnowledge,
+          }),
       pendingOutboundSweep: {
         pendingOutbounds: repositories.pendingOutbounds,
       },
