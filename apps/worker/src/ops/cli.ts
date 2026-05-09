@@ -41,6 +41,7 @@ import { main as runMergeEmailOnlyIntoSfAnchoredCommand } from "./merge-email-on
 import { runRecoverOrphanGmailDetailsCommand } from "./recover-orphan-gmail-details.js";
 import { reconcileIdentityQueue } from "./reconcile-identity-queue.js";
 import { reconcileRoutingReviewQueue } from "./reconcile-routing-review-queue.js";
+import { runReconcileStaleCanonicalCommand } from "./reconcile-stale-canonical.js";
 import { runDedupHistoricalLedgerCommand } from "./dedup-historical-ledger.js";
 import { runReclassifySfDirectionCommand } from "./reclassify-sf-direction.js";
 import {
@@ -418,9 +419,12 @@ async function main(): Promise<void> {
     case "reclassify-sf-direction":
       await runReclassifySfDirectionCommand(rest, process.env);
       return;
+    case "reconcile-stale-canonical":
+      await runReconcileStaleCanonicalCommand(rest, process.env);
+      return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, backfill-mailchimp-campaign-body, mailchimp-capture-historical, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, recover-orphan-gmail-details, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction.",
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, backfill-mailchimp-campaign-body, mailchimp-capture-historical, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, recover-orphan-gmail-details, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction, reconcile-stale-canonical.",
       );
   }
 }
