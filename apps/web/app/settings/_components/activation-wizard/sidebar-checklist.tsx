@@ -24,7 +24,7 @@ export function SidebarChecklist({
     <aside className="flex w-[280px] shrink-0 flex-col border-r border-slate-100 bg-slate-50/70">
       <div className="border-b border-slate-100 px-6 py-6">
         <div className="flex items-center gap-3">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-slate-900 text-white">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-[#253746] text-white">
             <Plus className="size-4" aria-hidden="true" />
           </span>
           <div>
@@ -76,7 +76,7 @@ export function SidebarChecklist({
                     state === "done"
                       ? "bg-emerald-500 text-white"
                       : state === "current"
-                        ? "bg-slate-900 text-white"
+                        ? "bg-[#253746] text-white"
                         : "bg-white text-slate-400 ring-1 ring-slate-200"
                   )}
                 >

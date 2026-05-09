@@ -215,7 +215,7 @@ export function TeammateInviteModal({
                         className={cn(
                           "size-2 rounded-full",
                           role === option.value
-                            ? "bg-slate-900"
+                            ? "bg-[#253746]"
                             : "bg-transparent",
                         )}
                       />

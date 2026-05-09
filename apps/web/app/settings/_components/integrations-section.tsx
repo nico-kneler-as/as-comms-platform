@@ -524,7 +524,7 @@ function SyncButton({
       </TooltipTrigger>
       <TooltipContent
         side="top"
-        className="rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white"
+        className="rounded-md bg-[#253746] px-2 py-1 text-xs font-medium text-white"
       >
         Health checks are not wired for this provider yet.
       </TooltipContent>

@@ -207,7 +207,7 @@ function FilterRow(input: {
       className={cn(
         "group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[12.5px] transition-colors duration-150",
         isActive
-          ? "bg-[#abb8c3] text-slate-900"
+          ? "bg-[#253746] text-white"
           : "text-slate-700 hover:bg-slate-50",
       )}
     >
