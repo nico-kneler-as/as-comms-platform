@@ -13,6 +13,10 @@ export default defineConfig({
         replacement: path.resolve(repoRoot, "packages/db/src/test-helpers.ts"),
       },
       {
+        find: "@as-comms/db/parse-source-url",
+        replacement: path.resolve(repoRoot, "packages/db/src/parse-source-url.ts"),
+      },
+      {
         find: "@as-comms/contracts",
         replacement: path.resolve(repoRoot, "packages/contracts/src/index.ts"),
       },

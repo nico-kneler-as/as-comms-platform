@@ -1,4 +1,5 @@
 import type { ProjectRowViewModel } from "@/src/server/settings/selectors";
+import { parseSourceUrl } from "@as-comms/db/parse-source-url";
 
 import {
   getProjectAliasSignatureValidationError,
@@ -33,7 +34,7 @@ export const ACTIVATION_WIZARD_STEPS = [
   },
   {
     title: "AI knowledge",
-    subtitle: "Link the Notion page used for AI draft context."
+    subtitle: "Add the sources the AI should learn from, or skip for now."
   },
   {
     title: "Review & activate",
@@ -148,12 +149,35 @@ export function isBasicEmailAddress(value: string): boolean {
   return /^\S+@\S+\.\S+$/.test(value.trim());
 }
 
-export function isNotionUrlLike(value: string): boolean {
-  const normalized = value.trim();
-  return (
-    normalized.startsWith("https://www.notion.so/") ||
-    normalized.startsWith("https://notion.so/")
-  );
+export function splitAiKnowledgeSourceLines(value: string): readonly string[] {
+  return value
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+export function getAiKnowledgeSourceLineErrors(
+  value: string
+): Readonly<Record<number, string>> {
+  const lines = value.split(/\r?\n/u);
+  const errors: Record<number, string> = {};
+
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+
+    try {
+      parseSourceUrl(trimmed);
+    } catch (error) {
+      if (error instanceof Error) {
+        errors[index] = error.message;
+      }
+    }
+  }
+
+  return errors;
 }
 
 export function normalizeAliasAddress(value: string): string {

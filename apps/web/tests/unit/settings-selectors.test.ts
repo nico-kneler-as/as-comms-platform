@@ -325,7 +325,7 @@ describe("settings selectors", () => {
     });
   });
 
-  it("marks activation requirements met only when a project has an alias plus AI knowledge sync", async () => {
+  it("marks activation requirements met only when a project has an alias plus an inbox alias", async () => {
     if (!runtime) {
       throw new Error("runtime not initialized");
     }
@@ -378,7 +378,7 @@ describe("settings selectors", () => {
     expect(
       projects.find((project) => project.projectId === "project:no-knowledge")
         ?.activationRequirementsMet,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       projects.find((project) => project.projectId === "project:no-email")
         ?.activationRequirementsMet,

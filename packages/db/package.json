@@ -13,6 +13,10 @@
     "./test-helpers": {
       "types": "./src/test-helpers.ts",
       "default": "./dist/test-helpers.js"
+    },
+    "./parse-source-url": {
+      "types": "./src/parse-source-url.ts",
+      "default": "./dist/parse-source-url.js"
     }
   },
   "files": ["dist"],

@@ -6,6 +6,9 @@ import { z } from "zod";
 
 import {
   createProjectAliasSchema,
+  synthesizeProjectKnowledgeJobName,
+  synthesizeProjectKnowledgePayloadSchema,
+  type AiKnowledgeSource,
   deactivateUserSchema,
   demoteUserSchema,
   notionKnowledgeSyncJobName,
@@ -14,6 +17,13 @@ import {
   reactivateUserSchema,
   type IntegrationHealthRecord
 } from "@as-comms/contracts";
+import {
+  addSource,
+  AiKnowledgeSourceValidationError,
+  parseSourceUrl,
+  removeSource,
+  updateSource
+} from "@as-comms/db";
 
 import { resolveAdminSession } from "@/src/server/auth/api";
 import { appendSecurityAudit } from "@/src/server/security/audit";
@@ -141,6 +151,32 @@ const activationWizardInputSchema = z
     }
   });
 
+const wizardAiKnowledgeSourcesSchema = z.object({
+  projectId: z.string().trim().min(1, "Project is required."),
+  urls: z.array(z.string()).max(100, "Add no more than 100 sources.")
+});
+
+const addAiKnowledgeSourceSchema = z.object({
+  url: z.string().trim().min(1, "Source URL is required."),
+  label: z.string().trim().max(160, "Label must be 160 characters or fewer.").nullable().optional()
+});
+
+const updateAiKnowledgeSourceSchema = z
+  .object({
+    url: z.string().trim().min(1, "Source URL is required.").optional(),
+    label: z.string().trim().max(160, "Label must be 160 characters or fewer.").nullable().optional(),
+    enabled: z.boolean().optional()
+  })
+  .refine(
+    (value) =>
+      value.url !== undefined ||
+      value.label !== undefined ||
+      value.enabled !== undefined,
+    {
+      message: "At least one source field must be updated."
+    }
+  );
+
 export interface ProjectKnowledgeMutationData {
   readonly id: string;
 }
@@ -197,14 +233,9 @@ function errorResult(
 
 function hasActivationRequirements(input: {
   readonly projectAlias: string | null;
-  readonly aiKnowledgeUrl: string | null;
   readonly emails: readonly { readonly address: string; readonly isPrimary: boolean }[];
 }): boolean {
-  return (
-    input.emails.length >= 1 &&
-    input.aiKnowledgeUrl !== null &&
-    (input.projectAlias?.trim().length ?? 0) > 0
-  );
+  return input.emails.length >= 1 && (input.projectAlias?.trim().length ?? 0) > 0;
 }
 
 function serializeProjectMutationData(input: {
@@ -215,6 +246,10 @@ function serializeProjectMutationData(input: {
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
   readonly hasCachedAiKnowledge: boolean;
+  readonly aiKnowledgeSources?: readonly AiKnowledgeSource[];
+  readonly aiOperatingContext?: string;
+  readonly aiOptimizedSynthesizedAt?: Date | null;
+  readonly aiOptimizedInputHash?: string | null;
   readonly emails: readonly {
     readonly id: string;
     readonly address: string;
@@ -230,9 +265,13 @@ function serializeProjectMutationData(input: {
     aiKnowledgeUrl: input.aiKnowledgeUrl,
     aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt?.toISOString() ?? null,
     hasCachedAiKnowledge: input.hasCachedAiKnowledge,
+    aiKnowledgeSources: input.aiKnowledgeSources ?? [],
+    aiOperatingContext: input.aiOperatingContext ?? "",
+    aiOptimizedSynthesizedAt:
+      input.aiOptimizedSynthesizedAt?.toISOString() ?? null,
+    aiOptimizedInputHash: input.aiOptimizedInputHash ?? null,
     activationRequirementsMet: hasActivationRequirements({
       projectAlias: input.projectAlias,
-      aiKnowledgeUrl: input.aiKnowledgeUrl,
       emails: input.emails
     }),
     emails: input.emails.map((email) => ({
@@ -634,8 +673,24 @@ export interface ProjectMutationData {
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: string | null;
   readonly hasCachedAiKnowledge: boolean;
+  readonly aiKnowledgeSources: readonly AiKnowledgeSource[];
+  readonly aiOperatingContext: string;
+  readonly aiOptimizedSynthesizedAt: string | null;
+  readonly aiOptimizedInputHash: string | null;
   readonly activationRequirementsMet: boolean;
   readonly emails: readonly ProjectEmailMutationData[];
+}
+
+export interface ProjectAiKnowledgeMutationData {
+  readonly source: AiKnowledgeSource;
+}
+
+export interface ProjectAiKnowledgeSourcesMutationData {
+  readonly sources: readonly AiKnowledgeSource[];
+}
+
+export interface ProjectOperatingContextMutationData {
+  readonly content: string;
 }
 
 function truncateAuditValue(value: string): string {
@@ -671,6 +726,86 @@ async function enqueueNotionKnowledgeSyncJob(input: {
       max_attempts => 1
     )
   `;
+}
+
+async function enqueueSynthesizeProjectKnowledgeJob(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly projectId: string;
+  readonly trigger:
+    | "activation"
+    | "wizard_sources"
+    | "source_added"
+    | "source_updated"
+    | "sync_one"
+    | "sync_all";
+}): Promise<void> {
+  if (input.runtime.connection === null) {
+    return;
+  }
+
+  const payload = synthesizeProjectKnowledgePayloadSchema.parse({
+    projectId: input.projectId
+  });
+
+  await input.runtime.connection.sql`
+    select graphile_worker.add_job(
+      identifier => ${synthesizeProjectKnowledgeJobName},
+      payload => ${JSON.stringify(payload)}::json,
+      job_key => ${`synthesize-project-knowledge:${input.projectId}`},
+      job_key_mode => 'replace',
+      max_attempts => 1
+    )
+  `;
+}
+
+function normalizeOptionalSourceLabel(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function flattenSourceUrls(urls: readonly string[]): readonly string[] {
+  return urls.flatMap((value) =>
+    value
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+  );
+}
+
+function buildSourceFieldErrors(urls: readonly string[]): Record<string, string> {
+  const fieldErrors: Record<string, string> = {};
+
+  for (const [index, url] of urls.entries()) {
+    try {
+      parseSourceUrl(url);
+    } catch (error) {
+      if (error instanceof AiKnowledgeSourceValidationError) {
+        fieldErrors[`urls.${String(index)}`] = error.message;
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  return fieldErrors;
+}
+
+function toAiKnowledgeValidationResult(
+  error: unknown
+): UiError {
+  if (error instanceof AiKnowledgeSourceValidationError) {
+    const code =
+      error.code === "duplicate_source"
+        ? "duplicate_source"
+        : error.code === "source_not_found"
+          ? "not_found"
+          : "validation_error";
+
+    return errorResult(code, error.message);
+  }
+
+  throw error;
 }
 
 // ─── Projects ───────────────────────────────────────────────────────────────
@@ -720,18 +855,6 @@ export async function activateProjectAction(
     );
   }
 
-  if (project.aiKnowledgeUrl === null) {
-    return errorResult(
-      "requirements_not_met",
-      "Set a Notion page URL before this project can be activated.",
-      {
-        fieldErrors: {
-          aiKnowledgeUrl: "Set a Notion page URL before activating this project."
-        }
-      }
-    );
-  }
-
   const updatedProject = await repositories.projects.setActive(projectId, true);
   if (updatedProject === null) {
     return errorResult("not_found", "That project no longer exists.");
@@ -754,13 +877,13 @@ export async function activateProjectAction(
 
   try {
     const runtime = await getStage1WebRuntime();
-    await enqueueNotionKnowledgeSyncJob({
+    await enqueueSynthesizeProjectKnowledgeJob({
       runtime,
       projectId,
       trigger: "activation"
     });
   } catch {
-    // Activation remains successful even if the follow-up sync queue misses.
+    // Activation remains successful even if the follow-up synthesis queue misses.
   }
 
   revalidateProjectSettings(projectId);
@@ -1052,6 +1175,527 @@ export async function updateProjectAiKnowledgeAction(
   };
 }
 
+export async function submitWizardAiKnowledgeSourcesAction(
+  projectId: string,
+  urls: readonly string[]
+): Promise<UiResult<ProjectAiKnowledgeSourcesMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to update AI knowledge sources.",
+    forbiddenMessage: "Only admins can update AI knowledge sources."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = wizardAiKnowledgeSourcesSchema.safeParse({ projectId, urls });
+  if (!parsed.success) {
+    return errorResult("validation_error", "AI knowledge sources are invalid.", {
+      fieldErrors: flattenZodFieldErrors(parsed.error)
+    });
+  }
+
+  const normalizedUrls = flattenSourceUrls(parsed.data.urls);
+  const fieldErrors = buildSourceFieldErrors(normalizedUrls);
+  if (Object.keys(fieldErrors).length > 0) {
+    return errorResult(
+      "validation_error",
+      "Fix the invalid AI knowledge source URLs before continuing.",
+      { fieldErrors }
+    );
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(parsed.data.projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  let nextSources: readonly AiKnowledgeSource[] = [];
+  try {
+    for (const url of normalizedUrls) {
+      nextSources = addSource(nextSources, { url });
+    }
+  } catch (error) {
+    return toAiKnowledgeValidationResult(error);
+  }
+
+  await runtime.repositories.projectDimensions.setAiKnowledgeSources(
+    parsed.data.projectId,
+    nextSources
+  );
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.ai_knowledge_sources_submitted",
+    entityType: "project",
+    entityId: parsed.data.projectId,
+    metadataJson: {
+      sourceCount: nextSources.length,
+      urls: nextSources.map((source) => source.url)
+    }
+  });
+
+  if (nextSources.length > 0) {
+    try {
+      await enqueueSynthesizeProjectKnowledgeJob({
+        runtime,
+        projectId: parsed.data.projectId,
+        trigger: "wizard_sources"
+      });
+    } catch (error) {
+      return errorResult(
+        "enqueue_failed",
+        error instanceof Error
+          ? error.message
+          : "The synthesis job could not be queued.",
+        { retryable: true }
+      );
+    }
+  }
+
+  revalidateProjectSettings(parsed.data.projectId);
+
+  return {
+    ok: true,
+    data: {
+      sources: nextSources
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function addAiKnowledgeSourceAction(
+  projectId: string,
+  input: {
+    readonly url: string;
+    readonly label?: string | null;
+  }
+): Promise<UiResult<ProjectAiKnowledgeMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to add an AI knowledge source.",
+    forbiddenMessage: "Only admins can add an AI knowledge source."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = addAiKnowledgeSourceSchema.safeParse(input);
+  if (!parsed.success) {
+    return errorResult("validation_error", "AI knowledge source is invalid.", {
+      fieldErrors: flattenZodFieldErrors(parsed.error)
+    });
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  const currentSources =
+    await runtime.repositories.projectDimensions.getAiKnowledgeSources(projectId);
+
+  let nextSources: readonly AiKnowledgeSource[];
+  try {
+    nextSources = addSource(currentSources, {
+      url: parsed.data.url,
+      label: normalizeOptionalSourceLabel(parsed.data.label)
+    });
+  } catch (error) {
+    return toAiKnowledgeValidationResult(error);
+  }
+
+  const source = nextSources.at(-1);
+  if (source === undefined) {
+    return errorResult("validation_error", "Could not create the AI knowledge source.");
+  }
+
+  await runtime.repositories.projectDimensions.setAiKnowledgeSources(
+    projectId,
+    nextSources
+  );
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.ai_knowledge_source_added",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      sourceId: source.id,
+      url: source.url,
+      kind: source.kind
+    }
+  });
+
+  try {
+    await enqueueSynthesizeProjectKnowledgeJob({
+      runtime,
+      projectId,
+      trigger: "source_added"
+    });
+  } catch (error) {
+    return errorResult(
+      "enqueue_failed",
+      error instanceof Error
+        ? error.message
+        : "The synthesis job could not be queued.",
+      { retryable: true }
+    );
+  }
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: {
+      source
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function updateAiKnowledgeSourceAction(
+  projectId: string,
+  sourceId: string,
+  patch: {
+    readonly url?: string;
+    readonly label?: string | null;
+    readonly enabled?: boolean;
+  }
+): Promise<UiResult<ProjectAiKnowledgeMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to update an AI knowledge source.",
+    forbiddenMessage: "Only admins can update an AI knowledge source."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = updateAiKnowledgeSourceSchema.safeParse(patch);
+  if (!parsed.success) {
+    return errorResult("validation_error", "AI knowledge source update is invalid.", {
+      fieldErrors: flattenZodFieldErrors(parsed.error)
+    });
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  const currentSources =
+    await runtime.repositories.projectDimensions.getAiKnowledgeSources(projectId);
+  const existing = currentSources.find((source) => source.id === sourceId);
+  if (existing === undefined) {
+    return errorResult("not_found", "That AI knowledge source no longer exists.");
+  }
+
+  const nextPatch: Parameters<typeof updateSource>[2] = {};
+  let urlChanged = false;
+
+  if (parsed.data.url !== undefined) {
+    try {
+      const parsedUrl = parseSourceUrl(parsed.data.url);
+      urlChanged = parsedUrl.normalized_url !== existing.url;
+    } catch (error) {
+      return toAiKnowledgeValidationResult(error);
+    }
+
+    nextPatch.url = parsed.data.url;
+  }
+
+  if (parsed.data.label !== undefined) {
+    nextPatch.label = normalizeOptionalSourceLabel(parsed.data.label);
+  }
+
+  if (parsed.data.enabled !== undefined) {
+    nextPatch.enabled = parsed.data.enabled;
+  }
+
+  if (urlChanged) {
+    nextPatch.last_synced_at = null;
+    nextPatch.last_sync_status = "pending";
+    nextPatch.last_sync_error = null;
+    nextPatch.source_content_hash = null;
+  }
+
+  let nextSources: readonly AiKnowledgeSource[];
+  try {
+    nextSources = updateSource(currentSources, sourceId, nextPatch);
+  } catch (error) {
+    return toAiKnowledgeValidationResult(error);
+  }
+
+  const source = nextSources.find((item) => item.id === sourceId);
+  if (source === undefined) {
+    return errorResult("not_found", "That AI knowledge source no longer exists.");
+  }
+
+  await runtime.repositories.projectDimensions.setAiKnowledgeSources(
+    projectId,
+    nextSources
+  );
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.ai_knowledge_source_updated",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      sourceId,
+      before: existing,
+      after: source
+    }
+  });
+
+  if (urlChanged) {
+    try {
+      await enqueueSynthesizeProjectKnowledgeJob({
+        runtime,
+        projectId,
+        trigger: "source_updated"
+      });
+    } catch (error) {
+      return errorResult(
+        "enqueue_failed",
+        error instanceof Error
+          ? error.message
+          : "The synthesis job could not be queued.",
+        { retryable: true }
+      );
+    }
+  }
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: {
+      source
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function removeAiKnowledgeSourceAction(
+  projectId: string,
+  sourceId: string
+): Promise<UiResult<void>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to remove an AI knowledge source.",
+    forbiddenMessage: "Only admins can remove an AI knowledge source."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  const currentSources =
+    await runtime.repositories.projectDimensions.getAiKnowledgeSources(projectId);
+  const existing = currentSources.find((source) => source.id === sourceId);
+  if (existing === undefined) {
+    return errorResult("not_found", "That AI knowledge source no longer exists.");
+  }
+
+  const nextSources = removeSource(currentSources, sourceId);
+  await runtime.repositories.projectDimensions.setAiKnowledgeSources(
+    projectId,
+    nextSources
+  );
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.ai_knowledge_source_removed",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      sourceId,
+      url: existing.url
+    }
+  });
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: undefined,
+    requestId: newRequestId()
+  };
+}
+
+export async function syncOneAiKnowledgeSourceAction(
+  projectId: string,
+  sourceId: string
+): Promise<UiResult<{ enqueued: true }>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to sync an AI knowledge source.",
+    forbiddenMessage: "Only admins can sync an AI knowledge source."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  const currentSources =
+    await runtime.repositories.projectDimensions.getAiKnowledgeSources(projectId);
+  if (!currentSources.some((source) => source.id === sourceId)) {
+    return errorResult("not_found", "That AI knowledge source no longer exists.");
+  }
+
+  try {
+    await enqueueSynthesizeProjectKnowledgeJob({
+      runtime,
+      projectId,
+      trigger: "sync_one"
+    });
+  } catch (error) {
+    return errorResult(
+      "enqueue_failed",
+      error instanceof Error
+        ? error.message
+        : "The synthesis job could not be queued.",
+      { retryable: true }
+    );
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.ai_knowledge_source_sync_requested",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      sourceId
+    }
+  });
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: {
+      enqueued: true
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function triggerProjectKnowledgeSynthesisAction(
+  projectId: string
+): Promise<UiResult<{ enqueued: true }>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to re-sync project AI knowledge.",
+    forbiddenMessage: "Only admins can re-sync project AI knowledge."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  try {
+    await enqueueSynthesizeProjectKnowledgeJob({
+      runtime,
+      projectId,
+      trigger: "sync_all"
+    });
+  } catch (error) {
+    return errorResult(
+      "enqueue_failed",
+      error instanceof Error
+        ? error.message
+        : "The synthesis job could not be queued.",
+      { retryable: true }
+    );
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.ai_knowledge_synthesis_requested",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      projectId
+    }
+  });
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: {
+      enqueued: true
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function updateOperatingContextAction(
+  projectId: string,
+  content: string
+): Promise<UiResult<ProjectOperatingContextMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to update the operating context.",
+    forbiddenMessage: "Only admins can update the operating context."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  const normalizedContent = content.trim();
+  await runtime.repositories.projectDimensions.updateOperatingContext(
+    projectId,
+    normalizedContent
+  );
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.ai_knowledge_operating_context_updated",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      contentLength: normalizedContent.length
+    }
+  });
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: {
+      content: normalizedContent
+    },
+    requestId: newRequestId()
+  };
+}
+
 export async function updateProjectKnowledgeAction(
   rawInput: z.input<typeof projectKnowledgeUpdateSchema>
 ): Promise<UiResult<ProjectKnowledgeMutationData>> {
@@ -1304,13 +1948,6 @@ export async function activateProjectFromWizardAction(
     return errorResult("already_active", "This project is already active.");
   }
 
-  if (project.aiKnowledgeUrl === null) {
-    return errorResult(
-      "requirements_not_met",
-      "Add a Notion page URL before activating this project."
-    );
-  }
-
   for (const alias of orderedAliases) {
     const existingAlias = await runtime.settings.aliases.findByAlias(alias.address);
     if (
@@ -1380,7 +2017,7 @@ export async function activateProjectFromWizardAction(
   }
 
   try {
-    await enqueueNotionKnowledgeSyncJob({
+    await enqueueSynthesizeProjectKnowledgeJob({
       runtime,
       projectId: parsed.data.projectId,
       trigger: "activation"

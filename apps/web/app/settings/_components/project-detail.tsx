@@ -33,9 +33,7 @@ import {
   type ProjectEmailInput,
   type ProjectEmailMutationData,
   type ProjectMutationData,
-  syncProjectAiKnowledgeAction,
   updateProjectAliasAction,
-  updateProjectAiKnowledgeAction,
   updateProjectAliasSignatureAction,
   updateProjectEmailsAction
 } from "../actions";
@@ -43,6 +41,7 @@ import {
   getProjectAliasSignatureValidationError,
   normalizeProjectAliasSignature
 } from "../_lib/project-alias-signature";
+import { ProjectAiKnowledgeSection } from "./project-ai-knowledge-section";
 
 interface FeedbackState {
   readonly kind: "success" | "error";
@@ -51,14 +50,9 @@ interface FeedbackState {
 
 function hasActivationRequirements(input: {
   readonly projectAlias: string | null;
-  readonly aiKnowledgeUrl: string | null;
   readonly emails: readonly ProjectEmailInput[];
 }): boolean {
-  return (
-    input.emails.length >= 1 &&
-    input.aiKnowledgeUrl !== null &&
-    (input.projectAlias?.trim().length ?? 0) > 0
-  );
+  return input.emails.length >= 1 && (input.projectAlias?.trim().length ?? 0) > 0;
 }
 
 function buildProjectState(
@@ -72,6 +66,10 @@ function buildProjectState(
     aiKnowledgeUrl: project.aiKnowledgeUrl,
     aiKnowledgeSyncedAt: project.aiKnowledgeSyncedAt,
     hasCachedAiKnowledge: project.hasCachedAiKnowledge,
+    aiKnowledgeSources: project.aiKnowledgeSources,
+    aiOperatingContext: project.aiOperatingContext,
+    aiOptimizedSynthesizedAt: project.aiOptimizedSynthesizedAt,
+    aiOptimizedInputHash: project.aiOptimizedInputHash,
     activationRequirementsMet: project.activationRequirementsMet,
     emails: project.emails
   };
@@ -98,7 +96,6 @@ function mergeProjectState(
     ...next,
     activationRequirementsMet: hasActivationRequirements({
       projectAlias: next.projectAlias,
-      aiKnowledgeUrl: next.aiKnowledgeUrl,
       emails: next.emails
     })
   };
@@ -161,25 +158,6 @@ function toProjectEmailInputs(
   }));
 }
 
-function formatLastSynced(iso: string | null): string {
-  return iso
-    ? `Knowledge last synced ${new Date(iso).toLocaleString()}`
-    : "Knowledge has not been synced yet.";
-}
-
-function getStalenessDays(iso: string | null): number | null {
-  if (iso === null) {
-    return null;
-  }
-
-  const elapsedMs = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
-    return null;
-  }
-
-  return Math.floor(elapsedMs / (24 * 60 * 60 * 1000));
-}
-
 export function ProjectDetail({
   project
 }: {
@@ -190,7 +168,6 @@ export function ProjectDetail({
     projectState,
     mergeProjectState
   );
-  const [knowledgeDraft, setKnowledgeDraft] = useState(project.aiKnowledgeUrl ?? "");
   const [projectAliasDraft, setProjectAliasDraft] = useState(project.projectAlias ?? "");
   const [signatureDrafts, setSignatureDrafts] = useState(() =>
     buildSignatureDrafts(project.emails)
@@ -203,15 +180,11 @@ export function ProjectDetail({
   const [activationMessage, setActivationMessage] = useState<string | null>(null);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [pendingSignatureId, setPendingSignatureId] = useState<string | null>(null);
-  const [knowledgePending, startKnowledgeTransition] = useTransition();
   const [projectAliasPending, startProjectAliasTransition] = useTransition();
   const [emailPending, startEmailTransition] = useTransition();
   const [signaturePending, startSignatureTransition] = useTransition();
   const [activationPending, startActivationTransition] = useTransition();
   const [deactivateOpen, setDeactivateOpen] = useState(false);
-  const [knowledgeEditorOpen, setKnowledgeEditorOpen] = useState(
-    project.aiKnowledgeUrl === null
-  );
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
     setFeedback({ kind, message });
@@ -222,7 +195,6 @@ export function ProjectDetail({
 
   function commitProject(nextProject: ProjectMutationData) {
     setProjectState(nextProject);
-    setKnowledgeDraft(nextProject.aiKnowledgeUrl ?? "");
     setProjectAliasDraft(nextProject.projectAlias ?? "");
     setSignatureDrafts((current) =>
       Object.fromEntries(
@@ -240,19 +212,6 @@ export function ProjectDetail({
       )
     );
     setActivationMessage(null);
-  }
-
-  function handleKnowledgeSync() {
-    startKnowledgeTransition(async () => {
-      const result = await syncProjectAiKnowledgeAction(project.projectId);
-
-      if (!result.ok) {
-        announce(result.message, "error");
-        return;
-      }
-
-      announce("Queued a fresh Notion sync.");
-    });
   }
 
   function handleAddEmail() {
@@ -419,36 +378,6 @@ export function ProjectDetail({
     });
   }
 
-  function handleSaveKnowledgeUrl(nextDraft = knowledgeDraft) {
-    const nextUrl = nextDraft.trim().length === 0 ? null : nextDraft.trim();
-
-    startKnowledgeTransition(async () => {
-      applyOptimisticProject({ aiKnowledgeUrl: nextUrl });
-      const result = await updateProjectAiKnowledgeAction(
-        project.projectId,
-        nextUrl
-      );
-
-      if (!result.ok) {
-        announce(result.message, "error");
-        return;
-      }
-
-      commitProject(result.data);
-      setKnowledgeEditorOpen(nextUrl === null);
-      announce(
-        nextUrl === null
-          ? "Cleared the AI knowledge URL."
-          : "Saved the Notion URL and queued a sync."
-      );
-    });
-  }
-
-  function handleUnlinkKnowledgeUrl() {
-    setKnowledgeDraft("");
-    handleSaveKnowledgeUrl("");
-  }
-
   function handleSaveProjectAlias() {
     const nextAlias =
       projectAliasDraft.trim().length === 0 ? null : projectAliasDraft.trim();
@@ -503,14 +432,12 @@ export function ProjectDetail({
     });
   }
 
-  const knowledgeDirty =
-    knowledgeDraft.trim() !== (optimisticProject.aiKnowledgeUrl ?? "");
   const projectAliasDirty =
     projectAliasDraft.trim() !== (optimisticProject.projectAlias ?? "");
   const inactiveActivationMessage =
     activationMessage ??
     (!optimisticProject.activationRequirementsMet
-      ? "Activation needs a short project alias, a project inbox alias, and a Notion page URL."
+      ? "Activation needs a short project alias and a project inbox alias."
       : null);
   const signatureEmails = [...optimisticProject.emails].sort((left, right) => {
     if (left.isPrimary !== right.isPrimary) {
@@ -521,14 +448,6 @@ export function ProjectDetail({
   });
   const signaturePlaceholderProjectName =
     optimisticProject.projectAlias ?? optimisticProject.projectName;
-  const showKnowledgeEditor =
-    project.isAdmin &&
-    (knowledgeEditorOpen || optimisticProject.aiKnowledgeUrl === null);
-  const staleDays = getStalenessDays(optimisticProject.aiKnowledgeSyncedAt);
-  const showKnowledgeStalenessWarning =
-    optimisticProject.aiKnowledgeUrl !== null &&
-    staleDays !== null &&
-    staleDays > 30;
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
@@ -780,109 +699,14 @@ export function ProjectDetail({
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <span className={TYPE.label}>AI knowledge source</span>
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 sm:flex-row sm:items-center">
-              <span className="inline-flex size-4 shrink-0 items-center justify-center rounded bg-white text-[10px] font-semibold text-slate-900 ring-1 ring-slate-200">
-                N
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[12.5px] font-medium text-slate-800">
-                  {optimisticProject.aiKnowledgeUrl ?? "No knowledge source linked"}
-                </div>
-                <div className={cn(TYPE.micro, "truncate text-slate-500")}>
-                  {formatLastSynced(optimisticProject.aiKnowledgeSyncedAt)}
-                </div>
-              </div>
-              {project.isAdmin ? (
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleKnowledgeSync}
-                    disabled={
-                      knowledgePending || optimisticProject.aiKnowledgeUrl === null
-                    }
-                  >
-                    Resync
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleUnlinkKnowledgeUrl}
-                    disabled={
-                      knowledgePending || optimisticProject.aiKnowledgeUrl === null
-                    }
-                  >
-                    Unlink
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-
-            {project.isAdmin ? (
-              <div className="flex flex-col gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="w-fit px-0 text-slate-600 hover:bg-transparent hover:text-slate-900"
-                  onClick={() => {
-                    setKnowledgeEditorOpen((current) => !current);
-                  }}
-                >
-                  {showKnowledgeEditor ? "Hide URL editor" : "Edit URL"}
-                </Button>
-                {showKnowledgeEditor ? (
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <label htmlFor="project-ai-knowledge-url" className="sr-only">
-                      AI knowledge URL
-                    </label>
-                    <Input
-                      id="project-ai-knowledge-url"
-                      value={knowledgeDraft}
-                      onChange={(event) => {
-                        setKnowledgeDraft(event.target.value);
-                        setActivationMessage(null);
-                      }}
-                      disabled={knowledgePending}
-                      placeholder="https://..."
-                      className="font-mono text-[13px]"
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        handleSaveKnowledgeUrl();
-                      }}
-                      disabled={knowledgePending || !knowledgeDirty}
-                    >
-                      Save URL
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            {showKnowledgeStalenessWarning ? (
-              <div className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
-                <span>Knowledge synced {String(staleDays)} days ago. Resync?</span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={handleKnowledgeSync}
-                  disabled={knowledgePending}
-                >
-                  Resync
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <ProjectAiKnowledgeSection
+          projectId={project.projectId}
+          isAdmin={project.isAdmin}
+          initialSources={project.aiKnowledgeSources}
+          initialOperatingContext={project.aiOperatingContext}
+          aiOptimizedSynthesizedAt={project.aiOptimizedSynthesizedAt}
+          aiKnowledgeSynthesisStale={project.aiKnowledgeSynthesisStale}
+        />
 
         <div className="flex flex-col gap-4">
           <span className={TYPE.label}>Email signatures</span>

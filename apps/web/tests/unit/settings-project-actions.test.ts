@@ -112,7 +112,7 @@ describe("settings project actions", () => {
     runtime = null;
   });
 
-  it("requires a Notion URL before direct activation", async () => {
+  it("allows activation without a Notion URL", async () => {
     if (!runtime) throw new Error("runtime not initialized");
 
     await seedProject(runtime, {
@@ -125,10 +125,10 @@ describe("settings project actions", () => {
     const result = await activateProjectAction("project:no-url");
 
     expect(result).toMatchObject({
-      ok: false,
-      code: "requirements_not_met",
-      fieldErrors: {
-        aiKnowledgeUrl: "Set a Notion page URL before activating this project.",
+      ok: true,
+      data: {
+        projectId: "project:no-url",
+        isActive: true,
       },
     });
   });

@@ -17,7 +17,8 @@ export interface WizardState {
   readonly aliasDraft: string;
   readonly aliases: readonly AliasDraft[];
   readonly signatureDraft: string;
-  readonly notionUrl: string;
+  readonly knowledgeSourcesText: string;
+  readonly skipKnowledgeSetup: boolean;
   readonly knowledgeStatus: KnowledgeStatus;
   readonly knowledgeMessage: string | null;
   readonly activationStatus: "idle" | "pending" | "error";
@@ -35,7 +36,8 @@ export type WizardAction =
   | { readonly type: "remove-alias"; readonly address: string }
   | { readonly type: "make-primary"; readonly address: string }
   | { readonly type: "set-signature"; readonly signatureDraft: string }
-  | { readonly type: "set-notion-url"; readonly notionUrl: string }
+  | { readonly type: "set-knowledge-sources-text"; readonly value: string }
+  | { readonly type: "set-skip-knowledge-setup"; readonly checked: boolean }
   | { readonly type: "sync-start" }
   | { readonly type: "sync-done" }
   | { readonly type: "sync-error"; readonly message: string }
@@ -56,7 +58,8 @@ export function createInitialState(
     aliasDraft: buildInitialAliasDraft(initialProject),
     aliases: buildInitialAliases(initialProject),
     signatureDraft: "",
-    notionUrl: initialProject?.aiKnowledgeUrl ?? "",
+    knowledgeSourcesText: initialProject?.aiKnowledgeUrl ?? "",
+    skipKnowledgeSetup: false,
     knowledgeStatus: "idle",
     knowledgeMessage: null,
     activationStatus: "idle",
@@ -127,7 +130,8 @@ export function activationWizardReducer(
         aliasDraft: buildInitialAliasDraft(action.project),
         aliases: buildInitialAliases(action.project),
         signatureDraft: "",
-        notionUrl: action.project.aiKnowledgeUrl ?? "",
+        knowledgeSourcesText: action.project.aiKnowledgeUrl ?? "",
+        skipKnowledgeSetup: false,
         knowledgeStatus: "idle",
         knowledgeMessage: null,
         activationStatus: "idle",
@@ -197,14 +201,22 @@ export function activationWizardReducer(
         activationMessage: null,
         activationStatus: "idle"
       };
-    case "set-notion-url":
-      if (state.notionUrl === action.notionUrl) {
+    case "set-knowledge-sources-text":
+      if (state.knowledgeSourcesText === action.value) {
         return state;
       }
 
       return {
         ...resetKnowledgeState(state),
-        notionUrl: action.notionUrl,
+        knowledgeSourcesText: action.value,
+        skipKnowledgeSetup: false,
+        activationMessage: null,
+        activationStatus: "idle"
+      };
+    case "set-skip-knowledge-setup":
+      return {
+        ...resetKnowledgeState(state),
+        skipKnowledgeSetup: action.checked,
         activationMessage: null,
         activationStatus: "idle"
       };
