@@ -588,7 +588,7 @@ export function InboxList({
             className={cn(
               "relative size-8 shrink-0",
               isFilterPaneOpen
-                ? "bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+                ? "bg-[#abb8c3] text-slate-900 hover:bg-[#abb8c3] hover:text-slate-900"
                 : hasActiveFilters
                   ? "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
                   : "text-slate-900 hover:bg-slate-100 hover:text-slate-950",
