@@ -193,7 +193,7 @@ type RoutingResolutionDecision =
 
 export type NormalizedSourceEvidenceResult =
   | {
-      readonly outcome: "inserted" | "duplicate";
+      readonly outcome: "inserted" | "duplicate" | "superseded";
       readonly record: SourceEvidenceRecord;
       readonly auditEvidence: null;
     }

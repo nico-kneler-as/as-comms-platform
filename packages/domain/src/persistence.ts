@@ -40,6 +40,10 @@ import {
 } from "@as-comms/contracts";
 
 import type { Stage1RepositoryBundle } from "./repositories.js";
+import {
+  decideSourceEvidenceSupersede,
+  sameSourceEvidenceRecord,
+} from "./source-evidence-supersede-policy.js";
 
 export type SourceEvidenceConflictReason =
   | "idempotency_key_mismatch"
@@ -49,7 +53,7 @@ export type CanonicalEventConflictReason = "idempotency_key_mismatch";
 
 export type SourceEvidenceWriteResult =
   | {
-      readonly outcome: "inserted" | "duplicate";
+      readonly outcome: "inserted" | "duplicate" | "superseded";
       readonly record: SourceEvidenceRecord;
     }
   | {
@@ -137,20 +141,6 @@ function arraysEqual(
   }
 
   return left.every((value, index) => value === right[index]);
-}
-
-function sameSourceEvidenceRecord(
-  incoming: SourceEvidenceRecord,
-  existing: SourceEvidenceRecord
-): boolean {
-  return (
-    incoming.provider === existing.provider &&
-    incoming.providerRecordType === existing.providerRecordType &&
-    incoming.providerRecordId === existing.providerRecordId &&
-    incoming.occurredAt === existing.occurredAt &&
-    incoming.idempotencyKey === existing.idempotencyKey &&
-    incoming.checksum === existing.checksum
-  );
 }
 
 function sameCanonicalEventRecord(
@@ -243,28 +233,38 @@ export function createStage1PersistenceService(
         );
 
       if (existingByIdempotency) {
-        if (sameSourceEvidenceRecord(parsed, existingByIdempotency)) {
+        const decision = decideSourceEvidenceSupersede(
+          existingByIdempotency,
+          parsed
+        );
+
+        if (decision.kind === "duplicate") {
           return {
             outcome: "duplicate",
             record: existingByIdempotency
           };
         }
 
+        // Supersede: park the prior canonical in quarantine for audit, then
+        // replace canonical in place. The replacement preserves the existing
+        // row id so downstream FK references (canonical_event_ledger and the
+        // *_details tables that join on source_evidence_id) stay valid.
         await repositories.sourceEvidenceQuarantine.record({
-          provider: parsed.provider,
-          idempotencyKey: parsed.idempotencyKey,
-          checksum: parsed.checksum,
+          provider: existingByIdempotency.provider,
+          idempotencyKey: existingByIdempotency.idempotencyKey,
+          checksum: existingByIdempotency.checksum,
           attemptedAt: new Date(parsed.receivedAt),
-          reason: "checksum_mismatch",
-          payloadRef: parsed.payloadRef,
-          details: buildSourceEvidenceQuarantineDetails(parsed)
+          reason: "superseded_canonical",
+          payloadRef: existingByIdempotency.payloadRef,
+          details: buildSourceEvidenceQuarantineDetails(existingByIdempotency)
         });
 
+        const updated =
+          await repositories.sourceEvidence.replaceByIdempotencyKey(parsed);
+
         return {
-          outcome: "conflict",
-          incoming: parsed,
-          conflictingRecords: [existingByIdempotency],
-          reason: "idempotency_key_mismatch"
+          outcome: "superseded",
+          record: updated
         };
       }
 

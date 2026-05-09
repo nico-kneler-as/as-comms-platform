@@ -295,7 +295,7 @@ function buildContext(input: {
     idempotencyKey: string;
     checksum: string;
     attemptedAt: Date;
-    reason: "checksum_mismatch";
+    reason: "checksum_mismatch" | "superseded_canonical";
     payloadRef: string;
     details: Readonly<Record<string, unknown>>;
     createdAt: Date;
@@ -309,6 +309,15 @@ function buildContext(input: {
         sourceEvidenceById.set(record.id, record);
         sourceEvidenceByIdempotencyKey.set(record.idempotencyKey, record);
         return Promise.resolve(record);
+      },
+      replaceByIdempotencyKey: (record) => {
+        const existing = sourceEvidenceByIdempotencyKey.get(
+          record.idempotencyKey,
+        );
+        const updated = existing === undefined ? record : { ...record, id: existing.id };
+        sourceEvidenceById.set(updated.id, updated);
+        sourceEvidenceByIdempotencyKey.set(updated.idempotencyKey, updated);
+        return Promise.resolve(updated);
       },
       findById: (id) => Promise.resolve(sourceEvidenceById.get(id) ?? null),
       listByIds: (ids) =>

@@ -32,6 +32,7 @@ function buildRepositoryBundle(input: {
   return defineStage1RepositoryBundle({
     sourceEvidence: {
       append: (record) => Promise.resolve(record),
+      replaceByIdempotencyKey: (record) => Promise.resolve(record),
       findById: () => Promise.resolve(null),
       listByIds: () => Promise.resolve([]),
       findByIdempotencyKey: () => Promise.resolve(null),
