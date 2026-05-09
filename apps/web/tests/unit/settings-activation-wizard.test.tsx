@@ -73,9 +73,10 @@ function renderStep(input: {
   if (!root) {
     throw new Error("root not initialized");
   }
+  const activeRoot = root;
 
   act(() => {
-    root.render(
+    activeRoot.render(
       <StepKnowledge
         knowledgeSourcesText={input.knowledgeSourcesText ?? ""}
         skipKnowledgeSetup={input.skipKnowledgeSetup ?? false}
