@@ -1232,6 +1232,34 @@ function createStage1RepositoriesInternal(
         );
       },
 
+      async replaceByIdempotencyKey(record) {
+        const values = mapSourceEvidenceToInsert(record);
+        const [updated] = await db
+          .update(sourceEvidenceLog)
+          .set({
+            providerRecordType: values.providerRecordType,
+            providerRecordId: values.providerRecordId,
+            receivedAt: values.receivedAt,
+            occurredAt: values.occurredAt,
+            payloadRef: values.payloadRef,
+            checksum: values.checksum,
+          })
+          .where(
+            and(
+              eq(sourceEvidenceLog.provider, values.provider),
+              eq(sourceEvidenceLog.idempotencyKey, values.idempotencyKey),
+            ),
+          )
+          .returning();
+
+        return mapSourceEvidenceRow(
+          requireRow(
+            updated,
+            "Expected an existing source evidence row to replace by idempotency key.",
+          ),
+        );
+      },
+
       async findById(id) {
         const [row] = await db
           .select()

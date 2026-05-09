@@ -37,8 +37,20 @@ import type {
   SmsSenderRecord,
 } from "./records.js";
 
+export type SourceEvidenceQuarantineReason =
+  | "checksum_mismatch"
+  | "superseded_canonical";
+
 export interface SourceEvidenceRepository {
   append(record: SourceEvidenceRecord): Promise<SourceEvidenceRecord>;
+  // Replaces the canonical row matched by (provider, idempotency_key) with
+  // the incoming record's mutable fields, preserving the existing row id.
+  // Used by the supersede branch in recordSourceEvidence so downstream FK
+  // references to source_evidence_id stay valid across capture-mapper
+  // refinements.
+  replaceByIdempotencyKey(
+    record: SourceEvidenceRecord,
+  ): Promise<SourceEvidenceRecord>;
   findById(id: string): Promise<SourceEvidenceRecord | null>;
   listByIds(ids: readonly string[]): Promise<readonly SourceEvidenceRecord[]>;
   findByIdempotencyKey(
@@ -64,7 +76,7 @@ export interface SourceEvidenceQuarantineInput {
   readonly idempotencyKey: string;
   readonly checksum: string;
   readonly attemptedAt: Date;
-  readonly reason: "checksum_mismatch";
+  readonly reason: SourceEvidenceQuarantineReason;
   readonly payloadRef: string;
   readonly details: Readonly<Record<string, unknown>>;
 }

@@ -126,50 +126,64 @@ describe("Stage 1 persistence service", () => {
     });
   });
 
-  it("recordSourceEvidence quarantines a different-checksum collision and returns conflict", async () => {
+  it("recordSourceEvidence supersedes a different-checksum collision and parks the prior canonical", async () => {
     const { persistence, repositories } = await createTestStage1Context();
 
     const firstResult = await persistence.recordSourceEvidence({
-      id: "sev_quarantine_winner",
+      id: "sev_supersede_prior",
       provider: "gmail",
       providerRecordType: "message",
-      providerRecordId: "gmail-quarantine-winner",
+      providerRecordId: "gmail-supersede-target",
       receivedAt: "2026-01-03T00:01:00.000Z",
       occurredAt: "2026-01-03T00:00:00.000Z",
-      payloadRef: "payloads/gmail/gmail-quarantine-winner.json",
-      idempotencyKey: "gmail:message:gmail-quarantine",
+      payloadRef: "payloads/gmail/gmail-supersede-prior.json",
+      idempotencyKey: "gmail:message:gmail-supersede",
       checksum: "checksum-a"
     });
 
     if (firstResult.outcome !== "inserted") {
-      throw new Error("Expected the winning source evidence row to insert.");
+      throw new Error("Expected the prior canonical row to insert.");
     }
 
     const result = await persistence.recordSourceEvidence({
-      id: "sev_quarantine_loser",
+      id: "sev_supersede_corrected",
       provider: "gmail",
       providerRecordType: "message",
-      providerRecordId: "gmail-quarantine-winner",
+      providerRecordId: "gmail-supersede-target",
       receivedAt: "2026-01-03T00:02:00.000Z",
       occurredAt: "2026-01-03T00:00:00.000Z",
-      payloadRef: "payloads/gmail/gmail-quarantine-loser.json",
-      idempotencyKey: "gmail:message:gmail-quarantine",
+      payloadRef: "payloads/gmail/gmail-supersede-corrected.json",
+      idempotencyKey: "gmail:message:gmail-supersede",
       checksum: "checksum-b"
     });
 
-    expect(result.outcome).toBe("conflict");
-    if (result.outcome === "conflict") {
-      expect(result.reason).toBe("idempotency_key_mismatch");
-      expect(result.conflictingRecords).toEqual([firstResult.record]);
+    expect(result.outcome).toBe("superseded");
+    if (result.outcome === "superseded") {
+      // Canonical row id is preserved across supersede so downstream FK
+      // references (canonical_event_ledger.source_evidence_id, *_details
+      // tables joined on source_evidence_id) stay valid.
+      expect(result.record.id).toBe(firstResult.record.id);
+      expect(result.record.checksum).toBe("checksum-b");
+      expect(result.record.payloadRef).toBe(
+        "payloads/gmail/gmail-supersede-corrected.json"
+      );
+      expect(result.record.receivedAt).toBe("2026-01-03T00:02:00.000Z");
     }
+
+    const canonicalAfterSupersede =
+      await persistence.findSourceEvidenceByIdempotencyKey(
+        "gmail:message:gmail-supersede"
+      );
+    expect(canonicalAfterSupersede?.id).toBe(firstResult.record.id);
+    expect(canonicalAfterSupersede?.checksum).toBe("checksum-b");
 
     await expect(
       repositories.sourceEvidence.listByProviderRecord({
         provider: "gmail",
         providerRecordType: "message",
-        providerRecordId: "gmail-quarantine-winner"
+        providerRecordId: "gmail-supersede-target"
       })
-    ).resolves.toEqual([firstResult.record]);
+    ).resolves.toEqual([canonicalAfterSupersede]);
 
     const quarantineRows = await repositories.sourceEvidenceQuarantine.listRecent({
       limit: 10
@@ -177,20 +191,73 @@ describe("Stage 1 persistence service", () => {
     expect(quarantineRows.entries).toHaveLength(1);
     expect(quarantineRows.entries[0]).toMatchObject({
       provider: "gmail",
-      idempotencyKey: "gmail:message:gmail-quarantine",
-      checksum: "checksum-b",
+      idempotencyKey: "gmail:message:gmail-supersede",
+      checksum: "checksum-a",
       attemptedAt: new Date("2026-01-03T00:02:00.000Z"),
-      reason: "checksum_mismatch",
-      payloadRef: "payloads/gmail/gmail-quarantine-loser.json",
+      reason: "superseded_canonical",
+      payloadRef: "payloads/gmail/gmail-supersede-prior.json",
       details: {
         provider: "gmail",
         providerRecordType: "message",
-        providerRecordId: "gmail-quarantine-winner",
-        payloadRef: "payloads/gmail/gmail-quarantine-loser.json",
-        idempotencyKey: "gmail:message:gmail-quarantine",
-        checksum: "checksum-b"
+        providerRecordId: "gmail-supersede-target",
+        payloadRef: "payloads/gmail/gmail-supersede-prior.json",
+        idempotencyKey: "gmail:message:gmail-supersede",
+        checksum: "checksum-a"
       }
     });
+  });
+
+  it("recordSourceEvidence supersede is idempotent across repeated checksum-stable replays", async () => {
+    const { persistence, repositories } = await createTestStage1Context();
+
+    await persistence.recordSourceEvidence({
+      id: "sev_idemp_prior",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-idemp",
+      receivedAt: "2026-01-03T00:01:00.000Z",
+      occurredAt: "2026-01-03T00:00:00.000Z",
+      payloadRef: "payloads/gmail/gmail-idemp-prior.json",
+      idempotencyKey: "gmail:message:gmail-idemp",
+      checksum: "checksum-old"
+    });
+
+    const supersedeResult = await persistence.recordSourceEvidence({
+      id: "sev_idemp_corrected",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-idemp",
+      receivedAt: "2026-01-03T00:02:00.000Z",
+      occurredAt: "2026-01-03T00:00:00.000Z",
+      payloadRef: "payloads/gmail/gmail-idemp-corrected.json",
+      idempotencyKey: "gmail:message:gmail-idemp",
+      checksum: "checksum-new"
+    });
+
+    expect(supersedeResult.outcome).toBe("superseded");
+
+    // A subsequent replay of the same corrected payload must come back as a
+    // duplicate, not another supersede; otherwise quarantine would grow on
+    // every live-poll cycle that re-fetches a stable corrected record.
+    const replayResult = await persistence.recordSourceEvidence({
+      id: "sev_idemp_replay",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-idemp",
+      receivedAt: "2026-01-03T00:03:00.000Z",
+      occurredAt: "2026-01-03T00:00:00.000Z",
+      payloadRef: "payloads/gmail/gmail-idemp-corrected.json",
+      idempotencyKey: "gmail:message:gmail-idemp",
+      checksum: "checksum-new"
+    });
+
+    expect(replayResult.outcome).toBe("duplicate");
+
+    const quarantineRows = await repositories.sourceEvidenceQuarantine.listRecent({
+      limit: 10
+    });
+    expect(quarantineRows.entries).toHaveLength(1);
+    expect(quarantineRows.entries[0]?.reason).toBe("superseded_canonical");
   });
 
   it("recordSourceEvidence handles DB-layer race losers via post-append re-read", async () => {
