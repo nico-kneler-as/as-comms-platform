@@ -498,7 +498,11 @@ Alias drift outbound message.
           source: "salesforce",
           isActive: false,
           aiKnowledgeUrl: null,
-          aiKnowledgeSyncedAt: null
+          aiKnowledgeSyncedAt: null,
+          aiKnowledgeSources: [],
+          aiOperatingContext: "",
+          aiOptimizedSynthesizedAt: null,
+          aiOptimizedInputHash: null
         }
       ]);
       await expect(

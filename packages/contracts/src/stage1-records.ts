@@ -157,8 +157,48 @@ export const projectDimensionSchema = z.object({
   isActive: z.boolean().optional(),
   aiKnowledgeUrl: nullableStringSchema.optional(),
   aiKnowledgeSyncedAt: optionalTimestampSchema.optional(),
+  aiKnowledgeSources: z.lazy(() => aiKnowledgeSourcesSchema).optional(),
+  aiOperatingContext: z.string().optional(),
+  aiOptimizedSynthesizedAt: optionalTimestampSchema.optional(),
+  aiOptimizedInputHash: nullableStringSchema.optional(),
 });
 export type ProjectDimensionRecord = z.infer<typeof projectDimensionSchema>;
+
+export const aiKnowledgeSourceKindSchema = z.enum([
+  "notion",
+  "web_page",
+  "inline_text",
+]);
+export type AiKnowledgeSourceKind = z.infer<typeof aiKnowledgeSourceKindSchema>;
+
+export const aiKnowledgeSourceSyncStatusSchema = z.enum([
+  "pending",
+  "healthy",
+  "stale",
+  "broken",
+]);
+export type AiKnowledgeSourceSyncStatus = z.infer<
+  typeof aiKnowledgeSourceSyncStatusSchema
+>;
+
+export const aiKnowledgeSourceSchema = z.object({
+  id: z.string().uuid(),
+  url: z.string().url(),
+  kind: aiKnowledgeSourceKindSchema,
+  label: z.string().nullable(),
+  enabled: z.boolean(),
+  last_synced_at: z.string().datetime().nullable(),
+  last_sync_status: aiKnowledgeSourceSyncStatusSchema.nullable(),
+  last_sync_error: z.string().nullable(),
+  source_id: z.string().nullable(),
+  source_content_hash: z.string().nullable(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+export type AiKnowledgeSource = z.infer<typeof aiKnowledgeSourceSchema>;
+
+export const aiKnowledgeSourcesSchema = z.array(aiKnowledgeSourceSchema);
+export type AiKnowledgeSources = z.infer<typeof aiKnowledgeSourcesSchema>;
 
 export const aiKnowledgeEntrySchema = z.object({
   id: idSchema,

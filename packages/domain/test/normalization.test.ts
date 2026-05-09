@@ -500,6 +500,10 @@ function buildContext(input: {
       listAll: () => Promise.resolve([]),
       listActive: () => Promise.resolve([]),
       listByIds: () => Promise.resolve([]),
+      getAiKnowledgeSources: () => Promise.resolve([]),
+      setAiKnowledgeSources: () => Promise.resolve(),
+      updateOperatingContext: () => Promise.resolve(),
+      setSynthesisMetadata: () => Promise.resolve(),
       upsert: (record: ProjectDimensionRecord) => {
         input.onProjectDimensionUpsert?.(record);
         return Promise.resolve(record);
