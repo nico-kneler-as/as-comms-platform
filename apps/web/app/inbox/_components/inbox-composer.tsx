@@ -37,17 +37,14 @@ import { useComposerDraftState } from "../_hooks/use-composer-draft-state";
 import { useComposerSubmit } from "../_hooks/use-composer-submit";
 
 export function InboxComposerReplyBar({
-  contactDisplayName,
   onReply,
   onNote,
 }: {
-  readonly contactDisplayName: string;
   readonly onReply: () => void;
   readonly onNote?: () => void;
 }) {
   return (
     <ComposerCollapsedPill
-      personName={contactDisplayName}
       onExpand={onReply}
       onNote={onNote ?? onReply}
     />
@@ -59,9 +56,12 @@ function resolveReplyTitle(input: {
   readonly fallbackName: string;
 }): string {
   const subject = input.subject?.trim() ?? "";
-  const base = subject.length > 0 ? subject : input.fallbackName;
 
-  return /^re:/iu.test(base) ? base : `Re: ${base}`;
+  if (subject.length === 0) {
+    return `New message to ${input.fallbackName}`;
+  }
+
+  return /^re:/iu.test(subject) ? subject : `Re: ${subject}`;
 }
 
 function ComposerModeTabs({

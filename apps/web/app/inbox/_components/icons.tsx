@@ -20,6 +20,7 @@ export {
   Mail as MailIcon,
   Phone as PhoneIcon,
   FileText as NoteIcon,
+  Pin as PinIcon,
   Sparkle as SparkleIcon,
   Sparkles as SparklesIcon,
   BookOpen as BookOpenIcon,

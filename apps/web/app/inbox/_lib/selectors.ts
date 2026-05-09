@@ -2599,7 +2599,21 @@ function buildComposerReplyContext(input: {
   );
 
   if (latestInboundEmail === undefined) {
-    return null;
+    // Fresh-draft path: contacts whose timeline only contains lifecycle or
+    // automated-outbound entries get a synthetic context with empty subject
+    // and null threading fields. The composer modal renders this as a new
+    // message rather than a reply (see `resolveReplyTitle`).
+    return {
+      contactId: input.contact.id,
+      contactDisplayName: input.contact.displayName,
+      contactPrimaryPhone: input.contact.primaryPhone,
+      subject: "",
+      threadCursor: null,
+      threadId: null,
+      inReplyToRfc822: null,
+      defaultAlias: input.defaultAlias,
+      cc: [],
+    };
   }
 
   return {
