@@ -48,7 +48,16 @@ const MAILCHIMP_SENT_SNIPPET_MAX = 8_000
 const mailchimpCaptureServiceResponseSchema =
   createCapturedBatchResponseSchema(mailchimpRecordSchema)
 const jsonObjectSchema = z.record(z.string(), z.unknown())
-const nullableStringSchema = z.string().min(1).nullable()
+
+// Mailchimp's Marketing API returns empty strings (not null) for optional
+// campaign fields like subject_line, preview_text, send_time when they're
+// unset (e.g., test campaigns or auto-generated emails). A strict
+// `z.string().min(1).nullable()` rejects these and 400s the entire batch
+// (observed 2026-05-09: one campaign with subject_line="" stalled the
+// scheduler for 24+ hours). Coerce empty strings to null at parse time.
+const nullableStringSchema = z
+  .union([z.string(), z.null()])
+  .transform((value) => (value !== null && value.length > 0 ? value : null))
 
 const mailchimpCaptureServiceConfigSchema = z.object({
   bearerToken: z.string().min(1),
