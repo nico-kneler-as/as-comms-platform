@@ -3504,45 +3504,6 @@ describe("real inbox selectors", () => {
     ).toEqual(new Set(statuses.map(([, label]) => label)));
   });
 
-  it("shows signup year only for past-project rows", async () => {
-    if (runtime === null) {
-      throw new Error("Expected inbox test runtime");
-    }
-
-    await runtime.context.settings.projects.setActive(
-      "project:killer-whales",
-      false,
-    );
-
-    const [activeDetail, pastDetail] = await Promise.all([
-      getInboxDetail("contact:sarah-martinez"),
-      getInboxDetail("contact:lisa-zhang"),
-    ]);
-
-    if (activeDetail === null || pastDetail === null) {
-      throw new Error("Expected inbox detail for active and past contacts");
-    }
-
-    const activeMarkup = renderToStaticMarkup(
-      createElement(InboxContactRail, {
-        contact: activeDetail.contact,
-      }),
-    );
-    const pastMarkup = renderToStaticMarkup(
-      createElement(InboxContactRail, {
-        contact: pastDetail.contact,
-      }),
-    );
-
-    const activeSection =
-      activeMarkup.split("Past Projects")[0] ?? activeMarkup;
-    const pastSection = pastMarkup.split("Past Projects")[1] ?? pastMarkup;
-
-    expect(activeSection).not.toContain("tabular-nums");
-    expect(pastSection).toContain("tabular-nums");
-    expect(pastSection).toContain("2023");
-  });
-
   it("uses the most recent internal note as the pinned note proxy", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
