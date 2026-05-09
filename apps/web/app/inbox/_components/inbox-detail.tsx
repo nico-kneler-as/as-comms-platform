@@ -462,7 +462,6 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
         <div className="shrink-0">
           {composerReplyContext ? (
             <InboxComposerReplyBar
-              contactDisplayName={contact.displayName}
               onReply={() => {
                 openReplyDraft(composerReplyContext);
               }}

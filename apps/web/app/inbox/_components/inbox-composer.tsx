@@ -37,17 +37,14 @@ import { useComposerDraftState } from "../_hooks/use-composer-draft-state";
 import { useComposerSubmit } from "../_hooks/use-composer-submit";
 
 export function InboxComposerReplyBar({
-  contactDisplayName,
   onReply,
   onNote,
 }: {
-  readonly contactDisplayName: string;
   readonly onReply: () => void;
   readonly onNote?: () => void;
 }) {
   return (
     <ComposerCollapsedPill
-      personName={contactDisplayName}
       onExpand={onReply}
       onNote={onNote ?? onReply}
     />
