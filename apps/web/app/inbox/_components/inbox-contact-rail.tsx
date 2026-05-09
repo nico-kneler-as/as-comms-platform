@@ -195,8 +195,6 @@ interface ProjectsSectionProps {
 }
 
 function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) {
-  const isPastSection = title === "Past Projects";
-
   return (
     <section className={`border-b border-slate-200 ${SPACING.section}`}>
       <SectionLabel as="h3">
@@ -217,14 +215,6 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
                     {project.projectName}
                   </p>
                   <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-                    {isPastSection && project.signupYear !== null ? (
-                      <>
-                        <span className="tabular-nums">
-                          {project.signupYear.toString()}
-                        </span>
-                        <span className="text-slate-300">·</span>
-                      </>
-                    ) : null}
                     <InboxProjectStatusBadge
                       status={project.status}
                       label={project.statusLabel}

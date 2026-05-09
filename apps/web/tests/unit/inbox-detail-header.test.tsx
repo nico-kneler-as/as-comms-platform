@@ -155,7 +155,6 @@ function buildDetail(
           membershipId: "membership-1",
           projectId: "project-1",
           projectName: "Amazon Basin",
-          signupYear: 2026,
           projectIsActive: true,
           status: "in-field",
           statusLabel: "Active",
