@@ -106,14 +106,26 @@ export function buildLoadQuarantineSql(input: {
   // collision set, we replay the most recent loser — earlier losers either had
   // an identical checksum (already represented) or were superseded by the
   // newer one upstream in SF.
-  return `SELECT DISTINCT ON (idempotency_key)
-  idempotency_key,
-  provider,
-  attempted_at,
-  details_jsonb
-FROM source_evidence_quarantine
-WHERE ${where}
-ORDER BY idempotency_key, attempted_at DESC${limitClause}`;
+  //
+  // The NOT EXISTS clause skips keys whose most-recent loser has already been
+  // propagated forward — i.e. there's a `superseded_canonical` audit row at
+  // or after that loser's attempted_at. Without this, every re-run wastes
+  // budget churning through already-done keys as duplicates.
+  return `SELECT DISTINCT ON (q.idempotency_key)
+  q.idempotency_key,
+  q.provider,
+  q.attempted_at,
+  q.details_jsonb
+FROM source_evidence_quarantine q
+WHERE ${where.replaceAll("provider =", "q.provider =").replaceAll("idempotency_key LIKE", "q.idempotency_key LIKE").replaceAll("reason =", "q.reason =")}
+  AND NOT EXISTS (
+    SELECT 1
+    FROM source_evidence_quarantine resolved
+    WHERE resolved.idempotency_key = q.idempotency_key
+      AND resolved.reason = 'superseded_canonical'
+      AND resolved.attempted_at >= q.attempted_at
+  )
+ORDER BY q.idempotency_key, q.attempted_at DESC${limitClause}`;
 }
 
 export async function loadReconcileTargets(input: {

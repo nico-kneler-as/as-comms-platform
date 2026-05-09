@@ -85,20 +85,31 @@ describe("reconcile-stale-canonical", () => {
         recordType: null,
         limit: null,
       });
-      expect(sqlAll).toContain("reason = 'checksum_mismatch'");
-      expect(sqlAll).not.toContain("provider =");
-      expect(sqlAll).not.toContain("LIKE");
+      expect(sqlAll).toContain("q.reason = 'checksum_mismatch'");
+      expect(sqlAll).not.toContain("q.provider =");
+      expect(sqlAll).not.toContain("idempotency_key LIKE");
 
       const sqlScoped = buildLoadQuarantineSql({
         provider: "salesforce",
         recordType: "lifecycle_milestone",
         limit: 250,
       });
-      expect(sqlScoped).toContain("provider = 'salesforce'");
+      expect(sqlScoped).toContain("q.provider = 'salesforce'");
       expect(sqlScoped).toContain(
-        "idempotency_key LIKE 'source-evidence:%:lifecycle_milestone:%'",
+        "q.idempotency_key LIKE 'source-evidence:%:lifecycle_milestone:%'",
       );
       expect(sqlScoped).toContain("LIMIT 250");
+    });
+
+    it("skips keys already propagated forward via a superseded_canonical row", () => {
+      const sql = buildLoadQuarantineSql({
+        provider: null,
+        recordType: null,
+        limit: null,
+      });
+      expect(sql).toContain("NOT EXISTS");
+      expect(sql).toContain("resolved.reason = 'superseded_canonical'");
+      expect(sql).toContain("resolved.attempted_at >= q.attempted_at");
     });
 
     it("escapes single quotes in filters", () => {
@@ -107,7 +118,7 @@ describe("reconcile-stale-canonical", () => {
         recordType: null,
         limit: null,
       });
-      expect(sql).toContain("provider = 'sales''force'");
+      expect(sql).toContain("q.provider = 'sales''force'");
     });
   });
 
