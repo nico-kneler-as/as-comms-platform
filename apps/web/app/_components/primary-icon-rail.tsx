@@ -98,7 +98,7 @@ export function PrimaryIconRail({
             const active = isActive(pathname, item.activePrefixes);
             const baseClass = `flex size-10 items-center justify-center ${RADIUS.lg} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
               active
-                ? "bg-slate-900 text-white"
+                ? "bg-[#abb8c3] text-slate-900"
                 : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
             }`;
 
@@ -158,36 +158,25 @@ function OperatorMenu({
           type="button"
           aria-label={`${operator.displayName} · account menu`}
           className={cn(
-            "group mt-2 flex h-10 items-center gap-2 overflow-hidden border border-slate-200 bg-white pl-0.5 pr-2 text-left text-slate-700",
+            "mt-2 grid size-10 place-items-center border border-slate-200 bg-white text-slate-700",
             RADIUS.full,
             SHADOW.sm,
-            TRANSITION.layout,
+            TRANSITION.fast,
             TRANSITION.reduceMotion,
             FOCUS_RING,
-            open
-              ? "w-44 border-slate-300 shadow-md"
-              : "w-10 hover:w-44 hover:border-slate-300 hover:shadow-md focus-visible:w-44"
+            "hover:border-slate-300 hover:shadow-md",
+            open && "border-slate-300 shadow-md"
           )}
         >
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
+          <span className="flex size-9 items-center justify-center rounded-full bg-[#abb8c3] text-[11px] font-semibold text-slate-900">
             {operator.initials}
-          </span>
-          <span
-            className={cn(
-              "min-w-0 overflow-hidden whitespace-nowrap text-xs font-medium transition-all duration-200 ease-out motion-reduce:transition-none",
-              open
-                ? "max-w-24 opacity-100"
-                : "max-w-0 opacity-0 group-hover:max-w-24 group-hover:opacity-100 group-focus-visible:max-w-24 group-focus-visible:opacity-100"
-            )}
-          >
-            {operator.displayName}
           </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="end" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <div className="flex items-center gap-3">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#abb8c3] text-[11px] font-semibold text-slate-900">
               {operator.initials}
             </div>
             <div className="min-w-0">

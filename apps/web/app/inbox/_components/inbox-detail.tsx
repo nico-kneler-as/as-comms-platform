@@ -324,13 +324,13 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
               className="size-7 text-[11px]"
             />
             <div className="min-w-0">
-              <h1 className="truncate text-base font-semibold leading-tight text-slate-900 text-balance">
+              <h1 className="truncate text-sm font-semibold leading-tight text-slate-900 text-balance">
                 {contact.displayName}
               </h1>
               {headerProject ? (
                 <div className="mt-0.5 flex min-w-0 items-center gap-2">
                   <span
-                    className="min-w-0 truncate text-[13px] font-medium leading-none text-slate-500"
+                    className="min-w-0 truncate text-[12px] font-medium leading-none text-slate-500"
                     title={
                       "source" in headerProject &&
                       headerProject.source === "conversation"

@@ -229,3 +229,18 @@ export const SPACING = {
 
 export const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1" as const;
+
+// ─── Brand ──────────────────────────────────────────────────────────────────
+//
+// Adventure Scientists muted-slate brand color. Replaces near-black
+// (`bg-slate-900` / logo PNG fill) on icon backgrounds, primary buttons, the
+// operator avatar, and the company logo.
+
+export const BRAND = {
+  /** Hex value — for inline `style` and CSS mask color. */
+  neutral: "#abb8c3",
+  /** Tailwind background class. */
+  bg: "bg-[#abb8c3]",
+  /** Tailwind text color class. */
+  text: "text-[#abb8c3]",
+} as const;
