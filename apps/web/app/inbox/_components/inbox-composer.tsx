@@ -56,9 +56,12 @@ function resolveReplyTitle(input: {
   readonly fallbackName: string;
 }): string {
   const subject = input.subject?.trim() ?? "";
-  const base = subject.length > 0 ? subject : input.fallbackName;
 
-  return /^re:/iu.test(base) ? base : `Re: ${base}`;
+  if (subject.length === 0) {
+    return `New message to ${input.fallbackName}`;
+  }
+
+  return /^re:/iu.test(subject) ? subject : `Re: ${subject}`;
 }
 
 function ComposerModeTabs({

@@ -3204,7 +3204,16 @@ describe("real inbox selectors", () => {
     expect(detail?.timeline.map((entry) => entry.subject)).toEqual([
       "Visible outbound",
     ]);
-    expect(detail?.composerReplyContext).toBeNull();
+    // Pre-cutover inbound is filtered out, but the bar still renders as a
+    // fresh-draft entry — synthetic context with empty subject + null
+    // threading is the signal the modal uses to title itself
+    // "New message to ..." instead of "Re: ...".
+    expect(detail?.composerReplyContext).toMatchObject({
+      contactId: "contact:cutover-reply",
+      subject: "",
+      threadId: null,
+      inReplyToRfc822: null,
+    });
   });
 
   it("renders the contact rail project row as a single expedition-member anchor with a hover affordance", async () => {
