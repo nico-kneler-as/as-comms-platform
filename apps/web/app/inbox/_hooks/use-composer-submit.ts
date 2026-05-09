@@ -1,6 +1,8 @@
 import type { Dispatch, TransitionStartFunction } from "react";
 import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
 
+import { smsMetrics } from "@as-comms/domain/sms-segments";
+
 import {
   createNoteAction,
   sendComposerAction,
@@ -77,10 +79,6 @@ function toOptimisticAttachment(attachment: AttachmentDraft, index: number) {
         ? ""
         : `data:${attachment.contentType};base64,${attachment.contentBase64}`,
   };
-}
-
-function appendComposerSignature(body: string, signature: string): string {
-  return signature.length > 0 ? `${body}\n\n${signature}` : body;
 }
 
 export function useComposerSubmit({
@@ -353,6 +351,16 @@ export function useComposerSubmit({
       return;
     }
 
+    if (smsMetrics(body).length > 320) {
+      const message = "SMS messages are limited to 320 encoded characters.";
+      setErrors({
+        message,
+        retryable: false,
+        fieldErrors: [{ field: "body", message }],
+      });
+      return;
+    }
+
     const clientGeneratedId = crypto.randomUUID();
     const smsRecipient = state.smsRecipient;
     const smsSenderId = state.smsSelectedSenderId;
@@ -361,8 +369,7 @@ export function useComposerSubmit({
         ? null
         : (composerAliases.find((alias) => alias.alias === state.selectedAlias) ??
           null);
-    const signature = selectedAliasRecord?.signature ?? "";
-    const smsBody = appendComposerSignature(body, signature);
+    const smsBody = body;
     const occurredAt = new Date().toISOString();
     const recipientLabel =
       smsRecipient.kind === "contact"

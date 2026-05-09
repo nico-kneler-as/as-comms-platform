@@ -37,7 +37,7 @@ export function ComposerCollapsedPill({
           className={`flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-500 ${SHADOW.sm} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:border-amber-300 hover:bg-amber-50/50 hover:text-amber-700`}
         >
           <NoteIcon className="size-3.5 shrink-0" />
-          <span>Note</span>
+          <span>Leave Note</span>
         </button>
       </div>
     </div>

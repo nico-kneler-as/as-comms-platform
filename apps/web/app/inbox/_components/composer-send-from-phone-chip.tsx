@@ -6,7 +6,6 @@ import {
   RADIUS,
   SHADOW,
   TRANSITION,
-  TYPE,
 } from "@/app/_lib/design-tokens-v2";
 
 import type { InboxSmsSenderOption } from "../_lib/view-models";
@@ -23,16 +22,18 @@ export function SendFromPhoneChip({
       <div
         aria-invalid={errorMessage ? true : undefined}
         className={cn(
-          `flex min-h-11 w-full items-center justify-between gap-3 border border-slate-200 bg-white px-3 py-2 text-left ${RADIUS.md} ${SHADOW.sm} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion}`,
+          `inline-flex min-h-8 max-w-full items-center gap-2 border border-slate-200 bg-white px-2.5 py-1 text-left ${RADIUS.md} ${SHADOW.sm} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion}`,
           errorMessage ? "border-rose-300 ring-1 ring-rose-200" : "",
         )}
       >
         {sender ? (
-          <span className="block min-w-0">
-            <span className="block truncate text-[13px] font-medium text-slate-900">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="size-2 shrink-0 rounded-full bg-sky-400" />
+            <span className="truncate text-[13px] font-medium text-slate-900">
               {sender.phoneE164}
             </span>
-            <span className={`mt-0.5 block truncate ${TYPE.caption}`}>
+            <span className="shrink-0 text-[13px] text-slate-400">·</span>
+            <span className="truncate text-[13px] text-slate-600">
               {sender.displayName}
             </span>
           </span>

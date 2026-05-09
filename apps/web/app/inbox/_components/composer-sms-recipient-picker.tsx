@@ -34,13 +34,17 @@ function toSmsContactResult(
 }
 
 function formatPhoneLabel(phoneE164: string): string {
-  const match = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(phoneE164);
-  const area = match?.[1];
-  const prefix = match?.[2];
-  const line = match?.[3];
-  return match === null
+  const digits = phoneE164.replace(/\D/g, "");
+  const nationalNumber =
+    digits.length === 11 && digits.startsWith("1")
+      ? digits.slice(1)
+      : digits.length === 10
+        ? digits
+        : null;
+
+  return nationalNumber === null
     ? phoneE164
-    : `+1 (${area ?? ""}) ${prefix ?? ""}-${line ?? ""}`;
+    : `(${nationalNumber.slice(0, 3)}) ${nationalNumber.slice(3, 6)}-${nationalNumber.slice(6)}`;
 }
 
 function isSameRecipient(
@@ -58,6 +62,20 @@ function isSameRecipient(
   return left.phoneE164 === right.phoneE164;
 }
 
+function getContactInitials(displayName: string): string {
+  const parts = displayName
+    .trim()
+    .split(/\s+/u)
+    .filter((part) => part.length > 0);
+
+  const initials =
+    parts.length > 1
+      ? `${parts[0]?.[0] ?? ""}${parts[parts.length - 1]?.[0] ?? ""}`
+      : (parts[0]?.slice(0, 2) ?? "");
+
+  return initials.toUpperCase();
+}
+
 export function ComposerSmsRecipientPicker({
   recipient,
   locked = false,
@@ -72,8 +90,30 @@ export function ComposerSmsRecipientPicker({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<readonly SmsContactSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isResultsOpen, setIsResultsOpen] = useState(false);
   const activeSearchIdRef = useRef(0);
+  const rootRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (rootRef.current?.contains(target) === true) {
+        return;
+      }
+
+      setIsResultsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
 
   useEffect(() => {
     if (locked || recipient !== null) {
@@ -81,6 +121,7 @@ export function ComposerSmsRecipientPicker({
       setQuery("");
       setResults([]);
       setIsSearching(false);
+      setIsResultsOpen(false);
       return undefined;
     }
 
@@ -89,6 +130,7 @@ export function ComposerSmsRecipientPicker({
       activeSearchIdRef.current += 1;
       setResults([]);
       setIsSearching(false);
+      setIsResultsOpen(false);
       return undefined;
     }
 
@@ -145,21 +187,23 @@ export function ComposerSmsRecipientPicker({
     onRecipientChange(nextRecipient);
     setQuery("");
     setResults([]);
+    setIsResultsOpen(false);
     return true;
   };
 
   const shouldShowInput = !locked && recipient === null;
   const shouldShowResults =
+    isResultsOpen &&
     shouldShowInput &&
     (isSearching || results.length > 0 || query.trim().length >= 2);
 
   return (
     <div className="space-y-1.5">
-      <div className="relative">
+      <div ref={rootRef} className="relative">
         <div
           className={cn(
-            `flex min-h-11 flex-wrap items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 ${RADIUS.md} ${SHADOW.sm}`,
-            errorMessage ? "border-rose-300 ring-1 ring-rose-200" : "",
+            `flex min-h-8 flex-wrap items-center gap-1.5 rounded-md bg-white px-0 py-0.5`,
+            errorMessage ? "border border-rose-300 px-2 ring-1 ring-rose-200" : "",
           )}
         >
           {recipient ? (
@@ -176,11 +220,17 @@ export function ComposerSmsRecipientPicker({
 
           {shouldShowInput ? (
             <div className="flex min-w-[14rem] flex-1 items-center">
-              <SearchIcon className="pointer-events-none mr-2 size-4 shrink-0 text-slate-400" />
+              <SearchIcon className="pointer-events-none mr-2 size-3.5 shrink-0 text-slate-400" />
               <Input
                 value={query}
                 onChange={(event) => {
                   setQuery(event.currentTarget.value);
+                  setIsResultsOpen(true);
+                }}
+                onFocus={() => {
+                  if (query.trim().length >= 2 || results.length > 0) {
+                    setIsResultsOpen(true);
+                  }
                 }}
                 onBlur={() => {
                   void commitTypedPhone();
@@ -193,12 +243,12 @@ export function ComposerSmsRecipientPicker({
                   event.preventDefault();
                   void commitTypedPhone();
                 }}
-                placeholder="Search contacts or type a phone number"
+                placeholder="Search contacts"
                 aria-expanded={shouldShowResults}
                 aria-controls={shouldShowResults ? listboxId : undefined}
                 aria-autocomplete="list"
                 className={cn(
-                  `h-8 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none ${FOCUS_RING}`,
+                  `h-7 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none ${FOCUS_RING}`,
                 )}
               />
             </div>
@@ -207,7 +257,7 @@ export function ComposerSmsRecipientPicker({
 
         {shouldShowResults ? (
           <div
-            className={`absolute inset-x-0 top-full z-20 mt-2 overflow-hidden border border-slate-200 bg-white ${RADIUS.md} ${SHADOW.md}`}
+            className={`absolute inset-x-0 top-full z-20 mt-1 overflow-hidden border border-slate-200 bg-white ${RADIUS.md} ${SHADOW.md}`}
           >
             {isSearching ? (
               <div className="px-3 py-3 text-sm text-slate-500">
@@ -217,7 +267,7 @@ export function ComposerSmsRecipientPicker({
               <ul
                 id={listboxId}
                 role="listbox"
-                className="max-h-72 divide-y divide-slate-100 overflow-y-auto"
+                className="max-h-64 divide-y divide-slate-100 overflow-y-auto"
               >
                 {results.map((result) => (
                   <li key={result.id}>
@@ -235,22 +285,25 @@ export function ComposerSmsRecipientPicker({
                         });
                         setQuery("");
                         setResults([]);
+                        setIsResultsOpen(false);
                       }}
-                      className={`flex w-full items-start justify-between gap-3 px-3 py-3 text-left ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:bg-slate-50`}
+                      className={`flex w-full items-center gap-3 px-3 py-1.5 text-left ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:bg-slate-50`}
                     >
-                      <div className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-slate-900">
-                          {result.displayName}
+                      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                        <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-50 text-[10px] font-semibold text-sky-700">
+                          {getContactInitials(result.displayName)}
                         </span>
-                        <span className="mt-1 block text-xs text-slate-500">
-                          {formatPhoneLabel(result.primaryPhone)}
+                        <span className="min-w-0">
+                          <span className="flex min-w-0 items-baseline gap-2">
+                            <span className="truncate text-[13px] font-semibold leading-4 text-slate-900">
+                              {result.displayName}
+                            </span>
+                            <span className="truncate text-[12px] leading-4 text-slate-500">
+                              {formatPhoneLabel(result.primaryPhone)}
+                            </span>
+                          </span>
                         </span>
                       </div>
-                      {result.salesforceContactId ? (
-                        <Chip tone="neutral" className="uppercase">
-                          SF
-                        </Chip>
-                      ) : null}
                     </button>
                   </li>
                 ))}
@@ -280,7 +333,7 @@ function RecipientChip({
   const label =
     recipient.kind === "contact"
       ? `${recipient.displayName} (${formatPhoneLabel(recipient.phoneE164)})`
-      : recipient.phoneE164;
+      : formatPhoneLabel(recipient.phoneE164);
 
   return (
     <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2 pr-1.5 text-[12px] text-slate-700">

@@ -835,6 +835,22 @@ describe("composer canonical modal", () => {
     expect(document.body.textContent).toContain("SMS");
   });
 
+  it("renders channel tabs and composer window controls in one header row", async () => {
+    await mount(<TestApp />);
+
+    await click(getByText("Open new draft"));
+
+    const tablist = document.querySelector("[role='tablist']");
+    const header = tablist?.closest("header");
+
+    expect(header).not.toBeNull();
+    expect(tablist?.textContent).toContain("Email");
+    expect(tablist?.textContent).toContain("SMS");
+    expect(tablist?.textContent).not.toContain("Note");
+    expect(header?.querySelector("button[aria-label='Minimize composer']")).not.toBeNull();
+    expect(header?.querySelector("button[aria-label='Close composer']")).not.toBeNull();
+  });
+
   it("keeps the SMS tab visible when SMS sending is disabled and disables send", async () => {
     await mount(<TestApp />);
 
@@ -866,7 +882,8 @@ describe("composer canonical modal", () => {
     await click(getByText("Open note draft"));
 
     expect(getStateText()).toBe("replying:modal");
-    expect(document.body.textContent).toContain("Note");
+    expect(document.querySelector("[role='dialog']")).toBeNull();
+    expect(document.querySelector("[role='tablist']")).toBeNull();
     expect(getTextarea("Internal note body").value).toBe("");
   });
 

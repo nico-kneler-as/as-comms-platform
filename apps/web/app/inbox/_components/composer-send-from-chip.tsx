@@ -42,7 +42,7 @@ export function ComposerSendFromChip({
             type="button"
             aria-invalid={errorMessage ? true : undefined}
             className={cn(
-              `flex min-h-11 w-full items-center justify-between gap-3 border border-slate-200 bg-white px-3 py-2 text-left ${RADIUS.md} ${SHADOW.sm} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:border-slate-300`,
+              `inline-flex min-h-8 max-w-full items-center gap-2 border border-slate-200 bg-white px-2.5 py-1 text-left ${RADIUS.md} ${SHADOW.sm} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:border-slate-300`,
               errorMessage ? "border-rose-300 ring-1 ring-rose-200" : "",
             )}
           >
@@ -56,9 +56,6 @@ export function ComposerSendFromChip({
                     />
                     <span className="truncate">{selectedAlias.alias}</span>
                   </span>
-                  <span className={`mt-0.5 flex items-center gap-1.5 ${TYPE.caption}`}>
-                    <span className="truncate">{selectedAlias.projectName}</span>
-                  </span>
                 </span>
               ) : (
                 <span className="text-[13px] text-slate-400">
@@ -66,7 +63,7 @@ export function ComposerSendFromChip({
                 </span>
               )}
             </span>
-            <ChevronDownIcon className="size-4 shrink-0 text-slate-400" />
+            <ChevronDownIcon className="size-3.5 shrink-0 text-slate-400" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent

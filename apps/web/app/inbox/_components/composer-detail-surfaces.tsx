@@ -2,7 +2,7 @@
 
 import type { RefObject } from "react";
 
-import type { SmsMetrics } from "@as-comms/domain";
+import { smsMetrics, type SmsMetrics } from "@as-comms/domain/sms-segments";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,11 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { RADIUS, SHADOW, TYPE } from "@/app/_lib/design-tokens-v2";
-import {
-  estimateSmsCostUsd,
-  formatSmsEstimatedCostUsd,
-} from "@/src/lib/sms-pricing";
+import { TYPE } from "@/app/_lib/design-tokens-v2";
 
 import { ComposerAiDraftWindow } from "./composer-ai-draft-window";
 import {
@@ -41,6 +37,8 @@ import { ComposerToolbar } from "./composer-toolbar";
 import {
   BookOpenIcon,
   ChevronDownIcon,
+  ImageIcon,
+  LinkIcon,
   LoaderIcon,
   MailIcon,
   NoteIcon,
@@ -62,22 +60,26 @@ import type {
 import { ComposerSmsRecipientPicker } from "./composer-sms-recipient-picker";
 import { SendFromPhoneChip } from "./composer-send-from-phone-chip";
 
-function KnowledgeIndicator({
-  tooltipMessage = "AI Draft will use voice instructions only — no project-specific context.",
+function KnowledgeBaseIndicator({
+  hasKnowledge,
+  projectName,
 }: {
-  readonly tooltipMessage?: string;
+  readonly hasKnowledge: boolean;
+  readonly projectName: string | null;
 }) {
+  const isLinked = hasKnowledge && projectName !== null;
+  const label = isLinked ? `${projectName} Knowledge Base` : "Without Knowledge Base";
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
-          No project knowledge linked yet
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-64 text-pretty">
-        {tooltipMessage}
-      </TooltipContent>
-    </Tooltip>
+    <span
+      className={cn(
+        `inline-flex min-w-0 items-center justify-center gap-1.5 truncate ${TYPE.caption}`,
+        isLinked ? "text-emerald-600" : "text-slate-400",
+      )}
+    >
+      <BookOpenIcon className="size-3.5 shrink-0" />
+      <span className="truncate">{label}</span>
+    </span>
   );
 }
 
@@ -126,6 +128,41 @@ function SendAndSaveMenuItem({
       <TooltipContent side="left">{tooltipMessage}</TooltipContent>
     </Tooltip>
   );
+}
+
+const SMS_COMPOSER_LENGTH_LIMIT = 320;
+
+function clampSmsComposerBody(value: string): string {
+  if (smsMetrics(value).length <= SMS_COMPOSER_LENGTH_LIMIT) {
+    return value;
+  }
+
+  let nextValue = "";
+
+  for (const char of Array.from(value)) {
+    const candidate = `${nextValue}${char}`;
+    if (smsMetrics(candidate).length > SMS_COMPOSER_LENGTH_LIMIT) {
+      break;
+    }
+
+    nextValue = candidate;
+  }
+
+  return nextValue;
+}
+
+function formatUsPhoneLabel(phoneE164: string): string {
+  const digits = phoneE164.replace(/\D/g, "");
+  const nationalNumber =
+    digits.length === 11 && digits.startsWith("1")
+      ? digits.slice(1)
+      : digits.length === 10
+        ? digits
+        : null;
+
+  return nationalNumber === null
+    ? phoneE164
+    : `(${nationalNumber.slice(0, 3)}) ${nationalNumber.slice(3, 6)}-${nationalNumber.slice(6)}`;
 }
 
 export function ComposerPaneChrome({
@@ -326,24 +363,29 @@ export function ComposerEmailSurface({
   readonly onSend: (sendKind: ComposerSendKind) => void;
   readonly onCancel: () => void;
 }) {
-  const knowledgeTooltip =
-    "AI Draft will use voice instructions only — no project-specific context is linked yet. Add a Notion URL in Settings → Projects to enable project knowledge.";
   const sendAndSaveDisabled = isSendDisabled || !canSendAndSaveForAi;
   const sendAndSaveTooltipMessage =
     canSendAndSaveForAi || sendAndSaveDisabledReason === null
       ? null
       : sendAndSaveDisabledReason;
+  const knowledgeIndicator = (
+    <KnowledgeBaseIndicator
+      hasKnowledge={selectedAliasHasCachedContent}
+      projectName={selectedAliasProjectName}
+    />
+  );
 
   return (
     <TooltipProvider delayDuration={200}>
-      <ComposerField label="FROM">
-        <ComposerSendFromChip
-          value={selectedAlias}
-          aliases={composerAliases}
-          onChange={onAliasChange}
-          {...(aliasError?.message ? { errorMessage: aliasError.message } : {})}
-        />
-      </ComposerField>
+      <div className="flex min-h-full flex-col">
+        <ComposerField label="FROM">
+          <ComposerSendFromChip
+            value={selectedAlias}
+            aliases={composerAliases}
+            onChange={onAliasChange}
+            {...(aliasError?.message ? { errorMessage: aliasError.message } : {})}
+          />
+        </ComposerField>
 
       <ComposerField label="TO">
         <div className="rounded-md bg-white">
@@ -445,7 +487,7 @@ export function ComposerEmailSurface({
           }}
           placeholder="Subject"
           className={cn(
-            "h-9 border-0 px-0 text-[13.5px] font-medium shadow-none focus-visible:ring-0",
+            "h-8 border-0 px-0 text-[13px] font-medium shadow-none focus-visible:ring-0",
             subjectError ? "text-rose-900" : "",
           )}
         />
@@ -455,6 +497,9 @@ export function ComposerEmailSurface({
       </ComposerField>
 
       <RichTextComposerEditor
+        className="flex min-h-0 flex-1 flex-col"
+        frameClassName="flex min-h-0 flex-1 flex-col border-x-0 border-b-0 shadow-none"
+        contentClassName="min-h-0 flex-1"
         bodyPlaintext={body}
         errorMessage={bodyError?.message}
         onChange={(nextBody) => {
@@ -466,6 +511,7 @@ export function ComposerEmailSurface({
         onClearErrors={onClearErrors}
         topSlot={
           <ComposerAiDraftWindow
+            tone="email"
             aiDraft={aiDraft}
             directiveText={aiDirective}
             repromptText={repromptText}
@@ -484,7 +530,7 @@ export function ComposerEmailSurface({
         }
         bottomSlot={
           selectedAliasSignature.length > 0 ? (
-            <div className="px-4 pb-4 pt-3 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
+            <div className="px-4 pb-3 pt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
               {selectedAliasSignature}
             </div>
           ) : undefined
@@ -518,34 +564,31 @@ export function ComposerEmailSurface({
               />
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-2">
-              <ComposerToolbar
-                activeCommands={activeCommands}
-                onCommand={onCommand}
-              />
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="shrink-0">
+                <ComposerToolbar
+                  activeCommands={activeCommands}
+                  onCommand={onCommand}
+                />
+              </div>
 
               <Button
                 type="button"
                 variant="ghost"
-                className="gap-1.5 border-l border-slate-200 pl-3 text-[11.5px] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                className="shrink-0 gap-1.5 border-l border-slate-200 pl-3 text-[11.5px] font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 onClick={onAttachmentClick}
               >
                 <PaperclipIcon className="size-3.5" />
                 Attach
               </Button>
 
-              {selectedAliasHasCachedContent && selectedAliasProjectName !== null ? (
-                <span
-                  className={`inline-flex items-center gap-1.5 ${TYPE.caption} text-slate-500`}
-                >
-                  <BookOpenIcon className="size-3.5" />
-                  Uses {selectedAliasProjectName} knowledge
-                </span>
-              ) : selectedAliasProjectName !== null ? (
-                <KnowledgeIndicator tooltipMessage={knowledgeTooltip} />
-              ) : null}
+              <div className="hidden min-w-0 max-w-[18rem] items-center border-l border-slate-200 pl-3 md:flex">
+                {knowledgeIndicator}
+              </div>
 
-              <div className="ml-auto flex items-center gap-2">
+              <div className="min-w-0 flex-1" />
+
+              <div className="flex shrink-0 items-center gap-2">
                 <Button
                   type="button"
                   variant="ghost"
@@ -617,6 +660,8 @@ export function ComposerEmailSurface({
                 </div>
               </div>
             </div>
+
+            <div className="mt-2 md:hidden">{knowledgeIndicator}</div>
           </div>
         )}
       />
@@ -626,11 +671,12 @@ export function ComposerEmailSurface({
           {aiWarningMessage}
         </div>
       ) : null}
-      {bodyError ? (
-        <div className="px-4 py-2 text-xs text-rose-700">
-          {bodyError.message}
-        </div>
-      ) : null}
+        {bodyError ? (
+          <div className="px-4 py-2 text-xs text-rose-700">
+            {bodyError.message}
+          </div>
+        ) : null}
+      </div>
     </TooltipProvider>
   );
 }
@@ -641,8 +687,8 @@ function resolveSmsRecipientLabel(recipient: ComposerSmsRecipient | null): strin
   }
 
   return recipient.kind === "contact"
-    ? `${recipient.displayName} (${recipient.phoneE164})`
-    : recipient.phoneE164;
+    ? `${recipient.displayName} (${formatUsPhoneLabel(recipient.phoneE164)})`
+    : formatUsPhoneLabel(recipient.phoneE164);
 }
 
 export function ComposerSmsSurface({
@@ -652,15 +698,15 @@ export function ComposerSmsSurface({
   recipient,
   lockedRecipient,
   body,
-  selectedAliasSignature,
   segmentMetrics,
-  outboundRateUsdPerSegment,
   aiDraft,
   aiDirective,
   repromptText,
   isGeneratingAi,
   runAiDraftDisabled,
   runAiDraftDisabledReason,
+  selectedAliasHasCachedContent,
+  selectedAliasProjectName,
   canSendAndSaveForAi,
   sendAndSaveDisabledReason,
   sendDisabledReason,
@@ -689,15 +735,15 @@ export function ComposerSmsSurface({
   readonly recipient: ComposerSmsRecipient | null;
   readonly lockedRecipient: boolean;
   readonly body: string;
-  readonly selectedAliasSignature: string;
   readonly segmentMetrics: SmsMetrics;
-  readonly outboundRateUsdPerSegment: number;
   readonly aiDraft: AiDraftState;
   readonly aiDirective: string;
   readonly repromptText: string;
   readonly isGeneratingAi: boolean;
   readonly runAiDraftDisabled: boolean;
   readonly runAiDraftDisabledReason: string | null;
+  readonly selectedAliasHasCachedContent: boolean;
+  readonly selectedAliasProjectName: string | null;
   readonly canSendAndSaveForAi: boolean;
   readonly sendAndSaveDisabledReason: string | null;
   readonly sendDisabledReason: string | null;
@@ -724,13 +770,6 @@ export function ComposerSmsSurface({
     smsSenders.find((sender) => sender.id === selectedSenderId) ??
     smsSenders[0] ??
     null;
-  const estimatedCostUsd =
-    segmentMetrics.segments > 0
-      ? estimateSmsCostUsd(
-          segmentMetrics.segments,
-          outboundRateUsdPerSegment,
-        )
-      : null;
   const sendAndSaveDisabled = !canSendAndSaveForAi || isSending;
   const sendAndSaveTooltipMessage =
     sendAndSaveDisabledReason ??
@@ -738,6 +777,16 @@ export function ComposerSmsSurface({
   const sendSmsDisabledReason = !smsEnabled
     ? "SMS sending isn't wired up yet — coming soon"
     : sendDisabledReason;
+  const smsLengthLimit =
+    segmentMetrics.length <= 160 ? 160 : SMS_COMPOSER_LENGTH_LIMIT;
+  const smsLengthIsExtended = segmentMetrics.length > 160;
+  const smsLengthLabel = `${String(segmentMetrics.length)}/${String(smsLengthLimit)}`;
+  const knowledgeIndicator = (
+    <KnowledgeBaseIndicator
+      hasKnowledge={selectedAliasHasCachedContent}
+      projectName={selectedAliasProjectName}
+    />
+  );
   const sendButton = (
     <div className="inline-flex items-stretch overflow-hidden rounded-md shadow-sm">
       <Button
@@ -799,6 +848,7 @@ export function ComposerSmsSurface({
 
   return (
     <TooltipProvider delayDuration={200}>
+      <div className="flex min-h-full flex-col">
       <ComposerField label="FROM">
         <SendFromPhoneChip
           sender={selectedSender}
@@ -817,9 +867,18 @@ export function ComposerSmsSurface({
         />
       </ComposerField>
 
-      <div className="px-4 py-4">
+      <ComposerField label="SUBJ">
+        <div
+          aria-hidden="true"
+          className="flex h-8 items-center text-[13px] font-medium text-slate-300"
+        >
+          Subject
+        </div>
+      </ComposerField>
+
+      <div className="flex min-h-0 flex-1 flex-col border-t border-slate-100">
         <ComposerAiDraftWindow
-          directivePlaceholder='Optional: nudge the SMS draft (e.g. "remind them about Wed training, keep under 140 chars"). Or just click Draft with AI.'
+          tone="sms"
           aiDraft={aiDraft}
           directiveText={aiDirective}
           repromptText={repromptText}
@@ -835,32 +894,40 @@ export function ComposerSmsSurface({
           onDiscard={onDiscardAi}
           onApprove={onApproveAi}
         />
-        <textarea
-          rows={8}
-          value={body}
-          onChange={(event) => {
-            onBodyChange(event.currentTarget.value);
-            if (aiDraft.status === "inserted") {
-              onAiEdited();
-            }
-          }}
-          placeholder="Write an SMS reply"
-          className={cn(
-            `min-h-52 w-full resize-none border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 ${RADIUS.md} focus:outline-none focus:ring-1 focus:ring-slate-300`,
-            bodyError ? "border-rose-300 ring-1 ring-rose-200" : "",
-          )}
-        />
-        {bodyError ? (
-          <p className="mt-2 text-xs text-rose-700">{bodyError.message}</p>
-        ) : null}
-        {selectedAliasSignature.length > 0 ? (
-          <div className="mt-3 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
-            {selectedAliasSignature}
+        <div className="relative min-h-0 flex-1 px-4 pb-3 pt-2">
+          <textarea
+            rows={7}
+            value={body}
+            onChange={(event) => {
+              onBodyChange(clampSmsComposerBody(event.currentTarget.value));
+              if (aiDraft.status === "inserted") {
+                onAiEdited();
+              }
+            }}
+            placeholder="Write an SMS reply"
+            className={cn(
+              "h-full min-h-0 w-full resize-none border-0 bg-white px-0 py-3 pb-8 text-sm leading-6 text-slate-900 shadow-none focus:outline-none focus:ring-0",
+              bodyError ? "text-rose-900" : "",
+            )}
+            aria-describedby="sms-composer-character-count"
+          />
+          <div
+            id="sms-composer-character-count"
+            className={cn(
+              "pointer-events-none absolute bottom-5 right-5 text-[11.5px] font-medium tabular-nums",
+              smsLengthIsExtended ? "text-rose-600" : "text-slate-400",
+            )}
+            aria-live="polite"
+          >
+            {smsLengthLabel}
           </div>
-        ) : null}
+          {bodyError ? (
+            <p className="mt-2 text-xs text-rose-700">{bodyError.message}</p>
+          ) : null}
+        </div>
       </div>
 
-      <div className="border-t border-slate-200 px-4 py-4">
+      <div className="border-t border-slate-200 px-4 py-[12.5px]">
         {inlineError ? (
           <InlineErrorBanner
             message={inlineError.message}
@@ -869,17 +936,24 @@ export function ComposerSmsSurface({
           />
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-slate-500">
-            <span className="font-medium text-slate-700">
-              {segmentMetrics.segments === 0 ? "0 segments" : `${String(segmentMetrics.segments)} segments`}
-            </span>
-            {` · ${segmentMetrics.encoding} · ${String(segmentMetrics.remaining)} remaining`}
-            {estimatedCostUsd === null ? null : (
-              <span className="font-medium tabular-nums text-slate-500">
-                · Est. ${formatSmsEstimatedCostUsd(estimatedCostUsd)}
-              </span>
-            )}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 gap-1.5 border-sky-200 bg-white px-2.5 text-[12px] font-medium text-sky-700 hover:bg-sky-50 hover:text-sky-800"
+            >
+              <ImageIcon className="size-3.5" />
+              Add MMS
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 gap-1.5 border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+            >
+              <LinkIcon className="size-3.5" />
+              Shorten links
+            </Button>
           </div>
 
           {recipientError?.message ? (
@@ -888,7 +962,13 @@ export function ComposerSmsSurface({
             </span>
           ) : null}
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="hidden min-w-0 max-w-[18rem] items-center border-l border-slate-200 pl-3 md:flex">
+            {knowledgeIndicator}
+          </div>
+
+          <div className="mt-1 w-full md:hidden">{knowledgeIndicator}</div>
+
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button
               type="button"
               variant="ghost"
@@ -912,11 +992,13 @@ export function ComposerSmsSurface({
           </div>
         </div>
       </div>
+      </div>
     </TooltipProvider>
   );
 }
 
 export function ComposerNoteSurface({
+  contactDisplayName,
   body,
   bodyError,
   isSavingNote,
@@ -927,7 +1009,10 @@ export function ComposerNoteSurface({
   onTextareaInput,
   onSaveNote,
   onCancel,
+  onMinimize,
+  onClose,
 }: {
+  readonly contactDisplayName: string;
   readonly body: string;
   readonly bodyError?: ComposerValidationError;
   readonly isSavingNote: boolean;
@@ -938,40 +1023,56 @@ export function ComposerNoteSurface({
   readonly onTextareaInput: (target: HTMLTextAreaElement) => void;
   readonly onSaveNote: () => void;
   readonly onCancel: () => void;
+  readonly onMinimize: () => void;
+  readonly onClose: () => void;
 }) {
+  const noteRecipient =
+    contactDisplayName.trim().length > 0 ? contactDisplayName : "this contact";
+
   return (
-    <>
-      <div
-        className={`border-l-4 border-amber-300 bg-amber-50/50 px-4 py-4 ${SHADOW.sm}`}
-      >
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-amber-900">
-              Internal note
-            </p>
-            <p className={`mt-1 ${TYPE.caption} text-amber-800`}>
-              Team-visible note only. This will not be sent to the contact.
-            </p>
-          </div>
-          <Button
+    <section
+      role="region"
+      aria-label="Internal note composer"
+      className="absolute inset-x-0 bottom-0 z-40 border-t border-amber-200 bg-amber-50 shadow-[0_-12px_30px_rgba(15,23,42,0.08)]"
+    >
+      <div className="flex min-h-10 items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-5 py-2">
+        <p className="flex min-w-0 items-center gap-2 text-[13px] text-amber-700">
+          <NoteIcon className="size-3.5 shrink-0" />
+          <span className="shrink-0 font-semibold text-amber-800">
+            Internal note
+          </span>
+          <span className="truncate">
+            — visible to teammates only. Not sent to {noteRecipient}.
+          </span>
+        </p>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
             type="button"
-            disabled={isSaveNoteDisabled}
-            onClick={onSaveNote}
-            className="bg-amber-600 hover:bg-amber-700"
+            aria-label="Minimize note composer"
+            className="inline-flex size-8 items-center justify-center rounded-md text-amber-600 hover:bg-amber-100 hover:text-amber-800"
+            onClick={onMinimize}
           >
-            {isSavingNote ? (
-              <>
-                <LoaderIcon className="size-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <NoteIcon className="size-4" />
-                Save note
-              </>
-            )}
-          </Button>
+            <ChevronDownIcon className="size-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="Close note composer"
+            className="inline-flex size-8 items-center justify-center rounded-md text-amber-600 hover:bg-amber-100 hover:text-amber-800"
+            onClick={onClose}
+          >
+            <XIcon className="size-4" />
+          </button>
         </div>
+      </div>
+
+      <div className="bg-white px-5 py-4">
+        {inlineError ? (
+          <InlineErrorBanner
+            message={inlineError.message}
+            retryable={inlineError.retryable}
+            onRetry={onSaveNote}
+          />
+        ) : null}
         <textarea
           ref={textareaRef}
           rows={6}
@@ -982,10 +1083,10 @@ export function ComposerNoteSurface({
           onInput={(event) => {
             onTextareaInput(event.currentTarget);
           }}
-          placeholder="Write a team-visible note"
+          placeholder={`Add a note about ${noteRecipient} for your team...`}
           className={cn(
-            `max-h-[30rem] min-h-48 w-full resize-none border border-amber-300 bg-amber-50/40 px-4 py-3 text-sm leading-6 text-slate-900 ${RADIUS.md} focus:outline-none focus:ring-1 focus:ring-amber-300`,
-            bodyError ? "border-rose-300 ring-1 ring-rose-200" : "",
+            "h-40 w-full resize-none border-0 bg-transparent px-0 py-1 text-sm leading-6 text-slate-900 shadow-none placeholder:text-amber-700/45 focus:outline-none focus:ring-0",
+            bodyError ? "text-rose-900" : "",
           )}
         />
         {bodyError ? (
@@ -993,37 +1094,34 @@ export function ComposerNoteSurface({
         ) : null}
       </div>
 
-      <div className="border-t border-slate-200 px-4 py-4">
-        {inlineError ? (
-          <InlineErrorBanner
-            message={inlineError.message}
-            retryable={inlineError.retryable}
-            onRetry={onSaveNote}
-          />
-        ) : null}
-        <div className="flex items-center justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            disabled={isSaveNoteDisabled}
-            onClick={onSaveNote}
-          >
-            {isSavingNote ? (
-              <>
-                <LoaderIcon className="size-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <NoteIcon className="size-4" />
-                Save note
-              </>
-            )}
-          </Button>
-        </div>
+      <div className="flex items-center justify-end gap-2 border-t border-amber-200 bg-amber-50 px-5 py-3">
+        <Button
+          type="button"
+          variant="ghost"
+          className="text-[13px] text-slate-500 hover:bg-amber-100/70 hover:text-amber-800"
+          onClick={onCancel}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          disabled={isSaveNoteDisabled}
+          onClick={onSaveNote}
+          className="h-9 bg-amber-700 px-4 text-[13px] text-white hover:bg-amber-800 disabled:bg-amber-300"
+        >
+          {isSavingNote ? (
+            <>
+              <LoaderIcon className="size-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <NoteIcon className="size-4" />
+              Save note
+            </>
+          )}
+        </Button>
       </div>
-    </>
+    </section>
   );
 }
