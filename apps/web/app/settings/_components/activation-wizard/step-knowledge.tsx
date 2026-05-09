@@ -96,7 +96,7 @@ export function StepKnowledge({
             </div>
           </div>
             <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full w-2/5 animate-pulse rounded-full bg-slate-900" />
+              <div className="h-full w-2/5 animate-pulse rounded-full bg-[#253746]" />
             </div>
           </div>
         ) : null}

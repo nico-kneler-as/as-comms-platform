@@ -347,7 +347,7 @@ export function AccessSection({
                               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1",
                               "disabled:cursor-not-allowed disabled:opacity-40",
                               isEditing
-                                ? "bg-slate-900 text-white"
+                                ? "bg-[#253746] text-white"
                                 : "text-slate-400 hover:bg-slate-100 hover:text-slate-700",
                             )}
                           >
@@ -548,7 +548,7 @@ function RowEditPanel({
                     <span
                       className={cn(
                         "size-2 rounded-full",
-                        isSelected ? "bg-slate-900" : "bg-transparent",
+                        isSelected ? "bg-[#253746]" : "bg-transparent",
                       )}
                     />
                   </span>

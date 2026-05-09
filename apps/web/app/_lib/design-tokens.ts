@@ -232,15 +232,15 @@ export const FOCUS_RING =
 
 // ─── Brand ──────────────────────────────────────────────────────────────────
 //
-// Adventure Scientists muted-slate brand color. Replaces near-black
-// (`bg-slate-900` / logo PNG fill) on icon backgrounds, primary buttons, the
-// operator avatar, and the company logo.
+// Adventure Scientists dark-slate brand color (sampled from the logo PNG).
+// Replaces `bg-slate-900` on primary buttons, active nav, operator avatar,
+// tooltips, and the company-logo CSS mask fill.
 
 export const BRAND = {
   /** Hex value — for inline `style` and CSS mask color. */
-  neutral: "#abb8c3",
+  neutral: "#253746",
   /** Tailwind background class. */
-  bg: "bg-[#abb8c3]",
+  bg: "bg-[#253746]",
   /** Tailwind text color class. */
-  text: "text-[#abb8c3]",
+  text: "text-[#253746]",
 } as const;

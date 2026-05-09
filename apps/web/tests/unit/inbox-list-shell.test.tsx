@@ -536,7 +536,7 @@ describe("Inbox list shell", () => {
     });
 
     expect(filterButton.getAttribute("aria-expanded")).toBe("true");
-    expect(filterButton.className).toContain("bg-[#abb8c3]");
+    expect(filterButton.className).toContain("bg-[#253746]");
     expect(session.container.textContent).toContain("State");
     expect(session.container.textContent).toContain("All projects");
     expect(session.container.textContent).not.toContain("Unresolved");

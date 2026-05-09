@@ -98,7 +98,7 @@ export function PrimaryIconRail({
             const active = isActive(pathname, item.activePrefixes);
             const baseClass = `flex size-10 items-center justify-center ${RADIUS.lg} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
               active
-                ? "bg-[#abb8c3] text-slate-900"
+                ? "bg-[#253746] text-white"
                 : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
             }`;
 
@@ -129,7 +129,7 @@ export function PrimaryIconRail({
                 </TooltipTrigger>
                 <TooltipContent
                   side="right"
-                  className="rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white"
+                  className="rounded-md bg-[#253746] px-2 py-1 text-xs font-medium text-white"
                 >
                   {item.label}
                 </TooltipContent>
@@ -168,7 +168,7 @@ function OperatorMenu({
             open && "border-slate-300 shadow-md"
           )}
         >
-          <span className="flex size-9 items-center justify-center rounded-full bg-[#abb8c3] text-[11px] font-semibold text-slate-900">
+          <span className="flex size-9 items-center justify-center rounded-full bg-[#253746] text-[11px] font-semibold text-white">
             {operator.initials}
           </span>
         </button>
@@ -176,7 +176,7 @@ function OperatorMenu({
       <DropdownMenuContent side="right" align="end" className="w-56">
         <DropdownMenuLabel className="font-normal">
           <div className="flex items-center gap-3">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#abb8c3] text-[11px] font-semibold text-slate-900">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#253746] text-[11px] font-semibold text-white">
               {operator.initials}
             </div>
             <div className="min-w-0">

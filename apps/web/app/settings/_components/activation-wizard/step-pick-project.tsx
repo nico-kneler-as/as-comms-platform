@@ -74,7 +74,7 @@ export function StepPickProject({
                 }}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
-                  isSelected ? "bg-slate-900 text-white" : "hover:bg-slate-50"
+                  isSelected ? "bg-[#253746] text-white" : "hover:bg-slate-50"
                 )}
               >
                 <span

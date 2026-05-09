@@ -211,7 +211,7 @@ export function ComposerPaneChrome({
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium",
               activeTab === "email"
-                ? "bg-[#abb8c3] text-slate-900"
+                ? "bg-[#253746] text-white"
                 : "bg-slate-100 text-slate-600",
             )}
           >
@@ -601,7 +601,7 @@ export function ComposerEmailSurface({
                   <Button
                     type="button"
                     disabled={isSendDisabled}
-                    className="h-9 rounded-none rounded-l-md bg-[#abb8c3] px-3 text-[12.5px] font-medium text-slate-900 shadow-none hover:bg-[#bcc6cf]"
+                    className="h-9 rounded-none rounded-l-md bg-[#253746] px-3 text-[12.5px] font-medium text-white shadow-none hover:bg-[#324558]"
                     onClick={() => {
                       onSend("send");
                     }}
@@ -624,7 +624,7 @@ export function ComposerEmailSurface({
                         type="button"
                         aria-label="Send options"
                         disabled={isSending}
-                        className="h-9 rounded-none rounded-r-md border-l border-slate-400 bg-[#abb8c3] px-2 text-slate-900 shadow-none hover:bg-[#bcc6cf]"
+                        className="h-9 rounded-none rounded-r-md border-l border-slate-700 bg-[#253746] px-2 text-white shadow-none hover:bg-[#324558]"
                       >
                         <ChevronDownIcon className="size-4" />
                       </Button>
@@ -792,7 +792,7 @@ export function ComposerSmsSurface({
       <Button
         type="button"
         disabled={sendSmsDisabledReason !== null || isSending}
-        className="h-9 rounded-none rounded-l-md bg-[#abb8c3] px-3 text-[12.5px] font-medium text-slate-900 shadow-none hover:bg-[#bcc6cf]"
+        className="h-9 rounded-none rounded-l-md bg-[#253746] px-3 text-[12.5px] font-medium text-white shadow-none hover:bg-[#324558]"
         onClick={() => {
           onSend("send");
         }}
@@ -815,7 +815,7 @@ export function ComposerSmsSurface({
             type="button"
             aria-label="SMS send options"
             disabled={!smsEnabled || isSending}
-            className="h-9 rounded-none rounded-r-md border-l border-slate-400 bg-[#abb8c3] px-2 text-slate-900 shadow-none hover:bg-[#bcc6cf]"
+            className="h-9 rounded-none rounded-r-md border-l border-slate-700 bg-[#253746] px-2 text-white shadow-none hover:bg-[#324558]"
           >
             <ChevronDownIcon className="size-4" />
           </Button>
