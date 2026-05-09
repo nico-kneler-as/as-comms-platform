@@ -35,11 +35,17 @@ import {
   type IntegrationHealthAlertSender
 } from "../jobs/integration-health/email.js";
 import { mailchimpTransitionSchedulerJobName } from "./mailchimp-transition-scheduler.js";
+import {
+  createPollAiKnowledgeAutoSyncTask,
+  pollAiKnowledgeAutoSyncJobName,
+  type PollAiKnowledgeAutoSyncTaskDependencies,
+} from "./poll-ai-knowledge-auto-sync.js";
 import type { Stage1WorkerOrchestrationService } from "./types.js";
 
 export const pollGmailLiveJobName = "poll-gmail-live" as const;
 export const pollSalesforceLiveJobName = "poll-salesforce-live" as const;
 export const pollIntegrationHealthJobName = "poll-integration-health" as const;
+export { pollAiKnowledgeAutoSyncJobName };
 const polledIntegrationServices = [
   "salesforce",
   "gmail",
@@ -464,6 +470,7 @@ export function createStage1TaskList(
   orchestration: Stage1WorkerOrchestrationService,
   input?: {
     readonly integrationHealth?: IntegrationHealthTaskDependencies;
+    readonly aiKnowledgeAutoSync?: PollAiKnowledgeAutoSyncTaskDependencies;
   }
 ): TaskList {
   return {
@@ -495,6 +502,13 @@ export function createStage1TaskList(
         jobName: salesforceLiveCaptureBatchJobName
       }
     ),
+    ...(input?.aiKnowledgeAutoSync === undefined
+      ? {}
+      : {
+          [pollAiKnowledgeAutoSyncJobName]: createPollAiKnowledgeAutoSyncTask(
+            input.aiKnowledgeAutoSync,
+          ),
+        }),
     [mailchimpTransitionSchedulerJobName]: async (_rawPayload, helpers) => {
       await orchestration.runMailchimpTransitionSchedulerTick({
         addJob: helpers.addJob,

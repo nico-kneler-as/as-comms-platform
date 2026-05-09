@@ -162,7 +162,8 @@ function buildRepositories(input?: {
     source: "salesforce",
     isActive: true,
     aiKnowledgeUrl: null,
-    aiKnowledgeSyncedAt: null
+    aiKnowledgeSyncedAt: null,
+    aiAutoSyncSchedule: "never",
   };
   const inserted = input?.inserted ?? [];
 

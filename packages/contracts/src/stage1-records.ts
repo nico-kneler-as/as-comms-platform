@@ -159,10 +159,11 @@ export const projectDimensionSchema = z.object({
   aiKnowledgeSyncedAt: optionalTimestampSchema.optional(),
   aiKnowledgeSources: z.lazy(() => aiKnowledgeSourcesSchema).optional(),
   aiOperatingContext: z.string().optional(),
+  aiAutoSyncSchedule: z.enum(["never", "daily", "weekly"]).default("never"),
   aiOptimizedSynthesizedAt: optionalTimestampSchema.optional(),
   aiOptimizedInputHash: nullableStringSchema.optional(),
 });
-export type ProjectDimensionRecord = z.infer<typeof projectDimensionSchema>;
+export type ProjectDimensionRecord = z.input<typeof projectDimensionSchema>;
 
 export const aiKnowledgeSourceKindSchema = z.enum([
   "notion",

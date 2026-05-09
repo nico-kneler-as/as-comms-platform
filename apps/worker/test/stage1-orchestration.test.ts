@@ -501,6 +501,7 @@ Alias drift outbound message.
           aiKnowledgeSyncedAt: null,
           aiKnowledgeSources: [],
           aiOperatingContext: "",
+          aiAutoSyncSchedule: "never",
           aiOptimizedSynthesizedAt: null,
           aiOptimizedInputHash: null
         }

@@ -123,6 +123,12 @@ export type SynthesizeProjectKnowledgeResult =
       readonly tokensOut: number;
     }
   | {
+      readonly ok: true;
+      readonly unchanged: true;
+      readonly projectId: string;
+      readonly sourcesChecked: number;
+    }
+  | {
       readonly ok: false;
       readonly code:
         | "llm_failed"
@@ -140,9 +146,18 @@ export async function runSynthesizeProjectKnowledge(
 ): Promise<SynthesizeProjectKnowledgeResult> {
   const logger = deps.logger ?? console;
   const now = deps.now ?? (() => new Date());
+  const orchestratorPayload =
+    payload.skipIfHashUnchanged === undefined
+      ? {
+          projectId: payload.projectId,
+        }
+      : {
+          projectId: payload.projectId,
+          skipIfHashUnchanged: payload.skipIfHashUnchanged,
+        };
   const orchestratorResult = await synthesizeProjectKnowledgeOrchestrator(
     deps,
-    payload,
+    orchestratorPayload,
   );
 
   if (!orchestratorResult.ok) {
@@ -152,6 +167,29 @@ export async function runSynthesizeProjectKnowledge(
     };
   }
 
+  if ("unchanged" in orchestratorResult) {
+    return {
+      ok: true,
+      unchanged: true,
+      projectId: payload.projectId,
+      sourcesChecked: orchestratorResult.sourcesChecked,
+    };
+  }
+
+  if (!("content" in orchestratorResult)) {
+    throw new Error("Expected synthesized content when auto-sync result is not unchanged.");
+  }
+
+  const {
+    content,
+    costUsd,
+    inputHash,
+    model,
+    project,
+    sourcesUsed,
+    tokensIn,
+    tokensOut,
+  } = orchestratorResult;
   const createClient = deps.notion.createClient ?? createNotionClient;
   const createMarkdownPage =
     deps.notion.createMarkdownPage ?? createNotionMarkdownPage;
@@ -161,17 +199,17 @@ export async function runSynthesizeProjectKnowledge(
     fallbackParentPageId:
       deps.notion.rootPageId ?? DEFAULT_SYNTHESIZED_PAGE_ROOT_ID,
     logger,
-    project: orchestratorResult.project,
+    project,
   });
   const synthesizedAt = now();
-  const pageTitle = `${orchestratorResult.project.projectAlias ?? orchestratorResult.project.projectName} — AI Knowledge (synthesized ${synthesizedAt.toISOString().slice(0, 16)})`;
+  const pageTitle = `${project.projectAlias ?? project.projectName} — AI Knowledge (synthesized ${synthesizedAt.toISOString().slice(0, 16)})`;
 
   try {
     const notionPage = await createMarkdownPage({
       apiKey: deps.notion.apiKey,
       parentPageId,
       title: pageTitle,
-      markdown: orchestratorResult.content,
+      markdown: content,
     });
 
     await deps.repositories.settingsProjects.setAiKnowledgeUrl(
@@ -182,7 +220,7 @@ export async function runSynthesizeProjectKnowledge(
       payload.projectId,
       {
         synthesizedAt: synthesizedAt.toISOString(),
-        inputHash: orchestratorResult.inputHash,
+        inputHash,
       },
     );
 
@@ -191,13 +229,13 @@ export async function runSynthesizeProjectKnowledge(
       projectId: payload.projectId,
       notionPageId: notionPage.id,
       notionUrl: notionPage.url,
-      content: orchestratorResult.content,
-      inputHash: orchestratorResult.inputHash,
-      tokensIn: orchestratorResult.tokensIn,
-      tokensOut: orchestratorResult.tokensOut,
-      costUsd: orchestratorResult.costUsd,
-      model: orchestratorResult.model,
-      sourcesUsed: orchestratorResult.sourcesUsed,
+      content,
+      inputHash,
+      tokensIn,
+      tokensOut,
+      costUsd,
+      model,
+      sourcesUsed,
     };
   } catch (error) {
     logger.error(

@@ -704,6 +704,7 @@ export function ProjectDetail({
           isAdmin={project.isAdmin}
           initialSources={project.aiKnowledgeSources}
           initialOperatingContext={project.aiOperatingContext}
+          initialAutoSyncSchedule={project.aiAutoSyncSchedule}
           aiOptimizedSynthesizedAt={project.aiOptimizedSynthesizedAt}
           aiKnowledgeSynthesisStale={project.aiKnowledgeSynthesisStale}
         />

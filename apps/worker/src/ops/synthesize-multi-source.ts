@@ -100,6 +100,17 @@ async function main(): Promise<void> {
       return;
     }
 
+    if ("unchanged" in result) {
+      console.info(
+        `No source changes detected for ${result.projectId}; checked ${String(result.sourcesChecked)} sources.`,
+      );
+      return;
+    }
+
+    if (!("notionUrl" in result)) {
+      throw new Error("Expected synthesized Notion output when result is not unchanged.");
+    }
+
     console.info(`Notion URL: ${result.notionUrl}`);
     console.info(`Model: ${result.model}`);
     console.info(`Sources used: ${String(result.sourcesUsed)}`);

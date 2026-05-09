@@ -26,6 +26,7 @@ import {
   submitWizardAiKnowledgeSourcesAction,
   syncOneAiKnowledgeSourceAction,
   triggerProjectKnowledgeSynthesisAction,
+  updateAiAutoSyncScheduleAction,
   updateAiKnowledgeSourceAction,
   updateOperatingContextAction
 } from "../../app/settings/actions";
@@ -55,6 +56,7 @@ async function seedProject(runtime: Stage1WebTestRuntime, projectId = "project:a
     aiKnowledgeSyncedAt: null,
     aiKnowledgeSources: [],
     aiOperatingContext: "",
+    aiAutoSyncSchedule: "never",
     aiOptimizedSynthesizedAt: null,
     aiOptimizedInputHash: null
   });
@@ -243,6 +245,49 @@ describe("settings project AI knowledge actions", () => {
     expect(sqlSpy).not.toHaveBeenCalled();
   });
 
+  it("updates the auto-sync schedule without enqueueing", async () => {
+    const sqlSpy = await installSqlSpy();
+
+    const result = await updateAiAutoSyncScheduleAction("project:ai", "weekly");
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        schedule: "weekly"
+      }
+    });
+    expect(sqlSpy).not.toHaveBeenCalled();
+    expect(revalidateProjectSettings).toHaveBeenCalledWith("project:ai");
+  });
+
+  it("validates the auto-sync schedule input", async () => {
+    const result = await updateAiAutoSyncScheduleAction(
+      "project:ai",
+      "monthly" as never
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "validation_error"
+    });
+  });
+
+  it("returns an auth error when updating the auto-sync schedule as a non-admin", async () => {
+    resolveAdminSession.mockResolvedValueOnce({
+      ok: false as const,
+      code: "forbidden",
+      message: "Forbidden",
+      requestId: "auth-error"
+    });
+
+    const result = await updateAiAutoSyncScheduleAction("project:ai", "daily");
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "forbidden"
+    });
+  });
+
   it("validates wizard source submission and persists multiple sources", async () => {
     const sqlSpy = await installSqlSpy();
 
@@ -302,6 +347,7 @@ describe("settings project AI knowledge actions", () => {
       removeAiKnowledgeSourceAction("project:missing", "source:missing"),
       syncOneAiKnowledgeSourceAction("project:missing", "source:missing"),
       triggerProjectKnowledgeSynthesisAction("project:missing"),
+      updateAiAutoSyncScheduleAction("project:missing", "daily"),
       updateOperatingContextAction("project:missing", "Missing"),
       submitWizardAiKnowledgeSourcesAction("project:missing", [
         "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

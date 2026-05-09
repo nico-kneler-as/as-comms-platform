@@ -46,6 +46,7 @@ export interface ProjectSettingsDetailViewModel extends ProjectRowViewModel {
   readonly isAdmin: boolean;
   readonly aiKnowledgeSources: readonly AiKnowledgeSource[];
   readonly aiOperatingContext: string;
+  readonly aiAutoSyncSchedule: "never" | "daily" | "weekly";
   readonly aiOptimizedSynthesizedAt: string | null;
   readonly aiOptimizedInputHash: string | null;
   readonly aiKnowledgeSynthesisStale: boolean;
@@ -556,6 +557,7 @@ async function readProjectSettingsDetail(
     ...toProjectRowViewModel(project),
     aiKnowledgeSources,
     aiOperatingContext: dimension?.aiOperatingContext ?? "",
+    aiAutoSyncSchedule: dimension?.aiAutoSyncSchedule ?? "never",
     aiOptimizedSynthesizedAt: dimension?.aiOptimizedSynthesizedAt ?? null,
     aiOptimizedInputHash,
     aiKnowledgeSynthesisStale:
