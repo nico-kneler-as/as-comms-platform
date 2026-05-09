@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 import {
   mailchimpHistoricalCaptureBatchJobName,
@@ -390,11 +391,16 @@ async function main(): Promise<void> {
   await runMailchimpHistoricalCaptureCommand(process.argv.slice(2), process.env);
 }
 
-void main().catch((error: unknown) => {
-  console.error(
-    error instanceof Error
-      ? error.message
-      : "mailchimp-capture-historical failed."
-  );
-  process.exitCode = 1;
-});
+// Only auto-run when invoked as a CLI entry point. Without this guard,
+// importing this module from cli.ts re-runs main() on every CLI dispatch
+// — which trips the required `--since` flag check on unrelated commands.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  void main().catch((error: unknown) => {
+    console.error(
+      error instanceof Error
+        ? error.message
+        : "mailchimp-capture-historical failed."
+    );
+    process.exitCode = 1;
+  });
+}
