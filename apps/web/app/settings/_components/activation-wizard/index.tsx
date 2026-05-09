@@ -6,7 +6,7 @@ import { ArrowLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 import {
   type ActivationWizardInput,
   activateProjectFromWizardAction,
-  updateProjectAiKnowledgeAction
+  submitWizardAiKnowledgeSourcesAction
 } from "@/app/settings/actions";
 import {
   Dialog,
@@ -26,7 +26,8 @@ import {
   getStepOneValid,
   getStepThreeValid,
   getStepTwoValid,
-  isNotionUrlLike,
+  getAiKnowledgeSourceLineErrors,
+  splitAiKnowledgeSourceLines,
   normalizeSignatureDraft
 } from "./shared";
 import {
@@ -71,7 +72,9 @@ export function ActivationWizard({
     }),
     1: getStepTwoValid(state.aliases),
     2: getStepThreeValid(state.signatureDraft),
-    3: state.knowledgeStatus === "done"
+    3:
+      state.skipKnowledgeSetup ||
+      state.knowledgeStatus === "done"
   } as const;
   const canContinue =
     state.step === 0
@@ -94,19 +97,41 @@ export function ActivationWizard({
     : ACTIVATION_WIZARD_STEPS[state.step].subtitle;
 
   async function handleSync() {
-    if (selectedProject === null || !isNotionUrlLike(state.notionUrl)) {
+    if (selectedProject === null) {
       dispatch({
         type: "sync-error",
-        message: "Enter a Notion page URL."
+        message: "Choose a project before saving AI Knowledge sources."
+      });
+      return;
+    }
+
+    if (state.skipKnowledgeSetup) {
+      dispatch({ type: "sync-done" });
+      return;
+    }
+
+    const sourceLines = splitAiKnowledgeSourceLines(state.knowledgeSourcesText);
+    if (sourceLines.length === 0) {
+      dispatch({
+        type: "sync-error",
+        message: "Add at least one AI Knowledge source or skip this step."
+      });
+      return;
+    }
+
+    if (Object.keys(getAiKnowledgeSourceLineErrors(state.knowledgeSourcesText)).length > 0) {
+      dispatch({
+        type: "sync-error",
+        message: "Fix the invalid AI Knowledge source URLs before continuing."
       });
       return;
     }
 
     dispatch({ type: "sync-start" });
 
-    const result = await updateProjectAiKnowledgeAction(
+    const result = await submitWizardAiKnowledgeSourcesAction(
       selectedProject.projectId,
-      state.notionUrl
+      sourceLines
     );
     if (!result.ok) {
       dispatch({
@@ -274,13 +299,23 @@ export function ActivationWizard({
 
               {!isActivated && state.step === 3 ? (
                 <StepKnowledge
-                  notionUrl={state.notionUrl}
+                  knowledgeSourcesText={state.knowledgeSourcesText}
+                  skipKnowledgeSetup={state.skipKnowledgeSetup}
                   knowledgeStatus={state.knowledgeStatus}
                   knowledgeMessage={state.knowledgeMessage}
-                  onNotionUrlChange={(nextValue) => {
-                    dispatch({ type: "set-notion-url", notionUrl: nextValue });
+                  onKnowledgeSourcesTextChange={(nextValue) => {
+                    dispatch({
+                      type: "set-knowledge-sources-text",
+                      value: nextValue
+                    });
                   }}
-                  onSync={() => {
+                  onSkipKnowledgeSetupChange={(checked) => {
+                    dispatch({
+                      type: "set-skip-knowledge-setup",
+                      checked
+                    });
+                  }}
+                  onSubmit={() => {
                     void handleSync();
                   }}
                 />
@@ -291,7 +326,8 @@ export function ActivationWizard({
                   selectedProject={selectedProject}
                   aliasDraft={state.aliasDraft}
                   aliases={state.aliases}
-                  notionUrl={state.notionUrl}
+                  knowledgeSourcesText={state.knowledgeSourcesText}
+                  skipKnowledgeSetup={state.skipKnowledgeSetup}
                   signatureDraft={state.signatureDraft}
                   activationError={state.activationMessage}
                 />

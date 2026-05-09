@@ -2,10 +2,12 @@ import { unstable_cache } from "next/cache";
 import { sql } from "drizzle-orm";
 
 import type {
+  AiKnowledgeSource,
   IntegrationHealthCategory,
   IntegrationHealthStatus,
   Provider
 } from "@as-comms/contracts";
+import { inputHashFromSources } from "@as-comms/db";
 
 import { getCurrentUser } from "../auth/session";
 import { readWebEnv } from "../env";
@@ -42,6 +44,11 @@ export interface ProjectsSettingsViewModel {
 
 export interface ProjectSettingsDetailViewModel extends ProjectRowViewModel {
   readonly isAdmin: boolean;
+  readonly aiKnowledgeSources: readonly AiKnowledgeSource[];
+  readonly aiOperatingContext: string;
+  readonly aiOptimizedSynthesizedAt: string | null;
+  readonly aiOptimizedInputHash: string | null;
+  readonly aiKnowledgeSynthesisStale: boolean;
   readonly emails: readonly {
     readonly id: string;
     readonly address: string;
@@ -401,14 +408,9 @@ function buildSourceEvidenceCollisionSummary(
 
 function hasActivationRequirements(input: {
   readonly projectAlias: string | null;
-  readonly hasCachedAiKnowledge: boolean;
   readonly emailCount: number;
 }): boolean {
-  return (
-    input.emailCount >= 1 &&
-    input.hasCachedAiKnowledge &&
-    (input.projectAlias?.trim().length ?? 0) > 0
-  );
+  return input.emailCount >= 1 && (input.projectAlias?.trim().length ?? 0) > 0;
 }
 
 function deriveSuggestedAlias(projectName: string): string {
@@ -471,7 +473,6 @@ function toProjectRowViewModel(input: {
     memberCount: input.memberCount,
     activationRequirementsMet: hasActivationRequirements({
       projectAlias: input.projectAlias,
-      hasCachedAiKnowledge: input.hasCachedAiKnowledge,
       emailCount: input.emails.length
     })
   };
@@ -539,14 +540,26 @@ async function readProjectSettingsDetail(
   projectId: string
 ) {
   const runtime = await getStage1WebRuntime();
-  const project = await runtime.settings.projects.findById(projectId);
+  const [project, dimension] = await Promise.all([
+    runtime.settings.projects.findById(projectId),
+    runtime.repositories.projectDimensions.findById(projectId)
+  ]);
 
   if (project === null) {
     return null;
   }
 
+  const aiKnowledgeSources = dimension?.aiKnowledgeSources ?? [];
+  const aiOptimizedInputHash = dimension?.aiOptimizedInputHash ?? null;
+
   return {
     ...toProjectRowViewModel(project),
+    aiKnowledgeSources,
+    aiOperatingContext: dimension?.aiOperatingContext ?? "",
+    aiOptimizedSynthesizedAt: dimension?.aiOptimizedSynthesizedAt ?? null,
+    aiOptimizedInputHash,
+    aiKnowledgeSynthesisStale:
+      inputHashFromSources(aiKnowledgeSources) !== aiOptimizedInputHash,
     emails: project.emails,
     salesforceProjectId: project.salesforceProjectId
   };

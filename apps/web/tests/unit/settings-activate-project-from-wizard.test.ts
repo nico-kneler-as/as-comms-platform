@@ -110,7 +110,7 @@ describe("activateProjectFromWizardAction", () => {
     });
   });
 
-  it("still blocks activation when the project has no Notion URL", async () => {
+  it("allows activation when the project has no AI knowledge URL", async () => {
     if (!runtime) throw new Error("runtime not initialized");
 
     await seedProject(runtime, null);
@@ -128,8 +128,11 @@ describe("activateProjectFromWizardAction", () => {
     });
 
     expect(result).toMatchObject({
-      ok: false,
-      code: "requirements_not_met",
+      ok: true,
+      data: {
+        projectId: "project:wizard",
+        isActive: true,
+      },
     });
   });
 });

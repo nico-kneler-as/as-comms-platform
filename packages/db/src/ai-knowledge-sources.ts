@@ -7,48 +7,14 @@ import {
   type AiKnowledgeSourceSyncStatus,
 } from "@as-comms/contracts";
 
-const NOTION_HOST_PATTERN = /(^|\.)notion\.so$/u;
-const NOTION_ID_PATTERN =
-  /([0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/iu;
+import {
+  AiKnowledgeSourceValidationError,
+  parseSourceUrl,
+} from "./parse-source-url.js";
+import { hashSourceId } from "./source-id.js";
 
 function hashText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
-}
-
-function normalizeUrlInput(value: string): string {
-  return value.trim();
-}
-
-function normalizeWebUrl(url: URL): string {
-  url.hash = "";
-  url.protocol = url.protocol.toLowerCase();
-  url.hostname = url.hostname.toLowerCase();
-
-  if (
-    (url.protocol === "https:" && url.port === "443") ||
-    (url.protocol === "http:" && url.port === "80")
-  ) {
-    url.port = "";
-  }
-
-  return url.toString();
-}
-
-function normalizeNotionSourceId(value: string): string {
-  const normalized = value.trim().replace(/-/gu, "").toLowerCase();
-
-  if (!/^[0-9a-f]{32}$/u.test(normalized)) {
-    throw new AiKnowledgeSourceValidationError({
-      code: "invalid_url",
-      message: `Invalid Notion page ID: ${value}`,
-    });
-  }
-
-  return normalized;
-}
-
-function isNotionHost(hostname: string): boolean {
-  return NOTION_HOST_PATTERN.test(hostname.toLowerCase());
 }
 
 function findSourceIndex(
@@ -104,80 +70,6 @@ function replaceSourceAt(
   );
 }
 
-export class AiKnowledgeSourceValidationError extends Error {
-  readonly code:
-    | "duplicate_source"
-    | "invalid_url"
-    | "source_not_found";
-
-  constructor(input: {
-    readonly code: AiKnowledgeSourceValidationError["code"];
-    readonly message: string;
-  }) {
-    super(input.message);
-    this.name = "AiKnowledgeSourceValidationError";
-    this.code = input.code;
-  }
-}
-
-export function parseSourceUrl(url: string): {
-  readonly kind: "notion" | "web_page";
-  readonly source_id: string | null;
-  readonly normalized_url: string;
-} {
-  const trimmedUrl = normalizeUrlInput(url);
-
-  if (trimmedUrl.length === 0) {
-    throw new AiKnowledgeSourceValidationError({
-      code: "invalid_url",
-      message: "AI knowledge source URL is required.",
-    });
-  }
-
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(trimmedUrl);
-  } catch {
-    throw new AiKnowledgeSourceValidationError({
-      code: "invalid_url",
-      message: `Invalid AI knowledge source URL: ${url}`,
-    });
-  }
-
-  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-    throw new AiKnowledgeSourceValidationError({
-      code: "invalid_url",
-      message: `Unsupported AI knowledge source URL scheme: ${parsedUrl.protocol}`,
-    });
-  }
-
-  if (isNotionHost(parsedUrl.hostname)) {
-    const notionIdMatch = NOTION_ID_PATTERN.exec(parsedUrl.pathname);
-    const notionId = notionIdMatch?.[1];
-
-    if (notionId === undefined) {
-      throw new AiKnowledgeSourceValidationError({
-        code: "invalid_url",
-        message: `Could not extract a Notion page ID from URL: ${url}`,
-      });
-    }
-
-    const sourceId = normalizeNotionSourceId(notionId);
-    return {
-      kind: "notion",
-      source_id: sourceId,
-      normalized_url: `https://www.notion.so/${sourceId}`,
-    };
-  }
-
-  const normalizedUrl = normalizeWebUrl(parsedUrl);
-  return {
-    kind: "web_page",
-    source_id: hashText(normalizedUrl),
-    normalized_url: normalizedUrl,
-  };
-}
-
 export interface AddAiKnowledgeSourceInput {
   readonly url: string;
   readonly label?: string | null;
@@ -191,10 +83,14 @@ export function addSource(
 ): readonly AiKnowledgeSource[] {
   const parsedSources = aiKnowledgeSourcesSchema.parse(sources);
   const parsedUrl = parseSourceUrl(input.url);
+  const sourceId =
+    parsedUrl.kind === "web_page" && parsedUrl.source_id !== null
+      ? hashSourceId(parsedUrl.source_id)
+      : parsedUrl.source_id;
 
   assertNoDuplicate(parsedSources, {
     kind: parsedUrl.kind,
-    sourceId: parsedUrl.source_id,
+    sourceId,
   });
 
   const now = input.now ?? new Date().toISOString();
@@ -207,7 +103,7 @@ export function addSource(
     last_synced_at: null,
     last_sync_status: null,
     last_sync_error: null,
-    source_id: parsedUrl.source_id,
+    source_id: sourceId,
     source_content_hash: null,
     created_at: now,
     updated_at: now,
@@ -240,7 +136,10 @@ export function updateSource(
     const parsedUrl = parseSourceUrl(patch.url);
     nextUrl = parsedUrl.normalized_url;
     nextKind = parsedUrl.kind;
-    nextSourceId = parsedUrl.source_id;
+    nextSourceId =
+      parsedUrl.kind === "web_page" && parsedUrl.source_id !== null
+        ? hashSourceId(parsedUrl.source_id)
+        : parsedUrl.source_id;
     assertNoDuplicate(
       parsedSources,
       { kind: nextKind, sourceId: nextSourceId },

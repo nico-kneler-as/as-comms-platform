@@ -14,14 +14,16 @@ export function StepReview({
   selectedProject,
   aliasDraft,
   aliases,
-  notionUrl,
+  knowledgeSourcesText,
+  skipKnowledgeSetup,
   signatureDraft,
   activationError
 }: {
   readonly selectedProject: ProjectRowViewModel | null;
   readonly aliasDraft: string;
   readonly aliases: readonly AliasDraft[];
-  readonly notionUrl: string;
+  readonly knowledgeSourcesText: string;
+  readonly skipKnowledgeSetup: boolean;
   readonly signatureDraft: string;
   readonly activationError: string | null;
 }) {
@@ -46,14 +48,20 @@ export function StepReview({
         <ReviewRow
           label="AI knowledge"
           value={
-            <span className="flex items-center gap-2">
-              <span className="truncate">{notionUrl}</span>
-              <StatusBadge
-                label="Synced"
-                colorClasses="bg-emerald-50 text-emerald-700 ring-emerald-200"
-                variant="soft"
-              />
-            </span>
+            skipKnowledgeSetup ? (
+              <span className="text-slate-500">Skipped for now</span>
+            ) : (
+              <span className="flex items-center gap-2">
+                <span className="truncate">
+                  {`${String(knowledgeSourcesText.split(/\r?\n/u).filter((line) => line.trim().length > 0).length)} source(s) saved`}
+                </span>
+                <StatusBadge
+                  label="Queued"
+                  colorClasses="bg-emerald-50 text-emerald-700 ring-emerald-200"
+                  variant="soft"
+                />
+              </span>
+            )
           }
         />
         <ReviewRow
@@ -76,7 +84,7 @@ export function StepReview({
           </li>
           <li className="flex gap-2">
             <Check className="mt-0.5 size-3 text-emerald-600" aria-hidden="true" />
-            Future AI drafts use the synced Notion knowledge.
+            AI Knowledge can be managed later from the project detail page.
           </li>
         </ul>
       </div>

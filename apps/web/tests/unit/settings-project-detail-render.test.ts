@@ -11,6 +11,7 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("lucide-react", () => ({
+  AlertTriangle: () => null,
   ArrowLeft: () => null,
   BookOpen: () => null,
   Check: () => null,
@@ -96,12 +97,18 @@ vi.mock("@/components/ui/status-badge", () => ({
 
 vi.mock("../../app/settings/actions", () => ({
   activateProjectAction: vi.fn(),
+  addAiKnowledgeSourceAction: vi.fn(),
   deactivateProjectAction: vi.fn(),
-  syncProjectAiKnowledgeAction: vi.fn(),
+  removeAiKnowledgeSourceAction: vi.fn(),
+  syncOneAiKnowledgeSourceAction: vi.fn(),
+  submitWizardAiKnowledgeSourcesAction: vi.fn(),
+  triggerProjectKnowledgeSynthesisAction: vi.fn(),
   updateProjectAliasAction: vi.fn(),
   updateProjectAliasSignatureAction: vi.fn(),
-  updateProjectAiKnowledgeAction: vi.fn(),
+  updateAiKnowledgeSourceAction: vi.fn(),
   updateProjectEmailsAction: vi.fn()
+  ,
+  updateOperatingContextAction: vi.fn()
 }));
 
 import { ProjectDetail } from "../../app/settings/_components/project-detail";
@@ -122,6 +129,11 @@ describe("ProjectDetail role-aware rendering", () => {
           aiKnowledgeUrl: null,
           aiKnowledgeSyncedAt: null,
           hasCachedAiKnowledge: false,
+          aiKnowledgeSources: [],
+          aiOperatingContext: "",
+          aiOptimizedSynthesizedAt: null,
+          aiOptimizedInputHash: null,
+          aiKnowledgeSynthesisStale: false,
           memberCount: 0,
           activationRequirementsMet: false,
           isAdmin: false,
