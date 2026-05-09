@@ -1,5 +1,5 @@
 import type { ProjectRowViewModel } from "@/src/server/settings/selectors";
-import { parseSourceUrl } from "@as-comms/db";
+import { parseSourceUrl } from "@as-comms/db/parse-source-url";
 
 import {
   getProjectAliasSignatureValidationError,
