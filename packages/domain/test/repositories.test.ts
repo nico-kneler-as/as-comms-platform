@@ -110,6 +110,10 @@ describe("defineStage1RepositoryBundle", () => {
         listAll: () => Promise.resolve([]),
         listActive: () => Promise.resolve([]),
         listByIds: () => Promise.resolve([]),
+        getAiKnowledgeSources: () => Promise.resolve([]),
+        setAiKnowledgeSources: () => Promise.resolve(),
+        updateOperatingContext: () => Promise.resolve(),
+        setSynthesisMetadata: () => Promise.resolve(),
         upsert: (record) => Promise.resolve(record),
       },
       expeditionDimensions: {

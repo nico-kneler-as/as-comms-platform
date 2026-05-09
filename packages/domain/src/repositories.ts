@@ -1,4 +1,5 @@
 import type {
+  AiKnowledgeSource,
   AiKnowledgeEntryRecord,
   AuditEvidenceRecord,
   CanonicalEventRecord,
@@ -259,6 +260,21 @@ export interface ProjectDimensionRepository {
   listByIds(
     projectIds: readonly string[],
   ): Promise<readonly ProjectDimensionRecord[]>;
+  getAiKnowledgeSources(
+    projectId: string,
+  ): Promise<readonly AiKnowledgeSource[]>;
+  setAiKnowledgeSources(
+    projectId: string,
+    sources: readonly AiKnowledgeSource[],
+  ): Promise<void>;
+  updateOperatingContext(projectId: string, context: string): Promise<void>;
+  setSynthesisMetadata(
+    projectId: string,
+    input: {
+      readonly synthesizedAt: string | null;
+      readonly inputHash: string | null;
+    },
+  ): Promise<void>;
   upsert(record: ProjectDimensionRecord): Promise<ProjectDimensionRecord>;
 }
 

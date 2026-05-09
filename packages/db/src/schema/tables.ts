@@ -1,5 +1,6 @@
 import { isNotNull, sql } from "drizzle-orm";
 import type {
+  AiKnowledgeSource,
   CanonicalEventProvenance,
   IntegrationHealthCategory,
   IntegrationHealthStatus,
@@ -227,6 +228,16 @@ export const projectDimensions = pgTable(
       mode: "date",
       withTimezone: true,
     }),
+    aiKnowledgeSources: jsonb("ai_knowledge_sources")
+      .$type<readonly AiKnowledgeSource[]>()
+      .notNull()
+      .default([]),
+    aiOperatingContext: text("ai_operating_context").notNull().default(""),
+    aiOptimizedSynthesizedAt: timestamp("ai_optimized_synthesized_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    aiOptimizedInputHash: text("ai_optimized_input_hash"),
     source: recordSourceEnum("source").notNull(),
     createdAt: createdAtColumn,
     updatedAt: updatedAtColumn,

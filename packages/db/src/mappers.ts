@@ -1,4 +1,5 @@
 import {
+  aiKnowledgeSourcesSchema,
   aiKnowledgeEntrySchema,
   auditEvidenceSchema,
   canonicalEventSchema,
@@ -540,6 +541,10 @@ export function mapProjectDimensionRow(
     isActive: row.isActive,
     aiKnowledgeUrl: row.aiKnowledgeUrl,
     aiKnowledgeSyncedAt: fromDate(row.aiKnowledgeSyncedAt),
+    aiKnowledgeSources: aiKnowledgeSourcesSchema.parse(row.aiKnowledgeSources),
+    aiOperatingContext: row.aiOperatingContext,
+    aiOptimizedSynthesizedAt: fromDate(row.aiOptimizedSynthesizedAt),
+    aiOptimizedInputHash: row.aiOptimizedInputHash,
   });
 }
 
@@ -559,6 +564,18 @@ export function mapProjectDimensionToInsert(
       parsed.aiKnowledgeSyncedAt === null
         ? null
         : toDate(parsed.aiKnowledgeSyncedAt),
+    aiKnowledgeSources: parsed.aiKnowledgeSources ?? undefined,
+    aiOperatingContext: parsed.aiOperatingContext ?? undefined,
+    aiOptimizedSynthesizedAt:
+      parsed.aiOptimizedSynthesizedAt === undefined
+        ? undefined
+        : parsed.aiOptimizedSynthesizedAt === null
+          ? null
+          : toDate(parsed.aiOptimizedSynthesizedAt),
+    aiOptimizedInputHash:
+      parsed.aiOptimizedInputHash === undefined
+        ? undefined
+        : parsed.aiOptimizedInputHash,
     source: parsed.source,
   };
 }

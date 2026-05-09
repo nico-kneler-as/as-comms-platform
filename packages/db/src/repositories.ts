@@ -29,6 +29,7 @@ import {
   defineStage1RepositoryBundle,
   defineStage2RepositoryBundle,
 } from "@as-comms/domain";
+import { aiKnowledgeSourcesSchema } from "@as-comms/contracts";
 
 import type { DatabaseConnection } from "./client.js";
 import {
@@ -2153,6 +2154,52 @@ function createStage1RepositoriesInternal(
         return rows.map(mapProjectDimensionRow);
       },
 
+      async getAiKnowledgeSources(projectId) {
+        const [row] = await db
+          .select({
+            aiKnowledgeSources: projectDimensions.aiKnowledgeSources,
+          })
+          .from(projectDimensions)
+          .where(eq(projectDimensions.projectId, projectId))
+          .limit(1);
+
+        return aiKnowledgeSourcesSchema.parse(row?.aiKnowledgeSources ?? []);
+      },
+
+      async setAiKnowledgeSources(projectId, sources) {
+        const parsedSources = aiKnowledgeSourcesSchema.parse(sources);
+
+        await db
+          .update(projectDimensions)
+          .set({
+            aiKnowledgeSources: parsedSources,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectDimensions.projectId, projectId));
+      },
+
+      async updateOperatingContext(projectId, context) {
+        await db
+          .update(projectDimensions)
+          .set({
+            aiOperatingContext: context,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectDimensions.projectId, projectId));
+      },
+
+      async setSynthesisMetadata(projectId, input) {
+        await db
+          .update(projectDimensions)
+          .set({
+            aiOptimizedSynthesizedAt:
+              input.synthesizedAt === null ? null : new Date(input.synthesizedAt),
+            aiOptimizedInputHash: input.inputHash,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectDimensions.projectId, projectId));
+      },
+
       async upsert(record) {
         const values = mapProjectDimensionToInsert(record);
         const [row] = await db
@@ -2173,6 +2220,18 @@ function createStage1RepositoriesInternal(
               // and Salesforce capture must not overwrite that app-owned state.
               aiKnowledgeUrl: values.aiKnowledgeUrl,
               aiKnowledgeSyncedAt: values.aiKnowledgeSyncedAt,
+              aiKnowledgeSources:
+                values.aiKnowledgeSources ?? projectDimensions.aiKnowledgeSources,
+              aiOperatingContext:
+                values.aiOperatingContext ?? projectDimensions.aiOperatingContext,
+              aiOptimizedSynthesizedAt:
+                values.aiOptimizedSynthesizedAt === undefined
+                  ? projectDimensions.aiOptimizedSynthesizedAt
+                  : values.aiOptimizedSynthesizedAt,
+              aiOptimizedInputHash:
+                values.aiOptimizedInputHash === undefined
+                  ? projectDimensions.aiOptimizedInputHash
+                  : values.aiOptimizedInputHash,
               source: values.source,
               updatedAt: new Date(),
             },
