@@ -159,7 +159,7 @@ export const projectDimensionSchema = z.object({
   aiKnowledgeSyncedAt: optionalTimestampSchema.optional(),
   aiKnowledgeSources: z.lazy(() => aiKnowledgeSourcesSchema).optional(),
   aiOperatingContext: z.string().optional(),
-  aiAutoSyncSchedule: z.enum(["never", "daily", "weekly"]).default("never"),
+  aiAutoSyncSchedule: z.enum(["never", "daily", "weekly"]).optional(),
   aiOptimizedSynthesizedAt: optionalTimestampSchema.optional(),
   aiOptimizedInputHash: nullableStringSchema.optional(),
 });
