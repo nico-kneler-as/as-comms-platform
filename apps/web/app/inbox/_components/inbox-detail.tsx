@@ -43,7 +43,6 @@ import type { UiError, UiResult } from "@/src/server/ui-result";
 import { InboxFreshnessPoller } from "./inbox-freshness-poller";
 import { useInboxClient } from "./inbox-client-provider";
 import { InboxAvatar } from "./inbox-avatar";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { PROJECT_STATUS_BADGE } from "@/app/_lib/design-tokens";
 import {
   LAYOUT,
@@ -301,7 +300,6 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
     });
   }, [contact.contactId, router]);
 
-  const headerProject = contact.activeProjects[0] ?? detail.conversationProject;
   const isFollowUp = followUpToggle.value;
   const composerReplyContext = detail.composerReplyContext;
 
@@ -327,28 +325,33 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
               <h1 className="truncate text-sm font-semibold leading-tight text-slate-900 text-balance">
                 {contact.displayName}
               </h1>
-              {headerProject ? (
-                <div className="mt-0.5 flex min-w-0 items-center gap-2">
-                  <span
-                    className="min-w-0 truncate text-[12px] font-medium leading-none text-slate-500"
-                    title={
-                      "source" in headerProject &&
-                      headerProject.source === "conversation"
-                        ? "Via project alias"
-                        : undefined
-                    }
-                  >
-                    {headerProject.projectName}
-                  </span>
-                  {"status" in headerProject ? (
-                    <StatusBadge
-                      variant="subtle"
-                      colorClasses={PROJECT_STATUS_BADGE[headerProject.status]}
-                      label={headerProject.statusLabel}
-                      className="shrink-0"
-                    />
-                  ) : null}
+              {contact.activeProjects.length > 0 ? (
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden">
+                  {contact.activeProjects.map((project) => (
+                    <span
+                      key={project.membershipId}
+                      className={cn(
+                        "inline-flex shrink-0 items-center rounded px-1.5 py-px text-[10px] font-medium",
+                        PROJECT_STATUS_BADGE[project.status],
+                      )}
+                    >
+                      <span className="max-w-[160px] truncate">
+                        {project.projectName}
+                      </span>
+                      <span className="mx-1 opacity-60">›</span>
+                      <span className="whitespace-nowrap">
+                        {project.statusLabel}
+                      </span>
+                    </span>
+                  ))}
                 </div>
+              ) : detail.conversationProject ? (
+                <span
+                  className="mt-0.5 block min-w-0 truncate text-[12px] font-medium leading-none text-slate-500"
+                  title="Via project alias"
+                >
+                  {detail.conversationProject.projectName}
+                </span>
               ) : (
                 <span className="text-xs text-slate-400">
                   No active project
