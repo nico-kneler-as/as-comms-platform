@@ -14,6 +14,7 @@ const workspaceRules = {
       // outbound-email-dedup. Any new subpath needs another entry — check is exact-string.
       "@as-comms/domain/phone",
       "@as-comms/domain/sms-segments",
+      "@as-comms/db/parse-source-url",
       "@as-comms/ui"
     ])
   },
@@ -102,6 +103,19 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
     // Test-only split of the composition root. Keeps `@as-comms/db/test-helpers`
     // (which pulls in PGlite) off the production Edge Runtime bundle path.
     // Only test files may import this module.
+    return true;
+  }
+
+  if (
+    (relativeFile === "apps/web/app/settings/actions.ts" ||
+      relativeFile === "apps/web/src/server/settings/selectors.ts") &&
+    specifier === "@as-comms/db"
+  ) {
+    // Settings server actions + selectors compose the AI Knowledge source
+    // registry helpers (addSource/updateSource/removeSource/parseSourceUrl/
+    // inputHashFromSources/AiKnowledgeSourceValidationError). These are pure
+    // data utilities that happen to live in @as-comms/db; a future cleanup
+    // can promote them to a browser-safe subpath. Until then, narrow exception.
     return true;
   }
 
