@@ -261,6 +261,8 @@ export async function generateDraft(
   });
 }
 
+export const invokeModel = generateDraft;
+
 const MODEL_RATE_CARD_USD_PER_MTOK: Readonly<
   Record<string, { readonly input: number; readonly output: number }>
 > = {

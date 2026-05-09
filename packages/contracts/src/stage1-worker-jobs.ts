@@ -79,6 +79,8 @@ export const parityCheckBatchJobName = "stage1.parity.check" as const;
 export const cutoverCheckpointBatchJobName =
   "stage1.cutover.checkpoint" as const;
 export const notionKnowledgeSyncJobName = "notion-knowledge-sync" as const;
+export const synthesizeProjectKnowledgeJobName =
+  "synthesize-project-knowledge" as const;
 
 export const stage1WorkerJobNames = [
   gmailHistoricalCaptureBatchJobName,
@@ -291,4 +293,11 @@ export const notionKnowledgeSyncPayloadSchema = z.object({
 });
 export type NotionKnowledgeSyncPayload = z.infer<
   typeof notionKnowledgeSyncPayloadSchema
+>;
+
+export const synthesizeProjectKnowledgePayloadSchema = z.object({
+  projectId: idSchema,
+});
+export type SynthesizeProjectKnowledgePayload = z.infer<
+  typeof synthesizeProjectKnowledgePayloadSchema
 >;
