@@ -258,6 +258,7 @@ vi.mock("../../app/inbox/_components/icons", () => ({
   BoldIcon: iconMock("Bold"),
   BookOpenIcon: iconMock("BookOpen"),
   ChevronDownIcon: iconMock("ChevronDown"),
+  ImageIcon: iconMock("Image"),
   ItalicIcon: iconMock("Italic"),
   LinkIcon: iconMock("Link"),
   ListIcon: iconMock("List"),
@@ -271,9 +272,13 @@ vi.mock("../../app/inbox/_components/icons", () => ({
   XIcon: iconMock("X"),
 }));
 
-import { ComposerEmailSurface } from "../../app/inbox/_components/composer-detail-surfaces";
+import {
+  ComposerEmailSurface,
+  ComposerSmsSurface,
+} from "../../app/inbox/_components/composer-detail-surfaces";
 
 type ComposerEmailSurfaceProps = React.ComponentProps<typeof ComposerEmailSurface>;
+type ComposerSmsSurfaceProps = React.ComponentProps<typeof ComposerSmsSurface>;
 
 const baseProps: ComposerEmailSurfaceProps = {
   composerAliases: [
@@ -356,6 +361,59 @@ const baseProps: ComposerEmailSurfaceProps = {
   onCancel: vi.fn(),
 };
 
+const baseSmsProps: ComposerSmsSurfaceProps = {
+  smsSenders: [
+    {
+      id: "sender-1",
+      phoneE164: "+14065550142",
+      displayName: "Whitebark Pine",
+    },
+  ],
+  smsEnabled: true,
+  selectedSenderId: "sender-1",
+  recipient: {
+    kind: "contact" as const,
+    contactId: "contact-1",
+    displayName: "Maya Lee",
+    phoneE164: "+15555550100",
+  },
+  lockedRecipient: false,
+  body: "SMS body",
+  segmentMetrics: {
+    encoding: "GSM-7",
+    length: 8,
+    remaining: 152,
+    segments: 1,
+    segmentCap: 160,
+  },
+  aiDraft: baseProps.aiDraft,
+  aiDirective: "",
+  repromptText: "",
+  isGeneratingAi: false,
+  runAiDraftDisabled: false,
+  runAiDraftDisabledReason: null,
+  selectedAliasHasCachedContent: true,
+  selectedAliasProjectName: "Coastal Survey",
+  canSendAndSaveForAi: true,
+  sendAndSaveDisabledReason: null,
+  sendDisabledReason: null,
+  inlineError: null,
+  isSending: false,
+  onRecipientChange: vi.fn(),
+  onBodyChange: vi.fn(),
+  onAiDirectiveChange: vi.fn(),
+  onAiEdited: vi.fn(),
+  onDiscardAi: vi.fn(),
+  onOpenReprompt: vi.fn(),
+  onCancelReprompt: vi.fn(),
+  onApproveAi: vi.fn(),
+  onRunAiDraft: vi.fn(),
+  onRepromptTextChange: vi.fn(),
+  onReprompt: vi.fn(),
+  onSend: vi.fn(),
+  onCancel: vi.fn(),
+};
+
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
@@ -368,6 +426,19 @@ async function mount(
 
   await act(async () => {
     root?.render(<ComposerEmailSurface {...baseProps} {...overrides} />);
+    await Promise.resolve();
+  });
+}
+
+async function mountSms(
+  overrides: Partial<ComposerSmsSurfaceProps> = {},
+): Promise<void> {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+
+  await act(async () => {
+    root?.render(<ComposerSmsSurface {...baseSmsProps} {...overrides} />);
     await Promise.resolve();
   });
 }
@@ -413,10 +484,8 @@ describe("composer send menu", () => {
       selectedAliasHasCachedContent: true,
     });
 
-    expect(document.body.textContent).toContain("Uses Coastal Survey knowledge");
-    expect(document.body.textContent).not.toContain(
-      "No project knowledge linked yet",
-    );
+    expect(document.body.textContent).toContain("Coastal Survey Knowledge Base");
+    expect(document.body.textContent).not.toContain("Without Knowledge Base");
   });
 
   it("shows the soft knowledge indicator when project knowledge is not cached", async () => {
@@ -424,12 +493,8 @@ describe("composer send menu", () => {
       selectedAliasHasCachedContent: false,
     });
 
-    expect(document.body.textContent).toContain(
-      "No project knowledge linked yet",
-    );
-    expect(document.body.textContent).toContain(
-      "AI Draft will use voice instructions only",
-    );
+    expect(document.body.textContent).toContain("Without Knowledge Base");
+    expect(document.body.textContent).not.toContain("Coastal Survey Knowledge Base");
   });
 
   it("renders the selected alias signature below the editor and hides empty signatures", async () => {
@@ -499,5 +564,33 @@ describe("composer send menu", () => {
 
     await click(disabledItem);
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("does not show SMS segment metrics in the default composer footer", async () => {
+    await mountSms();
+
+    expect(document.body.textContent).toContain("Add MMS");
+    expect(document.body.textContent).toContain("Shorten links");
+    expect(document.body.textContent).toContain("8/160");
+    expect(document.body.textContent).not.toContain("segments");
+    expect(document.body.textContent).not.toContain("GSM-7");
+    expect(document.body.textContent).not.toContain("remaining");
+    expect(document.body.textContent).not.toContain("Est.");
+    expect(document.querySelector("button[aria-label='SMS send options']")).not.toBeNull();
+  });
+
+  it("shows an extended SMS character counter after 160 encoded characters", async () => {
+    await mountSms({
+      body: "a".repeat(161),
+      segmentMetrics: {
+        encoding: "GSM-7",
+        length: 161,
+        remaining: 145,
+        segments: 2,
+        segmentCap: 153,
+      },
+    });
+
+    expect(document.body.textContent).toContain("161/320");
   });
 });

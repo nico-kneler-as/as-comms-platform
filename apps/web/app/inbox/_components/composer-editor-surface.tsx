@@ -47,8 +47,8 @@ export function ComposerField({
   readonly children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-1.5">
-      <span className={`mt-1 w-8 shrink-0 ${TYPE.label}`}>{label}</span>
+    <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-1.5">
+      <span className={`w-8 shrink-0 ${TYPE.label}`}>{label}</span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
@@ -147,6 +147,9 @@ export function RichTextComposerEditor({
   topSlot,
   bottomSlot,
   toolbarFooter,
+  className,
+  frameClassName,
+  contentClassName,
   onChange,
   onClearErrors,
 }: {
@@ -158,6 +161,9 @@ export function RichTextComposerEditor({
     readonly activeCommands: ReadonlySet<ComposerToolbarCommand>;
     readonly onCommand: (command: ComposerToolbarCommand) => void;
   }) => React.ReactNode;
+  readonly className?: string;
+  readonly frameClassName?: string;
+  readonly contentClassName?: string;
   readonly onChange: (value: {
     readonly bodyPlaintext: string;
     readonly bodyHtml: string;
@@ -190,7 +196,7 @@ export function RichTextComposerEditor({
         "aria-multiline": "true",
         ...(errorMessage ? { "aria-invalid": "true" } : {}),
         class: cn(
-          "min-h-48 w-full px-4 py-4 text-sm leading-6 text-slate-900 focus:outline-none [&_a]:text-sky-700 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_ol]:ml-5 [&_ol]:list-decimal [&_ul]:ml-5 [&_ul]:list-disc",
+          "min-h-44 w-full px-4 py-3 text-sm leading-6 text-slate-900 focus:outline-none [&_a]:text-sky-700 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-600 [&_ol]:ml-5 [&_ol]:list-decimal [&_ul]:ml-5 [&_ul]:list-disc",
           errorMessage ? "bg-rose-50/40" : "",
         ),
       },
@@ -284,16 +290,24 @@ export function RichTextComposerEditor({
   const showPlaceholder = bodyPlaintext.length === 0;
 
   return (
-    <>
-      <div className={`border border-slate-200 bg-white ${SHADOW.sm}`}>
+    <div className={cn(className)}>
+      <div
+        className={cn(
+          `border border-slate-200 bg-white ${SHADOW.sm}`,
+          frameClassName,
+        )}
+      >
         {toolbarFooter ? null : (
           <ComposerToolbar activeCommands={activeCommands} onCommand={runCommand} />
         )}
         {topSlot}
-        <div className="relative min-h-48" onKeyDown={handleKeyDown}>
-          <EditorContent editor={editor} />
+        <div
+          className={cn("relative min-h-44", contentClassName)}
+          onKeyDown={handleKeyDown}
+        >
+          <EditorContent editor={editor} className="h-full" />
           {showPlaceholder ? (
-            <span className="pointer-events-none absolute left-4 top-4 text-sm leading-6 text-slate-400">
+            <span className="pointer-events-none absolute left-4 top-3 text-sm leading-6 text-slate-400">
               Write your message
             </span>
           ) : null}
@@ -306,6 +320,6 @@ export function RichTextComposerEditor({
             onCommand: runCommand,
           })
         : null}
-    </>
+    </div>
   );
 }

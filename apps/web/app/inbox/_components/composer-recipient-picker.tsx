@@ -12,10 +12,7 @@ import {
   TRANSITION,
 } from "@/app/_lib/design-tokens-v2";
 
-import {
-  formatContactRecipientLabel,
-  resolveTypedEmailRecipient,
-} from "../_lib/composer-ui";
+import { resolveTypedEmailRecipient } from "../_lib/composer-ui";
 import {
   searchContactsAction,
   type ContactSearchResult,
@@ -72,11 +69,25 @@ function isSameRecipient(
   return false;
 }
 
+function getContactInitials(displayName: string): string {
+  const parts = displayName
+    .trim()
+    .split(/\s+/u)
+    .filter((part) => part.length > 0);
+
+  const initials =
+    parts.length > 1
+      ? `${parts[0]?.[0] ?? ""}${parts[parts.length - 1]?.[0] ?? ""}`
+      : (parts[0]?.slice(0, 2) ?? "");
+
+  return initials.toUpperCase();
+}
+
 export function ComposerRecipientPicker({
   recipients,
   locked = false,
   single = false,
-  placeholder = "Search Salesforce contacts or type an email",
+  placeholder = "Search contacts",
   rightSlot,
   onRecipientsChange,
 }: {
@@ -92,8 +103,30 @@ export function ComposerRecipientPicker({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<readonly ContactSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isResultsOpen, setIsResultsOpen] = useState(false);
   const activeSearchIdRef = useRef(0);
+  const rootRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (rootRef.current?.contains(target) === true) {
+        return;
+      }
+
+      setIsResultsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
 
   useEffect(() => {
     if (locked || (single && recipients.length > 0)) {
@@ -101,6 +134,7 @@ export function ComposerRecipientPicker({
       setQuery("");
       setResults([]);
       setIsSearching(false);
+      setIsResultsOpen(false);
       return undefined;
     }
 
@@ -110,6 +144,7 @@ export function ComposerRecipientPicker({
       activeSearchIdRef.current += 1;
       setResults([]);
       setIsSearching(false);
+      setIsResultsOpen(false);
       return undefined;
     }
 
@@ -142,6 +177,7 @@ export function ComposerRecipientPicker({
 
   const shouldShowInput = !locked && (!single || recipients.length === 0);
   const shouldShowResults =
+    isResultsOpen &&
     shouldShowInput &&
     (isSearching || results.length > 0 || query.trim().length >= 2);
 
@@ -159,10 +195,10 @@ export function ComposerRecipientPicker({
   };
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <div
         className={cn(
-          `flex min-h-9 flex-wrap items-center gap-1.5 rounded-md px-0 py-0.5`,
+          `flex min-h-8 flex-wrap items-center gap-1.5 rounded-md px-0 py-0.5`,
           !shouldShowInput && recipients.length > 0 ? "" : "pr-2",
         )}
       >
@@ -190,12 +226,18 @@ export function ComposerRecipientPicker({
         {shouldShowInput ? (
           <div className="flex min-w-[14rem] flex-1 items-center">
             {recipients.length === 0 ? (
-              <SearchIcon className="pointer-events-none mr-2 size-4 shrink-0 text-slate-400" />
+              <SearchIcon className="pointer-events-none mr-2 size-3.5 shrink-0 text-slate-400" />
             ) : null}
             <Input
               value={query}
               onChange={(event) => {
                 setQuery(event.currentTarget.value);
+                setIsResultsOpen(true);
+              }}
+              onFocus={() => {
+                if (query.trim().length >= 2 || results.length > 0) {
+                  setIsResultsOpen(true);
+                }
               }}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") {
@@ -222,13 +264,14 @@ export function ComposerRecipientPicker({
                 commitRecipient(typedEmailRecipient);
                 setQuery("");
                 setResults([]);
+                setIsResultsOpen(false);
               }}
               placeholder={recipients.length === 0 ? placeholder : ""}
               aria-expanded={shouldShowResults}
               aria-controls={shouldShowResults ? listboxId : undefined}
               aria-autocomplete="list"
               className={cn(
-                `h-8 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none ${FOCUS_RING}`,
+                `h-7 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none ${FOCUS_RING}`,
                 recipients.length === 0 ? "pl-0" : "",
               )}
             />
@@ -236,7 +279,7 @@ export function ComposerRecipientPicker({
         ) : null}
 
         {rightSlot ? (
-          <div className="ml-auto flex items-center self-start pt-1">
+          <div className="ml-auto flex items-center self-center">
             {rightSlot}
           </div>
         ) : null}
@@ -244,7 +287,7 @@ export function ComposerRecipientPicker({
 
       {shouldShowResults ? (
         <div
-          className={`absolute inset-x-0 top-full z-20 mt-2 overflow-hidden border border-slate-200 bg-white ${RADIUS.md} ${SHADOW.md}`}
+          className={`absolute inset-x-0 top-full z-20 mt-1 overflow-hidden border border-slate-200 bg-white ${RADIUS.md} ${SHADOW.md}`}
         >
           {isSearching ? (
             <div className="px-3 py-3 text-sm text-slate-500">
@@ -254,7 +297,7 @@ export function ComposerRecipientPicker({
             <ul
               id={listboxId}
               role="listbox"
-              className="max-h-72 divide-y divide-slate-100 overflow-y-auto"
+              className="max-h-64 divide-y divide-slate-100 overflow-y-auto"
             >
               {results.map((result) => (
                 <li key={result.id}>
@@ -264,25 +307,27 @@ export function ComposerRecipientPicker({
                       commitRecipient(toContactRecipient(result));
                       setQuery("");
                       setResults([]);
+                      setIsResultsOpen(false);
                     }}
-                    className={`flex w-full items-start justify-between gap-3 px-3 py-3 text-left ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:bg-slate-50`}
+                    className={`flex w-full items-center gap-3 px-3 py-1.5 text-left ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} hover:bg-slate-50`}
                   >
-                    <div className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-slate-900">
-                        {formatContactRecipientLabel({
-                          displayName: result.displayName,
-                          primaryEmail: result.primaryEmail,
-                        })}
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-sky-50 text-[10px] font-semibold text-sky-700">
+                        {getContactInitials(result.displayName)}
                       </span>
-                      <span className="mt-1 block text-xs text-slate-500">
-                        {result.primaryProjectName ?? "Contact recipient"}
+                      <span className="min-w-0">
+                        <span className="flex min-w-0 items-baseline gap-2">
+                          <span className="truncate text-[13px] font-semibold leading-4 text-slate-900">
+                            {result.displayName}
+                          </span>
+                          {result.primaryEmail ? (
+                            <span className="truncate text-[12px] leading-4 text-slate-500">
+                              {result.primaryEmail}
+                            </span>
+                          ) : null}
+                        </span>
                       </span>
                     </div>
-                    {result.salesforceContactId ? (
-                      <Chip tone="neutral" className="uppercase">
-                        SF
-                      </Chip>
-                    ) : null}
                   </button>
                 </li>
               ))}
@@ -311,11 +356,15 @@ function RecipientChip({
     <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2 pr-1.5 text-[12px] text-slate-700">
       <span className="min-w-0">
         {recipient.kind === "contact" ? (
-          <span className="block truncate font-medium text-slate-900">
-            {formatContactRecipientLabel({
-              displayName: recipient.displayName,
-              primaryEmail: recipient.primaryEmail,
-            })}
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className="truncate font-medium text-slate-900">
+              {recipient.displayName}
+            </span>
+            {recipient.primaryEmail ? (
+              <span className="truncate text-slate-500">
+                {recipient.primaryEmail}
+              </span>
+            ) : null}
           </span>
         ) : (
           <span className="flex min-w-0 items-center gap-2">

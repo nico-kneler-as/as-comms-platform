@@ -8,7 +8,6 @@ import { smsMetrics } from "@as-comms/domain/sms-segments";
 import {
   FOCUS_RING,
   TRANSITION,
-  TYPE,
 } from "@/app/_lib/design-tokens-v2";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -31,7 +30,7 @@ import {
 import { useInboxClient } from "./inbox-client-provider";
 import type { InboxSmsSenderOption } from "../_lib/view-models";
 import { resolveSmsConsentAction } from "../actions";
-import { ChevronDownIcon, MailIcon, NoteIcon, PhoneIcon, XIcon } from "./icons";
+import { ChevronDownIcon, MailIcon, PhoneIcon, XIcon } from "./icons";
 import { useAiDraftRun } from "../_hooks/use-ai-draft-run";
 import { useAttachmentIntake } from "../_hooks/use-attachment-intake";
 import { useComposerDraftState } from "../_hooks/use-composer-draft-state";
@@ -65,28 +64,19 @@ function resolveReplyTitle(input: {
   return /^re:/iu.test(base) ? base : `Re: ${base}`;
 }
 
-function appendComposerSignature(body: string, signature: string): string {
-  return signature.length > 0 ? `${body}\n\n${signature}` : body;
-}
-
 function ComposerModeTabs({
   activeTab,
-  canUseNoteTab,
   onEmail,
   onSms,
-  onNote,
 }: {
-  readonly activeTab: "email" | "sms" | "note";
-  readonly canUseNoteTab: boolean;
+  readonly activeTab: "email" | "sms";
   readonly onEmail: () => void;
   readonly onSms: () => void;
-  readonly onNote: () => void;
 }) {
-  const isNote = activeTab === "note";
   const isSms = activeTab === "sms";
 
   return (
-    <div className="border-b border-slate-200 px-4 py-2.5">
+    <div>
       <div
         role="tablist"
         aria-label="Composer type"
@@ -100,8 +90,8 @@ function ComposerModeTabs({
           className={cn(
             `inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion}`,
             activeTab === "email"
-              ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
-              : "text-slate-500",
+              ? "bg-violet-50 text-violet-700 shadow-sm ring-1 ring-violet-200"
+              : "text-slate-400 hover:bg-slate-50 hover:text-slate-600",
           )}
           onClick={onEmail}
         >
@@ -116,39 +106,20 @@ function ComposerModeTabs({
           className={cn(
             `inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion}`,
             isSms
-              ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
-              : "text-slate-500",
+              ? "bg-sky-50 text-sky-700 shadow-sm ring-1 ring-sky-200"
+              : "text-slate-400 hover:bg-slate-50 hover:text-slate-600",
           )}
           onClick={onSms}
         >
           <PhoneIcon className="size-3.5" />
           SMS
         </button>
-        {canUseNoteTab ? (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={isNote}
-            tabIndex={0}
-            className={cn(
-              `inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-medium ${FOCUS_RING}`,
-              isNote
-                ? "bg-white text-amber-700 shadow-sm ring-1 ring-amber-200"
-                : "text-amber-700",
-            )}
-            onClick={onNote}
-          >
-            <NoteIcon className="size-3.5" />
-            Note
-          </button>
-        ) : null}
       </div>
     </div>
   );
 }
 
 export function InboxComposerDetailPane({
-  outboundRateUsdPerSegment,
   smsEnabled = false,
   smsSenders = [],
 }: {
@@ -335,14 +306,12 @@ export function InboxComposerDetailPane({
     (error) => error.field === "attachments",
   );
   const modalTitle =
-    state.activeTab === "note"
-      ? "Note"
-      : isReplying && replyContext !== null
-        ? resolveReplyTitle({
-            subject: replyContext.subject,
-            fallbackName: replyContext.contactDisplayName,
-          })
-        : null;
+    isReplying && replyContext !== null
+      ? resolveReplyTitle({
+          subject: replyContext.subject,
+          fallbackName: replyContext.contactDisplayName,
+        })
+      : null;
   const handleFilesSelected = useAttachmentIntake({
     attachmentBytes,
     dispatch,
@@ -397,11 +366,7 @@ export function InboxComposerDetailPane({
     smsSenders.find((sender) => sender.id === state.smsSelectedSenderId) ??
     smsSenders[0] ??
     null;
-  const smsBodyWithSignature = appendComposerSignature(
-    state.smsBody,
-    selectedAliasSignature,
-  );
-  const smsMetricsValue = smsMetrics(smsBodyWithSignature);
+  const smsMetricsValue = smsMetrics(state.smsBody);
   const smsSendDisabledReason =
     state.smsRecipient === null
       ? "Choose a phone recipient first."
@@ -415,9 +380,37 @@ export function InboxComposerDetailPane({
             : "SMS requires prior inbound or recorded opt-in."
           : selectedSmsSender === null
             ? "No active SMS sender is configured."
-            : smsMetricsValue.segments > 10
-              ? "SMS messages are limited to 10 segments."
+            : smsMetricsValue.length > 320
+              ? "SMS messages are limited to 320 encoded characters."
               : null;
+
+  if (state.activeTab === "note") {
+    if (composerView !== "modal") {
+      return null;
+    }
+
+    return (
+      <ComposerNoteSurface
+        contactDisplayName={replyContext?.contactDisplayName ?? "this contact"}
+        body={state.body}
+        isSavingNote={isSavingNote}
+        isSaveNoteDisabled={isSaveNoteDisabled}
+        inlineError={state.inlineError}
+        textareaRef={bodyRef}
+        onBodyChange={(value) => {
+          dispatch({ type: "SET_BODY", body: value, bodyHtml: "" });
+          dispatch({ type: "CLEAR_ERRORS" });
+          setComposerErrors([]);
+        }}
+        onTextareaInput={autoResizeTextarea}
+        onSaveNote={saveNote}
+        onCancel={cancel}
+        onMinimize={minimizeComposer}
+        onClose={closeComposer}
+        {...(bodyError ? { bodyError } : {})}
+      />
+    );
+  }
 
   return (
     <Dialog
@@ -430,32 +423,23 @@ export function InboxComposerDetailPane({
     >
       <DialogContent
         className={cn(
-          `flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-[820px] flex-col gap-0 overflow-hidden border-slate-200 bg-white p-0 shadow-2xl ring-1 ring-slate-900/5 sm:rounded-xl [&>button:last-child]:hidden`,
+          `flex h-[656px] max-h-[84vh] w-[calc(100vw-2rem)] max-w-[1144px] flex-col gap-0 overflow-hidden border-slate-200 bg-white p-0 shadow-2xl ring-1 ring-slate-900/5 data-[state=closed]:!animate-none data-[state=open]:!animate-none sm:rounded-xl [&>button:last-child]:hidden`,
         )}
+        style={{ transform: "translate(-50%, -50%)" }}
       >
         <DialogTitle className="sr-only">
           {modalTitle ?? "Message composer"}
         </DialogTitle>
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
-          {modalTitle !== null ? (
-            <div className="flex min-w-0 items-center gap-2">
-              <span
-                aria-hidden="true"
-                className="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-900 text-white"
-              >
-                {state.activeTab === "note" ? (
-                  <NoteIcon className="size-3.5" />
-                ) : state.activeTab === "sms" ? (
-                  <PhoneIcon className="size-3.5" />
-                ) : (
-                  <MailIcon className="size-3.5" />
-                )}
-              </span>
-              <h2 className={`truncate ${TYPE.headingMd}`}>{modalTitle}</h2>
-            </div>
-          ) : (
-            <span aria-hidden="true" />
-          )}
+        <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
+          <ComposerModeTabs
+            activeTab={state.activeTab}
+            onEmail={() => {
+              dispatch({ type: "SET_ACTIVE_TAB", tab: "email" });
+            }}
+            onSms={() => {
+              dispatch({ type: "SET_ACTIVE_TAB", tab: "sms" });
+            }}
+          />
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -481,20 +465,6 @@ export function InboxComposerDetailPane({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-          <ComposerModeTabs
-            activeTab={state.activeTab}
-            canUseNoteTab={canUseNoteTab}
-            onEmail={() => {
-              dispatch({ type: "SET_ACTIVE_TAB", tab: "email" });
-            }}
-            onSms={() => {
-              dispatch({ type: "SET_ACTIVE_TAB", tab: "sms" });
-            }}
-            onNote={() => {
-              dispatch({ type: "SET_ACTIVE_TAB", tab: "note" });
-            }}
-          />
-
           {state.activeTab === "email" ? (
             <ComposerEmailSurface
               composerAliases={composerAliases}
@@ -598,7 +568,7 @@ export function InboxComposerDetailPane({
               {...(bodyError ? { bodyError } : {})}
               {...(attachmentError ? { attachmentError } : {})}
             />
-          ) : state.activeTab === "sms" ? (
+          ) : (
             <ComposerSmsSurface
               smsSenders={smsSenders}
               smsEnabled={smsEnabled}
@@ -608,15 +578,19 @@ export function InboxComposerDetailPane({
                 isReplying && replyContext?.contactPrimaryPhone !== null
               }
               body={state.smsBody}
-              selectedAliasSignature={selectedAliasSignature}
               segmentMetrics={smsMetricsValue}
-              outboundRateUsdPerSegment={outboundRateUsdPerSegment}
               aiDraft={aiDraft}
               aiDirective={state.aiDirective}
               repromptText={state.repromptText}
               isGeneratingAi={isGeneratingAi}
               runAiDraftDisabled={runAiDraftDisabled}
               runAiDraftDisabledReason={runAiDraftDisabledReason}
+              selectedAliasHasCachedContent={
+                selectedAliasRecord?.hasCachedContent === true
+              }
+              selectedAliasProjectName={
+                selectedAliasRecord?.projectName ?? null
+              }
               canSendAndSaveForAi={smsSendAndSaveAvailability.enabled}
               sendAndSaveDisabledReason={
                 smsSendAndSaveAvailability.disabledReason
@@ -682,30 +656,13 @@ export function InboxComposerDetailPane({
               {...(senderError ? { senderError } : {})}
               {...(bodyError ? { bodyError } : {})}
             />
-          ) : (
-            <ComposerNoteSurface
-              body={state.body}
-              isSavingNote={isSavingNote}
-              isSaveNoteDisabled={isSaveNoteDisabled}
-              inlineError={state.inlineError}
-              textareaRef={bodyRef}
-              onBodyChange={(value) => {
-                dispatch({ type: "SET_BODY", body: value, bodyHtml: "" });
-                dispatch({ type: "CLEAR_ERRORS" });
-                setComposerErrors([]);
-              }}
-              onTextareaInput={autoResizeTextarea}
-              onSaveNote={saveNote}
-              onCancel={cancel}
-              {...(bodyError ? { bodyError } : {})}
-            />
           )}
 
           <input
             ref={attachmentInputRef}
             type="file"
             multiple
-            className="hidden"
+            className="sr-only"
             onChange={handleFilesSelected}
           />
         </div>

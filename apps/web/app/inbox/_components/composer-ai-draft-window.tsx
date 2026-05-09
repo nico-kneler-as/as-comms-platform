@@ -21,6 +21,35 @@ import {
 } from "./icons";
 import type { AiDraftState } from "./inbox-client-provider";
 
+type AiDraftAccent = "violet" | "sky";
+
+const AI_DRAFT_ACCENT_CLASSES = {
+  violet: {
+    section: "border-violet-200 ring-violet-100",
+    header: "border-violet-100 bg-violet-50/40",
+    iconWrap: "bg-violet-100 text-violet-700",
+    icon: "text-violet-500",
+    textareaFocus: "focus:ring-violet-300",
+    repromptPlaceholder: "placeholder:text-violet-400/80",
+    repromptRing: "ring-violet-200 focus:ring-violet-400",
+    primary:
+      "bg-violet-600 text-white hover:bg-violet-700 disabled:bg-violet-300 disabled:text-white",
+    footer: "border-violet-100 bg-violet-50/40",
+  },
+  sky: {
+    section: "border-sky-200 ring-sky-100",
+    header: "border-sky-100 bg-sky-50/50",
+    iconWrap: "bg-sky-100 text-sky-700",
+    icon: "text-sky-500",
+    textareaFocus: "focus:ring-sky-300",
+    repromptPlaceholder: "placeholder:text-sky-400/80",
+    repromptRing: "ring-sky-200 focus:ring-sky-400",
+    primary:
+      "bg-sky-600 text-white hover:bg-sky-700 disabled:bg-sky-300 disabled:text-white",
+    footer: "border-sky-100 bg-sky-50/50",
+  },
+} as const;
+
 function DraftSkeleton() {
   return (
     <div className="space-y-1.5 rounded-md bg-slate-50/60 px-3 py-2.5 ring-1 ring-inset ring-slate-200">
@@ -37,12 +66,16 @@ function AiDraftActionButton({
   disabled = false,
   onClick,
   tone = "ghost",
+  accent = "violet",
 }: {
   readonly children: ReactNode;
   readonly disabled?: boolean;
   readonly onClick: () => void;
   readonly tone?: "ghost" | "danger" | "primary";
+  readonly accent?: AiDraftAccent;
 }) {
+  const accentClasses = AI_DRAFT_ACCENT_CLASSES[accent];
+
   return (
     <button
       type="button"
@@ -51,7 +84,7 @@ function AiDraftActionButton({
       className={cn(
         `inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion}`,
         tone === "primary"
-          ? "bg-violet-600 text-white hover:bg-violet-700 disabled:bg-violet-300 disabled:text-white"
+          ? accentClasses.primary
           : tone === "danger"
             ? "text-rose-600 hover:bg-rose-50 disabled:text-rose-300"
             : "text-slate-700 hover:bg-white disabled:text-slate-300",
@@ -76,18 +109,24 @@ function DraftActionTrigger({
   disabledReason,
   isGenerating,
   onRun,
+  accent = "violet",
 }: {
   readonly disabled: boolean;
   readonly disabledReason: string | null;
   readonly isGenerating: boolean;
   readonly onRun: () => void;
+  readonly accent?: AiDraftAccent;
 }) {
+  const accentClasses = AI_DRAFT_ACCENT_CLASSES[accent];
   const button = (
     <Button
       type="button"
       disabled={disabled}
       onClick={onRun}
-      className="h-8 shrink-0 rounded-md bg-violet-600 px-3 text-[12px] font-medium text-white shadow-sm hover:bg-violet-700 disabled:bg-violet-300"
+      className={cn(
+        "h-8 shrink-0 rounded-md px-3 text-[12px] font-medium shadow-sm",
+        accentClasses.primary,
+      )}
     >
       {isGenerating ? (
         <>
@@ -120,7 +159,8 @@ function DraftActionTrigger({
 }
 
 export function ComposerAiDraftWindow({
-  directivePlaceholder = 'Optional: nudge the draft (e.g. "keep it brief, offer May 14 slot"). Or just click Draft with AI.',
+  tone = "email",
+  directivePlaceholder = 'Provide an intent first, or click the "Draft with AI" button directly',
   aiDraft,
   directiveText,
   repromptText,
@@ -136,6 +176,7 @@ export function ComposerAiDraftWindow({
   onDiscard,
   onApprove,
 }: {
+  readonly tone?: "email" | "sms";
   readonly directivePlaceholder?: string;
   readonly aiDraft: AiDraftState;
   readonly directiveText: string;
@@ -160,19 +201,36 @@ export function ComposerAiDraftWindow({
   const canSubmitReprompt = trimmedReprompt.length > 0 && !isGeneratingAi;
   const canApprove = !isGeneratingAi && (!isReprompting || trimmedReprompt.length === 0);
   const canUseDraftActions = !isGeneratingAi;
+  const accent: AiDraftAccent = tone === "sms" ? "sky" : "violet";
+  const accentClasses = AI_DRAFT_ACCENT_CLASSES[accent];
 
   return (
-    <section className="mx-4 mt-3 overflow-hidden rounded-xl border border-violet-200 bg-white ring-1 ring-violet-100">
-      <div className="flex items-center gap-2 border-b border-violet-100 bg-violet-50/40 px-3 py-2">
-        <div className="flex size-5 items-center justify-center rounded-md bg-violet-100 text-violet-700">
-          <SparkleIcon className="size-3.5 text-violet-500" />
+    <section
+      className={cn(
+        "mx-4 mt-3 min-w-0 overflow-hidden rounded-lg border bg-white ring-1",
+        accentClasses.section,
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-center gap-2 border-b px-3 py-1.5",
+          accentClasses.header,
+        )}
+      >
+        <div
+          className={cn(
+            "flex size-5 items-center justify-center rounded-md",
+            accentClasses.iconWrap,
+          )}
+        >
+          <SparkleIcon className={cn("size-3.5", accentClasses.icon)} />
         </div>
         <p className="text-[12px] font-semibold text-slate-800">AI draft</p>
       </div>
 
-      <div className="px-3 pb-3 pt-2">
+      <div className="min-w-0 px-3 pb-2.5 pt-2">
         {showsEmptyState ? (
-          <div className="flex items-start gap-2">
+          <div className="flex min-w-0 items-start gap-2">
             <textarea
               value={directiveText}
               onChange={(event) => {
@@ -191,13 +249,17 @@ export function ComposerAiDraftWindow({
               placeholder={directivePlaceholder}
               rows={2}
               disabled={isGeneratingAi}
-              className={`flex-1 resize-none rounded-md bg-slate-50/60 px-2.5 py-2 text-[12.5px] leading-relaxed text-slate-800 placeholder:text-slate-400 ring-1 ring-inset ring-slate-200 focus:outline-none focus:ring-violet-300 disabled:opacity-60 ${TRANSITION.reduceMotion}`}
+              className={cn(
+                `min-h-[44px] min-w-0 flex-1 resize-none rounded-md bg-slate-50/60 px-2.5 py-2 text-[12.5px] leading-relaxed text-slate-800 placeholder:text-slate-400 ring-1 ring-inset ring-slate-200 focus:outline-none disabled:opacity-60 ${TRANSITION.reduceMotion}`,
+                accentClasses.textareaFocus,
+              )}
             />
             <DraftActionTrigger
               disabled={runDraftDisabled}
               disabledReason={runDraftDisabledReason}
               isGenerating={isGeneratingAi}
               onRun={onRunDraft}
+              accent={accent}
             />
           </div>
         ) : null}
@@ -213,7 +275,7 @@ export function ComposerAiDraftWindow({
             <DraftPreview text={aiDraft.generatedText} />
 
             {isReprompting ? (
-              <div className="flex items-start gap-2">
+              <div className="flex min-w-0 items-start gap-2">
                 <textarea
                   autoFocus
                   value={repromptText}
@@ -236,14 +298,21 @@ export function ComposerAiDraftWindow({
                   }}
                   placeholder='Reprompt — "shorter", "warmer tone", "add the meeting link"...'
                   disabled={isGeneratingAi}
-                  className={`min-h-[64px] flex-1 resize-none rounded-md bg-white px-2.5 py-2 text-[12.5px] leading-relaxed text-slate-800 placeholder:text-violet-400/80 ring-1 ring-inset ring-violet-200 focus:outline-none focus:ring-violet-400 disabled:opacity-60 ${TRANSITION.reduceMotion}`}
+                  className={cn(
+                    `min-h-[64px] min-w-0 flex-1 resize-none rounded-md bg-white px-2.5 py-2 text-[12.5px] leading-relaxed text-slate-800 ring-1 ring-inset focus:outline-none disabled:opacity-60 ${TRANSITION.reduceMotion}`,
+                    accentClasses.repromptPlaceholder,
+                    accentClasses.repromptRing,
+                  )}
                 />
                 <button
                   type="button"
                   aria-label="Regenerate AI draft"
                   disabled={!canSubmitReprompt}
                   onClick={onSubmitReprompt}
-                  className={`inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-violet-600 p-2 text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-violet-300 ${FOCUS_RING} ${TRANSITION.fast} ${TRANSITION.reduceMotion}`}
+                  className={cn(
+                    `inline-flex size-9 shrink-0 items-center justify-center rounded-md p-2 shadow-sm disabled:cursor-not-allowed ${FOCUS_RING} ${TRANSITION.fast} ${TRANSITION.reduceMotion}`,
+                    accentClasses.primary,
+                  )}
                 >
                   <RotateCwIcon className="size-4" />
                 </button>
@@ -254,7 +323,12 @@ export function ComposerAiDraftWindow({
       </div>
 
       {showsDraft ? (
-        <div className="flex items-center gap-2 border-t border-violet-100 bg-violet-50/40 px-3 py-1.5">
+        <div
+          className={cn(
+            "flex items-center gap-2 border-t px-3 py-1.5",
+            accentClasses.footer,
+          )}
+        >
           <div className="ml-auto flex items-center gap-1">
             <AiDraftActionButton
               onClick={isReprompting ? onCancelReprompt : onOpenReprompt}
@@ -272,6 +346,7 @@ export function ComposerAiDraftWindow({
               Discard
             </AiDraftActionButton>
             <AiDraftActionButton
+              accent={accent}
               tone="primary"
               onClick={onApprove}
               disabled={!canApprove}
