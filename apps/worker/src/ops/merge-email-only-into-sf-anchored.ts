@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 import {
   closeDatabaseConnection,
@@ -635,11 +636,17 @@ export async function main(
   }
 }
 
-void main().catch((error: unknown) => {
-  console.error(
-    error instanceof Error
-      ? error.message
-      : "merge-email-only-into-sf-anchored failed.",
-  );
-  process.exitCode = 1;
-});
+// Only auto-run when invoked as a CLI entry point. Without this guard,
+// importing main() from cli.ts (or any other module) would re-trigger the
+// op as a side-effect — once let a `--execute` flag passed to a sibling op
+// accidentally drive a 3-pair merge during a reconcile-stale-canonical run.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  void main().catch((error: unknown) => {
+    console.error(
+      error instanceof Error
+        ? error.message
+        : "merge-email-only-into-sf-anchored failed.",
+    );
+    process.exitCode = 1;
+  });
+}
