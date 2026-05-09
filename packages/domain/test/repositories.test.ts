@@ -74,6 +74,8 @@ describe("defineStage1RepositoryBundle", () => {
         listAll: () => Promise.resolve([contact]),
         listByIds: () => Promise.resolve([contact]),
         searchByQuery: () => Promise.resolve([contact]),
+        searchAllContacts: () =>
+          Promise.resolve({ rows: [], nextCursor: null }),
         upsert: (record) => Promise.resolve(record),
       },
       contactIdentities: {

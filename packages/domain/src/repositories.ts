@@ -176,6 +176,23 @@ export interface ProjectKnowledgeRepository {
   }): Promise<readonly ProjectKnowledgeEntryRecord[]>;
 }
 
+export interface AllContactsSearchMembership {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly projectAlias: string | null;
+}
+
+export interface AllContactsSearchRow {
+  readonly contact: ContactRecord;
+  readonly memberships: readonly AllContactsSearchMembership[];
+  readonly lastActivityAt: string | null;
+}
+
+export interface AllContactsSearchCursor {
+  readonly displayName: string;
+  readonly contactId: string;
+}
+
 export interface ContactRepository {
   findById(id: string): Promise<ContactRecord | null>;
   findBySalesforceContactId(
@@ -188,6 +205,22 @@ export interface ContactRepository {
     readonly query: string;
     readonly limit: number;
   }): Promise<readonly ContactRecord[]>;
+  /**
+   * Bypasses the inbox projection and queries the `contacts` table directly so
+   * volunteer-support operators can find any contact in the database — even
+   * those with only lifecycle/campaign events (or no events at all). Returns
+   * each contact with their active project memberships and last canonical
+   * activity timestamp (across ALL event types, not just inbox-driving ones).
+   * No active-project filter, no membership filter, no event-existence filter.
+   */
+  searchAllContacts(input: {
+    readonly query: string;
+    readonly limit: number;
+    readonly cursor: AllContactsSearchCursor | null;
+  }): Promise<{
+    readonly rows: readonly AllContactsSearchRow[];
+    readonly nextCursor: AllContactsSearchCursor | null;
+  }>;
   upsert(record: ContactRecord): Promise<ContactRecord>;
 }
 
