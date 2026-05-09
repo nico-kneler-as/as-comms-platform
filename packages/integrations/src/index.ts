@@ -5,6 +5,7 @@
 
 export * from "./provider-types.js";
 export * from "./shared.js";
+export * from "./ai-knowledge-fetchers.js";
 export {
   classifySalesforceTaskMessageKind,
   parseSubjectDirection,
@@ -30,6 +31,7 @@ export * from "./providers/gmail-record-builder.js";
 export * from "./providers/mailchimp.js";
 export * from "./providers/anthropic.js";
 export * from "./providers/notion.js";
+export * from "./notion-markdown-page.js";
 export * from "./providers/salesforce.js";
 export * from "./providers/simpletexting.js";
 export * from "./providers/twilio.js";
