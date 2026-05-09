@@ -107,6 +107,7 @@ describe("defineStage1RepositoryBundle", () => {
         getActiveUsageSnapshot: () => Promise.resolve(null),
       },
       projectDimensions: {
+        findById: () => Promise.resolve(null),
         listAll: () => Promise.resolve([]),
         listActive: () => Promise.resolve([]),
         listByIds: () => Promise.resolve([]),

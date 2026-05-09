@@ -30,6 +30,7 @@
     "ops:migrate-notion-child-dbs-to-project-knowledge": "tsx src/ops/migrate-notion-child-dbs-to-project-knowledge.ts",
     "ops:dump-notion-page": "tsx src/ops/dump-notion-page.ts",
     "ops:create-notion-page-from-markdown": "tsx src/ops/create-notion-page-from-markdown.ts",
+    "ops:synthesize-multi-source": "tsx src/ops/synthesize-multi-source.ts",
     "ops:synthesize-project-knowledge": "tsx src/ops/synthesize-project-knowledge.ts",
     "ops:enqueue": "tsx src/ops/cli.ts enqueue",
     "ops:import-gmail-mbox": "tsx src/ops/cli.ts import-gmail-mbox",

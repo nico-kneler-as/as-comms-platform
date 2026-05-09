@@ -255,6 +255,7 @@ export interface SmsSenderRepository {
 }
 
 export interface ProjectDimensionRepository {
+  findById(projectId: string): Promise<ProjectDimensionRecord | null>;
   listAll(): Promise<readonly ProjectDimensionRecord[]>;
   listActive(): Promise<readonly ProjectDimensionRecord[]>;
   listByIds(
