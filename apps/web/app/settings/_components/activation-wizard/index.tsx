@@ -6,6 +6,7 @@ import { ArrowLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 import {
   type ActivationWizardInput,
   activateProjectFromWizardAction,
+  setProjectConnectedProjectsAction,
   submitWizardAiKnowledgeSourcesAction
 } from "@/app/settings/actions";
 import {
@@ -35,6 +36,7 @@ import {
   createInitialState
 } from "./state";
 import { StepAliases } from "./step-aliases";
+import { StepConnectedProjects } from "./step-connected-projects";
 import { StepKnowledge } from "./step-knowledge";
 import { StepPickProject } from "./step-pick-project";
 import { StepReview } from "./step-review";
@@ -64,6 +66,16 @@ export function ActivationWizard({
   const selectedProject =
     inactiveProjects.find((project) => project.projectId === state.pickedProjectId) ??
     null;
+  // The activation wizard's connected-projects step picks from the same
+  // "inactive AND not yet connected" pool that the project picker uses, but
+  // excludes the host being activated. The wizard's caller already filters
+  // to "inactive projects with no connection of their own" before passing
+  // them in, so we just need to drop the picked one.
+  const connectedProjectCandidates = inactiveProjects.filter(
+    (project) =>
+      project.projectId !== state.pickedProjectId &&
+      project.connectedToProjectId === null
+  );
   const primaryAlias = getPrimaryAlias(state.aliases);
   const stepValid = {
     0: getStepOneValid({
@@ -169,6 +181,23 @@ export function ActivationWizard({
         message: result.message
       });
       return;
+    }
+
+    if (state.connectedProjectIds.length > 0) {
+      const connectionResult = await setProjectConnectedProjectsAction(
+        selectedProject.projectId,
+        state.connectedProjectIds
+      );
+      if (!connectionResult.ok) {
+        // The host activated successfully but the connection step failed;
+        // surface the error so the operator can retry from the project
+        // detail page. The host stays activated.
+        dispatch({
+          type: "activation-error",
+          message: `Project activated, but connecting sub-projects failed: ${connectionResult.message}`
+        });
+        return;
+      }
     }
 
     dispatch({
@@ -322,6 +351,19 @@ export function ActivationWizard({
               ) : null}
 
               {!isActivated && state.step === 4 ? (
+                <StepConnectedProjects
+                  candidates={connectedProjectCandidates}
+                  selectedProjectIds={state.connectedProjectIds}
+                  onToggle={(projectId) => {
+                    dispatch({
+                      type: "toggle-connected-project",
+                      projectId
+                    });
+                  }}
+                />
+              ) : null}
+
+              {!isActivated && state.step === 5 ? (
                 <StepReview
                   selectedProject={selectedProject}
                   aliasDraft={state.aliasDraft}
@@ -329,6 +371,8 @@ export function ActivationWizard({
                   knowledgeSourcesText={state.knowledgeSourcesText}
                   skipKnowledgeSetup={state.skipKnowledgeSetup}
                   signatureDraft={state.signatureDraft}
+                  connectedProjectIds={state.connectedProjectIds}
+                  connectedProjectCandidates={connectedProjectCandidates}
                   activationError={state.activationMessage}
                 />
               ) : null}
@@ -351,7 +395,7 @@ export function ActivationWizard({
                 <Button type="button" onClick={handleClose}>
                   Done
                 </Button>
-              ) : state.step === 4 ? (
+              ) : state.step === 5 ? (
                 <Button
                   type="button"
                   onClick={() => {

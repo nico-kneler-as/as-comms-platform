@@ -508,6 +508,8 @@ function buildContext(input: {
       listAll: () => Promise.resolve([]),
       listActive: () => Promise.resolve([]),
       listByIds: () => Promise.resolve([]),
+      listConnectedProjects: () => Promise.resolve([]),
+      listAvailableConnectionCandidates: () => Promise.resolve([]),
       getAiKnowledgeSources: () => Promise.resolve([]),
       setAiKnowledgeSources: () => Promise.resolve(),
       setAiAutoSyncSchedule: () => Promise.resolve(),

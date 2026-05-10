@@ -31,6 +31,8 @@ vi.mock("lucide-react", () => ({
   Flag: () => null,
   FolderOpen: () => null,
   Inbox: () => null,
+  Link2: () => null,
+  Link2Off: () => null,
   Loader2: () => null,
   Mail: () => null,
   MailOpen: () => null,
@@ -110,7 +112,9 @@ vi.mock("../../app/settings/actions", () => ({
   activateProjectAction: vi.fn(),
   addAiKnowledgeSourceAction: vi.fn(),
   deactivateProjectAction: vi.fn(),
+  disconnectProjectAction: vi.fn(),
   removeAiKnowledgeSourceAction: vi.fn(),
+  setProjectConnectedProjectsAction: vi.fn(),
   syncOneAiKnowledgeSourceAction: vi.fn(),
   submitWizardAiKnowledgeSourcesAction: vi.fn(),
   triggerProjectKnowledgeSynthesisAction: vi.fn(),
@@ -134,6 +138,7 @@ describe("ProjectDetail role-aware rendering", () => {
           projectName: "Inactive Project",
           suggestedAlias: "Inactive Project",
           projectAlias: null,
+          connectedToProjectId: null,
           isActive: false,
           primaryEmail: "inactive@asc.internal",
           emailAliases: ["inactive@asc.internal"],
@@ -158,7 +163,10 @@ describe("ProjectDetail role-aware rendering", () => {
               signature: ""
             }
           ],
-          salesforceProjectId: "project:inactive"
+          salesforceProjectId: "project:inactive",
+          connectedProjects: [],
+          connectedToHost: null,
+          availableConnectionCandidates: []
         }
       })
     );

@@ -2394,6 +2394,46 @@ function buildTimelineEntry(input: {
   };
 }
 
+/**
+ * Filename patterns that email clients use as defaults when the sender
+ * embeds an inline image without an explicit filename — typically the
+ * sender's signature graphic. Used as a belt-and-suspenders alongside
+ * `message_attachments.is_inline`: capture-side detection requires both
+ * a Content-ID header AND a `cid:` reference in the live HTML body, but
+ * reply chains often strip the reference even though the image is still
+ * dragged along as a quoted-signature artifact. Those slip through the
+ * primary filter and end up showing as map-sized thumbnails.
+ *
+ * Patterns covered (case-insensitive):
+ *   - "noname"                   (Outlook default, no extension)
+ *   - "image001.png"             (Outlook embedded-image convention)
+ *   - "image.png" / "image.jpg"  (mobile mail clients, generic)
+ *   - "ATT00001.png"             (legacy Lotus Notes / similar)
+ *
+ * Conservative: only image MIME types, only when the filename matches
+ * one of these placeholder shapes. Real photos with descriptive names
+ * are unaffected, and the API endpoint still serves the bytes — we
+ * just don't surface them as visible thumbnails in the bubble.
+ */
+const INLINE_SIGNATURE_FILENAME_PATTERN =
+  /^(noname|image\d*\.(?:png|jpe?g|gif|webp)|ATT\d+\.(?:png|jpe?g|gif|webp))$/iu;
+
+function looksLikeInlineSignatureImage(attachment: {
+  readonly mimeType: string;
+  readonly filename: string | null;
+}): boolean {
+  if (!attachment.mimeType.toLowerCase().startsWith("image/")) {
+    return false;
+  }
+
+  const trimmed = attachment.filename?.trim();
+  if (trimmed === undefined || trimmed.length === 0) {
+    return true;
+  }
+
+  return INLINE_SIGNATURE_FILENAME_PATTERN.test(trimmed);
+}
+
 function buildEmailAttachmentsForEntry(input: {
   readonly canonical: readonly MessageAttachmentRecord[];
   readonly pending: readonly {
@@ -2403,7 +2443,10 @@ function buildEmailAttachmentsForEntry(input: {
   }[];
 }): InboxTimelineEntryViewModel["attachments"] {
   const canonicalAttachments = input.canonical
-    .filter((attachment) => !attachment.isInline)
+    .filter(
+      (attachment) =>
+        !attachment.isInline && !looksLikeInlineSignatureImage(attachment),
+    )
     .map((attachment) => ({
       id: attachment.id,
       mimeType: attachment.mimeType,
