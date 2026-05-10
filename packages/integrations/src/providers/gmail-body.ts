@@ -97,6 +97,15 @@ const ENCRYPTED_MIME_TYPES = new Set([
   "multipart/encrypted",
   "application/pgp-encrypted"
 ]);
+// `multipart/signed` envelopes whose protocol is one of these signature types
+// wrap the readable plaintext in a way mailparser frequently mis-extracts —
+// observed in production for proton.me PGP-signed and S/MIME-signed mail. We
+// route these to binary_fallback so the snippet fallback supplies a clean
+// preview rather than half-decoding the signed payload bytes.
+const SIGNED_ENVELOPE_PROTOCOLS = new Set([
+  "application/pgp-signature",
+  "application/pkcs7-signature",
+]);
 const DENYLISTED_ATTACHMENT_MIME_TYPES = new Set([
   "application/pkcs7-signature",
   "application/pgp-signature",
@@ -110,10 +119,11 @@ const REPLACEMENT_CHARACTER = "�";
 // example, an `application/pkcs7-mime` body misdeclared as `text/plain`, or a
 // signed-but-not-listed envelope. Legitimate emails with the occasional
 // private-use Unicode char come in well under 10%; encrypted bodies measured
-// in production sit at ~50%.
+// in production sit at ~50%. Short bodies (<32 chars) are flagged on any
+// suspicious char — proton.me PGP-signed envelopes leak as 5-7 char bodies
+// with 1-2 FFFDs that fall under the percentage threshold.
 const BINARY_NOISE_THRESHOLD = 0.3;
 const BINARY_NOISE_MIN_LENGTH = 32;
-const SHORT_BINARY_NOISE_MIN_SUSPICIOUS = 3;
 const DEFAULT_GMAIL_MIME_MAX_DEPTH = 64;
 const DEFAULT_GMAIL_MIME_MAX_PARTS = 512;
 const DEFAULT_GMAIL_MIME_MAX_DECODED_BYTES = 20 * 1024 * 1024;
@@ -267,10 +277,7 @@ export function isLikelyBinaryNoise(text: string): boolean {
   const ratio = suspicious / total;
 
   if (total < BINARY_NOISE_MIN_LENGTH) {
-    return (
-      suspicious >= SHORT_BINARY_NOISE_MIN_SUSPICIOUS &&
-      ratio >= BINARY_NOISE_THRESHOLD
-    );
+    return suspicious >= 1;
   }
 
   return ratio >= BINARY_NOISE_THRESHOLD;
@@ -690,6 +697,136 @@ function containsEncryptedBodyPartInternal(
   });
 }
 
+// Gmail's API pre-decodes Content-Transfer-Encoding before returning body.data,
+// so the bytes we get from decodePartBody are already plaintext (per the
+// declared charset). We must NOT re-apply CTE — feeding back to mailparser
+// with the original CTE header double-decodes and produces FFFD soup, which is
+// the root cause of the proton.me / mountainmadness "v+�)^�د" bug.
+function decodePartContentDirect(
+  part: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  decodeState: GmailMimeDecodeState,
+): string | null {
+  const rawBody = decodePartBody(part, context, decodeState);
+  if (rawBody === null) {
+    return null;
+  }
+
+  const contentTypeHeader = getPartHeader(part, "Content-Type") ?? "";
+  const charsetMatch = /charset\s*=\s*"?([^";\s]+)"?/iu.exec(contentTypeHeader);
+  const charset = charsetMatch?.[1]?.trim().toLowerCase() ?? "utf-8";
+
+  if (
+    charset === "utf-8" ||
+    charset === "utf8" ||
+    charset === "us-ascii" ||
+    charset === "ascii"
+  ) {
+    return rawBody.toString("utf8");
+  }
+
+  try {
+    return new TextDecoder(charset, { fatal: false }).decode(rawBody);
+  } catch {
+    return rawBody.toString("utf8");
+  }
+}
+
+function extractTextFromSignedEnvelopeInternal(
+  payload: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  decodeState: GmailMimeDecodeState,
+): string | null {
+  const traversalState: GmailMimeTraversalState = {
+    visitedParts: 0,
+    budgetExceeded: false,
+  };
+  const candidates = collectCandidateBodyPartsInternal(
+    payload,
+    context,
+    traversalState,
+  );
+
+  if (traversalState.budgetExceeded || candidates.length === 0) {
+    return null;
+  }
+
+  for (const kind of ["plain", "html"] as const) {
+    for (const candidate of candidates.filter((entry) => entry.kind === kind)) {
+      const decoded = decodePartContentDirect(
+        candidate.part,
+        context,
+        decodeState,
+      );
+
+      if (decodeState.budgetExceeded) {
+        return null;
+      }
+
+      if (decoded === null || decoded.length === 0) {
+        continue;
+      }
+
+      const cleaned = cleanGmailBodyPreviewText(decoded);
+
+      if (cleaned.length > 0 && !isLikelyBinaryNoise(cleaned)) {
+        return cleaned;
+      }
+    }
+  }
+
+  return null;
+}
+
+function isSignedEnvelopePart(part: GmailApiMessagePart): boolean {
+  const contentTypeHeader =
+    getPartHeader(part, "Content-Type") ?? part.mimeType ?? "";
+
+  if (normalizeMimeType(contentTypeHeader) !== "multipart/signed") {
+    return false;
+  }
+
+  const protocolMatch = /protocol\s*=\s*"?([^";\s]+)"?/iu.exec(
+    contentTypeHeader,
+  );
+  const protocol = protocolMatch?.[1]?.trim().toLowerCase() ?? "";
+  return SIGNED_ENVELOPE_PROTOCOLS.has(protocol);
+}
+
+function containsSignedEnvelopePartInternal(
+  part: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  traversalState: GmailMimeTraversalState,
+  depth = 0,
+): boolean {
+  if (depth > context.bounds.maxDepth) {
+    markTraversalBudgetExceeded(
+      context,
+      traversalState,
+      "depth",
+      context.bounds.maxDepth,
+    );
+    return true;
+  }
+
+  if (isSignedEnvelopePart(part)) {
+    return true;
+  }
+
+  return (part.parts ?? []).some((childPart) => {
+    if (visitChildPart(context, traversalState)) {
+      return true;
+    }
+
+    return containsSignedEnvelopePartInternal(
+      childPart,
+      context,
+      traversalState,
+      depth + 1,
+    );
+  });
+}
+
 function isAttachmentPart(part: GmailApiMessagePart): boolean {
   if ((part.filename?.trim().length ?? 0) > 0) {
     return true;
@@ -938,6 +1075,28 @@ async function extractTextFromMimePart(
   context: GmailMimeBudgetContext,
   decodeState: GmailMimeDecodeState
 ): Promise<string> {
+  // Direct decode bypasses mailparser. Gmail's API pre-decodes
+  // Content-Transfer-Encoding before returning body.data, so feeding the bytes
+  // back to mailparser with the original CTE header double-decodes and
+  // produces FFFD soup (the proton.me / mountainmadness "v+�)^�د" bug).
+  const directText = decodePartContentDirect(part, context, decodeState);
+
+  if (directText !== null && directText.length > 0) {
+    const cleaned = cleanGmailBodyPreviewText(directText);
+
+    if (cleaned.length > 0 && !isLikelyBinaryNoise(cleaned)) {
+      return cleaned;
+    }
+  }
+
+  if (decodeState.budgetExceeded) {
+    return "";
+  }
+
+  // Fallback: rebuild MIME and parse with mailparser. Reached when direct
+  // decode returns empty (no body.data) or noisy output (rare; would happen
+  // if Gmail unexpectedly returned CTE-encoded bytes, or for charsets that
+  // TextDecoder can't handle).
   const serializedPart = serializeMimePart(part, context, decodeState);
 
   if (serializedPart === null) {
@@ -986,6 +1145,38 @@ export async function extractGmailBodyPreviewFromPayloadResult(
     return buildBodyPreviewResult(
       ENCRYPTED_MESSAGE_PLACEHOLDER,
       "encrypted_placeholder"
+    );
+  }
+
+  const signedEnvelopeTraversalState: GmailMimeTraversalState = {
+    visitedParts: 0,
+    budgetExceeded: false,
+  };
+
+  if (
+    containsSignedEnvelopePartInternal(
+      payload,
+      context,
+      signedEnvelopeTraversalState,
+    )
+  ) {
+    const signedDecodeState: GmailMimeDecodeState = {
+      decodedBytes: 0,
+      budgetExceeded: false,
+    };
+    const directBody = extractTextFromSignedEnvelopeInternal(
+      payload,
+      context,
+      signedDecodeState,
+    );
+
+    if (directBody !== null) {
+      return buildBodyPreviewResult(directBody, "plaintext");
+    }
+
+    return buildBodyPreviewResult(
+      BINARY_FALLBACK_PLACEHOLDER,
+      "binary_fallback",
     );
   }
 
