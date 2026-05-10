@@ -697,6 +697,100 @@ function containsEncryptedBodyPartInternal(
   });
 }
 
+function decodeSignedPartContentDirect(
+  part: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  decodeState: GmailMimeDecodeState,
+): string | null {
+  const rawBody = decodePartBody(part, context, decodeState);
+  if (rawBody === null) {
+    return null;
+  }
+
+  const cte = (getPartHeader(part, "Content-Transfer-Encoding") ?? "")
+    .trim()
+    .toLowerCase();
+  const contentTypeHeader = getPartHeader(part, "Content-Type") ?? "";
+  const charsetMatch = /charset\s*=\s*"?([^";\s]+)"?/iu.exec(contentTypeHeader);
+  const charset = charsetMatch?.[1]?.trim().toLowerCase() ?? "utf-8";
+
+  if (cte === "quoted-printable") {
+    return decodeQuotedPrintable(rawBody.toString("ascii"));
+  }
+
+  let textBytes: Buffer;
+  if (cte === "base64") {
+    try {
+      textBytes = Buffer.from(rawBody.toString("ascii"), "base64");
+    } catch {
+      return null;
+    }
+  } else {
+    textBytes = rawBody;
+  }
+
+  if (
+    charset === "utf-8" ||
+    charset === "utf8" ||
+    charset === "us-ascii" ||
+    charset === "ascii"
+  ) {
+    return textBytes.toString("utf8");
+  }
+
+  try {
+    return new TextDecoder(charset, { fatal: false }).decode(textBytes);
+  } catch {
+    return null;
+  }
+}
+
+function extractTextFromSignedEnvelopeInternal(
+  payload: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  decodeState: GmailMimeDecodeState,
+): string | null {
+  const traversalState: GmailMimeTraversalState = {
+    visitedParts: 0,
+    budgetExceeded: false,
+  };
+  const candidates = collectCandidateBodyPartsInternal(
+    payload,
+    context,
+    traversalState,
+  );
+
+  if (traversalState.budgetExceeded || candidates.length === 0) {
+    return null;
+  }
+
+  for (const kind of ["plain", "html"] as const) {
+    for (const candidate of candidates.filter((entry) => entry.kind === kind)) {
+      const decoded = decodeSignedPartContentDirect(
+        candidate.part,
+        context,
+        decodeState,
+      );
+
+      if (decodeState.budgetExceeded) {
+        return null;
+      }
+
+      if (decoded === null || decoded.length === 0) {
+        continue;
+      }
+
+      const cleaned = cleanGmailBodyPreviewText(decoded);
+
+      if (cleaned.length > 0 && !isLikelyBinaryNoise(cleaned)) {
+        return cleaned;
+      }
+    }
+  }
+
+  return null;
+}
+
 function isSignedEnvelopePart(part: GmailApiMessagePart): boolean {
   const contentTypeHeader =
     getPartHeader(part, "Content-Type") ?? part.mimeType ?? "";
@@ -1057,6 +1151,20 @@ export async function extractGmailBodyPreviewFromPayloadResult(
       signedEnvelopeTraversalState,
     )
   ) {
+    const signedDecodeState: GmailMimeDecodeState = {
+      decodedBytes: 0,
+      budgetExceeded: false,
+    };
+    const directBody = extractTextFromSignedEnvelopeInternal(
+      payload,
+      context,
+      signedDecodeState,
+    );
+
+    if (directBody !== null) {
+      return buildBodyPreviewResult(directBody, "plaintext");
+    }
+
     return buildBodyPreviewResult(
       BINARY_FALLBACK_PLACEHOLDER,
       "binary_fallback",
