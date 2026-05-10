@@ -2116,15 +2116,20 @@ function createStage1RepositoriesInternal(
       },
 
       async searchInboxUnified(input) {
-        // Unified search backing the inbox search bar. Returns two sections:
-        //   A. contactMatches — name / primary email / primary phone ILIKE
-        //   B. bodyMatches    — projection snippet / latest message subject
-        //                       ILIKE, EXCLUDING contactMatches
+        // Unified search backing the inbox search bar. Returns the same
+        // contact-attribute query partitioned by membership-existence:
         //
-        // Both sections are sorted by lastActivityAt desc (across ALL
-        // canonical events, not just inbox-driving comm types) and capped at
-        // `limit`. `totals` reports the count BEFORE truncation so the UI
-        // can render "X+ results".
+        //   - volunteers: matched contacts with at least one row in
+        //     `contact_memberships` (active OR past).
+        //   - contacts:   matched contacts with zero membership rows.
+        //
+        // Sort key is `lastActivityAt` desc — restricted to
+        // volunteer-initiated events (lifecycle.* + inbound 1:1 comm +
+        // sms.opt_*) so an operator's outbound reply or a campaign send
+        // doesn't bump a contact to the top. NULL `lastActivityAt` sorts
+        // last with `contacts.created_at` desc as the tiebreaker. Each
+        // section is independently capped at `limit`. `totals` reports the
+        // pre-truncation count per section.
         const trimmedQuery = input.query.trim();
 
         if (trimmedQuery.length === 0) {
@@ -2132,86 +2137,58 @@ function createStage1RepositoriesInternal(
           // length the route should short-circuit before reaching this; this
           // is a defence-in-depth empty-result shortcut.
           return {
-            contactMatches: [],
-            bodyMatches: [],
-            totals: { contactMatches: 0, bodyMatches: 0 },
+            volunteers: [],
+            contacts: [],
+            totals: { volunteers: 0, contacts: 0 },
           };
         }
 
         const limit = Math.max(1, Math.min(input.limit, 200));
         const pattern = `%${escapeIlikePattern(trimmedQuery)}%`;
 
-        // Per-contact lastActivityAt CTE used by both sections so we don't
-        // recompute it twice. Anchored on canonical_event_ledger so any
-        // event type (comm, lifecycle, campaign) qualifies.
+        // Volunteer-initiated event types that count toward `lastActivityAt`.
+        // Excludes outbound sends, all campaign events, and internal notes
+        // so an operator's reply or a Mailchimp blast doesn't move a contact
+        // up the search-result list. See
+        // packages/contracts/src/stage1-taxonomy.ts:36-51 for the canonical
+        // event-type list.
+        const VOLUNTEER_SIDE_EVENT_TYPES = [
+          "lifecycle.signed_up",
+          "lifecycle.received_training",
+          "lifecycle.completed_training",
+          "lifecycle.submitted_first_data",
+          "communication.email.inbound",
+          "communication.sms.inbound",
+          "communication.sms.opt_in",
+          "communication.sms.opt_out",
+        ] as const;
+
+        // Per-contact lastActivityAt CTE filtered to volunteer-side events.
         const lastActivityCte = sql`(
           select
             ${canonicalEventLedger.contactId} as contact_id,
             max(${canonicalEventLedger.occurredAt}) as last_activity_at
           from ${canonicalEventLedger}
+          where ${canonicalEventLedger.eventType} in ${VOLUNTEER_SIDE_EVENT_TYPES}
           group by ${canonicalEventLedger.contactId}
         )`;
 
-        // Section A: contact-attribute matches. LEFT JOIN inbox projection
-        // so projection-backed contacts return their thread metadata for the
-        // hybrid row format; non-projection contacts get nulls and render as
-        // contact-only rows on the client.
-        //
-        // Section B: body matches with the same projection join, filtered to
-        // contacts NOT already in section A and with snippet/subject ILIKE.
-        // We run both as raw SQL so the lastActivityAt sort uses the CTE
-        // value uniformly even when the projection is absent.
+        // Per-contact membership-existence CTE. Either an active OR past
+        // membership qualifies — any row in `contact_memberships` for the
+        // contact flips them into the Volunteers section.
+        const membershipFlagCte = sql`(
+          select distinct ${contactMemberships.contactId} as contact_id
+          from ${contactMemberships}
+        )`;
 
-        const totalsResult = await db.execute(sql`
-          with last_activity as ${lastActivityCte},
-          contact_matches as (
-            select ${contacts.id} as id
-            from ${contacts}
-            where (
-              ${contacts.displayName} ilike ${pattern} escape '\\'
-              or coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'
-              or coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'
-            )
-          ),
-          body_matches as (
-            select ${contactInboxProjection.contactId} as id
-            from ${contactInboxProjection}
-            left join ${canonicalEventLedger}
-              on ${canonicalEventLedger.id} = ${contactInboxProjection.lastCanonicalEventId}
-            left join ${gmailMessageDetails}
-              on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
-            left join ${salesforceCommunicationDetailsTable}
-              on ${salesforceCommunicationDetailsTable.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
-            where (
-              ${contactInboxProjection.snippet} ilike ${pattern} escape '\\'
-              or coalesce(${gmailMessageDetails.subject}, '') ilike ${pattern} escape '\\'
-              or coalesce(${salesforceCommunicationDetailsTable.subject}, '') ilike ${pattern} escape '\\'
-            )
-          )
-          select
-            (select count(*)::int from contact_matches) as contact_total,
-            (select count(*)::int from body_matches
-              where id not in (select id from contact_matches)
-            ) as body_total
-        `);
-
-        interface TotalsRow {
-          readonly contact_total: number | string | null;
-          readonly body_total: number | string | null;
-        }
-        const totalsRowSource = (
-          (totalsResult as { rows?: readonly TotalsRow[] }).rows ??
-          (totalsResult as readonly TotalsRow[])
-        );
-        const totalsRow = totalsRowSource[0] ?? {
-          contact_total: 0,
-          body_total: 0,
-        };
-        const contactTotal = Number(totalsRow.contact_total ?? 0);
-        const bodyTotal = Number(totalsRow.body_total ?? 0);
-
+        // Single contact-attribute query, partitioned in TS after we read
+        // the `has_membership` flag. We LEFT JOIN inbox projection so
+        // projection-backed contacts return their thread metadata for the
+        // hybrid row format; non-projection contacts get nulls and render
+        // as contact-only rows on the client.
         const contactMatchesResult = await db.execute(sql`
-          with last_activity as ${lastActivityCte}
+          with last_activity as ${lastActivityCte},
+          memberships_flag as ${membershipFlagCte}
           select
             ${contacts.id} as id,
             ${contacts.salesforceContactId} as salesforce_contact_id,
@@ -2221,6 +2198,7 @@ function createStage1RepositoriesInternal(
             ${contacts.createdAt} as created_at,
             ${contacts.updatedAt} as updated_at,
             la.last_activity_at as last_activity_at,
+            (mf.contact_id is not null) as has_membership,
             ${contactInboxProjection.snippet} as snippet,
             ${contactInboxProjection.lastEventType} as last_event_type,
             ${contactInboxProjection.lastCanonicalEventId} as last_canonical_event_id,
@@ -2229,6 +2207,8 @@ function createStage1RepositoriesInternal(
           from ${contacts}
           left join last_activity la
             on la.contact_id = ${contacts.id}
+          left join memberships_flag mf
+            on mf.contact_id = ${contacts.id}
           left join ${contactInboxProjection}
             on ${contactInboxProjection.contactId} = ${contacts.id}
           left join ${canonicalEventLedger}
@@ -2242,54 +2222,7 @@ function createStage1RepositoriesInternal(
             or coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'
             or coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'
           )
-          order by la.last_activity_at desc nulls last, ${contacts.displayName} asc, ${contacts.id} asc
-          limit ${limit}
-        `);
-
-        const bodyMatchesResult = await db.execute(sql`
-          with last_activity as ${lastActivityCte},
-          contact_matches as (
-            select ${contacts.id} as id
-            from ${contacts}
-            where (
-              ${contacts.displayName} ilike ${pattern} escape '\\'
-              or coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'
-              or coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'
-            )
-          )
-          select
-            ${contacts.id} as id,
-            ${contacts.salesforceContactId} as salesforce_contact_id,
-            ${contacts.displayName} as display_name,
-            ${contacts.primaryEmail} as primary_email,
-            ${contacts.primaryPhone} as primary_phone,
-            ${contacts.createdAt} as created_at,
-            ${contacts.updatedAt} as updated_at,
-            la.last_activity_at as last_activity_at,
-            ${contactInboxProjection.snippet} as snippet,
-            ${contactInboxProjection.lastEventType} as last_event_type,
-            ${contactInboxProjection.lastCanonicalEventId} as last_canonical_event_id,
-            coalesce(${gmailMessageDetails.subject}, ${salesforceCommunicationDetailsTable.subject}) as latest_subject,
-            true as has_projection
-          from ${contactInboxProjection}
-          inner join ${contacts}
-            on ${contacts.id} = ${contactInboxProjection.contactId}
-          left join last_activity la
-            on la.contact_id = ${contacts.id}
-          left join ${canonicalEventLedger}
-            on ${canonicalEventLedger.id} = ${contactInboxProjection.lastCanonicalEventId}
-          left join ${gmailMessageDetails}
-            on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
-          left join ${salesforceCommunicationDetailsTable}
-            on ${salesforceCommunicationDetailsTable.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
-          where (
-            ${contactInboxProjection.snippet} ilike ${pattern} escape '\\'
-            or coalesce(${gmailMessageDetails.subject}, '') ilike ${pattern} escape '\\'
-            or coalesce(${salesforceCommunicationDetailsTable.subject}, '') ilike ${pattern} escape '\\'
-          )
-          and ${contacts.id} not in (select id from contact_matches)
-          order by la.last_activity_at desc nulls last, ${contacts.displayName} asc, ${contacts.id} asc
-          limit ${limit}
+          order by la.last_activity_at desc nulls last, ${contacts.createdAt} desc, ${contacts.id} asc
         `);
 
         interface SearchRowResult {
@@ -2301,6 +2234,7 @@ function createStage1RepositoriesInternal(
           readonly created_at: Date | string;
           readonly updated_at: Date | string;
           readonly last_activity_at: Date | string | null;
+          readonly has_membership: boolean | string | number | null;
           readonly snippet: string | null;
           readonly last_event_type: string | null;
           readonly last_canonical_event_id: string | null;
@@ -2308,19 +2242,23 @@ function createStage1RepositoriesInternal(
           readonly has_projection: boolean | string | number | null;
         }
 
-        const contactRowsRaw =
+        const allRowsRaw =
           (contactMatchesResult as { rows?: readonly SearchRowResult[] }).rows ??
           (contactMatchesResult as readonly SearchRowResult[]);
-        const bodyRowsRaw =
-          (bodyMatchesResult as { rows?: readonly SearchRowResult[] }).rows ??
-          (bodyMatchesResult as readonly SearchRowResult[]);
 
-        const allMatchedIds = new Set<string>();
-        for (const row of contactRowsRaw) allMatchedIds.add(row.id);
-        for (const row of bodyRowsRaw) allMatchedIds.add(row.id);
-        const matchedContactIds = [...allMatchedIds];
+        // Postgres can return booleans as boolean | "t"/"f" | 1/0 depending
+        // on the driver layer; normalise once.
+        const isTruthyBool = (
+          value: boolean | string | number | null | undefined,
+        ): boolean =>
+          value === true || value === "t" || value === 1 || value === "1";
 
-        // Active project memberships for chip rendering.
+        const matchedContactIds = allRowsRaw.map((row) => row.id);
+
+        // Active project memberships for chip rendering. Same join as before:
+        // `contact_memberships` filtered by active project. (Membership-flag
+        // CTE above considers any membership row; this query is for the chip
+        // payload, which only renders active projects.)
         const membershipRows =
           matchedContactIds.length === 0
             ? []
@@ -2384,11 +2322,9 @@ function createStage1RepositoriesInternal(
             updatedAt: toDate(raw.updated_at),
           }),
           memberships: membershipsByContactId.get(raw.id) ?? [],
+          hasMembership: isTruthyBool(raw.has_membership),
           lastActivityAt: toIso(raw.last_activity_at),
-          hasProjection:
-            raw.has_projection === true ||
-            raw.has_projection === "t" ||
-            raw.has_projection === 1,
+          hasProjection: isTruthyBool(raw.has_projection),
           snippet: raw.snippet,
           latestMessageSubject:
             raw.latest_subject !== null && raw.latest_subject.length > 0
@@ -2400,12 +2336,23 @@ function createStage1RepositoriesInternal(
               : (raw.last_event_type as InboxUnifiedSearchRow["lastEventType"]),
         });
 
+        const volunteerRowsAll: InboxUnifiedSearchRow[] = [];
+        const contactRowsAll: InboxUnifiedSearchRow[] = [];
+        for (const raw of allRowsRaw) {
+          const mapped = toRow(raw);
+          if (mapped.hasMembership) {
+            volunteerRowsAll.push(mapped);
+          } else {
+            contactRowsAll.push(mapped);
+          }
+        }
+
         return {
-          contactMatches: contactRowsRaw.map(toRow),
-          bodyMatches: bodyRowsRaw.map(toRow),
+          volunteers: volunteerRowsAll.slice(0, limit),
+          contacts: contactRowsAll.slice(0, limit),
           totals: {
-            contactMatches: contactTotal,
-            bodyMatches: bodyTotal,
+            volunteers: volunteerRowsAll.length,
+            contacts: contactRowsAll.length,
           },
         };
       },
