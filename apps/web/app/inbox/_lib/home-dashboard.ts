@@ -126,31 +126,58 @@ async function readLifecycleEvents(
     );
 }
 
-async function readLifecycleProjects(): Promise<readonly ProjectRow[]> {
+interface LifecycleProjectsData {
+  readonly tiles: readonly ProjectRow[];
+  // Sub-project id -> host id, used to fold connected-sub-project memberships
+  // and lifecycle events into the host's tile. See migration 0056.
+  readonly hostByConnectedProjectId: ReadonlyMap<string, string>;
+}
+
+async function readLifecycleProjects(): Promise<LifecycleProjectsData> {
   const runtime = await getStage1WebRuntime();
   const activeProjects = await runtime.repositories.projectDimensions.listActive();
+
+  // Connected sub-projects fold into their host's tile (one merged tile per
+  // host) instead of getting their own tile. Build the redirect map first so
+  // it stays consistent with the tile list below.
+  const hostByConnectedProjectId = new Map<string, string>();
+  const hostProjects = activeProjects.filter((project) => {
+    const connectedTo = project.connectedToProjectId ?? null;
+    if (connectedTo !== null && connectedTo.length > 0) {
+      hostByConnectedProjectId.set(project.projectId, connectedTo);
+      return false;
+    }
+    return true;
+  });
+
   const projectCounts = await Promise.all(
-    activeProjects.map((project) =>
+    hostProjects.map((project) =>
       runtime.repositories.inboxProjection.countByFilters({
         projectId: project.projectId,
       }),
     ),
   );
 
-  return activeProjects.map((project, index) => {
+  const tiles = hostProjects.map((project, index) => {
     const projectName = readProjectDisplayName(project);
     return {
       projectId: project.projectId,
       projectName,
       projectTone: projectToneFromName(projectName),
       isActive: project.isActive ?? true,
+      // countByFilters already counts connected-sub-project memberships under
+      // the host (buildInboxProjectPredicate's third branch), so this is the
+      // rolled-up unread count.
       unreadCount: projectCounts[index]?.unread ?? 0,
     };
   });
+
+  return { tiles, hostByConnectedProjectId };
 }
 
 async function readLifecycleMemberships(
   contactIds: readonly string[],
+  hostByConnectedProjectId: ReadonlyMap<string, string>,
 ): Promise<readonly MembershipRow[]> {
   const runtime = await getStage1WebRuntime();
   const memberships =
@@ -165,7 +192,10 @@ async function readLifecycleMemberships(
     )
     .map((membership) => ({
       contactId: membership.contactId,
-      projectId: membership.projectId,
+      // Memberships in a connected sub-project roll up to the host so the
+      // lifecycle metric aggregator credits the host's tile.
+      projectId:
+        hostByConnectedProjectId.get(membership.projectId) ?? membership.projectId,
     }));
 }
 
@@ -202,20 +232,21 @@ export async function getInboxWelcomeSalesforceLifecycle(
   },
 ): Promise<InboxWelcomeSalesforceLifecycleData> {
   const now = input?.now ?? new Date();
-  const [events, projects, lastSuccessAt] = await Promise.all([
+  const [events, projectsData, lastSuccessAt] = await Promise.all([
     readLifecycleEvents(now),
     readLifecycleProjects(),
     readSalesforceCaptureLastSuccessAt(),
   ]);
   const memberships = await readLifecycleMemberships(
     Array.from(new Set(events.map((event) => event.contactId))),
+    projectsData.hostByConnectedProjectId,
   );
 
   return {
     tiles: buildProjectLifecycleMetrics({
       events,
       memberships,
-      projects,
+      projects: projectsData.tiles,
       now,
     }),
     freshness: classifySyncFreshness({
