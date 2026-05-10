@@ -37,6 +37,11 @@ export const ACTIVATION_WIZARD_STEPS = [
     subtitle: "Add the sources the AI should learn from, or skip for now."
   },
   {
+    title: "Connected projects",
+    subtitle:
+      "Optionally roll inactive Salesforce projects into this one's inbox."
+  },
+  {
     title: "Review & activate",
     subtitle: "Confirm the project is ready to route mail."
   }

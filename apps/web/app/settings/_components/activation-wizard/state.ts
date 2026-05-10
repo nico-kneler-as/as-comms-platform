@@ -8,7 +8,7 @@ import {
   buildInitialAliases
 } from "./shared";
 
-export type StepIndex = 0 | 1 | 2 | 3 | 4;
+export type StepIndex = 0 | 1 | 2 | 3 | 4 | 5;
 export type KnowledgeStatus = "idle" | "syncing" | "done" | "error";
 
 export interface WizardState {
@@ -21,6 +21,7 @@ export interface WizardState {
   readonly skipKnowledgeSetup: boolean;
   readonly knowledgeStatus: KnowledgeStatus;
   readonly knowledgeMessage: string | null;
+  readonly connectedProjectIds: readonly string[];
   readonly activationStatus: "idle" | "pending" | "error";
   readonly activationMessage: string | null;
   readonly activatedProject: ProjectMutationData | null;
@@ -41,6 +42,7 @@ export type WizardAction =
   | { readonly type: "sync-start" }
   | { readonly type: "sync-done" }
   | { readonly type: "sync-error"; readonly message: string }
+  | { readonly type: "toggle-connected-project"; readonly projectId: string }
   | { readonly type: "activation-start" }
   | { readonly type: "activation-error"; readonly message: string }
   | { readonly type: "activation-success"; readonly project: ProjectMutationData };
@@ -62,6 +64,7 @@ export function createInitialState(
     skipKnowledgeSetup: false,
     knowledgeStatus: "idle",
     knowledgeMessage: null,
+    connectedProjectIds: [],
     activationStatus: "idle",
     activationMessage: null,
     activatedProject: null
@@ -112,7 +115,7 @@ export function activationWizardReducer(
           activationMessage: null,
           activationStatus: "idle"
         },
-        Math.min(state.step + 1, 4) as StepIndex
+        Math.min(state.step + 1, 5) as StepIndex
       );
     case "go-to-step":
       return prepareStateForStep(
@@ -134,6 +137,7 @@ export function activationWizardReducer(
         skipKnowledgeSetup: false,
         knowledgeStatus: "idle",
         knowledgeMessage: null,
+        connectedProjectIds: [],
         activationStatus: "idle",
         activationMessage: null,
         activatedProject: null
@@ -240,6 +244,19 @@ export function activationWizardReducer(
         knowledgeStatus: "error",
         knowledgeMessage: action.message
       };
+    case "toggle-connected-project": {
+      const isSelected = state.connectedProjectIds.includes(action.projectId);
+      return {
+        ...state,
+        connectedProjectIds: isSelected
+          ? state.connectedProjectIds.filter(
+              (projectId) => projectId !== action.projectId
+            )
+          : [...state.connectedProjectIds, action.projectId],
+        activationMessage: null,
+        activationStatus: "idle"
+      };
+    }
     case "activation-start":
       return {
         ...state,
@@ -249,7 +266,7 @@ export function activationWizardReducer(
     case "activation-error":
       return {
         ...state,
-        step: 4,
+        step: 5,
         activationStatus: "error",
         activationMessage: action.message
       };

@@ -58,6 +58,7 @@ describe("ProjectsSection accessibility", () => {
           projectName: "Orca Soundwatch",
           suggestedAlias: "Orca Soundwatch",
           projectAlias: "orca",
+          connectedToProjectId: null,
           isActive: true,
           primaryEmail: "orca@example.org",
           emailAliases: ["orca@example.org"],

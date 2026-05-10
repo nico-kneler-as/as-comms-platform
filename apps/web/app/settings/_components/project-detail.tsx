@@ -3,7 +3,7 @@
 import Link from "next/link";
 import * as React from "react";
 import { useOptimistic, useState, useTransition } from "react";
-import { ArrowLeft, Mail, Trash2 } from "lucide-react";
+import { ArrowLeft, Link2Off, Mail, Trash2 } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -30,6 +30,7 @@ import type { ProjectSettingsDetailViewModel } from "@/src/server/settings/selec
 import {
   activateProjectAction,
   deactivateProjectAction,
+  disconnectProjectAction,
   type ProjectEmailInput,
   type ProjectEmailMutationData,
   type ProjectMutationData,
@@ -42,6 +43,7 @@ import {
   normalizeProjectAliasSignature
 } from "../_lib/project-alias-signature";
 import { ProjectAiKnowledgeSection } from "./project-ai-knowledge-section";
+import { ProjectConnectedProjectsSection } from "./project-connected-projects-section";
 
 interface FeedbackState {
   readonly kind: "success" | "error";
@@ -62,6 +64,7 @@ function buildProjectState(
     projectId: project.projectId,
     projectName: project.projectName,
     projectAlias: project.projectAlias,
+    connectedToProjectId: project.connectedToProjectId,
     isActive: project.isActive,
     aiKnowledgeUrl: project.aiKnowledgeUrl,
     aiKnowledgeSyncedAt: project.aiKnowledgeSyncedAt,
@@ -428,7 +431,36 @@ export function ProjectDetail({
 
       commitProject(result.data);
       setDeactivateOpen(false);
-      announce(`${result.data.projectName} is now inactive.`);
+      const cascadedCount = result.data.cascadedSubProjects.length;
+      const cascadedNote =
+        cascadedCount === 0
+          ? ""
+          : ` (${String(cascadedCount)} connected sub-project${
+              cascadedCount === 1 ? "" : "s"
+            } also deactivated)`;
+      announce(
+        `${result.data.projectName} is now inactive.${cascadedNote}`
+      );
+    });
+  }
+
+  function handleDisconnect() {
+    startActivationTransition(async () => {
+      applyOptimisticProject({
+        isActive: false,
+        connectedToProjectId: null
+      });
+      const result = await disconnectProjectAction(project.projectId);
+
+      if (!result.ok) {
+        announce(result.message, "error");
+        return;
+      }
+
+      commitProject(result.data);
+      announce(
+        `Disconnected ${result.data.projectName} from its host. The project is now inactive.`
+      );
     });
   }
 
@@ -448,6 +480,19 @@ export function ProjectDetail({
   });
   const signaturePlaceholderProjectName =
     optimisticProject.projectAlias ?? optimisticProject.projectName;
+
+  // Connection state derived from the optimistic snapshot. A sub-project
+  // (connectedToProjectId set) inherits its alias and AI Knowledge from the
+  // host, so the corresponding fields are read-only and show inherited
+  // values. A host with non-empty alias and no parent is the only state in
+  // which the "Connected projects" card renders.
+  const isConnectedSub = optimisticProject.connectedToProjectId !== null;
+  const connectedHost = project.connectedToHost;
+  const isHost =
+    !isConnectedSub &&
+    optimisticProject.isActive &&
+    (optimisticProject.projectAlias?.trim().length ?? 0) > 0;
+  const cascadeSubProjects = project.connectedProjects;
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
@@ -480,6 +525,20 @@ export function ProjectDetail({
                 }
                 variant="soft"
               />
+              {isConnectedSub && connectedHost ? (
+                <Link
+                  href={`/settings/projects/${encodeURIComponent(
+                    connectedHost.projectId
+                  )}`}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-0.5 text-[11.5px] font-medium text-sky-800 ring-1 ring-inset ring-sky-200 hover:bg-sky-100",
+                    TRANSITION.fast,
+                    FOCUS_RING
+                  )}
+                >
+                  Connected to {connectedHost.projectName}
+                </Link>
+              ) : null}
             </div>
           </div>
 
@@ -544,34 +603,60 @@ export function ProjectDetail({
             >
               Project alias
             </label>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Input
-                id="project-short-alias"
-                value={projectAliasDraft}
-                onChange={(event) => {
-                  setProjectAliasDraft(event.target.value);
-                  setActivationMessage(null);
-                }}
-                disabled={!project.isAdmin || projectAliasPending}
-                readOnly={!project.isAdmin}
-                placeholder="Short internal project name"
-                className="font-mono text-[13px]"
-              />
-              {project.isAdmin ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={handleSaveProjectAlias}
-                  disabled={projectAliasPending || !projectAliasDirty}
-                >
-                  Save alias
-                </Button>
-              ) : null}
-            </div>
-            <span className={cn(TYPE.caption, "text-slate-500")}>
-              Short internal name used in inbox tags.
-            </span>
+            {isConnectedSub && connectedHost ? (
+              <>
+                <Input
+                  id="project-short-alias"
+                  value={connectedHost.projectAlias ?? ""}
+                  disabled
+                  readOnly
+                  className="font-mono text-[13px]"
+                />
+                <span className={cn(TYPE.caption, "text-slate-500")}>
+                  Inherited from{" "}
+                  <Link
+                    href={`/settings/projects/${encodeURIComponent(
+                      connectedHost.projectId
+                    )}`}
+                    className="font-medium text-sky-700 hover:underline"
+                  >
+                    {connectedHost.projectName}
+                  </Link>
+                  .
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    id="project-short-alias"
+                    value={projectAliasDraft}
+                    onChange={(event) => {
+                      setProjectAliasDraft(event.target.value);
+                      setActivationMessage(null);
+                    }}
+                    disabled={!project.isAdmin || projectAliasPending}
+                    readOnly={!project.isAdmin}
+                    placeholder="Short internal project name"
+                    className="font-mono text-[13px]"
+                  />
+                  {project.isAdmin ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleSaveProjectAlias}
+                      disabled={projectAliasPending || !projectAliasDirty}
+                    >
+                      Save alias
+                    </Button>
+                  ) : null}
+                </div>
+                <span className={cn(TYPE.caption, "text-slate-500")}>
+                  Short internal name used in inbox tags.
+                </span>
+              </>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -699,15 +784,46 @@ export function ProjectDetail({
           </div>
         </div>
 
-        <ProjectAiKnowledgeSection
-          projectId={project.projectId}
-          isAdmin={project.isAdmin}
-          initialSources={project.aiKnowledgeSources}
-          initialOperatingContext={project.aiOperatingContext}
-          initialAutoSyncSchedule={project.aiAutoSyncSchedule}
-          aiOptimizedSynthesizedAt={project.aiOptimizedSynthesizedAt}
-          aiKnowledgeSynthesisStale={project.aiKnowledgeSynthesisStale}
-        />
+        {isConnectedSub && connectedHost ? (
+          <div className="flex flex-col gap-1.5">
+            <span className={TYPE.label}>AI Knowledge</span>
+            <div className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-3">
+              <p className={cn(TYPE.caption, "text-slate-700")}>
+                AI Knowledge is inherited from{" "}
+                <Link
+                  href={`/settings/projects/${encodeURIComponent(
+                    connectedHost.projectId
+                  )}`}
+                  className="font-medium text-sky-700 hover:underline"
+                >
+                  {connectedHost.projectName}
+                </Link>
+                {connectedHost.aiKnowledgeUrl !== null
+                  ? ". Manage sources from the host project."
+                  : ". The host has no AI Knowledge URL configured yet."}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <ProjectAiKnowledgeSection
+            projectId={project.projectId}
+            isAdmin={project.isAdmin}
+            initialSources={project.aiKnowledgeSources}
+            initialOperatingContext={project.aiOperatingContext}
+            initialAutoSyncSchedule={project.aiAutoSyncSchedule}
+            aiOptimizedSynthesizedAt={project.aiOptimizedSynthesizedAt}
+            aiKnowledgeSynthesisStale={project.aiKnowledgeSynthesisStale}
+          />
+        )}
+
+        {isHost ? (
+          <ProjectConnectedProjectsSection
+            hostProjectId={project.projectId}
+            isAdmin={project.isAdmin}
+            initialConnectedProjects={project.connectedProjects}
+            initialAvailableCandidates={project.availableConnectionCandidates}
+          />
+        ) : null}
 
         <div className="flex flex-col gap-4">
           <span className={TYPE.label}>Email signatures</span>
@@ -813,9 +929,27 @@ export function ProjectDetail({
               <DialogHeader>
                 <DialogTitle>Deactivate {project.projectName}?</DialogTitle>
                 <DialogDescription>
-                  This will hide the project from the active list. Continue?
+                  {cascadeSubProjects.length === 0
+                    ? "This will hide the project from the active list. Continue?"
+                    : `Deactivating this project will also deactivate ${cascadeSubProjects
+                        .map((sub) => sub.projectName)
+                        .join(", ")} (currently connected). Continue?`}
                 </DialogDescription>
               </DialogHeader>
+              {cascadeSubProjects.length > 0 ? (
+                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-[12px] text-amber-900">
+                  <p className="font-medium">
+                    {String(cascadeSubProjects.length)} connected sub-project
+                    {cascadeSubProjects.length === 1 ? "" : "s"} will also
+                    deactivate:
+                  </p>
+                  <ul className="mt-1 list-inside list-disc">
+                    {cascadeSubProjects.map((sub) => (
+                      <li key={sub.projectId}>{sub.projectName}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               <DialogFooter className="mt-4">
                 <Button
                   type="button"
@@ -841,7 +975,96 @@ export function ProjectDetail({
             </DialogContent>
           </Dialog>
         ) : null}
+
+        {project.isAdmin && isConnectedSub ? (
+          <ConnectedSubDisconnectControl
+            projectName={project.projectName}
+            hostName={connectedHost?.projectName ?? "host"}
+            onDisconnect={handleDisconnect}
+            disabled={activationPending}
+          />
+        ) : null}
       </section>
     </div>
+  );
+}
+
+function ConnectedSubDisconnectControl({
+  projectName,
+  hostName,
+  onDisconnect,
+  disabled
+}: {
+  readonly projectName: string;
+  readonly hostName: string;
+  readonly onDisconnect: () => void;
+  readonly disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <div className="mt-1">
+        <div className="flex items-center justify-between rounded-md border border-rose-200/70 bg-rose-50/40 px-3 py-2">
+          <div className="text-[12px]">
+            <span className="font-medium text-rose-700">
+              Disconnect from {hostName}
+            </span>
+            <span className="ml-1.5 text-rose-600/80">
+              Deactivates this project. Volunteers stop rolling up.
+            </span>
+          </div>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "min-h-10 shrink-0 px-2 text-[12px] font-medium text-rose-700 hover:underline",
+                FOCUS_RING,
+                RADIUS.sm
+              )}
+            >
+              <Link2Off className="mr-1 inline size-3.5" aria-hidden="true" />
+              Disconnect
+            </button>
+          </DialogTrigger>
+        </div>
+      </div>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Disconnect {projectName} from {hostName}?
+          </DialogTitle>
+          <DialogDescription>
+            This project will be deactivated and its volunteers will no longer
+            roll up to {hostName}.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="mt-4">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setOpen(false);
+            }}
+            disabled={disabled}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            onClick={() => {
+              setOpen(false);
+              onDisconnect();
+            }}
+            disabled={disabled}
+          >
+            Disconnect project
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

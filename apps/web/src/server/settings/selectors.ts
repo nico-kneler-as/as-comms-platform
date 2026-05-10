@@ -20,6 +20,13 @@ export interface ProjectRowViewModel {
   readonly projectName: string;
   readonly suggestedAlias: string;
   readonly projectAlias: string | null;
+  /**
+   * When non-null, this project rolls up into the referenced host project's
+   * inbox / dashboard / AI knowledge. The shape of the host appears in
+   * `connectedToHost` on the detail view-model; rows surface the host's name
+   * via that nested field, not here.
+   */
+  readonly connectedToProjectId: string | null;
   readonly isActive: boolean;
   readonly primaryEmail: string | null;
   readonly emailAliases: readonly string[];
@@ -29,6 +36,18 @@ export interface ProjectRowViewModel {
   readonly hasCachedAiKnowledge: boolean;
   readonly memberCount: number;
   readonly activationRequirementsMet: boolean;
+}
+
+export interface ConnectedProjectSummaryViewModel {
+  readonly projectId: string;
+  readonly projectName: string;
+}
+
+export interface ConnectedHostSummaryViewModel {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly projectAlias: string | null;
+  readonly aiKnowledgeUrl: string | null;
 }
 
 export interface ProjectsSettingsViewModel {
@@ -57,6 +76,23 @@ export interface ProjectSettingsDetailViewModel extends ProjectRowViewModel {
     readonly signature: string;
   }[];
   readonly salesforceProjectId: string | null;
+  /**
+   * For host projects (alias non-null, connectedToProjectId null), the list
+   * of currently-connected sub-projects. Empty for sub-projects and
+   * standalone projects.
+   */
+  readonly connectedProjects: readonly ConnectedProjectSummaryViewModel[];
+  /**
+   * For connected sub-projects (connectedToProjectId non-null), the
+   * inherited host's identity + alias + AI knowledge URL. Null otherwise.
+   */
+  readonly connectedToHost: ConnectedHostSummaryViewModel | null;
+  /**
+   * The list of inactive, unconnected projects available to be picked as
+   * connection candidates. Provided to host detail pages so the "Add" picker
+   * can render server-rendered options without an extra round-trip.
+   */
+  readonly availableConnectionCandidates: readonly ConnectedProjectSummaryViewModel[];
 }
 
 export interface UserRowViewModel {
@@ -443,6 +479,7 @@ function toProjectRowViewModel(input: {
   readonly projectId: string;
   readonly projectName: string;
   readonly projectAlias: string | null;
+  readonly connectedToProjectId?: string | null;
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
@@ -464,6 +501,7 @@ function toProjectRowViewModel(input: {
     projectName: input.projectName,
     suggestedAlias: deriveSuggestedAlias(input.projectName),
     projectAlias: input.projectAlias,
+    connectedToProjectId: input.connectedToProjectId ?? null,
     isActive: input.isActive,
     primaryEmail,
     emailAliases: input.emails.map((email) => email.address),
@@ -553,6 +591,29 @@ async function readProjectSettingsDetail(
   const aiKnowledgeSources = dimension?.aiKnowledgeSources ?? [];
   const aiOptimizedInputHash = dimension?.aiOptimizedInputHash ?? null;
 
+  // For host projects (no connection of their own), look up active sub-
+  // projects rolling into this one, plus inactive candidates available to
+  // connect. Skip both queries for connected sub-projects: those don't get
+  // a picker and don't host their own connections.
+  const isHost = project.connectedToProjectId === null;
+  const [connectedSubs, candidates, host] = await Promise.all([
+    isHost
+      ? runtime.settings.projects.listConnectedProjects(projectId)
+      : Promise.resolve([] as readonly Awaited<
+          ReturnType<typeof runtime.settings.projects.listConnectedProjects>
+        >[number][]),
+    isHost
+      ? runtime.settings.projects.listAvailableConnectionCandidates()
+      : Promise.resolve([] as readonly Awaited<
+          ReturnType<
+            typeof runtime.settings.projects.listAvailableConnectionCandidates
+          >
+        >[number][]),
+    project.connectedToProjectId === null
+      ? Promise.resolve(null)
+      : runtime.settings.projects.findById(project.connectedToProjectId)
+  ]);
+
   return {
     ...toProjectRowViewModel(project),
     aiKnowledgeSources,
@@ -569,7 +630,24 @@ async function readProjectSettingsDetail(
       aiOptimizedInputHash !== null &&
       inputHashFromSources(aiKnowledgeSources) !== aiOptimizedInputHash,
     emails: project.emails,
-    salesforceProjectId: project.salesforceProjectId
+    salesforceProjectId: project.salesforceProjectId,
+    connectedProjects: connectedSubs.map((sub) => ({
+      projectId: sub.projectId,
+      projectName: sub.projectName
+    })),
+    connectedToHost:
+      host === null
+        ? null
+        : {
+            projectId: host.projectId,
+            projectName: host.projectName,
+            projectAlias: host.projectAlias,
+            aiKnowledgeUrl: host.aiKnowledgeUrl
+          },
+    availableConnectionCandidates: candidates.map((candidate) => ({
+      projectId: candidate.projectId,
+      projectName: candidate.projectName
+    }))
   };
 }
 
