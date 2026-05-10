@@ -617,10 +617,12 @@ describe("Inbox list shell", () => {
     const filterPane = session.container.querySelector(
       "[data-inbox-filter-pane='true']",
     );
-    expect(filterPane).not.toBeNull();
+    if (filterPane === null) {
+      throw new Error("filter pane not rendered");
+    }
 
     await act(async () => {
-      filterPane!.dispatchEvent(
+      filterPane.dispatchEvent(
         new PointerEvent("pointerdown", { bubbles: true }),
       );
       await Promise.resolve();
