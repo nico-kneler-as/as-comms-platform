@@ -116,6 +116,7 @@ vi.mock("../../app/inbox/_components/icons", () => ({
   SearchIcon: iconMock("SearchIcon"),
   SearchXIcon: iconMock("SearchXIcon"),
   SendIcon: iconMock("SendIcon"),
+  UserRoundIcon: iconMock("UserRoundIcon"),
   XIcon: iconMock("XIcon"),
 }));
 

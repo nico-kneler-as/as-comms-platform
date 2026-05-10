@@ -16,6 +16,9 @@ import {
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
+  AllContactsSearchCursor,
+  AllContactsSearchMembership,
+  AllContactsSearchRow,
   InternalNoteRecord,
   PendingComposerOutboundRecord,
   ProjectAliasRecord,
@@ -1976,6 +1979,161 @@ function createStage1RepositoriesInternal(
           .limit(limit);
 
         return rows.map(mapContactRow);
+      },
+
+      async searchAllContacts(input) {
+        // Sort: best-match relevance is overkill for v1 — sort by displayName
+        // ASC, then contactId ASC for deterministic pagination. The cursor is
+        // (displayName, contactId) keyset-style, which the
+        // contacts_display_name_idx covers without an extra index.
+        const trimmedQuery = input.query.trim();
+
+        if (trimmedQuery.length === 0) {
+          // Don't enumerate the entire DB. Empty query returns empty results.
+          return { rows: [], nextCursor: null };
+        }
+
+        const limit = Math.max(1, Math.min(input.limit, 200));
+        const pattern = `%${escapeIlikePattern(trimmedQuery)}%`;
+        const matchPredicate = or(
+          sql`${contacts.displayName} ilike ${pattern} escape '\\'`,
+          sql`coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'`,
+          sql`coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'`,
+        );
+        const cursorPredicate =
+          input.cursor === null
+            ? undefined
+            : or(
+                sql`${contacts.displayName} > ${input.cursor.displayName}`,
+                and(
+                  sql`${contacts.displayName} = ${input.cursor.displayName}`,
+                  sql`${contacts.id} > ${input.cursor.contactId}`,
+                ),
+              );
+        const wherePredicate =
+          cursorPredicate === undefined
+            ? matchPredicate
+            : and(matchPredicate, cursorPredicate);
+
+        const contactRows = await db
+          .select({
+            id: contacts.id,
+            salesforceContactId: contacts.salesforceContactId,
+            displayName: contacts.displayName,
+            primaryEmail: contacts.primaryEmail,
+            primaryPhone: contacts.primaryPhone,
+            createdAt: contacts.createdAt,
+            updatedAt: contacts.updatedAt,
+          })
+          .from(contacts)
+          .where(wherePredicate)
+          .orderBy(asc(contacts.displayName), asc(contacts.id))
+          .limit(limit);
+
+        if (contactRows.length === 0) {
+          return { rows: [], nextCursor: null };
+        }
+
+        const matchedContactIds = contactRows.map((row) => row.id);
+
+        // LEFT JOIN contact_memberships → project_dimensions (active only).
+        // Many contacts will have no active memberships and that's the
+        // expected v1 behaviour — chips just render empty.
+        const [membershipRows, activityRows] = await Promise.all([
+          db
+            .select({
+              contactId: contactMemberships.contactId,
+              projectId: projectDimensions.projectId,
+              projectName: projectDimensions.projectName,
+              projectAlias: projectDimensions.projectAlias,
+            })
+            .from(contactMemberships)
+            .innerJoin(
+              projectDimensions,
+              and(
+                eq(contactMemberships.projectId, projectDimensions.projectId),
+                eq(projectDimensions.isActive, true),
+              ),
+            )
+            .where(inArray(contactMemberships.contactId, matchedContactIds))
+            .orderBy(
+              asc(contactMemberships.contactId),
+              asc(projectDimensions.projectName),
+              asc(projectDimensions.projectId),
+            ),
+          // Last activity across ALL canonical events (not just inbox-driving
+          // comm types). Lifecycle, campaign, internal notes — anything in
+          // the ledger. NULL when the contact has no events at all.
+          db
+            .select({
+              contactId: canonicalEventLedger.contactId,
+              lastActivityAt: sql<Date | null>`max(${canonicalEventLedger.occurredAt})`,
+            })
+            .from(canonicalEventLedger)
+            .where(inArray(canonicalEventLedger.contactId, matchedContactIds))
+            .groupBy(canonicalEventLedger.contactId),
+        ]);
+
+        const membershipsByContactId = new Map<
+          string,
+          AllContactsSearchMembership[]
+        >();
+        for (const row of membershipRows) {
+          // innerJoin on project_dimensions guarantees projectId is non-null.
+          const existing = membershipsByContactId.get(row.contactId);
+          const entry: AllContactsSearchMembership = {
+            projectId: row.projectId,
+            projectName: row.projectName,
+            projectAlias: row.projectAlias,
+          };
+          if (existing === undefined) {
+            membershipsByContactId.set(row.contactId, [entry]);
+          } else if (
+            !existing.some((m) => m.projectId === entry.projectId)
+          ) {
+            existing.push(entry);
+          }
+        }
+
+        const lastActivityByContactId = new Map<string, string>();
+        for (const row of activityRows) {
+          if (row.lastActivityAt instanceof Date) {
+            lastActivityByContactId.set(
+              row.contactId,
+              row.lastActivityAt.toISOString(),
+            );
+          } else if (typeof row.lastActivityAt === "string") {
+            lastActivityByContactId.set(
+              row.contactId,
+              new Date(row.lastActivityAt).toISOString(),
+            );
+          }
+        }
+
+        const rows: AllContactsSearchRow[] = contactRows.map((row) => ({
+          contact: mapContactRow({
+            id: row.id,
+            salesforceContactId: row.salesforceContactId,
+            displayName: row.displayName,
+            primaryEmail: row.primaryEmail,
+            primaryPhone: row.primaryPhone,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          }),
+          memberships: membershipsByContactId.get(row.id) ?? [],
+          lastActivityAt: lastActivityByContactId.get(row.id) ?? null,
+        }));
+
+        const lastRow = contactRows[contactRows.length - 1];
+        const nextCursor: AllContactsSearchCursor | null =
+          contactRows.length === limit && lastRow !== undefined
+            ? {
+                displayName: lastRow.displayName,
+                contactId: lastRow.id,
+              }
+            : null;
+
+        return { rows, nextCursor };
       },
 
       async upsert(record) {

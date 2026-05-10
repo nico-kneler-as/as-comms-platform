@@ -448,6 +448,8 @@ function buildContext(input: {
             .filter((entry): entry is ContactRecord => entry !== undefined),
         ),
       searchByQuery: () => Promise.resolve([...contacts]),
+      searchAllContacts: () =>
+        Promise.resolve({ rows: [], nextCursor: null }),
       upsert: (record) => Promise.resolve(record),
     },
     contactIdentities: {
