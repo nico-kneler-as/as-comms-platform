@@ -6,6 +6,7 @@ import type {
   InboxFilterId,
   InboxListViewModel,
   InboxTimelineEntryViewModel,
+  InboxUnifiedSearchViewModel,
 } from "./view-models";
 
 export interface InboxTimelinePageResponse {
@@ -36,7 +37,6 @@ export function fetchInboxListPage(input: {
   readonly filterId: InboxFilterId;
   readonly cursor?: string | null;
   readonly limit?: number;
-  readonly query?: string | null;
   readonly projectId?: string | null;
 }): Promise<InboxListViewModel> {
   const params = new URLSearchParams({
@@ -51,12 +51,6 @@ export function fetchInboxListPage(input: {
     params.set("limit", input.limit.toString());
   }
 
-  const trimmedQuery = input.query?.trim();
-
-  if (trimmedQuery !== undefined && trimmedQuery.length > 0) {
-    params.set("q", trimmedQuery);
-  }
-
   if (
     input.projectId !== undefined &&
     input.projectId !== null &&
@@ -66,6 +60,15 @@ export function fetchInboxListPage(input: {
   }
 
   return readJson<InboxListViewModel>(`/api/inbox/list?${params.toString()}`);
+}
+
+export function fetchInboxUnifiedSearch(input: {
+  readonly query: string;
+}): Promise<InboxUnifiedSearchViewModel> {
+  const params = new URLSearchParams({ q: input.query.trim() });
+  return readJson<InboxUnifiedSearchViewModel>(
+    `/api/inbox/search?${params.toString()}`,
+  );
 }
 
 export function fetchInboxTimelinePage(input: {

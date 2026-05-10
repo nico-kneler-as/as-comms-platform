@@ -94,8 +94,12 @@ function buildRepositoryBundle(input: {
       listAll: () => Promise.resolve([contact]),
       listByIds: () => Promise.resolve([contact]),
       searchByQuery: () => Promise.resolve([contact]),
-      searchAllContacts: () =>
-        Promise.resolve({ rows: [], nextCursor: null }),
+      searchInboxUnified: () =>
+        Promise.resolve({
+          contactMatches: [],
+          bodyMatches: [],
+          totals: { contactMatches: 0, bodyMatches: 0 },
+        }),
       upsert: (record) => Promise.resolve(record),
     },
     contactIdentities: {

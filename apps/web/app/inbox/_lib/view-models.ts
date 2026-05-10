@@ -468,6 +468,47 @@ export interface InboxWelcomeWorkloadViewModel {
   };
 }
 
+/**
+ * Unified inbox search row. Subsumes both projection-backed contacts (for
+ * which `hasProjection === true` and `latestSubject`/`snippet` come from the
+ * projection) and contact-only rows (for which `hasProjection === false` and
+ * the secondary line shows email/phone instead).
+ */
+export interface InboxUnifiedSearchRowViewModel {
+  readonly contactId: string;
+  readonly displayName: string;
+  readonly initials: string;
+  readonly avatarTone: InboxAvatarTone;
+  readonly primaryEmail: string | null;
+  readonly primaryPhone: string | null;
+  readonly projectLabel: string | null;
+  readonly hasProjection: boolean;
+  /** Last activity across ALL canonical event types (lifecycle, comm, etc.). */
+  readonly lastActivityAt: string | null;
+  readonly lastActivityLabel: string;
+  /** Latest message subject, when projection-backed. Null otherwise. */
+  readonly latestSubject: string | null;
+  /** Latest message snippet, when projection-backed. Null otherwise. */
+  readonly snippet: string | null;
+  /** Channel for the latest message; null when no projection. */
+  readonly latestChannel: InboxChannel | null;
+  readonly lastEventType: CanonicalEventType | null;
+}
+
+/**
+ * Two-section unified search response. Both sections capped at 25 in v1.
+ * `totals` reports the count BEFORE truncation.
+ */
+export interface InboxUnifiedSearchViewModel {
+  readonly query: string;
+  readonly contactMatches: readonly InboxUnifiedSearchRowViewModel[];
+  readonly bodyMatches: readonly InboxUnifiedSearchRowViewModel[];
+  readonly totals: {
+    readonly contactMatches: number;
+    readonly bodyMatches: number;
+  };
+}
+
 export interface InboxListViewModel {
   readonly items: readonly InboxListItemViewModel[];
   readonly filters: readonly InboxFilterViewModel[];
