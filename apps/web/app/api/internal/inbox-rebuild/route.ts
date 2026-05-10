@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -26,7 +28,18 @@ function isAuthorized(request: Request): boolean {
     return false;
   }
 
-  return request.headers.get("authorization") === `Bearer ${expectedToken}`;
+  const received = request.headers.get("authorization") ?? "";
+  const expectedHeader = `Bearer ${expectedToken}`;
+  // Length check first — `timingSafeEqual` throws on length mismatch, and
+  // the throw itself would leak a length signal via timing. Short-circuit
+  // cleanly so equal-length comparisons run in constant time.
+  if (received.length !== expectedHeader.length) {
+    return false;
+  }
+  return timingSafeEqual(
+    Buffer.from(received, "utf8"),
+    Buffer.from(expectedHeader, "utf8"),
+  );
 }
 
 function compareCanonicalEventOrder(

@@ -25,6 +25,27 @@ const secretPatterns = [
     name: "hard-coded database URL",
     regex:
       /\b(?:DATABASE_URL|WORKER_DATABASE_URL|SUPABASE_SERVICE_ROLE_KEY)\s*[:=]\s*["'`][^"'`\s]{8,}/g
+  },
+  // Vendors we actually use — added 2026-05-02 after the pre-launch
+  // security review (.STATE-2026-05-02-security-review.md H3) noted the
+  // existing pattern list missed Anthropic / Notion / Google / OpenAI keys.
+  {
+    name: "Anthropic API key",
+    regex: /\bsk-ant-(?:api03|admin01)-[A-Za-z0-9_-]{80,}\b/g
+  },
+  {
+    name: "OpenAI API key",
+    // Negative lookahead excludes Anthropic keys (which also start with
+    // `sk-ant-` and would otherwise match this generic OpenAI shape).
+    regex: /\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{40,}\b/g
+  },
+  {
+    name: "Notion integration token",
+    regex: /\b(?:secret_|ntn_)[A-Za-z0-9]{40,}\b/g
+  },
+  {
+    name: "Google OAuth client secret",
+    regex: /\bGOCSPX-[A-Za-z0-9_-]{20,}\b/g
   }
 ];
 
