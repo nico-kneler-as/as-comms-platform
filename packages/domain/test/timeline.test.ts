@@ -162,6 +162,7 @@ function createRepositoryBundle(input: {
       setApproved: () => Promise.resolve(),
       deleteById: () => Promise.resolve(),
       getForRetrieval: () => Promise.resolve([]),
+      countCapturedSinceTimestamp: () => Promise.resolve(0),
     },
     contacts: {
       findById: () => Promise.resolve(contact),

@@ -206,6 +206,7 @@ function buildSynthesizeProjectKnowledgeDependencies(input: {
   return {
     repositories: {
       projectDimensions: input.repositories.projectDimensions,
+      projectKnowledge: input.repositories.projectKnowledge,
       settingsProjects: input.settings.projects,
     },
     fetchers: {

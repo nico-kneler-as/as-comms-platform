@@ -25,6 +25,7 @@ import {
   type AiDraftRequestPayload,
   type AiDraftResponse,
 } from "@/src/server/ai";
+import { enqueueSynthesizeProjectKnowledgeJob } from "@/src/server/ai/enqueue";
 import { getAiProviderConfig } from "@/src/server/ai/provider";
 import { readWebEnv } from "@/src/server/env";
 import { setInboxArchived } from "@/src/server/inbox/archive";
@@ -46,6 +47,17 @@ import type { MetricKey } from "./_lib/project-lifecycle-metrics";
 import type { UiResult } from "../../src/server/ui-result";
 
 const SMS_AI_MAX_TOKENS = 120;
+
+/**
+ * Phase 3 of PRD #366 — automatic AI Knowledge re-synthesis trigger.
+ *
+ * After this many "Send and save for AI" approvals accumulate for a project
+ * (since the last successful synthesis, or all-time if synthesis has never
+ * run), the inbox capture path enqueues a synthesis worker job so the
+ * AI's drafts continuously incorporate the operator's best work. Hardcoded
+ * for now; a future PR can make this per-project configurable.
+ */
+const AI_KNOWLEDGE_CAPTURE_TRIGGER_THRESHOLD = 5;
 
 const composerSendActionInputSchema = composerSendInputSchema.extend({
   saveAsKnowledge: z.boolean().optional(),
@@ -341,6 +353,13 @@ async function captureKnowledgeFromSend(input: {
           maskedExample: maskKnowledgeExample(input.bodyPlaintext),
         };
 
+  // Phase 3 of PRD #366: the operator's deliberate click on
+  // "Send and save for AI" IS the approval signal. The original spec assumed
+  // a separate review step (approvedForAi: false then a UI gate flips it),
+  // but that review UI was never built and is deferred to a later PRD. Per
+  // D-032 ("memory captured ONLY from human-approved sent replies"), this
+  // is consistent — the click is the human approval. Captures land
+  // approved-for-AI immediately and feed straight into synthesis weighting.
   await input.runtime.repositories.projectKnowledge.upsert({
     id: entryId,
     projectId: input.projectId,
@@ -351,13 +370,93 @@ async function captureKnowledgeFromSend(input: {
     replyStrategy: null,
     maskedExample: input.bodyPlaintext,
     sourceKind: "captured_from_send",
-    approvedForAi: false,
+    approvedForAi: true,
     sourceEventId: null,
     metadataJson,
     lastReviewedAt: null,
     createdAt: nowIso,
     updatedAt: nowIso,
   });
+
+  await maybeTriggerCaptureBasedSynthesis({
+    runtime: input.runtime,
+    projectId: input.projectId,
+  });
+}
+
+/**
+ * Phase 3 capture-trigger: after a successful "Send and save for AI" capture
+ * upsert, count how many approved-for-AI rows have accumulated since the
+ * last synthesis (or all-time if synthesis has never run). Once we cross
+ * the threshold AND the project has at least one enabled AI Knowledge
+ * source, enqueue the synthesis worker job.
+ *
+ * Failures here are logged but never thrown — the original Send-and-save
+ * action must remain successful even if the trigger queue is unavailable.
+ */
+async function maybeTriggerCaptureBasedSynthesis(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly projectId: string;
+}): Promise<void> {
+  try {
+    const project =
+      await input.runtime.repositories.projectDimensions.findById(
+        input.projectId,
+      );
+    if (project === null) {
+      return;
+    }
+
+    const lastSynthesizedAt = project.aiOptimizedSynthesizedAt;
+    const sinceDate =
+      typeof lastSynthesizedAt === "string" && lastSynthesizedAt.length > 0
+        ? new Date(lastSynthesizedAt)
+        : null;
+    const sinceForCount =
+      sinceDate !== null && Number.isFinite(sinceDate.getTime())
+        ? sinceDate
+        : null;
+
+    const approvedCount =
+      await input.runtime.repositories.projectKnowledge.countCapturedSinceTimestamp(
+        {
+          projectId: input.projectId,
+          since: sinceForCount,
+        },
+      );
+
+    if (approvedCount < AI_KNOWLEDGE_CAPTURE_TRIGGER_THRESHOLD) {
+      return;
+    }
+
+    const sources =
+      await input.runtime.repositories.projectDimensions.getAiKnowledgeSources(
+        input.projectId,
+      );
+    const hasEnabledSource = sources.some((source) => source.enabled);
+    if (!hasEnabledSource) {
+      return;
+    }
+
+    await enqueueSynthesizeProjectKnowledgeJob({
+      runtime: input.runtime,
+      projectId: input.projectId,
+      trigger: "capture_threshold",
+      // Approved-reply additions aren't part of the source-input hash — we
+      // explicitly want to re-synthesize even when Notion sources haven't
+      // changed because the new captures ARE the change signal.
+      skipIfHashUnchanged: false,
+      jobKey: `ai-knowledge-capture-trigger:${input.projectId}`,
+    });
+  } catch (error) {
+    console.warn(
+      "Capture-triggered AI knowledge synthesis enqueue failed; capture itself succeeded.",
+      {
+        projectId: input.projectId,
+        error,
+      },
+    );
+  }
 }
 
 function readSaveAsKnowledgeFlag(

@@ -428,6 +428,7 @@ function buildContext(input: {
       setApproved: () => Promise.resolve(),
       deleteById: () => Promise.resolve(),
       getForRetrieval: () => Promise.resolve([]),
+      countCapturedSinceTimestamp: () => Promise.resolve(0),
     },
     contacts: {
       findById: (id) => Promise.resolve(contactsById.get(id) ?? null),

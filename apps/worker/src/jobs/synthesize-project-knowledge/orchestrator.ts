@@ -1,9 +1,13 @@
 import type {
   AiKnowledgeSource,
   ProjectDimensionRecord,
+  ProjectKnowledgeEntryRecord,
 } from "@as-comms/contracts";
 import { inputHashFromSources, markSourceSyncResult } from "@as-comms/db";
-import type { ProjectDimensionRepository } from "@as-comms/domain";
+import type {
+  ProjectDimensionRepository,
+  ProjectKnowledgeRepository,
+} from "@as-comms/domain";
 import {
   estimateCostUsd,
   type GenerateDraftResult,
@@ -13,6 +17,7 @@ import {
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 const DEFAULT_MAX_TOKENS = 16_000;
 const DEFAULT_TEMPERATURE = 0.3;
+const APPROVED_REPLY_PROMPT_LIMIT = 50;
 
 export const SYNTHESIS_SYSTEM_PROMPT = `You are organizing an AI training document for a volunteer communications assistant. Your output will be used by an AI to draft replies to volunteers for a specific project.
 
@@ -120,6 +125,7 @@ export interface SynthesizeProjectKnowledgeOrchestratorDependencies {
       ProjectDimensionRepository,
       "findById" | "getAiKnowledgeSources" | "setAiKnowledgeSources"
     >;
+    readonly projectKnowledge: Pick<ProjectKnowledgeRepository, "list">;
   };
   readonly temperature?: number;
 }
@@ -184,8 +190,34 @@ ${source.content}
     .join("\n\n");
 }
 
+function buildApprovedReplyExamplesBlock(
+  approvedReplies: readonly ProjectKnowledgeEntryRecord[],
+): string {
+  if (approvedReplies.length === 0) {
+    return "";
+  }
+
+  const renderedExamples = approvedReplies
+    .map((reply, index) => {
+      const capturedAt = reply.createdAt.slice(0, 10);
+      const example = reply.maskedExample?.trim() ?? "";
+      return `--- Example ${String(index + 1)} (captured ${capturedAt}, kind=${reply.kind}) ---
+${example}`;
+    })
+    .join("\n\n");
+
+  return `
+
+Here are ${String(approvedReplies.length)} canonical reply examples that the operator has marked as exemplary via "Send and save for AI". These represent the gold standard for tone, structure, and approved phrasing for this project. Treat them as authoritative examples of how the team replies; weight them MORE HEAVILY than ordinary inbox-corpus patterns when synthesizing the FAQ section and tone signals.
+
+<APPROVED_REPLY_EXAMPLES>
+${renderedExamples}
+</APPROVED_REPLY_EXAMPLES>`;
+}
+
 function buildUserContent(input: {
   readonly healthySources: readonly HealthySourceContent[];
+  readonly approvedReplies: readonly ProjectKnowledgeEntryRecord[];
 }): string {
   const inlineDocs = input.healthySources
     .filter((source) => source.source.kind === "inline_text")
@@ -208,6 +240,9 @@ function buildUserContent(input: {
 Here are ${String(externalSourceCount)} additional source document(s) for this project (e.g., training course content, supplementary protocols). Integrate any unique facts from these into the appropriate sections of the AI Knowledge doc. Do not preserve them verbatim — overlap with the existing doc is expected and should be deduplicated. If the additional source contains a knowledge check / quiz, treat the quiz topics as a signal of what volunteers must know (and what the AI should be ready to support).
 
 ${additionalSourcesBlock}`;
+  const approvedRepliesNote = buildApprovedReplyExamplesBlock(
+    input.approvedReplies,
+  );
 
   return `Here is the existing AI Knowledge document for the project:
 
@@ -218,7 +253,7 @@ ${existingDoc}
 Here is the corpus of 0 past sent replies from this project's volunteer alias(es), most recent first:
 
 <EMAIL_CORPUS>
-</EMAIL_CORPUS>
+</EMAIL_CORPUS>${approvedRepliesNote}
 
 Produce the updated AI Knowledge document per the system instructions. Output ONLY the markdown.`;
 }
@@ -376,6 +411,19 @@ export async function synthesizeProjectKnowledgeOrchestrator(
     };
   }
 
+  // Phase 3 of PRD #366: weight operator-approved replies as canonical
+  // examples in synthesis. The capture path flips approvedForAi=true on
+  // every "Send and save for AI" click, so listing approved canonical
+  // replies returns the operator's curated tone/structure exemplars.
+  const allApprovedKnowledge =
+    await deps.repositories.projectKnowledge.list({
+      projectId: payload.projectId,
+      approvedOnly: true,
+    });
+  const approvedReplies = allApprovedKnowledge
+    .filter((entry) => entry.kind === "canonical_reply")
+    .slice(0, APPROVED_REPLY_PROMPT_LIMIT);
+
   try {
     const model = deps.model ?? DEFAULT_MODEL;
     const response = await deps.invokeModel({
@@ -384,7 +432,10 @@ export async function synthesizeProjectKnowledgeOrchestrator(
       messages: [
         {
           role: "user",
-          content: buildUserContent({ healthySources: syncPass.healthySources }),
+          content: buildUserContent({
+            healthySources: syncPass.healthySources,
+            approvedReplies,
+          }),
         },
       ],
       maxTokens: deps.maxTokens ?? DEFAULT_MAX_TOKENS,
