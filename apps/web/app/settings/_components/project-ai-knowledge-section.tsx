@@ -41,7 +41,11 @@ interface FeedbackState {
   readonly message: string;
 }
 
-const POLL_WINDOW_MS = 30_000;
+// Source fetches finish in seconds, but the synthesis tail (Claude call +
+// Notion publish + setSynthesisMetadata) can take 60-90s. Window is sized so
+// the operator sees "Last synthesized" tick forward on a normal run without
+// having to refresh the page.
+const POLL_WINDOW_MS = 120_000;
 const POLL_INTERVAL_MS = 3_000;
 
 function formatTimestamp(value: string | null): string {
@@ -212,13 +216,16 @@ export function ProjectAiKnowledgeSection({
     };
   }, [enqueuedAt, router]);
 
-  // If every enabled source has now caught up past the enqueue mark, lift the
-  // optimistic pending overlay early — no need to keep polling for 30s.
+  // Lift the optimistic pending overlay early once both legs of the run have
+  // caught up past the enqueue mark: every enabled source has been re-synced
+  // AND the synthesis tail has written aiOptimizedSynthesizedAt. Otherwise the
+  // 120s window keeps polling so the operator sees the synthesis timestamp
+  // appear without a manual refresh.
   useEffect(() => {
     if (enqueuedAt === null) {
       return;
     }
-    const stillPending = sources.some((source) => {
+    const sourcesPending = sources.some((source) => {
       if (!source.enabled) {
         return false;
       }
@@ -228,10 +235,17 @@ export function ProjectAiKnowledgeSection({
           : Date.parse(source.last_synced_at);
       return lastSyncedMs === null || lastSyncedMs < enqueuedAt;
     });
-    if (!stillPending) {
+    const synthesizedAtMs =
+      aiOptimizedSynthesizedAt === null
+        ? null
+        : Date.parse(aiOptimizedSynthesizedAt);
+    const synthesisPending =
+      synthesizedAtMs === null || synthesizedAtMs < enqueuedAt;
+
+    if (!sourcesPending && !synthesisPending) {
       setEnqueuedAt(null);
     }
-  }, [sources, enqueuedAt]);
+  }, [sources, enqueuedAt, aiOptimizedSynthesizedAt]);
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
     setFeedback({ kind, message });
@@ -645,12 +659,30 @@ export function ProjectAiKnowledgeSection({
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <p className="text-sm font-medium text-slate-900">Synthesis status</p>
-        <p className={cn(TYPE.caption, "mt-1 text-slate-600")}>
-          {aiOptimizedSynthesizedAt === null
-            ? "Not yet synthesized."
-            : `Last synthesized: ${formatTimestamp(aiOptimizedSynthesizedAt)} (${String(enabledHealthySources.length)} healthy enabled sources, model metadata unavailable).`}
+        <p
+          className={cn(
+            TYPE.caption,
+            "mt-1 flex items-center gap-1.5 text-slate-600"
+          )}
+        >
+          {enqueuedAt !== null ? (
+            <>
+              <RefreshCw
+                className="size-3 animate-spin text-sky-600"
+                aria-hidden="true"
+              />
+              <span>
+                Synthesizing now — Claude call + Notion publish typically
+                takes 30–90s.
+              </span>
+            </>
+          ) : aiOptimizedSynthesizedAt === null ? (
+            <span>Not yet synthesized.</span>
+          ) : (
+            <span>{`Last synthesized: ${formatTimestamp(aiOptimizedSynthesizedAt)} (${String(enabledHealthySources.length)} healthy enabled sources, model metadata unavailable).`}</span>
+          )}
         </p>
-        {aiKnowledgeSynthesisStale ? (
+        {aiKnowledgeSynthesisStale && enqueuedAt === null ? (
           <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
             Synthesis is stale. One or more source hashes no longer match the
             last synthesized input. Re-sync recommended.

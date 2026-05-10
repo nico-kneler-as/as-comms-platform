@@ -560,7 +560,13 @@ async function readProjectSettingsDetail(
     aiAutoSyncSchedule: dimension?.aiAutoSyncSchedule ?? "never",
     aiOptimizedSynthesizedAt: dimension?.aiOptimizedSynthesizedAt ?? null,
     aiOptimizedInputHash,
+    // Only consider synthesis "stale" when a prior synthesis exists to
+    // compare against. Otherwise (never-synthesized), the project is in a
+    // "needs first synthesis" state, which the Synthesis status copy already
+    // conveys via "Not yet synthesized." Showing the stale banner alongside
+    // that copy is contradictory — the input never matched anything yet.
     aiKnowledgeSynthesisStale:
+      aiOptimizedInputHash !== null &&
       inputHashFromSources(aiKnowledgeSources) !== aiOptimizedInputHash,
     emails: project.emails,
     salesforceProjectId: project.salesforceProjectId
