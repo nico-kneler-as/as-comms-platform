@@ -196,6 +196,16 @@ function setDomGlobals(window: Window & typeof globalThis) {
     configurable: true,
     value: window.MouseEvent,
   });
+  Object.defineProperty(globalThis, "PointerEvent", {
+    configurable: true,
+    value:
+      (window as unknown as { PointerEvent?: typeof PointerEvent })
+        .PointerEvent ?? window.MouseEvent,
+  });
+  Object.defineProperty(globalThis, "Element", {
+    configurable: true,
+    value: window.Element,
+  });
   Object.defineProperty(globalThis, "navigator", {
     configurable: true,
     value: window.navigator,
@@ -568,6 +578,89 @@ describe("Inbox list shell", () => {
       filterButton.querySelector("[data-filter-active-indicator='true']"),
     ).not.toBeNull();
     expect(session.container.textContent).not.toContain("All projects");
+  });
+
+  it("collapses the filter pane when a pointerdown fires outside it", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList();
+    const session = activeSession;
+
+    const filterButton = findButtonByLabel(session.container, "Filters");
+    act(() => {
+      filterButton.click();
+    });
+    expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+
+    // pointerdown on document.body — outside the filter pane and the toggle.
+    await act(async () => {
+      document.body.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true }),
+      );
+      await Promise.resolve();
+    });
+    await flushReact();
+
+    expect(filterButton.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("keeps the filter pane open when pointerdown fires inside it", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList();
+    const session = activeSession;
+
+    const filterButton = findButtonByLabel(session.container, "Filters");
+    act(() => {
+      filterButton.click();
+    });
+    expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+
+    const filterPane = session.container.querySelector(
+      "[data-inbox-filter-pane='true']",
+    );
+    if (filterPane === null) {
+      throw new Error("filter pane not rendered");
+    }
+
+    await act(async () => {
+      filterPane.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true }),
+      );
+      await Promise.resolve();
+    });
+    await flushReact();
+
+    expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("keeps the filter pane open when pointerdown fires on a Radix portal menu", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList();
+    const session = activeSession;
+
+    const filterButton = findButtonByLabel(session.container, "Filters");
+    act(() => {
+      filterButton.click();
+    });
+    expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+
+    // Simulate a Radix-portaled menu rendered outside the filter pane.
+    const portalMenu = document.createElement("div");
+    portalMenu.setAttribute("role", "menu");
+    document.body.appendChild(portalMenu);
+
+    try {
+      await act(async () => {
+        portalMenu.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true }),
+        );
+        await Promise.resolve();
+      });
+      await flushReact();
+
+      expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+    } finally {
+      document.body.removeChild(portalMenu);
+    }
   });
 
   it("keeps the filter panel open when a project is selected from the dropdown", async () => {

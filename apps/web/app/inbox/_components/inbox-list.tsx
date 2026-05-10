@@ -189,6 +189,8 @@ export function InboxList({
   const [isFilterPaneOpen, setFilterPaneOpen] = useState(false);
   const [isFilterTransitionPending, startFilterTransition] = useTransition();
   const activeRequestIdRef = useRef(0);
+  const filterPaneRef = useRef<HTMLDivElement | null>(null);
+  const filterToggleRef = useRef<HTMLButtonElement | null>(null);
   const listViewportRef = useRef<HTMLDivElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const pendingAppendCursorRef = useRef<string | null>(null);
@@ -614,6 +616,46 @@ export function InboxList({
     setFilterPaneOpen((isOpen) => !isOpen);
   }, []);
 
+  // Collapse the filter pane on outside pointerdown. The toggle button is
+  // excluded so it can still flip the pane closed via its own onClick. The
+  // project Radix `DropdownMenu` portals its content outside `filterPaneRef`,
+  // so allow clicks on any `[role="menu"]` element so picking a project does
+  // not close the pane on its way to the radio item handler.
+  useEffect(() => {
+    if (!isFilterPaneOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (filterPaneRef.current?.contains(target) === true) {
+        return;
+      }
+
+      if (filterToggleRef.current?.contains(target) === true) {
+        return;
+      }
+
+      if (
+        target instanceof Element &&
+        target.closest('[role="menu"]') !== null
+      ) {
+        return;
+      }
+
+      setFilterPaneOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isFilterPaneOpen]);
+
   useEffect(() => {
     const root = listViewportRef.current;
     const sentinel = loadMoreSentinelRef.current;
@@ -700,6 +742,7 @@ export function InboxList({
             <PencilIcon aria-hidden="true" data-icon="inline-start" />
           </Button>
           <Button
+            ref={filterToggleRef}
             type="button"
             variant="ghost"
             size="icon"
@@ -780,6 +823,7 @@ export function InboxList({
 
         {isFilterPaneOpen ? (
           <InboxFilterList
+            ref={filterPaneRef}
             id="inbox-filter-list"
             filters={currentList.filters}
             activeFilter={activeFilter}
