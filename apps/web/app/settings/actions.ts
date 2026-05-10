@@ -283,6 +283,8 @@ function serializeProjectMutationData(input: {
   };
 }
 
+const aiAutoSyncScheduleSchema = z.enum(["never", "daily", "weekly"]);
+
 async function resolveSettingsAdmin(input: {
   readonly unauthorizedMessage: string;
   readonly forbiddenMessage: string;
@@ -691,6 +693,10 @@ export interface ProjectAiKnowledgeSourcesMutationData {
 
 export interface ProjectOperatingContextMutationData {
   readonly content: string;
+}
+
+export interface ProjectAiAutoSyncScheduleMutationData {
+  readonly schedule: "never" | "daily" | "weekly";
 }
 
 function truncateAuditValue(value: string): string {
@@ -1691,6 +1697,58 @@ export async function updateOperatingContextAction(
     ok: true,
     data: {
       content: normalizedContent
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function updateAiAutoSyncScheduleAction(
+  projectId: string,
+  schedule: "never" | "daily" | "weekly",
+): Promise<UiResult<ProjectAiAutoSyncScheduleMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to update the auto-sync schedule.",
+    forbiddenMessage: "Only admins can update the auto-sync schedule."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = aiAutoSyncScheduleSchema.safeParse(schedule);
+  if (!parsed.success) {
+    return errorResult("validation_error", "Choose a valid auto-sync schedule.");
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.repositories.projectDimensions.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  const nextSchedule = parsed.data;
+  await runtime.repositories.projectDimensions.setAiAutoSyncSchedule(
+    projectId,
+    nextSchedule,
+  );
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.ai_auto_sync_schedule_updated",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      before: project.aiAutoSyncSchedule ?? "never",
+      after: nextSchedule,
+    }
+  });
+
+  revalidateProjectSettings(projectId);
+
+  return {
+    ok: true,
+    data: {
+      schedule: nextSchedule,
     },
     requestId: newRequestId()
   };

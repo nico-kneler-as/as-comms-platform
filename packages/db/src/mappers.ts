@@ -543,6 +543,7 @@ export function mapProjectDimensionRow(
     aiKnowledgeSyncedAt: fromDate(row.aiKnowledgeSyncedAt),
     aiKnowledgeSources: aiKnowledgeSourcesSchema.parse(row.aiKnowledgeSources),
     aiOperatingContext: row.aiOperatingContext,
+    aiAutoSyncSchedule: row.aiAutoSyncSchedule,
     aiOptimizedSynthesizedAt: fromDate(row.aiOptimizedSynthesizedAt),
     aiOptimizedInputHash: row.aiOptimizedInputHash,
   });
@@ -566,6 +567,7 @@ export function mapProjectDimensionToInsert(
         : toDate(parsed.aiKnowledgeSyncedAt),
     aiKnowledgeSources: parsed.aiKnowledgeSources ?? undefined,
     aiOperatingContext: parsed.aiOperatingContext ?? undefined,
+    aiAutoSyncSchedule: parsed.aiAutoSyncSchedule,
     aiOptimizedSynthesizedAt:
       parsed.aiOptimizedSynthesizedAt === undefined
         ? undefined

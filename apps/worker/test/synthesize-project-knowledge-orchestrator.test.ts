@@ -4,6 +4,7 @@ import type {
   AiKnowledgeSource,
   ProjectDimensionRecord,
 } from "@as-comms/contracts";
+import { inputHashFromSources } from "@as-comms/db";
 import type { GenerateDraftResult, SourceFetchResult } from "@as-comms/integrations";
 
 import { synthesizeProjectKnowledgeOrchestrator } from "../src/jobs/synthesize-project-knowledge/orchestrator.js";
@@ -19,6 +20,7 @@ function buildProject(): ProjectDimensionRecord {
     aiKnowledgeSyncedAt: null,
     aiKnowledgeSources: [],
     aiOperatingContext: "",
+    aiAutoSyncSchedule: "never",
     aiOptimizedSynthesizedAt: null,
     aiOptimizedInputHash: null,
   };
@@ -312,6 +314,81 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
       code: "llm_failed",
     });
     expect(setAiKnowledgeSources).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns unchanged and skips the model when source hashes match", async () => {
+    const sources = [
+      buildSource({
+        id: "88888888-8888-4888-8888-888888888888",
+        kind: "notion",
+        url: "https://www.notion.so/source",
+        source_content_hash: "hash:notion",
+        last_synced_at: "2026-05-08T12:00:00.000Z",
+      }),
+      buildSource({
+        id: "99999999-9999-4999-8999-999999999999",
+        kind: "web_page",
+        url: "https://example.test/project",
+        source_content_hash: "hash:web",
+        last_synced_at: "2026-05-08T12:00:00.000Z",
+      }),
+    ];
+    const project = {
+      ...buildProject(),
+      aiOptimizedInputHash: inputHashFromSources(sources),
+    } satisfies ProjectDimensionRecord;
+    const notionFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      unchanged: true,
+      lastModified: "2026-05-09T10:00:00.000Z",
+    } satisfies SourceFetchResult);
+    const webFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      unchanged: true,
+      lastModified: "2026-05-09T10:00:00.000Z",
+    } satisfies SourceFetchResult);
+    const setAiKnowledgeSources = vi.fn().mockResolvedValue(undefined);
+    const invokeModel = vi.fn();
+
+    const result = await synthesizeProjectKnowledgeOrchestrator(
+      {
+        repositories: {
+          projectDimensions: {
+            findById: vi.fn().mockResolvedValue(project),
+            getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
+            setAiKnowledgeSources,
+          },
+        },
+        fetchers: {
+          inline_text: { fetch: vi.fn() },
+          notion: { fetch: notionFetch },
+          web_page: { fetch: webFetch },
+        },
+        invokeModel,
+      },
+      {
+        projectId: project.projectId,
+        skipIfHashUnchanged: true,
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      unchanged: true,
+      sourcesChecked: 2,
+    });
+    expect(notionFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastModified: "2026-05-08T12:00:00.000Z",
+      }),
+    );
+    expect(webFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastModified: "2026-05-08T12:00:00.000Z",
+      }),
+    );
+    expect(setAiKnowledgeSources).toHaveBeenCalledTimes(1);
+    expect(invokeModel).not.toHaveBeenCalled();
   });
 
   it("skips disabled sources", async () => {

@@ -297,6 +297,7 @@ export type NotionKnowledgeSyncPayload = z.infer<
 
 export const synthesizeProjectKnowledgePayloadSchema = z.object({
   projectId: idSchema,
+  skipIfHashUnchanged: z.boolean().optional(),
 });
 export type SynthesizeProjectKnowledgePayload = z.infer<
   typeof synthesizeProjectKnowledgePayloadSchema

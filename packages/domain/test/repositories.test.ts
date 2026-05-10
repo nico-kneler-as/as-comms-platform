@@ -113,6 +113,7 @@ describe("defineStage1RepositoryBundle", () => {
         listByIds: () => Promise.resolve([]),
         getAiKnowledgeSources: () => Promise.resolve([]),
         setAiKnowledgeSources: () => Promise.resolve(),
+        setAiAutoSyncSchedule: () => Promise.resolve(),
         updateOperatingContext: () => Promise.resolve(),
         setSynthesisMetadata: () => Promise.resolve(),
         upsert: (record) => Promise.resolve(record),

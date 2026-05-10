@@ -267,6 +267,10 @@ describe("AI knowledge source registry repository methods", () => {
         "project:registry",
         "Crew brief refreshed today.",
       );
+      await context.repositories.projectDimensions.setAiAutoSyncSchedule(
+        "project:registry",
+        "weekly",
+      );
       await context.repositories.projectDimensions.setSynthesisMetadata(
         "project:registry",
         {
@@ -281,6 +285,7 @@ describe("AI knowledge source registry repository methods", () => {
         .where(eq(projectDimensions.projectId, "project:registry"));
 
       expect(row?.aiOperatingContext).toBe("Crew brief refreshed today.");
+      expect(row?.aiAutoSyncSchedule).toBe("weekly");
       expect(row?.aiOptimizedInputHash).toBe("hash:input");
       expect(row?.aiOptimizedSynthesizedAt?.toISOString()).toBe(
         "2026-05-04T08:30:00.000Z",
@@ -328,6 +333,53 @@ describe("AI knowledge source registry repository methods", () => {
       ).rejects.toBeInstanceOf(ZodError);
     } finally {
       await context.dispose();
+    }
+  });
+});
+
+describe("0055_ai_knowledge_auto_sync_schedule migration", () => {
+  it("defaults to never and rejects invalid schedule values", async () => {
+    const client = new PGlite();
+
+    try {
+      await applyMigrationsThrough(
+        client,
+        "0054_ai_knowledge_source_registry.sql",
+      );
+      await applySingleMigration(
+        client,
+        "0055_ai_knowledge_auto_sync_schedule.sql",
+      );
+
+      const db = drizzle(client) as Stage1Database;
+      await client.exec(`
+        insert into "project_dimensions" (
+          "project_id",
+          "project_name",
+          "source"
+        ) values (
+          'project:auto-sync',
+          'Auto Sync Project',
+          'salesforce'
+        );
+      `);
+
+      const [project] = await db
+        .select()
+        .from(projectDimensions)
+        .where(eq(projectDimensions.projectId, "project:auto-sync"));
+
+      expect(project?.aiAutoSyncSchedule).toBe("never");
+
+      await expect(
+        client.exec(`
+          update "project_dimensions"
+          set "ai_auto_sync_schedule" = 'monthly'
+          where "project_id" = 'project:auto-sync';
+        `),
+      ).rejects.toThrow(/ai_auto_sync_schedule/i);
+    } finally {
+      await client.close();
     }
   });
 });
@@ -397,6 +449,13 @@ describe("0054_ai_knowledge_source_registry migration", () => {
       `);
 
       await applySingleMigration(client, "0054_ai_knowledge_source_registry.sql");
+      // Apply later migrations so the table schema matches the Drizzle table
+      // definition (which includes columns added after 0054, e.g.,
+      // ai_auto_sync_schedule from 0055).
+      await applySingleMigration(
+        client,
+        "0055_ai_knowledge_auto_sync_schedule.sql",
+      );
 
       const db = drizzle(client) as Stage1Database;
       const [projectWithSource] = await db

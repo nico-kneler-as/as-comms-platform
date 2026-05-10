@@ -233,6 +233,10 @@ export const projectDimensions = pgTable(
       .notNull()
       .default([]),
     aiOperatingContext: text("ai_operating_context").notNull().default(""),
+    aiAutoSyncSchedule: text("ai_auto_sync_schedule")
+      .$type<"never" | "daily" | "weekly">()
+      .notNull()
+      .default("never"),
     aiOptimizedSynthesizedAt: timestamp("ai_optimized_synthesized_at", {
       mode: "date",
       withTimezone: true,
@@ -246,6 +250,10 @@ export const projectDimensions = pgTable(
     check(
       "project_dimensions_active_alias_required",
       sql`${table.isActive} = false OR (${table.projectAlias} IS NOT NULL AND BTRIM(${table.projectAlias}) <> '')`,
+    ),
+    check(
+      "project_dimensions_ai_auto_sync_schedule_valid",
+      sql`${table.aiAutoSyncSchedule} IN ('never', 'daily', 'weekly')`,
     ),
   ],
 );

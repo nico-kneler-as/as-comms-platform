@@ -71,6 +71,7 @@ OUTPUT FORMAT: markdown with H1, H2, H3 headings and bullet lists. Output ONLY t
 
 export interface SynthesizeProjectKnowledgePayload {
   readonly projectId: string;
+  readonly skipIfHashUnchanged?: boolean;
 }
 
 export interface SynthesizeProjectKnowledgeOrchestratorDependencies {
@@ -80,6 +81,7 @@ export interface SynthesizeProjectKnowledgeOrchestratorDependencies {
         readonly url: string;
         readonly sourceId: string | null;
         readonly lastContentHash: string | null;
+        readonly lastModified?: string | null;
       }): Promise<SourceFetchResult>;
     };
     readonly web_page: {
@@ -87,6 +89,7 @@ export interface SynthesizeProjectKnowledgeOrchestratorDependencies {
         readonly url: string;
         readonly sourceId: string | null;
         readonly lastContentHash: string | null;
+        readonly lastModified?: string | null;
       }): Promise<SourceFetchResult>;
     };
     readonly inline_text: {
@@ -94,6 +97,7 @@ export interface SynthesizeProjectKnowledgeOrchestratorDependencies {
         readonly url: string;
         readonly sourceId: string | null;
         readonly lastContentHash: string | null;
+        readonly lastModified?: string | null;
       }): Promise<SourceFetchResult>;
     };
   };
@@ -133,6 +137,11 @@ export type SynthesizeProjectKnowledgeOrchestratorResult =
       readonly tokensOut: number;
     }
   | {
+      readonly ok: true;
+      readonly unchanged: true;
+      readonly sourcesChecked: number;
+    }
+  | {
       readonly ok: false;
       readonly code: "project_missing" | "no_healthy_sources";
       readonly message: string;
@@ -147,6 +156,13 @@ export type SynthesizeProjectKnowledgeOrchestratorResult =
 interface HealthySourceContent {
   readonly content: string;
   readonly source: AiKnowledgeSource;
+}
+
+interface SourceSyncPassResult {
+  readonly healthyRegistrySources: readonly AiKnowledgeSource[];
+  readonly healthySources: readonly HealthySourceContent[];
+  readonly nextSources: readonly AiKnowledgeSource[];
+  readonly sourcesChecked: number;
 }
 
 function buildAdditionalSourcesBlock(
@@ -243,6 +259,53 @@ function applyFetchResult(
   });
 }
 
+async function runSourceSyncPass(
+  deps: SynthesizeProjectKnowledgeOrchestratorDependencies,
+  input: {
+    readonly sources: readonly AiKnowledgeSource[];
+    readonly useLastModified: boolean;
+  },
+): Promise<SourceSyncPassResult> {
+  const enabledSources = input.sources.filter((source) => source.enabled);
+  let nextSources = input.sources;
+  const healthySources: HealthySourceContent[] = [];
+
+  for (const source of enabledSources) {
+    const fetcher = deps.fetchers[source.kind];
+    const result = await fetcher.fetch({
+      url: source.url,
+      sourceId: source.source_id,
+      lastContentHash: source.source_content_hash,
+      ...(input.useLastModified
+        ? { lastModified: source.last_synced_at }
+        : {}),
+    });
+
+    nextSources = applyFetchResult(nextSources, source, result);
+
+    if (!result.ok || result.unchanged || result.content.trim().length === 0) {
+      continue;
+    }
+
+    healthySources.push({
+      source,
+      content: result.content,
+    });
+  }
+
+  return {
+    nextSources,
+    healthySources,
+    healthyRegistrySources: nextSources.filter(
+      (source) =>
+        source.enabled &&
+        source.last_sync_status === "healthy" &&
+        source.source_content_hash !== null,
+    ),
+    sourcesChecked: enabledSources.length,
+  };
+}
+
 export async function synthesizeProjectKnowledgeOrchestrator(
   deps: SynthesizeProjectKnowledgeOrchestratorDependencies,
   payload: SynthesizeProjectKnowledgePayload,
@@ -263,36 +326,17 @@ export async function synthesizeProjectKnowledgeOrchestrator(
   const sources = await deps.repositories.projectDimensions.getAiKnowledgeSources(
     payload.projectId,
   );
-  const enabledSources = sources.filter((source) => source.enabled);
-  let nextSources = sources;
-  const healthySources: HealthySourceContent[] = [];
-
-  for (const source of enabledSources) {
-    const fetcher = deps.fetchers[source.kind];
-    const result = await fetcher.fetch({
-      url: source.url,
-      sourceId: source.source_id,
-      lastContentHash: source.source_content_hash,
-    });
-
-    nextSources = applyFetchResult(nextSources, source, result);
-
-    if (!result.ok || result.unchanged || result.content.trim().length === 0) {
-      continue;
-    }
-
-    healthySources.push({
-      source,
-      content: result.content,
-    });
-  }
+  let syncPass = await runSourceSyncPass(deps, {
+    sources,
+    useLastModified: payload.skipIfHashUnchanged === true,
+  });
 
   await deps.repositories.projectDimensions.setAiKnowledgeSources(
     payload.projectId,
-    nextSources,
+    syncPass.nextSources,
   );
 
-  if (healthySources.length === 0) {
+  if (syncPass.healthyRegistrySources.length === 0) {
     return {
       ok: false,
       code: "no_healthy_sources",
@@ -300,12 +344,37 @@ export async function synthesizeProjectKnowledgeOrchestrator(
     };
   }
 
-  const healthyRegistrySources = nextSources.filter(
-    (source) =>
-      source.enabled &&
-      source.last_sync_status === "healthy" &&
-      source.source_content_hash !== null,
-  );
+  const nextInputHash = inputHashFromSources(syncPass.healthyRegistrySources);
+  if (
+    payload.skipIfHashUnchanged === true &&
+    nextInputHash === project.aiOptimizedInputHash
+  ) {
+    return {
+      ok: true,
+      unchanged: true,
+      sourcesChecked: syncPass.sourcesChecked,
+    };
+  }
+
+  if (payload.skipIfHashUnchanged === true) {
+    syncPass = await runSourceSyncPass(deps, {
+      sources: syncPass.nextSources,
+      useLastModified: false,
+    });
+
+    await deps.repositories.projectDimensions.setAiKnowledgeSources(
+      payload.projectId,
+      syncPass.nextSources,
+    );
+  }
+
+  if (syncPass.healthySources.length === 0) {
+    return {
+      ok: false,
+      code: "no_healthy_sources",
+      message: `Project ${payload.projectId} has no healthy AI knowledge sources to synthesize.`,
+    };
+  }
 
   try {
     const model = deps.model ?? DEFAULT_MODEL;
@@ -315,7 +384,7 @@ export async function synthesizeProjectKnowledgeOrchestrator(
       messages: [
         {
           role: "user",
-          content: buildUserContent({ healthySources }),
+          content: buildUserContent({ healthySources: syncPass.healthySources }),
         },
       ],
       maxTokens: deps.maxTokens ?? DEFAULT_MAX_TOKENS,
@@ -326,12 +395,12 @@ export async function synthesizeProjectKnowledgeOrchestrator(
       ok: true,
       project,
       content: response.text,
-      inputHash: inputHashFromSources(healthyRegistrySources),
+      inputHash: inputHashFromSources(syncPass.healthyRegistrySources),
       tokensIn: response.usage.inputTokens,
       tokensOut: response.usage.outputTokens,
       costUsd: estimateCostUsd(response.usage, response.model),
       model: response.model,
-      sourcesUsed: healthySources.length,
+      sourcesUsed: syncPass.healthySources.length,
     };
   } catch (error) {
     logger.error(
