@@ -33,6 +33,7 @@ import { runBackfillMembershipSfIdsCommand } from "./backfill-membership-sf-ids.
 import { runBackfillGmailMboxBodiesCommand } from "./backfill-gmail-mbox-bodies.js";
 import { runBackfillContentFingerprintCommand } from "./backfill-content-fingerprint.js";
 import { runBackfillGarbledMessageBodiesCommand } from "./backfill-garbled-message-bodies.js";
+import { runReExtractSignedEnvelopeBodiesCommand } from "./re-extract-signed-envelope-bodies.js";
 import { runBackfillMailchimpCampaignBodyCommand } from "./backfill-mailchimp-campaign-body.js";
 import { runMailchimpHistoricalCaptureCommand } from "./mailchimp-capture-historical.js";
 import { runCleanupGmailDraftEventsCommand } from "./cleanup-gmail-draft-events.js";
@@ -390,6 +391,9 @@ async function main(): Promise<void> {
     case "backfill-garbled-message-bodies":
       await runBackfillGarbledMessageBodiesCommand(rest, process.env);
       return;
+    case "re-extract-signed-envelope-bodies":
+      await runReExtractSignedEnvelopeBodiesCommand(rest, process.env);
+      return;
     case "backfill-mailchimp-campaign-body":
       await runBackfillMailchimpCampaignBodyCommand(rest, process.env);
       return;
@@ -428,7 +432,7 @@ async function main(): Promise<void> {
       return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, backfill-mailchimp-campaign-body, mailchimp-capture-historical, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, recover-orphan-gmail-details, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction, reconcile-stale-canonical, reconcile-superseded-projections.",
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, re-extract-signed-envelope-bodies, backfill-mailchimp-campaign-body, mailchimp-capture-historical, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, recover-orphan-gmail-details, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction, reconcile-stale-canonical, reconcile-superseded-projections.",
       );
   }
 }

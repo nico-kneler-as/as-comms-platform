@@ -697,7 +697,12 @@ function containsEncryptedBodyPartInternal(
   });
 }
 
-function decodeSignedPartContentDirect(
+// Gmail's API pre-decodes Content-Transfer-Encoding before returning body.data,
+// so the bytes we get from decodePartBody are already plaintext (per the
+// declared charset). We must NOT re-apply CTE — feeding back to mailparser
+// with the original CTE header double-decodes and produces FFFD soup, which is
+// the root cause of the proton.me / mountainmadness "v+�)^�د" bug.
+function decodePartContentDirect(
   part: GmailApiMessagePart,
   context: GmailMimeBudgetContext,
   decodeState: GmailMimeDecodeState,
@@ -707,27 +712,9 @@ function decodeSignedPartContentDirect(
     return null;
   }
 
-  const cte = (getPartHeader(part, "Content-Transfer-Encoding") ?? "")
-    .trim()
-    .toLowerCase();
   const contentTypeHeader = getPartHeader(part, "Content-Type") ?? "";
   const charsetMatch = /charset\s*=\s*"?([^";\s]+)"?/iu.exec(contentTypeHeader);
   const charset = charsetMatch?.[1]?.trim().toLowerCase() ?? "utf-8";
-
-  if (cte === "quoted-printable") {
-    return decodeQuotedPrintable(rawBody.toString("ascii"));
-  }
-
-  let textBytes: Buffer;
-  if (cte === "base64") {
-    try {
-      textBytes = Buffer.from(rawBody.toString("ascii"), "base64");
-    } catch {
-      return null;
-    }
-  } else {
-    textBytes = rawBody;
-  }
 
   if (
     charset === "utf-8" ||
@@ -735,13 +722,13 @@ function decodeSignedPartContentDirect(
     charset === "us-ascii" ||
     charset === "ascii"
   ) {
-    return textBytes.toString("utf8");
+    return rawBody.toString("utf8");
   }
 
   try {
-    return new TextDecoder(charset, { fatal: false }).decode(textBytes);
+    return new TextDecoder(charset, { fatal: false }).decode(rawBody);
   } catch {
-    return null;
+    return rawBody.toString("utf8");
   }
 }
 
@@ -766,7 +753,7 @@ function extractTextFromSignedEnvelopeInternal(
 
   for (const kind of ["plain", "html"] as const) {
     for (const candidate of candidates.filter((entry) => entry.kind === kind)) {
-      const decoded = decodeSignedPartContentDirect(
+      const decoded = decodePartContentDirect(
         candidate.part,
         context,
         decodeState,
@@ -1088,6 +1075,28 @@ async function extractTextFromMimePart(
   context: GmailMimeBudgetContext,
   decodeState: GmailMimeDecodeState
 ): Promise<string> {
+  // Direct decode bypasses mailparser. Gmail's API pre-decodes
+  // Content-Transfer-Encoding before returning body.data, so feeding the bytes
+  // back to mailparser with the original CTE header double-decodes and
+  // produces FFFD soup (the proton.me / mountainmadness "v+�)^�د" bug).
+  const directText = decodePartContentDirect(part, context, decodeState);
+
+  if (directText !== null && directText.length > 0) {
+    const cleaned = cleanGmailBodyPreviewText(directText);
+
+    if (cleaned.length > 0 && !isLikelyBinaryNoise(cleaned)) {
+      return cleaned;
+    }
+  }
+
+  if (decodeState.budgetExceeded) {
+    return "";
+  }
+
+  // Fallback: rebuild MIME and parse with mailparser. Reached when direct
+  // decode returns empty (no body.data) or noisy output (rare; would happen
+  // if Gmail unexpectedly returned CTE-encoded bytes, or for charsets that
+  // TextDecoder can't handle).
   const serializedPart = serializeMimePart(part, context, decodeState);
 
   if (serializedPart === null) {
