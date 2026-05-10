@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { LucideIcon } from "lucide-react";
+import { forwardRef } from "react";
 
 import type {
   InboxActiveProjectOption,
@@ -45,16 +46,20 @@ interface InboxFilterListProps {
   readonly onProjectChange: (id: string | null) => void;
 }
 
-export function InboxFilterList({
-  id,
-  filters,
-  activeFilter,
-  onFilterChange,
-  onCollapse,
-  projects,
-  selectedProjectId,
-  onProjectChange,
-}: InboxFilterListProps) {
+export const InboxFilterList = forwardRef<HTMLDivElement, InboxFilterListProps>(
+  function InboxFilterList(
+    {
+      id,
+      filters,
+      activeFilter,
+      onFilterChange,
+      onCollapse,
+      projects,
+      selectedProjectId,
+      onProjectChange,
+    },
+    ref,
+  ) {
   const filterById = new Map(filters.map((filter) => [filter.id, filter]));
   const primaryFilters = ["inbox", "unread", "follow-up"] as const;
   const secondaryFilters = ["archived", "sent"] as const;
@@ -69,7 +74,9 @@ export function InboxFilterList({
 
   return (
     <div
+      ref={ref}
       id={id}
+      data-inbox-filter-pane="true"
       className={cn(
         "animate-in slide-in-from-top-1 border-t border-slate-100 bg-white pb-3 duration-150 fade-in",
         "motion-reduce:animate-none",
@@ -181,7 +188,8 @@ export function InboxFilterList({
       ) : null}
     </div>
   );
-}
+  },
+);
 
 function FilterRow(input: {
   readonly filter: InboxFilterViewModel;
