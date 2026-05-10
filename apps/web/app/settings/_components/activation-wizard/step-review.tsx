@@ -17,6 +17,8 @@ export function StepReview({
   knowledgeSourcesText,
   skipKnowledgeSetup,
   signatureDraft,
+  connectedProjectIds,
+  connectedProjectCandidates,
   activationError
 }: {
   readonly selectedProject: ProjectRowViewModel | null;
@@ -25,6 +27,8 @@ export function StepReview({
   readonly knowledgeSourcesText: string;
   readonly skipKnowledgeSetup: boolean;
   readonly signatureDraft: string;
+  readonly connectedProjectIds: readonly string[];
+  readonly connectedProjectCandidates: readonly ProjectRowViewModel[];
   readonly activationError: string | null;
 }) {
   const primaryAlias = getPrimaryAlias(aliases);
@@ -32,6 +36,10 @@ export function StepReview({
   if (selectedProject === null) {
     return null;
   }
+
+  const selectedConnectedProjects = connectedProjectCandidates.filter(
+    (candidate) => connectedProjectIds.includes(candidate.projectId)
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -60,6 +68,25 @@ export function StepReview({
                   colorClasses="bg-emerald-50 text-emerald-700 ring-emerald-200"
                   variant="soft"
                 />
+              </span>
+            )
+          }
+        />
+        <ReviewRow
+          label="Connected projects"
+          value={
+            selectedConnectedProjects.length === 0 ? (
+              <span className="text-slate-500">None</span>
+            ) : (
+              <span className="flex flex-col gap-1">
+                {selectedConnectedProjects.map((connected) => (
+                  <span
+                    key={connected.projectId}
+                    className="inline-flex w-fit items-center gap-2 rounded-md bg-sky-50 px-2 py-0.5 text-[11.5px] text-sky-800 ring-1 ring-inset ring-sky-200"
+                  >
+                    {connected.projectName}
+                  </span>
+                ))}
               </span>
             )
           }

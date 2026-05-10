@@ -185,6 +185,52 @@ export class ProjectAliasRequiredError extends Error {
   }
 }
 
+/**
+ * Thrown by the projects repository when a connect-projects-to-host call
+ * fails its preconditions: host must be active with a non-empty alias, each
+ * candidate sub must currently be inactive with no existing connection, and
+ * the host can't connect to itself. The action layer should validate the
+ * same things up-front so this is defense-in-depth.
+ */
+export class InvalidProjectConnectionError extends Error {
+  readonly code:
+    | "host_not_found"
+    | "host_inactive"
+    | "host_missing_alias"
+    | "host_already_connected"
+    | "candidate_not_found"
+    | "candidate_already_active"
+    | "candidate_already_connected"
+    | "candidate_is_host"
+    | "candidate_is_self";
+  readonly projectId: string;
+
+  constructor(
+    code: InvalidProjectConnectionError["code"],
+    projectId: string,
+    message?: string,
+  ) {
+    super(message ?? `Invalid connection request (${code}) for ${projectId}.`);
+    this.name = "InvalidProjectConnectionError";
+    this.code = code;
+    this.projectId = projectId;
+  }
+}
+
+/**
+ * Thrown by the projects repository when a disconnect call targets a
+ * project whose `connected_to_project_id` is already NULL.
+ */
+export class ProjectNotConnectedError extends Error {
+  readonly projectId: string;
+
+  constructor(projectId: string) {
+    super(`Project ${projectId} is not connected to any host.`);
+    this.name = "ProjectNotConnectedError";
+    this.projectId = projectId;
+  }
+}
+
 interface SalesforceCommunicationDetailRecord {
   readonly sourceEvidenceId: string;
   readonly providerRecordId: string;
@@ -2501,6 +2547,36 @@ function createStage1RepositoriesInternal(
         return rows.map(mapProjectDimensionRow);
       },
 
+      async listConnectedProjects(hostProjectId) {
+        const rows = await db
+          .select()
+          .from(projectDimensions)
+          .where(
+            and(
+              eq(projectDimensions.connectedToProjectId, hostProjectId),
+              eq(projectDimensions.isActive, true),
+            ),
+          )
+          .orderBy(asc(projectDimensions.projectName));
+
+        return rows.map(mapProjectDimensionRow);
+      },
+
+      async listAvailableConnectionCandidates() {
+        const rows = await db
+          .select()
+          .from(projectDimensions)
+          .where(
+            and(
+              eq(projectDimensions.isActive, false),
+              isNull(projectDimensions.connectedToProjectId),
+            ),
+          )
+          .orderBy(asc(projectDimensions.projectName));
+
+        return rows.map(mapProjectDimensionRow);
+      },
+
       async getAiKnowledgeSources(projectId) {
         const [row] = await db
           .select({
@@ -4235,6 +4311,7 @@ function createStage2RepositoriesInternal(
         salesforceProjectId: row.projectId,
         projectName: row.projectName,
         projectAlias: row.projectAlias,
+        connectedToProjectId: row.connectedToProjectId,
         isActive: row.isActive,
         aiKnowledgeUrl: row.aiKnowledgeUrl,
         aiKnowledgeSyncedAt: row.aiKnowledgeSyncedAt,
@@ -4453,6 +4530,328 @@ function createStage2RepositoriesInternal(
 
         const [project] = await loadSettingsProjects([row.projectId]);
         return project ?? null;
+      },
+
+      async listConnectedProjects(hostProjectId: string) {
+        const rows = await db
+          .select({ projectId: projectDimensions.projectId })
+          .from(projectDimensions)
+          .where(
+            and(
+              eq(projectDimensions.connectedToProjectId, hostProjectId),
+              eq(projectDimensions.isActive, true),
+            ),
+          )
+          .orderBy(asc(projectDimensions.projectName));
+
+        if (rows.length === 0) {
+          return [];
+        }
+
+        const projects = await loadSettingsProjects(
+          rows.map((row) => row.projectId),
+        );
+
+        // loadSettingsProjects orders by projectId; re-sort by name to honour
+        // the contract.
+        return [...projects].sort((left, right) =>
+          left.projectName.localeCompare(right.projectName),
+        );
+      },
+
+      async listAvailableConnectionCandidates() {
+        const rows = await db
+          .select({ projectId: projectDimensions.projectId })
+          .from(projectDimensions)
+          .where(
+            and(
+              eq(projectDimensions.isActive, false),
+              isNull(projectDimensions.connectedToProjectId),
+            ),
+          )
+          .orderBy(asc(projectDimensions.projectName));
+
+        if (rows.length === 0) {
+          return [];
+        }
+
+        const projects = await loadSettingsProjects(
+          rows.map((row) => row.projectId),
+        );
+
+        return [...projects].sort((left, right) =>
+          left.projectName.localeCompare(right.projectName),
+        );
+      },
+
+      async connectProjectsToHost(input: {
+        readonly hostProjectId: string;
+        readonly connectedProjectIds: readonly string[];
+      }) {
+        const candidateIds = [...new Set(input.connectedProjectIds)];
+
+        if (candidateIds.includes(input.hostProjectId)) {
+          throw new InvalidProjectConnectionError(
+            "candidate_is_self",
+            input.hostProjectId,
+            "A project cannot connect to itself.",
+          );
+        }
+
+        // Pre-flight: read host + candidates + any current sub-projects of
+        // candidates. Do this BEFORE the transaction so we can throw typed
+        // errors instead of running into a CHECK / trigger violation.
+        const [hostRow] = await db
+          .select({
+            projectId: projectDimensions.projectId,
+            projectAlias: projectDimensions.projectAlias,
+            isActive: projectDimensions.isActive,
+            connectedToProjectId: projectDimensions.connectedToProjectId,
+          })
+          .from(projectDimensions)
+          .where(eq(projectDimensions.projectId, input.hostProjectId))
+          .limit(1);
+
+        if (hostRow === undefined) {
+          throw new InvalidProjectConnectionError(
+            "host_not_found",
+            input.hostProjectId,
+            `Host project ${input.hostProjectId} no longer exists.`,
+          );
+        }
+        if (!hostRow.isActive) {
+          throw new InvalidProjectConnectionError(
+            "host_inactive",
+            input.hostProjectId,
+            "Host project must be active before connecting sub-projects.",
+          );
+        }
+        // Check chain status before alias: an active connected sub-project
+        // has no alias of its own (it inherits the host's). If we checked
+        // alias first, the user would see "missing alias" instead of the
+        // more accurate "already connected".
+        if (hostRow.connectedToProjectId !== null) {
+          throw new InvalidProjectConnectionError(
+            "host_already_connected",
+            input.hostProjectId,
+            "Host project is itself connected to another project.",
+          );
+        }
+        if ((hostRow.projectAlias?.trim().length ?? 0) === 0) {
+          throw new InvalidProjectConnectionError(
+            "host_missing_alias",
+            input.hostProjectId,
+            "Host project must have a non-empty alias before connecting sub-projects.",
+          );
+        }
+
+        if (candidateIds.length === 0) {
+          // No-op connect; return the host's view-model untouched.
+          const [host] = await loadSettingsProjects([input.hostProjectId]);
+          if (host === undefined) {
+            throw new InvalidProjectConnectionError(
+              "host_not_found",
+              input.hostProjectId,
+            );
+          }
+          return {
+            host,
+            connectedProjects: [],
+          };
+        }
+
+        const candidateRows = await db
+          .select({
+            projectId: projectDimensions.projectId,
+            isActive: projectDimensions.isActive,
+            connectedToProjectId: projectDimensions.connectedToProjectId,
+          })
+          .from(projectDimensions)
+          .where(inArray(projectDimensions.projectId, candidateIds));
+
+        const candidateRowsById = new Map(
+          candidateRows.map((row) => [row.projectId, row] as const),
+        );
+
+        for (const candidateId of candidateIds) {
+          const row = candidateRowsById.get(candidateId);
+          if (row === undefined) {
+            throw new InvalidProjectConnectionError(
+              "candidate_not_found",
+              candidateId,
+              `Candidate project ${candidateId} no longer exists.`,
+            );
+          }
+          if (row.isActive) {
+            throw new InvalidProjectConnectionError(
+              "candidate_already_active",
+              candidateId,
+              `Candidate project ${candidateId} is already active.`,
+            );
+          }
+          if (row.connectedToProjectId !== null) {
+            throw new InvalidProjectConnectionError(
+              "candidate_already_connected",
+              candidateId,
+              `Candidate project ${candidateId} is already connected to another host.`,
+            );
+          }
+        }
+
+        // Reject candidates that are themselves hosts of other connected
+        // sub-projects — connecting them would leave their existing children
+        // dangling. Inactive hosts CAN'T have active children (children
+        // require an active host), so this check is mostly defensive against
+        // schema drift. Cheap and explicit.
+        const [firstSubRowOfCandidate] = await db
+          .select({ projectId: projectDimensions.projectId })
+          .from(projectDimensions)
+          .where(
+            inArray(projectDimensions.connectedToProjectId, candidateIds),
+          )
+          .limit(1);
+        if (firstSubRowOfCandidate !== undefined) {
+          throw new InvalidProjectConnectionError(
+            "candidate_is_host",
+            firstSubRowOfCandidate.projectId,
+            "A candidate is itself a host with connected sub-projects.",
+          );
+        }
+
+        await db.transaction(async (tx) => {
+          await tx
+            .update(projectDimensions)
+            .set({
+              isActive: true,
+              connectedToProjectId: input.hostProjectId,
+              projectAlias: null,
+              aiKnowledgeUrl: null,
+              aiKnowledgeSyncedAt: null,
+              updatedAt: new Date(),
+            })
+            .where(inArray(projectDimensions.projectId, candidateIds));
+        });
+
+        const [host] = await loadSettingsProjects([input.hostProjectId]);
+        if (host === undefined) {
+          throw new InvalidProjectConnectionError(
+            "host_not_found",
+            input.hostProjectId,
+          );
+        }
+
+        const connectedProjects = await loadSettingsProjects(candidateIds);
+
+        return {
+          host,
+          connectedProjects: [...connectedProjects].sort((left, right) =>
+            left.projectName.localeCompare(right.projectName),
+          ),
+        };
+      },
+
+      async disconnectProject(projectId: string) {
+        const [existingRow] = await db
+          .select({
+            projectId: projectDimensions.projectId,
+            connectedToProjectId: projectDimensions.connectedToProjectId,
+          })
+          .from(projectDimensions)
+          .where(eq(projectDimensions.projectId, projectId))
+          .limit(1);
+
+        if (existingRow === undefined) {
+          return null;
+        }
+        if (existingRow.connectedToProjectId === null) {
+          throw new ProjectNotConnectedError(projectId);
+        }
+
+        const [row] = await db
+          .update(projectDimensions)
+          .set({
+            isActive: false,
+            connectedToProjectId: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectDimensions.projectId, projectId))
+          .returning({
+            projectId: projectDimensions.projectId,
+          });
+
+        if (row === undefined) {
+          return null;
+        }
+
+        const [project] = await loadSettingsProjects([row.projectId]);
+        return project ?? null;
+      },
+
+      async deactivateWithCascade(projectId: string) {
+        const [existingRow] = await db
+          .select({
+            projectId: projectDimensions.projectId,
+            isActive: projectDimensions.isActive,
+          })
+          .from(projectDimensions)
+          .where(eq(projectDimensions.projectId, projectId))
+          .limit(1);
+
+        if (existingRow === undefined) {
+          return null;
+        }
+
+        const subRowsBefore = await db
+          .select({ projectId: projectDimensions.projectId })
+          .from(projectDimensions)
+          .where(
+            and(
+              eq(projectDimensions.connectedToProjectId, projectId),
+              eq(projectDimensions.isActive, true),
+            ),
+          );
+        const cascadedIds = subRowsBefore.map((row) => row.projectId);
+
+        await db.transaction(async (tx) => {
+          if (cascadedIds.length > 0) {
+            await tx
+              .update(projectDimensions)
+              .set({
+                isActive: false,
+                connectedToProjectId: null,
+                updatedAt: new Date(),
+              })
+              .where(
+                inArray(projectDimensions.projectId, cascadedIds),
+              );
+          }
+
+          await tx
+            .update(projectDimensions)
+            .set({
+              isActive: false,
+              updatedAt: new Date(),
+            })
+            .where(eq(projectDimensions.projectId, projectId));
+        });
+
+        const [project] = await loadSettingsProjects([projectId]);
+        if (project === undefined) {
+          return null;
+        }
+
+        const cascadedSubProjects =
+          cascadedIds.length === 0
+            ? []
+            : [...(await loadSettingsProjects(cascadedIds))].sort(
+                (left, right) =>
+                  left.projectName.localeCompare(right.projectName),
+              );
+
+        return {
+          project,
+          cascadedSubProjects,
+        };
       },
     },
 

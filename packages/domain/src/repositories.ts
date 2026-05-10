@@ -354,6 +354,20 @@ export interface ProjectDimensionRepository {
   listByIds(
     projectIds: readonly string[],
   ): Promise<readonly ProjectDimensionRecord[]>;
+  /**
+   * Returns active projects whose `connected_to_project_id` points at the
+   * given host. Ordered by project name.
+   */
+  listConnectedProjects(
+    hostProjectId: string,
+  ): Promise<readonly ProjectDimensionRecord[]>;
+  /**
+   * Returns candidates eligible to be connected: inactive rows with no
+   * existing connection. Ordered by project name.
+   */
+  listAvailableConnectionCandidates(): Promise<
+    readonly ProjectDimensionRecord[]
+  >;
   getAiKnowledgeSources(
     projectId: string,
   ): Promise<readonly AiKnowledgeSource[]>;

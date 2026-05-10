@@ -16,7 +16,9 @@ import {
 import {
   addSource,
   AiKnowledgeSourceValidationError,
+  InvalidProjectConnectionError,
   parseSourceUrl,
+  ProjectNotConnectedError,
   removeSource,
   updateSource
 } from "@as-comms/db";
@@ -242,6 +244,7 @@ function serializeProjectMutationData(input: {
   readonly projectId: string;
   readonly projectName: string;
   readonly projectAlias: string | null;
+  readonly connectedToProjectId?: string | null;
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: Date | null;
@@ -261,6 +264,7 @@ function serializeProjectMutationData(input: {
     projectId: input.projectId,
     projectName: input.projectName,
     projectAlias: input.projectAlias,
+    connectedToProjectId: input.connectedToProjectId ?? null,
     isActive: input.isActive,
     aiKnowledgeUrl: input.aiKnowledgeUrl,
     aiKnowledgeSyncedAt: input.aiKnowledgeSyncedAt?.toISOString() ?? null,
@@ -671,6 +675,7 @@ export interface ProjectMutationData {
   readonly projectId: string;
   readonly projectName: string;
   readonly projectAlias: string | null;
+  readonly connectedToProjectId: string | null;
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
   readonly aiKnowledgeSyncedAt: string | null;
@@ -681,6 +686,25 @@ export interface ProjectMutationData {
   readonly aiOptimizedInputHash: string | null;
   readonly activationRequirementsMet: boolean;
   readonly emails: readonly ProjectEmailMutationData[];
+}
+
+export interface ProjectConnectedProjectSummary {
+  readonly projectId: string;
+  readonly projectName: string;
+}
+
+export interface ProjectConnectionMutationData {
+  readonly host: ProjectMutationData;
+  readonly connectedProjects: readonly ProjectConnectedProjectSummary[];
+}
+
+export interface ProjectDeactivationMutationData extends ProjectMutationData {
+  /**
+   * Sub-projects that were cascaded off the host on deactivation. Empty
+   * when the project being deactivated isn't a host or had no connected
+   * sub-projects.
+   */
+  readonly cascadedSubProjects: readonly ProjectConnectedProjectSummary[];
 }
 
 export interface ProjectAiKnowledgeMutationData {
@@ -2053,7 +2077,7 @@ export async function activateProjectFromWizardAction(
 
 export async function deactivateProjectAction(
   projectId: string
-): Promise<UiResult<ProjectMutationData>> {
+): Promise<UiResult<ProjectDeactivationMutationData>> {
   const admin = await resolveSettingsAdmin({
     unauthorizedMessage: "You must be signed in to deactivate a project.",
     forbiddenMessage: "Only admins can deactivate projects."
@@ -2072,8 +2096,8 @@ export async function deactivateProjectAction(
     return errorResult("already_inactive", "This project is already inactive.");
   }
 
-  const updatedProject = await repositories.projects.setActive(projectId, false);
-  if (updatedProject === null) {
+  const result = await repositories.projects.deactivateWithCascade(projectId);
+  if (result === null) {
     return errorResult("not_found", "That project no longer exists.");
   }
 
@@ -2087,12 +2111,296 @@ export async function deactivateProjectAction(
         isActive: project.isActive
       },
       after: {
-        isActive: updatedProject.isActive
+        isActive: result.project.isActive
+      },
+      cascadedSubProjectIds: result.cascadedSubProjects.map(
+        (sub) => sub.projectId
+      )
+    }
+  });
+
+  for (const sub of result.cascadedSubProjects) {
+    await appendSettingsAudit({
+      actorId: admin.userId,
+      action: "settings.project.connection_cascaded_off",
+      entityType: "project",
+      entityId: sub.projectId,
+      metadataJson: {
+        hostProjectId: projectId,
+        before: {
+          isActive: true,
+          connectedToProjectId: projectId
+        },
+        after: {
+          isActive: false,
+          connectedToProjectId: null
+        }
+      }
+    });
+  }
+
+  revalidateProjectSettings(projectId);
+  for (const sub of result.cascadedSubProjects) {
+    revalidateProjectSettings(sub.projectId);
+  }
+
+  return {
+    ok: true,
+    data: {
+      ...serializeProjectMutationData(result.project),
+      cascadedSubProjects: result.cascadedSubProjects.map((sub) => ({
+        projectId: sub.projectId,
+        projectName: sub.projectName
+      }))
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function setProjectConnectedProjectsAction(
+  hostProjectId: string,
+  connectedProjectIds: readonly string[]
+): Promise<UiResult<ProjectConnectionMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to connect projects.",
+    forbiddenMessage: "Only admins can connect projects."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const dedupedIds = [...new Set(connectedProjectIds.map((id) => id.trim()))]
+    .filter((id) => id.length > 0);
+
+  const repositories = await getSettingsRepositories();
+  const host = await repositories.projects.findById(hostProjectId);
+  if (host === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+  if (!host.isActive) {
+    return errorResult(
+      "host_inactive",
+      "Activate this project before connecting sub-projects.",
+      {
+        fieldErrors: {
+          host: "Activate this project before connecting sub-projects."
+        }
+      }
+    );
+  }
+  if ((host.projectAlias?.trim().length ?? 0) === 0) {
+    return errorResult(
+      "host_missing_alias",
+      "Set a project alias on the host before connecting sub-projects.",
+      {
+        fieldErrors: {
+          host: "Set a project alias on the host before connecting sub-projects."
+        }
+      }
+    );
+  }
+  if (host.connectedToProjectId !== null) {
+    return errorResult(
+      "host_already_connected",
+      "This project is itself connected to another host.",
+      {
+        fieldErrors: {
+          host: "This project is itself connected to another host."
+        }
+      }
+    );
+  }
+  if (dedupedIds.includes(hostProjectId)) {
+    return errorResult(
+      "invalid_candidate",
+      "A project cannot connect to itself.",
+      {
+        fieldErrors: {
+          connectedProjectIds: "A project cannot connect to itself."
+        }
+      }
+    );
+  }
+
+  if (dedupedIds.length === 0) {
+    // No-op success: the wizard / detail page may invoke this with an empty
+    // list when the operator skips selection. Nothing to write; nothing to
+    // revalidate beyond returning the host's current view-model.
+    const connectedProjects =
+      await repositories.projects.listConnectedProjects(hostProjectId);
+    return {
+      ok: true,
+      data: {
+        host: serializeProjectMutationData(host),
+        connectedProjects: connectedProjects.map((sub) => ({
+          projectId: sub.projectId,
+          projectName: sub.projectName
+        }))
+      },
+      requestId: newRequestId()
+    };
+  }
+
+  let result: Awaited<
+    ReturnType<typeof repositories.projects.connectProjectsToHost>
+  >;
+  try {
+    result = await repositories.projects.connectProjectsToHost({
+      hostProjectId,
+      connectedProjectIds: dedupedIds
+    });
+  } catch (error) {
+    if (error instanceof InvalidProjectConnectionError) {
+      const code = error.code;
+      const message =
+        code === "candidate_already_active"
+          ? "One of the chosen projects is already active and can't be connected."
+          : code === "candidate_already_connected"
+            ? "One of the chosen projects is already connected to another host."
+            : code === "candidate_not_found"
+              ? "One of the chosen projects no longer exists."
+              : code === "candidate_is_host"
+                ? "One of the chosen projects already hosts other connected projects."
+                : code === "candidate_is_self"
+                  ? "A project cannot connect to itself."
+                  : code === "host_inactive"
+                    ? "Activate this project before connecting sub-projects."
+                    : code === "host_missing_alias"
+                      ? "Set a project alias on the host before connecting sub-projects."
+                      : code === "host_already_connected"
+                        ? "This project is itself connected to another host."
+                        : "That project no longer exists.";
+
+      return errorResult(code, message, {
+        fieldErrors: {
+          connectedProjectIds: message
+        }
+      });
+    }
+    throw error;
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.connections_set",
+    entityType: "project",
+    entityId: hostProjectId,
+    metadataJson: {
+      hostProjectId,
+      connectedProjectIds: result.connectedProjects.map(
+        (sub) => sub.projectId
+      )
+    }
+  });
+
+  for (const sub of result.connectedProjects) {
+    await appendSettingsAudit({
+      actorId: admin.userId,
+      action: "settings.project.connected",
+      entityType: "project",
+      entityId: sub.projectId,
+      metadataJson: {
+        hostProjectId,
+        before: {
+          isActive: false,
+          connectedToProjectId: null
+        },
+        after: {
+          isActive: true,
+          connectedToProjectId: hostProjectId,
+          // alias and AI knowledge URL were cleared; surface that explicitly.
+          projectAlias: null,
+          aiKnowledgeUrl: null
+        }
+      }
+    });
+  }
+
+  revalidateProjectSettings(hostProjectId);
+  for (const sub of result.connectedProjects) {
+    revalidateProjectSettings(sub.projectId);
+  }
+  revalidateTag("inbox");
+
+  return {
+    ok: true,
+    data: {
+      host: serializeProjectMutationData(result.host),
+      connectedProjects: result.connectedProjects.map((sub) => ({
+        projectId: sub.projectId,
+        projectName: sub.projectName
+      }))
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function disconnectProjectAction(
+  connectedProjectId: string
+): Promise<UiResult<ProjectMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to disconnect a project.",
+    forbiddenMessage: "Only admins can disconnect projects."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const repositories = await getSettingsRepositories();
+  const project = await repositories.projects.findById(connectedProjectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+  if (project.connectedToProjectId === null) {
+    return errorResult(
+      "not_connected",
+      "This project is not connected to any host."
+    );
+  }
+
+  const previousHostId = project.connectedToProjectId;
+  let updatedProject: Awaited<
+    ReturnType<typeof repositories.projects.disconnectProject>
+  >;
+  try {
+    updatedProject = await repositories.projects.disconnectProject(
+      connectedProjectId
+    );
+  } catch (error) {
+    if (error instanceof ProjectNotConnectedError) {
+      return errorResult(
+        "not_connected",
+        "This project is not connected to any host."
+      );
+    }
+    throw error;
+  }
+
+  if (updatedProject === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.disconnected",
+    entityType: "project",
+    entityId: connectedProjectId,
+    metadataJson: {
+      hostProjectId: previousHostId,
+      before: {
+        isActive: true,
+        connectedToProjectId: previousHostId
+      },
+      after: {
+        isActive: updatedProject.isActive,
+        connectedToProjectId: updatedProject.connectedToProjectId
       }
     }
   });
 
-  revalidateProjectSettings(projectId);
+  revalidateProjectSettings(connectedProjectId);
+  revalidateProjectSettings(previousHostId);
+  revalidateTag("inbox");
 
   return {
     ok: true,
