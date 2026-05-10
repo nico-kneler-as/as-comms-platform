@@ -22,7 +22,7 @@ vi.mock("@/src/server/auth/session", () => ({
   getCurrentUser,
 }));
 
-import SettingsAccessPage from "../../app/settings/access/page";
+import SettingsTeamPage from "../../app/settings/team/page";
 import { waitForPendingSecurityAuditTasksForTests } from "../../src/server/security/audit";
 import {
   createStage1WebTestRuntime,
@@ -94,8 +94,8 @@ describe("settings users read audit", () => {
     runtime = null;
   });
 
-  it("records who opened the settings Access page", async () => {
-    const page = await SettingsAccessPage();
+  it("records who opened the settings Team page", async () => {
+    const page = await SettingsTeamPage();
     if (!runtime) {
       throw new Error("runtime not initialized");
     }
@@ -141,7 +141,7 @@ describe("settings users read audit", () => {
       throw new Error("NEXT_REDIRECT_SETTINGS");
     });
 
-    await expect(SettingsAccessPage()).rejects.toThrow("NEXT_REDIRECT_SETTINGS");
+    await expect(SettingsTeamPage()).rejects.toThrow("NEXT_REDIRECT_SETTINGS");
     expect(redirect).toHaveBeenCalledWith("/settings");
   });
 });

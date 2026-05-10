@@ -14,10 +14,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import {
-  formatSmsEstimatedCostUsd,
-  formatUsdAmount,
-} from "@/src/lib/sms-pricing";
 import type {
   IntegrationHealthViewModel,
   IntegrationsSettingsViewModel,
@@ -88,11 +84,6 @@ function formatRelative(iso: string | null): string {
   return `${String(years)}y ago`;
 }
 
-function formatMailchimpCount(value: number | null): string {
-  if (value === null) return "—";
-  return new Intl.NumberFormat("en-US").format(value);
-}
-
 function formatMailchimpStatus(
   integration: Extract<IntegrationHealthViewModel, { mailchimp: unknown }>,
 ): { readonly label: string; readonly colorClasses: string } {
@@ -114,34 +105,6 @@ function formatMailchimpStatus(
         colorClasses: "bg-amber-50 text-amber-800 ring-amber-200",
       };
   }
-}
-
-function buildTwilioUsageState(input: {
-  readonly spendUsd: number | null;
-  readonly capUsd: number | null;
-}): null | {
-  readonly label: string;
-  readonly className: string;
-} {
-  if (input.spendUsd === null || input.capUsd === null || input.capUsd <= 0) {
-    return null;
-  }
-
-  if (input.spendUsd >= input.capUsd) {
-    return {
-      label: "Cap exceeded — sends still allowed in v1, no hard enforcement",
-      className: "bg-rose-50 text-rose-700 ring-rose-200",
-    };
-  }
-
-  if (input.spendUsd >= input.capUsd * 0.8) {
-    return {
-      label: "Approaching cap",
-      className: "bg-amber-50 text-amber-800 ring-amber-200",
-    };
-  }
-
-  return null;
 }
 
 export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
@@ -191,136 +154,91 @@ export function IntegrationsSection({ viewModel }: IntegrationsSectionProps) {
       <SettingsSection
         id="settings-integrations"
         title="Integrations"
+        description="Providers this workspace depends on"
         feedback={feedback}
       >
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {items.map((integration) => {
-            const statusMeta =
-              integration.serviceName === "mailchimp" &&
-              integration.mailchimp !== null
-                ? formatMailchimpStatus(integration)
-                : STATUS_META[integration.status];
-            const isRowPending =
-              pending && pendingId === integration.serviceName;
-            const isSyncDisabled = !integration.supportsRefresh || isRowPending;
-            const descriptionTerminator = /[.!?]$/.test(integration.description)
-              ? ""
-              : ".";
-            const summary = integration.detail
-              ? `${integration.description}${descriptionTerminator} ${integration.detail}`
-              : integration.description;
+        <div
+          className={cn(
+            "overflow-hidden",
+            RADIUS.lg,
+            "border border-slate-200 bg-white",
+            SHADOW.sm,
+          )}
+        >
+          <ul className="divide-y divide-slate-100">
+            {items.map((integration) => {
+              const statusMeta =
+                integration.serviceName === "mailchimp" &&
+                integration.mailchimp !== null
+                  ? formatMailchimpStatus(integration)
+                  : STATUS_META[integration.status];
+              const isRowPending =
+                pending && pendingId === integration.serviceName;
+              const isSyncDisabled =
+                !integration.supportsRefresh || isRowPending;
+              const descriptionTerminator = /[.!?]$/.test(
+                integration.description,
+              )
+                ? ""
+                : ".";
+              const summary = integration.detail
+                ? `${integration.description}${descriptionTerminator} ${integration.detail}`
+                : integration.description;
 
-            return (
-              <li
-                key={integration.serviceName}
-                className={cn(
-                  "flex min-h-full flex-col gap-3 border border-slate-200 bg-white p-4",
-                  RADIUS.lg,
-                  SHADOW.sm,
-                  isRowPending && "opacity-60",
-                )}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <IntegrationLogoMark integration={integration} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="truncate text-[13.5px] font-semibold text-slate-900">
-                          {integration.displayName}
-                        </span>
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                          {CATEGORY_LABEL[integration.category]}
-                        </span>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-[12px] text-slate-500">
-                        {summary}
-                      </p>
+              return (
+                <li
+                  key={integration.serviceName}
+                  className={cn(
+                    "flex items-center gap-3 px-5 py-3",
+                    isRowPending && "opacity-60",
+                  )}
+                >
+                  <IntegrationLogoMark integration={integration} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="truncate text-[13.5px] font-semibold text-slate-900">
+                        {integration.displayName}
+                      </span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                        {CATEGORY_LABEL[integration.category]}
+                      </span>
                     </div>
+                    <p className="mt-0.5 truncate text-[12px] text-slate-500">
+                      {summary}
+                    </p>
+                    <p className="mt-0.5 truncate text-[11.5px] text-slate-400 tabular-nums">
+                      Last checked · {formatRelative(integration.lastCheckedAt)}
+                    </p>
                   </div>
-
                   <StatusBadge
                     label={statusMeta.label}
                     colorClasses={statusMeta.colorClasses}
                     variant="soft"
                     className="shrink-0"
                   />
-                </div>
-
-                {integration.mailchimp !== null ? (
-                  <MailchimpTileDetails integration={integration} />
-                ) : (
-                  <div className="flex items-center justify-between gap-3 text-[11.5px] text-slate-500">
-                    <span className="min-w-0 truncate tabular-nums">
-                      Last checked · {formatRelative(integration.lastCheckedAt)}
-                    </span>
-
-                    {viewModel.isAdmin && (
-                      <SyncButton
-                        disabled={isSyncDisabled}
-                        supportsRefresh={integration.supportsRefresh}
-                        pending={isRowPending}
-                        integrationName={integration.displayName}
-                        onSync={() => {
-                          handleRefresh(integration);
-                        }}
-                      />
-                    )}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-          {/* Twilio is rendered inside the same grid so all 6 cards share equal column widths */}
-          <TwilioConnectorCard viewModel={viewModel.twilioCard} />
-        </ul>
+                  {viewModel.isAdmin ? (
+                    <SyncButton
+                      disabled={isSyncDisabled}
+                      supportsRefresh={integration.supportsRefresh}
+                      pending={isRowPending}
+                      integrationName={integration.displayName}
+                      onSync={() => {
+                        handleRefresh(integration);
+                      }}
+                    />
+                  ) : null}
+                </li>
+              );
+            })}
+            <TwilioConnectorRow viewModel={viewModel.twilioCard} />
+          </ul>
+        </div>
       </SettingsSection>
     </TooltipProvider>
   );
 }
 
-function MailchimpTileDetails({
-  integration,
-}: {
-  readonly integration: IntegrationHealthViewModel;
-}) {
-  if (integration.mailchimp === null) {
-    return null;
-  }
-
-  return (
-    <div className="border-t border-slate-200 pt-3">
-      <dl className="grid gap-2 text-[12px] text-slate-600">
-        <div className="flex items-start justify-between gap-3">
-          <dt className="font-medium text-slate-900">Last sync</dt>
-          <dd className="text-right tabular-nums">
-            {formatRelative(integration.mailchimp.lastSuccessfulSyncAt)}
-          </dd>
-        </div>
-        <div className="flex items-start justify-between gap-3">
-          <dt className="font-medium text-slate-900">Last campaign</dt>
-          <dd className="max-w-[60%] text-right">
-            {integration.mailchimp.lastCampaignName === null
-              ? "—"
-              : `${integration.mailchimp.lastCampaignName} · ${formatRelative(
-                  integration.mailchimp.lastCampaignSentAt,
-                )}`}
-          </dd>
-        </div>
-        <div className="flex items-start justify-between gap-3">
-          <dt className="font-medium text-slate-900">Last batch</dt>
-          <dd className="text-right tabular-nums">
-            {formatMailchimpCount(
-              integration.mailchimp.lastBatchRecipientCount,
-            )}{" "}
-            recipients
-          </dd>
-        </div>
-      </dl>
-    </div>
-  );
-}
-
-function TwilioConnectorCard({
+function TwilioConnectorRow({
   viewModel,
 }: {
   readonly viewModel: IntegrationsSettingsViewModel["twilioCard"];
@@ -339,101 +257,36 @@ function TwilioConnectorCard({
       colorClasses: "bg-amber-50 text-amber-800 ring-amber-200",
     },
   }[viewModel.status];
-  const usageState = buildTwilioUsageState({
-    spendUsd: viewModel.monthToDateSpendUsd,
-    capUsd: viewModel.monthlyCapUsd,
-  });
-  const showUsageRows =
-    viewModel.smsEnabled &&
-    viewModel.monthToDateSpendUsd !== null &&
-    viewModel.monthToDateSegments !== null;
 
   return (
-    <li
-      className={cn(
-        "flex min-h-full flex-col gap-3 border border-slate-200 bg-white p-4",
-        RADIUS.lg,
-        SHADOW.sm,
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-inset ring-slate-200/70">
-            <span className="text-[10px] font-semibold uppercase">TW</span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="truncate text-[13.5px] font-semibold text-slate-900">
-                Twilio
-              </span>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Messaging
-              </span>
-            </div>
-            <p className="mt-1 text-[12px] text-slate-500">
-              Outbound SMS connector. Read-only in this phase.
-            </p>
-          </div>
-        </div>
-        <StatusBadge
-          label={statusMeta.label}
-          colorClasses={statusMeta.colorClasses}
-          variant="soft"
-          className="shrink-0"
-        />
+    <li className="flex items-center gap-3 px-5 py-3">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-700 ring-1 ring-inset ring-slate-200/70">
+        <span className="text-[10px] font-semibold uppercase">TW</span>
       </div>
-
-      <dl className="grid gap-2 text-[12px] text-slate-600 sm:grid-cols-3">
-        <div>
-          <dt className="font-medium text-slate-900">SMS enabled</dt>
-          <dd>{viewModel.smsEnabled ? "On" : "Off"}</dd>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="truncate text-[13.5px] font-semibold text-slate-900">
+            Twilio
+          </span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Messaging
+          </span>
         </div>
-        <div>
-          <dt className="font-medium text-slate-900">Active sender</dt>
-          <dd>{viewModel.hasActiveSender ? "Configured" : "Missing"}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-slate-900">Last status callback</dt>
-          <dd>{formatRelative(viewModel.lastStatusCallbackAt)}</dd>
-        </div>
-      </dl>
-
-      {showUsageRows ? (
-        <div className="border-t border-slate-200 pt-3">
-          <dl className="grid gap-2 text-[12px] text-slate-600">
-            <div className="flex items-start justify-between gap-3">
-              <dt className="font-medium text-slate-900">Spend MTD</dt>
-              <dd className="text-right">
-                <span className="font-medium tabular-nums text-slate-900">
-                  ${formatUsdAmount(viewModel.monthToDateSpendUsd)}
-                </span>
-              </dd>
-            </div>
-            <div className="-mt-1 text-right text-[11.5px] text-slate-500 tabular-nums">
-              (${formatSmsEstimatedCostUsd(viewModel.outboundRateUsdPerSegment)}{" "}
-              / segment, {String(viewModel.monthToDateSegments)} segments)
-            </div>
-            <div className="flex items-start justify-between gap-3">
-              <dt className="font-medium text-slate-900">Monthly cap</dt>
-              <dd className="font-medium tabular-nums text-slate-900">
-                {viewModel.monthlyCapUsd === null
-                  ? "—"
-                  : `$${formatUsdAmount(viewModel.monthlyCapUsd)}`}
-              </dd>
-            </div>
-          </dl>
-
-          {usageState ? (
-            <div className="mt-3">
-              <StatusBadge
-                label={usageState.label}
-                colorClasses={usageState.className}
-                variant="soft"
-              />
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+        <p className="mt-0.5 truncate text-[12px] text-slate-500">
+          Outbound SMS connector. Read-only in this phase.
+        </p>
+        <p className="mt-0.5 truncate text-[11.5px] text-slate-400 tabular-nums">
+          SMS · {viewModel.smsEnabled ? "On" : "Off"} · Sender ·{" "}
+          {viewModel.hasActiveSender ? "Configured" : "Missing"} · Last callback ·{" "}
+          {formatRelative(viewModel.lastStatusCallbackAt)}
+        </p>
+      </div>
+      <StatusBadge
+        label={statusMeta.label}
+        colorClasses={statusMeta.colorClasses}
+        variant="soft"
+        className="shrink-0"
+      />
     </li>
   );
 }
