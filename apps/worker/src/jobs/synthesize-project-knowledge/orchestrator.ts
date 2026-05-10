@@ -18,6 +18,11 @@ const DEFAULT_MODEL = "claude-sonnet-4-6";
 const DEFAULT_MAX_TOKENS = 16_000;
 const DEFAULT_TEMPERATURE = 0.3;
 const APPROVED_REPLY_PROMPT_LIMIT = 50;
+// Cap on backfilled / accumulated bulk corpus examples sent into the
+// EMAIL_CORPUS prompt block. Lower-weighted than approved canonical
+// replies; volume matters here for tone/pattern distillation, but going
+// past ~100 inflates input tokens without proportional signal gain.
+const CORPUS_PROMPT_LIMIT = 100;
 // Synthesis bundles every healthy source document into one prompt and asks
 // for up to DEFAULT_MAX_TOKENS back. The default Anthropic timeout (25s)
 // fits inbox AI drafts but kills synthesis runs that span 30-90s. Confirmed
@@ -221,9 +226,36 @@ ${renderedExamples}
 </APPROVED_REPLY_EXAMPLES>`;
 }
 
+function buildEmailCorpusBlock(
+  corpusEntries: readonly ProjectKnowledgeEntryRecord[],
+): string {
+  if (corpusEntries.length === 0) {
+    return `Here is the corpus of 0 past sent replies from this project's volunteer alias(es), most recent first:
+
+<EMAIL_CORPUS>
+</EMAIL_CORPUS>`;
+  }
+
+  const renderedExamples = corpusEntries
+    .map((entry, index) => {
+      const capturedAt = entry.createdAt.slice(0, 10);
+      const example = entry.maskedExample?.trim() ?? "";
+      return `--- Reply ${String(index + 1)} (sent ${capturedAt}) ---
+${example}`;
+    })
+    .join("\n\n");
+
+  return `Here is the corpus of ${String(corpusEntries.length)} past sent replies from this project's volunteer alias(es), most recent first. Use it to distill tone signals, common volunteer questions, and recurring approved-answer patterns. Volume here is for pattern extraction; do NOT treat any single message as authoritative the way an APPROVED_REPLY_EXAMPLE entry would be — corpus messages are unreviewed historical sends.
+
+<EMAIL_CORPUS>
+${renderedExamples}
+</EMAIL_CORPUS>`;
+}
+
 function buildUserContent(input: {
   readonly healthySources: readonly HealthySourceContent[];
   readonly approvedReplies: readonly ProjectKnowledgeEntryRecord[];
+  readonly corpusEntries: readonly ProjectKnowledgeEntryRecord[];
 }): string {
   const inlineDocs = input.healthySources
     .filter((source) => source.source.kind === "inline_text")
@@ -249,6 +281,7 @@ ${additionalSourcesBlock}`;
   const approvedRepliesNote = buildApprovedReplyExamplesBlock(
     input.approvedReplies,
   );
+  const emailCorpusBlock = buildEmailCorpusBlock(input.corpusEntries);
 
   return `Here is the existing AI Knowledge document for the project:
 
@@ -256,10 +289,7 @@ ${additionalSourcesBlock}`;
 ${existingDoc}
 </EXISTING_DOC>${additionalSourcesNote}
 
-Here is the corpus of 0 past sent replies from this project's volunteer alias(es), most recent first:
-
-<EMAIL_CORPUS>
-</EMAIL_CORPUS>${approvedRepliesNote}
+${emailCorpusBlock}${approvedRepliesNote}
 
 Produce the updated AI Knowledge document per the system instructions. Output ONLY the markdown.`;
 }
@@ -429,6 +459,14 @@ export async function synthesizeProjectKnowledgeOrchestrator(
   const approvedReplies = allApprovedKnowledge
     .filter((entry) => entry.kind === "canonical_reply")
     .slice(0, APPROVED_REPLY_PROMPT_LIMIT);
+  // 2026-05-10: bulk corpus from historical outbounds, backfilled per
+  // project via apps/worker/src/ops/backfill-project-corpus.ts. Lower
+  // training weight than canonical_reply (see system prompt + corpus
+  // block copy) but provides the volume needed for the prompt's
+  // "Common volunteer questions and approved answer patterns" section.
+  const corpusEntries = allApprovedKnowledge
+    .filter((entry) => entry.kind === "corpus_example")
+    .slice(0, CORPUS_PROMPT_LIMIT);
 
   try {
     const model = deps.model ?? DEFAULT_MODEL;
@@ -441,6 +479,7 @@ export async function synthesizeProjectKnowledgeOrchestrator(
           content: buildUserContent({
             healthySources: syncPass.healthySources,
             approvedReplies,
+            corpusEntries,
           }),
         },
       ],

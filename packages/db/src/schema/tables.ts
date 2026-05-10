@@ -1121,7 +1121,7 @@ export const projectKnowledgeEntries = pgTable(
     id: text("id").primaryKey(),
     projectId: text("project_id").notNull(),
     kind: text("kind")
-      .$type<"canonical_reply" | "snippet" | "pattern">()
+      .$type<"canonical_reply" | "snippet" | "pattern" | "corpus_example">()
       .notNull(),
     issueType: text("issue_type"),
     volunteerStage: text("volunteer_stage"),

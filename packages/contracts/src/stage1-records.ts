@@ -227,7 +227,12 @@ export type AiKnowledgeEntryRecord = z.infer<typeof aiKnowledgeEntrySchema>;
 export const projectKnowledgeEntrySchema = z.object({
   id: idSchema,
   projectId: z.string().min(1),
-  kind: z.enum(["canonical_reply", "snippet", "pattern"]),
+  // corpus_example added 2026-05-10: bulk historical outbound replies
+  // backfilled per project to populate the EMAIL_CORPUS block in the
+  // synthesis prompt. Lower training weight than canonical_reply
+  // (which represents operator-endorsed exemplars). See PRD #366 +
+  // backfill-project-corpus ops script.
+  kind: z.enum(["canonical_reply", "snippet", "pattern", "corpus_example"]),
   issueType: nullableStringSchema.default(null),
   volunteerStage: nullableStringSchema.default(null),
   questionSummary: z.string().min(1),
