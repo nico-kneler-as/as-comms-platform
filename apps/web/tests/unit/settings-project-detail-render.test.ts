@@ -12,12 +12,12 @@ vi.mock("next/link", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
-    refresh: () => {},
-    push: () => {},
-    replace: () => {},
-    back: () => {},
-    forward: () => {},
-    prefetch: () => {}
+    refresh: vi.fn(),
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn()
   })
 }));
 
