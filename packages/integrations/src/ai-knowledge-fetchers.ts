@@ -200,18 +200,47 @@ export class NotionPageFetcher implements SourceFetcher {
   }
 }
 
+// Caps on what the WebPageFetcher accepts. The fetcher is wired into the
+// AI Knowledge synthesis prompt, which has a 1M-token Claude input ceiling.
+// Without these caps a single rogue source (e.g. a 7MB PDF served at a web
+// URL — see Killer Whales skw_protocols.pdf, 2026-05-10) blows past 2M
+// tokens and the synthesis job dies with invalid_request_error.
+const MAX_WEB_PAGE_BODY_BYTES = 2_000_000; // ~2MB ceiling on raw body
+const ALLOWED_TEXT_CONTENT_TYPES = [
+  "text/html",
+  "text/plain",
+  "application/xhtml+xml",
+  "application/xml",
+  "text/xml",
+] as const;
+
+function isTextContentType(contentType: string | null): boolean {
+  if (contentType === null) {
+    // No header — assume text and let the body parse pass/fail. Conservative
+    // server defaults (especially generic CDNs) sometimes drop the header.
+    return true;
+  }
+  const lowered = contentType.toLowerCase();
+  return ALLOWED_TEXT_CONTENT_TYPES.some((allowed) =>
+    lowered.startsWith(allowed),
+  );
+}
+
 export class WebPageFetcher implements SourceFetcher {
   readonly kind = "web_page" as const;
 
   readonly #fetchImplementation: typeof fetch;
   readonly #timeoutMs: number;
+  readonly #maxBodyBytes: number;
 
   constructor(input?: {
     readonly fetchImplementation?: typeof fetch;
     readonly timeoutMs?: number;
+    readonly maxBodyBytes?: number;
   }) {
     this.#fetchImplementation = input?.fetchImplementation ?? globalThis.fetch;
     this.#timeoutMs = input?.timeoutMs ?? 15_000;
+    this.#maxBodyBytes = input?.maxBodyBytes ?? MAX_WEB_PAGE_BODY_BYTES;
   }
 
   async fetch(input: SourceFetcherInput): Promise<SourceFetchResult> {
@@ -254,7 +283,35 @@ export class WebPageFetcher implements SourceFetcher {
         };
       }
 
+      const contentType = response.headers.get("content-type");
+      if (!isTextContentType(contentType)) {
+        return {
+          ok: false,
+          status: "broken",
+          error: `Unsupported content type "${contentType ?? "unknown"}". Web sources must serve text/html or text/plain — host the document as a Notion page or HTML article.`,
+        };
+      }
+
+      const declaredLength = response.headers.get("content-length");
+      if (declaredLength !== null) {
+        const parsed = Number.parseInt(declaredLength, 10);
+        if (Number.isFinite(parsed) && parsed > this.#maxBodyBytes) {
+          return {
+            ok: false,
+            status: "broken",
+            error: `Source body is ${String(parsed)} bytes — exceeds the ${String(this.#maxBodyBytes)}-byte ceiling. Trim the source or split into smaller pages.`,
+          };
+        }
+      }
+
       const body = await response.text();
+      if (body.length > this.#maxBodyBytes) {
+        return {
+          ok: false,
+          status: "broken",
+          error: `Source body is ${String(body.length)} bytes — exceeds the ${String(this.#maxBodyBytes)}-byte ceiling. Trim the source or split into smaller pages.`,
+        };
+      }
       const content = htmlToMarkdown(body);
 
       return {
