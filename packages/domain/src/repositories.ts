@@ -147,6 +147,19 @@ export interface AiKnowledgeRepository {
   findProjectNotionContent(
     projectId: string,
   ): Promise<AiKnowledgeEntryRecord | null>;
+  /**
+   * Like {@link findProjectNotionContent}, but transparently falls back to
+   * the host project's cached Notion content when `projectId` refers to a
+   * connected sub-project (one with `project_dimensions.connected_to_project_id`
+   * set). Used by the AI Draft retriever so a thread tagged with the sub's
+   * project_id still gets the host-curated grounding.
+   *
+   * Settings + sync code paths must NOT call this — they need the raw
+   * project's content keyed by its own id.
+   */
+  findEffectiveProjectNotionContent(
+    projectId: string,
+  ): Promise<AiKnowledgeEntryRecord | null>;
   hasProjectNotionContent(projectId: string): Promise<boolean>;
   findProjectIdsWithNotionContent(
     projectIds: readonly string[],
@@ -347,6 +360,28 @@ export interface SmsSenderRepository {
   } | null>;
 }
 
+/**
+ * Effective (i.e. resolved-after-fallback) AI knowledge bundle for a project.
+ *
+ * - `projectId` is the project the caller asked about.
+ * - `resolvedFromProjectId` is the project the values were actually read from.
+ *   Equal to `projectId` when the project is a host or standalone; equal to
+ *   the host's id when the project is a connected sub.
+ * - The remaining fields mirror the AI-knowledge columns on
+ *   {@link ProjectDimensionRecord} so the AI Draft pipeline can use them
+ *   without caring whether the project is a sub or a host.
+ */
+export interface EffectiveAiKnowledge {
+  readonly projectId: string;
+  readonly resolvedFromProjectId: string;
+  readonly aiKnowledgeUrl: string | null;
+  readonly aiKnowledgeSources: readonly AiKnowledgeSource[];
+  readonly aiOperatingContext: string;
+  readonly aiAutoSyncSchedule: "never" | "daily" | "weekly";
+  readonly aiOptimizedSynthesizedAt: string | null;
+  readonly aiOptimizedInputHash: string | null;
+}
+
 export interface ProjectDimensionRepository {
   findById(projectId: string): Promise<ProjectDimensionRecord | null>;
   listAll(): Promise<readonly ProjectDimensionRecord[]>;
@@ -368,6 +403,18 @@ export interface ProjectDimensionRepository {
   listAvailableConnectionCandidates(): Promise<
     readonly ProjectDimensionRecord[]
   >;
+  /**
+   * Returns the AI-knowledge bundle the synthesis + draft pipelines should
+   * use for `projectId`, transparently inheriting from the host when the
+   * row is a connected sub-project.
+   *
+   * Settings code paths must NOT call this — they need the raw stored value
+   * (see {@link findById}). Use this only when you want the inherited /
+   * "effective" value.
+   */
+  findEffectiveAiKnowledge(
+    projectId: string,
+  ): Promise<EffectiveAiKnowledge | null>;
   getAiKnowledgeSources(
     projectId: string,
   ): Promise<readonly AiKnowledgeSource[]>;

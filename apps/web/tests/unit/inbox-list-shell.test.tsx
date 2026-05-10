@@ -229,6 +229,7 @@ function buildList(
         snippet: "Thanks for the quick update.",
         latestChannel: "email",
         projectLabel: "Amazon Basin",
+        projectSubLabel: null,
         additionalActiveProjectsCount: 0,
         volunteerStage: "active",
         bucket: "new",
@@ -839,6 +840,66 @@ describe("Inbox list shell", () => {
 
     expect(row?.textContent).toContain("Amazon Basin");
     expect(row?.textContent).not.toContain("+2");
+  });
+
+  // Connected-projects host/sub label: a Beech-only volunteer's row chip
+  // shows "Beech & Butternut · via Saving American Beech" rather than just
+  // "Beech" — same source of truth (the resolver's resolvedPrimaryProject)
+  // that the conversation header uses.
+  it("renders the host name with 'via {sub}' on the inbox row chip when the project is a connected sub", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    const baseItem = buildList().items[0];
+
+    if (baseItem === undefined) {
+      throw new Error("Expected an inbox list fixture item");
+    }
+
+    activeSession = await mountInboxList(
+      buildList({
+        items: [
+          {
+            ...baseItem,
+            projectLabel: "Beech & Butternut",
+            projectSubLabel: "Saving American Beech",
+          },
+        ],
+      }),
+    );
+
+    const row = activeSession.container.querySelector(
+      "[data-inbox-row='true']",
+    );
+
+    expect(row?.textContent).toContain("Beech & Butternut");
+    expect(row?.textContent).toContain("via Saving American Beech");
+  });
+
+  it("renders only the project label on the inbox row chip when the project is standalone", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    const baseItem = buildList().items[0];
+
+    if (baseItem === undefined) {
+      throw new Error("Expected an inbox list fixture item");
+    }
+
+    activeSession = await mountInboxList(
+      buildList({
+        items: [
+          {
+            ...baseItem,
+            projectLabel: "Whitebark Pines",
+            projectSubLabel: null,
+          },
+        ],
+      }),
+    );
+
+    const row = activeSession.container.querySelector(
+      "[data-inbox-row='true']",
+    );
+
+    expect(row?.textContent).toContain("Whitebark Pines");
+    expect(row?.textContent).not.toContain("via ");
   });
 
   it("renders staff-origin non-volunteer rows with an AS chip", async () => {

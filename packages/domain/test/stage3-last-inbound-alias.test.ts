@@ -75,6 +75,7 @@ function buildRepositoryBundle(input: {
     aiKnowledge: {
       findByScope: () => Promise.resolve(null),
       findProjectNotionContent: () => Promise.resolve(null),
+      findEffectiveProjectNotionContent: () => Promise.resolve(null),
       hasProjectNotionContent: () => Promise.resolve(false),
       findProjectIdsWithNotionContent: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record),
@@ -139,6 +140,7 @@ function buildRepositoryBundle(input: {
       listByIds: () => Promise.resolve([]),
       listConnectedProjects: () => Promise.resolve([]),
       listAvailableConnectionCandidates: () => Promise.resolve([]),
+      findEffectiveAiKnowledge: () => Promise.resolve(null),
       getAiKnowledgeSources: () => Promise.resolve([]),
       setAiKnowledgeSources: () => Promise.resolve(),
       setAiAutoSyncSchedule: () => Promise.resolve(),

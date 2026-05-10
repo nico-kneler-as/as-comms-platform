@@ -214,6 +214,11 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
                   <p className="truncate text-[13px] font-medium text-slate-800 group-hover:text-slate-900">
                     {project.projectName}
                   </p>
+                  {project.subDisplayName === null ? null : (
+                    <p className="mt-0.5 truncate text-[11px] text-slate-400">
+                      via {project.subDisplayName}
+                    </p>
+                  )}
                   <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
                     <InboxProjectStatusBadge
                       status={project.status}
@@ -240,7 +245,7 @@ function ProjectsSection({ title, projects, emptyLabel }: ProjectsSectionProps) 
                     target="_blank"
                     rel="noreferrer"
                     className={`${rowClassName} hover:bg-white hover:ring-1 hover:ring-slate-200`}
-                    aria-label={`Open ${project.projectName} expedition member record in Salesforce`}
+                    aria-label={`Open ${project.subDisplayName ?? project.projectName} expedition member record in Salesforce`}
                   >
                     {content}
                   </a>

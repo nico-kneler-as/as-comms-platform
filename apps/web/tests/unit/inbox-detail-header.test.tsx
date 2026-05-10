@@ -156,6 +156,8 @@ function buildDetail(
           membershipId: "membership-1",
           projectId: "project-1",
           projectName: "Amazon Basin",
+          subDisplayName: null,
+          isConnectedSub: false,
           projectIsActive: true,
           status: "in-field",
           statusLabel: "Active",
@@ -170,6 +172,7 @@ function buildDetail(
     conversationProject: {
       projectId: "project-1",
       projectName: "Amazon Basin",
+      subProjectName: null,
       source: "membership",
     },
     initials: "RC",
@@ -375,6 +378,74 @@ describe("Inbox detail header", () => {
         '[data-tooltip-content="true"]',
       )?.textContent,
     ).toContain("Pending — click to clear");
+  });
+
+  // Connected-projects host/sub label: when the contact's primary
+  // membership is a connected sub, the header chip's primary text is the
+  // host's name and a small "via {sub}" line appears next to it.
+  it("renders the host name with 'via {sub}' for a connected sub-project membership", async () => {
+    activeSession = await renderDetail(
+      buildDetail({
+        contact: {
+          ...buildDetail().contact,
+          activeProjects: [
+            {
+              membershipId: "membership:beech",
+              projectId: "project:beech",
+              projectName: "Beech & Butternut",
+              subDisplayName: "Saving American Beech",
+              isConnectedSub: true,
+              projectIsActive: true,
+              status: "in-field",
+              statusLabel: "Active",
+              crmUrl: "/crm/project/beech",
+              expeditionMemberUrl: null,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(activeSession.container.textContent).toContain(
+      "Beech & Butternut",
+    );
+    expect(activeSession.container.textContent).toContain(
+      "via Saving American Beech",
+    );
+  });
+
+  // When the contact has no active membership but the conversation
+  // resolved (via SF event context) to a connected sub, the fallback chip
+  // still shows the host name with the via-line.
+  it("renders the host name with 'via {sub}' when the conversation fallback is a connected sub", async () => {
+    activeSession = await renderDetail(
+      buildDetail({
+        contact: {
+          ...buildDetail().contact,
+          activeProjects: [],
+        },
+        conversationProject: {
+          projectId: "project:beech",
+          projectName: "Beech & Butternut",
+          subProjectName: "Saving American Beech",
+          source: "conversation",
+        },
+      }),
+    );
+
+    expect(activeSession.container.textContent).toContain(
+      "Beech & Butternut",
+    );
+    expect(activeSession.container.textContent).toContain(
+      "via Saving American Beech",
+    );
+  });
+
+  it("does not render 'via …' when the project is standalone", async () => {
+    activeSession = await renderDetail(buildDetail());
+
+    expect(activeSession.container.textContent).toContain("Amazon Basin");
+    expect(activeSession.container.textContent).not.toContain("via ");
   });
 
   it("keeps the follow-up toggle clickable while a request is in flight and queues the latest intent", async () => {

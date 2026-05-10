@@ -138,7 +138,14 @@ export async function retrieveGrounding(
       }),
       input.projectId === null
         ? Promise.resolve(null)
-        : repositories.aiKnowledge.findProjectNotionContent(input.projectId),
+        : // Connected sub-projects (per PR #388) clear their own
+          // ai_knowledge_url and inherit the host's bundle. The "effective"
+          // lookup transparently hops sub→host so the draft pipeline picks
+          // up the curated grounding even when the thread is tagged with
+          // the sub's project_id.
+          repositories.aiKnowledge.findEffectiveProjectNotionContent(
+            input.projectId,
+          ),
       repositories.canonicalEvents.listByContactId(input.contactId),
     ]);
 
