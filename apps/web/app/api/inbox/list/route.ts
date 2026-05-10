@@ -65,7 +65,6 @@ export async function GET(request: Request) {
     await getInboxList(filter, {
       cursor: searchParams.get("cursor"),
       ...(limit === undefined ? {} : { limit }),
-      query: searchParams.get("q") ?? searchParams.get("query"),
       projectId,
     }),
   );

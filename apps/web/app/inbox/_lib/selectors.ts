@@ -54,6 +54,8 @@ import type {
   InboxTimelineEntryKind,
   InboxTimelineEntryParticipantRowViewModel,
   InboxTimelineEntryViewModel,
+  InboxUnifiedSearchRowViewModel,
+  InboxUnifiedSearchViewModel,
   InboxVolunteerStage,
   InboxWelcomeWorkloadViewModel,
 } from "./view-models";
@@ -4504,6 +4506,93 @@ export async function getInboxList(
     selectedProjectId: projectId,
     page: cachedData.page,
     freshness: cachedData.freshness,
+  };
+}
+
+/** Minimum query length enforced for the unified inbox search. */
+export const INBOX_UNIFIED_SEARCH_MIN_QUERY_LENGTH = 3;
+
+/** Per-section cap. Total counts (pre-truncation) come back in `totals`. */
+export const INBOX_UNIFIED_SEARCH_SECTION_LIMIT = 25;
+
+/**
+ * Server selector for the unified inbox search bar. Replaces the dedicated
+ * `/inbox/all-contacts` surface and the projection-only inbox-list search:
+ * the input now searches the broad set of contacts (Section A — contact
+ * attribute matches) plus projection snippet/subject matches (Section B),
+ * with each section sorted by last activity desc and capped per section.
+ *
+ * Below the min-query length the selector short-circuits without hitting
+ * the DB, so the API route can rely on this for cheap empty responses.
+ */
+export async function getInboxUnifiedSearch(input: {
+  readonly query: string;
+}): Promise<InboxUnifiedSearchViewModel> {
+  const trimmedQuery = input.query.trim();
+
+  if (trimmedQuery.length < INBOX_UNIFIED_SEARCH_MIN_QUERY_LENGTH) {
+    return {
+      query: trimmedQuery,
+      contactMatches: [],
+      bodyMatches: [],
+      totals: { contactMatches: 0, bodyMatches: 0 },
+    };
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const { contactMatches, bodyMatches, totals } =
+    await runtime.repositories.contacts.searchInboxUnified({
+      query: trimmedQuery,
+      limit: INBOX_UNIFIED_SEARCH_SECTION_LIMIT,
+    });
+
+  const referenceNowIso = new Date().toISOString();
+
+  const toRow = (
+    row: Awaited<
+      ReturnType<typeof runtime.repositories.contacts.searchInboxUnified>
+    >["contactMatches"][number],
+  ): InboxUnifiedSearchRowViewModel => {
+    const projectLabel =
+      row.memberships.length === 0
+        ? null
+        : (row.memberships[0]?.projectAlias ??
+          row.memberships[0]?.projectName ??
+          null);
+    const lastActivityLabel =
+      row.lastActivityAt === null
+        ? ""
+        : formatRelativeTimestamp(row.lastActivityAt, referenceNowIso);
+    const channel: InboxChannel | null =
+      row.lastEventType === null ? null : mapChannel(row.lastEventType);
+    const sanitizedSnippet =
+      row.snippet === null
+        ? null
+        : sanitizePreviewText(row.snippet) || row.snippet;
+
+    return {
+      contactId: row.contact.id,
+      displayName: row.contact.displayName,
+      initials: toInitials(row.contact.displayName),
+      avatarTone: avatarToneForContact(row.contact.id),
+      primaryEmail: row.contact.primaryEmail,
+      primaryPhone: row.contact.primaryPhone,
+      projectLabel,
+      hasProjection: row.hasProjection,
+      lastActivityAt: row.lastActivityAt,
+      lastActivityLabel,
+      latestSubject: row.latestMessageSubject,
+      snippet: sanitizedSnippet,
+      latestChannel: channel,
+      lastEventType: row.lastEventType,
+    };
+  };
+
+  return {
+    query: trimmedQuery,
+    contactMatches: contactMatches.map(toRow),
+    bodyMatches: bodyMatches.map(toRow),
+    totals,
   };
 }
 

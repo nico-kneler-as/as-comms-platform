@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InboxListViewModel } from "../../app/inbox/_lib/view-models";
 
 const fetchInboxListPageMock = vi.hoisted(() => vi.fn());
+const fetchInboxUnifiedSearchMock = vi.hoisted(() => vi.fn());
 const routerReplaceMock = vi.hoisted(() => vi.fn());
 const routerPrefetchMock = vi.hoisted(() => vi.fn());
 const searchParamsMock = vi.hoisted(() => ({
@@ -43,6 +44,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("../../app/inbox/_lib/client-api", () => ({
   fetchInboxListPage: fetchInboxListPageMock,
+  fetchInboxUnifiedSearch: fetchInboxUnifiedSearchMock,
 }));
 
 function iconMock(name: string) {
@@ -116,7 +118,6 @@ vi.mock("../../app/inbox/_components/icons", () => ({
   SearchIcon: iconMock("SearchIcon"),
   SearchXIcon: iconMock("SearchXIcon"),
   SendIcon: iconMock("SendIcon"),
-  UserRoundIcon: iconMock("UserRoundIcon"),
   XIcon: iconMock("XIcon"),
 }));
 
@@ -449,7 +450,8 @@ describe("Inbox list shell", () => {
   });
 
   it("renders Results when search is active", async () => {
-    fetchInboxListPageMock.mockReturnValue(new Promise(() => undefined));
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    fetchInboxUnifiedSearchMock.mockReturnValue(new Promise(() => undefined));
     activeSession = await mountInboxList(buildList(), {
       query: "basin",
       isQueueLoading: true,
@@ -629,7 +631,8 @@ describe("Inbox list shell", () => {
   });
 
   it("replaces the clear-search control with a spinner while search is loading", async () => {
-    fetchInboxListPageMock.mockReturnValue(new Promise(() => undefined));
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    fetchInboxUnifiedSearchMock.mockReturnValue(new Promise(() => undefined));
     activeSession = await mountInboxList(buildList(), {
       query: "basin",
       isQueueLoading: true,
@@ -662,7 +665,8 @@ describe("Inbox list shell", () => {
   });
 
   it("shows search skeleton rows only once the query reaches three characters", async () => {
-    fetchInboxListPageMock.mockReturnValue(new Promise(() => undefined));
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    fetchInboxUnifiedSearchMock.mockReturnValue(new Promise(() => undefined));
     activeSession = await mountInboxList(buildList(), {
       query: "am",
       isQueueLoading: true,
@@ -805,5 +809,122 @@ describe("Inbox list shell", () => {
     expect(row?.textContent).toContain("External");
     expect(row?.innerHTML).toContain("bg-amber-50");
     expect(row?.innerHTML).not.toContain(">AS<");
+  });
+
+  it("does NOT render an 'All contacts' left-rail entry (unified search replaces the dedicated route)", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList();
+    const session = activeSession;
+
+    await act(async () => {
+      findButtonByLabel(session.container, "Filters").click();
+      await Promise.resolve();
+    });
+
+    expect(session.container.textContent).not.toContain("All contacts");
+    expect(
+      session.container.querySelector('a[href="/inbox/all-contacts"]'),
+    ).toBeNull();
+  });
+
+  it("renders the two-section unified search result with contact and body matches", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    fetchInboxUnifiedSearchMock.mockResolvedValue({
+      query: "Eli",
+      contactMatches: [
+        {
+          contactId: "contact:eliza",
+          displayName: "Eliza Tate",
+          initials: "ET",
+          avatarTone: "violet",
+          primaryEmail: "eliza.tate@example.org",
+          primaryPhone: null,
+          projectLabel: null,
+          hasProjection: false,
+          lastActivityAt: "2026-04-22T12:00:00.000Z",
+          lastActivityLabel: "1d ago",
+          latestSubject: null,
+          snippet: null,
+          latestChannel: null,
+          lastEventType: null,
+        },
+      ],
+      bodyMatches: [
+        {
+          contactId: "contact:bm",
+          displayName: "Quincy Adams",
+          initials: "QA",
+          avatarTone: "amber",
+          primaryEmail: "quincy@example.org",
+          primaryPhone: null,
+          projectLabel: "Amazon Basin",
+          hasProjection: true,
+          lastActivityAt: "2026-04-21T09:00:00.000Z",
+          lastActivityLabel: "2d ago",
+          latestSubject: "Re: thanks",
+          snippet: "Thanks Eli for the helpful update.",
+          latestChannel: "email",
+          lastEventType: "communication.email.inbound",
+        },
+      ],
+      totals: { contactMatches: 1, bodyMatches: 1 },
+    });
+
+    activeSession = await mountInboxList(buildList(), {
+      query: "Eli",
+      isQueueLoading: false,
+    });
+    await flushReact();
+
+    expect(activeSession.container.textContent).toContain("Eliza Tate");
+    expect(activeSession.container.textContent).toContain("Quincy Adams");
+    // Section labels render when both sections are non-empty.
+    expect(activeSession.container.textContent).toContain("Contacts");
+    expect(activeSession.container.textContent).toContain("Message matches");
+    // Body-match snippet should highlight the substring with <mark>.
+    const mark = activeSession.container.querySelector("mark");
+    expect(mark).not.toBeNull();
+    expect((mark?.textContent ?? "").toLowerCase()).toBe("eli");
+  });
+
+  it("returns to the folder-filtered list when the search is cleared", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    fetchInboxUnifiedSearchMock.mockResolvedValue({
+      query: "Eli",
+      contactMatches: [
+        {
+          contactId: "contact:eliza",
+          displayName: "Eliza Tate",
+          initials: "ET",
+          avatarTone: "violet",
+          primaryEmail: "eliza.tate@example.org",
+          primaryPhone: null,
+          projectLabel: null,
+          hasProjection: false,
+          lastActivityAt: "2026-04-22T12:00:00.000Z",
+          lastActivityLabel: "1d ago",
+          latestSubject: null,
+          snippet: null,
+          latestChannel: null,
+          lastEventType: null,
+        },
+      ],
+      bodyMatches: [],
+      totals: { contactMatches: 1, bodyMatches: 0 },
+    });
+
+    activeSession = await mountInboxList(buildList(), {
+      query: "Eli",
+      isQueueLoading: false,
+    });
+    await flushReact();
+
+    expect(activeSession.container.textContent).toContain("Eliza Tate");
+
+    await activeSession.rerender({ query: "", isQueueLoading: false });
+    await flushReact();
+
+    expect(activeSession.container.textContent).not.toContain("Eliza Tate");
+    expect(activeSession.container.textContent).toContain("Riley Carter");
   });
 });

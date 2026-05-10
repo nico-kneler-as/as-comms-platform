@@ -14,8 +14,9 @@ import type {
   InboxActiveProjectOption,
   InboxFilterId,
   InboxListViewModel,
+  InboxUnifiedSearchViewModel,
 } from "../_lib/view-models";
-import { fetchInboxListPage } from "../_lib/client-api";
+import { fetchInboxListPage, fetchInboxUnifiedSearch } from "../_lib/client-api";
 import { parseInboxFilterId } from "../_lib/view-models";
 import { shouldApplyUrlSearchQuery } from "../_lib/search-sync";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -45,6 +46,7 @@ import {
 import { InboxFilterList } from "./inbox-filter-list";
 import { QueueLoadingSkeleton, QueueLoadMoreSkeleton } from "./inbox-loading";
 import { InboxRow } from "./inbox-row";
+import { InboxUnifiedSearchRow } from "./inbox-unified-search-row";
 
 interface ListColumnProps {
   readonly initialList: InboxListViewModel;
@@ -272,12 +274,14 @@ export function InboxList({
     };
   }, [normalizedQuery, pathname, searchParams, urlQuery]);
 
+  const [searchResult, setSearchResult] =
+    useState<InboxUnifiedSearchViewModel | null>(null);
+
   const loadFilterPage = useCallback(
     async (input: {
       readonly filterId: InboxFilterId;
       readonly cursor?: string | null;
       readonly append: boolean;
-      readonly query?: string | null;
       readonly projectId?: string | null;
     }) => {
       const appendCursor = input.append ? (input.cursor ?? null) : null;
@@ -305,7 +309,6 @@ export function InboxList({
         const nextList = await fetchInboxListPage({
           filterId: input.filterId,
           ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
-          query: input.query ?? null,
           projectId: input.projectId ?? null,
         });
 
@@ -343,6 +346,36 @@ export function InboxList({
     [setQueueLoading],
   );
 
+  const loadUnifiedSearchPage = useCallback(
+    async (query: string) => {
+      const requestId = activeRequestIdRef.current + 1;
+      activeRequestIdRef.current = requestId;
+      setQueueLoading(true);
+      setQueueError(null);
+
+      try {
+        const next = await fetchInboxUnifiedSearch({ query });
+
+        if (activeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setSearchResult(next);
+      } catch {
+        if (activeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setQueueError("Search failed. Keeping the previous results.");
+      } finally {
+        if (activeRequestIdRef.current === requestId) {
+          setQueueLoading(false);
+        }
+      }
+    },
+    [setQueueLoading],
+  );
+
   useEffect(() => {
     const previousFilter = previousFilterRef.current;
     const previousProjectId = previousProjectIdRef.current;
@@ -351,14 +384,23 @@ export function InboxList({
     activeRequestIdRef.current += 1;
     const latestShellState = latestShellStateRef.current;
 
+    // Search active → run the unified search pipeline. The folder-filtered
+    // list stays in `currentList` from before the search began; we don't
+    // refetch it because the user can still see what they were looking at
+    // when they clear the input.
+    if (isServerSearchActive && serverQuery !== null) {
+      void loadUnifiedSearchPage(serverQuery);
+      return;
+    }
+
     if (
       activeFilter === "inbox" &&
-      selectedProjectId === null &&
-      !isServerSearchActive
+      selectedProjectId === null
     ) {
       setQueueLoading(false);
       setQueueError(null);
       setCurrentList(latestShellState.initialList);
+      setSearchResult(null);
       return;
     }
 
@@ -378,10 +420,10 @@ export function InboxList({
       }));
     }
 
+    setSearchResult(null);
     void loadFilterPage({
       filterId: activeFilter,
       append: false,
-      query: serverQuery,
       projectId: selectedProjectId,
     });
   }, [
@@ -389,6 +431,7 @@ export function InboxList({
     initialFilterCountById,
     isServerSearchActive,
     loadFilterPage,
+    loadUnifiedSearchPage,
     selectedProjectId,
     serverQuery,
     setQueueLoading,
@@ -397,23 +440,34 @@ export function InboxList({
   useEffect(() => {
     const latestShellState = latestShellStateRef.current;
 
-    if (
-      latestShellState.activeFilter === "inbox" &&
-      latestShellState.selectedProjectId === null &&
-      !isServerSearchActive
-    ) {
-      setCurrentList(latestShellState.initialList);
-      setQueueError(null);
+    if (isServerSearchActive && serverQuery !== null) {
+      void loadUnifiedSearchPage(serverQuery);
       return;
     }
 
+    if (
+      latestShellState.activeFilter === "inbox" &&
+      latestShellState.selectedProjectId === null
+    ) {
+      setCurrentList(latestShellState.initialList);
+      setQueueError(null);
+      setSearchResult(null);
+      return;
+    }
+
+    setSearchResult(null);
     void loadFilterPage({
       filterId: latestShellState.activeFilter,
       append: false,
-      query: serverQuery,
       projectId: latestShellState.selectedProjectId,
     });
-  }, [isServerSearchActive, listFreshnessKey, loadFilterPage, serverQuery]);
+  }, [
+    isServerSearchActive,
+    listFreshnessKey,
+    loadFilterPage,
+    loadUnifiedSearchPage,
+    serverQuery,
+  ]);
 
   const displayItems = currentList.items;
 
@@ -424,10 +478,18 @@ export function InboxList({
   const shouldShowSearchSkeleton = isSearchThresholdMet && isSearchInFlight;
   const shouldShowInitialSkeleton =
     isQueueLoading && currentList.items.length === 0 && !shouldShowSearchSkeleton;
+  // Pagination only applies to the folder-filtered list — the unified search
+  // returns the top 25 per section in v1 with no cursor.
   const canLoadMore =
-    currentList.page.hasMore && currentList.page.nextCursor !== null;
+    !isServerSearchActive &&
+    currentList.page.hasMore &&
+    currentList.page.nextCursor !== null;
   const isLoadingMore =
     isQueueLoading && pendingAppendCursorRef.current !== null;
+  const searchResultCount =
+    searchResult === null
+      ? 0
+      : searchResult.contactMatches.length + searchResult.bodyMatches.length;
   const activeProjects = currentList.activeProjects;
   const hasActiveFilters =
     activeFilter !== "inbox" || selectedProjectId !== null;
@@ -520,7 +582,6 @@ export function InboxList({
           filterId: activeFilter,
           cursor: nextCursor,
           append: true,
-          query: serverQuery,
           projectId: selectedProjectId,
         });
       },
@@ -544,7 +605,6 @@ export function InboxList({
     isQueueLoading,
     loadFilterPage,
     selectedProjectId,
-    serverQuery,
   ]);
 
   return (
@@ -683,16 +743,16 @@ export function InboxList({
                 <span className="text-slate-400">
                   Searching for &ldquo;{search.query}&rdquo;
                 </span>
-              ) : displayItems.length === 0 ? (
+              ) : searchResultCount === 0 ? (
                 <span className="text-slate-400">
                   No results for &ldquo;{search.query}&rdquo;
                 </span>
               ) : (
                 <>
                   <span className="font-medium text-slate-700">
-                    {currentList.page.total}
+                    {searchResultCount}
                   </span>{" "}
-                  {currentList.page.total === 1 ? "result" : "results"} for
+                  {searchResultCount === 1 ? "result" : "results"} for
                   &ldquo;{search.query}&rdquo;
                 </>
               )}
@@ -706,8 +766,18 @@ export function InboxList({
           <QueueLoadingSkeleton rowCount={3} label="Searching inbox" />
         ) : shouldShowInitialSkeleton ? (
           <QueueLoadingSkeleton />
-        ) : shouldShowSearchSummary && displayItems.length === 0 ? (
-          <SearchEmptyState query={search.query} onClearSearch={clearSearch} />
+        ) : isServerSearchActive && searchResult !== null ? (
+          searchResultCount === 0 ? (
+            <SearchEmptyState
+              query={search.query}
+              onClearSearch={clearSearch}
+            />
+          ) : (
+            <UnifiedSearchResultList
+              result={searchResult}
+              activeContactId={activeContactId}
+            />
+          )
         ) : displayItems.length === 0 ? (
           <QueueEmptyState
             onSwitchToFollowUp={() => {
@@ -779,11 +849,11 @@ function SearchEmptyState({
   return (
     <EmptyState
       icon={<SearchXIcon className="size-6" />}
-      title="No results"
+      title="No contacts match the search"
       description={
         <>
-          Nothing in the inbox matches &ldquo;{query}&rdquo;. Try a different
-          search.
+          Nothing matches &ldquo;{query}&rdquo;. Try a different name, email,
+          phone number, or message snippet.
         </>
       }
       action={
@@ -793,9 +863,96 @@ function SearchEmptyState({
           size="sm"
           onClick={onClearSearch}
         >
-          Clear filter
+          Clear search
         </Button>
       }
     />
+  );
+}
+
+/**
+ * Two-section result list rendered when the inbox search bar is in unified
+ * search mode. Section A — `contactMatches` — shows attribute matches first;
+ * Section B — `bodyMatches` — shows projection snippet/subject matches with
+ * the matched substring highlighted via `<mark>`. Both sections share the
+ * same row format so the divider is the only visual separator. Section
+ * labels are omitted when only one section is non-empty.
+ */
+function UnifiedSearchResultList({
+  result,
+  activeContactId,
+}: {
+  readonly result: InboxUnifiedSearchViewModel;
+  readonly activeContactId: string | null;
+}) {
+  const showSectionLabels =
+    result.contactMatches.length > 0 && result.bodyMatches.length > 0;
+
+  return (
+    <div>
+      {result.contactMatches.length > 0 ? (
+        <section aria-label="Contact matches">
+          {showSectionLabels ? (
+            <UnifiedSearchSectionHeader
+              label="Contacts"
+              count={result.totals.contactMatches}
+              shown={result.contactMatches.length}
+            />
+          ) : null}
+          <ul className="divide-y divide-slate-100">
+            {result.contactMatches.map((row) => (
+              <InboxUnifiedSearchRow
+                key={row.contactId}
+                row={row}
+                query={result.query}
+                isActive={row.contactId === activeContactId}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {result.bodyMatches.length > 0 ? (
+        <section aria-label="Message matches">
+          <UnifiedSearchSectionHeader
+            label={showSectionLabels ? "Message matches" : "Results"}
+            count={result.totals.bodyMatches}
+            shown={result.bodyMatches.length}
+          />
+          <ul className="divide-y divide-slate-100">
+            {result.bodyMatches.map((row) => (
+              <InboxUnifiedSearchRow
+                key={row.contactId}
+                row={row}
+                query={result.query}
+                isActive={row.contactId === activeContactId}
+                highlightSnippet
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function UnifiedSearchSectionHeader({
+  label,
+  count,
+  shown,
+}: {
+  readonly label: string;
+  readonly count: number;
+  readonly shown: number;
+}) {
+  return (
+    <div className="border-y border-slate-100 bg-slate-50 px-4 py-1.5">
+      <div className="flex items-center justify-between gap-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+        <span>{label}</span>
+        <span className="text-slate-400">
+          {count > shown ? `${shown.toString()} of ${count.toString()}` : count.toString()}
+        </span>
+      </div>
+    </div>
   );
 }

@@ -188,21 +188,68 @@ export interface ProjectKnowledgeRepository {
   }): Promise<number>;
 }
 
-export interface AllContactsSearchMembership {
+export interface InboxUnifiedSearchMembership {
   readonly projectId: string;
   readonly projectName: string;
   readonly projectAlias: string | null;
 }
 
-export interface AllContactsSearchRow {
+/**
+ * One result row from the unified inbox search. Whether the contact has an
+ * inbox-projection row or not is signalled by `hasProjection` and the
+ * thread-metadata fields below it; the renderer picks between the two row
+ * formats (conversation row vs contact-only row) based on those.
+ */
+export interface InboxUnifiedSearchRow {
   readonly contact: ContactRecord;
-  readonly memberships: readonly AllContactsSearchMembership[];
+  readonly memberships: readonly InboxUnifiedSearchMembership[];
+  /**
+   * MAX(canonicalEventLedger.occurredAt) across ALL event types — not just
+   * inbox-driving comm events. Drives the "last activity" sort key and
+   * timestamp label. Null when the contact has no events at all.
+   */
   readonly lastActivityAt: string | null;
+  /**
+   * True when the contact has a row in `contact_inbox_projection`. Drives the
+   * choice between the conversation-row format and the contact-only row
+   * format on the client.
+   */
+  readonly hasProjection: boolean;
+  /**
+   * Latest message snippet from the inbox projection, when available. Only
+   * present for projection contacts. May still be empty string when the
+   * projection row was upserted with an empty snippet.
+   */
+  readonly snippet: string | null;
+  /**
+   * Latest message subject resolved from the projection's
+   * `last_canonical_event_id` join (gmail or salesforce comm details). Null
+   * for non-projection contacts or when the linked source had no subject.
+   */
+  readonly latestMessageSubject: string | null;
+  /**
+   * Last canonical event type from the inbox projection, used by the client to
+   * pick channel icons. Null for non-projection contacts.
+   */
+  readonly lastEventType: CanonicalEventRecord["eventType"] | null;
 }
 
-export interface AllContactsSearchCursor {
-  readonly displayName: string;
-  readonly contactId: string;
+/**
+ * Two-section unified search result. Section A (`contactMatches`) matches on
+ * contact attributes (display name, primary email, primary phone). Section B
+ * (`bodyMatches`) matches on inbox-projection snippet or latest message
+ * subject and EXCLUDES contacts already in `contactMatches`. Each section is
+ * sorted by lastActivityAt desc internally and capped at the `limit` passed
+ * in. `totals` exposes the count BEFORE truncation so the UI can show
+ * "X+ results".
+ */
+export interface InboxUnifiedSearchResult {
+  readonly contactMatches: readonly InboxUnifiedSearchRow[];
+  readonly bodyMatches: readonly InboxUnifiedSearchRow[];
+  readonly totals: {
+    readonly contactMatches: number;
+    readonly bodyMatches: number;
+  };
 }
 
 export interface ContactRepository {
@@ -218,21 +265,22 @@ export interface ContactRepository {
     readonly limit: number;
   }): Promise<readonly ContactRecord[]>;
   /**
-   * Bypasses the inbox projection and queries the `contacts` table directly so
-   * volunteer-support operators can find any contact in the database — even
-   * those with only lifecycle/campaign events (or no events at all). Returns
-   * each contact with their active project memberships and last canonical
-   * activity timestamp (across ALL event types, not just inbox-driving ones).
-   * No active-project filter, no membership filter, no event-existence filter.
+   * Unified inbox search. Bypasses the projection-only filter so the result
+   * includes contacts who have lifecycle/campaign events (or no events at
+   * all) alongside contacts with conversation history. Returns two sections:
+   *
+   * - `contactMatches`: matches on `contacts.displayName`, `primaryEmail`,
+   *   `primaryPhone`. Includes contacts without inbox projection.
+   * - `bodyMatches`: matches on `contact_inbox_projection.snippet` or the
+   *   latest message subject (joined via `last_canonical_event_id`). Excludes
+   *   contacts already returned in `contactMatches`.
+   *
+   * Both sections are sorted by `lastActivityAt` desc and capped at `limit`.
    */
-  searchAllContacts(input: {
+  searchInboxUnified(input: {
     readonly query: string;
     readonly limit: number;
-    readonly cursor: AllContactsSearchCursor | null;
-  }): Promise<{
-    readonly rows: readonly AllContactsSearchRow[];
-    readonly nextCursor: AllContactsSearchCursor | null;
-  }>;
+  }): Promise<InboxUnifiedSearchResult>;
   upsert(record: ContactRecord): Promise<ContactRecord>;
 }
 

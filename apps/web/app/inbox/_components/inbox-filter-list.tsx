@@ -1,8 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-
 import { SHADOW, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -27,10 +24,7 @@ import {
   InboxIcon,
   MailOpenIcon,
   SendIcon,
-  UserRoundIcon,
 } from "./icons";
-
-const ALL_CONTACTS_HREF = "/inbox/all-contacts";
 
 const FILTER_ICON: Record<InboxFilterId, LucideIcon | null> = {
   inbox: InboxIcon,
@@ -61,8 +55,6 @@ export function InboxFilterList({
   selectedProjectId,
   onProjectChange,
 }: InboxFilterListProps) {
-  const pathname = usePathname();
-  const isAllContactsActive = pathname.startsWith(ALL_CONTACTS_HREF);
   const filterById = new Map(filters.map((filter) => [filter.id, filter]));
   const primaryFilters = ["inbox", "unread", "follow-up"] as const;
   const secondaryFilters = ["archived", "sent"] as const;
@@ -187,37 +179,6 @@ export function InboxFilterList({
           </div>
         </>
       ) : null}
-
-      {/* "All contacts" scope — bypasses contact_inbox_projection and
-          queries the contacts table directly so operators can find any
-          volunteer in the database, even those with only signup/lifecycle
-          events or no events at all. */}
-      <div className="my-2 border-t border-slate-100" />
-      <ul className="flex flex-col gap-0.5 px-3">
-        <li>
-          <Link
-            href={ALL_CONTACTS_HREF}
-            onClick={onCollapse}
-            aria-current={isAllContactsActive ? "page" : undefined}
-            className={cn(
-              "group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[12.5px] transition-colors duration-150",
-              isAllContactsActive
-                ? "bg-[#253746] text-white"
-                : "text-slate-700 hover:bg-slate-50",
-            )}
-          >
-            <UserRoundIcon
-              aria-hidden="true"
-              className="size-3.5 shrink-0"
-            />
-            <span
-              className={cn("flex-1 truncate", isAllContactsActive ? "font-medium" : "")}
-            >
-              All contacts
-            </span>
-          </Link>
-        </li>
-      </ul>
     </div>
   );
 }

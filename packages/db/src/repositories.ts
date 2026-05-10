@@ -17,9 +17,8 @@ import {
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
-  AllContactsSearchCursor,
-  AllContactsSearchMembership,
-  AllContactsSearchRow,
+  InboxUnifiedSearchMembership,
+  InboxUnifiedSearchRow,
   InternalNoteRecord,
   PendingComposerOutboundRecord,
   ProjectAliasRecord,
@@ -2000,159 +1999,299 @@ function createStage1RepositoriesInternal(
         return rows.map(mapContactRow);
       },
 
-      async searchAllContacts(input) {
-        // Sort: best-match relevance is overkill for v1 — sort by displayName
-        // ASC, then contactId ASC for deterministic pagination. The cursor is
-        // (displayName, contactId) keyset-style, which the
-        // contacts_display_name_idx covers without an extra index.
+      async searchInboxUnified(input) {
+        // Unified search backing the inbox search bar. Returns two sections:
+        //   A. contactMatches — name / primary email / primary phone ILIKE
+        //   B. bodyMatches    — projection snippet / latest message subject
+        //                       ILIKE, EXCLUDING contactMatches
+        //
+        // Both sections are sorted by lastActivityAt desc (across ALL
+        // canonical events, not just inbox-driving comm types) and capped at
+        // `limit`. `totals` reports the count BEFORE truncation so the UI
+        // can render "X+ results".
         const trimmedQuery = input.query.trim();
 
         if (trimmedQuery.length === 0) {
-          // Don't enumerate the entire DB. Empty query returns empty results.
-          return { rows: [], nextCursor: null };
+          // Don't enumerate the entire DB. Below the API-level min query
+          // length the route should short-circuit before reaching this; this
+          // is a defence-in-depth empty-result shortcut.
+          return {
+            contactMatches: [],
+            bodyMatches: [],
+            totals: { contactMatches: 0, bodyMatches: 0 },
+          };
         }
 
         const limit = Math.max(1, Math.min(input.limit, 200));
         const pattern = `%${escapeIlikePattern(trimmedQuery)}%`;
-        const matchPredicate = or(
-          sql`${contacts.displayName} ilike ${pattern} escape '\\'`,
-          sql`coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'`,
-          sql`coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'`,
+
+        // Per-contact lastActivityAt CTE used by both sections so we don't
+        // recompute it twice. Anchored on canonical_event_ledger so any
+        // event type (comm, lifecycle, campaign) qualifies.
+        const lastActivityCte = sql`(
+          select
+            ${canonicalEventLedger.contactId} as contact_id,
+            max(${canonicalEventLedger.occurredAt}) as last_activity_at
+          from ${canonicalEventLedger}
+          group by ${canonicalEventLedger.contactId}
+        )`;
+
+        // Section A: contact-attribute matches. LEFT JOIN inbox projection
+        // so projection-backed contacts return their thread metadata for the
+        // hybrid row format; non-projection contacts get nulls and render as
+        // contact-only rows on the client.
+        //
+        // Section B: body matches with the same projection join, filtered to
+        // contacts NOT already in section A and with snippet/subject ILIKE.
+        // We run both as raw SQL so the lastActivityAt sort uses the CTE
+        // value uniformly even when the projection is absent.
+
+        const totalsResult = await db.execute(sql`
+          with last_activity as ${lastActivityCte},
+          contact_matches as (
+            select ${contacts.id} as id
+            from ${contacts}
+            where (
+              ${contacts.displayName} ilike ${pattern} escape '\\'
+              or coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'
+              or coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'
+            )
+          ),
+          body_matches as (
+            select ${contactInboxProjection.contactId} as id
+            from ${contactInboxProjection}
+            left join ${canonicalEventLedger}
+              on ${canonicalEventLedger.id} = ${contactInboxProjection.lastCanonicalEventId}
+            left join ${gmailMessageDetails}
+              on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+            left join ${salesforceCommunicationDetailsTable}
+              on ${salesforceCommunicationDetailsTable.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+            where (
+              ${contactInboxProjection.snippet} ilike ${pattern} escape '\\'
+              or coalesce(${gmailMessageDetails.subject}, '') ilike ${pattern} escape '\\'
+              or coalesce(${salesforceCommunicationDetailsTable.subject}, '') ilike ${pattern} escape '\\'
+            )
+          )
+          select
+            (select count(*)::int from contact_matches) as contact_total,
+            (select count(*)::int from body_matches
+              where id not in (select id from contact_matches)
+            ) as body_total
+        `);
+
+        interface TotalsRow {
+          readonly contact_total: number | string | null;
+          readonly body_total: number | string | null;
+        }
+        const totalsRowSource = (
+          (totalsResult as { rows?: readonly TotalsRow[] }).rows ??
+          (totalsResult as readonly TotalsRow[])
         );
-        const cursorPredicate =
-          input.cursor === null
-            ? undefined
-            : or(
-                sql`${contacts.displayName} > ${input.cursor.displayName}`,
-                and(
-                  sql`${contacts.displayName} = ${input.cursor.displayName}`,
-                  sql`${contacts.id} > ${input.cursor.contactId}`,
-                ),
-              );
-        const wherePredicate =
-          cursorPredicate === undefined
-            ? matchPredicate
-            : and(matchPredicate, cursorPredicate);
+        const totalsRow = totalsRowSource[0] ?? {
+          contact_total: 0,
+          body_total: 0,
+        };
+        const contactTotal = Number(totalsRow.contact_total ?? 0);
+        const bodyTotal = Number(totalsRow.body_total ?? 0);
 
-        const contactRows = await db
-          .select({
-            id: contacts.id,
-            salesforceContactId: contacts.salesforceContactId,
-            displayName: contacts.displayName,
-            primaryEmail: contacts.primaryEmail,
-            primaryPhone: contacts.primaryPhone,
-            createdAt: contacts.createdAt,
-            updatedAt: contacts.updatedAt,
-          })
-          .from(contacts)
-          .where(wherePredicate)
-          .orderBy(asc(contacts.displayName), asc(contacts.id))
-          .limit(limit);
+        const contactMatchesResult = await db.execute(sql`
+          with last_activity as ${lastActivityCte}
+          select
+            ${contacts.id} as id,
+            ${contacts.salesforceContactId} as salesforce_contact_id,
+            ${contacts.displayName} as display_name,
+            ${contacts.primaryEmail} as primary_email,
+            ${contacts.primaryPhone} as primary_phone,
+            ${contacts.createdAt} as created_at,
+            ${contacts.updatedAt} as updated_at,
+            la.last_activity_at as last_activity_at,
+            ${contactInboxProjection.snippet} as snippet,
+            ${contactInboxProjection.lastEventType} as last_event_type,
+            ${contactInboxProjection.lastCanonicalEventId} as last_canonical_event_id,
+            coalesce(${gmailMessageDetails.subject}, ${salesforceCommunicationDetailsTable.subject}) as latest_subject,
+            (${contactInboxProjection.contactId} is not null) as has_projection
+          from ${contacts}
+          left join last_activity la
+            on la.contact_id = ${contacts.id}
+          left join ${contactInboxProjection}
+            on ${contactInboxProjection.contactId} = ${contacts.id}
+          left join ${canonicalEventLedger}
+            on ${canonicalEventLedger.id} = ${contactInboxProjection.lastCanonicalEventId}
+          left join ${gmailMessageDetails}
+            on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+          left join ${salesforceCommunicationDetailsTable}
+            on ${salesforceCommunicationDetailsTable.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+          where (
+            ${contacts.displayName} ilike ${pattern} escape '\\'
+            or coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'
+            or coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'
+          )
+          order by la.last_activity_at desc nulls last, ${contacts.displayName} asc, ${contacts.id} asc
+          limit ${limit}
+        `);
 
-        if (contactRows.length === 0) {
-          return { rows: [], nextCursor: null };
+        const bodyMatchesResult = await db.execute(sql`
+          with last_activity as ${lastActivityCte},
+          contact_matches as (
+            select ${contacts.id} as id
+            from ${contacts}
+            where (
+              ${contacts.displayName} ilike ${pattern} escape '\\'
+              or coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'
+              or coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'
+            )
+          )
+          select
+            ${contacts.id} as id,
+            ${contacts.salesforceContactId} as salesforce_contact_id,
+            ${contacts.displayName} as display_name,
+            ${contacts.primaryEmail} as primary_email,
+            ${contacts.primaryPhone} as primary_phone,
+            ${contacts.createdAt} as created_at,
+            ${contacts.updatedAt} as updated_at,
+            la.last_activity_at as last_activity_at,
+            ${contactInboxProjection.snippet} as snippet,
+            ${contactInboxProjection.lastEventType} as last_event_type,
+            ${contactInboxProjection.lastCanonicalEventId} as last_canonical_event_id,
+            coalesce(${gmailMessageDetails.subject}, ${salesforceCommunicationDetailsTable.subject}) as latest_subject,
+            true as has_projection
+          from ${contactInboxProjection}
+          inner join ${contacts}
+            on ${contacts.id} = ${contactInboxProjection.contactId}
+          left join last_activity la
+            on la.contact_id = ${contacts.id}
+          left join ${canonicalEventLedger}
+            on ${canonicalEventLedger.id} = ${contactInboxProjection.lastCanonicalEventId}
+          left join ${gmailMessageDetails}
+            on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+          left join ${salesforceCommunicationDetailsTable}
+            on ${salesforceCommunicationDetailsTable.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+          where (
+            ${contactInboxProjection.snippet} ilike ${pattern} escape '\\'
+            or coalesce(${gmailMessageDetails.subject}, '') ilike ${pattern} escape '\\'
+            or coalesce(${salesforceCommunicationDetailsTable.subject}, '') ilike ${pattern} escape '\\'
+          )
+          and ${contacts.id} not in (select id from contact_matches)
+          order by la.last_activity_at desc nulls last, ${contacts.displayName} asc, ${contacts.id} asc
+          limit ${limit}
+        `);
+
+        interface SearchRowResult {
+          readonly id: string;
+          readonly salesforce_contact_id: string | null;
+          readonly display_name: string;
+          readonly primary_email: string | null;
+          readonly primary_phone: string | null;
+          readonly created_at: Date | string;
+          readonly updated_at: Date | string;
+          readonly last_activity_at: Date | string | null;
+          readonly snippet: string | null;
+          readonly last_event_type: string | null;
+          readonly last_canonical_event_id: string | null;
+          readonly latest_subject: string | null;
+          readonly has_projection: boolean | string | number | null;
         }
 
-        const matchedContactIds = contactRows.map((row) => row.id);
+        const contactRowsRaw =
+          (contactMatchesResult as { rows?: readonly SearchRowResult[] }).rows ??
+          (contactMatchesResult as readonly SearchRowResult[]);
+        const bodyRowsRaw =
+          (bodyMatchesResult as { rows?: readonly SearchRowResult[] }).rows ??
+          (bodyMatchesResult as readonly SearchRowResult[]);
 
-        // LEFT JOIN contact_memberships → project_dimensions (active only).
-        // Many contacts will have no active memberships and that's the
-        // expected v1 behaviour — chips just render empty.
-        const [membershipRows, activityRows] = await Promise.all([
-          db
-            .select({
-              contactId: contactMemberships.contactId,
-              projectId: projectDimensions.projectId,
-              projectName: projectDimensions.projectName,
-              projectAlias: projectDimensions.projectAlias,
-            })
-            .from(contactMemberships)
-            .innerJoin(
-              projectDimensions,
-              and(
-                eq(contactMemberships.projectId, projectDimensions.projectId),
-                eq(projectDimensions.isActive, true),
-              ),
-            )
-            .where(inArray(contactMemberships.contactId, matchedContactIds))
-            .orderBy(
-              asc(contactMemberships.contactId),
-              asc(projectDimensions.projectName),
-              asc(projectDimensions.projectId),
-            ),
-          // Last activity across ALL canonical events (not just inbox-driving
-          // comm types). Lifecycle, campaign, internal notes — anything in
-          // the ledger. NULL when the contact has no events at all.
-          db
-            .select({
-              contactId: canonicalEventLedger.contactId,
-              lastActivityAt: sql<Date | null>`max(${canonicalEventLedger.occurredAt})`,
-            })
-            .from(canonicalEventLedger)
-            .where(inArray(canonicalEventLedger.contactId, matchedContactIds))
-            .groupBy(canonicalEventLedger.contactId),
-        ]);
+        const allMatchedIds = new Set<string>();
+        for (const row of contactRowsRaw) allMatchedIds.add(row.id);
+        for (const row of bodyRowsRaw) allMatchedIds.add(row.id);
+        const matchedContactIds = [...allMatchedIds];
+
+        // Active project memberships for chip rendering.
+        const membershipRows =
+          matchedContactIds.length === 0
+            ? []
+            : await db
+                .select({
+                  contactId: contactMemberships.contactId,
+                  projectId: projectDimensions.projectId,
+                  projectName: projectDimensions.projectName,
+                  projectAlias: projectDimensions.projectAlias,
+                })
+                .from(contactMemberships)
+                .innerJoin(
+                  projectDimensions,
+                  and(
+                    eq(contactMemberships.projectId, projectDimensions.projectId),
+                    eq(projectDimensions.isActive, true),
+                  ),
+                )
+                .where(inArray(contactMemberships.contactId, matchedContactIds))
+                .orderBy(
+                  asc(contactMemberships.contactId),
+                  asc(projectDimensions.projectName),
+                  asc(projectDimensions.projectId),
+                );
 
         const membershipsByContactId = new Map<
           string,
-          AllContactsSearchMembership[]
+          InboxUnifiedSearchMembership[]
         >();
         for (const row of membershipRows) {
-          // innerJoin on project_dimensions guarantees projectId is non-null.
           const existing = membershipsByContactId.get(row.contactId);
-          const entry: AllContactsSearchMembership = {
+          const entry: InboxUnifiedSearchMembership = {
             projectId: row.projectId,
             projectName: row.projectName,
             projectAlias: row.projectAlias,
           };
           if (existing === undefined) {
             membershipsByContactId.set(row.contactId, [entry]);
-          } else if (
-            !existing.some((m) => m.projectId === entry.projectId)
-          ) {
+          } else if (!existing.some((m) => m.projectId === entry.projectId)) {
             existing.push(entry);
           }
         }
 
-        const lastActivityByContactId = new Map<string, string>();
-        for (const row of activityRows) {
-          if (row.lastActivityAt instanceof Date) {
-            lastActivityByContactId.set(
-              row.contactId,
-              row.lastActivityAt.toISOString(),
-            );
-          } else if (typeof row.lastActivityAt === "string") {
-            lastActivityByContactId.set(
-              row.contactId,
-              new Date(row.lastActivityAt).toISOString(),
-            );
-          }
-        }
+        const toIso = (value: Date | string | null): string | null => {
+          if (value === null) return null;
+          if (value instanceof Date) return value.toISOString();
+          return new Date(value).toISOString();
+        };
 
-        const rows: AllContactsSearchRow[] = contactRows.map((row) => ({
+        const toDate = (value: Date | string): Date =>
+          value instanceof Date ? value : new Date(value);
+
+        const toRow = (raw: SearchRowResult): InboxUnifiedSearchRow => ({
           contact: mapContactRow({
-            id: row.id,
-            salesforceContactId: row.salesforceContactId,
-            displayName: row.displayName,
-            primaryEmail: row.primaryEmail,
-            primaryPhone: row.primaryPhone,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
+            id: raw.id,
+            salesforceContactId: raw.salesforce_contact_id,
+            displayName: raw.display_name,
+            primaryEmail: raw.primary_email,
+            primaryPhone: raw.primary_phone,
+            createdAt: toDate(raw.created_at),
+            updatedAt: toDate(raw.updated_at),
           }),
-          memberships: membershipsByContactId.get(row.id) ?? [],
-          lastActivityAt: lastActivityByContactId.get(row.id) ?? null,
-        }));
+          memberships: membershipsByContactId.get(raw.id) ?? [],
+          lastActivityAt: toIso(raw.last_activity_at),
+          hasProjection:
+            raw.has_projection === true ||
+            raw.has_projection === "t" ||
+            raw.has_projection === 1,
+          snippet: raw.snippet,
+          latestMessageSubject:
+            raw.latest_subject !== null && raw.latest_subject.length > 0
+              ? raw.latest_subject
+              : null,
+          lastEventType:
+            raw.last_event_type === null
+              ? null
+              : (raw.last_event_type as InboxUnifiedSearchRow["lastEventType"]),
+        });
 
-        const lastRow = contactRows[contactRows.length - 1];
-        const nextCursor: AllContactsSearchCursor | null =
-          contactRows.length === limit && lastRow !== undefined
-            ? {
-                displayName: lastRow.displayName,
-                contactId: lastRow.id,
-              }
-            : null;
-
-        return { rows, nextCursor };
+        return {
+          contactMatches: contactRowsRaw.map(toRow),
+          bodyMatches: bodyRowsRaw.map(toRow),
+          totals: {
+            contactMatches: contactTotal,
+            bodyMatches: bodyTotal,
+          },
+        };
       },
 
       async upsert(record) {
