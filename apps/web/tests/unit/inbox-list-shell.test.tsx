@@ -927,4 +927,77 @@ describe("Inbox list shell", () => {
     expect(activeSession.container.textContent).not.toContain("Eliza Tate");
     expect(activeSession.container.textContent).toContain("Riley Carter");
   });
+
+  it("surfaces the HTTP status in the refresh-failed banner", async () => {
+    const fetchError = Object.assign(new Error("Request failed with status 502."), {
+      name: "InboxFetchError",
+      status: 502,
+    });
+    fetchInboxListPageMock.mockRejectedValue(fetchError);
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    activeSession = await mountInboxList(buildPnwProjectList());
+    await flushReact();
+
+    expect(activeSession.container.textContent).toContain("HTTP 502");
+    expect(activeSession.container.textContent).toContain(
+      "Keeping the last loaded rows.",
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      "inbox.refresh.failed",
+      expect.objectContaining({
+        status: 502,
+        name: "InboxFetchError",
+      }),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("labels TypeError network failures in the refresh-failed banner", async () => {
+    const networkError = new TypeError("Failed to fetch");
+    fetchInboxListPageMock.mockRejectedValue(networkError);
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    activeSession = await mountInboxList(buildPnwProjectList());
+    await flushReact();
+
+    expect(activeSession.container.textContent).toContain("network error");
+    expect(activeSession.container.textContent).toContain(
+      "Keeping the last loaded rows.",
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      "inbox.refresh.failed",
+      expect.objectContaining({
+        status: null,
+        name: "TypeError",
+      }),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("suppresses AbortError silently — no banner, no console warn", async () => {
+    const abortError = new Error("The user aborted a request.");
+    abortError.name = "AbortError";
+    fetchInboxListPageMock.mockRejectedValue(abortError);
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    activeSession = await mountInboxList(buildPnwProjectList());
+    await flushReact();
+
+    expect(activeSession.container.textContent).not.toContain(
+      "Inbox refresh failed",
+    );
+    expect(activeSession.container.textContent).not.toContain("HTTP");
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
 });
