@@ -537,6 +537,7 @@ export function mapProjectDimensionRow(
     projectId: row.projectId,
     projectName: row.projectName,
     projectAlias: row.projectAlias,
+    connectedToProjectId: row.connectedToProjectId,
     source: row.source,
     isActive: row.isActive,
     aiKnowledgeUrl: row.aiKnowledgeUrl,
@@ -558,6 +559,10 @@ export function mapProjectDimensionToInsert(
     projectId: parsed.projectId,
     projectName: parsed.projectName,
     projectAlias: parsed.projectAlias ?? null,
+    // connectedToProjectId is operator-managed; absent in incoming records
+    // means "don't set it" (mirrors projectAlias behaviour). Salesforce
+    // capture never sets this — only Settings/admin actions should.
+    connectedToProjectId: parsed.connectedToProjectId ?? null,
     isActive: parsed.isActive ?? false,
     aiKnowledgeUrl: parsed.aiKnowledgeUrl ?? null,
     aiKnowledgeSyncedAt:
