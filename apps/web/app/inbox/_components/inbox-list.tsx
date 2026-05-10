@@ -60,6 +60,45 @@ const STATE_HEADER_LABEL: Partial<Record<InboxFilterId, string>> = {
   archived: "Archived",
 };
 
+/**
+ * Pull a numeric HTTP status off an unknown caught error, when one is
+ * available. We don't know the exact thrown shape (could be `InboxFetchError`,
+ * a plain `Error`, a `TypeError` for network failures, etc.), so we duck-type
+ * for `.status` instead of relying on `instanceof`.
+ */
+function extractFetchErrorStatus(error: unknown): number | null {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof (error as { status: unknown }).status === "number"
+  ) {
+    return (error as { status: number }).status;
+  }
+
+  return null;
+}
+
+/**
+ * Build the banner string for a failed inbox refresh. Surfacing the HTTP
+ * status (when available) gives operators something concrete to report when a
+ * refresh fails, without leaking request bodies, headers, or query params.
+ */
+function resolveInboxRefreshErrorMessage(input: {
+  readonly status: number | null;
+  readonly errorName: string | null;
+}): string {
+  if (input.status !== null) {
+    return `Inbox refresh failed (HTTP ${input.status.toString()}). Keeping the last loaded rows.`;
+  }
+
+  if (input.errorName === "TypeError") {
+    return "Inbox refresh failed (network error). Keeping the last loaded rows.";
+  }
+
+  return "Inbox refresh failed. Keeping the last loaded rows.";
+}
+
 function resolveInboxHeaderTitle(input: {
   readonly searchQuery: string;
   readonly activeFilter: InboxFilterId;
@@ -324,12 +363,36 @@ export function InboxList({
               }
             : nextList,
         );
-      } catch {
+      } catch (error) {
         if (activeRequestIdRef.current !== requestId) {
           return;
         }
 
-        setQueueError("Inbox refresh failed. Keeping the last loaded rows.");
+        // AbortError fires when the user navigates away or the freshness
+        // poller cancels a stale fetch — neither is a failure we should
+        // surface to the operator.
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+
+        const status = extractFetchErrorStatus(error);
+        const errorName = error instanceof Error ? error.name : null;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+
+        // Structured log only — never include request bodies, tokens,
+        // headers, or query params. We rely on `Error.message` as
+        // emitted by `InboxFetchError`/native fetch, which doesn't carry
+        // those fields.
+        console.warn("inbox.refresh.failed", {
+          status,
+          name: errorName ?? "unknown",
+          message: errorMessage,
+        });
+
+        setQueueError(
+          resolveInboxRefreshErrorMessage({ status, errorName }),
+        );
       } finally {
         if (
           appendCursor !== null &&
