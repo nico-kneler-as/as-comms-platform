@@ -404,6 +404,46 @@ describe("AI knowledge fetchers", () => {
     }
   });
 
+  it("rejects loopback, private, internal-mesh, and non-http(s) URLs without invoking fetch (SSRF guard)", async () => {
+    // Each of these would, if allowed, give an admin-supplied AI Knowledge
+    // source the ability to exfiltrate internal HTTP responses through the
+    // synthesis prompt. See `.STATE-2026-05-02-security-review-pass-2.md` H4.
+    const disallowedUrls = [
+      "http://localhost/",
+      "http://127.0.0.1:8080/admin",
+      "http://0.0.0.0:9000/",
+      "http://10.0.0.1/health",
+      "http://172.16.5.5/",
+      "http://192.168.1.1/router",
+      "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+      "http://web.railway.internal/",
+      "http://example.localhost/",
+      "file:///etc/passwd",
+      "ftp://example.com/",
+      "gopher://example.com/",
+    ];
+
+    for (const url of disallowedUrls) {
+      const fetchImpl = vi.fn();
+      const fetcher = new WebPageFetcher({
+        fetchImplementation: fetchImpl as unknown as typeof fetch,
+      });
+      const result = await fetcher.fetch({
+        url,
+        sourceId: "source:web",
+        lastContentHash: null,
+      });
+      expect(result).toMatchObject({ ok: false, status: "broken" });
+      if (!result.ok) {
+        expect(result.error.toLowerCase()).toMatch(
+          /not allowed|not parseable|empty/u,
+        );
+      }
+      // The SSRF guard MUST short-circuit before the network call.
+      expect(fetchImpl).not.toHaveBeenCalled();
+    }
+  });
+
   it("returns inline text verbatim with a content hash", async () => {
     const fetcher = new InlineTextFetcher();
 

@@ -31,6 +31,22 @@ export interface IRateLimiter {
 }
 
 declare global {
+  /**
+   * Process-local in-memory rate-limit buckets keyed by `${scope}:${identifier}`.
+   * Lives on `globalThis` so the bucket map survives Next route module
+   * reloads within a single Node process (HMR in dev; warm Lambda-style
+   * reuse in prod). Scoped per-process: with horizontal scaling, each
+   * Railway instance has its own bucket map and clients can shop limits
+   * by hitting different instances.
+   *
+   * Intentional: pattern flagged as "hidden_state_mutation" by static
+   * analysis but is a real cross-module cache, not a hidden side-effect.
+   *
+   * For per-IP/per-user limits this is acceptable on single-instance deploy.
+   * If the web service ever scales horizontally, swap the InMemoryRateLimiter
+   * for a Redis-backed implementation. The IRateLimiter interface below
+   * exists so the swap is a one-line change in `getSecurityRateLimiter`.
+   */
   var __AS_COMMS_RATE_LIMIT_STATE__: GlobalRateLimitState | undefined;
 }
 

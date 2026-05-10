@@ -4,6 +4,21 @@ interface DailyCostState {
 }
 
 declare global {
+  /**
+   * Process-local daily cost accumulator for the AI draft surface. Lives on
+   * `globalThis` so module reloads in dev (HMR) and shared module instances
+   * across Next route boundaries observe the same accumulator within a
+   * single Node process.
+   *
+   * Intentional: pattern flagged as "hidden_state_mutation" by static
+   * analysis but is a real cross-module cache, not a hidden side-effect.
+   *
+   * Limitation: if the web service ever scales to multiple Railway
+   * instances, each instance has its own counter, so the effective cap
+   * becomes N × `AI_DAILY_CAP_USD`. Current deploy is single-instance;
+   * if that changes, move this counter to a Redis or DB row. See
+   * `.STATE-2026-05-02-security-review.md` M2.
+   */
   var __AS_COMMS_AI_DAILY_COST_STATE__: DailyCostState | undefined;
 }
 

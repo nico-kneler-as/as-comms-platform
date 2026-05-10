@@ -226,6 +226,100 @@ function isTextContentType(contentType: string | null): boolean {
   );
 }
 
+// SSRF guards. The fetcher is reachable from `addAiKnowledgeSourceAction`,
+// which is admin-only but still operator-supplied. Without these guards an
+// admin could point a `web_page` source at `http://localhost`, a private
+// RFC1918 IP, the cloud-metadata link-local IP, or `*.railway.internal`,
+// and the response body would be fed into the AI Knowledge synthesis
+// prompt and ultimately surfaced in operator-visible AI Knowledge content.
+// Practical risk is low (admin-only, 1-3 trusted operators) but we
+// still close the obvious vectors here at the choke point.
+//
+// Hostname-string matching only — does NOT defend against DNS rebinding or
+// DNS-based bypasses (an attacker-controlled public hostname that resolves
+// to a private IP at fetch time). Documented as a future hardening item;
+// belt-and-suspenders DNS resolution would require either a custom
+// `lookup` Agent or a userspace IP-resolution + range check, neither of
+// which is justified for the current trust model.
+const DISALLOWED_FETCH_HOSTNAMES = new Set([
+  "localhost",
+  "0.0.0.0",
+  "::",
+  "::1",
+  "[::1]",
+]);
+
+const DISALLOWED_FETCH_HOSTNAME_SUFFIXES = [
+  ".localhost",
+  ".railway.internal",
+  ".internal",
+] as const;
+
+const PRIVATE_OR_LINK_LOCAL_IPV4_PATTERN =
+  /^(?:127\.|10\.|172\.(?:1[6-9]|2\d|3[0-1])\.|192\.168\.|169\.254\.)/u;
+
+function isAllowedFetchUrl(
+  urlString: string,
+):
+  | { readonly allowed: true }
+  | { readonly allowed: false; readonly reason: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    return { allowed: false, reason: "URL is not parseable." };
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return {
+      allowed: false,
+      reason: `Scheme "${parsed.protocol}" is not allowed; web sources must use http(s).`,
+    };
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname.length === 0) {
+    return { allowed: false, reason: "URL host is empty." };
+  }
+
+  if (DISALLOWED_FETCH_HOSTNAMES.has(hostname)) {
+    return {
+      allowed: false,
+      reason: `URL host "${hostname}" is not allowed (loopback or unspecified address).`,
+    };
+  }
+
+  if (
+    DISALLOWED_FETCH_HOSTNAME_SUFFIXES.some((suffix) =>
+      hostname.endsWith(suffix),
+    )
+  ) {
+    return {
+      allowed: false,
+      reason: `URL host "${hostname}" is not allowed (internal mesh suffix).`,
+    };
+  }
+
+  if (PRIVATE_OR_LINK_LOCAL_IPV4_PATTERN.test(hostname)) {
+    return {
+      allowed: false,
+      reason: `URL host "${hostname}" is not allowed (private or link-local IP range).`,
+    };
+  }
+
+  // IPv6 literal in URL form: hostname comes back wrapped in brackets per
+  // WHATWG URL but with brackets stripped via .hostname; check the raw form
+  // for unique-local (fc00::/7) and link-local (fe80::/10) prefixes.
+  if (hostname.startsWith("fc") || hostname.startsWith("fd") || hostname.startsWith("fe8") || hostname.startsWith("fe9") || hostname.startsWith("fea") || hostname.startsWith("feb")) {
+    return {
+      allowed: false,
+      reason: `URL host "${hostname}" is not allowed (IPv6 unique-local or link-local).`,
+    };
+  }
+
+  return { allowed: true };
+}
+
 export class WebPageFetcher implements SourceFetcher {
   readonly kind = "web_page" as const;
 
@@ -249,6 +343,15 @@ export class WebPageFetcher implements SourceFetcher {
         ok: false,
         status: "broken",
         error: "Global fetch is unavailable.",
+      };
+    }
+
+    const urlValidation = isAllowedFetchUrl(input.url);
+    if (!urlValidation.allowed) {
+      return {
+        ok: false,
+        status: "broken",
+        error: urlValidation.reason,
       };
     }
 
