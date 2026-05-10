@@ -319,6 +319,91 @@ describe("AI knowledge fetchers", () => {
     }
   });
 
+  it("marks non-text web sources broken with an actionable message", async () => {
+    const pdfFetcher = new WebPageFetcher({
+      fetchImplementation: vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          "content-type": "application/pdf",
+          "content-length": "7299737",
+        }),
+        text: () => Promise.resolve("%PDF-1.4..."),
+      } satisfies Partial<Response>),
+    });
+
+    const result = await pdfFetcher.fetch({
+      url: "https://example.test/skw_protocols.pdf",
+      sourceId: "source:web",
+      lastContentHash: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "broken",
+    });
+    if (!result.ok) {
+      expect(result.error).toContain('Unsupported content type "application/pdf"');
+      expect(result.error).toContain("Notion page or HTML article");
+    }
+  });
+
+  it("rejects oversized web sources by declared content-length before reading the body", async () => {
+    const textFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        "content-type": "text/html; charset=utf-8",
+        "content-length": "5000000",
+      }),
+      text: () => Promise.resolve("<p>tiny in declared length lies</p>"),
+    } satisfies Partial<Response>);
+    const fetcher = new WebPageFetcher({
+      fetchImplementation: textFetch,
+      maxBodyBytes: 2_000_000,
+    });
+
+    const result = await fetcher.fetch({
+      url: "https://example.test/huge",
+      sourceId: "source:web",
+      lastContentHash: null,
+    });
+
+    expect(result).toMatchObject({ ok: false, status: "broken" });
+    // Short-circuited before .text() was even called.
+    expect(textFetch).toHaveBeenCalledTimes(1);
+    if (!result.ok) {
+      expect(result.error).toContain("5000000 bytes");
+      expect(result.error).toContain("ceiling");
+    }
+  });
+
+  it("rejects oversized web sources after reading the body when content-length lies or is absent", async () => {
+    const oversizedBody = "x".repeat(2_500_000);
+    const fetcher = new WebPageFetcher({
+      fetchImplementation: vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          "content-type": "text/html; charset=utf-8",
+        }),
+        text: () => Promise.resolve(oversizedBody),
+      } satisfies Partial<Response>),
+      maxBodyBytes: 2_000_000,
+    });
+
+    const result = await fetcher.fetch({
+      url: "https://example.test/lying-length",
+      sourceId: "source:web",
+      lastContentHash: null,
+    });
+
+    expect(result).toMatchObject({ ok: false, status: "broken" });
+    if (!result.ok) {
+      expect(result.error).toContain("2500000 bytes");
+    }
+  });
+
   it("returns inline text verbatim with a content hash", async () => {
     const fetcher = new InlineTextFetcher();
 
