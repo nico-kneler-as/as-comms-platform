@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Fragment, useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 import type { InboxUnifiedSearchRowViewModel } from "../_lib/view-models";
 import { InboxAvatar } from "./inbox-avatar";
@@ -10,29 +10,29 @@ import { MailIcon, PhoneIcon } from "./icons";
 import { FOCUS_RING, TRANSITION } from "@/app/_lib/design-tokens-v2";
 
 /**
- * Single result row inside the unified search list. Shares layout primitives
- * with `InboxRow` so projection-backed and contact-only matches feel
- * identical. The two row formats:
+ * Single result row inside the unified search list. Two visual modes:
  *
- * - `hasProjection === true`: renders subject + snippet (with `<mark>` over
- *   the matched substring when `highlightSnippet` is set).
- * - `hasProjection === false`: renders email/phone (or "No conversation
- *   yet") on the secondary line; no subject/snippet.
+ * - Default (Volunteers section): full-row format — avatar + name +
+ *   time-ago + snippet + project chip. `hasProjection === true` rows show
+ *   subject/snippet from the inbox projection; `hasProjection === false`
+ *   rows fall back to email/phone with a muted "No conversation yet" line.
+ * - Compact (Contacts section, `compact = true`): single-line format with
+ *   no avatar, no time-ago, no snippet, no project chip. If `displayName`
+ *   contains "@" we render just the email; otherwise we render
+ *   "Name · email".
  *
- * Click target is `/inbox/[contactId]` regardless of section, preserving
+ * Click target is `/inbox/[contactId]` regardless of mode, preserving
  * existing `q` / `filter` / `projectId` URL params so the search input
  * stays populated when navigating back.
  */
 export function InboxUnifiedSearchRow({
   row,
-  query,
   isActive,
-  highlightSnippet = false,
+  compact = false,
 }: {
   readonly row: InboxUnifiedSearchRowViewModel;
-  readonly query: string;
   readonly isActive: boolean;
-  readonly highlightSnippet?: boolean;
+  readonly compact?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -58,27 +58,23 @@ export function InboxUnifiedSearchRow({
     return null;
   }, [row.latestChannel]);
 
+  if (compact) {
+    return (
+      <CompactContactRow
+        row={row}
+        href={href}
+        isActive={isActive}
+        prefetchDetail={prefetchDetail}
+      />
+    );
+  }
+
   const showSubject =
     row.hasProjection &&
     row.latestSubject !== null &&
     row.latestSubject.length > 0;
 
-  // Body-match snippet: slice ±60 chars around the first match position so
-  // the matched substring is visible even for long snippets, then highlight
-  // the matched substring with <mark>.
-  const snippetContent = useMemo(() => {
-    const snippet = row.snippet ?? "";
-
-    if (snippet.length === 0) {
-      return null;
-    }
-
-    if (!highlightSnippet || query.trim().length === 0) {
-      return <span>{snippet}</span>;
-    }
-
-    return renderHighlightedSnippet(snippet, query);
-  }, [row.snippet, query, highlightSnippet]);
+  const snippet = row.snippet ?? "";
 
   return (
     <li>
@@ -127,9 +123,9 @@ export function InboxUnifiedSearchRow({
                   <p className="truncate text-slate-700">{row.latestSubject}</p>
                 </div>
               ) : null}
-              {snippetContent !== null ? (
+              {snippet.length > 0 ? (
                 <p className="mt-0.5 truncate text-[11px] text-slate-400">
-                  {snippetContent}
+                  {snippet}
                 </p>
               ) : null}
             </>
@@ -179,77 +175,58 @@ export function InboxUnifiedSearchRow({
 }
 
 /**
- * Slice ±60 chars around the first occurrence of the query (case-insensitive)
- * and wrap every match with <mark>. When the snippet is shorter than ~140
- * chars, return it unsliced.
+ * Compact single-line row for the Contacts section. Visually lightest row
+ * format we render: no avatar, no time-ago, no snippet, no project chip.
+ * Email-only contacts (the dominant case — ~3,304 of ~3,467) collapse to
+ * just the email; SF-anchored named contacts render `Name · email`.
  */
-function renderHighlightedSnippet(
-  snippet: string,
-  query: string,
-): React.ReactNode {
-  const trimmed = query.trim();
-  if (trimmed.length === 0) {
-    return <span>{snippet}</span>;
-  }
-
-  const lower = snippet.toLowerCase();
-  const needle = trimmed.toLowerCase();
-  const firstIdx = lower.indexOf(needle);
-
-  let workingSnippet = snippet;
-  let leadEllipsis = false;
-  let trailEllipsis = false;
-
-  // Slice around the first match if the snippet is long enough to need it.
-  if (firstIdx >= 0 && snippet.length > 140) {
-    const start = Math.max(0, firstIdx - 60);
-    const end = Math.min(snippet.length, firstIdx + needle.length + 60);
-    workingSnippet = snippet.slice(start, end);
-    leadEllipsis = start > 0;
-    trailEllipsis = end < snippet.length;
-  }
-
-  // Walk the working snippet, splitting on case-insensitive matches.
-  const workingLower = workingSnippet.toLowerCase();
-  const parts: React.ReactNode[] = [];
-  let cursor = 0;
-  let key = 0;
-  while (cursor < workingSnippet.length) {
-    const idx = workingLower.indexOf(needle, cursor);
-    if (idx === -1) {
-      parts.push(
-        <Fragment key={`t-${key.toString()}`}>
-          {workingSnippet.slice(cursor)}
-        </Fragment>,
-      );
-      key += 1;
-      break;
-    }
-    if (idx > cursor) {
-      parts.push(
-        <Fragment key={`t-${key.toString()}`}>
-          {workingSnippet.slice(cursor, idx)}
-        </Fragment>,
-      );
-      key += 1;
-    }
-    parts.push(
-      <mark
-        key={`m-${key.toString()}`}
-        className="rounded bg-amber-100 px-0.5 text-slate-900"
-      >
-        {workingSnippet.slice(idx, idx + needle.length)}
-      </mark>,
-    );
-    key += 1;
-    cursor = idx + needle.length;
-  }
+function CompactContactRow({
+  row,
+  href,
+  isActive,
+  prefetchDetail,
+}: {
+  readonly row: InboxUnifiedSearchRowViewModel;
+  readonly href: string;
+  readonly isActive: boolean;
+  readonly prefetchDetail: () => void;
+}) {
+  const isDisplayNameAnEmail = row.displayName.includes("@");
+  const hasSecondaryEmail =
+    !isDisplayNameAnEmail &&
+    row.primaryEmail !== null &&
+    row.primaryEmail.length > 0;
 
   return (
-    <span>
-      {leadEllipsis ? "… " : null}
-      {parts}
-      {trailEllipsis ? " …" : null}
-    </span>
+    <li>
+      <Link
+        href={href}
+        prefetch={false}
+        data-inbox-row="true"
+        data-inbox-search-row="true"
+        data-inbox-search-row-compact="true"
+        data-contact-id={row.contactId}
+        data-active={isActive ? "true" : "false"}
+        aria-current={isActive ? "page" : undefined}
+        onMouseEnter={prefetchDetail}
+        onFocus={prefetchDetail}
+        className={`flex w-full items-center gap-2 border-b border-slate-100 px-4 py-2 text-left text-[12px] ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
+          isActive ? "bg-sky-50/50" : "hover:bg-slate-50"
+        }`}
+      >
+        {isDisplayNameAnEmail ? (
+          <span className="truncate text-slate-700">{row.displayName}</span>
+        ) : (
+          <span className="truncate">
+            <span className="font-semibold text-slate-900">
+              {row.displayName}
+            </span>
+            {hasSecondaryEmail ? (
+              <span className="text-slate-400"> · {row.primaryEmail}</span>
+            ) : null}
+          </span>
+        )}
+      </Link>
+    </li>
   );
 }

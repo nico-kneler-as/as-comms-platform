@@ -4591,9 +4591,10 @@ export const INBOX_UNIFIED_SEARCH_SECTION_LIMIT = 25;
 /**
  * Server selector for the unified inbox search bar. Replaces the dedicated
  * `/inbox/all-contacts` surface and the projection-only inbox-list search:
- * the input now searches the broad set of contacts (Section A — contact
- * attribute matches) plus projection snippet/subject matches (Section B),
- * with each section sorted by last activity desc and capped per section.
+ * the input searches contact attributes (name / primary email / primary
+ * phone) and partitions matches into Volunteers (≥1 membership) and Contacts
+ * (zero memberships). Each section is sorted by volunteer-side last
+ * activity desc and capped at 25.
  *
  * Below the min-query length the selector short-circuits without hitting
  * the DB, so the API route can rely on this for cheap empty responses.
@@ -4606,14 +4607,14 @@ export async function getInboxUnifiedSearch(input: {
   if (trimmedQuery.length < INBOX_UNIFIED_SEARCH_MIN_QUERY_LENGTH) {
     return {
       query: trimmedQuery,
-      contactMatches: [],
-      bodyMatches: [],
-      totals: { contactMatches: 0, bodyMatches: 0 },
+      volunteers: [],
+      contacts: [],
+      totals: { volunteers: 0, contacts: 0 },
     };
   }
 
   const runtime = await getStage1WebRuntime();
-  const { contactMatches, bodyMatches, totals } =
+  const { volunteers, contacts, totals } =
     await runtime.repositories.contacts.searchInboxUnified({
       query: trimmedQuery,
       limit: INBOX_UNIFIED_SEARCH_SECTION_LIMIT,
@@ -4624,7 +4625,7 @@ export async function getInboxUnifiedSearch(input: {
   const toRow = (
     row: Awaited<
       ReturnType<typeof runtime.repositories.contacts.searchInboxUnified>
-    >["contactMatches"][number],
+    >["volunteers"][number],
   ): InboxUnifiedSearchRowViewModel => {
     const projectLabel =
       row.memberships.length === 0
@@ -4651,6 +4652,7 @@ export async function getInboxUnifiedSearch(input: {
       primaryEmail: row.contact.primaryEmail,
       primaryPhone: row.contact.primaryPhone,
       projectLabel,
+      hasMembership: row.hasMembership,
       hasProjection: row.hasProjection,
       lastActivityAt: row.lastActivityAt,
       lastActivityLabel,
@@ -4663,8 +4665,8 @@ export async function getInboxUnifiedSearch(input: {
 
   return {
     query: trimmedQuery,
-    contactMatches: contactMatches.map(toRow),
-    bodyMatches: bodyMatches.map(toRow),
+    volunteers: volunteers.map(toRow),
+    contacts: contacts.map(toRow),
     totals,
   };
 }

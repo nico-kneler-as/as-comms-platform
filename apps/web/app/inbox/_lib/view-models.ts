@@ -519,8 +519,17 @@ export interface InboxUnifiedSearchRowViewModel {
   readonly primaryEmail: string | null;
   readonly primaryPhone: string | null;
   readonly projectLabel: string | null;
+  /**
+   * True when the contact has at least one row in `contact_memberships`
+   * (active OR past). Drives the Volunteers / Contacts partition.
+   */
+  readonly hasMembership: boolean;
   readonly hasProjection: boolean;
-  /** Last activity across ALL canonical event types (lifecycle, comm, etc.). */
+  /**
+   * Last volunteer-side activity (lifecycle.* + inbound 1:1 + sms.opt_*).
+   * Outbound 1:1 sends and campaign events are excluded so an operator's
+   * reply doesn't move a contact up.
+   */
   readonly lastActivityAt: string | null;
   readonly lastActivityLabel: string;
   /** Latest message subject, when projection-backed. Null otherwise. */
@@ -533,16 +542,23 @@ export interface InboxUnifiedSearchRowViewModel {
 }
 
 /**
- * Two-section unified search response. Both sections capped at 25 in v1.
- * `totals` reports the count BEFORE truncation.
+ * Two-section unified search response, partitioned by membership-existence:
+ *
+ * - `volunteers`: matched contacts with at least one `contact_memberships`
+ *   row (active OR past), rendered in the existing full-row format.
+ * - `contacts`: matched contacts with zero memberships, rendered in the
+ *   compact single-line format.
+ *
+ * Each section capped at 25 in v1. `totals` reports the count BEFORE
+ * truncation.
  */
 export interface InboxUnifiedSearchViewModel {
   readonly query: string;
-  readonly contactMatches: readonly InboxUnifiedSearchRowViewModel[];
-  readonly bodyMatches: readonly InboxUnifiedSearchRowViewModel[];
+  readonly volunteers: readonly InboxUnifiedSearchRowViewModel[];
+  readonly contacts: readonly InboxUnifiedSearchRowViewModel[];
   readonly totals: {
-    readonly contactMatches: number;
-    readonly bodyMatches: number;
+    readonly volunteers: number;
+    readonly contacts: number;
   };
 }
 

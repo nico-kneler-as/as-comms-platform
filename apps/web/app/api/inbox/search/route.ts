@@ -16,17 +16,19 @@ const querySchema = z.object({
 /**
  * GET /api/inbox/search
  *
- * Unified search for the existing inbox search bar. Returns two sections:
+ * Unified search for the existing inbox search bar. Returns two sections,
+ * partitioned by membership-existence on the matched contacts:
  *
- * - `contactMatches` — contacts matching name / primary email / primary phone
- *   (includes contacts who have only lifecycle/campaign events, or none).
- * - `bodyMatches` — projection-backed contacts whose snippet or latest
- *   message subject ILIKE the query (excluding contacts already in
- *   `contactMatches`).
+ * - `volunteers` — contacts matching name / primary email / primary phone
+ *   that have at least one `contact_memberships` row (active OR past).
+ * - `contacts` — contacts matching the same attributes that have zero
+ *   membership rows.
  *
  * Below the min query length (3 characters) the route returns empty arrays
  * without hitting the DB. Each section is capped at 25 in v1; `totals`
- * exposes pre-truncation counts for the UX.
+ * exposes pre-truncation counts for the UX. Sort key per section is
+ * volunteer-side last activity desc — outbound 1:1 sends and campaign
+ * events are excluded so an operator's reply doesn't bump a contact up.
  *
  * Distinct from `/api/inbox/list` which returns the folder-filtered queue
  * shape. We picked a dedicated endpoint over overloading `/list` because
@@ -59,9 +61,9 @@ export async function GET(request: Request) {
   if (trimmed.length < INBOX_UNIFIED_SEARCH_MIN_QUERY_LENGTH) {
     return NextResponse.json({
       query: trimmed,
-      contactMatches: [],
-      bodyMatches: [],
-      totals: { contactMatches: 0, bodyMatches: 0 },
+      volunteers: [],
+      contacts: [],
+      totals: { volunteers: 0, contacts: 0 },
     });
   }
 
