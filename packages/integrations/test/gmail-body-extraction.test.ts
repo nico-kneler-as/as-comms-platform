@@ -370,6 +370,136 @@ describe("Gmail body extraction", () => {
     });
   });
 
+  it("treats a short ASCII-interleaved text/plain part with stray invalid bytes as a binary fallback", async () => {
+    // proton.me PGP-signed envelope leak: 8 bytes where 2 are invalid UTF-8
+    // (0xFF, 0xFE) interleaved with ASCII. Decodes to "v+�)^�د"
+    // (7 chars, 2 FFFDs, 28% ratio). Pre-fix this slipped past the short-body
+    // threshold and rendered as a 3-line garbled body in the inbox.
+    const payload: GmailApiMessagePart = {
+      mimeType: "text/plain",
+      headers: [{ name: "Content-Type", value: "text/plain; charset=utf-8" }],
+      body: {
+        data: encodeBase64Url(
+          Buffer.from([0x76, 0x2b, 0xff, 0x29, 0x5e, 0xfe, 0xd8, 0xaf]),
+        ),
+        size: 8,
+      },
+    };
+
+    await expect(
+      extractGmailBodyPreviewFromPayloadResult(payload),
+    ).resolves.toEqual({
+      bodyTextPreview: "[Message body could not be extracted — open in Gmail]",
+      bodyKind: "binary_fallback",
+    });
+  });
+
+  it("routes multipart/signed PGP envelopes to binary fallback so the snippet can fill in", async () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/signed",
+      headers: [
+        {
+          name: "Content-Type",
+          value:
+            'multipart/signed; protocol="application/pgp-signature"; micalg="pgp-sha256"; boundary="abc"',
+        },
+      ],
+      parts: [
+        {
+          mimeType: "text/plain",
+          headers: [
+            { name: "Content-Type", value: "text/plain; charset=utf-8" },
+          ],
+          body: {
+            data: encodeBase64Url(Buffer.from("Hello there", "utf8")),
+            size: 11,
+          },
+        },
+        {
+          mimeType: "application/pgp-signature",
+          body: {
+            data: encodeBase64Url(Buffer.from("-----BEGIN PGP SIGNATURE-----")),
+            size: 29,
+          },
+        },
+      ],
+    };
+
+    await expect(
+      extractGmailBodyPreviewFromPayloadResult(payload),
+    ).resolves.toEqual({
+      bodyTextPreview: "[Message body could not be extracted — open in Gmail]",
+      bodyKind: "binary_fallback",
+    });
+  });
+
+  it("routes multipart/signed S/MIME envelopes to binary fallback", async () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/signed",
+      headers: [
+        {
+          name: "Content-Type",
+          value:
+            'multipart/signed; protocol="application/pkcs7-signature"; micalg=sha-256; boundary="xyz"',
+        },
+      ],
+      parts: [
+        {
+          mimeType: "text/plain",
+          headers: [
+            { name: "Content-Type", value: "text/plain; charset=utf-8" },
+          ],
+          body: {
+            data: encodeBase64Url(Buffer.from("Status update", "utf8")),
+            size: 13,
+          },
+        },
+        {
+          mimeType: "application/pkcs7-signature",
+          body: {
+            data: encodeBase64Url(Buffer.from("smime-sig-blob")),
+            size: 14,
+          },
+        },
+      ],
+    };
+
+    await expect(
+      extractGmailBodyPreviewFromPayloadResult(payload),
+    ).resolves.toEqual({
+      bodyTextPreview: "[Message body could not be extracted — open in Gmail]",
+      bodyKind: "binary_fallback",
+    });
+  });
+
+  it("does not flag plain multipart/signed without a recognized protocol", async () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/signed",
+      headers: [
+        {
+          name: "Content-Type",
+          value: 'multipart/signed; boundary="xyz"',
+        },
+      ],
+      parts: [
+        {
+          mimeType: "text/plain",
+          headers: [
+            { name: "Content-Type", value: "text/plain; charset=utf-8" },
+          ],
+          body: {
+            data: encodeBase64Url(Buffer.from("Hello there", "utf8")),
+            size: 11,
+          },
+        },
+      ],
+    };
+
+    const result = await extractGmailBodyPreviewFromPayloadResult(payload);
+    expect(result.bodyKind).toBe("plaintext");
+    expect(result.bodyTextPreview).toContain("Hello there");
+  });
+
   it("uses a readable Gmail snippet when live body extraction returns a short binary fallback", async () => {
     const binaryPart: GmailApiMessagePart = {
       mimeType: "text/plain",

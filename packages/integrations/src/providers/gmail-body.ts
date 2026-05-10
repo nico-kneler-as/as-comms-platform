@@ -97,6 +97,15 @@ const ENCRYPTED_MIME_TYPES = new Set([
   "multipart/encrypted",
   "application/pgp-encrypted"
 ]);
+// `multipart/signed` envelopes whose protocol is one of these signature types
+// wrap the readable plaintext in a way mailparser frequently mis-extracts —
+// observed in production for proton.me PGP-signed and S/MIME-signed mail. We
+// route these to binary_fallback so the snippet fallback supplies a clean
+// preview rather than half-decoding the signed payload bytes.
+const SIGNED_ENVELOPE_PROTOCOLS = new Set([
+  "application/pgp-signature",
+  "application/pkcs7-signature",
+]);
 const DENYLISTED_ATTACHMENT_MIME_TYPES = new Set([
   "application/pkcs7-signature",
   "application/pgp-signature",
@@ -110,10 +119,11 @@ const REPLACEMENT_CHARACTER = "�";
 // example, an `application/pkcs7-mime` body misdeclared as `text/plain`, or a
 // signed-but-not-listed envelope. Legitimate emails with the occasional
 // private-use Unicode char come in well under 10%; encrypted bodies measured
-// in production sit at ~50%.
+// in production sit at ~50%. Short bodies (<32 chars) are flagged on any
+// suspicious char — proton.me PGP-signed envelopes leak as 5-7 char bodies
+// with 1-2 FFFDs that fall under the percentage threshold.
 const BINARY_NOISE_THRESHOLD = 0.3;
 const BINARY_NOISE_MIN_LENGTH = 32;
-const SHORT_BINARY_NOISE_MIN_SUSPICIOUS = 3;
 const DEFAULT_GMAIL_MIME_MAX_DEPTH = 64;
 const DEFAULT_GMAIL_MIME_MAX_PARTS = 512;
 const DEFAULT_GMAIL_MIME_MAX_DECODED_BYTES = 20 * 1024 * 1024;
@@ -267,10 +277,7 @@ export function isLikelyBinaryNoise(text: string): boolean {
   const ratio = suspicious / total;
 
   if (total < BINARY_NOISE_MIN_LENGTH) {
-    return (
-      suspicious >= SHORT_BINARY_NOISE_MIN_SUSPICIOUS &&
-      ratio >= BINARY_NOISE_THRESHOLD
-    );
+    return suspicious >= 1;
   }
 
   return ratio >= BINARY_NOISE_THRESHOLD;
@@ -690,6 +697,55 @@ function containsEncryptedBodyPartInternal(
   });
 }
 
+function isSignedEnvelopePart(part: GmailApiMessagePart): boolean {
+  const contentTypeHeader =
+    getPartHeader(part, "Content-Type") ?? part.mimeType ?? "";
+
+  if (normalizeMimeType(contentTypeHeader) !== "multipart/signed") {
+    return false;
+  }
+
+  const protocolMatch = /protocol\s*=\s*"?([^";\s]+)"?/iu.exec(
+    contentTypeHeader,
+  );
+  const protocol = protocolMatch?.[1]?.trim().toLowerCase() ?? "";
+  return SIGNED_ENVELOPE_PROTOCOLS.has(protocol);
+}
+
+function containsSignedEnvelopePartInternal(
+  part: GmailApiMessagePart,
+  context: GmailMimeBudgetContext,
+  traversalState: GmailMimeTraversalState,
+  depth = 0,
+): boolean {
+  if (depth > context.bounds.maxDepth) {
+    markTraversalBudgetExceeded(
+      context,
+      traversalState,
+      "depth",
+      context.bounds.maxDepth,
+    );
+    return true;
+  }
+
+  if (isSignedEnvelopePart(part)) {
+    return true;
+  }
+
+  return (part.parts ?? []).some((childPart) => {
+    if (visitChildPart(context, traversalState)) {
+      return true;
+    }
+
+    return containsSignedEnvelopePartInternal(
+      childPart,
+      context,
+      traversalState,
+      depth + 1,
+    );
+  });
+}
+
 function isAttachmentPart(part: GmailApiMessagePart): boolean {
   if ((part.filename?.trim().length ?? 0) > 0) {
     return true;
@@ -986,6 +1042,24 @@ export async function extractGmailBodyPreviewFromPayloadResult(
     return buildBodyPreviewResult(
       ENCRYPTED_MESSAGE_PLACEHOLDER,
       "encrypted_placeholder"
+    );
+  }
+
+  const signedEnvelopeTraversalState: GmailMimeTraversalState = {
+    visitedParts: 0,
+    budgetExceeded: false,
+  };
+
+  if (
+    containsSignedEnvelopePartInternal(
+      payload,
+      context,
+      signedEnvelopeTraversalState,
+    )
+  ) {
+    return buildBodyPreviewResult(
+      BINARY_FALLBACK_PLACEHOLDER,
+      "binary_fallback",
     );
   }
 

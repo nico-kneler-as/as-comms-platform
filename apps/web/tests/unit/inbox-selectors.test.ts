@@ -5288,6 +5288,54 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("skips the proton.me PGP-signed 7-char body pattern and renders the snippet instead", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:proton-garbled",
+      salesforceContactId: "003-proton-garbled",
+      displayName: "Nicole Beyler",
+      primaryEmail: "nicole@proton.me",
+      primaryPhone: null,
+    });
+
+    const latestEvent = await seedInboxEmailEvent(runtime.context, {
+      id: "proton-garbled-latest",
+      contactId: "contact:proton-garbled",
+      occurredAt: "2026-05-09T21:59:00.000Z",
+      direction: "inbound",
+      subject: "Re: Hex 45802 (Date Pending)",
+      snippet:
+        "Hi there, The coordinates of my HEXs are 48.7687950, -120.6502200",
+      snippetClean:
+        "Hi there, The coordinates of my HEXs are 48.7687950, -120.6502200",
+      bodyTextPreview: "v+�)^�د",
+      bodyKind: "plaintext",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:proton-garbled",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-09T21:59:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-09T21:59:00.000Z",
+      snippet:
+        "Hi there, The coordinates of my HEXs are 48.7687950, -120.6502200",
+      lastCanonicalEventId: latestEvent.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:proton-garbled");
+
+    expect(detail?.timeline.at(-1)).toMatchObject({
+      kind: "inbound-email",
+      body: "Hi there, The coordinates of my HEXs are 48.7687950, -120.6502200",
+    });
+  });
+
   it("falls back to provider communication details before projection snippets for Salesforce-backed latest rows", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
