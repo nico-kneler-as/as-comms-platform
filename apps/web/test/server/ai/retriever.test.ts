@@ -114,6 +114,49 @@ describe("retrieveGrounding", () => {
     expect(bundle.targetInbound?.body).toContain("current field kit list");
   });
 
+  it("falls back to the host's tier-2 entry when the project is a connected sub", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    // Mark whitebark as a connected sub of host:forests. The Settings UI
+    // (PR #388) clears the sub's own ai_knowledge_url, so the AI Draft
+    // pipeline should resolve grounding via the host.
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "host:forests",
+      projectName: "Forests",
+      projectAlias: "Forests",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:whitebark",
+      projectName: "Whitebark Pines",
+      projectAlias: "Whitebark",
+      source: "salesforce",
+      isActive: true,
+      connectedToProjectId: "host:forests",
+    });
+    await seedAiKnowledge(runtime, {
+      id: "ai:project:host:forests",
+      scope: "project",
+      scopeKey: "host:forests",
+      title: "Forests AI Knowledge",
+      content: "Curated host-level grounding for the connected sub.",
+    });
+
+    const bundle = await retrieveGrounding(runtime.context.repositories, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      threadCursor: null,
+    });
+
+    // Even though we asked for project:whitebark, the bundle resolves
+    // through the host's curated entry — the sub itself has none.
+    expect(bundle.projectContext?.title).toBe("Forests AI Knowledge");
+    expect(bundle.grounding.some((entry) => entry.tier === 2)).toBe(true);
+  });
+
   it("handles an empty database without throwing", async () => {
     const emptyRuntime = await createStage1WebTestRuntime();
 

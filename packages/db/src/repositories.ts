@@ -17,6 +17,7 @@ import {
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
+  EffectiveAiKnowledge,
   InboxUnifiedSearchMembership,
   InboxUnifiedSearchRow,
   InternalNoteRecord,
@@ -1779,6 +1780,56 @@ function createStage1RepositoriesInternal(
         return row === undefined ? null : mapAiKnowledgeEntryRow(row);
       },
 
+      async findEffectiveProjectNotionContent(projectId) {
+        // Hop sub→host transparently so the AI Draft retriever picks up the
+        // host's curated grounding when a thread is tagged with a connected
+        // sub-project's id (sub.ai_knowledge_url is null by Settings invariant
+        // — see PR #388).
+        const [projectRow] = await db
+          .select({
+            connectedToProjectId: projectDimensions.connectedToProjectId,
+          })
+          .from(projectDimensions)
+          .where(eq(projectDimensions.projectId, projectId))
+          .limit(1);
+        const hostProjectId = projectRow?.connectedToProjectId ?? null;
+        const effectiveScopeKey = hostProjectId ?? projectId;
+
+        if (hostProjectId !== null) {
+          // Logging at debug-level only — avoid noise on hot paths but make
+          // the fallback observable when troubleshooting an AI Draft. The
+          // synthesis worker emits stringified JSON for log scraping; mirror
+          // that style here.
+          // eslint-disable-next-line no-console -- Stage1 repo layer has no
+          // injected logger; debug-level is the conventional place.
+          console.debug(
+            JSON.stringify({
+              event: "ai_knowledge.fallback",
+              subProjectId: projectId,
+              hostProjectId,
+            }),
+          );
+        }
+
+        const [row] = await db
+          .select()
+          .from(aiKnowledgeEntries)
+          .where(
+            and(
+              eq(aiKnowledgeEntries.scope, "project"),
+              eq(aiKnowledgeEntries.scopeKey, effectiveScopeKey),
+              eq(aiKnowledgeEntries.sourceProvider, "notion"),
+            ),
+          )
+          .orderBy(
+            desc(aiKnowledgeEntries.syncedAt),
+            asc(aiKnowledgeEntries.id),
+          )
+          .limit(1);
+
+        return row === undefined ? null : mapAiKnowledgeEntryRow(row);
+      },
+
       async hasProjectNotionContent(projectId) {
         const [row] = await db
           .select({
@@ -2575,6 +2626,67 @@ function createStage1RepositoriesInternal(
           .orderBy(asc(projectDimensions.projectName));
 
         return rows.map(mapProjectDimensionRow);
+      },
+
+      async findEffectiveAiKnowledge(projectId): Promise<EffectiveAiKnowledge | null> {
+        // Resolve sub→host transparently. The AI Draft pipeline (and any
+        // future consolidated grounding loader) calls through here so a
+        // connected sub-project inherits the host's curated AI Knowledge
+        // bundle without each call site re-implementing the lookup.
+        //
+        // Settings code paths must NOT call this — they edit the raw stored
+        // value via setAiKnowledgeUrl / setAiKnowledgeSources etc.
+        const [ownRow] = await db
+          .select()
+          .from(projectDimensions)
+          .where(eq(projectDimensions.projectId, projectId))
+          .limit(1);
+
+        if (ownRow === undefined) {
+          return null;
+        }
+
+        const ownRecord = mapProjectDimensionRow(ownRow);
+        const hostProjectId = ownRecord.connectedToProjectId ?? null;
+        let resolved = ownRecord;
+
+        if (hostProjectId !== null) {
+          const [hostRow] = await db
+            .select()
+            .from(projectDimensions)
+            .where(eq(projectDimensions.projectId, hostProjectId))
+            .limit(1);
+
+          if (hostRow !== undefined) {
+            resolved = mapProjectDimensionRow(hostRow);
+            // eslint-disable-next-line no-console -- Stage1 repo layer has
+            // no injected logger; debug-level is the conventional place.
+            console.debug(
+              JSON.stringify({
+                event: "ai_knowledge.fallback",
+                subProjectId: projectId,
+                hostProjectId,
+              }),
+            );
+          }
+          // If the host row is missing (orphaned connection — shouldn't
+          // happen in practice because connected_to_project_id has
+          // ON DELETE SET NULL, but defensive), fall through to the sub's
+          // own (likely null) values rather than throwing.
+        }
+
+        return {
+          projectId,
+          resolvedFromProjectId: resolved.projectId,
+          aiKnowledgeUrl: resolved.aiKnowledgeUrl ?? null,
+          aiKnowledgeSources: aiKnowledgeSourcesSchema.parse(
+            resolved.aiKnowledgeSources ?? [],
+          ),
+          aiOperatingContext: resolved.aiOperatingContext ?? "",
+          aiAutoSyncSchedule: resolved.aiAutoSyncSchedule ?? "never",
+          aiOptimizedSynthesizedAt: resolved.aiOptimizedSynthesizedAt ?? null,
+          aiOptimizedInputHash: resolved.aiOptimizedInputHash ?? null,
+        };
       },
 
       async getAiKnowledgeSources(projectId) {
