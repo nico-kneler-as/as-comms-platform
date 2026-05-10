@@ -690,4 +690,162 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
     expect(prompt).not.toContain("SNIPPET_BODY");
     expect(prompt).not.toContain("PATTERN_BODY");
   });
+
+  it("renders corpus_example entries into the EMAIL_CORPUS block separately from canonical replies", async () => {
+    const project = buildProject();
+    const sources = [
+      buildSource({
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "inline_text",
+        url: "https://example.test/inline-1",
+      }),
+    ];
+    const approvedEntries = [
+      buildApprovedReply({
+        id: "approved:1",
+        maskedExample: "CANONICAL_REPLY_TONE",
+        createdAt: "2026-05-08T12:00:00.000Z",
+        kind: "canonical_reply",
+      }),
+      buildApprovedReply({
+        id: "corpus:1",
+        maskedExample: "Hi {NAME}, thanks for the field-data submission.",
+        createdAt: "2026-04-22T08:30:00.000Z",
+        kind: "corpus_example",
+      }),
+      buildApprovedReply({
+        id: "corpus:2",
+        maskedExample: "Welcome aboard {NAME}! Kit ships next week.",
+        createdAt: "2026-04-21T08:30:00.000Z",
+        kind: "corpus_example",
+      }),
+    ];
+    const invokeModel = vi.fn().mockResolvedValue(buildDraftResult("# Synthesized"));
+
+    await synthesizeProjectKnowledgeOrchestrator(
+      {
+        repositories: {
+          projectDimensions: {
+            findById: vi.fn().mockResolvedValue(project),
+            getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
+            setAiKnowledgeSources: vi.fn().mockResolvedValue(undefined),
+          },
+          projectKnowledge: { list: vi.fn().mockResolvedValue(approvedEntries) },
+        },
+        fetchers: {
+          inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
+          notion: { fetch: vi.fn() },
+          web_page: { fetch: vi.fn() },
+        },
+        invokeModel,
+      },
+      {
+        projectId: project.projectId,
+      },
+    );
+
+    const prompt = readPromptFromInvokeModelMock(invokeModel);
+    // EMAIL_CORPUS block is now populated with corpus_example rows
+    expect(prompt).toContain("<EMAIL_CORPUS>");
+    expect(prompt).toContain("</EMAIL_CORPUS>");
+    expect(prompt).toContain("2 past sent replies");
+    expect(prompt).toContain(
+      "Hi {NAME}, thanks for the field-data submission.",
+    );
+    expect(prompt).toContain("Welcome aboard {NAME}! Kit ships next week.");
+    expect(prompt).toContain("--- Reply 1 (sent 2026-04-22) ---");
+    // Canonical reply still goes in its own dedicated higher-weight block
+    expect(prompt).toContain("<APPROVED_REPLY_EXAMPLES>");
+    expect(prompt).toContain("CANONICAL_REPLY_TONE");
+    // Anti-leak: corpus_example bodies should not appear in the canonical
+    // block's authoritative weighting copy
+    expect(prompt).toContain("1 canonical reply examples");
+  });
+
+  it("renders an empty EMAIL_CORPUS block when no corpus_example rows exist", async () => {
+    const project = buildProject();
+    const sources = [
+      buildSource({
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "inline_text",
+        url: "https://example.test/inline-1",
+      }),
+    ];
+    const invokeModel = vi.fn().mockResolvedValue(buildDraftResult("# Synthesized"));
+
+    await synthesizeProjectKnowledgeOrchestrator(
+      {
+        repositories: {
+          projectDimensions: {
+            findById: vi.fn().mockResolvedValue(project),
+            getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
+            setAiKnowledgeSources: vi.fn().mockResolvedValue(undefined),
+          },
+          projectKnowledge: { list: vi.fn().mockResolvedValue([]) },
+        },
+        fetchers: {
+          inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
+          notion: { fetch: vi.fn() },
+          web_page: { fetch: vi.fn() },
+        },
+        invokeModel,
+      },
+      {
+        projectId: project.projectId,
+      },
+    );
+
+    const prompt = readPromptFromInvokeModelMock(invokeModel);
+    expect(prompt).toContain("0 past sent replies");
+    expect(prompt).toContain("<EMAIL_CORPUS>\n</EMAIL_CORPUS>");
+  });
+
+  it("caps the EMAIL_CORPUS block at the 100 most recently returned corpus_example rows", async () => {
+    const project = buildProject();
+    const sources = [
+      buildSource({
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "inline_text",
+        url: "https://example.test/inline-1",
+      }),
+    ];
+    const corpusEntries = Array.from({ length: 120 }, (_, index) =>
+      buildApprovedReply({
+        id: `corpus:${String(index)}`,
+        maskedExample: `CORPUS_BODY_${String(index)}`,
+        createdAt: "2026-04-22T08:30:00.000Z",
+        kind: "corpus_example",
+      }),
+    );
+    const invokeModel = vi.fn().mockResolvedValue(buildDraftResult("# Synthesized"));
+
+    await synthesizeProjectKnowledgeOrchestrator(
+      {
+        repositories: {
+          projectDimensions: {
+            findById: vi.fn().mockResolvedValue(project),
+            getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
+            setAiKnowledgeSources: vi.fn().mockResolvedValue(undefined),
+          },
+          projectKnowledge: { list: vi.fn().mockResolvedValue(corpusEntries) },
+        },
+        fetchers: {
+          inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
+          notion: { fetch: vi.fn() },
+          web_page: { fetch: vi.fn() },
+        },
+        invokeModel,
+      },
+      {
+        projectId: project.projectId,
+      },
+    );
+
+    const prompt = readPromptFromInvokeModelMock(invokeModel);
+    expect(prompt).toContain("100 past sent replies");
+    expect(prompt).toContain("CORPUS_BODY_0");
+    expect(prompt).toContain("CORPUS_BODY_99");
+    expect(prompt).not.toContain("CORPUS_BODY_100");
+    expect(prompt).not.toContain("CORPUS_BODY_119");
+  });
 });
