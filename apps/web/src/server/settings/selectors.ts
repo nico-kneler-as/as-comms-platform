@@ -881,8 +881,8 @@ function loadAccessSettingsCacheData() {
     return readAccessSettings();
   }
 
-  return unstable_cache(() => readAccessSettings(), ["settings:access"], {
-    tags: ["settings:access"]
+  return unstable_cache(() => readAccessSettings(), ["settings:team"], {
+    tags: ["settings:team"]
   })();
 }
 

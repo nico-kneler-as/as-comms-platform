@@ -232,6 +232,7 @@ export function ComposerAiDraftWindow({
         {showsEmptyState ? (
           <div className="flex min-w-0 items-start gap-2">
             <textarea
+              autoFocus
               value={directiveText}
               onChange={(event) => {
                 onDirectiveTextChange(event.currentTarget.value);

@@ -223,6 +223,14 @@ export const projectDimensions = pgTable(
     projectName: text("project_name").notNull(),
     projectAlias: text("project_alias"),
     isActive: boolean("is_active").notNull().default(false),
+    // Connected-sub-project pointer. NULL = host (or standalone) project.
+    // Non-NULL = this project rolls up into the referenced host's inbox and
+    // dashboard views; it does not own its own alias or AI knowledge.
+    // Chain prevention is enforced by a BEFORE-INSERT/UPDATE trigger added
+    // in migration 0056 (drizzle-kit can't model triggers, so it lives in
+    // raw SQL). FK with ON DELETE SET NULL: deleting a host disconnects
+    // its sub-projects safely.
+    connectedToProjectId: text("connected_to_project_id"),
     aiKnowledgeUrl: text("ai_knowledge_url"),
     aiKnowledgeSyncedAt: timestamp("ai_knowledge_synced_at", {
       mode: "date",
@@ -249,12 +257,13 @@ export const projectDimensions = pgTable(
   (table) => [
     check(
       "project_dimensions_active_alias_required",
-      sql`${table.isActive} = false OR (${table.projectAlias} IS NOT NULL AND BTRIM(${table.projectAlias}) <> '')`,
+      sql`${table.isActive} = false OR (${table.projectAlias} IS NOT NULL AND BTRIM(${table.projectAlias}) <> '') OR ${table.connectedToProjectId} IS NOT NULL`,
     ),
     check(
       "project_dimensions_ai_auto_sync_schedule_valid",
       sql`${table.aiAutoSyncSchedule} IN ('never', 'daily', 'weekly')`,
     ),
+    index("project_dimensions_connected_to_idx").on(table.connectedToProjectId),
   ],
 );
 

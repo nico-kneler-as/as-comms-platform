@@ -203,8 +203,8 @@ export function AccessSection({
 
   return (
     <SettingsSection
-      id="settings-access"
-      title="Access"
+      id="settings-team"
+      title="Team"
       description="Teammates, roles, and deactivated accounts"
       feedback={feedback}
       action={

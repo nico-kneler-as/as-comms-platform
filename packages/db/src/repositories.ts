@@ -1014,6 +1014,17 @@ function buildInboxProjectPredicate(
     return undefined;
   }
 
+  // Three-way OR predicate (membership + alias + connected sub-project),
+  // expressed as a single EXISTS over a UNION ALL so the planner can stop at
+  // the first match. Branches:
+  //   1. The contact has an active membership in the requested project.
+  //   2. The contact has an inbound Gmail event captured at the requested
+  //      project's alias (covers volunteers who haven't been backfilled to a
+  //      membership yet — see PR #333).
+  //   3. The contact has an active membership in a project that is connected
+  //      to the requested project (host rollup — see migration 0056). The
+  //      target project must itself be active; connected sub-projects are
+  //      defined as is_active=true with connected_to_project_id set.
   return sql`exists (
     select 1
     from (
@@ -1038,6 +1049,16 @@ function buildInboxProjectPredicate(
       where ${canonicalEventLedger.contactId} = ${contactInboxProjection.contactId}
         and ${gmailMessageDetails.direction} = 'inbound'
         and ${projectAliases.projectId} = ${projectId}
+        and ${projectDimensions.isActive} = true
+
+      union all
+
+      select 1
+      from ${contactMemberships}
+      inner join ${projectDimensions}
+        on ${contactMemberships.projectId} = ${projectDimensions.projectId}
+      where ${contactMemberships.contactId} = ${contactInboxProjection.contactId}
+        and ${projectDimensions.connectedToProjectId} = ${projectId}
         and ${projectDimensions.isActive} = true
     ) inbox_project_match
   )`;
@@ -2552,6 +2573,11 @@ function createStage1RepositoriesInternal(
               projectAlias: sql`COALESCE(EXCLUDED.${sql.identifier(
                 "project_alias",
               )}, ${projectDimensions.projectAlias})`,
+              // connectedToProjectId follows the same rule as projectAlias:
+              // operator-managed, must not be clobbered by Salesforce capture.
+              connectedToProjectId: sql`COALESCE(EXCLUDED.${sql.identifier(
+                "connected_to_project_id",
+              )}, ${projectDimensions.connectedToProjectId})`,
               // isActive intentionally NOT updated: admins manage it in Settings,
               // and Salesforce capture must not overwrite that app-owned state.
               aiKnowledgeUrl: values.aiKnowledgeUrl,

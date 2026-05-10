@@ -19,7 +19,7 @@ export const metadata = {
  * same platform:
  *   1. Shared {@link PrimaryIconRail} (`w-14`) — gear is active on any
  *      `/settings/*` route.
- *   2. {@link SettingsSectionNav} (`w-[22rem]`) — Active Projects / Access /
+ *   2. {@link SettingsSectionNav} (`w-[22rem]`) — Active Projects / Team /
  *      Integrations rows styled like the inbox list column.
  *   3. `<main>` (flex-1) — renders the active section's page, or the
  *      project detail view.

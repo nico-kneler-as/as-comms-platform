@@ -218,7 +218,7 @@ function realEntryMatchesOptimistic(
 
 export function InboxDetail({ detail, timelineSlot }: DetailProps) {
   const { contact } = detail;
-  const { openReplyDraft } = useInboxClient();
+  const { openReplyDraft, composerAliases } = useInboxClient();
 
   const [railOpen, setRailOpen] = useState(false);
   const followUpToggle = useOptimisticBooleanToggle({
@@ -302,6 +302,26 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
 
   const isFollowUp = followUpToggle.value;
   const composerReplyContext = detail.composerReplyContext;
+
+  // Default the reply alias to the alias belonging to the conversation tag's
+  // project (first active-project chip, falling back to conversationProject)
+  // so a forests@ thread opens with forests@ selected — not whatever alias
+  // the volunteer last replied to.
+  const tagProjectId =
+    contact.activeProjects[0]?.projectId ??
+    detail.conversationProject?.projectId ??
+    null;
+  const projectAliasOverride =
+    tagProjectId === null
+      ? null
+      : (composerAliases.find((option) => option.projectId === tagProjectId)
+          ?.alias ?? null);
+  const resolvedReplyContext =
+    composerReplyContext === null
+      ? null
+      : projectAliasOverride === null
+        ? composerReplyContext
+        : { ...composerReplyContext, defaultAlias: projectAliasOverride };
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -460,13 +480,13 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
         {timelineSlot ?? <InboxDetailTimelineFallback />}
 
         <div className="shrink-0">
-          {composerReplyContext ? (
+          {resolvedReplyContext ? (
             <InboxComposerReplyBar
               onReply={() => {
-                openReplyDraft(composerReplyContext);
+                openReplyDraft(resolvedReplyContext);
               }}
               onNote={() => {
-                openReplyDraft(composerReplyContext, "note");
+                openReplyDraft(resolvedReplyContext, "note");
               }}
             />
           ) : null}

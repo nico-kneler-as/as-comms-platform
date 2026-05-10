@@ -350,6 +350,12 @@ describe("0055_ai_knowledge_auto_sync_schedule migration", () => {
         client,
         "0055_ai_knowledge_auto_sync_schedule.sql",
       );
+      // Apply later migrations so the table schema matches the Drizzle table
+      // definition (which includes connected_to_project_id from 0056).
+      await applySingleMigration(
+        client,
+        "0056_project_dimensions_connected_to.sql",
+      );
 
       const db = drizzle(client) as Stage1Database;
       await client.exec(`
@@ -451,10 +457,14 @@ describe("0054_ai_knowledge_source_registry migration", () => {
       await applySingleMigration(client, "0054_ai_knowledge_source_registry.sql");
       // Apply later migrations so the table schema matches the Drizzle table
       // definition (which includes columns added after 0054, e.g.,
-      // ai_auto_sync_schedule from 0055).
+      // ai_auto_sync_schedule from 0055 and connected_to_project_id from 0056).
       await applySingleMigration(
         client,
         "0055_ai_knowledge_auto_sync_schedule.sql",
+      );
+      await applySingleMigration(
+        client,
+        "0056_project_dimensions_connected_to.sql",
       );
 
       const db = drizzle(client) as Stage1Database;

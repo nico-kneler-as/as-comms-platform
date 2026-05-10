@@ -32,10 +32,10 @@ const ITEMS: readonly SectionItem[] = [
     Icon: FolderOpen
   },
   {
-    id: "access",
-    label: "Access",
+    id: "team",
+    label: "Team",
     description: "Teammates, roles, and deactivated accounts.",
-    href: "/settings/access",
+    href: "/settings/team",
     Icon: Users
   },
   {

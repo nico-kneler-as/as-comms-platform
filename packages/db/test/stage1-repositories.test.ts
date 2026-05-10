@@ -1688,4 +1688,281 @@ describe("Stage 1 DB repositories", () => {
     expect(forestsACounts.all).toBe(3);
     expect(forestsBCounts.all).toBe(1);
   });
+
+  it("rolls connected sub-project memberships into the host's inbox filter", async () => {
+    // Migration 0056 adds connected_to_project_id, letting two Salesforce
+    // projects share one inbox alias. Filtering by the host should now
+    // include volunteers whose only membership is in a connected sub-project.
+    // Filtering by the sub-project's own id is intentionally NOT supported —
+    // operators look at the host tile.
+    const { repositories, settings } = await createTestStage1Context();
+    const now = "2026-04-21T00:00:00.000Z";
+
+    // Two host/sub pairs, modelled on the Beech & Butternut shared-alias case.
+    await repositories.projectDimensions.upsert({
+      projectId: "project:host-a",
+      projectName: "Host A",
+      projectAlias: "Host A",
+      source: "salesforce",
+      isActive: true,
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "project:sub-b",
+      projectName: "Sub B",
+      // Connected sub-projects don't need their own alias — that's the whole
+      // point of the relaxed CHECK in 0056.
+      projectAlias: null,
+      source: "salesforce",
+      isActive: true,
+      connectedToProjectId: "project:host-a",
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "project:host-d",
+      projectName: "Host D",
+      projectAlias: "Host D",
+      source: "salesforce",
+      isActive: true,
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "project:sub-c",
+      projectName: "Sub C",
+      projectAlias: null,
+      source: "salesforce",
+      isActive: true,
+      connectedToProjectId: "project:host-d",
+    });
+
+    // Sanity-check the column landed and the trigger isn't refusing the
+    // connected sub-project insert.
+    const subB = await repositories.projectDimensions.findById("project:sub-b");
+    expect(subB?.connectedToProjectId).toBe("project:host-a");
+
+    const seedContact = async (input: {
+      readonly contactId: string;
+      readonly projectId: string;
+      readonly membershipId: string;
+    }) => {
+      const sourceEvidenceId = `source:${input.contactId}-inbound`;
+      const canonicalEventId = `event:${input.contactId}-inbound`;
+      await repositories.contacts.upsert({
+        id: input.contactId,
+        salesforceContactId: `003-${input.contactId}`,
+        displayName: input.contactId,
+        primaryEmail: `${input.contactId}@example.org`,
+        primaryPhone: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+      await repositories.contactMemberships.upsert({
+        id: input.membershipId,
+        contactId: input.contactId,
+        projectId: input.projectId,
+        expeditionId: null,
+        salesforceMembershipId: `sf-${input.membershipId}`,
+        role: "volunteer",
+        status: "lead",
+        source: "salesforce",
+        createdAt: "2026-04-01T10:00:00.000Z",
+      });
+      await repositories.sourceEvidence.append({
+        id: sourceEvidenceId,
+        provider: "salesforce",
+        providerRecordType: "task",
+        providerRecordId: `${input.contactId}-msg`,
+        receivedAt: now,
+        occurredAt: now,
+        payloadRef: `payloads/salesforce/${input.contactId}.json`,
+        idempotencyKey: `salesforce:${input.contactId}-inbound`,
+        checksum: `checksum:${input.contactId}`,
+      });
+      await repositories.canonicalEvents.upsert({
+        id: canonicalEventId,
+        contactId: input.contactId,
+        eventType: "communication.email.inbound",
+        channel: "email",
+        occurredAt: now,
+        contentFingerprint: null,
+        sourceEvidenceId,
+        idempotencyKey: `canonical:${input.contactId}-inbound`,
+        provenance: {
+          primaryProvider: "salesforce",
+          primarySourceEvidenceId: sourceEvidenceId,
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "task",
+          sourceRecordId: `${input.contactId}-msg`,
+          messageKind: "one_to_one",
+          campaignRef: null,
+          threadRef: null,
+          direction: "inbound",
+          notes: null,
+        },
+        reviewState: "clear",
+      });
+      await repositories.inboxProjection.upsert({
+        contactId: input.contactId,
+        bucket: "New",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt: now,
+        lastOutboundAt: null,
+        lastActivityAt: now,
+        snippet: `signal for ${input.contactId}`,
+        archivedAt: null,
+        lastCanonicalEventId: canonicalEventId,
+        lastEventType: "communication.email.inbound",
+      });
+    };
+
+    // Three contacts, each in a different project:
+    //   contact:in-host-a    — direct membership in the host (existing case 1)
+    //   contact:in-sub-b     — membership in the connected sub-project (NEW)
+    //   contact:in-sub-c     — membership in a sub-project of a DIFFERENT host
+    await seedContact({
+      contactId: "contact:in-host-a",
+      projectId: "project:host-a",
+      membershipId: "membership:host-a",
+    });
+    await seedContact({
+      contactId: "contact:in-sub-b",
+      projectId: "project:sub-b",
+      membershipId: "membership:sub-b",
+    });
+    await seedContact({
+      contactId: "contact:in-sub-c",
+      projectId: "project:sub-c",
+      membershipId: "membership:sub-c",
+    });
+
+    // Existing alias case: contact emails the host's alias with no membership.
+    await settings.aliases.create({
+      id: "alias:host-a",
+      alias: "host-a@example.org",
+      signature: "",
+      projectId: "project:host-a",
+      createdAt: new Date(now),
+      updatedAt: new Date(now),
+      createdBy: null,
+      updatedBy: null,
+    });
+    await repositories.contacts.upsert({
+      id: "contact:alias-only",
+      salesforceContactId: "003-alias-only",
+      displayName: "Alias Only",
+      primaryEmail: "alias-only@example.org",
+      primaryPhone: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await repositories.sourceEvidence.append({
+      id: "source:alias-only",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "alias-only-msg",
+      receivedAt: now,
+      occurredAt: now,
+      payloadRef: "payloads/gmail/alias-only.json",
+      idempotencyKey: "gmail:alias-only",
+      checksum: "checksum:alias-only",
+    });
+    await repositories.canonicalEvents.upsert({
+      id: "event:alias-only",
+      contactId: "contact:alias-only",
+      eventType: "communication.email.inbound",
+      channel: "email",
+      occurredAt: now,
+      contentFingerprint: null,
+      sourceEvidenceId: "source:alias-only",
+      idempotencyKey: "canonical:alias-only",
+      provenance: {
+        primaryProvider: "gmail",
+        primarySourceEvidenceId: "source:alias-only",
+        supportingSourceEvidenceIds: [],
+        winnerReason: "single_source",
+        sourceRecordType: "message",
+        sourceRecordId: "alias-only-msg",
+        messageKind: "one_to_one",
+        campaignRef: null,
+        threadRef: null,
+        direction: "inbound",
+        notes: null,
+      },
+      reviewState: "clear",
+    });
+    await repositories.gmailMessageDetails.upsert({
+      sourceEvidenceId: "source:alias-only",
+      providerRecordId: "alias-only-msg",
+      gmailThreadId: "thread:alias-only",
+      rfc822MessageId: "<alias-only@example.org>",
+      direction: "inbound",
+      subject: "alias-only inbound",
+      fromHeader: "Alias Only <alias-only@example.org>",
+      toHeader: "host-a@example.org",
+      ccHeader: null,
+      labelIds: ["INBOX"],
+      snippetClean: "alias-only signal",
+      bodyTextPreview: "alias-only signal",
+      capturedMailbox: "host-a@example.org",
+      projectInboxAlias: "host-a@example.org",
+    });
+    await repositories.inboxProjection.upsert({
+      contactId: "contact:alias-only",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: now,
+      lastOutboundAt: null,
+      lastActivityAt: now,
+      snippet: "alias-only signal",
+      archivedAt: null,
+      lastCanonicalEventId: "event:alias-only",
+      lastEventType: "communication.email.inbound",
+    });
+
+    const hostARows = await repositories.inboxProjection.listPageOrderedByRecency({
+      filter: "visible",
+      order: "last-inbound",
+      limit: 10,
+      cursor: null,
+      projectId: "project:host-a",
+    });
+    const subBRows = await repositories.inboxProjection.listPageOrderedByRecency(
+      {
+        filter: "visible",
+        order: "last-inbound",
+        limit: 10,
+        cursor: null,
+        projectId: "project:sub-b",
+      },
+    );
+    const hostDRows = await repositories.inboxProjection.listPageOrderedByRecency(
+      {
+        filter: "visible",
+        order: "last-inbound",
+        limit: 10,
+        cursor: null,
+        projectId: "project:host-d",
+      },
+    );
+
+    // Filtering by host A returns: direct member, sub-project member, alias-only.
+    expect(new Set(hostARows.map((row) => row.contactId))).toEqual(
+      new Set([
+        "contact:in-host-a",
+        "contact:in-sub-b",
+        "contact:alias-only",
+      ]),
+    );
+    // Filtering by the sub-project's own id is not the operator-facing path —
+    // it should match only the contact whose membership is on that exact id
+    // (existing case 1) and NOT the host or other host's contacts. The sub
+    // does not have a host of its own, so no rollup happens here.
+    expect(subBRows.map((row) => row.contactId)).toEqual([
+      "contact:in-sub-b",
+    ]);
+    // Cross-host isolation: host D's filter must not include host A's family.
+    expect(hostDRows.map((row) => row.contactId)).toEqual([
+      "contact:in-sub-c",
+    ]);
+  });
 });

@@ -497,6 +497,7 @@ Alias drift outbound message.
           projectAlias: null,
           source: "salesforce",
           isActive: false,
+          connectedToProjectId: null,
           aiKnowledgeUrl: null,
           aiKnowledgeSyncedAt: null,
           aiKnowledgeSources: [],

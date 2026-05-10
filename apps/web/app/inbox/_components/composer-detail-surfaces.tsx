@@ -43,6 +43,7 @@ import {
   MailIcon,
   NoteIcon,
   PaperclipIcon,
+  PinIcon,
   SendIcon,
   XIcon,
 } from "./icons";
@@ -1075,6 +1076,7 @@ export function ComposerNoteSurface({
         ) : null}
         <textarea
           ref={textareaRef}
+          autoFocus
           rows={6}
           value={body}
           onChange={(event) => {
@@ -1112,12 +1114,12 @@ export function ComposerNoteSurface({
           {isSavingNote ? (
             <>
               <LoaderIcon className="size-4 animate-spin" />
-              Saving...
+              Pinning...
             </>
           ) : (
             <>
-              <NoteIcon className="size-4" />
-              Save note
+              <PinIcon className="size-4" />
+              Pin Note
             </>
           )}
         </Button>
