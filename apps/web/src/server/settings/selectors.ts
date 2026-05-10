@@ -38,6 +38,19 @@ export interface ProjectRowViewModel {
   readonly activationRequirementsMet: boolean;
 }
 
+/**
+ * Top-level row in the Settings → Projects list. Connected sub-projects do
+ * not appear at this level; they are nested under their host's
+ * `connectedSubProjects` and inherit "Connected to {host}" copy in the
+ * renderer. `host` carries the host's own row exactly as it would render
+ * standalone, so `connectedSubProjects` is the only sub-aware field on the
+ * envelope.
+ */
+export interface ProjectListEntryViewModel {
+  readonly host: ProjectRowViewModel;
+  readonly connectedSubProjects: readonly ProjectRowViewModel[];
+}
+
 export interface ConnectedProjectSummaryViewModel {
   readonly projectId: string;
   readonly projectName: string;
@@ -52,8 +65,8 @@ export interface ConnectedHostSummaryViewModel {
 
 export interface ProjectsSettingsViewModel {
   readonly isAdmin: boolean;
-  readonly active: readonly ProjectRowViewModel[];
-  readonly inactive: readonly ProjectRowViewModel[];
+  readonly active: readonly ProjectListEntryViewModel[];
+  readonly inactive: readonly ProjectListEntryViewModel[];
   readonly counts: {
     readonly active: number;
     readonly inactive: number;
@@ -547,7 +560,7 @@ async function readProjectsSettings(input: {
     return input.filter === "active" ? project.isActive : !project.isActive;
   });
 
-  const active = filteredProjects
+  const activeRows = filteredProjects
     .filter((project) => project.isActive)
     .sort(
       (left, right) =>
@@ -555,7 +568,7 @@ async function readProjectsSettings(input: {
         left.projectName.localeCompare(right.projectName)
     )
     .map(toProjectRowViewModel);
-  const inactive = filteredProjects
+  const inactiveRows = filteredProjects
     .filter((project) => !project.isActive)
     .sort(
       (left, right) =>
@@ -564,15 +577,63 @@ async function readProjectsSettings(input: {
     )
     .map(toProjectRowViewModel);
 
+  const active = nestConnectedSubProjects(activeRows);
+  const inactive = nestConnectedSubProjects(inactiveRows);
+
   return {
     active,
     inactive,
     counts: {
-      active: active.length,
-      inactive: inactive.length,
-      total: active.length + inactive.length
+      active: activeRows.length,
+      inactive: inactiveRows.length,
+      total: activeRows.length + inactiveRows.length
     }
   };
+}
+
+/**
+ * Folds a flat row list into `{ host, connectedSubProjects }` entries.
+ * Connected sub-projects are removed from the top level and nested under
+ * their host. Sub-projects whose host isn't in this bucket (e.g. host is
+ * inactive while sub remains active) stay as their own top-level entry —
+ * data integrity should prevent this, but the fallback keeps the row
+ * visible rather than silently dropping it. Sub-projects under each host
+ * are sorted by project name.
+ */
+function nestConnectedSubProjects(
+  rows: readonly ProjectRowViewModel[]
+): readonly ProjectListEntryViewModel[] {
+  const subsByHostId = new Map<string, ProjectRowViewModel[]>();
+  const hostIds = new Set(rows.map((row) => row.projectId));
+
+  for (const row of rows) {
+    if (
+      row.connectedToProjectId !== null &&
+      hostIds.has(row.connectedToProjectId)
+    ) {
+      const existing = subsByHostId.get(row.connectedToProjectId) ?? [];
+      existing.push(row);
+      subsByHostId.set(row.connectedToProjectId, existing);
+    }
+  }
+
+  return rows
+    .filter(
+      (row) =>
+        row.connectedToProjectId === null ||
+        !hostIds.has(row.connectedToProjectId)
+    )
+    .map((host) => {
+      const subs = subsByHostId.get(host.projectId) ?? [];
+      return {
+        host,
+        connectedSubProjects: subs
+          .slice()
+          .sort((left, right) =>
+            left.projectName.localeCompare(right.projectName)
+          )
+      };
+    });
 }
 
 async function readProjectSettingsDetail(

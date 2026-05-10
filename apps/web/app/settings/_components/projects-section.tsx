@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderOpen, Plus } from "lucide-react";
+import { CornerDownRight, FolderOpen, Plus } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
+  ProjectListEntryViewModel,
   ProjectRowViewModel,
   ProjectsSettingsViewModel
 } from "@/src/server/settings/selectors";
@@ -45,6 +46,11 @@ export function ProjectsSection({
     router.refresh();
   }
 
+  // The wizard's pick-project list is a flat row list of inactive +
+  // unconnected candidates, not the nested envelope the Settings list uses.
+  // Flatten host + sub rows back into a single array for that surface.
+  const inactiveFlatProjects = flattenEntries(viewModel.inactive);
+
   return (
     <>
       <SettingsSection
@@ -66,7 +72,7 @@ export function ProjectsSection({
         }
       >
         <ProjectList
-          projects={viewModel.active}
+          entries={viewModel.active}
           emptyMessage="No active projects yet."
           renderLeading={() => (
             <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/60">
@@ -80,7 +86,7 @@ export function ProjectsSection({
         <ActivationWizard
           open
           onClose={closeWizard}
-          inactiveProjects={viewModel.inactive}
+          inactiveProjects={inactiveFlatProjects}
           {...(wizardRequest.initialProjectId === undefined
             ? {}
             : { initialProjectId: wizardRequest.initialProjectId })}
@@ -90,18 +96,29 @@ export function ProjectsSection({
   );
 }
 
+function flattenEntries(
+  entries: readonly ProjectListEntryViewModel[]
+): readonly ProjectRowViewModel[] {
+  const out: ProjectRowViewModel[] = [];
+
+  for (const entry of entries) {
+    out.push(entry.host);
+    for (const sub of entry.connectedSubProjects) {
+      out.push(sub);
+    }
+  }
+
+  return out;
+}
+
 function ProjectList({
-  projects,
+  entries,
   emptyMessage,
-  renderLeading,
-  renderMeta,
-  renderAction
+  renderLeading
 }: {
-  readonly projects: readonly ProjectRowViewModel[];
+  readonly entries: readonly ProjectListEntryViewModel[];
   readonly emptyMessage: string;
-  readonly renderLeading?: (project: ProjectRowViewModel) => ReactNode;
-  readonly renderMeta?: (project: ProjectRowViewModel) => ReactNode;
-  readonly renderAction?: (project: ProjectRowViewModel) => ReactNode;
+  readonly renderLeading?: ((project: ProjectRowViewModel) => ReactNode) | undefined;
 }) {
   return (
     <ul
@@ -111,66 +128,132 @@ function ProjectList({
         "border border-slate-200 bg-white",
         SHADOW.sm
       )}
+      data-testid="settings-projects-list"
     >
-      {projects.map((project) => (
-        <li
-          key={project.projectId}
-          className={cn(
-            "group flex items-center gap-3",
-            SPACING.listItem,
-            TRANSITION.fast,
-            "hover:bg-slate-50/80"
-          )}
-        >
-          <Link
-            href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
-            className={cn(
-              renderLeading
-                ? "flex min-w-0 flex-1 items-start gap-4"
-                : "flex min-w-0 flex-1 flex-col gap-1",
-              FOCUS_RING,
-              RADIUS.sm
-            )}
-            aria-label={`Open ${project.projectName}`}
-          >
-            {renderLeading ? renderLeading(project) : null}
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <p
-                  className={
-                    renderLeading
-                      ? "truncate text-[14.5px] font-semibold text-slate-900"
-                      : "truncate text-sm font-medium text-slate-900"
-                  }
-                >
-                  {project.projectName}
-                </p>
-                {renderMeta ? renderMeta(project) : null}
-              </div>
-              {renderLeading ? (
-                <p className={cn("mt-1 truncate text-slate-500", TYPE.caption)}>
-                  {getProjectSecondaryLabel(project)}
-                </p>
-              ) : (
-                <>
-                  <p className={cn(TYPE.caption, "truncate text-slate-500")}>
-                    {getProjectSecondaryLabel(project)}
-                  </p>
-                </>
-              )}
-            </div>
-          </Link>
-
-          {renderAction ? renderAction(project) : null}
-        </li>
+      {entries.map((entry) => (
+        <ProjectListEntry
+          key={entry.host.projectId}
+          entry={entry}
+          renderLeading={renderLeading}
+        />
       ))}
 
-      {projects.length === 0 ? (
+      {entries.length === 0 ? (
         <li className="px-5 py-10 text-center">
           <p className={TYPE.caption}>{emptyMessage}</p>
         </li>
       ) : null}
     </ul>
+  );
+}
+
+function ProjectListEntry({
+  entry,
+  renderLeading
+}: {
+  readonly entry: ProjectListEntryViewModel;
+  readonly renderLeading: ((project: ProjectRowViewModel) => ReactNode) | undefined;
+}) {
+  const { host, connectedSubProjects } = entry;
+
+  return (
+    <li
+      className="flex flex-col"
+      data-testid="settings-projects-entry"
+      data-project-id={host.projectId}
+    >
+      <ProjectRow project={host} renderLeading={renderLeading} />
+
+      {connectedSubProjects.length > 0 ? (
+        <ul
+          className="flex flex-col divide-y divide-slate-100 border-t border-slate-100 bg-slate-50/40"
+          data-testid="settings-projects-connected-subs"
+        >
+          {connectedSubProjects.map((sub) => (
+            <ProjectRow
+              key={sub.projectId}
+              project={sub}
+              renderLeading={renderLeading}
+              hostName={host.projectName}
+              isConnectedSub
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+function ProjectRow({
+  project,
+  renderLeading,
+  hostName,
+  isConnectedSub = false
+}: {
+  readonly project: ProjectRowViewModel;
+  readonly renderLeading: ((project: ProjectRowViewModel) => ReactNode) | undefined;
+  readonly hostName?: string;
+  readonly isConnectedSub?: boolean;
+}) {
+  const secondaryLabel = isConnectedSub
+    ? `Connected to ${hostName ?? ""}`.trim()
+    : getProjectSecondaryLabel(project);
+
+  return (
+    <li
+      className={cn(
+        "group flex items-center gap-3",
+        SPACING.listItem,
+        TRANSITION.fast,
+        "hover:bg-slate-50/80",
+        isConnectedSub ? "pl-8" : ""
+      )}
+      data-testid={
+        isConnectedSub
+          ? "settings-projects-connected-sub-row"
+          : "settings-projects-row"
+      }
+      data-project-id={project.projectId}
+    >
+      {isConnectedSub ? (
+        <span
+          className="flex size-5 shrink-0 items-center justify-center text-slate-400"
+          aria-hidden="true"
+        >
+          <CornerDownRight className="size-3.5" />
+        </span>
+      ) : null}
+
+      <Link
+        href={`/settings/projects/${encodeURIComponent(project.projectId)}`}
+        className={cn(
+          renderLeading
+            ? "flex min-w-0 flex-1 items-start gap-4"
+            : "flex min-w-0 flex-1 flex-col gap-1",
+          FOCUS_RING,
+          RADIUS.sm
+        )}
+        aria-label={`Open ${project.projectName}`}
+      >
+        {renderLeading && !isConnectedSub ? renderLeading(project) : null}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <p
+              className={
+                renderLeading && !isConnectedSub
+                  ? "truncate text-[14.5px] font-semibold text-slate-900"
+                  : "truncate text-sm font-medium text-slate-900"
+              }
+            >
+              {project.projectName}
+            </p>
+          </div>
+          <p className={cn("mt-1 truncate text-slate-500", TYPE.caption)}>
+            {secondaryLabel}
+          </p>
+        </div>
+      </Link>
+    </li>
   );
 }
 

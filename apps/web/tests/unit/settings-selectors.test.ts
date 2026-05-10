@@ -61,6 +61,7 @@ async function seedProject(
     readonly projectId: string;
     readonly projectName: string;
     readonly projectAlias?: string | null;
+    readonly connectedToProjectId?: string | null;
     readonly isActive: boolean;
     readonly aiKnowledgeUrl: string | null;
     readonly aiKnowledgeSyncedAt?: string | null;
@@ -73,6 +74,7 @@ async function seedProject(
     projectName: input.projectName,
     projectAlias:
       input.projectAlias === undefined ? input.projectName : input.projectAlias,
+    connectedToProjectId: input.connectedToProjectId ?? null,
     source: "salesforce",
     isActive: input.isActive,
     aiKnowledgeUrl: input.aiKnowledgeUrl,
@@ -316,7 +318,7 @@ describe("settings selectors", () => {
     });
 
     expect(viewModel.active).toHaveLength(2);
-    expect(viewModel.active.every((project) => project.isActive)).toBe(true);
+    expect(viewModel.active.every((entry) => entry.host.isActive)).toBe(true);
     expect(viewModel.inactive).toHaveLength(0);
     expect(viewModel.counts).toEqual({
       active: 2,
@@ -361,7 +363,10 @@ describe("settings selectors", () => {
     const viewModel = await loadProjectsSettings({
       filter: "all",
     });
-    const projects = [...viewModel.active, ...viewModel.inactive];
+    const projects = [
+      ...viewModel.active.map((entry) => entry.host),
+      ...viewModel.inactive.map((entry) => entry.host),
+    ];
 
     expect(
       projects.find((project) => project.projectId === "project:ready")
@@ -406,7 +411,7 @@ describe("settings selectors", () => {
       search: "sfkw",
     });
 
-    expect(byAlias.active.map((project) => project.projectId)).toEqual([
+    expect(byAlias.active.map((entry) => entry.host.projectId)).toEqual([
       "project:alias-search",
     ]);
   });
@@ -439,14 +444,86 @@ describe("settings selectors", () => {
     });
 
     expect(
-      viewModel.active.find((project) => project.projectId === "project:colon")
-        ?.suggestedAlias,
+      viewModel.active.find(
+        (entry) => entry.host.projectId === "project:colon",
+      )?.host.suggestedAlias,
     ).toBe("White Oak Savanna");
     expect(
       viewModel.inactive.find(
-        (project) => project.projectId === "project:prefix",
-      )?.suggestedAlias,
+        (entry) => entry.host.projectId === "project:prefix",
+      )?.host.suggestedAlias,
     ).toBe("Killer Whales 2025/2026");
+  });
+
+  it("nests connected sub-projects under their host in the active list", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    await seedProject(runtime, {
+      projectId: "project:butternut",
+      projectName: "Restoring Butternut Tree Health",
+      projectAlias: "forests",
+      isActive: true,
+      aiKnowledgeUrl: "https://www.notion.so/forests",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
+      emails: ["forests@asc.internal"],
+      memberCount: 5,
+    });
+    await seedProject(runtime, {
+      projectId: "project:beech",
+      projectName: "Saving American Beech",
+      projectAlias: null,
+      connectedToProjectId: "project:butternut",
+      isActive: true,
+      aiKnowledgeUrl: null,
+      emails: [],
+      memberCount: 3,
+    });
+    await seedProject(runtime, {
+      projectId: "project:standalone",
+      projectName: "Pollinator Gardens",
+      projectAlias: "pollinator",
+      isActive: true,
+      aiKnowledgeUrl: "https://www.notion.so/pollinator",
+      aiKnowledgeSyncedAt: "2026-04-20T15:00:00.000Z",
+      emails: ["pollinator@asc.internal"],
+      memberCount: 2,
+    });
+
+    const viewModel = await loadProjectsSettings({ filter: "active" });
+
+    // Connected sub does not appear at top level.
+    expect(viewModel.active.map((entry) => entry.host.projectId)).not.toContain(
+      "project:beech",
+    );
+
+    const butternutEntry = viewModel.active.find(
+      (entry) => entry.host.projectId === "project:butternut",
+    );
+    expect(butternutEntry).toBeDefined();
+    expect(
+      butternutEntry?.connectedSubProjects.map((sub) => sub.projectId),
+    ).toEqual(["project:beech"]);
+    expect(butternutEntry?.connectedSubProjects[0]?.projectName).toBe(
+      "Saving American Beech",
+    );
+    expect(
+      butternutEntry?.connectedSubProjects[0]?.connectedToProjectId,
+    ).toBe("project:butternut");
+
+    // Counts include all rows (host + sub + standalone).
+    expect(viewModel.counts).toEqual({
+      active: 3,
+      inactive: 0,
+      total: 3,
+    });
+
+    // Standalone projects keep their own top-level entry with no subs.
+    const standalone = viewModel.active.find(
+      (entry) => entry.host.projectId === "project:standalone",
+    );
+    expect(standalone?.connectedSubProjects).toHaveLength(0);
   });
 
   it("returns null when project detail is requested for an unknown id", async () => {
