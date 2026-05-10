@@ -18,6 +18,11 @@ const DEFAULT_MODEL = "claude-sonnet-4-6";
 const DEFAULT_MAX_TOKENS = 16_000;
 const DEFAULT_TEMPERATURE = 0.3;
 const APPROVED_REPLY_PROMPT_LIMIT = 50;
+// Synthesis bundles every healthy source document into one prompt and asks
+// for up to DEFAULT_MAX_TOKENS back. The default Anthropic timeout (25s)
+// fits inbox AI drafts but kills synthesis runs that span 30-90s. Confirmed
+// 2026-05-10 in worker logs: aborts at ~25s on PNW Biodiversity (8 sources).
+const DEFAULT_SYNTHESIS_TIMEOUT_MS = 180_000;
 
 export const SYNTHESIS_SYSTEM_PROMPT = `You are organizing an AI training document for a volunteer communications assistant. Your output will be used by an AI to draft replies to volunteers for a specific project.
 
@@ -115,6 +120,7 @@ export interface SynthesizeProjectKnowledgeOrchestratorDependencies {
     }[];
     readonly maxTokens: number;
     readonly temperature: number;
+    readonly timeoutMs?: number;
   }) => Promise<GenerateDraftResult>;
   readonly logger?: Pick<Console, "info" | "warn" | "error">;
   readonly model?: string;
@@ -440,6 +446,7 @@ export async function synthesizeProjectKnowledgeOrchestrator(
       ],
       maxTokens: deps.maxTokens ?? DEFAULT_MAX_TOKENS,
       temperature: deps.temperature ?? DEFAULT_TEMPERATURE,
+      timeoutMs: DEFAULT_SYNTHESIS_TIMEOUT_MS,
     });
 
     return {
