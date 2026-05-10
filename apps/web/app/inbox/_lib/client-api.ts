@@ -19,14 +19,32 @@ export interface InboxFreshnessResponse {
   readonly detail: InboxDetailFreshnessViewModel | null;
 }
 
+/**
+ * Typed error thrown by inbox client fetchers when an HTTP request returns a
+ * non-OK status. Surfacing `status` lets callers distinguish HTTP failures
+ * (where we have a status) from network/parse failures (where we don't), and
+ * lets the UI display a meaningful error label without leaking request
+ * payloads, headers, or URLs.
+ */
+export class InboxFetchError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "InboxFetchError";
+    this.status = status;
+  }
+}
+
 async function readJson<T>(input: RequestInfo | URL): Promise<T> {
   const response = await fetch(input, {
     cache: "no-store",
   });
 
   if (!response.ok) {
-    throw new Error(
+    throw new InboxFetchError(
       `Request failed with status ${response.status.toString()}.`,
+      response.status,
     );
   }
 
