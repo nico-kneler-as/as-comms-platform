@@ -10,6 +10,7 @@ import {
   CanonicalContactAmbiguityError,
   canSendTo,
   computePendingComposerOutboundFingerprint,
+  maskKnowledgeExample,
   smsMetrics,
   toE164,
 } from "@as-comms/domain";
@@ -294,13 +295,6 @@ function mapProjectMetricContactRow(
   };
 }
 
-function maskKnowledgeExample(value: string): string {
-  return value
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, "{EMAIL}")
-    .replace(/\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/gu, "{PHONE}")
-    .replace(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b/gu, "{NAME}");
-}
-
 async function captureKnowledgeFromSend(input: {
   readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
   readonly projectId: string;
@@ -368,7 +362,10 @@ async function captureKnowledgeFromSend(input: {
     volunteerStage: null,
     questionSummary,
     replyStrategy: null,
-    maskedExample: input.bodyPlaintext,
+    // The column is named masked_example for a reason; the synthesis path
+    // and prompt builder both read from it expecting masked PII. Storing
+    // the raw body here was a long-standing miss — fixed 2026-05-10.
+    maskedExample: maskKnowledgeExample(input.bodyPlaintext),
     sourceKind: "captured_from_send",
     approvedForAi: true,
     sourceEventId: null,
