@@ -5,6 +5,7 @@ export * from "./notes.js";
 export * from "./normalization.js";
 export * from "./outbound-email-dedup.js";
 export * from "./pending-outbounds.js";
+export * from "./pii-mask.js";
 export * from "./phone.js";
 export * from "./readiness.js";
 export * from "./persistence.js";
