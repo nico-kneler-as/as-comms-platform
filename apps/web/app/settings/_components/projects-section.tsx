@@ -15,7 +15,6 @@ import {
   TRANSITION
 } from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import type {
   ProjectRowViewModel,
@@ -48,49 +47,33 @@ export function ProjectsSection({
 
   return (
     <>
-      <SettingsSection id="settings-projects" title="Projects">
-        <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-slate-900">
-                Currently active
-              </h3>
-              <div className="flex items-center gap-2">
-                <span className={cn(TYPE.caption, "tabular-nums")}>
-                  {String(viewModel.counts.active)} active
-                </span>
-                {viewModel.isAdmin ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => {
-                      openWizard();
-                    }}
-                  >
-                    <Plus className="size-3.5" aria-hidden="true" />
-                    Activate a project
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            <ProjectList
-              projects={viewModel.active}
-              emptyMessage="No active projects yet."
-              renderLeading={() => (
-                <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/60">
-                  <FolderOpen className="size-4" aria-hidden="true" />
-                </span>
-              )}
-              renderMeta={() => (
-                <StatusBadge
-                  label="Active"
-                  colorClasses="bg-emerald-50 text-emerald-700 ring-emerald-200"
-                  variant="soft"
-                />
-              )}
-            />
-          </div>
-        </div>
+      <SettingsSection
+        id="settings-projects"
+        title="Projects"
+        description="Projects currently receiving inbound mail"
+        action={
+          viewModel.isAdmin ? (
+            <Button
+              type="button"
+              onClick={() => {
+                openWizard();
+              }}
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+              Activate a project
+            </Button>
+          ) : null
+        }
+      >
+        <ProjectList
+          projects={viewModel.active}
+          emptyMessage="No active projects yet."
+          renderLeading={() => (
+            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200/60">
+              <FolderOpen className="size-4" aria-hidden="true" />
+            </span>
+          )}
+        />
       </SettingsSection>
 
       {wizardRequest !== null ? (

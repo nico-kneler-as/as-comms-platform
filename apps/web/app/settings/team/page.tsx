@@ -9,11 +9,11 @@ import { SettingsContent } from "../_components/settings-content";
 export const dynamic = "force-dynamic";
 
 /**
- * Access section — teammates, roles, last sign-in. This is the only settings
+ * Team section — teammates, roles, last sign-in. This is the only settings
  * sub-route that exposes user PII, so the `settings.users.read` sensitive-read
  * audit fires from here (moved off the previous single-page `/settings`).
  */
-export default async function SettingsAccessPage() {
+export default async function SettingsTeamPage() {
   try {
     await requireSession();
   } catch (error) {

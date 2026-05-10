@@ -54,6 +54,7 @@ vi.mock("../../app/inbox/_components/inbox-client-provider", () => ({
     removeOptimisticOutbound: removeOptimisticOutboundMock,
     openReplyDraft: openReplyDraftMock,
     showToast: showToastMock,
+    composerAliases: [],
   }),
 }));
 

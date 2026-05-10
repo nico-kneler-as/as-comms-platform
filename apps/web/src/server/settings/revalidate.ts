@@ -13,8 +13,8 @@ export function revalidateProjectSettings(projectId: string): void {
 }
 
 export function revalidateAccessSettings(): void {
-  revalidateTag("settings:access");
-  revalidatePath("/settings/access");
+  revalidateTag("settings:team");
+  revalidatePath("/settings/team");
 }
 
 export function revalidateIntegrationHealth(): void {
