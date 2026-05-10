@@ -1,15 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
-  Check,
-  Circle,
-  Pencil,
   Plus,
   RefreshCw,
-  RotateCw,
   Trash2
 } from "lucide-react";
 
@@ -35,7 +32,6 @@ import {
   removeAiKnowledgeSourceAction,
   syncOneAiKnowledgeSourceAction,
   triggerProjectKnowledgeSynthesisAction,
-  updateAiKnowledgeSourceAction,
   updateAiAutoSyncScheduleAction,
   updateOperatingContextAction
 } from "../actions";
@@ -44,6 +40,9 @@ interface FeedbackState {
   readonly kind: "success" | "error";
   readonly message: string;
 }
+
+const POLL_WINDOW_MS = 30_000;
+const POLL_INTERVAL_MS = 3_000;
 
 function formatTimestamp(value: string | null): string {
   if (value === null) {
@@ -74,43 +73,76 @@ function buildSourceLabel(source: AiKnowledgeSource): string {
   }
 }
 
-function getSourceStatus(source: AiKnowledgeSource): {
-  readonly label: string;
-  readonly icon: typeof Circle;
-  readonly classes: string;
-} {
+type DerivedStatus =
+  | "disabled"
+  | "pending"
+  | "healthy"
+  | "stale"
+  | "broken";
+
+function deriveStatus(
+  source: AiKnowledgeSource,
+  enqueuedAt: number | null
+): DerivedStatus {
   if (!source.enabled) {
-    return {
-      label: "Disabled",
-      icon: Circle,
-      classes: "bg-slate-100 text-slate-600 ring-slate-200"
-    };
+    return "disabled";
+  }
+
+  if (enqueuedAt !== null) {
+    const lastSyncedMs =
+      source.last_synced_at === null
+        ? null
+        : Date.parse(source.last_synced_at);
+    const isAheadOfEnqueue =
+      lastSyncedMs !== null && lastSyncedMs >= enqueuedAt;
+    if (!isAheadOfEnqueue) {
+      return "pending";
+    }
   }
 
   switch (source.last_sync_status) {
     case "healthy":
+      return "healthy";
+    case "stale":
+      return "stale";
+    case "broken":
+      return "broken";
+    case "pending":
+    case null:
+    default:
+      return "pending";
+  }
+}
+
+function statusBadgeProps(status: DerivedStatus): {
+  readonly label: string;
+  readonly classes: string;
+} {
+  switch (status) {
+    case "disabled":
+      return {
+        label: "Disabled",
+        classes: "bg-slate-100 text-slate-600 ring-slate-200"
+      };
+    case "healthy":
       return {
         label: "Healthy",
-        icon: Check,
         classes: "bg-emerald-50 text-emerald-700 ring-emerald-200"
       };
     case "stale":
       return {
         label: "Stale",
-        icon: RotateCw,
         classes: "bg-amber-50 text-amber-800 ring-amber-200"
       };
     case "broken":
       return {
         label: "Broken",
-        icon: AlertTriangle,
         classes: "bg-rose-50 text-rose-700 ring-rose-200"
       };
     case "pending":
     default:
       return {
-        label: "Pending",
-        icon: RefreshCw,
+        label: "Syncing…",
         classes: "bg-sky-50 text-sky-700 ring-sky-200"
       };
   }
@@ -133,29 +165,80 @@ export function ProjectAiKnowledgeSection({
   readonly aiOptimizedSynthesizedAt: string | null;
   readonly aiKnowledgeSynthesisStale: boolean;
 }) {
+  const router = useRouter();
   const [sources, setSources] = useState(initialSources);
   const [operatingContext, setOperatingContext] = useState(initialOperatingContext);
   const [savedOperatingContext, setSavedOperatingContext] = useState(
     initialOperatingContext
   );
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
-  const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null);
-  const [editingSource, setEditingSource] = useState<AiKnowledgeSource | null>(null);
-  const [editingUrl, setEditingUrl] = useState("");
-  const [editingLabel, setEditingLabel] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [addUrl, setAddUrl] = useState("");
   const [addLabel, setAddLabel] = useState("");
   const [autoSyncSchedule, setAutoSyncSchedule] = useState(initialAutoSyncSchedule);
+  const [enqueuedAt, setEnqueuedAt] = useState<number | null>(null);
   const [pendingSourceId, setPendingSourceId] = useState<string | null>(null);
   const [rowPending, startRowTransition] = useTransition();
   const [saveContextPending, startSaveContextTransition] = useTransition();
   const [syncAllPending, startSyncAllTransition] = useTransition();
   const [schedulePending, startScheduleTransition] = useTransition();
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Pull fresh server data into local state whenever the parent re-renders
+  // (e.g. after a router.refresh()). Optimistic local mutations from add/remove
+  // converge as soon as the server-provided list arrives.
+  useEffect(() => {
+    setSources(initialSources);
+  }, [initialSources]);
+
+  // While a re-sync is in flight, poll the server for updated source statuses
+  // by issuing router.refresh() at a steady cadence. The parent re-renders
+  // with new initialSources, and the useEffect above syncs them in.
+  useEffect(() => {
+    if (enqueuedAt === null) {
+      return undefined;
+    }
+
+    const intervalId = setInterval(() => {
+      router.refresh();
+    }, POLL_INTERVAL_MS);
+    const timeoutId = setTimeout(() => {
+      setEnqueuedAt(null);
+    }, POLL_WINDOW_MS);
+
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(timeoutId);
+    };
+  }, [enqueuedAt, router]);
+
+  // If every enabled source has now caught up past the enqueue mark, lift the
+  // optimistic pending overlay early — no need to keep polling for 30s.
+  useEffect(() => {
+    if (enqueuedAt === null) {
+      return;
+    }
+    const stillPending = sources.some((source) => {
+      if (!source.enabled) {
+        return false;
+      }
+      const lastSyncedMs =
+        source.last_synced_at === null
+          ? null
+          : Date.parse(source.last_synced_at);
+      return lastSyncedMs === null || lastSyncedMs < enqueuedAt;
+    });
+    if (!stillPending) {
+      setEnqueuedAt(null);
+    }
+  }, [sources, enqueuedAt]);
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
     setFeedback({ kind, message });
-    window.setTimeout(() => {
+    if (feedbackTimerRef.current !== null) {
+      clearTimeout(feedbackTimerRef.current);
+    }
+    feedbackTimerRef.current = setTimeout(() => {
       setFeedback(null);
     }, 3500);
   }
@@ -165,6 +248,11 @@ export function ProjectAiKnowledgeSection({
   );
   const sourcesDirty = operatingContext.trim() !== savedOperatingContext.trim();
 
+  function markSyncEnqueued() {
+    setEnqueuedAt(Date.now());
+    router.refresh();
+  }
+
   function handleSyncAll() {
     startSyncAllTransition(async () => {
       const result = await triggerProjectKnowledgeSynthesisAction(projectId);
@@ -173,6 +261,7 @@ export function ProjectAiKnowledgeSection({
         return;
       }
 
+      markSyncEnqueued();
       announce("Queued a full AI Knowledge re-sync.");
     });
   }
@@ -212,41 +301,6 @@ export function ProjectAiKnowledgeSection({
     });
   }
 
-  function beginEdit(source: AiKnowledgeSource) {
-    setEditingSource(source);
-    setEditingUrl(source.url);
-    setEditingLabel(source.label ?? "");
-  }
-
-  function handleSaveEdit() {
-    if (editingSource === null) {
-      return;
-    }
-
-    const sourceId = editingSource.id;
-    setPendingSourceId(sourceId);
-    startRowTransition(async () => {
-      const result = await updateAiKnowledgeSourceAction(projectId, sourceId, {
-        url: editingUrl,
-        label: editingLabel
-      });
-      setPendingSourceId(null);
-
-      if (!result.ok) {
-        announce(result.message, "error");
-        return;
-      }
-
-      setSources((current) =>
-        current.map((source) =>
-          source.id === sourceId ? result.data.source : source
-        )
-      );
-      setEditingSource(null);
-      announce("Updated the AI Knowledge source.");
-    });
-  }
-
   function handleAddSource() {
     startRowTransition(async () => {
       const result = await addAiKnowledgeSourceAction(projectId, {
@@ -282,26 +336,6 @@ export function ProjectAiKnowledgeSection({
     });
   }
 
-  function handleToggleEnabled(source: AiKnowledgeSource, enabled: boolean) {
-    setPendingSourceId(source.id);
-    startRowTransition(async () => {
-      const result = await updateAiKnowledgeSourceAction(projectId, source.id, {
-        enabled
-      });
-      setPendingSourceId(null);
-
-      if (!result.ok) {
-        announce(result.message, "error");
-        return;
-      }
-
-      setSources((current) =>
-        current.map((item) => (item.id === source.id ? result.data.source : item))
-      );
-      announce(enabled ? "Re-enabled the source." : "Disabled the source.");
-    });
-  }
-
   function handleSyncOne(sourceId: string) {
     setPendingSourceId(sourceId);
     startRowTransition(async () => {
@@ -313,6 +347,7 @@ export function ProjectAiKnowledgeSection({
         return;
       }
 
+      markSyncEnqueued();
       announce("Queued a project synthesis run.");
     });
   }
@@ -340,7 +375,9 @@ export function ProjectAiKnowledgeSection({
             <p className="text-sm font-medium text-slate-900">AI Knowledge</p>
             <p className={cn(TYPE.caption, "mt-1 max-w-2xl text-slate-500")}>
               Manage the sources the synthesis worker fetches and combines into
-              the project&apos;s AI Knowledge.
+              the project&apos;s AI Knowledge. Notion pages must be shared with
+              the AS Comms integration before they can be read (Share →
+              Connections in Notion).
             </p>
           </div>
           {isAdmin ? (
@@ -414,9 +451,16 @@ export function ProjectAiKnowledgeSection({
                 size="sm"
                 variant="outline"
                 onClick={handleSyncAll}
-                disabled={syncAllPending}
+                disabled={syncAllPending || enqueuedAt !== null}
               >
-                Re-sync all
+                {enqueuedAt !== null ? (
+                  <>
+                    <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
+                    Syncing…
+                  </>
+                ) : (
+                  "Re-sync all"
+                )}
               </Button>
             </div>
           ) : null}
@@ -429,116 +473,92 @@ export function ProjectAiKnowledgeSection({
                 <th className="px-3 py-2 font-medium">Status</th>
                 <th className="px-3 py-2 font-medium">Kind</th>
                 <th className="px-3 py-2 font-medium">Label</th>
-                <th className="px-3 py-2 font-medium">URL</th>
                 <th className="px-3 py-2 font-medium">Last synced</th>
-                <th className="px-3 py-2 font-medium">Actions</th>
+                <th className="px-3 py-2 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {sources.map((source) => {
-                const status = getSourceStatus(source);
-                const StatusIcon = status.icon;
-                const isExpanded = expandedSourceId === source.id;
-                const isPending = rowPending && pendingSourceId === source.id;
+                const status = deriveStatus(source, enqueuedAt);
+                const badge = statusBadgeProps(status);
+                const isRowPending = rowPending && pendingSourceId === source.id;
+                const showError =
+                  status === "broken" &&
+                  source.last_sync_error !== null &&
+                  source.last_sync_error.trim().length > 0;
 
                 return (
                   <tr
                     key={source.id}
-                    className={cn(!source.enabled && "opacity-70", isPending && "opacity-60")}
+                    className={cn(!source.enabled && "opacity-70", isRowPending && "opacity-60")}
                   >
                     <td className="px-3 py-3">
-                      <span className="inline-flex items-center gap-1.5">
-                        <StatusIcon className="size-3 text-slate-500" aria-hidden="true" />
+                      <div className="flex flex-col gap-1">
                         <StatusBadge
-                          label={status.label}
-                          colorClasses={status.classes}
+                          label={badge.label}
+                          colorClasses={badge.classes}
                           variant="soft"
                         />
-                      </span>
+                        {showError ? (
+                          <p
+                            className="flex items-start gap-1 text-[11px] leading-snug text-rose-700"
+                            title={source.last_sync_error ?? undefined}
+                          >
+                            <AlertTriangle
+                              className="mt-0.5 size-3 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span>{source.last_sync_error}</span>
+                          </p>
+                        ) : null}
+                      </div>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-3 align-top">
                       <StatusBadge
                         label={source.kind}
                         colorClasses="bg-slate-100 text-slate-700 ring-slate-200"
                         variant="soft"
                       />
                     </td>
-                    <td className="px-3 py-3 font-medium text-slate-900">
+                    <td
+                      className="px-3 py-3 align-top font-medium text-slate-900"
+                      title={source.url}
+                    >
                       {buildSourceLabel(source)}
                     </td>
-                    <td className="max-w-[280px] px-3 py-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setExpandedSourceId((current) =>
-                            current === source.id ? null : source.id
-                          );
-                        }}
-                        className={cn(
-                          "w-full text-left text-slate-600 hover:text-slate-900",
-                          !isExpanded && "truncate"
-                        )}
-                        title={source.url}
-                      >
-                        {source.url}
-                      </button>
-                    </td>
-                    <td className="px-3 py-3 text-slate-600">
+                    <td className="px-3 py-3 align-top text-slate-600">
                       {formatTimestamp(source.last_synced_at)}
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-3 align-top">
                       {isAdmin ? (
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
-                            onClick={() => {
-                              beginEdit(source);
-                            }}
-                            className="text-slate-600 hover:text-slate-900"
-                          >
-                            <span className="sr-only">Edit</span>
-                            <Pencil className="size-3.5" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isPending}
+                            disabled={isRowPending || enqueuedAt !== null}
                             onClick={() => {
                               handleSyncOne(source.id);
                             }}
-                            className="text-slate-600 hover:text-slate-900 disabled:opacity-40"
+                            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label={`Sync ${buildSourceLabel(source)}`}
+                            title="Sync now"
                           >
-                            Sync now
+                            <RefreshCw
+                              className={cn(
+                                "size-3.5",
+                                status === "pending" && "animate-spin"
+                              )}
+                              aria-hidden="true"
+                            />
                           </button>
-                          {!source.enabled ? (
-                            <button
-                              type="button"
-                              disabled={isPending}
-                              onClick={() => {
-                                handleToggleEnabled(source, true);
-                              }}
-                              className="text-slate-600 hover:text-slate-900 disabled:opacity-40"
-                            >
-                              Re-enable
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={isPending}
-                              onClick={() => {
-                                handleToggleEnabled(source, false);
-                              }}
-                              className="text-slate-600 hover:text-slate-900 disabled:opacity-40"
-                            >
-                              Disable
-                            </button>
-                          )}
                           <button
                             type="button"
-                            disabled={isPending}
+                            disabled={isRowPending}
                             onClick={() => {
                               handleRemoveSource(source.id);
                             }}
-                            className="text-rose-600 hover:text-rose-700 disabled:opacity-40"
+                            className="rounded p-1 text-rose-600 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label={`Delete ${buildSourceLabel(source)}`}
+                            title="Delete source"
                           >
                             <Trash2 className="size-3.5" aria-hidden="true" />
                           </button>
@@ -550,7 +570,7 @@ export function ProjectAiKnowledgeSection({
               })}
               {sources.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-5 text-center text-slate-500">
+                  <td colSpan={5} className="px-3 py-5 text-center text-slate-500">
                     No AI Knowledge sources yet.
                   </td>
                 </tr>
@@ -637,72 +657,6 @@ export function ProjectAiKnowledgeSection({
           </div>
         ) : null}
       </div>
-
-      <Dialog
-        open={editingSource !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingSource(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit AI Knowledge source</DialogTitle>
-            <DialogDescription>
-              Update the source URL or operator label.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-3 py-2">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="edit-ai-knowledge-url" className={TYPE.label}>
-                Source URL
-              </label>
-              <Input
-                id="edit-ai-knowledge-url"
-                value={editingUrl}
-                onChange={(event) => {
-                  setEditingUrl(event.target.value);
-                }}
-                placeholder="https://..."
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="edit-ai-knowledge-label" className={TYPE.label}>
-                Label
-              </label>
-              <Input
-                id="edit-ai-knowledge-label"
-                value={editingLabel}
-                onChange={(event) => {
-                  setEditingLabel(event.target.value);
-                }}
-                placeholder="Optional operator label"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setEditingSource(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSaveEdit}
-              disabled={rowPending || editingUrl.trim().length === 0}
-            >
-              Save changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

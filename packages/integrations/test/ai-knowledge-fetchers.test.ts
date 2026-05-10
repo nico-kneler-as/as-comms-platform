@@ -172,6 +172,9 @@ describe("AI knowledge fetchers", () => {
         }),
     });
 
+    const expectedSharingMessage =
+      "Notion can't access this page. Open it in Notion and share it with the AS Comms integration (Share → Connections → add AS Comms).";
+
     await expect(
       unauthorizedFetcher.fetch({
         url: "https://www.notion.so/missing",
@@ -181,7 +184,7 @@ describe("AI knowledge fetchers", () => {
     ).resolves.toEqual({
       ok: false,
       status: "broken",
-      error: "Permission denied when reading the Notion page.",
+      error: expectedSharingMessage,
     });
 
     await expect(
@@ -193,7 +196,7 @@ describe("AI knowledge fetchers", () => {
     ).resolves.toEqual({
       ok: false,
       status: "broken",
-      error: "Page not found in Notion.",
+      error: expectedSharingMessage,
     });
   });
 
