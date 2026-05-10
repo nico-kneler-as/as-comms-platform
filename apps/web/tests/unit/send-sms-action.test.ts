@@ -285,7 +285,9 @@ describe("sendSmsAction", () => {
     expect(entries[0]).toMatchObject({
       kind: "canonical_reply",
       sourceKind: "captured_from_send",
-      approvedForAi: false,
+      // Phase 3 of PRD #366: SMS captures land approved-for-AI immediately.
+      // The "Save for AI" toggle on send IS the approval signal.
+      approvedForAi: true,
       questionSummary: "SMS to Maya Lee",
       maskedExample: "Field update confirmed.",
     });

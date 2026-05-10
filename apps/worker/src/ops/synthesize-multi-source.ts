@@ -51,6 +51,7 @@ function buildDependencies(): SynthesizeProjectKnowledgeDependencies {
   const base: SynthesizeProjectKnowledgeDependencies = {
     repositories: {
       projectDimensions: repositories.projectDimensions,
+      projectKnowledge: repositories.projectKnowledge,
       settingsProjects: settings.projects,
     },
     fetchers: {

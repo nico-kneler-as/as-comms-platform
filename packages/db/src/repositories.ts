@@ -5,6 +5,7 @@ import {
   countDistinct,
   desc,
   eq,
+  gt,
   inArray,
   isNotNull,
   isNull,
@@ -1899,6 +1900,24 @@ function createStage1RepositoriesInternal(
         return PROJECT_KNOWLEDGE_KINDS.flatMap(
           (kind) => rankedByKind.get(kind) ?? [],
         );
+      },
+
+      async countCapturedSinceTimestamp(input) {
+        const predicates: SQL[] = [
+          eq(projectKnowledgeEntries.projectId, input.projectId),
+          eq(projectKnowledgeEntries.approvedForAi, true),
+        ];
+
+        if (input.since !== null) {
+          predicates.push(gt(projectKnowledgeEntries.createdAt, input.since));
+        }
+
+        const [row] = await db
+          .select({ value: count() })
+          .from(projectKnowledgeEntries)
+          .where(and(...predicates));
+
+        return row?.value ?? 0;
       },
     },
 

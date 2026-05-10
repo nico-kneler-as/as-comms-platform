@@ -3,11 +3,43 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   AiKnowledgeSource,
   ProjectDimensionRecord,
+  ProjectKnowledgeEntryRecord,
 } from "@as-comms/contracts";
 import { inputHashFromSources } from "@as-comms/db";
 import type { GenerateDraftResult, SourceFetchResult } from "@as-comms/integrations";
 
 import { synthesizeProjectKnowledgeOrchestrator } from "../src/jobs/synthesize-project-knowledge/orchestrator.js";
+
+function buildEmptyProjectKnowledge() {
+  return {
+    list: vi.fn().mockResolvedValue([]),
+  };
+}
+
+function buildApprovedReply(input: {
+  readonly id: string;
+  readonly maskedExample: string;
+  readonly createdAt: string;
+  readonly kind?: ProjectKnowledgeEntryRecord["kind"];
+}): ProjectKnowledgeEntryRecord {
+  return {
+    id: input.id,
+    projectId: "project:orcas",
+    kind: input.kind ?? "canonical_reply",
+    issueType: null,
+    volunteerStage: null,
+    questionSummary: `Question for ${input.id}`,
+    replyStrategy: null,
+    maskedExample: input.maskedExample,
+    sourceKind: "captured_from_send",
+    approvedForAi: true,
+    sourceEventId: null,
+    metadataJson: {},
+    lastReviewedAt: null,
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+  };
+}
 
 function buildProject(): ProjectDimensionRecord {
   return {
@@ -115,6 +147,7 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
             getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
             setAiKnowledgeSources,
           },
+          projectKnowledge: buildEmptyProjectKnowledge(),
         },
         fetchers: {
           inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
@@ -174,6 +207,7 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
             getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
             setAiKnowledgeSources,
           },
+          projectKnowledge: buildEmptyProjectKnowledge(),
         },
         fetchers: {
           inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
@@ -221,6 +255,7 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
             getAiKnowledgeSources: vi.fn().mockResolvedValue([]),
             setAiKnowledgeSources: vi.fn().mockResolvedValue(undefined),
           },
+          projectKnowledge: buildEmptyProjectKnowledge(),
         },
         fetchers: {
           inline_text: { fetch: vi.fn() },
@@ -253,6 +288,7 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
             ]),
             setAiKnowledgeSources: vi.fn().mockResolvedValue(undefined),
           },
+          projectKnowledge: buildEmptyProjectKnowledge(),
         },
         fetchers: {
           inline_text: { fetch: vi.fn() },
@@ -296,6 +332,7 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
             ]),
             setAiKnowledgeSources,
           },
+          projectKnowledge: buildEmptyProjectKnowledge(),
         },
         fetchers: {
           inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
@@ -358,6 +395,7 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
             getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
             setAiKnowledgeSources,
           },
+          projectKnowledge: buildEmptyProjectKnowledge(),
         },
         fetchers: {
           inline_text: { fetch: vi.fn() },
@@ -416,6 +454,7 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
             ]),
             setAiKnowledgeSources: vi.fn().mockResolvedValue(undefined),
           },
+          projectKnowledge: buildEmptyProjectKnowledge(),
         },
         fetchers: {
           inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
@@ -430,5 +469,225 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
     );
 
     expect(webFetch).not.toHaveBeenCalled();
+  });
+
+  it("includes approved-reply examples in the synthesis prompt with weighting language", async () => {
+    const project = buildProject();
+    const sources = [
+      buildSource({
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "inline_text",
+        url: "https://example.test/inline-1",
+      }),
+    ];
+    const approvedReplies = [
+      buildApprovedReply({
+        id: "approved:1",
+        maskedExample: "Hi {NAME}, thanks for confirming the field logistics.",
+        createdAt: "2026-05-08T12:00:00.000Z",
+      }),
+      buildApprovedReply({
+        id: "approved:2",
+        maskedExample: "Welcome aboard! Your training kit ships next week.",
+        createdAt: "2026-05-07T12:00:00.000Z",
+      }),
+      buildApprovedReply({
+        id: "approved:3",
+        maskedExample: "Submit your data through the {APP} portal.",
+        createdAt: "2026-05-06T12:00:00.000Z",
+      }),
+    ];
+    const invokeModel = vi.fn().mockResolvedValue(buildDraftResult("# Synthesized"));
+    const list = vi.fn().mockResolvedValue(approvedReplies);
+
+    await synthesizeProjectKnowledgeOrchestrator(
+      {
+        repositories: {
+          projectDimensions: {
+            findById: vi.fn().mockResolvedValue(project),
+            getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
+            setAiKnowledgeSources: vi.fn().mockResolvedValue(undefined),
+          },
+          projectKnowledge: { list },
+        },
+        fetchers: {
+          inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
+          notion: { fetch: vi.fn() },
+          web_page: { fetch: vi.fn() },
+        },
+        invokeModel,
+      },
+      {
+        projectId: project.projectId,
+      },
+    );
+
+    expect(list).toHaveBeenCalledWith({
+      projectId: project.projectId,
+      approvedOnly: true,
+    });
+    const prompt = readPromptFromInvokeModelMock(invokeModel);
+    expect(prompt).toContain("<APPROVED_REPLY_EXAMPLES>");
+    expect(prompt).toContain("</APPROVED_REPLY_EXAMPLES>");
+    expect(prompt).toContain("3 canonical reply examples");
+    expect(prompt).toContain("weight them MORE HEAVILY");
+    expect(prompt).toContain(
+      "Hi {NAME}, thanks for confirming the field logistics.",
+    );
+    expect(prompt).toContain(
+      "Welcome aboard! Your training kit ships next week.",
+    );
+    expect(prompt).toContain("Submit your data through the {APP} portal.");
+    expect(prompt).toContain("--- Example 1 (captured 2026-05-08, kind=canonical_reply) ---");
+  });
+
+  it("omits the approved-reply block entirely when no approved replies exist", async () => {
+    const project = buildProject();
+    const sources = [
+      buildSource({
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "inline_text",
+        url: "https://example.test/inline-1",
+      }),
+    ];
+    const invokeModel = vi.fn().mockResolvedValue(buildDraftResult("# Synthesized"));
+
+    await synthesizeProjectKnowledgeOrchestrator(
+      {
+        repositories: {
+          projectDimensions: {
+            findById: vi.fn().mockResolvedValue(project),
+            getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
+            setAiKnowledgeSources: vi.fn().mockResolvedValue(undefined),
+          },
+          projectKnowledge: { list: vi.fn().mockResolvedValue([]) },
+        },
+        fetchers: {
+          inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
+          notion: { fetch: vi.fn() },
+          web_page: { fetch: vi.fn() },
+        },
+        invokeModel,
+      },
+      {
+        projectId: project.projectId,
+      },
+    );
+
+    const prompt = readPromptFromInvokeModelMock(invokeModel);
+    expect(prompt).not.toContain("<APPROVED_REPLY_EXAMPLES>");
+    expect(prompt).not.toContain("canonical reply examples");
+    expect(prompt).not.toContain("weight them MORE HEAVILY");
+  });
+
+  it("caps the approved-reply block at the 50 most recently returned entries", async () => {
+    const project = buildProject();
+    const sources = [
+      buildSource({
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "inline_text",
+        url: "https://example.test/inline-1",
+      }),
+    ];
+    // The repo returns rows already ordered by desc(updatedAt). The
+    // orchestrator should pick the first 50 — items 0..49 — and exclude
+    // the rest. We verify by tagging the bodies with their index.
+    const approvedReplies = Array.from({ length: 60 }, (_, index) =>
+      buildApprovedReply({
+        id: `approved:${String(index)}`,
+        maskedExample: `EXAMPLE_BODY_${String(index)}`,
+        createdAt: `2026-05-${String(8).padStart(2, "0")}T12:00:00.000Z`,
+      }),
+    );
+    const invokeModel = vi.fn().mockResolvedValue(buildDraftResult("# Synthesized"));
+
+    await synthesizeProjectKnowledgeOrchestrator(
+      {
+        repositories: {
+          projectDimensions: {
+            findById: vi.fn().mockResolvedValue(project),
+            getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
+            setAiKnowledgeSources: vi.fn().mockResolvedValue(undefined),
+          },
+          projectKnowledge: { list: vi.fn().mockResolvedValue(approvedReplies) },
+        },
+        fetchers: {
+          inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
+          notion: { fetch: vi.fn() },
+          web_page: { fetch: vi.fn() },
+        },
+        invokeModel,
+      },
+      {
+        projectId: project.projectId,
+      },
+    );
+
+    const prompt = readPromptFromInvokeModelMock(invokeModel);
+    expect(prompt).toContain("50 canonical reply examples");
+    expect(prompt).toContain("EXAMPLE_BODY_0");
+    expect(prompt).toContain("EXAMPLE_BODY_49");
+    expect(prompt).not.toContain("EXAMPLE_BODY_50");
+    expect(prompt).not.toContain("EXAMPLE_BODY_59");
+  });
+
+  it("excludes non-canonical_reply approved entries from the prompt block", async () => {
+    const project = buildProject();
+    const sources = [
+      buildSource({
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "inline_text",
+        url: "https://example.test/inline-1",
+      }),
+    ];
+    const approvedReplies = [
+      buildApprovedReply({
+        id: "approved:reply",
+        maskedExample: "CANONICAL_REPLY_BODY",
+        createdAt: "2026-05-08T12:00:00.000Z",
+        kind: "canonical_reply",
+      }),
+      buildApprovedReply({
+        id: "approved:snippet",
+        maskedExample: "SNIPPET_BODY",
+        createdAt: "2026-05-08T12:00:00.000Z",
+        kind: "snippet",
+      }),
+      buildApprovedReply({
+        id: "approved:pattern",
+        maskedExample: "PATTERN_BODY",
+        createdAt: "2026-05-08T12:00:00.000Z",
+        kind: "pattern",
+      }),
+    ];
+    const invokeModel = vi.fn().mockResolvedValue(buildDraftResult("# Synthesized"));
+
+    await synthesizeProjectKnowledgeOrchestrator(
+      {
+        repositories: {
+          projectDimensions: {
+            findById: vi.fn().mockResolvedValue(project),
+            getAiKnowledgeSources: vi.fn().mockResolvedValue(sources),
+            setAiKnowledgeSources: vi.fn().mockResolvedValue(undefined),
+          },
+          projectKnowledge: { list: vi.fn().mockResolvedValue(approvedReplies) },
+        },
+        fetchers: {
+          inline_text: { fetch: vi.fn().mockResolvedValue(healthyContent("Inline operator context")) },
+          notion: { fetch: vi.fn() },
+          web_page: { fetch: vi.fn() },
+        },
+        invokeModel,
+      },
+      {
+        projectId: project.projectId,
+      },
+    );
+
+    const prompt = readPromptFromInvokeModelMock(invokeModel);
+    expect(prompt).toContain("1 canonical reply examples");
+    expect(prompt).toContain("CANONICAL_REPLY_BODY");
+    expect(prompt).not.toContain("SNIPPET_BODY");
+    expect(prompt).not.toContain("PATTERN_BODY");
   });
 });

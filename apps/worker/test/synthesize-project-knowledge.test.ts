@@ -68,6 +68,7 @@ describe("runSynthesizeProjectKnowledge", () => {
         {
           repositories: {
             projectDimensions: context.repositories.projectDimensions,
+            projectKnowledge: context.repositories.projectKnowledge,
             settingsProjects: context.settings.projects,
           },
           fetchers: {

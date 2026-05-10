@@ -174,6 +174,18 @@ export interface ProjectKnowledgeRepository {
     readonly keywordsLower: readonly string[];
     readonly limitPerKind: number;
   }): Promise<readonly ProjectKnowledgeEntryRecord[]>;
+  /**
+   * Count approved-for-AI rows for a project captured strictly after the
+   * given timestamp. Pass `null` to count every approved-for-AI row in the
+   * project (useful when synthesis has never run).
+   *
+   * Used by the Phase 3 capture-trigger path to decide whether enough new
+   * approved replies have accumulated to re-synthesize.
+   */
+  countCapturedSinceTimestamp(input: {
+    readonly projectId: string;
+    readonly since: Date | null;
+  }): Promise<number>;
 }
 
 export interface AllContactsSearchMembership {

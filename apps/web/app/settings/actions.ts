@@ -6,13 +6,9 @@ import { z } from "zod";
 
 import {
   createProjectAliasSchema,
-  synthesizeProjectKnowledgeJobName,
-  synthesizeProjectKnowledgePayloadSchema,
   type AiKnowledgeSource,
   deactivateUserSchema,
   demoteUserSchema,
-  notionKnowledgeSyncJobName,
-  notionKnowledgeSyncPayloadSchema,
   promoteUserSchema,
   reactivateUserSchema,
   type IntegrationHealthRecord
@@ -25,6 +21,10 @@ import {
   updateSource
 } from "@as-comms/db";
 
+import {
+  enqueueNotionKnowledgeSyncJob,
+  enqueueSynthesizeProjectKnowledgeJob
+} from "@/src/server/ai/enqueue";
 import { resolveAdminSession } from "@/src/server/auth/api";
 import { appendSecurityAudit } from "@/src/server/security/audit";
 import {
@@ -707,61 +707,6 @@ export interface ProjectAliasSignatureMutationData {
   readonly id: string;
   readonly alias: string;
   readonly signature: string;
-}
-
-async function enqueueNotionKnowledgeSyncJob(input: {
-  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
-  readonly projectId: string;
-  readonly trigger: "manual" | "url_save" | "activation";
-}): Promise<void> {
-  if (input.runtime.connection === null) {
-    return;
-  }
-
-  const payload = notionKnowledgeSyncPayloadSchema.parse({
-    projectId: input.projectId,
-    trigger: input.trigger
-  });
-
-  await input.runtime.connection.sql`
-    select graphile_worker.add_job(
-      identifier => ${notionKnowledgeSyncJobName},
-      payload => ${JSON.stringify(payload)}::json,
-      job_key => ${`notion-knowledge-sync:${input.projectId}`},
-      job_key_mode => 'replace',
-      max_attempts => 1
-    )
-  `;
-}
-
-async function enqueueSynthesizeProjectKnowledgeJob(input: {
-  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
-  readonly projectId: string;
-  readonly trigger:
-    | "activation"
-    | "wizard_sources"
-    | "source_added"
-    | "source_updated"
-    | "sync_one"
-    | "sync_all";
-}): Promise<void> {
-  if (input.runtime.connection === null) {
-    return;
-  }
-
-  const payload = synthesizeProjectKnowledgePayloadSchema.parse({
-    projectId: input.projectId
-  });
-
-  await input.runtime.connection.sql`
-    select graphile_worker.add_job(
-      identifier => ${synthesizeProjectKnowledgeJobName},
-      payload => ${JSON.stringify(payload)}::json,
-      job_key => ${`synthesize-project-knowledge:${input.projectId}`},
-      job_key_mode => 'replace',
-      max_attempts => 1
-    )
-  `;
 }
 
 function normalizeOptionalSourceLabel(value: string | null | undefined): string | null {
