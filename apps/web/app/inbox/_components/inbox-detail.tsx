@@ -354,10 +354,20 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
                         "inline-flex shrink-0 items-center rounded px-1.5 py-px text-[10px] font-medium",
                         PROJECT_STATUS_BADGE[project.status],
                       )}
+                      title={
+                        project.subDisplayName === null
+                          ? undefined
+                          : `${project.projectName} (via ${project.subDisplayName})`
+                      }
                     >
                       <span className="max-w-[160px] truncate">
                         {project.projectName}
                       </span>
+                      {project.subDisplayName === null ? null : (
+                        <span className="ml-1 max-w-[120px] truncate opacity-70">
+                          via {project.subDisplayName}
+                        </span>
+                      )}
                       <span className="mx-1 opacity-60">›</span>
                       <span className="whitespace-nowrap">
                         {project.statusLabel}
@@ -368,9 +378,18 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
               ) : detail.conversationProject ? (
                 <span
                   className="mt-0.5 block min-w-0 truncate text-[12px] font-medium leading-none text-slate-500"
-                  title="Via project alias"
+                  title={
+                    detail.conversationProject.subProjectName === null
+                      ? "Via project alias"
+                      : `${detail.conversationProject.projectName} (via ${detail.conversationProject.subProjectName})`
+                  }
                 >
                   {detail.conversationProject.projectName}
+                  {detail.conversationProject.subProjectName === null ? null : (
+                    <span className="ml-1 text-slate-400">
+                      via {detail.conversationProject.subProjectName}
+                    </span>
+                  )}
                 </span>
               ) : (
                 <span className="text-xs text-slate-400">

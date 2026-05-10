@@ -115,6 +115,7 @@ function buildItem(
     snippet: overrides.snippet ?? "Snippet",
     latestChannel: overrides.latestChannel ?? "email",
     projectLabel: overrides.projectLabel ?? null,
+    projectSubLabel: overrides.projectSubLabel ?? null,
     additionalActiveProjectsCount: overrides.additionalActiveProjectsCount ?? 0,
     volunteerStage: overrides.volunteerStage ?? "active",
     bucket: overrides.bucket ?? "opened",
@@ -693,10 +694,14 @@ describe("resolvePrimaryProjectForContact", () => {
     "project:illegal-timber": {
       projectName: "Illegal Timber",
       isActive: true,
+      connectedToProjectId: null,
+      hostProjectName: null,
     },
     "project:passive-acoustic": {
       projectName: "Passive Acoustic",
       isActive: true,
+      connectedToProjectId: null,
+      hostProjectName: null,
     },
   } as const;
 
@@ -732,6 +737,8 @@ describe("resolvePrimaryProjectForContact", () => {
       "project:beech-butternut": {
         projectName: "Beech & Butternut",
         isActive: true,
+        connectedToProjectId: null,
+        hostProjectName: null,
       },
     } as const;
     const primary = resolvePrimaryProjectForContact({
@@ -767,10 +774,14 @@ describe("resolvePrimaryProjectForContact", () => {
       "project:illegal-timber": {
         projectName: "Illegal Timber",
         isActive: false,
+        connectedToProjectId: null,
+        hostProjectName: null,
       },
       "project:passive-acoustic": {
         projectName: "Passive Acoustic",
         isActive: true,
+        connectedToProjectId: null,
+        hostProjectName: null,
       },
     } as const;
     const primary = resolvePrimaryProjectForContact({
@@ -831,6 +842,107 @@ describe("resolvePrimaryProjectForContact", () => {
     });
 
     expect(primary).toBeNull();
+  });
+
+  // Connected-projects host/sub label: a Beech-only volunteer whose only
+  // active membership is on the connected sub `project:beech` should
+  // surface "Beech & Butternut" (host) as the chip's primary text and
+  // "Saving American Beech" as the secondary `subProjectName`.
+  it("returns the host name as projectName and the sub name as subProjectName when the membership is on a connected sub", () => {
+    const primary = resolvePrimaryProjectForContact({
+      memberships: [
+        buildMembership({
+          id: "membership:beech",
+          projectId: "project:beech",
+          createdAt: "2026-04-01T10:00:00.000Z",
+          status: "active",
+        }),
+      ],
+      projectMetadataById: {
+        "project:beech": {
+          projectName: "Saving American Beech",
+          isActive: true,
+          connectedToProjectId: "host:forests",
+          hostProjectName: "Beech & Butternut",
+        },
+      },
+      lastOccurredAtByProjectId: new Map(),
+      conversationProjectFallback: null,
+    });
+
+    expect(primary).toEqual({
+      projectId: "project:beech",
+      projectName: "Beech & Butternut",
+      subProjectName: "Saving American Beech",
+      isConnectedSub: true,
+      source: "membership",
+    });
+  });
+
+  // Same logic should apply to the conversation-fallback path so the
+  // header chip stays consistent when a contact has no active memberships
+  // but the conversation resolved to a connected sub via SF event context.
+  it("applies the host/sub label to the conversation fallback path", () => {
+    const primary = resolvePrimaryProjectForContact({
+      memberships: [],
+      projectMetadataById: {
+        "project:beech": {
+          projectName: "Saving American Beech",
+          isActive: true,
+          connectedToProjectId: "host:forests",
+          hostProjectName: "Beech & Butternut",
+        },
+      },
+      lastOccurredAtByProjectId: new Map(),
+      conversationProjectFallback: {
+        projectId: "project:beech",
+        projectName: "Saving American Beech",
+      },
+    });
+
+    expect(primary).toEqual({
+      projectId: "project:beech",
+      projectName: "Beech & Butternut",
+      subProjectName: "Saving American Beech",
+      isConnectedSub: true,
+      source: "conversation",
+    });
+  });
+
+  // Defensive: when the metadata index says "connected" but the host name
+  // failed to resolve (e.g., the host row was missing from the IN(...)
+  // batch query), fall back to the sub's own name as a single-line label
+  // rather than rendering an empty chip.
+  it("falls back to the sub name when the host name is missing from the metadata", () => {
+    const primary = resolvePrimaryProjectForContact({
+      memberships: [
+        buildMembership({
+          id: "membership:beech",
+          projectId: "project:beech",
+          createdAt: "2026-04-01T10:00:00.000Z",
+          status: "active",
+        }),
+      ],
+      projectMetadataById: {
+        "project:beech": {
+          projectName: "Saving American Beech",
+          isActive: true,
+          connectedToProjectId: "host:forests",
+          // hostProjectName intentionally null — host row missing.
+          hostProjectName: null,
+        },
+      },
+      lastOccurredAtByProjectId: new Map(),
+      conversationProjectFallback: null,
+    });
+
+    expect(primary).toEqual({
+      projectId: "project:beech",
+      projectName: "Saving American Beech",
+      subProjectName: null,
+      isConnectedSub: false,
+      source: "membership",
+    });
   });
 });
 
@@ -3057,7 +3169,74 @@ describe("real inbox selectors", () => {
     expect(detail?.conversationProject).toEqual({
       projectId: "project:amazon-basin",
       projectName: "Amazon Basin Research",
+      subProjectName: null,
       source: "membership",
+    });
+  });
+
+  // Connected-projects host/sub label (PR for AI knowledge + rail): when
+  // the contact's only active membership is on a connected sub-project,
+  // both the contact rail's activeProjects entry AND the conversation
+  // header's chip resolve to the host's display name with the sub as
+  // secondary label. Same source of truth as the inbox row.
+  it("renders host name as primary with sub as secondary when the membership is on a connected sub", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    // Host project owns the alias and (in production) the AI knowledge.
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "host:forests",
+      projectName: "Forests",
+      projectAlias: "Beech & Butternut",
+      source: "salesforce",
+      isActive: true,
+    });
+    // Connected sub: alias and AI knowledge cleared per PR #388 invariants.
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "sub:beech",
+      projectName: "Saving American Beech",
+      projectAlias: null,
+      source: "salesforce",
+      isActive: true,
+      connectedToProjectId: "host:forests",
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:beech-only",
+      salesforceContactId: "sf:beech-only",
+      displayName: "Beech Only Volunteer",
+      primaryEmail: "beech-only@example.org",
+      primaryPhone: null,
+      projectId: "sub:beech",
+      projectName: "Saving American Beech",
+      projectAlias: null,
+      membershipId: "membership:beech-only",
+      membershipStatus: "active",
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "beech-only-thread-inbound",
+      contactId: "contact:beech-only",
+      occurredAt: "2026-05-08T10:00:00.000Z",
+      direction: "inbound",
+      subject: "Beech question",
+      snippet: "Where do I record measurements?",
+      bodyTextPreview: "Where do I record measurements?",
+    });
+
+    const detail = await getInboxDetail("contact:beech-only");
+
+    expect(detail?.conversationProject).toEqual({
+      projectId: "sub:beech",
+      projectName: "Beech & Butternut",
+      subProjectName: "Saving American Beech",
+      source: "membership",
+    });
+    expect(detail?.contact.activeProjects).toHaveLength(1);
+    expect(detail?.contact.activeProjects[0]).toMatchObject({
+      projectId: "sub:beech",
+      projectName: "Beech & Butternut",
+      subDisplayName: "Saving American Beech",
+      isConnectedSub: true,
     });
   });
 
@@ -3120,6 +3299,7 @@ describe("real inbox selectors", () => {
     expect(detail?.conversationProject).toEqual({
       projectId: "project:orcas",
       projectName: "Orcas",
+      subProjectName: null,
       source: "conversation",
     });
   });
