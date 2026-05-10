@@ -77,7 +77,7 @@ type InboxDetailProjection = Omit<
  * when the project rolls up into a host (per PR #384). Standalone or host
  * projects leave both `null` so the chip renders as a single-line label.
  */
-type ProjectMetadataEntry = {
+interface ProjectMetadataEntry {
   readonly projectName: string;
   readonly isActive: boolean;
   /**
@@ -92,7 +92,7 @@ type ProjectMetadataEntry = {
    * standalone or host projects.
    */
   readonly hostProjectName: string | null;
-};
+}
 
 type ProjectMetadataIndex = Readonly<Record<string, ProjectMetadataEntry>>;
 
@@ -915,18 +915,16 @@ export function resolvePrimaryProjectForContact(input: {
   if (primary !== null && primary.projectId !== null) {
     const metadata = input.projectMetadataById[primary.projectId];
     const ownName = metadata?.projectName ?? primary.projectId;
-    const isConnectedSub =
-      metadata?.connectedToProjectId !== undefined &&
-      metadata.connectedToProjectId !== null &&
-      metadata.hostProjectName !== null;
+    const hostName =
+      metadata?.connectedToProjectId == null
+        ? null
+        : metadata.hostProjectName;
 
     return {
       projectId: primary.projectId,
-      projectName: isConnectedSub
-        ? (metadata?.hostProjectName ?? ownName)
-        : ownName,
-      subProjectName: isConnectedSub ? ownName : null,
-      isConnectedSub,
+      projectName: hostName ?? ownName,
+      subProjectName: hostName === null ? null : ownName,
+      isConnectedSub: hostName !== null,
       source: "membership",
     };
   }
@@ -937,19 +935,17 @@ export function resolvePrimaryProjectForContact(input: {
     // For the conversation-fallback path the caller already resolved the
     // sub's own name (via the metadata index → `projectName`). Reuse that
     // as the chip's secondary line when the project is a connected sub.
-    const isConnectedSub =
-      metadata?.connectedToProjectId !== undefined &&
-      metadata.connectedToProjectId !== null &&
-      metadata.hostProjectName !== null;
     const ownName = input.conversationProjectFallback.projectName;
+    const hostName =
+      metadata?.connectedToProjectId == null
+        ? null
+        : metadata.hostProjectName;
 
     return {
       projectId: fallbackId,
-      projectName: isConnectedSub
-        ? (metadata?.hostProjectName ?? ownName)
-        : ownName,
-      subProjectName: isConnectedSub ? ownName : null,
-      isConnectedSub,
+      projectName: hostName ?? ownName,
+      subProjectName: hostName === null ? null : ownName,
+      isConnectedSub: hostName !== null,
       source: "conversation",
     };
   }
@@ -1046,19 +1042,17 @@ function buildProjectMembershipViewModel(
   // `metadata.hostProjectName`. Only flip into the two-line layout when
   // the host's name actually resolved — otherwise fall back to the sub's
   // own name as a single-line label so we never render an empty primary.
-  const isConnectedSub =
-    metadata?.connectedToProjectId !== undefined &&
-    metadata.connectedToProjectId !== null &&
-    metadata.hostProjectName !== null;
+  const hostName =
+    metadata?.connectedToProjectId == null
+      ? null
+      : metadata.hostProjectName;
 
   return {
     membershipId: membership.id,
     projectId: membership.projectId,
-    projectName: isConnectedSub
-      ? (metadata?.hostProjectName ?? ownName)
-      : ownName,
-    subDisplayName: isConnectedSub ? ownName : null,
-    isConnectedSub,
+    projectName: hostName ?? ownName,
+    subDisplayName: hostName === null ? null : ownName,
+    isConnectedSub: hostName !== null,
     projectIsActive: metadata?.isActive ?? false,
     status: mapProjectStatus(membership.status),
     statusLabel: mapProjectStatusLabel(membership.status),

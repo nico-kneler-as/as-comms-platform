@@ -1800,8 +1800,6 @@ function createStage1RepositoriesInternal(
           // the fallback observable when troubleshooting an AI Draft. The
           // synthesis worker emits stringified JSON for log scraping; mirror
           // that style here.
-          // eslint-disable-next-line no-console -- Stage1 repo layer has no
-          // injected logger; debug-level is the conventional place.
           console.debug(
             JSON.stringify({
               event: "ai_knowledge.fallback",
@@ -2659,8 +2657,6 @@ function createStage1RepositoriesInternal(
 
           if (hostRow !== undefined) {
             resolved = mapProjectDimensionRow(hostRow);
-            // eslint-disable-next-line no-console -- Stage1 repo layer has
-            // no injected logger; debug-level is the conventional place.
             console.debug(
               JSON.stringify({
                 event: "ai_knowledge.fallback",
