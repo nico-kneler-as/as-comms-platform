@@ -17,9 +17,11 @@ function hashContent(content: string): string {
 function humanizeNotionFetchError(error: NotionProviderError): string {
   switch (error.code) {
     case "not_found":
-      return "Page not found in Notion.";
     case "unauthorized":
-      return "Permission denied when reading the Notion page.";
+      // 404/403 from Notion almost always means the page hasn't been shared
+      // with our integration. Notion returns 404 for unshared pages even when
+      // they exist, so we coalesce both codes into the same actionable message.
+      return "Notion can't access this page. Open it in Notion and share it with the AS Comms integration (Share → Connections → add AS Comms).";
     case "timeout":
       return "Notion request timed out.";
     case "rate_limited":

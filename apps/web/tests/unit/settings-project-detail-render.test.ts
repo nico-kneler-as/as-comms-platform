@@ -10,6 +10,17 @@ vi.mock("next/link", () => ({
   }) => children
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    refresh: vi.fn(),
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn()
+  })
+}));
+
 vi.mock("lucide-react", () => ({
   AlertTriangle: () => null,
   ArrowLeft: () => null,
