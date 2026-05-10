@@ -56,4 +56,4 @@ capture resumes.
 - **Code paths:**
   - [`apps/worker/src/jobs/integration-health/email.ts:118`](../../apps/worker/src/jobs/integration-health/email.ts) — alert email; subject format is `[AS Comms] <service> integration degraded — <status>`; 1-hour cooldown per service
   - [`packages/contracts/src/settings-records.ts:22`](../../packages/contracts/src/settings-records.ts) — status values that trigger action
-- **Other runbooks:** [gmail-capture-stopped.md](./gmail-capture-stopped.md), [salesforce-capture-stopped.md](./salesforce-capture-stopped.md), [worker-queue-stuck.md](./worker-queue-stuck.md), [operator-reports-missing-email.md](./operator-reports-missing-email.md)
+- **Other runbooks:** [gmail-capture-stopped.md](./gmail-capture-stopped.md), [salesforce-capture-stopped.md](./salesforce-capture-stopped.md), [worker-queue-stuck.md](./worker-queue-stuck.md), [operator-reports-missing-email.md](./operator-reports-missing-email.md), [ai-knowledge-sync-failed.md](./ai-knowledge-sync-failed.md), [ai-draft-failed-or-malformed.md](./ai-draft-failed-or-malformed.md)

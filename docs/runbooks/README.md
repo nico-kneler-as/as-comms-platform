@@ -35,6 +35,7 @@ edit the markdown here and re-mirror.
 | Runbook | Symptom |
 |---|---|
 | [ai-draft-failed-or-malformed.md](./ai-draft-failed-or-malformed.md) | AI Draft button fails, returns blank, or returns nonsense |
+| [ai-knowledge-sync-failed.md](./ai-knowledge-sync-failed.md) | Settings → AI Knowledge re-sync errors, a source is `broken`, spinner stuck, or stale banner persists |
 
 ## Worker / infrastructure
 
