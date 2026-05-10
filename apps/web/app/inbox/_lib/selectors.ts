@@ -97,6 +97,22 @@ interface InboxListCacheRow {
   readonly lastInboundAlias: string | null;
   readonly lastNonAliasMessageAt: string | null;
   readonly isUnread: boolean;
+  /**
+   * Per-contact map of `projectId -> latest occurredAt` for that project's
+   * Salesforce lifecycle events. Powers the same "primary project by last
+   * activity" derivation the conversation header uses, so the inbox row's
+   * project chip cannot diverge from the header's first chip.
+   */
+  readonly lastOccurredAtByProjectId: ReadonlyMap<string, string>;
+  /**
+   * Per-contact fallback used when no active membership exists. Mirrors the
+   * conversation header's `conversationProject` (latest SF lifecycle event
+   * with a known projectId, mapped through projectMetadataById).
+   */
+  readonly conversationProjectFallback: {
+    readonly projectId: string;
+    readonly projectName: string;
+  } | null;
 }
 
 interface InboxListCacheData {
@@ -814,27 +830,100 @@ function mapVolunteerStage(
   }
 }
 
-export function resolvePrimaryMembership(input: {
+/**
+ * Result returned by {@link resolvePrimaryProjectForContact}. Mirrors the
+ * shape of `InboxDetailViewModel["conversationProject"]` (without the
+ * `source` discriminator) so callers can render either field with the same
+ * code path.
+ */
+export interface ResolvedPrimaryProject {
+  readonly projectId: string;
+  readonly projectName: string;
+  /**
+   * "membership" — derived from an active membership (preferred path).
+   * "conversation" — fell through to the latest SF lifecycle event's project
+   * because the contact has no active memberships.
+   */
+  readonly source: "membership" | "conversation";
+}
+
+/**
+ * Single source of truth for "which project does this contact's
+ * conversation belong to?". Both the conversation header (multi-chip
+ * region collapsed to its first chip) and the inbox row (single chip)
+ * call through here so the two surfaces cannot drift.
+ *
+ * Order of preference, mirroring `buildContactSummary` + the existing
+ * `conversationProject` derivation:
+ *   1. The first active membership when sorted by last activity (then
+ *      projectId asc, then membershipId asc — same comparator as
+ *      `sortMembershipsByLastActivity`). The `lastOccurredAtByProjectId`
+ *      index ties activity ordering to real Salesforce timeline events;
+ *      pass an empty map to fall back to membership createdAt order.
+ *   2. The provided `conversationProjectFallback`, normally the latest
+ *      timeline-projection SF event with a known projectId.
+ *   3. `null` when neither is available.
+ *
+ * This replaces the older `resolvePrimaryMembership` that keyed off
+ * `lastInboundAlias` + most-recent membership createdAt — that path
+ * produced rows whose chip disagreed with the header's chip whenever
+ * the alias mapped to a different project than the contact's active
+ * membership(s).
+ */
+export function resolvePrimaryProjectForContact(input: {
   readonly memberships: readonly ContactMembershipRecord[];
-  readonly lastInboundAlias: string | null;
-  readonly aliasToProjectId: ReadonlyMap<string, string>;
-}): ContactMembershipRecord | null {
-  if (input.lastInboundAlias !== null) {
-    const projectId = input.aliasToProjectId.get(input.lastInboundAlias);
-
-    if (projectId !== undefined) {
-      const match =
-        sortMembershipsByCreatedAt(input.memberships).find(
-          (membership) => membership.projectId === projectId,
-        ) ?? null;
-
-      if (match !== null) {
-        return match;
+  readonly projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
       }
-    }
+    >
+  >;
+  readonly lastOccurredAtByProjectId: ReadonlyMap<string, string>;
+  readonly conversationProjectFallback: {
+    readonly projectId: string;
+    readonly projectName: string;
+  } | null;
+}): ResolvedPrimaryProject | null {
+  // Match the header's `activeProjects` array exactly: drop past
+  // (inactive) projects, and drop memberships whose `projectId` is null
+  // because `buildProjectMembershipViewModel` returns null in that case
+  // and the header skips them. The candidate set must be identical, or
+  // the row's primary chip can race ahead of the header's first chip.
+  const activeMemberships = input.memberships.filter(
+    (membership) =>
+      !isPastProject(membership, input.projectMetadataById) &&
+      membership.projectId !== null,
+  );
+  const sortedActive = sortMembershipsByLastActivity(
+    activeMemberships,
+    input.lastOccurredAtByProjectId,
+  );
+  const primary = sortedActive[0] ?? null;
+
+  if (primary !== null && primary.projectId !== null) {
+    const projectName =
+      input.projectMetadataById[primary.projectId]?.projectName ??
+      primary.projectId;
+
+    return {
+      projectId: primary.projectId,
+      projectName,
+      source: "membership",
+    };
   }
 
-  return sortMembershipsByCreatedAt(input.memberships)[0] ?? null;
+  if (input.conversationProjectFallback !== null) {
+    return {
+      projectId: input.conversationProjectFallback.projectId,
+      projectName: input.conversationProjectFallback.projectName,
+      source: "conversation",
+    };
+  }
+
+  return null;
 }
 
 function mapProjectStatus(status: string | null): InboxProjectStatus {
@@ -902,17 +991,6 @@ function mapProjectStatusLabel(status: string | null): string {
     default:
       return "Applied";
   }
-}
-
-function resolveProjectName(
-  membership: ContactMembershipRecord,
-  projectNameById: Readonly<Record<string, string>>,
-): string | null {
-  if (membership.projectId === null) {
-    return null;
-  }
-
-  return projectNameById[membership.projectId] ?? membership.projectId;
 }
 
 function buildProjectMembershipViewModel(
@@ -2812,7 +2890,7 @@ function buildProjectLabelById(
 
 function countAdditionalActiveProjects(input: {
   readonly memberships: readonly ContactMembershipRecord[];
-  readonly primaryMembership: ContactMembershipRecord | null;
+  readonly primaryProjectId: string | null;
   readonly projectMetadataById: Readonly<
     Record<
       string,
@@ -2823,7 +2901,7 @@ function countAdditionalActiveProjects(input: {
     >
   >;
 }): number {
-  const primaryProjectId = input.primaryMembership?.projectId ?? null;
+  const primaryProjectId = input.primaryProjectId;
   const additionalActiveProjectIds = new Set<string>();
 
   for (const membership of input.memberships) {
@@ -3133,7 +3211,39 @@ async function readInboxListCacheData(input: {
   ]);
   const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
   const membershipsByContactId = groupMembershipsByContactId(memberships);
-  const projectMetadataById = await loadProjectMetadataById(memberships);
+  // Salesforce event context covers two row-level needs:
+  //   1. The per-project last-activity index, scoped to lifecycle events
+  //      (matches `buildProjectActivityIndex` on the detail side, which
+  //      only counts `family === "salesforce_event"` items).
+  //   2. The conversationProject fallback when no active membership
+  //      exists (matches the detail loader, which checks ANY canonical
+  //      event's source evidence — e.g. an outbound email sent FROM a
+  //      project alias gets a salesforceEventContext entry too).
+  // We load the broader set (all canonical source evidence ids, like the
+  // detail loader does) so both paths resolve identically.
+  const allCanonicalSourceEvidenceIds = uniqueStrings(
+    canonicalEvents.map((event) => event.sourceEvidenceId),
+  );
+  const salesforceEventContexts =
+    allCanonicalSourceEvidenceIds.length === 0
+      ? []
+      : await runtime.repositories.salesforceEventContext.listBySourceEvidenceIds(
+          allCanonicalSourceEvidenceIds,
+        );
+  const salesforceContextProjectIdBySourceEvidenceId = new Map(
+    salesforceEventContexts.map((context) => [
+      context.sourceEvidenceId,
+      context.projectId,
+    ]),
+  );
+  // Project metadata must cover both membership projects AND any project
+  // surfaced only by a Salesforce-context-linked event — otherwise the
+  // conversationProject fallback can't resolve a project name and the row
+  // chip silently disappears.
+  const projectMetadataById = await loadProjectMetadataById(
+    memberships,
+    salesforceEventContexts.map((context) => context.projectId),
+  );
   const projectLabelById = buildProjectLabelById(projectMetadataById);
   const aliasToProjectId = new Map<string, string>();
 
@@ -3190,14 +3300,16 @@ async function readInboxListCacheData(input: {
       memberships: rowMemberships,
       aliasesByProjectId,
     });
+    const rowCanonicalEvents =
+      canonicalEventsByContactId.get(inboxProjection.contactId) ?? [];
     const lastNonAliasMessageAt = findLastNonAliasMessageAt({
-      events: canonicalEventsByContactId.get(inboxProjection.contactId) ?? [],
+      events: rowCanonicalEvents,
       aliasSet,
       gmailDetailBySourceEvidenceId,
       fallbackLastInboundAt: inboxProjection.lastInboundAt,
     });
     const lastNonAliasOutboundAt = findLastNonAliasOutboundAt({
-      events: canonicalEventsByContactId.get(inboxProjection.contactId) ?? [],
+      events: rowCanonicalEvents,
       aliasSet,
       gmailDetailBySourceEvidenceId,
     });
@@ -3208,6 +3320,53 @@ async function readInboxListCacheData(input: {
       inboxProjection.bucket === "New" ||
       (lastNonAliasOutboundAt !== null &&
         (latestReadAt === null || lastNonAliasOutboundAt > latestReadAt));
+    // Build the per-contact project-activity index, restricted to
+    // lifecycle canonical events. Mirrors `buildProjectActivityIndex` in
+    // the detail loader, which keys off TimelineItem.family ===
+    // "salesforce_event" (lifecycle.* event types map to that family —
+    // see packages/domain/src/timeline.ts).
+    const lastOccurredAtByProjectId = new Map<string, string>();
+    // The conversationProject fallback follows the detail loader's
+    // broader rule: ANY canonical event whose source evidence has a
+    // projectId in salesforce_event_context counts (e.g. outbound emails
+    // sent from a project alias). We track the newest such event.
+    let fallbackProjectId: string | null = null;
+    let fallbackProjectOccurredAt: string | null = null;
+    for (const event of rowCanonicalEvents) {
+      const projectId =
+        salesforceContextProjectIdBySourceEvidenceId.get(
+          event.sourceEvidenceId,
+        ) ?? null;
+
+      if (projectId === null) {
+        continue;
+      }
+
+      if (event.eventType.startsWith("lifecycle.")) {
+        const previous = lastOccurredAtByProjectId.get(projectId) ?? null;
+        if (previous === null || event.occurredAt > previous) {
+          lastOccurredAtByProjectId.set(projectId, event.occurredAt);
+        }
+      }
+
+      if (
+        fallbackProjectOccurredAt === null ||
+        event.occurredAt > fallbackProjectOccurredAt
+      ) {
+        fallbackProjectOccurredAt = event.occurredAt;
+        fallbackProjectId = projectId;
+      }
+    }
+    const fallbackProjectName =
+      fallbackProjectId === null
+        ? null
+        : (projectMetadataById[fallbackProjectId]?.projectName ?? null);
+    const conversationProjectFallback =
+      fallbackProjectId !== null &&
+      fallbackProjectName !== null &&
+      fallbackProjectName.length > 0
+        ? { projectId: fallbackProjectId, projectName: fallbackProjectName }
+        : null;
 
     return [
       {
@@ -3222,6 +3381,8 @@ async function readInboxListCacheData(input: {
           lastInboundAliasByContactId.get(inboxProjection.contactId) ?? null,
         lastNonAliasMessageAt,
         isUnread,
+        lastOccurredAtByProjectId,
+        conversationProjectFallback,
       } satisfies InboxListCacheRow,
     ];
   });
@@ -3882,10 +4043,14 @@ function toListItemViewModel(
   referenceNowIso: string,
 ): InboxListItemViewModel {
   const sortedMemberships = sortMemberships(row.memberships);
-  const primaryMembership = resolvePrimaryMembership({
+  // Share derivation with the conversation header so the row chip and the
+  // header chip cannot disagree for the same contact. See
+  // {@link resolvePrimaryProjectForContact}.
+  const primaryProject = resolvePrimaryProjectForContact({
     memberships: row.memberships,
-    lastInboundAlias: row.lastInboundAlias,
-    aliasToProjectId: cacheData.aliasToProjectId,
+    projectMetadataById: cacheData.projectMetadataById,
+    lastOccurredAtByProjectId: row.lastOccurredAtByProjectId,
+    conversationProjectFallback: row.conversationProjectFallback,
   });
   const preview = resolvePreferredMessagePreview({
     explicitSubjects: [row.latestMessagePreview?.subject],
@@ -3911,13 +4076,10 @@ function toListItemViewModel(
       sanitizePreviewText(row.inboxProjection.snippet) ||
       fallbackLatestSubject(row.inboxProjection.lastEventType),
     latestChannel: mapChannel(row.inboxProjection.lastEventType),
-    projectLabel:
-      primaryMembership === null
-        ? null
-        : resolveProjectName(primaryMembership, cacheData.projectLabelById),
+    projectLabel: primaryProject?.projectName ?? null,
     additionalActiveProjectsCount: countAdditionalActiveProjects({
       memberships: row.memberships,
-      primaryMembership,
+      primaryProjectId: primaryProject?.projectId ?? null,
       projectMetadataById: cacheData.projectMetadataById,
     }),
     volunteerStage: mapVolunteerStage(sortedMemberships),
@@ -4022,8 +4184,15 @@ function buildContactSummary(input: {
   };
 }
 
-function buildConversationProject(input: {
-  readonly contact: InboxContactSummaryViewModel;
+/**
+ * Walks the contact's timeline items (newest first) and returns the most
+ * recent SF lifecycle event with a known projectId + project name. This is
+ * the "conversation project" fallback used when the contact has no active
+ * memberships — the same logic the inbox row uses (see
+ * `readInboxListCacheData`), just driven off a `TimelineItem[]` instead of
+ * raw canonical events.
+ */
+function deriveConversationProjectFallbackFromTimeline(input: {
   readonly timelineItems: readonly TimelineItem[];
   readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
   readonly salesforceEventContextBySourceEvidenceId: ReadonlyMap<
@@ -4041,17 +4210,7 @@ function buildConversationProject(input: {
       }
     >
   >;
-}): InboxDetailViewModel["conversationProject"] {
-  const membershipProject = input.contact.activeProjects[0];
-
-  if (membershipProject !== undefined) {
-    return {
-      projectId: membershipProject.projectId,
-      projectName: membershipProject.projectName,
-      source: "membership",
-    };
-  }
-
+}): { readonly projectId: string; readonly projectName: string } | null {
   for (const item of [...input.timelineItems].sort((left, right) =>
     right.occurredAt.localeCompare(left.occurredAt),
   )) {
@@ -4077,14 +4236,47 @@ function buildConversationProject(input: {
       continue;
     }
 
-    return {
-      projectId,
-      projectName,
-      source: "conversation",
-    };
+    return { projectId, projectName };
   }
 
   return null;
+}
+
+function buildConversationProject(input: {
+  readonly memberships: readonly ContactMembershipRecord[];
+  readonly timelineItems: readonly TimelineItem[];
+  readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
+  readonly salesforceEventContextBySourceEvidenceId: ReadonlyMap<
+    string,
+    {
+      readonly projectId: string | null;
+    }
+  >;
+  readonly projectMetadataById: Readonly<
+    Record<
+      string,
+      {
+        readonly projectName: string;
+        readonly isActive: boolean;
+      }
+    >
+  >;
+}): InboxDetailViewModel["conversationProject"] {
+  // Routes through the shared helper so the header's primary project chip
+  // cannot diverge from the inbox row's chip for the same contact.
+  return resolvePrimaryProjectForContact({
+    memberships: input.memberships,
+    projectMetadataById: input.projectMetadataById,
+    lastOccurredAtByProjectId: buildProjectActivityIndex(input.timelineItems)
+      .lastOccurredAtByProjectId,
+    conversationProjectFallback: deriveConversationProjectFallbackFromTimeline({
+      timelineItems: input.timelineItems,
+      canonicalEventById: input.canonicalEventById,
+      salesforceEventContextBySourceEvidenceId:
+        input.salesforceEventContextBySourceEvidenceId,
+      projectMetadataById: input.projectMetadataById,
+    }),
+  });
 }
 
 function buildInboxDetailSummaryViewModel(input: {
@@ -4106,7 +4298,7 @@ function buildInboxDetailSummaryViewModel(input: {
     contact: contactSummary,
     projectionAvailable: input.cachedData.projectionAvailable,
     conversationProject: buildConversationProject({
-      contact: contactSummary,
+      memberships: input.cachedData.memberships,
       timelineItems: input.cachedData.activityTimelineItems,
       canonicalEventById: input.cachedData.canonicalEventById,
       salesforceEventContextBySourceEvidenceId:

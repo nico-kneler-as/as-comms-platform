@@ -70,7 +70,7 @@ import {
   getInboxTimelinePage,
   getInboxWelcomeWorkload,
   groupInboxTimelineSystemMessages,
-  resolvePrimaryMembership,
+  resolvePrimaryProjectForContact,
   sortMembershipsByCreatedAt,
   stripSignature,
 } from "../../app/inbox/_lib/selectors";
@@ -672,7 +672,9 @@ describe("sortMembershipsByCreatedAt", () => {
   });
 });
 
-describe("resolvePrimaryMembership", () => {
+describe("resolvePrimaryProjectForContact", () => {
+  // Two active memberships across two projects; identical metadata for
+  // both so behavior depends only on the activity index / fallback.
   const memberships = [
     buildMembership({
       id: "membership:older",
@@ -687,51 +689,148 @@ describe("resolvePrimaryMembership", () => {
       status: "active",
     }),
   ];
+  const projectMetadataById = {
+    "project:illegal-timber": {
+      projectName: "Illegal Timber",
+      isActive: true,
+    },
+    "project:passive-acoustic": {
+      projectName: "Passive Acoustic",
+      isActive: true,
+    },
+  } as const;
 
-  it("returns the membership whose project matches the last-inbound alias", () => {
-    const primaryMembership = resolvePrimaryMembership({
+  it("picks the active membership with the most recent project activity", () => {
+    const primary = resolvePrimaryProjectForContact({
       memberships,
-      lastInboundAlias: "pnwbio@adventurescientists.org",
-      aliasToProjectId: new Map([
-        ["pnwbio@adventurescientists.org", "project:passive-acoustic"],
+      projectMetadataById,
+      lastOccurredAtByProjectId: new Map([
+        ["project:illegal-timber", "2026-04-20T10:00:00.000Z"],
+        ["project:passive-acoustic", "2026-04-10T10:00:00.000Z"],
       ]),
+      conversationProjectFallback: null,
     });
 
-    expect(primaryMembership?.id).toBe("membership:newest");
+    expect(primary?.projectId).toBe("project:illegal-timber");
+    expect(primary?.source).toBe("membership");
   });
 
-  it("falls back to newest-by-createdAt when alias maps to a different project", () => {
-    const primaryMembership = resolvePrimaryMembership({
+  // Regression for the inbox-row-vs-header divergence: a contact whose
+  // lastInboundAlias maps to project B must NOT shadow active project A
+  // on the inbox row chip — the header always shows A first, and the row
+  // must agree.
+  it("ignores lastInboundAlias and prefers the only active membership (matches conversation header)", () => {
+    const singleActive = [
+      buildMembership({
+        id: "membership:beech-butternut",
+        projectId: "project:beech-butternut",
+        createdAt: "2026-04-01T10:00:00.000Z",
+        status: "active",
+      }),
+    ];
+    const metadata = {
+      "project:beech-butternut": {
+        projectName: "Beech & Butternut",
+        isActive: true,
+      },
+    } as const;
+    const primary = resolvePrimaryProjectForContact({
+      memberships: singleActive,
+      projectMetadataById: metadata,
+      // The activity index is empty: there are no SF lifecycle events for
+      // this contact yet (the inbound message that defined
+      // lastInboundAlias is a Gmail event, not SF lifecycle). The helper
+      // must still pick the single active membership rather than falling
+      // through to the alias-derived projectId.
+      lastOccurredAtByProjectId: new Map(),
+      conversationProjectFallback: null,
+    });
+
+    expect(primary?.projectId).toBe("project:beech-butternut");
+    expect(primary?.projectName).toBe("Beech & Butternut");
+    expect(primary?.source).toBe("membership");
+  });
+
+  it("falls back to createdAt order when no activity index is provided", () => {
+    const primary = resolvePrimaryProjectForContact({
       memberships,
-      lastInboundAlias: "whitebark@adventurescientists.org",
-      aliasToProjectId: new Map([
-        ["whitebark@adventurescientists.org", "project:whitebark-pine"],
+      projectMetadataById,
+      lastOccurredAtByProjectId: new Map(),
+      conversationProjectFallback: null,
+    });
+
+    expect(primary?.projectId).toBe("project:passive-acoustic");
+  });
+
+  it("skips memberships whose project is inactive", () => {
+    const inactiveMetadata = {
+      "project:illegal-timber": {
+        projectName: "Illegal Timber",
+        isActive: false,
+      },
+      "project:passive-acoustic": {
+        projectName: "Passive Acoustic",
+        isActive: true,
+      },
+    } as const;
+    const primary = resolvePrimaryProjectForContact({
+      memberships,
+      projectMetadataById: inactiveMetadata,
+      lastOccurredAtByProjectId: new Map([
+        ["project:illegal-timber", "2026-04-30T10:00:00.000Z"],
       ]),
+      conversationProjectFallback: null,
     });
 
-    expect(primaryMembership?.id).toBe("membership:newest");
+    expect(primary?.projectId).toBe("project:passive-acoustic");
   });
 
-  it("falls back to newest-by-createdAt when no inbound alias exists", () => {
-    const primaryMembership = resolvePrimaryMembership({
-      memberships,
-      lastInboundAlias: null,
-      aliasToProjectId: new Map(),
+  // Mirrors the conversation header's `conversationProject` fallback
+  // (latest SF lifecycle event with a known projectId). Without this
+  // path, contacts who have only past memberships would render an empty
+  // chip on the row even though the header surfaces the project.
+  it("falls back to conversationProject when no active membership exists", () => {
+    const primary = resolvePrimaryProjectForContact({
+      memberships: [],
+      projectMetadataById,
+      lastOccurredAtByProjectId: new Map(),
+      conversationProjectFallback: {
+        projectId: "project:illegal-timber",
+        projectName: "Illegal Timber",
+      },
     });
 
-    expect(primaryMembership?.id).toBe("membership:newest");
+    expect(primary?.projectId).toBe("project:illegal-timber");
+    expect(primary?.source).toBe("conversation");
   });
 
-  it("returns null when memberships is empty", () => {
+  it("returns null when there are no memberships and no conversation fallback", () => {
     expect(
-      resolvePrimaryMembership({
+      resolvePrimaryProjectForContact({
         memberships: [],
-        lastInboundAlias: "pnwbio@adventurescientists.org",
-        aliasToProjectId: new Map([
-          ["pnwbio@adventurescientists.org", "project:passive-acoustic"],
-        ]),
+        projectMetadataById,
+        lastOccurredAtByProjectId: new Map(),
+        conversationProjectFallback: null,
       }),
     ).toBeNull();
+  });
+
+  it("returns null when memberships have null projectId and no fallback", () => {
+    const primary = resolvePrimaryProjectForContact({
+      memberships: [
+        buildMembership({
+          id: "membership:no-project",
+          projectId: null,
+          createdAt: "2026-04-01T10:00:00.000Z",
+          status: "active",
+        }),
+      ],
+      projectMetadataById,
+      lastOccurredAtByProjectId: new Map(),
+      conversationProjectFallback: null,
+    });
+
+    expect(primary).toBeNull();
   });
 });
 
@@ -1497,24 +1596,20 @@ describe("real inbox selectors", () => {
     ).toBe("Amazon Basin");
   });
 
-  it("uses the last inbound alias project for inbox row tags before rank sorting", async () => {
+  // Regression for the row-vs-header divergence: when a contact has an
+  // active membership in project A AND a lastInboundAlias mapping to a
+  // *different* project B, the row's chip used to show B (alias-derived)
+  // while the conversation header showed A (the only active membership).
+  // After this fix, both surfaces share `resolvePrimaryProjectForContact`
+  // and the row's chip equals the header's first chip. This test verifies
+  // the contact:steve-herman fixture (one active project, inbound alias
+  // mapped to a *third* unrelated project) renders the same label on the
+  // inbox row as on the conversation header.
+  it("matches conversation header when an inbound alias points to a non-membership project", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
 
-    await seedInboxContact(runtime.context, {
-      contactId: "contact:steve-herman",
-      salesforceContactId: "003-steve",
-      displayName: "Steve Herman",
-      primaryEmail: "steve@example.org",
-      primaryPhone: null,
-      projectId: "project:illegal-timber",
-      projectName: "Illegal Timber Tracking",
-      projectAlias: "Illegal Timber",
-      membershipId: "membership:steve:illegal-timber",
-      membershipStatus: "lead",
-      membershipCreatedAt: "2026-04-01T10:00:00.000Z",
-    });
     await seedInboxContact(runtime.context, {
       contactId: "contact:steve-herman",
       salesforceContactId: "003-steve",
@@ -1528,24 +1623,41 @@ describe("real inbox selectors", () => {
       membershipStatus: "active",
       membershipCreatedAt: "2026-04-03T10:00:00.000Z",
     });
+    // A second alias mapped to a project Steve has NO membership in
+    // (the bug scenario: lastInboundAlias points to project C, but
+    // Steve only belongs to project A).
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:beech-butternut",
+      projectName: "Beech & Butternut",
+      projectAlias: "Beech & Butternut",
+      source: "salesforce",
+      isActive: true,
+    });
     await runtime.context.settings.aliases.create({
-      id: "alias:pnwbio",
-      alias: "pnwbio@adventurescientists.org",
+      id: "alias:beechbutternut",
+      alias: "beechbutternut@adventurescientists.org",
       signature: "",
-      projectId: "project:passive-acoustic",
+      projectId: "project:beech-butternut",
       createdAt: new Date("2026-04-20T12:00:00.000Z"),
       updatedAt: new Date("2026-04-20T12:00:00.000Z"),
       createdBy: null,
       updatedBy: null,
     });
     const latest = await seedInboxEmailEvent(runtime.context, {
-      id: "steve-inbound-1",
+      id: "steve-inbound-cross-alias",
       contactId: "contact:steve-herman",
       occurredAt: "2026-04-20T12:30:00.000Z",
       direction: "inbound",
       subject: "Re: Field logistics",
-      snippet: "Replying from the PNW project alias.",
-      projectInboxAlias: "pnwbio@adventurescientists.org",
+      // The CRITICAL bit: lastInboundAlias resolves to a project Steve
+      // is not a member of. Old `resolvePrimaryMembership` would key off
+      // this alias, fall through (no matching membership), then pick the
+      // most recent membership by createdAt — which happened to coincide
+      // with the active one in many cases but not always. The new helper
+      // ignores the alias entirely and goes straight to the active
+      // membership set, matching the header.
+      snippet: "Replying via the wrong project alias.",
+      projectInboxAlias: "beechbutternut@adventurescientists.org",
     });
     await seedInboxProjection(runtime.context, {
       contactId: "contact:steve-herman",
@@ -1555,17 +1667,100 @@ describe("real inbox selectors", () => {
       lastInboundAt: "2026-04-20T12:30:00.000Z",
       lastOutboundAt: null,
       lastActivityAt: "2026-04-20T12:30:00.000Z",
-      snippet: "Replying from the PNW project alias.",
+      snippet: "Replying via the wrong project alias.",
       lastCanonicalEventId: latest.canonicalEventId,
       lastEventType: "communication.email.inbound",
     });
 
     const list = await getInboxList();
+    const detail = await getInboxDetail("contact:steve-herman");
 
-    expect(
-      list.items.find((item) => item.contactId === "contact:steve-herman")
-        ?.projectLabel,
-    ).toBe("Passive Acoustic");
+    const rowLabel = list.items.find(
+      (item) => item.contactId === "contact:steve-herman",
+    )?.projectLabel;
+    // The conversation header's primary chip is the first entry in
+    // `activeProjects` (same array `inbox-detail.tsx` renders), with the
+    // `conversationProject` fallback when that array is empty.
+    const headerLabel =
+      detail?.contact.activeProjects[0]?.projectName ??
+      detail?.conversationProject?.projectName ??
+      null;
+
+    expect(rowLabel).toBe("Passive Acoustic");
+    expect(rowLabel).toBe(headerLabel);
+  });
+
+  // Second leg of the row-vs-header invariant: contact has no active
+  // memberships, only project-tied Salesforce events. The header falls
+  // back to `conversationProject`; the row must too.
+  it("falls back to the conversation project when there is no active membership (matches header)", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:past-orcas",
+      projectName: "Past Orcas Listening",
+      projectAlias: "Past Orcas",
+      source: "salesforce",
+      isActive: true,
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:no-active-membership",
+      salesforceContactId: "003-no-active",
+      displayName: "Past Volunteer",
+      primaryEmail: "past@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "no-active-outbound",
+      contactId: "contact:no-active-membership",
+      occurredAt: "2026-04-19T16:00:00.000Z",
+      direction: "outbound",
+      subject: "Project alias send",
+      snippet: "Sent from the past-orcas alias.",
+      bodyTextPreview: "Sent from the past-orcas alias.",
+      fromHeader: "Past Orcas <past-orcas@adventurescientists.org>",
+      toHeader: "Past Volunteer <past@example.org>",
+      projectInboxAlias: "past-orcas@adventurescientists.org",
+    });
+    await runtime.context.repositories.salesforceEventContext.upsert({
+      sourceEvidenceId: "source:no-active-outbound",
+      salesforceContactId: null,
+      projectId: "project:past-orcas",
+      expeditionId: null,
+      sourceField: null,
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:no-active-membership",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-04-19T16:00:00.000Z",
+      lastActivityAt: "2026-04-19T16:00:00.000Z",
+      snippet: "Sent from the past-orcas alias.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const list = await getInboxList("sent");
+    const detail = await getInboxDetail("contact:no-active-membership");
+
+    const rowLabel = list.items.find(
+      (item) => item.contactId === "contact:no-active-membership",
+    )?.projectLabel;
+    const headerLabel =
+      detail?.contact.activeProjects[0]?.projectName ??
+      detail?.conversationProject?.projectName ??
+      null;
+
+    expect(detail?.contact.activeProjects).toHaveLength(0);
+    // loadProjectMetadataById prefers projectAlias over projectName, same
+    // contract the existing detail-side test ("falls back to a
+    // conversation-derived project ...") relies on.
+    expect(rowLabel).toBe("Past Orcas");
+    expect(rowLabel).toBe(headerLabel);
   });
 
   it("counts only other active memberships for the inbox row +N indicator", async () => {
@@ -1648,8 +1843,14 @@ describe("real inbox selectors", () => {
       (item) => item.contactId === "contact:matt-bromley",
     );
 
+    // Three active memberships, no SF lifecycle events → all sort by
+    // createdAt desc (no per-project activity index). The newest
+    // createdAt (`2026-04-03`, Wild and Scenic Rivers) becomes the
+    // primary chip — same value the conversation header surfaces as
+    // `activeProjects[0]`. Two other active memberships remain, so the
+    // +N indicator reads 2.
     expect(matt).toMatchObject({
-      projectLabel: "Whitebark Pine",
+      projectLabel: "Wild and Scenic Rivers",
       additionalActiveProjectsCount: 2,
     });
   });
@@ -1905,12 +2106,18 @@ describe("real inbox selectors", () => {
       (item) => item.contactId === "contact:matt-filter",
     );
 
+    // Three active memberships, no SF lifecycle events → sort by
+    // createdAt desc puts Wild and Scenic Rivers (2026-04-03) first;
+    // both filtered views show that same primary chip plus the +2
+    // indicator for the remaining active memberships. The chip stays
+    // identical no matter which active-membership filter the operator
+    // applies, matching the conversation header.
     expect(mattInPnw).toMatchObject({
-      projectLabel: "Whitebark Pine",
+      projectLabel: "Wild and Scenic Rivers",
       additionalActiveProjectsCount: 2,
     });
     expect(mattInWhitebark).toMatchObject({
-      projectLabel: "Whitebark Pine",
+      projectLabel: "Wild and Scenic Rivers",
       additionalActiveProjectsCount: 2,
     });
   });
