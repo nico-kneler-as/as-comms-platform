@@ -3215,20 +3215,29 @@ async function readInboxListCacheData(input: {
     ...primaryProjectionPage.rows,
     ...attentionScanProjectionPage.rows,
   ]);
+  // Connected sub-projects roll up into their host (see PR #384's
+  // host-aware predicate). The host is the only entry point — exclude subs
+  // so the dropdown doesn't list them as their own filter option.
   const activeProjects: readonly InboxActiveProjectOption[] =
-    activeProjectRecords.map((record) => ({
-      id: record.projectId,
-      name:
-        record.projectAlias?.trim().length &&
-        record.projectAlias.trim().length > 0
-          ? record.projectAlias.trim()
-          : record.projectName,
-      alias:
-        record.projectAlias?.trim().length &&
-        record.projectAlias.trim().length > 0
-          ? record.projectAlias.trim()
-          : null,
-    }));
+    activeProjectRecords
+      .filter(
+        (record) =>
+          record.connectedToProjectId === null ||
+          record.connectedToProjectId === undefined,
+      )
+      .map((record) => ({
+        id: record.projectId,
+        name:
+          record.projectAlias?.trim().length &&
+          record.projectAlias.trim().length > 0
+            ? record.projectAlias.trim()
+            : record.projectName,
+        alias:
+          record.projectAlias?.trim().length &&
+          record.projectAlias.trim().length > 0
+            ? record.projectAlias.trim()
+            : null,
+      }));
   const candidateContactIds = uniqueStrings(
     matchedProjections.map((projection) => projection.contactId),
   );

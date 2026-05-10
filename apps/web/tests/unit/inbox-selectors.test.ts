@@ -894,6 +894,34 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("excludes connected sub-projects from the inbox project filter options", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:butternut",
+      projectName: "Restoring Butternut Tree Health",
+      projectAlias: "forests",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:beech",
+      projectName: "Saving American Beech",
+      projectAlias: null,
+      connectedToProjectId: "project:butternut",
+      source: "salesforce",
+      isActive: true,
+    });
+
+    const list = await getInboxList();
+    const ids = list.activeProjects.map((option) => option.id);
+
+    expect(ids).toContain("project:butternut");
+    expect(ids).not.toContain("project:beech");
+  });
+
   it("keeps one-to-one SMS visible in the timeline regardless of SMS compose availability", async () => {
     const originalSmsEnabled = process.env.SMS_ENABLED;
     process.env.SMS_ENABLED = "false";
