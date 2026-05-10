@@ -14,6 +14,14 @@ export interface AnthropicGenerateDraftInput {
   }[];
   readonly maxTokens: number;
   readonly temperature: number;
+  /**
+   * Per-call abort timeout in milliseconds. Defaults to 25s — appropriate
+   * for inbox AI drafts where the operator is actively waiting. Background
+   * jobs that bundle many source documents and request large completions
+   * (e.g. AI Knowledge synthesis at maxTokens=16_000) should pass a longer
+   * value, typically 180_000 (3 minutes).
+   */
+  readonly timeoutMs?: number;
 }
 
 export interface AnthropicGenerateDraftUsage {
@@ -208,7 +216,9 @@ export async function generateDraft(
           temperature: input.temperature,
         },
         {
-          signal: AbortSignal.timeout(DEFAULT_ANTHROPIC_TIMEOUT_MS),
+          signal: AbortSignal.timeout(
+            input.timeoutMs ?? DEFAULT_ANTHROPIC_TIMEOUT_MS,
+          ),
         },
       );
 
