@@ -36,6 +36,7 @@ import {
   syncOneAiKnowledgeSourceAction,
   triggerProjectKnowledgeSynthesisAction,
   updateAiKnowledgeSourceAction,
+  updateAiAutoSyncScheduleAction,
   updateOperatingContextAction
 } from "../actions";
 
@@ -120,6 +121,7 @@ export function ProjectAiKnowledgeSection({
   isAdmin,
   initialSources,
   initialOperatingContext,
+  initialAutoSyncSchedule,
   aiOptimizedSynthesizedAt,
   aiKnowledgeSynthesisStale
 }: {
@@ -127,6 +129,7 @@ export function ProjectAiKnowledgeSection({
   readonly isAdmin: boolean;
   readonly initialSources: readonly AiKnowledgeSource[];
   readonly initialOperatingContext: string;
+  readonly initialAutoSyncSchedule: "never" | "daily" | "weekly";
   readonly aiOptimizedSynthesizedAt: string | null;
   readonly aiKnowledgeSynthesisStale: boolean;
 }) {
@@ -143,10 +146,12 @@ export function ProjectAiKnowledgeSection({
   const [addOpen, setAddOpen] = useState(false);
   const [addUrl, setAddUrl] = useState("");
   const [addLabel, setAddLabel] = useState("");
+  const [autoSyncSchedule, setAutoSyncSchedule] = useState(initialAutoSyncSchedule);
   const [pendingSourceId, setPendingSourceId] = useState<string | null>(null);
   const [rowPending, startRowTransition] = useTransition();
   const [saveContextPending, startSaveContextTransition] = useTransition();
   const [syncAllPending, startSyncAllTransition] = useTransition();
+  const [schedulePending, startScheduleTransition] = useTransition();
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
     setFeedback({ kind, message });
@@ -183,6 +188,27 @@ export function ProjectAiKnowledgeSection({
       setOperatingContext(result.data.content);
       setSavedOperatingContext(result.data.content);
       announce("Saved the operating context.");
+    });
+  }
+
+  function handleAutoSyncScheduleChange(
+    nextSchedule: "never" | "daily" | "weekly",
+  ) {
+    const previousSchedule = autoSyncSchedule;
+    setAutoSyncSchedule(nextSchedule);
+    startScheduleTransition(async () => {
+      const result = await updateAiAutoSyncScheduleAction(
+        projectId,
+        nextSchedule,
+      );
+      if (!result.ok) {
+        setAutoSyncSchedule(previousSchedule);
+        announce(result.message, "error");
+        return;
+      }
+
+      setAutoSyncSchedule(result.data.schedule);
+      announce("Updated the auto-sync schedule.");
     });
   }
 
@@ -566,6 +592,35 @@ export function ProjectAiKnowledgeSection({
             </Button>
           </div>
         ) : null}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-900">Auto-sync schedule</p>
+            <p className={cn(TYPE.caption, "mt-1 text-slate-600")}>
+              Hourly polling checks whether this project is due for a daily or
+              weekly refresh, then skips synthesis when source hashes are unchanged.
+            </p>
+          </div>
+          <label className="flex flex-col gap-1.5 text-[12px] text-slate-600">
+            <span className={TYPE.label}>Schedule</span>
+            <select
+              value={autoSyncSchedule}
+              onChange={(event) => {
+                handleAutoSyncScheduleChange(
+                  event.target.value as "never" | "daily" | "weekly",
+                );
+              }}
+              disabled={!isAdmin || schedulePending}
+              className="min-w-[160px] rounded-md border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-slate-800 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:opacity-60"
+            >
+              <option value="never">Never</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">

@@ -2198,6 +2198,16 @@ function createStage1RepositoriesInternal(
           .where(eq(projectDimensions.projectId, projectId));
       },
 
+      async setAiAutoSyncSchedule(projectId, schedule) {
+        await db
+          .update(projectDimensions)
+          .set({
+            aiAutoSyncSchedule: schedule,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectDimensions.projectId, projectId));
+      },
+
       async setSynthesisMetadata(projectId, input) {
         await db
           .update(projectDimensions)
@@ -2242,6 +2252,7 @@ function createStage1RepositoriesInternal(
                 values.aiOptimizedInputHash === undefined
                   ? projectDimensions.aiOptimizedInputHash
                   : values.aiOptimizedInputHash,
+              aiAutoSyncSchedule: projectDimensions.aiAutoSyncSchedule,
               source: values.source,
               updatedAt: new Date(),
             },

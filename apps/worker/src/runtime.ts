@@ -46,6 +46,7 @@ import {
   createStage1WorkerOrchestrationService,
   mailchimpTransitionSchedulerJobName,
   type MailchimpCapturePort,
+  pollAiKnowledgeAutoSyncJobName,
   pollGmailLiveJobName,
   pollIntegrationHealthJobName,
   pollSalesforceLiveJobName,
@@ -138,6 +139,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `*/${String(gmailMinutes)} * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
     `*/${String(salesforceMinutes)} * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
     `0 * * * * ${mailchimpTransitionSchedulerJobName} ?id=mailchimp-transition-scheduler&max=1`,
+    `0 * * * * ${pollAiKnowledgeAutoSyncJobName} ?id=ai-knowledge-auto-sync-poll&max=1`,
     `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
     `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
     `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
@@ -502,6 +504,9 @@ export async function createStage1WorkerRuntimeServices(
         db: connection.db,
         integrationHealth: settings.integrationHealth,
         notion: notionKnowledgeSync,
+      },
+      aiKnowledgeAutoSync: {
+        projectDimensions: repositories.projectDimensions,
       },
       ...(synthesizeProjectKnowledge === undefined
         ? {}

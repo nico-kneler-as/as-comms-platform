@@ -269,6 +269,10 @@ export interface ProjectDimensionRepository {
     sources: readonly AiKnowledgeSource[],
   ): Promise<void>;
   updateOperatingContext(projectId: string, context: string): Promise<void>;
+  setAiAutoSyncSchedule(
+    projectId: string,
+    schedule: "never" | "daily" | "weekly",
+  ): Promise<void>;
   setSynthesisMetadata(
     projectId: string,
     input: {
