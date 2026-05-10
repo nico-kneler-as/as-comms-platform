@@ -14,7 +14,6 @@ export interface ResolvedMessagePreview {
 
 const PREVIEW_NOISE_THRESHOLD = 0.3;
 const PREVIEW_NOISE_MIN_LENGTH = 32;
-const SHORT_PREVIEW_NOISE_MIN_SUSPICIOUS = 3;
 const REPLACEMENT_CHARACTER = "�";
 const WORD_JOINED_CONTROL_PATTERN = /([\p{L}\p{N}])[\u0018\u0019]([\p{L}\p{N}])/gu;
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
@@ -235,10 +234,7 @@ function isLikelyPreviewNoise(value: string): boolean {
   }
 
   if (total < PREVIEW_NOISE_MIN_LENGTH) {
-    return (
-      suspicious >= SHORT_PREVIEW_NOISE_MIN_SUSPICIOUS &&
-      ratio >= PREVIEW_NOISE_THRESHOLD
-    );
+    return suspicious >= 1;
   }
 
   return ratio >= PREVIEW_NOISE_THRESHOLD;
@@ -618,6 +614,13 @@ export function resolvePreferredMessagePreview(input: {
 
   for (const rawCandidate of input.rawCandidates) {
     if (typeof rawCandidate !== "string" || rawCandidate.trim().length === 0) {
+      continue;
+    }
+
+    // Run the noise check on the raw candidate: sanitizePreviewText replaces
+    // U+FFFD with newlines, so a post-sanitize check can't see the suspicious
+    // chars on bodies like "v+�)^�د" (proton.me PGP-signed leak).
+    if (isLikelyPreviewNoise(rawCandidate)) {
       continue;
     }
 
