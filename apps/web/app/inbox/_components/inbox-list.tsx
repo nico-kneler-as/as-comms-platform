@@ -554,7 +554,7 @@ export function InboxList({
   const searchResultCount =
     searchResult === null
       ? 0
-      : searchResult.contactMatches.length + searchResult.bodyMatches.length;
+      : searchResult.volunteers.length + searchResult.contacts.length;
   const activeProjects = currentList.activeProjects;
   const hasActiveFilters =
     activeFilter !== "inbox" || selectedProjectId !== null;
@@ -960,7 +960,7 @@ function SearchEmptyState({
       description={
         <>
           Nothing matches &ldquo;{query}&rdquo;. Try a different name, email,
-          phone number, or message snippet.
+          or phone number.
         </>
       }
       action={
@@ -979,11 +979,12 @@ function SearchEmptyState({
 
 /**
  * Two-section result list rendered when the inbox search bar is in unified
- * search mode. Section A — `contactMatches` — shows attribute matches first;
- * Section B — `bodyMatches` — shows projection snippet/subject matches with
- * the matched substring highlighted via `<mark>`. Both sections share the
- * same row format so the divider is the only visual separator. Section
- * labels are omitted when only one section is non-empty.
+ * search mode. Top section — `volunteers` — shows matched contacts with at
+ * least one membership in the existing full-row format. Bottom section —
+ * `contacts` — shows matched contacts with zero memberships in a compact
+ * single-line format. Section labels render only when both sections have
+ * results; if only one is populated we render that section's rows without
+ * a header.
  */
 function UnifiedSearchResultList({
   result,
@@ -993,25 +994,20 @@ function UnifiedSearchResultList({
   readonly activeContactId: string | null;
 }) {
   const showSectionLabels =
-    result.contactMatches.length > 0 && result.bodyMatches.length > 0;
+    result.volunteers.length > 0 && result.contacts.length > 0;
 
   return (
     <div>
-      {result.contactMatches.length > 0 ? (
-        <section aria-label="Contact matches">
+      {result.volunteers.length > 0 ? (
+        <section aria-label="Volunteers">
           {showSectionLabels ? (
-            <UnifiedSearchSectionHeader
-              label="Contacts"
-              count={result.totals.contactMatches}
-              shown={result.contactMatches.length}
-            />
+            <UnifiedSearchSectionHeader label="Volunteers" />
           ) : null}
           <ul className="divide-y divide-slate-100">
-            {result.contactMatches.map((row) => (
+            {result.volunteers.map((row) => (
               <InboxUnifiedSearchRow
                 key={row.contactId}
                 row={row}
-                query={result.query}
                 isActive={row.contactId === activeContactId}
               />
             ))}
@@ -1019,21 +1015,18 @@ function UnifiedSearchResultList({
         </section>
       ) : null}
 
-      {result.bodyMatches.length > 0 ? (
-        <section aria-label="Message matches">
-          <UnifiedSearchSectionHeader
-            label={showSectionLabels ? "Message matches" : "Results"}
-            count={result.totals.bodyMatches}
-            shown={result.bodyMatches.length}
-          />
+      {result.contacts.length > 0 ? (
+        <section aria-label="Contacts">
+          {showSectionLabels ? (
+            <UnifiedSearchSectionHeader label="Contacts" />
+          ) : null}
           <ul className="divide-y divide-slate-100">
-            {result.bodyMatches.map((row) => (
+            {result.contacts.map((row) => (
               <InboxUnifiedSearchRow
                 key={row.contactId}
                 row={row}
-                query={result.query}
                 isActive={row.contactId === activeContactId}
-                highlightSnippet
+                compact
               />
             ))}
           </ul>
@@ -1043,22 +1036,11 @@ function UnifiedSearchResultList({
   );
 }
 
-function UnifiedSearchSectionHeader({
-  label,
-  count,
-  shown,
-}: {
-  readonly label: string;
-  readonly count: number;
-  readonly shown: number;
-}) {
+function UnifiedSearchSectionHeader({ label }: { readonly label: string }) {
   return (
     <div className="border-y border-slate-100 bg-slate-50 px-4 py-1.5">
-      <div className="flex items-center justify-between gap-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-        <span>{label}</span>
-        <span className="text-slate-400">
-          {count > shown ? `${shown.toString()} of ${count.toString()}` : count.toString()}
-        </span>
+      <div className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+        {label}
       </div>
     </div>
   );

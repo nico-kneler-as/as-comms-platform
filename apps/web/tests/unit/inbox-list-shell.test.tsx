@@ -981,11 +981,11 @@ describe("Inbox list shell", () => {
     ).toBeNull();
   });
 
-  it("renders the two-section unified search result with contact and body matches", async () => {
+  it("renders the Volunteers and Contacts section labels when both sections have results", async () => {
     fetchInboxListPageMock.mockResolvedValue(buildList());
     fetchInboxUnifiedSearchMock.mockResolvedValue({
       query: "Eli",
-      contactMatches: [
+      volunteers: [
         {
           contactId: "contact:eliza",
           displayName: "Eliza Tate",
@@ -993,7 +993,8 @@ describe("Inbox list shell", () => {
           avatarTone: "violet",
           primaryEmail: "eliza.tate@example.org",
           primaryPhone: null,
-          projectLabel: null,
+          projectLabel: "Pollinator Watch",
+          hasMembership: true,
           hasProjection: false,
           lastActivityAt: "2026-04-22T12:00:00.000Z",
           lastActivityLabel: "1d ago",
@@ -1003,25 +1004,26 @@ describe("Inbox list shell", () => {
           lastEventType: null,
         },
       ],
-      bodyMatches: [
+      contacts: [
         {
-          contactId: "contact:bm",
-          displayName: "Quincy Adams",
-          initials: "QA",
+          contactId: "contact:elias",
+          displayName: "elias.partner@example.org",
+          initials: "EP",
           avatarTone: "amber",
-          primaryEmail: "quincy@example.org",
+          primaryEmail: "elias.partner@example.org",
           primaryPhone: null,
-          projectLabel: "Amazon Basin",
-          hasProjection: true,
-          lastActivityAt: "2026-04-21T09:00:00.000Z",
-          lastActivityLabel: "2d ago",
-          latestSubject: "Re: thanks",
-          snippet: "Thanks Eli for the helpful update.",
-          latestChannel: "email",
-          lastEventType: "communication.email.inbound",
+          projectLabel: null,
+          hasMembership: false,
+          hasProjection: false,
+          lastActivityAt: null,
+          lastActivityLabel: "",
+          latestSubject: null,
+          snippet: null,
+          latestChannel: null,
+          lastEventType: null,
         },
       ],
-      totals: { contactMatches: 1, bodyMatches: 1 },
+      totals: { volunteers: 1, contacts: 1 },
     });
 
     activeSession = await mountInboxList(buildList(), {
@@ -1031,21 +1033,166 @@ describe("Inbox list shell", () => {
     await flushReact();
 
     expect(activeSession.container.textContent).toContain("Eliza Tate");
-    expect(activeSession.container.textContent).toContain("Quincy Adams");
+    expect(activeSession.container.textContent).toContain(
+      "elias.partner@example.org",
+    );
     // Section labels render when both sections are non-empty.
-    expect(activeSession.container.textContent).toContain("Contacts");
-    expect(activeSession.container.textContent).toContain("Message matches");
-    // Body-match snippet should highlight the substring with <mark>.
-    const mark = activeSession.container.querySelector("mark");
-    expect(mark).not.toBeNull();
-    expect((mark?.textContent ?? "").toLowerCase()).toBe("eli");
+    const volunteersSection = activeSession.container.querySelector(
+      'section[aria-label="Volunteers"]',
+    );
+    const contactsSection = activeSession.container.querySelector(
+      'section[aria-label="Contacts"]',
+    );
+    expect(volunteersSection).not.toBeNull();
+    expect(contactsSection).not.toBeNull();
+    expect(volunteersSection?.textContent).toContain("Volunteers");
+    expect(contactsSection?.textContent).toContain("Contacts");
+  });
+
+  it("renders volunteer rows in full-row format and contact rows in compact single-line format", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    fetchInboxUnifiedSearchMock.mockResolvedValue({
+      query: "Eli",
+      volunteers: [
+        {
+          contactId: "contact:eliza",
+          displayName: "Eliza Tate",
+          initials: "ET",
+          avatarTone: "violet",
+          primaryEmail: "eliza.tate@example.org",
+          primaryPhone: null,
+          projectLabel: "Pollinator Watch",
+          hasMembership: true,
+          hasProjection: true,
+          lastActivityAt: "2026-04-22T12:00:00.000Z",
+          lastActivityLabel: "1d ago",
+          latestSubject: "Re: question",
+          snippet: "Thanks for the update.",
+          latestChannel: "email",
+          lastEventType: "communication.email.inbound",
+        },
+      ],
+      contacts: [
+        {
+          contactId: "contact:emailonly",
+          displayName: "elias.partner@example.org",
+          initials: "EP",
+          avatarTone: "amber",
+          primaryEmail: "elias.partner@example.org",
+          primaryPhone: null,
+          projectLabel: null,
+          hasMembership: false,
+          hasProjection: false,
+          lastActivityAt: null,
+          lastActivityLabel: "",
+          latestSubject: null,
+          snippet: null,
+          latestChannel: null,
+          lastEventType: null,
+        },
+        {
+          contactId: "contact:named",
+          displayName: "Maya Patel",
+          initials: "MP",
+          avatarTone: "sky",
+          primaryEmail: "maya.patel@example.org",
+          primaryPhone: null,
+          projectLabel: null,
+          hasMembership: false,
+          hasProjection: false,
+          lastActivityAt: null,
+          lastActivityLabel: "",
+          latestSubject: null,
+          snippet: null,
+          latestChannel: null,
+          lastEventType: null,
+        },
+      ],
+      totals: { volunteers: 1, contacts: 2 },
+    });
+
+    activeSession = await mountInboxList(buildList(), {
+      query: "Eli",
+      isQueueLoading: false,
+    });
+    await flushReact();
+
+    // Volunteer row uses the full-row format — the snippet line should be
+    // rendered (snippet text appears).
+    expect(activeSession.container.textContent).toContain("Thanks for the update.");
+    // Volunteer row shows a time-ago label.
+    expect(activeSession.container.textContent).toContain("1d ago");
+
+    // Contact rows use the compact format — both must carry the compact
+    // attribute marker we exposed on the row.
+    const compactRows = activeSession.container.querySelectorAll(
+      "[data-inbox-search-row-compact='true']",
+    );
+    expect(compactRows.length).toBe(2);
+
+    // Email-only contact: rendered text is just the email (no separator).
+    const emailOnlyRow = activeSession.container.querySelector(
+      "[data-contact-id='contact:emailonly']",
+    );
+    expect((emailOnlyRow?.textContent ?? "").trim()).toBe(
+      "elias.partner@example.org",
+    );
+    expect(emailOnlyRow?.textContent ?? "").not.toContain(" · ");
+
+    // Named contact: rendered text is "Name · email".
+    const namedRow = activeSession.container.querySelector(
+      "[data-contact-id='contact:named']",
+    );
+    expect(namedRow?.textContent ?? "").toContain("Maya Patel");
+    expect(namedRow?.textContent ?? "").toContain(" · ");
+    expect(namedRow?.textContent ?? "").toContain("maya.patel@example.org");
+  });
+
+  it("does not render a body-match section or any <mark> highlights", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    fetchInboxUnifiedSearchMock.mockResolvedValue({
+      query: "Eli",
+      volunteers: [
+        {
+          contactId: "contact:eliza",
+          displayName: "Eliza Tate",
+          initials: "ET",
+          avatarTone: "violet",
+          primaryEmail: "eliza.tate@example.org",
+          primaryPhone: null,
+          projectLabel: "Pollinator Watch",
+          hasMembership: true,
+          hasProjection: true,
+          lastActivityAt: "2026-04-22T12:00:00.000Z",
+          lastActivityLabel: "1d ago",
+          latestSubject: "Re: question",
+          snippet: "Thanks Eli for the update.",
+          latestChannel: "email",
+          lastEventType: "communication.email.inbound",
+        },
+      ],
+      contacts: [],
+      totals: { volunteers: 1, contacts: 0 },
+    });
+
+    activeSession = await mountInboxList(buildList(), {
+      query: "Eli",
+      isQueueLoading: false,
+    });
+    await flushReact();
+
+    // The body-match section was named "Message matches" — should not
+    // appear at all.
+    expect(activeSession.container.textContent).not.toContain("Message matches");
+    // No <mark> element should be rendered (we dropped highlighting).
+    expect(activeSession.container.querySelector("mark")).toBeNull();
   });
 
   it("returns to the folder-filtered list when the search is cleared", async () => {
     fetchInboxListPageMock.mockResolvedValue(buildList());
     fetchInboxUnifiedSearchMock.mockResolvedValue({
       query: "Eli",
-      contactMatches: [
+      volunteers: [
         {
           contactId: "contact:eliza",
           displayName: "Eliza Tate",
@@ -1054,6 +1201,7 @@ describe("Inbox list shell", () => {
           primaryEmail: "eliza.tate@example.org",
           primaryPhone: null,
           projectLabel: null,
+          hasMembership: true,
           hasProjection: false,
           lastActivityAt: "2026-04-22T12:00:00.000Z",
           lastActivityLabel: "1d ago",
@@ -1063,8 +1211,8 @@ describe("Inbox list shell", () => {
           lastEventType: null,
         },
       ],
-      bodyMatches: [],
-      totals: { contactMatches: 1, bodyMatches: 0 },
+      contacts: [],
+      totals: { volunteers: 1, contacts: 0 },
     });
 
     activeSession = await mountInboxList(buildList(), {

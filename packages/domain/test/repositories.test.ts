@@ -78,9 +78,9 @@ describe("defineStage1RepositoryBundle", () => {
         searchByQuery: () => Promise.resolve([contact]),
         searchInboxUnified: () =>
           Promise.resolve({
-            contactMatches: [],
-            bodyMatches: [],
-            totals: { contactMatches: 0, bodyMatches: 0 },
+            volunteers: [],
+            contacts: [],
+            totals: { volunteers: 0, contacts: 0 },
           }),
         upsert: (record) => Promise.resolve(record),
       },
