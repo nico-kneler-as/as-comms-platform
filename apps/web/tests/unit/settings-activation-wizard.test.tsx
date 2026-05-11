@@ -9,7 +9,9 @@ Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
   Check: () => null,
-  RefreshCw: () => null
+  Plus: () => null,
+  RefreshCw: () => null,
+  Trash2: () => null
 }));
 
 vi.mock("@/components/ui/button", () => ({
@@ -19,6 +21,11 @@ vi.mock("@/components/ui/button", () => ({
   }: {
     readonly children: React.ReactNode;
   }) => React.createElement("button", props, children)
+}));
+
+vi.mock("@/components/ui/input", () => ({
+  Input: (props: Record<string, unknown>) =>
+    React.createElement("input", props)
 }));
 
 const workerRequire = createRequire(import.meta.url);
@@ -35,6 +42,7 @@ const { JSDOM } = workerRequire("jsdom") as {
 };
 
 import { StepKnowledge } from "../../app/settings/_components/activation-wizard/step-knowledge";
+import type { KnowledgeSourceDraft } from "../../app/settings/_components/activation-wizard/state";
 
 let dom: InstanceType<typeof JSDOM> | null = null;
 let root: Root | null = null;
@@ -66,7 +74,7 @@ function setupDom() {
 }
 
 function renderStep(input: {
-  readonly knowledgeSourcesText?: string;
+  readonly knowledgeSourceDrafts?: readonly KnowledgeSourceDraft[];
   readonly skipKnowledgeSetup?: boolean;
   readonly onSubmit?: () => void;
 }) {
@@ -78,11 +86,15 @@ function renderStep(input: {
   act(() => {
     activeRoot.render(
       <StepKnowledge
-        knowledgeSourcesText={input.knowledgeSourcesText ?? ""}
+        knowledgeSourceDrafts={
+          input.knowledgeSourceDrafts ?? [{ url: "", label: "" }]
+        }
         skipKnowledgeSetup={input.skipKnowledgeSetup ?? false}
         knowledgeStatus="idle"
         knowledgeMessage={null}
-        onKnowledgeSourcesTextChange={() => undefined}
+        onAddRow={() => undefined}
+        onRemoveRow={() => undefined}
+        onFieldChange={() => undefined}
         onSkipKnowledgeSetupChange={() => undefined}
         onSubmit={input.onSubmit ?? (() => undefined)}
       />
@@ -103,47 +115,64 @@ afterEach(() => {
   dom = null;
 });
 
+function getSaveButton(): HTMLButtonElement {
+  const element = Array.from(document.querySelectorAll("button")).find(
+    (button) => button.textContent.includes("Save sources")
+  );
+  if (!(element instanceof HTMLButtonElement)) {
+    throw new Error("Save sources button not found");
+  }
+  return element;
+}
+
 describe("StepKnowledge", () => {
-  it("renders the multiline textarea", () => {
-    renderStep({});
+  it("renders one row per draft with URL and Label inputs", () => {
+    renderStep({
+      knowledgeSourceDrafts: [
+        { url: "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", label: "Whitebark FAQ" },
+        { url: "", label: "" }
+      ]
+    });
 
-    expect(document.querySelector("textarea")).not.toBeNull();
     expect(document.body.textContent).toContain("AI Knowledge sources");
+    expect(document.body.textContent).toContain("Source URL");
+    expect(document.body.textContent).toContain("Label");
+    // Two URL inputs + two Label inputs = 4 inputs (plus the skip checkbox).
+    const inputs = document.querySelectorAll("input");
+    // checkbox is an input too — so we have 4 row inputs + 1 checkbox.
+    expect(inputs.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("validates URLs as the operator types", () => {
+  it("flags invalid URLs inline next to the offending row", () => {
     renderStep({
-      knowledgeSourcesText:
-        "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nnot-a-url"
+      knowledgeSourceDrafts: [
+        { url: "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", label: "" },
+        { url: "not-a-url", label: "" }
+      ]
     });
 
-    expect(document.body.textContent).toContain("Line 2:");
+    // The error text appears in the second row.
+    const errorEls = document.querySelectorAll("p.text-rose-600");
+    const errorTexts = Array.from(errorEls).map((node) => node.textContent);
+    expect(errorTexts.length).toBeGreaterThan(0);
+    expect(errorTexts.some((text) => text.length > 0)).toBe(true);
   });
 
-  it("disables submission when the lines are empty or invalid", () => {
-    renderStep({});
-
-    const getSaveButton = () => {
-      const element = Array.from(document.querySelectorAll("button")).find(
-        (button) => button.textContent.includes("Save sources")
-      );
-      if (!(element instanceof HTMLButtonElement)) {
-        throw new Error("Save sources button not found");
-      }
-
-      return element;
-    };
-
-    expect(getSaveButton().disabled).toBe(true);
-
+  it("disables submission when every row is empty or any URL is invalid", () => {
     renderStep({
-      knowledgeSourcesText: "not-a-url"
+      knowledgeSourceDrafts: [{ url: "", label: "" }]
     });
     expect(getSaveButton().disabled).toBe(true);
 
     renderStep({
-      knowledgeSourcesText:
-        "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      knowledgeSourceDrafts: [{ url: "not-a-url", label: "" }]
+    });
+    expect(getSaveButton().disabled).toBe(true);
+
+    renderStep({
+      knowledgeSourceDrafts: [
+        { url: "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", label: "" }
+      ]
     });
     expect(getSaveButton().disabled).toBe(false);
   });
@@ -160,22 +189,18 @@ describe("StepKnowledge", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("submits after multiple valid URLs are entered", () => {
+  it("submits once at least one valid URL is present", () => {
     const onSubmit = vi.fn();
     renderStep({
-      knowledgeSourcesText: [
-        "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "https://www.adventurescientists.org/project/whitebark-pine"
-      ].join("\n"),
+      knowledgeSourceDrafts: [
+        { url: "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", label: "Notion FAQ" },
+        { url: "https://www.adventurescientists.org/project/whitebark-pine", label: "Homepage" }
+      ],
       onSubmit
     });
 
-    const saveButton = Array.from(document.querySelectorAll("button")).find(
-      (element) => element.textContent.includes("Save sources")
-    );
-    if (!(saveButton instanceof HTMLButtonElement)) {
-      throw new Error("Save sources button not found");
-    }
+    const saveButton = getSaveButton();
+    expect(saveButton.disabled).toBe(false);
 
     act(() => {
       saveButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));

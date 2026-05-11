@@ -27,8 +27,8 @@ import {
   getStepOneValid,
   getStepThreeValid,
   getStepTwoValid,
-  getAiKnowledgeSourceLineErrors,
-  splitAiKnowledgeSourceLines,
+  getDraftLineErrors,
+  listEnteredDrafts,
   normalizeSignatureDraft
 } from "./shared";
 import {
@@ -122,8 +122,8 @@ export function ActivationWizard({
       return;
     }
 
-    const sourceLines = splitAiKnowledgeSourceLines(state.knowledgeSourcesText);
-    if (sourceLines.length === 0) {
+    const enteredDrafts = listEnteredDrafts(state.knowledgeSourceDrafts);
+    if (enteredDrafts.length === 0) {
       dispatch({
         type: "sync-error",
         message: "Add at least one AI Knowledge source or skip this step."
@@ -131,7 +131,7 @@ export function ActivationWizard({
       return;
     }
 
-    if (Object.keys(getAiKnowledgeSourceLineErrors(state.knowledgeSourcesText)).length > 0) {
+    if (Object.keys(getDraftLineErrors(state.knowledgeSourceDrafts)).length > 0) {
       dispatch({
         type: "sync-error",
         message: "Fix the invalid AI Knowledge source URLs before continuing."
@@ -143,7 +143,10 @@ export function ActivationWizard({
 
     const result = await submitWizardAiKnowledgeSourcesAction(
       selectedProject.projectId,
-      sourceLines
+      enteredDrafts.map((draft) => ({
+        url: draft.url.trim(),
+        label: draft.label.trim().length > 0 ? draft.label.trim() : null
+      }))
     );
     if (!result.ok) {
       dispatch({
@@ -328,14 +331,25 @@ export function ActivationWizard({
 
               {!isActivated && state.step === 3 ? (
                 <StepKnowledge
-                  knowledgeSourcesText={state.knowledgeSourcesText}
+                  knowledgeSourceDrafts={state.knowledgeSourceDrafts}
                   skipKnowledgeSetup={state.skipKnowledgeSetup}
                   knowledgeStatus={state.knowledgeStatus}
                   knowledgeMessage={state.knowledgeMessage}
-                  onKnowledgeSourcesTextChange={(nextValue) => {
+                  onAddRow={() => {
+                    dispatch({ type: "add-knowledge-source-row" });
+                  }}
+                  onRemoveRow={(index) => {
                     dispatch({
-                      type: "set-knowledge-sources-text",
-                      value: nextValue
+                      type: "remove-knowledge-source-row",
+                      index
+                    });
+                  }}
+                  onFieldChange={(index, field, value) => {
+                    dispatch({
+                      type: "set-knowledge-source-field",
+                      index,
+                      field,
+                      value
                     });
                   }}
                   onSkipKnowledgeSetupChange={(checked) => {
@@ -368,7 +382,7 @@ export function ActivationWizard({
                   selectedProject={selectedProject}
                   aliasDraft={state.aliasDraft}
                   aliases={state.aliases}
-                  knowledgeSourcesText={state.knowledgeSourcesText}
+                  knowledgeSourceDrafts={state.knowledgeSourceDrafts}
                   skipKnowledgeSetup={state.skipKnowledgeSetup}
                   signatureDraft={state.signatureDraft}
                   connectedProjectIds={state.connectedProjectIds}

@@ -288,12 +288,15 @@ describe("settings project AI knowledge actions", () => {
     });
   });
 
-  it("validates wizard source submission and persists multiple sources", async () => {
+  it("validates wizard source submission and persists multiple sources with labels", async () => {
     const sqlSpy = await installSqlSpy();
 
     const invalid = await submitWizardAiKnowledgeSourcesAction("project:ai", [
-      "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "not-a-url"
+      {
+        url: "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        label: "Notion FAQ"
+      },
+      { url: "not-a-url", label: "Broken" }
     ]);
 
     expect(invalid).toMatchObject({
@@ -302,8 +305,16 @@ describe("settings project AI knowledge actions", () => {
     });
 
     const valid = await submitWizardAiKnowledgeSourcesAction("project:ai", [
-      "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "https://www.adventurescientists.org/project/whitebark-pine"
+      {
+        url: "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        label: "Notion FAQ"
+      },
+      {
+        url: "https://www.adventurescientists.org/project/whitebark-pine",
+        label: "Volunteer homepage"
+      },
+      // Empty row from the wizard should be silently dropped, not failed.
+      { url: "", label: "" }
     ]);
 
     expect(valid).toMatchObject({
@@ -313,6 +324,8 @@ describe("settings project AI knowledge actions", () => {
       throw new Error("expected valid wizard submission");
     }
     expect(valid.data.sources).toHaveLength(2);
+    expect(valid.data.sources[0]?.label).toBe("Notion FAQ");
+    expect(valid.data.sources[1]?.label).toBe("Volunteer homepage");
     expect(sqlSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -350,7 +363,10 @@ describe("settings project AI knowledge actions", () => {
       updateAiAutoSyncScheduleAction("project:missing", "daily"),
       updateOperatingContextAction("project:missing", "Missing"),
       submitWizardAiKnowledgeSourcesAction("project:missing", [
-        "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        {
+          url: "https://www.notion.so/page-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          label: null
+        }
       ])
     ]);
 

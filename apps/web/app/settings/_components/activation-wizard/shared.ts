@@ -154,21 +154,28 @@ export function isBasicEmailAddress(value: string): boolean {
   return /^\S+@\S+\.\S+$/.test(value.trim());
 }
 
-export function splitAiKnowledgeSourceLines(value: string): readonly string[] {
-  return value
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+/**
+ * Drop the empty placeholder rows the wizard always renders so callers can
+ * count "real" entered sources without manually filtering each time.
+ */
+export function listEnteredDrafts(
+  drafts: readonly { readonly url: string; readonly label: string }[]
+): readonly { readonly url: string; readonly label: string }[] {
+  return drafts.filter((draft) => draft.url.trim().length > 0);
 }
 
-export function getAiKnowledgeSourceLineErrors(
-  value: string
+/**
+ * Per-row validation indexed by the operator's row position so the UI can
+ * mark the right input as invalid. Empty rows are silently skipped — they're
+ * placeholders, not errors.
+ */
+export function getDraftLineErrors(
+  drafts: readonly { readonly url: string; readonly label: string }[]
 ): Readonly<Record<number, string>> {
-  const lines = value.split(/\r?\n/u);
   const errors: Record<number, string> = {};
 
-  for (const [index, line] of lines.entries()) {
-    const trimmed = line.trim();
+  for (const [index, draft] of drafts.entries()) {
+    const trimmed = draft.url.trim();
     if (trimmed.length === 0) {
       continue;
     }

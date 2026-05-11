@@ -7,14 +7,16 @@ import type { ProjectRowViewModel } from "@/src/server/settings/selectors";
 import {
   type AliasDraft,
   getPrimaryAlias,
+  listEnteredDrafts,
   truncateSignatureSummary
 } from "./shared";
+import type { KnowledgeSourceDraft } from "./state";
 
 export function StepReview({
   selectedProject,
   aliasDraft,
   aliases,
-  knowledgeSourcesText,
+  knowledgeSourceDrafts,
   skipKnowledgeSetup,
   signatureDraft,
   connectedProjectIds,
@@ -24,7 +26,7 @@ export function StepReview({
   readonly selectedProject: ProjectRowViewModel | null;
   readonly aliasDraft: string;
   readonly aliases: readonly AliasDraft[];
-  readonly knowledgeSourcesText: string;
+  readonly knowledgeSourceDrafts: readonly KnowledgeSourceDraft[];
   readonly skipKnowledgeSetup: boolean;
   readonly signatureDraft: string;
   readonly connectedProjectIds: readonly string[];
@@ -32,6 +34,7 @@ export function StepReview({
   readonly activationError: string | null;
 }) {
   const primaryAlias = getPrimaryAlias(aliases);
+  const enteredKnowledgeDrafts = listEnteredDrafts(knowledgeSourceDrafts);
 
   if (selectedProject === null) {
     return null;
@@ -61,7 +64,7 @@ export function StepReview({
             ) : (
               <span className="flex items-center gap-2">
                 <span className="truncate">
-                  {`${String(knowledgeSourcesText.split(/\r?\n/u).filter((line) => line.trim().length > 0).length)} source(s) saved`}
+                  {`${String(enteredKnowledgeDrafts.length)} source(s) saved`}
                 </span>
                 <StatusBadge
                   label="Queued"
