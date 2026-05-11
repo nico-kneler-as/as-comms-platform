@@ -1,43 +1,50 @@
 "use client";
 
 import * as React from "react";
-import { Check, RefreshCw } from "lucide-react";
+import { Check, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-import {
-  getAiKnowledgeSourceLineErrors,
-  splitAiKnowledgeSourceLines
-} from "./shared";
+import { getDraftLineErrors, listEnteredDrafts } from "./shared";
+import type { KnowledgeSourceDraft } from "./state";
 
 type KnowledgeStatus = "idle" | "syncing" | "done" | "error";
 
 export function StepKnowledge({
-  knowledgeSourcesText,
+  knowledgeSourceDrafts,
   skipKnowledgeSetup,
   knowledgeStatus,
   knowledgeMessage,
-  onKnowledgeSourcesTextChange,
+  onAddRow,
+  onRemoveRow,
+  onFieldChange,
   onSkipKnowledgeSetupChange,
   onSubmit
 }: {
-  readonly knowledgeSourcesText: string;
+  readonly knowledgeSourceDrafts: readonly KnowledgeSourceDraft[];
   readonly skipKnowledgeSetup: boolean;
   readonly knowledgeStatus: KnowledgeStatus;
   readonly knowledgeMessage: string | null;
-  readonly onKnowledgeSourcesTextChange: (nextValue: string) => void;
+  readonly onAddRow: () => void;
+  readonly onRemoveRow: (index: number) => void;
+  readonly onFieldChange: (
+    index: number,
+    field: "url" | "label",
+    value: string
+  ) => void;
   readonly onSkipKnowledgeSetupChange: (checked: boolean) => void;
   readonly onSubmit: () => void;
 }) {
-  const lineErrors = getAiKnowledgeSourceLineErrors(knowledgeSourcesText);
-  const sourceLines = splitAiKnowledgeSourceLines(knowledgeSourcesText);
-  const hasInvalidLines = Object.keys(lineErrors).length > 0;
+  const draftErrors = getDraftLineErrors(knowledgeSourceDrafts);
+  const enteredDrafts = listEnteredDrafts(knowledgeSourceDrafts);
+  const hasErrors = Object.keys(draftErrors).length > 0;
   const canSubmit =
     !skipKnowledgeSetup &&
     knowledgeStatus !== "syncing" &&
-    sourceLines.length > 0 &&
-    !hasInvalidLines;
+    enteredDrafts.length > 0 &&
+    !hasErrors;
 
   return (
     <div className="flex flex-col gap-6">
@@ -46,37 +53,100 @@ export function StepKnowledge({
           AI Knowledge sources
         </p>
         <p className="mt-1 text-[12px] text-slate-500">
-          Paste links to Notion pages, public web pages, or any source the AI
-          should learn from. The system will fetch each one and synthesize them
-          into the project&apos;s AI Knowledge.
+          Add Notion pages, public web pages, or any source the AI should learn
+          from. One row per source — the label is what shows up in the project
+          detail page later (handy for Notion URLs that would otherwise read as
+          opaque IDs).
         </p>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <label htmlFor="activation-ai-knowledge-sources" className="sr-only">
-          AI Knowledge sources
-        </label>
-        <textarea
-          id="activation-ai-knowledge-sources"
-          value={knowledgeSourcesText}
-          onChange={(event) => {
-            onKnowledgeSourcesTextChange(event.target.value);
-          }}
-          disabled={knowledgeStatus === "syncing" || skipKnowledgeSetup}
-          rows={8}
-          placeholder={"https://www.notion.so/...\nhttps://www.adventurescientists.org/..."}
-          className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2.5 text-[12.5px] text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:bg-slate-50"
-        />
-        {Object.entries(lineErrors).length > 0 ? (
-          <div className="mt-3 flex flex-col gap-1 text-[11.5px] text-rose-600">
-            {Object.entries(lineErrors).map(([lineIndex, message]) => (
-              <p key={lineIndex}>Line {String(Number(lineIndex) + 1)}: {message}</p>
-            ))}
-          </div>
-        ) : null}
-        {knowledgeStatus === "error" && knowledgeMessage !== null ? (
-          <p className="mt-3 text-[11.5px] text-rose-600">{knowledgeMessage}</p>
-        ) : null}
+        <div className="flex flex-col gap-3">
+          {knowledgeSourceDrafts.map((draft, index) => {
+            const urlError = draftErrors[index] ?? null;
+            const showRemove = knowledgeSourceDrafts.length > 1;
+            return (
+              <div
+                key={index}
+                className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] gap-2"
+              >
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor={`activation-ai-knowledge-url-${String(index)}`}
+                    className="text-[10px] font-medium uppercase tracking-wide text-slate-500"
+                  >
+                    Source URL
+                  </label>
+                  <Input
+                    id={`activation-ai-knowledge-url-${String(index)}`}
+                    value={draft.url}
+                    placeholder="https://www.notion.so/..."
+                    disabled={skipKnowledgeSetup || knowledgeStatus === "syncing"}
+                    onChange={(event) => {
+                      onFieldChange(index, "url", event.target.value);
+                    }}
+                    aria-invalid={urlError !== null}
+                  />
+                  {urlError !== null ? (
+                    <p className="text-[11.5px] text-rose-600">{urlError}</p>
+                  ) : null}
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor={`activation-ai-knowledge-label-${String(index)}`}
+                    className="text-[10px] font-medium uppercase tracking-wide text-slate-500"
+                  >
+                    Label
+                  </label>
+                  <Input
+                    id={`activation-ai-knowledge-label-${String(index)}`}
+                    value={draft.label}
+                    placeholder="Volunteer homepage"
+                    disabled={skipKnowledgeSetup || knowledgeStatus === "syncing"}
+                    onChange={(event) => {
+                      onFieldChange(index, "label", event.target.value);
+                    }}
+                  />
+                </div>
+                <div className="flex items-end pb-0.5">
+                  {showRemove ? (
+                    <button
+                      type="button"
+                      aria-label={`Remove source ${String(index + 1)}`}
+                      title="Remove source"
+                      disabled={skipKnowledgeSetup || knowledgeStatus === "syncing"}
+                      onClick={() => {
+                        onRemoveRow(index);
+                      }}
+                      className="rounded p-1 text-rose-600 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Trash2 className="size-3.5" aria-hidden="true" />
+                    </button>
+                  ) : (
+                    <div className="size-6" aria-hidden="true" />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 flex items-center justify-between">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={skipKnowledgeSetup || knowledgeStatus === "syncing"}
+            onClick={onAddRow}
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+            Add source
+          </Button>
+          {knowledgeStatus === "error" && knowledgeMessage !== null ? (
+            <p className="text-[11.5px] text-rose-600">{knowledgeMessage}</p>
+          ) : null}
+        </div>
+
         <label className="mt-4 flex items-start gap-2 text-[12px] text-slate-600">
           <input
             type="checkbox"
@@ -157,15 +227,17 @@ export function StepKnowledge({
           </p>
         ) : null}
 
-        {knowledgeStatus === "idle" && !skipKnowledgeSetup && knowledgeMessage === null ? (
+        {knowledgeStatus === "idle" &&
+        !skipKnowledgeSetup &&
+        knowledgeMessage === null ? (
           <p className="text-[12px] text-slate-500">
-            Add one source per line, then save them before continuing.
+            Add at least one source, then save before continuing.
           </p>
         ) : null}
 
         {knowledgeStatus === "error" && knowledgeMessage !== null ? (
           <p className="text-[12px] text-slate-700">
-            Correct the invalid lines or try submitting again once the worker is
+            Correct the invalid rows or try submitting again once the worker is
             healthy.
           </p>
         ) : null}

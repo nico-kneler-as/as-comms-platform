@@ -11,13 +11,18 @@ import {
 export type StepIndex = 0 | 1 | 2 | 3 | 4 | 5;
 export type KnowledgeStatus = "idle" | "syncing" | "done" | "error";
 
+export interface KnowledgeSourceDraft {
+  readonly url: string;
+  readonly label: string;
+}
+
 export interface WizardState {
   readonly step: StepIndex;
   readonly pickedProjectId: string | null;
   readonly aliasDraft: string;
   readonly aliases: readonly AliasDraft[];
   readonly signatureDraft: string;
-  readonly knowledgeSourcesText: string;
+  readonly knowledgeSourceDrafts: readonly KnowledgeSourceDraft[];
   readonly skipKnowledgeSetup: boolean;
   readonly knowledgeStatus: KnowledgeStatus;
   readonly knowledgeMessage: string | null;
@@ -37,7 +42,14 @@ export type WizardAction =
   | { readonly type: "remove-alias"; readonly address: string }
   | { readonly type: "make-primary"; readonly address: string }
   | { readonly type: "set-signature"; readonly signatureDraft: string }
-  | { readonly type: "set-knowledge-sources-text"; readonly value: string }
+  | { readonly type: "add-knowledge-source-row" }
+  | { readonly type: "remove-knowledge-source-row"; readonly index: number }
+  | {
+      readonly type: "set-knowledge-source-field";
+      readonly index: number;
+      readonly field: "url" | "label";
+      readonly value: string;
+    }
   | { readonly type: "set-skip-knowledge-setup"; readonly checked: boolean }
   | { readonly type: "sync-start" }
   | { readonly type: "sync-done" }
@@ -46,6 +58,18 @@ export type WizardAction =
   | { readonly type: "activation-start" }
   | { readonly type: "activation-error"; readonly message: string }
   | { readonly type: "activation-success"; readonly project: ProjectMutationData };
+
+// Wizard always starts the AI Knowledge step with one empty row so the
+// operator sees the input shape immediately. If the project already has a
+// legacy single `ai_knowledge_url`, seed it into the first row so
+// re-activating a pre-migration project shows the existing source as
+// editable rather than dropping it.
+function buildInitialKnowledgeSourceDrafts(
+  project: ProjectRowViewModel | null
+): readonly KnowledgeSourceDraft[] {
+  const initialUrl = project?.aiKnowledgeUrl?.trim() ?? "";
+  return [{ url: initialUrl, label: "" }];
+}
 
 export function createInitialState(
   projects: readonly ProjectRowViewModel[],
@@ -60,7 +84,7 @@ export function createInitialState(
     aliasDraft: buildInitialAliasDraft(initialProject),
     aliases: buildInitialAliases(initialProject),
     signatureDraft: "",
-    knowledgeSourcesText: initialProject?.aiKnowledgeUrl ?? "",
+    knowledgeSourceDrafts: buildInitialKnowledgeSourceDrafts(initialProject),
     skipKnowledgeSetup: false,
     knowledgeStatus: "idle",
     knowledgeMessage: null,
@@ -133,7 +157,7 @@ export function activationWizardReducer(
         aliasDraft: buildInitialAliasDraft(action.project),
         aliases: buildInitialAliases(action.project),
         signatureDraft: "",
-        knowledgeSourcesText: action.project.aiKnowledgeUrl ?? "",
+        knowledgeSourceDrafts: buildInitialKnowledgeSourceDrafts(action.project),
         skipKnowledgeSetup: false,
         knowledgeStatus: "idle",
         knowledgeMessage: null,
@@ -205,18 +229,49 @@ export function activationWizardReducer(
         activationMessage: null,
         activationStatus: "idle"
       };
-    case "set-knowledge-sources-text":
-      if (state.knowledgeSourcesText === action.value) {
-        return state;
-      }
-
+    case "add-knowledge-source-row":
       return {
         ...resetKnowledgeState(state),
-        knowledgeSourcesText: action.value,
+        knowledgeSourceDrafts: [
+          ...state.knowledgeSourceDrafts,
+          { url: "", label: "" }
+        ],
         skipKnowledgeSetup: false,
         activationMessage: null,
         activationStatus: "idle"
       };
+    case "remove-knowledge-source-row": {
+      const filtered = state.knowledgeSourceDrafts.filter(
+        (_draft, index) => index !== action.index
+      );
+      // Never let the operator delete down to zero rows — keep at least one
+      // empty placeholder so they can keep typing without re-clicking "Add
+      // source." Matches the project-detail UX which always shows the Add
+      // dialog as the entry point.
+      const nextDrafts =
+        filtered.length === 0 ? [{ url: "", label: "" }] : filtered;
+      return {
+        ...resetKnowledgeState(state),
+        knowledgeSourceDrafts: nextDrafts,
+        skipKnowledgeSetup: false,
+        activationMessage: null,
+        activationStatus: "idle"
+      };
+    }
+    case "set-knowledge-source-field": {
+      const nextDrafts = state.knowledgeSourceDrafts.map((draft, index) =>
+        index === action.index
+          ? { ...draft, [action.field]: action.value }
+          : draft
+      );
+      return {
+        ...resetKnowledgeState(state),
+        knowledgeSourceDrafts: nextDrafts,
+        skipKnowledgeSetup: false,
+        activationMessage: null,
+        activationStatus: "idle"
+      };
+    }
     case "set-skip-knowledge-setup":
       return {
         ...resetKnowledgeState(state),

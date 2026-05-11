@@ -153,10 +153,26 @@ const activationWizardInputSchema = z
     }
   });
 
+const wizardAiKnowledgeSourceDraftSchema = z.object({
+  url: z.string(),
+  label: z
+    .string()
+    .trim()
+    .max(160, "Label must be 160 characters or fewer.")
+    .nullable()
+    .optional()
+});
+
 const wizardAiKnowledgeSourcesSchema = z.object({
   projectId: z.string().trim().min(1, "Project is required."),
-  urls: z.array(z.string()).max(100, "Add no more than 100 sources.")
+  sources: z
+    .array(wizardAiKnowledgeSourceDraftSchema)
+    .max(100, "Add no more than 100 sources.")
 });
+
+export type WizardAiKnowledgeSourceDraft = z.infer<
+  typeof wizardAiKnowledgeSourceDraftSchema
+>;
 
 const addAiKnowledgeSourceSchema = z.object({
   url: z.string().trim().min(1, "Source URL is required."),
@@ -738,24 +754,20 @@ function normalizeOptionalSourceLabel(value: string | null | undefined): string 
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function flattenSourceUrls(urls: readonly string[]): readonly string[] {
-  return urls.flatMap((value) =>
-    value
-      .split(/\r?\n/u)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-  );
-}
-
-function buildSourceFieldErrors(urls: readonly string[]): Record<string, string> {
+// Validates each draft's URL via parseSourceUrl and reports errors keyed
+// by the operator's row index (e.g. "sources.2.url") so the wizard UI can
+// highlight exactly which row needs attention.
+function buildSourceFieldErrorsForDrafts(
+  drafts: readonly { readonly url: string; readonly originalIndex: number }[]
+): Record<string, string> {
   const fieldErrors: Record<string, string> = {};
 
-  for (const [index, url] of urls.entries()) {
+  for (const draft of drafts) {
     try {
-      parseSourceUrl(url);
+      parseSourceUrl(draft.url);
     } catch (error) {
       if (error instanceof AiKnowledgeSourceValidationError) {
-        fieldErrors[`urls.${String(index)}`] = error.message;
+        fieldErrors[`sources.${String(draft.originalIndex)}.url`] = error.message;
         continue;
       }
 
@@ -1152,7 +1164,7 @@ export async function updateProjectAiKnowledgeAction(
 
 export async function submitWizardAiKnowledgeSourcesAction(
   projectId: string,
-  urls: readonly string[]
+  sources: readonly { readonly url: string; readonly label?: string | null }[]
 ): Promise<UiResult<ProjectAiKnowledgeSourcesMutationData>> {
   const admin = await resolveSettingsAdmin({
     unauthorizedMessage:
@@ -1163,15 +1175,28 @@ export async function submitWizardAiKnowledgeSourcesAction(
     return admin.error;
   }
 
-  const parsed = wizardAiKnowledgeSourcesSchema.safeParse({ projectId, urls });
+  const parsed = wizardAiKnowledgeSourcesSchema.safeParse({
+    projectId,
+    sources
+  });
   if (!parsed.success) {
     return errorResult("validation_error", "AI knowledge sources are invalid.", {
       fieldErrors: flattenZodFieldErrors(parsed.error)
     });
   }
 
-  const normalizedUrls = flattenSourceUrls(parsed.data.urls);
-  const fieldErrors = buildSourceFieldErrors(normalizedUrls);
+  // Trim whitespace + drop blank-URL rows. The wizard UI lets operators
+  // leave empty placeholder rows; we keep the originalIndex so any error
+  // message points at the right row in the UI.
+  const normalizedDrafts = parsed.data.sources
+    .map((draft, index) => ({
+      url: draft.url.trim(),
+      label: normalizeOptionalSourceLabel(draft.label ?? null),
+      originalIndex: index
+    }))
+    .filter((draft) => draft.url.length > 0);
+
+  const fieldErrors = buildSourceFieldErrorsForDrafts(normalizedDrafts);
   if (Object.keys(fieldErrors).length > 0) {
     return errorResult(
       "validation_error",
@@ -1188,8 +1213,11 @@ export async function submitWizardAiKnowledgeSourcesAction(
 
   let nextSources: readonly AiKnowledgeSource[] = [];
   try {
-    for (const url of normalizedUrls) {
-      nextSources = addSource(nextSources, { url });
+    for (const draft of normalizedDrafts) {
+      nextSources = addSource(nextSources, {
+        url: draft.url,
+        label: draft.label
+      });
     }
   } catch (error) {
     return toAiKnowledgeValidationResult(error);
