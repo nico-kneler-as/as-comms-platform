@@ -705,13 +705,12 @@ export function ProjectDetail({
                 setActiveTab(tab.id);
               }}
               className={cn(
-                "-mb-px border-b-2 pb-2.5 pt-1 text-sm font-medium",
+                "-mb-px inline-flex items-center border-b-2 px-0.5 pb-3 pt-2 text-sm",
                 TRANSITION.fast,
-                FOCUS_RING,
-                RADIUS.sm,
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2",
                 isActive
-                  ? "border-slate-900 text-slate-900"
-                  : "border-transparent text-slate-500 hover:text-slate-800"
+                  ? "border-slate-900 font-semibold text-slate-900"
+                  : "border-transparent font-medium text-slate-500 hover:text-slate-800"
               )}
             >
               {tab.label}
@@ -725,7 +724,7 @@ export function ProjectDetail({
         id="project-tabpanel-overview"
         aria-labelledby="project-tab-overview"
         hidden={activeTab !== "overview"}
-        className="flex flex-col gap-5"
+        className={cn(activeTab === "overview" && "flex flex-col gap-5")}
       >
         <SettingsCard
           title="Project basics"
@@ -1016,7 +1015,7 @@ export function ProjectDetail({
         id="project-tabpanel-ai-knowledge"
         aria-labelledby="project-tab-ai-knowledge"
         hidden={activeTab !== "ai-knowledge"}
-        className="flex flex-col gap-5"
+        className={cn(activeTab === "ai-knowledge" && "flex flex-col gap-5")}
       >
         {isConnectedSub && connectedHost ? (
           <SettingsCard
@@ -1058,7 +1057,7 @@ export function ProjectDetail({
         id="project-tabpanel-danger-zone"
         aria-labelledby="project-tab-danger-zone"
         hidden={activeTab !== "danger-zone"}
-        className="flex flex-col gap-5"
+        className={cn(activeTab === "danger-zone" && "flex flex-col gap-5")}
       >
         {project.isAdmin && optimisticProject.isActive && !isConnectedSub ? (
           <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
