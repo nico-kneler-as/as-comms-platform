@@ -70,6 +70,32 @@ type InboxDetailProjection = Omit<
   readonly lastEventType: CanonicalEventRecord["eventType"] | null;
 };
 
+/**
+ * Per-project metadata used by the inbox row, conversation header, and
+ * contact rail to label and route project chips. The connected-projects
+ * fields (`connectedToProjectId`, `hostProjectName`) are populated only
+ * when the project rolls up into a host (per PR #384). Standalone or host
+ * projects leave both `null` so the chip renders as a single-line label.
+ */
+interface ProjectMetadataEntry {
+  readonly projectName: string;
+  readonly isActive: boolean;
+  /**
+   * `project_dimensions.connected_to_project_id` for connected sub-projects;
+   * `null` for standalone or host rows.
+   */
+  readonly connectedToProjectId: string | null;
+  /**
+   * Display name to show as the primary chip label when the project is a
+   * connected sub. Equals the host's resolved alias-or-name (so the chip
+   * reads "Beech & Butternut" for a Beech-only volunteer). `null` for
+   * standalone or host projects.
+   */
+  readonly hostProjectName: string | null;
+}
+
+type ProjectMetadataIndex = Readonly<Record<string, ProjectMetadataEntry>>;
+
 function findNewestCanonicalEvent(
   events: readonly CanonicalEventRecord[],
 ): CanonicalEventRecord | null {
@@ -120,15 +146,7 @@ interface InboxListCacheRow {
 interface InboxListCacheData {
   readonly rows: readonly InboxListCacheRow[];
   readonly projectLabelById: Readonly<Record<string, string>>;
-  readonly projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >;
+  readonly projectMetadataById: ProjectMetadataIndex;
   readonly aliasToProjectId: ReadonlyMap<string, string>;
   readonly counts: {
     readonly inbox: number;
@@ -167,15 +185,7 @@ interface InboxDetailCacheData {
     Record<string, CampaignActivitySummary>
   >;
   readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
-  readonly projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >;
+  readonly projectMetadataById: ProjectMetadataIndex;
   readonly salesforceEventContextBySourceEvidenceId: ReadonlyMap<
     string,
     {
@@ -206,15 +216,7 @@ interface InboxDetailSummaryCacheData {
   } | null;
   readonly activityTimelineItems: readonly TimelineItem[];
   readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
-  readonly projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >;
+  readonly projectMetadataById: ProjectMetadataIndex;
   readonly salesforceEventContextBySourceEvidenceId: ReadonlyMap<
     string,
     {
@@ -840,7 +842,20 @@ function mapVolunteerStage(
  */
 export interface ResolvedPrimaryProject {
   readonly projectId: string;
+  /**
+   * The chip's primary text. For a connected sub this is the host's display
+   * name (so the chip reads "Beech & Butternut"); for standalone or host
+   * projects it's the project's own name.
+   */
   readonly projectName: string;
+  /**
+   * Sub-project's own name when the resolved project is a connected sub,
+   * so the renderer can place "via {subProjectName}" beneath the primary
+   * label. `null` for standalone / host projects.
+   */
+  readonly subProjectName: string | null;
+  /** Mirrors {@link InboxProjectMembershipViewModel.isConnectedSub}. */
+  readonly isConnectedSub: boolean;
   /**
    * "membership" — derived from an active membership (preferred path).
    * "conversation" — fell through to the latest SF lifecycle event's project
@@ -874,15 +889,7 @@ export interface ResolvedPrimaryProject {
  */
 export function resolvePrimaryProjectForContact(input: {
   readonly memberships: readonly ContactMembershipRecord[];
-  readonly projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >;
+  readonly projectMetadataById: ProjectMetadataIndex;
   readonly lastOccurredAtByProjectId: ReadonlyMap<string, string>;
   readonly conversationProjectFallback: {
     readonly projectId: string;
@@ -906,21 +913,39 @@ export function resolvePrimaryProjectForContact(input: {
   const primary = sortedActive[0] ?? null;
 
   if (primary !== null && primary.projectId !== null) {
-    const projectName =
-      input.projectMetadataById[primary.projectId]?.projectName ??
-      primary.projectId;
+    const metadata = input.projectMetadataById[primary.projectId];
+    const ownName = metadata?.projectName ?? primary.projectId;
+    const hostName =
+      metadata?.connectedToProjectId == null
+        ? null
+        : metadata.hostProjectName;
 
     return {
       projectId: primary.projectId,
-      projectName,
+      projectName: hostName ?? ownName,
+      subProjectName: hostName === null ? null : ownName,
+      isConnectedSub: hostName !== null,
       source: "membership",
     };
   }
 
   if (input.conversationProjectFallback !== null) {
+    const fallbackId = input.conversationProjectFallback.projectId;
+    const metadata = input.projectMetadataById[fallbackId];
+    // For the conversation-fallback path the caller already resolved the
+    // sub's own name (via the metadata index → `projectName`). Reuse that
+    // as the chip's secondary line when the project is a connected sub.
+    const ownName = input.conversationProjectFallback.projectName;
+    const hostName =
+      metadata?.connectedToProjectId == null
+        ? null
+        : metadata.hostProjectName;
+
     return {
-      projectId: input.conversationProjectFallback.projectId,
-      projectName: input.conversationProjectFallback.projectName,
+      projectId: fallbackId,
+      projectName: hostName ?? ownName,
+      subProjectName: hostName === null ? null : ownName,
+      isConnectedSub: hostName !== null,
       source: "conversation",
     };
   }
@@ -997,32 +1022,38 @@ function mapProjectStatusLabel(status: string | null): string {
 
 function buildProjectMembershipViewModel(
   membership: ContactMembershipRecord,
-  projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >,
+  projectMetadataById: ProjectMetadataIndex,
 ): InboxProjectMembershipViewModel | null {
-  const projectName =
+  const metadata =
+    membership.projectId === null
+      ? undefined
+      : projectMetadataById[membership.projectId];
+  const ownName =
     membership.projectId === null
       ? null
-      : (projectMetadataById[membership.projectId]?.projectName ??
-        membership.projectId);
+      : (metadata?.projectName ?? membership.projectId);
 
-  if (projectName === null || membership.projectId === null) {
+  if (ownName === null || membership.projectId === null) {
     return null;
   }
+
+  // Connected-sub display: PR #388 keeps the sub's own row (with its own
+  // alias-or-name in `metadata.projectName`) and the host's display name in
+  // `metadata.hostProjectName`. Only flip into the two-line layout when
+  // the host's name actually resolved — otherwise fall back to the sub's
+  // own name as a single-line label so we never render an empty primary.
+  const hostName =
+    metadata?.connectedToProjectId == null
+      ? null
+      : metadata.hostProjectName;
 
   return {
     membershipId: membership.id,
     projectId: membership.projectId,
-    projectName,
-    projectIsActive:
-      projectMetadataById[membership.projectId]?.isActive ?? false,
+    projectName: hostName ?? ownName,
+    subDisplayName: hostName === null ? null : ownName,
+    isConnectedSub: hostName !== null,
+    projectIsActive: metadata?.isActive ?? false,
     status: mapProjectStatus(membership.status),
     statusLabel: mapProjectStatusLabel(membership.status),
     crmUrl: `https://adventurescientists.lightning.force.com/lightning/r/Project__c/${encodeURIComponent(
@@ -1038,15 +1069,7 @@ function buildProjectMembershipViewModel(
 
 function isPastProject(
   membership: ContactMembershipRecord,
-  projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >,
+  projectMetadataById: ProjectMetadataIndex,
 ): boolean {
   if (membership.projectId === null) {
     return true;
@@ -2877,17 +2900,7 @@ async function loadProjectMetadataById(
    * sent FROM a project alias).
    */
   extraProjectIds: readonly (string | null | undefined)[] = [],
-): Promise<
-  Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >
-> {
+): Promise<ProjectMetadataIndex> {
   const projectIds = uniqueStrings([
     ...memberships.map((membership) => membership.projectId),
     ...extraProjectIds,
@@ -2901,29 +2914,53 @@ async function loadProjectMetadataById(
   const dimensions =
     await runtime.repositories.projectDimensions.listByIds(projectIds);
 
+  // Connected-projects rollup (PR #384 + #388): if any of the requested
+  // dimensions points at a host via `connected_to_project_id`, fetch that
+  // host's row in a second batch query so the renderer can label the chip
+  // with the host's display name. One extra IN(...) per page render is
+  // cheap and preserves the existing batch-loading pattern.
+  const hostIds = Array.from(
+    new Set(
+      dimensions
+        .map((dimension) => dimension.connectedToProjectId ?? null)
+        .filter((id): id is string => id !== null && !projectIds.includes(id)),
+    ),
+  );
+  const hostDimensions =
+    hostIds.length === 0
+      ? []
+      : await runtime.repositories.projectDimensions.listByIds(hostIds);
+  const hostNameById = new Map<string, string>();
+  for (const host of [...dimensions, ...hostDimensions]) {
+    hostNameById.set(
+      host.projectId,
+      host.projectAlias?.trim().length ? host.projectAlias : host.projectName,
+    );
+  }
+
   return Object.fromEntries(
-    dimensions.map((dimension) => [
-      dimension.projectId,
-      {
-        projectName: dimension.projectAlias?.trim().length
-          ? dimension.projectAlias
-          : dimension.projectName,
-        isActive: dimension.isActive ?? false,
-      },
-    ]),
+    dimensions.map((dimension) => {
+      const connectedTo = dimension.connectedToProjectId ?? null;
+      return [
+        dimension.projectId,
+        {
+          projectName: dimension.projectAlias?.trim().length
+            ? dimension.projectAlias
+            : dimension.projectName,
+          isActive: dimension.isActive ?? false,
+          connectedToProjectId: connectedTo,
+          hostProjectName:
+            connectedTo === null
+              ? null
+              : (hostNameById.get(connectedTo) ?? null),
+        } satisfies ProjectMetadataEntry,
+      ];
+    }),
   );
 }
 
 function buildProjectLabelById(
-  projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >,
+  projectMetadataById: ProjectMetadataIndex,
 ): Readonly<Record<string, string>> {
   return Object.fromEntries(
     Object.entries(projectMetadataById).map(([projectId, metadata]) => [
@@ -2936,15 +2973,7 @@ function buildProjectLabelById(
 function countAdditionalActiveProjects(input: {
   readonly memberships: readonly ContactMembershipRecord[];
   readonly primaryProjectId: string | null;
-  readonly projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >;
+  readonly projectMetadataById: ProjectMetadataIndex;
 }): number {
   const primaryProjectId = input.primaryProjectId;
   const additionalActiveProjectIds = new Set<string>();
@@ -4131,6 +4160,7 @@ function toListItemViewModel(
       fallbackLatestSubject(row.inboxProjection.lastEventType),
     latestChannel: mapChannel(row.inboxProjection.lastEventType),
     projectLabel: primaryProject?.projectName ?? null,
+    projectSubLabel: primaryProject?.subProjectName ?? null,
     additionalActiveProjectsCount: countAdditionalActiveProjects({
       memberships: row.memberships,
       primaryProjectId: primaryProject?.projectId ?? null,
@@ -4170,15 +4200,7 @@ function buildContactSummary(input: {
     readonly createdAt: string;
   } | null;
   readonly activityTimelineItems: readonly TimelineItem[];
-  readonly projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >;
+  readonly projectMetadataById: ProjectMetadataIndex;
   readonly referenceNowIso: string;
 }): InboxContactSummaryViewModel {
   const projectActivityIndex = buildProjectActivityIndex(
@@ -4255,15 +4277,7 @@ function deriveConversationProjectFallbackFromTimeline(input: {
       readonly projectId: string | null;
     }
   >;
-  readonly projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >;
+  readonly projectMetadataById: ProjectMetadataIndex;
 }): { readonly projectId: string; readonly projectName: string } | null {
   for (const item of [...input.timelineItems].sort((left, right) =>
     right.occurredAt.localeCompare(left.occurredAt),
@@ -4306,19 +4320,11 @@ function buildConversationProject(input: {
       readonly projectId: string | null;
     }
   >;
-  readonly projectMetadataById: Readonly<
-    Record<
-      string,
-      {
-        readonly projectName: string;
-        readonly isActive: boolean;
-      }
-    >
-  >;
+  readonly projectMetadataById: ProjectMetadataIndex;
 }): InboxDetailViewModel["conversationProject"] {
   // Routes through the shared helper so the header's primary project chip
   // cannot diverge from the inbox row's chip for the same contact.
-  return resolvePrimaryProjectForContact({
+  const resolved = resolvePrimaryProjectForContact({
     memberships: input.memberships,
     projectMetadataById: input.projectMetadataById,
     lastOccurredAtByProjectId: buildProjectActivityIndex(input.timelineItems)
@@ -4331,6 +4337,21 @@ function buildConversationProject(input: {
       projectMetadataById: input.projectMetadataById,
     }),
   });
+
+  if (resolved === null) {
+    return null;
+  }
+
+  // Project the wider `ResolvedPrimaryProject` shape to the narrower
+  // `conversationProject` view-model so toEqual() callers don't see the
+  // helper's `isConnectedSub` flag (which the header doesn't consume —
+  // it gates rendering on `subProjectName !== null` instead).
+  return {
+    projectId: resolved.projectId,
+    projectName: resolved.projectName,
+    subProjectName: resolved.subProjectName,
+    source: resolved.source,
+  };
 }
 
 function buildInboxDetailSummaryViewModel(input: {
@@ -4570,9 +4591,10 @@ export const INBOX_UNIFIED_SEARCH_SECTION_LIMIT = 25;
 /**
  * Server selector for the unified inbox search bar. Replaces the dedicated
  * `/inbox/all-contacts` surface and the projection-only inbox-list search:
- * the input now searches the broad set of contacts (Section A — contact
- * attribute matches) plus projection snippet/subject matches (Section B),
- * with each section sorted by last activity desc and capped per section.
+ * the input searches contact attributes (name / primary email / primary
+ * phone) and partitions matches into Volunteers (≥1 membership) and Contacts
+ * (zero memberships). Each section is sorted by volunteer-side last
+ * activity desc and capped at 25.
  *
  * Below the min-query length the selector short-circuits without hitting
  * the DB, so the API route can rely on this for cheap empty responses.
@@ -4585,14 +4607,14 @@ export async function getInboxUnifiedSearch(input: {
   if (trimmedQuery.length < INBOX_UNIFIED_SEARCH_MIN_QUERY_LENGTH) {
     return {
       query: trimmedQuery,
-      contactMatches: [],
-      bodyMatches: [],
-      totals: { contactMatches: 0, bodyMatches: 0 },
+      volunteers: [],
+      contacts: [],
+      totals: { volunteers: 0, contacts: 0 },
     };
   }
 
   const runtime = await getStage1WebRuntime();
-  const { contactMatches, bodyMatches, totals } =
+  const { volunteers, contacts, totals } =
     await runtime.repositories.contacts.searchInboxUnified({
       query: trimmedQuery,
       limit: INBOX_UNIFIED_SEARCH_SECTION_LIMIT,
@@ -4603,7 +4625,7 @@ export async function getInboxUnifiedSearch(input: {
   const toRow = (
     row: Awaited<
       ReturnType<typeof runtime.repositories.contacts.searchInboxUnified>
-    >["contactMatches"][number],
+    >["volunteers"][number],
   ): InboxUnifiedSearchRowViewModel => {
     const projectLabel =
       row.memberships.length === 0
@@ -4630,6 +4652,7 @@ export async function getInboxUnifiedSearch(input: {
       primaryEmail: row.contact.primaryEmail,
       primaryPhone: row.contact.primaryPhone,
       projectLabel,
+      hasMembership: row.hasMembership,
       hasProjection: row.hasProjection,
       lastActivityAt: row.lastActivityAt,
       lastActivityLabel,
@@ -4642,8 +4665,8 @@ export async function getInboxUnifiedSearch(input: {
 
   return {
     query: trimmedQuery,
-    contactMatches: contactMatches.map(toRow),
-    bodyMatches: bodyMatches.map(toRow),
+    volunteers: volunteers.map(toRow),
+    contacts: contacts.map(toRow),
     totals,
   };
 }

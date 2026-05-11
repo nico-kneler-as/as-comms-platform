@@ -268,6 +268,8 @@ describe("InboxContactRail", () => {
           membershipId: "membership-1",
           projectId: "project-1",
           projectName: "Alpine Stream Survey",
+          subDisplayName: null,
+          isConnectedSub: false,
           expeditionMemberUrl: null,
           crmUrl: "https://salesforce.example.com/member/1",
           projectIsActive: false,
@@ -279,5 +281,62 @@ describe("InboxContactRail", () => {
 
     expect(activeSession.container.textContent).toContain("Alpine Stream Survey");
     expect(activeSession.container.textContent).toContain("Successful");
+  });
+
+  // PR for connected-projects host/sub label: a Beech-only volunteer's
+  // active project rolls up under a "Forests" host. The rail must show
+  // the host's display name as primary, with a small "via {sub}" line
+  // beneath it so the operator can still see which Salesforce project
+  // the contact actually rolled up from.
+  it("renders the host name as primary and 'via {sub}' as secondary for a connected sub project", async () => {
+    activeSession = await renderRail({
+      ...buildContact(0),
+      activeProjects: [
+        {
+          membershipId: "membership-beech",
+          projectId: "project:beech",
+          projectName: "Beech & Butternut",
+          subDisplayName: "Saving American Beech",
+          isConnectedSub: true,
+          expeditionMemberUrl:
+            "https://salesforce.example.com/member/beech-1",
+          crmUrl: "https://salesforce.example.com/project/beech-1",
+          projectIsActive: true,
+          status: "in-field",
+          statusLabel: "In field",
+        },
+      ],
+    });
+
+    expect(activeSession.container.textContent).toContain(
+      "Beech & Butternut",
+    );
+    expect(activeSession.container.textContent).toContain(
+      "via Saving American Beech",
+    );
+  });
+
+  it("does not render 'via …' for a standalone (non-connected) active project", async () => {
+    activeSession = await renderRail({
+      ...buildContact(0),
+      activeProjects: [
+        {
+          membershipId: "membership-standalone",
+          projectId: "project:whitebark",
+          projectName: "Whitebark Pines",
+          subDisplayName: null,
+          isConnectedSub: false,
+          expeditionMemberUrl:
+            "https://salesforce.example.com/member/whitebark-1",
+          crmUrl: "https://salesforce.example.com/project/whitebark-1",
+          projectIsActive: true,
+          status: "in-field",
+          statusLabel: "In field",
+        },
+      ],
+    });
+
+    expect(activeSession.container.textContent).toContain("Whitebark Pines");
+    expect(activeSession.container.textContent).not.toContain("via ");
   });
 });

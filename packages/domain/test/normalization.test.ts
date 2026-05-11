@@ -418,6 +418,7 @@ function buildContext(input: {
     aiKnowledge: {
       findByScope: () => Promise.resolve(null),
       findProjectNotionContent: () => Promise.resolve(null),
+      findEffectiveProjectNotionContent: () => Promise.resolve(null),
       hasProjectNotionContent: () => Promise.resolve(false),
       findProjectIdsWithNotionContent: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record),
@@ -451,9 +452,9 @@ function buildContext(input: {
       searchByQuery: () => Promise.resolve([...contacts]),
       searchInboxUnified: () =>
         Promise.resolve({
-          contactMatches: [],
-          bodyMatches: [],
-          totals: { contactMatches: 0, bodyMatches: 0 },
+          volunteers: [],
+          contacts: [],
+          totals: { volunteers: 0, contacts: 0 },
         }),
       upsert: (record) => Promise.resolve(record),
     },
@@ -510,6 +511,7 @@ function buildContext(input: {
       listByIds: () => Promise.resolve([]),
       listConnectedProjects: () => Promise.resolve([]),
       listAvailableConnectionCandidates: () => Promise.resolve([]),
+      findEffectiveAiKnowledge: () => Promise.resolve(null),
       getAiKnowledgeSources: () => Promise.resolve([]),
       setAiKnowledgeSources: () => Promise.resolve(),
       setAiAutoSyncSchedule: () => Promise.resolve(),

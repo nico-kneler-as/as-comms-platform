@@ -196,6 +196,16 @@ function setDomGlobals(window: Window & typeof globalThis) {
     configurable: true,
     value: window.MouseEvent,
   });
+  Object.defineProperty(globalThis, "PointerEvent", {
+    configurable: true,
+    value:
+      (window as unknown as { PointerEvent?: typeof PointerEvent })
+        .PointerEvent ?? window.MouseEvent,
+  });
+  Object.defineProperty(globalThis, "Element", {
+    configurable: true,
+    value: window.Element,
+  });
   Object.defineProperty(globalThis, "navigator", {
     configurable: true,
     value: window.navigator,
@@ -219,6 +229,7 @@ function buildList(
         snippet: "Thanks for the quick update.",
         latestChannel: "email",
         projectLabel: "Amazon Basin",
+        projectSubLabel: null,
         additionalActiveProjectsCount: 0,
         volunteerStage: "active",
         bucket: "new",
@@ -570,6 +581,89 @@ describe("Inbox list shell", () => {
     expect(session.container.textContent).not.toContain("All projects");
   });
 
+  it("collapses the filter pane when a pointerdown fires outside it", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList();
+    const session = activeSession;
+
+    const filterButton = findButtonByLabel(session.container, "Filters");
+    act(() => {
+      filterButton.click();
+    });
+    expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+
+    // pointerdown on document.body — outside the filter pane and the toggle.
+    await act(async () => {
+      document.body.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true }),
+      );
+      await Promise.resolve();
+    });
+    await flushReact();
+
+    expect(filterButton.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("keeps the filter pane open when pointerdown fires inside it", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList();
+    const session = activeSession;
+
+    const filterButton = findButtonByLabel(session.container, "Filters");
+    act(() => {
+      filterButton.click();
+    });
+    expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+
+    const filterPane = session.container.querySelector(
+      "[data-inbox-filter-pane='true']",
+    );
+    if (filterPane === null) {
+      throw new Error("filter pane not rendered");
+    }
+
+    await act(async () => {
+      filterPane.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true }),
+      );
+      await Promise.resolve();
+    });
+    await flushReact();
+
+    expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("keeps the filter pane open when pointerdown fires on a Radix portal menu", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    activeSession = await mountInboxList();
+    const session = activeSession;
+
+    const filterButton = findButtonByLabel(session.container, "Filters");
+    act(() => {
+      filterButton.click();
+    });
+    expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+
+    // Simulate a Radix-portaled menu rendered outside the filter pane.
+    const portalMenu = document.createElement("div");
+    portalMenu.setAttribute("role", "menu");
+    document.body.appendChild(portalMenu);
+
+    try {
+      await act(async () => {
+        portalMenu.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true }),
+        );
+        await Promise.resolve();
+      });
+      await flushReact();
+
+      expect(filterButton.getAttribute("aria-expanded")).toBe("true");
+    } finally {
+      document.body.removeChild(portalMenu);
+    }
+  });
+
   it("keeps the filter panel open when a project is selected from the dropdown", async () => {
     fetchInboxListPageMock.mockResolvedValue(buildPnwProjectList());
     activeSession = await mountInboxList(buildPnwProjectList());
@@ -748,6 +842,66 @@ describe("Inbox list shell", () => {
     expect(row?.textContent).not.toContain("+2");
   });
 
+  // Connected-projects host/sub label: a Beech-only volunteer's row chip
+  // shows "Beech & Butternut · via Saving American Beech" rather than just
+  // "Beech" — same source of truth (the resolver's resolvedPrimaryProject)
+  // that the conversation header uses.
+  it("renders the host name with 'via {sub}' on the inbox row chip when the project is a connected sub", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    const baseItem = buildList().items[0];
+
+    if (baseItem === undefined) {
+      throw new Error("Expected an inbox list fixture item");
+    }
+
+    activeSession = await mountInboxList(
+      buildList({
+        items: [
+          {
+            ...baseItem,
+            projectLabel: "Beech & Butternut",
+            projectSubLabel: "Saving American Beech",
+          },
+        ],
+      }),
+    );
+
+    const row = activeSession.container.querySelector(
+      "[data-inbox-row='true']",
+    );
+
+    expect(row?.textContent).toContain("Beech & Butternut");
+    expect(row?.textContent).toContain("via Saving American Beech");
+  });
+
+  it("renders only the project label on the inbox row chip when the project is standalone", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    const baseItem = buildList().items[0];
+
+    if (baseItem === undefined) {
+      throw new Error("Expected an inbox list fixture item");
+    }
+
+    activeSession = await mountInboxList(
+      buildList({
+        items: [
+          {
+            ...baseItem,
+            projectLabel: "Whitebark Pines",
+            projectSubLabel: null,
+          },
+        ],
+      }),
+    );
+
+    const row = activeSession.container.querySelector(
+      "[data-inbox-row='true']",
+    );
+
+    expect(row?.textContent).toContain("Whitebark Pines");
+    expect(row?.textContent).not.toContain("via ");
+  });
+
   it("renders staff-origin non-volunteer rows with an AS chip", async () => {
     fetchInboxListPageMock.mockResolvedValue(buildList());
     const baseItem = buildList().items[0];
@@ -827,11 +981,11 @@ describe("Inbox list shell", () => {
     ).toBeNull();
   });
 
-  it("renders the two-section unified search result with contact and body matches", async () => {
+  it("renders the Volunteers and Contacts section labels when both sections have results", async () => {
     fetchInboxListPageMock.mockResolvedValue(buildList());
     fetchInboxUnifiedSearchMock.mockResolvedValue({
       query: "Eli",
-      contactMatches: [
+      volunteers: [
         {
           contactId: "contact:eliza",
           displayName: "Eliza Tate",
@@ -839,7 +993,8 @@ describe("Inbox list shell", () => {
           avatarTone: "violet",
           primaryEmail: "eliza.tate@example.org",
           primaryPhone: null,
-          projectLabel: null,
+          projectLabel: "Pollinator Watch",
+          hasMembership: true,
           hasProjection: false,
           lastActivityAt: "2026-04-22T12:00:00.000Z",
           lastActivityLabel: "1d ago",
@@ -849,25 +1004,26 @@ describe("Inbox list shell", () => {
           lastEventType: null,
         },
       ],
-      bodyMatches: [
+      contacts: [
         {
-          contactId: "contact:bm",
-          displayName: "Quincy Adams",
-          initials: "QA",
+          contactId: "contact:elias",
+          displayName: "elias.partner@example.org",
+          initials: "EP",
           avatarTone: "amber",
-          primaryEmail: "quincy@example.org",
+          primaryEmail: "elias.partner@example.org",
           primaryPhone: null,
-          projectLabel: "Amazon Basin",
-          hasProjection: true,
-          lastActivityAt: "2026-04-21T09:00:00.000Z",
-          lastActivityLabel: "2d ago",
-          latestSubject: "Re: thanks",
-          snippet: "Thanks Eli for the helpful update.",
-          latestChannel: "email",
-          lastEventType: "communication.email.inbound",
+          projectLabel: null,
+          hasMembership: false,
+          hasProjection: false,
+          lastActivityAt: null,
+          lastActivityLabel: "",
+          latestSubject: null,
+          snippet: null,
+          latestChannel: null,
+          lastEventType: null,
         },
       ],
-      totals: { contactMatches: 1, bodyMatches: 1 },
+      totals: { volunteers: 1, contacts: 1 },
     });
 
     activeSession = await mountInboxList(buildList(), {
@@ -877,21 +1033,166 @@ describe("Inbox list shell", () => {
     await flushReact();
 
     expect(activeSession.container.textContent).toContain("Eliza Tate");
-    expect(activeSession.container.textContent).toContain("Quincy Adams");
+    expect(activeSession.container.textContent).toContain(
+      "elias.partner@example.org",
+    );
     // Section labels render when both sections are non-empty.
-    expect(activeSession.container.textContent).toContain("Contacts");
-    expect(activeSession.container.textContent).toContain("Message matches");
-    // Body-match snippet should highlight the substring with <mark>.
-    const mark = activeSession.container.querySelector("mark");
-    expect(mark).not.toBeNull();
-    expect((mark?.textContent ?? "").toLowerCase()).toBe("eli");
+    const volunteersSection = activeSession.container.querySelector(
+      'section[aria-label="Volunteers"]',
+    );
+    const contactsSection = activeSession.container.querySelector(
+      'section[aria-label="Contacts"]',
+    );
+    expect(volunteersSection).not.toBeNull();
+    expect(contactsSection).not.toBeNull();
+    expect(volunteersSection?.textContent).toContain("Volunteers");
+    expect(contactsSection?.textContent).toContain("Contacts");
+  });
+
+  it("renders volunteer rows in full-row format and contact rows in compact single-line format", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    fetchInboxUnifiedSearchMock.mockResolvedValue({
+      query: "Eli",
+      volunteers: [
+        {
+          contactId: "contact:eliza",
+          displayName: "Eliza Tate",
+          initials: "ET",
+          avatarTone: "violet",
+          primaryEmail: "eliza.tate@example.org",
+          primaryPhone: null,
+          projectLabel: "Pollinator Watch",
+          hasMembership: true,
+          hasProjection: true,
+          lastActivityAt: "2026-04-22T12:00:00.000Z",
+          lastActivityLabel: "1d ago",
+          latestSubject: "Re: question",
+          snippet: "Thanks for the update.",
+          latestChannel: "email",
+          lastEventType: "communication.email.inbound",
+        },
+      ],
+      contacts: [
+        {
+          contactId: "contact:emailonly",
+          displayName: "elias.partner@example.org",
+          initials: "EP",
+          avatarTone: "amber",
+          primaryEmail: "elias.partner@example.org",
+          primaryPhone: null,
+          projectLabel: null,
+          hasMembership: false,
+          hasProjection: false,
+          lastActivityAt: null,
+          lastActivityLabel: "",
+          latestSubject: null,
+          snippet: null,
+          latestChannel: null,
+          lastEventType: null,
+        },
+        {
+          contactId: "contact:named",
+          displayName: "Maya Patel",
+          initials: "MP",
+          avatarTone: "sky",
+          primaryEmail: "maya.patel@example.org",
+          primaryPhone: null,
+          projectLabel: null,
+          hasMembership: false,
+          hasProjection: false,
+          lastActivityAt: null,
+          lastActivityLabel: "",
+          latestSubject: null,
+          snippet: null,
+          latestChannel: null,
+          lastEventType: null,
+        },
+      ],
+      totals: { volunteers: 1, contacts: 2 },
+    });
+
+    activeSession = await mountInboxList(buildList(), {
+      query: "Eli",
+      isQueueLoading: false,
+    });
+    await flushReact();
+
+    // Volunteer row uses the full-row format — the snippet line should be
+    // rendered (snippet text appears).
+    expect(activeSession.container.textContent).toContain("Thanks for the update.");
+    // Volunteer row shows a time-ago label.
+    expect(activeSession.container.textContent).toContain("1d ago");
+
+    // Contact rows use the compact format — both must carry the compact
+    // attribute marker we exposed on the row.
+    const compactRows = activeSession.container.querySelectorAll(
+      "[data-inbox-search-row-compact='true']",
+    );
+    expect(compactRows.length).toBe(2);
+
+    // Email-only contact: rendered text is just the email (no separator).
+    const emailOnlyRow = activeSession.container.querySelector(
+      "[data-contact-id='contact:emailonly']",
+    );
+    expect((emailOnlyRow?.textContent ?? "").trim()).toBe(
+      "elias.partner@example.org",
+    );
+    expect(emailOnlyRow?.textContent ?? "").not.toContain(" · ");
+
+    // Named contact: rendered text is "Name · email".
+    const namedRow = activeSession.container.querySelector(
+      "[data-contact-id='contact:named']",
+    );
+    expect(namedRow?.textContent ?? "").toContain("Maya Patel");
+    expect(namedRow?.textContent ?? "").toContain(" · ");
+    expect(namedRow?.textContent ?? "").toContain("maya.patel@example.org");
+  });
+
+  it("does not render a body-match section or any <mark> highlights", async () => {
+    fetchInboxListPageMock.mockResolvedValue(buildList());
+    fetchInboxUnifiedSearchMock.mockResolvedValue({
+      query: "Eli",
+      volunteers: [
+        {
+          contactId: "contact:eliza",
+          displayName: "Eliza Tate",
+          initials: "ET",
+          avatarTone: "violet",
+          primaryEmail: "eliza.tate@example.org",
+          primaryPhone: null,
+          projectLabel: "Pollinator Watch",
+          hasMembership: true,
+          hasProjection: true,
+          lastActivityAt: "2026-04-22T12:00:00.000Z",
+          lastActivityLabel: "1d ago",
+          latestSubject: "Re: question",
+          snippet: "Thanks Eli for the update.",
+          latestChannel: "email",
+          lastEventType: "communication.email.inbound",
+        },
+      ],
+      contacts: [],
+      totals: { volunteers: 1, contacts: 0 },
+    });
+
+    activeSession = await mountInboxList(buildList(), {
+      query: "Eli",
+      isQueueLoading: false,
+    });
+    await flushReact();
+
+    // The body-match section was named "Message matches" — should not
+    // appear at all.
+    expect(activeSession.container.textContent).not.toContain("Message matches");
+    // No <mark> element should be rendered (we dropped highlighting).
+    expect(activeSession.container.querySelector("mark")).toBeNull();
   });
 
   it("returns to the folder-filtered list when the search is cleared", async () => {
     fetchInboxListPageMock.mockResolvedValue(buildList());
     fetchInboxUnifiedSearchMock.mockResolvedValue({
       query: "Eli",
-      contactMatches: [
+      volunteers: [
         {
           contactId: "contact:eliza",
           displayName: "Eliza Tate",
@@ -900,6 +1201,7 @@ describe("Inbox list shell", () => {
           primaryEmail: "eliza.tate@example.org",
           primaryPhone: null,
           projectLabel: null,
+          hasMembership: true,
           hasProjection: false,
           lastActivityAt: "2026-04-22T12:00:00.000Z",
           lastActivityLabel: "1d ago",
@@ -909,8 +1211,8 @@ describe("Inbox list shell", () => {
           lastEventType: null,
         },
       ],
-      bodyMatches: [],
-      totals: { contactMatches: 1, bodyMatches: 0 },
+      contacts: [],
+      totals: { volunteers: 1, contacts: 0 },
     });
 
     activeSession = await mountInboxList(buildList(), {

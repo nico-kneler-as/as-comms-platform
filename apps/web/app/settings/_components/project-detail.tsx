@@ -3,7 +3,7 @@
 import Link from "next/link";
 import * as React from "react";
 import { useOptimistic, useState, useTransition } from "react";
-import { ArrowLeft, Link2Off, Mail, Trash2 } from "lucide-react";
+import { ArrowLeft, Link2Off, Mail, Pencil, Trash2 } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -49,6 +49,8 @@ interface FeedbackState {
   readonly kind: "success" | "error";
   readonly message: string;
 }
+
+type TabId = "overview" | "ai-knowledge" | "danger-zone";
 
 function hasActivationRequirements(input: {
   readonly projectAlias: string | null;
@@ -161,6 +163,38 @@ function toProjectEmailInputs(
   }));
 }
 
+function buildSubtitleParts({
+  alias,
+  salesforceProjectId,
+  sourceCount,
+  isActive,
+  autoSyncSchedule,
+  hideAlias
+}: {
+  readonly alias: string | null;
+  readonly salesforceProjectId: string | null;
+  readonly sourceCount: number;
+  readonly isActive: boolean;
+  readonly autoSyncSchedule: "never" | "daily" | "weekly";
+  readonly hideAlias: boolean;
+}): readonly string[] {
+  const parts: string[] = [];
+
+  if (!hideAlias && alias && alias.trim().length > 0) {
+    parts.push(alias.trim());
+  }
+
+  if (salesforceProjectId && salesforceProjectId.length > 0) {
+    parts.push(salesforceProjectId);
+  }
+
+  parts.push(`${String(sourceCount)} source${sourceCount === 1 ? "" : "s"}`);
+
+  parts.push(isActive ? `Syncs ${autoSyncSchedule}` : "Inactive");
+
+  return parts;
+}
+
 export function ProjectDetail({
   project
 }: {
@@ -178,6 +212,9 @@ export function ProjectDetail({
   const [signatureErrors, setSignatureErrors] = useState<
     Record<string, string | undefined>
   >({});
+  const [editingSignatureId, setEditingSignatureId] = useState<string | null>(
+    null
+  );
   const [newEmail, setNewEmail] = useState("");
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [activationMessage, setActivationMessage] = useState<string | null>(null);
@@ -188,6 +225,7 @@ export function ProjectDetail({
   const [signaturePending, startSignatureTransition] = useTransition();
   const [activationPending, startActivationTransition] = useTransition();
   const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
     setFeedback({ kind, message });
@@ -290,6 +328,7 @@ export function ProjectDetail({
       }
 
       commitProject(result.data);
+      setEditingSignatureId((current) => (current === null ? current : null));
       announce(`Removed ${address}.`);
     });
   }
@@ -377,8 +416,25 @@ export function ProjectDetail({
         ...current,
         [result.data.id]: undefined
       }));
+      setEditingSignatureId(null);
       announce(`Saved the signature for ${result.data.alias}.`);
     });
+  }
+
+  function handleCancelSignatureEdit(email: ProjectEmailMutationData) {
+    setSignatureDrafts((current) => ({
+      ...current,
+      [email.id]: email.signature
+    }));
+    setSignatureErrors((current) => ({
+      ...current,
+      [email.id]: undefined
+    }));
+    setEditingSignatureId(null);
+  }
+
+  function handleToggleSignatureEdit(emailId: string) {
+    setEditingSignatureId((current) => (current === emailId ? null : emailId));
   }
 
   function handleSaveProjectAlias() {
@@ -494,8 +550,33 @@ export function ProjectDetail({
     (optimisticProject.projectAlias?.trim().length ?? 0) > 0;
   const cascadeSubProjects = project.connectedProjects;
 
+  const subtitleParts = buildSubtitleParts({
+    alias: optimisticProject.projectAlias,
+    salesforceProjectId: project.salesforceProjectId,
+    sourceCount: project.aiKnowledgeSources.length,
+    isActive: optimisticProject.isActive,
+    autoSyncSchedule: project.aiAutoSyncSchedule,
+    hideAlias: isConnectedSub
+  });
+
+  // Danger zone tab is admin-only. For sub-projects it surfaces "Disconnect
+  // from host"; for hosts/standalone active projects it surfaces "Deactivate
+  // project". Inactive standalone projects without a host have no destructive
+  // action available, so the tab is hidden in that case.
+  const dangerZoneAvailable =
+    project.isAdmin &&
+    (isConnectedSub || optimisticProject.isActive);
+
+  const tabs: readonly { readonly id: TabId; readonly label: string }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "ai-knowledge", label: "AI knowledge" },
+    ...(dangerZoneAvailable
+      ? ([{ id: "danger-zone", label: "Danger zone" }] as const)
+      : [])
+  ];
+
   return (
-    <div className="flex max-w-3xl flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4">
         <Link
           href="/settings/projects"
@@ -507,41 +588,60 @@ export function ProjectDetail({
           )}
         >
           <ArrowLeft className="size-3.5" aria-hidden="true" />
-          Back to Projects
+          Projects
         </Link>
 
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className={cn(TYPE.headingLg, "text-balance text-slate-950")}>
-                {project.projectName}
-              </h1>
-              <StatusBadge
-                label={optimisticProject.isActive ? "Active" : "Inactive"}
-                colorClasses={
-                  optimisticProject.isActive
-                    ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                    : "bg-amber-50 text-amber-800 ring-amber-200"
-                }
-                variant="soft"
-              />
-              {isConnectedSub && connectedHost ? (
-                <Link
-                  href={`/settings/projects/${encodeURIComponent(
-                    connectedHost.projectId
-                  )}`}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-0.5 text-[11.5px] font-medium text-sky-800 ring-1 ring-inset ring-sky-200 hover:bg-sky-100",
-                    TRANSITION.fast,
-                    FOCUS_RING
-                  )}
-                >
-                  Connected to {connectedHost.projectName}
-                </Link>
-              ) : null}
-            </div>
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className={cn(TYPE.headingLg, "text-balance text-slate-950")}>
+              {project.projectName}
+            </h1>
+            <StatusBadge
+              label={optimisticProject.isActive ? "Active" : "Inactive"}
+              colorClasses={
+                optimisticProject.isActive
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                  : "bg-amber-50 text-amber-800 ring-amber-200"
+              }
+              variant="soft"
+            />
+            {isConnectedSub && connectedHost ? (
+              <Link
+                href={`/settings/projects/${encodeURIComponent(
+                  connectedHost.projectId
+                )}`}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-0.5 text-[11.5px] font-medium text-sky-800 ring-1 ring-inset ring-sky-200 hover:bg-sky-100",
+                  TRANSITION.fast,
+                  FOCUS_RING
+                )}
+              >
+                Connected to {connectedHost.projectName}
+              </Link>
+            ) : null}
           </div>
-
+          {subtitleParts.length > 0 ? (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+              {subtitleParts.map((part, index) => (
+                <React.Fragment key={`subtitle-${String(index)}`}>
+                  {index > 0 ? (
+                    <span aria-hidden="true" className="text-slate-300">
+                      ·
+                    </span>
+                  ) : null}
+                  <span
+                    className={
+                      part === project.salesforceProjectId
+                        ? "font-mono text-[12.5px] text-slate-500"
+                        : undefined
+                    }
+                  >
+                    {part}
+                  </span>
+                </React.Fragment>
+              ))}
+            </p>
+          ) : null}
         </div>
 
         {!optimisticProject.isActive && project.isAdmin ? (
@@ -586,163 +686,303 @@ export function ProjectDetail({
         </div>
       ) : null}
 
-      <section
-        aria-label="Project details"
-        className={cn(
-          "flex flex-col gap-5 p-5",
-          RADIUS.md,
-          "border border-slate-200 bg-white",
-          SHADOW.sm
-        )}
+      <div
+        role="tablist"
+        aria-label="Project sections"
+        className="flex items-center gap-6 border-b border-slate-200"
       >
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="project-short-alias"
-              className={cn(TYPE.label, "text-slate-600")}
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`project-tabpanel-${tab.id}`}
+              id={`project-tab-${tab.id}`}
+              onClick={() => {
+                setActiveTab(tab.id);
+              }}
+              className={cn(
+                "-mb-px border-b-2 pb-2.5 pt-1 text-sm font-medium",
+                TRANSITION.fast,
+                FOCUS_RING,
+                RADIUS.sm,
+                isActive
+                  ? "border-slate-900 text-slate-900"
+                  : "border-transparent text-slate-500 hover:text-slate-800"
+              )}
             >
-              Project alias
-            </label>
-            {isConnectedSub && connectedHost ? (
-              <>
-                <Input
-                  id="project-short-alias"
-                  value={connectedHost.projectAlias ?? ""}
-                  disabled
-                  readOnly
-                  className="font-mono text-[13px]"
-                />
-                <span className={cn(TYPE.caption, "text-slate-500")}>
-                  Inherited from{" "}
-                  <Link
-                    href={`/settings/projects/${encodeURIComponent(
-                      connectedHost.projectId
-                    )}`}
-                    className="font-medium text-sky-700 hover:underline"
-                  >
-                    {connectedHost.projectName}
-                  </Link>
-                  .
-                </span>
-              </>
-            ) : (
-              <>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="project-tabpanel-overview"
+        aria-labelledby="project-tab-overview"
+        hidden={activeTab !== "overview"}
+        className="flex flex-col gap-5"
+      >
+        <SettingsCard
+          title="Project basics"
+          description="Internal name and CRM record."
+        >
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="project-short-alias"
+                className={cn(TYPE.label, "text-slate-600")}
+              >
+                Project alias
+              </label>
+              {isConnectedSub && connectedHost ? (
+                <>
                   <Input
                     id="project-short-alias"
-                    value={projectAliasDraft}
-                    onChange={(event) => {
-                      setProjectAliasDraft(event.target.value);
-                      setActivationMessage(null);
-                    }}
-                    disabled={!project.isAdmin || projectAliasPending}
-                    readOnly={!project.isAdmin}
-                    placeholder="Short internal project name"
+                    value={connectedHost.projectAlias ?? ""}
+                    disabled
+                    readOnly
                     className="font-mono text-[13px]"
                   />
-                  {project.isAdmin ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleSaveProjectAlias}
-                      disabled={projectAliasPending || !projectAliasDirty}
+                  <span className={cn(TYPE.caption, "text-slate-500")}>
+                    Inherited from{" "}
+                    <Link
+                      href={`/settings/projects/${encodeURIComponent(
+                        connectedHost.projectId
+                      )}`}
+                      className="font-medium text-sky-700 hover:underline"
                     >
-                      Save alias
-                    </Button>
-                  ) : null}
-                </div>
-                <span className={cn(TYPE.caption, "text-slate-500")}>
-                  Short internal name used in inbox tags.
-                </span>
-              </>
-            )}
-          </div>
+                      {connectedHost.projectName}
+                    </Link>
+                    .
+                  </span>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Input
+                      id="project-short-alias"
+                      value={projectAliasDraft}
+                      onChange={(event) => {
+                        setProjectAliasDraft(event.target.value);
+                        setActivationMessage(null);
+                      }}
+                      disabled={!project.isAdmin || projectAliasPending}
+                      readOnly={!project.isAdmin}
+                      placeholder="Short internal project name"
+                      className="font-mono text-[13px]"
+                    />
+                    {project.isAdmin ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleSaveProjectAlias}
+                        disabled={projectAliasPending || !projectAliasDirty}
+                      >
+                        Save alias
+                      </Button>
+                    ) : null}
+                  </div>
+                  <span className={cn(TYPE.caption, "text-slate-500")}>
+                    Short internal name used in inbox tags.
+                  </span>
+                </>
+              )}
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="project-salesforce-id"
-              className={cn(TYPE.label, "text-slate-600")}
-            >
-              Salesforce ID
-            </label>
-            <Input
-              id="project-salesforce-id"
-              value={project.salesforceProjectId ?? ""}
-              disabled
-              readOnly
-              className="font-mono text-[13px]"
-            />
-            <span className={cn(TYPE.caption, "text-slate-500")}>
-              Read-only, linked via CRM sync.
-            </span>
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="project-salesforce-id"
+                className={cn(TYPE.label, "text-slate-600")}
+              >
+                Salesforce ID
+              </label>
+              <Input
+                id="project-salesforce-id"
+                value={project.salesforceProjectId ?? ""}
+                disabled
+                readOnly
+                className="font-mono text-[13px]"
+              />
+              <span className={cn(TYPE.caption, "text-slate-500")}>
+                Read-only, linked via CRM sync.
+              </span>
+            </div>
           </div>
-        </div>
+        </SettingsCard>
 
-        <div className="flex flex-col gap-1.5">
-          <span className={TYPE.label}>Inbox aliases</span>
-          <div className="flex flex-col gap-1.5">
-            {optimisticProject.emails.map((email) => {
+        <SettingsCard
+          title="Inbox aliases & signatures"
+          description="Addresses that route mail in. One signature each."
+          action={
+            project.isAdmin ? (
+              <InboxAliasAddControl
+                value={newEmail}
+                onChange={(value) => {
+                  setNewEmail(value);
+                  setActivationMessage(null);
+                }}
+                onAdd={handleAddEmail}
+                disabled={emailPending}
+              />
+            ) : null
+          }
+        >
+          <div className="flex flex-col gap-2">
+            {signatureEmails.map((email) => {
               const isRowPending = emailPending && pendingEmail === email.address;
+              const isExpanded = editingSignatureId === email.id;
+              const isSignaturePending =
+                signaturePending && pendingSignatureId === email.id;
+              const signatureDraft = signatureDrafts[email.id] ?? email.signature;
+              const signatureError = signatureErrors[email.id];
+              const signatureDirty =
+                normalizeProjectAliasSignature(signatureDraft) !== email.signature;
 
               return (
                 <div
                   key={email.id}
                   className={cn(
-                    "flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2",
+                    "rounded-md border border-slate-200 bg-white",
                     isRowPending && "opacity-60"
                   )}
                 >
-                  <Mail
-                    className="size-3.5 shrink-0 text-slate-400"
-                    aria-hidden="true"
-                  />
-                  <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-slate-800">
-                    {email.address}
-                  </span>
-                  {email.isPrimary ? (
-                    <StatusBadge
-                      label="Primary"
-                      colorClasses="bg-sky-50 text-sky-700 ring-sky-200"
-                      variant="soft"
+                  <div className="flex items-center gap-2 px-3 py-2">
+                    <Mail
+                      className="size-3.5 shrink-0 text-slate-400"
+                      aria-hidden="true"
                     />
-                  ) : null}
-                  {project.isAdmin && !email.isPrimary ? (
-                    <button
-                      type="button"
-                      disabled={emailPending}
-                      onClick={() => {
-                        handleMakePrimary(email.address);
-                      }}
-                      className={cn(
-                        "min-h-10 shrink-0 px-2 text-[11.5px] font-medium text-slate-500 hover:text-slate-900",
-                        TRANSITION.fast,
-                        FOCUS_RING,
-                        RADIUS.sm,
-                        "disabled:cursor-not-allowed disabled:opacity-40"
-                      )}
-                    >
-                      Make primary
-                    </button>
-                  ) : null}
-                  {project.isAdmin ? (
-                    <button
-                      type="button"
-                      aria-label={`Remove ${email.address}`}
-                      disabled={isRowPending}
-                      onClick={() => {
-                        handleRemoveEmail(email.address);
-                      }}
-                      className={cn(
-                        "flex size-10 shrink-0 items-center justify-center text-slate-400 hover:text-rose-600",
-                        TRANSITION.fast,
-                        FOCUS_RING,
-                        RADIUS.sm,
-                        "disabled:cursor-not-allowed disabled:opacity-40"
-                      )}
-                    >
-                      <Trash2 className="size-3.5" aria-hidden="true" />
-                    </button>
+                    <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-slate-800">
+                      {email.address}
+                    </span>
+                    {email.isPrimary ? (
+                      <StatusBadge
+                        label="Primary"
+                        colorClasses="bg-sky-50 text-sky-700 ring-sky-200"
+                        variant="soft"
+                      />
+                    ) : null}
+                    {project.isAdmin ? (
+                      <button
+                        type="button"
+                        aria-label={`Edit signature for ${email.address}`}
+                        aria-expanded={isExpanded}
+                        onClick={() => {
+                          handleToggleSignatureEdit(email.id);
+                        }}
+                        className={cn(
+                          "flex size-9 shrink-0 items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700",
+                          TRANSITION.fast,
+                          FOCUS_RING,
+                          RADIUS.sm,
+                          isExpanded && "bg-slate-100 text-slate-700"
+                        )}
+                      >
+                        <Pencil className="size-3.5" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                    {project.isAdmin ? (
+                      <button
+                        type="button"
+                        aria-label={`Remove ${email.address}`}
+                        disabled={isRowPending}
+                        onClick={() => {
+                          handleRemoveEmail(email.address);
+                        }}
+                        className={cn(
+                          "flex size-9 shrink-0 items-center justify-center text-slate-400 hover:bg-rose-50 hover:text-rose-600",
+                          TRANSITION.fast,
+                          FOCUS_RING,
+                          RADIUS.sm,
+                          "disabled:cursor-not-allowed disabled:opacity-40"
+                        )}
+                      >
+                        <Trash2 className="size-3.5" aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                  {project.isAdmin && isExpanded ? (
+                    <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-3 py-3">
+                      <div className="flex flex-col gap-1.5">
+                        <label
+                          htmlFor={`project-email-signature-${email.id}`}
+                          className={cn(TYPE.label, "text-slate-600")}
+                        >
+                          Email signature
+                        </label>
+                        <textarea
+                          id={`project-email-signature-${email.id}`}
+                          value={signatureDraft}
+                          onChange={(event) => {
+                            handleSignatureDraftChange(
+                              email.id,
+                              event.target.value
+                            );
+                          }}
+                          disabled={isSignaturePending}
+                          rows={5}
+                          className={cn(
+                            "w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200",
+                            signatureError &&
+                              "border-rose-300 bg-rose-50/40 text-rose-900"
+                          )}
+                          placeholder={`Warmly,\nThe ${signaturePlaceholderProjectName} Team\nAdventure Scientists`}
+                        />
+                        <span className={cn(TYPE.caption, "text-slate-500")}>
+                          Appended to every outbound email from this alias.
+                        </span>
+                        {signatureError ? (
+                          <p className="text-[11.5px] text-rose-600">
+                            {signatureError}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          {!email.isPrimary ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              disabled={emailPending}
+                              onClick={() => {
+                                handleMakePrimary(email.address);
+                              }}
+                            >
+                              Make primary
+                            </Button>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={isSignaturePending}
+                            onClick={() => {
+                              handleCancelSignatureEdit(email);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={isSignaturePending || !signatureDirty}
+                            onClick={() => {
+                              handleSaveSignature(email);
+                            }}
+                          >
+                            Save signature
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   ) : null}
                 </div>
               );
@@ -753,40 +993,36 @@ export function ProjectDetail({
                 <p className={TYPE.caption}>No connected addresses yet.</p>
               </div>
             ) : null}
-
-            {project.isAdmin ? (
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <label htmlFor="project-email-input" className="sr-only">
-                  Add project inbox alias
-                </label>
-                <Input
-                  id="project-email-input"
-                  type="email"
-                  value={newEmail}
-                  onChange={(event) => {
-                    setNewEmail(event.target.value);
-                    setActivationMessage(null);
-                  }}
-                  disabled={emailPending}
-                  placeholder="project@asc.internal"
-                  className="font-mono text-[13px]"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleAddEmail}
-                  disabled={emailPending || newEmail.trim().length === 0}
-                >
-                  + Add alias
-                </Button>
-              </div>
-            ) : null}
           </div>
-        </div>
+        </SettingsCard>
 
+        {isHost ? (
+          <SettingsCard
+            title="Connected projects"
+            description="Inactive projects routed through this one."
+          >
+            <ProjectConnectedProjectsSection
+              hostProjectId={project.projectId}
+              isAdmin={project.isAdmin}
+              initialConnectedProjects={project.connectedProjects}
+              initialAvailableCandidates={project.availableConnectionCandidates}
+            />
+          </SettingsCard>
+        ) : null}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="project-tabpanel-ai-knowledge"
+        aria-labelledby="project-tab-ai-knowledge"
+        hidden={activeTab !== "ai-knowledge"}
+        className="flex flex-col gap-5"
+      >
         {isConnectedSub && connectedHost ? (
-          <div className="flex flex-col gap-1.5">
-            <span className={TYPE.label}>AI Knowledge</span>
+          <SettingsCard
+            title="AI Knowledge"
+            description="AI Knowledge is inherited from the host project."
+          >
             <div className="rounded-md border border-slate-200 bg-slate-50/60 px-3 py-3">
               <p className={cn(TYPE.caption, "text-slate-700")}>
                 AI Knowledge is inherited from{" "}
@@ -803,7 +1039,7 @@ export function ProjectDetail({
                   : ". The host has no AI Knowledge URL configured yet."}
               </p>
             </div>
-          </div>
+          </SettingsCard>
         ) : (
           <ProjectAiKnowledgeSection
             projectId={project.projectId}
@@ -815,113 +1051,45 @@ export function ProjectDetail({
             aiKnowledgeSynthesisStale={project.aiKnowledgeSynthesisStale}
           />
         )}
+      </div>
 
-        {isHost ? (
-          <ProjectConnectedProjectsSection
-            hostProjectId={project.projectId}
-            isAdmin={project.isAdmin}
-            initialConnectedProjects={project.connectedProjects}
-            initialAvailableCandidates={project.availableConnectionCandidates}
-          />
-        ) : null}
-
-        <div className="flex flex-col gap-4">
-          <span className={TYPE.label}>Email signatures</span>
-          {signatureEmails.length > 0 ? (
-            signatureEmails.map((email, index) => {
-              const isSignaturePending =
-                signaturePending && pendingSignatureId === email.id;
-              const signatureDraft = signatureDrafts[email.id] ?? email.signature;
-              const signatureError = signatureErrors[email.id];
-              const signatureDirty =
-                normalizeProjectAliasSignature(signatureDraft) !== email.signature;
-
-              return (
-                <div
-                  key={email.id}
-                  className={cn(
-                    "flex flex-col gap-1.5",
-                    index > 0 && "border-t border-slate-100 pt-4"
-                  )}
-                >
-                  <label
-                    htmlFor={`project-email-signature-${email.id}`}
-                    className={cn(TYPE.label, "text-slate-600")}
-                  >
-                    Email signature - {email.address}
-                  </label>
-                  <textarea
-                    id={`project-email-signature-${email.id}`}
-                    value={signatureDraft}
-                    onChange={(event) => {
-                      handleSignatureDraftChange(email.id, event.target.value);
-                    }}
-                    disabled={!project.isAdmin || isSignaturePending}
-                    readOnly={!project.isAdmin}
-                    rows={5}
-                    className={cn(
-                      "w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200",
-                      signatureError &&
-                        "border-rose-300 bg-rose-50/40 text-rose-900"
-                    )}
-                    placeholder={`Warmly,\nThe ${signaturePlaceholderProjectName} Team\nAdventure Scientists`}
-                  />
-                  <div className="mt-1 flex items-center justify-between gap-3">
-                    <span className={cn(TYPE.caption, "text-slate-500")}>
-                      Appended to every outbound email from this alias.
-                    </span>
-                    {project.isAdmin ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={isSignaturePending || !signatureDirty}
-                        onClick={() => {
-                          handleSaveSignature(email);
-                        }}
-                      >
-                        Save signature
-                      </Button>
-                    ) : null}
-                  </div>
-                  {signatureError ? (
-                    <p className="mt-1 text-[11.5px] text-rose-600">
-                      {signatureError}
-                    </p>
-                  ) : null}
-                </div>
-              );
-            })
-          ) : (
-            <p className={TYPE.caption}>
-              Add an inbox alias to configure per-alias signatures.
-            </p>
-          )}
-        </div>
-
-        {project.isAdmin && optimisticProject.isActive ? (
+      <div
+        role="tabpanel"
+        id="project-tabpanel-danger-zone"
+        aria-labelledby="project-tab-danger-zone"
+        hidden={activeTab !== "danger-zone"}
+        className="flex flex-col gap-5"
+      >
+        {project.isAdmin && optimisticProject.isActive && !isConnectedSub ? (
           <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
-            <div className="mt-1">
-              <div className="flex items-center justify-between rounded-md border border-rose-200/70 bg-rose-50/40 px-3 py-2">
-                <div className="text-[12px]">
-                  <span className="font-medium text-rose-700">
-                    Deactivate project
-                  </span>
-                  <span className="ml-1.5 text-rose-600/80">
-                    Stops routing mail. Existing threads stay searchable.
-                  </span>
-                </div>
+            <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-5">
+              <div className="flex flex-col gap-2">
+                <h3 className="text-sm font-semibold text-rose-700">
+                  Deactivate project
+                </h3>
+                <p className="max-w-2xl text-[13px] leading-relaxed text-rose-700/90">
+                  Stops routing mail to this project. Existing threads stay
+                  searchable in the inbox but new mail addressed to this
+                  project&apos;s aliases will bounce. You can reactivate from the
+                  Projects list later.
+                </p>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-rose-200/70 pt-4">
+                <p className="text-[12.5px] text-rose-700/90">
+                  This will affect{" "}
+                  <span className="font-semibold text-rose-800">
+                    {String(project.memberCount)}
+                  </span>{" "}
+                  linked volunteer{project.memberCount === 1 ? "" : "s"}.
+                </p>
                 <DialogTrigger asChild>
-                  <button
+                  <Button
                     type="button"
-                    className={cn(
-                      "min-h-10 shrink-0 px-2 text-[12px] font-medium text-rose-700 hover:underline",
-                      FOCUS_RING,
-                      RADIUS.sm
-                    )}
+                    variant="outline"
+                    className="border-rose-300 text-rose-700 hover:bg-rose-100 hover:text-rose-800"
                   >
-                    Deactivate
-                  </button>
+                    Deactivate project
+                  </Button>
                 </DialogTrigger>
               </div>
             </div>
@@ -980,23 +1148,134 @@ export function ProjectDetail({
           <ConnectedSubDisconnectControl
             projectName={project.projectName}
             hostName={connectedHost?.projectName ?? "host"}
+            memberCount={project.memberCount}
             onDisconnect={handleDisconnect}
             disabled={activationPending}
           />
         ) : null}
-      </section>
+      </div>
     </div>
+  );
+}
+
+function SettingsCard({
+  title,
+  description,
+  action,
+  children
+}: {
+  readonly title: string;
+  readonly description?: string;
+  readonly action?: React.ReactNode;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <section
+      className={cn(
+        "p-5",
+        RADIUS.md,
+        "border border-slate-200 bg-white",
+        SHADOW.sm
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className={TYPE.headingSm}>{title}</h3>
+          {description ? (
+            <p className={cn(TYPE.caption, "mt-1 text-slate-500")}>
+              {description}
+            </p>
+          ) : null}
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function InboxAliasAddControl({
+  value,
+  onChange,
+  onAdd,
+  disabled
+}: {
+  readonly value: string;
+  readonly onChange: (next: string) => void;
+  readonly onAdd: () => void;
+  readonly disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" size="sm" variant="outline">
+          + Add alias
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add inbox alias</DialogTitle>
+          <DialogDescription>
+            Mail sent to this address routes into this project&apos;s inbox.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-1.5 py-2">
+          <label htmlFor="project-email-input" className={TYPE.label}>
+            Email address
+          </label>
+          <Input
+            id="project-email-input"
+            type="email"
+            value={value}
+            onChange={(event) => {
+              onChange(event.target.value);
+            }}
+            disabled={disabled}
+            placeholder="project@asc.internal"
+            className="font-mono text-[13px]"
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setOpen(false);
+            }}
+            disabled={disabled}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              onAdd();
+              setOpen(false);
+            }}
+            disabled={disabled || value.trim().length === 0}
+          >
+            Save alias
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function ConnectedSubDisconnectControl({
   projectName,
   hostName,
+  memberCount,
   onDisconnect,
   disabled
 }: {
   readonly projectName: string;
   readonly hostName: string;
+  readonly memberCount: number;
   readonly onDisconnect: () => void;
   readonly disabled: boolean;
 }) {
@@ -1004,28 +1283,33 @@ function ConnectedSubDisconnectControl({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <div className="mt-1">
-        <div className="flex items-center justify-between rounded-md border border-rose-200/70 bg-rose-50/40 px-3 py-2">
-          <div className="text-[12px]">
-            <span className="font-medium text-rose-700">
-              Disconnect from {hostName}
-            </span>
-            <span className="ml-1.5 text-rose-600/80">
-              Deactivates this project. Volunteers stop rolling up.
-            </span>
-          </div>
+      <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-5">
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-rose-700">
+            Disconnect from {hostName}
+          </h3>
+          <p className="max-w-2xl text-[13px] leading-relaxed text-rose-700/90">
+            Deactivates {projectName} and stops volunteers from rolling up to{" "}
+            {hostName}. You can reconnect later from the Projects list.
+          </p>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-rose-200/70 pt-4">
+          <p className="text-[12.5px] text-rose-700/90">
+            This will affect{" "}
+            <span className="font-semibold text-rose-800">
+              {String(memberCount)}
+            </span>{" "}
+            linked volunteer{memberCount === 1 ? "" : "s"}.
+          </p>
           <DialogTrigger asChild>
-            <button
+            <Button
               type="button"
-              className={cn(
-                "min-h-10 shrink-0 px-2 text-[12px] font-medium text-rose-700 hover:underline",
-                FOCUS_RING,
-                RADIUS.sm
-              )}
+              variant="outline"
+              className="border-rose-300 text-rose-700 hover:bg-rose-100 hover:text-rose-800"
             >
               <Link2Off className="mr-1 inline size-3.5" aria-hidden="true" />
-              Disconnect
-            </button>
+              Disconnect project
+            </Button>
           </DialogTrigger>
         </div>
       </div>

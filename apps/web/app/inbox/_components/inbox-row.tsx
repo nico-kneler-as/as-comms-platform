@@ -127,8 +127,22 @@ export function InboxRow({ item, isActive }: RowProps) {
           {showBadges ? (
             <div className="mt-2 flex items-center gap-1.5">
               {item.projectLabel ? (
-                <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
-                  {item.projectLabel}
+                <span
+                  className={`inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 ${
+                    item.projectSubLabel === null ? "" : "gap-1"
+                  }`}
+                  title={
+                    item.projectSubLabel === null
+                      ? undefined
+                      : `${item.projectLabel} (via ${item.projectSubLabel})`
+                  }
+                >
+                  <span>{item.projectLabel}</span>
+                  {item.projectSubLabel === null ? null : (
+                    <span className="text-slate-400">
+                      via {item.projectSubLabel}
+                    </span>
+                  )}
                 </span>
               ) : null}
               {showAsBadge ? (

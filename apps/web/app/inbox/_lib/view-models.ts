@@ -79,6 +79,14 @@ export interface InboxListItemViewModel {
   readonly snippet: string;
   readonly latestChannel: InboxChannel;
   readonly projectLabel: string | null;
+  /**
+   * When the row's primary project is a connected sub-project, this holds
+   * the sub-project's own name so the chip can render "via {sub}" beneath
+   * the host's name (which is in `projectLabel`). `null` when the project
+   * is standalone or a host. Mirrors the membership-level
+   * `subDisplayName` field so rail / row / header agree by construction.
+   */
+  readonly projectSubLabel: string | null;
   readonly additionalActiveProjectsCount: number;
   readonly volunteerStage: InboxVolunteerStage;
 
@@ -122,7 +130,23 @@ export type InboxProjectStatus =
 export interface InboxProjectMembershipViewModel {
   readonly membershipId: string;
   readonly projectId: string;
+  /**
+   * The label the rail / chip shows as primary text. For a standalone or
+   * host project this is just the project's own name. For a connected sub
+   * (one whose `project_dimensions.connected_to_project_id` is set) this
+   * is the **host's** name — so a Beech-only volunteer's rail entry reads
+   * "Beech & Butternut" rather than "Beech".
+   */
   readonly projectName: string;
+  /**
+   * Set when this membership's project is a connected sub. Holds the
+   * sub-project's own name (e.g. "Saving American Beech") so the rail / chip
+   * can render a small "via {subDisplayName}" line under the primary host
+   * label. `null` for standalone or host projects.
+   */
+  readonly subDisplayName: string | null;
+  /** True when this membership's project is a connected sub-project. */
+  readonly isConnectedSub: boolean;
   readonly projectIsActive: boolean;
   readonly status: InboxProjectStatus;
   readonly statusLabel: string;
@@ -403,7 +427,20 @@ export interface InboxDetailSummaryViewModel {
   readonly projectionAvailable: boolean;
   readonly conversationProject: {
     readonly projectId: string;
+    /**
+     * Same convention as
+     * {@link InboxProjectMembershipViewModel.projectName}: when the
+     * resolved project is a connected sub, this is the host's name (so the
+     * header chip says "Beech & Butternut") and the sub-project's own
+     * name lives in `subProjectName`.
+     */
     readonly projectName: string;
+    /**
+     * Sub-project's own name when the resolved project is a connected sub
+     * (so the header chip can render "via {subProjectName}"). `null` for
+     * standalone / host projects.
+     */
+    readonly subProjectName: string | null;
     readonly source: "membership" | "conversation";
   } | null;
   readonly initials: string;
@@ -482,8 +519,17 @@ export interface InboxUnifiedSearchRowViewModel {
   readonly primaryEmail: string | null;
   readonly primaryPhone: string | null;
   readonly projectLabel: string | null;
+  /**
+   * True when the contact has at least one row in `contact_memberships`
+   * (active OR past). Drives the Volunteers / Contacts partition.
+   */
+  readonly hasMembership: boolean;
   readonly hasProjection: boolean;
-  /** Last activity across ALL canonical event types (lifecycle, comm, etc.). */
+  /**
+   * Last volunteer-side activity (lifecycle.* + inbound 1:1 + sms.opt_*).
+   * Outbound 1:1 sends and campaign events are excluded so an operator's
+   * reply doesn't move a contact up.
+   */
   readonly lastActivityAt: string | null;
   readonly lastActivityLabel: string;
   /** Latest message subject, when projection-backed. Null otherwise. */
@@ -496,16 +542,23 @@ export interface InboxUnifiedSearchRowViewModel {
 }
 
 /**
- * Two-section unified search response. Both sections capped at 25 in v1.
- * `totals` reports the count BEFORE truncation.
+ * Two-section unified search response, partitioned by membership-existence:
+ *
+ * - `volunteers`: matched contacts with at least one `contact_memberships`
+ *   row (active OR past), rendered in the existing full-row format.
+ * - `contacts`: matched contacts with zero memberships, rendered in the
+ *   compact single-line format.
+ *
+ * Each section capped at 25 in v1. `totals` reports the count BEFORE
+ * truncation.
  */
 export interface InboxUnifiedSearchViewModel {
   readonly query: string;
-  readonly contactMatches: readonly InboxUnifiedSearchRowViewModel[];
-  readonly bodyMatches: readonly InboxUnifiedSearchRowViewModel[];
+  readonly volunteers: readonly InboxUnifiedSearchRowViewModel[];
+  readonly contacts: readonly InboxUnifiedSearchRowViewModel[];
   readonly totals: {
-    readonly contactMatches: number;
-    readonly bodyMatches: number;
+    readonly volunteers: number;
+    readonly contacts: number;
   };
 }
 

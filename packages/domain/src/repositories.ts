@@ -147,6 +147,19 @@ export interface AiKnowledgeRepository {
   findProjectNotionContent(
     projectId: string,
   ): Promise<AiKnowledgeEntryRecord | null>;
+  /**
+   * Like {@link findProjectNotionContent}, but transparently falls back to
+   * the host project's cached Notion content when `projectId` refers to a
+   * connected sub-project (one with `project_dimensions.connected_to_project_id`
+   * set). Used by the AI Draft retriever so a thread tagged with the sub's
+   * project_id still gets the host-curated grounding.
+   *
+   * Settings + sync code paths must NOT call this — they need the raw
+   * project's content keyed by its own id.
+   */
+  findEffectiveProjectNotionContent(
+    projectId: string,
+  ): Promise<AiKnowledgeEntryRecord | null>;
   hasProjectNotionContent(projectId: string): Promise<boolean>;
   findProjectIdsWithNotionContent(
     projectIds: readonly string[],
@@ -204,9 +217,18 @@ export interface InboxUnifiedSearchRow {
   readonly contact: ContactRecord;
   readonly memberships: readonly InboxUnifiedSearchMembership[];
   /**
-   * MAX(canonicalEventLedger.occurredAt) across ALL event types — not just
-   * inbox-driving comm events. Drives the "last activity" sort key and
-   * timestamp label. Null when the contact has no events at all.
+   * True when the contact has at least one row in `contact_memberships`,
+   * regardless of whether the membership is active or past. Drives the
+   * Volunteers / Contacts partition on the client.
+   */
+  readonly hasMembership: boolean;
+  /**
+   * MAX(canonicalEventLedger.occurredAt) WHERE event_type is
+   * volunteer-initiated (lifecycle.* + inbound 1:1 comm + sms.opt_*).
+   * Excludes outbound 1:1 sends, all campaign events, and internal notes
+   * so an operator's reply doesn't bump a contact to the top. Drives the
+   * "last activity" sort key and timestamp label. Null when the contact has
+   * no qualifying events at all.
    */
   readonly lastActivityAt: string | null;
   /**
@@ -235,20 +257,26 @@ export interface InboxUnifiedSearchRow {
 }
 
 /**
- * Two-section unified search result. Section A (`contactMatches`) matches on
- * contact attributes (display name, primary email, primary phone). Section B
- * (`bodyMatches`) matches on inbox-projection snippet or latest message
- * subject and EXCLUDES contacts already in `contactMatches`. Each section is
- * sorted by lastActivityAt desc internally and capped at the `limit` passed
- * in. `totals` exposes the count BEFORE truncation so the UI can show
- * "X+ results".
+ * Two-section unified search result. Both sections match on contact
+ * attributes (display name, primary email, primary phone) and partition the
+ * matched contacts by membership-existence:
+ *
+ * - `volunteers`: contacts with at least one `contact_memberships` row
+ *   (active OR past).
+ * - `contacts`: contacts with zero membership rows.
+ *
+ * Each section is sorted by `lastActivityAt` desc (volunteer-initiated
+ * events only — see {@link InboxUnifiedSearchRow.lastActivityAt}) with NULL
+ * last and `contacts.created_at` desc as the tiebreaker, then capped at the
+ * `limit` passed in. `totals` exposes the count BEFORE truncation so the UI
+ * can show "X+ results".
  */
 export interface InboxUnifiedSearchResult {
-  readonly contactMatches: readonly InboxUnifiedSearchRow[];
-  readonly bodyMatches: readonly InboxUnifiedSearchRow[];
+  readonly volunteers: readonly InboxUnifiedSearchRow[];
+  readonly contacts: readonly InboxUnifiedSearchRow[];
   readonly totals: {
-    readonly contactMatches: number;
-    readonly bodyMatches: number;
+    readonly volunteers: number;
+    readonly contacts: number;
   };
 }
 
@@ -265,17 +293,17 @@ export interface ContactRepository {
     readonly limit: number;
   }): Promise<readonly ContactRecord[]>;
   /**
-   * Unified inbox search. Bypasses the projection-only filter so the result
-   * includes contacts who have lifecycle/campaign events (or no events at
-   * all) alongside contacts with conversation history. Returns two sections:
+   * Unified inbox search. Returns contacts matching name / primary email /
+   * primary phone (ILIKE), partitioned by whether the contact has any
+   * `contact_memberships` row (active OR past):
    *
-   * - `contactMatches`: matches on `contacts.displayName`, `primaryEmail`,
-   *   `primaryPhone`. Includes contacts without inbox projection.
-   * - `bodyMatches`: matches on `contact_inbox_projection.snippet` or the
-   *   latest message subject (joined via `last_canonical_event_id`). Excludes
-   *   contacts already returned in `contactMatches`.
+   * - `volunteers`: matched contacts with at least one membership.
+   * - `contacts`: matched contacts with zero memberships.
    *
-   * Both sections are sorted by `lastActivityAt` desc and capped at `limit`.
+   * Both sections are sorted by `lastActivityAt` desc — restricted to
+   * volunteer-initiated events (lifecycle.* + inbound 1:1 communication +
+   * sms.opt_*) so outbound sends and campaign events don't bump a contact
+   * to the top — and capped at `limit`.
    */
   searchInboxUnified(input: {
     readonly query: string;
@@ -347,6 +375,28 @@ export interface SmsSenderRepository {
   } | null>;
 }
 
+/**
+ * Effective (i.e. resolved-after-fallback) AI knowledge bundle for a project.
+ *
+ * - `projectId` is the project the caller asked about.
+ * - `resolvedFromProjectId` is the project the values were actually read from.
+ *   Equal to `projectId` when the project is a host or standalone; equal to
+ *   the host's id when the project is a connected sub.
+ * - The remaining fields mirror the AI-knowledge columns on
+ *   {@link ProjectDimensionRecord} so the AI Draft pipeline can use them
+ *   without caring whether the project is a sub or a host.
+ */
+export interface EffectiveAiKnowledge {
+  readonly projectId: string;
+  readonly resolvedFromProjectId: string;
+  readonly aiKnowledgeUrl: string | null;
+  readonly aiKnowledgeSources: readonly AiKnowledgeSource[];
+  readonly aiOperatingContext: string;
+  readonly aiAutoSyncSchedule: "never" | "daily" | "weekly";
+  readonly aiOptimizedSynthesizedAt: string | null;
+  readonly aiOptimizedInputHash: string | null;
+}
+
 export interface ProjectDimensionRepository {
   findById(projectId: string): Promise<ProjectDimensionRecord | null>;
   listAll(): Promise<readonly ProjectDimensionRecord[]>;
@@ -368,6 +418,18 @@ export interface ProjectDimensionRepository {
   listAvailableConnectionCandidates(): Promise<
     readonly ProjectDimensionRecord[]
   >;
+  /**
+   * Returns the AI-knowledge bundle the synthesis + draft pipelines should
+   * use for `projectId`, transparently inheriting from the host when the
+   * row is a connected sub-project.
+   *
+   * Settings code paths must NOT call this — they need the raw stored value
+   * (see {@link findById}). Use this only when you want the inherited /
+   * "effective" value.
+   */
+  findEffectiveAiKnowledge(
+    projectId: string,
+  ): Promise<EffectiveAiKnowledge | null>;
   getAiKnowledgeSources(
     projectId: string,
   ): Promise<readonly AiKnowledgeSource[]>;

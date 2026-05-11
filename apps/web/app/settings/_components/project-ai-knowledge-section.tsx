@@ -628,66 +628,68 @@ export function ProjectAiKnowledgeSection({
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-900">Auto-sync schedule</p>
-            <p className={cn(TYPE.caption, "mt-1 text-slate-600")}>
-              Hourly polling checks whether this project is due for a daily or
-              weekly refresh, then skips synthesis when source hashes are unchanged.
-            </p>
-          </div>
-          <label className="flex flex-col gap-1.5 text-[12px] text-slate-600">
-            <span className={TYPE.label}>Schedule</span>
-            <select
-              value={autoSyncSchedule}
-              onChange={(event) => {
-                handleAutoSyncScheduleChange(
-                  event.target.value as "never" | "daily" | "weekly",
-                );
-              }}
-              disabled={!isAdmin || schedulePending}
-              className="min-w-[160px] rounded-md border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-slate-800 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:opacity-60"
-            >
-              <option value="never">Never</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-            </select>
-          </label>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <p className="text-sm font-medium text-slate-900">Synthesis status</p>
+          <p
+            className={cn(
+              TYPE.caption,
+              "mt-1 flex items-start gap-1.5 text-slate-600"
+            )}
+          >
+            {enqueuedAt !== null ? (
+              <>
+                <RefreshCw
+                  className="mt-0.5 size-3 shrink-0 animate-spin text-sky-600"
+                  aria-hidden="true"
+                />
+                <span>
+                  Synthesizing now — Claude call + Notion publish typically
+                  takes 30–90s.
+                </span>
+              </>
+            ) : aiOptimizedSynthesizedAt === null ? (
+              <span>Not yet synthesized.</span>
+            ) : (
+              <span>{`Last synthesized: ${formatTimestamp(aiOptimizedSynthesizedAt)} (${String(enabledHealthySources.length)} healthy enabled sources, model metadata unavailable).`}</span>
+            )}
+          </p>
+          {aiKnowledgeSynthesisStale && enqueuedAt === null ? (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+              Synthesis is stale. One or more source hashes no longer match the
+              last synthesized input. Re-sync recommended.
+            </div>
+          ) : null}
         </div>
-      </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <p className="text-sm font-medium text-slate-900">Synthesis status</p>
-        <p
-          className={cn(
-            TYPE.caption,
-            "mt-1 flex items-center gap-1.5 text-slate-600"
-          )}
-        >
-          {enqueuedAt !== null ? (
-            <>
-              <RefreshCw
-                className="size-3 animate-spin text-sky-600"
-                aria-hidden="true"
-              />
-              <span>
-                Synthesizing now — Claude call + Notion publish typically
-                takes 30–90s.
-              </span>
-            </>
-          ) : aiOptimizedSynthesizedAt === null ? (
-            <span>Not yet synthesized.</span>
-          ) : (
-            <span>{`Last synthesized: ${formatTimestamp(aiOptimizedSynthesizedAt)} (${String(enabledHealthySources.length)} healthy enabled sources, model metadata unavailable).`}</span>
-          )}
-        </p>
-        {aiKnowledgeSynthesisStale && enqueuedAt === null ? (
-          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
-            Synthesis is stale. One or more source hashes no longer match the
-            last synthesized input. Re-sync recommended.
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-col gap-3">
+            <div>
+              <p className="text-sm font-medium text-slate-900">Auto-sync schedule</p>
+              <p className={cn(TYPE.caption, "mt-1 text-slate-600")}>
+                Hourly polling checks whether this project is due for a refresh,
+                then skips synthesis when source hashes are unchanged.
+              </p>
+            </div>
+            <label className="flex flex-col gap-1.5 text-[12px] text-slate-600">
+              <span className={TYPE.label}>Frequency</span>
+              <select
+                value={autoSyncSchedule}
+                onChange={(event) => {
+                  handleAutoSyncScheduleChange(
+                    event.target.value as "never" | "daily" | "weekly",
+                  );
+                }}
+                disabled={!isAdmin || schedulePending}
+                className="min-w-[160px] rounded-md border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-slate-800 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:opacity-60"
+              >
+                <option value="never">Never</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </label>
           </div>
-        ) : null}
+        </div>
       </div>
     </div>
   );
