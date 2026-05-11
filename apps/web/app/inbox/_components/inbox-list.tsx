@@ -154,6 +154,45 @@ function resolveInboxHeaderTitle(input: {
   return projectLabel ?? activeStateLabel ?? "Inbox";
 }
 
+/**
+ * Format the inbox header title with an unread count suffix, e.g.
+ * `Inbox (22)` or `PNW Biodiversity (20)`.
+ *
+ * The count is `totals.unread` which is already scoped to the active project
+ * filter server-side (see `countByFilters({ projectId })`), so the same value
+ * reads correctly across no-filter and project-filtered views.
+ *
+ * Skipped when:
+ *  - a search is active (the title is "Results" and the count concept doesn't
+ *    apply to the unified search response)
+ *  - the unread count is zero (cleaner empty state)
+ *  - the active filter is one of `sent` / `archived` / `follow-up` where
+ *    "unread" isn't the dominant metric
+ */
+function formatInboxHeaderTitleWithUnreadCount(input: {
+  readonly title: string;
+  readonly unreadCount: number;
+  readonly activeFilter: InboxFilterId;
+  readonly isSearchActive: boolean;
+}): string {
+  if (input.isSearchActive) {
+    return input.title;
+  }
+
+  if (input.unreadCount <= 0) {
+    return input.title;
+  }
+
+  const filterId = input.activeFilter;
+  const showsUnreadAsHeadline =
+    filterId === "inbox" || filterId === "unread";
+  if (!showsUnreadAsHeadline) {
+    return input.title;
+  }
+
+  return `${input.title} (${String(input.unreadCount)})`;
+}
+
 export function InboxList({
   initialList,
   initialFilterId = "inbox",
@@ -559,16 +598,30 @@ export function InboxList({
   const hasActiveFilters =
     activeFilter !== "inbox" || selectedProjectId !== null;
   const shouldShowSearchSummary = search.isActive && isSearchThresholdMet;
+  const unreadCount = currentList.totals.unread;
   const headerTitle = useMemo(
     () =>
-      resolveInboxHeaderTitle({
-        searchQuery: search.query,
+      formatInboxHeaderTitleWithUnreadCount({
+        title: resolveInboxHeaderTitle({
+          searchQuery: search.query,
+          activeFilter,
+          selectedProjectId,
+          urlProjectIds,
+          activeProjects,
+        }),
+        unreadCount,
         activeFilter,
-        selectedProjectId,
-        urlProjectIds,
-        activeProjects,
+        isSearchActive: search.isActive,
       }),
-    [activeFilter, activeProjects, search.query, selectedProjectId, urlProjectIds],
+    [
+      activeFilter,
+      activeProjects,
+      search.isActive,
+      search.query,
+      selectedProjectId,
+      unreadCount,
+      urlProjectIds,
+    ],
   );
 
   const handleFilterChange = useCallback(

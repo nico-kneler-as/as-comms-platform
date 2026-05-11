@@ -388,21 +388,21 @@ describe("Inbox list shell", () => {
     searchParamsMock.current = "";
   });
 
-  it("renders Inbox when no filter is active", async () => {
+  it("renders Inbox with the unread count when no filter is active", async () => {
     fetchInboxListPageMock.mockResolvedValue(buildList());
     activeSession = await mountInboxList();
 
     const heading = activeSession.container.querySelector("h1");
-    expect(heading?.textContent).toBe("Inbox");
+    expect(heading?.textContent).toBe("Inbox (3)");
   });
 
-  it("renders the selected project alias in the header", async () => {
+  it("renders the selected project alias in the header with the unread count", async () => {
     const projectList = buildPnwProjectList();
     fetchInboxListPageMock.mockResolvedValue(projectList);
     activeSession = await mountInboxList(projectList);
 
     const heading = activeSession.container.querySelector("h1");
-    expect(heading?.textContent).toBe("PNW Biodiversity");
+    expect(heading?.textContent).toBe("PNW Biodiversity (3)");
   });
 
   it("falls back old filter=all URLs to inbox", async () => {
@@ -415,7 +415,7 @@ describe("Inbox list shell", () => {
       scroll: false,
     });
     expect(activeSession.container.querySelector("h1")?.textContent).toBe(
-      "Inbox",
+      "Inbox (3)",
     );
   });
 
@@ -437,7 +437,7 @@ describe("Inbox list shell", () => {
     await flushReact();
 
     const heading = session.container.querySelector("h1");
-    expect(heading?.textContent).toBe("PNW Biodiversity · Unread");
+    expect(heading?.textContent).toBe("PNW Biodiversity · Unread (3)");
   });
 
   it("renders the active state label when only a state filter is active", async () => {
@@ -494,7 +494,7 @@ describe("Inbox list shell", () => {
     );
 
     const heading = activeSession.container.querySelector("h1");
-    expect(heading?.textContent).toBe("2 projects");
+    expect(heading?.textContent).toBe("2 projects (3)");
   });
 
   it("renders Filtered when more than two facets are active", async () => {
@@ -531,7 +531,24 @@ describe("Inbox list shell", () => {
     await flushReact();
 
     const heading = session.container.querySelector("h1");
-    expect(heading?.textContent).toBe("Filtered");
+    expect(heading?.textContent).toBe("Filtered (3)");
+  });
+
+  it("omits the unread count from the title when no unread emails remain", async () => {
+    const listWithZeroUnread = buildList({
+      totals: {
+        inbox: 1289,
+        unread: 0,
+        followUp: 2,
+        sent: 7,
+        archived: 1,
+      },
+    });
+    fetchInboxListPageMock.mockResolvedValue(listWithZeroUnread);
+    activeSession = await mountInboxList(listWithZeroUnread);
+
+    const heading = activeSession.container.querySelector("h1");
+    expect(heading?.textContent).toBe("Inbox");
   });
 
   it("keeps filters hidden by default and exposes open and active button states", async () => {
