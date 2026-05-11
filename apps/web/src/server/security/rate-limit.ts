@@ -127,24 +127,58 @@ export function resetSecurityRateLimiterForTests(): void {
   rateLimiterOverride = null;
 }
 
+/**
+ * Resolve the request's client IP for rate-limit bucketing.
+ *
+ * Trust order matters: an attacker can spoof headers they fully control.
+ * Per Railway's edge-proxy documented behavior (verified 2026-05-02, see
+ * `.STATE-2026-05-02-security-review-pass-2.md` H5 and the Railway
+ * forum post on x-forwarded-for trust):
+ *
+ *   - `x-real-ip` is set by Railway's edge AND any client-supplied value
+ *     is stripped before forwarding. Trustworthy.
+ *   - `cf-connecting-ip` is set by Cloudflare's edge AND any client-supplied
+ *     value is stripped. Trustworthy when Cloudflare fronts the deploy.
+ *   - `x-forwarded-for` is APPENDED to by Railway with the actual client IP,
+ *     but client-supplied entries are preserved at the LEFTMOST positions.
+ *     The rightmost value is Railway's view of the client; the leftmost is
+ *     attacker-controlled. Naive "take the first" implementations are
+ *     spoofable for rate-limit evasion.
+ *
+ * Prefer the trustworthy headers; fall back to the rightmost X-Forwarded-For
+ * value (Railway's edge entry) only when nothing else is available — this
+ * is the right default for non-Railway dev environments where there's no
+ * edge proxy adding a trusted header.
+ *
+ * In tests and local dev with no proxy headers, returns "127.0.0.1".
+ */
 export function getClientIp(request: Request): string {
+  const cfConnectingIp = request.headers.get("cf-connecting-ip");
+  if (cfConnectingIp && cfConnectingIp.trim().length > 0) {
+    return cfConnectingIp.trim();
+  }
+
+  const xRealIp = request.headers.get("x-real-ip");
+  if (xRealIp && xRealIp.trim().length > 0) {
+    return xRealIp.trim();
+  }
+
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
-    const firstForwardedIp = forwardedFor
+    const chain = forwardedFor
       .split(",")
       .map((value) => value.trim())
-      .find((value) => value.length > 0);
+      .filter((value) => value.length > 0);
 
-    if (firstForwardedIp) {
-      return firstForwardedIp;
+    // Take the rightmost entry — the trusted edge's view of the client.
+    // The leftmost entries are client-controlled and can be spoofed.
+    const trustedEdgeEntry = chain[chain.length - 1];
+    if (trustedEdgeEntry !== undefined) {
+      return trustedEdgeEntry;
     }
   }
 
-  return (
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-real-ip") ??
-    "127.0.0.1"
-  );
+  return "127.0.0.1";
 }
 
 export async function enforceRateLimit(input: {
