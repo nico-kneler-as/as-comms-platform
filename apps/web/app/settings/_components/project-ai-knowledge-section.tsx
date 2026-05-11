@@ -520,7 +520,7 @@ export function ProjectAiKnowledgeSection({
                     className={cn(!source.enabled && "opacity-70", isRowPending && "opacity-60")}
                   >
                     <td className="px-3 py-3">
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col items-start gap-1">
                         <StatusBadge
                           label={badge.label}
                           colorClasses={badge.classes}
