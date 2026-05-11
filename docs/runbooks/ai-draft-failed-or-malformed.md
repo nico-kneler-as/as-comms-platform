@@ -77,4 +77,4 @@ Alert `nico@adventurescientists.org`. Include:
   - [`apps/web/src/server/ai/cost-counter.ts:35`](../../apps/web/src/server/ai/cost-counter.ts) — in-process daily cost state; resets at midnight UTC
   - [`apps/web/src/server/ai/types.ts:12`](../../apps/web/src/server/ai/types.ts) — warning codes: `provider_not_configured`, `provider_timeout`, `provider_rate_limited`, `provider_unavailable`, `budget_warn`, `grounding_empty`
   - [`apps/web/src/server/ai/draft-generator.ts:279`](../../apps/web/src/server/ai/draft-generator.ts) — error classification and fallback dispatch
-- **Other runbooks:** [morning-ops-checks.md](./morning-ops-checks.md)
+- **Other runbooks:** [morning-ops-checks.md](./morning-ops-checks.md), [ai-knowledge-sync-failed.md](./ai-knowledge-sync-failed.md)
