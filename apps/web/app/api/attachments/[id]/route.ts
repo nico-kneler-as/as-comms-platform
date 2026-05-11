@@ -1,6 +1,7 @@
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 import { requireApiSession } from "@/src/server/auth/api";
 import { fetchAttachmentUpstream } from "@/src/server/attachments/upstream";
+import { appendSecurityAudit } from "@/src/server/security/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,23 @@ export async function GET(
   const attachment = await runtime.repositories.messageAttachments.findById(id);
 
   if (attachment === null) {
+    // Defense-in-depth observability: log every cross-attachment access
+    // attempt so a future cross-project IDOR pattern is detectable in the
+    // audit log without requiring a structural project-scope filter.
+    // See `.STATE-2026-05-02-security-review.md` H2.
+    await appendSecurityAudit({
+      actorType: "user",
+      actorId: session.user.id,
+      action: "attachment.fetch",
+      entityType: "message_attachment",
+      entityId: id,
+      result: "denied",
+      policyCode: "attachment.fetch.not_found",
+      metadataJson: {},
+    }).catch((error: unknown) => {
+      console.error("Failed to append attachment audit.", error);
+    });
+
     return new Response("Attachment not found", { status: 404 });
   }
 
@@ -93,6 +111,24 @@ export async function GET(
   if (!upstreamResponse.ok) {
     return new Response("Attachment upstream unavailable.", { status: 502 });
   }
+
+  // Successful fetch — log who fetched what for the cross-attachment access
+  // audit trail (see `.STATE-2026-05-02-security-review.md` H2).
+  await appendSecurityAudit({
+    actorType: "user",
+    actorId: session.user.id,
+    action: "attachment.fetch",
+    entityType: "message_attachment",
+    entityId: id,
+    result: "allowed",
+    policyCode: "attachment.fetch",
+    metadataJson: {
+      mimeType: attachment.mimeType,
+      sizeBytes: attachment.sizeBytes,
+    },
+  }).catch((error: unknown) => {
+    console.error("Failed to append attachment audit.", error);
+  });
 
   return new Response(upstreamResponse.body, {
     status: 200,

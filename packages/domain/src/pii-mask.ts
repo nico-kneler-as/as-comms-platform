@@ -19,6 +19,26 @@
  *   - Single capitalised words (would over-mask common English: "Monday",
  *     "Pacific", project names that legitimately appear in tone signal).
  *   - Greetings and sign-offs — Claude needs these to learn voice.
+ *
+ * Compliance boundary (security review 2026-05-02 M4):
+ *
+ * This masker is **heuristic, not regulatory-grade.** Specifically:
+ *   - Phone regex matches US-style 10-digit numbers only. International
+ *     formats (e.g. `+44 207 123 4567`, `+33 1 ...`) will NOT be masked.
+ *   - Name regex requires 2+ consecutive capitalised words. Single first
+ *     names in greetings (e.g. "Hi Sarah,") will NOT be masked.
+ *   - The following PII categories are NOT masked at all and would leak
+ *     to Anthropic if present in a corpus example: physical addresses,
+ *     dates of birth, member/donor IDs, social-security-style numbers,
+ *     payment card numbers, donation amounts.
+ *
+ * Acceptable for the current data class — Adventure Scientists volunteer
+ * communications are non-regulated PII and Anthropic's DPA covers the
+ * processing. If this masker is ever reused for HIPAA-regulated content
+ * (e.g. citizen-science health-research volunteers), GDPR-resident data
+ * beyond what Anthropic's DPA covers, or financial reconciliation data,
+ * **revisit and tighten before extending the corpus surface.** Consider
+ * a policy-driven masking library (e.g. presidio) at that point.
  */
 export function maskKnowledgeExample(value: string): string {
   return value
