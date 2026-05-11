@@ -77,6 +77,19 @@ function buildSourceLabel(source: AiKnowledgeSource): string {
   }
 }
 
+function formatKindLabel(kind: AiKnowledgeSource["kind"]): string {
+  switch (kind) {
+    case "notion":
+      return "Notion";
+    case "web_page":
+      return "Web page";
+    case "inline_text":
+      return "Inline text";
+    default:
+      return kind;
+  }
+}
+
 type DerivedStatus =
   | "disabled"
   | "pending"
@@ -511,7 +524,8 @@ export function ProjectAiKnowledgeSection({
                         <StatusBadge
                           label={badge.label}
                           colorClasses={badge.classes}
-                          variant="soft"
+                          variant="subtle"
+                          className="ring-1 ring-inset"
                         />
                         {showError ? (
                           <p
@@ -527,12 +541,8 @@ export function ProjectAiKnowledgeSection({
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-3 py-3 align-top">
-                      <StatusBadge
-                        label={source.kind}
-                        colorClasses="bg-slate-100 text-slate-700 ring-slate-200"
-                        variant="soft"
-                      />
+                    <td className="px-3 py-3 align-top text-slate-600">
+                      {formatKindLabel(source.kind)}
                     </td>
                     <td
                       className="px-3 py-3 align-top font-medium text-slate-900"
