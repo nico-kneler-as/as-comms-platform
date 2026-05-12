@@ -124,42 +124,54 @@ export function InboxRow({ item, isActive }: RowProps) {
             {item.snippet}
           </p>
 
-          {showBadges ? (
-            <div className="mt-2 flex items-center gap-1.5">
-              {item.projectLabel ? (
-                <span
-                  className={`inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 ${
-                    item.projectSubLabel === null ? "" : "gap-1"
-                  }`}
-                  title={
-                    item.projectSubLabel === null
-                      ? undefined
-                      : `${item.projectLabel} (via ${item.projectSubLabel})`
-                  }
-                >
-                  <span>{item.projectLabel}</span>
-                  {item.projectSubLabel === null ? null : (
-                    <span className="text-slate-400">
-                      via {item.projectSubLabel}
-                    </span>
-                  )}
-                </span>
-              ) : null}
-              {showAsBadge ? (
-                <span className="inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
-                  AS
-                </span>
-              ) : null}
-              {showExternalBadge ? (
-                <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
-                  External
-                </span>
-              ) : null}
-              {item.needsFollowUp ? (
-                <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] text-rose-700">
-                  <FlagIcon className="size-2.5" />
-                  Follow-up
-                </span>
+          {showBadges || isUnread ? (
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1.5">
+                {item.projectLabel ? (
+                  <span
+                    className={`inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 ${
+                      item.projectSubLabel === null ? "" : "gap-1"
+                    }`}
+                    title={
+                      item.projectSubLabel === null
+                        ? undefined
+                        : `${item.projectLabel} (via ${item.projectSubLabel})`
+                    }
+                  >
+                    <span>{item.projectLabel}</span>
+                    {item.projectSubLabel === null ? null : (
+                      <span className="text-slate-400">
+                        via {item.projectSubLabel}
+                      </span>
+                    )}
+                  </span>
+                ) : null}
+                {showAsBadge ? (
+                  <span className="inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                    AS
+                  </span>
+                ) : null}
+                {showExternalBadge ? (
+                  <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                    External
+                  </span>
+                ) : null}
+                {item.needsFollowUp ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] text-rose-700">
+                    <FlagIcon className="size-2.5" />
+                    Follow-up
+                  </span>
+                ) : null}
+              </div>
+              {isUnread ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    data-testid="inbox-row-unread-dot"
+                    className="size-2 shrink-0 rounded-full bg-sky-500"
+                  />
+                  <span className="sr-only">Unread</span>
+                </>
               ) : null}
             </div>
           ) : null}
