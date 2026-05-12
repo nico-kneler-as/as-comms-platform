@@ -32,6 +32,8 @@ import {
 } from "../actions";
 import { plaintextToComposerHtml } from "@/src/lib/html-sanitizer";
 import { fetchInboxTimelinePage } from "../_lib/client-api";
+import { buildForwardContextFromEntry } from "../_lib/composer-forward";
+import { resolveProjectAliasOverride } from "../_lib/composer-ui";
 import type {
   InboxComposerReplyContext,
   InboxDetailSummaryViewModel,
@@ -306,16 +308,17 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
   // Default the reply alias to the alias belonging to the conversation tag's
   // project (first active-project chip, falling back to conversationProject)
   // so a forests@ thread opens with forests@ selected — not whatever alias
-  // the volunteer last replied to.
-  const tagProjectId =
-    contact.activeProjects[0]?.projectId ??
-    detail.conversationProject?.projectId ??
-    null;
-  const projectAliasOverride =
-    tagProjectId === null
-      ? null
-      : (composerAliases.find((option) => option.projectId === tagProjectId)
-          ?.alias ?? null);
+  // the volunteer last replied to. Connected-sub volunteers must hop through
+  // the host project id too because the alias is owned by the host.
+  const tagProject = contact.activeProjects[0] ?? null;
+  const projectAliasOverride = resolveProjectAliasOverride({
+    projectIds: [
+      tagProject?.projectId ?? null,
+      tagProject?.hostProjectId ?? null,
+      detail.conversationProject?.projectId ?? null,
+    ],
+    aliases: composerAliases,
+  });
   const resolvedReplyContext =
     composerReplyContext === null
       ? null
@@ -549,6 +552,7 @@ export function InboxDetailTimelinePanel({
     optimisticOutbounds,
     clearOptimisticForContact,
     removeOptimisticOutbound,
+    openForwardDraft,
     openReplyDraft,
     showToast,
   } = useInboxClient();
@@ -717,6 +721,26 @@ export function InboxDetailTimelinePanel({
     ],
   );
 
+  const handleForward = useCallback(
+    (entryId: string) => {
+      const entry = mergedTimelineEntries.find((item) => item.id === entryId);
+
+      if (entry === undefined) {
+        return;
+      }
+
+      const forwardContext = buildForwardContextFromEntry({
+        entry,
+        defaultAlias: composerReplyContext?.defaultAlias ?? null,
+      });
+
+      if (forwardContext !== null) {
+        openForwardDraft(forwardContext);
+      }
+    },
+    [composerReplyContext?.defaultAlias, mergedTimelineEntries, openForwardDraft],
+  );
+
   const handleRetryPending = useCallback(
     (entryId: string) => {
       const entry = mergedTimelineEntries.find((item) => item.id === entryId);
@@ -800,6 +824,7 @@ export function InboxDetailTimelinePanel({
           isLoadingOlder={isTimelineLoading}
           retryingEntryId={isRetryPending ? retryingEntryId : null}
           onRetryPending={handleRetryPending}
+          onForward={handleForward}
           onReply={handleReply}
           onLoadOlder={() => {
             void loadOlderTimeline();

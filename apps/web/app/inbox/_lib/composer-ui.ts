@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import type {
   InboxComposerAliasOption,
-  InboxComposerReplyContext
+  InboxComposerForwardContext,
+  InboxComposerReplyContext,
 } from "./view-models";
 
 const emailSchema = z.string().email();
@@ -19,6 +20,11 @@ export type ComposerPaneState =
       readonly mode: "replying";
       readonly replyContext: InboxComposerReplyContext;
       readonly initialTab?: "email" | "note";
+    }
+  | {
+      readonly mode: "forwarding";
+      readonly forwardContext: InboxComposerForwardContext;
+      readonly initialTab?: "email";
     };
 
 export type ComposerSendKind = "send" | "send-and-save";
@@ -31,6 +37,11 @@ export type ComposerPaneAction =
       readonly type: "open-reply";
       readonly replyContext: InboxComposerReplyContext;
       readonly initialTab?: "email" | "note";
+    }
+  | {
+      readonly type: "open-forward";
+      readonly forwardContext: InboxComposerForwardContext;
+      readonly initialTab?: "email";
     }
   | {
       readonly type: "close";
@@ -50,6 +61,12 @@ export function reduceComposerPane(
       return {
         mode: "replying",
         replyContext: action.replyContext,
+        initialTab: action.initialTab ?? "email",
+      };
+    case "open-forward":
+      return {
+        mode: "forwarding",
+        forwardContext: action.forwardContext,
         initialTab: action.initialTab ?? "email",
       };
     case "close":
@@ -138,6 +155,25 @@ export function resolveDefaultAlias(input: {
   return (
     input.aliases.find((alias) => alias.projectName === primaryProjectName)
       ?.alias ?? null
+  );
+}
+
+export function resolveProjectAliasOverride(input: {
+  readonly projectIds: readonly (string | null | undefined)[];
+  readonly aliases: readonly InboxComposerAliasOption[];
+}): string | null {
+  const projectIds = input.projectIds.filter(
+    (projectId): projectId is string =>
+      typeof projectId === "string" && projectId.length > 0,
+  );
+
+  if (projectIds.length === 0) {
+    return null;
+  }
+
+  return (
+    input.aliases.find((alias) => projectIds.includes(alias.projectId))?.alias ??
+    null
   );
 }
 

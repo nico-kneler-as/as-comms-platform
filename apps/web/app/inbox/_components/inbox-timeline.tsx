@@ -52,6 +52,7 @@ interface TimelineProps {
   readonly onLoadOlder?: () => void;
   readonly retryingEntryId?: string | null;
   readonly onRetryPending?: (entryId: string) => void;
+  readonly onForward?: (entryId: string) => void;
   readonly onReply?: (entryId: string) => void;
 }
 
@@ -65,6 +66,7 @@ export function InboxTimeline({
   onLoadOlder,
   retryingEntryId = null,
   onRetryPending,
+  onForward,
   onReply,
 }: TimelineProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
@@ -148,6 +150,7 @@ export function InboxTimeline({
                   isExpanded={expanded.has(item.id)}
                   retryingEntryId={retryingEntryId}
                   onRetryPending={onRetryPending}
+                  {...(onForward === undefined ? {} : { onForward })}
                   {...(onReply === undefined ? {} : { onReply })}
                   onToggle={() => {
                     toggle(item.id);
@@ -181,6 +184,7 @@ export function InboxTimeline({
                   isExpanded={expanded.has(entry.id)}
                   retryingEntryId={retryingEntryId}
                   onRetryPending={onRetryPending}
+                  {...(onForward === undefined ? {} : { onForward })}
                   {...(onReply === undefined ? {} : { onReply })}
                   onToggle={() => {
                     toggle(entry.id);
@@ -256,6 +260,7 @@ interface EntryProps {
   readonly isExpanded: boolean;
   readonly retryingEntryId: string | null;
   readonly onRetryPending: ((entryId: string) => void) | undefined;
+  readonly onForward?: (entryId: string) => void;
   readonly onReply?: (entryId: string) => void;
   readonly onToggle: () => void;
 }
@@ -267,6 +272,7 @@ function TimelineEntry({
   isExpanded,
   retryingEntryId,
   onRetryPending,
+  onForward,
   onReply,
   onToggle,
 }: EntryProps) {
@@ -288,6 +294,7 @@ function TimelineEntry({
         <MessageBubble
           entry={entry}
           direction="inbound"
+          {...(onForward === undefined ? {} : { onForward })}
           {...(onReply === undefined ? {} : { onReply })}
         />
       );
@@ -309,6 +316,7 @@ function TimelineEntry({
           entry={entry}
           direction="outbound"
           isRetrying={retryingEntryId === entry.id}
+          {...(onForward === undefined ? {} : { onForward })}
           {...(onReply === undefined ? {} : { onReply })}
           {...(onRetryPending === undefined ? {} : { onRetryPending })}
         />

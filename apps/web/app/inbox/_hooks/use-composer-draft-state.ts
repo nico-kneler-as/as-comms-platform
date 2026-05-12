@@ -1,14 +1,16 @@
 import { useEffect, useReducer, useRef } from "react";
 
 import {
+  buildForwardBodyHtml,
+  buildForwardBodyPlaintext,
+  buildForwardSubject,
+} from "../_lib/composer-forward";
+import {
   clearDraft,
   loadDraft,
   saveDraft,
 } from "../_lib/composer-draft-storage";
-import {
-  resolveDefaultAlias,
-  type ComposerPaneState,
-} from "../_lib/composer-ui";
+import { resolveDefaultAlias, type ComposerPaneState } from "../_lib/composer-ui";
 import type { InboxComposerAliasOption } from "../_lib/view-models";
 import {
   resolveComposerDraftKey,
@@ -41,14 +43,32 @@ export function useComposerDraftState({
   const hydratedDraftKeyRef = useRef<string | null>(null);
   const replyContext =
     composerPane.mode === "replying" ? composerPane.replyContext : null;
+  const forwardContext =
+    composerPane.mode === "forwarding" ? composerPane.forwardContext : null;
   const isReplying = composerPane.mode === "replying";
-  const baselineSubject = replyContext?.subject ?? "";
-  const baselineAlias = isReplying
-    ? (replyContext?.defaultAlias ?? null)
-    : resolveDefaultAlias({
-        recipient: state.recipient,
-        aliases: composerAliases,
-      });
+  const baselineSubject =
+    composerPane.mode === "forwarding" && forwardContext !== null
+      ? buildForwardSubject(forwardContext.originalSubject)
+      : (replyContext?.subject ?? "");
+  const baselineBody =
+    composerPane.mode === "forwarding" && forwardContext !== null
+      ? buildForwardBodyPlaintext(forwardContext)
+      : "";
+  const baselineBodyHtml =
+    composerPane.mode === "forwarding" &&
+    forwardContext?.originalBodyHtml !== null &&
+    forwardContext !== null
+      ? buildForwardBodyHtml(forwardContext)
+      : "";
+  const baselineAlias =
+    composerPane.mode === "forwarding"
+      ? (forwardContext?.defaultAlias ?? null)
+      : isReplying
+        ? (replyContext?.defaultAlias ?? null)
+        : resolveDefaultAlias({
+            recipient: state.recipient,
+            aliases: composerAliases,
+          });
   const draftKey = resolveComposerDraftKey({
     actorId,
     recipient: state.recipient,
@@ -63,12 +83,14 @@ export function useComposerDraftState({
       type: "RESET_TO_PANE_MODE",
       composerPane,
       replyContext,
+      forwardContext,
     });
     setComposerStatus("idle");
     setComposerErrors([]);
     resetAiDraft();
   }, [
     composerPane,
+    forwardContext,
     replyContext,
     resetAiDraft,
     setComposerErrors,
@@ -87,8 +109,8 @@ export function useComposerDraftState({
 
     const isUntouchedComposer =
       state.subject.trim() === baselineSubject.trim() &&
-      state.body.trim().length === 0 &&
-      state.bodyHtml.trim().length === 0 &&
+      state.body.trim() === baselineBody.trim() &&
+      state.bodyHtml.trim() === baselineBodyHtml.trim() &&
       state.cc.length === 0 &&
       state.bcc.length === 0 &&
       state.attachments.length === 0 &&
@@ -110,6 +132,8 @@ export function useComposerDraftState({
     }
   }, [
     baselineAlias,
+    baselineBody,
+    baselineBodyHtml,
     baselineSubject,
     composerPane.mode,
     draftKey,
@@ -134,8 +158,8 @@ export function useComposerDraftState({
 
     const hasPersistableContent =
       state.subject.trim() !== baselineSubject.trim() ||
-      state.body.trim().length > 0 ||
-      state.bodyHtml.trim().length > 0 ||
+      state.body.trim() !== baselineBody.trim() ||
+      state.bodyHtml.trim() !== baselineBodyHtml.trim() ||
       state.cc.length > 0 ||
       state.bcc.length > 0 ||
       state.selectedAlias !== baselineAlias ||
@@ -173,6 +197,8 @@ export function useComposerDraftState({
     };
   }, [
     baselineAlias,
+    baselineBody,
+    baselineBodyHtml,
     baselineSubject,
     composerPane.mode,
     draftKey,

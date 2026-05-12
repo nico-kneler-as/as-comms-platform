@@ -10,6 +10,7 @@ import {
   isComposerSendDisabled,
   resolveComposerSendActionFlags,
   resolveDefaultAlias,
+  resolveProjectAliasOverride,
   resolveSendAndSaveForAiAvailability,
   type ComposerPaneState,
 } from "../../app/inbox/_lib/composer-ui";
@@ -62,6 +63,34 @@ describe("stage3 composer ui helpers", () => {
     } satisfies ComposerPaneState);
   });
 
+  it("stores forward context when opening a forward draft", () => {
+    const forwardContext = {
+      originalEntryId: "entry-1",
+      originalSubject: "Trip logistics",
+      originalFromLabel: "Alice Smith <alice@example.com>",
+      originalToLabel: "field@adventuresci.org",
+      originalCcLabel: null,
+      originalOccurredAtIso: "2026-05-09T20:42:00.000Z",
+      originalBodyPlaintext: "Forward this along.",
+      originalBodyHtml: null,
+      defaultAlias: "field@adventuresci.org",
+    } as const;
+
+    const forwarding = reduceComposerPane(
+      { mode: "closed" },
+      {
+        type: "open-forward",
+        forwardContext,
+      },
+    );
+
+    expect(forwarding).toEqual({
+      mode: "forwarding",
+      forwardContext,
+      initialTab: "email",
+    } satisfies ComposerPaneState);
+  });
+
   it("derives minimized composer labels from the active composer pane", () => {
     expect(
       resolveFloatingComposerLabel({
@@ -85,6 +114,24 @@ describe("stage3 composer ui helpers", () => {
         initialTab: "note",
       }),
     ).toBe("Note about Alice Smith");
+
+    expect(
+      resolveFloatingComposerLabel({
+        mode: "forwarding",
+        forwardContext: {
+          originalEntryId: "entry-1",
+          originalSubject: "Trip logistics",
+          originalFromLabel: "Alice Smith <alice@example.com>",
+          originalToLabel: "field@adventuresci.org",
+          originalCcLabel: null,
+          originalOccurredAtIso: "2026-05-09T20:42:00.000Z",
+          originalBodyPlaintext: "Forward this along.",
+          originalBodyHtml: null,
+          defaultAlias: "field@adventuresci.org",
+        },
+        initialTab: "email",
+      }),
+    ).toBe("Fwd: Trip logistics");
   });
 
   it("accepts an unmatched valid email as an external recipient", () => {
@@ -247,5 +294,24 @@ describe("stage3 composer ui helpers", () => {
     ).toBe(
       "<p>Hi Lily,</p><p>Thanks for reaching out.<br>Second line</p><p>&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</p>",
     );
+  });
+
+  it("resolves the project alias across direct and host project ids", () => {
+    expect(
+      resolveProjectAliasOverride({
+        projectIds: ["project:beech", "host:forests", null],
+        aliases: [
+          {
+            id: "alias-1",
+            alias: "forests@adventuresci.org",
+            projectId: "host:forests",
+            projectName: "Beech & Butternut",
+            signature: "Best,\nForests",
+            isAiReady: true,
+            hasCachedContent: true,
+          },
+        ],
+      }),
+    ).toBe("forests@adventuresci.org");
   });
 });

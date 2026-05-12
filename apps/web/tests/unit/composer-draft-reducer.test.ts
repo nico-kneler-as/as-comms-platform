@@ -49,6 +49,7 @@ describe("composer draft reducer", () => {
         inReplyToRfc822: "<message@example.org>",
         cc: ["forest@adventuresci.org", "partner@example.org"],
       },
+      forwardContext: null,
     });
 
     expect(state).toMatchObject({
@@ -129,6 +130,48 @@ describe("composer draft reducer", () => {
     ]);
   });
 
+  it("seeds forwarding mode with a subject, quoted body, and editable recipient", () => {
+    const state = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
+      type: "RESET_TO_PANE_MODE",
+      composerPane: {
+        mode: "forwarding",
+        initialTab: "email",
+        forwardContext: {
+          originalEntryId: "entry-1",
+          originalSubject: "Field update",
+          originalFromLabel: "Jim Warren <jim@example.com>",
+          originalToLabel: "field@adventuresci.org",
+          originalCcLabel: "cc@example.com",
+          originalOccurredAtIso: "2026-05-09T20:42:00.000Z",
+          originalBodyPlaintext: "Original message body.",
+          originalBodyHtml: "<p>Original message body.</p>",
+          defaultAlias: "forest@adventuresci.org",
+        },
+      },
+      replyContext: null,
+      forwardContext: {
+        originalEntryId: "entry-1",
+        originalSubject: "Field update",
+        originalFromLabel: "Jim Warren <jim@example.com>",
+        originalToLabel: "field@adventuresci.org",
+        originalCcLabel: "cc@example.com",
+        originalOccurredAtIso: "2026-05-09T20:42:00.000Z",
+        originalBodyPlaintext: "Original message body.",
+        originalBodyHtml: "<p>Original message body.</p>",
+        defaultAlias: "forest@adventuresci.org",
+      },
+    });
+
+    expect(state.recipient).toBeNull();
+    expect(state.cc).toEqual([]);
+    expect(state.showCc).toBe(false);
+    expect(state.selectedAlias).toBe("forest@adventuresci.org");
+    expect(state.subject).toBe("Fwd: Field update");
+    expect(state.body).toContain("---------- Forwarded message ----------");
+    expect(state.body).toContain("Original message body.");
+    expect(state.bodyHtml).toContain("<blockquote");
+  });
+
   it("applies AI approval and clears tab-scoped errors on tab switch", () => {
     const approved = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
       type: "APPLY_AI_APPROVAL",
@@ -185,6 +228,7 @@ describe("composer draft reducer", () => {
           type: "RESET_TO_PANE_MODE",
           composerPane: closedPane,
           replyContext: null,
+          forwardContext: null,
         },
       ),
     ).toEqual(INITIAL_COMPOSER_DRAFT_STATE);

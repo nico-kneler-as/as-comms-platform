@@ -15,6 +15,11 @@ vi.mock("@/components/ui/dialog", () => ({
     createElement("div", { "data-dialog-content": true }, children),
   DialogTitle: ({ children }: { readonly children?: React.ReactNode }) =>
     createElement("div", { "data-dialog-title": true }, children),
+  DialogDescription: ({
+    children,
+  }: {
+    readonly children?: React.ReactNode;
+  }) => createElement("div", { "data-dialog-description": true }, children),
 }));
 
 vi.mock("@/components/ui/tooltip", () => ({
@@ -54,6 +59,7 @@ vi.mock("../../app/inbox/_components/icons", () => ({
   AdventureScientistsLogo: () => createElement("svg"),
   ArrowUpRightIcon: () => createElement("svg"),
   CornerUpLeftIcon: () => createElement("svg"),
+  CornerUpRightIcon: () => createElement("svg"),
   FileDocIcon: () => createElement("svg"),
   LoaderIcon: () => createElement("svg"),
   MailIcon: () => createElement("svg"),
@@ -345,6 +351,21 @@ describe("MessageBubble metadata and polish", () => {
 
     expect(markup).toContain("Sarah Martinez");
     expect(markup).toContain("SMS body");
+  });
+
+  it("renders forward and reply footer actions when both callbacks are provided", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MessageBubble, {
+        entry: buildEntry(),
+        direction: "inbound",
+        onForward: vi.fn(),
+        onReply: vi.fn(),
+      }),
+    );
+
+    expect(markup).toContain("Forward");
+    expect(markup).toContain("Reply");
+    expect(markup).toContain("group-hover:opacity-100");
   });
 
   it("renders the outbound brand avatar as dark-on-light without a ring", () => {

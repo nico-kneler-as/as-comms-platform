@@ -27,6 +27,7 @@ import {
   AdventureScientistsLogo,
   ArrowUpRightIcon,
   CornerUpLeftIcon,
+  CornerUpRightIcon,
   FileDocIcon,
   LoaderIcon,
   MailIcon,
@@ -219,31 +220,59 @@ function MessageAttachments({
 
 function ReplyFooter({
   entryId,
+  onForward,
   onReply,
 }: {
   readonly entryId: string;
+  readonly onForward?: (entryId: string) => void;
   readonly onReply?: (entryId: string) => void;
 }) {
-  if (onReply === undefined) {
+  if (onForward === undefined && onReply === undefined) {
     return null;
   }
 
   return (
-    <div className="flex items-center justify-end border-t border-slate-100 px-4 py-1.5">
-      <button
-        type="button"
-        onClick={() => {
-          onReply(entryId);
-        }}
-        className={cn(
-          "inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800",
-          TRANSITION.fast,
-          TRANSITION.reduceMotion,
+    <div
+      className={cn(
+        "border-t border-slate-100 px-4 py-1.5 opacity-0 group-hover:opacity-100",
+        TRANSITION.fast,
+        TRANSITION.reduceMotion,
+      )}
+    >
+      <div className="flex items-center justify-end gap-3">
+        {onForward === undefined ? null : (
+          <button
+            type="button"
+            onClick={() => {
+              onForward(entryId);
+            }}
+            className={cn(
+              "inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800",
+              TRANSITION.fast,
+              TRANSITION.reduceMotion,
+            )}
+          >
+            <CornerUpRightIcon className="size-3" />
+            <span>Forward</span>
+          </button>
         )}
-      >
-        <CornerUpLeftIcon className="size-3" />
-        <span>Reply</span>
-      </button>
+        {onReply === undefined ? null : (
+          <button
+            type="button"
+            onClick={() => {
+              onReply(entryId);
+            }}
+            className={cn(
+              "inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800",
+              TRANSITION.fast,
+              TRANSITION.reduceMotion,
+            )}
+          >
+            <CornerUpLeftIcon className="size-3" />
+            <span>Reply</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -381,12 +410,14 @@ function OutboundBrandAvatar() {
 export function MessageBubble({
   entry,
   direction,
+  onForward,
   onReply,
   isRetrying = false,
   onRetryPending,
 }: {
   readonly entry: InboxTimelineEntryViewModel;
   readonly direction: "inbound" | "outbound";
+  readonly onForward?: (entryId: string) => void;
   readonly onReply?: (entryId: string) => void;
   readonly isRetrying?: boolean;
   readonly onRetryPending?: (entryId: string) => void;
@@ -427,7 +458,7 @@ export function MessageBubble({
   const bubble = (
     <div
       className={cn(
-        "min-w-0 overflow-hidden rounded-xl",
+        "group min-w-0 overflow-hidden rounded-xl",
         bubbleWidthClassName,
         SHADOW.sm,
         bubbleClassName,
@@ -486,6 +517,7 @@ export function MessageBubble({
 
       <ReplyFooter
         entryId={entry.id}
+        {...(onForward === undefined ? {} : { onForward })}
         {...(onReply === undefined ? {} : { onReply })}
       />
     </div>

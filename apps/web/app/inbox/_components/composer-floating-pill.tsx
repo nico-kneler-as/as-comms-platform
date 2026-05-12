@@ -32,6 +32,15 @@ export function resolveFloatingComposerLabel(
     return /^re:/iu.test(base) ? base : `Re: ${base}`;
   }
 
+  if (composerPane.mode === "forwarding") {
+    const subject = composerPane.forwardContext.originalSubject.trim();
+    return subject.length > 0
+      ? /^fwd:/iu.test(subject)
+        ? subject
+        : `Fwd: ${subject}`
+      : "Forward message";
+  }
+
   return "Composer";
 }
 
