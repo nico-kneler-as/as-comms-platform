@@ -158,6 +158,13 @@ vi.mock("@/components/ui/dialog", () => ({
     readonly children: ReactNode;
     readonly className?: string;
   }) => createElement("h2", { className }, children),
+  DialogDescription: ({
+    children,
+    className,
+  }: {
+    readonly children: ReactNode;
+    readonly className?: string;
+  }) => createElement("p", { className }, children),
 }));
 
 vi.mock("../../app/inbox/actions", () => ({

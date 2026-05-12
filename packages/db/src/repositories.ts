@@ -1851,6 +1851,28 @@ function createStage1RepositoriesInternal(
         if (projectIds.length === 0) {
           return [];
         }
+
+        const projectRows = await db
+          .select({
+            projectId: projectDimensions.projectId,
+            connectedToProjectId: projectDimensions.connectedToProjectId,
+          })
+          .from(projectDimensions)
+          .where(inArray(projectDimensions.projectId, projectIds as string[]));
+
+        const effectiveScopeKeyByInputId = new Map(
+          projectIds.map((projectId) => [projectId, projectId]),
+        );
+        for (const row of projectRows) {
+          effectiveScopeKeyByInputId.set(
+            row.projectId,
+            row.connectedToProjectId ?? row.projectId,
+          );
+        }
+
+        const effectiveScopeKeys = Array.from(
+          new Set(effectiveScopeKeyByInputId.values()),
+        );
         const rows = await db
           .selectDistinct({ scopeKey: aiKnowledgeEntries.scopeKey })
           .from(aiKnowledgeEntries)
@@ -1858,14 +1880,21 @@ function createStage1RepositoriesInternal(
             and(
               eq(aiKnowledgeEntries.scope, "project"),
               eq(aiKnowledgeEntries.sourceProvider, "notion"),
-              inArray(aiKnowledgeEntries.scopeKey, projectIds as string[]),
+              inArray(aiKnowledgeEntries.scopeKey, effectiveScopeKeys),
               sql`length(btrim(${aiKnowledgeEntries.content})) > 0`,
             ),
           );
+        const matchedScopeKeys = new Set(
+          rows
+            .map((row) => row.scopeKey)
+            .filter((scopeKey): scopeKey is string => scopeKey !== null),
+        );
 
-        return rows
-          .map((row) => row.scopeKey)
-          .filter((key): key is string => key !== null);
+        return projectIds.filter((projectId) =>
+          matchedScopeKeys.has(
+            effectiveScopeKeyByInputId.get(projectId) ?? projectId,
+          ),
+        );
       },
 
       async upsert(record) {

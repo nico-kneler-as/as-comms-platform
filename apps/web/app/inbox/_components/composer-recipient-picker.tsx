@@ -87,6 +87,7 @@ export function ComposerRecipientPicker({
   recipients,
   locked = false,
   single = false,
+  autoFocusInput = false,
   placeholder = "Search contacts",
   rightSlot,
   onRecipientsChange,
@@ -94,6 +95,7 @@ export function ComposerRecipientPicker({
   readonly recipients: readonly ComposerRecipientValue[];
   readonly locked?: boolean;
   readonly single?: boolean;
+  readonly autoFocusInput?: boolean;
   readonly placeholder?: string;
   readonly rightSlot?: ReactNode;
   readonly onRecipientsChange: (
@@ -229,6 +231,8 @@ export function ComposerRecipientPicker({
               <SearchIcon className="pointer-events-none mr-2 size-3.5 shrink-0 text-slate-400" />
             ) : null}
             <Input
+              autoFocus={autoFocusInput}
+              data-composer-recipient-input={single ? "" : undefined}
               value={query}
               onChange={(event) => {
                 setQuery(event.currentTarget.value);

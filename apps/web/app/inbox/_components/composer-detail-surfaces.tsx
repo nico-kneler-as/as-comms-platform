@@ -250,6 +250,8 @@ export function ComposerEmailSurface({
   showCc,
   showBcc,
   isReplying,
+  recipientAutoFocus = false,
+  recipientPlaceholder = "Search contacts",
   recipientError,
   ccError,
   bccError,
@@ -307,6 +309,8 @@ export function ComposerEmailSurface({
   readonly showCc: boolean;
   readonly showBcc: boolean;
   readonly isReplying: boolean;
+  readonly recipientAutoFocus?: boolean;
+  readonly recipientPlaceholder?: string;
   readonly recipientError?: ComposerValidationError;
   readonly ccError?: ComposerValidationError;
   readonly bccError?: ComposerValidationError;
@@ -394,6 +398,8 @@ export function ComposerEmailSurface({
             recipients={recipient === null ? [] : [recipient]}
             locked={isReplying}
             single
+            autoFocusInput={recipientAutoFocus}
+            placeholder={recipientPlaceholder}
             rightSlot={
               !showCc || !showBcc ? (
                 <div className="flex items-center gap-1 pt-0.5 text-[11.5px]">

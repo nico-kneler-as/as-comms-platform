@@ -1,9 +1,15 @@
 import {
+  buildForwardBodyHtml,
+  buildForwardBodyPlaintext,
+  buildForwardSubject,
+} from "../_lib/composer-forward";
+import {
   resolveDefaultAlias,
   type ComposerPaneState,
 } from "../_lib/composer-ui";
 import type {
   InboxComposerAliasOption,
+  InboxComposerForwardContext,
   InboxComposerReplyContext,
 } from "../_lib/view-models";
 import type {
@@ -59,6 +65,7 @@ export type ComposerDraftAction =
       readonly type: "RESET_TO_PANE_MODE";
       readonly composerPane: ComposerPaneState;
       readonly replyContext: InboxComposerReplyContext | null;
+      readonly forwardContext: InboxComposerForwardContext | null;
     }
   | {
       readonly type: "HYDRATE_FROM_STORED_DRAFT";
@@ -158,6 +165,7 @@ export function reduceComposerDraft(
       }
 
       const replyContext = action.replyContext;
+      const forwardContext = action.forwardContext;
       const replyRecipient: ComposerRecipientValue | null =
         replyContext === null
           ? null
@@ -176,6 +184,10 @@ export function reduceComposerDraft(
 
         return candidate.emailAddress !== replyContext?.defaultAlias;
       });
+      const bodyHtml =
+        forwardContext?.originalBodyHtml === null || forwardContext === null
+          ? ""
+          : buildForwardBodyHtml(forwardContext);
 
       return {
         ...INITIAL_COMPOSER_DRAFT_STATE,
@@ -197,11 +209,24 @@ export function reduceComposerDraft(
           action.composerPane.initialTab === "note"
             ? "note"
             : "email",
-        recipient: replyRecipient,
-        cc,
-        showCc: cc.length > 0,
-        selectedAlias: replyContext?.defaultAlias ?? null,
-        subject: replyContext?.subject ?? "",
+        recipient:
+          action.composerPane.mode === "forwarding" ? null : replyRecipient,
+        cc: action.composerPane.mode === "forwarding" ? [] : cc,
+        showCc:
+          action.composerPane.mode === "forwarding" ? false : cc.length > 0,
+        selectedAlias:
+          action.composerPane.mode === "forwarding"
+            ? (forwardContext?.defaultAlias ?? null)
+            : (replyContext?.defaultAlias ?? null),
+        subject:
+          action.composerPane.mode === "forwarding"
+            ? buildForwardSubject(forwardContext?.originalSubject ?? "")
+            : (replyContext?.subject ?? ""),
+        body:
+          action.composerPane.mode === "forwarding" && forwardContext !== null
+            ? buildForwardBodyPlaintext(forwardContext)
+            : "",
+        bodyHtml,
       };
     }
     case "HYDRATE_FROM_STORED_DRAFT": {

@@ -13,6 +13,7 @@ const routerRefreshMock = vi.hoisted(() => vi.fn());
 const setTimelineLoadingMock = vi.hoisted(() => vi.fn());
 const clearOptimisticForContactMock = vi.hoisted(() => vi.fn());
 const removeOptimisticOutboundMock = vi.hoisted(() => vi.fn());
+const openForwardDraftMock = vi.hoisted(() => vi.fn());
 const openReplyDraftMock = vi.hoisted(() => vi.fn());
 const showToastMock = vi.hoisted(() => vi.fn());
 const markInboxNeedsFollowUpActionMock = vi.hoisted(() => vi.fn());
@@ -52,6 +53,7 @@ vi.mock("../../app/inbox/_components/inbox-client-provider", () => ({
     optimisticOutbounds: [],
     clearOptimisticForContact: clearOptimisticForContactMock,
     removeOptimisticOutbound: removeOptimisticOutboundMock,
+    openForwardDraft: openForwardDraftMock,
     openReplyDraft: openReplyDraftMock,
     showToast: showToastMock,
     composerAliases: [],
@@ -158,6 +160,7 @@ function buildDetail(
           projectName: "Amazon Basin",
           subDisplayName: null,
           isConnectedSub: false,
+          hostProjectId: null,
           projectIsActive: true,
           status: "in-field",
           statusLabel: "Active",
@@ -395,6 +398,7 @@ describe("Inbox detail header", () => {
               projectName: "Beech & Butternut",
               subDisplayName: "Saving American Beech",
               isConnectedSub: true,
+              hostProjectId: "host:forests",
               projectIsActive: true,
               status: "in-field",
               statusLabel: "Active",

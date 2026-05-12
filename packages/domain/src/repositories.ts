@@ -161,6 +161,13 @@ export interface AiKnowledgeRepository {
     projectId: string,
   ): Promise<AiKnowledgeEntryRecord | null>;
   hasProjectNotionContent(projectId: string): Promise<boolean>;
+  /**
+   * Returns the subset of input project IDs whose effective Notion
+   * knowledge bundle has non-empty content. Connected sub-projects
+   * (`project_dimensions.connected_to_project_id IS NOT NULL`)
+   * transparently hop to their host before checking content — mirrors
+   * `findEffectiveProjectNotionContent` for the bulk path.
+   */
   findProjectIdsWithNotionContent(
     projectIds: readonly string[],
   ): Promise<readonly string[]>;

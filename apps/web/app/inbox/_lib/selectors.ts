@@ -1053,6 +1053,7 @@ function buildProjectMembershipViewModel(
     projectName: hostName ?? ownName,
     subDisplayName: hostName === null ? null : ownName,
     isConnectedSub: hostName !== null,
+    hostProjectId: metadata?.connectedToProjectId ?? null,
     projectIsActive: metadata?.isActive ?? false,
     status: mapProjectStatus(membership.status),
     statusLabel: mapProjectStatusLabel(membership.status),

@@ -33,6 +33,7 @@ export {
   PanelRightClose as PanelRightCloseIcon,
   UserRound as UserRoundIcon,
   CornerUpLeft as CornerUpLeftIcon,
+  CornerUpRight as CornerUpRightIcon,
   ArrowRight as ArrowRightIcon,
   X as XIcon,
   LogOut as LogOutIcon,

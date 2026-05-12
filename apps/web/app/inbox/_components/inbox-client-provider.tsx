@@ -12,6 +12,7 @@ import {
 import type { AiDraftRequestPayload, AiDraftResponseVm } from "../actions";
 import type {
   InboxComposerAliasOption,
+  InboxComposerForwardContext,
   InboxComposerReplyContext,
   OptimisticOutbound,
 } from "../_lib/view-models";
@@ -158,6 +159,10 @@ interface InboxClientState {
   readonly openReplyDraft: (
     replyContext: InboxComposerReplyContext,
     initialTab?: "email" | "note",
+  ) => void;
+  readonly openForwardDraft: (
+    forwardContext: InboxComposerForwardContext,
+    initialTab?: "email",
   ) => void;
   readonly closeComposer: () => void;
   readonly minimizeComposer: () => void;
@@ -346,6 +351,25 @@ export function InboxClientProvider({
         reduceComposerPane(previous, {
           type: "open-reply",
           replyContext,
+          initialTab,
+        }),
+      );
+      setComposerView("modal");
+      setComposerStatus("idle");
+      setComposerErrors([]);
+    },
+    [],
+  );
+
+  const openForwardDraft = useCallback(
+    (
+      forwardContext: InboxComposerForwardContext,
+      initialTab: "email" = "email",
+    ) => {
+      setComposerPane((previous) =>
+        reduceComposerPane(previous, {
+          type: "open-forward",
+          forwardContext,
           initialTab,
         }),
       );
@@ -601,6 +625,7 @@ export function InboxClientProvider({
       composerView,
       openNewDraft,
       openReplyDraft,
+      openForwardDraft,
       closeComposer,
       minimizeComposer,
       expandComposer,
@@ -649,6 +674,7 @@ export function InboxClientProvider({
       composerView,
       openNewDraft,
       openReplyDraft,
+      openForwardDraft,
       closeComposer,
       minimizeComposer,
       expandComposer,

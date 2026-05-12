@@ -270,6 +270,7 @@ describe("InboxContactRail", () => {
           projectName: "Alpine Stream Survey",
           subDisplayName: null,
           isConnectedSub: false,
+          hostProjectId: null,
           expeditionMemberUrl: null,
           crmUrl: "https://salesforce.example.com/member/1",
           projectIsActive: false,
@@ -298,6 +299,7 @@ describe("InboxContactRail", () => {
           projectName: "Beech & Butternut",
           subDisplayName: "Saving American Beech",
           isConnectedSub: true,
+          hostProjectId: "host:forests",
           expeditionMemberUrl:
             "https://salesforce.example.com/member/beech-1",
           crmUrl: "https://salesforce.example.com/project/beech-1",
@@ -326,6 +328,7 @@ describe("InboxContactRail", () => {
           projectName: "Whitebark Pines",
           subDisplayName: null,
           isConnectedSub: false,
+          hostProjectId: null,
           expeditionMemberUrl:
             "https://salesforce.example.com/member/whitebark-1",
           crmUrl: "https://salesforce.example.com/project/whitebark-1",

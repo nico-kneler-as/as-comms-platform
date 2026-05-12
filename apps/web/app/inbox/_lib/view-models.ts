@@ -147,6 +147,7 @@ export interface InboxProjectMembershipViewModel {
   readonly subDisplayName: string | null;
   /** True when this membership's project is a connected sub-project. */
   readonly isConnectedSub: boolean;
+  readonly hostProjectId: string | null;
   readonly projectIsActive: boolean;
   readonly status: InboxProjectStatus;
   readonly statusLabel: string;
@@ -407,6 +408,18 @@ export interface InboxComposerReplyContext {
   readonly inReplyToRfc822: string | null;
   readonly defaultAlias: string | null;
   readonly cc?: readonly string[];
+}
+
+export interface InboxComposerForwardContext {
+  readonly originalEntryId: string;
+  readonly originalSubject: string;
+  readonly originalFromLabel: string;
+  readonly originalToLabel: string;
+  readonly originalCcLabel: string | null;
+  readonly originalOccurredAtIso: string;
+  readonly originalBodyPlaintext: string;
+  readonly originalBodyHtml: string | null;
+  readonly defaultAlias: string | null;
 }
 
 export interface InboxDetailTimelinePageViewModel {

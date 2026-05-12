@@ -9,7 +9,12 @@ import {
   FOCUS_RING,
   TRANSITION,
 } from "@/app/_lib/design-tokens-v2";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 import {
@@ -62,6 +67,18 @@ function resolveReplyTitle(input: {
   }
 
   return /^re:/iu.test(subject) ? subject : `Re: ${subject}`;
+}
+
+function resolveForwardTitle(subject: string | null | undefined): string {
+  const normalizedSubject = subject?.trim() ?? "";
+
+  if (normalizedSubject.length === 0) {
+    return "Forward message";
+  }
+
+  return /^fwd:/iu.test(normalizedSubject)
+    ? normalizedSubject
+    : `Fwd: ${normalizedSubject}`;
 }
 
 function ComposerModeTabs({
@@ -306,11 +323,17 @@ export function InboxComposerDetailPane({
     (error) => error.field === "attachments",
   );
   const modalTitle =
-    isReplying && replyContext !== null
-      ? resolveReplyTitle({
-          subject: replyContext.subject,
-          fallbackName: replyContext.contactDisplayName,
-        })
+    composerPane.mode === "forwarding"
+      ? resolveForwardTitle(composerPane.forwardContext.originalSubject)
+      : isReplying && replyContext !== null
+        ? resolveReplyTitle({
+            subject: replyContext.subject,
+            fallbackName: replyContext.contactDisplayName,
+          })
+        : null;
+  const modalDescription =
+    composerPane.mode === "forwarding"
+      ? "Pick a contact or type an email"
       : null;
   const handleFilesSelected = useAttachmentIntake({
     attachmentBytes,
@@ -430,6 +453,11 @@ export function InboxComposerDetailPane({
         <DialogTitle className="sr-only">
           {modalTitle ?? "Message composer"}
         </DialogTitle>
+        {modalDescription === null ? null : (
+          <DialogDescription className="sr-only">
+            {modalDescription}
+          </DialogDescription>
+        )}
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
           <ComposerModeTabs
             activeTab={state.activeTab}
@@ -475,6 +503,12 @@ export function InboxComposerDetailPane({
               showCc={state.showCc}
               showBcc={state.showBcc}
               isReplying={isReplying}
+              recipientAutoFocus={composerPane.mode === "forwarding"}
+              recipientPlaceholder={
+                composerPane.mode === "forwarding"
+                  ? "Pick a contact or type an email"
+                  : "Search contacts"
+              }
               subject={state.subject}
               body={state.body}
               attachments={state.attachments}
