@@ -14,11 +14,13 @@ import {
 
 describe("retrieveGrounding", () => {
   let runtime: Stage1WebTestRuntime | null = null;
+  let seededInboundId: string | null = null;
 
   beforeEach(async () => {
     runtime = await createStage1WebTestRuntime();
     await seedAiContact(runtime);
-    await seedAiThread(runtime);
+    const { latestInboundId } = await seedAiThread(runtime);
+    seededInboundId = latestInboundId;
   });
 
   afterEach(async () => {
@@ -72,7 +74,7 @@ describe("retrieveGrounding", () => {
     expect(bundle.grounding.some((entry) => entry.tier === 2)).toBe(true);
   });
 
-  it("retrieves approved tier-3 project knowledge", async () => {
+  it("retrieves approved tier-3 project knowledge when replying to a specific inbound", async () => {
     if (!runtime) {
       throw new Error("Expected runtime.");
     }
@@ -87,10 +89,17 @@ describe("retrieveGrounding", () => {
       approvedForAi: false,
     });
 
+    // Tier-3 retrieval is keyword-matched against the target inbound, only
+    // applies when the operator is actually replying (threadCursor set).
+    // Net-new compose (threadCursor=null) intentionally skips tier-3.
+    if (seededInboundId === null) {
+      throw new Error("Expected seededInboundId.");
+    }
+
     const bundle = await retrieveGrounding(runtime.context.repositories, {
       contactId: "contact:maya",
       projectId: "project:whitebark",
-      threadCursor: null,
+      threadCursor: seededInboundId,
     });
 
     expect(bundle.tier3Entries.map((entry) => entry.id)).toEqual([
@@ -111,7 +120,28 @@ describe("retrieveGrounding", () => {
     });
 
     expect(bundle.projectContext).toBeNull();
-    expect(bundle.targetInbound?.body).toContain("current field kit list");
+    // threadCursor=null is the new-conversation signal; the retriever no
+    // longer fabricates a target inbound from the most recent thread event.
+    expect(bundle.targetInbound).toBeNull();
+  });
+
+  it("leaves targetInbound null on net-new compose but still surfaces thread history as context", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    const bundle = await retrieveGrounding(runtime.context.repositories, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      threadCursor: null,
+    });
+
+    // Operator started a new conversation from the pencil button: no message
+    // is being replied to, even though this contact has thread history.
+    expect(bundle.targetInbound).toBeNull();
+    // The history still travels as background context so the AI knows
+    // recent activity (submissions, milestones, etc.).
+    expect(bundle.recentEvents.length).toBeGreaterThan(0);
   });
 
   it("falls back to the host's tier-2 entry when the project is a connected sub", async () => {
