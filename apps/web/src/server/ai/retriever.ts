@@ -242,18 +242,33 @@ export async function retrieveGrounding(
   );
 
   const inboundEvents = threadEvents.filter((event) => event.direction === "inbound");
+  // When the operator passes an explicit threadCursor, the AI is replying to
+  // that specific inbound and we anchor to it. When threadCursor is null,
+  // the operator is composing a brand new outbound from the new-draft pane
+  // (the pencil button) — they are NOT replying to anything. Treating the
+  // most-recent inbound as the implicit target made every net-new compose
+  // come out as a reply (operator-reported 2026-05-12). Leave targetInbound
+  // null in that case; the prompt-builder switches to a new-conversation
+  // framing.
   const targetInbound =
-    (input.threadCursor === null
+    input.threadCursor === null
       ? null
       : inboundEvents.find(
           (event) => event.canonicalEventId === input.threadCursor,
-        )) ??
-    inboundEvents.at(-1) ??
-    null;
+        ) ?? null;
 
+  // Recent thread events still travel into the prompt for either case so
+  // the AI knows the contact's history. For a reply, we cap at events at-
+  // or-before the target inbound. For a new conversation we include the
+  // last 10 events overall (gives Claude full context to mention recent
+  // submissions, milestones, etc. without treating any one as the message
+  // being replied to).
   const recentEvents =
     targetInbound === null
-      ? []
+      ? threadEvents.slice(-10).map((event) => ({
+          ...event,
+          body: truncate(event.body, 500),
+        }))
       : threadEvents
           .filter(
             (event) =>
