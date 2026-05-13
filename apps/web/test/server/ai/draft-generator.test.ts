@@ -73,6 +73,7 @@ describe("generateAiDraft", () => {
     const result = await generateAiDraft(createDeps(runtime), {
       contactId: "contact:maya",
       projectId: "project:whitebark",
+      intent: "reply",
       threadCursor: "event:thread-1-inbound",
       repromptIndex: 0,
       channel: "email",
@@ -95,6 +96,7 @@ describe("generateAiDraft", () => {
     const result = await generateAiDraft(createDeps(runtime), {
       contactId: "contact:maya",
       projectId: "project:whitebark",
+      intent: "reply",
       threadCursor: "event:thread-1-inbound",
       repromptIndex: 0,
       channel: "email",
@@ -114,6 +116,7 @@ describe("generateAiDraft", () => {
     const result = await generateAiDraft(createDeps(runtime), {
       contactId: "contact:maya",
       projectId: "project:whitebark",
+      intent: "reply",
       threadCursor: "event:thread-1-inbound",
       repromptIndex: 1,
       channel: "email",
@@ -138,6 +141,7 @@ describe("generateAiDraft", () => {
       {
         contactId: "contact:maya",
         projectId: "project:whitebark",
+        intent: "reply",
         threadCursor: "event:thread-1-inbound",
         repromptIndex: 0,
         channel: "email",
@@ -167,6 +171,7 @@ describe("generateAiDraft", () => {
       {
         contactId: "contact:maya",
         projectId: "project:whitebark",
+        intent: "reply",
         threadCursor: "event:thread-1-inbound",
         repromptIndex: 0,
         channel: "email",
@@ -189,6 +194,7 @@ describe("generateAiDraft", () => {
     const result = await generateAiDraft(createDeps(runtime), {
       contactId: "contact:maya",
       projectId: "project:missing",
+      intent: "reply",
       threadCursor: "event:thread-1-inbound",
       repromptIndex: 0,
       channel: "email",
@@ -213,6 +219,7 @@ describe("generateAiDraft", () => {
       {
         contactId: "contact:maya",
         projectId: "project:whitebark",
+        intent: "reply",
         threadCursor: "event:thread-1-inbound",
         repromptIndex: 0,
         channel: "email",
@@ -246,6 +253,7 @@ describe("generateAiDraft", () => {
       {
         contactId: "contact:maya",
         projectId: "project:whitebark",
+        intent: "reply",
         threadCursor: "event:thread-1-inbound",
         repromptIndex: 0,
         channel: "email",

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { createTestStage1Context } from "./helpers.js";
 
-describe("aiKnowledge.findProjectIdsWithNotionContent", () => {
-  it("returns standalone projects with content, skips empty hosts, and hops connected subs to their host", async () => {
+describe("aiKnowledge.findProjectIdsWithAiKnowledgeConfigured", () => {
+  it("returns the configured subset across standalone and connected projects", async () => {
     const context = await createTestStage1Context();
 
     try {
@@ -13,6 +13,7 @@ describe("aiKnowledge.findProjectIdsWithNotionContent", () => {
         projectAlias: "Standalone Ready",
         source: "salesforce",
         isActive: true,
+        aiKnowledgeSyncedAt: "2026-05-01T00:00:00.000Z",
       });
       await context.repositories.projectDimensions.upsert({
         projectId: "standalone:empty",
@@ -20,6 +21,7 @@ describe("aiKnowledge.findProjectIdsWithNotionContent", () => {
         projectAlias: "Standalone Empty",
         source: "salesforce",
         isActive: true,
+        aiKnowledgeSyncedAt: null,
       });
       await context.repositories.projectDimensions.upsert({
         projectId: "host:ready",
@@ -27,6 +29,7 @@ describe("aiKnowledge.findProjectIdsWithNotionContent", () => {
         projectAlias: "Host Ready",
         source: "salesforce",
         isActive: true,
+        aiKnowledgeSyncedAt: "2026-05-01T00:00:00.000Z",
       });
       await context.repositories.projectDimensions.upsert({
         projectId: "host:empty",
@@ -34,6 +37,7 @@ describe("aiKnowledge.findProjectIdsWithNotionContent", () => {
         projectAlias: "Host Empty",
         source: "salesforce",
         isActive: true,
+        aiKnowledgeSyncedAt: null,
       });
       await context.repositories.projectDimensions.upsert({
         projectId: "sub:beech",
@@ -52,46 +56,15 @@ describe("aiKnowledge.findProjectIdsWithNotionContent", () => {
         connectedToProjectId: "host:empty",
       });
 
-      await context.repositories.aiKnowledge.upsert({
-        id: "ai:standalone:ready",
-        scope: "project",
-        scopeKey: "standalone:ready",
-        sourceProvider: "notion",
-        sourceId: "notion-standalone-ready",
-        sourceUrl: "https://www.notion.so/standalone-ready",
-        title: "Standalone Ready",
-        content: "Standalone content",
-        contentHash: "hash:standalone-ready",
-        metadataJson: {},
-        sourceLastEditedAt: "2026-05-01T00:00:00.000Z",
-        syncedAt: "2026-05-01T00:00:00.000Z",
-        createdAt: "2026-05-01T00:00:00.000Z",
-        updatedAt: "2026-05-01T00:00:00.000Z",
-      });
-      await context.repositories.aiKnowledge.upsert({
-        id: "ai:host:ready",
-        scope: "project",
-        scopeKey: "host:ready",
-        sourceProvider: "notion",
-        sourceId: "notion-host-ready",
-        sourceUrl: "https://www.notion.so/host-ready",
-        title: "Host Ready",
-        content: "Host content",
-        contentHash: "hash:host-ready",
-        metadataJson: {},
-        sourceLastEditedAt: "2026-05-01T00:00:00.000Z",
-        syncedAt: "2026-05-01T00:00:00.000Z",
-        createdAt: "2026-05-01T00:00:00.000Z",
-        updatedAt: "2026-05-01T00:00:00.000Z",
-      });
-
       const result =
-        await context.repositories.aiKnowledge.findProjectIdsWithNotionContent([
-          "standalone:ready",
-          "standalone:empty",
-          "sub:beech",
-          "sub:butternut",
-        ]);
+        await context.repositories.aiKnowledge.findProjectIdsWithAiKnowledgeConfigured(
+          [
+            "standalone:ready",
+            "standalone:empty",
+            "sub:beech",
+            "sub:butternut",
+          ],
+        );
 
       expect(result).toEqual(["standalone:ready", "sub:beech"]);
     } finally {

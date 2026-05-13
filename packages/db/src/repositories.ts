@@ -1847,7 +1847,7 @@ function createStage1RepositoriesInternal(
         return row !== undefined;
       },
 
-      async findProjectIdsWithNotionContent(projectIds) {
+      async findProjectIdsWithAiKnowledgeConfigured(projectIds) {
         if (projectIds.length === 0) {
           return [];
         }
@@ -1856,43 +1856,59 @@ function createStage1RepositoriesInternal(
           .select({
             projectId: projectDimensions.projectId,
             connectedToProjectId: projectDimensions.connectedToProjectId,
+            aiKnowledgeSyncedAt: projectDimensions.aiKnowledgeSyncedAt,
           })
           .from(projectDimensions)
           .where(inArray(projectDimensions.projectId, projectIds as string[]));
 
-        const effectiveScopeKeyByInputId = new Map(
+        const knownProjectsById = new Map(
+          projectRows.map((row) => [row.projectId, row]),
+        );
+        const effectiveProjectIdByInput = new Map(
           projectIds.map((projectId) => [projectId, projectId]),
         );
         for (const row of projectRows) {
-          effectiveScopeKeyByInputId.set(
+          effectiveProjectIdByInput.set(
             row.projectId,
             row.connectedToProjectId ?? row.projectId,
           );
         }
 
-        const effectiveScopeKeys = Array.from(
-          new Set(effectiveScopeKeyByInputId.values()),
-        );
-        const rows = await db
-          .selectDistinct({ scopeKey: aiKnowledgeEntries.scopeKey })
-          .from(aiKnowledgeEntries)
-          .where(
-            and(
-              eq(aiKnowledgeEntries.scope, "project"),
-              eq(aiKnowledgeEntries.sourceProvider, "notion"),
-              inArray(aiKnowledgeEntries.scopeKey, effectiveScopeKeys),
-              sql`length(btrim(${aiKnowledgeEntries.content})) > 0`,
+        const hostIdsToFetch = Array.from(
+          new Set(
+            Array.from(effectiveProjectIdByInput.values()).filter(
+              (projectId) => !knownProjectsById.has(projectId),
             ),
-          );
-        const matchedScopeKeys = new Set(
-          rows
-            .map((row) => row.scopeKey)
-            .filter((scopeKey): scopeKey is string => scopeKey !== null),
+          ),
+        );
+
+        if (hostIdsToFetch.length > 0) {
+          const hostRows = await db
+            .select({
+              projectId: projectDimensions.projectId,
+              aiKnowledgeSyncedAt: projectDimensions.aiKnowledgeSyncedAt,
+            })
+            .from(projectDimensions)
+            .where(inArray(projectDimensions.projectId, hostIdsToFetch));
+
+          for (const row of hostRows) {
+            knownProjectsById.set(row.projectId, {
+              projectId: row.projectId,
+              connectedToProjectId: null,
+              aiKnowledgeSyncedAt: row.aiKnowledgeSyncedAt,
+            });
+          }
+        }
+
+        const configuredEffectiveIds = new Set(
+          Array.from(knownProjectsById.values())
+            .filter((row) => row.aiKnowledgeSyncedAt !== null)
+            .map((row) => row.projectId),
         );
 
         return projectIds.filter((projectId) =>
-          matchedScopeKeys.has(
-            effectiveScopeKeyByInputId.get(projectId) ?? projectId,
+          configuredEffectiveIds.has(
+            effectiveProjectIdByInput.get(projectId) ?? projectId,
           ),
         );
       },

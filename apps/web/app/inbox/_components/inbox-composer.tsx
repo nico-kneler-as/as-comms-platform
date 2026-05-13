@@ -354,6 +354,7 @@ export function InboxComposerDetailPane({
     selectedAliasRecord,
     selectedAliasAiConfigured,
     replyContext,
+    composerPaneMode: composerPane.mode,
     startAiGeneration,
     markAiDraftReviewable,
     approveAiDraft,

@@ -38,6 +38,7 @@ const baseBundle: GroundingBundle = {
     updatedAt: "2026-04-24T12:00:00.000Z",
   },
   tier3Entries: [],
+  intent: "reply",
   targetInbound: {
     canonicalEventId: "event:inbound-1",
     occurredAt: "2026-04-24T09:15:00.000Z",
@@ -68,6 +69,7 @@ describe("prompt builder", () => {
     const prompt = buildDraftPrompt(baseBundle, {
       contactId: "contact:maya",
       projectId: "project:whitebark",
+      intent: "reply",
       threadCursor: "event:inbound-1",
       repromptIndex: 0,
       channel: "email",
@@ -101,11 +103,11 @@ describe("prompt builder", () => {
       
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
       
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
+      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.",
       }
     `);
     expect(prompt.system).toContain(
-      "You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
+      "You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.",
     );
   });
 
@@ -114,6 +116,7 @@ describe("prompt builder", () => {
       buildFillPrompt(baseBundle, {
         contactId: "contact:maya",
         projectId: "project:whitebark",
+        intent: "reply",
         threadCursor: "event:inbound-1",
         repromptIndex: 0,
         channel: "email",
@@ -152,7 +155,7 @@ describe("prompt builder", () => {
       
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
       
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
+      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.",
       }
     `);
   });
@@ -162,6 +165,7 @@ describe("prompt builder", () => {
       buildRepromptPrompt(baseBundle, {
         contactId: "contact:maya",
         projectId: "project:whitebark",
+        intent: "reply",
         threadCursor: "event:inbound-1",
         repromptIndex: 1,
         channel: "email",
@@ -204,7 +208,7 @@ describe("prompt builder", () => {
       
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
       
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
+      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.",
       }
     `);
   });
@@ -220,6 +224,7 @@ describe("prompt builder", () => {
         {
           contactId: "contact:maya",
           projectId: null,
+          intent: "reply",
           threadCursor: null,
           repromptIndex: 0,
           channel: "email",
@@ -253,7 +258,7 @@ describe("prompt builder", () => {
       
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
       
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.",
+      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.",
       }
     `);
   });
@@ -287,6 +292,7 @@ describe("prompt builder", () => {
         {
           contactId: "contact:maya",
           projectId: "project:whitebark",
+          intent: "reply",
           threadCursor: "event:inbound-1",
           repromptIndex: 0,
           channel: "email",
@@ -298,10 +304,59 @@ describe("prompt builder", () => {
     );
   });
 
+  it("uses brand-new outbound framing when intent is new", () => {
+    const prompt = buildDraftPrompt(
+      {
+        ...baseBundle,
+        intent: "new",
+        targetInbound: null,
+      },
+      {
+        contactId: "contact:maya",
+        projectId: "project:whitebark",
+        intent: "new",
+        threadCursor: null,
+        repromptIndex: 0,
+        channel: "email",
+        mode: "draft",
+      },
+    );
+
+    expect(prompt.system).toContain("brand-new outbound email");
+    expect(prompt.messages[0]?.content).toContain(
+      "This is a brand-new outbound conversation.",
+    );
+  });
+
+  it("keeps reply framing when intent is reply but there is no specific inbound", () => {
+    const prompt = buildDraftPrompt(
+      {
+        ...baseBundle,
+        intent: "reply",
+        targetInbound: null,
+      },
+      {
+        contactId: "contact:maya",
+        projectId: "project:whitebark",
+        intent: "reply",
+        threadCursor: null,
+        repromptIndex: 0,
+        channel: "email",
+        mode: "draft",
+      },
+    );
+
+    expect(prompt.system).toContain("drafting a reply to a volunteer");
+    expect(prompt.messages[0]?.content).toContain(
+      "Reply framing: the operator is composing a reply, but the thread has no",
+    );
+  });
+
   it("builds the sms system prompt variant", () => {
     const prompt = buildDraftPrompt(baseBundle, {
       contactId: "contact:maya",
       projectId: "project:whitebark",
+      intent: "reply",
       threadCursor: "event:inbound-1",
       repromptIndex: 0,
       channel: "sms",

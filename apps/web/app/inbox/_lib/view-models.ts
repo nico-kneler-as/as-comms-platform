@@ -386,8 +386,9 @@ export interface InboxComposerAliasOption {
   readonly isAiReady: boolean;
   readonly isAiConfigured?: boolean;
   /**
-   * Canonical project-knowledge signal: whether this alias's project has
-   * cached Notion-backed context available for grounding.
+   * Whether the effective project (host or own) is configured for AI
+   * knowledge — i.e. `ai_knowledge_synced_at IS NOT NULL`. This drives the
+   * composer's "Knowledge Base" footer chip.
    */
   readonly hasCachedContent?: boolean;
 }

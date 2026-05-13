@@ -33,6 +33,7 @@ function setup(input?: {
   readonly body?: string;
   readonly smsBody?: string;
   readonly activeTab?: "email" | "sms" | "note";
+  readonly composerPaneMode?: "new-draft" | "replying" | "forwarding";
   readonly recipient?: (typeof INITIAL_COMPOSER_DRAFT_STATE)["recipient"];
   readonly smsRecipient?: (typeof INITIAL_COMPOSER_DRAFT_STATE)["smsRecipient"];
   readonly selectedAliasAiConfigured?: boolean;
@@ -91,6 +92,7 @@ function setup(input?: {
       defaultAlias: "forest@adventuresci.org",
       cc: [],
     },
+    composerPaneMode: input?.composerPaneMode ?? "replying",
     startAiGeneration,
     markAiDraftReviewable: vi.fn(),
     approveAiDraft,
@@ -223,6 +225,7 @@ describe("useAiDraftRun", () => {
       request: {
         contactId: "contact-sms-42",
         projectId: "project-1",
+        intent: "reply",
         threadCursor: "thread-cursor-1",
         channel: "sms",
         mode: "draft",

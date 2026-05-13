@@ -126,7 +126,10 @@ function buildTierFourGrounding(
 
 export async function retrieveGrounding(
   repositories: AiRetrieverRepositories,
-  input: Pick<AiDraftRequest, "contactId" | "projectId" | "threadCursor">,
+  input: Pick<
+    AiDraftRequest,
+    "contactId" | "projectId" | "intent" | "threadCursor"
+  >,
   logger: Pick<Console, "warn"> = console,
 ): Promise<GroundingBundle> {
   const [contact, generalTraining, projectContext, canonicalEvents] =
@@ -242,20 +245,20 @@ export async function retrieveGrounding(
   );
 
   const inboundEvents = threadEvents.filter((event) => event.direction === "inbound");
-  // When the operator passes an explicit threadCursor, the AI is replying to
-  // that specific inbound and we anchor to it. When threadCursor is null,
-  // the operator is composing a brand new outbound from the new-draft pane
-  // (the pencil button) — they are NOT replying to anything. Treating the
-  // most-recent inbound as the implicit target made every net-new compose
-  // come out as a reply (operator-reported 2026-05-12). Leave targetInbound
-  // null in that case; the prompt-builder switches to a new-conversation
-  // framing.
+  // The framing decision uses `intent` (not threadCursor). Intent "new"
+  // comes from the pencil-button "new draft" pane and means: do NOT
+  // anchor on any prior inbound, frame as brand-new outbound. Intent
+  // "reply" comes from any Reply trigger (bubble footer or bottom bar)
+  // and means: anchor on the explicit threadCursor inbound if provided,
+  // else the most-recent inbound, else null with reply framing still on.
   const targetInbound =
-    input.threadCursor === null
+    input.intent === "new"
       ? null
-      : inboundEvents.find(
-          (event) => event.canonicalEventId === input.threadCursor,
-        ) ?? null;
+      : input.threadCursor !== null
+        ? inboundEvents.find(
+            (event) => event.canonicalEventId === input.threadCursor,
+          ) ?? null
+        : inboundEvents.at(-1) ?? null;
 
   // Recent thread events still travel into the prompt for either case so
   // the AI knows the contact's history. For a reply, we cap at events at-
@@ -335,6 +338,7 @@ export async function retrieveGrounding(
     generalTraining,
     projectContext,
     tier3Entries: [...tier3Entries],
+    intent: input.intent,
     targetInbound:
       targetInbound === null
         ? null
