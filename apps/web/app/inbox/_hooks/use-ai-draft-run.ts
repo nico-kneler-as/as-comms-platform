@@ -11,6 +11,7 @@ import type {
   ComposerDraftAction,
   ComposerDraftState,
 } from "./composer-draft-reducer";
+import type { ComposerPaneState } from "../_lib/composer-ui";
 import type { InboxComposerReplyContext } from "../_lib/view-models";
 
 export function useAiDraftRun({
@@ -20,6 +21,7 @@ export function useAiDraftRun({
   selectedAliasRecord,
   selectedAliasAiConfigured,
   replyContext,
+  composerPaneMode,
   startAiGeneration,
   markAiDraftReviewable,
   approveAiDraft,
@@ -37,6 +39,7 @@ export function useAiDraftRun({
   readonly selectedAliasRecord: InboxComposerAliasOption | null;
   readonly selectedAliasAiConfigured: boolean;
   readonly replyContext: InboxComposerReplyContext | null;
+  readonly composerPaneMode: ComposerPaneState["mode"];
   readonly startAiGeneration: (input: {
     readonly request: AiDraftRequestPayload;
     readonly prompt: string;
@@ -103,6 +106,10 @@ export function useAiDraftRun({
     const baseRequest = {
       contactId,
       projectId: selectedAliasRecord?.projectId ?? null,
+      intent:
+        composerPaneMode === "new-draft"
+          ? ("new" as const)
+          : ("reply" as const),
       threadCursor: replyContext?.threadCursor ?? null,
       channel: isSms ? ("sms" as const) : ("email" as const),
     } as const;

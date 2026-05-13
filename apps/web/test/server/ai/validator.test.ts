@@ -24,6 +24,7 @@ const bundle: GroundingBundle = {
   },
   projectContext: null,
   tier3Entries: [],
+  intent: "reply",
   targetInbound: null,
   recentEvents: [],
   grounding: [],

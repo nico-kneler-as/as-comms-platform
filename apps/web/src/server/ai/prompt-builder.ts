@@ -60,27 +60,26 @@ function renderTier3Entries(bundle: GroundingBundle): string {
 
 function renderChannelInstructionBlock(input: {
   readonly channel: AiDraftRequest["channel"];
-  readonly isNewConversation: boolean;
+  readonly intent: GroundingBundle["intent"];
 }): string {
   if (input.channel === "sms") {
-    if (input.isNewConversation) {
+    if (input.intent === "new") {
       return "Write a brand-new outbound SMS. The operator is starting a new conversation, not replying to anything — do NOT phrase this as a reply. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown. Open with the volunteer's first name when natural. No signature unless the operator asked. Don't include 'Reply STOP to opt out' — Twilio appends compliance language automatically.";
     }
     return "Write SMS replies. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown, no greetings if the volunteer is mid-thread, no signature unless the operator asked. Match the tone of prior thread messages if any. Use the volunteer's first name when natural; default to no salutation. Don't include 'Reply STOP to opt out' — Twilio appends compliance language automatically.";
   }
 
-  if (input.isNewConversation) {
+  if (input.intent === "new") {
     return "You are drafting a brand-new outbound email to a volunteer. The operator is starting a new conversation — do NOT phrase this as a reply, do NOT begin with 'Thanks for reaching out' or any reply-style opener, and do NOT reference any inbound message as if it triggered this. The thread history below is background context only. Use only the information above and the operator's directive (if any). Never invent facts.";
   }
 
-  return "You are drafting a reply to a volunteer. Use only the information above and the inbound message. Never invent facts.";
+  return "You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.";
 }
 
 function buildSystemPrompt(
   bundle: GroundingBundle,
   request: Pick<AiDraftRequest, "channel">,
 ): string {
-  const isNewConversation = bundle.targetInbound === null;
   return [
     renderContextSection(
       "Tier 1 Voice Instructions",
@@ -104,13 +103,13 @@ function buildSystemPrompt(
     "",
     renderChannelInstructionBlock({
       channel: request.channel,
-      isNewConversation,
+      intent: bundle.intent,
     }),
   ].join("\n");
 }
 
 function buildContextPayload(bundle: GroundingBundle): string {
-  if (bundle.targetInbound === null) {
+  if (bundle.intent === "new") {
     return [
       "This is a brand-new outbound conversation. The operator picked this contact",
       "from the new-draft pane and has not been triggered by any specific inbound.",
@@ -118,6 +117,18 @@ function buildContextPayload(bundle: GroundingBundle): string {
       "",
       "Recent thread history with this contact (background context only — do NOT",
       "treat any of these as the message you are replying to):",
+      renderRecentEvents(bundle),
+    ].join("\n");
+  }
+
+  if (bundle.targetInbound === null) {
+    return [
+      "Reply framing: the operator is composing a reply, but the thread has no",
+      "specific inbound message to anchor on (the thread may be automated-only,",
+      "or the operator is following up without a specific message in mind).",
+      "",
+      "Recent thread context (use as background to inform the reply, not as the",
+      "message you are replying to):",
       renderRecentEvents(bundle),
     ].join("\n");
   }
@@ -159,8 +170,8 @@ export function buildFillPrompt(
   bundle: GroundingBundle,
   input: Extract<AiDraftRequest, { mode: "fill" }>,
 ): BuiltPrompt {
-  const isNewConversation = bundle.targetInbound === null;
-  const expansionInstruction = isNewConversation
+  const expansionInstruction =
+    bundle.intent === "new"
     ? "Expand the operator's directive into a complete outbound message in the voice and context above. This is a new conversation, not a reply. If the directive contradicts the project context, produce the draft as directed AND emit a clear marker that the operator should reconfirm. Example marker: [NOTE: directive may conflict with project context, please verify X]."
     : "Expand the operator's directive into a complete reply in the voice and context above. If the directive contradicts the project context, produce the draft as directed AND emit a clear marker that the operator should reconfirm. Example marker: [NOTE: directive may conflict with project context, please verify X].";
 

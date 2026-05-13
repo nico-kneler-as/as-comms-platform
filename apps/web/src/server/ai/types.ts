@@ -65,6 +65,7 @@ export type AiDraftModelParams = z.infer<typeof aiDraftModelParamsSchema>;
 const aiDraftBaseRequestSchema = z.object({
   contactId: z.string().min(1),
   projectId: z.string().min(1).nullable().optional().default(null),
+  intent: z.enum(["reply", "new"]).optional().default("reply"),
   threadCursor: z.string().min(1).nullable().optional().default(null),
   repromptIndex: z.number().int().nonnegative().optional().default(0),
   channel: z.enum(["email", "sms"]).default("email"),
@@ -104,6 +105,7 @@ export const groundingBundleSchema = z.object({
   generalTraining: aiKnowledgeEntrySchema.nullable(),
   projectContext: aiKnowledgeEntrySchema.nullable(),
   tier3Entries: z.array(projectKnowledgeEntrySchema),
+  intent: z.enum(["reply", "new"]),
   targetInbound: aiThreadContextEventSchema.nullable(),
   recentEvents: z.array(aiThreadContextEventSchema),
   grounding: z.array(aiDraftGroundingSchema),

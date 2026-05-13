@@ -162,13 +162,18 @@ export interface AiKnowledgeRepository {
   ): Promise<AiKnowledgeEntryRecord | null>;
   hasProjectNotionContent(projectId: string): Promise<boolean>;
   /**
-   * Returns the subset of input project IDs whose effective Notion
-   * knowledge bundle has non-empty content. Connected sub-projects
-   * (`project_dimensions.connected_to_project_id IS NOT NULL`)
-   * transparently hop to their host before checking content — mirrors
-   * `findEffectiveProjectNotionContent` for the bulk path.
+   * Returns the subset of input project IDs whose effective project is
+   * configured for AI knowledge — i.e. has
+   * `ai_knowledge_synced_at IS NOT NULL`. Connected sub-projects
+   * transparently hop to their host's synced timestamp (same semantics as
+   * {@link findEffectiveProjectNotionContent} for the bulk path).
+   *
+   * This is the chip-facing signal (composer "Knowledge Base" indicator).
+   * It does NOT inspect `ai_knowledge_entries` cache content — a project
+   * may be configured before its cache row is populated by the next sync,
+   * and we still want the chip to show as configured.
    */
-  findProjectIdsWithNotionContent(
+  findProjectIdsWithAiKnowledgeConfigured(
     projectIds: readonly string[],
   ): Promise<readonly string[]>;
   upsert(record: AiKnowledgeEntryRecord): Promise<AiKnowledgeEntryRecord>;

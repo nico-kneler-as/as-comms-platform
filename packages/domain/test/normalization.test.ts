@@ -420,7 +420,7 @@ function buildContext(input: {
       findProjectNotionContent: () => Promise.resolve(null),
       findEffectiveProjectNotionContent: () => Promise.resolve(null),
       hasProjectNotionContent: () => Promise.resolve(false),
-      findProjectIdsWithNotionContent: () => Promise.resolve([]),
+      findProjectIdsWithAiKnowledgeConfigured: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record),
     },
     projectKnowledge: {

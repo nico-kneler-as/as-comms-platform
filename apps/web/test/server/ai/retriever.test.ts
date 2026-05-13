@@ -44,6 +44,7 @@ describe("retrieveGrounding", () => {
     const bundle = await retrieveGrounding(runtime.context.repositories, {
       contactId: "contact:maya",
       projectId: "project:whitebark",
+      intent: "reply",
       threadCursor: null,
     });
 
@@ -67,6 +68,7 @@ describe("retrieveGrounding", () => {
     const bundle = await retrieveGrounding(runtime.context.repositories, {
       contactId: "contact:maya",
       projectId: "project:whitebark",
+      intent: "reply",
       threadCursor: null,
     });
 
@@ -99,6 +101,7 @@ describe("retrieveGrounding", () => {
     const bundle = await retrieveGrounding(runtime.context.repositories, {
       contactId: "contact:maya",
       projectId: "project:whitebark",
+      intent: "reply",
       threadCursor: seededInboundId,
     });
 
@@ -116,16 +119,35 @@ describe("retrieveGrounding", () => {
     const bundle = await retrieveGrounding(runtime.context.repositories, {
       contactId: "contact:maya",
       projectId: "project:missing",
+      intent: "reply",
       threadCursor: null,
     });
 
     expect(bundle.projectContext).toBeNull();
-    // threadCursor=null is the new-conversation signal; the retriever no
-    // longer fabricates a target inbound from the most recent thread event.
-    expect(bundle.targetInbound).toBeNull();
+    expect(bundle.targetInbound).not.toBeNull();
   });
 
-  it("leaves targetInbound null on net-new compose but still surfaces thread history as context", async () => {
+  it("leaves targetInbound null on new intent even when threadCursor is set", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    if (seededInboundId === null) {
+      throw new Error("Expected seededInboundId.");
+    }
+
+    const bundle = await retrieveGrounding(runtime.context.repositories, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      intent: "new",
+      threadCursor: seededInboundId,
+    });
+
+    expect(bundle.targetInbound).toBeNull();
+    expect(bundle.recentEvents.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to the most recent inbound on reply intent when threadCursor is null", async () => {
     if (!runtime) {
       throw new Error("Expected runtime.");
     }
@@ -133,15 +155,30 @@ describe("retrieveGrounding", () => {
     const bundle = await retrieveGrounding(runtime.context.repositories, {
       contactId: "contact:maya",
       projectId: "project:whitebark",
+      intent: "reply",
       threadCursor: null,
     });
 
-    // Operator started a new conversation from the pencil button: no message
-    // is being replied to, even though this contact has thread history.
-    expect(bundle.targetInbound).toBeNull();
-    // The history still travels as background context so the AI knows
-    // recent activity (submissions, milestones, etc.).
-    expect(bundle.recentEvents.length).toBeGreaterThan(0);
+    expect(bundle.targetInbound?.canonicalEventId).toBe(seededInboundId);
+  });
+
+  it("leaves targetInbound null on reply intent when no inbound exists", async () => {
+    const emptyRuntime = await createStage1WebTestRuntime();
+
+    try {
+      await seedAiContact(emptyRuntime);
+
+      const bundle = await retrieveGrounding(emptyRuntime.context.repositories, {
+        contactId: "contact:maya",
+        projectId: "project:whitebark",
+        intent: "reply",
+        threadCursor: null,
+      });
+
+      expect(bundle.targetInbound).toBeNull();
+    } finally {
+      await emptyRuntime.dispose();
+    }
   });
 
   it("falls back to the host's tier-2 entry when the project is a connected sub", async () => {
@@ -178,6 +215,7 @@ describe("retrieveGrounding", () => {
     const bundle = await retrieveGrounding(runtime.context.repositories, {
       contactId: "contact:maya",
       projectId: "project:whitebark",
+      intent: "reply",
       threadCursor: null,
     });
 
@@ -194,6 +232,7 @@ describe("retrieveGrounding", () => {
       const bundle = await retrieveGrounding(emptyRuntime.context.repositories, {
         contactId: "contact:missing",
         projectId: "project:missing",
+        intent: "reply",
         threadCursor: null,
       });
 
@@ -202,6 +241,7 @@ describe("retrieveGrounding", () => {
         generalTraining: null,
         projectContext: null,
         tier3Entries: [],
+        intent: "reply",
         targetInbound: null,
         recentEvents: [],
         grounding: [],
