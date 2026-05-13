@@ -459,15 +459,19 @@ export function InboxComposerDetailPane({
           </DialogDescription>
         )}
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
-          <ComposerModeTabs
-            activeTab={state.activeTab}
-            onEmail={() => {
-              dispatch({ type: "SET_ACTIVE_TAB", tab: "email" });
-            }}
-            onSms={() => {
-              dispatch({ type: "SET_ACTIVE_TAB", tab: "sms" });
-            }}
-          />
+          {composerPane.mode === "forwarding" ? (
+            <div className="text-sm font-medium text-slate-600">Forward</div>
+          ) : (
+            <ComposerModeTabs
+              activeTab={state.activeTab}
+              onEmail={() => {
+                dispatch({ type: "SET_ACTIVE_TAB", tab: "email" });
+              }}
+              onSms={() => {
+                dispatch({ type: "SET_ACTIVE_TAB", tab: "sms" });
+              }}
+            />
+          )}
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -504,6 +508,7 @@ export function InboxComposerDetailPane({
               showBcc={state.showBcc}
               isReplying={isReplying}
               recipientAutoFocus={composerPane.mode === "forwarding"}
+              showAiDraftAffordances={composerPane.mode !== "forwarding"}
               recipientPlaceholder={
                 composerPane.mode === "forwarding"
                   ? "Pick a contact or type an email"

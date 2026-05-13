@@ -365,7 +365,10 @@ describe("MessageBubble metadata and polish", () => {
 
     expect(markup).toContain("Forward");
     expect(markup).toContain("Reply");
+    expect(markup).toContain("grid grid-cols-2 border-t border-slate-100 opacity-0");
     expect(markup).toContain("group-hover:opacity-100");
+    expect(markup).toContain("hover:bg-sky-50 hover:text-sky-700");
+    expect(markup).toContain("hover:bg-slate-100 hover:text-slate-700");
   });
 
   it("renders the outbound brand avatar as dark-on-light without a ring", () => {

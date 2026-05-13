@@ -551,6 +551,7 @@ export function InboxDetailTimelinePanel({
     setTimelineLoading,
     optimisticOutbounds,
     clearOptimisticForContact,
+    composerAliases,
     removeOptimisticOutbound,
     openForwardDraft,
     openReplyDraft,
@@ -731,6 +732,7 @@ export function InboxDetailTimelinePanel({
 
       const forwardContext = buildForwardContextFromEntry({
         entry,
+        composerAliases,
         defaultAlias: composerReplyContext?.defaultAlias ?? null,
       });
 

@@ -2,6 +2,8 @@ import { createRequire } from "node:module";
 import React, {
   act,
   createElement,
+  useEffect,
+  useRef,
   type ButtonHTMLAttributes,
   type ChangeEvent,
   type InputEvent as ReactInputEvent,
@@ -213,8 +215,10 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
     onToggleBcc,
     onToggleCc,
     recipient,
+    recipientAutoFocus,
     runAiDraftDisabled,
     runAiDraftDisabledReason,
+    showAiDraftAffordances,
     showBcc,
     showCc,
     subject,
@@ -261,180 +265,203 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
       | { readonly kind: "email"; readonly emailAddress: string }
       | { readonly kind: "contact"; readonly displayName: string }
       | null;
+    readonly recipientAutoFocus?: boolean;
     readonly runAiDraftDisabled: boolean;
     readonly runAiDraftDisabledReason: string | null;
+    readonly showAiDraftAffordances?: boolean;
     readonly showBcc: boolean;
     readonly showCc: boolean;
     readonly subject: string;
   }) =>
-    createElement(
-      "div",
-      { "data-testid": "email-surface" },
-      createElement("input", {
-        "aria-label": "Recipient",
-        onChange: (event: ChangeEvent<HTMLInputElement>) => {
-          const value = event.currentTarget.value.trim();
-          onRecipientChange(
-            value.length > 0 ? { kind: "email", emailAddress: value } : null,
-          );
-        },
-        onInput: (event: ReactInputEvent<HTMLInputElement>) => {
-          const value = event.currentTarget.value.trim();
-          onRecipientChange(
-            value.length > 0 ? { kind: "email", emailAddress: value } : null,
-          );
-        },
-        value:
-          recipient?.kind === "email"
-            ? recipient.emailAddress
-            : recipient?.kind === "contact"
-              ? recipient.displayName
-              : "",
-      } satisfies InputHTMLAttributes<HTMLInputElement>),
-      createElement("input", {
-        "aria-label": "Subject",
-        onChange: (event: ChangeEvent<HTMLInputElement>) => {
-          onSubjectChange(event.currentTarget.value);
-        },
-        onInput: (event: ReactInputEvent<HTMLInputElement>) => {
-          onSubjectChange(event.currentTarget.value);
-        },
-        value: subject,
-      } satisfies InputHTMLAttributes<HTMLInputElement>),
-      createElement("textarea", {
-        "aria-label": "Message body",
-        onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
-          const value = event.currentTarget.value;
-          onBodyChange({
-            bodyPlaintext: value,
-            bodyHtml: `<p>${value}</p>`,
-          });
-        },
-        onInput: (event: ReactInputEvent<HTMLTextAreaElement>) => {
-          const value = event.currentTarget.value;
-          onBodyChange({
-            bodyPlaintext: value,
-            bodyHtml: `<p>${value}</p>`,
-          });
-        },
-        value: body,
-      } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
-      createElement("textarea", {
-        "aria-label": "AI directive",
-        onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
-          onAiDirectiveChange(event.currentTarget.value);
-        },
-        onInput: (event: ReactInputEvent<HTMLTextAreaElement>) => {
-          onAiDirectiveChange(event.currentTarget.value);
-        },
-        value: aiDirective,
-      } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
-      createElement(
-        "button",
-        {
-          type: "button",
-          disabled: runAiDraftDisabled,
-          title: runAiDraftDisabledReason ?? undefined,
-        },
-        "Draft with AI",
-      ),
-      !showCc
-        ? createElement(
-            "button",
-            {
-              type: "button",
-              onClick: () => {
-                onToggleCc(true);
+    createElement(function MockComposerEmailSurface() {
+      const recipientRef = useRef<HTMLInputElement>(null);
+
+      useEffect(() => {
+        if (!recipientAutoFocus || recipientRef.current === null) {
+          return;
+        }
+
+        recipientRef.current.focus();
+      }, [recipientAutoFocus]);
+
+      return createElement(
+        "div",
+        { "data-testid": "email-surface" },
+        createElement("input", {
+          ref: recipientRef,
+          "aria-label": "Recipient",
+          onChange: (event: ChangeEvent<HTMLInputElement>) => {
+            const value = event.currentTarget.value.trim();
+            onRecipientChange(
+              value.length > 0 ? { kind: "email", emailAddress: value } : null,
+            );
+          },
+          onInput: (event: ReactInputEvent<HTMLInputElement>) => {
+            const value = event.currentTarget.value.trim();
+            onRecipientChange(
+              value.length > 0 ? { kind: "email", emailAddress: value } : null,
+            );
+          },
+          value:
+            recipient?.kind === "email"
+              ? recipient.emailAddress
+              : recipient?.kind === "contact"
+                ? recipient.displayName
+                : "",
+        }),
+        createElement("input", {
+          "aria-label": "Subject",
+          onChange: (event: ChangeEvent<HTMLInputElement>) => {
+            onSubjectChange(event.currentTarget.value);
+          },
+          onInput: (event: ReactInputEvent<HTMLInputElement>) => {
+            onSubjectChange(event.currentTarget.value);
+          },
+          value: subject,
+        } satisfies InputHTMLAttributes<HTMLInputElement>),
+        createElement("textarea", {
+          "aria-label": "Message body",
+          onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
+            const value = event.currentTarget.value;
+            onBodyChange({
+              bodyPlaintext: value,
+              bodyHtml: `<p>${value}</p>`,
+            });
+          },
+          onInput: (event: ReactInputEvent<HTMLTextAreaElement>) => {
+            const value = event.currentTarget.value;
+            onBodyChange({
+              bodyPlaintext: value,
+              bodyHtml: `<p>${value}</p>`,
+            });
+          },
+          value: body,
+        } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
+        showAiDraftAffordances !== false
+          ? createElement("textarea", {
+              "aria-label": "AI directive",
+              onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
+                onAiDirectiveChange(event.currentTarget.value);
               },
-            },
-            "Show Cc",
-          )
-        : null,
-      showCc
-        ? createElement("input", {
-            "aria-label": "Cc",
-            onChange: (event: ChangeEvent<HTMLInputElement>) => {
-              onCcChange(
-                event.currentTarget.value
-                  .split(",")
-                  .map((value) => value.trim())
-                  .filter((value) => value.length > 0)
-                  .map((emailAddress) => ({
-                    kind: "email" as const,
-                    emailAddress,
-                  })),
-              );
-            },
-            onInput: (event: ReactInputEvent<HTMLInputElement>) => {
-              onCcChange(
-                event.currentTarget.value
-                  .split(",")
-                  .map((value) => value.trim())
-                  .filter((value) => value.length > 0)
-                  .map((emailAddress) => ({
-                    kind: "email" as const,
-                    emailAddress,
-                  })),
-              );
-            },
-            value: ccRecipients.map((recipient) => recipient.emailAddress).join(", "),
-          } satisfies InputHTMLAttributes<HTMLInputElement>)
-        : null,
-      !showBcc
-        ? createElement(
-            "button",
-            {
-              type: "button",
-              onClick: () => {
-                onToggleBcc(true);
+              onInput: (event: ReactInputEvent<HTMLTextAreaElement>) => {
+                onAiDirectiveChange(event.currentTarget.value);
               },
-            },
-            "Show Bcc",
-          )
-        : null,
-      showBcc
-        ? createElement("input", {
-            "aria-label": "Bcc",
-            onChange: (event: ChangeEvent<HTMLInputElement>) => {
-              onBccChange(
-                event.currentTarget.value
-                  .split(",")
-                  .map((value) => value.trim())
-                  .filter((value) => value.length > 0)
-                  .map((emailAddress) => ({
-                    kind: "email" as const,
-                    emailAddress,
-                  })),
-              );
-            },
-            onInput: (event: ReactInputEvent<HTMLInputElement>) => {
-              onBccChange(
-                event.currentTarget.value
-                  .split(",")
-                  .map((value) => value.trim())
-                  .filter((value) => value.length > 0)
-                  .map((emailAddress) => ({
-                    kind: "email" as const,
-                    emailAddress,
-                  })),
-              );
-            },
-            value: bccRecipients.map((recipient) => recipient.emailAddress).join(", "),
-          } satisfies InputHTMLAttributes<HTMLInputElement>)
-        : null,
-      createElement(
-        "ul",
-        { "aria-label": "Attachments" },
-        attachments.map((attachment) =>
-          createElement(
-            "li",
-            { key: attachment.filename },
-            attachment.filename,
+              value: aiDirective,
+            } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>)
+          : null,
+        showAiDraftAffordances !== false
+          ? createElement(
+              "button",
+              {
+                type: "button",
+                disabled: runAiDraftDisabled,
+                title: runAiDraftDisabledReason ?? undefined,
+              },
+              "Draft with AI",
+            )
+          : null,
+        !showCc
+          ? createElement(
+              "button",
+              {
+                type: "button",
+                onClick: () => {
+                  onToggleCc(true);
+                },
+              },
+              "Show Cc",
+            )
+          : null,
+        showCc
+          ? createElement("input", {
+              "aria-label": "Cc",
+              onChange: (event: ChangeEvent<HTMLInputElement>) => {
+                onCcChange(
+                  event.currentTarget.value
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter((value) => value.length > 0)
+                    .map((emailAddress) => ({
+                      kind: "email" as const,
+                      emailAddress,
+                    })),
+                );
+              },
+              onInput: (event: ReactInputEvent<HTMLInputElement>) => {
+                onCcChange(
+                  event.currentTarget.value
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter((value) => value.length > 0)
+                    .map((emailAddress) => ({
+                      kind: "email" as const,
+                      emailAddress,
+                    })),
+                );
+              },
+              value: ccRecipients
+                .map((recipient) => recipient.emailAddress)
+                .join(", "),
+            } satisfies InputHTMLAttributes<HTMLInputElement>)
+          : null,
+        !showBcc
+          ? createElement(
+              "button",
+              {
+                type: "button",
+                onClick: () => {
+                  onToggleBcc(true);
+                },
+              },
+              "Show Bcc",
+            )
+          : null,
+        showBcc
+          ? createElement("input", {
+              "aria-label": "Bcc",
+              onChange: (event: ChangeEvent<HTMLInputElement>) => {
+                onBccChange(
+                  event.currentTarget.value
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter((value) => value.length > 0)
+                    .map((emailAddress) => ({
+                      kind: "email" as const,
+                      emailAddress,
+                    })),
+                );
+              },
+              onInput: (event: ReactInputEvent<HTMLInputElement>) => {
+                onBccChange(
+                  event.currentTarget.value
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter((value) => value.length > 0)
+                    .map((emailAddress) => ({
+                      kind: "email" as const,
+                      emailAddress,
+                    })),
+                );
+              },
+              value: bccRecipients
+                .map((recipient) => recipient.emailAddress)
+                .join(", "),
+            } satisfies InputHTMLAttributes<HTMLInputElement>)
+          : null,
+        createElement(
+          "ul",
+          { "aria-label": "Attachments" },
+          attachments.map((attachment) =>
+            createElement(
+              "li",
+              { key: attachment.filename },
+              attachment.filename,
+            ),
           ),
         ),
-      ),
-      createElement("button", { onClick: onCancel, type: "button" }, "Cancel"),
-    ),
+        createElement("button", { onClick: onCancel, type: "button" }, "Cancel"),
+      );
+    }),
   ComposerNoteSurface: ({
     body,
     onBodyChange,
@@ -526,6 +553,18 @@ const replyContext = {
   defaultAlias: "whitebark@adventurescientists.org",
 };
 
+const forwardContext = {
+  originalEntryId: "entry:forward-1",
+  originalSubject: "Trip logistics",
+  originalFromLabel: "Maya Lee <maya@example.org>",
+  originalToLabel: "whitebark@adventurescientists.org",
+  originalCcLabel: null,
+  originalOccurredAtIso: "2026-05-11T16:00:00.000Z",
+  originalBodyPlaintext: "Forward this update.",
+  originalBodyHtml: "<p>Forward this update.</p>",
+  defaultAlias: "whitebark@adventurescientists.org",
+} as const;
+
 interface RenderSession {
   readonly cleanup: () => Promise<void>;
   readonly container: HTMLDivElement;
@@ -586,6 +625,22 @@ function setDomGlobals(window: Window & typeof globalThis) {
     writable: true,
   });
 
+  if (!("attachEvent" in window.HTMLElement.prototype)) {
+    Object.defineProperty(window.HTMLElement.prototype, "attachEvent", {
+      configurable: true,
+      value: () => undefined,
+      writable: true,
+    });
+  }
+
+  if (!("detachEvent" in window.HTMLElement.prototype)) {
+    Object.defineProperty(window.HTMLElement.prototype, "detachEvent", {
+      configurable: true,
+      value: () => undefined,
+      writable: true,
+    });
+  }
+
   window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
     return globalThis.setTimeout(() => {
       callback(Date.now());
@@ -618,6 +673,7 @@ function ComposerControls() {
     composerView,
     expandComposer,
     minimizeComposer,
+    openForwardDraft,
     openNewDraft,
     openReplyDraft,
   } = useInboxClient();
@@ -642,6 +698,14 @@ function ComposerControls() {
         }}
       >
         Open note draft
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          openForwardDraft(forwardContext);
+        }}
+      >
+        Open forward draft
       </button>
       <button type="button" onClick={minimizeComposer}>
         Minimize from context
@@ -957,6 +1021,20 @@ describe("composer canonical modal", () => {
 
     expect(getInput("Cc").value).toBe("partner@example.org");
     expect(getInput("Bcc").value).toBe("archive@example.org");
+  });
+
+  it("opens forwarding mode without tabs or AI draft affordances and focuses the recipient input", async () => {
+    await mount(<TestApp />);
+
+    await click(getByText("Open forward draft"));
+
+    expect(getStateText()).toBe("forwarding:modal");
+    expect(document.querySelector("[role='tablist']")).toBeNull();
+    expect(document.body.textContent).toContain("Forward");
+    expect(document.body.textContent).not.toContain("SMS");
+    expect(document.body.textContent).not.toContain("Draft with AI");
+    expect(document.querySelector("textarea[aria-label='AI directive']")).toBeNull();
+    expect(document.activeElement).toBe(getInput("Recipient"));
   });
 
   it("closes from the modal header and from the minimized pill", async () => {
