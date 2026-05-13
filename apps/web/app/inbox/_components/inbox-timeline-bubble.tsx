@@ -234,45 +234,49 @@ function ReplyFooter({
   return (
     <div
       className={cn(
-        "border-t border-slate-100 px-4 py-1.5 opacity-0 group-hover:opacity-100",
+        "grid grid-cols-2 border-t border-slate-100 opacity-0 group-hover:opacity-100",
         TRANSITION.fast,
         TRANSITION.reduceMotion,
       )}
     >
-      <div className="flex items-center justify-end gap-3">
-        {onForward === undefined ? null : (
-          <button
-            type="button"
-            onClick={() => {
-              onForward(entryId);
-            }}
-            className={cn(
-              "inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800",
-              TRANSITION.fast,
-              TRANSITION.reduceMotion,
-            )}
-          >
-            <CornerUpRightIcon className="size-3" />
-            <span>Forward</span>
-          </button>
-        )}
-        {onReply === undefined ? null : (
-          <button
-            type="button"
-            onClick={() => {
-              onReply(entryId);
-            }}
-            className={cn(
-              "inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800",
-              TRANSITION.fast,
-              TRANSITION.reduceMotion,
-            )}
-          >
-            <CornerUpLeftIcon className="size-3" />
-            <span>Reply</span>
-          </button>
-        )}
-      </div>
+      {onReply === undefined ? (
+        <div aria-hidden="true" />
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            onReply(entryId);
+          }}
+          className={cn(
+            "inline-flex items-center justify-center gap-1.5 py-2 text-[12px] text-slate-500 transition-colors",
+            "hover:bg-sky-50 hover:text-sky-700",
+            TRANSITION.fast,
+            TRANSITION.reduceMotion,
+          )}
+        >
+          <CornerUpLeftIcon className="size-3.5" />
+          <span>Reply</span>
+        </button>
+      )}
+      {onForward === undefined ? (
+        <div aria-hidden="true" />
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            onForward(entryId);
+          }}
+          className={cn(
+            "inline-flex items-center justify-center gap-1.5 border-l border-slate-100 py-2 text-[12px] text-slate-500 transition-colors",
+            "hover:bg-slate-100 hover:text-slate-700",
+            TRANSITION.fast,
+            TRANSITION.reduceMotion,
+          )}
+        >
+          <CornerUpRightIcon className="size-3.5" />
+          <span>Forward</span>
+        </button>
+      )}
     </div>
   );
 }

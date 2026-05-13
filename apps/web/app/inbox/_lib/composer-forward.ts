@@ -1,6 +1,8 @@
 import { sanitizeComposerHtml } from "@/src/lib/html-sanitizer";
 
+import { extractEmailAddresses } from "./message-formatting";
 import type {
+  InboxComposerAliasOption,
   InboxComposerForwardContext,
   InboxTimelineEntryViewModel,
 } from "./view-models";
@@ -56,6 +58,23 @@ function htmlToPlaintext(bodyHtml: string): string {
   return decoded.replace(/\n{3,}/gu, "\n\n").trim();
 }
 
+function findMatchingAlias(
+  header: string | null,
+  composerAliases: readonly InboxComposerAliasOption[],
+): string | null {
+  for (const emailAddress of extractEmailAddresses(header)) {
+    const match = composerAliases.find(
+      (option) => option.alias.toLowerCase() === emailAddress,
+    );
+
+    if (match !== undefined) {
+      return match.alias;
+    }
+  }
+
+  return null;
+}
+
 export function buildForwardSubject(originalSubject: string): string {
   return FORWARD_SUBJECT_PREFIX_PATTERN.test(originalSubject)
     ? originalSubject
@@ -108,6 +127,7 @@ export function buildForwardBodyHtml(
 
 export function buildForwardContextFromEntry(input: {
   readonly entry: InboxTimelineEntryViewModel;
+  readonly composerAliases: readonly InboxComposerAliasOption[];
   readonly defaultAlias: string | null;
 }): InboxComposerForwardContext | null {
   if (input.entry.channel !== "email") {
@@ -121,6 +141,11 @@ export function buildForwardContextFromEntry(input: {
       : null;
   const originalFromLabel = input.entry.fromHeader?.trim();
   const originalToLabel = input.entry.toHeader?.trim();
+  const defaultAlias =
+    findMatchingAlias(input.entry.toHeader, input.composerAliases) ??
+    findMatchingAlias(input.entry.ccHeader, input.composerAliases) ??
+    input.defaultAlias ??
+    null;
 
   return {
     originalEntryId: input.entry.id,
@@ -139,6 +164,6 @@ export function buildForwardContextFromEntry(input: {
     originalBodyPlaintext:
       originalBodyHtml === null ? originalBody : htmlToPlaintext(originalBodyHtml),
     originalBodyHtml,
-    defaultAlias: input.defaultAlias,
+    defaultAlias,
   };
 }

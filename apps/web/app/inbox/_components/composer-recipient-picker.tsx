@@ -108,6 +108,7 @@ export function ComposerRecipientPicker({
   const [isResultsOpen, setIsResultsOpen] = useState(false);
   const activeSearchIdRef = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const listboxId = useId();
 
   useEffect(() => {
@@ -183,6 +184,20 @@ export function ComposerRecipientPicker({
     shouldShowInput &&
     (isSearching || results.length > 0 || query.trim().length >= 2);
 
+  useEffect(() => {
+    if (!autoFocusInput || !shouldShowInput || inputRef.current === null) {
+      return undefined;
+    }
+
+    const handle = window.setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(handle);
+    };
+  }, [autoFocusInput, shouldShowInput]);
+
   const commitRecipient = (recipient: ComposerRecipientValue) => {
     if (single) {
       onRecipientsChange([recipient]);
@@ -231,7 +246,7 @@ export function ComposerRecipientPicker({
               <SearchIcon className="pointer-events-none mr-2 size-3.5 shrink-0 text-slate-400" />
             ) : null}
             <Input
-              autoFocus={autoFocusInput}
+              ref={inputRef}
               data-composer-recipient-input={single ? "" : undefined}
               value={query}
               onChange={(event) => {

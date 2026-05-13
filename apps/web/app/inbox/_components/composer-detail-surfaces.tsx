@@ -251,6 +251,7 @@ export function ComposerEmailSurface({
   showBcc,
   isReplying,
   recipientAutoFocus = false,
+  showAiDraftAffordances = true,
   recipientPlaceholder = "Search contacts",
   recipientError,
   ccError,
@@ -310,6 +311,7 @@ export function ComposerEmailSurface({
   readonly showBcc: boolean;
   readonly isReplying: boolean;
   readonly recipientAutoFocus?: boolean;
+  readonly showAiDraftAffordances?: boolean;
   readonly recipientPlaceholder?: string;
   readonly recipientError?: ComposerValidationError;
   readonly ccError?: ComposerValidationError;
@@ -373,12 +375,12 @@ export function ComposerEmailSurface({
     canSendAndSaveForAi || sendAndSaveDisabledReason === null
       ? null
       : sendAndSaveDisabledReason;
-  const knowledgeIndicator = (
+  const knowledgeIndicator = showAiDraftAffordances ? (
     <KnowledgeBaseIndicator
       hasKnowledge={selectedAliasHasCachedContent}
       projectName={selectedAliasProjectName}
     />
-  );
+  ) : null;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -517,23 +519,25 @@ export function ComposerEmailSurface({
         }}
         onClearErrors={onClearErrors}
         topSlot={
-          <ComposerAiDraftWindow
-            tone="email"
-            aiDraft={aiDraft}
-            directiveText={aiDirective}
-            repromptText={repromptText}
-            isGeneratingAi={isGeneratingAi}
-            runDraftDisabled={runAiDraftDisabled}
-            runDraftDisabledReason={runAiDraftDisabledReason}
-            onDirectiveTextChange={onAiDirectiveChange}
-            onRepromptTextChange={onRepromptTextChange}
-            onRunDraft={onRunAiDraft}
-            onOpenReprompt={onOpenReprompt}
-            onSubmitReprompt={onReprompt}
-            onCancelReprompt={onCancelReprompt}
-            onDiscard={onDiscardAi}
-            onApprove={onApproveAi}
-          />
+          showAiDraftAffordances ? (
+            <ComposerAiDraftWindow
+              tone="email"
+              aiDraft={aiDraft}
+              directiveText={aiDirective}
+              repromptText={repromptText}
+              isGeneratingAi={isGeneratingAi}
+              runDraftDisabled={runAiDraftDisabled}
+              runDraftDisabledReason={runAiDraftDisabledReason}
+              onDirectiveTextChange={onAiDirectiveChange}
+              onRepromptTextChange={onRepromptTextChange}
+              onRunDraft={onRunAiDraft}
+              onOpenReprompt={onOpenReprompt}
+              onSubmitReprompt={onReprompt}
+              onCancelReprompt={onCancelReprompt}
+              onDiscard={onDiscardAi}
+              onApprove={onApproveAi}
+            />
+          ) : undefined
         }
         bottomSlot={
           selectedAliasSignature.length > 0 ? (
@@ -589,9 +593,11 @@ export function ComposerEmailSurface({
                 Attach
               </Button>
 
-              <div className="hidden min-w-0 max-w-[18rem] items-center border-l border-slate-200 pl-3 md:flex">
-                {knowledgeIndicator}
-              </div>
+              {knowledgeIndicator ? (
+                <div className="hidden min-w-0 max-w-[18rem] items-center border-l border-slate-200 pl-3 md:flex">
+                  {knowledgeIndicator}
+                </div>
+              ) : null}
 
               <div className="min-w-0 flex-1" />
 
@@ -668,7 +674,9 @@ export function ComposerEmailSurface({
               </div>
             </div>
 
-            <div className="mt-2 md:hidden">{knowledgeIndicator}</div>
+            {knowledgeIndicator ? (
+              <div className="mt-2 md:hidden">{knowledgeIndicator}</div>
+            ) : null}
           </div>
         )}
       />
