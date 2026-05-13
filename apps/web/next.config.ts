@@ -74,6 +74,16 @@ const nextConfig: NextConfig = {
       },
     ]);
   },
+  rewrites() {
+    return Promise.resolve([
+      // Flow map documentation — static HTML served from /public/flow.html.
+      // Rewrite so the clean URL /flow works without the .html suffix.
+      {
+        source: "/flow",
+        destination: "/flow.html",
+      },
+    ]);
+  },
 };
 
 export default nextConfig;

@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AS Comms Platform — Flow Map</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --border: #e5e5e2;
+    --border-strong: #cfcfca;
+    --text: #1f2328;
+    --text-dim: #6b7280;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --node-ext: #fef9c3;
+    --node-ext-border: #ca8a04;
+    --node-app: #e0f2fe;
+    --node-app-border: #0284c7;
+    --node-module: #f1f5f9;
+    --node-module-border: #475569;
+    --node-pkg: #ecfccb;
+    --node-pkg-border: #4d7c0f;
+    --node-store: #fde2e4;
+    --node-store-border: #be123c;
+    --node-actor: #f5d0fe;
+    --node-actor-border: #a21caf;
+    --container-bg: #fafaf9;
+    --container-border: #d4d4d8;
+    --edge-active: #1d4ed8;
+    --edge-dim: #d1d5db;
+    --badge-bg: #1d4ed8;
+    --badge-text: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 18px 28px 12px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  header .subtitle {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 260px 1fr 360px;
+    height: calc(100vh - 56px);
+    overflow: hidden;
+  }
+  aside.flow-list, aside.step-panel {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  aside.step-panel {
+    border-right: none;
+    border-left: 1px solid var(--border);
+  }
+  aside h2 {
+    margin: 0;
+    padding: 16px 18px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .flow-button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 18px;
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    font: inherit;
+    cursor: pointer;
+    color: var(--text);
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .flow-button:hover { background: #f3f4f6; }
+  .flow-button.active {
+    background: var(--accent-soft);
+    border-left-color: var(--accent);
+  }
+  .flow-button .flow-title {
+    font-weight: 500;
+  }
+  .flow-button .flow-blurb {
+    display: block;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  main.canvas {
+    overflow: auto;
+    background: var(--bg);
+    position: relative;
+  }
+  main.canvas svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-width: 1500px;
+    min-height: 820px;
+  }
+  .container-rect {
+    fill: var(--container-bg);
+    stroke: var(--container-border);
+    stroke-dasharray: 4 3;
+    stroke-width: 1.2;
+  }
+  .container-label {
+    font-size: 12px;
+    font-weight: 600;
+    fill: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .node-rect {
+    stroke-width: 1.4;
+    rx: 8;
+    ry: 8;
+  }
+  .node-text {
+    font-size: 12.5px;
+    font-weight: 500;
+    fill: var(--text);
+    pointer-events: none;
+    text-anchor: middle;
+    dominant-baseline: central;
+  }
+  .node-subtext {
+    font-size: 11px;
+    fill: var(--text-dim);
+    pointer-events: none;
+    text-anchor: middle;
+  }
+  .node[data-type="external"] .node-rect { fill: var(--node-ext); stroke: var(--node-ext-border); }
+  .node[data-type="app"]      .node-rect { fill: var(--node-app); stroke: var(--node-app-border); }
+  .node[data-type="module"]   .node-rect { fill: var(--node-module); stroke: var(--node-module-border); }
+  .node[data-type="pkg"]      .node-rect { fill: var(--node-pkg); stroke: var(--node-pkg-border); }
+  .node[data-type="store"]    .node-rect { fill: var(--node-store); stroke: var(--node-store-border); }
+  .node[data-type="actor"]    .node-rect { fill: var(--node-actor); stroke: var(--node-actor-border); }
+  .node.dimmed .node-rect { opacity: 0.35; }
+  .node.dimmed .node-text, .node.dimmed .node-subtext { opacity: 0.45; }
+  .node.touched .node-rect { stroke-width: 2.4; filter: drop-shadow(0 1px 3px rgba(29,78,216,0.25)); }
+
+  .edge-path {
+    fill: none;
+    stroke: var(--edge-active);
+    stroke-width: 2.2;
+    marker-end: url(#arrow);
+  }
+  .edge-badge {
+    fill: var(--badge-bg);
+  }
+  .edge-badge-text {
+    fill: var(--badge-text);
+    font-size: 11px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .edge-label {
+    font-size: 11px;
+    fill: var(--edge-active);
+    font-weight: 500;
+    pointer-events: none;
+  }
+  .edge-label-bg {
+    fill: var(--bg);
+  }
+
+  aside.step-panel .flow-meta {
+    padding: 6px 18px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  aside.step-panel .flow-meta h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  aside.step-panel .flow-meta p {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  ol.step-list {
+    list-style: none;
+    margin: 0;
+    padding: 8px 0 24px;
+  }
+  ol.step-list li {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 10px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  ol.step-list li:hover { background: #f3f4f6; }
+  ol.step-list li.highlighted { background: var(--accent-soft); }
+  ol.step-list .step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--badge-bg);
+    color: var(--badge-text);
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 1px;
+  }
+  ol.step-list .step-from-to {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: ui-monospace, "SF Mono", monospace;
+  }
+  ol.step-list .step-label {
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  ol.step-list .step-annotation {
+    font-size: 13px;
+    margin-top: 4px;
+    color: #374151;
+  }
+  .empty-state {
+    padding: 18px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .legend {
+    position: absolute;
+    top: 16px;
+    right: 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11.5px;
+    color: var(--text-dim);
+    line-height: 1.7;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .legend-swatch {
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 1px solid;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AS Comms Platform — Flow Map</h1>
+  <p class="subtitle">Click a flow on the left to see how it traverses apps, packages, and external services.</p>
+</header>
+
+<div class="layout">
+  <aside class="flow-list">
+    <h2>Flows</h2>
+    <div id="flow-buttons"></div>
+  </aside>
+
+  <main class="canvas">
+    <svg id="diagram" viewBox="0 0 1500 830" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--edge-active)"/>
+        </marker>
+      </defs>
+      <g id="containers"></g>
+      <g id="nodes"></g>
+      <g id="edges"></g>
+    </svg>
+    <div class="legend">
+      <div class="legend-row"><span class="legend-swatch" style="background: var(--node-ext); border-color: var(--node-ext-border)"></span> External service</div>
+      <div class="legend-row"><span class="legend-swatch" style="background: var(--node-app); border-color: var(--node-app-border)"></span> App (in <code>apps/</code>)</div>
+      <div class="legend-row"><span class="legend-swatch" style="background: var(--node-module); border-color: var(--node-module-border)"></span> Internal module</div>
+      <div class="legend-row"><span class="legend-swatch" style="background: var(--node-pkg); border-color: var(--node-pkg-border)"></span> Workspace package</div>
+      <div class="legend-row"><span class="legend-swatch" style="background: var(--node-store); border-color: var(--node-store-border)"></span> Storage</div>
+      <div class="legend-row"><span class="legend-swatch" style="background: var(--node-actor); border-color: var(--node-actor-border)"></span> Operator</div>
+    </div>
+  </main>
+
+  <aside class="step-panel">
+    <h2>Selected flow</h2>
+    <div id="flow-details" class="empty-state">
+      Pick a flow on the left to see step-by-step annotations of what's passed between each piece of the system.
+    </div>
+  </aside>
+</div>
+
+<script>
+// =====================================================================
+// APP DATA — edit this JS object literal to add nodes or flows.
+// =====================================================================
+const APP_DATA = {
+  containers: [
+    // Containers are visual groupings only (dashed-border background rects with a label).
+    // They are NOT edge endpoints — flows reference the inner module nodes.
+    { id: "c:worker", label: "apps/worker",  x: 60,  y: 240, w: 420, h: 240 },
+    { id: "c:web",    label: "apps/web",     x: 520, y: 240, w: 940, h: 280 },
+  ],
+  nodes: [
+    // ── External services ───────────────────────────────────────────
+    { id: "ext:gmail",      label: "Gmail",      type: "external", x: 180, y: 28, w: 140, h: 50 },
+    { id: "ext:salesforce", label: "Salesforce", type: "external", x: 380, y: 28, w: 140, h: 50 },
+    { id: "ext:twilio",     label: "Twilio",     type: "external", x: 580, y: 28, w: 140, h: 50 },
+    { id: "ext:anthropic",  label: "Anthropic",  sub: "Claude Sonnet 4.6", type: "external", x: 780, y: 28, w: 140, h: 50 },
+    { id: "ext:notion",     label: "Notion",     type: "external", x: 980, y: 28, w: 140, h: 50 },
+
+    // ── Capture apps ────────────────────────────────────────────────
+    { id: "app:gmail-capture",      label: "apps/gmail-capture",     sub: "1-min poll", type: "app", x: 80,  y: 130, w: 180, h: 60 },
+    { id: "app:salesforce-capture", label: "apps/salesforce-capture", sub: "5-min poll", type: "app", x: 300, y: 130, w: 200, h: 60 },
+    { id: "app:sms-capture",        label: "apps/sms-capture",        sub: "Twilio webhook", type: "app", x: 540, y: 130, w: 180, h: 60 },
+    { id: "app:mailchimp-capture",  label: "apps/mailchimp-capture",  sub: "sunsetting", type: "app", x: 760, y: 130, w: 200, h: 60 },
+
+    // ── Worker (inside c:worker) ────────────────────────────────────
+    { id: "worker:ingest",         label: "ingest endpoint",        sub: "/api/internal/ingest", type: "module", x: 80,  y: 285, w: 180, h: 56 },
+    { id: "worker:synthesis",      label: "synthesize-project-knowledge", sub: "orchestrator + worker job", type: "module", x: 280, y: 285, w: 180, h: 56 },
+    { id: "worker:autosync-poll",  label: "poll-ai-knowledge-auto-sync",  sub: "hourly cron", type: "module", x: 80,  y: 365, w: 180, h: 56 },
+    { id: "worker:reconcile-gaps", label: "reconcile-capture-gaps", sub: "daily cron", type: "module", x: 280, y: 365, w: 180, h: 56 },
+
+    // ── Web app (inside c:web) ──────────────────────────────────────
+    { id: "web:inbox",            label: "/inbox",            sub: "list + thread routes", type: "module", x: 540, y: 285, w: 160, h: 56 },
+    { id: "web:composer",         label: "/composer",         sub: "draft pane + AI Draft", type: "module", x: 720, y: 285, w: 180, h: 56 },
+    { id: "web:settings-wizard",  label: "/settings (wizard)", sub: "6-step activation", type: "module", x: 920, y: 285, w: 180, h: 56 },
+    { id: "web:settings-team",    label: "/settings/team",    sub: "users + roles", type: "module", x: 1120, y: 285, w: 160, h: 56 },
+    { id: "web:server-actions",   label: "server actions",    sub: "composer / ai / settings", type: "module", x: 1300, y: 285, w: 140, h: 56 },
+    { id: "web:capture-helper",   label: "captureKnowledgeFromSend", sub: "Tier-3 write + threshold trigger", type: "module", x: 540, y: 380, w: 320, h: 56 },
+
+    // ── Packages ────────────────────────────────────────────────────
+    { id: "pkg:contracts",    label: "packages/contracts",    sub: "Zod + taxonomy", type: "pkg", x: 100,  y: 560, w: 180, h: 64 },
+    { id: "pkg:domain",       label: "packages/domain",       sub: "normalize, identity, dedup", type: "pkg", x: 300,  y: 560, w: 220, h: 64 },
+    { id: "pkg:integrations", label: "packages/integrations", sub: "gmail · salesforce · twilio · anthropic · notion · web-fetch", type: "pkg", x: 540,  y: 560, w: 380, h: 64 },
+    { id: "pkg:db",           label: "packages/db",           sub: "Drizzle + migrator + repos", type: "pkg", x: 940,  y: 560, w: 220, h: 64 },
+    { id: "pkg:ui",           label: "packages/ui",           sub: "shared primitives", type: "pkg", x: 1180, y: 560, w: 200, h: 64 },
+
+    // ── Storage + Actor ─────────────────────────────────────────────
+    { id: "store:postgres",  label: "Postgres",      sub: "Railway-managed", type: "store", x: 540, y: 700, w: 240, h: 60 },
+    { id: "actor:operator",  label: "Operator",      sub: "admin / operator role", type: "actor", x: 1240, y: 700, w: 180, h: 60 },
+  ],
+
+  flows: [
+    // =================================================================
+    // 1) Inbound email → Inbox
+    // =================================================================
+    {
+      id: "inbound-email",
+      title: "Inbound email arrives in the Inbox",
+      blurb: "A volunteer emails a project alias; the message becomes a row in the operator Inbox.",
+      steps: [
+        { from: "ext:gmail",         to: "app:gmail-capture",   label: "1-min poll",            annotation: "Gmail API users.messages.list + get since last cursor. Pulls new threads in volunteers@ and project aliases (whales@, whitebarkpine@, ...)." },
+        { from: "app:gmail-capture", to: "pkg:integrations",    label: "provider-close map",     annotation: "Raw Gmail message → provider-close shape (preserves Message-ID and threadId, normalizes addresses, hides inline-signature image attachments)." },
+        { from: "app:gmail-capture", to: "worker:ingest",       label: "POST /api/internal/ingest", annotation: "Batched provider-close records sent over the worker's internal ingest endpoint. Capture apps never write to the database directly." },
+        { from: "worker:ingest",     to: "pkg:domain",          label: "normalize()",            annotation: "Identity resolution (Salesforce Contact.Id anchor per D-003; ambiguous → identity_resolution_queue case per D-004). Builds canonical event communication.email.inbound." },
+        { from: "pkg:domain",        to: "pkg:db",              label: "persist (transaction)",  annotation: "One transaction writes source_evidence (provider-close), canonical_event_ledger (normalized), and contact_inbox_projection (the per-person queue read model)." },
+        { from: "pkg:db",            to: "store:postgres",      label: "INSERT (3 tables)",      annotation: "No cache invalidation needed (D-040): Inbox routes are force-dynamic and re-read on every page view." },
+        { from: "actor:operator",    to: "web:inbox",           label: "Opens Inbox",            annotation: "Server-rendered /inbox route reads contact_inbox_projection ordered by lastInboundAt desc; the new row appears as bucket='new'." },
+      ],
+    },
+
+    // =================================================================
+    // 2) Operator replies via Composer
+    // =================================================================
+    {
+      id: "composer-reply",
+      title: "Operator replies via the Composer",
+      blurb: "Reply to an existing thread via Gmail, with optimistic UI and a reconciliation pass.",
+      steps: [
+        { from: "actor:operator",   to: "web:composer",       label: "Reply + Send",          annotation: "Operator clicks Reply, types, picks alias (defaults to the project of the inbound message), clicks Send." },
+        { from: "web:composer",     to: "web:server-actions", label: "sendComposerAction",     annotation: "Server action receives { threadId, contactId, alias, body }; validates ownership; stamps optimistic UI hint." },
+        { from: "web:server-actions", to: "pkg:domain",       label: "buildOutboundEnvelope", annotation: "Resolves canonical contact, fetches signature, constructs rfc822 envelope with In-Reply-To threading header." },
+        { from: "web:server-actions", to: "pkg:integrations", label: "gmailSend()",            annotation: "Calls Gmail users.messages.send with the Send-As alias header. Single shared OAuth identity per memory; aliases are Send-As entries." },
+        { from: "pkg:integrations", to: "ext:gmail",          label: "users.messages.send",    annotation: "Gmail transports the message; threadId preserved so the next volunteer reply lands in the same thread." },
+        { from: "web:server-actions", to: "pkg:db",           label: "writePendingOutbound",   annotation: "Records a pending-outbound row keyed by the returned Message-ID. The Inbox shows the row optimistically as an outbound event." },
+        { from: "pkg:db",           to: "store:postgres",     label: "INSERT pending_outbound", annotation: "Reconciler matches by Message-ID on the next gmail-capture cycle." },
+        { from: "app:gmail-capture", to: "worker:ingest",     label: "reconcile next poll",     annotation: "Next 1-min poll sees the sent message; matches to the pending row by Message-ID; writes the canonical outbound event and clears the pending row." },
+      ],
+    },
+
+    // =================================================================
+    // 3) AI Draft
+    // =================================================================
+    {
+      id: "ai-draft",
+      title: "Operator clicks AI Draft",
+      blurb: "Claude writes a first-draft reply grounded in the project's AI Knowledge document.",
+      steps: [
+        { from: "actor:operator",     to: "web:composer",         label: "Click AI Draft",          annotation: "Operator clicks the AI Draft button on an open thread." },
+        { from: "web:composer",       to: "web:server-actions",   label: "draftReplyAction",        annotation: "Server action receives { threadId, contactId, projectId }." },
+        { from: "web:server-actions", to: "pkg:db",               label: "read 3-tier knowledge",   annotation: "Loads: (1) shared voice doc, (2) the project's cached synthesized AI Knowledge doc, (3) top approved replies (Tier 3) via the deterministic ranker. Plus recent thread events as live context." },
+        { from: "web:server-actions", to: "pkg:integrations",     label: "buildPrompt + call",       annotation: "Three-layer prompt with strict precedence (D-032). Single LLM call by default. Prompt-cached so per-draft cost stays in the cents range." },
+        { from: "pkg:integrations",   to: "ext:anthropic",        label: "Claude Sonnet 4.6",       annotation: "One synchronous call. Over-budget or empty-grounding cases downgrade with a typed warning, never block (Stage 4 framing decisions, 2026-04-21)." },
+        { from: "ext:anthropic",      to: "web:composer",         label: "draft text",              annotation: "Returned text is injected into the Composer textarea. Operator reviews, edits, and chooses Send or 'Send and save for AI'." },
+      ],
+    },
+
+    // =================================================================
+    // 4) Send and save for AI → threshold-triggered re-synthesis
+    // =================================================================
+    {
+      id: "save-for-ai",
+      title: "Send and save for AI → re-synthesis",
+      blurb: "After ≥5 saved replies, the platform auto-re-synthesizes the project's AI Knowledge doc.",
+      steps: [
+        { from: "actor:operator",     to: "web:composer",        label: "Send + save",                 annotation: "Operator clicks 'Send and save for AI' instead of plain Send. The send proceeds normally (Flow 2), plus the captureForAi flag is set." },
+        { from: "web:composer",       to: "web:server-actions",  label: "sendComposerAction(saveForAi=true)", annotation: "Same send path as Flow 2; on success, invokes the capture helper." },
+        { from: "web:server-actions", to: "web:capture-helper",  label: "captureKnowledgeFromSend",    annotation: "Per D-032, the 'Send and save for AI' click IS the human approval — no separate review UI." },
+        { from: "web:capture-helper", to: "pkg:db",              label: "INSERT project_knowledge_entries", annotation: "Row written with kind='canonical_reply' and approved_for_ai=true (the capture-flag flip shipped in PR #377 Phase 3)." },
+        { from: "web:capture-helper", to: "pkg:db",              label: "countCapturedSinceTimestamp", annotation: "Counts approved-for-AI rows created strictly after the last synthesis run." },
+        { from: "web:capture-helper", to: "pkg:db",              label: "if ≥5 → enqueue job",         annotation: "Inserts graphile-worker job 'ai-knowledge-capture-trigger:{projectId}' with skipIfHashUnchanged=false (approved replies are the change signal even when sources didn't change). jobKeyMode=replace dedupes per project. Capture returns ok regardless of enqueue success." },
+        { from: "pkg:db",             to: "store:postgres",      label: "INSERT graphile_worker.jobs", annotation: "Job is now durable; worker picks it up on next tick." },
+        { from: "worker:synthesis",   to: "pkg:integrations",    label: "fetch enabled sources",       annotation: "Iterates ai_knowledge_sources for the project; uses notion provider for notion: URLs and a web-fetch provider for public URLs." },
+        { from: "worker:synthesis",   to: "ext:anthropic",       label: "synthesize merged doc",       annotation: "Merges sources + approved-reply memory into one AI Knowledge document. ~$0.30–$0.60. Anthropic timeout bumped to 180s for synthesis (PR #387)." },
+        { from: "worker:synthesis",   to: "ext:notion",          label: "write {Project} (vN)",        annotation: "Writes the versioned AI Knowledge page back to the Notion workspace via the 'Volunteer Comms Background Inforrmation Check' integration." },
+        { from: "worker:synthesis",   to: "pkg:db",              label: "update project_dimensions",   annotation: "Persists new ai_optimized_input_hash + last_synthesized_at. Next auto-sync can skip-if-unchanged." },
+      ],
+    },
+
+    // =================================================================
+    // 5) AI Knowledge auto-sync (hourly cron)
+    // =================================================================
+    {
+      id: "auto-sync",
+      title: "AI Knowledge auto-sync (hourly cron)",
+      blurb: "Hourly cron pulls fresh source content for projects on a daily/weekly schedule.",
+      steps: [
+        { from: "worker:autosync-poll", to: "pkg:db",            label: "Query due projects",      annotation: "Selects project_dimensions where ai_auto_sync_schedule != 'never' AND last_synthesized_at < (24h if daily / 7d if weekly) ago, AND project has at least one enabled source." },
+        { from: "worker:autosync-poll", to: "worker:synthesis",  label: "Enqueue per due project", annotation: "jobKey 'ai-knowledge-auto-sync:{projectId}' with skipIfHashUnchanged=true (auto-sync should be cheap by default)." },
+        { from: "worker:synthesis",     to: "pkg:integrations",  label: "Fetch enabled sources",   annotation: "Same source-fetch path as Flow 4 step 8 (Notion + web-fetch providers)." },
+        { from: "worker:synthesis",     to: "pkg:domain",        label: "Compute input hash",      annotation: "Hashes all fetched source content into ai_optimized_input_hash candidate." },
+        { from: "worker:synthesis",     to: "pkg:db",            label: "Read stored hash",        annotation: "Compares candidate hash to project_dimensions.ai_optimized_input_hash." },
+        { from: "worker:synthesis",     to: "pkg:db",            label: "If match → short-circuit", annotation: "Returns { ok:true, unchanged:true, sourcesChecked:N }. No Anthropic call, no Notion write, no cost. Most auto-sync ticks land here." },
+        { from: "worker:synthesis",     to: "ext:anthropic",     label: "Else → synthesize",       annotation: "Hash mismatch path: Claude merges sources + approved-reply memory (same as Flow 4 step 9)." },
+        { from: "worker:synthesis",     to: "ext:notion",        label: "Else → write vN+1",       annotation: "Hash mismatch path: writes a new versioned AI Knowledge page." },
+      ],
+    },
+
+    // =================================================================
+    // 6) Activate a project (wizard)
+    // =================================================================
+    {
+      id: "activate-project",
+      title: "Operator activates a new project (wizard)",
+      blurb: "The 6-step Settings wizard self-serves project activation end-to-end.",
+      steps: [
+        { from: "actor:operator",     to: "web:settings-wizard", label: "Complete 6 steps",        annotation: "Pick project → aliases → signature → AI Knowledge sources → connected projects (D-044) → review." },
+        { from: "web:settings-wizard", to: "web:server-actions", label: "activateProjectAction",   annotation: "Single transactional submit with all wizard state. Admin role required (D-025)." },
+        { from: "web:server-actions", to: "pkg:db",              label: "Begin transaction",       annotation: "Writes project_dimensions.is_active=true, project_aliases rows, ai_knowledge_sources rows, connected_to_project_id on selected subs. Chain-prevention trigger validates sub selections (D-044)." },
+        { from: "pkg:db",             to: "store:postgres",      label: "COMMIT (all-or-nothing)", annotation: "Transactional: if the chain-prevention trigger or any constraint fails, the entire activation rolls back. No half-active state possible." },
+        { from: "web:server-actions", to: "pkg:db",              label: "Enqueue synthesis",       annotation: "graphile_worker job for synthesize-project-knowledge with the new source list and skipIfHashUnchanged=false." },
+        { from: "worker:synthesis",   to: "pkg:integrations",    label: "Fetch sources",           annotation: "First synthesis run for the project — same fetch path as Flow 4 step 8." },
+        { from: "worker:synthesis",   to: "ext:anthropic",       label: "Synthesize v1",           annotation: "Claude produces the v1 merged AI Knowledge doc. ~2–3 minutes wall-clock. ~$0.30." },
+        { from: "worker:synthesis",   to: "ext:notion",          label: "Write {Project} v1",      annotation: "Creates a fresh '{Project} — AI Knowledge (v1)' Notion page in the workspace." },
+        { from: "web:settings-wizard", to: "actor:operator",     label: "Show 'Synthesis in progress'", annotation: "Wizard returns success immediately; project detail page shows a progress indicator until first synthesis lands (PR #385 suppresses the stale banner pre-first-synthesis)." },
+      ],
+    },
+
+    // =================================================================
+    // 7) Inbound SMS with multi-candidate phone → unresolved
+    // =================================================================
+    {
+      id: "sms-multi-candidate",
+      title: "Inbound SMS with multi-candidate phone → unresolved",
+      blurb: "A shared phone number maps to ≥2 contacts; the platform asks instead of guessing.",
+      steps: [
+        { from: "ext:twilio",       to: "app:sms-capture",   label: "POST /sms/inbound webhook", annotation: "Twilio delivers inbound SMS; Twilio signature verified before any work happens." },
+        { from: "app:sms-capture",  to: "pkg:domain",        label: "resolveContactByPhone",     annotation: "Per D-042, phone↔contact is many-to-many through contact_identities of kind='phone' (mirrors the email pattern)." },
+        { from: "pkg:domain",       to: "pkg:db",            label: "SELECT contact_identities", annotation: "Returns 0 (synthetic create), 1 (route normally), or N candidates (this flow's case)." },
+        { from: "pkg:domain",       to: "pkg:domain",        label: "Anchor to most-recent-active", annotation: "Winner computed in SQL: ORDER BY contact_inbox_projection.last_inbound_at DESC NULLS LAST, last_activity_at DESC NULLS LAST, contacts.id ASC LIMIT 1." },
+        { from: "pkg:domain",       to: "pkg:db",            label: "Write sms_messages + ledger", annotation: "Both anchored to the winner. canonical_event_ledger row's review_state='needs_identity_review'." },
+        { from: "pkg:domain",       to: "pkg:db",            label: "Open identity_resolution_queue case", annotation: "reason_code='identity_multi_candidate'; the full candidate list is preserved in the case payload for operator review." },
+        { from: "pkg:domain",       to: "pkg:db",            label: "UPDATE contact_inbox_projection", annotation: "Sets has_unresolved=true on the winner so the Inbox row renders with the unresolved overlay." },
+        { from: "actor:operator",   to: "web:inbox",         label: "Sees unresolved row",       annotation: "UnresolvedDetails rail shows the specific reason and a Salesforce contact search to manually re-anchor if the winner was wrong." },
+      ],
+    },
+
+    // =================================================================
+    // 8) Invite a new user / promote to admin
+    // =================================================================
+    {
+      id: "invite-user",
+      title: "Invite a new user / promote to admin",
+      blurb: "Admin manages Team membership; audit row records every change.",
+      steps: [
+        { from: "actor:operator",     to: "web:settings-team",  label: "Add user / Promote",     annotation: "Admin role required (D-025). Non-admin operators don't see the Add or Promote affordances." },
+        { from: "web:settings-team",  to: "web:server-actions", label: "createUserAction / promoteUserAction", annotation: "Server action runs with the admin session token (JWT per D-035)." },
+        { from: "web:server-actions", to: "pkg:domain",         label: "Validate",               annotation: "First-time sign-in requires the email be @adventurescientists.org and the row be pre-seeded as active (per Settings 'Locked' contract). Promote/demote permitted on any active user." },
+        { from: "web:server-actions", to: "pkg:db",             label: "INSERT/UPDATE users",    annotation: "Writes users row (insert on add, update on promote). Two-role model: 'admin' or 'operator' (D-025)." },
+        { from: "web:server-actions", to: "pkg:db",             label: "Write audit_policy_evidence", annotation: "One audit row per change. Records actor, target, kind ('user.created' / 'user.role_changed'), and a payload snapshot for traceability." },
+        { from: "pkg:db",             to: "store:postgres",     label: "INSERT (2 tables)",      annotation: "users + audit_policy_evidence in one transaction." },
+        { from: "web:settings-team",  to: "actor:operator",     label: "Re-render Team list",    annotation: "router.refresh() re-reads users from the DB. New user can now sign in via Google SSO on their next attempt." },
+      ],
+    },
+  ],
+};
+
+// =====================================================================
+// Rendering
+// =====================================================================
+const svg = document.getElementById("diagram");
+const SVG_NS = "http://www.w3.org/2000/svg";
+const containersG = document.getElementById("containers");
+const nodesG = document.getElementById("nodes");
+const edgesG = document.getElementById("edges");
+
+const NODE_INDEX = {};
+APP_DATA.nodes.forEach(n => { NODE_INDEX[n.id] = n; });
+
+function el(tag, attrs = {}, text = null) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== null) e.textContent = text;
+  return e;
+}
+
+// ── Render containers
+APP_DATA.containers.forEach(c => {
+  const rect = el("rect", {
+    x: c.x, y: c.y, width: c.w, height: c.h,
+    class: "container-rect", rx: 12, ry: 12,
+  });
+  const label = el("text", {
+    x: c.x + 14, y: c.y + 20, class: "container-label",
+  }, c.label);
+  containersG.appendChild(rect);
+  containersG.appendChild(label);
+});
+
+// ── Render nodes
+APP_DATA.nodes.forEach(n => {
+  const g = el("g", {
+    class: "node",
+    "data-id": n.id,
+    "data-type": n.type,
+    transform: `translate(${n.x},${n.y})`,
+  });
+  const rect = el("rect", {
+    width: n.w, height: n.h,
+    class: "node-rect", rx: 8, ry: 8,
+  });
+  const cx = n.w / 2;
+  const labelY = n.sub ? n.h / 2 - 7 : n.h / 2;
+  const label = el("text", { x: cx, y: labelY, class: "node-text" }, n.label);
+  g.appendChild(rect);
+  g.appendChild(label);
+  if (n.sub) {
+    const sub = el("text", { x: cx, y: n.h / 2 + 9, class: "node-subtext" }, n.sub);
+    g.appendChild(sub);
+  }
+  nodesG.appendChild(g);
+});
+
+// ── Flow buttons
+const flowButtons = document.getElementById("flow-buttons");
+APP_DATA.flows.forEach(f => {
+  const btn = document.createElement("button");
+  btn.className = "flow-button";
+  btn.setAttribute("data-flow-id", f.id);
+  btn.innerHTML = `<span class="flow-title">${escapeHtml(f.title)}</span><span class="flow-blurb">${escapeHtml(f.blurb)}</span>`;
+  btn.addEventListener("click", () => selectFlow(f.id));
+  flowButtons.appendChild(btn);
+});
+
+// =====================================================================
+// Flow selection + edge rendering
+// =====================================================================
+let activeFlowId = null;
+
+function selectFlow(flowId) {
+  activeFlowId = flowId;
+  const flow = APP_DATA.flows.find(f => f.id === flowId);
+  if (!flow) return;
+
+  // toggle button active state
+  document.querySelectorAll(".flow-button").forEach(b => {
+    b.classList.toggle("active", b.getAttribute("data-flow-id") === flowId);
+  });
+
+  renderEdges(flow);
+  renderStepPanel(flow);
+  applyNodeDimming(flow);
+}
+
+function applyNodeDimming(flow) {
+  const touched = new Set();
+  flow.steps.forEach(s => { touched.add(s.from); touched.add(s.to); });
+  document.querySelectorAll(".node").forEach(n => {
+    const id = n.getAttribute("data-id");
+    if (touched.has(id)) {
+      n.classList.remove("dimmed");
+      n.classList.add("touched");
+    } else {
+      n.classList.add("dimmed");
+      n.classList.remove("touched");
+    }
+  });
+}
+
+function nodeCenter(id) {
+  const n = NODE_INDEX[id];
+  if (!n) return null;
+  return { x: n.x + n.w / 2, y: n.y + n.h / 2, w: n.w, h: n.h };
+}
+
+// Pick an exit/entry point on the node's edge rather than the center,
+// so the arrow visibly enters/exits the rect.
+function edgePoints(fromId, toId) {
+  const a = nodeCenter(fromId);
+  const b = nodeCenter(toId);
+  if (!a || !b) return null;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  // exit point on `a`
+  const aOut = exitPoint(NODE_INDEX[fromId], dx, dy);
+  // entry point on `b` (reverse direction)
+  const bIn = exitPoint(NODE_INDEX[toId], -dx, -dy);
+  return { ax: aOut.x, ay: aOut.y, bx: bIn.x, by: bIn.y };
+}
+
+function exitPoint(node, dx, dy) {
+  const cx = node.x + node.w / 2;
+  const cy = node.y + node.h / 2;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const halfW = node.w / 2;
+  const halfH = node.h / 2;
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+  // choose the side that the direction vector points toward more strongly
+  if (adx * halfH > ady * halfW) {
+    // exits on left or right
+    const sign = dx > 0 ? 1 : -1;
+    const yAtSide = cy + (dy / adx) * halfW * sign;
+    return { x: cx + sign * halfW, y: yAtSide };
+  } else {
+    // exits on top or bottom
+    const sign = dy > 0 ? 1 : -1;
+    const xAtSide = cx + (dx / ady) * halfH * sign;
+    return { x: xAtSide, y: cy + sign * halfH };
+  }
+}
+
+function renderEdges(flow) {
+  edgesG.innerHTML = "";
+  // Track how many edges share the same (from,to) pair so we can offset them.
+  const pairCounts = {};
+  const pairSeen = {};
+  flow.steps.forEach(s => {
+    const key = s.from + "→" + s.to;
+    pairCounts[key] = (pairCounts[key] || 0) + 1;
+  });
+
+  flow.steps.forEach((step, i) => {
+    const stepNum = i + 1;
+    const pts = edgePoints(step.from, step.to);
+    if (!pts) return;
+    const key = step.from + "→" + step.to;
+    pairSeen[key] = (pairSeen[key] || 0) + 1;
+    const occurrenceIndex = pairSeen[key] - 1;       // 0-based
+    const total = pairCounts[key];
+    // bezier control offset perpendicular to the segment, fanned out by occurrence
+    const midX = (pts.ax + pts.bx) / 2;
+    const midY = (pts.ay + pts.by) / 2;
+    const segDx = pts.bx - pts.ax;
+    const segDy = pts.by - pts.ay;
+    const segLen = Math.hypot(segDx, segDy) || 1;
+    // perpendicular unit vector
+    const px = -segDy / segLen;
+    const py = segDx / segLen;
+    // fan: spread occurrences symmetrically. Single edge → tiny curve; multiple → spread.
+    let lateral;
+    if (total === 1) {
+      lateral = 12;
+    } else {
+      const center = (total - 1) / 2;
+      lateral = 30 * (occurrenceIndex - center) + (occurrenceIndex >= center ? 14 : -14);
+    }
+    const cx = midX + px * lateral;
+    const cy = midY + py * lateral;
+    const d = `M ${pts.ax.toFixed(1)} ${pts.ay.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${pts.bx.toFixed(1)} ${pts.by.toFixed(1)}`;
+    const path = el("path", { d, class: "edge-path", "data-step": stepNum });
+    edgesG.appendChild(path);
+
+    // Badge at the bezier midpoint (which lies between mid and control point at t=0.5)
+    const t = 0.5;
+    const bx = (1 - t) * (1 - t) * pts.ax + 2 * (1 - t) * t * cx + t * t * pts.bx;
+    const by = (1 - t) * (1 - t) * pts.ay + 2 * (1 - t) * t * cy + t * t * pts.by;
+    const badge = el("circle", { cx: bx, cy: by, r: 12, class: "edge-badge", "data-step": stepNum });
+    const badgeText = el("text", { x: bx, y: by, class: "edge-badge-text", "data-step": stepNum }, String(stepNum));
+    edgesG.appendChild(badge);
+    edgesG.appendChild(badgeText);
+
+    // Edge label — short text near the badge
+    if (step.label) {
+      const labelOffsetX = px * (lateral > 0 ? 22 : -22);
+      const labelOffsetY = py * (lateral > 0 ? 22 : -22);
+      const lx = bx + labelOffsetX;
+      const ly = by + labelOffsetY;
+      const padX = 4, padY = 2;
+      const approxCharW = 6.2;
+      const labelText = step.label;
+      const labelW = labelText.length * approxCharW + padX * 2;
+      const labelH = 16;
+      const bg = el("rect", {
+        x: lx - labelW / 2, y: ly - labelH / 2,
+        width: labelW, height: labelH,
+        rx: 3, ry: 3, class: "edge-label-bg",
+      });
+      const lbl = el("text", {
+        x: lx, y: ly + 4, class: "edge-label",
+        "text-anchor": "middle",
+      }, labelText);
+      edgesG.appendChild(bg);
+      edgesG.appendChild(lbl);
+    }
+  });
+}
+
+function renderStepPanel(flow) {
+  const details = document.getElementById("flow-details");
+  details.classList.remove("empty-state");
+  details.innerHTML = "";
+
+  const meta = document.createElement("div");
+  meta.className = "flow-meta";
+  meta.innerHTML = `<h3>${escapeHtml(flow.title)}</h3><p>${escapeHtml(flow.blurb)}</p>`;
+  details.appendChild(meta);
+
+  const list = document.createElement("ol");
+  list.className = "step-list";
+  flow.steps.forEach((s, i) => {
+    const li = document.createElement("li");
+    li.setAttribute("data-step", i + 1);
+    const fromNode = NODE_INDEX[s.from];
+    const toNode = NODE_INDEX[s.to];
+    li.innerHTML = `
+      <span class="step-num">${i + 1}</span>
+      <div>
+        <div class="step-from-to">${escapeHtml(fromNode ? fromNode.label : s.from)} → ${escapeHtml(toNode ? toNode.label : s.to)}</div>
+        <div class="step-label">${escapeHtml(s.label || "")}</div>
+        <div class="step-annotation">${escapeHtml(s.annotation || "")}</div>
+      </div>
+    `;
+    li.addEventListener("mouseenter", () => highlightStep(i + 1));
+    li.addEventListener("mouseleave", () => clearStepHighlight());
+    list.appendChild(li);
+  });
+  details.appendChild(list);
+}
+
+function highlightStep(n) {
+  document.querySelectorAll(`.step-list li`).forEach(li => {
+    li.classList.toggle("highlighted", li.getAttribute("data-step") === String(n));
+  });
+  document.querySelectorAll(`#edges [data-step]`).forEach(node => {
+    if (node.getAttribute("data-step") === String(n)) {
+      node.setAttribute("stroke-width", "3.5");
+    }
+  });
+}
+function clearStepHighlight() {
+  document.querySelectorAll(`.step-list li`).forEach(li => li.classList.remove("highlighted"));
+  document.querySelectorAll(`#edges .edge-path`).forEach(p => p.setAttribute("stroke-width", "2.2"));
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+// Select the first flow on load so the page isn't empty
+selectFlow(APP_DATA.flows[0].id);
+</script>
+
+</body>
+</html>
