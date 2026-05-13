@@ -1856,7 +1856,8 @@ function createStage1RepositoriesInternal(
           .select({
             projectId: projectDimensions.projectId,
             connectedToProjectId: projectDimensions.connectedToProjectId,
-            aiKnowledgeSyncedAt: projectDimensions.aiKnowledgeSyncedAt,
+            aiOptimizedSynthesizedAt:
+              projectDimensions.aiOptimizedSynthesizedAt,
           })
           .from(projectDimensions)
           .where(inArray(projectDimensions.projectId, projectIds as string[]));
@@ -1886,7 +1887,8 @@ function createStage1RepositoriesInternal(
           const hostRows = await db
             .select({
               projectId: projectDimensions.projectId,
-              aiKnowledgeSyncedAt: projectDimensions.aiKnowledgeSyncedAt,
+              aiOptimizedSynthesizedAt:
+                projectDimensions.aiOptimizedSynthesizedAt,
             })
             .from(projectDimensions)
             .where(inArray(projectDimensions.projectId, hostIdsToFetch));
@@ -1895,14 +1897,14 @@ function createStage1RepositoriesInternal(
             knownProjectsById.set(row.projectId, {
               projectId: row.projectId,
               connectedToProjectId: null,
-              aiKnowledgeSyncedAt: row.aiKnowledgeSyncedAt,
+              aiOptimizedSynthesizedAt: row.aiOptimizedSynthesizedAt,
             });
           }
         }
 
         const configuredEffectiveIds = new Set(
           Array.from(knownProjectsById.values())
-            .filter((row) => row.aiKnowledgeSyncedAt !== null)
+            .filter((row) => row.aiOptimizedSynthesizedAt !== null)
             .map((row) => row.projectId),
         );
 
