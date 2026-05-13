@@ -28,11 +28,13 @@ Make routing, access, integration health, timezone, and AI knowledge configurati
 - **Two flat roles: `admin` and `operator`** — no permissions matrix (per `D-025`)
 - First-time Google sign-in is allowed only for active, pre-seeded `@adventurescientists.org` users; Settings admins (or initial ops setup) create the user row first, and admin promotion remains an explicit ops/admin action
 - header auth is dev/internal only: trusted header `x-dev-operator: <email>` is accepted only when `NODE_ENV !== 'production'`, seeded by a dev-only `/api/dev-auth?email=X` route that must 404 in prod
-- Notion-backed AI knowledge uses background sync/cache with no approval gate
+- Notion-backed AI knowledge uses background sync/cache with no approval gate; sources are an n-source registry per `D-043`, managed end-to-end by operators through the Settings activation wizard and project detail page
+- per-project `ai_auto_sync_schedule` is operator-configurable (`'never' | 'daily' | 'weekly'`); hourly cron handles the schedule
 - admin mutations must be auditable via `audit_policy_evidence`
 - Settings blocks Composer stage (per `D-026`); Composer builds on real Stage 2 auth
 - Composer depends on DB-backed project-inbox aliases (`project_aliases` table replacing the `GMAIL_PROJECT_INBOX_ALIASES` env var; worker reads DB first, env as fallback during cutover)
-- project activation requires a short project alias, at least one project-inbox alias, and synced AI knowledge
+- project activation requires a short project alias, at least one project-inbox alias, and a synthesized AI Knowledge document (or no sources registered if the project opts out)
+- two or more Salesforce projects can share an alias via host/sub `connected_to_project_id` rollup (per `D-044`); subs inherit alias and AI Knowledge from the host, are excluded from the Inbox project filter, and cascade-deactivate with the host in one transaction
 
 ## Required Interfaces / Concepts
 
@@ -41,16 +43,23 @@ Make routing, access, integration health, timezone, and AI knowledge configurati
 - Google SSO sign-in + session middleware gating `/inbox/*` and `/settings/*`
 - project-inbox alias admin CRUD (replaces `GMAIL_PROJECT_INBOX_ALIASES` env var)
 - short project alias admin editing on active/inactive projects
-- users + roles admin (list users, promote/demote admin, deactivate)
+- users + roles admin (list users, promote/demote admin, deactivate; surfaced under **Settings → Team** as of 2026-05-10)
+- activation wizard (pick project → aliases → signature → AI Knowledge sources → connected projects → review)
+- AI Knowledge multi-source registry per project (add/remove Notion or web URL with optional per-row label, enable/disable per source, set auto-sync schedule, click Resync, see freshness/last-synthesized-at) — operator-managed end-to-end
 
 ### MVP scope (ship thin)
 
 - organization settings (read-only card — org name, timezone `America/Denver`)
 - integration health (read-only summary of `sync_state` by provider)
 
-### Deferred to Stage 4
+### Connected projects (host/sub rollup)
 
-- knowledge-source and sync configuration (Notion workspace/page picker) — unblocks AI, not Composer
+- activation wizard "Connected projects" step (multi-select inactive unconnected projects to roll into a new host; selections submit alongside activation)
+- project detail (host view): "Connected projects" card with Disconnect + Add picker
+- project detail (sub view): "Connected to {host}" badge + read-only alias and AI Knowledge sections inheriting from the host + destructive Disconnect at the bottom
+- deactivate host cascades to subs in one transaction; deactivate dialog lists subs by name before confirming
+- Settings projects list nests subs visually under their host with a "Connected to {host name}" subtitle
+- alias-host-hop AI Knowledge fallback for connected subs (PR #405) — drafting in a sub-project reads the host's cached AI Knowledge doc
 
 ### Out of scope
 
