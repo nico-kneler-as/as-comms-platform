@@ -18,6 +18,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { cn } from "@/lib/utils";
 import { TONE_CLASSES, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { TimelineAutomatedRow } from "./inbox-timeline-automated-row";
@@ -38,7 +39,7 @@ const EXACT_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   hour: "numeric",
   minute: "2-digit",
-  timeZone: "UTC",
+  timeZone: ORG_TIMEZONE,
   timeZoneName: "short",
 });
 

@@ -17,6 +17,7 @@ import {
   occurredAtIsBeforePlatformFullCaptureCutover,
   filterItemsAtOrAfterPlatformFullCaptureCutover,
 } from "@/app/_lib/cutover";
+import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 
 import { INBOX_FILTERS } from "./filters";
 import { formatUtcRailEventDate } from "./format-date";
@@ -1083,7 +1084,7 @@ function formatJoinedAtLabel(createdAt: string): string {
   const formatter = new Intl.DateTimeFormat("en-US", {
     month: "short",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: ORG_TIMEZONE,
   });
 
   return `Joined ${formatter.format(new Date(createdAt))}`;
@@ -1136,13 +1137,13 @@ const BUBBLE_TIME_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
 const BUBBLE_MONTH_DAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
-  timeZone: "UTC",
+  timeZone: ORG_TIMEZONE,
 });
 const BUBBLE_MONTH_DAY_YEAR_FORMATTER = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
   year: "numeric",
-  timeZone: "UTC",
+  timeZone: ORG_TIMEZONE,
 });
 
 function bubbleDayKey(timestamp: string, timeZone: string): string {
@@ -1184,7 +1185,7 @@ function bubbleYear(timestamp: string, timeZone: string): number {
 export function formatBubbleTimestamp(
   timestamp: string,
   referenceNowIso: string,
-  timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
+  timeZone: string = ORG_TIMEZONE,
 ): string {
   const targetDayKey = bubbleDayKey(timestamp, timeZone);
   const referenceDayKey = bubbleDayKey(referenceNowIso, timeZone);
