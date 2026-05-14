@@ -697,7 +697,7 @@ describe("InboxTimeline", () => {
     );
 
     expect(markup).toContain(">2h ago<");
-    expect(markup).toContain('title="Apr 16, 2026, 12:30 PM UTC"');
+    expect(markup).toContain('title="Apr 16, 2026, 6:30 AM MDT"');
   });
 
   it("adds wrap-anywhere behavior to expanded timeline copy", () => {

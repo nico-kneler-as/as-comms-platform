@@ -7,6 +7,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING, TRANSITION, TYPE } from "@/app/_lib/design-tokens-v2";
 
@@ -23,7 +24,7 @@ const EXACT_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   hour: "numeric",
   minute: "2-digit",
-  timeZone: "UTC",
+  timeZone: ORG_TIMEZONE,
   timeZoneName: "short",
 });
 

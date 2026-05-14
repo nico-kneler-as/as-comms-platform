@@ -1,4 +1,6 @@
-const RAIL_EVENT_TIME_ZONE = "America/Denver";
+import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
+
+const RAIL_EVENT_TIME_ZONE = ORG_TIMEZONE;
 
 function buildRailEventFormatters(timeZone: string) {
   return {
