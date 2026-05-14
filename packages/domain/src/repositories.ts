@@ -121,6 +121,10 @@ export interface CanonicalEventRepository {
   findByIdempotencyKey(
     idempotencyKey: string,
   ): Promise<CanonicalEventRecord | null>;
+  findBySourceEvidenceId(
+    sourceEvidenceId: string,
+    eventType: CanonicalEventRecord["eventType"],
+  ): Promise<CanonicalEventRecord | null>;
   listByContentFingerprintWindow(input: {
     readonly contactId: string;
     readonly channel: CanonicalEventRecord["channel"];
@@ -472,6 +476,9 @@ export interface ExpeditionDimensionRepository {
 }
 
 export interface GmailMessageDetailRepository {
+  findByRfc822MessageId(
+    rfc822MessageId: string,
+  ): Promise<GmailMessageDetailRecord | null>;
   listBySourceEvidenceIds(
     sourceEvidenceIds: readonly string[],
   ): Promise<readonly GmailMessageDetailRecord[]>;
@@ -618,6 +625,9 @@ export interface PendingComposerOutboundRepository {
   findBySentRfc822MessageId(
     messageId: string,
   ): Promise<PendingComposerOutboundRecord | null>;
+  listUnreconciledWithRfc822(): Promise<
+    readonly PendingComposerOutboundRecord[]
+  >;
   markConfirmed(
     id: string,
     input: { readonly reconciledEventId: string | null },

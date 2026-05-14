@@ -552,6 +552,42 @@ async function reconcilePendingComposerOutbound(
     return;
   }
 
+  const [gmailDetails] =
+    await persistence.repositories.gmailMessageDetails.listBySourceEvidenceIds([
+      input.sourceEvidence.id,
+    ]);
+  const rfc822MessageId = gmailDetails?.rfc822MessageId ?? null;
+
+  if (rfc822MessageId !== null) {
+    const pending =
+      await persistence.repositories.pendingOutbounds.findBySentRfc822MessageId(
+        rfc822MessageId,
+      );
+
+    if (
+      pending !== null &&
+      (pending.status === "pending" ||
+        pending.status === "orphaned" ||
+        (pending.status === "confirmed" && pending.reconciledEventId === null))
+    ) {
+      await persistence.repositories.pendingOutbounds.markConfirmed(pending.id, {
+        reconciledEventId: input.canonicalEvent.id,
+      });
+      logStructuredEvent({
+        event: "composer.reconciliation.matched",
+        metadata: {
+          pendingOutboundId: pending.id,
+          rfc822MessageId,
+          canonicalEventId: input.canonicalEvent.id,
+          sourceEvidenceId: input.sourceEvidence.id,
+          providerRecordId: input.sourceEvidence.providerRecordId,
+          via: "rfc822",
+        },
+      });
+      return;
+    }
+  }
+
   const fingerprint = input.canonicalEvent.contentFingerprint;
 
   if (fingerprint === null) {
@@ -559,6 +595,7 @@ async function reconcilePendingComposerOutbound(
       event: "composer.reconciliation.unmatched",
       metadata: {
         reason: "missing_fingerprint",
+        rfc822MessageId,
         canonicalEventId: input.canonicalEvent.id,
         sourceEvidenceId: input.sourceEvidence.id,
         providerRecordId: input.sourceEvidence.providerRecordId,
@@ -599,6 +636,7 @@ async function reconcilePendingComposerOutbound(
     event: "composer.reconciliation.unmatched",
     metadata: {
       fingerprint,
+      rfc822MessageId,
       canonicalEventId: input.canonicalEvent.id,
       sourceEvidenceId: input.sourceEvidence.id,
       providerRecordId: input.sourceEvidence.providerRecordId,

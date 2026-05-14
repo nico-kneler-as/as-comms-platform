@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   AuditEvidenceRecord,
@@ -24,6 +24,7 @@ import type {
 } from "@as-comms/contracts";
 
 import {
+  computePendingComposerOutboundFingerprint,
   createStage1NormalizationService,
   createStage1PersistenceService,
   defineStage1RepositoryBundle,
@@ -56,6 +57,9 @@ interface TestContext {
   readonly normalization: ReturnType<typeof createStage1NormalizationService>;
   readonly getInboxProjection: () => InboxProjectionRow | null;
   readonly getInboxSaveCount: () => number;
+  readonly getPendingOutbound: (
+    id: string,
+  ) => PendingComposerOutboundRecord | null;
 }
 
 function sortEvents(
@@ -175,6 +179,74 @@ function buildExistingProjection(input: {
   };
 }
 
+function buildGmailDetail(input: {
+  readonly key: string;
+  readonly direction: GmailMessageDetailRecord["direction"];
+  readonly rfc822MessageId?: string | null;
+  readonly subject?: string | null;
+  readonly bodyTextPreview?: string;
+}): GmailMessageDetailRecord {
+  return {
+    sourceEvidenceId: `source:${input.key}`,
+    providerRecordId: `gmail:${input.key}`,
+    gmailThreadId: `thread:${input.key}`,
+    rfc822MessageId: input.rfc822MessageId ?? `<${input.key}@example.org>`,
+    direction: input.direction,
+    subject: input.subject ?? `Subject ${input.key}`,
+    fromHeader:
+      input.direction === "outbound"
+        ? "Forests <forests@adventurescientists.org>"
+        : "Volunteer <volunteer@example.org>",
+    toHeader:
+      input.direction === "outbound"
+        ? "Volunteer <volunteer@example.org>"
+        : "Forests <forests@adventurescientists.org>",
+    ccHeader: null,
+    snippetClean: input.bodyTextPreview ?? `Snippet ${input.key}`,
+    bodyTextPreview: input.bodyTextPreview ?? `Body ${input.key}`,
+    capturedMailbox: "volunteers@adventurescientists.org",
+    projectInboxAlias: "forests@adventurescientists.org",
+  };
+}
+
+function buildPendingOutbound(input: {
+  readonly id: string;
+  readonly fingerprint: string;
+  readonly status: PendingComposerOutboundRecord["status"];
+  readonly sentRfc822MessageId?: string | null;
+  readonly reconciledEventId?: string | null;
+}): PendingComposerOutboundRecord {
+  return {
+    id: input.id,
+    fingerprint: input.fingerprint,
+    status: input.status,
+    actorId: "user:operator",
+    canonicalContactId: contact.id,
+    projectId: null,
+    fromAlias: "forests@adventurescientists.org",
+    toEmailNormalized: "volunteer@example.org",
+    subject: "Pending subject",
+    bodyPlaintext: "Pending body",
+    bodyHtml: null,
+    bodySha256: "sha256:pending",
+    attachmentMetadata: [],
+    gmailThreadId: null,
+    inReplyToRfc822: null,
+    attemptedAt: "2026-04-24T10:00:00.000Z",
+    reconciledEventId: input.reconciledEventId ?? null,
+    reconciledAt:
+      input.reconciledEventId === undefined || input.reconciledEventId === null
+        ? null
+        : "2026-04-24T10:01:00.000Z",
+    failedReason: null,
+    sentRfc822MessageId: input.sentRfc822MessageId ?? null,
+    failedDetail: null,
+    orphanedAt: input.status === "orphaned" ? "2026-04-24T10:05:00.000Z" : null,
+    createdAt: "2026-04-24T10:00:00.000Z",
+    updatedAt: "2026-04-24T10:00:00.000Z",
+  };
+}
+
 function buildReplayInput(
   event: CanonicalEventRecord,
 ): NormalizedCanonicalEventIntake {
@@ -232,6 +304,8 @@ function buildContext(input: {
   readonly existingProjection?: InboxProjectionRow | null;
   readonly contacts?: readonly ContactRecord[];
   readonly contactIdentities?: readonly ContactIdentityRecord[];
+  readonly gmailMessageDetails?: readonly GmailMessageDetailRecord[];
+  readonly pendingOutbounds?: readonly PendingComposerOutboundRecord[];
   readonly sourceProvider?: SourceEvidenceRecord["provider"];
   readonly onContactIdentityUpsert?: (record: ContactIdentityRecord) => void;
   readonly onContactMembershipUpsert?: (
@@ -243,6 +317,7 @@ function buildContext(input: {
       Stage1RepositoryBundle["expeditionDimensions"]["upsert"]
     >[0],
   ) => void;
+  readonly onPendingOutboundConfirmed?: (record: PendingComposerOutboundRecord) => void;
 }): TestContext {
   const contacts = input.contacts ?? [contact];
   const contactIdentities = input.contactIdentities ?? [emailIdentity];
@@ -288,7 +363,15 @@ function buildContext(input: {
   const gmailDetailsBySourceEvidenceId = new Map<
     string,
     GmailMessageDetailRecord
-  >();
+  >(
+    (input.gmailMessageDetails ?? []).map((record) => [
+      record.sourceEvidenceId,
+      record,
+    ]),
+  );
+  const pendingOutboundsById = new Map(
+    (input.pendingOutbounds ?? []).map((record) => [record.id, record]),
+  );
   const sourceEvidenceQuarantineEntries = new Array<{
     id: string;
     provider: SourceEvidenceRecord["provider"];
@@ -383,9 +466,17 @@ function buildContext(input: {
         Promise.resolve(
           canonicalEventsByIdempotencyKey.get(idempotencyKey) ?? null,
         ),
+      findBySourceEvidenceId: (sourceEvidenceId, eventType) =>
+        Promise.resolve(
+          [...canonicalEventsById.values()].find(
+            (event) =>
+              event.sourceEvidenceId === sourceEvidenceId &&
+              event.eventType === eventType,
+          ) ?? null,
+        ),
       listByContentFingerprintWindow: () => Promise.resolve([]),
-      countAll: () => Promise.resolve(input.events.length),
-      countByPrimaryProvider: () => Promise.resolve(input.events.length),
+      countAll: () => Promise.resolve(canonicalEventsById.size),
+      countByPrimaryProvider: () => Promise.resolve(canonicalEventsById.size),
       countDistinctInboxContacts: () => Promise.resolve(1),
       listByIds: (ids) =>
         Promise.resolve(
@@ -398,13 +489,15 @@ function buildContext(input: {
       listByContactId: (contactId) =>
         Promise.resolve(
           sortEvents(
-            input.events.filter((event) => event.contactId === contactId),
+            [...canonicalEventsById.values()].filter(
+              (event) => event.contactId === contactId,
+            ),
           ),
         ),
       listByContactIds: (contactIds) =>
         Promise.resolve(
           sortEvents(
-            input.events.filter((event) =>
+            [...canonicalEventsById.values()].filter((event) =>
               contactIds.includes(event.contactId),
             ),
           ),
@@ -530,6 +623,12 @@ function buildContext(input: {
       },
     },
     gmailMessageDetails: {
+      findByRfc822MessageId: (rfc822MessageId) =>
+        Promise.resolve(
+          [...gmailDetailsBySourceEvidenceId.values()].find(
+            (record) => record.rfc822MessageId === rfc822MessageId,
+          ) ?? null,
+        ),
       listBySourceEvidenceIds: (ids) =>
         Promise.resolve(
           ids
@@ -600,16 +699,61 @@ function buildContext(input: {
     },
     pendingOutbounds: {
       insert: ({ id }) => Promise.resolve(id),
-      findByFingerprint: () =>
-        Promise.resolve<PendingComposerOutboundRecord | null>(null),
+      findByFingerprint: (fingerprint) =>
+        Promise.resolve(
+          [...pendingOutboundsById.values()].find(
+            (record) => record.fingerprint === fingerprint,
+          ) ?? null,
+        ),
       markSentRfc822: () => Promise.resolve(),
-      findBySentRfc822MessageId: () =>
-        Promise.resolve<PendingComposerOutboundRecord | null>(null),
-      markConfirmed: () => Promise.resolve(),
+      findBySentRfc822MessageId: (messageId) =>
+        Promise.resolve(
+          [...pendingOutboundsById.values()].find(
+            (record) => record.sentRfc822MessageId === messageId,
+          ) ?? null,
+        ),
+      listUnreconciledWithRfc822: () =>
+        Promise.resolve(
+          [...pendingOutboundsById.values()].filter(
+            (record) =>
+              record.sentRfc822MessageId !== null &&
+              record.reconciledEventId === null &&
+              ["pending", "confirmed", "orphaned"].includes(record.status),
+          ),
+        ),
+      markConfirmed: (id, confirmedInput) => {
+        const existing = pendingOutboundsById.get(id);
+
+        if (
+          existing === undefined ||
+          !(
+            existing.status === "pending" ||
+            existing.status === "orphaned" ||
+            (existing.status === "confirmed" &&
+              existing.reconciledEventId === null)
+          )
+        ) {
+          return Promise.resolve();
+        }
+
+        const updated: PendingComposerOutboundRecord = {
+          ...existing,
+          status: "confirmed",
+          reconciledEventId: confirmedInput.reconciledEventId,
+          reconciledAt: "2026-04-24T10:02:00.000Z",
+          failedReason: null,
+          failedDetail: null,
+          orphanedAt: null,
+          updatedAt: "2026-04-24T10:02:00.000Z",
+        };
+        pendingOutboundsById.set(id, updated);
+        input.onPendingOutboundConfirmed?.(updated);
+        return Promise.resolve();
+      },
       markFailed: () => Promise.resolve(),
       markSuperseded: () => Promise.resolve(),
       sweepOrphans: () => Promise.resolve(0),
-      findForContact: () => Promise.resolve([]),
+      findForContact: () => Promise.resolve([...pendingOutboundsById.values()]),
     },
     identityResolutionQueue: {
       findById: () => Promise.resolve(null),
@@ -738,6 +882,7 @@ function buildContext(input: {
     normalization: createStage1NormalizationService(persistence),
     getInboxProjection: () => inboxProjection,
     getInboxSaveCount: () => inboxSaveCount,
+    getPendingOutbound: (id) => pendingOutboundsById.get(id) ?? null,
   };
 }
 
@@ -1308,5 +1453,258 @@ describe("identity resolution hardening", () => {
         [contact.id, duplicateContact.id].sort(),
       );
     }
+  });
+});
+
+describe("pending composer outbound reconciliation", () => {
+  it("reconciles via rfc822 Message-ID before fingerprint matching", async () => {
+    const consoleLog = vi
+      .spyOn(console, "log")
+      .mockImplementation((entry) => void entry);
+    const event = buildEvent({
+      key: "rfc822-primary",
+      occurredAt: "2026-04-24T15:05:02.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [],
+      pendingOutbounds: [
+        buildPendingOutbound({
+          id: "pending:rfc822-primary",
+          fingerprint: "fp:deliberately-different",
+          status: "pending",
+          sentRfc822MessageId: "<matched-rfc822@example.org>",
+        }),
+      ],
+    });
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      ...buildReplayInput(event),
+      gmailMessageDetail: buildGmailDetail({
+        key: "rfc822-primary",
+        direction: "outbound",
+        rfc822MessageId: "<matched-rfc822@example.org>",
+        subject: "Project Inquiry",
+        bodyTextPreview: "Thanks for reaching out about the project.",
+      }),
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      throw new Error("Expected applied result.");
+    }
+
+    expect(context.getPendingOutbound("pending:rfc822-primary")).toMatchObject({
+      status: "confirmed",
+      reconciledEventId: result.canonicalEvent.id,
+    });
+
+    const matchedLog = consoleLog.mock.calls
+      .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      .find((entry) => entry.event === "composer.reconciliation.matched");
+
+    expect(matchedLog).toMatchObject({
+      pendingOutboundId: "pending:rfc822-primary",
+      rfc822MessageId: "<matched-rfc822@example.org>",
+      via: "rfc822",
+    });
+
+    consoleLog.mockRestore();
+  });
+
+  it("falls back to fingerprint matching when the Gmail detail has no rfc822 Message-ID", async () => {
+    const consoleLog = vi
+      .spyOn(console, "log")
+      .mockImplementation((entry) => void entry);
+    const subject = "Fallback subject";
+    const body = "Fallback body";
+    const occurredAt = "2026-04-24T15:04:00.000Z";
+    const event = buildEvent({
+      key: "fingerprint-fallback-missing-rfc822",
+      occurredAt,
+      direction: "outbound",
+    });
+    const fingerprint = computePendingComposerOutboundFingerprint({
+      contactId: contact.id,
+      subject,
+      bodyPlaintext: body,
+      sentAt: occurredAt,
+    });
+
+    if (fingerprint === null) {
+      throw new Error("Expected fingerprint to be computed for pending outbound.");
+    }
+
+    const context = buildContext({
+      events: [],
+      pendingOutbounds: [
+        buildPendingOutbound({
+          id: "pending:fingerprint-fallback-missing-rfc822",
+          fingerprint,
+          status: "pending",
+        }),
+      ],
+    });
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      ...buildReplayInput(event),
+      gmailMessageDetail: buildGmailDetail({
+        key: "fingerprint-fallback-missing-rfc822",
+        direction: "outbound",
+        rfc822MessageId: null,
+        subject,
+        bodyTextPreview: body,
+      }),
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      throw new Error("Expected applied result.");
+    }
+
+    expect(
+      context.getPendingOutbound("pending:fingerprint-fallback-missing-rfc822"),
+    ).toMatchObject({
+      status: "confirmed",
+      reconciledEventId: result.canonicalEvent.id,
+    });
+
+    const matchedLog = consoleLog.mock.calls
+      .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      .find((entry) => entry.event === "composer.reconciliation.matched");
+
+    expect(matchedLog).toMatchObject({
+      pendingOutboundId: "pending:fingerprint-fallback-missing-rfc822",
+      fingerprint,
+      via: "fingerprint",
+    });
+
+    consoleLog.mockRestore();
+  });
+
+  it("falls back to fingerprint matching when rfc822 is present but no pending row matches it", async () => {
+    const consoleLog = vi
+      .spyOn(console, "log")
+      .mockImplementation((entry) => void entry);
+    const subject = "Fingerprint fallback despite rfc822";
+    const body = "Body that should still fingerprint-match.";
+    const occurredAt = "2026-04-24T15:06:00.000Z";
+    const event = buildEvent({
+      key: "fingerprint-fallback-rfc822-miss",
+      occurredAt,
+      direction: "outbound",
+    });
+    const fingerprint = computePendingComposerOutboundFingerprint({
+      contactId: contact.id,
+      subject,
+      bodyPlaintext: body,
+      sentAt: occurredAt,
+    });
+
+    if (fingerprint === null) {
+      throw new Error("Expected fingerprint to be computed for pending outbound.");
+    }
+
+    const context = buildContext({
+      events: [],
+      pendingOutbounds: [
+        buildPendingOutbound({
+          id: "pending:fingerprint-fallback-rfc822-miss",
+          fingerprint,
+          status: "pending",
+          sentRfc822MessageId: "<different-rfc822@example.org>",
+        }),
+      ],
+    });
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      ...buildReplayInput(event),
+      gmailMessageDetail: buildGmailDetail({
+        key: "fingerprint-fallback-rfc822-miss",
+        direction: "outbound",
+        rfc822MessageId: "<unmatched-rfc822@example.org>",
+        subject,
+        bodyTextPreview: body,
+      }),
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      throw new Error("Expected applied result.");
+    }
+
+    expect(
+      context.getPendingOutbound("pending:fingerprint-fallback-rfc822-miss"),
+    ).toMatchObject({
+      status: "confirmed",
+      reconciledEventId: result.canonicalEvent.id,
+    });
+
+    const matchedLog = consoleLog.mock.calls
+      .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      .find((entry) => entry.event === "composer.reconciliation.matched");
+
+    expect(matchedLog).toMatchObject({
+      pendingOutboundId: "pending:fingerprint-fallback-rfc822-miss",
+      fingerprint,
+      via: "fingerprint",
+    });
+
+    consoleLog.mockRestore();
+  });
+
+  it("does not reconfirm a pending row that is already linked to another canonical event", async () => {
+    const consoleLog = vi
+      .spyOn(console, "log")
+      .mockImplementation((entry) => void entry);
+    const confirmedRows: PendingComposerOutboundRecord[] = [];
+    const event = buildEvent({
+      key: "already-linked-rfc822",
+      occurredAt: "2026-04-24T15:07:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [],
+      pendingOutbounds: [
+        buildPendingOutbound({
+          id: "pending:already-linked-rfc822",
+          fingerprint: "fp:already-linked",
+          status: "confirmed",
+          sentRfc822MessageId: "<already-linked@example.org>",
+          reconciledEventId: "event:existing-link",
+        }),
+      ],
+      onPendingOutboundConfirmed: (record) => {
+        confirmedRows.push(record);
+      },
+    });
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      ...buildReplayInput(event),
+      gmailMessageDetail: buildGmailDetail({
+        key: "already-linked-rfc822",
+        direction: "outbound",
+        rfc822MessageId: "<already-linked@example.org>",
+        subject: "Already linked subject",
+        bodyTextPreview: "Already linked body",
+      }),
+    });
+
+    expect(result.outcome).toBe("applied");
+    expect(confirmedRows).toHaveLength(0);
+    expect(context.getPendingOutbound("pending:already-linked-rfc822")).toMatchObject(
+      {
+        status: "confirmed",
+        reconciledEventId: "event:existing-link",
+      },
+    );
+
+    const matchedLog = consoleLog.mock.calls
+      .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      .find((entry) => entry.event === "composer.reconciliation.matched");
+
+    expect(matchedLog).toBeUndefined();
+
+    consoleLog.mockRestore();
   });
 });
