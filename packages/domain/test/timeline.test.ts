@@ -124,6 +124,7 @@ function createRepositoryBundle(input: {
     canonicalEvents: {
       findById: (id) => Promise.resolve(canonicalEventsById.get(id) ?? null),
       findByIdempotencyKey: () => Promise.resolve(null),
+      findBySourceEvidenceId: () => Promise.resolve(null),
       listByContentFingerprintWindow: () => Promise.resolve([]),
       countAll: () => Promise.resolve(input.canonicalEvents.length),
       countByPrimaryProvider: () => Promise.resolve(0),
@@ -230,6 +231,7 @@ function createRepositoryBundle(input: {
       upsert: (record) => Promise.resolve(record),
     },
     gmailMessageDetails: {
+      findByRfc822MessageId: () => Promise.resolve(null),
       listBySourceEvidenceIds: (sourceEvidenceIds) =>
         Promise.resolve(
           sourceEvidenceIds.flatMap((sourceEvidenceId) => {
@@ -334,6 +336,7 @@ function createRepositoryBundle(input: {
       findByFingerprint: () => Promise.resolve(null),
       markSentRfc822: () => Promise.resolve(),
       findBySentRfc822MessageId: () => Promise.resolve(null),
+      listUnreconciledWithRfc822: () => Promise.resolve([]),
       markConfirmed: () => Promise.resolve(),
       markFailed: () => Promise.resolve(),
       markSuperseded: () => Promise.resolve(),

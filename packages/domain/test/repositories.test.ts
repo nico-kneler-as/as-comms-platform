@@ -44,6 +44,7 @@ describe("defineStage1RepositoryBundle", () => {
       canonicalEvents: {
         findById: () => Promise.resolve(null),
         findByIdempotencyKey: () => Promise.resolve(null),
+        findBySourceEvidenceId: () => Promise.resolve(null),
         listByContentFingerprintWindow: () => Promise.resolve([]),
         countAll: () => Promise.resolve(0),
         countByPrimaryProvider: () => Promise.resolve(0),
@@ -134,6 +135,7 @@ describe("defineStage1RepositoryBundle", () => {
         upsert: (record) => Promise.resolve(record),
       },
       gmailMessageDetails: {
+        findByRfc822MessageId: () => Promise.resolve(null),
         listBySourceEvidenceIds: () => Promise.resolve([]),
         listLastInboundAliasByContactIds: () => Promise.resolve(new Map()),
         upsert: (record) => Promise.resolve(record),
@@ -195,6 +197,7 @@ describe("defineStage1RepositoryBundle", () => {
         markSentRfc822: () => Promise.resolve(),
         findBySentRfc822MessageId: () =>
           Promise.resolve<PendingComposerOutboundRecord | null>(null),
+        listUnreconciledWithRfc822: () => Promise.resolve([]),
         markConfirmed: () => Promise.resolve(),
         markFailed: () => Promise.resolve(),
         markSuperseded: () => Promise.resolve(),

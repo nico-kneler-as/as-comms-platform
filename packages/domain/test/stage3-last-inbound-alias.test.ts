@@ -53,6 +53,7 @@ function buildRepositoryBundle(input: {
     canonicalEvents: {
       findById: () => Promise.resolve(null),
       findByIdempotencyKey: () => Promise.resolve(null),
+      findBySourceEvidenceId: () => Promise.resolve(null),
       listByContentFingerprintWindow: () => Promise.resolve([]),
       countAll: () => Promise.resolve(input.canonicalEvents.length),
       countByPrimaryProvider: () => Promise.resolve(0),
@@ -153,6 +154,7 @@ function buildRepositoryBundle(input: {
       upsert: (record) => Promise.resolve(record),
     },
     gmailMessageDetails: {
+      findByRfc822MessageId: () => Promise.resolve(null),
       listBySourceEvidenceIds: (sourceEvidenceIds) =>
         Promise.resolve(
           input.gmailDetails.filter((detail) =>
@@ -219,6 +221,7 @@ function buildRepositoryBundle(input: {
       markSentRfc822: () => Promise.resolve(),
       findBySentRfc822MessageId: () =>
         Promise.resolve<PendingComposerOutboundRecord | null>(null),
+      listUnreconciledWithRfc822: () => Promise.resolve([]),
       markConfirmed: () => Promise.resolve(),
       markFailed: () => Promise.resolve(),
       markSuperseded: () => Promise.resolve(),

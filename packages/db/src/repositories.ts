@@ -1591,6 +1591,21 @@ function createStage1RepositoriesInternal(
         return row === undefined ? null : mapCanonicalEventRow(row);
       },
 
+      async findBySourceEvidenceId(sourceEvidenceId, eventType) {
+        const [row] = await db
+          .select()
+          .from(canonicalEventLedger)
+          .where(
+            and(
+              eq(canonicalEventLedger.sourceEvidenceId, sourceEvidenceId),
+              eq(canonicalEventLedger.eventType, eventType),
+            ),
+          )
+          .limit(1);
+
+        return row === undefined ? null : mapCanonicalEventRow(row);
+      },
+
       async listByContentFingerprintWindow(input) {
         const occurredAt = new Date(input.occurredAt);
 
@@ -2823,6 +2838,17 @@ function createStage1RepositoriesInternal(
     },
 
     gmailMessageDetails: {
+      async findByRfc822MessageId(rfc822MessageId) {
+        const [row] = await db
+          .select()
+          .from(gmailMessageDetails)
+          .where(eq(gmailMessageDetails.rfc822MessageId, rfc822MessageId))
+          .orderBy(desc(gmailMessageDetails.createdAt))
+          .limit(1);
+
+        return row === undefined ? null : mapGmailMessageDetailRow(row);
+      },
+
       async listBySourceEvidenceIds(sourceEvidenceIds) {
         if (sourceEvidenceIds.length === 0) {
           return [];
@@ -3506,6 +3532,29 @@ function createStage1RepositoriesInternal(
         return row === undefined ? null : mapPendingComposerOutboundRow(row);
       },
 
+      async listUnreconciledWithRfc822() {
+        const rows = (await db
+          .select()
+          .from(pendingComposerOutbounds)
+          .where(
+            and(
+              isNotNull(pendingComposerOutbounds.sentRfc822MessageId),
+              isNull(pendingComposerOutbounds.reconciledEventId),
+              inArray(pendingComposerOutbounds.status, [
+                "pending",
+                "confirmed",
+                "orphaned",
+              ]),
+            ),
+          )
+          .orderBy(
+            desc(pendingComposerOutbounds.attemptedAt),
+            desc(pendingComposerOutbounds.createdAt),
+          )) as PendingComposerOutboundRow[];
+
+        return rows.map(mapPendingComposerOutboundRow);
+      },
+
       async markConfirmed(id, input) {
         await db
           .update(pendingComposerOutbounds)
@@ -3523,6 +3572,7 @@ function createStage1RepositoriesInternal(
               eq(pendingComposerOutbounds.id, id),
               or(
                 eq(pendingComposerOutbounds.status, "pending"),
+                eq(pendingComposerOutbounds.status, "orphaned"),
                 and(
                   eq(pendingComposerOutbounds.status, "confirmed"),
                   isNull(pendingComposerOutbounds.reconciledEventId),
