@@ -162,16 +162,16 @@ export interface AiKnowledgeRepository {
   ): Promise<AiKnowledgeEntryRecord | null>;
   hasProjectNotionContent(projectId: string): Promise<boolean>;
   /**
-   * Returns the subset of input project IDs whose effective project is
-   * configured for AI knowledge — i.e. has
-   * `ai_knowledge_synced_at IS NOT NULL`. Connected sub-projects
-   * transparently hop to their host's synced timestamp (same semantics as
+   * Returns the subset of input project IDs whose effective project has had
+   * AI Knowledge synthesis run at least once — i.e.
+   * `ai_optimized_synthesized_at IS NOT NULL`. Connected sub-projects
+   * transparently hop to their host's synthesis timestamp (same semantics as
    * {@link findEffectiveProjectNotionContent} for the bulk path).
    *
    * This is the chip-facing signal (composer "Knowledge Base" indicator).
-   * It does NOT inspect `ai_knowledge_entries` cache content — a project
-   * may be configured before its cache row is populated by the next sync,
-   * and we still want the chip to show as configured.
+   * It reflects whether synthesis has produced a published AI Knowledge
+   * document, not whether the Notion -> cache sync has populated
+   * `ai_knowledge_entries`.
    */
   findProjectIdsWithAiKnowledgeConfigured(
     projectIds: readonly string[],

@@ -1,6 +1,6 @@
 "use client";
 
-import type { RefObject } from "react";
+import { useState, type RefObject } from "react";
 
 import { smsMetrics, type SmsMetrics } from "@as-comms/domain/sms-segments";
 
@@ -32,8 +32,12 @@ import {
   ComposerField,
   InlineErrorBanner,
   RichTextComposerEditor,
+  type RichTextComposerCommandState,
 } from "./composer-editor-surface";
-import { ComposerToolbar } from "./composer-toolbar";
+import {
+  ComposerToolbar,
+  type ComposerToolbarCommand,
+} from "./composer-toolbar";
 import {
   BookOpenIcon,
   ChevronDownIcon,
@@ -60,6 +64,10 @@ import type {
 } from "./inbox-client-provider";
 import { ComposerSmsRecipientPicker } from "./composer-sms-recipient-picker";
 import { SendFromPhoneChip } from "./composer-send-from-phone-chip";
+
+const EMPTY_ACTIVE_COMMANDS = new Set<ComposerToolbarCommand>();
+const NOOP_COMPOSER_COMMAND: (command: ComposerToolbarCommand) => void = () =>
+  undefined;
 
 function KnowledgeBaseIndicator({
   hasKnowledge,
@@ -381,205 +389,222 @@ export function ComposerEmailSurface({
       projectName={selectedAliasProjectName}
     />
   ) : null;
+  const [editorCommandState, setEditorCommandState] =
+    useState<RichTextComposerCommandState | null>(null);
+  const activeCommands =
+    editorCommandState?.activeCommands ?? EMPTY_ACTIVE_COMMANDS;
+  const onToolbarCommand =
+    editorCommandState?.onCommand ?? NOOP_COMPOSER_COMMAND;
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex min-h-full flex-col">
-        <ComposerField label="FROM">
-          <ComposerSendFromChip
-            value={selectedAlias}
-            aliases={composerAliases}
-            onChange={onAliasChange}
-            {...(aliasError?.message ? { errorMessage: aliasError.message } : {})}
-          />
-        </ComposerField>
-
-      <ComposerField label="TO">
-        <div className="rounded-md bg-white">
-          <ComposerRecipientPicker
-            recipients={recipient === null ? [] : [recipient]}
-            locked={isReplying}
-            single
-            autoFocusInput={recipientAutoFocus}
-            placeholder={recipientPlaceholder}
-            rightSlot={
-              !showCc || !showBcc ? (
-                <div className="flex items-center gap-1 pt-0.5 text-[11.5px]">
-                  {!showCc ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onToggleCc(true);
-                      }}
-                      className="rounded px-1.5 py-0.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                    >
-                      Cc
-                    </button>
-                  ) : null}
-                  {!showBcc ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onToggleBcc(true);
-                      }}
-                      className="rounded px-1.5 py-0.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                    >
-                      Bcc
-                    </button>
-                  ) : null}
-                </div>
-              ) : null
-            }
-            onRecipientsChange={(nextRecipients) => {
-              onRecipientChange(nextRecipients[0] ?? null);
-            }}
-          />
-        </div>
-        {recipientError ? (
-          <p className="mt-1 text-xs text-rose-700">{recipientError.message}</p>
-        ) : null}
-      </ComposerField>
-
-      {showCc ? (
-        <ComposerField label="CC">
-          <ComposerRecipientPicker
-            recipients={ccRecipients}
-            rightSlot={
-              <button
-                type="button"
-                aria-label="Hide Cc field"
-                onClick={() => {
-                  onToggleCc(false);
-                }}
-                className="text-slate-400 hover:text-slate-700"
-              >
-                <XIcon className="size-3.5" />
-              </button>
-            }
-            onRecipientsChange={onCcChange}
-          />
-          {ccError ? (
-            <p className="mt-1 text-xs text-rose-700">{ccError.message}</p>
-          ) : null}
-        </ComposerField>
-      ) : null}
-
-      {showBcc ? (
-        <ComposerField label="BCC">
-          <ComposerRecipientPicker
-            recipients={bccRecipients}
-            rightSlot={
-              <button
-                type="button"
-                aria-label="Hide Bcc field"
-                onClick={() => {
-                  onToggleBcc(false);
-                }}
-                className="text-slate-400 hover:text-slate-700"
-              >
-                <XIcon className="size-3.5" />
-              </button>
-            }
-            onRecipientsChange={onBccChange}
-          />
-          {bccError ? (
-            <p className="mt-1 text-xs text-rose-700">{bccError.message}</p>
-          ) : null}
-        </ComposerField>
-      ) : null}
-
-      <ComposerField label="SUBJ">
-        <Input
-          value={subject}
-          onChange={(event) => {
-            onSubjectChange(event.currentTarget.value);
-          }}
-          placeholder="Subject"
-          className={cn(
-            "h-8 border-0 px-0 text-[13px] font-medium shadow-none focus-visible:ring-0",
-            subjectError ? "text-rose-900" : "",
-          )}
-        />
-        {subjectError ? (
-          <p className="mt-1 text-xs text-rose-700">{subjectError.message}</p>
-        ) : null}
-      </ComposerField>
-
-      <RichTextComposerEditor
-        className="flex min-h-0 flex-1 flex-col"
-        frameClassName="flex min-h-0 flex-1 flex-col border-x-0 border-b-0 shadow-none"
-        contentClassName="min-h-0 flex-1"
-        bodyPlaintext={body}
-        errorMessage={bodyError?.message}
-        onChange={(nextBody) => {
-          onBodyChange(nextBody);
-          if (aiDraft.status === "inserted") {
-            onAiEdited();
-          }
-        }}
-        onClearErrors={onClearErrors}
-        topSlot={
-          showAiDraftAffordances ? (
-            <ComposerAiDraftWindow
-              tone="email"
-              aiDraft={aiDraft}
-              directiveText={aiDirective}
-              repromptText={repromptText}
-              isGeneratingAi={isGeneratingAi}
-              runDraftDisabled={runAiDraftDisabled}
-              runDraftDisabledReason={runAiDraftDisabledReason}
-              onDirectiveTextChange={onAiDirectiveChange}
-              onRepromptTextChange={onRepromptTextChange}
-              onRunDraft={onRunAiDraft}
-              onOpenReprompt={onOpenReprompt}
-              onSubmitReprompt={onReprompt}
-              onCancelReprompt={onCancelReprompt}
-              onDiscard={onDiscardAi}
-              onApprove={onApproveAi}
+      <div className="flex h-full flex-col">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <ComposerField label="FROM">
+            <ComposerSendFromChip
+              value={selectedAlias}
+              aliases={composerAliases}
+              onChange={onAliasChange}
+              {...(aliasError?.message
+                ? { errorMessage: aliasError.message }
+                : {})}
             />
-          ) : undefined
-        }
-        bottomSlot={
-          selectedAliasSignature.length > 0 ? (
-            <div className="px-4 pb-3 pt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
-              {selectedAliasSignature}
-            </div>
-          ) : undefined
-        }
-        toolbarFooter={({ activeCommands, onCommand }) => (
-          <div className="border-t border-slate-100 bg-slate-50/40 px-3 py-2">
-            <AttachmentRow
-              attachments={attachments}
-              onRemove={onAttachmentRemove}
-            />
-            {attachmentError ? (
-              <div className="px-1 pb-3 text-xs text-rose-700">
-                {attachmentError.message}
-              </div>
-            ) : null}
+          </ComposerField>
 
-            {inlineError || recipientError || ccError || bccError || attachmentError ? (
-              <InlineErrorBanner
-                message={
-                  inlineError?.message ??
-                  recipientError?.message ??
-                  ccError?.message ??
-                  bccError?.message ??
-                  attachmentError?.message ??
-                  "Something went wrong."
+          <ComposerField label="TO">
+            <div className="rounded-md bg-white">
+              <ComposerRecipientPicker
+                recipients={recipient === null ? [] : [recipient]}
+                locked={isReplying}
+                single
+                autoFocusInput={recipientAutoFocus}
+                placeholder={recipientPlaceholder}
+                rightSlot={
+                  !showCc || !showBcc ? (
+                    <div className="flex items-center gap-1 pt-0.5 text-[11.5px]">
+                      {!showCc ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onToggleCc(true);
+                          }}
+                          className="rounded px-1.5 py-0.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                        >
+                          Cc
+                        </button>
+                      ) : null}
+                      {!showBcc ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onToggleBcc(true);
+                          }}
+                          className="rounded px-1.5 py-0.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                        >
+                          Bcc
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null
                 }
-                retryable={inlineError?.retryable === true}
-                onRetry={() => {
-                  onSend("send");
+                onRecipientsChange={(nextRecipients) => {
+                  onRecipientChange(nextRecipients[0] ?? null);
                 }}
               />
+            </div>
+            {recipientError ? (
+              <p className="mt-1 text-xs text-rose-700">
+                {recipientError.message}
+              </p>
             ) : null}
+          </ComposerField>
 
+          {showCc ? (
+            <ComposerField label="CC">
+              <ComposerRecipientPicker
+                recipients={ccRecipients}
+                rightSlot={
+                  <button
+                    type="button"
+                    aria-label="Hide Cc field"
+                    onClick={() => {
+                      onToggleCc(false);
+                    }}
+                    className="text-slate-400 hover:text-slate-700"
+                  >
+                    <XIcon className="size-3.5" />
+                  </button>
+                }
+                onRecipientsChange={onCcChange}
+              />
+              {ccError ? (
+                <p className="mt-1 text-xs text-rose-700">{ccError.message}</p>
+              ) : null}
+            </ComposerField>
+          ) : null}
+
+          {showBcc ? (
+            <ComposerField label="BCC">
+              <ComposerRecipientPicker
+                recipients={bccRecipients}
+                rightSlot={
+                  <button
+                    type="button"
+                    aria-label="Hide Bcc field"
+                    onClick={() => {
+                      onToggleBcc(false);
+                    }}
+                    className="text-slate-400 hover:text-slate-700"
+                  >
+                    <XIcon className="size-3.5" />
+                  </button>
+                }
+                onRecipientsChange={onBccChange}
+              />
+              {bccError ? (
+                <p className="mt-1 text-xs text-rose-700">{bccError.message}</p>
+              ) : null}
+            </ComposerField>
+          ) : null}
+
+          <ComposerField label="SUBJ">
+            <Input
+              value={subject}
+              onChange={(event) => {
+                onSubjectChange(event.currentTarget.value);
+              }}
+              placeholder="Subject"
+              className={cn(
+                "h-8 border-0 px-0 text-[13px] font-medium shadow-none focus-visible:ring-0",
+                subjectError ? "text-rose-900" : "",
+              )}
+            />
+            {subjectError ? (
+              <p className="mt-1 text-xs text-rose-700">{subjectError.message}</p>
+            ) : null}
+          </ComposerField>
+
+          <RichTextComposerEditor
+            bodyPlaintext={body}
+            className="flex min-h-0 flex-1 flex-col"
+            contentClassName="min-h-0 flex-1"
+            errorMessage={bodyError?.message}
+            frameClassName="flex min-h-0 flex-1 flex-col border-x-0 border-b-0 shadow-none"
+            onChange={(nextBody) => {
+              onBodyChange(nextBody);
+              if (aiDraft.status === "inserted") {
+                onAiEdited();
+              }
+            }}
+            onClearErrors={onClearErrors}
+            onCommandStateChange={setEditorCommandState}
+            showToolbar={false}
+            topSlot={
+              showAiDraftAffordances ? (
+                <ComposerAiDraftWindow
+                  tone="email"
+                  aiDraft={aiDraft}
+                  directiveText={aiDirective}
+                  repromptText={repromptText}
+                  isGeneratingAi={isGeneratingAi}
+                  runDraftDisabled={runAiDraftDisabled}
+                  runDraftDisabledReason={runAiDraftDisabledReason}
+                  onDirectiveTextChange={onAiDirectiveChange}
+                  onRepromptTextChange={onRepromptTextChange}
+                  onRunDraft={onRunAiDraft}
+                  onOpenReprompt={onOpenReprompt}
+                  onSubmitReprompt={onReprompt}
+                  onCancelReprompt={onCancelReprompt}
+                  onDiscard={onDiscardAi}
+                  onApprove={onApproveAi}
+                />
+              ) : undefined
+            }
+            bottomSlot={
+              selectedAliasSignature.length > 0 ? (
+                <div className="px-4 pb-3 pt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
+                  {selectedAliasSignature}
+                </div>
+              ) : undefined
+            }
+          />
+        </div>
+
+        <div className="shrink-0 border-t border-slate-100 bg-slate-50/40">
+          <AttachmentRow attachments={attachments} onRemove={onAttachmentRemove} />
+          {attachmentError ? (
+            <div className="px-1 pb-3 text-xs text-rose-700">
+              {attachmentError.message}
+            </div>
+          ) : null}
+
+          {inlineError ||
+          recipientError ||
+          ccError ||
+          bccError ||
+          attachmentError ? (
+            <InlineErrorBanner
+              message={
+                inlineError?.message ??
+                recipientError?.message ??
+                ccError?.message ??
+                bccError?.message ??
+                attachmentError?.message ??
+                "Something went wrong."
+              }
+              retryable={inlineError?.retryable === true}
+              onRetry={() => {
+                onSend("send");
+              }}
+            />
+          ) : null}
+
+          <div className="px-3 py-2">
             <div className="flex min-w-0 items-center gap-2">
               <div className="shrink-0">
                 <ComposerToolbar
                   activeCommands={activeCommands}
-                  onCommand={onCommand}
+                  onCommand={onToolbarCommand}
                 />
               </div>
 
@@ -664,7 +689,8 @@ export function ComposerEmailSurface({
                             Save draft
                           </span>
                           <span className={TYPE.caption}>
-                            Collapse this draft to the floating pill without sending
+                            Collapse this draft to the floating pill without
+                            sending
                           </span>
                         </div>
                       </DropdownMenuItem>
@@ -678,19 +704,18 @@ export function ComposerEmailSurface({
               <div className="mt-2 md:hidden">{knowledgeIndicator}</div>
             ) : null}
           </div>
-        )}
-      />
 
-      {aiWarningMessage ? (
-        <div className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
-          {aiWarningMessage}
+          {aiWarningMessage ? (
+            <div className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+              {aiWarningMessage}
+            </div>
+          ) : null}
+          {bodyError ? (
+            <div className="px-4 py-2 text-xs text-rose-700">
+              {bodyError.message}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-        {bodyError ? (
-          <div className="px-4 py-2 text-xs text-rose-700">
-            {bodyError.message}
-          </div>
-        ) : null}
       </div>
     </TooltipProvider>
   );

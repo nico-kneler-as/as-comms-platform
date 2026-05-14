@@ -497,7 +497,7 @@ export function InboxComposerDetailPane({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+        <div className="flex min-h-0 flex-1 flex-col bg-white">
           {state.activeTab === "email" ? (
             <ComposerEmailSurface
               composerAliases={composerAliases}

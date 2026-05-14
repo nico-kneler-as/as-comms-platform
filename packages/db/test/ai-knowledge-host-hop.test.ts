@@ -13,7 +13,7 @@ describe("aiKnowledge.findProjectIdsWithAiKnowledgeConfigured", () => {
         projectAlias: "Standalone Ready",
         source: "salesforce",
         isActive: true,
-        aiKnowledgeSyncedAt: "2026-05-01T00:00:00.000Z",
+        aiOptimizedSynthesizedAt: "2026-05-01T00:00:00.000Z",
       });
       await context.repositories.projectDimensions.upsert({
         projectId: "standalone:empty",
@@ -21,7 +21,7 @@ describe("aiKnowledge.findProjectIdsWithAiKnowledgeConfigured", () => {
         projectAlias: "Standalone Empty",
         source: "salesforce",
         isActive: true,
-        aiKnowledgeSyncedAt: null,
+        aiOptimizedSynthesizedAt: null,
       });
       await context.repositories.projectDimensions.upsert({
         projectId: "host:ready",
@@ -29,7 +29,7 @@ describe("aiKnowledge.findProjectIdsWithAiKnowledgeConfigured", () => {
         projectAlias: "Host Ready",
         source: "salesforce",
         isActive: true,
-        aiKnowledgeSyncedAt: "2026-05-01T00:00:00.000Z",
+        aiOptimizedSynthesizedAt: "2026-05-01T00:00:00.000Z",
       });
       await context.repositories.projectDimensions.upsert({
         projectId: "host:empty",
@@ -37,7 +37,7 @@ describe("aiKnowledge.findProjectIdsWithAiKnowledgeConfigured", () => {
         projectAlias: "Host Empty",
         source: "salesforce",
         isActive: true,
-        aiKnowledgeSyncedAt: null,
+        aiOptimizedSynthesizedAt: null,
       });
       await context.repositories.projectDimensions.upsert({
         projectId: "sub:beech",

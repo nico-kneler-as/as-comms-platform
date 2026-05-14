@@ -386,9 +386,9 @@ export interface InboxComposerAliasOption {
   readonly isAiReady: boolean;
   readonly isAiConfigured?: boolean;
   /**
-   * Whether the effective project (host or own) is configured for AI
-   * knowledge — i.e. `ai_knowledge_synced_at IS NOT NULL`. This drives the
-   * composer's "Knowledge Base" footer chip.
+   * Whether the effective project (host or own) has had AI Knowledge
+   * synthesis run at least once (`ai_optimized_synthesized_at IS NOT NULL`).
+   * This is the signal for the composer's "Knowledge Base" footer chip.
    */
   readonly hasCachedContent?: boolean;
 }

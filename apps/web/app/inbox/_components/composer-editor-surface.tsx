@@ -141,12 +141,19 @@ export function InlineErrorBanner({
   );
 }
 
+export interface RichTextComposerCommandState {
+  readonly activeCommands: ReadonlySet<ComposerToolbarCommand>;
+  readonly onCommand: (command: ComposerToolbarCommand) => void;
+}
+
 export function RichTextComposerEditor({
   bodyPlaintext,
   errorMessage,
   topSlot,
   bottomSlot,
   toolbarFooter,
+  onCommandStateChange,
+  showToolbar = true,
   className,
   frameClassName,
   contentClassName,
@@ -157,6 +164,10 @@ export function RichTextComposerEditor({
   readonly errorMessage: string | undefined;
   readonly topSlot?: React.ReactNode;
   readonly bottomSlot?: React.ReactNode;
+  readonly onCommandStateChange?: (
+    state: RichTextComposerCommandState,
+  ) => void;
+  readonly showToolbar?: boolean;
   readonly toolbarFooter?: (input: {
     readonly activeCommands: ReadonlySet<ComposerToolbarCommand>;
     readonly onCommand: (command: ComposerToolbarCommand) => void;
@@ -218,6 +229,8 @@ export function RichTextComposerEditor({
     activeCommands.add("orderedList");
   if (editor?.isActive("link") === true) activeCommands.add("link");
   if (editor?.isActive("blockquote") === true) activeCommands.add("blockquote");
+  const activeCommandsSnapshot = Array.from(activeCommands).sort();
+  const activeCommandsKey = activeCommandsSnapshot.join(",");
 
   const runCommand = useCallback(
     (command: ComposerToolbarCommand) => {
@@ -280,6 +293,22 @@ export function RichTextComposerEditor({
     }
   }, [bodyPlaintext, editor]);
 
+  useEffect(() => {
+    if (onCommandStateChange === undefined) {
+      return;
+    }
+
+    onCommandStateChange({
+      activeCommands:
+        activeCommandsKey.length === 0
+          ? new Set<ComposerToolbarCommand>()
+          : new Set(
+              activeCommandsKey.split(",") as readonly ComposerToolbarCommand[],
+            ),
+      onCommand: runCommand,
+    });
+  }, [activeCommandsKey, onCommandStateChange, runCommand]);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
@@ -297,9 +326,9 @@ export function RichTextComposerEditor({
           frameClassName,
         )}
       >
-        {toolbarFooter ? null : (
+        {showToolbar && !toolbarFooter ? (
           <ComposerToolbar activeCommands={activeCommands} onCommand={runCommand} />
-        )}
+        ) : null}
         {topSlot}
         <div
           className={cn("relative min-h-44", contentClassName)}
