@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -28,7 +29,7 @@ const EXACT_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   hour: "numeric",
   minute: "2-digit",
-  timeZone: "UTC",
+  timeZone: ORG_TIMEZONE,
   timeZoneName: "short",
 });
 

@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 
+import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { cn } from "@/lib/utils";
 import { SHADOW, TONE_CLASSES, type ToneNameV2 } from "@/app/_lib/design-tokens-v2";
 
@@ -20,7 +21,7 @@ const EXACT_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   hour: "numeric",
   minute: "2-digit",
-  timeZone: "UTC",
+  timeZone: ORG_TIMEZONE,
   timeZoneName: "short",
 });
 
