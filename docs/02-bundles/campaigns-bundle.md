@@ -27,7 +27,8 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 - campaign runs remain single-channel
 - audience uses canonical platform identity and exclusions
 - campaign content, review state, and frozen audience remain product-owned
-- SendGrid is the Email delivery provider, not the authoring source of truth
+- Postmark is the Email delivery provider, not the authoring source of truth (`D-045`)
+- Phase A: project-specific Normal Email sends via Composer; Phase B: Unlayer drag-and-drop HTML editor; Phase C: newsletter migration + Mailchimp decommission; Phase D (5B): SMS — see PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and [`../04-implementation-specs/stage-5a-campaigns.md`](../04-implementation-specs/stage-5a-campaigns.md)
 - Mailchimp remains historical and transition-period live ingest scope until native Email Campaigns are trusted
 - transition-period live Mailchimp ingest is now operational for the cutover window; see PRD #283 and the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
 

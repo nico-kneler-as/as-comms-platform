@@ -15,7 +15,7 @@
 | Mailchimp | historical and transition-period campaign email ingest | transition-period Campaigns data |
 | Notion | AI instructions and approved knowledge source | AI knowledge sync/cache |
 | OpenAI | request-time draft generation | AI assistant |
-| SendGrid | Campaigns Email delivery provider | Email Campaigns transport |
+| Postmark | Campaigns Email delivery provider (Stage 5A) | Email Campaigns transport, Broadcast Message Streams, Events Webhook |
 | Supabase/Postgres | durable persistence | canonical state, projections, replay, audit |
 
 ## Frequent Reminders
@@ -23,7 +23,7 @@
 - Gmail stays the one-to-one email transport after cutover.
 - Salesforce Contact ID is the primary identity anchor.
 - Mailchimp remains transition ingest scope, not the future authoring UX.
-- SendGrid delivers Email Campaigns but is not the authoring source of truth.
+- Postmark delivers Email Campaigns (`D-045`); Stage 5A authoring + audience + frozen review stay product-owned in our DB.
 
 ## Notion
 
@@ -44,4 +44,4 @@
   - `service-simpletexting.md`
   - `service-mailchimp.md`
   - `service-notion.md`
-  - `service-sendgrid.md`
+  - (Postmark: no donor doc — provider is new in Stage 5A per `D-045`)
