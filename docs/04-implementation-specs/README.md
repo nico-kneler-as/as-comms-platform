@@ -31,6 +31,7 @@ They are meant to prevent code-first guessing, not to replace the bundle or core
 2. [`../02-bundles/campaigns-bundle.md`](../02-bundles/campaigns-bundle.md)
 3. [`stage-5a-campaigns.md`](./stage-5a-campaigns.md)
 4. [`../design-briefs/stage-5a-campaigns.md`](../design-briefs/stage-5a-campaigns.md) (UI/UX, pairs with the impl spec)
+5. [`stage-5a-phase-c-newsletter-audit.md`](./stage-5a-phase-c-newsletter-audit.md) (Brief C0 prep — read before Phase C planning, not Phase A)
 
 ## Shared Stage 1 Vocabulary
 
