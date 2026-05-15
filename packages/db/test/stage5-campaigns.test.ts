@@ -307,10 +307,15 @@ describe("Stage 5 campaigns repositories", () => {
 
     await seedContact(context);
 
+    // `recordOptOut` stamps `optedOutAt` with `new Date()`. To make the
+    // `optedOutAt <= at` query check meaningful regardless of when the test
+    // runs, query at a timestamp comfortably after any recorded opt-out.
+    const futureAt = () => new Date(Date.now() + 60_000);
+
     const beforeAnyOptOut = await campaigns.contactConsent.isOptedOut(
       "contact-1",
       { type: "project", id: "project-1" },
-      new Date("2026-05-15T12:00:00.000Z"),
+      futureAt(),
     );
 
     await campaigns.contactConsent.recordOptOut(
@@ -321,12 +326,12 @@ describe("Stage 5 campaigns repositories", () => {
     const scopedProjectOptOut = await campaigns.contactConsent.isOptedOut(
       "contact-1",
       { type: "project", id: "project-1" },
-      new Date("2026-05-15T12:01:00.000Z"),
+      futureAt(),
     );
     const unrelatedNewsletterOptOut = await campaigns.contactConsent.isOptedOut(
       "contact-1",
       { type: "newsletter" },
-      new Date("2026-05-15T12:01:00.000Z"),
+      futureAt(),
     );
 
     await campaigns.contactConsent.recordOptOut(
@@ -337,12 +342,12 @@ describe("Stage 5 campaigns repositories", () => {
     const allScopeProjectOptOut = await campaigns.contactConsent.isOptedOut(
       "contact-1",
       { type: "project", id: "project-99" },
-      new Date("2026-05-15T12:02:00.000Z"),
+      futureAt(),
     );
     const allScopeNewsletterOptOut = await campaigns.contactConsent.isOptedOut(
       "contact-1",
       { type: "newsletter" },
-      new Date("2026-05-15T12:02:00.000Z"),
+      futureAt(),
     );
 
     expect(beforeAnyOptOut).toBe(false);
@@ -454,6 +459,20 @@ describe("Stage 5 campaigns repositories", () => {
     const campaigns = createStage5RepositoryBundle(context.db);
 
     await seedProject(context);
+
+    // The `last_edited_by_user_id` FK requires a real users row.
+    const editorUserCreatedAt = new Date("2026-05-01T12:00:00.000Z");
+    await context.settings.users.upsert({
+      id: "user-99",
+      name: "Editor",
+      email: "editor@example.org",
+      emailVerified: editorUserCreatedAt,
+      image: null,
+      role: "operator",
+      deactivatedAt: null,
+      createdAt: editorUserCreatedAt,
+      updatedAt: editorUserCreatedAt,
+    });
 
     const created = await campaigns.campaignRuns.create(
       buildDraftInput({

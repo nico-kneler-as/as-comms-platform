@@ -36,10 +36,10 @@ describe("Stage 1 DB schema", () => {
       // Auth.js v5 + Stage 2 Settings tables (see D-025)
       "accounts",
       "aiKnowledgeEntries",
-      "auditPolicyEvidence",
       "audienceSnapshots",
-      "canonicalEventLedger",
+      "auditPolicyEvidence",
       "campaignRuns",
+      "canonicalEventLedger",
       "consentRecords",
       "contactConsent",
       "contactIdentities",

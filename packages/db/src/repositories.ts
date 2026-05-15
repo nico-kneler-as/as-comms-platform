@@ -5603,9 +5603,23 @@ function mapOrgSettingsRow(row: OrgSettingsRow): OrgSettingsRecord {
   });
 }
 
+function coerceRequiredDate(value: Date | string): Date {
+  return value instanceof Date ? value : new Date(value);
+}
+
+function coerceNullableDate(value: Date | string | null): Date | null {
+  if (value === null) {
+    return null;
+  }
+  return coerceRequiredDate(value);
+}
+
 function mapCampaignRunProjectionRowDb(
   row: CampaignRunProjectionRowDb,
 ): CampaignRunProjectionRow {
+  // Raw SQL queries against the VIEW can yield timestamp strings rather than
+  // Date objects depending on the driver path. Coerce defensively so the iso
+  // mappers always see a Date.
   return campaignRunProjectionRowSchema.parse({
     runId: row.runId,
     provider: row.provider,
@@ -5616,12 +5630,12 @@ function mapCampaignRunProjectionRowDb(
     sender: row.sender,
     subject: row.subject,
     audienceSize: row.audienceSize,
-    scheduledAt: toNullableIsoDate(row.scheduledAt),
-    startedAt: toNullableIsoDate(row.startedAt),
-    completedAt: toNullableIsoDate(row.completedAt),
-    cancelledAt: toNullableIsoDate(row.cancelledAt),
-    createdAt: toIsoDate(row.createdAt),
-    updatedAt: toIsoDate(row.updatedAt),
+    scheduledAt: toNullableIsoDate(coerceNullableDate(row.scheduledAt)),
+    startedAt: toNullableIsoDate(coerceNullableDate(row.startedAt)),
+    completedAt: toNullableIsoDate(coerceNullableDate(row.completedAt)),
+    cancelledAt: toNullableIsoDate(coerceNullableDate(row.cancelledAt)),
+    createdAt: toIsoDate(coerceRequiredDate(row.createdAt)),
+    updatedAt: toIsoDate(coerceRequiredDate(row.updatedAt)),
   });
 }
 
