@@ -11,13 +11,18 @@ import {
 
 import {
   aiKnowledgeEntries,
+  audienceSnapshots,
   canonicalEventLedger,
+  campaignRuns,
   contactInboxProjection,
+  contactConsent,
   contactTimelineProjection,
   databaseSchema,
   internalNotes,
   messageAttachments,
+  orgSettings,
   projectKnowledgeEntries,
+  suppressionList,
   sourceEvidenceLog,
   sourceEvidenceQuarantine,
   syncState
@@ -26,14 +31,17 @@ import { createTestStage1Context } from "./helpers.js";
 import { mapSyncStateRow, mapSyncStateToInsert } from "../src/mappers.js";
 
 describe("Stage 1 DB schema", () => {
-  it("exports the Stage 1 and Stage 2 durable tables", () => {
+  it("exports the Stage 1, Stage 2, and Stage 5 durable tables", () => {
     expect(Object.keys(databaseSchema).sort()).toEqual([
       // Auth.js v5 + Stage 2 Settings tables (see D-025)
       "accounts",
       "aiKnowledgeEntries",
       "auditPolicyEvidence",
+      "audienceSnapshots",
       "canonicalEventLedger",
+      "campaignRuns",
       "consentRecords",
+      "contactConsent",
       "contactIdentities",
       "contactInboxProjection",
       "contactMemberships",
@@ -48,6 +56,7 @@ describe("Stage 1 DB schema", () => {
       "mailchimpCampaignTailState",
       "manualNoteDetails",
       "messageAttachments",
+      "orgSettings",
       "pendingComposerOutbounds",
       "projectAliases",
       "projectDimensions",
@@ -61,6 +70,7 @@ describe("Stage 1 DB schema", () => {
       "smsSenders",
       "sourceEvidenceLog",
       "sourceEvidenceQuarantine",
+      "suppressionList",
       "syncState",
       "users",
       "verificationTokens"
@@ -77,6 +87,11 @@ describe("Stage 1 DB schema", () => {
     expect(getTableName(sourceEvidenceQuarantine)).toBe(
       "source_evidence_quarantine"
     );
+    expect(getTableName(campaignRuns)).toBe("campaign_runs");
+    expect(getTableName(audienceSnapshots)).toBe("audience_snapshots");
+    expect(getTableName(contactConsent)).toBe("contact_consent");
+    expect(getTableName(suppressionList)).toBe("suppression_list");
+    expect(getTableName(orgSettings)).toBe("org_settings");
     expect(getTableName(canonicalEventLedger)).toBe("canonical_event_ledger");
     expect(getTableName(internalNotes)).toBe("internal_notes");
     expect(getTableName(contactInboxProjection)).toBe(
@@ -97,6 +112,9 @@ describe("Stage 1 DB schema", () => {
       "campaign_email",
       "note"
     ]);
+    expect(canonicalEventTypeValues).toContain("campaign.email.delivered");
+    expect(canonicalEventTypeValues).toContain("campaign.email.bounced");
+    expect(canonicalEventTypeValues).toContain("campaign.email.complained");
     expect(canonicalEventTypeValues).toContain("campaign.email.unsubscribed");
     expect(canonicalEventTypeValues).toContain("note.internal.created");
     expect(reviewStateValues).toEqual([

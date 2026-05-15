@@ -22,6 +22,7 @@
     "ops:mailchimp-capture-historical": "tsx src/ops/mailchimp-capture-historical.ts",
     "ops:backfill-membership-sf-ids": "tsx src/ops/cli.ts backfill-membership-sf-ids",
     "ops:backfill-salesforce-communication-details": "tsx src/ops/backfill-salesforce-communication-details.ts",
+    "ops:inspect-sf-statuses": "tsx src/ops/cli.ts inspect-sf-expedition-member-statuses",
     "ops:audit-salesforce-task-ingest": "tsx src/ops/audit-salesforce-task-ingest.ts",
     "ops:cleanup-salesforce-owner-scope": "tsx src/ops/cleanup-salesforce-owner-scope.ts",
     "ops:backfill-inbox-projection-coverage": "tsx src/ops/backfill-inbox-projection-coverage.ts",

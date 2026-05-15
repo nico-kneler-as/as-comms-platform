@@ -5,6 +5,17 @@ import type {
   IntegrationHealthCategory,
   IntegrationHealthStatus,
 } from "@as-comms/contracts";
+import type {
+  AudienceCriteria,
+  CampaignKind,
+  ConsentScopeType,
+  ConsentSource,
+  DeliveryStatus,
+  LaunchType,
+  PostmarkSenderStatus,
+  RunState,
+  SuppressionReason,
+} from "@as-comms/contracts";
 import {
   bigint,
   boolean,
@@ -222,6 +233,10 @@ export const projectDimensions = pgTable(
     projectId: text("project_id").primaryKey(),
     projectName: text("project_name").notNull(),
     projectAlias: text("project_alias"),
+    postmarkSenderStatus: text("postmark_sender_status")
+      .$type<PostmarkSenderStatus>()
+      .notNull()
+      .default("unverified"),
     isActive: boolean("is_active").notNull().default(false),
     // Connected-sub-project pointer. NULL = host (or standalone) project.
     // Non-NULL = this project rolls up into the referenced host's inbox and
@@ -262,6 +277,10 @@ export const projectDimensions = pgTable(
     check(
       "project_dimensions_ai_auto_sync_schedule_valid",
       sql`${table.aiAutoSyncSchedule} IN ('never', 'daily', 'weekly')`,
+    ),
+    check(
+      "project_dimensions_postmark_sender_status_check",
+      sql`${table.postmarkSenderStatus} IN ('unverified', 'pending', 'verified', 'rejected')`,
     ),
     index("project_dimensions_connected_to_idx").on(table.connectedToProjectId),
   ],
@@ -1013,6 +1032,256 @@ export const projectAliases = pgTable(
     }),
   },
   (table) => [index("project_aliases_project_idx").on(table.projectId)],
+);
+
+export const campaignRuns = pgTable(
+  "campaign_runs",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind").$type<CampaignKind>().notNull(),
+    launchType: text("launch_type").$type<LaunchType>().notNull(),
+    state: text("state").$type<RunState>().notNull(),
+    projectId: text("project_id").references(() => projectDimensions.projectId, {
+      onDelete: "restrict",
+    }),
+    fromEmail: text("from_email"),
+    fromName: text("from_name"),
+    replyToEmail: text("reply_to_email"),
+    subjectTemplate: text("subject_template"),
+    bodyHtmlTemplate: text("body_html_template"),
+    bodyTextTemplate: text("body_text_template"),
+    preheader: text("preheader"),
+    audienceCriteria: jsonb("audience_criteria")
+      .$type<AudienceCriteria>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    audienceSize: integer("audience_size"),
+    scheduledAt: timestamp("scheduled_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    startedAt: timestamp("started_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    completedAt: timestamp("completed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    finalizedAt: timestamp("finalized_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    cancelledAt: timestamp("cancelled_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    cancelledReason: text("cancelled_reason"),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    lastEditedByUserId: text("last_edited_by_user_id").references(
+      () => users.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    check(
+      "campaign_runs_kind_check",
+      sql`${table.kind} IN ('newsletter', 'project')`,
+    ),
+    check(
+      "campaign_runs_launch_type_check",
+      sql`${table.launchType} IN ('normal_email', 'html_email', 'sms')`,
+    ),
+    check(
+      "campaign_runs_state_check",
+      sql`${table.state} IN ('draft', 'scheduled', 'sending', 'complete', 'finalized', 'cancelled')`,
+    ),
+    index("campaign_runs_state_scheduled_idx").on(
+      table.state,
+      table.scheduledAt,
+    ),
+    index("campaign_runs_project_id_idx")
+      .on(table.projectId)
+      .where(isNotNull(table.projectId)),
+    index("campaign_runs_created_at_idx").on(table.createdAt.desc()),
+  ],
+);
+
+export const audienceSnapshots = pgTable(
+  "audience_snapshots",
+  {
+    id: text("id").primaryKey(),
+    campaignRunId: text("campaign_run_id")
+      .notNull()
+      .references(() => campaignRuns.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "restrict" }),
+    frozenEmail: text("frozen_email").notNull(),
+    frozenFirstName: text("frozen_first_name"),
+    frozenProjectName: text("frozen_project_name"),
+    frozenProjectId: text("frozen_project_id"),
+    frozenAliasEmail: text("frozen_alias_email"),
+    unsubscribeToken: text("unsubscribe_token").notNull(),
+    deliveryStatus: text("delivery_status")
+      .$type<DeliveryStatus>()
+      .notNull()
+      .default("pending"),
+    providerMessageId: text("provider_message_id"),
+    sentAt: timestamp("sent_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    deliveredAt: timestamp("delivered_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    bouncedAt: timestamp("bounced_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    openedAt: timestamp("opened_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    clickedAt: timestamp("clicked_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    complainedAt: timestamp("complained_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    unsubscribedAt: timestamp("unsubscribed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    lastEventAt: timestamp("last_event_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    check(
+      "audience_snapshots_delivery_status_check",
+      sql`${table.deliveryStatus} IN ('pending', 'sent', 'delivered', 'bounced', 'complained', 'unsubscribed', 'failed', 'suppressed_at_send')`,
+    ),
+    index("audience_snapshots_run_id_idx").on(table.campaignRunId),
+    index("audience_snapshots_contact_id_idx").on(table.contactId),
+    uniqueIndex("audience_snapshots_unsubscribe_token_idx").on(
+      table.unsubscribeToken,
+    ),
+    index("audience_snapshots_provider_message_id_idx")
+      .on(table.providerMessageId)
+      .where(isNotNull(table.providerMessageId)),
+    uniqueIndex("audience_snapshots_run_contact_unique").on(
+      table.campaignRunId,
+      table.contactId,
+    ),
+  ],
+);
+
+export const contactConsent = pgTable(
+  "contact_consent",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    scopeType: text("scope_type").$type<ConsentScopeType>().notNull(),
+    scopeId: text("scope_id"),
+    source: text("source").$type<ConsentSource>().notNull(),
+    sourceRunId: text("source_run_id").references(() => campaignRuns.id, {
+      onDelete: "set null",
+    }),
+    optedOutAt: timestamp("opted_out_at", {
+      mode: "date",
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    check(
+      "contact_consent_scope_type_check",
+      sql`${table.scopeType} IN ('project', 'newsletter', 'all')`,
+    ),
+    check(
+      "contact_consent_source_check",
+      sql`${table.source} IN ('recipient_click', 'admin_action', 'provider_event', 'import')`,
+    ),
+    check(
+      "contact_consent_scope_shape_check",
+      sql`((${table.scopeType} = 'project' AND ${table.scopeId} IS NOT NULL) OR (${table.scopeType} IN ('newsletter', 'all') AND ${table.scopeId} IS NULL))`,
+    ),
+    index("contact_consent_contact_scope_idx").on(
+      table.contactId,
+      table.scopeType,
+      table.scopeId,
+    ),
+    uniqueIndex("contact_consent_project_scope_unique")
+      .on(table.contactId, table.scopeId)
+      .where(sql`${table.scopeType} = 'project'`),
+    uniqueIndex("contact_consent_non_project_scope_unique")
+      .on(table.contactId, table.scopeType)
+      .where(sql`${table.scopeType} IN ('newsletter', 'all')`),
+  ],
+);
+
+export const suppressionList = pgTable(
+  "suppression_list",
+  {
+    id: text("id").primaryKey(),
+    normalizedEmail: text("normalized_email").notNull(),
+    reason: text("reason").$type<SuppressionReason>().notNull(),
+    firstEventAt: timestamp("first_event_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    lastEventAt: timestamp("last_event_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    lastProviderEventId: text("last_provider_event_id"),
+    notes: text("notes"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    check(
+      "suppression_list_reason_check",
+      sql`${table.reason} IN ('hard_bounce', 'soft_bounce_strike3', 'complaint', 'manual')`,
+    ),
+    uniqueIndex("suppression_list_normalized_email_unique").on(
+      table.normalizedEmail,
+    ),
+  ],
+);
+
+export const orgSettings = pgTable(
+  "org_settings",
+  {
+    id: text("id").primaryKey(),
+    physicalAddressLine1: text("physical_address_line1").notNull().default(""),
+    physicalAddressLine2: text("physical_address_line2").notNull().default(""),
+    physicalCity: text("physical_city").notNull().default(""),
+    physicalState: text("physical_state").notNull().default(""),
+    physicalZip: text("physical_zip").notNull().default(""),
+    physicalCountry: text("physical_country").notNull().default("US"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    check("org_settings_singleton_check", sql`${table.id} = 'singleton'`),
+  ],
 );
 
 export const pendingComposerOutbounds = pgTable(

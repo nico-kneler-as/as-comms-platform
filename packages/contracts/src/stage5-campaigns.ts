@@ -1,0 +1,440 @@
+import { z } from "zod";
+
+const idSchema = z.string().min(1);
+const timestampSchema = z.string().datetime();
+const nullableTimestampSchema = timestampSchema.nullable();
+const nullableStringSchema = z.string().min(1).nullable();
+
+export const campaignKindValues = ["newsletter", "project"] as const;
+export const campaignKindSchema = z.enum(campaignKindValues);
+export type CampaignKind = z.infer<typeof campaignKindSchema>;
+
+export const launchTypeValues = ["normal_email", "html_email", "sms"] as const;
+export const launchTypeSchema = z.enum(launchTypeValues);
+export type LaunchType = z.infer<typeof launchTypeSchema>;
+
+export const runStateValues = [
+  "draft",
+  "scheduled",
+  "sending",
+  "complete",
+  "finalized",
+  "cancelled",
+] as const;
+export const runStateSchema = z.enum(runStateValues);
+export type RunState = z.infer<typeof runStateSchema>;
+
+export const consentScopeTypeValues = [
+  "project",
+  "newsletter",
+  "all",
+] as const;
+export const consentScopeTypeSchema = z.enum(consentScopeTypeValues);
+export type ConsentScopeType = z.infer<typeof consentScopeTypeSchema>;
+
+export const consentSourceValues = [
+  "recipient_click",
+  "admin_action",
+  "provider_event",
+  "import",
+] as const;
+export const consentSourceSchema = z.enum(consentSourceValues);
+export type ConsentSource = z.infer<typeof consentSourceSchema>;
+
+export const suppressionReasonValues = [
+  "hard_bounce",
+  "soft_bounce_strike3",
+  "complaint",
+  "manual",
+] as const;
+export const suppressionReasonSchema = z.enum(suppressionReasonValues);
+export type SuppressionReason = z.infer<typeof suppressionReasonSchema>;
+
+export const postmarkSenderStatusValues = [
+  "unverified",
+  "pending",
+  "verified",
+  "rejected",
+] as const;
+export const postmarkSenderStatusSchema = z.enum(postmarkSenderStatusValues);
+export type PostmarkSenderStatus = z.infer<typeof postmarkSenderStatusSchema>;
+
+export const deliveryStatusValues = [
+  "pending",
+  "sent",
+  "delivered",
+  "bounced",
+  "complained",
+  "unsubscribed",
+  "failed",
+  "suppressed_at_send",
+] as const;
+export const deliveryStatusSchema = z.enum(deliveryStatusValues);
+export type DeliveryStatus = z.infer<typeof deliveryStatusSchema>;
+
+export const campaignRunProjectionProviderValues = [
+  "postmark",
+  "mailchimp",
+] as const;
+export const campaignRunProjectionProviderSchema = z.enum(
+  campaignRunProjectionProviderValues,
+);
+export type CampaignRunProjectionProvider = z.infer<
+  typeof campaignRunProjectionProviderSchema
+>;
+
+// TODO Phase C / Brief C0 — verify against production SF picklist. Current values are best-guess.
+export const expeditionMemberStatusValues = [
+  "In the Field",
+  "In Training",
+  "Active",
+  "Inactive",
+  "Withdrawn",
+] as const;
+export const expeditionMemberStatusSchema = z.enum(
+  expeditionMemberStatusValues,
+);
+export type ExpeditionMemberStatus = z.infer<
+  typeof expeditionMemberStatusSchema
+>;
+
+export const audienceLastActivityWindowValues = [
+  "all_time",
+  "last_year",
+  "last_90_days",
+  "last_30_days",
+] as const;
+export const audienceLastActivityWindowSchema = z.enum(
+  audienceLastActivityWindowValues,
+);
+export type AudienceLastActivityWindow = z.infer<
+  typeof audienceLastActivityWindowSchema
+>;
+
+export const audienceTriStateValues = ["either", "yes", "no"] as const;
+export const audienceTriStateSchema = z.enum(audienceTriStateValues);
+export type AudienceTriState = z.infer<typeof audienceTriStateSchema>;
+
+const audienceCriteriaDefaults = {
+  projectIds: [],
+  statuses: [],
+  expeditionIds: [],
+  lastActivityWindow: "all_time" as const,
+  hasReplied: "either" as const,
+  hasClicked: "either" as const,
+};
+
+export const audienceCriteriaSchema = z.object({
+  projectIds: z.array(z.string().min(1)).default(audienceCriteriaDefaults.projectIds),
+  statuses: z.array(expeditionMemberStatusSchema).default(
+    audienceCriteriaDefaults.statuses,
+  ),
+  expeditionIds: z
+    .array(z.string().min(1))
+    .default(audienceCriteriaDefaults.expeditionIds),
+  lastActivityWindow: audienceLastActivityWindowSchema.default(
+    audienceCriteriaDefaults.lastActivityWindow,
+  ),
+  hasReplied: audienceTriStateSchema.default(
+    audienceCriteriaDefaults.hasReplied,
+  ),
+  hasClicked: audienceTriStateSchema.default(
+    audienceCriteriaDefaults.hasClicked,
+  ),
+});
+export type AudienceCriteria = z.infer<typeof audienceCriteriaSchema>;
+
+const campaignRunProjectScopeSchema = z
+  .object({
+    kind: campaignKindSchema,
+    projectId: nullableStringSchema.default(null),
+  })
+  .superRefine((value, context) => {
+    if (value.kind === "project" && value.projectId === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["projectId"],
+        message: "projectId is required when kind='project'.",
+      });
+    }
+
+    if (value.kind === "newsletter" && value.projectId !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["projectId"],
+        message: "projectId must be null when kind='newsletter'.",
+      });
+    }
+  });
+
+const campaignRunEditableFieldsSchema = z.object({
+  kind: campaignKindSchema,
+  launchType: launchTypeSchema,
+  projectId: nullableStringSchema.default(null),
+  fromEmail: z.string().email().nullable().default(null),
+  fromName: nullableStringSchema.default(null),
+  replyToEmail: z.string().email().nullable().default(null),
+  subjectTemplate: nullableStringSchema.default(null),
+  bodyHtmlTemplate: nullableStringSchema.default(null),
+  bodyTextTemplate: nullableStringSchema.default(null),
+  preheader: nullableStringSchema.default(null),
+  audienceCriteria: audienceCriteriaSchema.default(audienceCriteriaDefaults),
+  audienceSize: z.number().int().nonnegative().nullable().default(null),
+});
+
+export const campaignRunRecordSchema = campaignRunEditableFieldsSchema
+  .extend({
+    id: idSchema,
+    state: runStateSchema,
+    scheduledAt: nullableTimestampSchema.default(null),
+    startedAt: nullableTimestampSchema.default(null),
+    completedAt: nullableTimestampSchema.default(null),
+    finalizedAt: nullableTimestampSchema.default(null),
+    cancelledAt: nullableTimestampSchema.default(null),
+    cancelledReason: nullableStringSchema.default(null),
+    createdByUserId: nullableStringSchema.default(null),
+    lastEditedByUserId: nullableStringSchema.default(null),
+    createdAt: timestampSchema,
+    updatedAt: timestampSchema,
+  })
+  .superRefine((value, context) => {
+    const result = campaignRunProjectScopeSchema.safeParse(value);
+
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        context.addIssue(issue);
+      }
+    }
+  });
+export type CampaignRunRecord = z.infer<typeof campaignRunRecordSchema>;
+
+export const audienceSnapshotRecordSchema = z.object({
+  id: idSchema,
+  campaignRunId: idSchema,
+  contactId: idSchema,
+  frozenEmail: z.string().email(),
+  frozenFirstName: nullableStringSchema.default(null),
+  frozenProjectName: nullableStringSchema.default(null),
+  frozenProjectId: nullableStringSchema.default(null),
+  frozenAliasEmail: z.string().email().nullable().default(null),
+  unsubscribeToken: z.string().min(1),
+  deliveryStatus: deliveryStatusSchema.default("pending"),
+  providerMessageId: nullableStringSchema.default(null),
+  sentAt: nullableTimestampSchema.default(null),
+  deliveredAt: nullableTimestampSchema.default(null),
+  bouncedAt: nullableTimestampSchema.default(null),
+  openedAt: nullableTimestampSchema.default(null),
+  clickedAt: nullableTimestampSchema.default(null),
+  complainedAt: nullableTimestampSchema.default(null),
+  unsubscribedAt: nullableTimestampSchema.default(null),
+  lastEventAt: nullableTimestampSchema.default(null),
+  createdAt: timestampSchema,
+});
+export type AudienceSnapshotRecord = z.infer<
+  typeof audienceSnapshotRecordSchema
+>;
+
+export const newAudienceSnapshotSchema = audienceSnapshotRecordSchema
+  .omit({
+    campaignRunId: true,
+    createdAt: true,
+  })
+  .extend({
+    deliveryStatus: deliveryStatusSchema.optional(),
+    providerMessageId: nullableStringSchema.optional(),
+    sentAt: nullableTimestampSchema.optional(),
+    deliveredAt: nullableTimestampSchema.optional(),
+    bouncedAt: nullableTimestampSchema.optional(),
+    openedAt: nullableTimestampSchema.optional(),
+    clickedAt: nullableTimestampSchema.optional(),
+    complainedAt: nullableTimestampSchema.optional(),
+    unsubscribedAt: nullableTimestampSchema.optional(),
+    lastEventAt: nullableTimestampSchema.optional(),
+  });
+export type NewAudienceSnapshot = z.infer<typeof newAudienceSnapshotSchema>;
+
+export const contactConsentRecordSchema = z
+  .object({
+    id: idSchema,
+    contactId: idSchema,
+    scopeType: consentScopeTypeSchema,
+    scopeId: nullableStringSchema.default(null),
+    source: consentSourceSchema,
+    sourceRunId: nullableStringSchema.default(null),
+    optedOutAt: timestampSchema,
+    createdAt: timestampSchema,
+  })
+  .superRefine((value, context) => {
+    if (value.scopeType === "project" && value.scopeId === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scopeId"],
+        message: "scopeId is required when scopeType='project'.",
+      });
+    }
+
+    if (
+      (value.scopeType === "newsletter" || value.scopeType === "all") &&
+      value.scopeId !== null
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scopeId"],
+        message: "scopeId must be null unless scopeType='project'.",
+      });
+    }
+  });
+export type ContactConsentRecord = z.infer<typeof contactConsentRecordSchema>;
+
+export const suppressionListRecordSchema = z.object({
+  id: idSchema,
+  normalizedEmail: z.string().email(),
+  reason: suppressionReasonSchema,
+  firstEventAt: timestampSchema,
+  lastEventAt: timestampSchema,
+  lastProviderEventId: nullableStringSchema.default(null),
+  notes: nullableStringSchema.default(null),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+export type SuppressionListRecord = z.infer<typeof suppressionListRecordSchema>;
+
+export const orgSettingsRecordSchema = z.object({
+  id: z.literal("singleton"),
+  physicalAddressLine1: z.string(),
+  physicalAddressLine2: z.string(),
+  physicalCity: z.string(),
+  physicalState: z.string(),
+  physicalZip: z.string(),
+  physicalCountry: z.string().min(1),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+export type OrgSettingsRecord = z.infer<typeof orgSettingsRecordSchema>;
+
+export const campaignRunProjectionRowSchema = z.object({
+  runId: idSchema,
+  provider: campaignRunProjectionProviderSchema,
+  kind: campaignKindSchema,
+  launchType: launchTypeSchema,
+  state: runStateSchema,
+  projectId: nullableStringSchema.default(null),
+  sender: z.string(),
+  subject: z.string(),
+  audienceSize: z.number().int().nullable(),
+  scheduledAt: nullableTimestampSchema.default(null),
+  startedAt: nullableTimestampSchema.default(null),
+  completedAt: nullableTimestampSchema.default(null),
+  cancelledAt: nullableTimestampSchema.default(null),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+export type CampaignRunProjectionRow = z.infer<
+  typeof campaignRunProjectionRowSchema
+>;
+
+export const createDraftInputSchema = campaignRunEditableFieldsSchema
+  .pick({
+    kind: true,
+    launchType: true,
+    projectId: true,
+    fromEmail: true,
+    fromName: true,
+    replyToEmail: true,
+    subjectTemplate: true,
+    bodyHtmlTemplate: true,
+    bodyTextTemplate: true,
+    preheader: true,
+    audienceCriteria: true,
+    audienceSize: true,
+  })
+  .extend({
+    id: idSchema,
+    createdByUserId: nullableStringSchema.default(null),
+    lastEditedByUserId: nullableStringSchema.default(null),
+  })
+  .superRefine((value, context) => {
+    const result = campaignRunProjectScopeSchema.safeParse(value);
+
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        context.addIssue(issue);
+      }
+    }
+  });
+export type CreateDraftInput = z.infer<typeof createDraftInputSchema>;
+
+export const updateDraftInputSchema = z.object({
+  kind: campaignKindSchema.optional(),
+  launchType: launchTypeSchema.optional(),
+  projectId: nullableStringSchema.optional(),
+  fromEmail: z.string().email().nullable().optional(),
+  fromName: nullableStringSchema.optional(),
+  replyToEmail: z.string().email().nullable().optional(),
+  subjectTemplate: nullableStringSchema.optional(),
+  bodyHtmlTemplate: nullableStringSchema.optional(),
+  bodyTextTemplate: nullableStringSchema.optional(),
+  preheader: nullableStringSchema.optional(),
+  audienceCriteria: audienceCriteriaSchema.optional(),
+  audienceSize: z.number().int().nonnegative().nullable().optional(),
+  scheduledAt: nullableTimestampSchema.optional(),
+  lastEditedByUserId: nullableStringSchema.optional(),
+});
+export type UpdateDraftInput = z.infer<typeof updateDraftInputSchema>;
+
+export const scheduleSendInputSchema = z.object({
+  runId: idSchema,
+  scheduledAt: timestampSchema,
+  actorUserId: nullableStringSchema.default(null),
+});
+export type ScheduleSendInput = z.infer<typeof scheduleSendInputSchema>;
+
+export const sendNowInputSchema = z.object({
+  runId: idSchema,
+  actorUserId: nullableStringSchema.default(null),
+});
+export type SendNowInput = z.infer<typeof sendNowInputSchema>;
+
+export const cancelRunInputSchema = z.object({
+  runId: idSchema,
+  actorUserId: nullableStringSchema.default(null),
+  reason: nullableStringSchema.default(null),
+});
+export type CancelRunInput = z.infer<typeof cancelRunInputSchema>;
+
+export const recordUnsubscribeInputSchema = z
+  .object({
+    token: z.string().min(1),
+    scopeType: consentScopeTypeSchema,
+    scopeId: nullableStringSchema.default(null),
+  })
+  .superRefine((value, context) => {
+    if (value.scopeType === "project" && value.scopeId === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scopeId"],
+        message: "scopeId is required when scopeType='project'.",
+      });
+    }
+
+    if (
+      (value.scopeType === "newsletter" || value.scopeType === "all") &&
+      value.scopeId !== null
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scopeId"],
+        message: "scopeId must be null unless scopeType='project'.",
+      });
+    }
+  });
+export type RecordUnsubscribeInput = z.infer<
+  typeof recordUnsubscribeInputSchema
+>;
+
+export const testSendInputSchema = z.object({
+  runId: idSchema,
+  recipientEmail: z.string().email(),
+  actorUserId: nullableStringSchema.default(null),
+});
+export type TestSendInput = z.infer<typeof testSendInputSchema>;

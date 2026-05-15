@@ -9,6 +9,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./stage5-campaigns": {
+      "types": "./src/stage5-campaigns.ts",
+      "default": "./dist/stage5-campaigns.js"
     }
   },
   "files": ["dist"],

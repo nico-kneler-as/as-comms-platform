@@ -10,6 +10,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  lte,
   or,
   sql,
   type SQL,
@@ -34,6 +35,34 @@ import {
   defineStage2RepositoryBundle,
 } from "@as-comms/domain";
 import { aiKnowledgeSourcesSchema } from "@as-comms/contracts";
+import {
+  audienceCriteriaSchema,
+  audienceSnapshotRecordSchema,
+  campaignRunProjectionRowSchema,
+  campaignRunRecordSchema,
+  contactConsentRecordSchema,
+  createDraftInputSchema,
+  deliveryStatusSchema,
+  newAudienceSnapshotSchema,
+  orgSettingsRecordSchema,
+  runStateSchema,
+  suppressionListRecordSchema,
+  updateDraftInputSchema,
+  type AudienceSnapshotRecord,
+  type CampaignRunProjectionRow,
+  type CampaignRunRecord,
+  type ContactConsentRecord,
+  type ConsentScopeType,
+  type ConsentSource,
+  type CreateDraftInput,
+  type DeliveryStatus,
+  type NewAudienceSnapshot,
+  type OrgSettingsRecord,
+  type RunState,
+  type SuppressionListRecord,
+  type SuppressionReason,
+  type UpdateDraftInput,
+} from "@as-comms/contracts";
 
 import type { DatabaseConnection } from "./client.js";
 import {
@@ -91,10 +120,13 @@ import {
 } from "./mappers.js";
 import type { DatabaseSchema } from "./schema/index.js";
 import {
+  audienceSnapshots,
   aiKnowledgeEntries,
   auditPolicyEvidence,
   canonicalEventLedger,
+  campaignRuns,
   consentRecords,
+  contactConsent,
   contactIdentities,
   contactInboxProjection,
   contactMemberships,
@@ -109,6 +141,7 @@ import {
   mailchimpCampaignTailState,
   messageAttachments,
   manualNoteDetails,
+  orgSettings,
   pendingComposerOutbounds,
   projectAliases,
   projectKnowledgeEntries,
@@ -117,6 +150,7 @@ import {
   salesforceCommunicationDetails,
   salesforceEventContext,
   simpleTextingMessageDetails,
+  suppressionList,
   smsMessages,
   smsSenders,
   sourceEvidenceLog,
@@ -161,6 +195,114 @@ export interface MailchimpCampaignTailStateRepository {
     readonly campaignId: string;
     readonly droppedAt: string;
   }): Promise<MailchimpCampaignTailStateRecord | null>;
+}
+
+export class InvalidCampaignRunStateTransitionError extends Error {
+  readonly runId: string;
+  readonly from: RunState;
+  readonly to: RunState;
+
+  constructor(input: {
+    readonly runId: string;
+    readonly from: RunState;
+    readonly to: RunState;
+  }) {
+    super(
+      `Invalid campaign run transition for ${input.runId}: ${input.from} -> ${input.to}.`,
+    );
+    this.name = "InvalidCampaignRunStateTransitionError";
+    this.runId = input.runId;
+    this.from = input.from;
+    this.to = input.to;
+  }
+}
+
+export interface Stage5RepositoryBundle {
+  readonly campaignRuns: {
+    create(input: CreateDraftInput): Promise<CampaignRunRecord>;
+    findById(id: string): Promise<CampaignRunRecord | null>;
+    listRecent(opts?: {
+      readonly limit?: number;
+      readonly filterByProjectIds?: readonly string[];
+      readonly state?: readonly RunState[];
+    }): Promise<readonly CampaignRunRecord[]>;
+    updateDraft(id: string, input: UpdateDraftInput): Promise<CampaignRunRecord>;
+    transitionState(
+      id: string,
+      from: RunState,
+      to: RunState,
+      fields?: Partial<CampaignRunRecord>,
+    ): Promise<CampaignRunRecord>;
+  };
+  readonly audienceSnapshots: {
+    bulkInsert(
+      runId: string,
+      members: readonly NewAudienceSnapshot[],
+    ): Promise<void>;
+    listForRun(runId: string): Promise<readonly AudienceSnapshotRecord[]>;
+    findByUnsubscribeToken(token: string): Promise<AudienceSnapshotRecord | null>;
+    findByProviderMessageId(
+      messageId: string,
+    ): Promise<AudienceSnapshotRecord | null>;
+    updateDeliveryEvent(
+      id: string,
+      event: {
+        readonly status: DeliveryStatus;
+        readonly at: Date;
+        readonly providerEventId?: string;
+      },
+    ): Promise<void>;
+  };
+  readonly contactConsent: {
+    recordOptOut(
+      contactId: string,
+      scope: {
+        readonly type: ConsentScopeType;
+        readonly id?: string;
+      },
+      source: ConsentSource,
+      sourceRunId?: string,
+    ): Promise<void>;
+    isOptedOut(
+      contactId: string,
+      scope: {
+        readonly type: ConsentScopeType;
+        readonly id?: string;
+      },
+      at: Date,
+    ): Promise<boolean>;
+    listForContact(contactId: string): Promise<readonly ContactConsentRecord[]>;
+  };
+  readonly suppressionList: {
+    upsertFromBounce(
+      email: string,
+      reason: SuppressionReason,
+      providerEventId: string,
+      eventAt: Date,
+    ): Promise<void>;
+    isSuppressed(normalizedEmail: string, at: Date): Promise<boolean>;
+    listAll(): Promise<readonly SuppressionListRecord[]>;
+  };
+  readonly orgSettings: {
+    read(): Promise<OrgSettingsRecord>;
+    update(input: Partial<OrgSettingsRecord>): Promise<OrgSettingsRecord>;
+  };
+  readonly campaignRunProjection: {
+    listRecent(opts?: {
+      readonly limit?: number;
+      readonly filterByProjectIds?: readonly string[];
+    }): Promise<readonly CampaignRunProjectionRow[]>;
+    getDetail(
+      runId: string,
+      provider: "postmark" | "mailchimp",
+    ): Promise<CampaignRunProjectionRow | null>;
+  };
+}
+
+export function defineStage5RepositoryBundle<T extends Stage5RepositoryBundle>(
+  bundle: T,
+): T {
+  return bundle;
 }
 
 /**
@@ -5261,4 +5403,840 @@ export function createStage2RepositoryBundleFromConnection(
   connection: Pick<DatabaseConnection, "db">,
 ): Stage2RepositoryBundle {
   return createStage2RepositoriesInternal(connection.db);
+}
+
+type CampaignRunRow = typeof campaignRuns.$inferSelect;
+type AudienceSnapshotRow = typeof audienceSnapshots.$inferSelect;
+type ContactConsentRow = typeof contactConsent.$inferSelect;
+type SuppressionListRow = typeof suppressionList.$inferSelect;
+type OrgSettingsRow = typeof orgSettings.$inferSelect;
+
+interface CampaignRunProjectionRowDb {
+  readonly runId: string;
+  readonly provider: "postmark" | "mailchimp";
+  readonly kind: CampaignRunRecord["kind"];
+  readonly launchType: CampaignRunRecord["launchType"];
+  readonly state: CampaignRunRecord["state"];
+  readonly projectId: string | null;
+  readonly sender: string;
+  readonly subject: string;
+  readonly audienceSize: number | null;
+  readonly scheduledAt: Date | null;
+  readonly startedAt: Date | null;
+  readonly completedAt: Date | null;
+  readonly cancelledAt: Date | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+const CAMPAIGN_RUN_ALLOWED_TRANSITIONS: Readonly<
+  Record<RunState, readonly RunState[]>
+> = {
+  draft: ["scheduled", "cancelled"],
+  scheduled: ["sending", "cancelled"],
+  sending: ["complete", "cancelled"],
+  complete: ["finalized"],
+  finalized: [],
+  cancelled: [],
+};
+
+function clampCampaignListLimit(limit: number | undefined): number {
+  if (limit === undefined) {
+    return 50;
+  }
+
+  return Math.max(1, Math.min(limit, 200));
+}
+
+function normalizeProjectIdFilter(
+  projectIds: readonly string[] | undefined,
+): readonly string[] | null {
+  if (projectIds === undefined) {
+    return null;
+  }
+
+  const normalized = [
+    ...new Set(projectIds.map((projectId) => projectId.trim()).filter(Boolean)),
+  ];
+
+  return normalized.length === 0 ? [] : normalized;
+}
+
+function toIsoDate(value: Date): string {
+  return value.toISOString();
+}
+
+function toNullableIsoDate(value: Date | null): string | null {
+  return value === null ? null : value.toISOString();
+}
+
+function toNullableDate(value: string | null | undefined): Date | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  return new Date(value);
+}
+
+function normalizeSuppressionEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function normalizeConsentScope(input: {
+  readonly type: ConsentScopeType;
+  readonly id?: string;
+}): {
+  readonly scopeType: ConsentScopeType;
+  readonly scopeId: string | null;
+} {
+  const scopeType = input.type;
+  const trimmedId = input.id?.trim();
+  const scopeId =
+    trimmedId === undefined || trimmedId.length === 0 ? null : trimmedId;
+
+  if (scopeType === "project" && scopeId === null) {
+    throw new Error("scope.id is required when scope.type='project'.");
+  }
+
+  if ((scopeType === "newsletter" || scopeType === "all") && scopeId !== null) {
+    throw new Error("scope.id must be omitted unless scope.type='project'.");
+  }
+
+  return {
+    scopeType,
+    scopeId,
+  };
+}
+
+function mapCampaignRunRow(row: CampaignRunRow): CampaignRunRecord {
+  return campaignRunRecordSchema.parse({
+    id: row.id,
+    kind: row.kind,
+    launchType: row.launchType,
+    state: row.state,
+    projectId: row.projectId,
+    fromEmail: row.fromEmail,
+    fromName: row.fromName,
+    replyToEmail: row.replyToEmail,
+    subjectTemplate: row.subjectTemplate,
+    bodyHtmlTemplate: row.bodyHtmlTemplate,
+    bodyTextTemplate: row.bodyTextTemplate,
+    preheader: row.preheader,
+    audienceCriteria: audienceCriteriaSchema.parse(row.audienceCriteria),
+    audienceSize: row.audienceSize,
+    scheduledAt: toNullableIsoDate(row.scheduledAt),
+    startedAt: toNullableIsoDate(row.startedAt),
+    completedAt: toNullableIsoDate(row.completedAt),
+    finalizedAt: toNullableIsoDate(row.finalizedAt),
+    cancelledAt: toNullableIsoDate(row.cancelledAt),
+    cancelledReason: row.cancelledReason,
+    createdByUserId: row.createdByUserId,
+    lastEditedByUserId: row.lastEditedByUserId,
+    createdAt: toIsoDate(row.createdAt),
+    updatedAt: toIsoDate(row.updatedAt),
+  });
+}
+
+function mapAudienceSnapshotRow(row: AudienceSnapshotRow): AudienceSnapshotRecord {
+  return audienceSnapshotRecordSchema.parse({
+    id: row.id,
+    campaignRunId: row.campaignRunId,
+    contactId: row.contactId,
+    frozenEmail: row.frozenEmail,
+    frozenFirstName: row.frozenFirstName,
+    frozenProjectName: row.frozenProjectName,
+    frozenProjectId: row.frozenProjectId,
+    frozenAliasEmail: row.frozenAliasEmail,
+    unsubscribeToken: row.unsubscribeToken,
+    deliveryStatus: row.deliveryStatus,
+    providerMessageId: row.providerMessageId,
+    sentAt: toNullableIsoDate(row.sentAt),
+    deliveredAt: toNullableIsoDate(row.deliveredAt),
+    bouncedAt: toNullableIsoDate(row.bouncedAt),
+    openedAt: toNullableIsoDate(row.openedAt),
+    clickedAt: toNullableIsoDate(row.clickedAt),
+    complainedAt: toNullableIsoDate(row.complainedAt),
+    unsubscribedAt: toNullableIsoDate(row.unsubscribedAt),
+    lastEventAt: toNullableIsoDate(row.lastEventAt),
+    createdAt: toIsoDate(row.createdAt),
+  });
+}
+
+function mapContactConsentRow(row: ContactConsentRow): ContactConsentRecord {
+  return contactConsentRecordSchema.parse({
+    id: row.id,
+    contactId: row.contactId,
+    scopeType: row.scopeType,
+    scopeId: row.scopeId,
+    source: row.source,
+    sourceRunId: row.sourceRunId,
+    optedOutAt: toIsoDate(row.optedOutAt),
+    createdAt: toIsoDate(row.createdAt),
+  });
+}
+
+function mapSuppressionListRow(row: SuppressionListRow): SuppressionListRecord {
+  return suppressionListRecordSchema.parse({
+    id: row.id,
+    normalizedEmail: row.normalizedEmail,
+    reason: row.reason,
+    firstEventAt: toIsoDate(row.firstEventAt),
+    lastEventAt: toIsoDate(row.lastEventAt),
+    lastProviderEventId: row.lastProviderEventId,
+    notes: row.notes,
+    createdAt: toIsoDate(row.createdAt),
+    updatedAt: toIsoDate(row.updatedAt),
+  });
+}
+
+function mapOrgSettingsRow(row: OrgSettingsRow): OrgSettingsRecord {
+  return orgSettingsRecordSchema.parse({
+    id: row.id,
+    physicalAddressLine1: row.physicalAddressLine1,
+    physicalAddressLine2: row.physicalAddressLine2,
+    physicalCity: row.physicalCity,
+    physicalState: row.physicalState,
+    physicalZip: row.physicalZip,
+    physicalCountry: row.physicalCountry,
+    createdAt: toIsoDate(row.createdAt),
+    updatedAt: toIsoDate(row.updatedAt),
+  });
+}
+
+function mapCampaignRunProjectionRowDb(
+  row: CampaignRunProjectionRowDb,
+): CampaignRunProjectionRow {
+  return campaignRunProjectionRowSchema.parse({
+    runId: row.runId,
+    provider: row.provider,
+    kind: row.kind,
+    launchType: row.launchType,
+    state: row.state,
+    projectId: row.projectId,
+    sender: row.sender,
+    subject: row.subject,
+    audienceSize: row.audienceSize,
+    scheduledAt: toNullableIsoDate(row.scheduledAt),
+    startedAt: toNullableIsoDate(row.startedAt),
+    completedAt: toNullableIsoDate(row.completedAt),
+    cancelledAt: toNullableIsoDate(row.cancelledAt),
+    createdAt: toIsoDate(row.createdAt),
+    updatedAt: toIsoDate(row.updatedAt),
+  });
+}
+
+function mapCampaignRunMutationFields(
+  input:
+    | UpdateDraftInput
+    | Partial<CampaignRunRecord>
+    | Partial<CreateDraftInput>,
+): Partial<typeof campaignRuns.$inferInsert> {
+  const values: Partial<typeof campaignRuns.$inferInsert> = {};
+
+  if ("kind" in input && input.kind !== undefined) {
+    values.kind = input.kind;
+  }
+  if ("launchType" in input && input.launchType !== undefined) {
+    values.launchType = input.launchType;
+  }
+  if ("projectId" in input && input.projectId !== undefined) {
+    values.projectId = input.projectId;
+  }
+  if ("fromEmail" in input && input.fromEmail !== undefined) {
+    values.fromEmail = input.fromEmail;
+  }
+  if ("fromName" in input && input.fromName !== undefined) {
+    values.fromName = input.fromName;
+  }
+  if ("replyToEmail" in input && input.replyToEmail !== undefined) {
+    values.replyToEmail = input.replyToEmail;
+  }
+  if ("subjectTemplate" in input && input.subjectTemplate !== undefined) {
+    values.subjectTemplate = input.subjectTemplate;
+  }
+  if ("bodyHtmlTemplate" in input && input.bodyHtmlTemplate !== undefined) {
+    values.bodyHtmlTemplate = input.bodyHtmlTemplate;
+  }
+  if ("bodyTextTemplate" in input && input.bodyTextTemplate !== undefined) {
+    values.bodyTextTemplate = input.bodyTextTemplate;
+  }
+  if ("preheader" in input && input.preheader !== undefined) {
+    values.preheader = input.preheader;
+  }
+  if ("audienceCriteria" in input && input.audienceCriteria !== undefined) {
+    values.audienceCriteria = audienceCriteriaSchema.parse(input.audienceCriteria);
+  }
+  if ("audienceSize" in input && input.audienceSize !== undefined) {
+    values.audienceSize = input.audienceSize;
+  }
+  if ("scheduledAt" in input && input.scheduledAt !== undefined) {
+    values.scheduledAt = toNullableDate(input.scheduledAt);
+  }
+  if ("startedAt" in input) {
+    values.startedAt = toNullableDate(input.startedAt);
+  }
+  if ("completedAt" in input) {
+    values.completedAt = toNullableDate(input.completedAt);
+  }
+  if ("finalizedAt" in input) {
+    values.finalizedAt = toNullableDate(input.finalizedAt);
+  }
+  if ("cancelledAt" in input) {
+    values.cancelledAt = toNullableDate(input.cancelledAt);
+  }
+  if ("cancelledReason" in input) {
+    values.cancelledReason = input.cancelledReason;
+  }
+  if ("createdByUserId" in input) {
+    values.createdByUserId = input.createdByUserId;
+  }
+  if (
+    "lastEditedByUserId" in input &&
+    input.lastEditedByUserId !== undefined
+  ) {
+    values.lastEditedByUserId = input.lastEditedByUserId;
+  }
+
+  return values;
+}
+
+function mapAudienceSnapshotInsert(
+  runId: string,
+  member: NewAudienceSnapshot,
+): typeof audienceSnapshots.$inferInsert {
+  const parsed = newAudienceSnapshotSchema.parse(member);
+
+  return {
+    id: parsed.id,
+    campaignRunId: runId,
+    contactId: parsed.contactId,
+    frozenEmail: parsed.frozenEmail,
+    frozenFirstName: parsed.frozenFirstName ?? null,
+    frozenProjectName: parsed.frozenProjectName ?? null,
+    frozenProjectId: parsed.frozenProjectId ?? null,
+    frozenAliasEmail: parsed.frozenAliasEmail ?? null,
+    unsubscribeToken: parsed.unsubscribeToken,
+    deliveryStatus: parsed.deliveryStatus ?? "pending",
+    providerMessageId: parsed.providerMessageId ?? null,
+    sentAt: toNullableDate(parsed.sentAt),
+    deliveredAt: toNullableDate(parsed.deliveredAt),
+    bouncedAt: toNullableDate(parsed.bouncedAt),
+    openedAt: toNullableDate(parsed.openedAt),
+    clickedAt: toNullableDate(parsed.clickedAt),
+    complainedAt: toNullableDate(parsed.complainedAt),
+    unsubscribedAt: toNullableDate(parsed.unsubscribedAt),
+    lastEventAt: toNullableDate(parsed.lastEventAt),
+    createdAt: new Date(),
+  };
+}
+
+export function createStage5RepositoryBundle(
+  db: Stage1Database,
+): Stage5RepositoryBundle {
+  const loadCampaignRunById = async (
+    id: string,
+  ): Promise<CampaignRunRecord | null> => {
+    const [row] = await db
+      .select()
+      .from(campaignRuns)
+      .where(eq(campaignRuns.id, id))
+      .limit(1);
+
+    return row === undefined ? null : mapCampaignRunRow(row);
+  };
+
+  const readOrgSettingsRow = async (): Promise<OrgSettingsRow> => {
+    const [existing] = await db
+      .select()
+      .from(orgSettings)
+      .where(eq(orgSettings.id, "singleton"))
+      .limit(1);
+
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    await db.insert(orgSettings).values({ id: "singleton" }).onConflictDoNothing();
+
+    const [inserted] = await db
+      .select()
+      .from(orgSettings)
+      .where(eq(orgSettings.id, "singleton"))
+      .limit(1);
+
+    return requireRow(
+      inserted,
+      "Expected org_settings singleton row to exist after fallback insert.",
+    );
+  };
+
+  return defineStage5RepositoryBundle({
+    campaignRuns: {
+      async create(input) {
+        const parsed = createDraftInputSchema.parse(input);
+        const now = new Date();
+        const [row] = await db
+          .insert(campaignRuns)
+          .values({
+            id: parsed.id,
+            kind: parsed.kind,
+            launchType: parsed.launchType,
+            state: "draft",
+            projectId: parsed.projectId,
+            fromEmail: parsed.fromEmail,
+            fromName: parsed.fromName,
+            replyToEmail: parsed.replyToEmail,
+            subjectTemplate: parsed.subjectTemplate,
+            bodyHtmlTemplate: parsed.bodyHtmlTemplate,
+            bodyTextTemplate: parsed.bodyTextTemplate,
+            preheader: parsed.preheader,
+            audienceCriteria: audienceCriteriaSchema.parse(parsed.audienceCriteria),
+            audienceSize: parsed.audienceSize,
+            createdByUserId: parsed.createdByUserId,
+            lastEditedByUserId: parsed.lastEditedByUserId,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+
+        return mapCampaignRunRow(
+          requireRow(
+            row,
+            "Expected campaign run row to be returned from create.",
+          ),
+        );
+      },
+
+      async findById(id) {
+        return loadCampaignRunById(id);
+      },
+
+      async listRecent(opts = {}) {
+        const limit = clampCampaignListLimit(opts.limit);
+        const projectIds = normalizeProjectIdFilter(opts.filterByProjectIds);
+        const states =
+          opts.state === undefined
+            ? null
+            : [...new Set(opts.state.map((state) => runStateSchema.parse(state)))];
+
+        if (projectIds !== null && projectIds.length === 0) {
+          return [];
+        }
+        if (states !== null && states.length === 0) {
+          return [];
+        }
+
+        const predicates: SQL[] = [];
+        if (projectIds !== null) {
+          predicates.push(inArray(campaignRuns.projectId, [...projectIds]));
+        }
+        if (states !== null) {
+          predicates.push(inArray(campaignRuns.state, [...states]));
+        }
+
+        const whereClause = combinePredicates(...predicates);
+        const rows =
+          whereClause === undefined
+            ? await db
+                .select()
+                .from(campaignRuns)
+                .orderBy(desc(campaignRuns.createdAt), asc(campaignRuns.id))
+                .limit(limit)
+            : await db
+                .select()
+                .from(campaignRuns)
+                .where(whereClause)
+                .orderBy(desc(campaignRuns.createdAt), asc(campaignRuns.id))
+                .limit(limit);
+
+        return rows.map(mapCampaignRunRow);
+      },
+
+      async updateDraft(id, input) {
+        const parsed = updateDraftInputSchema.parse(input);
+        const existing = await loadCampaignRunById(id);
+
+        if (existing === null) {
+          throw new Error(`Campaign run ${id} was not found.`);
+        }
+        if (existing.state !== "draft") {
+          throw new Error(`Campaign run ${id} is not editable outside draft.`);
+        }
+
+        campaignRunRecordSchema.parse({
+          ...existing,
+          ...parsed,
+        });
+
+        const [row] = await db
+          .update(campaignRuns)
+          .set({
+            ...mapCampaignRunMutationFields(parsed),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(campaignRuns.id, id), eq(campaignRuns.state, "draft")))
+          .returning();
+
+        return mapCampaignRunRow(
+          requireRow(
+            row,
+            "Expected draft campaign run row to be returned from updateDraft.",
+          ),
+        );
+      },
+
+      async transitionState(id, from, to, fields) {
+        const parsedFrom = runStateSchema.parse(from);
+        const parsedTo = runStateSchema.parse(to);
+
+        if (!CAMPAIGN_RUN_ALLOWED_TRANSITIONS[parsedFrom].includes(parsedTo)) {
+          throw new InvalidCampaignRunStateTransitionError({
+            runId: id,
+            from: parsedFrom,
+            to: parsedTo,
+          });
+        }
+
+        const [row] = await db
+          .update(campaignRuns)
+          .set({
+            ...mapCampaignRunMutationFields(fields ?? {}),
+            state: parsedTo,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(campaignRuns.id, id), eq(campaignRuns.state, parsedFrom)))
+          .returning();
+
+        return mapCampaignRunRow(
+          requireRow(
+            row,
+            `Expected campaign run ${id} in state ${parsedFrom} to transition to ${parsedTo}.`,
+          ),
+        );
+      },
+    },
+
+    audienceSnapshots: {
+      async bulkInsert(runId, members) {
+        if (members.length === 0) {
+          return;
+        }
+
+        await db
+          .insert(audienceSnapshots)
+          .values(members.map((member) => mapAudienceSnapshotInsert(runId, member)))
+          .onConflictDoNothing({
+            target: [audienceSnapshots.campaignRunId, audienceSnapshots.contactId],
+          });
+      },
+
+      async listForRun(runId) {
+        const rows = await db
+          .select()
+          .from(audienceSnapshots)
+          .where(eq(audienceSnapshots.campaignRunId, runId))
+          .orderBy(asc(audienceSnapshots.createdAt), asc(audienceSnapshots.id));
+
+        return rows.map(mapAudienceSnapshotRow);
+      },
+
+      async findByUnsubscribeToken(token) {
+        const [row] = await db
+          .select()
+          .from(audienceSnapshots)
+          .where(eq(audienceSnapshots.unsubscribeToken, token))
+          .limit(1);
+
+        return row === undefined ? null : mapAudienceSnapshotRow(row);
+      },
+
+      async findByProviderMessageId(messageId) {
+        const [row] = await db
+          .select()
+          .from(audienceSnapshots)
+          .where(eq(audienceSnapshots.providerMessageId, messageId))
+          .limit(1);
+
+        return row === undefined ? null : mapAudienceSnapshotRow(row);
+      },
+
+      async updateDeliveryEvent(id, event) {
+        const status = deliveryStatusSchema.parse(event.status);
+        const eventAtIso = event.at.toISOString();
+        const eventAtSql = sql`${eventAtIso}::timestamptz`;
+        const deliveryFields: Record<string, SQL | DeliveryStatus> = {
+          deliveryStatus: status,
+          lastEventAt: sql`greatest(coalesce(${audienceSnapshots.lastEventAt}, ${eventAtSql}), ${eventAtSql})`,
+        };
+
+        switch (status) {
+          case "sent":
+            deliveryFields.sentAt = sql`coalesce(${audienceSnapshots.sentAt}, ${eventAtSql})`;
+            break;
+          case "delivered":
+            deliveryFields.deliveredAt = sql`coalesce(${audienceSnapshots.deliveredAt}, ${eventAtSql})`;
+            break;
+          case "bounced":
+            deliveryFields.bouncedAt = sql`coalesce(${audienceSnapshots.bouncedAt}, ${eventAtSql})`;
+            break;
+          case "complained":
+            deliveryFields.complainedAt = sql`coalesce(${audienceSnapshots.complainedAt}, ${eventAtSql})`;
+            break;
+          case "unsubscribed":
+            deliveryFields.unsubscribedAt = sql`coalesce(${audienceSnapshots.unsubscribedAt}, ${eventAtSql})`;
+            break;
+          case "pending":
+          case "failed":
+          case "suppressed_at_send":
+            break;
+        }
+
+        // Stage 5A stores the provider's MessageID but not webhook event IDs.
+        // Preserve the parameter in the contract for Brief A2/A6 callers even
+        // though this repository has no durable column for it yet.
+        void event.providerEventId;
+
+        await db
+          .update(audienceSnapshots)
+          .set(deliveryFields as Partial<typeof audienceSnapshots.$inferInsert>)
+          .where(eq(audienceSnapshots.id, id));
+      },
+    },
+
+    contactConsent: {
+      async recordOptOut(contactId, scope, source, sourceRunId) {
+        const normalizedScope = normalizeConsentScope(scope);
+        await db.insert(contactConsent).values({
+          id: crypto.randomUUID(),
+          contactId,
+          scopeType: normalizedScope.scopeType,
+          scopeId: normalizedScope.scopeId,
+          source,
+          sourceRunId: sourceRunId ?? null,
+          optedOutAt: new Date(),
+          createdAt: new Date(),
+        }).onConflictDoNothing();
+      },
+
+      async isOptedOut(contactId, scope, at) {
+        const normalizedScope = normalizeConsentScope(scope);
+        const scopedPredicate =
+          normalizedScope.scopeType === "project"
+            ? and(
+                eq(contactConsent.scopeType, "project"),
+                eq(contactConsent.scopeId, normalizedScope.scopeId ?? ""),
+              )
+            : eq(contactConsent.scopeType, normalizedScope.scopeType);
+        const [row] = await db
+          .select({ id: contactConsent.id })
+          .from(contactConsent)
+          .where(
+            and(
+              eq(contactConsent.contactId, contactId),
+              lte(contactConsent.optedOutAt, at),
+              or(eq(contactConsent.scopeType, "all"), scopedPredicate),
+            ),
+          )
+          .limit(1);
+
+        return row !== undefined;
+      },
+
+      async listForContact(contactId) {
+        const rows = await db
+          .select()
+          .from(contactConsent)
+          .where(eq(contactConsent.contactId, contactId))
+          .orderBy(desc(contactConsent.optedOutAt), desc(contactConsent.createdAt));
+
+        return rows.map(mapContactConsentRow);
+      },
+    },
+
+    suppressionList: {
+      async upsertFromBounce(email, reason, providerEventId, eventAt) {
+        const normalizedEmail = normalizeSuppressionEmail(email);
+        const eventAtIso = eventAt.toISOString();
+
+        await db
+          .insert(suppressionList)
+          .values({
+            id: crypto.randomUUID(),
+            normalizedEmail,
+            reason,
+            firstEventAt: eventAt,
+            lastEventAt: eventAt,
+            lastProviderEventId: providerEventId,
+            notes: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: suppressionList.normalizedEmail,
+            set: {
+              reason,
+              firstEventAt: sql`least(${suppressionList.firstEventAt}, ${eventAtIso}::timestamptz)`,
+              lastEventAt: sql`greatest(${suppressionList.lastEventAt}, ${eventAtIso}::timestamptz)`,
+              lastProviderEventId: providerEventId,
+              updatedAt: new Date(),
+            },
+          });
+      },
+
+      async isSuppressed(normalizedEmail, at) {
+        const [row] = await db
+          .select({ id: suppressionList.id })
+          .from(suppressionList)
+          .where(
+            and(
+              eq(
+                suppressionList.normalizedEmail,
+                normalizeSuppressionEmail(normalizedEmail),
+              ),
+              lte(suppressionList.firstEventAt, at),
+            ),
+          )
+          .limit(1);
+
+        return row !== undefined;
+      },
+
+      async listAll() {
+        const rows = await db
+          .select()
+          .from(suppressionList)
+          .orderBy(asc(suppressionList.normalizedEmail));
+
+        return rows.map(mapSuppressionListRow);
+      },
+    },
+
+    orgSettings: {
+      async read() {
+        return mapOrgSettingsRow(await readOrgSettingsRow());
+      },
+
+      async update(input) {
+        const values: Partial<typeof orgSettings.$inferInsert> = {};
+
+        if (input.physicalAddressLine1 !== undefined) {
+          values.physicalAddressLine1 = input.physicalAddressLine1;
+        }
+        if (input.physicalAddressLine2 !== undefined) {
+          values.physicalAddressLine2 = input.physicalAddressLine2;
+        }
+        if (input.physicalCity !== undefined) {
+          values.physicalCity = input.physicalCity;
+        }
+        if (input.physicalState !== undefined) {
+          values.physicalState = input.physicalState;
+        }
+        if (input.physicalZip !== undefined) {
+          values.physicalZip = input.physicalZip;
+        }
+        if (input.physicalCountry !== undefined) {
+          values.physicalCountry = input.physicalCountry;
+        }
+
+        if (Object.keys(values).length === 0) {
+          return mapOrgSettingsRow(await readOrgSettingsRow());
+        }
+
+        const [row] = await db
+          .update(orgSettings)
+          .set({
+            ...values,
+            updatedAt: new Date(),
+          })
+          .where(eq(orgSettings.id, "singleton"))
+          .returning();
+
+        return mapOrgSettingsRow(
+          requireRow(
+            row,
+            "Expected org_settings singleton row to be returned from update.",
+          ),
+        );
+      },
+    },
+
+    campaignRunProjection: {
+      async listRecent(opts = {}) {
+        const limit = clampCampaignListLimit(opts.limit);
+        const projectIds = normalizeProjectIdFilter(opts.filterByProjectIds);
+
+        if (projectIds !== null && projectIds.length === 0) {
+          return [];
+        }
+
+        const whereClause =
+          projectIds === null
+            ? sql``
+            : sql`where "project_id" in (${sql.join(projectIds.map((projectId) => sql`${projectId}`), sql`, `)})`;
+
+        const result = await db.execute(sql<CampaignRunProjectionRowDb>`
+          select
+            "run_id" as "runId",
+            "provider" as "provider",
+            "kind" as "kind",
+            "launch_type" as "launchType",
+            "state" as "state",
+            "project_id" as "projectId",
+            "sender" as "sender",
+            "subject" as "subject",
+            "audience_size" as "audienceSize",
+            "scheduled_at" as "scheduledAt",
+            "started_at" as "startedAt",
+            "completed_at" as "completedAt",
+            "cancelled_at" as "cancelledAt",
+            "created_at" as "createdAt",
+            "updated_at" as "updatedAt"
+          from "campaign_run_projection"
+          ${whereClause}
+          order by "created_at" desc, "run_id" asc
+          limit ${limit}
+        `);
+
+        return normalizeSqlResultRows<CampaignRunProjectionRowDb>(
+          result as { readonly rows?: readonly CampaignRunProjectionRowDb[] },
+        ).map(mapCampaignRunProjectionRowDb);
+      },
+
+      async getDetail(runId, provider) {
+        const result = await db.execute(sql<CampaignRunProjectionRowDb>`
+          select
+            "run_id" as "runId",
+            "provider" as "provider",
+            "kind" as "kind",
+            "launch_type" as "launchType",
+            "state" as "state",
+            "project_id" as "projectId",
+            "sender" as "sender",
+            "subject" as "subject",
+            "audience_size" as "audienceSize",
+            "scheduled_at" as "scheduledAt",
+            "started_at" as "startedAt",
+            "completed_at" as "completedAt",
+            "cancelled_at" as "cancelledAt",
+            "created_at" as "createdAt",
+            "updated_at" as "updatedAt"
+          from "campaign_run_projection"
+          where "run_id" = ${runId}
+            and "provider" = ${provider}
+          limit 1
+        `);
+        const [row] = normalizeSqlResultRows<CampaignRunProjectionRowDb>(
+          result as { readonly rows?: readonly CampaignRunProjectionRowDb[] },
+        );
+
+        return row === undefined ? null : mapCampaignRunProjectionRowDb(row);
+      },
+    },
+  });
+}
+
+export function createStage5RepositoryBundleFromConnection(
+  connection: Pick<DatabaseConnection, "db">,
+): Stage5RepositoryBundle {
+  return createStage5RepositoryBundle(connection.db);
 }

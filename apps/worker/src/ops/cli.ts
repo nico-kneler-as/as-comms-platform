@@ -46,6 +46,7 @@ import { runReconcileStaleCanonicalCommand } from "./reconcile-stale-canonical.j
 import { runReconcileSupersededProjectionsCommand } from "./reconcile-superseded-projections.js";
 import { runDedupHistoricalLedgerCommand } from "./dedup-historical-ledger.js";
 import { runReclassifySfDirectionCommand } from "./reclassify-sf-direction.js";
+import { runInspectSfExpeditionMemberStatusesCommand } from "./inspect-sf-expedition-member-statuses.js";
 import {
   buildOperationId,
   parseCliFlags,
@@ -423,6 +424,9 @@ async function main(): Promise<void> {
       return;
     case "reclassify-sf-direction":
       await runReclassifySfDirectionCommand(rest, process.env);
+      return;
+    case "inspect-sf-expedition-member-statuses":
+      await runInspectSfExpeditionMemberStatusesCommand(rest, process.env);
       return;
     case "reconcile-stale-canonical":
       await runReconcileStaleCanonicalCommand(rest, process.env);

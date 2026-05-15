@@ -45,6 +45,9 @@ export const canonicalEventTypeValues = [
   "lifecycle.completed_training",
   "lifecycle.submitted_first_data",
   "campaign.email.sent",
+  "campaign.email.delivered",
+  "campaign.email.bounced",
+  "campaign.email.complained",
   "campaign.email.opened",
   "campaign.email.clicked",
   "campaign.email.unsubscribed",
@@ -74,6 +77,9 @@ export const canonicalEventTypeChannel = {
   "lifecycle.completed_training": "lifecycle",
   "lifecycle.submitted_first_data": "lifecycle",
   "campaign.email.sent": "campaign_email",
+  "campaign.email.delivered": "campaign_email",
+  "campaign.email.bounced": "campaign_email",
+  "campaign.email.complained": "campaign_email",
   "campaign.email.opened": "campaign_email",
   "campaign.email.clicked": "campaign_email",
   "campaign.email.unsubscribed": "campaign_email",
@@ -137,6 +143,9 @@ export type CommunicationDirection = z.infer<typeof communicationDirectionSchema
 
 export const campaignEmailActivityTypeValues = [
   "sent",
+  "delivered",
+  "bounced",
+  "complained",
   "opened",
   "clicked",
   "unsubscribed"

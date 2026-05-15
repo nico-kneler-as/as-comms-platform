@@ -355,6 +355,24 @@ function buildDefaultProjectionSeed(
         snippet: "",
         source: "fallback"
       };
+    case "campaign.email.delivered":
+      return {
+        summary: "Campaign email delivered",
+        snippet: "",
+        source: "fallback"
+      };
+    case "campaign.email.bounced":
+      return {
+        summary: "Campaign email bounced",
+        snippet: "",
+        source: "fallback"
+      };
+    case "campaign.email.complained":
+      return {
+        summary: "Campaign email marked as spam",
+        snippet: "",
+        source: "fallback"
+      };
     case "campaign.email.opened":
       return {
         summary: "Campaign email opened",

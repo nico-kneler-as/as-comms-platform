@@ -496,8 +496,8 @@ function emptyCampaignActivitySummary(): CampaignActivitySummary {
 }
 
 function campaignActivitySummaryKey(
-  activityType: CampaignActivityType,
-): keyof CampaignActivitySummary {
+  activityType: string,
+): keyof CampaignActivitySummary | null {
   switch (activityType) {
     case "sent":
       return "sentAt";
@@ -508,7 +508,8 @@ function campaignActivitySummaryKey(
     case "unsubscribed":
       return "unsubscribedAt";
     default:
-      return "sentAt";
+      // delivered / bounced / complained: tracked in run detail, not inbox summary
+      return null;
   }
 }
 
@@ -568,6 +569,10 @@ async function loadCampaignActivitySummaryByCampaignId(input: {
       summaryByCampaignId[key] ??
       (summaryByCampaignId[key] = emptyCampaignActivitySummary());
     const summaryKey = campaignActivitySummaryKey(detail.activityType);
+
+    if (summaryKey === null) {
+      continue;
+    }
 
     summary[summaryKey] = keepMostRecentTimestamp(
       summary[summaryKey],
