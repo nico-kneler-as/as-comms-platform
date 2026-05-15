@@ -305,7 +305,7 @@ Per `D-031`, none of the Phase A code in `apps/` or `packages/` merges to `main`
 
 ## Read next
 
-- the PRD that this spec implements: [`apps#412`](https://github.com/nico-kneler-as/2026-05-15-as-comms-platform/issues/412)
+- the PRD that this spec implements: [`apps#412`](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
 - the canon updates required before code merges: [`../01-core/decision-log.md`](../01-core/decision-log.md) (D-045 entry)
 - the design brief this spec pairs with: [`../design-briefs/stage-5a-campaigns.md`](../design-briefs/stage-5a-campaigns.md)
 - the Mailchimp decommission runbook that Phase C executes: [`../runbooks/mailchimp-decommission.md`](../runbooks/mailchimp-decommission.md)
