@@ -39,7 +39,7 @@
 - Salesforce is the primary source for contact identity and expedition/project context
 - SimpleTexting is the source for official SMS compliance events
 - Notion is the source for AI instructions and approved knowledge
-- SendGrid is a delivery provider for Campaigns Email, not the authoring source of truth
+- Postmark is the delivery provider for Campaigns Email (Stage 5A), not the authoring source of truth (see `D-045`)
 
 ## Cutover Model
 

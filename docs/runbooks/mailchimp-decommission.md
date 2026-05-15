@@ -1,21 +1,25 @@
-# Runbook: Decommission Mailchimp transition ingest after SendGrid cutover
+# Runbook: Decommission Mailchimp transition ingest after Postmark cutover
 
 **Severity:** S2  
 **Average time to recover:** planned change window + 30-day tail drain  
-**Last verified:** 2026-05-03 against commit af11e396
+**Last verified:** 2026-05-03 against commit af11e396 (provider line updated 2026-05-15 per `D-045`)
 
 ## Purpose
 
-Retire the temporary Mailchimp live-ingest path once native SendGrid campaign
+Retire the temporary Mailchimp live-ingest path once native Postmark campaign
 sending is fully trusted. This removes scheduler activity and the dedicated
 `mailchimp-capture` service without deleting canonical history.
 
+Stage 5A context: this runbook executes at the end of **Phase C** (newsletter
+migration) per PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
+and [`../04-implementation-specs/stage-5a-campaigns.md`](../04-implementation-specs/stage-5a-campaigns.md).
+
 ## Preconditions
 
-1. SendGrid native campaign sending is fully validated in production.
+1. Postmark native campaign sending is fully validated in production.
 2. Operators have confirmed no active Mailchimp campaign sends remain scheduled.
 3. The fallback path is understood: re-enable transition ingest only if
-   SendGrid issues require a temporary rollback.
+   Postmark issues require a temporary rollback.
 4. The historical Mailchimp data already needed by Stage 1 has been captured.
 
 ## Sequence
@@ -32,7 +36,7 @@ sending is fully trusted. This removes scheduler activity and the dedicated
 ### 2. Confirm Mailchimp authoring is idle
 
 1. Confirm with operations that no Mailchimp campaign sends remain scheduled.
-2. Confirm with the architect that SendGrid is now the only active campaign
+2. Confirm with the architect that Postmark is now the only active campaign
    send path.
 3. If any Mailchimp campaign is still scheduled, stop here. Do not disable the
    ingest tail early.
@@ -134,7 +138,7 @@ has been stable for a while.
 
 ## Rollback
 
-If SendGrid issues require a temporary fallback:
+If Postmark issues require a temporary fallback:
 
 1. Restore the `mailchimp-capture` service.
 2. Restore `MAILCHIMP_API_KEY` on `mailchimp-capture`.
