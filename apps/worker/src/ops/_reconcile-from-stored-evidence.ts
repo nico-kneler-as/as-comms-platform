@@ -241,6 +241,12 @@ function buildMailchimpSummary(
   switch (activityType) {
     case "sent":
       return "Campaign email sent";
+    case "delivered":
+      return "Campaign email delivered";
+    case "bounced":
+      return "Campaign email bounced";
+    case "complained":
+      return "Campaign email marked as spam";
     case "opened":
       return "Campaign email opened";
     case "clicked":
