@@ -526,10 +526,10 @@ export function ComposerEmailSurface({
 
           <RichTextComposerEditor
             bodyPlaintext={body}
-            className="flex min-h-0 flex-1 flex-col"
-            contentClassName="min-h-0 flex-1"
+            className="flex flex-col"
+            contentClassName=""
             errorMessage={bodyError?.message}
-            frameClassName="flex min-h-0 flex-1 flex-col border-x-0 border-b-0 shadow-none"
+            frameClassName="flex flex-col border-x-0 border-b-0 shadow-none"
             onChange={(nextBody) => {
               onBodyChange(nextBody);
               if (aiDraft.status === "inserted") {
