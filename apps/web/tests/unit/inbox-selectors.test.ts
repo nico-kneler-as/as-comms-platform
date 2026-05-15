@@ -3959,7 +3959,7 @@ describe("real inbox selectors", () => {
       authorLabel: "Sam Bowes",
     });
     expect(detail?.contact.pinnedNote?.createdAtLabel).toMatch(
-      /^(?:Just now|\d+[smhdw] ago)$/u,
+      /^(?:Just now|\d+(?:[smhdw]|mo|y) ago)$/u,
     );
   });
 
