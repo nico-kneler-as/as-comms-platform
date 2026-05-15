@@ -355,7 +355,7 @@ Hello from an exported mailbox.
     }
   });
 
-  it("does not turn platform-originated internal mail into unread inbox work", () => {
+  it("captures operator-led internal sends as outbound using the internal recipient as identity evidence", () => {
     const platformInternalRecord = buildGmailMessageRecord({
       recordId: "gmail-platform-internal-1",
       threadId: "thread-platform-internal-1",
@@ -380,9 +380,72 @@ Hello from an exported mailbox.
       projectInboxAliases: ["pnwbio@adventurescientists.org"],
     });
 
-    expect(platformInternalRecord).toEqual({
+    expect(platformInternalRecord).toMatchObject({
+      recordType: "message",
+      direction: "outbound",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+      normalizedParticipantEmails: ["admin@adventurescientists.org"],
+    });
+  });
+
+  it("still skips pure internal staff-to-staff messages when no mailbox address sent them", () => {
+    const internalStaffRecord = buildGmailMessageRecord({
+      recordId: "gmail-internal-staff-1",
+      threadId: "thread-internal-staff-1",
+      snippet: "Internal coordination note.",
+      internalDate: "2026-05-07T02:32:00.000Z",
+      headers: {
+        Date: "Thu, 7 May 2026 02:32:00 +0000",
+        From: "Staff A <staff-a@adventurescientists.org>",
+        To: "Staff B <staff-b@adventurescientists.org>",
+        Subject: "Internal coordination",
+        "Message-ID": "<gmail-internal-staff-1@example.org>",
+      },
+      payloadRef:
+        "gmail://internal/messages/gmail-internal-staff-1",
+      checksum: "checksum-internal-staff-1",
+      capturedMailbox: "",
+      receivedAt: "2026-05-07T02:33:00.000Z",
+      internalAddresses: [],
+      projectInboxAliases: [],
+    });
+
+    expect(internalStaffRecord).toEqual({
       recordType: "internal_only_message",
-      recordId: "gmail-platform-internal-1",
+      recordId: "gmail-internal-staff-1",
+    });
+  });
+
+  it("keeps operator-led external sends classified as outbound", () => {
+    const externalRecipientRecord = buildGmailMessageRecord({
+      recordId: "gmail-platform-external-1",
+      threadId: "thread-platform-external-1",
+      snippet: "Following up with the volunteer.",
+      internalDate: "2026-05-07T02:34:00.000Z",
+      headers: {
+        Date: "Thu, 7 May 2026 02:34:00 +0000",
+        From: "PNW Biodiversity <pnwbio@adventurescientists.org>",
+        To: "Volunteer <volunteer@gmail.com>",
+        Subject: "Volunteer follow-up",
+        "Message-ID": "<gmail-platform-external-1@example.org>",
+      },
+      payloadRef:
+        "gmail://pnwbio@adventurescientists.org/messages/gmail-platform-external-1",
+      checksum: "checksum-platform-external-1",
+      capturedMailbox: "pnwbio@adventurescientists.org",
+      receivedAt: "2026-05-07T02:35:00.000Z",
+      internalAddresses: [
+        "volunteers@adventurescientists.org",
+        "pnwbio@adventurescientists.org",
+      ],
+      projectInboxAliases: ["pnwbio@adventurescientists.org"],
+    });
+
+    expect(externalRecipientRecord).toMatchObject({
+      recordType: "message",
+      direction: "outbound",
+      projectInboxAlias: "pnwbio@adventurescientists.org",
+      normalizedParticipantEmails: ["volunteer@gmail.com"],
     });
   });
 
