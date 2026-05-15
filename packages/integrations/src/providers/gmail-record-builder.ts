@@ -256,11 +256,20 @@ export function buildGmailMessageRecord(
     externalPrimaryRecipientEmails.length > 0
       ? externalPrimaryRecipientEmails
       : externalCopiedRecipientEmails;
+  const internalRecipientEmails = uniqueEmails(
+    [...toEmails, ...ccEmails, ...bccEmails].filter(
+      (email) =>
+        isInternalEmail(email, internalAddresses) &&
+        !mailboxAddresses.has(email.toLowerCase()),
+    ),
+  );
   const identityParticipantEmails =
     senderIsInternal && externalRecipientEmails.length > 0
       ? externalRecipientEmails
       : externalSenderEmails.length > 0
         ? externalSenderEmails
+        : senderIsMailbox && internalRecipientEmails.length > 0
+          ? internalRecipientEmails
         : externalParticipantEmails;
   const projectInboxCopyRecipient =
     projectInboxAlias !== null &&
@@ -284,7 +293,8 @@ export function buildGmailMessageRecord(
 
   if (
     externalParticipantEmails.length === 0 &&
-    !staffOriginatedMailboxMessage
+    !staffOriginatedMailboxMessage &&
+    !senderIsMailbox
   ) {
     return {
       recordType: "internal_only_message",
