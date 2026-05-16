@@ -226,7 +226,10 @@ export interface Stage5RepositoryBundle {
       readonly filterByProjectIds?: readonly string[];
       readonly state?: readonly RunState[];
     }): Promise<readonly CampaignRunRecord[]>;
-    updateDraft(id: string, input: UpdateDraftInput): Promise<CampaignRunRecord>;
+    updateDraft(
+      id: string,
+      input: UpdateDraftInput,
+    ): Promise<CampaignRunRecord>;
     transitionState(
       id: string,
       from: RunState,
@@ -244,7 +247,9 @@ export interface Stage5RepositoryBundle {
       members: readonly NewAudienceSnapshot[],
     ): Promise<void>;
     listForRun(runId: string): Promise<readonly AudienceSnapshotRecord[]>;
-    findByUnsubscribeToken(token: string): Promise<AudienceSnapshotRecord | null>;
+    findByUnsubscribeToken(
+      token: string,
+    ): Promise<AudienceSnapshotRecord | null>;
     findByProviderMessageId(
       messageId: string,
     ): Promise<AudienceSnapshotRecord | null>;
@@ -2471,8 +2476,8 @@ function createStage1RepositoriesInternal(
         }
 
         const allRowsRaw =
-          (contactMatchesResult as { rows?: readonly SearchRowResult[] }).rows ??
-          (contactMatchesResult as readonly SearchRowResult[]);
+          (contactMatchesResult as { rows?: readonly SearchRowResult[] })
+            .rows ?? (contactMatchesResult as readonly SearchRowResult[]);
 
         // Postgres can return booleans as boolean | "t"/"f" | 1/0 depending
         // on the driver layer; normalise once.
@@ -2501,7 +2506,10 @@ function createStage1RepositoriesInternal(
                 .innerJoin(
                   projectDimensions,
                   and(
-                    eq(contactMemberships.projectId, projectDimensions.projectId),
+                    eq(
+                      contactMemberships.projectId,
+                      projectDimensions.projectId,
+                    ),
                     eq(projectDimensions.isActive, true),
                   ),
                 )
@@ -2801,7 +2809,9 @@ function createStage1RepositoriesInternal(
         return rows.map(mapProjectDimensionRow);
       },
 
-      async findEffectiveAiKnowledge(projectId): Promise<EffectiveAiKnowledge | null> {
+      async findEffectiveAiKnowledge(
+        projectId,
+      ): Promise<EffectiveAiKnowledge | null> {
         // Resolve sub→host transparently. The AI Draft pipeline (and any
         // future consolidated grounding loader) calls through here so a
         // connected sub-project inherits the host's curated AI Knowledge
@@ -2909,7 +2919,9 @@ function createStage1RepositoriesInternal(
           .update(projectDimensions)
           .set({
             aiOptimizedSynthesizedAt:
-              input.synthesizedAt === null ? null : new Date(input.synthesizedAt),
+              input.synthesizedAt === null
+                ? null
+                : new Date(input.synthesizedAt),
             aiOptimizedInputHash: input.inputHash,
             updatedAt: new Date(),
           })
@@ -2942,9 +2954,11 @@ function createStage1RepositoriesInternal(
               aiKnowledgeUrl: values.aiKnowledgeUrl,
               aiKnowledgeSyncedAt: values.aiKnowledgeSyncedAt,
               aiKnowledgeSources:
-                values.aiKnowledgeSources ?? projectDimensions.aiKnowledgeSources,
+                values.aiKnowledgeSources ??
+                projectDimensions.aiKnowledgeSources,
               aiOperatingContext:
-                values.aiOperatingContext ?? projectDimensions.aiOperatingContext,
+                values.aiOperatingContext ??
+                projectDimensions.aiOperatingContext,
               aiOptimizedSynthesizedAt:
                 values.aiOptimizedSynthesizedAt === undefined
                   ? projectDimensions.aiOptimizedSynthesizedAt
@@ -3342,14 +3356,17 @@ function createStage1RepositoriesInternal(
 
       async listByCampaignIds(campaignIds) {
         const normalizedCampaignIds = [
-          ...new Set(campaignIds.map((campaignId) => campaignId.trim()).filter(Boolean)),
+          ...new Set(
+            campaignIds.map((campaignId) => campaignId.trim()).filter(Boolean),
+          ),
         ];
 
         if (normalizedCampaignIds.length === 0) {
           return [];
         }
 
-        const campaignIdColumn = mailchimpCampaignActivityDetailsTable.campaignId;
+        const campaignIdColumn =
+          mailchimpCampaignActivityDetailsTable.campaignId;
         const rows = (await db
           .select()
           .from(mailchimpCampaignActivityDetails)
@@ -4558,7 +4575,18 @@ function createStage2RepositoriesInternal(
       return [];
     }
 
-    const resolvedProjectIds = projectRows.map((row) => row.projectId);
+    const validProjectRows = projectRows.filter(
+      (row) =>
+        typeof row.projectId === "string" && row.projectId.trim().length > 0,
+    );
+    const resolvedProjectIds = [
+      ...new Set(validProjectRows.map((row) => row.projectId)),
+    ];
+
+    if (resolvedProjectIds.length === 0) {
+      return [];
+    }
+
     const aliasRows = await db
       .select()
       .from(projectAliases)
@@ -4631,7 +4659,7 @@ function createStage2RepositoriesInternal(
       ),
     );
 
-    return projectRows.map((row) => {
+    return validProjectRows.map((row) => {
       const orderedEmails = (emailsByProjectId.get(row.projectId) ?? [])
         .slice()
         .sort(
@@ -5067,9 +5095,7 @@ function createStage2RepositoriesInternal(
         const [firstSubRowOfCandidate] = await db
           .select({ projectId: projectDimensions.projectId })
           .from(projectDimensions)
-          .where(
-            inArray(projectDimensions.connectedToProjectId, candidateIds),
-          )
+          .where(inArray(projectDimensions.connectedToProjectId, candidateIds))
           .limit(1);
         if (firstSubRowOfCandidate !== undefined) {
           throw new InvalidProjectConnectionError(
@@ -5182,9 +5208,7 @@ function createStage2RepositoriesInternal(
                 connectedToProjectId: null,
                 updatedAt: new Date(),
               })
-              .where(
-                inArray(projectDimensions.projectId, cascadedIds),
-              );
+              .where(inArray(projectDimensions.projectId, cascadedIds));
           }
 
           await tx
@@ -5577,7 +5601,10 @@ function buildCampaignProjectionWhereClause(input: {
     conditions.push(
       input.projectIds.length === 0
         ? sql`1 = 0`
-        : sql`"project_id" in (${sql.join(input.projectIds.map((projectId) => sql`${projectId}`), sql`, `)})`,
+        : sql`"project_id" in (${sql.join(
+            input.projectIds.map((projectId) => sql`${projectId}`),
+            sql`, `,
+          )})`,
     );
   }
 
@@ -5585,7 +5612,10 @@ function buildCampaignProjectionWhereClause(input: {
     conditions.push(
       input.states.length === 0
         ? sql`1 = 0`
-        : sql`"state" in (${sql.join(input.states.map((state) => sql`${state}`), sql`, `)})`,
+        : sql`"state" in (${sql.join(
+            input.states.map((state) => sql`${state}`),
+            sql`, `,
+          )})`,
     );
   }
 
@@ -5677,7 +5707,9 @@ function mapCampaignRunRow(row: CampaignRunRow): CampaignRunRecord {
   });
 }
 
-function mapAudienceSnapshotRow(row: AudienceSnapshotRow): AudienceSnapshotRecord {
+function mapAudienceSnapshotRow(
+  row: AudienceSnapshotRow,
+): AudienceSnapshotRecord {
   return audienceSnapshotRecordSchema.parse({
     id: row.id,
     campaignRunId: row.campaignRunId,
@@ -5821,7 +5853,9 @@ function mapCampaignRunMutationFields(
     values.preheader = input.preheader;
   }
   if ("audienceCriteria" in input && input.audienceCriteria !== undefined) {
-    values.audienceCriteria = audienceCriteriaSchema.parse(input.audienceCriteria);
+    values.audienceCriteria = audienceCriteriaSchema.parse(
+      input.audienceCriteria,
+    );
   }
   if ("audienceSize" in input && input.audienceSize !== undefined) {
     values.audienceSize = input.audienceSize;
@@ -5847,10 +5881,7 @@ function mapCampaignRunMutationFields(
   if ("createdByUserId" in input) {
     values.createdByUserId = input.createdByUserId;
   }
-  if (
-    "lastEditedByUserId" in input &&
-    input.lastEditedByUserId !== undefined
-  ) {
+  if ("lastEditedByUserId" in input && input.lastEditedByUserId !== undefined) {
     values.lastEditedByUserId = input.lastEditedByUserId;
   }
 
@@ -5970,7 +6001,10 @@ export function createStage5RepositoryBundle(
       return existing;
     }
 
-    await db.insert(orgSettings).values({ id: "singleton" }).onConflictDoNothing();
+    await db
+      .insert(orgSettings)
+      .values({ id: "singleton" })
+      .onConflictDoNothing();
 
     const [inserted] = await db
       .select()
@@ -6004,7 +6038,9 @@ export function createStage5RepositoryBundle(
             bodyHtmlTemplate: parsed.bodyHtmlTemplate,
             bodyTextTemplate: parsed.bodyTextTemplate,
             preheader: parsed.preheader,
-            audienceCriteria: audienceCriteriaSchema.parse(parsed.audienceCriteria),
+            audienceCriteria: audienceCriteriaSchema.parse(
+              parsed.audienceCriteria,
+            ),
             audienceSize: parsed.audienceSize,
             createdByUserId: parsed.createdByUserId,
             lastEditedByUserId: parsed.lastEditedByUserId,
@@ -6031,7 +6067,11 @@ export function createStage5RepositoryBundle(
         const states =
           opts.state === undefined
             ? null
-            : [...new Set(opts.state.map((state) => runStateSchema.parse(state)))];
+            : [
+                ...new Set(
+                  opts.state.map((state) => runStateSchema.parse(state)),
+                ),
+              ];
 
         if (projectIds !== null && projectIds.length === 0) {
           return [];
@@ -6118,7 +6158,9 @@ export function createStage5RepositoryBundle(
             state: parsedTo,
             updatedAt: new Date(),
           })
-          .where(and(eq(campaignRuns.id, id), eq(campaignRuns.state, parsedFrom)))
+          .where(
+            and(eq(campaignRuns.id, id), eq(campaignRuns.state, parsedFrom)),
+          )
           .returning();
 
         return mapCampaignRunRow(
@@ -6156,9 +6198,14 @@ export function createStage5RepositoryBundle(
 
         await db
           .insert(audienceSnapshots)
-          .values(members.map((member) => mapAudienceSnapshotInsert(runId, member)))
+          .values(
+            members.map((member) => mapAudienceSnapshotInsert(runId, member)),
+          )
           .onConflictDoNothing({
-            target: [audienceSnapshots.campaignRunId, audienceSnapshots.contactId],
+            target: [
+              audienceSnapshots.campaignRunId,
+              audienceSnapshots.contactId,
+            ],
           });
       },
 
@@ -6261,16 +6308,19 @@ export function createStage5RepositoryBundle(
     contactConsent: {
       async recordOptOut(contactId, scope, source, sourceRunId) {
         const normalizedScope = normalizeConsentScope(scope);
-        await db.insert(contactConsent).values({
-          id: crypto.randomUUID(),
-          contactId,
-          scopeType: normalizedScope.scopeType,
-          scopeId: normalizedScope.scopeId,
-          source,
-          sourceRunId: sourceRunId ?? null,
-          optedOutAt: new Date(),
-          createdAt: new Date(),
-        }).onConflictDoNothing();
+        await db
+          .insert(contactConsent)
+          .values({
+            id: crypto.randomUUID(),
+            contactId,
+            scopeType: normalizedScope.scopeType,
+            scopeId: normalizedScope.scopeId,
+            source,
+            sourceRunId: sourceRunId ?? null,
+            optedOutAt: new Date(),
+            createdAt: new Date(),
+          })
+          .onConflictDoNothing();
       },
 
       async isOptedOut(contactId, scope, at) {
@@ -6302,7 +6352,10 @@ export function createStage5RepositoryBundle(
           .select()
           .from(contactConsent)
           .where(eq(contactConsent.contactId, contactId))
-          .orderBy(desc(contactConsent.optedOutAt), desc(contactConsent.createdAt));
+          .orderBy(
+            desc(contactConsent.optedOutAt),
+            desc(contactConsent.createdAt),
+          );
 
         return rows.map(mapContactConsentRow);
       },
@@ -6496,13 +6549,19 @@ export function createStage5RepositoryBundle(
           searchQuery: null,
         });
 
-        const result = await db.execute(sql<{ readonly total: number | string }>`
+        const result = await db.execute(sql<{
+          readonly total: number | string;
+        }>`
           select count(*)::int as "total"
           from "campaign_run_projection"
           ${whereClause}
         `);
-        const [row] = normalizeSqlResultRows<{ readonly total: number | string }>(
-          result as { readonly rows?: readonly { readonly total: number | string }[] },
+        const [row] = normalizeSqlResultRows<{
+          readonly total: number | string;
+        }>(
+          result as {
+            readonly rows?: readonly { readonly total: number | string }[];
+          },
         );
 
         return Number(row?.total ?? 0);

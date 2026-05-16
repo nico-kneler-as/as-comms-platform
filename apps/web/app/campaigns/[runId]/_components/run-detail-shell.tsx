@@ -37,22 +37,22 @@ export function RunDetailShell({ model }: { readonly model: RunDetailModel }) {
 
   return (
     <>
-      <div className="flex min-h-dvh flex-col bg-slate-100 px-8 py-8">
-        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6">
-          <RunDetailHeader
-            run={model.run}
-            senderAlias={model.senderAlias}
-            kindLabel={model.kindLabel}
-            dateLabel={model.dateLabel}
-            dateIso={model.dateIso}
-            canStopUnsent={model.canStopUnsent}
-            canDuplicate={model.canDuplicate}
-            onStopUnsent={() => {
-              setCancelOpen(true);
-            }}
-          />
+      <div className="flex min-h-dvh flex-col bg-slate-50">
+        <RunDetailHeader
+          run={model.run}
+          senderAlias={model.senderAlias}
+          kindLabel={model.kindLabel}
+          dateLabel={model.dateLabel}
+          dateIso={model.dateIso}
+          canStopUnsent={model.canStopUnsent}
+          canDuplicate={model.canDuplicate}
+          onStopUnsent={() => {
+            setCancelOpen(true);
+          }}
+        />
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-5 px-6 py-6">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <div className="space-y-6">
               <MetricTiles model={model} />
               <RecipientsTable rows={model.recipients} />

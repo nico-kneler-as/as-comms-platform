@@ -1,6 +1,6 @@
 "use client";
 
-import { MailOpen, Newspaper } from "lucide-react";
+import { CheckCircle2, MailOpen, Newspaper } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -77,21 +77,27 @@ export function CampaignKindStep({
                   onChange(option.value);
                 }}
                 className={cn(
-                  "flex min-h-[220px] flex-col rounded-3xl border p-6 text-left transition-colors",
+                  "relative flex min-h-[220px] flex-col rounded-2xl border p-6 text-left transition-colors",
                   selected
-                    ? "border-[#253746] bg-slate-900 text-white"
+                    ? "border-slate-950 bg-white text-slate-950 shadow-sm ring-1 ring-slate-950"
                     : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50",
                   disabled
                     ? "cursor-not-allowed opacity-60 hover:border-slate-200 hover:bg-white"
                     : "",
                 )}
               >
+                {selected ? (
+                  <CheckCircle2
+                    className="absolute right-4 top-4 size-5 text-slate-950"
+                    aria-hidden="true"
+                  />
+                ) : null}
                 <div className="flex items-start justify-between gap-3">
                   <span
                     className={cn(
-                      "flex size-11 items-center justify-center rounded-2xl",
+                      "flex size-11 items-center justify-center rounded-xl",
                       selected
-                        ? "bg-white/10 text-white"
+                        ? "bg-slate-950 text-white"
                         : "bg-slate-100 text-slate-700",
                     )}
                   >
@@ -101,7 +107,7 @@ export function CampaignKindStep({
                     className={cn(
                       "rounded-full px-2.5 py-1 text-[10px] font-semibold",
                       selected
-                        ? "bg-white/10 text-white"
+                        ? "bg-slate-100 text-slate-700 ring-1 ring-slate-200"
                         : "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
                     )}
                   >
@@ -116,7 +122,7 @@ export function CampaignKindStep({
                   <p
                     className={cn(
                       "mt-3 text-pretty text-sm leading-6",
-                      selected ? "text-slate-200" : "text-slate-600",
+                      selected ? "text-slate-600" : "text-slate-600",
                     )}
                   >
                     {option.description}

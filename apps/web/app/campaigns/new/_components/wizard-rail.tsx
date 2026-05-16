@@ -20,16 +20,18 @@ export interface CampaignWizardStepDefinition {
 interface WizardRailProps {
   readonly steps: readonly CampaignWizardStepDefinition[];
   readonly currentStep: number;
+  readonly statusLabel: string;
   readonly onStepChange: (index: number) => void;
 }
 
 export function WizardRail({
   steps,
   currentStep,
+  statusLabel,
   onStepChange,
 }: WizardRailProps) {
   return (
-    <aside className="flex w-[300px] shrink-0 flex-col border-r border-slate-200 bg-slate-50/80">
+    <aside className="flex w-full shrink-0 flex-col border-b border-slate-200 bg-slate-50 lg:w-[300px] lg:border-b-0 lg:border-r">
       <div className="border-b border-slate-200 px-6 py-6">
         <div className="flex items-center gap-3">
           <span className="flex size-9 items-center justify-center rounded-xl bg-[#253746] text-white">
@@ -44,9 +46,13 @@ export function WizardRail({
             </p>
           </div>
         </div>
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11.5px] font-medium text-emerald-800">
+          <span className="mr-2 inline-block size-1.5 rounded-full bg-emerald-500 align-middle" />
+          {statusLabel}
+        </div>
       </div>
 
-      <div className="flex-1 px-3 py-4">
+      <div className="flex-1 px-3 py-4 max-lg:hidden">
         {steps.map((step, index) => {
           const state =
             index < currentStep
@@ -77,7 +83,9 @@ export function WizardRail({
                 aria-current={index === currentStep ? "step" : undefined}
                 className={cn(
                   "relative z-10 flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left",
-                  state === "current" ? "bg-white shadow-sm ring-1 ring-slate-200" : "",
+                  state === "current"
+                    ? "bg-white shadow-sm ring-1 ring-slate-200"
+                    : "",
                   index > currentStep
                     ? "cursor-not-allowed opacity-70"
                     : "transition-colors hover:bg-white/70",
@@ -120,14 +128,18 @@ export function WizardRail({
         })}
       </div>
 
-      <div className="m-4 rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="text-[11.5px] font-semibold text-slate-700">
-          Phase A guardrails
+      <div className="border-t border-slate-200 px-6 py-5 max-lg:hidden">
+        <div className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          You&apos;ll set up
         </div>
         <ul className="mt-3 space-y-2 text-[11.5px] text-slate-600">
-          <ChecklistRow label="Normal Email only" ok />
-          <ChecklistRow label="Audience stays live and server-owned" ok />
-          <ChecklistRow label="Compose + frozen review wired in-app" ok />
+          {steps.map((step, index) => (
+            <ChecklistRow
+              key={step.id}
+              label={step.title}
+              ok={index <= currentStep}
+            />
+          ))}
         </ul>
       </div>
     </aside>

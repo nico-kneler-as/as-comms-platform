@@ -25,7 +25,8 @@ import { CampaignRow } from "./campaign-row";
 import type { CampaignStateTab } from "./state-filter-tabs";
 import { StateFilterTabs } from "./state-filter-tabs";
 
-const ROW_HEIGHT = 92;
+const DESKTOP_ROW_HEIGHT = 92;
+const MOBILE_ROW_HEIGHT = 156;
 const OVERSCAN = 6;
 
 interface CampaignProjectOption {
@@ -93,6 +94,7 @@ export function CampaignsList({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(640);
+  const [rowHeight, setRowHeight] = useState(DESKTOP_ROW_HEIGHT);
 
   useEffect(() => {
     setSearchDraft(searchQuery);
@@ -107,6 +109,9 @@ export function CampaignsList({
     const syncViewport = () => {
       setViewportHeight(element.clientHeight);
       setScrollTop(element.scrollTop);
+      setRowHeight(
+        element.clientWidth < 640 ? MOBILE_ROW_HEIGHT : DESKTOP_ROW_HEIGHT,
+      );
     };
 
     syncViewport();
@@ -157,8 +162,8 @@ export function CampaignsList({
           )?.label ?? "1 project")
         : `${selectedProjectIds.length.toString()} projects`;
 
-  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2;
+  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN);
+  const visibleCount = Math.ceil(viewportHeight / rowHeight) + OVERSCAN * 2;
   const endIndex = Math.min(items.length, startIndex + visibleCount);
   const visibleItems = useMemo(
     () => items.slice(startIndex, endIndex),
@@ -326,7 +331,7 @@ export function CampaignsList({
           >
             <div
               className="relative overflow-hidden"
-              style={{ height: `${String(items.length * ROW_HEIGHT)}px` }}
+              style={{ height: `${String(items.length * rowHeight)}px` }}
             >
               {visibleItems.map((item, index) => {
                 const rowIndex = startIndex + index;
@@ -337,7 +342,7 @@ export function CampaignsList({
                     item={item}
                     style={{
                       position: "absolute",
-                      top: `${String(rowIndex * ROW_HEIGHT)}px`,
+                      top: `${String(rowIndex * rowHeight)}px`,
                       left: 0,
                       right: 0,
                     }}

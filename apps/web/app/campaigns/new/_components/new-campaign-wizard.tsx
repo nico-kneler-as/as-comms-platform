@@ -17,6 +17,7 @@ import type {
   ComposePreviewData,
   CampaignWizardDraftData,
 } from "../../_lib/audience-data-source";
+import { cn } from "@/lib/utils";
 import {
   loadComposePreviewAction,
   previewAudienceAction,
@@ -29,10 +30,7 @@ import { CampaignKindStep } from "./campaign-kind-step";
 import { ComposeStep } from "./compose-step";
 import { LaunchTypeStep } from "./launch-type-step";
 import { ReviewStep } from "./review-step";
-import {
-  type CampaignWizardStepDefinition,
-  WizardRail,
-} from "./wizard-rail";
+import { type CampaignWizardStepDefinition, WizardRail } from "./wizard-rail";
 
 const STEPS: readonly CampaignWizardStepDefinition[] = [
   {
@@ -63,12 +61,10 @@ const STEPS: readonly CampaignWizardStepDefinition[] = [
 ];
 
 type SaveState = "idle" | "saving" | "saved" | "error";
-type ToastState =
-  | {
-      readonly tone: "success" | "error";
-      readonly message: string;
-    }
-  | null;
+type ToastState = {
+  readonly tone: "success" | "error";
+  readonly message: string;
+} | null;
 
 function hasAppliedAudienceFilters(criteria: AudienceCriteria): boolean {
   return (
@@ -187,7 +183,10 @@ function deriveSuggestedSenderEmail(input: {
   );
   const selected = input.criteria.projectIds
     .map((projectId) => byId.get(projectId))
-    .filter((project): project is NonNullable<typeof project> => project !== undefined);
+    .filter(
+      (project): project is NonNullable<typeof project> =>
+        project !== undefined,
+    );
 
   if (selected.length === 0) {
     return null;
@@ -236,7 +235,9 @@ function readProjectChipLabel(
   const byId = new Map(
     bootstrap.projects.flatMap((group) => [
       [group.host.id, group.host.name] as const,
-      ...group.connectedSubs.map((project) => [project.id, project.name] as const),
+      ...group.connectedSubs.map(
+        (project) => [project.id, project.name] as const,
+      ),
     ]),
   );
   if (criteria.projectIds.length === 1) {
@@ -258,7 +259,9 @@ export function NewCampaignWizard({
   readonly isAdmin: boolean;
 }) {
   const initialSchedule = buildDenverInputDefaults(new Date());
-  const [currentStep, setCurrentStep] = useState(draft.state === "draft" ? 0 : 4);
+  const [currentStep, setCurrentStep] = useState(
+    draft.state === "draft" ? 0 : 4,
+  );
   const [launchType, setLaunchType] = useState<LaunchType>(draft.launchType);
   const [kind, setKind] = useState<CampaignKind>(draft.kind);
   const [name, setName] = useState(draft.name ?? "");
@@ -266,26 +269,33 @@ export function NewCampaignWizard({
   const [replyToEmail, setReplyToEmail] = useState(draft.replyToEmail);
   const [subject, setSubject] = useState(draft.subjectTemplate ?? "");
   const [preheader, setPreheader] = useState(draft.preheader ?? "");
-  const [bodyPlaintext, setBodyPlaintext] = useState(draft.bodyTextTemplate ?? "");
+  const [bodyPlaintext, setBodyPlaintext] = useState(
+    draft.bodyTextTemplate ?? "",
+  );
   const [bodyHtml, setBodyHtml] = useState(draft.bodyHtmlTemplate ?? "");
   const [criteria, setCriteria] = useState(draft.audienceCriteria);
   const [countState, setCountState] = useState({
     count: draft.audienceSize ?? 0,
     hasAppliedFilters: hasAppliedAudienceFilters(draft.audienceCriteria),
   });
-  const [previewRows, setPreviewRows] = useState<readonly AudiencePreviewRow[]>([]);
+  const [previewRows, setPreviewRows] = useState<readonly AudiencePreviewRow[]>(
+    [],
+  );
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [composePreview, setComposePreview] = useState<ComposePreviewData | null>(null);
+  const [composePreview, setComposePreview] =
+    useState<ComposePreviewData | null>(null);
   const [sampleIndex, setSampleIndex] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [lastSavedAtIso, setLastSavedAtIso] = useState(draft.updatedAt);
   const [autosaveTick, setAutosaveTick] = useState(0);
-  const [warningDismissFingerprint, setWarningDismissFingerprint] = useState<string | null>(
-    null,
-  );
+  const [warningDismissFingerprint, setWarningDismissFingerprint] = useState<
+    string | null
+  >(null);
   const [testSendOpen, setTestSendOpen] = useState(false);
-  const [testRecipientEmail, setTestRecipientEmail] = useState(draft.operatorEmail);
+  const [testRecipientEmail, setTestRecipientEmail] = useState(
+    draft.operatorEmail,
+  );
   const [affectedContactsOpen, setAffectedContactsOpen] = useState(false);
   const [reviewExpanded, setReviewExpanded] = useState(false);
   const [sendMode, setSendMode] = useState<"now" | "later">("now");
@@ -490,7 +500,16 @@ export function NewCampaignWizard({
     return () => {
       clearTimeout(timer);
     };
-  }, [bodyHtml, bodyPlaintext, criteria, currentStep, fromEmail, kind, sampleIndex, subject]);
+  }, [
+    bodyHtml,
+    bodyPlaintext,
+    criteria,
+    currentStep,
+    fromEmail,
+    kind,
+    sampleIndex,
+    subject,
+  ]);
 
   useEffect(() => {
     setSampleIndex(0);
@@ -558,7 +577,8 @@ export function NewCampaignWizard({
           replyToEmail,
           subjectTemplate: subject.trim().length === 0 ? null : subject,
           bodyHtmlTemplate: bodyHtml.trim().length === 0 ? null : bodyHtml,
-          bodyTextTemplate: bodyPlaintext.trim().length === 0 ? null : bodyPlaintext,
+          bodyTextTemplate:
+            bodyPlaintext.trim().length === 0 ? null : bodyPlaintext,
           preheader: preheader.trim().length === 0 ? null : preheader,
           audienceCriteria: criteria,
           audienceSize: countState.hasAppliedFilters ? countState.count : null,
@@ -601,7 +621,9 @@ export function NewCampaignWizard({
     });
   }
 
-  function updateCriteria(mutator: (current: AudienceCriteria) => AudienceCriteria) {
+  function updateCriteria(
+    mutator: (current: AudienceCriteria) => AudienceCriteria,
+  ) {
     setCriteria((current) => mutator(current));
   }
 
@@ -694,11 +716,15 @@ export function NewCampaignWizard({
       const result =
         sendMode === "later"
           ? await (() => {
-              const sendAt = convertDenverInputToDate(scheduleDate, scheduleTime);
+              const sendAt = convertDenverInputToDate(
+                scheduleDate,
+                scheduleTime,
+              );
               if (sendAt === null) {
                 return Promise.resolve({
                   ok: false as const,
-                  message: "Pick a valid Denver date and time before scheduling.",
+                  message:
+                    "Pick a valid Denver date and time before scheduling.",
                 });
               }
               return schedule(draft.runId, sendAt);
@@ -731,17 +757,18 @@ export function NewCampaignWizard({
     saveState === "saving" || savePending
       ? "Saving draft…"
       : saveState === "saved"
-        ? saveMessage ?? "Saved"
+        ? (saveMessage ?? "Saved")
         : saveState === "error"
-          ? saveMessage ?? "Save failed"
+          ? (saveMessage ?? "Save failed")
           : dirty
             ? "Unsaved changes"
             : "All changes saved";
 
   return (
-    <div className="flex min-h-dvh w-full bg-slate-100">
+    <div className="flex min-h-dvh w-full bg-slate-100 max-lg:flex-col">
       <WizardRail
         currentStep={currentStep}
+        statusLabel={statusLabel}
         onStepChange={(index) => {
           if (!frozen && index <= currentStep) {
             setCurrentStep(index);
@@ -751,32 +778,23 @@ export function NewCampaignWizard({
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="border-b border-slate-200 bg-white px-8 py-5">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4">
-            <div>
-              <h1 className="text-balance text-2xl font-semibold text-slate-900">
-                Create campaign
-              </h1>
-              <p className="mt-2 text-sm text-slate-500">
-                Draft ID {draft.runId.slice(0, 8)} · {statusLabel}
-              </p>
-            </div>
-            {toast ? (
-              <div
-                className={
-                  toast.tone === "error"
-                    ? "rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-900"
-                    : "rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-900"
-                }
-              >
-                {toast.message}
-              </div>
-            ) : null}
+        {toast ? (
+          <div
+            className={cn(
+              "fixed right-6 top-6 z-50 rounded-xl border px-4 py-2 text-sm shadow-lg",
+              toast.tone === "error"
+                ? "border-rose-200 bg-rose-50 text-rose-900"
+                : "border-emerald-200 bg-emerald-50 text-emerald-900",
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            {toast.message}
           </div>
-        </div>
+        ) : null}
 
-        <div className="flex-1 px-8 py-8">
-          <div className="mx-auto flex h-full w-full max-w-6xl flex-col rounded-3xl border border-slate-200 bg-white p-8">
+        <div className="flex-1 overflow-y-auto bg-white px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+          <div className="mx-auto flex min-h-full w-full max-w-[1100px] flex-col">
             {currentStep === 0 ? (
               <LaunchTypeStep
                 value={launchType}
@@ -880,7 +898,11 @@ export function NewCampaignWizard({
             {currentStep === 4 ? (
               <ReviewStep
                 kind={kind}
-                projectChipLabel={readProjectChipLabel(kind, criteria, bootstrap)}
+                projectChipLabel={readProjectChipLabel(
+                  kind,
+                  criteria,
+                  bootstrap,
+                )}
                 runName={name.trim().length === 0 ? null : name}
                 fromEmail={fromEmail}
                 preheader={preheader}

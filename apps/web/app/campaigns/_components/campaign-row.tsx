@@ -142,7 +142,7 @@ export function CampaignRow({
         data-campaign-row="true"
         data-campaign-provider={item.provider}
         data-campaign-state={item.state}
-        className="grid h-[92px] grid-cols-[44px_minmax(0,1fr)_minmax(132px,180px)] items-center gap-5 border-b border-slate-200 bg-white px-5 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-inset sm:px-6"
+        className="grid min-h-[156px] grid-cols-[44px_minmax(0,1fr)] items-center gap-x-4 gap-y-3 border-b border-slate-200 bg-white px-5 py-4 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400 sm:h-[92px] sm:min-h-0 sm:grid-cols-[44px_minmax(0,1fr)_minmax(132px,180px)] sm:gap-5 sm:px-6 sm:py-0"
       >
         <span className="flex size-11 items-center justify-center rounded-lg border border-sky-100 bg-sky-50 text-sky-700">
           <MailIcon className="size-4" aria-hidden="true" />
@@ -180,8 +180,8 @@ export function CampaignRow({
           </div>
         </div>
 
-        <div className="min-w-0 text-right">
-          <div className="flex items-center justify-end gap-2">
+        <div className="col-span-2 min-w-0 text-left sm:col-span-1 sm:text-right">
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             <span
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]",
