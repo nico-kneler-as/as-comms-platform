@@ -59,6 +59,7 @@ function buildRow(
     projectName: "Project",
     suggestedAlias: "Project",
     projectAlias: null,
+    postmarkSenderStatus: "unverified",
     connectedToProjectId: null,
     isActive: true,
     primaryEmail: null,

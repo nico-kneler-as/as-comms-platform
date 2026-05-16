@@ -249,6 +249,7 @@ export interface Stage5RepositoryBundle {
       event: {
         readonly status: DeliveryStatus;
         readonly at: Date;
+        readonly activity?: "open" | "click";
         readonly providerEventId?: string;
       },
     ): Promise<void>;
@@ -1121,6 +1122,12 @@ const DEFAULT_INTEGRATION_HEALTH_SEED = [
   {
     id: "mailchimp",
     serviceName: "mailchimp",
+    category: "messaging",
+    status: "not_configured",
+  },
+  {
+    id: "postmark",
+    serviceName: "postmark",
     category: "messaging",
     status: "not_configured",
   },
@@ -4605,6 +4612,7 @@ function createStage2RepositoriesInternal(
         salesforceProjectId: row.projectId,
         projectName: row.projectName,
         projectAlias: row.projectAlias,
+        postmarkSenderStatus: row.postmarkSenderStatus,
         connectedToProjectId: row.connectedToProjectId,
         isActive: row.isActive,
         aiKnowledgeUrl: row.aiKnowledgeUrl,
@@ -4811,6 +4819,26 @@ function createStage2RepositoriesInternal(
           .update(projectDimensions)
           .set({
             projectAlias,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectDimensions.projectId, projectId))
+          .returning({
+            projectId: projectDimensions.projectId,
+          });
+
+        if (row === undefined) {
+          return null;
+        }
+
+        const [project] = await loadSettingsProjects([row.projectId]);
+        return project ?? null;
+      },
+
+      async setPostmarkSenderStatus(projectId: string, status) {
+        const [row] = await db
+          .update(projectDimensions)
+          .set({
+            postmarkSenderStatus: status,
             updatedAt: new Date(),
           })
           .where(eq(projectDimensions.projectId, projectId))
@@ -6009,6 +6037,14 @@ export function createStage5RepositoryBundle(
         // Preserve the parameter in the contract for Brief A2/A6 callers even
         // though this repository has no durable column for it yet.
         void event.providerEventId;
+
+        if (event.activity === "open") {
+          deliveryFields.openedAt = sql`coalesce(${audienceSnapshots.openedAt}, ${eventAtSql})`;
+        }
+
+        if (event.activity === "click") {
+          deliveryFields.clickedAt = sql`coalesce(${audienceSnapshots.clickedAt}, ${eventAtSql})`;
+        }
 
         await db
           .update(audienceSnapshots)

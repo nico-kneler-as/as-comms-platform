@@ -21,6 +21,7 @@ import {
   setStage1WebRuntimeForTests,
   type Stage1WebRuntime,
 } from "./stage1-runtime";
+import { createStage5RepositoryBundle } from "@as-comms/db";
 
 export type { TestStage1Context } from "@as-comms/db/test-helpers";
 
@@ -39,6 +40,7 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
       sql: null as never,
     },
     repositories: context.repositories,
+    campaigns: createStage5RepositoryBundle(context.db),
     settings: context.settings,
     normalization: context.normalization,
     timelinePresentation: createStage1TimelinePresentationService(

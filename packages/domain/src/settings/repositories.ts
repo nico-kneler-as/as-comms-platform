@@ -1,4 +1,5 @@
 import type { IntegrationHealthRecord } from "@as-comms/contracts";
+import type { PostmarkSenderStatus } from "@as-comms/contracts";
 import type {
   ConsentRecordRepository,
   SmsMessageRepository,
@@ -77,6 +78,10 @@ export interface SettingsProjectsRepository {
   setProjectAlias(
     projectId: string,
     projectAlias: string | null
+  ): Promise<SettingsProjectRecord | null>;
+  setPostmarkSenderStatus(
+    projectId: string,
+    status: PostmarkSenderStatus
   ): Promise<SettingsProjectRecord | null>;
   /**
    * Returns active projects whose `connected_to_project_id` points at the

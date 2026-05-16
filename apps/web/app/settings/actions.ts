@@ -9,6 +9,9 @@ import {
   type AiKnowledgeSource,
   deactivateUserSchema,
   demoteUserSchema,
+  pollPostmarkSenderStatusJobName,
+  pollPostmarkSenderStatusPayloadSchema,
+  type PostmarkSenderStatus,
   promoteUserSchema,
   reactivateUserSchema,
   type IntegrationHealthRecord
@@ -22,6 +25,11 @@ import {
   removeSource,
   updateSource
 } from "@as-comms/db";
+import {
+  createPostmarkClient,
+  type PostmarkSenderDnsRecord,
+  type PostmarkSenderStatus as PostmarkSenderStatusDetail,
+} from "@as-comms/integrations";
 
 import {
   enqueueNotionKnowledgeSyncJob,
@@ -29,6 +37,7 @@ import {
 } from "@/src/server/ai/enqueue";
 import { resolveAdminSession } from "@/src/server/auth/api";
 import { appendSecurityAudit } from "@/src/server/security/audit";
+import { readWebEnv } from "@/src/server/env";
 import {
   isMissingIntegrationHealthTableError,
   refreshIntegrationHealthRecord
@@ -739,8 +748,60 @@ export interface ProjectAiAutoSyncScheduleMutationData {
   readonly schedule: "never" | "daily" | "weekly";
 }
 
+export interface PostmarkSenderSetupMutationData {
+  readonly projectId: string;
+  readonly domain: string | null;
+  readonly status: PostmarkSenderStatus;
+  readonly returnPathDomain: string | null;
+  readonly dnsRecords: readonly PostmarkSenderDnsRecord[];
+}
+
 function truncateAuditValue(value: string): string {
   return value.slice(0, 500);
+}
+
+function extractEmailDomain(address: string | null): string | null {
+  if (address === null) {
+    return null;
+  }
+
+  const normalized = address.trim().toLowerCase();
+  const at = normalized.lastIndexOf("@");
+  if (at <= 0 || at === normalized.length - 1) {
+    return null;
+  }
+
+  return normalized.slice(at + 1);
+}
+
+function buildPostmarkClientFromEnv() {
+  const env = readWebEnv();
+
+  if (!env.POSTMARK_SERVER_TOKEN || !env.POSTMARK_ACCOUNT_TOKEN) {
+    return null;
+  }
+
+  return createPostmarkClient({
+    serverToken: env.POSTMARK_SERVER_TOKEN,
+    accountToken: env.POSTMARK_ACCOUNT_TOKEN,
+    webhookSigningSecret: env.POSTMARK_WEBHOOK_SIGNING_SECRET ?? "unused",
+    baseUrl: env.POSTMARK_BASE_URL,
+  });
+}
+
+function toPostmarkSenderSetupData(input: {
+  readonly projectId: string;
+  readonly domain: string | null;
+  readonly detail: PostmarkSenderStatusDetail | null;
+  readonly fallbackStatus: PostmarkSenderStatus;
+}): PostmarkSenderSetupMutationData {
+  return {
+    projectId: input.projectId,
+    domain: input.domain,
+    status: input.detail?.status ?? input.fallbackStatus,
+    returnPathDomain: input.detail?.returnPathDomain ?? null,
+    dnsRecords: input.detail?.dnsRecords ?? [],
+  };
 }
 
 export interface ProjectAliasSignatureMutationData {
@@ -1964,6 +2025,171 @@ export async function syncProjectAiKnowledgeAction(
       projectId
     },
     requestId: newRequestId()
+  };
+}
+
+export async function loadPostmarkSenderSetupAction(
+  projectId: string,
+): Promise<UiResult<PostmarkSenderSetupMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to inspect Postmark sender verification.",
+    forbiddenMessage:
+      "Only admins can inspect Postmark sender verification.",
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  const domain = extractEmailDomain(project.emails[0]?.address ?? null);
+  if (domain === null) {
+    return {
+      ok: true,
+      data: toPostmarkSenderSetupData({
+        projectId,
+        domain: null,
+        detail: null,
+        fallbackStatus: project.postmarkSenderStatus,
+      }),
+      requestId: newRequestId(),
+    };
+  }
+
+  const client = buildPostmarkClientFromEnv();
+  if (client === null) {
+    return errorResult(
+      "not_configured",
+      "Postmark sender verification is not configured.",
+    );
+  }
+
+  try {
+    const detail = await client.getSenderDomainStatus(domain);
+    await runtime.settings.projects.setPostmarkSenderStatus(
+      projectId,
+      detail.status,
+    );
+    revalidateProjectSettings(projectId);
+
+    return {
+      ok: true,
+      data: toPostmarkSenderSetupData({
+        projectId,
+        domain,
+        detail,
+        fallbackStatus: detail.status,
+      }),
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "provider_error",
+      error instanceof Error
+        ? error.message
+        : "Postmark sender verification could not be loaded.",
+      {
+        retryable: true,
+      },
+    );
+  }
+}
+
+export async function recheckPostmarkSenderStatusAction(
+  projectId: string,
+): Promise<UiResult<PostmarkSenderSetupMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage:
+      "You must be signed in to re-check Postmark sender verification.",
+    forbiddenMessage:
+      "Only admins can re-check Postmark sender verification.",
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const project = await runtime.settings.projects.findById(projectId);
+  if (project === null) {
+    return errorResult("not_found", "That project no longer exists.");
+  }
+
+  const domain = extractEmailDomain(project.emails[0]?.address ?? null);
+  const client = buildPostmarkClientFromEnv();
+  if (client === null) {
+    return errorResult(
+      "not_configured",
+      "Postmark sender verification is not configured.",
+    );
+  }
+
+  let detail: PostmarkSenderStatusDetail | null = null;
+  if (domain !== null) {
+    try {
+      detail = await client.getSenderDomainStatus(domain);
+      await runtime.settings.projects.setPostmarkSenderStatus(
+        projectId,
+        detail.status,
+      );
+    } catch (error) {
+      return errorResult(
+        "provider_error",
+        error instanceof Error
+          ? error.message
+          : "Postmark sender verification check failed.",
+        {
+          retryable: true,
+        },
+      );
+    }
+  }
+
+  if (runtime.connection !== null) {
+    const payload = pollPostmarkSenderStatusPayloadSchema.parse({
+      projectId,
+      trigger: "manual",
+    });
+
+    await runtime.connection.sql`
+      select graphile_worker.add_job(
+        identifier => ${pollPostmarkSenderStatusJobName},
+        payload => ${JSON.stringify(payload)}::json,
+        job_key => ${`poll-postmark-sender-status:${projectId}`},
+        job_key_mode => 'replace',
+        max_attempts => 1
+      )
+    `;
+  }
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.project.postmark_sender_status_rechecked",
+    entityType: "project",
+    entityId: projectId,
+    metadataJson: {
+      projectId,
+      domain,
+      status: detail?.status ?? project.postmarkSenderStatus,
+    },
+  });
+
+  revalidateProjectSettings(projectId);
+  revalidateIntegrationHealth();
+
+  return {
+    ok: true,
+    data: toPostmarkSenderSetupData({
+      projectId,
+      domain,
+      detail,
+      fallbackStatus: detail?.status ?? project.postmarkSenderStatus,
+    }),
+    requestId: newRequestId(),
   };
 }
 

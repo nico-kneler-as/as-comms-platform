@@ -505,6 +505,7 @@ function extractFreshnessSample(
     case "mailchimp":
     case "twilio":
     case "manual":
+    case "postmark":
       return null;
   }
 }
@@ -615,6 +616,10 @@ function getMappedResultForRecord(
     case "manual":
       throw new Stage1NonRetryableJobError(
         "Manual note provider records are not mapped through worker orchestration."
+      );
+    case "postmark":
+      throw new Stage1NonRetryableJobError(
+        "Postmark provider records are not mapped through worker orchestration; campaigns webhook handler owns them."
       );
   }
 }
@@ -798,6 +803,10 @@ async function captureRecordsForReplay(
     case "manual":
       throw new Stage1NonRetryableJobError(
         "Manual note provider is not supported for replay capture batches."
+      );
+    case "postmark":
+      throw new Stage1NonRetryableJobError(
+        "Postmark provider is not supported for replay capture batches; campaigns webhook handler owns ingest."
       );
   }
 }
@@ -2252,6 +2261,10 @@ export function createStage1WorkerOrchestrationService(input: {
             case "manual":
               throw new Stage1NonRetryableJobError(
                 "Manual note provider is not supported for replay ingest batches."
+              );
+            case "postmark":
+              throw new Stage1NonRetryableJobError(
+                "Postmark provider is not supported for replay ingest batches; campaigns webhook handler owns ingest."
               );
           }
         },

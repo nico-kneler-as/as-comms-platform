@@ -37,6 +37,7 @@ import {
   type Stage1SafeRuntimeConfigSummary,
 } from "./ops/config.js";
 import { readNotionKnowledgeSyncConfig } from "./jobs/notion-knowledge-sync/index.js";
+import { readPollPostmarkSenderStatusConfig } from "./jobs/poll-postmark-sender-status/index.js";
 import { dedupHistoricalLedgerJobName } from "./jobs/dedup-historical-ledger.js";
 import { reconcileCaptureGapsJobName } from "./jobs/reconcile-capture-gaps.js";
 import { reconcileRoutingReviewQueueJobName } from "./jobs/reconcile-routing-review-queue.js";
@@ -57,6 +58,7 @@ import { createTaskList } from "./tasks.js";
 import { reconcileIdentityQueueJobName } from "./jobs/reconcile-identity-queue.js";
 import { reconcileStaleRunningJobName } from "./jobs/reconcile-stale-running.js";
 import { sweepPendingOutboundsJobName } from "./jobs/sweep-pending-outbounds.js";
+import { pollPostmarkSenderStatusJobName } from "./jobs/poll-postmark-sender-status/index.js";
 
 const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
 const mailchimpTransitionDiscoverySeedLookbackDays = 35;
@@ -141,6 +143,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `0 * * * * ${mailchimpTransitionSchedulerJobName} ?id=mailchimp-transition-scheduler&max=1`,
     `0 * * * * ${pollAiKnowledgeAutoSyncJobName} ?id=ai-knowledge-auto-sync-poll&max=1`,
     `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
+    `*/5 * * * * ${pollPostmarkSenderStatusJobName} ?id=postmark-sender-status-poll&max=1`,
     `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
     `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
     `*/15 * * * * ${reconcileIdentityQueueJobName} ?id=identity-queue-reconcile&max=1`,
@@ -423,6 +426,9 @@ export async function createStage1WorkerRuntimeServices(
   const notionKnowledgeSync = readNotionKnowledgeSyncConfig(
     input?.env ?? process.env,
   );
+  const postmarkSenderStatus = readPollPostmarkSenderStatusConfig(
+    input?.env ?? process.env,
+  );
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
   const ingest = createStage1IngestService(normalization);
@@ -505,6 +511,11 @@ export async function createStage1WorkerRuntimeServices(
         db: connection.db,
         integrationHealth: settings.integrationHealth,
         notion: notionKnowledgeSync,
+      },
+      pollPostmarkSenderStatus: {
+        projects: settings.projects,
+        integrationHealth: settings.integrationHealth,
+        config: postmarkSenderStatus,
       },
       aiKnowledgeAutoSync: {
         projectDimensions: repositories.projectDimensions,

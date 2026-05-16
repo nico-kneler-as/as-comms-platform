@@ -135,6 +135,13 @@ function toStage1IngestProvider(
       throw new Error(
         "Manual provider records are not supported by the Stage 1 ingest service.",
       );
+    case "postmark":
+      // Postmark webhook events flow directly into canonical_event_ledger via
+      // apps/web/app/api/webhooks/postmark/route.ts — they don't pass through
+      // the Stage 1 ingest service.
+      throw new Error(
+        "Postmark provider records are handled by the campaigns webhook handler, not the Stage 1 ingest service.",
+      );
   }
 }
 

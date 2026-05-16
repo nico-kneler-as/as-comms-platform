@@ -38,6 +38,11 @@ import {
   type NotionKnowledgeSyncDependencies,
 } from "./jobs/notion-knowledge-sync/index.js";
 import {
+  createPollPostmarkSenderStatusTask,
+  pollPostmarkSenderStatusJobName,
+  type PollPostmarkSenderStatusDependencies,
+} from "./jobs/poll-postmark-sender-status/index.js";
+import {
   createSynthesizeProjectKnowledgeTask,
   synthesizeProjectKnowledgeJobName,
   type SynthesizeProjectKnowledgeDependencies,
@@ -63,6 +68,7 @@ export function createTaskList(
     readonly reconcileCaptureGaps?: ReconcileCaptureGapsTaskDependencies;
     readonly reconcileStaleRunning?: ReconcileStaleRunningTaskDependencies;
     readonly synthesizeProjectKnowledge?: SynthesizeProjectKnowledgeDependencies;
+    readonly pollPostmarkSenderStatus?: PollPostmarkSenderStatusDependencies;
   },
 ): TaskList {
   return {
@@ -115,6 +121,13 @@ export function createTaskList(
       : {
           [notionKnowledgeSyncJobName]: createNotionKnowledgeSyncTask(
             input.notionKnowledgeSync,
+          ),
+        }),
+    ...(input?.pollPostmarkSenderStatus === undefined
+      ? {}
+      : {
+          [pollPostmarkSenderStatusJobName]: createPollPostmarkSenderStatusTask(
+            input.pollPostmarkSenderStatus,
           ),
         }),
     ...(input?.synthesizeProjectKnowledge === undefined

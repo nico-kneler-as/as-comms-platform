@@ -42,6 +42,7 @@ import {
   getProjectAliasSignatureValidationError,
   normalizeProjectAliasSignature
 } from "../_lib/project-alias-signature";
+import { PostmarkSenderStatusSection } from "./postmark-sender-status";
 import { ProjectAiKnowledgeSection } from "./project-ai-knowledge-section";
 import { ProjectConnectedProjectsSection } from "./project-connected-projects-section";
 
@@ -994,6 +995,12 @@ export function ProjectDetail({
             ) : null}
           </div>
         </SettingsCard>
+
+        <PostmarkSenderStatusSection
+          projectId={project.projectId}
+          primaryEmail={optimisticProject.emails[0]?.address ?? null}
+          initialStatus={project.postmarkSenderStatus}
+        />
 
         {isHost ? (
           <SettingsCard
