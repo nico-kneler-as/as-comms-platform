@@ -541,6 +541,9 @@ export interface MailchimpCampaignActivityDetailRepository {
   listBySourceEvidenceIds(
     sourceEvidenceIds: readonly string[],
   ): Promise<readonly MailchimpCampaignActivityDetailRecord[]>;
+  listByCampaignIds?(
+    campaignIds: readonly string[],
+  ): Promise<readonly MailchimpCampaignActivityDetailRecord[]>;
   upsert(
     record: MailchimpCampaignActivityDetailRecord,
   ): Promise<MailchimpCampaignActivityDetailRecord>;

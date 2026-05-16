@@ -299,12 +299,21 @@ export interface Stage5RepositoryBundle {
   readonly campaignRunProjection: {
     listRecent(opts?: {
       readonly limit?: number;
+      readonly offset?: number;
+      readonly states?: readonly RunState[];
+      readonly projectIds?: readonly string[];
       readonly filterByProjectIds?: readonly string[];
+      readonly searchQuery?: string;
     }): Promise<readonly CampaignRunProjectionRow[]>;
     getDetail(
       runId: string,
       provider: "postmark" | "mailchimp",
     ): Promise<CampaignRunProjectionRow | null>;
+    count(opts?: {
+      readonly states?: readonly RunState[];
+      readonly projectIds?: readonly string[];
+      readonly filterByProjectIds?: readonly string[];
+    }): Promise<number>;
   };
 }
 
@@ -3331,6 +3340,28 @@ function createStage1RepositoriesInternal(
         return rows.map(mapMailchimpCampaignActivityDetailRowLocal);
       },
 
+      async listByCampaignIds(campaignIds) {
+        const normalizedCampaignIds = [
+          ...new Set(campaignIds.map((campaignId) => campaignId.trim()).filter(Boolean)),
+        ];
+
+        if (normalizedCampaignIds.length === 0) {
+          return [];
+        }
+
+        const campaignIdColumn = mailchimpCampaignActivityDetailsTable.campaignId;
+        const rows = (await db
+          .select()
+          .from(mailchimpCampaignActivityDetails)
+          .where(inArray(campaignIdColumn, normalizedCampaignIds))
+          .orderBy(
+            asc(campaignIdColumn),
+            asc(mailchimpCampaignActivityDetailsTable.createdAt),
+          )) as MailchimpCampaignActivityDetailRow[];
+
+        return rows.map(mapMailchimpCampaignActivityDetailRowLocal);
+      },
+
       async upsert(record) {
         const sourceEvidenceIdColumn =
           mailchimpCampaignActivityDetailsTable.sourceEvidenceId;
@@ -5484,6 +5515,14 @@ function clampCampaignListLimit(limit: number | undefined): number {
   return Math.max(1, Math.min(limit, 200));
 }
 
+function clampCampaignListOffset(offset: number | undefined): number {
+  if (offset === undefined) {
+    return 0;
+  }
+
+  return Math.max(0, offset);
+}
+
 function normalizeProjectIdFilter(
   projectIds: readonly string[] | undefined,
 ): readonly string[] | null {
@@ -5496,6 +5535,70 @@ function normalizeProjectIdFilter(
   ];
 
   return normalized.length === 0 ? [] : normalized;
+}
+
+function normalizeRunStateFilter(
+  states: readonly RunState[] | undefined,
+): readonly RunState[] | null {
+  if (states === undefined) {
+    return null;
+  }
+
+  const normalized = [...new Set(states)];
+  return normalized.length === 0 ? [] : normalized;
+}
+
+function normalizeCampaignSearchQuery(
+  searchQuery: string | undefined,
+): string | null {
+  if (searchQuery === undefined) {
+    return null;
+  }
+
+  const normalized = searchQuery.trim();
+  return normalized.length === 0 ? null : normalized;
+}
+
+function resolveCampaignProjectionProjectFilter(input: {
+  readonly projectIds?: readonly string[];
+  readonly filterByProjectIds?: readonly string[];
+}): readonly string[] | null {
+  return normalizeProjectIdFilter(input.projectIds ?? input.filterByProjectIds);
+}
+
+function buildCampaignProjectionWhereClause(input: {
+  readonly projectIds: readonly string[] | null;
+  readonly states: readonly RunState[] | null;
+  readonly searchQuery: string | null;
+}) {
+  const conditions = [];
+
+  if (input.projectIds !== null) {
+    conditions.push(
+      input.projectIds.length === 0
+        ? sql`1 = 0`
+        : sql`"project_id" in (${sql.join(input.projectIds.map((projectId) => sql`${projectId}`), sql`, `)})`,
+    );
+  }
+
+  if (input.states !== null) {
+    conditions.push(
+      input.states.length === 0
+        ? sql`1 = 0`
+        : sql`"state" in (${sql.join(input.states.map((state) => sql`${state}`), sql`, `)})`,
+    );
+  }
+
+  if (input.searchQuery !== null) {
+    const pattern = `%${input.searchQuery.replace(/[\\%_]/g, "\\$&")}%`;
+    conditions.push(sql`"subject" ilike ${pattern} escape '\\'`);
+  }
+
+  if (conditions.length === 0) {
+    return sql``;
+  }
+
+  return sql`where ${sql.join(conditions, sql` and `)}`;
 }
 
 function toIsoDate(value: Date): string {
@@ -6315,16 +6418,15 @@ export function createStage5RepositoryBundle(
     campaignRunProjection: {
       async listRecent(opts = {}) {
         const limit = clampCampaignListLimit(opts.limit);
-        const projectIds = normalizeProjectIdFilter(opts.filterByProjectIds);
-
-        if (projectIds !== null && projectIds.length === 0) {
-          return [];
-        }
-
-        const whereClause =
-          projectIds === null
-            ? sql``
-            : sql`where "project_id" in (${sql.join(projectIds.map((projectId) => sql`${projectId}`), sql`, `)})`;
+        const offset = clampCampaignListOffset(opts.offset);
+        const projectIds = resolveCampaignProjectionProjectFilter(opts);
+        const states = normalizeRunStateFilter(opts.states);
+        const searchQuery = normalizeCampaignSearchQuery(opts.searchQuery);
+        const whereClause = buildCampaignProjectionWhereClause({
+          projectIds,
+          states,
+          searchQuery,
+        });
 
         const result = await db.execute(sql<CampaignRunProjectionRowDb>`
           select
@@ -6345,8 +6447,9 @@ export function createStage5RepositoryBundle(
             "updated_at" as "updatedAt"
           from "campaign_run_projection"
           ${whereClause}
-          order by "created_at" desc, "run_id" asc
+          order by "updated_at" desc, "created_at" desc, "run_id" asc
           limit ${limit}
+          offset ${offset}
         `);
 
         return normalizeSqlResultRows<CampaignRunProjectionRowDb>(
@@ -6382,6 +6485,27 @@ export function createStage5RepositoryBundle(
         );
 
         return row === undefined ? null : mapCampaignRunProjectionRowDb(row);
+      },
+
+      async count(opts = {}) {
+        const projectIds = resolveCampaignProjectionProjectFilter(opts);
+        const states = normalizeRunStateFilter(opts.states);
+        const whereClause = buildCampaignProjectionWhereClause({
+          projectIds,
+          states,
+          searchQuery: null,
+        });
+
+        const result = await db.execute(sql<{ readonly total: number | string }>`
+          select count(*)::int as "total"
+          from "campaign_run_projection"
+          ${whereClause}
+        `);
+        const [row] = normalizeSqlResultRows<{ readonly total: number | string }>(
+          result as { readonly rows?: readonly { readonly total: number | string }[] },
+        );
+
+        return Number(row?.total ?? 0);
       },
     },
   });

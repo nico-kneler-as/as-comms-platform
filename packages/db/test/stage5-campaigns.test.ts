@@ -417,6 +417,85 @@ describe("Stage 5 campaigns repositories", () => {
     expect(mailchimpDetail?.updatedAt).toBe("2026-05-10T10:00:00.000Z");
   });
 
+  it("filters and counts the unified projection consistently", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context, "project-1");
+    await context.repositories.projectDimensions.upsert({
+      projectId: "project-2",
+      projectName: "Whales",
+      projectAlias: "whales",
+      connectedToProjectId: null,
+      source: "manual",
+      isActive: true,
+      aiKnowledgeUrl: null,
+      aiKnowledgeSyncedAt: null,
+      aiKnowledgeSources: [],
+      aiOperatingContext: "",
+      aiAutoSyncSchedule: "never",
+      aiOptimizedSynthesizedAt: null,
+      aiOptimizedInputHash: null,
+    });
+
+    await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-filter-1",
+        subjectTemplate: "Forests draft",
+      }),
+    );
+    await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-filter-2",
+        projectId: "project-2",
+        subjectTemplate: "Whales send",
+      }),
+    );
+    await campaigns.campaignRuns.transitionState(
+      "run-filter-2",
+      "draft",
+      "scheduled",
+      {
+        scheduledAt: "2026-05-16T09:00:00.000Z",
+      },
+    );
+
+    await seedMailchimpActivity(context, {
+      sourceEvidenceId: "sev-mailchimp-filter-1",
+      providerRecordId: "mailchimp-filter-1",
+      campaignId: "mailchimp-filter-run",
+      campaignName: "Archive newsletter",
+      createdAt: new Date("2026-05-01T09:00:00.000Z"),
+      updatedAt: new Date("2026-05-01T10:00:00.000Z"),
+    });
+
+    const scheduledRows = await campaigns.campaignRunProjection.listRecent({
+      states: ["scheduled"],
+    });
+    const projectRows = await campaigns.campaignRunProjection.listRecent({
+      projectIds: ["project-2"],
+    });
+    const searchRows = await campaigns.campaignRunProjection.listRecent({
+      searchQuery: "archive",
+    });
+    const scheduledCount = await campaigns.campaignRunProjection.count({
+      states: ["scheduled"],
+    });
+    const projectCount = await campaigns.campaignRunProjection.count({
+      projectIds: ["project-2"],
+    });
+
+    expect(scheduledRows).toHaveLength(1);
+    expect(scheduledRows[0]?.runId).toBe("run-filter-2");
+    expect(projectRows).toHaveLength(1);
+    expect(projectRows[0]?.projectId).toBe("project-2");
+    expect(searchRows).toHaveLength(1);
+    expect(searchRows[0]?.provider).toBe("mailchimp");
+    expect(scheduledCount).toBe(1);
+    expect(projectCount).toBe(1);
+  });
+
   it("allows draft to scheduled but rejects draft to sending directly", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);
