@@ -150,6 +150,17 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
   }
 
   if (
+    relativeFile === "apps/web/tests/unit/postmark-webhook-route.test.ts" &&
+    specifier === "@as-comms/db"
+  ) {
+    // Test-only direct use of createStage5RepositoryBundle so the webhook
+    // route handler test can seed + read campaign runs / audience snapshots
+    // / suppression list against the PGlite-backed runtime. Production
+    // apps/web code goes through the runtime composition root.
+    return true;
+  }
+
+  if (
     (relativeFile === "apps/web/app/api/webhooks/postmark/route.ts" ||
       relativeFile === "apps/web/app/settings/actions.ts") &&
     specifier === "@as-comms/integrations"

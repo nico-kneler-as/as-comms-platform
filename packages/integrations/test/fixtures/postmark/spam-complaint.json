@@ -15,6 +15,7 @@
   "Description": "Recipient marked the message as spam.",
   "Details": "Complaint received from mailbox provider.",
   "Email": "john@example.com",
+  "Recipient": "john@example.com",
   "BouncedAt": "2019-11-05T16:33:54.9070259Z",
   "DumpAvailable": false,
   "Inactive": true,
