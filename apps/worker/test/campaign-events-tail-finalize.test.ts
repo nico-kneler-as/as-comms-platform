@@ -24,6 +24,7 @@ async function seedRun(
     kind: "newsletter",
     launchType: "normal_email",
     projectId: null,
+    name: null,
     fromEmail: "forests@adventurescientists.org",
     fromName: "Adventure Scientists",
     replyToEmail: "forests@adventurescientists.org",

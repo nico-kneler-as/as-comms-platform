@@ -549,6 +549,7 @@ export async function duplicateCampaignRun(
       kind: existing.kind,
       launchType: existing.launchType,
       projectId: existing.projectId,
+      name: existing.name,
       fromEmail: existing.fromEmail,
       fromName: existing.fromName,
       replyToEmail: existing.replyToEmail,

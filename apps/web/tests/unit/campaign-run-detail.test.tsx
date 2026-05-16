@@ -65,6 +65,7 @@ function buildModel(state: RunDetailModel["run"]["state"]): RunDetailModel {
       launchType: "normal_email",
       state,
       projectId: "project-1",
+      name: null,
       fromEmail: "forests@adventurescientists.org",
       fromName: "Adventure Scientists",
       replyToEmail: "forests@adventurescientists.org",
