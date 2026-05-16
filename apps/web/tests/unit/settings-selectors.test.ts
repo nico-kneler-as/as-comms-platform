@@ -607,12 +607,20 @@ describe("settings selectors", () => {
 
     expect(
       viewModel.integrations.map((integration) => integration.serviceName),
-    ).toEqual(["salesforce", "gmail", "mailchimp", "notion", "openai"]);
+    ).toEqual([
+      "salesforce",
+      "gmail",
+      "mailchimp",
+      "postmark",
+      "notion",
+      "openai",
+    ]);
     expect(
       viewModel.integrations.map((integration) => integration.status),
     ).toEqual([
       "not_checked",
       "not_checked",
+      "not_configured",
       "not_configured",
       "not_configured",
       "not_configured",

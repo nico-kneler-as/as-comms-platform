@@ -4,6 +4,15 @@ const idSchema = z.string().min(1);
 const timestampSchema = z.string().datetime();
 const nullableTimestampSchema = timestampSchema.nullable();
 const nullableStringSchema = z.string().min(1).nullable();
+const coercingNullableString = z.preprocess(
+  (value) => (value === "" ? null : value),
+  z.string().min(1).nullable(),
+);
+const stringRecordSchema = z.record(z.string(), z.string());
+const nullableMetadataSchema = z.preprocess(
+  (value) => (value === "" || value == null ? {} : value),
+  stringRecordSchema,
+);
 
 export const campaignKindValues = ["newsletter", "project"] as const;
 export const campaignKindSchema = z.enum(campaignKindValues);
@@ -438,3 +447,147 @@ export const testSendInputSchema = z.object({
   actorUserId: nullableStringSchema.default(null),
 });
 export type TestSendInput = z.infer<typeof testSendInputSchema>;
+
+export const pollPostmarkSenderStatusJobName =
+  "poll-postmark-sender-status" as const;
+export const pollPostmarkSenderStatusPayloadSchema = z.object({
+  projectId: z.string().min(1).optional(),
+  trigger: z.enum(["cron", "manual"]).default("cron"),
+});
+export type PollPostmarkSenderStatusPayload = z.infer<
+  typeof pollPostmarkSenderStatusPayloadSchema
+>;
+
+const postmarkRecordTypeSchema = z.enum([
+  "Delivery",
+  "Bounce",
+  "SpamComplaint",
+  "Open",
+  "Click",
+  "SubscriptionChange",
+]);
+
+const postmarkWebhookBaseSchema = z.object({
+  RecordType: postmarkRecordTypeSchema,
+  MessageID: z.string().uuid(),
+  MessageStream: coercingNullableString.default(null),
+  Tag: coercingNullableString.default(null),
+  Recipient: z.string().email(),
+  Metadata: nullableMetadataSchema.default({}),
+});
+
+export const postmarkDeliveryEventSchema = postmarkWebhookBaseSchema.extend({
+  RecordType: z.literal("Delivery"),
+  DeliveredAt: timestampSchema,
+  Details: coercingNullableString.default(null),
+  ServerID: z.number().int().nonnegative(),
+});
+export type PostmarkDeliveryEvent = z.infer<
+  typeof postmarkDeliveryEventSchema
+>;
+
+export const postmarkBounceEventSchema = postmarkWebhookBaseSchema.extend({
+  RecordType: z.literal("Bounce"),
+  ID: z.number().int().nonnegative(),
+  Type: z.string().min(1),
+  TypeCode: z.number().int().nonnegative(),
+  Name: z.string().min(1),
+  Description: coercingNullableString.default(null),
+  Details: coercingNullableString.default(null),
+  Email: z.string().email(),
+  BouncedAt: timestampSchema,
+  DumpAvailable: z.boolean().default(false),
+  Inactive: z.boolean().default(false),
+  CanActivate: z.boolean().default(false),
+  Content: coercingNullableString.default(null),
+  Subject: coercingNullableString.default(null),
+  ServerID: z.number().int().nonnegative(),
+});
+export type PostmarkBounceEvent = z.infer<typeof postmarkBounceEventSchema>;
+
+export const postmarkSpamComplaintEventSchema =
+  postmarkWebhookBaseSchema.extend({
+    RecordType: z.literal("SpamComplaint"),
+    ID: z.number().int().nonnegative(),
+    Type: z.string().min(1),
+    TypeCode: z.number().int().nonnegative(),
+    Name: z.string().min(1),
+    Description: coercingNullableString.default(null),
+    Details: coercingNullableString.default(null),
+    Email: z.string().email(),
+    BouncedAt: timestampSchema,
+    DumpAvailable: z.boolean().default(false),
+    Inactive: z.boolean().default(false),
+    CanActivate: z.boolean().default(false),
+    Content: coercingNullableString.default(null),
+    Subject: coercingNullableString.default(null),
+    ServerID: z.number().int().nonnegative(),
+  });
+export type PostmarkSpamComplaintEvent = z.infer<
+  typeof postmarkSpamComplaintEventSchema
+>;
+
+const postmarkClientSchema = z.object({
+  Name: coercingNullableString.default(null),
+  Company: coercingNullableString.default(null),
+  Family: coercingNullableString.default(null),
+});
+
+const postmarkGeoSchema = z.object({
+  CountryISOCode: coercingNullableString.default(null),
+  Country: coercingNullableString.default(null),
+  RegionISOCode: coercingNullableString.default(null),
+  Region: coercingNullableString.default(null),
+  City: coercingNullableString.default(null),
+  Zip: coercingNullableString.default(null),
+  Coords: coercingNullableString.default(null),
+  IP: coercingNullableString.default(null),
+});
+
+export const postmarkOpenEventSchema = postmarkWebhookBaseSchema.extend({
+  RecordType: z.literal("Open"),
+  FirstOpen: z.boolean(),
+  Client: postmarkClientSchema.optional(),
+  OS: postmarkClientSchema.optional(),
+  Platform: coercingNullableString.default(null),
+  UserAgent: coercingNullableString.default(null),
+  Geo: postmarkGeoSchema.optional(),
+  ReceivedAt: timestampSchema,
+});
+export type PostmarkOpenEvent = z.infer<typeof postmarkOpenEventSchema>;
+
+export const postmarkClickEventSchema = postmarkWebhookBaseSchema.extend({
+  RecordType: z.literal("Click"),
+  OriginalLink: z.string().url(),
+  ClickLocation: coercingNullableString.default(null),
+  Client: postmarkClientSchema.optional(),
+  OS: postmarkClientSchema.optional(),
+  Platform: coercingNullableString.default(null),
+  UserAgent: coercingNullableString.default(null),
+  Geo: postmarkGeoSchema.optional(),
+  ReceivedAt: timestampSchema,
+});
+export type PostmarkClickEvent = z.infer<typeof postmarkClickEventSchema>;
+
+export const postmarkSubscriptionChangeEventSchema =
+  postmarkWebhookBaseSchema.omit({ MessageID: true }).extend({
+    RecordType: z.literal("SubscriptionChange"),
+    MessageID: z.string().uuid().nullable(),
+    ChangedAt: timestampSchema,
+    SuppressSending: z.boolean(),
+    SuppressionReason: coercingNullableString.default(null),
+    Origin: coercingNullableString.default(null),
+  });
+export type PostmarkSubscriptionChangeEvent = z.infer<
+  typeof postmarkSubscriptionChangeEventSchema
+>;
+
+export const postmarkWebhookEventSchema = z.discriminatedUnion("RecordType", [
+  postmarkDeliveryEventSchema,
+  postmarkBounceEventSchema,
+  postmarkSpamComplaintEventSchema,
+  postmarkOpenEventSchema,
+  postmarkClickEventSchema,
+  postmarkSubscriptionChangeEventSchema,
+]);
+export type PostmarkWebhookEvent = z.infer<typeof postmarkWebhookEventSchema>;

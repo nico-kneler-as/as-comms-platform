@@ -5,6 +5,7 @@ import type {
   AiKnowledgeSource,
   IntegrationHealthCategory,
   IntegrationHealthStatus,
+  PostmarkSenderStatus,
   Provider
 } from "@as-comms/contracts";
 import { inputHashFromSources } from "@as-comms/db";
@@ -20,6 +21,7 @@ export interface ProjectRowViewModel {
   readonly projectName: string;
   readonly suggestedAlias: string;
   readonly projectAlias: string | null;
+  readonly postmarkSenderStatus: PostmarkSenderStatus;
   /**
    * When non-null, this project rolls up into the referenced host project's
    * inbox / dashboard / AI knowledge. The shape of the host appears in
@@ -206,6 +208,7 @@ const INTEGRATION_ORDER = [
   "salesforce",
   "gmail",
   "mailchimp",
+  "postmark",
   "notion",
   "openai"
 ] as const;
@@ -224,6 +227,11 @@ const INTEGRATION_META = {
   mailchimp: {
     displayName: "Mailchimp",
     description: "Transition-period campaign ingest",
+    supportsRefresh: false
+  },
+  postmark: {
+    displayName: "Postmark",
+    description: "Campaign delivery and sender verification",
     supportsRefresh: false
   },
   notion: {
@@ -260,7 +268,8 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   salesforce: "Salesforce",
   twilio: "Twilio",
   simpletexting: "SimpleTexting",
-  mailchimp: "Mailchimp"
+  mailchimp: "Mailchimp",
+  postmark: "Postmark"
 };
 const MAILCHIMP_HEALTHY_WINDOW_MS = 70 * 60 * 1000;
 const MAILCHIMP_AUTO_HIDE_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
@@ -492,6 +501,7 @@ function toProjectRowViewModel(input: {
   readonly projectId: string;
   readonly projectName: string;
   readonly projectAlias: string | null;
+  readonly postmarkSenderStatus: PostmarkSenderStatus;
   readonly connectedToProjectId?: string | null;
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;
@@ -514,6 +524,7 @@ function toProjectRowViewModel(input: {
     projectName: input.projectName,
     suggestedAlias: deriveSuggestedAlias(input.projectName),
     projectAlias: input.projectAlias,
+    postmarkSenderStatus: input.postmarkSenderStatus,
     connectedToProjectId: input.connectedToProjectId ?? null,
     isActive: input.isActive,
     primaryEmail,

@@ -10,6 +10,7 @@ export const integrationHealthServiceSchema = z.enum([
   "gmail",
   "simpletexting",
   "mailchimp",
+  "postmark",
   "notion",
   "openai"
 ]);

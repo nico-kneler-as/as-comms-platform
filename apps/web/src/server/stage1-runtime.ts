@@ -2,11 +2,13 @@ import {
   accounts,
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
+  createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
   sessions,
   users,
   verificationTokens,
   type DatabaseConnection,
+  type Stage5RepositoryBundle,
 } from "@as-comms/db";
 import {
   createStage1InternalNoteService,
@@ -52,6 +54,7 @@ export interface Stage2RepositoryAccess {
 export interface Stage1WebRuntime {
   readonly connection: Pick<DatabaseConnection, "db" | "sql"> | null;
   readonly repositories: Stage1RepositoryBundle;
+  readonly campaigns: Stage5RepositoryBundle;
   readonly settings: Stage2RepositoryBundle;
   readonly normalization: Stage1NormalizationService;
   readonly timelinePresentation: Stage1TimelinePresentationService;
@@ -83,6 +86,7 @@ function createRuntime(): Stage1WebRuntime {
     connectionString,
   });
   const repositories = createStage1RepositoryBundleFromConnection(connection);
+  const campaigns = createStage5RepositoryBundleFromConnection(connection);
   const settings = createStage2RepositoryBundleFromConnection(connection);
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
@@ -94,6 +98,7 @@ function createRuntime(): Stage1WebRuntime {
   return {
     connection,
     repositories,
+    campaigns,
     settings,
     normalization,
     timelinePresentation: createStage1TimelinePresentationService(repositories),

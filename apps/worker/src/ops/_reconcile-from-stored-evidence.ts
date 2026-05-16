@@ -884,5 +884,9 @@ export async function buildEventFromStoredData(input: {
       throw new Error(
         `Manual source evidence ${sourceEvidenceId} cannot be reconciled through the identity queue operation.`
       );
+    case "postmark":
+      throw new Error(
+        `Postmark source evidence ${sourceEvidenceId} cannot be reconciled through the identity queue operation; Postmark events route through the campaigns webhook path.`
+      );
   }
 }

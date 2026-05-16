@@ -35,6 +35,11 @@ export interface SettingsProjectRecord {
   readonly salesforceProjectId: string | null;
   readonly projectName: string;
   readonly projectAlias: string | null;
+  readonly postmarkSenderStatus:
+    | "unverified"
+    | "pending"
+    | "verified"
+    | "rejected";
   readonly connectedToProjectId: string | null;
   readonly isActive: boolean;
   readonly aiKnowledgeUrl: string | null;

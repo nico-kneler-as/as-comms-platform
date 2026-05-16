@@ -6,7 +6,8 @@ export const providerValues = [
   "salesforce",
   "twilio",
   "simpletexting",
-  "mailchimp"
+  "mailchimp",
+  "postmark",
 ] as const;
 export const providerSchema = z.enum(providerValues);
 export type Provider = z.infer<typeof providerSchema>;
@@ -17,6 +18,7 @@ export const recordSourceValues = [
   "twilio",
   "simpletexting",
   "mailchimp",
+  "postmark",
   "manual",
   "system"
 ] as const;

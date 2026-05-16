@@ -120,6 +120,7 @@ function makeProject(
     projectName: "Forests",
     suggestedAlias: "Forests",
     projectAlias: "Forests",
+    postmarkSenderStatus: "unverified",
     connectedToProjectId: null,
     isActive: true,
     primaryEmail: "forests@adventurescientists.org",

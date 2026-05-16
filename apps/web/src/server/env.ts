@@ -26,6 +26,16 @@ export const webEnvSchema = z.object({
   TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT: z
     .preprocess(parsePositiveNumberEnv, z.number().positive())
     .default(0.0079),
+  POSTMARK_SERVER_TOKEN: z.string().trim().min(1).optional(),
+  POSTMARK_ACCOUNT_TOKEN: z.string().trim().min(1).optional(),
+  POSTMARK_WEBHOOK_SIGNING_SECRET: z.string().trim().min(1).optional(),
+  POSTMARK_TRANSACTIONAL_STREAM_ID: z.string().trim().min(1).default("outbound"),
+  POSTMARK_BROADCAST_STREAM_ID: z.string().trim().min(1).default("broadcast"),
+  POSTMARK_BASE_URL: z
+    .string()
+    .trim()
+    .url()
+    .default("https://api.postmarkapp.com"),
 });
 
 export type WebEnv = z.infer<typeof webEnvSchema>;
@@ -35,5 +45,11 @@ export function readWebEnv(env: NodeJS.ProcessEnv = process.env): WebEnv {
     SMS_ENABLED: env.SMS_ENABLED,
     TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT:
       env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT,
+    POSTMARK_SERVER_TOKEN: env.POSTMARK_SERVER_TOKEN,
+    POSTMARK_ACCOUNT_TOKEN: env.POSTMARK_ACCOUNT_TOKEN,
+    POSTMARK_WEBHOOK_SIGNING_SECRET: env.POSTMARK_WEBHOOK_SIGNING_SECRET,
+    POSTMARK_TRANSACTIONAL_STREAM_ID: env.POSTMARK_TRANSACTIONAL_STREAM_ID,
+    POSTMARK_BROADCAST_STREAM_ID: env.POSTMARK_BROADCAST_STREAM_ID,
+    POSTMARK_BASE_URL: env.POSTMARK_BASE_URL,
   });
 }

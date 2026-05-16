@@ -1,0 +1,25 @@
+{
+  "RecordType": "SpamComplaint",
+  "MessageStream": "outbound",
+  "ID": 4323372036854776001,
+  "Type": "SpamComplaint",
+  "TypeCode": 512,
+  "Name": "Spam complaint",
+  "Tag": "Test",
+  "MessageID": "883953f4-6105-42a2-a16a-77a8eac79483",
+  "Metadata": {
+    "a_key": "a_value",
+    "b_key": "b_value"
+  },
+  "ServerID": 23,
+  "Description": "Recipient marked the message as spam.",
+  "Details": "Complaint received from mailbox provider.",
+  "Email": "john@example.com",
+  "Recipient": "john@example.com",
+  "BouncedAt": "2019-11-05T16:33:54.9070259Z",
+  "DumpAvailable": false,
+  "Inactive": true,
+  "CanActivate": true,
+  "Subject": "Test subject",
+  "Content": ""
+}

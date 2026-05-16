@@ -150,6 +150,31 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
   }
 
   if (
+    relativeFile === "apps/web/tests/unit/postmark-webhook-route.test.ts" &&
+    specifier === "@as-comms/db"
+  ) {
+    // Test-only direct use of createStage5RepositoryBundle so the webhook
+    // route handler test can seed + read campaign runs / audience snapshots
+    // / suppression list against the PGlite-backed runtime. Production
+    // apps/web code goes through the runtime composition root.
+    return true;
+  }
+
+  if (
+    (relativeFile === "apps/web/app/api/webhooks/postmark/route.ts" ||
+      relativeFile === "apps/web/app/settings/actions.ts") &&
+    specifier === "@as-comms/integrations"
+  ) {
+    // Stage 5A Brief A2: Postmark client composition for the webhook route
+    // handler and Settings re-check action. Each file builds its own
+    // PostmarkClient from env vars and webhook signing secret. A future
+    // cleanup could promote a single composition root at
+    // apps/web/src/server/postmark/, but the two-call surface today is
+    // narrow enough to track as an explicit exception.
+    return true;
+  }
+
+  if (
     relativeFile === "apps/web/src/server/ai/provider.ts" &&
     specifier === "@as-comms/integrations"
   ) {
