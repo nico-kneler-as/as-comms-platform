@@ -12,6 +12,7 @@
     "ops": "tsx src/ops/cli.ts",
     "ops:backfill-content-fingerprint": "tsx src/ops/backfill-content-fingerprint.ts",
     "ops:backfill-project-corpus": "tsx src/ops/backfill-project-corpus.ts",
+    "ops:reprocess-pending-campaign-sends": "tsx src/ops/cli.ts reprocess-pending-campaign-sends",
     "ops:backfill-garbled-message-bodies": "tsx src/ops/cli.ts backfill-garbled-message-bodies",
     "ops:re-extract-signed-envelope-bodies": "tsx src/ops/cli.ts re-extract-signed-envelope-bodies",
     "ops:check-config": "tsx src/ops/cli.ts check-config",

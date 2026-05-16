@@ -3,6 +3,11 @@ import type { TaskList } from "graphile-worker";
 import { noopJobName } from "@as-comms/contracts";
 
 import {
+  createCampaignSendTask,
+  campaignSendJobName,
+  type CampaignSendTaskDependencies,
+} from "./jobs/campaign-send/index.js";
+import {
   createDedupHistoricalLedgerTask,
   dedupHistoricalLedgerJobName,
   type DedupHistoricalLedgerTaskDependencies,
@@ -58,6 +63,7 @@ import {
 export function createTaskList(
   orchestration?: Stage1WorkerOrchestrationService,
   input?: {
+    readonly campaignSend?: CampaignSendTaskDependencies;
     readonly dedupHistoricalLedger?: DedupHistoricalLedgerTaskDependencies;
     readonly integrationHealth?: IntegrationHealthTaskDependencies;
     readonly aiKnowledgeAutoSync?: PollAiKnowledgeAutoSyncTaskDependencies;
@@ -73,6 +79,11 @@ export function createTaskList(
 ): TaskList {
   return {
     [noopJobName]: runStage0NoopJob,
+    ...(input?.campaignSend === undefined
+      ? {}
+      : {
+          [campaignSendJobName]: createCampaignSendTask(input.campaignSend),
+        }),
     ...(input?.pendingOutboundSweep === undefined
       ? {}
       : {

@@ -233,6 +233,10 @@ export interface Stage5RepositoryBundle {
       to: RunState,
       fields?: Partial<CampaignRunRecord>,
     ): Promise<CampaignRunRecord>;
+    update(
+      id: string,
+      fields: Partial<CampaignRunRecord>,
+    ): Promise<CampaignRunRecord>;
   };
   readonly audienceSnapshots: {
     bulkInsert(
@@ -244,6 +248,10 @@ export interface Stage5RepositoryBundle {
     findByProviderMessageId(
       messageId: string,
     ): Promise<AudienceSnapshotRecord | null>;
+    update(
+      id: string,
+      fields: Partial<AudienceSnapshotRecord>,
+    ): Promise<AudienceSnapshotRecord>;
     updateDeliveryEvent(
       id: string,
       event: {
@@ -5772,6 +5780,63 @@ function mapAudienceSnapshotInsert(
   };
 }
 
+function mapAudienceSnapshotMutationFields(
+  input: Partial<AudienceSnapshotRecord>,
+): Partial<typeof audienceSnapshots.$inferInsert> {
+  const values: Partial<typeof audienceSnapshots.$inferInsert> = {};
+
+  if (input.frozenEmail !== undefined) {
+    values.frozenEmail = input.frozenEmail;
+  }
+  if (input.frozenFirstName !== undefined) {
+    values.frozenFirstName = input.frozenFirstName;
+  }
+  if (input.frozenProjectName !== undefined) {
+    values.frozenProjectName = input.frozenProjectName;
+  }
+  if (input.frozenProjectId !== undefined) {
+    values.frozenProjectId = input.frozenProjectId;
+  }
+  if (input.frozenAliasEmail !== undefined) {
+    values.frozenAliasEmail = input.frozenAliasEmail;
+  }
+  if (input.unsubscribeToken !== undefined) {
+    values.unsubscribeToken = input.unsubscribeToken;
+  }
+  if (input.deliveryStatus !== undefined) {
+    values.deliveryStatus = input.deliveryStatus;
+  }
+  if (input.providerMessageId !== undefined) {
+    values.providerMessageId = input.providerMessageId;
+  }
+  if (input.sentAt !== undefined) {
+    values.sentAt = toNullableDate(input.sentAt);
+  }
+  if (input.deliveredAt !== undefined) {
+    values.deliveredAt = toNullableDate(input.deliveredAt);
+  }
+  if (input.bouncedAt !== undefined) {
+    values.bouncedAt = toNullableDate(input.bouncedAt);
+  }
+  if (input.openedAt !== undefined) {
+    values.openedAt = toNullableDate(input.openedAt);
+  }
+  if (input.clickedAt !== undefined) {
+    values.clickedAt = toNullableDate(input.clickedAt);
+  }
+  if (input.complainedAt !== undefined) {
+    values.complainedAt = toNullableDate(input.complainedAt);
+  }
+  if (input.unsubscribedAt !== undefined) {
+    values.unsubscribedAt = toNullableDate(input.unsubscribedAt);
+  }
+  if (input.lastEventAt !== undefined) {
+    values.lastEventAt = toNullableDate(input.lastEventAt);
+  }
+
+  return values;
+}
+
 export function createStage5RepositoryBundle(
   db: Stage1Database,
 ): Stage5RepositoryBundle {
@@ -5956,6 +6021,24 @@ export function createStage5RepositoryBundle(
           ),
         );
       },
+
+      async update(id, fields) {
+        const [row] = await db
+          .update(campaignRuns)
+          .set({
+            ...mapCampaignRunMutationFields(fields),
+            updatedAt: new Date(),
+          })
+          .where(eq(campaignRuns.id, id))
+          .returning();
+
+        return mapCampaignRunRow(
+          requireRow(
+            row,
+            `Expected campaign run ${id} to be returned from update.`,
+          ),
+        );
+      },
     },
 
     audienceSnapshots: {
@@ -6000,6 +6083,21 @@ export function createStage5RepositoryBundle(
           .limit(1);
 
         return row === undefined ? null : mapAudienceSnapshotRow(row);
+      },
+
+      async update(id, fields) {
+        const [row] = await db
+          .update(audienceSnapshots)
+          .set(mapAudienceSnapshotMutationFields(fields))
+          .where(eq(audienceSnapshots.id, id))
+          .returning();
+
+        return mapAudienceSnapshotRow(
+          requireRow(
+            row,
+            `Expected audience snapshot ${id} to be returned from update.`,
+          ),
+        );
       },
 
       async updateDeliveryEvent(id, event) {

@@ -6,10 +6,15 @@ import {
   createMailchimpCampaignTailStateRepository,
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
+  createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
   type DatabaseConnection,
 } from "@as-comms/db";
 import {
+  createAudienceResolver,
+  createCampaignSendOrchestrator,
+  createExclusionFilter,
+  createMergeRenderer,
   createStage1NormalizationService,
   createStage1PersistenceService,
 } from "@as-comms/domain";
@@ -18,6 +23,7 @@ import {
   createAnthropicClient,
   createGmailCapturePort,
   createMailchimpCapturePort,
+  createPostmarkClient,
   InlineTextFetcher,
   invokeModel,
   NotionPageFetcher,
@@ -37,6 +43,7 @@ import {
   type Stage1SafeRuntimeConfigSummary,
 } from "./ops/config.js";
 import { readNotionKnowledgeSyncConfig } from "./jobs/notion-knowledge-sync/index.js";
+import { type CampaignSendTaskDependencies } from "./jobs/campaign-send/index.js";
 import { readPollPostmarkSenderStatusConfig } from "./jobs/poll-postmark-sender-status/index.js";
 import { dedupHistoricalLedgerJobName } from "./jobs/dedup-historical-ledger.js";
 import { reconcileCaptureGapsJobName } from "./jobs/reconcile-capture-gaps.js";
@@ -182,6 +189,65 @@ function readOptionalTrimmedEnv(
 
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
+}
+
+function buildCampaignSendDependencies(input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly campaigns: ReturnType<typeof createStage5RepositoryBundleFromConnection>;
+  readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
+  readonly settings: ReturnType<typeof createStage2RepositoryBundleFromConnection>;
+}): CampaignSendTaskDependencies | undefined {
+  const serverToken = readOptionalTrimmedEnv(input.env.POSTMARK_SERVER_TOKEN);
+  const baseUrl =
+    readOptionalTrimmedEnv(input.env.POSTMARK_BASE_URL) ??
+    "https://api.postmarkapp.com";
+
+  if (serverToken === null) {
+    console.warn(
+      "Skipping campaign-send wiring because POSTMARK_SERVER_TOKEN is missing.",
+    );
+    return undefined;
+  }
+
+  const audienceResolver = createAudienceResolver({
+    repositories: {
+      contacts: input.repositories.contacts,
+      contactMemberships: input.repositories.contactMemberships,
+      canonicalEvents: input.repositories.canonicalEvents,
+      projectDimensions: input.repositories.projectDimensions,
+      settingsProjects: input.settings.projects,
+    },
+  });
+  const exclusionFilter = createExclusionFilter({
+    repositories: {
+      campaignRuns: input.campaigns.campaignRuns,
+      contactConsent: input.campaigns.contactConsent,
+      suppressionList: input.campaigns.suppressionList,
+    },
+  });
+  const mergeRenderer = createMergeRenderer();
+  const postmarkClient = createPostmarkClient({
+    serverToken,
+    accountToken: readOptionalTrimmedEnv(input.env.POSTMARK_ACCOUNT_TOKEN),
+    webhookSigningSecret:
+      readOptionalTrimmedEnv(input.env.POSTMARK_WEBHOOK_SIGNING_SECRET) ??
+      "unused",
+    baseUrl,
+  });
+
+  return {
+    orchestrator: createCampaignSendOrchestrator({
+      repositories: {
+        campaignRuns: input.campaigns.campaignRuns,
+        audienceSnapshots: input.campaigns.audienceSnapshots,
+        settingsProjects: input.settings.projects,
+      },
+      audienceResolver,
+      exclusionFilter,
+      mergeRenderer,
+      postmarkClient,
+    }),
+  };
 }
 
 function buildSynthesizeProjectKnowledgeDependencies(input: {
@@ -419,6 +485,7 @@ export async function createStage1WorkerRuntimeServices(
       : [...config.launchScope.gmail.projectInboxAliases];
 
   const repositories = createStage1RepositoryBundleFromConnection(connection);
+  const campaigns = createStage5RepositoryBundleFromConnection(connection);
   const mailchimpTailState = createMailchimpCampaignTailStateRepository(
     connection.db,
   );
@@ -429,6 +496,12 @@ export async function createStage1WorkerRuntimeServices(
   const postmarkSenderStatus = readPollPostmarkSenderStatusConfig(
     input?.env ?? process.env,
   );
+  const campaignSend = buildCampaignSendDependencies({
+    env: input?.env ?? process.env,
+    campaigns,
+    repositories,
+    settings,
+  });
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
   const ingest = createStage1IngestService(normalization);
@@ -517,6 +590,11 @@ export async function createStage1WorkerRuntimeServices(
         integrationHealth: settings.integrationHealth,
         config: postmarkSenderStatus,
       },
+      ...(campaignSend === undefined
+        ? {}
+        : {
+            campaignSend,
+          }),
       aiKnowledgeAutoSync: {
         projectDimensions: repositories.projectDimensions,
       },
