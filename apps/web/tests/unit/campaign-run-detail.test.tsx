@@ -15,12 +15,9 @@ vi.mock("next/navigation", () => ({
 vi.mock("lucide-react", () => ({}));
 
 vi.mock("@/components/ui/button", () => ({
-  Button: ({
-    children,
-    ...props
-  }: {
-    readonly children: React.ReactNode;
-  }) => <button {...props}>{children}</button>,
+  Button: ({ children, ...props }: { readonly children: React.ReactNode }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 vi.mock("@/components/ui/input", () => ({
@@ -30,12 +27,24 @@ vi.mock("@/components/ui/input", () => ({
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
-  DialogContent: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
-  DialogDescription: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
-  DialogFooter: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
-  DialogHeader: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
-  DialogTitle: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
+  Dialog: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogContent: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogDescription: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogFooter: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogHeader: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogTitle: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
 }));
 
 vi.mock("@/components/ui/progress", () => ({
@@ -59,6 +68,7 @@ import { RunDetailShell } from "../../app/campaigns/[runId]/_components/run-deta
 
 function buildModel(state: RunDetailModel["run"]["state"]): RunDetailModel {
   return {
+    provider: "postmark",
     run: {
       id: `run-${state}`,
       kind: "project",
@@ -91,10 +101,8 @@ function buildModel(state: RunDetailModel["run"]["state"]): RunDetailModel {
         state === "complete" || state === "finalized"
           ? "2026-05-15T12:12:00.000Z"
           : null,
-      finalizedAt:
-        state === "finalized" ? "2026-06-15T12:12:00.000Z" : null,
-      cancelledAt:
-        state === "cancelled" ? "2026-05-15T12:08:00.000Z" : null,
+      finalizedAt: state === "finalized" ? "2026-06-15T12:12:00.000Z" : null,
+      cancelledAt: state === "cancelled" ? "2026-05-15T12:08:00.000Z" : null,
       cancelledReason: state === "cancelled" ? "operator_cancelled" : null,
       createdByUserId: "user-1",
       lastEditedByUserId: "user-1",
@@ -208,6 +216,8 @@ function buildModel(state: RunDetailModel["run"]["state"]): RunDetailModel {
       hasClicked: "either",
     },
     canStopUnsent: state === "sending" || state === "scheduled",
+    canDuplicate:
+      state === "complete" || state === "cancelled" || state === "finalized",
     isAdmin: true,
   };
 }

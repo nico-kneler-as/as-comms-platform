@@ -11,11 +11,7 @@ import { RepliesInInboxPanel } from "./replies-in-inbox-panel";
 import { RunAuditLog } from "./run-audit-log";
 import { RunDetailHeader } from "./run-detail-header";
 
-export function RunDetailShell({
-  model,
-}: {
-  readonly model: RunDetailModel;
-}) {
+export function RunDetailShell({ model }: { readonly model: RunDetailModel }) {
   const router = useRouter();
   const [cancelOpen, setCancelOpen] = useState(false);
 
@@ -50,6 +46,7 @@ export function RunDetailShell({
             dateLabel={model.dateLabel}
             dateIso={model.dateIso}
             canStopUnsent={model.canStopUnsent}
+            canDuplicate={model.canDuplicate}
             onStopUnsent={() => {
               setCancelOpen(true);
             }}

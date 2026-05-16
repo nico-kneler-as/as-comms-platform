@@ -1,18 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import {
-  usePathname,
-  useRouter,
-  useSearchParams,
-} from "next/navigation";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -35,7 +25,7 @@ import { CampaignRow } from "./campaign-row";
 import type { CampaignStateTab } from "./state-filter-tabs";
 import { StateFilterTabs } from "./state-filter-tabs";
 
-const ROW_HEIGHT = 120;
+const ROW_HEIGHT = 92;
 const OVERSCAN = 6;
 
 interface CampaignProjectOption {
@@ -71,7 +61,9 @@ function buildHref(input: {
   }
 
   const queryString = nextParams.toString();
-  return queryString.length === 0 ? input.pathname : `${input.pathname}?${queryString}`;
+  return queryString.length === 0
+    ? input.pathname
+    : `${input.pathname}?${queryString}`;
 }
 
 export function CampaignsList({
@@ -160,8 +152,9 @@ export function CampaignsList({
     selectedProjectIds.length === 0
       ? "All projects"
       : selectedProjectIds.length === 1
-        ? (projectOptions.find((project) => project.id === selectedProjectIds[0])?.label ??
-          "1 project")
+        ? (projectOptions.find(
+            (project) => project.id === selectedProjectIds[0],
+          )?.label ?? "1 project")
         : `${selectedProjectIds.length.toString()} projects`;
 
   const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
@@ -173,13 +166,15 @@ export function CampaignsList({
   );
 
   const hasActiveFilters =
-    activeFilterId !== "all" || selectedProjectIds.length > 0 || searchQuery.length > 0;
+    activeFilterId !== "all" ||
+    selectedProjectIds.length > 0 ||
+    searchQuery.length > 0;
   const showColdStart = totalCount === 0 && !hasActiveFilters;
 
   if (showColdStart) {
     return (
-      <div className="flex flex-1 px-6 py-8 sm:px-8">
-        <div className="mx-auto flex w-full max-w-6xl flex-1 rounded-[32px] border border-slate-200 bg-white">
+      <div className="flex flex-1 px-4 py-8 sm:px-8">
+        <div className="mx-auto flex w-full max-w-7xl flex-1 rounded-2xl border border-slate-200 bg-white">
           <EmptyState
             size="lg"
             icon={<MegaphoneIcon className="size-7 text-slate-500" />}
@@ -200,9 +195,9 @@ export function CampaignsList({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 px-6 py-6 sm:px-8">
-      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col rounded-[32px] border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+    <div className="flex min-h-0 flex-1 px-4 py-6 sm:px-8">
+      <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col">
+        <div className="pb-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <StateFilterTabs
               tabs={tabs}
@@ -226,13 +221,19 @@ export function CampaignsList({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="inline-flex min-w-[13rem] items-center justify-between rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700"
+                    className="inline-flex min-w-[13rem] items-center justify-between rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm"
                   >
                     <span className="truncate">{selectedProjectLabel}</span>
-                    <ChevronDownIcon className="size-4 text-slate-400" aria-hidden="true" />
+                    <ChevronDownIcon
+                      className="size-4 text-slate-400"
+                      aria-hidden="true"
+                    />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64 rounded-2xl p-1.5">
+                <DropdownMenuContent
+                  align="end"
+                  className="w-64 rounded-2xl p-1.5"
+                >
                   {projectOptions.map((project) => {
                     const checked = selectedProjectIds.includes(project.id);
 
@@ -243,11 +244,15 @@ export function CampaignsList({
                         onSelect={(event) => {
                           event.preventDefault();
                           const nextProjectIds = checked
-                            ? selectedProjectIds.filter((projectId) => projectId !== project.id)
+                            ? selectedProjectIds.filter(
+                                (projectId) => projectId !== project.id,
+                              )
                             : [...selectedProjectIds, project.id];
                           const href = buildHref({
                             pathname,
-                            currentParams: new URLSearchParams(searchParams.toString()),
+                            currentParams: new URLSearchParams(
+                              searchParams.toString(),
+                            ),
                             state: activeFilterId,
                             projectIds: nextProjectIds,
                             query: searchQuery,
@@ -268,10 +273,14 @@ export function CampaignsList({
               <label
                 className={cn(
                   "flex min-w-[18rem] items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm",
+                  "shadow-sm",
                   isPending ? "ring-1 ring-slate-200" : "",
                 )}
               >
-                <SearchIcon className="size-4 text-slate-400" aria-hidden="true" />
+                <SearchIcon
+                  className="size-4 text-slate-400"
+                  aria-hidden="true"
+                />
                 <input
                   data-campaign-search="true"
                   type="text"
@@ -313,10 +322,10 @@ export function CampaignsList({
         ) : (
           <div
             ref={viewportRef}
-            className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5"
+            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white"
           >
             <div
-              className="relative"
+              className="relative overflow-hidden"
               style={{ height: `${String(items.length * ROW_HEIGHT)}px` }}
             >
               {visibleItems.map((item, index) => {

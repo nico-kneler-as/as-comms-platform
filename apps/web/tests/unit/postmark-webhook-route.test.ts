@@ -158,10 +158,54 @@ describe("Postmark webhook route handler", () => {
     );
 
     expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       ok: false,
-      code: "unauthorized",
+      code: "invalid_signature",
+      message: "Postmark webhook signature did not match.",
     });
+  });
+
+  it("rejects a missing signature with 400", async () => {
+    const rawBody = loadFixture("delivery.json");
+    const response = await POST(
+      new Request("http://localhost/api/webhooks/postmark", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: rawBody,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: "missing_signature",
+      message: "Missing Postmark webhook signature.",
+    });
+  });
+
+  it("rejects malformed JSON with 400 after signature verification", async () => {
+    const rawBody = "{not-json";
+    const response = await POST(signRequest(rawBody));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: "malformed_json",
+      message: "Postmark webhook payload must be valid JSON.",
+    });
+  });
+
+  it("returns 200 for unknown Postmark event types to avoid retries", async () => {
+    const rawBody = JSON.stringify({
+      RecordType: "UnknownFutureEvent",
+      MessageID: FIXTURE_MESSAGE_ID,
+    });
+    const response = await POST(signRequest(rawBody));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
   });
 
   it("processes a Delivery event into audience_snapshots + canonical event", async () => {
@@ -282,9 +326,7 @@ describe("Postmark webhook route handler", () => {
     expect(response.status).toBe(200);
 
     const consentRows =
-      await campaigns.contactConsent.listForContact(
-        "contact-postmark",
-      );
+      await campaigns.contactConsent.listForContact("contact-postmark");
     expect(consentRows).toHaveLength(1);
     expect(consentRows[0]?.scopeType).toBe("project");
     expect(consentRows[0]?.scopeId).toBe("project-postmark");
@@ -303,9 +345,7 @@ describe("Postmark webhook route handler", () => {
     expect(response.status).toBe(200);
 
     const consentRows =
-      await campaigns.contactConsent.listForContact(
-        "contact-postmark",
-      );
+      await campaigns.contactConsent.listForContact("contact-postmark");
     expect(consentRows).toHaveLength(1);
     expect(consentRows[0]?.scopeType).toBe("newsletter");
     expect(consentRows[0]?.scopeId).toBeNull();

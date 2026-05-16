@@ -100,7 +100,9 @@ function buildProviderRecordType(event: PostmarkWebhookEvent): string {
 
 function buildProviderRecordId(event: PostmarkWebhookEvent): string {
   const occurredAt = toOccurredAt(event);
-  return event.MessageID ?? `${event.Recipient}:${event.RecordType}:${occurredAt}`;
+  return (
+    event.MessageID ?? `${event.Recipient}:${event.RecordType}:${occurredAt}`
+  );
 }
 
 function buildIdempotencyKey(event: PostmarkWebhookEvent): string {
@@ -187,20 +189,45 @@ async function writeSpamComplaintReview(input: {
   await input.runtime.repositories.identityResolutionQueue.upsert(caseRecord);
 }
 
-function unauthorized() {
+function safeError(code: string, message: string, status: number) {
   return NextResponse.json(
     {
       ok: false,
-      code: "unauthorized",
+      code,
+      message,
+      requestId: randomUUID(),
     },
     {
-      status: 401,
+      status,
     },
   );
 }
 
 function ok() {
   return NextResponse.json({ ok: true });
+}
+
+function isUnknownRecordType(payload: unknown): boolean {
+  if (
+    payload === null ||
+    typeof payload !== "object" ||
+    !("RecordType" in payload)
+  ) {
+    return false;
+  }
+
+  const recordType = (payload as { readonly RecordType?: unknown }).RecordType;
+  return (
+    typeof recordType === "string" &&
+    ![
+      "Delivery",
+      "Bounce",
+      "SpamComplaint",
+      "Open",
+      "Click",
+      "SubscriptionChange",
+    ].includes(recordType)
+  );
 }
 
 async function processEvent(
@@ -261,7 +288,9 @@ async function processEvent(
     );
     return;
   }
-  const run = await runtime.campaigns.campaignRuns.findById(snapshot.campaignRunId);
+  const run = await runtime.campaigns.campaignRuns.findById(
+    snapshot.campaignRunId,
+  );
   const shouldUpdateAggregateMetrics =
     run?.state !== "finalized" ||
     run.finalizedAt === null ||
@@ -335,7 +364,7 @@ async function processEvent(
 export async function POST(request: Request) {
   const env = readWebEnv();
   const rawBody = await request.text();
-  const signature = request.headers.get("x-postmark-signature") ?? "";
+  const signature = request.headers.get("x-postmark-signature");
   const client = createPostmarkClient({
     serverToken: env.POSTMARK_SERVER_TOKEN ?? "",
     accountToken: env.POSTMARK_ACCOUNT_TOKEN ?? null,
@@ -343,13 +372,45 @@ export async function POST(request: Request) {
     baseUrl: env.POSTMARK_BASE_URL,
   });
 
+  if (signature === null || signature.trim().length === 0) {
+    return safeError(
+      "missing_signature",
+      "Missing Postmark webhook signature.",
+      400,
+    );
+  }
+
   if (!client.verifyWebhookSignature(rawBody, signature)) {
-    return unauthorized();
+    return safeError(
+      "invalid_signature",
+      "Postmark webhook signature did not match.",
+      401,
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody) as unknown;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return safeError(
+        "malformed_json",
+        "Postmark webhook payload must be valid JSON.",
+        400,
+      );
+    }
+
+    console.error(error instanceof Error ? error.message : String(error));
+    return ok();
+  }
+
+  if (isUnknownRecordType(payload)) {
+    return ok();
   }
 
   let event: PostmarkWebhookEvent;
   try {
-    event = postmarkWebhookEventSchema.parse(JSON.parse(rawBody) as unknown);
+    event = postmarkWebhookEventSchema.parse(payload);
   } catch (error) {
     console.error("Postmark webhook payload validation failed.");
     console.error(error instanceof Error ? error.message : String(error));

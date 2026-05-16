@@ -5,8 +5,11 @@ import type {
   AudienceSnapshotRecord,
   AuditEvidenceRecord,
   CampaignRunRecord,
+  CampaignRunProjectionRow,
   RunState,
 } from "@as-comms/contracts";
+import { audienceCriteriaSchema } from "@as-comms/contracts";
+import { createCampaignRunProjectionReader } from "@as-comms/domain";
 
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 
@@ -65,6 +68,7 @@ export interface RunAuditEntry {
 }
 
 export interface RunDetailModel {
+  readonly provider: "postmark" | "mailchimp";
   readonly run: CampaignRunRecord;
   readonly totalAudience: number;
   readonly senderAlias: string | null;
@@ -83,6 +87,7 @@ export interface RunDetailModel {
   readonly auditEntries: readonly RunAuditEntry[];
   readonly audienceCriteria: AudienceCriteria;
   readonly canStopUnsent: boolean;
+  readonly canDuplicate: boolean;
   readonly isAdmin: boolean;
 }
 
@@ -303,6 +308,105 @@ function buildMetricTiles(
   ];
 }
 
+function buildHistoricalMetricTiles(
+  total: number,
+  state: CampaignRunRecord["state"],
+): readonly RunMetricTileData[] {
+  const sent = state === "complete" || state === "finalized" ? total : 0;
+  const queued = Math.max(0, total - sent);
+
+  return [
+    {
+      key: "queued",
+      label: "Queued",
+      value: queued,
+      percentage: formatPercentage(queued, total),
+      subtitle: null,
+    },
+    {
+      key: "sent",
+      label: "Sent",
+      value: sent,
+      percentage: formatPercentage(sent, total),
+      subtitle: total === 0 ? "Historical Mailchimp import" : null,
+    },
+    {
+      key: "delivered",
+      label: "Delivered",
+      value: 0,
+      percentage: 0,
+      subtitle: "Not imported from Mailchimp",
+    },
+    {
+      key: "opened",
+      label: "Opened",
+      value: 0,
+      percentage: 0,
+      subtitle: "Not imported from Mailchimp",
+    },
+    {
+      key: "clicked",
+      label: "Clicked",
+      value: 0,
+      percentage: 0,
+      subtitle: "Not imported from Mailchimp",
+    },
+    {
+      key: "bounced",
+      label: "Bounced",
+      value: 0,
+      percentage: 0,
+      subtitle: "Not imported from Mailchimp",
+    },
+    {
+      key: "unsubscribed",
+      label: "Unsubscribed",
+      value: 0,
+      percentage: 0,
+      subtitle: "Not imported from Mailchimp",
+    },
+    {
+      key: "complained",
+      label: "Complained",
+      value: 0,
+      percentage: 0,
+      subtitle: "Not imported from Mailchimp",
+    },
+  ];
+}
+
+function buildProjectionRun(
+  projection: CampaignRunProjectionRow,
+): CampaignRunRecord {
+  return {
+    id: projection.runId,
+    kind: projection.kind,
+    launchType: projection.launchType,
+    state: projection.state,
+    projectId: projection.projectId,
+    name: projection.subject.trim().length === 0 ? null : projection.subject,
+    fromEmail: null,
+    fromName: null,
+    replyToEmail: null,
+    subjectTemplate: projection.subject,
+    bodyHtmlTemplate: null,
+    bodyTextTemplate: null,
+    preheader: null,
+    audienceCriteria: audienceCriteriaSchema.parse({}),
+    audienceSize: projection.audienceSize,
+    scheduledAt: projection.scheduledAt,
+    startedAt: projection.startedAt,
+    completedAt: projection.completedAt,
+    finalizedAt: null,
+    cancelledAt: projection.cancelledAt,
+    cancelledReason: null,
+    createdByUserId: null,
+    lastEditedByUserId: null,
+    createdAt: projection.createdAt,
+    updatedAt: projection.updatedAt,
+  };
+}
+
 function estimateMinutesRemaining(input: {
   readonly runState: RunState;
   readonly startedAt: string | null;
@@ -328,7 +432,7 @@ function estimateMinutesRemaining(input: {
   }
 
   const remainingCount = input.totalAudience - input.sentCount;
-  return Math.max(1, Math.ceil((remainingCount / ratePerMs) / 60_000));
+  return Math.max(1, Math.ceil(remainingCount / ratePerMs / 60_000));
 }
 
 function buildAuditEntry(record: AuditEvidenceRecord): RunAuditEntry {
@@ -352,17 +456,35 @@ function buildAuditEntry(record: AuditEvidenceRecord): RunAuditEntry {
 
 export async function getRunDetailModel(input: {
   readonly runId: string;
+  readonly provider?: "postmark" | "mailchimp";
   readonly isAdmin: boolean;
 }): Promise<RunDetailModel | null> {
   const runtime = await getStage1WebRuntime();
-  const run = await runtime.campaigns.campaignRuns.findById(input.runId);
+  const provider = input.provider ?? "postmark";
+  const projectionReader = createCampaignRunProjectionReader({
+    repositories: runtime.campaigns,
+  });
+  const projection =
+    provider === "mailchimp"
+      ? await projectionReader.getDetail(input.runId, "mailchimp")
+      : null;
+  const run =
+    projection === null
+      ? await runtime.campaigns.campaignRuns.findById(input.runId)
+      : buildProjectionRun(projection);
   if (run === null) {
     return null;
   }
 
-  const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+  const snapshots =
+    provider === "mailchimp"
+      ? []
+      : await runtime.campaigns.audienceSnapshots.listForRun(run.id);
   const totalAudience = run.audienceSize ?? snapshots.length;
-  const metrics = buildMetricTiles(snapshots, totalAudience);
+  const metrics =
+    provider === "mailchimp"
+      ? buildHistoricalMetricTiles(totalAudience, run.state)
+      : buildMetricTiles(snapshots, totalAudience);
   const sentCount = metrics.find((metric) => metric.key === "sent")?.value ?? 0;
   const queuedCount =
     metrics.find((metric) => metric.key === "queued")?.value ?? 0;
@@ -397,7 +519,9 @@ export async function getRunDetailModel(input: {
     } satisfies RecipientRowData;
   });
 
-  const replyContactIds = [...new Set(snapshots.map((snapshot) => snapshot.contactId))];
+  const replyContactIds = [
+    ...new Set(snapshots.map((snapshot) => snapshot.contactId)),
+  ];
   let repliesCount = 0;
   let recentReplies: readonly ReplyPreviewRow[] = [];
   if (
@@ -415,7 +539,10 @@ export async function getRunDetailModel(input: {
       from canonical_event_ledger cel
       inner join contacts c
         on c.id = cel.contact_id
-      where cel.contact_id in (${sql.join(replyContactIds.map((value) => sql`${value}`), sql`, `)})
+      where cel.contact_id in (${sql.join(
+        replyContactIds.map((value) => sql`${value}`),
+        sql`, `,
+      )})
         and cel.event_type = 'communication.email.inbound'
         and cel.occurred_at > ${threshold}::timestamptz
       order by cel.occurred_at desc, cel.id desc
@@ -425,7 +552,10 @@ export async function getRunDetailModel(input: {
       sql<{ readonly count: number }>`
         select count(*)::int as "count"
         from canonical_event_ledger cel
-        where cel.contact_id in (${sql.join(replyContactIds.map((value) => sql`${value}`), sql`, `)})
+        where cel.contact_id in (${sql.join(
+          replyContactIds.map((value) => sql`${value}`),
+          sql`, `,
+        )})
           and cel.event_type = 'communication.email.inbound'
           and cel.occurred_at > ${threshold}::timestamptz
       `,
@@ -433,9 +563,11 @@ export async function getRunDetailModel(input: {
     const recentReplyRows =
       (replyRowsResult as { readonly rows?: readonly ReplyRowDb[] }).rows ?? [];
     const [countRow] =
-      (countResult as {
-        readonly rows?: readonly { readonly count: number }[];
-      }).rows ?? [];
+      (
+        countResult as {
+          readonly rows?: readonly { readonly count: number }[];
+        }
+      ).rows ?? [];
 
     repliesCount = countRow?.count ?? 0;
     recentReplies = recentReplyRows.map((row) => ({
@@ -453,9 +585,11 @@ export async function getRunDetailModel(input: {
   const { label: dateLabel, iso: dateIso } = resolveRunDate(run);
 
   return {
+    provider,
     run,
     totalAudience,
-    senderAlias: run.fromEmail,
+    senderAlias:
+      run.fromEmail ?? (provider === "mailchimp" ? "Mailchimp import" : null),
     kindLabel: run.kind === "project" ? "Project" : "Newsletter",
     dateLabel,
     dateIso,
@@ -471,8 +605,14 @@ export async function getRunDetailModel(input: {
     auditEntries: audits.map(buildAuditEntry),
     audienceCriteria: run.audienceCriteria,
     canStopUnsent:
+      provider === "postmark" &&
       input.isAdmin &&
       (run.state === "sending" || run.state === "scheduled"),
+    canDuplicate:
+      provider === "postmark" &&
+      (run.state === "complete" ||
+        run.state === "finalized" ||
+        run.state === "cancelled"),
     isAdmin: input.isAdmin,
   };
 }
