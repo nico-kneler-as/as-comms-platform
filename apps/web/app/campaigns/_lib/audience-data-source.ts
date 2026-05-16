@@ -12,12 +12,13 @@ import {
   type CampaignRunRecord,
   type ExpeditionMemberStatus,
   type LaunchType,
+  type PostmarkSenderStatus,
 } from "@as-comms/contracts";
 import { createAudienceResolver, createMergeRenderer } from "@as-comms/domain";
 
 import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 
-import { requireSession } from "@/src/server/auth/session";
+import { requireAdmin, requireSession } from "@/src/server/auth/session";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 
 import {
@@ -73,6 +74,7 @@ export interface CampaignSenderOption {
   readonly projectName: string;
   readonly email: string;
   readonly connectedToProjectId: string | null;
+  readonly status: PostmarkSenderStatus;
 }
 
 export interface CampaignWizardDraftData {
@@ -257,7 +259,7 @@ async function createResolver() {
 }
 
 export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftData> {
-  const session = await requireSession();
+  const session = await requireAdmin();
   const runtime = await getStage1WebRuntime();
   const created = await runtime.campaigns.campaignRuns.create({
     id: randomUUID(),
@@ -343,7 +345,6 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
     ),
   }));
   const senderOptions = settingsProjects
-    .filter((project) => project.postmarkSenderStatus === "verified")
     .map((project) => {
       const email = readPrimaryEmail(project);
       if (email === null) {
@@ -355,6 +356,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
         projectName: project.projectName,
         email,
         connectedToProjectId: project.connectedToProjectId,
+        status: project.postmarkSenderStatus,
       } satisfies CampaignSenderOption;
     })
     .filter((project): project is CampaignSenderOption => project !== null)

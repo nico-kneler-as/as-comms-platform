@@ -1,5 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
+import { requireSession } from "@/src/server/auth/session";
+
 import {
   createCampaignWizardDraft,
   getAudienceBuilderBootstrap,
@@ -16,6 +18,7 @@ export default async function NewCampaignPage({
   }>;
 }) {
   const params = (await searchParams) ?? {};
+  const currentUser = await requireSession();
 
   if (!params.runId) {
     const created = await createCampaignWizardDraft();
@@ -31,5 +34,11 @@ export default async function NewCampaignPage({
     notFound();
   }
 
-  return <NewCampaignWizard bootstrap={bootstrap} draft={draft} />;
+  return (
+    <NewCampaignWizard
+      bootstrap={bootstrap}
+      draft={draft}
+      isAdmin={currentUser.role === "admin"}
+    />
+  );
 }

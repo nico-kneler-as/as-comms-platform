@@ -48,12 +48,39 @@ vi.mock("@/components/ui/dialog", () => ({
   ),
 }));
 
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  PopoverTrigger: ({ children }: { readonly children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  PopoverContent: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+}));
+
+vi.mock("@/components/ui/tooltip", () => ({
+  TooltipProvider: ({ children }: { readonly children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  Tooltip: ({ children }: { readonly children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  TooltipTrigger: ({ children }: { readonly children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  TooltipContent: ({ children }: { readonly children: React.ReactNode }) => (
+    <div data-tooltip="true">{children}</div>
+  ),
+}));
+
 import { ReviewStep } from "../../app/campaigns/new/_components/review-step";
 
 const baseProps: React.ComponentProps<typeof ReviewStep> = {
   kind: "project",
   projectChipLabel: "Forests",
-  runName: null,
+  runName: "May forests volunteer update",
   fromEmail: "forests@adventurescientists.org",
   preheader: "Everything you need for tomorrow.",
   senderOptions: [
@@ -62,8 +89,10 @@ const baseProps: React.ComponentProps<typeof ReviewStep> = {
       projectName: "Forests",
       email: "forests@adventurescientists.org",
       connectedToProjectId: null,
+      status: "verified",
     },
   ],
+  selectedSenderVerified: true,
   audienceSize: 1247,
   previewData: {
     audienceSize: 1247,
@@ -105,31 +134,61 @@ const baseProps: React.ComponentProps<typeof ReviewStep> = {
   onSubmit: () => undefined,
 };
 
-describe("ReviewStep snapshots", () => {
-  it("renders the editable review state", () => {
-    expect(
-      renderToStaticMarkup(
-        <ReviewStep
-          {...baseProps}
-          runName="May forests volunteer update"
-          confirmOpen={true}
-        />,
-      ),
-    ).toMatchSnapshot();
+describe("ReviewStep sender gating", () => {
+  it("shows verified senders and leaves launch enabled", () => {
+    const markup = renderToStaticMarkup(<ReviewStep {...baseProps} />);
+
+    expect(markup).toContain("forests@adventurescientists.org · verified");
+    expect(markup).not.toContain("<button disabled=\"\">Send now</button>");
   });
 
-  it("renders the frozen scheduled state", () => {
-    expect(
-      renderToStaticMarkup(
-        <ReviewStep
-          {...baseProps}
-          runName="May forests volunteer update"
-          frozen={true}
-          frozenState="scheduled"
-          frozenScheduledAt="2026-05-20T15:30:00.000Z"
-          previewExpanded={false}
-        />,
-      ),
-    ).toMatchSnapshot();
+  it("renders unverified sender rows as disabled with verification guidance", () => {
+    const markup = renderToStaticMarkup(
+      <ReviewStep
+        {...baseProps}
+        fromEmail={null}
+        selectedSenderVerified={false}
+        senderOptions={[
+          ...baseProps.senderOptions,
+          {
+            projectId: "project-2",
+            projectName: "Kelp Watch",
+            email: "kelp@adventurescientists.org",
+            connectedToProjectId: null,
+            status: "unverified",
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("kelp@adventurescientists.org · unverified");
+    expect(markup).toContain("aria-disabled=\"true\"");
+    expect(markup).toContain(
+      "This alias hasn&#x27;t been verified in Postmark yet. Open Settings → Projects to start verification.",
+    );
+    expect(markup).toContain(
+      "aria-label=\"kelp@adventurescientists.org · unverified. This alias hasn&#x27;t been verified in Postmark yet. Open Settings → Projects to start verification.\"",
+    );
+  });
+
+  it("keeps launch disabled when only unverified senders exist", () => {
+    const markup = renderToStaticMarkup(
+      <ReviewStep
+        {...baseProps}
+        fromEmail={null}
+        selectedSenderVerified={false}
+        senderOptions={[
+          {
+            projectId: "project-2",
+            projectName: "Kelp Watch",
+            email: "kelp@adventurescientists.org",
+            connectedToProjectId: null,
+            status: "unverified",
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("<button disabled=\"\">Send now</button>");
   });
 });
