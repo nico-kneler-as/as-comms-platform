@@ -66,6 +66,7 @@ async function seedTarget(
     kind: input.kind,
     launchType: "normal_email",
     projectId: input.kind === "project" ? "project-sub" : null,
+    name: null,
     fromEmail: "forests@adventurescientists.org",
     fromName: "Adventure Scientists",
     replyToEmail: "forests@adventurescientists.org",

@@ -32,6 +32,7 @@ function buildDraftInput(
     kind: "project",
     launchType: "normal_email",
     projectId: "project-1",
+    name: null,
     fromEmail: null,
     fromName: null,
     replyToEmail: null,

@@ -2,6 +2,8 @@
 
 import { randomUUID } from "node:crypto";
 
+import { headers } from "next/headers";
+
 import {
   cancelRunInputSchema,
   campaignSendJobName,
@@ -15,11 +17,19 @@ import {
   createExclusionFilter,
   createMergeRenderer,
 } from "@as-comms/domain";
+import { createPostmarkClient } from "@as-comms/integrations";
+import { z } from "zod";
 
 import type { UiError, UiSuccess } from "@/src/server/ui-result";
 
-import { requireAdmin } from "@/src/server/auth/session";
+import { requireAdmin, requireSession } from "@/src/server/auth/session";
+import { readWebEnv } from "@/src/server/env";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
+
+import {
+  buildCampaignFooterPreview,
+  formatOrgAddress,
+} from "./_lib/campaign-preview";
 
 interface CampaignActionData {
   readonly runId: string;
@@ -27,6 +37,11 @@ interface CampaignActionData {
   readonly excludedCount?: number;
   readonly scheduledAt?: string | null;
   readonly state: "scheduled" | "cancelled";
+}
+
+interface CampaignTestSendData {
+  readonly runId: string;
+  readonly recipientEmail: string;
 }
 
 function newRequestId(): string {
@@ -55,6 +70,21 @@ function buildPostmarkClientForActions() {
       );
     },
   };
+}
+
+function buildLivePostmarkClient() {
+  const env = readWebEnv();
+
+  if (!env.POSTMARK_SERVER_TOKEN || !env.POSTMARK_ACCOUNT_TOKEN) {
+    return null;
+  }
+
+  return createPostmarkClient({
+    serverToken: env.POSTMARK_SERVER_TOKEN,
+    accountToken: env.POSTMARK_ACCOUNT_TOKEN,
+    webhookSigningSecret: env.POSTMARK_WEBHOOK_SIGNING_SECRET ?? "unused",
+    baseUrl: env.POSTMARK_BASE_URL,
+  });
 }
 
 async function createCampaignOrchestrator() {
@@ -158,6 +188,21 @@ async function assertCampaignAdmin():
   }
 }
 
+async function readRequestOrigin(): Promise<string> {
+  const requestHeaders = await headers();
+  const origin = requestHeaders.get("origin");
+  if (origin !== null && origin.trim().length > 0) {
+    return origin;
+  }
+
+  const host =
+    requestHeaders.get("x-forwarded-host") ??
+    requestHeaders.get("host") ??
+    "localhost:3000";
+  const protocol = requestHeaders.get("x-forwarded-proto") ?? "http";
+  return `${protocol}://${host}`;
+}
+
 export async function sendNow(
   runId: string,
 ): Promise<UiSuccess<CampaignActionData> | UiError> {
@@ -243,6 +288,154 @@ export async function schedule(
     return errorResult(
       "campaign_schedule_failed",
       error instanceof Error ? error.message : "Unable to schedule the campaign.",
+      true,
+    );
+  }
+}
+
+export async function testSend(
+  runId: string,
+  recipientEmail: string,
+): Promise<UiSuccess<CampaignTestSendData> | UiError> {
+  const session = await requireSession();
+
+  try {
+    const parsed = z.object({
+      runId: z.string().trim().min(1),
+      recipientEmail: z.string().trim().email(),
+    }).parse({
+      runId,
+      recipientEmail,
+    });
+    const client = buildLivePostmarkClient();
+    if (client === null) {
+      return errorResult(
+        "campaign_test_send_unavailable",
+        "Postmark is not configured for test sends in this environment.",
+      );
+    }
+
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
+    if (run === null) {
+      return errorResult("campaign_not_found", "Campaign draft not found.");
+    }
+
+    const resolver = createAudienceResolver({
+      repositories: {
+        contacts: runtime.repositories.contacts,
+        contactMemberships: runtime.repositories.contactMemberships,
+        canonicalEvents: runtime.repositories.canonicalEvents,
+        projectDimensions: runtime.repositories.projectDimensions,
+        settingsProjects: runtime.settings.projects,
+      },
+    });
+    const audience = await resolver.resolveAudience(run.audienceCriteria, new Date());
+    const sample = audience[0];
+    if (sample === undefined) {
+      return errorResult(
+        "campaign_test_send_missing_sample",
+        "Add at least one audience recipient before sending a test.",
+      );
+    }
+
+    const fromEmail = run.fromEmail ?? sample.frozenAliasEmail;
+    if (fromEmail === null) {
+      return errorResult(
+        "campaign_test_send_missing_sender",
+        "Choose a verified sender alias before sending a test.",
+      );
+    }
+
+    const footerAddress = formatOrgAddress(await runtime.campaigns.orgSettings.read());
+    const footer = buildCampaignFooterPreview({
+      kind: run.kind,
+      projectName: sample.frozenProjectName,
+      footerAddress,
+      origin: await readRequestOrigin(),
+    });
+    const mergeRenderer = createMergeRenderer();
+    const rendered = mergeRenderer.render(
+      {
+        subject: run.subjectTemplate ?? "",
+        bodyHtml: `${run.bodyHtmlTemplate ?? ""}${footer.html}`,
+        bodyText: [run.bodyTextTemplate ?? "", footer.text].filter(Boolean).join("\n\n"),
+      },
+      {
+        firstName: sample.frozenFirstName,
+        projectName: sample.frozenProjectName,
+        aliasEmail: sample.frozenAliasEmail,
+      },
+    );
+
+    await client.sendBatch({
+      isTest: true,
+      messages: [
+        {
+          From: fromEmail,
+          To: parsed.recipientEmail,
+          ...(run.replyToEmail === null ? {} : { ReplyTo: run.replyToEmail }),
+          Subject: rendered.subject,
+          HtmlBody: rendered.html,
+          TextBody: rendered.text,
+          MessageStream: "broadcast",
+          Metadata: {
+            campaignRunId: run.id,
+            campaignType: "test",
+            operatorUserId: session.id,
+          },
+        },
+      ],
+    });
+
+    return {
+      ok: true,
+      data: {
+        runId: run.id,
+        recipientEmail: parsed.recipientEmail,
+      },
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "campaign_test_send_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to send the test campaign email.",
+      true,
+    );
+  }
+}
+
+export async function cancelDraft(
+  runId: string,
+): Promise<UiSuccess<CampaignActionData> | UiError> {
+  const admin = await assertCampaignAdmin();
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    await runtime.campaigns.campaignRuns.transitionState(runId, "draft", "cancelled", {
+      cancelledAt: new Date().toISOString(),
+      cancelledReason: "Draft cancelled before launch.",
+      lastEditedByUserId: admin.userId,
+    });
+
+    return {
+      ok: true,
+      data: {
+        runId,
+        scheduledAt: null,
+        state: "cancelled",
+      },
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "campaign_cancel_draft_failed",
+      error instanceof Error ? error.message : "Unable to cancel the draft.",
       true,
     );
   }

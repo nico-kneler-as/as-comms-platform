@@ -40,6 +40,7 @@ interface AudienceBuilderStepProps {
   readonly onHasClickedChange: (value: AudienceTriState) => void;
   readonly onPreviewToggle: () => void;
   readonly onBack: () => void;
+  readonly onContinue: () => void;
 }
 
 export function AudienceBuilderStep({
@@ -61,6 +62,7 @@ export function AudienceBuilderStep({
   onHasClickedChange,
   onPreviewToggle,
   onBack,
+  onContinue,
 }: AudienceBuilderStepProps) {
   return (
     <section className="flex h-full flex-col">
@@ -123,12 +125,7 @@ export function AudienceBuilderStep({
         <Button variant="outline" onClick={onBack}>
           Back
         </Button>
-        <div className="text-right">
-          <p className="text-sm font-medium text-slate-900">Compose comes next</p>
-          <p className="mt-1 text-xs text-slate-500">
-            Step 4 lands in Brief A5. Your audience state keeps autosaving here.
-          </p>
-        </div>
+        <Button onClick={onContinue}>Continue to compose</Button>
       </div>
     </section>
   );

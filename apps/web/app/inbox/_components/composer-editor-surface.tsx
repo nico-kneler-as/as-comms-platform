@@ -144,6 +144,7 @@ export function InlineErrorBanner({
 export interface RichTextComposerCommandState {
   readonly activeCommands: ReadonlySet<ComposerToolbarCommand>;
   readonly onCommand: (command: ComposerToolbarCommand) => void;
+  readonly insertText: (value: string) => void;
 }
 
 export function RichTextComposerEditor({
@@ -171,6 +172,7 @@ export function RichTextComposerEditor({
   readonly toolbarFooter?: (input: {
     readonly activeCommands: ReadonlySet<ComposerToolbarCommand>;
     readonly onCommand: (command: ComposerToolbarCommand) => void;
+    readonly insertText: (value: string) => void;
   }) => React.ReactNode;
   readonly className?: string;
   readonly frameClassName?: string;
@@ -270,6 +272,17 @@ export function RichTextComposerEditor({
     [editor],
   );
 
+  const insertText = useCallback(
+    (value: string) => {
+      if (editor === null) {
+        return;
+      }
+
+      editor.chain().focus().insertContent(value).run();
+    },
+    [editor],
+  );
+
   useEffect(() => {
     if (editor === null) {
       return;
@@ -306,8 +319,9 @@ export function RichTextComposerEditor({
               activeCommandsKey.split(",") as readonly ComposerToolbarCommand[],
             ),
       onCommand: runCommand,
+      insertText,
     });
-  }, [activeCommandsKey, onCommandStateChange, runCommand]);
+  }, [activeCommandsKey, insertText, onCommandStateChange, runCommand]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -347,6 +361,7 @@ export function RichTextComposerEditor({
         ? toolbarFooter({
             activeCommands,
             onCommand: runCommand,
+            insertText,
           })
         : null}
     </div>
