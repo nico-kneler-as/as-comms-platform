@@ -448,6 +448,12 @@ export const testSendInputSchema = z.object({
 });
 export type TestSendInput = z.infer<typeof testSendInputSchema>;
 
+export const campaignSendJobName = "campaign-send" as const;
+export const campaignSendPayloadSchema = z.object({
+  runId: idSchema,
+});
+export type CampaignSendPayload = z.infer<typeof campaignSendPayloadSchema>;
+
 export const pollPostmarkSenderStatusJobName =
   "poll-postmark-sender-status" as const;
 export const pollPostmarkSenderStatusPayloadSchema = z.object({

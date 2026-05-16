@@ -2,9 +2,14 @@ import { readFile } from "node:fs/promises";
 import process from "node:process";
 
 import {
+  campaignSendJobName,
+  campaignSendPayloadSchema,
+} from "@as-comms/contracts";
+import {
   closeDatabaseConnection,
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
+  createStage5RepositoryBundleFromConnection,
 } from "@as-comms/db";
 import {
   createStage1NormalizationService,
@@ -361,6 +366,60 @@ async function runReconcileRoutingReviewQueue(
   }
 }
 
+async function runReprocessPendingCampaignSends(
+  args: readonly string[],
+): Promise<void> {
+  const limit = readOptionalLimitArg(args) ?? 100;
+  const connection = createDatabaseConnection({
+    connectionString: readConnectionString(process.env),
+  });
+
+  try {
+    const campaigns = createStage5RepositoryBundleFromConnection(connection);
+    const runs = await campaigns.campaignRuns.listRecent({
+      limit,
+      state: ["scheduled", "sending"],
+    });
+    const requeued: string[] = [];
+
+    for (const run of runs) {
+      const snapshots = await campaigns.audienceSnapshots.listForRun(run.id);
+      if (!snapshots.some((snapshot) => snapshot.deliveryStatus === "pending")) {
+        continue;
+      }
+
+      const payload = campaignSendPayloadSchema.parse({
+        runId: run.id,
+      });
+
+      await connection.sql`
+        select graphile_worker.add_job(
+          identifier => ${campaignSendJobName},
+          payload => ${JSON.stringify(payload)}::json,
+          job_key => ${`campaign-send:${run.id}`},
+          job_key_mode => 'replace',
+          max_attempts => 1
+        )
+      `;
+
+      requeued.push(run.id);
+    }
+
+    console.info(
+      JSON.stringify(
+        {
+          scanned: runs.length,
+          requeued,
+        },
+        null,
+        2,
+      ),
+    );
+  } finally {
+    await closeDatabaseConnection(connection);
+  }
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
 
@@ -410,6 +469,9 @@ async function main(): Promise<void> {
     case "recover-orphan-gmail-details":
       await runRecoverOrphanGmailDetailsCommand(rest, process.env);
       return;
+    case "reprocess-pending-campaign-sends":
+      await runReprocessPendingCampaignSends(rest);
+      return;
     case "dedup-historical-ledger":
       await runDedupHistoricalLedgerCommand(rest, process.env);
       return;
@@ -436,7 +498,7 @@ async function main(): Promise<void> {
       return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, re-extract-signed-envelope-bodies, backfill-mailchimp-campaign-body, mailchimp-capture-historical, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, recover-orphan-gmail-details, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction, reconcile-stale-canonical, reconcile-superseded-projections.",
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, re-extract-signed-envelope-bodies, backfill-mailchimp-campaign-body, mailchimp-capture-historical, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, recover-orphan-gmail-details, reprocess-pending-campaign-sends, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction, reconcile-stale-canonical, reconcile-superseded-projections.",
       );
   }
 }
