@@ -1,9 +1,6 @@
 import Link from "next/link";
 
-import type {
-  CampaignRunProjectionRow,
-  RunState,
-} from "@as-comms/contracts";
+import type { CampaignRunProjectionRow, RunState } from "@as-comms/contracts";
 import { createCampaignRunProjectionReader } from "@as-comms/domain";
 
 import { Button } from "@/components/ui/button";
@@ -92,7 +89,9 @@ function normalizeSearchQuery(value: CampaignsSearchParams["q"]): string {
 }
 
 function resolveFilterStates(filterId: CampaignFilterId) {
-  return FILTER_DEFINITIONS.find((filter) => filter.id === filterId)?.states ?? null;
+  return (
+    FILTER_DEFINITIONS.find((filter) => filter.id === filterId)?.states ?? null
+  );
 }
 
 function buildPreviewMaps(input: {
@@ -103,10 +102,16 @@ function buildPreviewMaps(input: {
   return new Map(
     input.rows.map((row) => {
       if (row.provider === "postmark") {
-        return [row.runId, input.postmarkPreheaders.get(row.runId) ?? null] as const;
+        return [
+          row.runId,
+          input.postmarkPreheaders.get(row.runId) ?? null,
+        ] as const;
       }
 
-      return [row.runId, input.mailchimpSnippets.get(row.runId) ?? null] as const;
+      return [
+        row.runId,
+        input.mailchimpSnippets.get(row.runId) ?? null,
+      ] as const;
     }),
   );
 }
@@ -141,14 +146,18 @@ export default async function CampaignsPage({
     }),
   );
   const projectLabelById = new Map(
-    activeProjects.map((project) => [project.projectId, project.projectName] as const),
+    activeProjects.map(
+      (project) => [project.projectId, project.projectName] as const,
+    ),
   );
 
   const listRecentOptions: Parameters<typeof reader.listRecent>[0] = {
     limit: 200,
     offset: 0,
     ...(activeStates === null ? {} : { states: [...activeStates] }),
-    ...(selectedProjectIds.length === 0 ? {} : { projectIds: selectedProjectIds }),
+    ...(selectedProjectIds.length === 0
+      ? {}
+      : { projectIds: selectedProjectIds }),
     ...(searchQuery.length === 0 ? {} : { searchQuery }),
   };
   const rows = await reader.listRecent(listRecentOptions);
@@ -157,7 +166,8 @@ export default async function CampaignsPage({
     .map((row) => row.runId);
 
   const mailchimpDetailsPromise =
-    runtime.repositories.mailchimpCampaignActivityDetails.listByCampaignIds === undefined
+    runtime.repositories.mailchimpCampaignActivityDetails.listByCampaignIds ===
+    undefined
       ? Promise.resolve(
           [] as Awaited<
             ReturnType<
@@ -212,29 +222,31 @@ export default async function CampaignsPage({
   const items: readonly CampaignListRowViewModel[] = rows.map((row) => ({
     ...row,
     projectLabel:
-      row.projectId === null ? null : (projectLabelById.get(row.projectId) ?? null),
+      row.projectId === null
+        ? null
+        : (projectLabelById.get(row.projectId) ?? null),
     previewText: previewByRunId.get(row.runId) ?? null,
   }));
 
   const activeCount =
-    tabCounts.find((filter) => filter.id === activeFilterId)?.count ?? items.length;
-  const totalCount = tabCounts.find((filter) => filter.id === "all")?.count ?? 0;
+    tabCounts.find((filter) => filter.id === activeFilterId)?.count ??
+    items.length;
+  const totalCount =
+    tabCounts.find((filter) => filter.id === "all")?.count ?? 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-100">
       <div className="border-b border-slate-200 bg-white px-6 py-6 sm:px-8">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4">
-          <div className="min-w-0">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4">
+          <div className="flex min-w-0 items-baseline gap-4">
             <h1 className="text-2xl font-semibold text-slate-900">Campaigns</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              {`${activeCount.toLocaleString()} ${
-                activeFilterId === "all" ? "campaigns" : "matching campaigns"
-              }`}
+            <p className="text-sm tabular-nums text-slate-500">
+              {activeCount.toLocaleString()}
             </p>
           </div>
           {currentUser.role === "admin" ? (
             <Button asChild>
-              <Link href="/campaigns/new">New campaign</Link>
+              <Link href="/campaigns/new">+ New campaign</Link>
             </Button>
           ) : null}
         </div>

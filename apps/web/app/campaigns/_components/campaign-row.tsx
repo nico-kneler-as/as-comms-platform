@@ -20,11 +20,11 @@ function formatCampaignDate(input: {
   const dateValue =
     input.state === "scheduled"
       ? input.scheduledAt
-      : input.cancelledAt ??
+      : (input.cancelledAt ??
         input.completedAt ??
         input.startedAt ??
         input.scheduledAt ??
-        input.createdAt;
+        input.createdAt);
   const label =
     input.state === "scheduled"
       ? "Scheduled"
@@ -38,7 +38,7 @@ function formatCampaignDate(input: {
     month: "short",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: "America/Denver",
   }).format(new Date(safeDateValue))}`;
 }
 
@@ -122,82 +122,86 @@ export function CampaignRow({
   readonly item: CampaignRowViewModel;
   readonly style?: React.CSSProperties;
 }) {
-  const title = item.subject.trim().length === 0 ? "No subject yet" : item.subject;
-  const previewText =
-    item.previewText?.trim().length
-      ? item.previewText
-      : item.provider === "mailchimp"
-        ? "Historical Mailchimp campaign"
-        : "No preview text";
+  const title =
+    item.subject.trim().length === 0 ? "No subject yet" : item.subject;
+  const previewText = item.previewText?.trim().length
+    ? item.previewText
+    : item.provider === "mailchimp"
+      ? "Historical Mailchimp campaign"
+      : "No preview text";
   const href =
     item.provider === "mailchimp"
       ? `/campaigns/${encodeURIComponent(item.runId)}?provider=mailchimp`
       : `/campaigns/${encodeURIComponent(item.runId)}`;
 
   return (
-    <div style={style} className="px-1">
+    <div style={style}>
       <Link
         href={href}
         prefetch={false}
         data-campaign-row="true"
         data-campaign-provider={item.provider}
         data-campaign-state={item.state}
-        className="flex h-[112px] items-start gap-4 rounded-3xl border border-slate-200 bg-white px-5 py-4 transition-colors hover:border-slate-300 hover:bg-slate-50"
+        className="grid h-[92px] grid-cols-[44px_minmax(0,1fr)_minmax(132px,180px)] items-center gap-5 border-b border-slate-200 bg-white px-5 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-inset sm:px-6"
       >
-        <span
-          aria-hidden="true"
-          className={cn("mt-2 size-2.5 shrink-0 rounded-full", resolveStateColor(item.state))}
-        />
+        <span className="flex size-11 items-center justify-center rounded-lg border border-sky-100 bg-sky-50 text-sky-700">
+          <MailIcon className="size-4" aria-hidden="true" />
+        </span>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p
-                className={cn(
-                  "truncate text-base font-semibold text-slate-900",
-                  item.state === "draft" && item.subject.trim().length === 0
-                    ? "italic text-slate-500"
-                    : "",
-                )}
-              >
-                {title}
-              </p>
-              <div className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                <MailIcon className="size-3.5 shrink-0" aria-hidden="true" />
-                <p className="truncate">{previewText}</p>
-              </div>
-            </div>
+          <p
+            className={cn(
+              "truncate text-base font-semibold leading-6 text-slate-900",
+              item.state === "draft" && item.subject.trim().length === 0
+                ? "italic text-slate-500"
+                : "",
+            )}
+          >
+            {title}
+          </p>
 
-            <div className="shrink-0 text-right">
-              <div className="flex items-center justify-end gap-2">
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]",
-                    resolveStateBadgeClasses(item.state),
-                  )}
-                >
-                  {item.state}
-                </span>
-                <ProviderBadge provider={item.provider} />
-              </div>
-              <p className="mt-2 text-xs text-slate-500">
-                {formatCampaignDate(item)}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
-            <Chip tone="neutral">{item.kind === "project" ? "Project" : "Newsletter"}</Chip>
-            {item.sender.trim().length > 0 ? (
-              <span className="truncate text-slate-400">{item.sender}</span>
-            ) : null}
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-sm text-slate-500">
             {item.projectLabel ? (
-              <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+              <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
                 {item.projectLabel}
               </span>
             ) : null}
+            <p className="truncate">{previewText}</p>
+          </div>
+
+          <div className="mt-2 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+            <Chip tone="neutral">
+              {item.kind === "project" ? "Project" : "Newsletter"}
+            </Chip>
+            {item.sender.trim().length > 0 ? (
+              <span className="truncate text-slate-400">{item.sender}</span>
+            ) : null}
             <span className="truncate">{formatAudienceLabel(item)}</span>
           </div>
+        </div>
+
+        <div className="min-w-0 text-right">
+          <div className="flex items-center justify-end gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]",
+                resolveStateBadgeClasses(item.state),
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "size-1.5 rounded-full",
+                  resolveStateColor(item.state),
+                )}
+              />
+              {item.state}
+            </span>
+            <ProviderBadge provider={item.provider} />
+          </div>
+          <p className="mt-2 truncate text-sm text-slate-500">
+            {formatCampaignDate(item)}
+          </p>
         </div>
       </Link>
     </div>

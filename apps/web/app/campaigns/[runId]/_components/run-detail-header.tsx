@@ -19,6 +19,7 @@ export function RunDetailHeader({
   dateLabel,
   dateIso,
   canStopUnsent,
+  canDuplicate,
   onStopUnsent,
 }: {
   readonly run: CampaignRunRecord;
@@ -27,6 +28,7 @@ export function RunDetailHeader({
   readonly dateLabel: string;
   readonly dateIso: string;
   readonly canStopUnsent: boolean;
+  readonly canDuplicate: boolean;
   readonly onStopUnsent: () => void;
 }) {
   const router = useRouter();
@@ -58,26 +60,28 @@ export function RunDetailHeader({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-3">
-          <Button
-            variant="outline"
-            disabled={pending}
-            onClick={() => {
-              startTransition(async () => {
-                const result = await duplicateCampaignRun(run.id);
-                if (!result.ok) {
-                  setDuplicateError(result.message);
-                  return;
-                }
+          {canDuplicate ? (
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() => {
+                startTransition(async () => {
+                  const result = await duplicateCampaignRun(run.id);
+                  if (!result.ok) {
+                    setDuplicateError(result.message);
+                    return;
+                  }
 
-                setDuplicateError(null);
-                router.push(
-                  `/campaigns/new?runId=${encodeURIComponent(result.data.runId)}`,
-                );
-              });
-            }}
-          >
-            {pending ? "Duplicating…" : "Duplicate"}
-          </Button>
+                  setDuplicateError(null);
+                  router.push(
+                    `/campaigns/new?runId=${encodeURIComponent(result.data.runId)}`,
+                  );
+                });
+              }}
+            >
+              {pending ? "Duplicating…" : "Duplicate"}
+            </Button>
+          ) : null}
           {canStopUnsent ? (
             <Button variant="destructive" onClick={onStopUnsent}>
               Stop unsent

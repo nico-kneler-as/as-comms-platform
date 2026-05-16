@@ -33,11 +33,7 @@ export const runStateValues = [
 export const runStateSchema = z.enum(runStateValues);
 export type RunState = z.infer<typeof runStateSchema>;
 
-export const consentScopeTypeValues = [
-  "project",
-  "newsletter",
-  "all",
-] as const;
+export const consentScopeTypeValues = ["project", "newsletter", "all"] as const;
 export const consentScopeTypeSchema = z.enum(consentScopeTypeValues);
 export type ConsentScopeType = z.infer<typeof consentScopeTypeSchema>;
 
@@ -134,10 +130,12 @@ const audienceCriteriaDefaults = {
 };
 
 export const audienceCriteriaSchema = z.object({
-  projectIds: z.array(z.string().min(1)).default(audienceCriteriaDefaults.projectIds),
-  statuses: z.array(expeditionMemberStatusSchema).default(
-    audienceCriteriaDefaults.statuses,
-  ),
+  projectIds: z
+    .array(z.string().min(1))
+    .default(audienceCriteriaDefaults.projectIds),
+  statuses: z
+    .array(expeditionMemberStatusSchema)
+    .default(audienceCriteriaDefaults.statuses),
   expeditionIds: z
     .array(z.string().min(1))
     .default(audienceCriteriaDefaults.expeditionIds),
@@ -208,6 +206,14 @@ export const campaignRunRecordSchema = campaignRunEditableFieldsSchema
     updatedAt: timestampSchema,
   })
   .superRefine((value, context) => {
+    if (
+      value.state === "draft" &&
+      value.kind === "project" &&
+      value.projectId === null
+    ) {
+      return;
+    }
+
     const result = campaignRunProjectScopeSchema.safeParse(value);
 
     if (!result.success) {
@@ -363,15 +369,6 @@ export const createDraftInputSchema = campaignRunEditableFieldsSchema
     id: idSchema,
     createdByUserId: nullableStringSchema.default(null),
     lastEditedByUserId: nullableStringSchema.default(null),
-  })
-  .superRefine((value, context) => {
-    const result = campaignRunProjectScopeSchema.safeParse(value);
-
-    if (!result.success) {
-      for (const issue of result.error.issues) {
-        context.addIssue(issue);
-      }
-    }
   });
 export type CreateDraftInput = z.infer<typeof createDraftInputSchema>;
 
@@ -491,9 +488,7 @@ export const postmarkDeliveryEventSchema = postmarkWebhookBaseSchema.extend({
   Details: coercingNullableString.default(null),
   ServerID: z.number().int().nonnegative(),
 });
-export type PostmarkDeliveryEvent = z.infer<
-  typeof postmarkDeliveryEventSchema
->;
+export type PostmarkDeliveryEvent = z.infer<typeof postmarkDeliveryEventSchema>;
 
 export const postmarkBounceEventSchema = postmarkWebhookBaseSchema.extend({
   RecordType: z.literal("Bounce"),
@@ -578,8 +573,9 @@ export const postmarkClickEventSchema = postmarkWebhookBaseSchema.extend({
 });
 export type PostmarkClickEvent = z.infer<typeof postmarkClickEventSchema>;
 
-export const postmarkSubscriptionChangeEventSchema =
-  postmarkWebhookBaseSchema.omit({ MessageID: true }).extend({
+export const postmarkSubscriptionChangeEventSchema = postmarkWebhookBaseSchema
+  .omit({ MessageID: true })
+  .extend({
     RecordType: z.literal("SubscriptionChange"),
     MessageID: z.string().uuid().nullable(),
     ChangedAt: timestampSchema,
