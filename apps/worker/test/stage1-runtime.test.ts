@@ -16,6 +16,7 @@ import {
 } from "../src/orchestration/tasks.js";
 import { reconcileStaleRunningJobName } from "../src/jobs/reconcile-stale-running.js";
 import { sweepPendingOutboundsJobName } from "../src/jobs/sweep-pending-outbounds.js";
+import { campaignEventsTailFinalizeJobName } from "../src/jobs/campaign-events-tail-finalize/index.js";
 import { createTaskList } from "../src/tasks.js";
 import {
   buildCapturedBatch,
@@ -153,6 +154,7 @@ describe("Stage 1 worker runtime task registration", () => {
         `0 * * * * ${pollAiKnowledgeAutoSyncJobName} ?id=ai-knowledge-auto-sync-poll&max=1`,
         `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
         `*/5 * * * * poll-postmark-sender-status ?id=postmark-sender-status-poll&max=1`,
+        `0 3 * * * ${campaignEventsTailFinalizeJobName} ?id=campaign-events-tail-finalize&max=1`,
         `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
         `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
         "*/15 * * * * reconcile-identity-queue ?id=identity-queue-reconcile&max=1",

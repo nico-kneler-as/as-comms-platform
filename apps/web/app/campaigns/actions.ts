@@ -62,6 +62,32 @@ function errorResult(
   };
 }
 
+async function appendCampaignAudit(input: {
+  readonly actorType: "user" | "system";
+  readonly actorId: string;
+  readonly action: string;
+  readonly runId: string;
+  readonly detail: string;
+  readonly metadataJson?: Record<string, unknown>;
+}) {
+  const runtime = await getStage1WebRuntime();
+  await runtime.repositories.auditEvidence.append({
+    id: randomUUID(),
+    actorType: input.actorType,
+    actorId: input.actorId,
+    action: input.action,
+    entityType: "campaign_run",
+    entityId: input.runId,
+    occurredAt: new Date().toISOString(),
+    result: "recorded",
+    policyCode: `stage5a.${input.action}`,
+    metadataJson: {
+      detail: input.detail,
+      ...(input.metadataJson ?? {}),
+    },
+  });
+}
+
 function buildPostmarkClientForActions() {
   return {
     sendBatch(): Promise<never> {
@@ -97,6 +123,7 @@ async function createCampaignOrchestrator() {
         campaignRuns: runtime.campaigns.campaignRuns,
         audienceSnapshots: runtime.campaigns.audienceSnapshots,
         settingsProjects: runtime.settings.projects,
+        auditEvidence: runtime.repositories.auditEvidence,
       },
       audienceResolver: createAudienceResolver({
         repositories: {
@@ -226,6 +253,13 @@ export async function sendNow(
     await enqueueCampaignSendJob({
       runId: parsed.runId,
     });
+    await appendCampaignAudit({
+      actorType: "user",
+      actorId: admin.userId,
+      action: "campaign_run.scheduled",
+      runId: parsed.runId,
+      detail: "Send now requested; the worker will start immediately.",
+    });
 
     return {
       ok: true,
@@ -271,6 +305,13 @@ export async function schedule(
     await enqueueCampaignSendJob({
       runId: parsed.runId,
       scheduledAt: new Date(parsed.scheduledAt),
+    });
+    await appendCampaignAudit({
+      actorType: "user",
+      actorId: admin.userId,
+      action: "campaign_run.scheduled",
+      runId: parsed.runId,
+      detail: `Scheduled for ${parsed.scheduledAt}.`,
     });
 
     return {
@@ -459,6 +500,16 @@ export async function cancel(
     const { runtime, orchestrator } = await createCampaignOrchestrator();
     await orchestrator.cancel(parsed.runId, parsed.reason ?? "");
     const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
+    await appendCampaignAudit({
+      actorType: "user",
+      actorId: admin.userId,
+      action: "campaign_run.cancelled",
+      runId: parsed.runId,
+      detail:
+        (parsed.reason?.trim().length ?? 0) > 0
+          ? (parsed.reason ?? "Cancelled from the operator workflow.")
+          : "Cancelled from the operator workflow.",
+    });
 
     return {
       ok: true,
@@ -473,6 +524,67 @@ export async function cancel(
     return errorResult(
       "campaign_cancel_failed",
       error instanceof Error ? error.message : "Unable to cancel the campaign.",
+      true,
+    );
+  }
+}
+
+export async function duplicateCampaignRun(
+  runId: string,
+): Promise<UiSuccess<{ readonly runId: string }> | UiError> {
+  const session = await requireSession();
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const existing = await runtime.campaigns.campaignRuns.findById(runId);
+    if (existing === null) {
+      return errorResult(
+        "campaign_duplicate_missing",
+        "Campaign run was not found.",
+      );
+    }
+
+    const duplicated = await runtime.campaigns.campaignRuns.create({
+      id: randomUUID(),
+      kind: existing.kind,
+      launchType: existing.launchType,
+      projectId: existing.projectId,
+      name: existing.name,
+      fromEmail: existing.fromEmail,
+      fromName: existing.fromName,
+      replyToEmail: existing.replyToEmail,
+      subjectTemplate: existing.subjectTemplate,
+      bodyHtmlTemplate: existing.bodyHtmlTemplate,
+      bodyTextTemplate: existing.bodyTextTemplate,
+      preheader: existing.preheader,
+      audienceCriteria: existing.audienceCriteria,
+      audienceSize: existing.audienceSize,
+      createdByUserId: session.id,
+      lastEditedByUserId: session.id,
+    });
+
+    await appendCampaignAudit({
+      actorType: "user",
+      actorId: session.id,
+      action: "campaign_run.duplicated",
+      runId: duplicated.id,
+      detail: `Duplicated from ${runId}.`,
+      metadataJson: {
+        sourceRunId: runId,
+      },
+    });
+
+    return {
+      ok: true,
+      data: {
+        runId: duplicated.id,
+      },
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "campaign_duplicate_failed",
+      error instanceof Error ? error.message : "Unable to duplicate the campaign.",
       true,
     );
   }
