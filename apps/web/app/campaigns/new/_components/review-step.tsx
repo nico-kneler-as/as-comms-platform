@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -12,12 +14,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { cn } from "@/lib/utils";
 
 import type {
   CampaignKind,
   CampaignRunRecord,
+  PostmarkSenderStatus,
 } from "@as-comms/contracts";
 
 import type {
@@ -32,6 +46,7 @@ interface ReviewStepProps {
   readonly fromEmail: string | null;
   readonly preheader: string;
   readonly senderOptions: readonly CampaignSenderOption[];
+  readonly selectedSenderVerified: boolean;
   readonly audienceSize: number | null;
   readonly previewData: ComposePreviewData | null;
   readonly previewExpanded: boolean;
@@ -53,6 +68,43 @@ interface ReviewStepProps {
   readonly onScheduleTimeChange: (value: string) => void;
   readonly onConfirmOpenChange: (open: boolean) => void;
   readonly onSubmit: () => void;
+}
+
+const SENDER_STATUS_META: Record<
+  PostmarkSenderStatus,
+  {
+    readonly label: string;
+    readonly selectable: boolean;
+    readonly tooltip: string | null;
+  }
+> = {
+  verified: {
+    label: "verified",
+    selectable: true,
+    tooltip: null,
+  },
+  pending: {
+    label: "pending DNS",
+    selectable: false,
+    tooltip:
+      "Postmark is still verifying this sender's DKIM/Return-Path. Re-check in Settings → Projects.",
+  },
+  unverified: {
+    label: "unverified",
+    selectable: false,
+    tooltip:
+      "This alias hasn't been verified in Postmark yet. Open Settings → Projects to start verification.",
+  },
+  rejected: {
+    label: "verification failed",
+    selectable: false,
+    tooltip:
+      "Postmark rejected this sender. Check Settings → Projects to retry.",
+  },
+};
+
+function readSenderLabel(option: CampaignSenderOption): string {
+  return `${option.email} · ${SENDER_STATUS_META[option.status].label}`;
 }
 
 function formatDenverTimestamp(value: string | null): string {
@@ -93,6 +145,7 @@ export function ReviewStep({
   fromEmail,
   preheader,
   senderOptions,
+  selectedSenderVerified,
   audienceSize,
   previewData,
   previewExpanded,
@@ -115,6 +168,15 @@ export function ReviewStep({
   onConfirmOpenChange,
   onSubmit,
 }: ReviewStepProps) {
+  const [senderOpen, setSenderOpen] = useState(false);
+  const selectedSender =
+    (fromEmail === null
+      ? null
+      : senderOptions.find(
+            (option) => option.email === fromEmail && option.status === "verified",
+          ) ??
+        senderOptions.find((option) => option.email === fromEmail) ??
+        null) ?? null;
   const submitLabel = sendMode === "later" ? "Schedule send" : "Send now";
   const confirmationLine =
     sendMode === "later"
@@ -159,48 +221,132 @@ export function ReviewStep({
         </section>
 
         <Section title="Sender">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label
-                htmlFor="campaign-from-email"
-                className="text-sm font-medium text-slate-900"
-              >
-                From
-              </label>
-              <select
-                id="campaign-from-email"
-                value={fromEmail ?? ""}
-                onChange={(event) => {
-                  onFromEmailChange(
-                    event.currentTarget.value.length === 0
-                      ? null
-                      : event.currentTarget.value,
-                  );
-                }}
-                disabled={frozen}
-                className="flex h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
-              >
-                <option value="">Choose a verified sender</option>
-                {senderOptions.map((option) => (
-                  <option key={option.projectId} value={option.email}>
-                    {option.email} · verified
-                  </option>
-                ))}
-              </select>
-            </div>
+          <TooltipProvider delayDuration={200}>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label
+                  htmlFor="campaign-from-email"
+                  className="text-sm font-medium text-slate-900"
+                >
+                  From
+                </label>
+                <Popover open={frozen ? false : senderOpen} onOpenChange={setSenderOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      id="campaign-from-email"
+                      type="button"
+                      disabled={frozen}
+                      className="flex h-11 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 text-left text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+                    >
+                      <span
+                        className={cn(
+                          "truncate",
+                          fromEmail === null ? "text-slate-500" : "text-slate-900",
+                          selectedSender !== null &&
+                            !SENDER_STATUS_META[selectedSender.status].selectable
+                            ? "text-slate-500"
+                            : "",
+                        )}
+                      >
+                        {selectedSender === null
+                          ? "Choose a sender alias"
+                          : readSenderLabel(selectedSender)}
+                      </span>
+                      <ChevronDown className="size-4 shrink-0 text-slate-400" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    className="w-[var(--radix-popover-trigger-width)] min-w-[24rem] p-1"
+                  >
+                    <div role="listbox" aria-label="Sender aliases" className="space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onFromEmailChange(null);
+                          setSenderOpen(false);
+                        }}
+                        className={cn(
+                          "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-slate-600 transition-colors hover:bg-slate-50",
+                          fromEmail === null ? "bg-slate-50 text-slate-900" : "",
+                        )}
+                      >
+                        <span>Choose a sender alias</span>
+                      </button>
+                      {senderOptions.map((option) => {
+                        const meta = SENDER_STATUS_META[option.status];
+                        const row = (
+                          <div
+                            role="option"
+                            aria-disabled={!meta.selectable}
+                            aria-selected={fromEmail === option.email}
+                            aria-label={
+                              meta.tooltip === null
+                                ? readSenderLabel(option)
+                                : `${readSenderLabel(option)}. ${meta.tooltip}`
+                            }
+                            className={cn(
+                              "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm",
+                              meta.selectable
+                                ? "cursor-pointer text-slate-900 transition-colors hover:bg-slate-50"
+                                : "cursor-not-allowed text-slate-500",
+                              fromEmail === option.email ? "bg-slate-50" : "",
+                            )}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">
+                                {readSenderLabel(option)}
+                              </p>
+                              <p className="truncate text-xs text-slate-500">
+                                {option.projectName}
+                              </p>
+                            </div>
+                          </div>
+                        );
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Reply-To
-              </p>
-              <p className="mt-2 text-sm text-slate-800">
-                {fromEmail ?? "Choose a sender alias first"}
-              </p>
-              <p className="mt-2 text-xs text-slate-500">
-                Replies route to the same address as the sender.
-              </p>
+                        if (!meta.selectable) {
+                          return (
+                            <Tooltip key={`${option.projectId}:${option.email}`}>
+                              <TooltipTrigger asChild>{row}</TooltipTrigger>
+                              <TooltipContent side="right" className="max-w-72 text-pretty">
+                                {meta.tooltip}
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        }
+
+                        return (
+                          <button
+                            key={`${option.projectId}:${option.email}`}
+                            type="button"
+                            onClick={() => {
+                              onFromEmailChange(option.email);
+                              setSenderOpen(false);
+                            }}
+                            className="block w-full"
+                          >
+                            {row}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  Reply-To
+                </p>
+                <p className="mt-2 text-sm text-slate-800">
+                  {fromEmail ?? "Choose a sender alias first"}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Replies route to the same address as the sender.
+                </p>
+              </div>
             </div>
-          </div>
+          </TooltipProvider>
         </Section>
 
         <Section title="Audience">
@@ -375,7 +521,7 @@ export function ReviewStep({
             onClick={() => {
               onConfirmOpenChange(true);
             }}
-            disabled={!fromEmail}
+            disabled={!fromEmail || !selectedSenderVerified}
           >
             {submitLabel}
           </Button>
@@ -397,7 +543,10 @@ export function ReviewStep({
             >
               Cancel
             </Button>
-            <Button onClick={onSubmit} disabled={submitPending}>
+            <Button
+              onClick={onSubmit}
+              disabled={submitPending || !fromEmail || !selectedSenderVerified}
+            >
               {submitPending ? "Working…" : "Confirm"}
             </Button>
           </DialogFooter>

@@ -13,6 +13,7 @@ import type {
 import type {
   AudienceBuilderBootstrap,
   AudiencePreviewRow,
+  CampaignSenderOption,
   ComposePreviewData,
   CampaignWizardDraftData,
 } from "../../_lib/audience-data-source";
@@ -195,7 +196,8 @@ function deriveSuggestedSenderEmail(input: {
   if (selected.length === 1) {
     return (
       input.bootstrap.senderOptions.find(
-        (option) => option.projectId === selected[0]?.id,
+        (option) =>
+          option.projectId === selected[0]?.id && option.status === "verified",
       )?.email ?? null
     );
   }
@@ -212,7 +214,8 @@ function deriveSuggestedSenderEmail(input: {
     if (allSelectedBelongToGroup) {
       return (
         input.bootstrap.senderOptions.find(
-          (option) => option.projectId === group.host.id,
+          (option) =>
+            option.projectId === group.host.id && option.status === "verified",
         )?.email ?? null
       );
     }
@@ -248,9 +251,11 @@ function readProjectChipLabel(
 export function NewCampaignWizard({
   bootstrap,
   draft,
+  isAdmin,
 }: {
   readonly bootstrap: AudienceBuilderBootstrap;
   readonly draft: CampaignWizardDraftData;
+  readonly isAdmin: boolean;
 }) {
   const initialSchedule = buildDenverInputDefaults(new Date());
   const [currentStep, setCurrentStep] = useState(draft.state === "draft" ? 0 : 4);
@@ -337,6 +342,22 @@ export function NewCampaignWizard({
     ],
   );
   const dirty = fingerprint !== savedFingerprintRef.current;
+  const selectedSenderOption = useMemo<CampaignSenderOption | null>(() => {
+    if (fromEmail === null) {
+      return null;
+    }
+
+    return (
+      bootstrap.senderOptions.find(
+        (option) => option.email === fromEmail && option.status === "verified",
+      ) ??
+      bootstrap.senderOptions.find((option) => option.email === fromEmail) ??
+      null
+    );
+  }, [bootstrap.senderOptions, fromEmail]);
+  const selectedSenderVerified = frozen
+    ? true
+    : selectedSenderOption?.status === "verified";
   const suggestedSenderEmail = useMemo(
     () => deriveSuggestedSenderEmail({ kind, criteria, bootstrap }),
     [bootstrap, criteria, kind],
@@ -475,6 +496,22 @@ export function NewCampaignWizard({
     setSampleIndex(0);
     setWarningDismissFingerprint(null);
   }, [bodyHtml, bodyPlaintext, subject]);
+
+  useEffect(() => {
+    if (!dirty || frozen) {
+      return;
+    }
+
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      Reflect.set(event, "returnValue", "");
+    };
+
+    window.addEventListener("beforeunload", handler);
+    return () => {
+      window.removeEventListener("beforeunload", handler);
+    };
+  }, [dirty, frozen]);
 
   useEffect(() => {
     if (!dirty || frozen) {
@@ -752,6 +789,7 @@ export function NewCampaignWizard({
 
             {currentStep === 1 ? (
               <CampaignKindStep
+                isAdmin={isAdmin}
                 value={kind}
                 onChange={setKind}
                 onBack={() => {
@@ -807,6 +845,7 @@ export function NewCampaignWizard({
                 testSendOpen={testSendOpen}
                 testRecipientEmail={testRecipientEmail}
                 testSendPending={testSendPending}
+                selectedSenderVerified={selectedSenderVerified}
                 frozen={frozen}
                 onSubjectChange={setSubject}
                 onPreheaderChange={setPreheader}
@@ -846,6 +885,7 @@ export function NewCampaignWizard({
                 fromEmail={fromEmail}
                 preheader={preheader}
                 senderOptions={bootstrap.senderOptions}
+                selectedSenderVerified={selectedSenderVerified}
                 audienceSize={composePreview?.audienceSize ?? countState.count}
                 previewData={composePreview}
                 previewExpanded={reviewExpanded}

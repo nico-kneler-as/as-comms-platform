@@ -46,6 +46,7 @@ interface ComposeStepProps {
   readonly testSendOpen: boolean;
   readonly testRecipientEmail: string;
   readonly testSendPending: boolean;
+  readonly selectedSenderVerified: boolean;
   readonly frozen: boolean;
   readonly onSubjectChange: (value: string) => void;
   readonly onPreheaderChange: (value: string) => void;
@@ -95,6 +96,7 @@ export function ComposeStep({
   testSendOpen,
   testRecipientEmail,
   testSendPending,
+  selectedSenderVerified,
   frozen,
   onSubjectChange,
   onPreheaderChange,
@@ -242,7 +244,12 @@ export function ComposeStep({
                         onClick={() => {
                           onTestSendOpenChange(true);
                         }}
-                        disabled={frozen}
+                        disabled={frozen || !selectedSenderVerified}
+                        title={
+                          selectedSenderVerified
+                            ? undefined
+                            : "Choose a verified sender alias before sending a test."
+                        }
                       >
                         <Send className="size-3.5" />
                         Send test
@@ -407,7 +414,10 @@ export function ComposeStep({
             >
               Cancel
             </Button>
-            <Button onClick={onSendTest} disabled={testSendPending}>
+            <Button
+              onClick={onSendTest}
+              disabled={testSendPending || !selectedSenderVerified}
+            >
               {testSendPending ? "Sending…" : "Send test"}
             </Button>
           </DialogFooter>

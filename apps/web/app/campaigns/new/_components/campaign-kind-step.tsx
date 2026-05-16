@@ -3,11 +3,18 @@
 import { MailOpen, Newspaper } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import type { CampaignKind } from "@as-comms/contracts";
 
 interface CampaignKindStepProps {
+  readonly isAdmin: boolean;
   readonly value: CampaignKind;
   readonly onChange: (value: CampaignKind) => void;
   readonly onBack: () => void;
@@ -32,6 +39,7 @@ const OPTIONS = [
 ] as const;
 
 export function CampaignKindStep({
+  isAdmin,
   value,
   onChange,
   onBack,
@@ -52,60 +60,87 @@ export function CampaignKindStep({
         </p>
       </div>
 
-      <div className="mt-8 grid gap-4 xl:grid-cols-2">
-        {OPTIONS.map((option) => {
-          const selected = value === option.value;
+      <TooltipProvider delayDuration={200}>
+        <div className="mt-8 grid gap-4 xl:grid-cols-2">
+          {OPTIONS.map((option) => {
+            const disabled = option.value === "newsletter" && !isAdmin;
+            const selected = value === option.value && !disabled;
+            const card = (
+              <button
+                key={option.value}
+                type="button"
+                aria-disabled={disabled}
+                onClick={() => {
+                  if (disabled) {
+                    return;
+                  }
+                  onChange(option.value);
+                }}
+                className={cn(
+                  "flex min-h-[220px] flex-col rounded-3xl border p-6 text-left transition-colors",
+                  selected
+                    ? "border-[#253746] bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50",
+                  disabled
+                    ? "cursor-not-allowed opacity-60 hover:border-slate-200 hover:bg-white"
+                    : "",
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span
+                    className={cn(
+                      "flex size-11 items-center justify-center rounded-2xl",
+                      selected
+                        ? "bg-white/10 text-white"
+                        : "bg-slate-100 text-slate-700",
+                    )}
+                  >
+                    <option.Icon className="size-5" aria-hidden="true" />
+                  </span>
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-[10px] font-semibold",
+                      selected
+                        ? "bg-white/10 text-white"
+                        : "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
+                    )}
+                  >
+                    {option.tag}
+                  </span>
+                </div>
 
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => {
-                onChange(option.value);
-              }}
-              className={cn(
-                "flex min-h-[220px] flex-col rounded-3xl border p-6 text-left transition-colors",
-                selected
-                  ? "border-[#253746] bg-slate-900 text-white"
-                  : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50",
-              )}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <span
-                  className={cn(
-                    "flex size-11 items-center justify-center rounded-2xl",
-                    selected ? "bg-white/10 text-white" : "bg-slate-100 text-slate-700",
-                  )}
-                >
-                  <option.Icon className="size-5" aria-hidden="true" />
-                </span>
-                <span
-                  className={cn(
-                    "rounded-full px-2.5 py-1 text-[10px] font-semibold",
-                    selected
-                      ? "bg-white/10 text-white"
-                      : "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
-                  )}
-                >
-                  {option.tag}
-                </span>
-              </div>
+                <div className="mt-10">
+                  <h3 className="text-balance text-lg font-semibold">
+                    {option.title}
+                  </h3>
+                  <p
+                    className={cn(
+                      "mt-3 text-pretty text-sm leading-6",
+                      selected ? "text-slate-200" : "text-slate-600",
+                    )}
+                  >
+                    {option.description}
+                  </p>
+                </div>
+              </button>
+            );
 
-              <div className="mt-10">
-                <h3 className="text-balance text-lg font-semibold">{option.title}</h3>
-                <p
-                  className={cn(
-                    "mt-3 text-pretty text-sm leading-6",
-                    selected ? "text-slate-200" : "text-slate-600",
-                  )}
-                >
-                  {option.description}
-                </p>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+            if (!disabled) {
+              return <div key={option.value}>{card}</div>;
+            }
+
+            return (
+              <Tooltip key={option.value}>
+                <TooltipTrigger asChild>{card}</TooltipTrigger>
+                <TooltipContent side="top" className="max-w-64 text-pretty">
+                  Newsletter sends are admin-only. Ask an admin to launch this
+                  campaign.
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
+      </TooltipProvider>
 
       <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
         The kind you pick changes the unsubscribe footer wording. Project emails

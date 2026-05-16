@@ -44,6 +44,19 @@ interface CampaignTestSendData {
   readonly recipientEmail: string;
 }
 
+function readPrimaryEmail(input: {
+  readonly emails: readonly {
+    readonly address: string;
+    readonly isPrimary: boolean;
+  }[];
+}): string | null {
+  return (
+    input.emails.find((email) => email.isPrimary)?.address ??
+    input.emails[0]?.address ??
+    null
+  );
+}
+
 function newRequestId(): string {
   return randomUUID();
 }
@@ -215,6 +228,32 @@ async function assertCampaignAdmin():
   }
 }
 
+async function validateVerifiedSender(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly email: string | null;
+  readonly failureMessage: string;
+}): Promise<UiError | null> {
+  if (input.email === null) {
+    return errorResult("campaign_sender_unverified", input.failureMessage);
+  }
+
+  const normalizedEmail = input.email.trim().toLowerCase();
+  if (normalizedEmail.length === 0) {
+    return errorResult("campaign_sender_unverified", input.failureMessage);
+  }
+
+  const hasVerifiedSender = (await input.runtime.settings.projects.listAll()).some(
+    (project) =>
+      readPrimaryEmail(project)?.trim().toLowerCase() === normalizedEmail &&
+      project.postmarkSenderStatus === "verified",
+  );
+  if (!hasVerifiedSender) {
+    return errorResult("campaign_sender_unverified", input.failureMessage);
+  }
+
+  return null;
+}
+
 async function readRequestOrigin(): Promise<string> {
   const requestHeaders = await headers();
   const origin = requestHeaders.get("origin");
@@ -244,6 +283,20 @@ export async function sendNow(
       actorUserId: admin.userId,
     });
     const { runtime, orchestrator } = await createCampaignOrchestrator();
+    const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
+    if (run === null) {
+      return errorResult("campaign_not_found", "Campaign draft not found.");
+    }
+
+    const senderError = await validateVerifiedSender({
+      runtime,
+      email: run.fromEmail,
+      failureMessage: "Choose a verified sender alias before sending this campaign.",
+    });
+    if (senderError !== null) {
+      return senderError;
+    }
+
     const frozen = await orchestrator.freeze(parsed.runId, new Date());
     const scheduledAt = new Date();
     await runtime.campaigns.campaignRuns.update(parsed.runId, {
@@ -297,6 +350,20 @@ export async function schedule(
       actorUserId: admin.userId,
     });
     const { runtime, orchestrator } = await createCampaignOrchestrator();
+    const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
+    if (run === null) {
+      return errorResult("campaign_not_found", "Campaign draft not found.");
+    }
+
+    const senderError = await validateVerifiedSender({
+      runtime,
+      email: run.fromEmail,
+      failureMessage: "Choose a verified sender alias before scheduling this campaign.",
+    });
+    if (senderError !== null) {
+      return senderError;
+    }
+
     const frozen = await orchestrator.freeze(parsed.runId, new Date());
     await runtime.campaigns.campaignRuns.update(parsed.runId, {
       scheduledAt: parsed.scheduledAt,
@@ -381,6 +448,14 @@ export async function testSend(
     }
 
     const fromEmail = run.fromEmail ?? sample.frozenAliasEmail;
+    const senderError = await validateVerifiedSender({
+      runtime,
+      email: fromEmail,
+      failureMessage: "Choose a verified sender alias before sending a test.",
+    });
+    if (senderError !== null) {
+      return senderError;
+    }
     if (fromEmail === null) {
       return errorResult(
         "campaign_test_send_missing_sender",

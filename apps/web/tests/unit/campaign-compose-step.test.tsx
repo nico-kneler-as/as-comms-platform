@@ -120,6 +120,7 @@ const baseProps: React.ComponentProps<typeof ComposeStep> = {
   testSendOpen: false,
   testRecipientEmail: "nico@adventurescientists.org",
   testSendPending: false,
+  selectedSenderVerified: true,
   frozen: false,
   onSubjectChange: () => undefined,
   onPreheaderChange: () => undefined,
