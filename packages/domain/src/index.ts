@@ -1,6 +1,7 @@
 export * from "./audience-resolver.js";
 export * from "./campaign-send-orchestrator.js";
 export * from "./campaign-types.js";
+export * from "./consent-ledger.js";
 export * from "./contact-resolution.js";
 export * from "./consent.js";
 export * from "./exclusion-filter.js";
