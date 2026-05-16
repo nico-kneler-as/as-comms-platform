@@ -15,6 +15,7 @@ function buildRun(kind: "project" | "newsletter"): CampaignRunRecord {
     launchType: "normal_email",
     state: "scheduled",
     projectId: kind === "project" ? "project-a" : null,
+    name: null,
     fromEmail: null,
     fromName: null,
     replyToEmail: null,

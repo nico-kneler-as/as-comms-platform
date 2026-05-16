@@ -77,6 +77,7 @@ async function seedRunAndSnapshot(
     kind: runKind,
     launchType: "normal_email",
     projectId: runKind === "project" ? projectId : null,
+    name: null,
     fromEmail: "postmark-test@adventurescientists.org",
     fromName: "AS Test",
     replyToEmail: "postmark-test@adventurescientists.org",

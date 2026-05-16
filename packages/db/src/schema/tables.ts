@@ -1044,6 +1044,7 @@ export const campaignRuns = pgTable(
     projectId: text("project_id").references(() => projectDimensions.projectId, {
       onDelete: "restrict",
     }),
+    name: text("name"),
     fromEmail: text("from_email"),
     fromName: text("from_name"),
     replyToEmail: text("reply_to_email"),

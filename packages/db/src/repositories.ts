@@ -5551,6 +5551,7 @@ function mapCampaignRunRow(row: CampaignRunRow): CampaignRunRecord {
     launchType: row.launchType,
     state: row.state,
     projectId: row.projectId,
+    name: row.name,
     fromEmail: row.fromEmail,
     fromName: row.fromName,
     replyToEmail: row.replyToEmail,
@@ -5691,6 +5692,9 @@ function mapCampaignRunMutationFields(
   }
   if ("projectId" in input && input.projectId !== undefined) {
     values.projectId = input.projectId;
+  }
+  if ("name" in input && input.name !== undefined) {
+    values.name = input.name;
   }
   if ("fromEmail" in input && input.fromEmail !== undefined) {
     values.fromEmail = input.fromEmail;

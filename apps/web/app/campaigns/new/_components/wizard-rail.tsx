@@ -4,7 +4,12 @@ import { Check, Circle, Megaphone } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type CampaignWizardStepId = "launch" | "kind" | "audience";
+export type CampaignWizardStepId =
+  | "launch"
+  | "kind"
+  | "audience"
+  | "compose"
+  | "review";
 
 export interface CampaignWizardStepDefinition {
   readonly id: CampaignWizardStepId;
@@ -122,7 +127,7 @@ export function WizardRail({
         <ul className="mt-3 space-y-2 text-[11.5px] text-slate-600">
           <ChecklistRow label="Normal Email only" ok />
           <ChecklistRow label="Audience stays live and server-owned" ok />
-          <ChecklistRow label="Compose and review continue in Brief A5" ok={false} />
+          <ChecklistRow label="Compose + frozen review wired in-app" ok />
         </ul>
       </div>
     </aside>

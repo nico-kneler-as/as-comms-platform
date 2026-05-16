@@ -2,6 +2,8 @@
 
 import { randomUUID } from "node:crypto";
 
+import { headers } from "next/headers";
+
 import {
   audienceCriteriaSchema,
   expeditionMemberStatusValues,
@@ -11,12 +13,18 @@ import {
   type ExpeditionMemberStatus,
   type LaunchType,
 } from "@as-comms/contracts";
-import { createAudienceResolver } from "@as-comms/domain";
+import { createAudienceResolver, createMergeRenderer } from "@as-comms/domain";
 
 import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 
 import { requireSession } from "@/src/server/auth/session";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
+
+import {
+  buildCampaignFooterPreview,
+  deriveInitials,
+  formatOrgAddress,
+} from "./campaign-preview";
 
 const EMPTY_AUDIENCE_CRITERIA = audienceCriteriaSchema.parse({});
 const RECENT_EXPEDITION_WINDOW_DAYS = 365;
@@ -45,6 +53,7 @@ export interface AudienceBuilderBootstrap {
   readonly projects: readonly CampaignProjectGroup[];
   readonly expeditions: readonly CampaignExpeditionOption[];
   readonly statuses: readonly ExpeditionMemberStatus[];
+  readonly senderOptions: readonly CampaignSenderOption[];
 }
 
 export interface AudiencePreviewRow {
@@ -59,12 +68,60 @@ export interface AudienceCountData {
   readonly hasAppliedFilters: boolean;
 }
 
+export interface CampaignSenderOption {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly email: string;
+  readonly connectedToProjectId: string | null;
+}
+
 export interface CampaignWizardDraftData {
   readonly runId: string;
   readonly launchType: LaunchType;
   readonly kind: CampaignKind;
+  readonly name: string | null;
+  readonly fromEmail: string | null;
+  readonly replyToEmail: string | null;
+  readonly subjectTemplate: string | null;
+  readonly bodyHtmlTemplate: string | null;
+  readonly bodyTextTemplate: string | null;
+  readonly preheader: string | null;
   readonly audienceCriteria: AudienceCriteria;
   readonly audienceSize: number | null;
+  readonly state: CampaignRunRecord["state"];
+  readonly scheduledAt: string | null;
+  readonly updatedAt: string;
+  readonly operatorEmail: string;
+}
+
+export interface ComposePreviewWarningContact {
+  readonly contactId: string;
+  readonly name: string;
+  readonly email: string;
+  readonly project: string | null;
+  readonly missingTokens: readonly string[];
+}
+
+export interface ComposePreviewSample {
+  readonly contactId: string;
+  readonly name: string;
+  readonly initials: string;
+  readonly email: string;
+  readonly project: string | null;
+  readonly fromEmail: string | null;
+  readonly subject: string;
+  readonly html: string;
+  readonly text: string;
+}
+
+export interface ComposePreviewData {
+  readonly audienceSize: number;
+  readonly sampleIndex: number;
+  readonly sampleCount: number;
+  readonly sample: ComposePreviewSample | null;
+  readonly warningCount: number;
+  readonly affectedContacts: readonly ComposePreviewWarningContact[];
+  readonly footerAddress: string | null;
 }
 
 function newRequestId(): string {
@@ -125,13 +182,40 @@ function deriveProjectId(
   return criteria.projectIds.length === 1 ? criteria.projectIds[0] ?? null : null;
 }
 
-function mapDraftRecord(record: CampaignRunRecord): CampaignWizardDraftData {
+function readPrimaryEmail(input: {
+  readonly emails: readonly {
+    readonly address: string;
+    readonly isPrimary: boolean;
+  }[];
+}): string | null {
+  return (
+    input.emails.find((email) => email.isPrimary)?.address ??
+    input.emails[0]?.address ??
+    null
+  );
+}
+
+function mapDraftRecord(
+  record: CampaignRunRecord,
+  operatorEmail: string,
+): CampaignWizardDraftData {
   return {
     runId: record.id,
     launchType: record.launchType,
     kind: record.kind,
+    name: record.name,
+    fromEmail: record.fromEmail,
+    replyToEmail: record.replyToEmail,
+    subjectTemplate: record.subjectTemplate,
+    bodyHtmlTemplate: record.bodyHtmlTemplate,
+    bodyTextTemplate: record.bodyTextTemplate,
+    preheader: record.preheader,
     audienceCriteria: audienceCriteriaSchema.parse(record.audienceCriteria),
     audienceSize: record.audienceSize,
+    state: record.state,
+    scheduledAt: record.scheduledAt,
+    updatedAt: record.updatedAt,
+    operatorEmail,
   };
 }
 
@@ -157,6 +241,7 @@ export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftDa
     kind: "project",
     launchType: "normal_email",
     projectId: null,
+    name: null,
     fromEmail: null,
     fromName: null,
     replyToEmail: null,
@@ -170,20 +255,20 @@ export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftDa
     lastEditedByUserId: session.id,
   });
 
-  return mapDraftRecord(created);
+  return mapDraftRecord(created, session.email);
 }
 
 export async function getCampaignWizardDraft(
   runId: string,
 ): Promise<CampaignWizardDraftData | null> {
-  await requireSession();
+  const session = await requireSession();
   const runtime = await getStage1WebRuntime();
   const run = await runtime.campaigns.campaignRuns.findById(runId);
   if (run === null) {
     return null;
   }
 
-  return mapDraftRecord(run);
+  return mapDraftRecord(run, session.email);
 }
 
 export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBootstrap> {
@@ -198,18 +283,13 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
 
   const projectOptions = settingsProjects
     .map((project) => {
-      const primaryEmail =
-        project.emails.find((email) => email.isPrimary)?.address ??
-        project.emails[0]?.address ??
-        null;
+      const primaryEmail = readPrimaryEmail(project);
       const hostProject =
         project.connectedToProjectId === null
           ? null
           : (projectsById.get(project.connectedToProjectId) ?? null);
       const hostPrimaryEmail =
-        hostProject?.emails.find((email) => email.isPrimary)?.address ??
-        hostProject?.emails[0]?.address ??
-        null;
+        hostProject === null ? null : readPrimaryEmail(hostProject);
 
       return {
         id: project.projectId,
@@ -233,12 +313,30 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
       (project) => project.connectedToProjectId === host.id,
     ),
   }));
+  const senderOptions = settingsProjects
+    .filter((project) => project.postmarkSenderStatus === "verified")
+    .map((project) => {
+      const email = readPrimaryEmail(project);
+      if (email === null) {
+        return null;
+      }
+
+      return {
+        projectId: project.projectId,
+        projectName: project.projectName,
+        email,
+        connectedToProjectId: project.connectedToProjectId,
+      } satisfies CampaignSenderOption;
+    })
+    .filter((project): project is CampaignSenderOption => project !== null)
+    .sort((left, right) => left.projectName.localeCompare(right.projectName));
 
   if (runtime.connection === null) {
     return {
       projects: groups,
       expeditions: [],
       statuses: expeditionMemberStatusValues,
+      senderOptions,
     };
   }
 
@@ -269,7 +367,23 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
       name: row.expeditionName ?? row.expeditionId,
     })),
     statuses: expeditionMemberStatusValues,
+    senderOptions,
   };
+}
+
+async function readRequestOrigin(): Promise<string> {
+  const requestHeaders = await headers();
+  const origin = requestHeaders.get("origin");
+  if (origin !== null && origin.trim().length > 0) {
+    return origin;
+  }
+
+  const host =
+    requestHeaders.get("x-forwarded-host") ??
+    requestHeaders.get("host") ??
+    "localhost:3000";
+  const protocol = requestHeaders.get("x-forwarded-proto") ?? "http";
+  return `${protocol}://${host}`;
 }
 
 export async function resolveAudienceCountAction(input: {
@@ -326,10 +440,123 @@ export async function previewAudienceAction(input: {
   }
 }
 
+export async function loadComposePreviewAction(input: {
+  readonly kind: CampaignKind;
+  readonly criteria: AudienceCriteria;
+  readonly fromEmail: string | null;
+  readonly subjectTemplate: string;
+  readonly bodyHtmlTemplate: string;
+  readonly bodyTextTemplate: string;
+  readonly sampleIndex: number;
+}): Promise<UiResult<ComposePreviewData>> {
+  await requireSession();
+
+  try {
+    const criteria = audienceCriteriaSchema.parse(input.criteria);
+    const resolver = await createResolver();
+    const runtime = await getStage1WebRuntime();
+    const mergeRenderer = createMergeRenderer();
+    const audience = await resolver.resolveAudience(criteria, new Date());
+    const orgSettings = await runtime.campaigns.orgSettings.read();
+    const footerAddress = formatOrgAddress(orgSettings);
+
+    if (audience.length === 0) {
+      return successResult({
+        audienceSize: 0,
+        sampleIndex: 0,
+        sampleCount: 0,
+        sample: null,
+        warningCount: 0,
+        affectedContacts: [],
+        footerAddress,
+      });
+    }
+
+    const missingByContact = mergeRenderer.validateTokens(
+      {
+        subject: input.subjectTemplate,
+        bodyHtml: input.bodyHtmlTemplate,
+      },
+      audience,
+    );
+    const normalizedSampleIndex =
+      ((input.sampleIndex % audience.length) + audience.length) % audience.length;
+    const sample = audience[normalizedSampleIndex] ?? audience[0];
+    const origin = await readRequestOrigin();
+    const footer = buildCampaignFooterPreview({
+      kind: input.kind,
+      projectName: sample?.frozenProjectName ?? null,
+      footerAddress,
+      origin,
+    });
+    const rendered = mergeRenderer.render(
+      {
+        subject: input.subjectTemplate,
+        bodyHtml: `${input.bodyHtmlTemplate}${footer.html}`,
+        bodyText: [input.bodyTextTemplate, footer.text].filter(Boolean).join("\n\n"),
+      },
+      {
+        firstName: sample?.frozenFirstName ?? null,
+        projectName: sample?.frozenProjectName ?? null,
+        aliasEmail: sample?.frozenAliasEmail ?? null,
+      },
+    );
+
+    return successResult({
+      audienceSize: audience.length,
+      sampleIndex: normalizedSampleIndex,
+      sampleCount: audience.length,
+      sample:
+        sample === undefined
+          ? null
+          : {
+              contactId: sample.contactId,
+              name: sample.frozenFirstName ?? sample.frozenEmail,
+              initials: deriveInitials(
+                sample.frozenFirstName,
+                sample.frozenEmail,
+              ),
+              email: sample.frozenEmail,
+              project: sample.frozenProjectName,
+              fromEmail: input.fromEmail ?? sample.frozenAliasEmail,
+              subject: rendered.subject,
+              html: rendered.html,
+              text: rendered.text,
+            },
+      warningCount: Object.keys(missingByContact).length,
+      affectedContacts: audience
+        .filter((member) => missingByContact[member.contactId] !== undefined)
+        .map((member) => ({
+          contactId: member.contactId,
+          name: member.frozenFirstName ?? member.frozenEmail,
+          email: member.frozenEmail,
+          project: member.frozenProjectName,
+          missingTokens: missingByContact[member.contactId] ?? [],
+        })),
+      footerAddress,
+    });
+  } catch (error) {
+    return errorResult(
+      "campaign_preview_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to render the campaign preview.",
+      true,
+    );
+  }
+}
+
 export async function saveCampaignWizardDraftAction(input: {
   readonly runId: string;
   readonly launchType: LaunchType;
   readonly kind: CampaignKind;
+  readonly name: string | null;
+  readonly fromEmail: string | null;
+  readonly replyToEmail: string | null;
+  readonly subjectTemplate: string | null;
+  readonly bodyHtmlTemplate: string | null;
+  readonly bodyTextTemplate: string | null;
+  readonly preheader: string | null;
   readonly audienceCriteria: AudienceCriteria;
   readonly audienceSize: number | null;
 }): Promise<UiResult<CampaignWizardDraftData>> {
@@ -342,12 +569,19 @@ export async function saveCampaignWizardDraftAction(input: {
       launchType: input.launchType,
       kind: input.kind,
       projectId: deriveProjectId(input.kind, audienceCriteria),
+      name: input.name,
+      fromEmail: input.fromEmail,
+      replyToEmail: input.replyToEmail,
+      subjectTemplate: input.subjectTemplate,
+      bodyHtmlTemplate: input.bodyHtmlTemplate,
+      bodyTextTemplate: input.bodyTextTemplate,
+      preheader: input.preheader,
       audienceCriteria,
       audienceSize: input.audienceSize,
       lastEditedByUserId: session.id,
     });
 
-    return successResult(mapDraftRecord(updated));
+    return successResult(mapDraftRecord(updated, session.email));
   } catch (error) {
     return errorResult(
       "campaign_draft_save_failed",
