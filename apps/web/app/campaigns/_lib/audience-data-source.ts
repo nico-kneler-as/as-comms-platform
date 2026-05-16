@@ -150,6 +150,29 @@ function successResult<T>(data: T): UiSuccess<T> {
   };
 }
 
+async function appendCampaignAudit(input: {
+  readonly actorId: string;
+  readonly action: string;
+  readonly runId: string;
+  readonly summary: string;
+}) {
+  const runtime = await getStage1WebRuntime();
+  await runtime.repositories.auditEvidence.append({
+    id: randomUUID(),
+    actorType: "user",
+    actorId: input.actorId,
+    action: input.action,
+    entityType: "campaign_run",
+    entityId: input.runId,
+    occurredAt: new Date().toISOString(),
+    result: "recorded",
+    policyCode: `stage5a.${input.action}`,
+    metadataJson: {
+      summary: input.summary,
+    },
+  });
+}
+
 function hasAppliedAudienceFilters(criteria: AudienceCriteria): boolean {
   return (
     criteria.projectIds.length > 0 ||
@@ -253,6 +276,12 @@ export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftDa
     audienceSize: null,
     createdByUserId: session.id,
     lastEditedByUserId: session.id,
+  });
+  await appendCampaignAudit({
+    actorId: session.id,
+    action: "campaign_run.created",
+    runId: created.id,
+    summary: "Draft created from the campaign wizard.",
   });
 
   return mapDraftRecord(created, session.email);

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  AuditEvidenceRecord,
   AudienceSnapshotRecord,
   CampaignRunRecord,
   NewAudienceSnapshot,
@@ -74,6 +75,9 @@ interface CampaignSendRepositories {
     ): Promise<AudienceSnapshotRecord>;
   };
   readonly settingsProjects: Pick<SettingsProjectsRepository, "findById">;
+  readonly auditEvidence?: {
+    append(record: AuditEvidenceRecord): Promise<AuditEvidenceRecord>;
+  };
 }
 
 function normalizeReason(reason: string): string | null {
@@ -145,6 +149,37 @@ function buildFreezeSnapshot(member: AudienceMember): NewAudienceSnapshot {
     unsubscribedAt: null,
     lastEventAt: null,
   };
+}
+
+async function appendCampaignAudit(
+  repositories: CampaignSendRepositories,
+  input: {
+    readonly runId: string;
+    readonly action: string;
+    readonly occurredAt: string;
+    readonly detail: string;
+    readonly metadataJson?: Record<string, unknown>;
+  },
+): Promise<void> {
+  if (repositories.auditEvidence === undefined) {
+    return;
+  }
+
+  await repositories.auditEvidence.append({
+    id: randomUUID(),
+    actorType: "system",
+    actorId: "campaign-send",
+    action: input.action,
+    entityType: "campaign_run",
+    entityId: input.runId,
+    occurredAt: input.occurredAt,
+    result: "recorded",
+    policyCode: `stage5a.${input.action}`,
+    metadataJson: {
+      detail: input.detail,
+      ...(input.metadataJson ?? {}),
+    },
+  });
 }
 
 async function readFrozenResult(
@@ -263,6 +298,12 @@ export function createCampaignSendOrchestrator(deps: {
             startedAt: run.startedAt ?? startedAt.toISOString(),
           },
         );
+        await appendCampaignAudit(deps.repositories, {
+          runId,
+          action: "campaign_run.send_started",
+          occurredAt: run.startedAt ?? startedAt.toISOString(),
+          detail: "Worker entered the sending state.",
+        });
       }
 
       if (run.state === "draft") {
@@ -389,6 +430,15 @@ export function createCampaignSendOrchestrator(deps: {
             `Campaign run ${runId} recipient ${message.snapshot.contactId} failed with Postmark error ${String(result.ErrorCode)}: ${result.Message}`,
           );
         }
+        await appendCampaignAudit(deps.repositories, {
+          runId,
+          action: "campaign_run.batch_sent",
+          occurredAt: now().toISOString(),
+          detail: `${String(messages.length)} recipients submitted to Postmark.`,
+          metadataJson: {
+            batchSize: messages.length,
+          },
+        });
       }
 
       const latestRun = await deps.repositories.campaignRuns.findById(runId);
@@ -411,6 +461,12 @@ export function createCampaignSendOrchestrator(deps: {
           completedAt: now().toISOString(),
         },
       );
+      await appendCampaignAudit(deps.repositories, {
+        runId,
+        action: "campaign_run.completed",
+        occurredAt: now().toISOString(),
+        detail: "All queued recipients reached a terminal state.",
+      });
     },
 
     async cancel(runId, reason) {

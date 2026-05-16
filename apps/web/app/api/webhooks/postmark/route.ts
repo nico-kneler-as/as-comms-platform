@@ -261,6 +261,11 @@ async function processEvent(
     );
     return;
   }
+  const run = await runtime.campaigns.campaignRuns.findById(snapshot.campaignRunId);
+  const shouldUpdateAggregateMetrics =
+    run?.state !== "finalized" ||
+    run.finalizedAt === null ||
+    new Date(occurredAt).getTime() <= new Date(run.finalizedAt).getTime();
 
   const activity: "open" | "click" | undefined =
     event.RecordType === "Open"
@@ -268,21 +273,23 @@ async function processEvent(
       : event.RecordType === "Click"
         ? "click"
         : undefined;
-  await runtime.campaigns.audienceSnapshots.updateDeliveryEvent(
-    snapshot.id,
-    activity === undefined
-      ? {
-          status: toAudienceEventStatus(event),
-          at: new Date(occurredAt),
-          providerEventId: buildProviderRecordId(event),
-        }
-      : {
-          status: toAudienceEventStatus(event),
-          at: new Date(occurredAt),
-          activity,
-          providerEventId: buildProviderRecordId(event),
-        },
-  );
+  if (shouldUpdateAggregateMetrics) {
+    await runtime.campaigns.audienceSnapshots.updateDeliveryEvent(
+      snapshot.id,
+      activity === undefined
+        ? {
+            status: toAudienceEventStatus(event),
+            at: new Date(occurredAt),
+            providerEventId: buildProviderRecordId(event),
+          }
+        : {
+            status: toAudienceEventStatus(event),
+            at: new Date(occurredAt),
+            activity,
+            providerEventId: buildProviderRecordId(event),
+          },
+    );
+  }
 
   const bounceReason = toBounceReason(event);
   if (bounceReason !== null) {
@@ -304,7 +311,6 @@ async function processEvent(
   }
 
   if (isRecipientUnsubscribe(event)) {
-    const run = await runtime.campaigns.campaignRuns.findById(snapshot.campaignRunId);
     if (run !== null) {
       await runtime.campaigns.contactConsent.recordOptOut(
         snapshot.contactId,

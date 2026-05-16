@@ -44,6 +44,7 @@ import {
 } from "./ops/config.js";
 import { readNotionKnowledgeSyncConfig } from "./jobs/notion-knowledge-sync/index.js";
 import { type CampaignSendTaskDependencies } from "./jobs/campaign-send/index.js";
+import { campaignEventsTailFinalizeJobName } from "./jobs/campaign-events-tail-finalize/index.js";
 import { readPollPostmarkSenderStatusConfig } from "./jobs/poll-postmark-sender-status/index.js";
 import { dedupHistoricalLedgerJobName } from "./jobs/dedup-historical-ledger.js";
 import { reconcileCaptureGapsJobName } from "./jobs/reconcile-capture-gaps.js";
@@ -151,6 +152,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `0 * * * * ${pollAiKnowledgeAutoSyncJobName} ?id=ai-knowledge-auto-sync-poll&max=1`,
     `*/5 * * * * ${pollIntegrationHealthJobName} ?id=integration-health-poll&max=1`,
     `*/5 * * * * ${pollPostmarkSenderStatusJobName} ?id=postmark-sender-status-poll&max=1`,
+    `0 3 * * * ${campaignEventsTailFinalizeJobName} ?id=campaign-events-tail-finalize&max=1`,
     `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
     `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
     `*/15 * * * * ${reconcileIdentityQueueJobName} ?id=identity-queue-reconcile&max=1`,
@@ -241,6 +243,7 @@ function buildCampaignSendDependencies(input: {
         campaignRuns: input.campaigns.campaignRuns,
         audienceSnapshots: input.campaigns.audienceSnapshots,
         settingsProjects: input.settings.projects,
+        auditEvidence: input.repositories.auditEvidence,
       },
       audienceResolver,
       exclusionFilter,
@@ -595,6 +598,11 @@ export async function createStage1WorkerRuntimeServices(
         : {
             campaignSend,
           }),
+      campaignEventsTailFinalize: {
+        db: connection.db,
+        campaigns,
+        auditEvidence: repositories.auditEvidence,
+      },
       aiKnowledgeAutoSync: {
         projectDimensions: repositories.projectDimensions,
       },
