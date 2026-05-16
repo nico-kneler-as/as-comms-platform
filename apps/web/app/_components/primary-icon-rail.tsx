@@ -7,6 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Inbox as InboxIcon,
   LogOut as LogOutIcon,
+  Megaphone as MegaphoneIcon,
   Settings as SettingsIcon
 } from "lucide-react";
 
@@ -56,6 +57,13 @@ const ITEMS: readonly RailItem[] = [
     Icon: InboxIcon,
     href: "/inbox",
     activePrefixes: ["/inbox"]
+  },
+  {
+    id: "campaigns",
+    label: "Campaigns",
+    Icon: MegaphoneIcon,
+    href: "/campaigns",
+    activePrefixes: ["/campaigns"]
   },
   {
     id: "settings",
