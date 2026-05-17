@@ -51,7 +51,7 @@ export function RunDetailShell({ model }: { readonly model: RunDetailModel }) {
           }}
         />
 
-        <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-5 px-6 py-6">
+        <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-5 px-6 py-6">
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <div className="space-y-6">
               <MetricTiles model={model} />

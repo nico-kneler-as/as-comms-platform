@@ -45,7 +45,7 @@ export function RunDetailHeader({
 
   return (
     <header className="border-b border-slate-200 bg-white">
-      <div className="mx-auto flex w-full max-w-[1360px] flex-col gap-4 px-6 py-5 xl:flex-row xl:items-start xl:justify-between">
+      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-4 px-6 py-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <Link
             href="/campaigns"

@@ -40,12 +40,16 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   DropdownMenuContent: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuCheckboxItem: ({
     children,
+    onSelect,
   }: {
     readonly children: React.ReactNode;
-  }) => <div>{children}</div>,
+    readonly onSelect?: (event: React.MouseEvent<HTMLDivElement>) => void;
+  }) => <div onClick={onSelect}>{children}</div>,
 }));
 
 import { CampaignsList } from "../../app/campaigns/_components/campaigns-list";
+
+type CampaignListItem = React.ComponentProps<typeof CampaignsList>["items"][number];
 
 const workerRequire = createRequire(import.meta.url);
 const { JSDOM } = workerRequire("jsdom") as {
@@ -83,6 +87,7 @@ function setupDom() {
   globalThis.HTMLAnchorElement = dom.window.HTMLAnchorElement;
   globalThis.HTMLInputElement = dom.window.HTMLInputElement;
   globalThis.Event = dom.window.Event;
+  globalThis.InputEvent = dom.window.InputEvent;
   globalThis.ResizeObserver = class {
     observe() {
       return undefined;
@@ -132,6 +137,28 @@ function renderList(
   });
 
   return container.innerHTML;
+}
+
+function makeCampaignRow(index: number): CampaignListItem {
+  return {
+    runId: `postmark-${String(index + 1)}`,
+    provider: "postmark",
+    kind: "project",
+    launchType: "normal_email",
+    state: "complete",
+    projectId: "project-1",
+    projectLabel: "Forests",
+    sender: "forests@adventurescientists.org",
+    subject: `Campaign ${String(index + 1)}`,
+    previewText: "Field update.",
+    audienceSize: 100 + index,
+    scheduledAt: null,
+    startedAt: "2026-05-14T15:00:00.000Z",
+    completedAt: "2026-05-14T15:25:00.000Z",
+    cancelledAt: null,
+    createdAt: "2026-05-14T14:30:00.000Z",
+    updatedAt: "2026-05-14T15:25:00.000Z",
+  };
 }
 
 beforeEach(() => {
@@ -293,5 +320,180 @@ describe("CampaignsList snapshots", () => {
     });
 
     expect(html).toMatchSnapshot();
+  });
+
+  it("clamps the virtual row window after filters shrink the list", () => {
+    const container = setupDom();
+    const rows = Array.from({ length: 30 }, (_, index) =>
+      makeCampaignRow(index),
+    );
+
+    renderList(container, {
+      items: rows,
+      tabs: [
+        { id: "all", label: "All", count: 30 },
+        { id: "drafts", label: "Drafts", count: 0 },
+        { id: "scheduled", label: "Scheduled", count: 0 },
+        { id: "sending", label: "Sending", count: 0 },
+        { id: "complete", label: "Complete", count: 30 },
+        { id: "cancelled", label: "Cancelled", count: 0 },
+      ],
+      totalCount: 30,
+    });
+
+    const viewport = container
+      .querySelector("[data-campaign-row]")
+      ?.closest(".overflow-y-auto");
+    expect(viewport).toBeInstanceOf(HTMLElement);
+
+    act(() => {
+      (viewport as HTMLElement).scrollTop = 4000;
+      viewport?.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+
+    renderList(container, {
+      items: rows.slice(0, 2),
+      tabs: [
+        { id: "all", label: "All", count: 30 },
+        { id: "drafts", label: "Drafts", count: 0 },
+        { id: "scheduled", label: "Scheduled", count: 0 },
+        { id: "sending", label: "Sending", count: 0 },
+        { id: "complete", label: "Complete", count: 2 },
+        { id: "cancelled", label: "Cancelled", count: 0 },
+      ],
+      activeFilterId: "complete",
+      totalCount: 30,
+    });
+
+    expect(container.querySelectorAll("[data-campaign-row]")).toHaveLength(2);
+    expect(container.textContent).toContain("Campaign 1");
+    expect(container.textContent).toContain("Campaign 2");
+  });
+
+  it("does not navigate when the active state tab is selected again", () => {
+    const container = setupDom();
+
+    renderList(container, {
+      items: [makeCampaignRow(0)],
+      tabs: [
+        { id: "all", label: "All", count: 1 },
+        { id: "drafts", label: "Drafts", count: 0 },
+        { id: "scheduled", label: "Scheduled", count: 0 },
+        { id: "sending", label: "Sending", count: 0 },
+        { id: "complete", label: "Complete", count: 1 },
+        { id: "cancelled", label: "Cancelled", count: 0 },
+      ],
+      totalCount: 1,
+    });
+
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>('[data-campaign-tab="all"]')
+        ?.click();
+    });
+
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the visible search draft when changing state tabs", () => {
+    const container = setupDom();
+
+    renderList(container, {
+      items: [makeCampaignRow(0)],
+      tabs: [
+        { id: "all", label: "All", count: 1 },
+        { id: "drafts", label: "Drafts", count: 0 },
+        { id: "scheduled", label: "Scheduled", count: 0 },
+        { id: "sending", label: "Sending", count: 0 },
+        { id: "complete", label: "Complete", count: 1 },
+        { id: "cancelled", label: "Cancelled", count: 0 },
+      ],
+      totalCount: 1,
+    });
+
+    const searchInput =
+      container.querySelector<HTMLInputElement>("[data-campaign-search]");
+    if (!(searchInput instanceof HTMLInputElement)) {
+      throw new Error("Expected campaign search input to render.");
+    }
+
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set?.call(searchInput, "whale");
+      searchInput.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: "whale",
+          inputType: "insertText",
+        }),
+      );
+    });
+
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>('[data-campaign-tab="complete"]')
+        ?.click();
+    });
+
+    expect(replaceMock).toHaveBeenCalledWith(
+      "/campaigns?state=complete&q=whale",
+      { scroll: false },
+    );
+  });
+
+  it("keeps the visible search draft when changing project filters", () => {
+    const container = setupDom();
+
+    renderList(container, {
+      items: [makeCampaignRow(0)],
+        projectOptions: [{ id: "project-kelp", label: "Kelp Forests" }],
+      tabs: [
+        { id: "all", label: "All", count: 1 },
+        { id: "drafts", label: "Drafts", count: 0 },
+        { id: "scheduled", label: "Scheduled", count: 0 },
+        { id: "sending", label: "Sending", count: 0 },
+        { id: "complete", label: "Complete", count: 1 },
+        { id: "cancelled", label: "Cancelled", count: 0 },
+      ],
+      totalCount: 1,
+    });
+
+    const searchInput =
+      container.querySelector<HTMLInputElement>("[data-campaign-search]");
+    if (!(searchInput instanceof HTMLInputElement)) {
+      throw new Error("Expected campaign search input to render.");
+    }
+
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set?.call(searchInput, "whale");
+      searchInput.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: "whale",
+          inputType: "insertText",
+        }),
+      );
+    });
+
+    const projectOption = Array.from(
+      container.querySelectorAll("button + div > div"),
+    ).find((element) => element.textContent === "Kelp Forests");
+    if (!(projectOption instanceof HTMLElement)) {
+      throw new Error("Expected Forests project option to render.");
+    }
+
+    act(() => {
+      projectOption.click();
+    });
+
+    expect(replaceMock).toHaveBeenCalledWith(
+      "/campaigns?projectId=project-kelp&q=whale",
+      { scroll: false },
+    );
   });
 });
