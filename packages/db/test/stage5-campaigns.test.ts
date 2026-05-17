@@ -390,6 +390,10 @@ describe("Stage 5 campaigns repositories", () => {
     });
 
     const rows = await campaigns.campaignRunProjection.listRecent({ limit: 10 });
+    const postmarkRuns = await campaigns.campaignRuns.listByIds([
+      "postmark-run-1",
+      "missing-run",
+    ]);
     const postmarkRow = rows.find((row) => row.provider === "postmark");
     const mailchimpRow = rows.find((row) => row.provider === "mailchimp");
     const mailchimpDetail = await campaigns.campaignRunProjection.getDetail(
@@ -404,6 +408,8 @@ describe("Stage 5 campaigns repositories", () => {
       launchType: "normal_email",
       state: "draft",
     });
+    expect(postmarkRuns).toHaveLength(1);
+    expect(postmarkRuns[0]?.id).toBe("postmark-run-1");
     expect(mailchimpRow).toMatchObject({
       runId: "mailchimp-run-1",
       provider: "mailchimp",
@@ -485,6 +491,11 @@ describe("Stage 5 campaigns repositories", () => {
     const projectCount = await campaigns.campaignRunProjection.count({
       projectIds: ["project-2"],
     });
+    const countsByState = await campaigns.campaignRunProjection.countByState();
+    const projectCountsByState =
+      await campaigns.campaignRunProjection.countByState({
+        projectIds: ["project-2"],
+      });
 
     expect(scheduledRows).toHaveLength(1);
     expect(scheduledRows[0]?.runId).toBe("run-filter-2");
@@ -494,6 +505,11 @@ describe("Stage 5 campaigns repositories", () => {
     expect(searchRows[0]?.provider).toBe("mailchimp");
     expect(scheduledCount).toBe(1);
     expect(projectCount).toBe(1);
+    expect(countsByState.draft).toBe(1);
+    expect(countsByState.scheduled).toBe(1);
+    expect(countsByState.complete).toBe(1);
+    expect(projectCountsByState.scheduled).toBe(1);
+    expect(projectCountsByState.draft ?? 0).toBe(0);
   });
 
   it("allows draft to scheduled but rejects draft to sending directly", async () => {

@@ -63,6 +63,12 @@ vi.mock("../../app/campaigns/actions", () => ({
       data: { runId: "dup" },
       requestId: "req",
     }),
+  listCampaignRecipients: () =>
+    Promise.resolve({
+      ok: true,
+      data: { rows: [], total: 0 },
+      requestId: "req",
+    }),
 }));
 
 import type { RunDetailModel } from "../../app/campaigns/[runId]/_lib/run-detail";
@@ -190,6 +196,7 @@ function buildModel(state: RunDetailModel["run"]["state"]): RunDetailModel {
         lastEventAt: "2026-05-15T12:07:00.000Z",
       },
     ],
+    recipientTotal: 1,
     repliesCount: 1,
     recentReplies: [
       {

@@ -28,6 +28,7 @@ import { StateFilterTabs } from "./state-filter-tabs";
 const DESKTOP_ROW_HEIGHT = 92;
 const MOBILE_ROW_HEIGHT = 156;
 const OVERSCAN = 6;
+const LIST_VIEWPORT_MAX_HEIGHT = 920;
 
 interface CampaignProjectOption {
   readonly id: string;
@@ -65,6 +66,11 @@ function buildHref(input: {
   return queryString.length === 0
     ? input.pathname
     : `${input.pathname}?${queryString}`;
+}
+
+function buildCurrentHref(pathname: string, searchParams: URLSearchParams) {
+  const queryString = searchParams.toString();
+  return queryString.length === 0 ? pathname : `${pathname}?${queryString}`;
 }
 
 export function CampaignsList({
@@ -106,35 +112,42 @@ export function CampaignsList({
       return;
     }
 
-    const syncViewport = () => {
+    const syncSize = () => {
       setViewportHeight(element.clientHeight);
-      setScrollTop(element.scrollTop);
       setRowHeight(
         element.clientWidth < 640 ? MOBILE_ROW_HEIGHT : DESKTOP_ROW_HEIGHT,
       );
     };
+    const syncScroll = () => {
+      setScrollTop(element.scrollTop);
+    };
 
-    syncViewport();
+    syncSize();
+    syncScroll();
 
-    const observer = new ResizeObserver(syncViewport);
+    const observer = new ResizeObserver(syncSize);
     observer.observe(element);
-    element.addEventListener("scroll", syncViewport, { passive: true });
+    element.addEventListener("scroll", syncScroll, { passive: true });
 
     return () => {
       observer.disconnect();
-      element.removeEventListener("scroll", syncViewport);
+      element.removeEventListener("scroll", syncScroll);
     };
   }, []);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
+      const currentParams = new URLSearchParams(searchParams.toString());
       const href = buildHref({
         pathname,
-        currentParams: new URLSearchParams(searchParams.toString()),
+        currentParams,
         state: activeFilterId,
         projectIds: selectedProjectIds,
         query: searchDraft,
       });
+      if (href === buildCurrentHref(pathname, currentParams)) {
+        return;
+      }
       startTransition(() => {
         router.replace(href, { scroll: false });
       });
@@ -162,8 +175,12 @@ export function CampaignsList({
           )?.label ?? "1 project")
         : `${selectedProjectIds.length.toString()} projects`;
 
-  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN);
   const visibleCount = Math.ceil(viewportHeight / rowHeight) + OVERSCAN * 2;
+  const maxStartIndex = Math.max(0, items.length - visibleCount);
+  const startIndex = Math.min(
+    maxStartIndex,
+    Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN),
+  );
   const endIndex = Math.min(items.length, startIndex + visibleCount);
   const visibleItems = useMemo(
     () => items.slice(startIndex, endIndex),
@@ -179,7 +196,7 @@ export function CampaignsList({
   if (showColdStart) {
     return (
       <div className="flex flex-1 px-4 py-8 sm:px-8">
-        <div className="mx-auto flex w-full max-w-7xl flex-1 rounded-2xl border border-slate-200 bg-white">
+        <div className="mx-auto flex w-full max-w-screen-2xl flex-1 rounded-2xl border border-slate-200 bg-white">
           <EmptyState
             size="lg"
             icon={<MegaphoneIcon className="size-7 text-slate-500" />}
@@ -201,20 +218,24 @@ export function CampaignsList({
 
   return (
     <div className="flex min-h-0 flex-1 px-4 py-6 sm:px-8">
-      <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col">
+      <div className="mx-auto flex min-h-0 w-full max-w-screen-2xl flex-1 flex-col">
         <div className="pb-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <StateFilterTabs
               tabs={tabs}
               activeTabId={activeFilterId}
               onSelect={(nextState) => {
+                const currentParams = new URLSearchParams(searchParams.toString());
                 const href = buildHref({
                   pathname,
-                  currentParams: new URLSearchParams(searchParams.toString()),
+                  currentParams,
                   state: nextState,
                   projectIds: selectedProjectIds,
-                  query: searchQuery,
+                  query: searchDraft,
                 });
+                if (href === buildCurrentHref(pathname, currentParams)) {
+                  return;
+                }
                 startTransition(() => {
                   router.replace(href, { scroll: false });
                 });
@@ -260,7 +281,7 @@ export function CampaignsList({
                             ),
                             state: activeFilterId,
                             projectIds: nextProjectIds,
-                            query: searchQuery,
+                            query: searchDraft,
                           });
                           startTransition(() => {
                             router.replace(href, { scroll: false });
@@ -290,10 +311,10 @@ export function CampaignsList({
                   data-campaign-search="true"
                   type="text"
                   value={searchDraft}
-                  onChange={(event) => {
+                  onInput={(event) => {
                     setSearchDraft(event.currentTarget.value);
                   }}
-                  placeholder="Search campaign subject"
+                  placeholder="Search campaigns"
                   className="w-full bg-transparent text-slate-900 placeholder:text-slate-400 focus:outline-none"
                 />
               </label>
@@ -327,7 +348,11 @@ export function CampaignsList({
         ) : (
           <div
             ref={viewportRef}
-            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white"
+            className="min-h-0 overflow-y-auto rounded-2xl border border-slate-200 bg-white"
+            style={{
+              height: `${String(LIST_VIEWPORT_MAX_HEIGHT)}px`,
+              maxHeight: "calc(100vh - 13.5rem)",
+            }}
           >
             <div
               className="relative overflow-hidden"

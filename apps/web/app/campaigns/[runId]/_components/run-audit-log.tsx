@@ -35,11 +35,13 @@ export function RunAuditLog({
 }) {
   return (
     <div className="space-y-5">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">Run audit log</h2>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-900">
+          Run audit log
+        </h2>
         <div className="mt-4 space-y-4">
           {entries.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
               No audit entries recorded yet.
             </div>
           ) : (
@@ -52,7 +54,9 @@ export function RunAuditLog({
                   <LocalDateTime iso={entry.occurredAt} /> · {entry.actorLabel}
                 </div>
                 {entry.detail ? (
-                  <div className="mt-1 text-sm text-slate-600">{entry.detail}</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    {entry.detail}
+                  </div>
                 ) : null}
               </div>
             ))
@@ -60,11 +64,11 @@ export function RunAuditLog({
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">
           Audience criteria snapshot
         </h2>
-        <pre className="mt-4 overflow-x-auto rounded-2xl bg-slate-950 px-4 py-4 text-xs leading-6 text-slate-100">
+        <pre className="mt-4 overflow-x-auto rounded-xl bg-slate-950 px-4 py-4 text-xs leading-6 text-slate-100">
           {JSON.stringify(audienceCriteria, null, 2)}
         </pre>
       </section>

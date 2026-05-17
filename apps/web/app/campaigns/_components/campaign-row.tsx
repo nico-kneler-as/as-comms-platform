@@ -9,6 +9,13 @@ import { MailIcon } from "@/app/inbox/_components/icons";
 
 import { ProviderBadge } from "./provider-badge";
 
+const CAMPAIGN_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "America/Denver",
+});
+
 function formatCampaignDate(input: {
   readonly state: CampaignRunProjectionRow["state"];
   readonly scheduledAt: string | null;
@@ -34,12 +41,7 @@ function formatCampaignDate(input: {
 
   const safeDateValue = dateValue ?? input.createdAt;
 
-  return `${label} ${new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "America/Denver",
-  }).format(new Date(safeDateValue))}`;
+  return `${label} ${CAMPAIGN_DATE_FORMATTER.format(new Date(safeDateValue))}`;
 }
 
 function resolveStateColor(state: CampaignRunProjectionRow["state"]) {
