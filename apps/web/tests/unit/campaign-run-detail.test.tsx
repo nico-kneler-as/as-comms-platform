@@ -12,7 +12,9 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-vi.mock("lucide-react", () => ({}));
+vi.mock("lucide-react", () => ({
+  Copy: () => null,
+}));
 
 vi.mock("@/components/ui/button", () => ({
   Button: ({ children, ...props }: { readonly children: React.ReactNode }) => (

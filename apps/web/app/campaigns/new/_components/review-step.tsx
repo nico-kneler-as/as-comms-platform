@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 
-import { CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  RefreshCw,
+  Send,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -127,13 +134,13 @@ function Section({
   readonly children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-5 py-4">
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 bg-slate-50/60 px-5 py-3">
         <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
           {title}
         </h3>
       </div>
-      <div className="px-5 py-5">{children}</div>
+      <div>{children}</div>
     </section>
   );
 }
@@ -172,11 +179,12 @@ export function ReviewStep({
   const selectedSender =
     (fromEmail === null
       ? null
-      : senderOptions.find(
-            (option) => option.email === fromEmail && option.status === "verified",
-          ) ??
+      : (senderOptions.find(
+          (option) =>
+            option.email === fromEmail && option.status === "verified",
+        ) ??
         senderOptions.find((option) => option.email === fromEmail) ??
-        null) ?? null;
+        null)) ?? null;
   const submitLabel = sendMode === "later" ? "Schedule send" : "Send now";
   const confirmationLine =
     sendMode === "later"
@@ -198,8 +206,8 @@ export function ReviewStep({
         </p>
       </div>
 
-      <div className="space-y-5">
-        <section className="rounded-3xl border border-slate-200 bg-white px-5 py-5">
+      <div className="space-y-4">
+        <section className="rounded-xl border border-slate-200 bg-white px-5 py-4">
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700">
               {kind === "newsletter" ? "Newsletter" : projectChipLabel}
@@ -212,7 +220,7 @@ export function ReviewStep({
             }}
             disabled={frozen}
             placeholder="Untitled campaign"
-            className="mt-4 h-auto border-none px-0 py-0 text-3xl font-semibold text-slate-900 shadow-none focus-visible:ring-0"
+            className="mt-4 h-auto border-none px-0 py-0 text-xl font-semibold text-slate-900 shadow-none focus-visible:ring-0"
             aria-label="Campaign name"
           />
           <p className="mt-2 text-sm text-slate-500">
@@ -220,46 +228,59 @@ export function ReviewStep({
           </p>
         </section>
 
-        <Section title="Sender">
-          <TooltipProvider delayDuration={200}>
-            <div className="space-y-4">
-              <div className="space-y-2">
+        <Section title="Sender & audience">
+          <div className="grid divide-y divide-slate-200 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_136px] md:divide-x md:divide-y-0">
+            <div className="p-5">
+              <TooltipProvider delayDuration={200}>
                 <label
                   htmlFor="campaign-from-email"
-                  className="text-sm font-medium text-slate-900"
+                  className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500"
                 >
                   From
                 </label>
-                <Popover open={frozen ? false : senderOpen} onOpenChange={setSenderOpen}>
+                <Popover
+                  open={frozen ? false : senderOpen}
+                  onOpenChange={setSenderOpen}
+                >
                   <PopoverTrigger asChild>
                     <button
                       id="campaign-from-email"
                       type="button"
                       disabled={frozen}
-                      className="flex h-11 w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 text-left text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+                      className="mt-2 flex h-10 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-left font-mono text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
                     >
                       <span
                         className={cn(
                           "truncate",
-                          fromEmail === null ? "text-slate-500" : "text-slate-900",
+                          fromEmail === null
+                            ? "text-slate-500"
+                            : "text-slate-900",
                           selectedSender !== null &&
-                            !SENDER_STATUS_META[selectedSender.status].selectable
+                            !SENDER_STATUS_META[selectedSender.status]
+                              .selectable
                             ? "text-slate-500"
                             : "",
                         )}
                       >
                         {selectedSender === null
-                          ? "Choose a sender alias"
+                          ? "Choose a verified sender"
                           : readSenderLabel(selectedSender)}
                       </span>
-                      <ChevronDown className="size-4 shrink-0 text-slate-400" />
+                      <ChevronDown
+                        className="ml-2 size-4 shrink-0 text-slate-400"
+                        aria-hidden="true"
+                      />
                     </button>
                   </PopoverTrigger>
                   <PopoverContent
                     align="start"
                     className="w-[var(--radix-popover-trigger-width)] min-w-[24rem] p-1"
                   >
-                    <div role="listbox" aria-label="Sender aliases" className="space-y-1">
+                    <div
+                      role="listbox"
+                      aria-label="Sender aliases"
+                      className="space-y-1"
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -267,11 +288,13 @@ export function ReviewStep({
                           setSenderOpen(false);
                         }}
                         className={cn(
-                          "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-slate-600 transition-colors hover:bg-slate-50",
-                          fromEmail === null ? "bg-slate-50 text-slate-900" : "",
+                          "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-600 transition-colors hover:bg-slate-50",
+                          fromEmail === null
+                            ? "bg-slate-50 text-slate-900"
+                            : "",
                         )}
                       >
-                        <span>Choose a sender alias</span>
+                        <span>Choose a verified sender</span>
                       </button>
                       {senderOptions.map((option) => {
                         const meta = SENDER_STATUS_META[option.status];
@@ -286,7 +309,7 @@ export function ReviewStep({
                                 : `${readSenderLabel(option)}. ${meta.tooltip}`
                             }
                             className={cn(
-                              "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm",
+                              "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm",
                               meta.selectable
                                 ? "cursor-pointer text-slate-900 transition-colors hover:bg-slate-50"
                                 : "cursor-not-allowed text-slate-500",
@@ -294,7 +317,7 @@ export function ReviewStep({
                             )}
                           >
                             <div className="min-w-0">
-                              <p className="truncate font-medium">
+                              <p className="truncate font-mono font-medium">
                                 {readSenderLabel(option)}
                               </p>
                               <p className="truncate text-xs text-slate-500">
@@ -306,9 +329,14 @@ export function ReviewStep({
 
                         if (!meta.selectable) {
                           return (
-                            <Tooltip key={`${option.projectId}:${option.email}`}>
+                            <Tooltip
+                              key={`${option.projectId}:${option.email}`}
+                            >
                               <TooltipTrigger asChild>{row}</TooltipTrigger>
-                              <TooltipContent side="right" className="max-w-72 text-pretty">
+                              <TooltipContent
+                                side="right"
+                                className="max-w-72 text-pretty"
+                              >
                                 {meta.tooltip}
                               </TooltipContent>
                             </Tooltip>
@@ -332,65 +360,77 @@ export function ReviewStep({
                     </div>
                   </PopoverContent>
                 </Popover>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  Reply-To
-                </p>
-                <p className="mt-2 text-sm text-slate-800">
-                  {fromEmail ?? "Choose a sender alias first"}
-                </p>
                 <p className="mt-2 text-xs text-slate-500">
-                  Replies route to the same address as the sender.
+                  Replies route to the same address.
                 </p>
+              </TooltipProvider>
+            </div>
+
+            <div className="p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Audience
+              </p>
+              <div className="mt-2 flex items-end gap-2">
+                <span className="text-2xl font-semibold tabular-nums text-slate-950">
+                  {(audienceSize ?? 0).toLocaleString()}
+                </span>
+                <span className="pb-1 text-sm text-slate-500">recipients</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                  Filtered audience
+                </span>
+                <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                  {projectChipLabel}
+                </span>
               </div>
             </div>
-          </TooltipProvider>
-        </Section>
 
-        <Section title="Audience">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-4xl font-semibold tabular-nums text-slate-900">
-                {(audienceSize ?? 0).toLocaleString()}
-              </p>
-              <p className="mt-2 text-sm text-slate-500">
-                Frozen at launch · Auto-excludes unsubscribed, bounced, no-email
-              </p>
+            <div className="flex items-center justify-center p-5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onRerunAudience}
+                disabled={frozen}
+              >
+                <RefreshCw className="mr-1.5 size-3.5" aria-hidden="true" />
+                Re-run
+              </Button>
             </div>
-            <button
-              type="button"
-              className={cn(
-                "text-sm font-medium text-slate-600 underline underline-offset-2",
-                frozen ? "cursor-not-allowed opacity-50" : "",
-              )}
-              onClick={onRerunAudience}
-              disabled={frozen}
-            >
-              Re-run audience
-            </button>
+          </div>
+          <div className="border-t border-slate-200 bg-slate-50/60 px-5 py-3 text-xs text-slate-500">
+            Audience freezes at launch. Auto-excludes unsubscribed,
+            hard-bounced, and contacts without an email on file.
           </div>
         </Section>
 
         <Section title="Email Content">
           <button
             type="button"
-            className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-medium text-slate-800"
+            className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50"
             onClick={() => {
               onPreviewExpandedChange(!previewExpanded);
             }}
           >
-            <span>{previewExpanded ? "Collapse" : "Expand"}</span>
-            {previewExpanded ? (
-              <ChevronUp className="size-4 text-slate-500" />
-            ) : (
-              <ChevronDown className="size-4 text-slate-500" />
-            )}
+            <span>
+              <span className="mr-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Subject
+              </span>
+              {previewData?.sample?.subject ?? "No subject yet"}
+            </span>
+            <span className="flex items-center gap-2 text-xs text-slate-500">
+              {previewExpanded ? "Collapse" : "Expand"}
+              {previewExpanded ? (
+                <ChevronUp className="size-4 text-slate-500" />
+              ) : (
+                <ChevronDown className="size-4 text-slate-500" />
+              )}
+            </span>
           </button>
 
           {previewExpanded ? (
-            <div className="mt-4 rounded-3xl border border-slate-200">
+            <div className="border-t border-slate-200">
               <div className="border-b border-slate-200 px-4 py-3 text-sm text-slate-600">
                 <p>
                   <span className="font-medium text-slate-900">Subject:</span>{" "}
@@ -423,7 +463,7 @@ export function ReviewStep({
         </Section>
 
         {frozen ? (
-          <section className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
+          <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
             <div className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
               <p>
@@ -435,45 +475,85 @@ export function ReviewStep({
           </section>
         ) : (
           <Section title="When To Send">
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 p-5 md:grid-cols-2">
               <button
                 type="button"
                 className={cn(
-                  "rounded-2xl border px-4 py-4 text-left transition-colors",
+                  "flex gap-3 rounded-xl border px-4 py-4 text-left transition-colors",
                   sendMode === "now"
-                    ? "border-slate-900 bg-slate-900 text-white"
+                    ? "border-slate-950 bg-white text-slate-950 shadow-sm ring-1 ring-slate-950"
                     : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50",
                 )}
                 onClick={() => {
                   onSendModeChange("now");
                 }}
               >
-                <p className="font-semibold">Send now</p>
-                <p className="mt-2 text-sm opacity-80">
-                  Recipients start receiving immediately
-                </p>
+                <span
+                  className={cn(
+                    "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
+                    sendMode === "now"
+                      ? "border-slate-950"
+                      : "border-slate-300",
+                  )}
+                  aria-hidden="true"
+                >
+                  {sendMode === "now" ? (
+                    <span className="size-2.5 rounded-full bg-slate-950" />
+                  ) : null}
+                </span>
+                <Send
+                  className="mt-0.5 size-4 shrink-0 text-slate-700"
+                  aria-hidden="true"
+                />
+                <span>
+                  <span className="block font-semibold">Send now</span>
+                  <span className="mt-1 block text-sm text-slate-500">
+                    Recipients start receiving immediately.
+                  </span>
+                </span>
               </button>
               <button
                 type="button"
                 className={cn(
-                  "rounded-2xl border px-4 py-4 text-left transition-colors",
+                  "flex gap-3 rounded-xl border px-4 py-4 text-left transition-colors",
                   sendMode === "later"
-                    ? "border-slate-900 bg-slate-900 text-white"
+                    ? "border-slate-950 bg-white text-slate-950 shadow-sm ring-1 ring-slate-950"
                     : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50",
                 )}
                 onClick={() => {
                   onSendModeChange("later");
                 }}
               >
-                <p className="font-semibold">Schedule for later</p>
-                <p className="mt-2 text-sm opacity-80">
-                  Pick a date and time. Locked to {ORG_TIMEZONE}.
-                </p>
+                <span
+                  className={cn(
+                    "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
+                    sendMode === "later"
+                      ? "border-slate-950"
+                      : "border-slate-300",
+                  )}
+                  aria-hidden="true"
+                >
+                  {sendMode === "later" ? (
+                    <span className="size-2.5 rounded-full bg-slate-950" />
+                  ) : null}
+                </span>
+                <Clock
+                  className="mt-0.5 size-4 shrink-0 text-slate-700"
+                  aria-hidden="true"
+                />
+                <span>
+                  <span className="block font-semibold">
+                    Schedule for later
+                  </span>
+                  <span className="mt-1 block text-sm text-slate-500">
+                    Pick a date and time. Locked to America/Denver.
+                  </span>
+                </span>
               </button>
             </div>
 
             {sendMode === "later" ? (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 border-t border-slate-200 px-5 py-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <label
                     htmlFor="campaign-send-date"
@@ -531,7 +611,11 @@ export function ReviewStep({
       <Dialog open={confirmOpen} onOpenChange={onConfirmOpenChange}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{submitLabel}</DialogTitle>
+            <DialogTitle>
+              {sendMode === "later"
+                ? "Schedule this campaign?"
+                : "Send this campaign now?"}
+            </DialogTitle>
             <DialogDescription>{confirmationLine}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -541,13 +625,13 @@ export function ReviewStep({
                 onConfirmOpenChange(false);
               }}
             >
-              Cancel
+              Keep editing
             </Button>
             <Button
               onClick={onSubmit}
               disabled={submitPending || !fromEmail || !selectedSenderVerified}
             >
-              {submitPending ? "Working…" : "Confirm"}
+              {submitPending ? "Working…" : submitLabel}
             </Button>
           </DialogFooter>
         </DialogContent>

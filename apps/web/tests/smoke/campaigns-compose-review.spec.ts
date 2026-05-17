@@ -20,9 +20,9 @@ async function reachComposeStep(page: Page) {
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
 
-  const firstProjectCheckbox = page.locator(
-    'input[aria-label^="Toggle project "]',
-  ).first();
+  const firstProjectCheckbox = page
+    .locator('input[aria-label^="Toggle project "]')
+    .first();
   if ((await firstProjectCheckbox.count()) === 0) {
     test.skip(true, "No active projects are available in this environment.");
     return false;
@@ -37,7 +37,9 @@ async function reachComposeStep(page: Page) {
   }
 
   await page.getByRole("button", { name: "Continue to compose" }).click();
-  await expect(page.getByRole("heading", { name: "Compose the campaign" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Compose the campaign" }),
+  ).toBeVisible();
   return true;
 }
 
@@ -51,18 +53,24 @@ test("campaign compose step rotates preview contacts and posts the test-send act
     return;
   }
 
-  await page.getByLabel("Campaign subject").fill("Gear pickup for {{firstName}}");
+  await page
+    .getByLabel("Campaign subject")
+    .fill("Gear pickup for {{firstName}}");
   await page.locator('[role="textbox"][aria-label="Message"]').click();
-  await page.locator('[role="textbox"][aria-label="Message"]').pressSequentially(
-    "Hi {{firstName}}, see you at the warehouse.",
-  );
+  await page
+    .locator('[role="textbox"][aria-label="Message"]')
+    .pressSequentially("Hi {{firstName}}, see you at the warehouse.");
 
   await expect(page.getByText("Live Preview")).toBeVisible();
   await page.getByRole("button", { name: "Next sample contact" }).click();
   await page.getByRole("button", { name: "Send test" }).click();
-  await expect(page.getByRole("heading", { name: "Send test email" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Send test email" }),
+  ).toBeVisible();
 
-  const actionRequest = page.waitForRequest((request) => request.method() === "POST");
+  const actionRequest = page.waitForRequest(
+    (request) => request.method() === "POST",
+  );
   await page.getByRole("button", { name: "Send test" }).last().click();
   await actionRequest;
 });
@@ -77,35 +85,49 @@ test("campaign review step can freeze a scheduled campaign from the wizard", asy
     return;
   }
 
-  await page.getByLabel("Campaign subject").fill("Gear pickup for {{firstName}}");
+  await page
+    .getByLabel("Campaign subject")
+    .fill("Gear pickup for {{firstName}}");
   await page.locator('[role="textbox"][aria-label="Message"]').click();
-  await page.locator('[role="textbox"][aria-label="Message"]').pressSequentially(
-    "Hi {{firstName}}, see you at the warehouse.",
-  );
+  await page
+    .locator('[role="textbox"][aria-label="Message"]')
+    .pressSequentially("Hi {{firstName}}, see you at the warehouse.");
   await page.getByRole("button", { name: "Continue to review" }).click();
-  await expect(page.getByRole("heading", { name: "Review and send" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Review and send" }),
+  ).toBeVisible();
 
-  const fromSelect = page.locator("#campaign-from-email");
-  if ((await fromSelect.count()) === 0) {
+  const senderTrigger = page.locator("#campaign-from-email");
+  if ((await senderTrigger.count()) === 0) {
     test.skip(true, "Sender selection did not render.");
     return;
   }
 
-  const optionCount = await fromSelect.locator("option").count();
-  if (optionCount < 2) {
-    test.skip(true, "No verified sender aliases are available in this environment.");
+  await senderTrigger.click();
+  const verifiedSender = page
+    .locator('[role="option"][aria-disabled="false"]')
+    .first();
+  if ((await verifiedSender.count()) === 0) {
+    test.skip(
+      true,
+      "No verified sender aliases are available in this environment.",
+    );
     return;
   }
 
-  await fromSelect.selectOption({ index: 1 });
+  await verifiedSender.click();
   await page.getByRole("button", { name: "Schedule for later" }).click();
   await page.locator("#campaign-send-date").fill("2026-05-20");
   await page.locator("#campaign-send-time").fill("09:30");
 
-  const actionRequest = page.waitForRequest((request) => request.method() === "POST");
+  const actionRequest = page.waitForRequest(
+    (request) => request.method() === "POST",
+  );
   await page.getByRole("button", { name: "Schedule send" }).click();
-  await page.getByRole("button", { name: "Confirm" }).click();
+  await page.getByRole("button", { name: "Schedule send" }).last().click();
   await actionRequest;
 
-  await expect(page.getByText(/Content and audience are locked/i)).toBeVisible();
+  await expect(
+    page.getByText(/Content and audience are locked/i),
+  ).toBeVisible();
 });

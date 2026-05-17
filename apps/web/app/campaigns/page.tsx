@@ -161,32 +161,21 @@ export default async function CampaignsPage({
     ...(searchQuery.length === 0 ? {} : { searchQuery }),
   };
   const rows = await reader.listRecent(listRecentOptions);
-  const mailchimpCampaignIds = rows
-    .filter((row) => row.provider === "mailchimp")
-    .map((row) => row.runId);
 
-  const mailchimpDetailsPromise =
-    runtime.repositories.mailchimpCampaignActivityDetails.listByCampaignIds ===
-    undefined
-      ? Promise.resolve(
-          [] as Awaited<
-            ReturnType<
-              NonNullable<
-                typeof runtime.repositories.mailchimpCampaignActivityDetails.listByCampaignIds
-              >
-            >
-          >,
-        )
-      : runtime.repositories.mailchimpCampaignActivityDetails.listByCampaignIds(
-          mailchimpCampaignIds,
-        );
-  const [postmarkRuns, mailchimpDetails, tabCounts] = await Promise.all([
+  type MailchimpCampaignDetails = Awaited<
+    ReturnType<
+      NonNullable<
+        typeof runtime.repositories.mailchimpCampaignActivityDetails.listByCampaignIds
+      >
+    >
+  >;
+  const mailchimpDetails = [] as MailchimpCampaignDetails;
+  const [postmarkRuns, tabCounts] = await Promise.all([
     Promise.all(
       rows
         .filter((row) => row.provider === "postmark")
         .map(async (row) => runtime.campaigns.campaignRuns.findById(row.runId)),
     ),
-    mailchimpDetailsPromise,
     Promise.all(
       FILTER_DEFINITIONS.map(async (filter) => ({
         id: filter.id,

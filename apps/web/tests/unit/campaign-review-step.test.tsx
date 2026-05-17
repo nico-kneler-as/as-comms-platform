@@ -8,15 +8,15 @@ vi.mock("lucide-react", () => ({
   CheckCircle2: () => null,
   ChevronDown: () => null,
   ChevronUp: () => null,
+  Clock: () => null,
+  RefreshCw: () => null,
+  Send: () => null,
 }));
 
 vi.mock("@/components/ui/button", () => ({
-  Button: ({
-    children,
-    ...props
-  }: {
-    readonly children: React.ReactNode;
-  }) => <button {...props}>{children}</button>,
+  Button: ({ children, ...props }: { readonly children: React.ReactNode }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 vi.mock("@/components/ui/input", () => ({
@@ -139,7 +139,7 @@ describe("ReviewStep sender gating", () => {
     const markup = renderToStaticMarkup(<ReviewStep {...baseProps} />);
 
     expect(markup).toContain("forests@adventurescientists.org · verified");
-    expect(markup).not.toContain("<button disabled=\"\">Send now</button>");
+    expect(markup).not.toContain('<button disabled="">Send now</button>');
   });
 
   it("renders unverified sender rows as disabled with verification guidance", () => {
@@ -162,12 +162,12 @@ describe("ReviewStep sender gating", () => {
     );
 
     expect(markup).toContain("kelp@adventurescientists.org · unverified");
-    expect(markup).toContain("aria-disabled=\"true\"");
+    expect(markup).toContain('aria-disabled="true"');
     expect(markup).toContain(
       "This alias hasn&#x27;t been verified in Postmark yet. Open Settings → Projects to start verification.",
     );
     expect(markup).toContain(
-      "aria-label=\"kelp@adventurescientists.org · unverified. This alias hasn&#x27;t been verified in Postmark yet. Open Settings → Projects to start verification.\"",
+      'aria-label="kelp@adventurescientists.org · unverified. This alias hasn&#x27;t been verified in Postmark yet. Open Settings → Projects to start verification."',
     );
   });
 
@@ -189,6 +189,6 @@ describe("ReviewStep sender gating", () => {
       />,
     );
 
-    expect(markup).toContain("<button disabled=\"\">Send now</button>");
+    expect(markup).toContain('<button disabled="">Send now</button>');
   });
 });

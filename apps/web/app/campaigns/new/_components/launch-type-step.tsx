@@ -1,6 +1,6 @@
 "use client";
 
-import { Mail, MessageSquare, PanelTop } from "lucide-react";
+import { CheckCircle2, Mail, MessageSquare, PanelTop } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -79,22 +79,28 @@ export function LaunchTypeStep({
                 }
               }}
               className={cn(
-                "flex min-h-[220px] flex-col rounded-3xl border p-6 text-left transition-colors",
+                "relative flex min-h-[220px] flex-col rounded-2xl border p-6 text-left transition-colors",
                 option.disabled
-                  ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                  ? "cursor-not-allowed border-dashed border-slate-200 bg-slate-50/70 text-slate-400"
                   : selected
-                    ? "border-[#253746] bg-slate-900 text-white"
+                    ? "border-slate-950 bg-white text-slate-950 shadow-sm ring-1 ring-slate-950"
                     : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50",
               )}
             >
+              {selected ? (
+                <CheckCircle2
+                  className="absolute right-4 top-4 size-5 text-slate-950"
+                  aria-hidden="true"
+                />
+              ) : null}
               <div className="flex items-start justify-between gap-3">
                 <span
                   className={cn(
-                    "flex size-11 items-center justify-center rounded-2xl",
+                    "flex size-11 items-center justify-center rounded-xl",
                     option.disabled
                       ? "bg-white text-slate-400 ring-1 ring-slate-200"
                       : selected
-                        ? "bg-white/10 text-white"
+                        ? "bg-slate-950 text-white"
                         : "bg-slate-100 text-slate-700",
                   )}
                 >
@@ -104,10 +110,8 @@ export function LaunchTypeStep({
                   className={cn(
                     "rounded-full px-2.5 py-1 text-[10px] font-semibold",
                     option.disabled
-                      ? "bg-white text-slate-500 ring-1 ring-slate-200"
-                      : selected
-                        ? "bg-white/10 text-white"
-                        : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+                      ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+                      : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
                   )}
                 >
                   {option.tag}
@@ -124,7 +128,7 @@ export function LaunchTypeStep({
                     option.disabled
                       ? "text-slate-500"
                       : selected
-                        ? "text-slate-200"
+                        ? "text-slate-600"
                         : "text-slate-600",
                   )}
                 >
@@ -137,8 +141,8 @@ export function LaunchTypeStep({
       </div>
 
       <div className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-        Phase A ships Normal Email only. HTML Email arrives once the drag-and-drop
-        builder lands; SMS follows.
+        Phase A ships Normal Email only. HTML Email arrives once the
+        drag-and-drop builder lands; SMS follows.
       </div>
 
       <div className="mt-auto flex justify-end border-t border-slate-200 pt-6">
