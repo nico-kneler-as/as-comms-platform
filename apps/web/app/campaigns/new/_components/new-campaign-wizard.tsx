@@ -561,7 +561,7 @@ export function NewCampaignWizard({
   }, [toast]);
 
   async function persistDraft(successMessage: string): Promise<boolean> {
-    if (frozen) {
+    if (frozen || !dirty) {
       return true;
     }
 

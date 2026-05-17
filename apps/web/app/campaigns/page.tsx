@@ -116,6 +116,20 @@ function buildPreviewMaps(input: {
   );
 }
 
+function countStates(
+  countsByState: Partial<Record<RunState, number>>,
+  states: readonly RunState[] | null,
+): number {
+  if (states === null) {
+    return Object.values(countsByState).reduce((total, count) => total + count, 0);
+  }
+
+  return states.reduce(
+    (total, state) => total + (countsByState[state] ?? 0),
+    0,
+  );
+}
+
 export default async function CampaignsPage({
   searchParams,
 }: {
@@ -133,7 +147,29 @@ export default async function CampaignsPage({
   const selectedProjectIds = normalizeProjectIds(params.projectId);
   const searchQuery = normalizeSearchQuery(params.q);
 
-  const activeProjects = (await runtime.settings.projects.listAll())
+  const listRecentOptions: Parameters<typeof reader.listRecent>[0] = {
+    limit: 200,
+    offset: 0,
+    ...(activeStates === null ? {} : { states: [...activeStates] }),
+    ...(selectedProjectIds.length === 0
+      ? {}
+      : { projectIds: selectedProjectIds }),
+    ...(searchQuery.length === 0 ? {} : { searchQuery }),
+  };
+  const activeProjectsPromise = runtime.settings.projects.listAll();
+  const rowsPromise = reader.listRecent(listRecentOptions);
+  const countsByStatePromise = reader.countByState({
+    ...(selectedProjectIds.length === 0
+      ? {}
+      : { projectIds: selectedProjectIds }),
+  });
+
+  const [allProjects, rows, countsByState] = await Promise.all([
+    activeProjectsPromise,
+    rowsPromise,
+    countsByStatePromise,
+  ]);
+  const activeProjects = allProjects
     .filter(
       (project) => project.isActive && project.connectedToProjectId === null,
     )
@@ -151,17 +187,6 @@ export default async function CampaignsPage({
     ),
   );
 
-  const listRecentOptions: Parameters<typeof reader.listRecent>[0] = {
-    limit: 200,
-    offset: 0,
-    ...(activeStates === null ? {} : { states: [...activeStates] }),
-    ...(selectedProjectIds.length === 0
-      ? {}
-      : { projectIds: selectedProjectIds }),
-    ...(searchQuery.length === 0 ? {} : { searchQuery }),
-  };
-  const rows = await reader.listRecent(listRecentOptions);
-
   type MailchimpCampaignDetails = Awaited<
     ReturnType<
       NonNullable<
@@ -170,30 +195,16 @@ export default async function CampaignsPage({
     >
   >;
   const mailchimpDetails = [] as MailchimpCampaignDetails;
-  const [postmarkRuns, tabCounts] = await Promise.all([
-    Promise.all(
-      rows
-        .filter((row) => row.provider === "postmark")
-        .map(async (row) => runtime.campaigns.campaignRuns.findById(row.runId)),
-    ),
-    Promise.all(
-      FILTER_DEFINITIONS.map(async (filter) => ({
-        id: filter.id,
-        label: filter.label,
-        count: await reader.count({
-          ...(filter.states === null ? {} : { states: [...filter.states] }),
-          ...(selectedProjectIds.length === 0
-            ? {}
-            : { projectIds: selectedProjectIds }),
-        }),
-      })),
-    ),
-  ]);
+  const postmarkRunIds = rows
+    .filter((row) => row.provider === "postmark")
+    .map((row) => row.runId);
+  const postmarkRuns =
+    postmarkRunIds.length === 0
+      ? []
+      : await runtime.campaigns.campaignRuns.listByIds(postmarkRunIds);
 
   const postmarkPreheaders = new Map(
-    postmarkRuns
-      .filter((run): run is NonNullable<typeof run> => run !== null)
-      .map((run) => [run.id, run.preheader] as const),
+    postmarkRuns.map((run) => [run.id, run.preheader] as const),
   );
   const mailchimpSnippets = new Map<string, string | null>();
   for (const detail of mailchimpDetails) {
@@ -207,6 +218,11 @@ export default async function CampaignsPage({
     postmarkPreheaders,
     mailchimpSnippets,
   });
+  const tabCounts = FILTER_DEFINITIONS.map((filter) => ({
+    id: filter.id,
+    label: filter.label,
+    count: countStates(countsByState, filter.states),
+  }));
 
   const items: readonly CampaignListRowViewModel[] = rows.map((row) => ({
     ...row,

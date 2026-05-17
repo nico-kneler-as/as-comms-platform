@@ -67,6 +67,11 @@ function buildHref(input: {
     : `${input.pathname}?${queryString}`;
 }
 
+function buildCurrentHref(pathname: string, searchParams: URLSearchParams) {
+  const queryString = searchParams.toString();
+  return queryString.length === 0 ? pathname : `${pathname}?${queryString}`;
+}
+
 export function CampaignsList({
   items,
   projectOptions,
@@ -106,35 +111,42 @@ export function CampaignsList({
       return;
     }
 
-    const syncViewport = () => {
+    const syncSize = () => {
       setViewportHeight(element.clientHeight);
-      setScrollTop(element.scrollTop);
       setRowHeight(
         element.clientWidth < 640 ? MOBILE_ROW_HEIGHT : DESKTOP_ROW_HEIGHT,
       );
     };
+    const syncScroll = () => {
+      setScrollTop(element.scrollTop);
+    };
 
-    syncViewport();
+    syncSize();
+    syncScroll();
 
-    const observer = new ResizeObserver(syncViewport);
+    const observer = new ResizeObserver(syncSize);
     observer.observe(element);
-    element.addEventListener("scroll", syncViewport, { passive: true });
+    element.addEventListener("scroll", syncScroll, { passive: true });
 
     return () => {
       observer.disconnect();
-      element.removeEventListener("scroll", syncViewport);
+      element.removeEventListener("scroll", syncScroll);
     };
   }, []);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
+      const currentParams = new URLSearchParams(searchParams.toString());
       const href = buildHref({
         pathname,
-        currentParams: new URLSearchParams(searchParams.toString()),
+        currentParams,
         state: activeFilterId,
         projectIds: selectedProjectIds,
         query: searchDraft,
       });
+      if (href === buildCurrentHref(pathname, currentParams)) {
+        return;
+      }
       startTransition(() => {
         router.replace(href, { scroll: false });
       });
@@ -293,7 +305,7 @@ export function CampaignsList({
                   onChange={(event) => {
                     setSearchDraft(event.currentTarget.value);
                   }}
-                  placeholder="Search campaign subject"
+                  placeholder="Search campaigns"
                   className="w-full bg-transparent text-slate-900 placeholder:text-slate-400 focus:outline-none"
                 />
               </label>

@@ -81,7 +81,7 @@ export function AudienceBuilderStep({
       </div>
 
       <div className="grid min-h-0 flex-1 gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-        <div className="min-h-0 overflow-hidden rounded-3xl border border-slate-200 bg-white">
+        <div className="min-h-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
           <AudienceFilterPanel
             criteria={criteria}
             projectGroups={projectGroups}
@@ -96,7 +96,7 @@ export function AudienceBuilderStep({
           />
         </div>
 
-        <div className="min-h-0 rounded-3xl border border-slate-200 bg-white p-6">
+        <div className="min-h-0 rounded-xl border border-slate-200 bg-white p-6">
           <AudienceCountPanel
             countState={countState}
             loading={countLoading}
@@ -142,15 +142,14 @@ export function AudienceCountPanel({
   readonly previewOpen: boolean;
   readonly onPreviewToggle: () => void;
 }) {
-  const tone =
-    !countState.hasAppliedFilters
-      ? "neutral"
-      : countState.count > 0
-        ? "positive"
-        : "warning";
+  const tone = !countState.hasAppliedFilters
+    ? "neutral"
+    : countState.count > 0
+      ? "positive"
+      : "warning";
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div
@@ -175,7 +174,9 @@ export function AudienceCountPanel({
           </div>
           <div className="mt-4 flex items-end gap-3">
             <span className="text-5xl font-semibold tabular-nums text-slate-900">
-              {countState.hasAppliedFilters ? countState.count.toLocaleString() : "—"}
+              {countState.hasAppliedFilters
+                ? countState.count.toLocaleString()
+                : "—"}
             </span>
             <span className="pb-1 text-sm text-slate-500">
               recipients match · live as you change filters

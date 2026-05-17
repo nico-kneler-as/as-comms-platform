@@ -20,6 +20,9 @@ export interface CampaignRunProjectionRepositories {
       readonly states?: readonly RunState[];
       readonly projectIds?: readonly string[];
     }): Promise<number>;
+    countByState(opts?: {
+      readonly projectIds?: readonly string[];
+    }): Promise<Partial<Record<RunState, number>>>;
   };
 }
 
@@ -36,6 +39,9 @@ export interface CampaignRunProjectionReader {
     provider: "postmark" | "mailchimp",
   ): Promise<CampaignRunProjectionRow | null>;
   count(opts: { states?: RunState[]; projectIds?: string[] }): Promise<number>;
+  countByState(opts: {
+    projectIds?: string[];
+  }): Promise<Partial<Record<RunState, number>>>;
 }
 
 export function createCampaignRunProjectionReader(deps: {
@@ -61,6 +67,12 @@ export function createCampaignRunProjectionReader(deps: {
     async count(opts) {
       return deps.repositories.campaignRunProjection.count({
         ...(opts.states === undefined ? {} : { states: opts.states }),
+        ...(opts.projectIds === undefined ? {} : { projectIds: opts.projectIds }),
+      });
+    },
+
+    async countByState(opts) {
+      return deps.repositories.campaignRunProjection.countByState({
         ...(opts.projectIds === undefined ? {} : { projectIds: opts.projectIds }),
       });
     },

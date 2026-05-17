@@ -61,9 +61,14 @@ function findButtonByText(
   text: string,
 ): React.ReactElement<{ onClick?: () => void }> | null {
   if (
-    React.isValidElement<{ children?: React.ReactNode; onClick?: () => void }>(node)
+    React.isValidElement<{ children?: React.ReactNode; onClick?: () => void }>(
+      node,
+    )
   ) {
-    if (node.type === "button" && collectText(node.props.children).includes(text)) {
+    if (
+      node.type === "button" &&
+      collectText(node.props.children).includes(text)
+    ) {
       return node;
     }
 
@@ -119,7 +124,7 @@ describe("CampaignKindStep admin gating", () => {
 
     expect(markup).toContain("Newsletter sends are admin-only");
     expect(markup).toContain("cursor-not-allowed opacity-60");
-    expect(markup).toContain("aria-disabled=\"true\"");
+    expect(markup).toContain('aria-disabled="true"');
   });
 
   it("ignores newsletter clicks for non-admins", () => {

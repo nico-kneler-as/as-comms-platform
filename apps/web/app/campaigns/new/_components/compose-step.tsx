@@ -32,7 +32,11 @@ import { ComposerToolbar } from "@/app/inbox/_components/composer-toolbar";
 
 import type { ComposePreviewData } from "../../_lib/audience-data-source";
 
-const MERGE_TOKENS = ["{{firstName}}", "{{projectName}}", "{{aliasEmail}}"] as const;
+const MERGE_TOKENS = [
+  "{{firstName}}",
+  "{{projectName}}",
+  "{{aliasEmail}}",
+] as const;
 
 interface ComposeStepProps {
   readonly subject: string;
@@ -149,7 +153,7 @@ export function ComposeStep({
       </div>
 
       <div className="grid min-h-0 flex-1 gap-6 xl:grid-cols-2">
-        <div className="flex min-h-0 flex-col rounded-3xl border border-slate-200 bg-white">
+        <div className="flex min-h-0 flex-col rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-5 py-5">
             <Input
               value={subject}
@@ -266,7 +270,7 @@ export function ComposeStep({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-col rounded-3xl border border-slate-200 bg-white">
+        <div className="flex min-h-0 flex-col rounded-xl border border-slate-200 bg-white">
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -317,7 +321,7 @@ export function ComposeStep({
                   Add audience filters to load a preview contact.
                 </div>
               ) : (
-                <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="mb-4 rounded-2xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
                     Previewing as {sample.name}
                   </div>

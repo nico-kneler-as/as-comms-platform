@@ -221,6 +221,7 @@ export interface Stage5RepositoryBundle {
   readonly campaignRuns: {
     create(input: CreateDraftInput): Promise<CampaignRunRecord>;
     findById(id: string): Promise<CampaignRunRecord | null>;
+    listByIds(ids: readonly string[]): Promise<readonly CampaignRunRecord[]>;
     listRecent(opts?: {
       readonly limit?: number;
       readonly filterByProjectIds?: readonly string[];
@@ -319,6 +320,10 @@ export interface Stage5RepositoryBundle {
       readonly projectIds?: readonly string[];
       readonly filterByProjectIds?: readonly string[];
     }): Promise<number>;
+    countByState(opts?: {
+      readonly projectIds?: readonly string[];
+      readonly filterByProjectIds?: readonly string[];
+    }): Promise<Partial<Record<RunState, number>>>;
   };
 }
 
@@ -6061,6 +6066,22 @@ export function createStage5RepositoryBundle(
         return loadCampaignRunById(id);
       },
 
+      async listByIds(ids) {
+        const uniqueIds = [...new Set(ids.map((id) => id.trim()))].filter(
+          (id) => id.length > 0,
+        );
+        if (uniqueIds.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(campaignRuns)
+          .where(inArray(campaignRuns.id, uniqueIds));
+
+        return rows.map(mapCampaignRunRow);
+      },
+
       async listRecent(opts = {}) {
         const limit = clampCampaignListLimit(opts.limit);
         const projectIds = normalizeProjectIdFilter(opts.filterByProjectIds);
@@ -6565,6 +6586,42 @@ export function createStage5RepositoryBundle(
         );
 
         return Number(row?.total ?? 0);
+      },
+
+      async countByState(opts = {}) {
+        const projectIds = resolveCampaignProjectionProjectFilter(opts);
+        const whereClause = buildCampaignProjectionWhereClause({
+          projectIds,
+          states: null,
+          searchQuery: null,
+        });
+
+        const result = await db.execute(sql<{
+          readonly state: RunState;
+          readonly total: number | string;
+        }>`
+          select "state" as "state", count(*)::int as "total"
+          from "campaign_run_projection"
+          ${whereClause}
+          group by "state"
+        `);
+
+        const counts: Partial<Record<RunState, number>> = {};
+        for (const row of normalizeSqlResultRows<{
+          readonly state: RunState;
+          readonly total: number | string;
+        }>(
+          result as {
+            readonly rows?: readonly {
+              readonly state: RunState;
+              readonly total: number | string;
+            }[];
+          },
+        )) {
+          counts[runStateSchema.parse(row.state)] = Number(row.total);
+        }
+
+        return counts;
       },
     },
   });

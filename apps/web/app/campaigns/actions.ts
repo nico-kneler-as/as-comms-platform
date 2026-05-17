@@ -30,6 +30,11 @@ import {
   buildCampaignFooterPreview,
   formatOrgAddress,
 } from "./_lib/campaign-preview";
+import {
+  listRunRecipients,
+  type RecipientFilter,
+  type RecipientQueryResult,
+} from "./_lib/run-recipients";
 
 interface CampaignActionData {
   readonly runId: string;
@@ -43,6 +48,24 @@ interface CampaignTestSendData {
   readonly runId: string;
   readonly recipientEmail: string;
 }
+
+const recipientFilterSchema = z.enum([
+  "all",
+  "sent",
+  "delivered",
+  "opened",
+  "clicked",
+  "bounced",
+  "unsubscribed",
+] satisfies [RecipientFilter, ...RecipientFilter[]]);
+
+const listCampaignRecipientsInputSchema = z.object({
+  runId: z.string().trim().min(1),
+  filter: recipientFilterSchema.default("all"),
+  query: z.string().trim().max(200).default(""),
+  limit: z.number().int().min(1).max(200).default(100),
+  offset: z.number().int().min(0).default(0),
+});
 
 function readPrimaryEmail(input: {
   readonly emails: readonly {
@@ -518,6 +541,33 @@ export async function testSend(
       error instanceof Error
         ? error.message
         : "Unable to send the test campaign email.",
+      true,
+    );
+  }
+}
+
+export async function listCampaignRecipients(input: {
+  readonly runId: string;
+  readonly filter?: RecipientFilter;
+  readonly query?: string;
+  readonly limit?: number;
+  readonly offset?: number;
+}): Promise<UiSuccess<RecipientQueryResult> | UiError> {
+  await requireSession();
+
+  try {
+    const parsed = listCampaignRecipientsInputSchema.parse(input);
+    const result = await listRunRecipients(parsed);
+
+    return {
+      ok: true,
+      data: result,
+      requestId: newRequestId(),
+    };
+  } catch {
+    return errorResult(
+      "campaign_recipients_load_failed",
+      "Unable to load campaign recipients.",
       true,
     );
   }

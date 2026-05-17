@@ -55,7 +55,11 @@ export function RunDetailShell({ model }: { readonly model: RunDetailModel }) {
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <div className="space-y-6">
               <MetricTiles model={model} />
-              <RecipientsTable rows={model.recipients} />
+              <RecipientsTable
+                runId={model.run.id}
+                rows={model.recipients}
+                total={model.recipientTotal}
+              />
             </div>
             <div className="space-y-6">
               <RepliesInInboxPanel

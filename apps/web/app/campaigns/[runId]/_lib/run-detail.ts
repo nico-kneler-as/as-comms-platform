@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 
 import type {
   AudienceCriteria,
-  AudienceSnapshotRecord,
   AuditEvidenceRecord,
   CampaignRunRecord,
   CampaignRunProjectionRow,
@@ -12,6 +11,13 @@ import { audienceCriteriaSchema } from "@as-comms/contracts";
 import { createCampaignRunProjectionReader } from "@as-comms/domain";
 
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
+
+import {
+  listRunRecipients,
+  readRunMetricCounts,
+  type RecipientRowData,
+  type RunMetricCounts,
+} from "../../_lib/run-recipients";
 
 export interface RunMetricTileData {
   readonly key:
@@ -27,29 +33,6 @@ export interface RunMetricTileData {
   readonly value: number;
   readonly percentage: number;
   readonly subtitle: string | null;
-}
-
-export type RecipientLatestState =
-  | "queued"
-  | "sent"
-  | "delivered"
-  | "opened"
-  | "clicked"
-  | "bounced"
-  | "unsubscribed"
-  | "complained"
-  | "failed"
-  | "suppressed";
-
-export interface RecipientRowData {
-  readonly snapshotId: string;
-  readonly contactId: string;
-  readonly name: string;
-  readonly email: string;
-  readonly project: string | null;
-  readonly latestState: RecipientLatestState;
-  readonly latestStateLabel: string;
-  readonly lastEventAt: string | null;
 }
 
 export interface ReplyPreviewRow {
@@ -81,6 +64,7 @@ export interface RunDetailModel {
   readonly progressPercent: number;
   readonly estimatedMinutesRemaining: number | null;
   readonly recipients: readonly RecipientRowData[];
+  readonly recipientTotal: number;
   readonly repliesCount: number;
   readonly recentReplies: readonly ReplyPreviewRow[];
   readonly inboxRecipientsHref: string;
@@ -96,16 +80,6 @@ interface ReplyRowDb {
   readonly contactName: string | null;
   readonly email: string | null;
   readonly occurredAt: Date;
-}
-
-function countWhere(
-  snapshots: readonly AudienceSnapshotRecord[],
-  predicate: (snapshot: AudienceSnapshotRecord) => boolean,
-): number {
-  return snapshots.reduce(
-    (count, snapshot) => count + (predicate(snapshot) ? 1 : 0),
-    0,
-  );
 }
 
 function formatPercentage(value: number, total: number): number {
@@ -145,164 +119,65 @@ function resolveRunDate(run: CampaignRunRecord): {
   return { label: "Created", iso: run.createdAt };
 }
 
-function resolveRecipientLatestState(
-  snapshot: AudienceSnapshotRecord,
-): RecipientLatestState {
-  if (snapshot.clickedAt !== null) {
-    return "clicked";
-  }
-  if (snapshot.openedAt !== null) {
-    return "opened";
-  }
-  if (snapshot.unsubscribedAt !== null) {
-    return "unsubscribed";
-  }
-  if (snapshot.deliveryStatus === "complained") {
-    return "complained";
-  }
-  if (snapshot.deliveryStatus === "bounced") {
-    return "bounced";
-  }
-  if (snapshot.deliveryStatus === "delivered") {
-    return "delivered";
-  }
-  if (snapshot.deliveryStatus === "sent") {
-    return "sent";
-  }
-  if (snapshot.deliveryStatus === "failed") {
-    return "failed";
-  }
-  if (snapshot.deliveryStatus === "suppressed_at_send") {
-    return "suppressed";
-  }
-  return "queued";
-}
-
-function recipientStateLabel(state: RecipientLatestState): string {
-  switch (state) {
-    case "queued":
-      return "Queued";
-    case "sent":
-      return "Sent";
-    case "delivered":
-      return "Delivered";
-    case "opened":
-      return "Opened";
-    case "clicked":
-      return "Clicked";
-    case "bounced":
-      return "Bounced";
-    case "unsubscribed":
-      return "Unsubscribed";
-    case "complained":
-      return "Complained";
-    case "failed":
-      return "Failed";
-    case "suppressed":
-      return "Suppressed";
-  }
-}
-
 function buildMetricTiles(
-  snapshots: readonly AudienceSnapshotRecord[],
+  counts: RunMetricCounts,
   total: number,
 ): readonly RunMetricTileData[] {
-  const queued = countWhere(
-    snapshots,
-    (snapshot) => snapshot.deliveryStatus === "pending",
-  );
-  const sent = countWhere(
-    snapshots,
-    (snapshot) =>
-      snapshot.sentAt !== null ||
-      snapshot.deliveryStatus === "delivered" ||
-      snapshot.deliveryStatus === "bounced" ||
-      snapshot.deliveryStatus === "complained" ||
-      snapshot.deliveryStatus === "unsubscribed",
-  );
-  const delivered = countWhere(
-    snapshots,
-    (snapshot) =>
-      snapshot.deliveryStatus === "delivered" ||
-      snapshot.openedAt !== null ||
-      snapshot.clickedAt !== null,
-  );
-  const opened = countWhere(
-    snapshots,
-    (snapshot) => snapshot.openedAt !== null,
-  );
-  const clicked = countWhere(
-    snapshots,
-    (snapshot) => snapshot.clickedAt !== null,
-  );
-  const bounced = countWhere(
-    snapshots,
-    (snapshot) => snapshot.deliveryStatus === "bounced",
-  );
-  const unsubscribed = countWhere(
-    snapshots,
-    (snapshot) => snapshot.unsubscribedAt !== null,
-  );
-  const complained = countWhere(
-    snapshots,
-    (snapshot) => snapshot.deliveryStatus === "complained",
-  );
-
   return [
     {
       key: "queued",
       label: "Queued",
-      value: queued,
-      percentage: formatPercentage(queued, total),
+      value: counts.queued,
+      percentage: formatPercentage(counts.queued, total),
       subtitle: null,
     },
     {
       key: "sent",
       label: "Sent",
-      value: sent,
-      percentage: formatPercentage(sent, total),
+      value: counts.sent,
+      percentage: formatPercentage(counts.sent, total),
       subtitle: null,
     },
     {
       key: "delivered",
       label: "Delivered",
-      value: delivered,
-      percentage: formatPercentage(delivered, total),
+      value: counts.delivered,
+      percentage: formatPercentage(counts.delivered, total),
       subtitle: "Postmark confirms",
     },
     {
       key: "opened",
       label: "Opened",
-      value: opened,
-      percentage: formatPercentage(opened, total),
+      value: counts.opened,
+      percentage: formatPercentage(counts.opened, total),
       subtitle: null,
     },
     {
       key: "clicked",
       label: "Clicked",
-      value: clicked,
-      percentage: formatPercentage(clicked, total),
+      value: counts.clicked,
+      percentage: formatPercentage(counts.clicked, total),
       subtitle: null,
     },
     {
       key: "bounced",
       label: "Bounced",
-      value: bounced,
-      percentage: formatPercentage(bounced, total),
+      value: counts.bounced,
+      percentage: formatPercentage(counts.bounced, total),
       subtitle: null,
     },
     {
       key: "unsubscribed",
       label: "Unsubscribed",
-      value: unsubscribed,
-      percentage: formatPercentage(unsubscribed, total),
+      value: counts.unsubscribed,
+      percentage: formatPercentage(counts.unsubscribed, total),
       subtitle: null,
     },
     {
       key: "complained",
       label: "Complained",
-      value: complained,
-      percentage: formatPercentage(complained, total),
+      value: counts.complained,
+      percentage: formatPercentage(counts.complained, total),
       subtitle: null,
     },
   ];
@@ -476,15 +351,25 @@ export async function getRunDetailModel(input: {
     return null;
   }
 
-  const snapshots =
+  const [metricCounts, recipientQuery] =
     provider === "mailchimp"
-      ? []
-      : await runtime.campaigns.audienceSnapshots.listForRun(run.id);
-  const totalAudience = run.audienceSize ?? snapshots.length;
+      ? [
+          null,
+          {
+            rows: [],
+            total: 0,
+          } satisfies Awaited<ReturnType<typeof listRunRecipients>>,
+        ]
+      : await Promise.all([
+          readRunMetricCounts({ runId: run.id }),
+          listRunRecipients({ runId: run.id, limit: 100 }),
+        ]);
+  const totalAudience =
+    run.audienceSize ?? (metricCounts === null ? 0 : metricCounts.total);
   const metrics =
-    provider === "mailchimp"
+    metricCounts === null
       ? buildHistoricalMetricTiles(totalAudience, run.state)
-      : buildMetricTiles(snapshots, totalAudience);
+      : buildMetricTiles(metricCounts, totalAudience);
   const sentCount = metrics.find((metric) => metric.key === "sent")?.value ?? 0;
   const queuedCount =
     metrics.find((metric) => metric.key === "queued")?.value ?? 0;
@@ -497,36 +382,13 @@ export async function getRunDetailModel(input: {
     totalAudience,
     now: new Date(),
   });
-  const recipients = snapshots.map((snapshot) => {
-    const latestState = resolveRecipientLatestState(snapshot);
-    return {
-      snapshotId: snapshot.id,
-      contactId: snapshot.contactId,
-      name: snapshot.frozenFirstName ?? snapshot.frozenEmail,
-      email: snapshot.frozenEmail,
-      project: snapshot.frozenProjectName,
-      latestState,
-      latestStateLabel: recipientStateLabel(latestState),
-      lastEventAt:
-        snapshot.lastEventAt ??
-        snapshot.clickedAt ??
-        snapshot.openedAt ??
-        snapshot.unsubscribedAt ??
-        snapshot.complainedAt ??
-        snapshot.bouncedAt ??
-        snapshot.deliveredAt ??
-        snapshot.sentAt,
-    } satisfies RecipientRowData;
-  });
+  const recipients = recipientQuery.rows;
 
-  const replyContactIds = [
-    ...new Set(snapshots.map((snapshot) => snapshot.contactId)),
-  ];
   let repliesCount = 0;
   let recentReplies: readonly ReplyPreviewRow[] = [];
   if (
     runtime.connection !== null &&
-    replyContactIds.length > 0 &&
+    provider === "postmark" &&
     run.completedAt !== null
   ) {
     const threshold = run.completedAt;
@@ -539,12 +401,14 @@ export async function getRunDetailModel(input: {
       from canonical_event_ledger cel
       inner join contacts c
         on c.id = cel.contact_id
-      where cel.contact_id in (${sql.join(
-        replyContactIds.map((value) => sql`${value}`),
-        sql`, `,
-      )})
-        and cel.event_type = 'communication.email.inbound'
+      where cel.event_type = 'communication.email.inbound'
         and cel.occurred_at > ${threshold}::timestamptz
+        and exists (
+          select 1
+          from audience_snapshots snapshot
+          where snapshot.campaign_run_id = ${run.id}
+            and snapshot.contact_id = cel.contact_id
+        )
       order by cel.occurred_at desc, cel.id desc
       limit 5
     `);
@@ -552,12 +416,14 @@ export async function getRunDetailModel(input: {
       sql<{ readonly count: number }>`
         select count(*)::int as "count"
         from canonical_event_ledger cel
-        where cel.contact_id in (${sql.join(
-          replyContactIds.map((value) => sql`${value}`),
-          sql`, `,
-        )})
-          and cel.event_type = 'communication.email.inbound'
+        where cel.event_type = 'communication.email.inbound'
           and cel.occurred_at > ${threshold}::timestamptz
+          and exists (
+            select 1
+            from audience_snapshots snapshot
+            where snapshot.campaign_run_id = ${run.id}
+              and snapshot.contact_id = cel.contact_id
+          )
       `,
     );
     const recentReplyRows =
@@ -599,6 +465,7 @@ export async function getRunDetailModel(input: {
     progressPercent,
     estimatedMinutesRemaining,
     recipients,
+    recipientTotal: recipientQuery.total,
     repliesCount,
     recentReplies,
     inboxRecipientsHref: "/inbox",
