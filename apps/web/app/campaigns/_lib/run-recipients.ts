@@ -27,9 +27,9 @@ export type RecipientFilter =
 
 export interface RecipientRowData {
   readonly snapshotId: string;
-  readonly contactId: string;
+  readonly contactId: string | null;
   readonly name: string;
-  readonly email: string;
+  readonly email: string | null;
   readonly project: string | null;
   readonly latestState: RecipientLatestState;
   readonly latestStateLabel: string;
@@ -55,12 +55,27 @@ export interface RunMetricCounts {
 
 interface RecipientRowDb {
   readonly snapshotId: string;
-  readonly contactId: string;
+  readonly contactId: string | null;
   readonly name: string | null;
-  readonly email: string;
+  readonly email: string | null;
   readonly project: string | null;
   readonly latestState: RecipientLatestState;
   readonly lastEventAt: Date | null;
+}
+
+interface MailchimpRecipientRowSource {
+  readonly memberId: string;
+  readonly email: string | null;
+  readonly displayName: string | null;
+  readonly contactId: string | null;
+  readonly latestState:
+    | "sent"
+    | "delivered"
+    | "opened"
+    | "clicked"
+    | "bounced"
+    | "unsubscribed";
+  readonly latestEventAt: string;
 }
 
 const DEFAULT_RECIPIENT_LIMIT = 100;
@@ -266,7 +281,7 @@ function mapRecipientRow(row: RecipientRowDb): RecipientRowData {
   return {
     snapshotId: row.snapshotId,
     contactId: row.contactId,
-    name: row.name ?? row.email,
+    name: row.name ?? row.email ?? "Unknown recipient",
     email: row.email,
     project: row.project,
     latestState: row.latestState,
@@ -275,18 +290,95 @@ function mapRecipientRow(row: RecipientRowDb): RecipientRowData {
   };
 }
 
+function mapMailchimpRecipientRow(
+  row: MailchimpRecipientRowSource,
+): RecipientRowData {
+  return {
+    snapshotId: row.memberId,
+    contactId: row.contactId,
+    name: row.displayName ?? row.email ?? row.memberId,
+    email: row.email,
+    project: null,
+    latestState: row.latestState,
+    latestStateLabel: recipientStateLabel(row.latestState),
+    lastEventAt: row.latestEventAt,
+  };
+}
+
+function matchesMailchimpQuery(
+  row: MailchimpRecipientRowSource,
+  query: string,
+): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery.length === 0) {
+    return true;
+  }
+
+  return [row.memberId, row.displayName ?? "", row.email ?? ""].some((value) =>
+    value.toLowerCase().includes(normalizedQuery),
+  );
+}
+
+function getMailchimpCampaignRepository(
+  runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>,
+) {
+  return runtime.repositories.mailchimpCampaignActivityDetails;
+}
+
 export async function listRunRecipients(input: {
   readonly runId: string;
+  readonly provider?: "postmark" | "mailchimp";
   readonly filter?: RecipientFilter;
   readonly query?: string;
   readonly limit?: number;
   readonly offset?: number;
 }): Promise<RecipientQueryResult> {
   const runtime = await getStage1WebRuntime();
+  const provider = input.provider ?? "postmark";
   const filter = input.filter ?? "all";
   const query = input.query ?? "";
   const limit = clampLimit(input.limit);
   const offset = normalizeOffset(input.offset);
+
+  if (provider === "mailchimp") {
+    const repository = getMailchimpCampaignRepository(runtime);
+
+    if (query.trim().length === 0) {
+      const result = await repository.listRecipientsForCampaign(input.runId, {
+        limit,
+        offset,
+        filter,
+      });
+      return {
+        rows: result.rows.map(mapMailchimpRecipientRow),
+        total: result.total,
+      };
+    }
+
+    const allRows: MailchimpRecipientRowSource[] = [];
+    let currentOffset = 0;
+    let total = 0;
+
+    do {
+      const page = await repository.listRecipientsForCampaign(input.runId, {
+        limit: MAX_RECIPIENT_LIMIT,
+        offset: currentOffset,
+        filter,
+      });
+      allRows.push(...page.rows);
+      total = page.total;
+      currentOffset += page.rows.length;
+      if (page.rows.length === 0) {
+        break;
+      }
+    } while (currentOffset < total);
+
+    const filtered = allRows.filter((row) => matchesMailchimpQuery(row, query));
+    return {
+      rows: filtered.slice(offset, offset + limit).map(mapMailchimpRecipientRow),
+      total: filtered.length,
+    };
+  }
 
   if (runtime.connection === null) {
     const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(

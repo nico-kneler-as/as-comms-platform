@@ -50,6 +50,20 @@ export interface RunAuditEntry {
   readonly detail: string | null;
 }
 
+export interface RunDetailHeaderModel {
+  readonly runId: string;
+  readonly state: CampaignRunRecord["state"];
+  readonly subject: string;
+  readonly preheader: string | null;
+  readonly senderAlias: string | null;
+  readonly kindLabel: "Project" | "Newsletter";
+  readonly dateLabel: string;
+  readonly dateIso: string;
+  readonly canStopUnsent: boolean;
+  readonly canDuplicate: boolean;
+  readonly totalAudience: number | null;
+}
+
 export interface RunDetailModel {
   readonly provider: "postmark" | "mailchimp";
   readonly run: CampaignRunRecord;
@@ -80,6 +94,15 @@ interface ReplyRowDb {
   readonly contactName: string | null;
   readonly email: string | null;
   readonly occurredAt: Date;
+}
+
+interface MailchimpCampaignAggregates {
+  readonly sent: number;
+  readonly opened: number;
+  readonly clicked: number;
+  readonly bounced: number;
+  readonly unsubscribed: number;
+  readonly distinctMembers: number;
 }
 
 function formatPercentage(value: number, total: number): number {
@@ -183,69 +206,69 @@ function buildMetricTiles(
   ];
 }
 
-function buildHistoricalMetricTiles(
-  total: number,
-  state: CampaignRunRecord["state"],
+function buildMailchimpMetricTiles(
+  aggregates: MailchimpCampaignAggregates,
 ): readonly RunMetricTileData[] {
-  const sent = state === "complete" || state === "finalized" ? total : 0;
-  const queued = Math.max(0, total - sent);
+  const sent = aggregates.sent;
+  const denominator = sent <= 0 ? 0 : sent;
+  const delivered = Math.max(0, sent - aggregates.bounced);
 
   return [
     {
       key: "queued",
       label: "Queued",
-      value: queued,
-      percentage: formatPercentage(queued, total),
+      value: aggregates.distinctMembers,
+      percentage: formatPercentage(aggregates.distinctMembers, denominator),
       subtitle: null,
     },
     {
       key: "sent",
       label: "Sent",
       value: sent,
-      percentage: formatPercentage(sent, total),
-      subtitle: total === 0 ? "Historical Mailchimp import" : null,
+      percentage: formatPercentage(sent, denominator),
+      subtitle: null,
     },
     {
       key: "delivered",
       label: "Delivered",
-      value: 0,
-      percentage: 0,
-      subtitle: "Not imported from Mailchimp",
+      value: delivered,
+      percentage: formatPercentage(delivered, denominator),
+      subtitle: null,
     },
     {
       key: "opened",
       label: "Opened",
-      value: 0,
-      percentage: 0,
-      subtitle: "Not imported from Mailchimp",
+      value: aggregates.opened,
+      percentage: formatPercentage(aggregates.opened, denominator),
+      subtitle: null,
     },
     {
       key: "clicked",
       label: "Clicked",
-      value: 0,
-      percentage: 0,
-      subtitle: "Not imported from Mailchimp",
+      value: aggregates.clicked,
+      percentage: formatPercentage(aggregates.clicked, denominator),
+      subtitle: null,
     },
     {
       key: "bounced",
       label: "Bounced",
-      value: 0,
-      percentage: 0,
-      subtitle: "Not imported from Mailchimp",
+      value: aggregates.bounced,
+      percentage: formatPercentage(aggregates.bounced, denominator),
+      subtitle: null,
     },
     {
       key: "unsubscribed",
       label: "Unsubscribed",
-      value: 0,
-      percentage: 0,
-      subtitle: "Not imported from Mailchimp",
+      value: aggregates.unsubscribed,
+      percentage: formatPercentage(aggregates.unsubscribed, denominator),
+      subtitle: null,
     },
     {
       key: "complained",
       label: "Complained",
       value: 0,
-      percentage: 0,
-      subtitle: "Not imported from Mailchimp",
+      percentage: formatPercentage(0, denominator),
+      subtitle: "Not tracked for Mailchimp imports",
     },
   ];
 }
@@ -329,6 +352,83 @@ function buildAuditEntry(record: AuditEvidenceRecord): RunAuditEntry {
   };
 }
 
+function getMailchimpRepository(
+  runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>,
+) {
+  return runtime.repositories.mailchimpCampaignActivityDetails;
+}
+
+function buildHeaderModel(input: {
+  readonly provider: "postmark" | "mailchimp";
+  readonly run: CampaignRunRecord;
+  readonly senderAlias: string | null;
+  readonly isAdmin: boolean;
+  readonly totalAudience: number | null;
+}): RunDetailHeaderModel {
+  const { label: dateLabel, iso: dateIso } = resolveRunDate(input.run);
+  const subject = input.run.subjectTemplate?.trim() ?? "";
+
+  return {
+    runId: input.run.id,
+    state: input.run.state,
+    subject: subject.length > 0 ? subject : "Untitled campaign",
+    preheader: (() => {
+      const trimmed = input.run.preheader?.trim() ?? "";
+      return trimmed.length > 0 ? trimmed : null;
+    })(),
+    senderAlias: input.senderAlias,
+    kindLabel: input.run.kind === "project" ? "Project" : "Newsletter",
+    dateLabel,
+    dateIso,
+    canStopUnsent:
+      input.provider === "postmark" &&
+      input.isAdmin &&
+      (input.run.state === "sending" || input.run.state === "scheduled"),
+    canDuplicate:
+      input.provider === "postmark" &&
+      (input.run.state === "complete" ||
+        input.run.state === "finalized" ||
+        input.run.state === "cancelled"),
+    totalAudience: input.totalAudience,
+  };
+}
+
+export async function getRunDetailHeaderModel(input: {
+  readonly runId: string;
+  readonly provider?: "postmark" | "mailchimp";
+  readonly isAdmin: boolean;
+}): Promise<RunDetailHeaderModel | null> {
+  const runtime = await getStage1WebRuntime();
+  const provider = input.provider ?? "postmark";
+  const projectionReader = createCampaignRunProjectionReader({
+    repositories: runtime.campaigns,
+  });
+  const projection = await projectionReader.getDetail(input.runId, provider);
+  const run =
+    projection === null
+      ? provider === "postmark"
+        ? await runtime.campaigns.campaignRuns.findById(input.runId)
+        : null
+      : buildProjectionRun(projection);
+
+  if (run === null) {
+    return null;
+  }
+
+  const totalAudience =
+    provider === "mailchimp"
+      ? run.audienceSize
+      : (projection?.audienceSize ?? run.audienceSize);
+
+  return buildHeaderModel({
+    provider,
+    run,
+    senderAlias: run.fromEmail ?? (provider === "mailchimp" ? "Mailchimp" : null),
+    isAdmin: input.isAdmin,
+    totalAudience,
+  });
+}
+
 export async function getRunDetailModel(input: {
   readonly runId: string;
   readonly provider?: "postmark" | "mailchimp";
@@ -351,25 +451,39 @@ export async function getRunDetailModel(input: {
     return null;
   }
 
-  const [metricCounts, recipientQuery] =
+  const [mailchimpAggregates, metricCounts, recipientQuery] =
     provider === "mailchimp"
-      ? [
-          null,
-          {
-            rows: [],
-            total: 0,
-          } satisfies Awaited<ReturnType<typeof listRunRecipients>>,
-        ]
+      ? await Promise.all([
+          getMailchimpRepository(runtime).aggregateForCampaign(run.id),
+          Promise.resolve<RunMetricCounts | null>(null),
+          listRunRecipients({ runId: run.id, provider, limit: 100 }),
+        ])
       : await Promise.all([
+          Promise.resolve<MailchimpCampaignAggregates | null>(null),
           readRunMetricCounts({ runId: run.id }),
-          listRunRecipients({ runId: run.id, limit: 100 }),
+          listRunRecipients({ runId: run.id, provider, limit: 100 }),
         ]);
   const totalAudience =
-    run.audienceSize ?? (metricCounts === null ? 0 : metricCounts.total);
+    provider === "mailchimp"
+      ? mailchimpAggregates?.distinctMembers ?? 0
+      : run.audienceSize ?? metricCounts?.total ?? 0;
   const metrics =
-    metricCounts === null
-      ? buildHistoricalMetricTiles(totalAudience, run.state)
-      : buildMetricTiles(metricCounts, totalAudience);
+    provider === "mailchimp" && mailchimpAggregates !== null
+      ? buildMailchimpMetricTiles(mailchimpAggregates)
+      : buildMetricTiles(
+          metricCounts ?? {
+            queued: 0,
+            sent: 0,
+            delivered: 0,
+            opened: 0,
+            clicked: 0,
+            bounced: 0,
+            unsubscribed: 0,
+            complained: 0,
+            total: 0,
+          },
+          totalAudience,
+        );
   const sentCount = metrics.find((metric) => metric.key === "sent")?.value ?? 0;
   const queuedCount =
     metrics.find((metric) => metric.key === "queued")?.value ?? 0;
@@ -444,10 +558,13 @@ export async function getRunDetailModel(input: {
     }));
   }
 
-  const audits = await runtime.repositories.auditEvidence.listByEntity({
-    entityType: "campaign_run",
-    entityId: run.id,
-  });
+  const audits =
+    provider === "mailchimp"
+      ? []
+      : await runtime.repositories.auditEvidence.listByEntity({
+          entityType: "campaign_run",
+          entityId: run.id,
+        });
   const { label: dateLabel, iso: dateIso } = resolveRunDate(run);
 
   return {
@@ -455,7 +572,7 @@ export async function getRunDetailModel(input: {
     run,
     totalAudience,
     senderAlias:
-      run.fromEmail ?? (provider === "mailchimp" ? "Mailchimp import" : null),
+      run.fromEmail ?? (provider === "mailchimp" ? "Mailchimp" : null),
     kindLabel: run.kind === "project" ? "Project" : "Newsletter",
     dateLabel,
     dateIso,

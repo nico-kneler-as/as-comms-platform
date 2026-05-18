@@ -544,6 +544,45 @@ export interface MailchimpCampaignActivityDetailRepository {
   listByCampaignIds?(
     campaignIds: readonly string[],
   ): Promise<readonly MailchimpCampaignActivityDetailRecord[]>;
+  aggregateForCampaign(campaignId: string): Promise<{
+    readonly sent: number;
+    readonly opened: number;
+    readonly clicked: number;
+    readonly bounced: number;
+    readonly unsubscribed: number;
+    readonly distinctMembers: number;
+  }>;
+  listRecipientsForCampaign(
+    campaignId: string,
+    opts: {
+      readonly limit: number;
+      readonly offset: number;
+      readonly filter?:
+        | "all"
+        | "sent"
+        | "delivered"
+        | "opened"
+        | "clicked"
+        | "bounced"
+        | "unsubscribed";
+    },
+  ): Promise<{
+    readonly rows: readonly {
+      readonly memberId: string;
+      readonly email: string | null;
+      readonly displayName: string | null;
+      readonly contactId: string | null;
+      readonly latestState:
+        | "sent"
+        | "delivered"
+        | "opened"
+        | "clicked"
+        | "bounced"
+        | "unsubscribed";
+      readonly latestEventAt: string;
+    }[];
+    readonly total: number;
+  }>;
   upsert(
     record: MailchimpCampaignActivityDetailRecord,
   ): Promise<MailchimpCampaignActivityDetailRecord>;

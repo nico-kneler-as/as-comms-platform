@@ -60,10 +60,12 @@ function rowTone(state: RecipientLatestState) {
 
 export function RecipientsTable({
   runId,
+  provider,
   rows,
   total,
 }: {
   readonly runId: string;
+  readonly provider: "postmark" | "mailchimp";
   readonly rows: readonly RecipientRowData[];
   readonly total: number;
 }) {
@@ -99,6 +101,7 @@ export function RecipientsTable({
     startTransition(async () => {
       const result = await listCampaignRecipients({
         runId,
+        provider,
         filter,
         query: deferredQuery,
         limit: PAGE_SIZE,
@@ -120,12 +123,13 @@ export function RecipientsTable({
     return () => {
       cancelled = true;
     };
-  }, [deferredQuery, filter, runId]);
+  }, [deferredQuery, filter, provider, runId]);
 
   function loadMore() {
     startTransition(async () => {
       const result = await listCampaignRecipients({
         runId,
+        provider,
         filter,
         query: deferredQuery,
         limit: PAGE_SIZE,
@@ -227,38 +231,74 @@ export function RecipientsTable({
               }}
             >
               <div style={{ transform: `translateY(${String(offsetY)}px)` }}>
-                {visibleRows.map((row) => (
-                  <Link
-                    key={row.snapshotId}
-                    href={`/inbox/${encodeURIComponent(row.contactId)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_160px_150px] items-center border-b border-slate-100 px-4 py-2 text-[12.5px] transition-colors hover:bg-slate-50"
-                    style={{ height: `${String(ROW_HEIGHT)}px` }}
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-slate-900">
-                        {row.name}
+                {visibleRows.map((row) =>
+                  row.contactId === null ? (
+                    <div
+                      key={row.snapshotId}
+                      className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_160px_150px] items-center border-b border-slate-100 px-4 py-2 text-[12.5px]"
+                      style={{ height: `${String(ROW_HEIGHT)}px` }}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-slate-900">
+                          {row.name}
+                        </div>
+                        <div className="truncate text-[11.5px] text-slate-500">
+                          {row.email ?? "No email retained from import"}
+                        </div>
+                        <div
+                          className="mt-1 text-[10.5px] text-slate-400"
+                          title="No matching contact in canonical store"
+                        >
+                          Inbox unavailable
+                        </div>
                       </div>
-                      <div className="truncate text-[11.5px] text-slate-500">
-                        {row.email}
+                      <div className="truncate text-slate-600">
+                        {row.project ?? "No project"}
+                      </div>
+                      <div>
+                        <RunStateChip state={rowTone(row.latestState)} />
+                      </div>
+                      <div className="text-slate-500">
+                        {row.lastEventAt ? (
+                          <LocalDateTime iso={row.lastEventAt} />
+                        ) : (
+                          "-"
+                        )}
                       </div>
                     </div>
-                    <div className="truncate text-slate-600">
-                      {row.project ?? "No project"}
-                    </div>
-                    <div>
-                      <RunStateChip state={rowTone(row.latestState)} />
-                    </div>
-                    <div className="text-slate-500">
-                      {row.lastEventAt ? (
-                        <LocalDateTime iso={row.lastEventAt} />
-                      ) : (
-                        "-"
-                      )}
-                    </div>
-                  </Link>
-                ))}
+                  ) : (
+                    <Link
+                      key={row.snapshotId}
+                      href={`/inbox/${encodeURIComponent(row.contactId)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_160px_150px] items-center border-b border-slate-100 px-4 py-2 text-[12.5px] transition-colors hover:bg-slate-50"
+                      style={{ height: `${String(ROW_HEIGHT)}px` }}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-slate-900">
+                          {row.name}
+                        </div>
+                        <div className="truncate text-[11.5px] text-slate-500">
+                          {row.email ?? "No email retained from import"}
+                        </div>
+                      </div>
+                      <div className="truncate text-slate-600">
+                        {row.project ?? "No project"}
+                      </div>
+                      <div>
+                        <RunStateChip state={rowTone(row.latestState)} />
+                      </div>
+                      <div className="text-slate-500">
+                        {row.lastEventAt ? (
+                          <LocalDateTime iso={row.lastEventAt} />
+                        ) : (
+                          "-"
+                        )}
+                      </div>
+                    </Link>
+                  ),
+                )}
               </div>
 
               {serverRows.length === 0 ? (
