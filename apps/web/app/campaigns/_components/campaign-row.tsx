@@ -1,79 +1,41 @@
 import Link from "next/link";
-import { Database, Mail, Megaphone } from "lucide-react";
+import { Mail, Megaphone, Users } from "lucide-react";
 
 import type { CampaignRunProjectionRow } from "@as-comms/contracts";
-
-import { Chip } from "@/components/ui/chip";
+import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { cn } from "@/lib/utils";
 
 import { ProviderBadge } from "./provider-badge";
 
-const CAMPAIGN_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "America/Denver",
+const CAMPAIGN_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  day: "2-digit",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+  timeZone: ORG_TIMEZONE,
 });
 
-function formatCampaignDate(input: {
-  readonly state: CampaignRunProjectionRow["state"];
-  readonly scheduledAt: string | null;
-  readonly startedAt: string | null;
-  readonly completedAt: string | null;
-  readonly cancelledAt: string | null;
-  readonly createdAt: string;
-}) {
-  const dateValue =
-    input.state === "scheduled"
-      ? input.scheduledAt
-      : (input.cancelledAt ??
-        input.completedAt ??
-        input.startedAt ??
-        input.scheduledAt ??
-        input.createdAt);
-  const label =
-    input.state === "scheduled"
-      ? "Scheduled"
-      : input.state === "cancelled"
-        ? "Cancelled"
-        : "Sent";
+const CAMPAIGN_DAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  day: "numeric",
+  timeZone: ORG_TIMEZONE,
+});
 
-  const safeDateValue = dateValue ?? input.createdAt;
-
-  return `${label} ${CAMPAIGN_DATE_FORMATTER.format(new Date(safeDateValue))}`;
-}
-
-function resolveStateColor(state: CampaignRunProjectionRow["state"]) {
+function resolveStatusClasses(state: CampaignRunProjectionRow["state"]) {
   switch (state) {
-    case "draft":
-      return "bg-slate-400";
-    case "scheduled":
-      return "bg-amber-500";
-    case "sending":
-      return "bg-sky-500";
     case "complete":
-      return "bg-emerald-500";
+      return "bg-sky-50 text-sky-700";
     case "finalized":
-      return "bg-emerald-700";
-    case "cancelled":
-      return "bg-rose-500";
-  }
-}
-
-function resolveStateBadgeClasses(state: CampaignRunProjectionRow["state"]) {
-  switch (state) {
-    case "draft":
-      return "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200";
-    case "scheduled":
-      return "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200";
+      return "bg-slate-50 text-slate-600";
     case "sending":
-      return "bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200";
-    case "complete":
-      return "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200";
-    case "finalized":
-      return "bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-300";
+      return "bg-emerald-50 text-emerald-700";
+    case "draft":
+      return "bg-amber-50 text-amber-700";
+    case "scheduled":
+      return "bg-violet-50 text-violet-700";
     case "cancelled":
-      return "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200";
+      return "bg-rose-50 text-rose-700";
   }
 }
 
@@ -88,46 +50,66 @@ function formatAudienceLabel(input: {
       : "Audience pending";
   }
 
-  const count = input.audienceSize.toLocaleString();
-  if (input.state === "complete" || input.state === "finalized") {
-    return `${count} sent`;
-  }
-
-  return `${count} recipients`;
+  return `${input.audienceSize.toLocaleString()} recipients`;
 }
 
 function readTypeMeta(item: CampaignRowViewModel) {
-  if (item.provider === "mailchimp") {
-    return {
-      Icon: Database,
-      label: "Mailchimp",
-      className: "border-slate-200 bg-slate-50 text-slate-600",
-    };
-  }
-
-  if (item.kind === "newsletter") {
+  if (item.audienceType === "newsletter") {
     return {
       Icon: Megaphone,
       label: "Newsletter",
-      className: "border-amber-100 bg-amber-50 text-amber-700",
+      className: resolveStatusClasses(item.state),
+    };
+  }
+
+  if (item.audienceType === "specific") {
+    return {
+      Icon: Users,
+      label: "Specific volunteers",
+      className: resolveStatusClasses(item.state),
     };
   }
 
   return {
     Icon: Mail,
     label: "Project",
-    className: "border-sky-100 bg-sky-50 text-sky-700",
+    className: resolveStatusClasses(item.state),
   };
+}
+
+function formatDateTimeLabel(value: string) {
+  const [monthDay = "", time = "12:00am"] = CAMPAIGN_DATE_TIME_FORMATTER.format(
+    new Date(value),
+  ).split(" at ");
+  return `${monthDay} at ${time.replace(" ", "").toLowerCase()}`;
+}
+
+function formatCampaignTimestamp(item: CampaignRowViewModel) {
+  switch (item.state) {
+    case "complete":
+    case "finalized":
+      return `Sent on ${formatDateTimeLabel(item.completedAt ?? item.updatedAt)}`;
+    case "scheduled":
+      return `Scheduled for ${formatDateTimeLabel(item.scheduledAt ?? item.createdAt)} MT`;
+    case "sending":
+      return `Started ${CAMPAIGN_DAY_FORMATTER.format(new Date(item.startedAt ?? item.createdAt))}`;
+    case "cancelled":
+      return `Cancelled ${CAMPAIGN_DAY_FORMATTER.format(new Date(item.cancelledAt ?? item.updatedAt))}`;
+    case "draft":
+      return `Saved ${CAMPAIGN_DAY_FORMATTER.format(new Date(item.updatedAt))}`;
+  }
 }
 
 export interface CampaignRowViewModel {
   readonly runId: string;
   readonly provider: "postmark" | "mailchimp";
+  readonly name: string | null;
   readonly kind: CampaignRunProjectionRow["kind"];
   readonly launchType: CampaignRunProjectionRow["launchType"];
   readonly state: CampaignRunProjectionRow["state"];
+  readonly audienceType: "newsletter" | "project" | "specific";
   readonly projectId: string | null;
-  readonly projectLabel: string | null;
+  readonly projectAlias: string | null;
   readonly sender: string;
   readonly subject: string;
   readonly previewText: string | null;
@@ -148,18 +130,25 @@ export function CampaignRow({
   readonly style?: React.CSSProperties;
 }) {
   const title =
-    item.subject.trim().length === 0 ? "No subject yet" : item.subject;
-  const previewText = item.previewText?.trim().length
-    ? item.previewText
-    : item.provider === "mailchimp"
-      ? "Historical Mailchimp campaign"
-      : "No preview text";
+    item.name?.trim().length && item.name.trim().length > 0
+      ? item.name
+      : "No subject yet";
+  const secondaryText = item.subject.trim().length
+    ? item.subject
+    : item.previewText?.trim().length
+      ? item.previewText
+      : item.provider === "mailchimp"
+        ? "Historical Mailchimp campaign"
+        : "";
   const href =
     item.provider === "mailchimp"
       ? `/campaigns/${encodeURIComponent(item.runId)}?provider=mailchimp`
       : `/campaigns/${encodeURIComponent(item.runId)}`;
   const typeMeta = readTypeMeta(item);
   const TypeIcon = typeMeta.Icon;
+  const projectAliasTag = item.projectAlias?.trim().length
+    ? `${item.projectAlias.trim()}@`
+    : null;
 
   return (
     <div style={style}>
@@ -169,11 +158,11 @@ export function CampaignRow({
         data-campaign-row="true"
         data-campaign-provider={item.provider}
         data-campaign-state={item.state}
-        className="grid min-h-[136px] grid-cols-[38px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-4 py-3 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400 sm:h-[76px] sm:min-h-0 sm:grid-cols-[38px_minmax(0,1fr)_minmax(132px,172px)] sm:gap-4 sm:px-4 sm:py-0"
+        className="grid min-h-[92px] grid-cols-[40px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-4 py-3 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400 sm:min-h-0 sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,190px)] sm:items-center sm:gap-4"
       >
         <span
           className={cn(
-            "flex size-9 items-center justify-center rounded-lg border",
+            "flex size-9 items-center justify-center rounded-lg",
             typeMeta.className,
           )}
           title={typeMeta.label}
@@ -181,59 +170,38 @@ export function CampaignRow({
           <TypeIcon className="size-4" aria-hidden="true" />
         </span>
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <p
             className={cn(
               "truncate text-[13.5px] font-semibold leading-5 text-slate-900",
-              item.state === "draft" && item.subject.trim().length === 0
-                ? "italic text-slate-500"
-                : "",
+              item.name?.trim().length ? "" : "italic text-slate-500",
             )}
           >
             {title}
           </p>
 
-          <div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] text-slate-500">
-            {item.projectLabel ? (
-              <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
-                {item.projectLabel}
+          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[12px] leading-4 text-slate-500">
+            {projectAliasTag ? (
+              <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] font-medium text-slate-600">
+                {projectAliasTag}
               </span>
             ) : null}
-            <p className="truncate">{previewText}</p>
-          </div>
-
-          <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-slate-500">
-            <Chip tone="neutral">
-              {item.kind === "project" ? "Project" : "Newsletter"}
-            </Chip>
-            {item.sender.trim().length > 0 ? (
-              <span className="truncate text-slate-400">{item.sender}</span>
+            {item.provider === "mailchimp" ? (
+              <ProviderBadge
+                provider={item.provider}
+                className="bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500 ring-slate-200/80"
+              />
             ) : null}
-            <span className="truncate">{formatAudienceLabel(item)}</span>
+            <p className="truncate">{secondaryText}</p>
           </div>
         </div>
 
         <div className="col-span-2 min-w-0 text-left sm:col-span-1 sm:text-right">
-          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide",
-                resolveStateBadgeClasses(item.state),
-              )}
-            >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "size-1.5 rounded-full",
-                  resolveStateColor(item.state),
-                )}
-              />
-              {item.state}
-            </span>
-            <ProviderBadge provider={item.provider} />
-          </div>
-          <p className="mt-1.5 truncate text-[12px] text-slate-500">
-            {formatCampaignDate(item)}
+          <p className="truncate text-[12.5px] font-medium text-slate-900">
+            {formatAudienceLabel(item)}
+          </p>
+          <p className="mt-0.5 truncate text-[12px] leading-4 text-slate-500">
+            {formatCampaignTimestamp(item)}
           </p>
         </div>
       </Link>

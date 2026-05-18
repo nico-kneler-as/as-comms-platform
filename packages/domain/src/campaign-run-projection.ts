@@ -1,7 +1,4 @@
-import type {
-  CampaignRunProjectionRow,
-  RunState,
-} from "@as-comms/contracts";
+import type { CampaignRunProjectionRow, RunState } from "@as-comms/contracts";
 
 export interface CampaignRunProjectionRepositories {
   readonly campaignRunProjection: {
@@ -19,6 +16,7 @@ export interface CampaignRunProjectionRepositories {
     count(opts?: {
       readonly states?: readonly RunState[];
       readonly projectIds?: readonly string[];
+      readonly searchQuery?: string;
     }): Promise<number>;
     countByState(opts?: {
       readonly projectIds?: readonly string[];
@@ -38,7 +36,11 @@ export interface CampaignRunProjectionReader {
     runId: string,
     provider: "postmark" | "mailchimp",
   ): Promise<CampaignRunProjectionRow | null>;
-  count(opts: { states?: RunState[]; projectIds?: string[] }): Promise<number>;
+  count(opts: {
+    states?: RunState[];
+    projectIds?: string[];
+    searchQuery?: string;
+  }): Promise<number>;
   countByState(opts: {
     projectIds?: string[];
   }): Promise<Partial<Record<RunState, number>>>;
@@ -54,8 +56,12 @@ export function createCampaignRunProjectionReader(deps: {
           ...(opts.limit === undefined ? {} : { limit: opts.limit }),
           ...(opts.offset === undefined ? {} : { offset: opts.offset }),
           ...(opts.states === undefined ? {} : { states: opts.states }),
-          ...(opts.projectIds === undefined ? {} : { projectIds: opts.projectIds }),
-          ...(opts.searchQuery === undefined ? {} : { searchQuery: opts.searchQuery }),
+          ...(opts.projectIds === undefined
+            ? {}
+            : { projectIds: opts.projectIds }),
+          ...(opts.searchQuery === undefined
+            ? {}
+            : { searchQuery: opts.searchQuery }),
         })),
       ];
     },
@@ -67,13 +73,20 @@ export function createCampaignRunProjectionReader(deps: {
     async count(opts) {
       return deps.repositories.campaignRunProjection.count({
         ...(opts.states === undefined ? {} : { states: opts.states }),
-        ...(opts.projectIds === undefined ? {} : { projectIds: opts.projectIds }),
+        ...(opts.projectIds === undefined
+          ? {}
+          : { projectIds: opts.projectIds }),
+        ...(opts.searchQuery === undefined
+          ? {}
+          : { searchQuery: opts.searchQuery }),
       });
     },
 
     async countByState(opts) {
       return deps.repositories.campaignRunProjection.countByState({
-        ...(opts.projectIds === undefined ? {} : { projectIds: opts.projectIds }),
+        ...(opts.projectIds === undefined
+          ? {}
+          : { projectIds: opts.projectIds }),
       });
     },
   };

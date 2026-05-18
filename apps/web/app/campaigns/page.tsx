@@ -25,11 +25,13 @@ interface CampaignProjectOption {
 interface CampaignListRowViewModel {
   readonly runId: string;
   readonly provider: "postmark" | "mailchimp";
+  readonly name: string | null;
   readonly kind: CampaignRunProjectionRow["kind"];
   readonly launchType: CampaignRunProjectionRow["launchType"];
   readonly state: CampaignRunProjectionRow["state"];
+  readonly audienceType: "newsletter" | "project" | "specific";
   readonly projectId: string | null;
-  readonly projectLabel: string | null;
+  readonly projectAlias: string | null;
   readonly sender: string;
   readonly subject: string;
   readonly previewText: string | null;
@@ -45,8 +47,11 @@ interface CampaignListRowViewModel {
 interface CampaignsSearchParams {
   readonly state?: string;
   readonly q?: string;
+  readonly page?: string;
   readonly projectId?: string | readonly string[];
 }
+
+const CAMPAIGNS_PAGE_SIZE = 25;
 
 const FILTER_DEFINITIONS: readonly {
   readonly id: CampaignFilterId;
@@ -88,6 +93,15 @@ function normalizeSearchQuery(value: CampaignsSearchParams["q"]): string {
   return normalized.length === 0 ? "" : normalized;
 }
 
+function normalizePage(value: CampaignsSearchParams["page"]): number {
+  const parsed = Number.parseInt(value ?? "1", 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1;
+  }
+
+  return parsed;
+}
+
 function resolveFilterStates(filterId: CampaignFilterId) {
   return (
     FILTER_DEFINITIONS.find((filter) => filter.id === filterId)?.states ?? null
@@ -121,7 +135,10 @@ function countStates(
   states: readonly RunState[] | null,
 ): number {
   if (states === null) {
-    return Object.values(countsByState).reduce((total, count) => total + count, 0);
+    return Object.values(countsByState).reduce(
+      (total, count) => total + count,
+      0,
+    );
   }
 
   return states.reduce(
@@ -146,29 +163,49 @@ export default async function CampaignsPage({
   const activeStates = resolveFilterStates(activeFilterId);
   const selectedProjectIds = normalizeProjectIds(params.projectId);
   const searchQuery = normalizeSearchQuery(params.q);
-
-  const listRecentOptions: Parameters<typeof reader.listRecent>[0] = {
-    limit: 200,
-    offset: 0,
+  const requestedPage = normalizePage(params.page);
+  const countOptions: Parameters<typeof reader.count>[0] = {
     ...(activeStates === null ? {} : { states: [...activeStates] }),
     ...(selectedProjectIds.length === 0
       ? {}
       : { projectIds: selectedProjectIds }),
     ...(searchQuery.length === 0 ? {} : { searchQuery }),
   };
+
+  const listRecentOptions: Parameters<typeof reader.listRecent>[0] = {
+    ...countOptions,
+    limit: CAMPAIGNS_PAGE_SIZE,
+    offset: (requestedPage - 1) * CAMPAIGNS_PAGE_SIZE,
+  };
   const activeProjectsPromise = runtime.settings.projects.listAll();
-  const rowsPromise = reader.listRecent(listRecentOptions);
+  const initialRowsPromise = reader.listRecent(listRecentOptions);
+  const totalMatchingCountPromise = reader.count(countOptions);
   const countsByStatePromise = reader.countByState({
     ...(selectedProjectIds.length === 0
       ? {}
       : { projectIds: selectedProjectIds }),
   });
 
-  const [allProjects, rows, countsByState] = await Promise.all([
-    activeProjectsPromise,
-    rowsPromise,
-    countsByStatePromise,
-  ]);
+  const [allProjects, initialRows, totalMatchingCount, countsByState] =
+    await Promise.all([
+      activeProjectsPromise,
+      initialRowsPromise,
+      totalMatchingCountPromise,
+      countsByStatePromise,
+    ]);
+  const totalPages = Math.max(
+    1,
+    Math.ceil(totalMatchingCount / CAMPAIGNS_PAGE_SIZE),
+  );
+  const currentPage = Math.min(requestedPage, totalPages);
+  const rows =
+    currentPage === requestedPage || totalMatchingCount === 0
+      ? initialRows
+      : await reader.listRecent({
+          ...countOptions,
+          limit: CAMPAIGNS_PAGE_SIZE,
+          offset: (currentPage - 1) * CAMPAIGNS_PAGE_SIZE,
+        });
   const activeProjects = allProjects
     .filter(
       (project) => project.isActive && project.connectedToProjectId === null,
@@ -181,9 +218,16 @@ export default async function CampaignsPage({
       label: project.projectAlias ?? project.projectName,
     }),
   );
-  const projectLabelById = new Map(
+  const projectMetaById = new Map(
     activeProjects.map(
-      (project) => [project.projectId, project.projectName] as const,
+      (project) =>
+        [
+          project.projectId,
+          {
+            alias: project.projectAlias,
+            name: project.projectName,
+          },
+        ] as const,
     ),
   );
 
@@ -202,6 +246,9 @@ export default async function CampaignsPage({
     postmarkRunIds.length === 0
       ? []
       : await runtime.campaigns.campaignRuns.listByIds(postmarkRunIds);
+  const postmarkRunById = new Map(
+    postmarkRuns.map((run) => [run.id, run] as const),
+  );
 
   const postmarkPreheaders = new Map(
     postmarkRuns.map((run) => [run.id, run.preheader] as const),
@@ -226,16 +273,36 @@ export default async function CampaignsPage({
 
   const items: readonly CampaignListRowViewModel[] = rows.map((row) => ({
     ...row,
-    projectLabel:
+    name:
+      row.provider === "mailchimp"
+        ? row.subject
+        : (postmarkRunById.get(row.runId)?.name ?? null),
+    audienceType:
+      row.provider === "mailchimp" || row.kind === "newsletter"
+        ? "newsletter"
+        : (postmarkRunById.get(row.runId)?.audienceCriteria.projectIds.length ??
+              0) === 0
+          ? "specific"
+          : "project",
+    projectAlias:
       row.projectId === null
         ? null
-        : (projectLabelById.get(row.projectId) ?? null),
+        : (() => {
+            const senderAlias = row.sender.split("@")[0]?.trim() ?? "";
+            if (senderAlias.length > 0) {
+              return senderAlias;
+            }
+
+            return projectMetaById.get(row.projectId)?.alias ?? null;
+          })(),
     previewText: previewByRunId.get(row.runId) ?? null,
   }));
 
   const activeCount =
-    tabCounts.find((filter) => filter.id === activeFilterId)?.count ??
-    items.length;
+    searchQuery.length > 0
+      ? totalMatchingCount
+      : (tabCounts.find((filter) => filter.id === activeFilterId)?.count ??
+        items.length);
   const totalCount =
     tabCounts.find((filter) => filter.id === "all")?.count ?? 0;
 
@@ -264,6 +331,8 @@ export default async function CampaignsPage({
         tabs={tabCounts}
         activeFilterId={activeFilterId}
         searchQuery={searchQuery}
+        page={currentPage}
+        totalPages={totalPages}
         totalCount={totalCount}
         showNewCampaignCta={currentUser.role === "admin"}
       />

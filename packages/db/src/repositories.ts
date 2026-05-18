@@ -319,6 +319,7 @@ export interface Stage5RepositoryBundle {
       readonly states?: readonly RunState[];
       readonly projectIds?: readonly string[];
       readonly filterByProjectIds?: readonly string[];
+      readonly searchQuery?: string;
     }): Promise<number>;
     countByState(opts?: {
       readonly projectIds?: readonly string[];
@@ -6564,10 +6565,11 @@ export function createStage5RepositoryBundle(
       async count(opts = {}) {
         const projectIds = resolveCampaignProjectionProjectFilter(opts);
         const states = normalizeRunStateFilter(opts.states);
+        const searchQuery = normalizeCampaignSearchQuery(opts.searchQuery);
         const whereClause = buildCampaignProjectionWhereClause({
           projectIds,
           states,
-          searchQuery: null,
+          searchQuery,
         });
 
         const result = await db.execute(sql<{
