@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { AudienceCriteria, CreateDraftInput } from "@as-comms/contracts";
+import type { CreateDraftInput } from "@as-comms/contracts";
 import {
   createAudienceResolver,
   createCampaignSendOrchestrator,
@@ -13,10 +13,12 @@ import { createTestStage1Context } from "./helpers.js";
 
 type Stage1Context = Awaited<ReturnType<typeof createTestStage1Context>>;
 
-function buildAudienceCriteria(): AudienceCriteria {
+function buildAudienceCriteria(): CreateDraftInput["audienceCriteria"] {
   return {
+    projectId: "project-1",
     projectIds: ["project-1"],
     statuses: ["Active"],
+    contactIds: [],
     expeditionIds: [],
     lastActivityWindow: "all_time",
     hasReplied: "either",

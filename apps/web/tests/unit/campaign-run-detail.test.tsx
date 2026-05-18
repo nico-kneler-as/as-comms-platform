@@ -92,8 +92,10 @@ function buildModel(state: RunDetailModel["run"]["state"]): RunDetailModel {
       bodyTextTemplate: "Hello",
       preheader: null,
       audienceCriteria: {
+        projectId: "project-1",
         projectIds: ["project-1"],
         statuses: ["Active"],
+        contactIds: [],
         expeditionIds: [],
         lastActivityWindow: "all_time",
         hasReplied: "either",

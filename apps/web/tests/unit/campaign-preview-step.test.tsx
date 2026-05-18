@@ -36,9 +36,6 @@ vi.mock("@/components/ui/dialog", () => ({
   DialogDescription: ({ children }: { readonly children: React.ReactNode }) => (
     <p>{children}</p>
   ),
-  DialogFooter: ({ children }: { readonly children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
   DialogHeader: ({ children }: { readonly children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -106,5 +103,15 @@ describe("PreviewStep", () => {
     expect(markup).toContain('aria-label="Previous sample contact"');
     expect(markup).toContain('aria-label="Next sample contact"');
     expect(markup).toContain("Continue to review");
+  });
+
+  it("renders the inline send-test controls when expanded", () => {
+    const markup = renderToStaticMarkup(
+      <PreviewStep {...baseProps} testSendOpen={true} />,
+    );
+
+    expect(markup).toContain("Send a test to:");
+    expect(markup).toContain("nico@adventurescientists.org");
+    expect(markup).toContain("Cancel");
   });
 });

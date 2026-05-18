@@ -1,6 +1,6 @@
 "use client";
 
-import { Info } from "lucide-react";
+import { Braces, Info } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -134,15 +134,21 @@ export function ComposeStep({
           toolbarFooter={({ activeCommands, onCommand, insertText }) => (
             <div className="border-t border-slate-200 bg-slate-50/70">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-1.5">
-                <ComposerToolbar
-                  activeCommands={activeCommands}
-                  onCommand={onCommand}
-                />
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1">
+                  <ComposerToolbar
+                    activeCommands={activeCommands}
+                    onCommand={onCommand}
+                  />
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" disabled={frozen}>
-                        Insert merge token
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={frozen}
+                        aria-label="Insert merge token"
+                        className="size-7"
+                      >
+                        <Braces className="size-3.5" aria-hidden="true" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-52">
@@ -158,13 +164,13 @@ export function ComposeStep({
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <span className="font-mono text-[10.5px] tabular-nums text-slate-500">
-                    {wordCount.toLocaleString()}{" "}
-                    <span className="text-slate-400">
-                      word{wordCount === 1 ? "" : "s"}
-                    </span>
-                  </span>
                 </div>
+                <span className="font-mono text-[10.5px] tabular-nums text-slate-500">
+                  {wordCount.toLocaleString()}{" "}
+                  <span className="text-slate-400">
+                    word{wordCount === 1 ? "" : "s"}
+                  </span>
+                </span>
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[11px] text-slate-500">
                 <span className="inline-flex items-center gap-1.5">

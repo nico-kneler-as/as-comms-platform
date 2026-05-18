@@ -7,7 +7,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -139,23 +138,57 @@ export function PreviewStep({
               Email preview
             </p>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-[11.5px]"
-                onClick={() => {
-                  onTestSendOpenChange(true);
-                }}
-                disabled={frozen || !selectedSenderVerified}
-                title={
-                  selectedSenderVerified
-                    ? undefined
-                    : "Choose a verified sender alias before sending a test."
-                }
-              >
-                <Send className="size-3" aria-hidden="true" />
-                Send test
-              </Button>
+              {testSendOpen ? (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1">
+                  <span className="text-[11.5px] text-slate-600">
+                    Send a test to:
+                  </span>
+                  <Input
+                    id="campaign-test-recipient"
+                    type="email"
+                    value={testRecipientEmail}
+                    onChange={(event) => {
+                      onTestRecipientEmailChange(event.currentTarget.value);
+                    }}
+                    className="h-7 w-[220px] text-[12.5px]"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-7 text-[11.5px]"
+                    onClick={onSendTest}
+                    disabled={testSendPending || !selectedSenderVerified}
+                  >
+                    {testSendPending ? "Sending..." : "Send test"}
+                  </Button>
+                  <button
+                    type="button"
+                    className="text-[11.5px] text-slate-500 underline underline-offset-2"
+                    onClick={() => {
+                      onTestSendOpenChange(false);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-[11.5px]"
+                  onClick={() => {
+                    onTestSendOpenChange(true);
+                  }}
+                  disabled={frozen || !selectedSenderVerified}
+                  title={
+                    selectedSenderVerified
+                      ? undefined
+                      : "Choose a verified sender alias before sending a test."
+                  }
+                >
+                  <Send className="size-3" aria-hidden="true" />
+                  Send test
+                </Button>
+              )}
               <div className="flex items-center gap-1.5">
                 <Button
                   variant="ghost"
@@ -269,50 +302,6 @@ export function PreviewStep({
               </div>
             )) ?? null}
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={testSendOpen} onOpenChange={onTestSendOpenChange}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Send test email</DialogTitle>
-            <DialogDescription>
-              Test sends use Postmark&apos;s test header and never enter the
-              canonical campaign ledger.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <label
-              htmlFor="campaign-test-recipient"
-              className="text-sm font-medium text-slate-900"
-            >
-              Recipient email
-            </label>
-            <Input
-              id="campaign-test-recipient"
-              type="email"
-              value={testRecipientEmail}
-              onChange={(event) => {
-                onTestRecipientEmailChange(event.currentTarget.value);
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                onTestSendOpenChange(false);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={onSendTest}
-              disabled={testSendPending || !selectedSenderVerified}
-            >
-              {testSendPending ? "Sending..." : "Send test"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </section>

@@ -151,6 +151,18 @@ function buildFreezeSnapshot(member: AudienceMember): NewAudienceSnapshot {
   };
 }
 
+function filterAudienceMembersBySelectedContacts(
+  rows: readonly AudienceMember[],
+  run: CampaignRunRecord,
+): readonly AudienceMember[] {
+  if (run.audienceCriteria.contactIds.length === 0) {
+    return rows;
+  }
+
+  const selectedContactIds = new Set(run.audienceCriteria.contactIds);
+  return rows.filter((row) => selectedContactIds.has(row.contactId));
+}
+
 async function appendCampaignAudit(
   repositories: CampaignSendRepositories,
   input: {
@@ -231,9 +243,9 @@ export function createCampaignSendOrchestrator(deps: {
         throw new Error(`Campaign run ${runId} cannot be frozen from ${run.state}.`);
       }
 
-      const members = await deps.audienceResolver.resolveAudience(
-        run.audienceCriteria,
-        at,
+      const members = filterAudienceMembersBySelectedContacts(
+        await deps.audienceResolver.resolveAudience(run.audienceCriteria, at),
+        run,
       );
       const exclusions = await deps.exclusionFilter.applyExclusions(
         members,

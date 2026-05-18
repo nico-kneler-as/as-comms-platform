@@ -8,46 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
-  ChevronDown: () => null,
-}));
-
-vi.mock("@/components/ui/dropdown-menu", () => ({
-  DropdownMenu: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
-  DropdownMenuTrigger: ({ children }: { readonly children: React.ReactNode }) => <>{children}</>,
-  DropdownMenuContent: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
-  DropdownMenuCheckboxItem: ({
-    children,
-    onCheckedChange,
-  }: {
-    readonly children: React.ReactNode;
-    readonly onCheckedChange?: () => void;
-  }) => (
-    <button type="button" onClick={onCheckedChange}>
-      {children}
-    </button>
-  ),
-}));
-
-vi.mock("@/components/ui/toggle-group", () => ({
-  ToggleGroup: ({
-    children,
-  }: {
-    readonly children: React.ReactNode;
-  }) => <div>{children}</div>,
-  ToggleGroupItem: ({
-    children,
-    value,
-    onClick,
-    ...props
-  }: {
-    readonly children: React.ReactNode;
-    readonly value?: string;
-    readonly onClick?: () => void;
-  }) => (
-    <button type="button" onClick={onClick} data-value={value} {...props}>
-      {children}
-    </button>
-  ),
+  CheckCircle2: () => null,
 }));
 
 import { AudienceFilterPanel } from "../../app/campaigns/new/_components/audience-filter-panel";
@@ -99,8 +60,10 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AudienceFilt
 
   const props: React.ComponentProps<typeof AudienceFilterPanel> = {
     criteria: {
+      projectId: null,
       projectIds: [],
       statuses: [],
+      contactIds: [],
       expeditionIds: [],
       lastActivityWindow: "all_time",
       hasReplied: "either",
@@ -128,14 +91,9 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AudienceFilt
         ],
       },
     ],
-    expeditionOptions: [{ id: "exp-1", name: "Spring 2026" }],
     statusOptions: ["Active", "Inactive"],
-    onProjectToggle: () => undefined,
+    onProjectChange: () => undefined,
     onStatusToggle: () => undefined,
-    onExpeditionToggle: () => undefined,
-    onLastActivityChange: () => undefined,
-    onHasRepliedChange: () => undefined,
-    onHasClickedChange: () => undefined,
     ...overrides,
   };
 
@@ -161,11 +119,17 @@ describe("AudienceFilterPanel", () => {
     renderPanel();
 
     expect(
-      document.querySelector('input[aria-label="Toggle project Forests"]'),
-    ).not.toBeNull();
+      Array.from(document.querySelectorAll("button")).some(
+        (button) => button.getAttribute("aria-label") === "Choose project Forests",
+      ),
+    ).toBe(true);
     expect(
-      document.querySelector('input[aria-label="Toggle project Butternut Canker"]'),
-    ).not.toBeNull();
+      Array.from(document.querySelectorAll("button")).some(
+        (button) =>
+          button.getAttribute("aria-label") ===
+          "Choose project Butternut Canker",
+      ),
+    ).toBe(true);
     expect(document.body.textContent).toContain("forests@");
     expect(
       Array.from(document.querySelectorAll("button")).some((button) =>
@@ -176,23 +140,23 @@ describe("AudienceFilterPanel", () => {
   });
 
   it("fires project and status callbacks when those controls change", () => {
-    const projectToggle = vi.fn();
+    const projectChange = vi.fn();
     const statusToggle = vi.fn();
 
     renderPanel({
-      onProjectToggle: projectToggle,
+      onProjectChange: projectChange,
       onStatusToggle: statusToggle,
     });
 
-    const hostCheckbox = document.querySelector(
-      'input[aria-label="Toggle project Forests"]',
+    const hostButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.getAttribute("aria-label") === "Choose project Forests",
     );
-    if (!(hostCheckbox instanceof HTMLInputElement)) {
-      throw new Error("Host project checkbox not found");
+    if (!(hostButton instanceof HTMLButtonElement)) {
+      throw new Error("Host project button not found");
     }
 
     act(() => {
-      hostCheckbox.click();
+      hostButton.click();
     });
 
     const statusButton = Array.from(document.querySelectorAll("button")).find(
@@ -208,7 +172,7 @@ describe("AudienceFilterPanel", () => {
       statusButton.click();
     });
 
-    expect(projectToggle).toHaveBeenCalledWith("host-project");
+    expect(projectChange).toHaveBeenCalledWith("host-project");
     expect(statusToggle).toHaveBeenCalledWith("Active");
   });
 });

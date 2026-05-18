@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Clock, RefreshCw, Send } from "lucide-react";
+import { CheckCircle2, Clock, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +23,6 @@ interface ReviewStepProps {
   readonly runName: string | null;
   readonly fromEmail: string | null;
   readonly subject: string;
-  readonly preheader: string;
   readonly selectedSenderVerified: boolean;
   readonly audienceSize: number | null;
   readonly sendMode: "now" | "later";
@@ -35,7 +34,6 @@ interface ReviewStepProps {
   readonly confirmOpen: boolean;
   readonly submitPending: boolean;
   readonly onBack: () => void;
-  readonly onRerunAudience: () => void;
   readonly onSendModeChange: (value: "now" | "later") => void;
   readonly onScheduleDateChange: (value: string) => void;
   readonly onScheduleTimeChange: (value: string) => void;
@@ -97,7 +95,6 @@ export function ReviewStep({
   runName,
   fromEmail,
   subject,
-  preheader,
   selectedSenderVerified,
   audienceSize,
   sendMode,
@@ -109,7 +106,6 @@ export function ReviewStep({
   confirmOpen,
   submitPending,
   onBack,
-  onRerunAudience,
   onSendModeChange,
   onScheduleDateChange,
   onScheduleTimeChange,
@@ -142,9 +138,9 @@ export function ReviewStep({
       </div>
 
       <div className="space-y-4">
-        <Section title="Final check">
-          <div className="grid divide-y divide-slate-200 md:grid-cols-[1fr_1fr_auto] md:divide-x md:divide-y-0">
-            <div className="space-y-2.5 px-4 py-3.5">
+        <Section title="FINAL CHECK">
+          <div className="grid gap-4 px-4 py-4 md:grid-cols-2">
+            <div className="space-y-2.5">
               <SummaryRow label="Name" value={runName ?? "Untitled campaign"} />
               <SummaryRow
                 label="Kind"
@@ -159,7 +155,7 @@ export function ReviewStep({
                 }
               />
             </div>
-            <div className="space-y-2.5 px-4 py-3.5">
+            <div className="space-y-2.5">
               <SummaryRow
                 label="Audience"
                 value={
@@ -171,32 +167,25 @@ export function ReviewStep({
                   </span>
                 }
               />
-              <SummaryRow label="Scope" value={projectChipLabel} />
+              <SummaryRow
+                label="Scope"
+                value={kind === "newsletter" ? "All AS" : projectChipLabel}
+              />
               <SummaryRow
                 label="Sender"
                 value={
                   selectedSenderVerified ? (
-                    <span className="inline-flex items-center gap-1.5 text-emerald-700">
-                      <span className="size-1.5 rounded-full bg-emerald-500" />
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-emerald-800">
+                      <span className="size-1 rounded-full bg-emerald-500" />
                       Verified
                     </span>
                   ) : (
-                    <span className="text-amber-700">Verification required</span>
+                    <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-amber-800">
+                      Verification required
+                    </span>
                   )
                 }
               />
-            </div>
-            <div className="flex items-center px-4 py-3.5">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onRerunAudience}
-                disabled={frozen}
-              >
-                <RefreshCw className="mr-1.5 size-3.5" aria-hidden="true" />
-                Re-run
-              </Button>
             </div>
           </div>
           <div className="border-t border-slate-200 bg-slate-50/60 px-4 py-2 text-[10.5px] text-slate-500">
@@ -217,9 +206,6 @@ export function ReviewStep({
                 )
               }
             />
-            {preheader.trim().length > 0 ? (
-              <SummaryRow label="Preview" value={preheader} />
-            ) : null}
           </div>
         </Section>
 

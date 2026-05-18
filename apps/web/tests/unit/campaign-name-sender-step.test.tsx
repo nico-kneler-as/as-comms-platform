@@ -6,7 +6,6 @@ Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
   CheckCircle2: () => null,
-  ChevronDown: () => null,
   Info: () => null,
 }));
 
@@ -18,18 +17,6 @@ vi.mock("@/components/ui/button", () => ({
 
 vi.mock("@/components/ui/input", () => ({
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
-}));
-
-vi.mock("@/components/ui/popover", () => ({
-  Popover: ({ children }: { readonly children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  PopoverTrigger: ({ children }: { readonly children: React.ReactNode }) => (
-    <>{children}</>
-  ),
-  PopoverContent: ({ children }: { readonly children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
 }));
 
 vi.mock("@/components/ui/tooltip", () => ({
@@ -56,6 +43,7 @@ const baseProps: React.ComponentProps<typeof NameAndSenderStep> = {
     {
       projectId: "project-1",
       projectName: "Forests",
+      projectAliasLabel: "Whitebark Pine",
       email: "forests@adventurescientists.org",
       connectedToProjectId: null,
       status: "verified",
@@ -63,6 +51,7 @@ const baseProps: React.ComponentProps<typeof NameAndSenderStep> = {
     {
       projectId: "project-2",
       projectName: "Kelp Watch",
+      projectAliasLabel: "Kelp Watch",
       email: "kelp@adventurescientists.org",
       connectedToProjectId: null,
       status: "unverified",
@@ -80,8 +69,10 @@ describe("NameAndSenderStep", () => {
     const markup = renderToStaticMarkup(<NameAndSenderStep {...baseProps} />);
 
     expect(markup).toContain("May forests volunteer update");
-    expect(markup).toContain("forests@adventurescientists.org - verified");
-    expect(markup).toContain("kelp@adventurescientists.org - unverified");
+    expect(markup).toContain("forests@adventurescientists.org");
+    expect(markup).toContain("Whitebark Pine");
+    expect(markup).toContain("kelp@adventurescientists.org");
+    expect(markup).toContain("Unverified");
     expect(markup).toContain('aria-disabled="true"');
     expect(markup).toContain("This alias hasn&#x27;t been verified in Postmark yet.");
   });

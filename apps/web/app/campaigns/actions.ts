@@ -292,6 +292,18 @@ async function readRequestOrigin(): Promise<string> {
   return `${protocol}://${host}`;
 }
 
+function filterAudienceMembersBySelectedContacts<T extends { readonly contactId: string }>(
+  rows: readonly T[],
+  contactIds: readonly string[],
+): readonly T[] {
+  if (contactIds.length === 0) {
+    return rows;
+  }
+
+  const selectedContactIds = new Set(contactIds);
+  return rows.filter((row) => selectedContactIds.has(row.contactId));
+}
+
 export async function sendNow(
   runId: string,
 ): Promise<UiSuccess<CampaignActionData> | UiError> {
@@ -461,7 +473,10 @@ export async function testSend(
         settingsProjects: runtime.settings.projects,
       },
     });
-    const audience = await resolver.resolveAudience(run.audienceCriteria, new Date());
+    const audience = filterAudienceMembersBySelectedContacts(
+      await resolver.resolveAudience(run.audienceCriteria, new Date()),
+      run.audienceCriteria.contactIds,
+    );
     const sample = audience[0];
     if (sample === undefined) {
       return errorResult(

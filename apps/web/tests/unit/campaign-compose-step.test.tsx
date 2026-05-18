@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
+  Braces: () => null,
   Info: () => null,
 }));
 

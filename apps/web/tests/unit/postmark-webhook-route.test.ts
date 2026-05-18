@@ -86,8 +86,10 @@ async function seedRunAndSnapshot(
     bodyTextTemplate: "Hello",
     preheader: null,
     audienceCriteria: {
+      projectId,
       projectIds: [projectId],
       statuses: [],
+      contactIds: [],
       expeditionIds: [],
       lastActivityWindow: "all_time",
       hasReplied: "either",

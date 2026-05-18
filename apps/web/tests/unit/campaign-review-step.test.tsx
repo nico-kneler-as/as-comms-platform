@@ -7,7 +7,6 @@ Object.assign(globalThis, { React });
 vi.mock("lucide-react", () => ({
   CheckCircle2: () => null,
   Clock: () => null,
-  RefreshCw: () => null,
   Send: () => null,
 }));
 
@@ -54,7 +53,6 @@ const baseProps: React.ComponentProps<typeof ReviewStep> = {
   runName: "May forests volunteer update",
   fromEmail: "forests@adventurescientists.org",
   subject: "Gear pickup for Sam",
-  preheader: "Everything you need for tomorrow.",
   selectedSenderVerified: true,
   audienceSize: 1247,
   sendMode: "now",
@@ -66,7 +64,6 @@ const baseProps: React.ComponentProps<typeof ReviewStep> = {
   confirmOpen: false,
   submitPending: false,
   onBack: () => undefined,
-  onRerunAudience: () => undefined,
   onSendModeChange: () => undefined,
   onScheduleDateChange: () => undefined,
   onScheduleTimeChange: () => undefined,
@@ -81,8 +78,11 @@ describe("ReviewStep sender gating", () => {
     expect(markup).toContain("May forests volunteer update");
     expect(markup).toContain("forests@adventurescientists.org");
     expect(markup).toContain("Verified");
+    expect(markup).toContain("FINAL CHECK");
     expect(markup).not.toContain("Choose a verified sender</button>");
     expect(markup).not.toContain("campaign-from-email");
+    expect(markup).not.toContain("Re-run");
+    expect(markup).not.toContain("Everything you need for tomorrow.");
   });
 
   it("keeps launch disabled when the root sender verification is false", () => {
