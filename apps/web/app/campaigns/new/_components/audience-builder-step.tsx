@@ -84,19 +84,17 @@ export function AudienceBuilderStep({
       </div>
 
       <div className="space-y-4">
+        <InitialFilterSelector
+          value={initialFilter}
+          onChange={onInitialFilterChange}
+        />
+
         <AudienceFilterPanel
           criteria={criteria}
           projectGroups={projectGroups}
           statusOptions={statusOptions}
           onProjectChange={onProjectChange}
           onStatusToggle={onStatusToggle}
-        />
-
-        <AudienceCountPanel countState={countState} loading={countLoading} />
-
-        <InitialFilterSelector
-          value={initialFilter}
-          onChange={onInitialFilterChange}
         />
 
         {initialFilter === "specific" ? (
@@ -110,6 +108,8 @@ export function AudienceBuilderStep({
             onToggle={onVolunteerToggle}
           />
         ) : null}
+
+        <AudienceCountPanel countState={countState} loading={countLoading} />
 
         <AudiencePreviewList
           rows={previewRows}
