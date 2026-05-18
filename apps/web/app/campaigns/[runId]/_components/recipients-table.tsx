@@ -20,7 +20,6 @@ import type {
   RecipientRowData,
 } from "../../_lib/run-recipients";
 import { LocalDateTime } from "./local-date-time";
-import { RunStateChip } from "./run-state-chip";
 
 const ROW_HEIGHT = 56;
 const TABLE_HEIGHT = 520;
@@ -37,33 +36,53 @@ const FILTER_LABELS: Record<RecipientFilter, string> = {
   unsubscribed: "Unsubscribed",
 };
 
-function rowTone(state: RecipientLatestState) {
-  switch (state) {
-    case "queued":
-      return "draft";
-    case "sent":
-      return "scheduled";
-    case "delivered":
-      return "complete";
-    case "opened":
-    case "clicked":
-      return "sending";
-    case "bounced":
-    case "unsubscribed":
-    case "complained":
-    case "failed":
-      return "cancelled";
-    case "suppressed":
-      return "finalized";
-  }
+const RECIPIENT_STATE_CLASS: Record<RecipientLatestState, string> = {
+  queued: "bg-slate-100 text-slate-700 ring-slate-200",
+  sent: "bg-slate-100 text-slate-700 ring-slate-200",
+  delivered: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  opened: "bg-sky-50 text-sky-700 ring-sky-200",
+  clicked: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+  bounced: "bg-rose-50 text-rose-800 ring-rose-200",
+  unsubscribed: "bg-amber-50 text-amber-800 ring-amber-200",
+  complained: "bg-rose-50 text-rose-800 ring-rose-200",
+  failed: "bg-rose-50 text-rose-800 ring-rose-200",
+  suppressed: "bg-slate-200 text-slate-700 ring-slate-300",
+};
+
+const RECIPIENT_STATE_LABEL: Record<RecipientLatestState, string> = {
+  queued: "Queued",
+  sent: "Sent",
+  delivered: "Delivered",
+  opened: "Opened",
+  clicked: "Clicked",
+  bounced: "Bounced",
+  unsubscribed: "Unsubscribed",
+  complained: "Complained",
+  failed: "Failed",
+  suppressed: "Suppressed",
+};
+
+function RecipientStateChip({ state }: { readonly state: RecipientLatestState }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset",
+        RECIPIENT_STATE_CLASS[state],
+      )}
+    >
+      {RECIPIENT_STATE_LABEL[state]}
+    </span>
+  );
 }
 
 export function RecipientsTable({
   runId,
+  provider,
   rows,
   total,
 }: {
   readonly runId: string;
+  readonly provider: "postmark" | "mailchimp";
   readonly rows: readonly RecipientRowData[];
   readonly total: number;
 }) {
@@ -99,6 +118,7 @@ export function RecipientsTable({
     startTransition(async () => {
       const result = await listCampaignRecipients({
         runId,
+        provider,
         filter,
         query: deferredQuery,
         limit: PAGE_SIZE,
@@ -120,12 +140,13 @@ export function RecipientsTable({
     return () => {
       cancelled = true;
     };
-  }, [deferredQuery, filter, runId]);
+  }, [deferredQuery, filter, provider, runId]);
 
   function loadMore() {
     startTransition(async () => {
       const result = await listCampaignRecipients({
         runId,
+        provider,
         filter,
         query: deferredQuery,
         limit: PAGE_SIZE,
@@ -227,38 +248,74 @@ export function RecipientsTable({
               }}
             >
               <div style={{ transform: `translateY(${String(offsetY)}px)` }}>
-                {visibleRows.map((row) => (
-                  <Link
-                    key={row.snapshotId}
-                    href={`/inbox/${encodeURIComponent(row.contactId)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_160px_150px] items-center border-b border-slate-100 px-4 py-2 text-[12.5px] transition-colors hover:bg-slate-50"
-                    style={{ height: `${String(ROW_HEIGHT)}px` }}
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-slate-900">
-                        {row.name}
+                {visibleRows.map((row) =>
+                  row.contactId === null ? (
+                    <div
+                      key={row.snapshotId}
+                      className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_160px_150px] items-center border-b border-slate-100 px-4 py-2 text-[12.5px]"
+                      style={{ height: `${String(ROW_HEIGHT)}px` }}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-slate-900">
+                          {row.name}
+                        </div>
+                        <div className="truncate text-[11.5px] text-slate-500">
+                          {row.email ?? "No email retained from import"}
+                        </div>
+                        <div
+                          className="mt-1 text-[10.5px] text-slate-400"
+                          title="No matching contact in canonical store"
+                        >
+                          Inbox unavailable
+                        </div>
                       </div>
-                      <div className="truncate text-[11.5px] text-slate-500">
-                        {row.email}
+                      <div className="truncate text-slate-600">
+                        {row.project ?? "No project"}
+                      </div>
+                      <div>
+                        <RecipientStateChip state={row.latestState} />
+                      </div>
+                      <div className="text-slate-500">
+                        {row.lastEventAt ? (
+                          <LocalDateTime iso={row.lastEventAt} />
+                        ) : (
+                          "-"
+                        )}
                       </div>
                     </div>
-                    <div className="truncate text-slate-600">
-                      {row.project ?? "No project"}
-                    </div>
-                    <div>
-                      <RunStateChip state={rowTone(row.latestState)} />
-                    </div>
-                    <div className="text-slate-500">
-                      {row.lastEventAt ? (
-                        <LocalDateTime iso={row.lastEventAt} />
-                      ) : (
-                        "-"
-                      )}
-                    </div>
-                  </Link>
-                ))}
+                  ) : (
+                    <Link
+                      key={row.snapshotId}
+                      href={`/inbox/${encodeURIComponent(row.contactId)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_160px_150px] items-center border-b border-slate-100 px-4 py-2 text-[12.5px] transition-colors hover:bg-slate-50"
+                      style={{ height: `${String(ROW_HEIGHT)}px` }}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-slate-900">
+                          {row.name}
+                        </div>
+                        <div className="truncate text-[11.5px] text-slate-500">
+                          {row.email ?? "No email retained from import"}
+                        </div>
+                      </div>
+                      <div className="truncate text-slate-600">
+                        {row.project ?? "No project"}
+                      </div>
+                      <div>
+                        <RecipientStateChip state={row.latestState} />
+                      </div>
+                      <div className="text-slate-500">
+                        {row.lastEventAt ? (
+                          <LocalDateTime iso={row.lastEventAt} />
+                        ) : (
+                          "-"
+                        )}
+                      </div>
+                    </Link>
+                  ),
+                )}
               </div>
 
               {serverRows.length === 0 ? (

@@ -667,6 +667,16 @@ function buildContext(input: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
       upsert: (record: MailchimpCampaignActivityDetailRecord) =>
         Promise.resolve(record),
+      aggregateForCampaign: () =>
+        Promise.resolve({
+          sent: 0,
+          opened: 0,
+          clicked: 0,
+          bounced: 0,
+          unsubscribed: 0,
+          distinctMembers: 0,
+        }),
+      listRecipientsForCampaign: () => Promise.resolve({ rows: [], total: 0 }),
     },
     manualNoteDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),

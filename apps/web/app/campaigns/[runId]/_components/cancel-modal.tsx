@@ -25,8 +25,8 @@ export function CancelModal({
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly runId: string;
-  readonly sentCount: number;
-  readonly totalAudience: number;
+  readonly sentCount: number | null;
+  readonly totalAudience: number | null;
 }) {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -41,8 +41,9 @@ export function CancelModal({
             <span className="block">
               We&apos;ll stop sending to remaining recipients.{" "}
               <strong>Already-sent emails cannot be recalled.</strong>{" "}
-              {sentCount.toLocaleString()} of {totalAudience.toLocaleString()}{" "}
-              emails have been sent so far.
+              {sentCount === null || totalAudience === null
+                ? "The current sent count is still loading."
+                : `${sentCount.toLocaleString()} of ${totalAudience.toLocaleString()} emails have been sent so far.`}
             </span>
             {errorMessage ? (
               <span className="block rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-red-700">

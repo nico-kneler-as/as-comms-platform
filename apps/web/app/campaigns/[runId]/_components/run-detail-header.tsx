@@ -5,43 +5,24 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Copy } from "lucide-react";
 
-import type { CampaignRunRecord } from "@as-comms/contracts";
-
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 
 import { duplicateCampaignRun } from "../../actions";
+import type { RunDetailHeaderModel } from "../_lib/run-detail";
 import { LocalDateTime } from "./local-date-time";
 import { RunStateChip } from "./run-state-chip";
 
 export function RunDetailHeader({
-  run,
-  senderAlias,
-  kindLabel,
-  dateLabel,
-  dateIso,
-  canStopUnsent,
-  canDuplicate,
+  header,
   onStopUnsent,
 }: {
-  readonly run: CampaignRunRecord;
-  readonly senderAlias: string | null;
-  readonly kindLabel: "Project" | "Newsletter";
-  readonly dateLabel: string;
-  readonly dateIso: string;
-  readonly canStopUnsent: boolean;
-  readonly canDuplicate: boolean;
+  readonly header: RunDetailHeaderModel;
   readonly onStopUnsent: () => void;
 }) {
   const router = useRouter();
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const subject =
-    run.subjectTemplate?.trim() !== undefined &&
-    run.subjectTemplate.trim().length > 0
-      ? run.subjectTemplate.trim()
-      : "Untitled campaign";
-  const preheader = run.preheader?.trim() ?? "";
 
   return (
     <header className="border-b border-slate-200 bg-white">
@@ -54,26 +35,26 @@ export function RunDetailHeader({
             ‹ Campaigns
           </Link>
           <div className="flex flex-wrap items-center gap-2">
-            <RunStateChip state={run.state} />
-            <Chip tone="neutral">{kindLabel}</Chip>
-            {senderAlias ? (
+            <RunStateChip state={header.state} />
+            <Chip tone="neutral">{header.kindLabel}</Chip>
+            {header.senderAlias ? (
               <span className="font-mono text-xs text-slate-500">
-                {senderAlias}
+                {header.senderAlias}
               </span>
             ) : null}
           </div>
           <h1 className="mt-2 text-balance text-[20px] font-semibold tracking-tight text-slate-950">
-            {subject}
+            {header.subject}
           </h1>
           <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1.5 text-[12px] text-slate-600">
-            {preheader.length > 0 ? (
+            {header.preheader ? (
               <>
-                <span>{preheader}</span>
+                <span>{header.preheader}</span>
                 <span className="text-slate-400">·</span>
               </>
             ) : null}
             <span>
-              {dateLabel} <LocalDateTime iso={dateIso} />
+              {header.dateLabel} <LocalDateTime iso={header.dateIso} />
             </span>
           </div>
           {duplicateError ? (
@@ -84,7 +65,7 @@ export function RunDetailHeader({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {canDuplicate ? (
+          {header.canDuplicate ? (
             <Button
               variant="outline"
               size="sm"
@@ -92,7 +73,7 @@ export function RunDetailHeader({
               className="gap-2"
               onClick={() => {
                 startTransition(async () => {
-                  const result = await duplicateCampaignRun(run.id);
+                  const result = await duplicateCampaignRun(header.runId);
                   if (!result.ok) {
                     setDuplicateError(result.message);
                     return;
@@ -109,7 +90,7 @@ export function RunDetailHeader({
               {pending ? "Duplicating…" : "Duplicate"}
             </Button>
           ) : null}
-          {canStopUnsent ? (
+          {header.canStopUnsent ? (
             <Button variant="destructive" size="sm" onClick={onStopUnsent}>
               Stop unsent
             </Button>

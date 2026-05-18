@@ -197,6 +197,30 @@ export interface MailchimpCampaignTailStateRepository {
   }): Promise<MailchimpCampaignTailStateRecord | null>;
 }
 
+export interface MailchimpCampaignAggregates {
+  readonly sent: number;
+  readonly opened: number;
+  readonly clicked: number;
+  readonly bounced: number;
+  readonly unsubscribed: number;
+  readonly distinctMembers: number;
+}
+
+export interface MailchimpRecipientRow {
+  readonly memberId: string;
+  readonly email: string | null;
+  readonly displayName: string | null;
+  readonly contactId: string | null;
+  readonly latestState:
+    | "sent"
+    | "delivered"
+    | "opened"
+    | "clicked"
+    | "bounced"
+    | "unsubscribed";
+  readonly latestEventAt: string;
+}
+
 export class InvalidCampaignRunStateTransitionError extends Error {
   readonly runId: string;
   readonly from: RunState;
@@ -470,7 +494,14 @@ function scoreProjectKnowledgeEntry(input: {
 interface MailchimpCampaignActivityDetailRecord {
   readonly sourceEvidenceId: string;
   readonly providerRecordId: string;
-  readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
+  readonly activityType:
+    | "sent"
+    | "delivered"
+    | "bounced"
+    | "complained"
+    | "opened"
+    | "clicked"
+    | "unsubscribed";
   readonly campaignId: string | null;
   readonly audienceId: string | null;
   readonly memberId: string;
@@ -480,6 +511,24 @@ interface MailchimpCampaignActivityDetailRecord {
 
 type MailchimpCampaignTailStateRow =
   typeof mailchimpCampaignTailState.$inferSelect;
+interface MailchimpAggregateRowDb {
+  readonly activityType: string;
+  readonly total: number | string;
+}
+interface MailchimpRecipientRowDb {
+  readonly memberId: string;
+  readonly email: string | null;
+  readonly displayName: string | null;
+  readonly contactId: string | null;
+  readonly latestState:
+    | "sent"
+    | "delivered"
+    | "opened"
+    | "clicked"
+    | "bounced"
+    | "unsubscribed";
+  readonly latestEventAt: Date;
+}
 
 interface ManualNoteDetailRecord {
   readonly sourceEvidenceId: string;
@@ -688,7 +737,10 @@ function mapMailchimpCampaignActivityDetailRowLocal(
   return {
     sourceEvidenceId: row.sourceEvidenceId,
     providerRecordId: row.providerRecordId,
-    activityType: row.activityType,
+    activityType:
+      normalizeMailchimpActivityType(
+        row.activityType,
+      ) as MailchimpCampaignActivityDetailRecord["activityType"],
     campaignId: row.campaignId,
     audienceId: row.audienceId,
     memberId: row.memberId,
@@ -714,6 +766,37 @@ function mapMailchimpCampaignActivityDetailToInsertLocal(
 
 function toIsoTimestampLocal(value: Date | null): string | null {
   return value === null ? null : value.toISOString();
+}
+
+function normalizeMailchimpActivityType(value: string): string {
+  switch (value) {
+    case "open":
+      return "opened";
+    case "click":
+      return "clicked";
+    case "bounce":
+      return "bounced";
+    case "unsubscribe":
+      return "unsubscribed";
+    default:
+      return value;
+  }
+}
+
+function mapMailchimpRecipientRow(
+  row: MailchimpRecipientRowDb,
+): MailchimpRecipientRow {
+  const eventAt = row.latestEventAt;
+  const isoLatestEventAt =
+    eventAt instanceof Date ? eventAt.toISOString() : new Date(String(eventAt)).toISOString();
+  return {
+    memberId: row.memberId,
+    email: row.email,
+    displayName: row.displayName,
+    contactId: row.contactId,
+    latestState: row.latestState,
+    latestEventAt: isoLatestEventAt,
+  };
 }
 
 function mapMailchimpCampaignTailStateRow(
@@ -3383,6 +3466,195 @@ function createStage1RepositoriesInternal(
           )) as MailchimpCampaignActivityDetailRow[];
 
         return rows.map(mapMailchimpCampaignActivityDetailRowLocal);
+      },
+
+      async aggregateForCampaign(campaignId) {
+        const normalizedCampaignId = campaignId.trim();
+        if (normalizedCampaignId.length === 0) {
+          return {
+            sent: 0,
+            opened: 0,
+            clicked: 0,
+            bounced: 0,
+            unsubscribed: 0,
+            distinctMembers: 0,
+          } satisfies MailchimpCampaignAggregates;
+        }
+
+        const [aggregateResult, membersResult] = await Promise.all([
+          db.execute(sql<MailchimpAggregateRowDb>`
+            select
+              activity_type as "activityType",
+              count(*)::int as "total"
+            from mailchimp_campaign_activity_details
+            where campaign_id = ${normalizedCampaignId}
+            group by activity_type
+          `),
+          db.execute(sql<{ readonly count: number | string }>`
+            select count(distinct member_id)::int as "count"
+            from mailchimp_campaign_activity_details
+            where campaign_id = ${normalizedCampaignId}
+              and member_id is not null
+          `),
+        ]);
+
+        let sent = 0;
+        let opened = 0;
+        let clicked = 0;
+        let bounced = 0;
+        let unsubscribed = 0;
+        const distinctMembers = Number(
+          normalizeSqlResultRows<{ readonly count: number | string }>(
+            membersResult as {
+              readonly rows?: readonly { readonly count: number | string }[];
+            },
+          )[0]?.count ?? 0,
+        );
+
+        for (const row of normalizeSqlResultRows<MailchimpAggregateRowDb>(
+          aggregateResult as {
+            readonly rows?: readonly MailchimpAggregateRowDb[];
+          },
+        )) {
+          switch (normalizeMailchimpActivityType(row.activityType)) {
+            case "sent":
+              sent = Number(row.total);
+              break;
+            case "opened":
+              opened = Number(row.total);
+              break;
+            case "clicked":
+              clicked = Number(row.total);
+              break;
+            case "bounced":
+              bounced = Number(row.total);
+              break;
+            case "unsubscribed":
+              unsubscribed = Number(row.total);
+              break;
+          }
+        }
+
+        return {
+          sent,
+          opened,
+          clicked,
+          bounced,
+          unsubscribed,
+          distinctMembers,
+        };
+      },
+
+      async listRecipientsForCampaign(campaignId, opts) {
+        const normalizedCampaignId = campaignId.trim();
+        if (normalizedCampaignId.length === 0) {
+          return {
+            rows: [],
+            total: 0,
+          } satisfies {
+            readonly rows: readonly MailchimpRecipientRow[];
+            readonly total: number;
+          };
+        }
+
+        const limit = Math.min(200, Math.max(1, Math.floor(opts.limit)));
+        const offset = Math.max(0, Math.floor(opts.offset));
+        const filter = opts.filter ?? "all";
+        const filterPredicate = (() => {
+          switch (filter) {
+            case "sent":
+              return sql`"hasSent" = true`;
+            case "delivered":
+              return sql`"hasSent" = true and "hasBounced" = false`;
+            case "opened":
+              return sql`"hasOpened" = true`;
+            case "clicked":
+              return sql`"hasClicked" = true`;
+            case "bounced":
+              return sql`"hasBounced" = true`;
+            case "unsubscribed":
+              return sql`"hasUnsubscribed" = true`;
+            case "all":
+              return sql`true`;
+          }
+        })();
+        const recipientsCte = sql`
+          with member_activity as (
+            select
+              member_id as "memberId",
+              max(created_at) as "latestEventAt",
+              bool_or(activity_type = 'sent') as "hasSent",
+              bool_or(activity_type in ('open', 'opened')) as "hasOpened",
+              bool_or(activity_type in ('click', 'clicked')) as "hasClicked",
+              bool_or(activity_type = 'bounce') as "hasBounced",
+              bool_or(activity_type in ('unsubscribe', 'unsubscribed')) as "hasUnsubscribed"
+            from mailchimp_campaign_activity_details
+            where campaign_id = ${normalizedCampaignId}
+              and member_id is not null
+            group by member_id
+          ),
+          filtered as (
+            select
+              "memberId",
+              null::text as "email",
+              null::text as "displayName",
+              null::text as "contactId",
+              case
+                when "hasClicked" then 'clicked'
+                when "hasOpened" then 'opened'
+                when "hasUnsubscribed" then 'unsubscribed'
+                when "hasBounced" then 'bounced'
+                when "hasSent" then 'delivered'
+                else 'sent'
+              end as "latestState",
+              "latestEventAt",
+              "hasSent",
+              "hasOpened",
+              "hasClicked",
+              "hasBounced",
+              "hasUnsubscribed"
+            from member_activity
+          )
+        `;
+
+        const [rowsResult, countResult] = await Promise.all([
+          db.execute(sql<MailchimpRecipientRowDb>`
+            ${recipientsCte}
+            select
+              "memberId",
+              "email",
+              "displayName",
+              "contactId",
+              "latestState",
+              "latestEventAt"
+            from filtered
+            where ${filterPredicate}
+            order by "latestEventAt" desc, "memberId" asc
+            limit ${limit}
+            offset ${offset}
+          `),
+          db.execute(sql<{ readonly count: number | string }>`
+            ${recipientsCte}
+            select count(*)::int as "count"
+            from filtered
+            where ${filterPredicate}
+          `),
+        ]);
+
+        return {
+          rows: normalizeSqlResultRows<MailchimpRecipientRowDb>(
+            rowsResult as {
+              readonly rows?: readonly MailchimpRecipientRowDb[];
+            },
+          ).map(mapMailchimpRecipientRow),
+          total: Number(
+            normalizeSqlResultRows<{ readonly count: number | string }>(
+              countResult as {
+                readonly rows?: readonly { readonly count: number | string }[];
+              },
+            )[0]?.count ?? 0,
+          ),
+        };
       },
 
       async upsert(record) {

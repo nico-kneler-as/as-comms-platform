@@ -1,11 +1,107 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
 import { requireSession } from "@/src/server/auth/session";
 
-import { RunDetailShell } from "./_components/run-detail-shell";
-import { getRunDetailModel } from "./_lib/run-detail";
+import { RecipientsTable } from "./_components/recipients-table";
+import { RepliesInInboxPanel } from "./_components/replies-in-inbox-panel";
+import { RunAuditLog } from "./_components/run-audit-log";
+import {
+  AudienceCriteriaPanel,
+  EmailContentPanel,
+  SendDetailsPanel,
+} from "./_components/run-detail-panels";
+import {
+  DetailCardSkeleton,
+  MetricTilesSkeleton,
+  RecipientsTableSkeleton,
+  RightRailSkeleton,
+  RunDetailShell,
+} from "./_components/run-detail-shell";
+import { MetricTiles } from "./_components/metric-tiles";
+import {
+  getRunDetailHeaderModel,
+  getRunDetailModel,
+  type RunDetailModel,
+} from "./_lib/run-detail";
 
 export const dynamic = "force-dynamic";
+
+type DetailPromise = Promise<RunDetailModel | null>;
+
+async function readModel(modelPromise: DetailPromise) {
+  const model = await modelPromise;
+  if (model === null) {
+    notFound();
+  }
+
+  return model;
+}
+
+async function MetricTilesSection({
+  modelPromise,
+}: {
+  readonly modelPromise: DetailPromise;
+}) {
+  const model = await readModel(modelPromise);
+  return <MetricTiles model={model} />;
+}
+
+async function EmailContentSection({
+  modelPromise,
+}: {
+  readonly modelPromise: DetailPromise;
+}) {
+  const model = await readModel(modelPromise);
+  return <EmailContentPanel model={model} />;
+}
+
+async function RecipientsSection({
+  modelPromise,
+}: {
+  readonly modelPromise: DetailPromise;
+}) {
+  const model = await readModel(modelPromise);
+  return (
+    <RecipientsTable
+      runId={model.run.id}
+      provider={model.provider}
+      rows={model.recipients}
+      total={model.recipientTotal}
+    />
+  );
+}
+
+async function RightRailSection({
+  modelPromise,
+}: {
+  readonly modelPromise: DetailPromise;
+}) {
+  const model = await readModel(modelPromise);
+
+  return (
+    <>
+      <RepliesInInboxPanel
+        repliesCount={model.repliesCount}
+        recentReplies={model.recentReplies}
+        href={model.inboxRecipientsHref}
+        {...(model.provider === "mailchimp"
+          ? {
+              subtitle: "0 replies tracked.",
+              emptyMessage:
+                "Reply tracking is not available for historical Mailchimp imports; replies to those campaigns went into Mailchimp's reply tracking.",
+            }
+          : {})}
+        showInboxLink={model.provider === "postmark"}
+      />
+      <SendDetailsPanel model={model} />
+      <AudienceCriteriaPanel model={model} />
+      {model.provider === "mailchimp" ? null : (
+        <RunAuditLog entries={model.auditEntries} />
+      )}
+    </>
+  );
+}
 
 export default async function CampaignRunDetailPage({
   params,
@@ -19,15 +115,46 @@ export default async function CampaignRunDetailPage({
     searchParams,
     requireSession(),
   ]);
-  const model = await getRunDetailModel({
-    runId: decodeURIComponent(runId),
-    provider: query?.provider === "mailchimp" ? "mailchimp" : "postmark",
+  const provider = query?.provider === "mailchimp" ? "mailchimp" : "postmark";
+  const decodedRunId = decodeURIComponent(runId);
+  const modelPromise = getRunDetailModel({
+    runId: decodedRunId,
+    provider,
+    isAdmin: currentUser.role === "admin",
+  });
+  const header = await getRunDetailHeaderModel({
+    runId: decodedRunId,
+    provider,
     isAdmin: currentUser.role === "admin",
   });
 
-  if (model === null) {
+  if (header === null) {
     notFound();
   }
 
-  return <RunDetailShell model={model} />;
+  return (
+    <RunDetailShell
+      header={header}
+      metricsSection={
+        <Suspense fallback={<MetricTilesSkeleton />}>
+          <MetricTilesSection modelPromise={modelPromise} />
+        </Suspense>
+      }
+      emailContentSection={
+        <Suspense fallback={<DetailCardSkeleton />}>
+          <EmailContentSection modelPromise={modelPromise} />
+        </Suspense>
+      }
+      recipientsSection={
+        <Suspense fallback={<RecipientsTableSkeleton />}>
+          <RecipientsSection modelPromise={modelPromise} />
+        </Suspense>
+      }
+      rightRailSection={
+        <Suspense fallback={<RightRailSkeleton />}>
+          <RightRailSection modelPromise={modelPromise} />
+        </Suspense>
+      }
+    />
+  );
 }

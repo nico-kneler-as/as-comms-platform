@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import type { ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import {
@@ -126,6 +128,7 @@ function buildCurrentHref(pathname: string, searchParams: URLSearchParams) {
 
 export function CampaignsList({
   items,
+  rowsSection,
   projectOptions,
   selectedProjectIds,
   tabs,
@@ -137,6 +140,7 @@ export function CampaignsList({
   showNewCampaignCta,
 }: {
   readonly items: readonly CampaignRowViewModel[];
+  readonly rowsSection?: ReactNode;
   readonly projectOptions: readonly CampaignProjectOption[];
   readonly selectedProjectIds: readonly string[];
   readonly tabs: readonly CampaignStateTab[];
@@ -208,6 +212,7 @@ export function CampaignsList({
     selectedProjectIds.length > 0 ||
     searchQuery.length > 0;
   const showColdStart = totalCount === 0 && !hasActiveFilters;
+  const showFilteredEmpty = rowsSection === undefined && items.length === 0;
   const paginationItems = buildPaginationItems(page, totalPages);
 
   if (showColdStart) {
@@ -343,7 +348,7 @@ export function CampaignsList({
           </div>
         </div>
 
-        {items.length === 0 ? (
+        {showFilteredEmpty ? (
           <div className="flex flex-1 items-center justify-center px-6 py-10">
             <EmptyState
               size="lg"
@@ -368,14 +373,16 @@ export function CampaignsList({
           </div>
         ) : (
           <>
-            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-              {items.map((item) => (
-                <CampaignRow
-                  key={`${item.provider}:${item.runId}`}
-                  item={item}
-                />
-              ))}
-            </div>
+            {rowsSection ?? (
+              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                {items.map((item) => (
+                  <CampaignRow
+                    key={`${item.provider}:${item.runId}`}
+                    item={item}
+                  />
+                ))}
+              </div>
+            )}
 
             {totalPages > 1 ? (
               <Pagination className="mt-4 justify-center">
@@ -449,6 +456,33 @@ export function CampaignsList({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+export function CampaignRowsSkeleton({
+  rows = 6,
+}: {
+  readonly rows?: number;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      {Array.from({ length: rows }, (_, index) => (
+        <div
+          key={`campaign-row-skeleton-${String(index)}`}
+          className="grid min-h-[92px] grid-cols-[40px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-4 py-3 sm:min-h-0 sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,190px)] sm:items-center sm:gap-4"
+        >
+          <Skeleton className="size-9 rounded-md" />
+          <div className="space-y-2">
+            <Skeleton className="h-3.5 w-52" />
+            <Skeleton className="h-3 w-72 max-w-full" />
+          </div>
+          <div className="col-span-2 space-y-2 sm:col-span-1 sm:ml-auto sm:w-[190px]">
+            <Skeleton className="ml-auto h-3.5 w-24 max-w-full" />
+            <Skeleton className="ml-auto h-3 w-32 max-w-full" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
