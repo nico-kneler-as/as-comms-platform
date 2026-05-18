@@ -265,8 +265,10 @@ function buildMailchimpModel(): RunDetailModel {
       bodyTextTemplate: null,
       preheader: null,
       audienceCriteria: {
+        projectId: null,
         projectIds: [],
         statuses: [],
+        contactIds: [],
         expeditionIds: [],
         lastActivityWindow: "all_time",
         hasReplied: "either",
