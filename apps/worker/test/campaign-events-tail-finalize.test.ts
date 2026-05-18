@@ -33,8 +33,10 @@ async function seedRun(
     bodyTextTemplate: "Hello",
     preheader: null,
     audienceCriteria: {
+      projectId: null,
       projectIds: [],
       statuses: [],
+      contactIds: [],
       expeditionIds: [],
       lastActivityWindow: "all_time",
       hasReplied: "either",

@@ -72,9 +72,16 @@ export interface AudienceCountData {
 export interface CampaignSenderOption {
   readonly projectId: string;
   readonly projectName: string;
+  readonly projectAliasLabel: string;
   readonly email: string;
   readonly connectedToProjectId: string | null;
   readonly status: PostmarkSenderStatus;
+}
+
+export interface AudienceVolunteerSearchRow {
+  readonly contactId: string;
+  readonly name: string;
+  readonly email: string;
 }
 
 export interface CampaignWizardDraftData {
@@ -177,12 +184,9 @@ async function appendCampaignAudit(input: {
 
 function hasAppliedAudienceFilters(criteria: AudienceCriteria): boolean {
   return (
-    criteria.projectIds.length > 0 ||
+    criteria.projectId != null ||
     criteria.statuses.length > 0 ||
-    criteria.expeditionIds.length > 0 ||
-    criteria.lastActivityWindow !== "all_time" ||
-    criteria.hasReplied !== "either" ||
-    criteria.hasClicked !== "either"
+    (criteria.contactIds?.length ?? 0) > 0
   );
 }
 
@@ -204,7 +208,35 @@ function deriveProjectId(
     return null;
   }
 
-  return criteria.projectIds.length === 1 ? criteria.projectIds[0] ?? null : null;
+  return criteria.projectId ?? (criteria.projectIds[0] ?? null);
+}
+
+function toStoredAudienceCriteria(
+  criteria: AudienceCriteria,
+): Record<string, unknown> {
+  return {
+    projectId: criteria.projectId ?? criteria.projectIds[0] ?? null,
+    statuses: criteria.statuses,
+    contactIds: criteria.contactIds ?? [],
+  };
+}
+
+function filterAudienceMembersBySelection<T extends { readonly contactId: string }>(
+  rows: readonly T[],
+  criteria: AudienceCriteria & {
+    readonly initialFilter?: "project_status" | "specific";
+  },
+): readonly T[] {
+  if ((criteria.initialFilter ?? "project_status") !== "specific") {
+    return rows;
+  }
+
+  if ((criteria.contactIds?.length ?? 0) === 0) {
+    return [];
+  }
+
+  const selectedContactIds = new Set(criteria.contactIds ?? []);
+  return rows.filter((row) => selectedContactIds.has(row.contactId));
 }
 
 function readPrimaryEmail(input: {
@@ -274,7 +306,9 @@ export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftDa
     bodyHtmlTemplate: null,
     bodyTextTemplate: null,
     preheader: null,
-    audienceCriteria: EMPTY_AUDIENCE_CRITERIA,
+    audienceCriteria: toStoredAudienceCriteria(
+      EMPTY_AUDIENCE_CRITERIA,
+    ) as CampaignRunRecord["audienceCriteria"],
     audienceSize: null,
     createdByUserId: session.id,
     lastEditedByUserId: session.id,
@@ -354,6 +388,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
       return {
         projectId: project.projectId,
         projectName: project.projectName,
+        projectAliasLabel: project.projectAlias ?? project.projectName,
         email,
         connectedToProjectId: project.connectedToProjectId,
         status: project.postmarkSenderStatus,
@@ -418,17 +453,22 @@ async function readRequestOrigin(): Promise<string> {
 }
 
 export async function resolveAudienceCountAction(input: {
-  readonly criteria: AudienceCriteria;
+  readonly criteria: AudienceCriteria & {
+    readonly initialFilter?: "project_status" | "specific";
+  };
 }): Promise<UiResult<AudienceCountData>> {
   await requireSession();
 
   try {
     const criteria = audienceCriteriaSchema.parse(input.criteria);
     const resolver = await createResolver();
-    const count = await resolver.estimateCount(criteria, new Date());
+    const audience = filterAudienceMembersBySelection(
+      await resolver.resolveAudience(criteria, new Date()),
+      input.criteria,
+    );
 
     return successResult({
-      count,
+      count: audience.length,
       hasAppliedFilters: hasAppliedAudienceFilters(criteria),
     });
   } catch (error) {
@@ -443,14 +483,19 @@ export async function resolveAudienceCountAction(input: {
 }
 
 export async function previewAudienceAction(input: {
-  readonly criteria: AudienceCriteria;
+  readonly criteria: AudienceCriteria & {
+    readonly initialFilter?: "project_status" | "specific";
+  };
 }): Promise<UiResult<readonly AudiencePreviewRow[]>> {
   await requireSession();
 
   try {
     const criteria = audienceCriteriaSchema.parse(input.criteria);
     const resolver = await createResolver();
-    const audience = await resolver.resolveAudience(criteria, new Date());
+    const audience = filterAudienceMembersBySelection(
+      await resolver.resolveAudience(criteria, new Date()),
+      input.criteria,
+    );
 
     return successResult(
       audience.slice(0, PREVIEW_LIMIT).map((member) => ({
@@ -473,7 +518,9 @@ export async function previewAudienceAction(input: {
 
 export async function loadComposePreviewAction(input: {
   readonly kind: CampaignKind;
-  readonly criteria: AudienceCriteria;
+  readonly criteria: AudienceCriteria & {
+    readonly initialFilter?: "project_status" | "specific";
+  };
   readonly fromEmail: string | null;
   readonly subjectTemplate: string;
   readonly bodyHtmlTemplate: string;
@@ -487,7 +534,10 @@ export async function loadComposePreviewAction(input: {
     const resolver = await createResolver();
     const runtime = await getStage1WebRuntime();
     const mergeRenderer = createMergeRenderer();
-    const audience = await resolver.resolveAudience(criteria, new Date());
+    const audience = filterAudienceMembersBySelection(
+      await resolver.resolveAudience(criteria, new Date()),
+      input.criteria,
+    );
     const orgSettings = await runtime.campaigns.orgSettings.read();
     const footerAddress = formatOrgAddress(orgSettings);
 
@@ -577,6 +627,64 @@ export async function loadComposePreviewAction(input: {
   }
 }
 
+export async function searchProjectVolunteersAction(input: {
+  readonly projectId: string | null;
+  readonly query: string;
+}): Promise<UiResult<readonly AudienceVolunteerSearchRow[]>> {
+  await requireSession();
+
+  const projectId = input.projectId?.trim() ?? "";
+  const query = input.query.trim();
+  if (projectId.length === 0 || query.length < 2) {
+    return successResult([]);
+  }
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const contacts = await runtime.repositories.contacts.searchByQuery({
+      query,
+      limit: 25,
+    });
+    if (contacts.length === 0) {
+      return successResult([]);
+    }
+
+    const memberships =
+      await runtime.repositories.contactMemberships.listByContactIds(
+        contacts.map((contact) => contact.id),
+      );
+    const allowedContactIds = new Set(
+      memberships
+        .filter((membership) => membership.projectId === projectId)
+        .map((membership) => membership.contactId),
+    );
+
+    return successResult(
+      contacts
+        .filter(
+          (contact) =>
+            allowedContactIds.has(contact.id) &&
+            (contact.primaryEmail?.trim().length ?? 0) > 0,
+        )
+        .map((contact) => ({
+          contactId: contact.id,
+          name: contact.displayName.trim().length > 0
+            ? contact.displayName
+            : (contact.primaryEmail ?? contact.id),
+          email: contact.primaryEmail ?? "",
+        })),
+    );
+  } catch (error) {
+    return errorResult(
+      "campaign_volunteer_search_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to search volunteers for this project.",
+      true,
+    );
+  }
+}
+
 export async function saveCampaignWizardDraftAction(input: {
   readonly runId: string;
   readonly launchType: LaunchType;
@@ -588,7 +696,9 @@ export async function saveCampaignWizardDraftAction(input: {
   readonly bodyHtmlTemplate: string | null;
   readonly bodyTextTemplate: string | null;
   readonly preheader: string | null;
-  readonly audienceCriteria: AudienceCriteria;
+  readonly audienceCriteria: AudienceCriteria & {
+    readonly initialFilter?: "project_status" | "specific";
+  };
   readonly audienceSize: number | null;
 }): Promise<UiResult<CampaignWizardDraftData>> {
   const session = await requireSession();
@@ -607,7 +717,10 @@ export async function saveCampaignWizardDraftAction(input: {
       bodyHtmlTemplate: input.bodyHtmlTemplate,
       bodyTextTemplate: input.bodyTextTemplate,
       preheader: input.preheader,
-      audienceCriteria,
+      audienceCriteria:
+        toStoredAudienceCriteria(
+          audienceCriteria,
+        ) as CampaignRunRecord["audienceCriteria"],
       audienceSize: input.audienceSize,
       lastEditedByUserId: session.id,
     });

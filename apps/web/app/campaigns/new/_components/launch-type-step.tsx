@@ -17,11 +17,10 @@ const OPTIONS = [
   {
     value: "normal_email",
     title: "Normal Email",
-    description:
-      "Quick to write, plain or lightly formatted. Best for project updates, calls to action, and short messages.",
+    description: "Quick to write, plain or lightly formatted.",
     Icon: Mail,
     disabled: false,
-    tag: "AVAILABLE NOW",
+    tag: null,
   },
   {
     value: "html_email",
@@ -106,16 +105,13 @@ export function LaunchTypeStep({
                 >
                   <option.Icon className="size-5" aria-hidden="true" />
                 </span>
-                <span
-                  className={cn(
-                    "rounded-full px-2.5 py-1 text-[10px] font-semibold",
-                    option.disabled
-                      ? "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
-                      : "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
-                  )}
-                >
-                  {option.tag}
-                </span>
+                {option.tag ? (
+                  <span
+                    className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200"
+                  >
+                    {option.tag}
+                  </span>
+                ) : null}
               </div>
 
               <div className="mt-8">

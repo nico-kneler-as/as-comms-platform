@@ -24,8 +24,10 @@ function buildRun(kind: "project" | "newsletter"): CampaignRunRecord {
     bodyTextTemplate: null,
     preheader: null,
     audienceCriteria: {
+      projectId: kind === "project" ? "project-a" : null,
       projectIds: kind === "project" ? ["project-a"] : [],
       statuses: [],
+      contactIds: [],
       expeditionIds: [],
       lastActivityWindow: "all_time",
       hasReplied: "either",

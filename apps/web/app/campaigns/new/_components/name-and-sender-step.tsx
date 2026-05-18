@@ -1,16 +1,9 @@
 "use client";
 
-import { useState } from "react";
-
-import { CheckCircle2, ChevronDown, Info } from "lucide-react";
+import { CheckCircle2, Info } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
@@ -38,37 +31,44 @@ const SENDER_STATUS_META: Record<
   PostmarkSenderStatus,
   {
     readonly label: string;
+    readonly chipLabel: string;
     readonly selectable: boolean;
+    readonly chipClassName: string;
     readonly tooltip: string | null;
   }
 > = {
   verified: {
     label: "verified",
+    chipLabel: "Verified",
     selectable: true,
+    chipClassName:
+      "border-emerald-200 bg-emerald-50 text-emerald-800",
     tooltip: null,
   },
   pending: {
-    label: "pending DNS",
+    label: "pending",
+    chipLabel: "Pending",
     selectable: false,
+    chipClassName: "border-amber-200 bg-amber-50 text-amber-800",
     tooltip:
       "Postmark is still verifying this sender's DKIM/Return-Path. Re-check in Settings -> Projects.",
   },
   unverified: {
     label: "unverified",
+    chipLabel: "Unverified",
     selectable: false,
+    chipClassName: "border-slate-200 bg-slate-100 text-slate-700",
     tooltip:
       "This alias hasn't been verified in Postmark yet. Open Settings -> Projects to start verification.",
   },
   rejected: {
     label: "verification failed",
+    chipLabel: "Unverified",
     selectable: false,
+    chipClassName: "border-slate-200 bg-slate-100 text-slate-700",
     tooltip: "Postmark rejected this sender. Check Settings -> Projects to retry.",
   },
 };
-
-function readSenderLabel(option: CampaignSenderOption): string {
-  return `${option.email} - ${SENDER_STATUS_META[option.status].label}`;
-}
 
 export function NameAndSenderStep({
   name,
@@ -80,17 +80,6 @@ export function NameAndSenderStep({
   onBack,
   onContinue,
 }: NameAndSenderStepProps) {
-  const [senderOpen, setSenderOpen] = useState(false);
-  const selectedSender =
-    (fromEmail === null
-      ? null
-      : (senderOptions.find(
-          (option) =>
-            option.email === fromEmail && option.status === "verified",
-        ) ??
-        senderOptions.find((option) => option.email === fromEmail) ??
-        null)) ?? null;
-
   return (
     <section className="flex h-full flex-col">
       <div className="pb-5">
@@ -130,138 +119,105 @@ export function NameAndSenderStep({
         </section>
 
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-2">
+          <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-2">
             <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
               Sending account
-            </p>
-            <p className="text-[10.5px] text-slate-500">
-              Which email this campaign is sent from
             </p>
           </div>
           <div className="p-4">
             <TooltipProvider delayDuration={200}>
-              <Popover
-                open={frozen ? false : senderOpen}
-                onOpenChange={setSenderOpen}
-              >
-                <PopoverTrigger asChild>
-                  <button
-                    id="campaign-from-email"
-                    type="button"
-                    disabled={frozen}
-                    className="flex h-9 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 text-left font-mono text-[12.5px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
-                  >
-                    <span
+              <div className="space-y-2">
+                {senderOptions.map((option) => {
+                  const meta = SENDER_STATUS_META[option.status];
+                  const selected = fromEmail === option.email;
+                  const card = (
+                    <div
                       className={cn(
-                        "truncate",
-                        fromEmail === null ? "text-slate-500" : "text-slate-900",
-                        selectedSender !== null &&
-                          !SENDER_STATUS_META[selectedSender.status].selectable
-                          ? "text-slate-500"
-                          : "",
+                        "flex items-start gap-3 rounded-xl border px-3 py-3 transition-colors",
+                        selected
+                          ? "border-slate-950 bg-slate-50 ring-1 ring-slate-950/10"
+                          : "border-slate-200 bg-white",
+                        meta.selectable
+                          ? "hover:border-slate-300 hover:bg-slate-50"
+                          : "text-slate-500",
                       )}
                     >
-                      {selectedSender === null
-                        ? "Choose a verified sender"
-                        : readSenderLabel(selectedSender)}
-                    </span>
-                    <ChevronDown
-                      className="ml-2 size-3.5 shrink-0 text-slate-400"
-                      aria-hidden="true"
-                    />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  className="w-[var(--radix-popover-trigger-width)] min-w-[24rem] p-1"
-                >
-                  <div role="listbox" aria-label="Sender aliases">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onFromEmailChange(null);
-                        setSenderOpen(false);
-                      }}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[12.5px] text-slate-600 transition-colors hover:bg-slate-50",
-                        fromEmail === null ? "bg-slate-50 text-slate-900" : "",
-                      )}
-                    >
-                      <span>Choose a verified sender</span>
-                    </button>
-                    {senderOptions.map((option) => {
-                      const meta = SENDER_STATUS_META[option.status];
-                      const row = (
-                        <div
-                          role="option"
-                          aria-disabled={!meta.selectable}
-                          aria-selected={fromEmail === option.email}
-                          aria-label={
-                            meta.tooltip === null
-                              ? readSenderLabel(option)
-                              : `${readSenderLabel(option)}. ${meta.tooltip}`
-                          }
+                      <span
+                        className={cn(
+                          "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+                          selected ? "border-slate-950" : "border-slate-300",
+                        )}
+                        aria-hidden="true"
+                      >
+                        {selected ? (
+                          <span className="size-2 rounded-full bg-slate-950" />
+                        ) : null}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-mono text-[12.5px] font-medium text-slate-900">
+                          {option.email}
+                        </p>
+                        <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                          {option.projectAliasLabel}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                          meta.chipClassName,
+                        )}
+                      >
+                        <span
                           className={cn(
-                            "flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left text-[12.5px]",
-                            meta.selectable
-                              ? "cursor-pointer text-slate-900 transition-colors hover:bg-slate-50"
-                              : "cursor-not-allowed text-slate-500",
-                            fromEmail === option.email ? "bg-slate-50" : "",
+                            "size-1 rounded-full",
+                            option.status === "verified"
+                              ? "bg-emerald-500"
+                              : option.status === "pending"
+                                ? "bg-amber-500"
+                                : "bg-slate-400",
                           )}
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate font-mono font-medium">
-                              {readSenderLabel(option)}
-                            </p>
-                            <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                              {option.projectName}
-                            </p>
-                          </div>
-                          {option.status === "verified" ? (
-                            <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-                              <span className="size-1 rounded-full bg-emerald-500" />
-                              Verified
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                              <span className="size-1 rounded-full bg-amber-500" />
-                              {meta.label}
-                            </span>
-                          )}
-                        </div>
-                      );
+                        />
+                        {meta.chipLabel}
+                      </span>
+                    </div>
+                  );
 
-                      if (!meta.selectable) {
-                        return (
-                          <Tooltip key={`${option.projectId}:${option.email}`}>
-                            <TooltipTrigger asChild>{row}</TooltipTrigger>
-                            <TooltipContent
-                              side="right"
-                              className="max-w-72 text-pretty"
-                            >
-                              {meta.tooltip}
-                            </TooltipContent>
-                          </Tooltip>
-                        );
-                      }
+                  if (!meta.selectable) {
+                    return (
+                      <Tooltip key={`${option.projectId}:${option.email}`}>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            disabled
+                            aria-disabled="true"
+                            className="block w-full cursor-not-allowed text-left"
+                          >
+                            {card}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-72 text-pretty">
+                          {meta.tooltip}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  }
 
-                      return (
-                        <button
-                          key={`${option.projectId}:${option.email}`}
-                          type="button"
-                          onClick={() => {
-                            onFromEmailChange(option.email);
-                            setSenderOpen(false);
-                          }}
-                          className="block w-full"
-                        >
-                          {row}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </PopoverContent>
-              </Popover>
+                  return (
+                    <button
+                      key={`${option.projectId}:${option.email}`}
+                      type="button"
+                      aria-pressed={selected}
+                      disabled={frozen}
+                      onClick={() => {
+                        onFromEmailChange(option.email);
+                      }}
+                      className="block w-full text-left disabled:cursor-not-allowed"
+                    >
+                      {card}
+                    </button>
+                  );
+                })}
+              </div>
             </TooltipProvider>
           </div>
         </section>

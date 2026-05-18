@@ -121,35 +121,79 @@ export const audienceTriStateSchema = z.enum(audienceTriStateValues);
 export type AudienceTriState = z.infer<typeof audienceTriStateSchema>;
 
 const audienceCriteriaDefaults = {
+  projectId: null,
   projectIds: [],
   statuses: [],
+  contactIds: [],
   expeditionIds: [],
   lastActivityWindow: "all_time" as const,
   hasReplied: "either" as const,
   hasClicked: "either" as const,
 };
 
-export const audienceCriteriaSchema = z.object({
-  projectIds: z
-    .array(z.string().min(1))
-    .default(audienceCriteriaDefaults.projectIds),
-  statuses: z
-    .array(expeditionMemberStatusSchema)
-    .default(audienceCriteriaDefaults.statuses),
-  expeditionIds: z
-    .array(z.string().min(1))
-    .default(audienceCriteriaDefaults.expeditionIds),
-  lastActivityWindow: audienceLastActivityWindowSchema.default(
-    audienceCriteriaDefaults.lastActivityWindow,
-  ),
-  hasReplied: audienceTriStateSchema.default(
-    audienceCriteriaDefaults.hasReplied,
-  ),
-  hasClicked: audienceTriStateSchema.default(
-    audienceCriteriaDefaults.hasClicked,
-  ),
-});
-export type AudienceCriteria = z.infer<typeof audienceCriteriaSchema>;
+export const audienceCriteriaSchema = z
+  .preprocess((value) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return value;
+    }
+
+    const input = value as Record<string, unknown>;
+    const projectId =
+      typeof input.projectId === "string" && input.projectId.trim().length > 0
+        ? input.projectId.trim()
+        : null;
+    const projectIds = Array.isArray(input.projectIds)
+      ? input.projectIds.filter(
+          (entry): entry is string =>
+            typeof entry === "string" && entry.trim().length > 0,
+        )
+      : [];
+    const normalizedProjectId = projectId ?? projectIds[0] ?? null;
+
+    return {
+      ...input,
+      projectId: normalizedProjectId,
+      projectIds:
+        normalizedProjectId === null ? projectIds : [normalizedProjectId],
+    };
+  }, z.object({
+    projectId: coercingNullableString.default(audienceCriteriaDefaults.projectId),
+    // Keep `projectIds` as a derived compatibility field while Stage 5A
+    // callers move to the single-select `projectId` contract.
+    projectIds: z
+      .array(z.string().min(1))
+      .default(audienceCriteriaDefaults.projectIds),
+    statuses: z
+      .array(expeditionMemberStatusSchema)
+      .default(audienceCriteriaDefaults.statuses),
+    contactIds: z
+      .array(z.string().min(1))
+      .default(audienceCriteriaDefaults.contactIds),
+    expeditionIds: z
+      .array(z.string().min(1))
+      .default(audienceCriteriaDefaults.expeditionIds),
+    lastActivityWindow: audienceLastActivityWindowSchema.default(
+      audienceCriteriaDefaults.lastActivityWindow,
+    ),
+    hasReplied: audienceTriStateSchema.default(
+      audienceCriteriaDefaults.hasReplied,
+    ),
+    hasClicked: audienceTriStateSchema.default(
+      audienceCriteriaDefaults.hasClicked,
+    ),
+  }))
+  .transform((value) => ({
+    ...value,
+    projectIds: value.projectId === null ? value.projectIds : [value.projectId],
+  }));
+type ParsedAudienceCriteria = z.infer<typeof audienceCriteriaSchema>;
+export type AudienceCriteria = Omit<
+  ParsedAudienceCriteria,
+  "projectId" | "contactIds"
+> & {
+  readonly projectId?: string | null;
+  readonly contactIds?: string[];
+};
 
 const campaignRunProjectScopeSchema = z
   .object({

@@ -75,8 +75,10 @@ async function seedTarget(
     bodyTextTemplate: "Hello",
     preheader: null,
     audienceCriteria: {
+      projectId: input.kind === "project" ? "project-sub" : null,
       projectIds: input.kind === "project" ? ["project-sub"] : [],
       statuses: [],
+      contactIds: [],
       expeditionIds: [],
       lastActivityWindow: "all_time",
       hasReplied: "either",
