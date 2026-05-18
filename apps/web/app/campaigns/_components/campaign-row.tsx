@@ -1,11 +1,10 @@
 import Link from "next/link";
+import { Database, Mail, Megaphone } from "lucide-react";
 
 import type { CampaignRunProjectionRow } from "@as-comms/contracts";
 
 import { Chip } from "@/components/ui/chip";
 import { cn } from "@/lib/utils";
-
-import { MailIcon } from "@/app/inbox/_components/icons";
 
 import { ProviderBadge } from "./provider-badge";
 
@@ -97,6 +96,30 @@ function formatAudienceLabel(input: {
   return `${count} recipients`;
 }
 
+function readTypeMeta(item: CampaignRowViewModel) {
+  if (item.provider === "mailchimp") {
+    return {
+      Icon: Database,
+      label: "Mailchimp",
+      className: "border-slate-200 bg-slate-50 text-slate-600",
+    };
+  }
+
+  if (item.kind === "newsletter") {
+    return {
+      Icon: Megaphone,
+      label: "Newsletter",
+      className: "border-amber-100 bg-amber-50 text-amber-700",
+    };
+  }
+
+  return {
+    Icon: Mail,
+    label: "Project",
+    className: "border-sky-100 bg-sky-50 text-sky-700",
+  };
+}
+
 export interface CampaignRowViewModel {
   readonly runId: string;
   readonly provider: "postmark" | "mailchimp";
@@ -135,6 +158,8 @@ export function CampaignRow({
     item.provider === "mailchimp"
       ? `/campaigns/${encodeURIComponent(item.runId)}?provider=mailchimp`
       : `/campaigns/${encodeURIComponent(item.runId)}`;
+  const typeMeta = readTypeMeta(item);
+  const TypeIcon = typeMeta.Icon;
 
   return (
     <div style={style}>
@@ -144,16 +169,22 @@ export function CampaignRow({
         data-campaign-row="true"
         data-campaign-provider={item.provider}
         data-campaign-state={item.state}
-        className="grid min-h-[156px] grid-cols-[44px_minmax(0,1fr)] items-center gap-x-4 gap-y-3 border-b border-slate-200 bg-white px-5 py-4 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400 sm:h-[92px] sm:min-h-0 sm:grid-cols-[44px_minmax(0,1fr)_minmax(132px,180px)] sm:gap-5 sm:px-6 sm:py-0"
+        className="grid min-h-[136px] grid-cols-[38px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-4 py-3 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400 sm:h-[76px] sm:min-h-0 sm:grid-cols-[38px_minmax(0,1fr)_minmax(132px,172px)] sm:gap-4 sm:px-4 sm:py-0"
       >
-        <span className="flex size-11 items-center justify-center rounded-lg border border-sky-100 bg-sky-50 text-sky-700">
-          <MailIcon className="size-4" aria-hidden="true" />
+        <span
+          className={cn(
+            "flex size-9 items-center justify-center rounded-lg border",
+            typeMeta.className,
+          )}
+          title={typeMeta.label}
+        >
+          <TypeIcon className="size-4" aria-hidden="true" />
         </span>
 
         <div className="min-w-0 flex-1">
           <p
             className={cn(
-              "truncate text-base font-semibold leading-6 text-slate-900",
+              "truncate text-[13.5px] font-semibold leading-5 text-slate-900",
               item.state === "draft" && item.subject.trim().length === 0
                 ? "italic text-slate-500"
                 : "",
@@ -162,16 +193,16 @@ export function CampaignRow({
             {title}
           </p>
 
-          <div className="mt-1 flex min-w-0 items-center gap-2 text-sm text-slate-500">
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] text-slate-500">
             {item.projectLabel ? (
-              <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700">
+              <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
                 {item.projectLabel}
               </span>
             ) : null}
             <p className="truncate">{previewText}</p>
           </div>
 
-          <div className="mt-2 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+          <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-slate-500">
             <Chip tone="neutral">
               {item.kind === "project" ? "Project" : "Newsletter"}
             </Chip>
@@ -186,7 +217,7 @@ export function CampaignRow({
           <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             <span
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em]",
+                "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide",
                 resolveStateBadgeClasses(item.state),
               )}
             >
@@ -201,7 +232,7 @@ export function CampaignRow({
             </span>
             <ProviderBadge provider={item.provider} />
           </div>
-          <p className="mt-2 truncate text-sm text-slate-500">
+          <p className="mt-1.5 truncate text-[12px] text-slate-500">
             {formatCampaignDate(item)}
           </p>
         </div>

@@ -50,19 +50,19 @@ export function LaunchTypeStep({
   return (
     <section className="flex h-full flex-col">
       <div>
-        <p className="text-[11px] font-semibold uppercase text-slate-500">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
           Step 1
         </p>
-        <h2 className="mt-2 text-balance text-2xl font-semibold text-slate-900">
+        <h2 className="mt-2 text-balance text-xl font-semibold text-slate-900">
           Choose the launch type
         </h2>
-        <p className="mt-2 max-w-2xl text-pretty text-sm leading-6 text-slate-500">
+        <p className="mt-2 max-w-2xl text-pretty text-[13px] leading-relaxed text-slate-500">
           Phase A ships the Normal Email path first, but the wizard makes the
           full campaign model visible now so operators know what is coming next.
         </p>
       </div>
 
-      <div className="mt-8 grid gap-4 xl:grid-cols-3">
+      <div className="mt-6 grid gap-3 xl:grid-cols-3">
         {OPTIONS.map((option) => {
           const selected = value === option.value;
 
@@ -79,7 +79,7 @@ export function LaunchTypeStep({
                 }
               }}
               className={cn(
-                "relative flex min-h-[220px] flex-col rounded-2xl border p-6 text-left transition-colors",
+                "relative flex min-h-[190px] flex-col rounded-xl border bg-white p-5 text-left transition-colors",
                 option.disabled
                   ? "cursor-not-allowed border-dashed border-slate-200 bg-slate-50/70 text-slate-400"
                   : selected
@@ -96,7 +96,7 @@ export function LaunchTypeStep({
               <div className="flex items-start justify-between gap-3">
                 <span
                   className={cn(
-                    "flex size-11 items-center justify-center rounded-xl",
+                    "flex size-10 items-center justify-center rounded-lg",
                     option.disabled
                       ? "bg-white text-slate-400 ring-1 ring-slate-200"
                       : selected
@@ -118,13 +118,13 @@ export function LaunchTypeStep({
                 </span>
               </div>
 
-              <div className="mt-10">
-                <h3 className="text-balance text-lg font-semibold">
+              <div className="mt-8">
+                <h3 className="text-balance text-[14px] font-semibold">
                   {option.title}
                 </h3>
                 <p
                   className={cn(
-                    "mt-3 text-pretty text-sm leading-6",
+                    "mt-2 text-pretty text-[12px] leading-relaxed",
                     option.disabled
                       ? "text-slate-500"
                       : selected
@@ -140,12 +140,12 @@ export function LaunchTypeStep({
         })}
       </div>
 
-      <div className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+      <div className="mt-5 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-[12px] text-sky-800">
         Phase A ships Normal Email only. HTML Email arrives once the
         drag-and-drop builder lands; SMS follows.
       </div>
 
-      <div className="mt-auto flex justify-end border-t border-slate-200 pt-6">
+      <div className="mt-auto flex justify-end border-t border-slate-200 pt-5">
         <Button onClick={onContinue}>Continue</Button>
       </div>
     </section>

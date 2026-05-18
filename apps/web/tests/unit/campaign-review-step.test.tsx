@@ -6,8 +6,6 @@ Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
   CheckCircle2: () => null,
-  ChevronDown: () => null,
-  ChevronUp: () => null,
   Clock: () => null,
   RefreshCw: () => null,
   Send: () => null,
@@ -48,33 +46,6 @@ vi.mock("@/components/ui/dialog", () => ({
   ),
 }));
 
-vi.mock("@/components/ui/popover", () => ({
-  Popover: ({ children }: { readonly children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  PopoverTrigger: ({ children }: { readonly children: React.ReactNode }) => (
-    <>{children}</>
-  ),
-  PopoverContent: ({ children }: { readonly children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-}));
-
-vi.mock("@/components/ui/tooltip", () => ({
-  TooltipProvider: ({ children }: { readonly children: React.ReactNode }) => (
-    <>{children}</>
-  ),
-  Tooltip: ({ children }: { readonly children: React.ReactNode }) => (
-    <>{children}</>
-  ),
-  TooltipTrigger: ({ children }: { readonly children: React.ReactNode }) => (
-    <>{children}</>
-  ),
-  TooltipContent: ({ children }: { readonly children: React.ReactNode }) => (
-    <div data-tooltip="true">{children}</div>
-  ),
-}));
-
 import { ReviewStep } from "../../app/campaigns/new/_components/review-step";
 
 const baseProps: React.ComponentProps<typeof ReviewStep> = {
@@ -82,38 +53,10 @@ const baseProps: React.ComponentProps<typeof ReviewStep> = {
   projectChipLabel: "Forests",
   runName: "May forests volunteer update",
   fromEmail: "forests@adventurescientists.org",
+  subject: "Gear pickup for Sam",
   preheader: "Everything you need for tomorrow.",
-  senderOptions: [
-    {
-      projectId: "project-1",
-      projectName: "Forests",
-      email: "forests@adventurescientists.org",
-      connectedToProjectId: null,
-      status: "verified",
-    },
-  ],
   selectedSenderVerified: true,
   audienceSize: 1247,
-  previewData: {
-    audienceSize: 1247,
-    sampleIndex: 0,
-    sampleCount: 1247,
-    warningCount: 0,
-    footerAddress: "123 Research Way • Bozeman, MT, 59715 • USA",
-    affectedContacts: [],
-    sample: {
-      contactId: "contact-1",
-      name: "Sam Waters",
-      initials: "SW",
-      email: "sam@example.org",
-      project: "Forests",
-      fromEmail: "forests@adventurescientists.org",
-      subject: "Gear pickup for Sam Waters",
-      html: "<p>Hi Sam Waters,</p><p>See you at the warehouse.</p>",
-      text: "Hi Sam Waters",
-    },
-  },
-  previewExpanded: true,
   sendMode: "now",
   scheduleDate: "2026-05-20",
   scheduleTime: "09:30",
@@ -122,11 +65,8 @@ const baseProps: React.ComponentProps<typeof ReviewStep> = {
   frozenScheduledAt: null,
   confirmOpen: false,
   submitPending: false,
-  onRunNameChange: () => undefined,
-  onFromEmailChange: () => undefined,
   onBack: () => undefined,
   onRerunAudience: () => undefined,
-  onPreviewExpandedChange: () => undefined,
   onSendModeChange: () => undefined,
   onScheduleDateChange: () => undefined,
   onScheduleTimeChange: () => undefined,
@@ -135,60 +75,39 @@ const baseProps: React.ComponentProps<typeof ReviewStep> = {
 };
 
 describe("ReviewStep sender gating", () => {
-  it("shows verified senders and leaves launch enabled", () => {
+  it("renders a lightweight final check without editable sender controls", () => {
     const markup = renderToStaticMarkup(<ReviewStep {...baseProps} />);
 
-    expect(markup).toContain("forests@adventurescientists.org · verified");
-    expect(markup).not.toContain('<button disabled="">Send now</button>');
+    expect(markup).toContain("May forests volunteer update");
+    expect(markup).toContain("forests@adventurescientists.org");
+    expect(markup).toContain("Verified");
+    expect(markup).not.toContain("Choose a verified sender</button>");
+    expect(markup).not.toContain("campaign-from-email");
   });
 
-  it("renders unverified sender rows as disabled with verification guidance", () => {
+  it("keeps launch disabled when the root sender verification is false", () => {
+    const markup = renderToStaticMarkup(
+      <ReviewStep
+        {...baseProps}
+        fromEmail="pending@adventurescientists.org"
+        selectedSenderVerified={false}
+      />,
+    );
+
+    expect(markup).toContain("Verification required");
+    expect(markup).toContain('<button disabled="">Send now</button>');
+  });
+
+  it("keeps launch disabled when no sender has been selected", () => {
     const markup = renderToStaticMarkup(
       <ReviewStep
         {...baseProps}
         fromEmail={null}
         selectedSenderVerified={false}
-        senderOptions={[
-          ...baseProps.senderOptions,
-          {
-            projectId: "project-2",
-            projectName: "Kelp Watch",
-            email: "kelp@adventurescientists.org",
-            connectedToProjectId: null,
-            status: "unverified",
-          },
-        ]}
       />,
     );
 
-    expect(markup).toContain("kelp@adventurescientists.org · unverified");
-    expect(markup).toContain('aria-disabled="true"');
-    expect(markup).toContain(
-      "This alias hasn&#x27;t been verified in Postmark yet. Open Settings → Projects to start verification.",
-    );
-    expect(markup).toContain(
-      'aria-label="kelp@adventurescientists.org · unverified. This alias hasn&#x27;t been verified in Postmark yet. Open Settings → Projects to start verification."',
-    );
-  });
-
-  it("keeps launch disabled when only unverified senders exist", () => {
-    const markup = renderToStaticMarkup(
-      <ReviewStep
-        {...baseProps}
-        fromEmail={null}
-        selectedSenderVerified={false}
-        senderOptions={[
-          {
-            projectId: "project-2",
-            projectName: "Kelp Watch",
-            email: "kelp@adventurescientists.org",
-            connectedToProjectId: null,
-            status: "unverified",
-          },
-        ]}
-      />,
-    );
-
+    expect(markup).toContain("Choose a verified sender");
     expect(markup).toContain('<button disabled="">Send now</button>');
   });
 });

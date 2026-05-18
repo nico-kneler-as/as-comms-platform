@@ -45,15 +45,15 @@ export function RunDetailHeader({
 
   return (
     <header className="border-b border-slate-200 bg-white">
-      <div className="mx-auto flex w-full max-w-screen-2xl flex-col gap-4 px-6 py-5 xl:flex-row xl:items-start xl:justify-between">
+      <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 px-6 py-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <Link
             href="/campaigns"
-            className="mb-4 inline-flex text-sm font-medium text-slate-500 transition-colors hover:text-slate-900"
+            className="mb-2 inline-flex text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-900"
           >
             ‹ Campaigns
           </Link>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <RunStateChip state={run.state} />
             <Chip tone="neutral">{kindLabel}</Chip>
             {senderAlias ? (
@@ -62,10 +62,10 @@ export function RunDetailHeader({
               </span>
             ) : null}
           </div>
-          <h1 className="mt-3 text-balance text-2xl font-semibold tracking-tight text-slate-950">
+          <h1 className="mt-2 text-balance text-[20px] font-semibold tracking-tight text-slate-950">
             {subject}
           </h1>
-          <div className="mt-3 flex flex-wrap gap-x-2 gap-y-2 text-sm text-slate-600">
+          <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1.5 text-[12px] text-slate-600">
             {preheader.length > 0 ? (
               <>
                 <span>{preheader}</span>
@@ -77,16 +77,17 @@ export function RunDetailHeader({
             </span>
           </div>
           {duplicateError ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
               {duplicateError}
             </div>
           ) : null}
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           {canDuplicate ? (
             <Button
               variant="outline"
+              size="sm"
               disabled={pending}
               className="gap-2"
               onClick={() => {
@@ -109,7 +110,7 @@ export function RunDetailHeader({
             </Button>
           ) : null}
           {canStopUnsent ? (
-            <Button variant="destructive" onClick={onStopUnsent}>
+            <Button variant="destructive" size="sm" onClick={onStopUnsent}>
               Stop unsent
             </Button>
           ) : null}

@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import type {
-  AudienceCriteria,
   AudienceLastActivityWindow,
   AudienceTriState,
   CampaignKind,
@@ -25,10 +24,15 @@ import {
   saveCampaignWizardDraftAction,
 } from "../../_lib/audience-data-source";
 import { schedule, sendNow, testSend } from "../../actions";
-import { AudienceBuilderStep } from "./audience-builder-step";
-import { CampaignKindStep } from "./campaign-kind-step";
+import {
+  AudienceBuilderStep,
+  type AudienceInitialFilter,
+  type CampaignAudienceCriteria,
+} from "./audience-builder-step";
 import { ComposeStep } from "./compose-step";
 import { LaunchTypeStep } from "./launch-type-step";
+import { NameAndSenderStep } from "./name-and-sender-step";
+import { PreviewStep } from "./preview-step";
 import { ReviewStep } from "./review-step";
 import { type CampaignWizardStepDefinition, WizardRail } from "./wizard-rail";
 
@@ -39,9 +43,9 @@ const STEPS: readonly CampaignWizardStepDefinition[] = [
     subtitle: "Normal Email is the only active path in Phase A.",
   },
   {
-    id: "kind",
-    title: "Campaign kind",
-    subtitle: "Project email and newsletter drive footer scope.",
+    id: "setup",
+    title: "Name & sender",
+    subtitle: "Name the campaign and choose a verified sender.",
   },
   {
     id: "audience",
@@ -50,13 +54,18 @@ const STEPS: readonly CampaignWizardStepDefinition[] = [
   },
   {
     id: "compose",
-    title: "Compose",
+    title: "Write your email",
     subtitle: "Draft the subject, preheader, and campaign body.",
   },
   {
+    id: "preview",
+    title: "Preview",
+    subtitle: "Render samples and send a test email.",
+  },
+  {
     id: "review",
-    title: "Review",
-    subtitle: "Freeze the sender, audience, and send timing.",
+    title: "Review + send",
+    subtitle: "Confirm the final checks and send timing.",
   },
 ];
 
@@ -66,8 +75,9 @@ type ToastState = {
   readonly message: string;
 } | null;
 
-function hasAppliedAudienceFilters(criteria: AudienceCriteria): boolean {
+function hasAppliedAudienceFilters(criteria: CampaignAudienceCriteria): boolean {
   return (
+    (criteria.initialFilter ?? "project_status") !== "project_status" ||
     criteria.projectIds.length > 0 ||
     criteria.statuses.length > 0 ||
     criteria.expeditionIds.length > 0 ||
@@ -75,6 +85,22 @@ function hasAppliedAudienceFilters(criteria: AudienceCriteria): boolean {
     criteria.hasReplied !== "either" ||
     criteria.hasClicked !== "either"
   );
+}
+
+function deriveInitialFilter(
+  draft: CampaignWizardDraftData,
+): AudienceInitialFilter {
+  if (draft.kind === "newsletter") {
+    return "all_approved";
+  }
+
+  return "project_status";
+}
+
+function deriveKindFromCriteria(
+  criteria: CampaignAudienceCriteria,
+): CampaignKind {
+  return criteria.initialFilter === "all_approved" ? "newsletter" : "project";
 }
 
 function formatAutosaveLabel(lastSavedAtIso: string): string {
@@ -168,7 +194,7 @@ function convertDenverInputToDate(date: string, time: string): Date | null {
 
 function deriveSuggestedSenderEmail(input: {
   readonly kind: CampaignKind;
-  readonly criteria: AudienceCriteria;
+  readonly criteria: CampaignAudienceCriteria;
   readonly bootstrap: AudienceBuilderBootstrap;
 }): string | null {
   if (input.kind !== "project" || input.criteria.projectIds.length === 0) {
@@ -225,7 +251,7 @@ function deriveSuggestedSenderEmail(input: {
 
 function readProjectChipLabel(
   kind: CampaignKind,
-  criteria: AudienceCriteria,
+  criteria: CampaignAudienceCriteria,
   bootstrap: AudienceBuilderBootstrap,
 ): string {
   if (kind === "newsletter") {
@@ -260,10 +286,9 @@ export function NewCampaignWizard({
 }) {
   const initialSchedule = buildDenverInputDefaults(new Date());
   const [currentStep, setCurrentStep] = useState(
-    draft.state === "draft" ? 0 : 4,
+    draft.state === "draft" ? 0 : 5,
   );
   const [launchType, setLaunchType] = useState<LaunchType>(draft.launchType);
-  const [kind, setKind] = useState<CampaignKind>(draft.kind);
   const [name, setName] = useState(draft.name ?? "");
   const [fromEmail, setFromEmail] = useState(draft.fromEmail);
   const [replyToEmail, setReplyToEmail] = useState(draft.replyToEmail);
@@ -273,10 +298,16 @@ export function NewCampaignWizard({
     draft.bodyTextTemplate ?? "",
   );
   const [bodyHtml, setBodyHtml] = useState(draft.bodyHtmlTemplate ?? "");
-  const [criteria, setCriteria] = useState(draft.audienceCriteria);
+  const [criteria, setCriteria] = useState<CampaignAudienceCriteria>({
+    ...draft.audienceCriteria,
+    initialFilter: deriveInitialFilter(draft),
+  });
   const [countState, setCountState] = useState({
     count: draft.audienceSize ?? 0,
-    hasAppliedFilters: hasAppliedAudienceFilters(draft.audienceCriteria),
+    hasAppliedFilters: hasAppliedAudienceFilters({
+      ...draft.audienceCriteria,
+      initialFilter: deriveInitialFilter(draft),
+    }),
   });
   const [previewRows, setPreviewRows] = useState<readonly AudiencePreviewRow[]>(
     [],
@@ -297,7 +328,6 @@ export function NewCampaignWizard({
     draft.operatorEmail,
   );
   const [affectedContactsOpen, setAffectedContactsOpen] = useState(false);
-  const [reviewExpanded, setReviewExpanded] = useState(false);
   const [sendMode, setSendMode] = useState<"now" | "later">("now");
   const [scheduleDate, setScheduleDate] = useState(initialSchedule.date);
   const [scheduleTime, setScheduleTime] = useState(initialSchedule.time);
@@ -317,6 +347,7 @@ export function NewCampaignWizard({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const frozen = runState !== "draft";
+  const kind = deriveKindFromCriteria(criteria);
   const previewFingerprint = useMemo(
     () => JSON.stringify({ subject, bodyPlaintext, bodyHtml }),
     [bodyHtml, bodyPlaintext, subject],
@@ -381,9 +412,13 @@ export function NewCampaignWizard({
     warningDismissFingerprint === previewFingerprint;
 
   useEffect(() => {
+    const initialCriteria = {
+      ...draft.audienceCriteria,
+      initialFilter: deriveInitialFilter(draft),
+    };
     savedFingerprintRef.current = JSON.stringify({
       launchType: draft.launchType,
-      kind: draft.kind,
+      kind: deriveKindFromCriteria(initialCriteria),
       name: draft.name,
       fromEmail: draft.fromEmail,
       replyToEmail: draft.replyToEmail,
@@ -391,7 +426,7 @@ export function NewCampaignWizard({
       preheader: draft.preheader ?? "",
       bodyPlaintext: draft.bodyTextTemplate ?? "",
       bodyHtml: draft.bodyHtmlTemplate ?? "",
-      criteria: draft.audienceCriteria,
+      criteria: initialCriteria,
       audienceSize: draft.audienceSize,
     });
   }, [draft]);
@@ -601,7 +636,10 @@ export function NewCampaignWizard({
           preheader: result.data.preheader ?? "",
           bodyPlaintext: result.data.bodyTextTemplate ?? "",
           bodyHtml: result.data.bodyHtmlTemplate ?? "",
-          criteria: result.data.audienceCriteria,
+          criteria: {
+            ...result.data.audienceCriteria,
+            initialFilter: criteria.initialFilter,
+          },
           audienceSize: result.data.audienceSize,
         });
         setSaveState("saved");
@@ -622,9 +660,16 @@ export function NewCampaignWizard({
   }
 
   function updateCriteria(
-    mutator: (current: AudienceCriteria) => AudienceCriteria,
+    mutator: (current: CampaignAudienceCriteria) => CampaignAudienceCriteria,
   ) {
     setCriteria((current) => mutator(current));
+  }
+
+  function changeInitialFilter(value: AudienceInitialFilter) {
+    updateCriteria((current) => ({
+      ...current,
+      initialFilter: value,
+    }));
   }
 
   function toggleProject(projectId: string) {
@@ -742,7 +787,7 @@ export function NewCampaignWizard({
       setRunState("scheduled");
       setScheduledAt(result.data.scheduledAt ?? null);
       setConfirmOpen(false);
-      setCurrentStep(4);
+      setCurrentStep(5);
       setToast({
         tone: "success",
         message:
@@ -793,8 +838,8 @@ export function NewCampaignWizard({
           </div>
         ) : null}
 
-        <div className="flex-1 overflow-y-auto bg-white px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-          <div className="mx-auto flex min-h-full w-full max-w-[1100px] flex-col">
+        <div className="flex-1 overflow-y-auto bg-white px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+          <div className="mx-auto flex min-h-full w-full max-w-[1040px] flex-col">
             {currentStep === 0 ? (
               <LaunchTypeStep
                 value={launchType}
@@ -806,10 +851,13 @@ export function NewCampaignWizard({
             ) : null}
 
             {currentStep === 1 ? (
-              <CampaignKindStep
-                isAdmin={isAdmin}
-                value={kind}
-                onChange={setKind}
+              <NameAndSenderStep
+                name={name}
+                fromEmail={fromEmail}
+                senderOptions={bootstrap.senderOptions}
+                frozen={frozen}
+                onNameChange={setName}
+                onFromEmailChange={setFromEmail}
                 onBack={() => {
                   setCurrentStep(0);
                 }}
@@ -831,6 +879,8 @@ export function NewCampaignWizard({
                 projectGroups={bootstrap.projects}
                 expeditionOptions={bootstrap.expeditions}
                 statusOptions={bootstrap.statuses}
+                isAdmin={isAdmin}
+                onInitialFilterChange={changeInitialFilter}
                 onProjectToggle={toggleProject}
                 onStatusToggle={toggleStatus}
                 onExpeditionToggle={toggleExpedition}
@@ -856,14 +906,6 @@ export function NewCampaignWizard({
                 preheader={preheader}
                 bodyPlaintext={bodyPlaintext}
                 autosaveLabel={autosaveLabel}
-                previewData={composePreview}
-                previewLoading={previewPending}
-                warningDismissed={warningDismissed}
-                affectedContactsOpen={affectedContactsOpen}
-                testSendOpen={testSendOpen}
-                testRecipientEmail={testRecipientEmail}
-                testSendPending={testSendPending}
-                selectedSenderVerified={selectedSenderVerified}
                 frozen={frozen}
                 onSubjectChange={setSubject}
                 onPreheaderChange={setPreheader}
@@ -876,6 +918,28 @@ export function NewCampaignWizard({
                 }}
                 onContinue={() => {
                   void continueTo(4);
+                }}
+              />
+            ) : null}
+
+            {currentStep === 4 ? (
+              <PreviewStep
+                subject={subject}
+                preheader={preheader}
+                previewData={composePreview}
+                previewLoading={previewPending}
+                warningDismissed={warningDismissed}
+                affectedContactsOpen={affectedContactsOpen}
+                testSendOpen={testSendOpen}
+                testRecipientEmail={testRecipientEmail}
+                testSendPending={testSendPending}
+                selectedSenderVerified={selectedSenderVerified}
+                frozen={frozen}
+                onBack={() => {
+                  setCurrentStep(3);
+                }}
+                onContinue={() => {
+                  void continueTo(5);
                 }}
                 onPreviewPrevious={() => {
                   setSampleIndex((current) => current - 1);
@@ -895,7 +959,7 @@ export function NewCampaignWizard({
               />
             ) : null}
 
-            {currentStep === 4 ? (
+            {currentStep === 5 ? (
               <ReviewStep
                 kind={kind}
                 projectChipLabel={readProjectChipLabel(
@@ -905,12 +969,10 @@ export function NewCampaignWizard({
                 )}
                 runName={name.trim().length === 0 ? null : name}
                 fromEmail={fromEmail}
+                subject={composePreview?.sample?.subject ?? subject}
                 preheader={preheader}
-                senderOptions={bootstrap.senderOptions}
                 selectedSenderVerified={selectedSenderVerified}
                 audienceSize={composePreview?.audienceSize ?? countState.count}
-                previewData={composePreview}
-                previewExpanded={reviewExpanded}
                 sendMode={sendMode}
                 scheduleDate={scheduleDate}
                 scheduleTime={scheduleTime}
@@ -919,11 +981,9 @@ export function NewCampaignWizard({
                 frozenScheduledAt={scheduledAt}
                 confirmOpen={confirmOpen}
                 submitPending={submitPending}
-                onRunNameChange={setName}
-                onFromEmailChange={setFromEmail}
                 onBack={() => {
                   if (!frozen) {
-                    setCurrentStep(3);
+                    setCurrentStep(4);
                   }
                 }}
                 onRerunAudience={() => {
@@ -931,7 +991,6 @@ export function NewCampaignWizard({
                     setCurrentStep(2);
                   }
                 }}
-                onPreviewExpandedChange={setReviewExpanded}
                 onSendModeChange={setSendMode}
                 onScheduleDateChange={setScheduleDate}
                 onScheduleTimeChange={setScheduleTime}

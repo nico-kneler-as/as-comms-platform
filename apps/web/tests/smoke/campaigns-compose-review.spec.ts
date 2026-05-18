@@ -18,6 +18,27 @@ async function signInForSmoke(page: Page) {
 async function reachComposeStep(page: Page) {
   await page.goto("/campaigns/new");
   await page.getByRole("button", { name: "Continue" }).click();
+
+  await page.getByLabel("Campaign name").fill("Smoke test campaign");
+  const senderTrigger = page.locator("#campaign-from-email");
+  if ((await senderTrigger.count()) === 0) {
+    test.skip(true, "Sender selection did not render.");
+    return false;
+  }
+
+  await senderTrigger.click();
+  const verifiedSender = page
+    .locator('[role="option"][aria-disabled="false"]')
+    .first();
+  if ((await verifiedSender.count()) === 0) {
+    test.skip(
+      true,
+      "No verified sender aliases are available in this environment.",
+    );
+    return false;
+  }
+
+  await verifiedSender.click();
   await page.getByRole("button", { name: "Continue" }).click();
 
   const firstProjectCheckbox = page
@@ -61,7 +82,8 @@ test("campaign compose step rotates preview contacts and posts the test-send act
     .locator('[role="textbox"][aria-label="Message"]')
     .pressSequentially("Hi {{firstName}}, see you at the warehouse.");
 
-  await expect(page.getByText("Live Preview")).toBeVisible();
+  await page.getByRole("button", { name: "Continue to preview" }).click();
+  await expect(page.getByText("Email preview")).toBeVisible();
   await page.getByRole("button", { name: "Next sample contact" }).click();
   await page.getByRole("button", { name: "Send test" }).click();
   await expect(
@@ -92,30 +114,11 @@ test("campaign review step can freeze a scheduled campaign from the wizard", asy
   await page
     .locator('[role="textbox"][aria-label="Message"]')
     .pressSequentially("Hi {{firstName}}, see you at the warehouse.");
+  await page.getByRole("button", { name: "Continue to preview" }).click();
   await page.getByRole("button", { name: "Continue to review" }).click();
   await expect(
     page.getByRole("heading", { name: "Review and send" }),
   ).toBeVisible();
-
-  const senderTrigger = page.locator("#campaign-from-email");
-  if ((await senderTrigger.count()) === 0) {
-    test.skip(true, "Sender selection did not render.");
-    return;
-  }
-
-  await senderTrigger.click();
-  const verifiedSender = page
-    .locator('[role="option"][aria-disabled="false"]')
-    .first();
-  if ((await verifiedSender.count()) === 0) {
-    test.skip(
-      true,
-      "No verified sender aliases are available in this environment.",
-    );
-    return;
-  }
-
-  await verifiedSender.click();
   await page.getByRole("button", { name: "Schedule for later" }).click();
   await page.locator("#campaign-send-date").fill("2026-05-20");
   await page.locator("#campaign-send-time").fill("09:30");
