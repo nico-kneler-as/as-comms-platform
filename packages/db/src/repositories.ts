@@ -787,14 +787,15 @@ function mapMailchimpRecipientRow(
   row: MailchimpRecipientRowDb,
 ): MailchimpRecipientRow {
   const eventAt = row.latestEventAt;
+  const isoLatestEventAt =
+    eventAt instanceof Date ? eventAt.toISOString() : new Date(String(eventAt)).toISOString();
   return {
     memberId: row.memberId,
     email: row.email,
     displayName: row.displayName,
     contactId: row.contactId,
     latestState: row.latestState,
-    latestEventAt:
-      eventAt instanceof Date ? eventAt.toISOString() : String(eventAt),
+    latestEventAt: isoLatestEventAt,
   };
 }
 
