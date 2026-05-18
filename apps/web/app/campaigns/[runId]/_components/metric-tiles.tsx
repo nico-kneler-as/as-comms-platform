@@ -29,15 +29,15 @@ export function MetricTiles({
   >;
 }) {
   return (
-    <section className="space-y-4">
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section className="space-y-3">
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="grid md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
           {model.metrics.map((metric) => (
             <article
               key={metric.key}
-              className="min-w-0 border-b border-slate-200 px-4 py-3 md:border-r xl:border-b-0"
+              className="min-w-0 border-b border-slate-200 px-3.5 py-3 md:border-r xl:border-b-0"
             >
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <div className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
                 <span
                   className={`size-1.5 rounded-full ${
                     METRIC_DOT_CLASS[metric.key] ?? "bg-slate-300"
@@ -47,14 +47,14 @@ export function MetricTiles({
                 {metric.label}
               </div>
               <div className="mt-2 flex items-baseline gap-2">
-                <div className="text-xl font-semibold tabular-nums text-slate-900">
+                <div className="text-[20px] font-semibold leading-none tabular-nums text-slate-900">
                   {metric.value.toLocaleString()}
                 </div>
-                <div className="text-xs font-medium tabular-nums text-slate-500">
+                <div className="text-[11px] font-medium tabular-nums text-slate-500">
                   {metric.percentage.toFixed(1)}%
                 </div>
               </div>
-              <div className="mt-1 truncate text-xs text-slate-500">
+              <div className="mt-1 truncate text-[11px] text-slate-500">
                 {metric.subtitle ??
                   `${metric.value.toLocaleString()} of ${model.totalAudience.toLocaleString()}`}
               </div>
@@ -64,8 +64,8 @@ export function MetricTiles({
       </div>
 
       {model.run.state === "sending" ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-5">
-          <div className="flex items-center justify-between gap-3 text-sm">
+        <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4">
+          <div className="flex items-center justify-between gap-3 text-[12.5px]">
             <span className="font-medium text-slate-900">
               {model.sentCount.toLocaleString()} of{" "}
               {model.totalAudience.toLocaleString()} sent
@@ -79,7 +79,7 @@ export function MetricTiles({
             className="mt-3 bg-amber-100 [&>div]:bg-amber-500"
           />
           {model.run.startedAt !== null ? (
-            <div className="mt-3 text-sm text-slate-600">
+            <div className="mt-3 text-[12.5px] text-slate-600">
               Started <LocalDateTime iso={model.run.startedAt} />
               {model.estimatedMinutesRemaining === null
                 ? null
@@ -90,7 +90,7 @@ export function MetricTiles({
       ) : null}
 
       {model.run.state === "complete" ? (
-        <p className="px-1 text-sm text-slate-600">
+        <p className="px-1 text-[12.5px] text-slate-600">
           Per-recipient delivery and engagement appear here. Run finalizes after
           30-day events tail.
         </p>

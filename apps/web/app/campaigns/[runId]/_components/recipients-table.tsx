@@ -22,8 +22,8 @@ import type {
 import { LocalDateTime } from "./local-date-time";
 import { RunStateChip } from "./run-state-chip";
 
-const ROW_HEIGHT = 64;
-const TABLE_HEIGHT = 560;
+const ROW_HEIGHT = 56;
+const TABLE_HEIGHT = 520;
 const OVERSCAN = 6;
 const PAGE_SIZE = 100;
 
@@ -154,11 +154,11 @@ export function RecipientsTable({
   const offsetY = startIndex * ROW_HEIGHT;
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <section className="rounded-lg border border-slate-200 bg-white p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Recipients</h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <h2 className="text-base font-semibold text-slate-900">Recipients</h2>
+          <p className="mt-1 text-[12.5px] text-slate-500">
             Search the frozen audience and jump directly into each
             contact&apos;s Inbox detail.
           </p>
@@ -174,17 +174,17 @@ export function RecipientsTable({
             setQuery(event.target.value);
           }}
           placeholder="Search name, email, or project"
-          className="w-full max-w-sm"
+          className="h-9 w-full max-w-sm text-[13px]"
         />
       </div>
 
       {errorMessage ? (
-        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
           {errorMessage}
         </div>
       ) : null}
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-1.5">
         {(Object.keys(FILTER_LABELS) as RecipientFilter[]).map((value) => (
           <button
             key={value}
@@ -193,7 +193,7 @@ export function RecipientsTable({
               setFilter(value);
             }}
             className={cn(
-              "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+              "rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors",
               filter === value
                 ? "bg-slate-900 text-white"
                 : "bg-slate-100 text-slate-600 hover:bg-slate-200",
@@ -204,9 +204,9 @@ export function RecipientsTable({
         ))}
       </div>
 
-      <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
+      <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
         <div className="min-w-[760px]">
-          <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_180px_170px] border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_160px_150px] border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
             <div>Recipient</div>
             <div>Project</div>
             <div>Latest state</div>
@@ -233,14 +233,16 @@ export function RecipientsTable({
                     href={`/inbox/${encodeURIComponent(row.contactId)}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_180px_170px] items-center border-b border-slate-100 px-5 py-3 text-sm transition-colors hover:bg-slate-50"
+                    className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_160px_150px] items-center border-b border-slate-100 px-4 py-2 text-[12.5px] transition-colors hover:bg-slate-50"
                     style={{ height: `${String(ROW_HEIGHT)}px` }}
                   >
                     <div className="min-w-0">
                       <div className="truncate font-medium text-slate-900">
                         {row.name}
                       </div>
-                      <div className="truncate text-slate-500">{row.email}</div>
+                      <div className="truncate text-[11.5px] text-slate-500">
+                        {row.email}
+                      </div>
                     </div>
                     <div className="truncate text-slate-600">
                       {row.project ?? "No project"}
@@ -260,7 +262,7 @@ export function RecipientsTable({
               </div>
 
               {serverRows.length === 0 ? (
-                <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
+                <div className="absolute inset-0 flex items-center justify-center text-[12.5px] text-slate-500">
                   No recipients match the current search or filter.
                 </div>
               ) : null}
