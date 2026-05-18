@@ -25,8 +25,8 @@ import { CampaignRow } from "./campaign-row";
 import type { CampaignStateTab } from "./state-filter-tabs";
 import { StateFilterTabs } from "./state-filter-tabs";
 
-const DESKTOP_ROW_HEIGHT = 92;
-const MOBILE_ROW_HEIGHT = 156;
+const DESKTOP_ROW_HEIGHT = 76;
+const MOBILE_ROW_HEIGHT = 136;
 const OVERSCAN = 6;
 const LIST_VIEWPORT_MAX_HEIGHT = 920;
 
@@ -195,8 +195,8 @@ export function CampaignsList({
 
   if (showColdStart) {
     return (
-      <div className="flex flex-1 px-4 py-8 sm:px-8">
-        <div className="mx-auto flex w-full max-w-screen-2xl flex-1 rounded-2xl border border-slate-200 bg-white">
+      <div className="flex flex-1 px-4 py-6 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[1180px] flex-1 rounded-lg border border-slate-200 bg-white">
           <EmptyState
             size="lg"
             icon={<MegaphoneIcon className="size-7 text-slate-500" />}
@@ -217,9 +217,9 @@ export function CampaignsList({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 px-4 py-6 sm:px-8">
-      <div className="mx-auto flex min-h-0 w-full max-w-screen-2xl flex-1 flex-col">
-        <div className="pb-4">
+    <div className="flex min-h-0 flex-1 px-4 py-4 sm:px-6">
+      <div className="mx-auto flex min-h-0 w-full max-w-[1180px] flex-1 flex-col">
+        <div className="pb-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <StateFilterTabs
               tabs={tabs}
@@ -247,7 +247,7 @@ export function CampaignsList({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="inline-flex min-w-[13rem] items-center justify-between rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm"
+                    className="inline-flex h-9 min-w-[13rem] items-center justify-between rounded-md border border-slate-200 bg-white px-3 text-[13px] text-slate-700"
                   >
                     <span className="truncate">{selectedProjectLabel}</span>
                     <ChevronDownIcon
@@ -258,7 +258,7 @@ export function CampaignsList({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   align="end"
-                  className="w-64 rounded-2xl p-1.5"
+                  className="w-64 rounded-lg p-1.5"
                 >
                   {projectOptions.map((project) => {
                     const checked = selectedProjectIds.includes(project.id);
@@ -287,7 +287,7 @@ export function CampaignsList({
                             router.replace(href, { scroll: false });
                           });
                         }}
-                        className="rounded-xl text-[12.5px]"
+                        className="rounded-md text-[12.5px]"
                       >
                         {project.label}
                       </DropdownMenuCheckboxItem>
@@ -298,8 +298,7 @@ export function CampaignsList({
 
               <label
                 className={cn(
-                  "flex min-w-[18rem] items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm",
-                  "shadow-sm",
+                  "flex h-9 min-w-[18rem] items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-[13px]",
                   isPending ? "ring-1 ring-slate-200" : "",
                 )}
               >
@@ -323,7 +322,7 @@ export function CampaignsList({
         </div>
 
         {items.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center px-6 py-12">
+          <div className="flex flex-1 items-center justify-center px-6 py-10">
             <EmptyState
               size="lg"
               icon={<SearchIcon className="size-7 text-slate-500" />}
@@ -348,10 +347,10 @@ export function CampaignsList({
         ) : (
           <div
             ref={viewportRef}
-            className="min-h-0 overflow-y-auto rounded-2xl border border-slate-200 bg-white"
+            className="min-h-0 overflow-y-auto rounded-lg border border-slate-200 bg-white"
             style={{
               height: `${String(LIST_VIEWPORT_MAX_HEIGHT)}px`,
-              maxHeight: "calc(100vh - 13.5rem)",
+              maxHeight: "calc(100vh - 10rem)",
             }}
           >
             <div

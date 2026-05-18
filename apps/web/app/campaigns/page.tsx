@@ -241,16 +241,16 @@ export default async function CampaignsPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-100">
-      <div className="border-b border-slate-200 bg-white px-6 py-6 sm:px-8">
-        <div className="mx-auto flex w-full max-w-screen-2xl items-center justify-between gap-4">
-          <div className="flex min-w-0 items-baseline gap-4">
-            <h1 className="text-2xl font-semibold text-slate-900">Campaigns</h1>
-            <p className="text-sm tabular-nums text-slate-500">
+      <div className="h-[54px] border-b border-slate-200 bg-white px-6">
+        <div className="mx-auto flex h-full w-full max-w-[1180px] items-center justify-between gap-4">
+          <div className="flex min-w-0 items-baseline gap-3">
+            <h1 className="text-lg font-semibold text-slate-900">Campaigns</h1>
+            <p className="text-[12px] tabular-nums text-slate-500">
               {activeCount.toLocaleString()}
             </p>
           </div>
           {currentUser.role === "admin" ? (
-            <Button asChild>
+            <Button asChild size="sm">
               <Link href="/campaigns/new">+ New campaign</Link>
             </Button>
           ) : null}
