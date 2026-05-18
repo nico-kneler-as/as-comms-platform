@@ -20,24 +20,39 @@ vi.mock("next/link", () => ({
     readonly [key: string]: unknown;
   }) => {
     void prefetch;
-    return <a href={href} {...props}>{children}</a>;
+    return (
+      <a href={href} {...props}>
+        {children}
+      </a>
+    );
   },
 }));
 
 const replaceMock = vi.fn();
+let searchParamsValue = new URLSearchParams();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     replace: replaceMock,
   }),
   usePathname: () => "/campaigns",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParamsValue,
 }));
 
 vi.mock("@/components/ui/dropdown-menu", () => ({
-  DropdownMenu: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
-  DropdownMenuTrigger: ({ children }: { readonly children: React.ReactNode }) => <>{children}</>,
-  DropdownMenuContent: ({ children }: { readonly children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenu: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DropdownMenuTrigger: ({
+    children,
+  }: {
+    readonly children: React.ReactNode;
+  }) => <>{children}</>,
+  DropdownMenuContent: ({
+    children,
+  }: {
+    readonly children: React.ReactNode;
+  }) => <div>{children}</div>,
   DropdownMenuCheckboxItem: ({
     children,
     onSelect,
@@ -49,7 +64,9 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
 
 import { CampaignsList } from "../../app/campaigns/_components/campaigns-list";
 
-type CampaignListItem = React.ComponentProps<typeof CampaignsList>["items"][number];
+type CampaignListItem = React.ComponentProps<
+  typeof CampaignsList
+>["items"][number];
 
 const workerRequire = createRequire(import.meta.url);
 const { JSDOM } = workerRequire("jsdom") as {
@@ -58,7 +75,7 @@ const { JSDOM } = workerRequire("jsdom") as {
     options?: {
       readonly url?: string;
       readonly pretendToBeVisual?: boolean;
-    }
+    },
   ) => {
     readonly window: Window &
       typeof globalThis & {
@@ -68,7 +85,8 @@ const { JSDOM } = workerRequire("jsdom") as {
 };
 
 let root: Root | null = null;
-let domWindow: (Window & typeof globalThis & { close: () => void }) | null = null;
+let domWindow: (Window & typeof globalThis & { close: () => void }) | null =
+  null;
 
 function setupDom() {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
@@ -99,8 +117,9 @@ function setupDom() {
       return undefined;
     }
   } as typeof ResizeObserver;
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true;
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
 
   const container = document.createElement("div");
   document.body.append(container);
@@ -129,6 +148,8 @@ function renderList(
         ]}
         activeFilterId="all"
         searchQuery=""
+        page={1}
+        totalPages={1}
         totalCount={0}
         showNewCampaignCta
         {...props}
@@ -143,13 +164,15 @@ function makeCampaignRow(index: number): CampaignListItem {
   return {
     runId: `postmark-${String(index + 1)}`,
     provider: "postmark",
+    name: `Broadcast ${String(index + 1)}`,
     kind: "project",
     launchType: "normal_email",
     state: "complete",
+    audienceType: "project",
     projectId: "project-1",
-    projectLabel: "Forests",
+    projectAlias: "forests",
     sender: "forests@adventurescientists.org",
-    subject: `Campaign ${String(index + 1)}`,
+    subject: `Subject ${String(index + 1)}`,
     previewText: "Field update.",
     audienceSize: 100 + index,
     scheduledAt: null,
@@ -163,6 +186,7 @@ function makeCampaignRow(index: number): CampaignListItem {
 
 beforeEach(() => {
   replaceMock.mockReset();
+  searchParamsValue = new URLSearchParams();
 });
 
 afterEach(() => {
@@ -189,11 +213,13 @@ describe("CampaignsList snapshots", () => {
       {
         runId: "postmark-1",
         provider: "postmark",
+        name: null,
         kind: "project",
         launchType: "normal_email",
         state: "draft",
+        audienceType: "project",
         projectId: "project-1",
-        projectLabel: "Forests",
+        projectAlias: "forests",
         sender: "forests@adventurescientists.org",
         subject: "",
         previewText: null,
@@ -208,13 +234,15 @@ describe("CampaignsList snapshots", () => {
       {
         runId: "postmark-2",
         provider: "postmark",
+        name: "Volunteer dispatch",
         kind: "project",
         launchType: "normal_email",
         state: "scheduled",
+        audienceType: "project",
         projectId: "project-2",
-        projectLabel: "Killer Whales",
+        projectAlias: "whales",
         sender: "whales@adventurescientists.org",
-        subject: "Volunteer dispatch",
+        subject: "Volunteer dispatch subject",
         previewText: "Field logistics and launch reminders.",
         audienceSize: 86,
         scheduledAt: "2026-05-20T18:00:00.000Z",
@@ -227,13 +255,15 @@ describe("CampaignsList snapshots", () => {
       {
         runId: "postmark-3",
         provider: "postmark",
+        name: "Trailhead update",
         kind: "project",
         launchType: "normal_email",
         state: "complete",
+        audienceType: "specific",
         projectId: "project-1",
-        projectLabel: "Forests",
+        projectAlias: "forests",
         sender: "forests@adventurescientists.org",
-        subject: "Trailhead update",
+        subject: "Quick note before your next survey day.",
         previewText: "Quick note before your next survey day.",
         audienceSize: 240,
         scheduledAt: null,
@@ -246,13 +276,15 @@ describe("CampaignsList snapshots", () => {
       {
         runId: "mailchimp-1",
         provider: "mailchimp",
+        name: "April newsletter",
         kind: "newsletter",
         launchType: "html_email",
         state: "complete",
+        audienceType: "newsletter",
         projectId: null,
-        projectLabel: null,
+        projectAlias: null,
         sender: "",
-        subject: "April newsletter",
+        subject: "",
         previewText: "Field stories from across the network.",
         audienceSize: null,
         scheduledAt: null,
@@ -261,44 +293,6 @@ describe("CampaignsList snapshots", () => {
         cancelledAt: null,
         createdAt: "2026-04-10T12:00:00.000Z",
         updatedAt: "2026-04-10T13:00:00.000Z",
-      },
-      {
-        runId: "mailchimp-2",
-        provider: "mailchimp",
-        kind: "newsletter",
-        launchType: "html_email",
-        state: "complete",
-        projectId: null,
-        projectLabel: null,
-        sender: "",
-        subject: "May newsletter",
-        previewText: "What volunteers need to know this month.",
-        audienceSize: null,
-        scheduledAt: null,
-        startedAt: "2026-05-01T12:00:00.000Z",
-        completedAt: "2026-05-01T12:30:00.000Z",
-        cancelledAt: null,
-        createdAt: "2026-05-01T12:00:00.000Z",
-        updatedAt: "2026-05-01T12:35:00.000Z",
-      },
-      {
-        runId: "mailchimp-3",
-        provider: "mailchimp",
-        kind: "newsletter",
-        launchType: "html_email",
-        state: "complete",
-        projectId: null,
-        projectLabel: null,
-        sender: "",
-        subject: "Winter highlights",
-        previewText: "Historic archive import row.",
-        audienceSize: null,
-        scheduledAt: null,
-        startedAt: "2026-02-03T09:00:00.000Z",
-        completedAt: "2026-02-03T09:25:00.000Z",
-        cancelledAt: null,
-        createdAt: "2026-02-03T09:00:00.000Z",
-        updatedAt: "2026-02-03T09:30:00.000Z",
       },
     ] as const;
 
@@ -309,65 +303,54 @@ describe("CampaignsList snapshots", () => {
         { id: "project-2", label: "Killer Whales" },
       ],
       tabs: [
-        { id: "all", label: "All", count: 6 },
+        { id: "all", label: "All", count: 4 },
         { id: "drafts", label: "Drafts", count: 1 },
         { id: "scheduled", label: "Scheduled", count: 1 },
         { id: "sending", label: "Sending", count: 0 },
-        { id: "complete", label: "Complete", count: 4 },
+        { id: "complete", label: "Complete", count: 2 },
         { id: "cancelled", label: "Cancelled", count: 0 },
       ],
-      totalCount: 6,
+      totalCount: 4,
     });
 
     expect(html).toMatchSnapshot();
   });
 
-  it("clamps the virtual row window after filters shrink the list", () => {
+  it("renders centered pagination links with the current page selected", () => {
     const container = setupDom();
-    const rows = Array.from({ length: 30 }, (_, index) =>
-      makeCampaignRow(index),
+    searchParamsValue = new URLSearchParams(
+      "state=scheduled&projectId=project-1&q=whale&page=2",
     );
 
     renderList(container, {
-      items: rows,
-      tabs: [
-        { id: "all", label: "All", count: 30 },
-        { id: "drafts", label: "Drafts", count: 0 },
-        { id: "scheduled", label: "Scheduled", count: 0 },
-        { id: "sending", label: "Sending", count: 0 },
-        { id: "complete", label: "Complete", count: 30 },
-        { id: "cancelled", label: "Cancelled", count: 0 },
-      ],
-      totalCount: 30,
+      items: Array.from({ length: 25 }, (_, index) => makeCampaignRow(index)),
+      activeFilterId: "scheduled",
+      selectedProjectIds: ["project-1"],
+      searchQuery: "whale",
+      page: 2,
+      totalPages: 4,
+      totalCount: 100,
     });
 
-    const viewport = container
-      .querySelector("[data-campaign-row]")
-      ?.closest(".overflow-y-auto");
-    expect(viewport).toBeInstanceOf(HTMLElement);
-
-    act(() => {
-      (viewport as HTMLElement).scrollTop = 4000;
-      viewport?.dispatchEvent(new Event("scroll", { bubbles: true }));
-    });
-
-    renderList(container, {
-      items: rows.slice(0, 2),
-      tabs: [
-        { id: "all", label: "All", count: 30 },
-        { id: "drafts", label: "Drafts", count: 0 },
-        { id: "scheduled", label: "Scheduled", count: 0 },
-        { id: "sending", label: "Sending", count: 0 },
-        { id: "complete", label: "Complete", count: 2 },
-        { id: "cancelled", label: "Cancelled", count: 0 },
-      ],
-      activeFilterId: "complete",
-      totalCount: 30,
-    });
-
-    expect(container.querySelectorAll("[data-campaign-row]")).toHaveLength(2);
-    expect(container.textContent).toContain("Campaign 1");
-    expect(container.textContent).toContain("Campaign 2");
+    expect(container.querySelector('a[aria-current="page"]')?.textContent).toBe(
+      "2",
+    );
+    expect(
+      new URL(
+        container
+          .querySelector('a[aria-label="Go to next page"]')
+          ?.getAttribute("href") ?? "",
+        "http://localhost",
+      ).searchParams.toString(),
+    ).toBe("state=scheduled&q=whale&page=3&projectId=project-1");
+    expect(
+      new URL(
+        container
+          .querySelector('a[aria-label="Go to previous page"]')
+          ?.getAttribute("href") ?? "",
+        "http://localhost",
+      ).searchParams.toString(),
+    ).toBe("state=scheduled&q=whale&projectId=project-1");
   });
 
   it("does not navigate when the active state tab is selected again", () => {
@@ -395,8 +378,9 @@ describe("CampaignsList snapshots", () => {
     expect(replaceMock).not.toHaveBeenCalled();
   });
 
-  it("keeps the visible search draft when changing state tabs", () => {
+  it("drops the page param when changing state tabs", () => {
     const container = setupDom();
+    searchParamsValue = new URLSearchParams("page=3");
 
     renderList(container, {
       items: [makeCampaignRow(0)],
@@ -411,8 +395,9 @@ describe("CampaignsList snapshots", () => {
       totalCount: 1,
     });
 
-    const searchInput =
-      container.querySelector<HTMLInputElement>("[data-campaign-search]");
+    const searchInput = container.querySelector<HTMLInputElement>(
+      "[data-campaign-search]",
+    );
     if (!(searchInput instanceof HTMLInputElement)) {
       throw new Error("Expected campaign search input to render.");
     }
@@ -443,12 +428,13 @@ describe("CampaignsList snapshots", () => {
     );
   });
 
-  it("keeps the visible search draft when changing project filters", () => {
+  it("drops the page param when changing project filters", () => {
     const container = setupDom();
+    searchParamsValue = new URLSearchParams("page=3");
 
     renderList(container, {
       items: [makeCampaignRow(0)],
-        projectOptions: [{ id: "project-kelp", label: "Kelp Forests" }],
+      projectOptions: [{ id: "project-kelp", label: "Kelp Forests" }],
       tabs: [
         { id: "all", label: "All", count: 1 },
         { id: "drafts", label: "Drafts", count: 0 },
@@ -460,8 +446,9 @@ describe("CampaignsList snapshots", () => {
       totalCount: 1,
     });
 
-    const searchInput =
-      container.querySelector<HTMLInputElement>("[data-campaign-search]");
+    const searchInput = container.querySelector<HTMLInputElement>(
+      "[data-campaign-search]",
+    );
     if (!(searchInput instanceof HTMLInputElement)) {
       throw new Error("Expected campaign search input to render.");
     }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
 
 import {
@@ -25,11 +34,6 @@ import { CampaignRow } from "./campaign-row";
 import type { CampaignStateTab } from "./state-filter-tabs";
 import { StateFilterTabs } from "./state-filter-tabs";
 
-const DESKTOP_ROW_HEIGHT = 76;
-const MOBILE_ROW_HEIGHT = 136;
-const OVERSCAN = 6;
-const LIST_VIEWPORT_MAX_HEIGHT = 920;
-
 interface CampaignProjectOption {
   readonly id: string;
   readonly label: string;
@@ -41,6 +45,7 @@ function buildHref(input: {
   readonly state?: string;
   readonly projectIds?: readonly string[];
   readonly query?: string;
+  readonly page?: number;
 }) {
   const nextParams = new URLSearchParams(input.currentParams.toString());
 
@@ -62,10 +67,56 @@ function buildHref(input: {
     nextParams.set("q", normalizedQuery);
   }
 
+  if (input.page === undefined || input.page <= 1) {
+    nextParams.delete("page");
+  } else {
+    nextParams.set("page", input.page.toString());
+  }
+
   const queryString = nextParams.toString();
   return queryString.length === 0
     ? input.pathname
     : `${input.pathname}?${queryString}`;
+}
+
+function readPageFromSearchParams(searchParams: URLSearchParams): number {
+  const parsed = Number.parseInt(searchParams.get("page") ?? "1", 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1;
+  }
+
+  return parsed;
+}
+
+function buildPaginationItems(currentPage: number, totalPages: number) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  if (currentPage <= 3) {
+    return [1, 2, 3, 4, "ellipsis-right", totalPages] as const;
+  }
+
+  if (currentPage >= totalPages - 2) {
+    return [
+      1,
+      "ellipsis-left",
+      totalPages - 3,
+      totalPages - 2,
+      totalPages - 1,
+      totalPages,
+    ] as const;
+  }
+
+  return [
+    1,
+    "ellipsis-left",
+    currentPage - 1,
+    currentPage,
+    currentPage + 1,
+    "ellipsis-right",
+    totalPages,
+  ] as const;
 }
 
 function buildCurrentHref(pathname: string, searchParams: URLSearchParams) {
@@ -80,6 +131,8 @@ export function CampaignsList({
   tabs,
   activeFilterId,
   searchQuery,
+  page,
+  totalPages,
   totalCount,
   showNewCampaignCta,
 }: {
@@ -89,6 +142,8 @@ export function CampaignsList({
   readonly tabs: readonly CampaignStateTab[];
   readonly activeFilterId: string;
   readonly searchQuery: string;
+  readonly page: number;
+  readonly totalPages: number;
   readonly totalCount: number;
   readonly showNewCampaignCta: boolean;
 }) {
@@ -97,53 +152,25 @@ export function CampaignsList({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [searchDraft, setSearchDraft] = useState(searchQuery);
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(640);
-  const [rowHeight, setRowHeight] = useState(DESKTOP_ROW_HEIGHT);
 
   useEffect(() => {
     setSearchDraft(searchQuery);
   }, [searchQuery]);
 
   useEffect(() => {
-    const element = viewportRef.current;
-    if (element === null) {
-      return;
-    }
-
-    const syncSize = () => {
-      setViewportHeight(element.clientHeight);
-      setRowHeight(
-        element.clientWidth < 640 ? MOBILE_ROW_HEIGHT : DESKTOP_ROW_HEIGHT,
-      );
-    };
-    const syncScroll = () => {
-      setScrollTop(element.scrollTop);
-    };
-
-    syncSize();
-    syncScroll();
-
-    const observer = new ResizeObserver(syncSize);
-    observer.observe(element);
-    element.addEventListener("scroll", syncScroll, { passive: true });
-
-    return () => {
-      observer.disconnect();
-      element.removeEventListener("scroll", syncScroll);
-    };
-  }, []);
-
-  useEffect(() => {
     const handle = window.setTimeout(() => {
       const currentParams = new URLSearchParams(searchParams.toString());
+      const normalizedDraft = searchDraft.trim();
       const href = buildHref({
         pathname,
         currentParams,
         state: activeFilterId,
         projectIds: selectedProjectIds,
         query: searchDraft,
+        page:
+          normalizedDraft === searchQuery
+            ? readPageFromSearchParams(currentParams)
+            : 1,
       });
       if (href === buildCurrentHref(pathname, currentParams)) {
         return;
@@ -161,6 +188,7 @@ export function CampaignsList({
     pathname,
     router,
     searchDraft,
+    searchQuery,
     searchParams,
     selectedProjectIds,
     startTransition,
@@ -175,23 +203,12 @@ export function CampaignsList({
           )?.label ?? "1 project")
         : `${selectedProjectIds.length.toString()} projects`;
 
-  const visibleCount = Math.ceil(viewportHeight / rowHeight) + OVERSCAN * 2;
-  const maxStartIndex = Math.max(0, items.length - visibleCount);
-  const startIndex = Math.min(
-    maxStartIndex,
-    Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN),
-  );
-  const endIndex = Math.min(items.length, startIndex + visibleCount);
-  const visibleItems = useMemo(
-    () => items.slice(startIndex, endIndex),
-    [endIndex, items, startIndex],
-  );
-
   const hasActiveFilters =
     activeFilterId !== "all" ||
     selectedProjectIds.length > 0 ||
     searchQuery.length > 0;
   const showColdStart = totalCount === 0 && !hasActiveFilters;
+  const paginationItems = buildPaginationItems(page, totalPages);
 
   if (showColdStart) {
     return (
@@ -225,17 +242,21 @@ export function CampaignsList({
               tabs={tabs}
               activeTabId={activeFilterId}
               onSelect={(nextState) => {
-                const currentParams = new URLSearchParams(searchParams.toString());
+                if (nextState === activeFilterId) {
+                  return;
+                }
+
+                const currentParams = new URLSearchParams(
+                  searchParams.toString(),
+                );
                 const href = buildHref({
                   pathname,
                   currentParams,
                   state: nextState,
                   projectIds: selectedProjectIds,
                   query: searchDraft,
+                  page: 1,
                 });
-                if (href === buildCurrentHref(pathname, currentParams)) {
-                  return;
-                }
                 startTransition(() => {
                   router.replace(href, { scroll: false });
                 });
@@ -282,6 +303,7 @@ export function CampaignsList({
                             state: activeFilterId,
                             projectIds: nextProjectIds,
                             query: searchDraft,
+                            page: 1,
                           });
                           startTransition(() => {
                             router.replace(href, { scroll: false });
@@ -345,36 +367,86 @@ export function CampaignsList({
             />
           </div>
         ) : (
-          <div
-            ref={viewportRef}
-            className="min-h-0 overflow-y-auto rounded-lg border border-slate-200 bg-white"
-            style={{
-              height: `${String(LIST_VIEWPORT_MAX_HEIGHT)}px`,
-              maxHeight: "calc(100vh - 10rem)",
-            }}
-          >
-            <div
-              className="relative overflow-hidden"
-              style={{ height: `${String(items.length * rowHeight)}px` }}
-            >
-              {visibleItems.map((item, index) => {
-                const rowIndex = startIndex + index;
-
-                return (
-                  <CampaignRow
-                    key={`${item.provider}:${item.runId}`}
-                    item={item}
-                    style={{
-                      position: "absolute",
-                      top: `${String(rowIndex * rowHeight)}px`,
-                      left: 0,
-                      right: 0,
-                    }}
-                  />
-                );
-              })}
+          <>
+            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+              {items.map((item) => (
+                <CampaignRow
+                  key={`${item.provider}:${item.runId}`}
+                  item={item}
+                />
+              ))}
             </div>
-          </div>
+
+            {totalPages > 1 ? (
+              <Pagination className="mt-4 justify-center">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href={buildHref({
+                        pathname,
+                        currentParams: new URLSearchParams(
+                          searchParams.toString(),
+                        ),
+                        state: activeFilterId,
+                        projectIds: selectedProjectIds,
+                        query: searchDraft,
+                        page: Math.max(1, page - 1),
+                      })}
+                      aria-disabled={page <= 1}
+                      className={
+                        page <= 1 ? "pointer-events-none opacity-50" : ""
+                      }
+                    />
+                  </PaginationItem>
+
+                  {paginationItems.map((item, index) => (
+                    <PaginationItem key={`${String(item)}-${String(index)}`}>
+                      {typeof item === "number" ? (
+                        <PaginationLink
+                          href={buildHref({
+                            pathname,
+                            currentParams: new URLSearchParams(
+                              searchParams.toString(),
+                            ),
+                            state: activeFilterId,
+                            projectIds: selectedProjectIds,
+                            query: searchDraft,
+                            page: item,
+                          })}
+                          isActive={item === page}
+                        >
+                          {item}
+                        </PaginationLink>
+                      ) : (
+                        <PaginationEllipsis />
+                      )}
+                    </PaginationItem>
+                  ))}
+
+                  <PaginationItem>
+                    <PaginationNext
+                      href={buildHref({
+                        pathname,
+                        currentParams: new URLSearchParams(
+                          searchParams.toString(),
+                        ),
+                        state: activeFilterId,
+                        projectIds: selectedProjectIds,
+                        query: searchDraft,
+                        page: Math.min(totalPages, page + 1),
+                      })}
+                      aria-disabled={page >= totalPages}
+                      className={
+                        page >= totalPages
+                          ? "pointer-events-none opacity-50"
+                          : ""
+                      }
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            ) : null}
+          </>
         )}
       </div>
     </div>
