@@ -786,13 +786,15 @@ function normalizeMailchimpActivityType(value: string): string {
 function mapMailchimpRecipientRow(
   row: MailchimpRecipientRowDb,
 ): MailchimpRecipientRow {
+  const eventAt = row.latestEventAt;
   return {
     memberId: row.memberId,
     email: row.email,
     displayName: row.displayName,
     contactId: row.contactId,
     latestState: row.latestState,
-    latestEventAt: row.latestEventAt.toISOString(),
+    latestEventAt:
+      eventAt instanceof Date ? eventAt.toISOString() : String(eventAt),
   };
 }
 
