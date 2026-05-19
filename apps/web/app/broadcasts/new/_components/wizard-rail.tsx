@@ -40,7 +40,7 @@ export function WizardRail({
           </span>
           <div>
             <p className="text-[13px] font-semibold text-slate-900">
-              New campaign
+              New broadcast
             </p>
             <p className="text-[11.5px] text-slate-500">
               Step {String(currentStep + 1)} of {String(steps.length)}

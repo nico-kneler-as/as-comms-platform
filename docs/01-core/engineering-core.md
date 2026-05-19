@@ -82,13 +82,13 @@ packages/ui
 
 - a different frontend framework or router
 - a single-process “web app does everything” runtime
-- client-owned source of truth for Inbox, timeline, or campaign state
+- client-owned source of truth for Inbox, timeline, or broadcast state
 - inline component definitions inside render functions
 - effect-driven derived state that can be computed during render
 - full-record server-to-client serialization when a view model would do
 
 ## Read Next
 
-- repo details and write scope: [`../03-reference/reference-donor-reuse.md`](../03-reference/reference-donor-reuse.md)
-- stage order and gates: [`delivery-core.md`](./delivery-core.md)
-- implementation workflow: [`../02-bundles/bootstrap-bundle.md`](../02-bundles/bootstrap-bundle.md)
+- repo details and write scope: [reference-donor-reuse.md](../03-reference/reference-donor-reuse.md)
+- stage order and gates: [delivery-core.md](./delivery-core.md)
+- implementation workflow: [bootstrap-bundle.md](../02-bundles/bootstrap-bundle.md)

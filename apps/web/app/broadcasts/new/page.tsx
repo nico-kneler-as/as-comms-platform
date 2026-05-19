@@ -22,7 +22,7 @@ export default async function NewCampaignPage({
 
   if (!params.runId) {
     const created = await createCampaignWizardDraft();
-    redirect(`/campaigns/new?runId=${encodeURIComponent(created.runId)}`);
+    redirect(`/broadcasts/new?runId=${encodeURIComponent(created.runId)}`);
   }
 
   const [draft, bootstrap] = await Promise.all([

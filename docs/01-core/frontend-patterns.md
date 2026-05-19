@@ -45,8 +45,8 @@
 | `timeline:contact:{contactId}` | per-contact timeline refresh |
 | `settings` | settings/admin reads |
 | `ai:contact:{contactId}` | grounded draft, feedback, or memory-related views |
-| `campaigns` | campaign list and summary views |
-| `campaign:{campaignId}` | individual campaign detail and monitoring views |
+| `campaigns` | broadcast list and summary views |
+| `campaign:{campaignId}` | individual broadcast detail and monitoring views |
 
 ## Revalidation And Polling Pattern
 
@@ -103,6 +103,6 @@ type UiError = {
 
 ## Read Next
 
-- stack and repo guardrails: [`engineering-core.md`](./engineering-core.md)
-- contract surface for projections and queues: [`interfaces-core.md`](./interfaces-core.md)
-- Inbox implementation packet: [`../02-bundles/inbox-bundle.md`](../02-bundles/inbox-bundle.md)
+- stack and repo guardrails: [engineering-core.md](./engineering-core.md)
+- contract surface for projections and queues: [interfaces-core.md](./interfaces-core.md)
+- Inbox implementation packet: [inbox-bundle.md](../02-bundles/inbox-bundle.md)

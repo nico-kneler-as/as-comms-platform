@@ -11,14 +11,14 @@ Add grounded draft generation and reusable memory retrieval without surrendering
 
 ## Required Reading
 
-1. [`../00-index.md`](../00-index.md)
-2. [`../01-core/product-core.md`](../01-core/product-core.md)
-3. [`../01-core/system-core.md`](../01-core/system-core.md)
-4. [`../01-core/data-core.md`](../01-core/data-core.md)
-5. [`../01-core/engineering-core.md`](../01-core/engineering-core.md)
-6. [`../01-core/frontend-patterns.md`](../01-core/frontend-patterns.md)
-7. [`../01-core/delivery-core.md`](../01-core/delivery-core.md)
-8. [`../01-core/decision-core.md`](../01-core/decision-core.md)
+1. [00-index.md](../00-index.md)
+2. [product-core.md](../01-core/product-core.md)
+3. [system-core.md](../01-core/system-core.md)
+4. [data-core.md](../01-core/data-core.md)
+5. [engineering-core.md](../01-core/engineering-core.md)
+6. [frontend-patterns.md](../01-core/frontend-patterns.md)
+7. [delivery-core.md](../01-core/delivery-core.md)
+8. [decision-core.md](../01-core/decision-core.md)
 
 ## Locked
 
@@ -69,4 +69,4 @@ Add grounded draft generation and reusable memory retrieval without surrendering
 
 ## Read Next
 
-- security and review gate: [`verification-security-bundle.md`](./verification-security-bundle.md)
+- security and review gate: [verification-security-bundle.md](./verification-security-bundle.md)

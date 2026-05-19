@@ -144,7 +144,7 @@ Launch-scope note:
 
 ### Deferred
 
-- broadcast or campaign analytics
+- broadcast or broadcast analytics
 - deeper media ingestion beyond provider-close evidence
 - richer delivery receipt families if they do not affect Stage 1 trust
 
@@ -189,7 +189,7 @@ Launch-scope note:
 
 ### Required first pass
 
-- historical campaign-member activity for:
+- historical broadcast-member activity for:
   - sent
   - opened
   - clicked
@@ -197,7 +197,7 @@ Launch-scope note:
 
 ### Deferred
 
-- campaign authoring objects
+- broadcast authoring objects
 - audience-management semantics beyond what is required to map historical activity
 - automation journey internals
 - non-transition live ingest if Mailchimp is no longer part of the active cutover path
@@ -206,7 +206,7 @@ Launch-scope note:
 
 - normalized email address
 - Mailchimp member or subscriber identifier
-- campaign identifier
+- broadcast identifier
 - audience or list identifier
 - event timestamp
 
@@ -221,12 +221,12 @@ Launch-scope note:
 
 - the same email address belongs to multiple candidate contacts
 - Mailchimp member activity cannot be linked to a Salesforce-anchored person safely
-- campaign events are mistaken for one-to-one email events
-- transition-period live events disagree with historical backfill for the same campaign-member activity
+- broadcast events are mistaken for one-to-one email events
+- transition-period live events disagree with historical backfill for the same broadcast-member activity
 
 ### Historical backfill vs live ingest
 
-- historical campaign activity is the first-priority Stage 1 scope
+- historical broadcast activity is the first-priority Stage 1 scope
 - transition-period live ingest is active during the Mailchimp → Postmark cutover window (Stage 5A Phase C per `D-045`) and uses the same event taxonomy and normalization path
 - once Postmark is trusted, disable scheduling, drain the 30-day tail, and retire the capture service per the decommission runbook
 

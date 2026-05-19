@@ -11,7 +11,7 @@ vi.mock("lucide-react", () => ({
   Check: () => null,
 }));
 
-import { AudienceFilterPanel } from "../../app/campaigns/new/_components/audience-filter-panel";
+import { AudienceFilterPanel } from "../../app/broadcasts/new/_components/audience-filter-panel";
 
 const workerRequire = createRequire(import.meta.url);
 const { JSDOM } = workerRequire("jsdom") as {
@@ -30,7 +30,7 @@ let root: Root | null = null;
 
 function setupDom() {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-    url: "http://localhost/campaigns/new",
+    url: "http://localhost/broadcasts/new",
     pretendToBeVisual: true,
   });
 

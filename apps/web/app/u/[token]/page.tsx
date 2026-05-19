@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 
 interface PageProps {
   readonly params: Promise<{ readonly token: string }>;
-  readonly searchParams: Promise<{ readonly all?: string }>;
+  readonly searchParams: Promise<{
+    readonly all?: string;
+    readonly confirmed?: string;
+  }>;
 }
 
 export default async function UnsubscribeTokenPage({
@@ -20,6 +23,7 @@ export default async function UnsubscribeTokenPage({
     runtime,
     token: decodeURIComponent(token),
     requestedAllBanner: query.all === "1",
+    confirmed: query.confirmed === "1" || query.all === "1",
   });
 
   return <UnsubscribePageView model={model} />;

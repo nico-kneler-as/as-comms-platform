@@ -78,7 +78,7 @@ vi.mock("@/app/inbox/_components/composer-editor-surface", () => ({
   ),
 }));
 
-import { ComposeStep } from "../../app/campaigns/new/_components/compose-step";
+import { ComposeStep } from "../../app/broadcasts/new/_components/compose-step";
 
 const baseProps: React.ComponentProps<typeof ComposeStep> = {
   subject: "",

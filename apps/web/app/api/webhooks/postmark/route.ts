@@ -27,6 +27,10 @@ function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+function recipientLogId(recipient: string): string {
+  return sha256(recipient.trim().toLowerCase()).slice(0, 16);
+}
+
 function toOccurredAt(event: PostmarkWebhookEvent): string {
   switch (event.RecordType) {
     case "Delivery":
@@ -283,7 +287,7 @@ async function processEvent(
         event: "postmark.webhook.snapshot_not_found",
         recordType: event.RecordType,
         messageId: event.MessageID,
-        recipient: event.Recipient,
+        recipientHash: recipientLogId(event.Recipient),
       }),
     );
     return;

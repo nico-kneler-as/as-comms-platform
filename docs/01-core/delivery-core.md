@@ -24,9 +24,9 @@
 | `3` | Inbox read surface (list, detail, follow-up, overlays) |
 | `3.5` | Composer (send/reply, per `D-026`) |
 | `4` | AI assistant (per `D-032`) |
-| `V` | validation gate in production; Campaigns blocked until clear (per `D-031`) |
-| `5A` | Email Campaigns |
-| `5B` | SMS Campaigns after Email trust is proven |
+| `V` | validation gate in production; Broadcasts blocked until clear (per `D-031`) |
+| `5A` | Email Broadcasts |
+| `5B` | SMS Broadcasts after Email trust is proven |
 | `6` | later reporting |
 
 ## Stage 0 Requirements
@@ -74,5 +74,5 @@ Do not call a stage complete if:
 
 ## Read Next
 
-- locked decisions: [`decision-core.md`](./decision-core.md)
-- stage work packet: open the relevant file under [`../02-bundles`](../02-bundles)
+- locked decisions: [decision-core.md](./decision-core.md)
+- stage work packet: open the relevant file under [02-bundles](../02-bundles)

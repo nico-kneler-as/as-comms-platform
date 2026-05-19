@@ -163,7 +163,7 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
   if (
     (relativeFile === "apps/web/app/api/webhooks/postmark/route.ts" ||
       relativeFile === "apps/web/app/settings/actions.ts" ||
-      relativeFile === "apps/web/app/campaigns/actions.ts") &&
+      relativeFile === "apps/web/app/broadcasts/actions.ts") &&
     specifier === "@as-comms/integrations"
   ) {
     // Stage 5A Briefs A2 + A5: Postmark client composition for the webhook

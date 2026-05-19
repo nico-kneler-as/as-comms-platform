@@ -35,7 +35,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({
     replace: replaceMock,
   }),
-  usePathname: () => "/campaigns",
+  usePathname: () => "/broadcasts",
   useSearchParams: () => searchParamsValue,
 }));
 
@@ -62,7 +62,7 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   }) => <div onClick={onSelect}>{children}</div>,
 }));
 
-import { CampaignsList } from "../../app/campaigns/_components/campaigns-list";
+import { CampaignsList } from "../../app/broadcasts/_components/campaigns-list";
 
 type CampaignListItem = React.ComponentProps<
   typeof CampaignsList
@@ -90,7 +90,7 @@ let domWindow: (Window & typeof globalThis & { close: () => void }) | null =
 
 function setupDom() {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-    url: "http://localhost/campaigns",
+    url: "http://localhost/broadcasts",
     pretendToBeVisual: true,
   });
 
@@ -170,7 +170,9 @@ function makeCampaignRow(index: number): CampaignListItem {
     state: "complete",
     audienceType: "project",
     projectId: "project-1",
+    projectName: "Forests",
     projectAlias: "forests",
+    projectLabel: "Forests",
     sender: "forests@adventurescientists.org",
     subject: `Subject ${String(index + 1)}`,
     previewText: "Field update.",
@@ -181,6 +183,9 @@ function makeCampaignRow(index: number): CampaignListItem {
     cancelledAt: null,
     createdAt: "2026-05-14T14:30:00.000Z",
     updatedAt: "2026-05-14T15:25:00.000Z",
+    selectedContactCount: 0,
+    sentCount: 100 + index,
+    openedCount: 42 + index,
   };
 }
 
@@ -199,7 +204,7 @@ afterEach(() => {
   domWindow = null;
 });
 
-describe("CampaignsList snapshots", () => {
+describe("broadcasts list snapshots", () => {
   it("matches the empty state snapshot", () => {
     const container = setupDom();
     const html = renderList(container);
@@ -207,7 +212,7 @@ describe("CampaignsList snapshots", () => {
     expect(html).toMatchSnapshot();
   });
 
-  it("matches the mixed-provider list snapshot", () => {
+  it("matches the broadcast list snapshot", () => {
     const container = setupDom();
     const rows = [
       {
@@ -219,7 +224,9 @@ describe("CampaignsList snapshots", () => {
         state: "draft",
         audienceType: "project",
         projectId: "project-1",
+        projectName: "Forests",
         projectAlias: "forests",
+        projectLabel: "Forests",
         sender: "forests@adventurescientists.org",
         subject: "",
         previewText: null,
@@ -230,6 +237,9 @@ describe("CampaignsList snapshots", () => {
         cancelledAt: null,
         createdAt: "2026-05-15T10:00:00.000Z",
         updatedAt: "2026-05-15T10:00:00.000Z",
+        selectedContactCount: 0,
+        sentCount: null,
+        openedCount: null,
       },
       {
         runId: "postmark-2",
@@ -240,7 +250,9 @@ describe("CampaignsList snapshots", () => {
         state: "scheduled",
         audienceType: "project",
         projectId: "project-2",
+        projectName: "Killer Whales",
         projectAlias: "whales",
+        projectLabel: "Whales",
         sender: "whales@adventurescientists.org",
         subject: "Volunteer dispatch subject",
         previewText: "Field logistics and launch reminders.",
@@ -251,9 +263,38 @@ describe("CampaignsList snapshots", () => {
         cancelledAt: null,
         createdAt: "2026-05-15T11:00:00.000Z",
         updatedAt: "2026-05-15T11:30:00.000Z",
+        selectedContactCount: 0,
+        sentCount: 0,
+        openedCount: 0,
       },
       {
         runId: "postmark-3",
+        provider: "postmark",
+        name: "Field bulletin",
+        kind: "newsletter",
+        launchType: "html_email",
+        state: "sending",
+        audienceType: "newsletter",
+        projectId: null,
+        projectName: null,
+        projectAlias: null,
+        projectLabel: null,
+        sender: "hello@adventurescientists.org",
+        subject: "May field bulletin",
+        previewText: "Broadcast update.",
+        audienceSize: 240,
+        scheduledAt: null,
+        startedAt: "2026-05-14T15:00:00.000Z",
+        completedAt: null,
+        cancelledAt: null,
+        createdAt: "2026-05-14T14:30:00.000Z",
+        updatedAt: "2026-05-14T15:05:00.000Z",
+        selectedContactCount: 0,
+        sentCount: 128,
+        openedCount: 0,
+      },
+      {
+        runId: "postmark-4",
         provider: "postmark",
         name: "Trailhead update",
         kind: "project",
@@ -261,7 +302,9 @@ describe("CampaignsList snapshots", () => {
         state: "complete",
         audienceType: "specific",
         projectId: "project-1",
+        projectName: "Forests",
         projectAlias: "forests",
+        projectLabel: "Forests",
         sender: "forests@adventurescientists.org",
         subject: "Quick note before your next survey day.",
         previewText: "Quick note before your next survey day.",
@@ -272,27 +315,35 @@ describe("CampaignsList snapshots", () => {
         cancelledAt: null,
         createdAt: "2026-05-14T14:30:00.000Z",
         updatedAt: "2026-05-14T15:25:00.000Z",
+        selectedContactCount: 18,
+        sentCount: 240,
+        openedCount: 124,
       },
       {
-        runId: "mailchimp-1",
-        provider: "mailchimp",
-        name: "April newsletter",
-        kind: "newsletter",
-        launchType: "html_email",
-        state: "complete",
-        audienceType: "newsletter",
-        projectId: null,
-        projectAlias: null,
-        sender: "",
-        subject: "",
-        previewText: "Field stories from across the network.",
-        audienceSize: null,
+        runId: "postmark-5",
+        provider: "postmark",
+        name: "Route closed update",
+        kind: "project",
+        launchType: "normal_email",
+        state: "cancelled",
+        audienceType: "project",
+        projectId: "project-1",
+        projectName: "Forests",
+        projectAlias: "forests",
+        projectLabel: "Forests",
+        sender: "forests@adventurescientists.org",
+        subject: "Storm delay update",
+        previewText: "Storm delay update.",
+        audienceSize: 240,
         scheduledAt: null,
         startedAt: "2026-04-10T12:00:00.000Z",
-        completedAt: "2026-04-10T12:45:00.000Z",
-        cancelledAt: null,
+        completedAt: null,
+        cancelledAt: "2026-04-10T12:45:00.000Z",
         createdAt: "2026-04-10T12:00:00.000Z",
         updatedAt: "2026-04-10T13:00:00.000Z",
+        selectedContactCount: 0,
+        sentCount: 61,
+        openedCount: 12,
       },
     ] as const;
 
@@ -303,14 +354,14 @@ describe("CampaignsList snapshots", () => {
         { id: "project-2", label: "Killer Whales" },
       ],
       tabs: [
-        { id: "all", label: "All", count: 4 },
+        { id: "all", label: "All", count: 5 },
         { id: "drafts", label: "Drafts", count: 1 },
         { id: "scheduled", label: "Scheduled", count: 1 },
-        { id: "sending", label: "Sending", count: 0 },
-        { id: "complete", label: "Complete", count: 2 },
-        { id: "cancelled", label: "Cancelled", count: 0 },
+        { id: "sending", label: "Sending", count: 1 },
+        { id: "complete", label: "Complete", count: 1 },
+        { id: "cancelled", label: "Cancelled", count: 1 },
       ],
-      totalCount: 4,
+      totalCount: 5,
     });
 
     expect(html).toMatchSnapshot();
@@ -399,7 +450,7 @@ describe("CampaignsList snapshots", () => {
       "[data-campaign-search]",
     );
     if (!(searchInput instanceof HTMLInputElement)) {
-      throw new Error("Expected campaign search input to render.");
+      throw new Error("Expected broadcast search input to render.");
     }
 
     act(() => {
@@ -423,7 +474,7 @@ describe("CampaignsList snapshots", () => {
     });
 
     expect(replaceMock).toHaveBeenCalledWith(
-      "/campaigns?state=complete&q=whale",
+      "/broadcasts?state=complete&q=whale",
       { scroll: false },
     );
   });
@@ -450,7 +501,7 @@ describe("CampaignsList snapshots", () => {
       "[data-campaign-search]",
     );
     if (!(searchInput instanceof HTMLInputElement)) {
-      throw new Error("Expected campaign search input to render.");
+      throw new Error("Expected broadcast search input to render.");
     }
 
     act(() => {
@@ -479,7 +530,7 @@ describe("CampaignsList snapshots", () => {
     });
 
     expect(replaceMock).toHaveBeenCalledWith(
-      "/campaigns?projectId=project-kelp&q=whale",
+      "/broadcasts?projectId=project-kelp&q=whale",
       { scroll: false },
     );
   });

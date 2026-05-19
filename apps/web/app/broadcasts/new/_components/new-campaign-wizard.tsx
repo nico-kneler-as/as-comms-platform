@@ -49,7 +49,7 @@ const STEPS: readonly CampaignWizardStepDefinition[] = [
   {
     id: "setup",
     title: "Name & sender",
-    subtitle: "Name the campaign and choose a verified sender.",
+    subtitle: "Name the broadcast and choose a verified sender.",
   },
   {
     id: "audience",
@@ -59,7 +59,7 @@ const STEPS: readonly CampaignWizardStepDefinition[] = [
   {
     id: "compose",
     title: "Write your email",
-    subtitle: "Draft the subject, preheader, and campaign body.",
+    subtitle: "Draft the subject, preheader, and broadcast body.",
   },
   {
     id: "preview",
@@ -1057,8 +1057,8 @@ export function NewCampaignWizard({
         tone: "success",
         message:
           sendMode === "later"
-            ? "Campaign scheduled."
-            : "Campaign queued to send now.",
+            ? "Broadcast scheduled."
+            : "Broadcast queued to send now.",
       });
     });
   }
