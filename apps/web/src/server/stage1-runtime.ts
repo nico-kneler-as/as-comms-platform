@@ -1,7 +1,10 @@
 import {
   accounts,
   createDatabaseConnection,
+  createStage1RepositoryBundle,
   createStage1RepositoryBundleFromConnection,
+  createStage2RepositoryBundle,
+  createStage5RepositoryBundle,
   createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
   sessions,
@@ -61,6 +64,13 @@ export interface Stage1WebRuntime {
   readonly internalNotes: Stage1InternalNoteService;
 }
 
+export interface Stage1WebTransaction {
+  readonly db: NonNullable<Stage1WebRuntime["connection"]>["db"];
+  readonly repositories: Stage1RepositoryBundle;
+  readonly campaigns: Stage5RepositoryBundle;
+  readonly settings: Stage2RepositoryBundle;
+}
+
 let runtimeOverride: Stage1WebRuntime | null = null;
 
 const STAGE1_RUNTIME_PROMISE_KEY = "__asCommsWebStage1RuntimePromise";
@@ -115,6 +125,24 @@ export async function getStage1WebRuntime(): Promise<Stage1WebRuntime> {
   runtimeGlobal[STAGE1_RUNTIME_PROMISE_KEY] ??=
     Promise.resolve(createRuntime());
   return runtimeGlobal[STAGE1_RUNTIME_PROMISE_KEY];
+}
+
+export async function withStage1WebTransaction<T>(
+  callback: (transaction: Stage1WebTransaction) => Promise<T>,
+): Promise<T> {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return runtime.connection.db.transaction(async (tx) =>
+    callback({
+      db: tx,
+      repositories: createStage1RepositoryBundle(tx),
+      campaigns: createStage5RepositoryBundle(tx),
+      settings: createStage2RepositoryBundle(tx),
+    }),
+  );
 }
 
 export async function getSettingsRepositories(): Promise<Stage2RepositoryBundle> {
