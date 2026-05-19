@@ -7,6 +7,7 @@ import { headers } from "next/headers";
 import {
   audienceCriteriaSchema,
   expeditionMemberStatusValues,
+  normalizeExpeditionMemberStatus,
   type AudienceCriteria,
   type CampaignKind,
   type CampaignRunRecord,
@@ -14,7 +15,11 @@ import {
   type LaunchType,
   type PostmarkSenderStatus,
 } from "@as-comms/contracts";
-import { createAudienceResolver, createMergeRenderer } from "@as-comms/domain";
+import {
+  createAudienceResolver,
+  createMergeRenderer,
+  type AudienceMember,
+} from "@as-comms/domain";
 
 import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 
@@ -69,6 +74,10 @@ export interface AudienceCountData {
   readonly hasAppliedFilters: boolean;
 }
 
+export type AudienceStatusCounts = Partial<
+  Record<ExpeditionMemberStatus, number>
+>;
+
 export interface CampaignSenderOption {
   readonly projectId: string;
   readonly projectName: string;
@@ -82,6 +91,8 @@ export interface AudienceVolunteerSearchRow {
   readonly contactId: string;
   readonly name: string;
   readonly email: string;
+  readonly project: string | null;
+  readonly projectAliasHint: string | null;
 }
 
 export interface CampaignWizardDraftData {
@@ -182,12 +193,77 @@ async function appendCampaignAudit(input: {
   });
 }
 
-function hasAppliedAudienceFilters(criteria: AudienceCriteria): boolean {
-  return (
-    criteria.projectId != null ||
-    criteria.statuses.length > 0 ||
-    (criteria.contactIds?.length ?? 0) > 0
-  );
+function readFirstName(displayName: string): string | null {
+  const trimmed = displayName.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const [firstName] = trimmed.split(/\s+/u);
+  return firstName?.trim().length ? firstName.trim() : null;
+}
+
+async function resolvePrimaryAliasEmail(
+  runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>,
+  projectId: string | null,
+  cache: Map<string, Promise<string | null>>,
+): Promise<string | null> {
+  if (projectId === null) {
+    return null;
+  }
+
+  const cached = cache.get(projectId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const task = (async () => {
+    const project = await runtime.settings.projects.findById(projectId);
+    if (project === null) {
+      return null;
+    }
+
+    const primary =
+      project.emails.find((email) => email.isPrimary) ?? project.emails[0];
+    if (primary !== undefined) {
+      const trimmed = primary.address.trim();
+      return trimmed.length === 0 ? null : trimmed.toLowerCase();
+    }
+
+    if (project.connectedToProjectId !== null) {
+      return resolvePrimaryAliasEmail(
+        runtime,
+        project.connectedToProjectId,
+        cache,
+      );
+    }
+
+    return null;
+  })();
+
+  cache.set(projectId, task);
+  return task;
+}
+
+function hasAppliedAudienceFilters(
+  criteria: AudienceCriteria & {
+    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+  },
+): boolean {
+  switch (readAudienceMode(criteria)) {
+    case "all_approved":
+    case "project_status":
+    case "specific":
+      return true;
+  }
+}
+
+function readAudienceMode(
+  criteria: AudienceCriteria & {
+    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+  },
+): "project_status" | "specific" | "all_approved" {
+  return criteria.initialFilter ?? "project_status";
 }
 
 function normalizeAliasHint(address: string | null | undefined): string | null {
@@ -216,6 +292,7 @@ function toStoredAudienceCriteria(
 ): Record<string, unknown> {
   return {
     projectId: criteria.projectId ?? criteria.projectIds[0] ?? null,
+    projectIds: criteria.projectIds,
     statuses: criteria.statuses,
     contactIds: criteria.contactIds ?? [],
   };
@@ -224,10 +301,10 @@ function toStoredAudienceCriteria(
 function filterAudienceMembersBySelection<T extends { readonly contactId: string }>(
   rows: readonly T[],
   criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific";
+    readonly initialFilter?: "project_status" | "specific" | "all_approved";
   },
 ): readonly T[] {
-  if ((criteria.initialFilter ?? "project_status") !== "specific") {
+  if (readAudienceMode(criteria) !== "specific") {
     return rows;
   }
 
@@ -288,6 +365,120 @@ async function createResolver() {
       settingsProjects: runtime.settings.projects,
     },
   });
+}
+
+function buildAllProjectsCriteria(projectIds: readonly string[]): AudienceCriteria {
+  return audienceCriteriaSchema.parse({
+    projectIds,
+    statuses: [],
+    contactIds: [],
+    expeditionIds: [],
+    lastActivityWindow: "all_time",
+    hasReplied: "either",
+    hasClicked: "either",
+  });
+}
+
+async function loadApprovedContactsAudience(
+  at: Date,
+): Promise<readonly AudienceMember[]> {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    const settingsProjects = (await runtime.settings.projects.listAll()).filter(
+      (project) => project.isActive,
+    );
+    const criteria = buildAllProjectsCriteria(
+      settingsProjects.map((project) => project.projectId),
+    );
+    const resolver = await createResolver();
+    return resolver.resolveAudience(criteria, at);
+  }
+
+  const rows = await runtime.connection.sql<{
+    contactId: string;
+    displayName: string;
+    email: string;
+    projectId: string | null;
+    projectName: string | null;
+  }[]>`
+    with ranked_memberships as (
+      select
+        cm.contact_id,
+        cm.project_id,
+        pd.project_name,
+        row_number() over (
+          partition by cm.contact_id
+          order by pd.project_name asc, cm.project_id asc, cm.id asc
+        ) as row_number
+      from contact_memberships cm
+      join project_dimensions pd
+        on pd.project_id = cm.project_id
+      where pd.is_active = true
+    ),
+    primary_memberships as (
+      select contact_id, project_id, project_name
+      from ranked_memberships
+      where row_number = 1
+    )
+    select
+      c.id as "contactId",
+      c.display_name as "displayName",
+      lower(trim(c.primary_email)) as "email",
+      pm.project_id as "projectId",
+      pm.project_name as "projectName"
+    from contacts c
+    join primary_memberships pm
+      on pm.contact_id = c.id
+    where c.primary_email is not null
+      and btrim(c.primary_email) <> ''
+      and not exists (
+        select 1
+        from suppression_list sl
+        where sl.normalized_email = lower(trim(c.primary_email))
+          and sl.first_event_at <= ${at.toISOString()}::timestamptz
+      )
+      and not exists (
+        select 1
+        from contact_consent cc
+        where cc.contact_id = c.id
+          and cc.opted_out_at <= ${at.toISOString()}::timestamptz
+          and cc.scope_type in ('all', 'newsletter')
+      )
+    order by
+      pm.project_name asc nulls last,
+      c.display_name asc,
+      c.id asc
+  `;
+
+  return rows.map((row) => ({
+    contactId: row.contactId,
+    frozenEmail: row.email,
+    frozenFirstName: readFirstName(row.displayName),
+    frozenProjectName: row.projectName,
+    frozenProjectId: row.projectId,
+    frozenAliasEmail: null,
+  }));
+}
+
+async function resolveWizardAudience(
+  kind: CampaignKind,
+  criteria: AudienceCriteria & {
+    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+  },
+  at: Date,
+): Promise<readonly AudienceMember[]> {
+  const parsedCriteria = audienceCriteriaSchema.parse(criteria);
+  const mode = readAudienceMode(criteria);
+
+  if (mode === "all_approved" && kind === "newsletter") {
+    return loadApprovedContactsAudience(at);
+  }
+
+  const resolver = await createResolver();
+  return filterAudienceMembersBySelection(
+    await resolver.resolveAudience(parsedCriteria, at),
+    criteria,
+  );
 }
 
 export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftData> {
@@ -453,23 +644,29 @@ async function readRequestOrigin(): Promise<string> {
 }
 
 export async function resolveAudienceCountAction(input: {
+  readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific";
+    readonly initialFilter?: "project_status" | "specific" | "all_approved";
   };
 }): Promise<UiResult<AudienceCountData>> {
   await requireSession();
 
   try {
     const criteria = audienceCriteriaSchema.parse(input.criteria);
-    const resolver = await createResolver();
-    const audience = filterAudienceMembersBySelection(
-      await resolver.resolveAudience(criteria, new Date()),
+    const audience = await resolveWizardAudience(
+      input.kind,
       input.criteria,
+      new Date(),
     );
 
     return successResult({
       count: audience.length,
-      hasAppliedFilters: hasAppliedAudienceFilters(criteria),
+      hasAppliedFilters: hasAppliedAudienceFilters({
+        ...criteria,
+        ...(input.criteria.initialFilter === undefined
+          ? {}
+          : { initialFilter: input.criteria.initialFilter }),
+      }),
     });
   } catch (error) {
     return errorResult(
@@ -483,18 +680,18 @@ export async function resolveAudienceCountAction(input: {
 }
 
 export async function previewAudienceAction(input: {
+  readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific";
+    readonly initialFilter?: "project_status" | "specific" | "all_approved";
   };
 }): Promise<UiResult<readonly AudiencePreviewRow[]>> {
   await requireSession();
 
   try {
-    const criteria = audienceCriteriaSchema.parse(input.criteria);
-    const resolver = await createResolver();
-    const audience = filterAudienceMembersBySelection(
-      await resolver.resolveAudience(criteria, new Date()),
+    const audience = await resolveWizardAudience(
+      input.kind,
       input.criteria,
+      new Date(),
     );
 
     return successResult(
@@ -519,7 +716,7 @@ export async function previewAudienceAction(input: {
 export async function loadComposePreviewAction(input: {
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific";
+    readonly initialFilter?: "project_status" | "specific" | "all_approved";
   };
   readonly fromEmail: string | null;
   readonly subjectTemplate: string;
@@ -530,13 +727,12 @@ export async function loadComposePreviewAction(input: {
   await requireSession();
 
   try {
-    const criteria = audienceCriteriaSchema.parse(input.criteria);
-    const resolver = await createResolver();
     const runtime = await getStage1WebRuntime();
     const mergeRenderer = createMergeRenderer();
-    const audience = filterAudienceMembersBySelection(
-      await resolver.resolveAudience(criteria, new Date()),
+    const audience = await resolveWizardAudience(
+      input.kind,
       input.criteria,
+      new Date(),
     );
     const orgSettings = await runtime.campaigns.orgSettings.read();
     const footerAddress = formatOrgAddress(orgSettings);
@@ -628,19 +824,24 @@ export async function loadComposePreviewAction(input: {
 }
 
 export async function searchProjectVolunteersAction(input: {
-  readonly projectId: string | null;
+  readonly projectIds: readonly string[];
   readonly query: string;
 }): Promise<UiResult<readonly AudienceVolunteerSearchRow[]>> {
   await requireSession();
 
-  const projectId = input.projectId?.trim() ?? "";
+  const projectIds = input.projectIds
+    .map((projectId) => projectId.trim())
+    .filter((projectId, index, values) => {
+      return projectId.length > 0 && values.indexOf(projectId) === index;
+    });
   const query = input.query.trim();
-  if (projectId.length === 0 || query.length < 2) {
+  if (projectIds.length === 0 || query.length < 2) {
     return successResult([]);
   }
 
   try {
     const runtime = await getStage1WebRuntime();
+    const aliasCache = new Map<string, Promise<string | null>>();
     const contacts = await runtime.repositories.contacts.searchByQuery({
       query,
       limit: 25,
@@ -653,33 +854,151 @@ export async function searchProjectVolunteersAction(input: {
       await runtime.repositories.contactMemberships.listByContactIds(
         contacts.map((contact) => contact.id),
       );
-    const allowedContactIds = new Set(
-      memberships
-        .filter((membership) => membership.projectId === projectId)
-        .map((membership) => membership.contactId),
+    const projects = await runtime.repositories.projectDimensions.listByIds(
+      projectIds,
     );
+    const projectsById = new Map(
+      projects.map((project) => [project.projectId, project] as const),
+    );
+    const selectedProjectIds = new Set(projectIds);
+    const membershipsByContact = new Map<
+      string,
+      (typeof memberships)[number][]
+    >(contacts.map((contact) => [contact.id, []]));
+    for (const membership of memberships) {
+      if (
+        membership.projectId === null ||
+        !selectedProjectIds.has(membership.projectId)
+      ) {
+        continue;
+      }
+
+      const existing = membershipsByContact.get(membership.contactId) ?? [];
+      existing.push(membership);
+      membershipsByContact.set(membership.contactId, existing);
+    }
 
     return successResult(
-      contacts
-        .filter(
-          (contact) =>
-            allowedContactIds.has(contact.id) &&
-            (contact.primaryEmail?.trim().length ?? 0) > 0,
-        )
-        .map((contact) => ({
-          contactId: contact.id,
-          name: contact.displayName.trim().length > 0
-            ? contact.displayName
-            : (contact.primaryEmail ?? contact.id),
-          email: contact.primaryEmail ?? "",
-        })),
+      await Promise.all(
+        contacts
+          .filter(
+            (contact) =>
+              (membershipsByContact.get(contact.id)?.length ?? 0) > 0 &&
+              (contact.primaryEmail?.trim().length ?? 0) > 0,
+          )
+          .map(async (contact) => {
+            const primaryMembership = [
+              ...(membershipsByContact.get(contact.id) ?? []),
+            ]
+              .sort((left, right) =>
+                (
+                  projectsById.get(left.projectId ?? "")?.projectName ??
+                  left.projectId ??
+                  ""
+                ).localeCompare(
+                  projectsById.get(right.projectId ?? "")?.projectName ??
+                    right.projectId ??
+                    "",
+                ),
+              )
+              .at(0);
+            const project =
+              primaryMembership?.projectId == null
+                ? null
+                : (projectsById.get(primaryMembership.projectId) ?? null);
+
+            return {
+              contactId: contact.id,
+              name: contact.displayName.trim().length > 0
+                ? contact.displayName
+                : (contact.primaryEmail ?? contact.id),
+              email: contact.primaryEmail ?? "",
+              project: project?.projectName ?? null,
+              projectAliasHint: normalizeAliasHint(
+                await resolvePrimaryAliasEmail(
+                  runtime,
+                  primaryMembership?.projectId ?? null,
+                  aliasCache,
+                ),
+              ),
+            } satisfies AudienceVolunteerSearchRow;
+          }),
+      ),
     );
   } catch (error) {
     return errorResult(
       "campaign_volunteer_search_failed",
       error instanceof Error
         ? error.message
-        : "Unable to search volunteers for this project.",
+        : "Unable to search volunteers for the selected projects.",
+      true,
+    );
+  }
+}
+
+export async function loadMemberStatusCountsForProjects(
+  projectIds: readonly string[],
+): Promise<UiResult<AudienceStatusCounts>> {
+  await requireSession();
+
+  const normalizedProjectIds = projectIds
+    .map((projectId) => projectId.trim())
+    .filter((projectId, index, values) => {
+      return projectId.length > 0 && values.indexOf(projectId) === index;
+    });
+
+  if (normalizedProjectIds.length === 0) {
+    return successResult({});
+  }
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const contacts = await runtime.repositories.contacts.listAll();
+    if (contacts.length === 0) {
+      return successResult({});
+    }
+
+    const selectedProjectIds = new Set(normalizedProjectIds);
+    const memberships =
+      await runtime.repositories.contactMemberships.listByContactIds(
+        contacts.map((contact) => contact.id),
+      );
+    const counts = new Map<ExpeditionMemberStatus, Set<string>>();
+
+    for (const membership of memberships) {
+      if (
+        membership.projectId === null ||
+        !selectedProjectIds.has(membership.projectId)
+      ) {
+        continue;
+      }
+
+      const normalizedStatus = normalizeExpeditionMemberStatus(
+        membership.status,
+      );
+      if (normalizedStatus === null) {
+        continue;
+      }
+
+      const existing = counts.get(normalizedStatus) ?? new Set<string>();
+      existing.add(membership.contactId);
+      counts.set(normalizedStatus, existing);
+    }
+
+    return successResult(
+      Object.fromEntries(
+        [...counts.entries()].map(([status, contactIds]) => [
+          status,
+          contactIds.size,
+        ]),
+      ) as AudienceStatusCounts,
+    );
+  } catch (error) {
+    return errorResult(
+      "campaign_member_status_counts_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to load member statuses for the selected projects.",
       true,
     );
   }
@@ -697,7 +1016,7 @@ export async function saveCampaignWizardDraftAction(input: {
   readonly bodyTextTemplate: string | null;
   readonly preheader: string | null;
   readonly audienceCriteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific";
+    readonly initialFilter?: "project_status" | "specific" | "all_approved";
   };
   readonly audienceSize: number | null;
 }): Promise<UiResult<CampaignWizardDraftData>> {

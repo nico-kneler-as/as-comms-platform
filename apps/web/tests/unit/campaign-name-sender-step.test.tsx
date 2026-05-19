@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
-  CheckCircle2: () => null,
   Info: () => null,
 }));
 
@@ -75,5 +74,24 @@ describe("NameAndSenderStep", () => {
     expect(markup).toContain("Unverified");
     expect(markup).toContain('aria-disabled="true"');
     expect(markup).toContain("This alias hasn&#x27;t been verified in Postmark yet.");
+    expect(markup).toContain("Continue ›");
+  });
+
+  it("disables continue until both the name and sender are present", () => {
+    const invalidMarkup = renderToStaticMarkup(
+      <NameAndSenderStep
+        {...baseProps}
+        name="   "
+        fromEmail={null}
+      />,
+    );
+    const validMarkup = renderToStaticMarkup(<NameAndSenderStep {...baseProps} />);
+
+    expect(invalidMarkup).toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue ›<\/button>/,
+    );
+    expect(validMarkup).not.toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue ›<\/button>/,
+    );
   });
 });

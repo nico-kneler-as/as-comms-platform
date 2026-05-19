@@ -17,7 +17,7 @@ function buildAudienceCriteria(): CreateDraftInput["audienceCriteria"] {
   return {
     projectId: "project-1",
     projectIds: ["project-1"],
-    statuses: ["Active"],
+    statuses: ["Waitlist"],
     contactIds: [],
     expeditionIds: [],
     lastActivityWindow: "all_time",
@@ -103,7 +103,7 @@ async function seedAudience(
       expeditionId: null,
       salesforceMembershipId: `sf-membership-${contactId}`,
       role: "volunteer",
-      status: "Active",
+      status: "Waitlist",
       source: "salesforce",
       createdAt: "2026-05-15T12:00:00.000Z",
     });

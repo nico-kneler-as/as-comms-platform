@@ -108,7 +108,7 @@ function buildPostmarkModel(
       audienceCriteria: {
         projectId: "project-1",
         projectIds: ["project-1"],
-        statuses: ["Active"],
+        statuses: ["Waitlist"],
         contactIds: [],
         expeditionIds: [],
         lastActivityWindow: "all_time",
@@ -234,7 +234,7 @@ function buildPostmarkModel(
     ],
     audienceCriteria: {
       projectIds: ["project-1"],
-      statuses: ["Active"],
+      statuses: ["Waitlist"],
       expeditionIds: [],
       lastActivityWindow: "all_time",
       hasReplied: "either",

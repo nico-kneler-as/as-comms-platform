@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
-  CheckCircle2: () => null,
+  Check: () => null,
 }));
 
 import { AudienceFilterPanel } from "../../app/broadcasts/new/_components/audience-filter-panel";
@@ -60,8 +60,8 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AudienceFilt
 
   const props: React.ComponentProps<typeof AudienceFilterPanel> = {
     criteria: {
-      projectId: null,
-      projectIds: [],
+      projectId: "host-project",
+      projectIds: ["host-project"],
       statuses: [],
       contactIds: [],
       expeditionIds: [],
@@ -91,7 +91,14 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AudienceFilt
         ],
       },
     ],
-    statusOptions: ["Active", "Inactive"],
+    statusOptions: ["Waitlist", "In Progress", "Denied"],
+    statusCounts: {
+      Waitlist: 12,
+      "In Progress": 0,
+      Denied: 3,
+    },
+    statusCountsErrorMessage: null,
+    onSelectAllStatuses: () => undefined,
     onProjectChange: () => undefined,
     onStatusToggle: () => undefined,
     ...overrides,
@@ -115,7 +122,7 @@ afterEach(() => {
 });
 
 describe("AudienceFilterPanel", () => {
-  it("renders accessible controls for project and status filters", () => {
+  it("renders accessible controls for project and stage-grouped status filters", () => {
     renderPanel();
 
     expect(
@@ -134,17 +141,22 @@ describe("AudienceFilterPanel", () => {
     expect(
       Array.from(document.querySelectorAll("button")).some((button) =>
         button.getAttribute("aria-label") ===
-        "Toggle expedition-member status Active",
+        "Toggle expedition-member status Waitlist",
       ),
     ).toBe(true);
+    expect(document.body.textContent).toContain("Top-funnel");
+    expect(document.body.textContent).toContain("Off-funnel");
+    expect(document.body.textContent).not.toContain("Mid-funnel");
   });
 
-  it("fires project and status callbacks when those controls change", () => {
+  it("fires project, select-all, and status callbacks when those controls change", () => {
     const projectChange = vi.fn();
+    const selectAllStatuses = vi.fn();
     const statusToggle = vi.fn();
 
     renderPanel({
       onProjectChange: projectChange,
+      onSelectAllStatuses: selectAllStatuses,
       onStatusToggle: statusToggle,
     });
 
@@ -162,7 +174,7 @@ describe("AudienceFilterPanel", () => {
     const statusButton = Array.from(document.querySelectorAll("button")).find(
       (button) =>
         button.getAttribute("aria-label") ===
-        "Toggle expedition-member status Active",
+        "Toggle expedition-member status Waitlist",
     );
     if (!(statusButton instanceof HTMLButtonElement)) {
       throw new Error("Status chip not found");
@@ -172,7 +184,57 @@ describe("AudienceFilterPanel", () => {
       statusButton.click();
     });
 
+    const selectAllButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Select all",
+    );
+    if (!(selectAllButton instanceof HTMLButtonElement)) {
+      throw new Error("Select all button not found");
+    }
+
+    act(() => {
+      selectAllButton.click();
+    });
+
     expect(projectChange).toHaveBeenCalledWith("host-project");
-    expect(statusToggle).toHaveBeenCalledWith("Active");
+    expect(statusToggle).toHaveBeenCalledWith("Waitlist");
+    expect(selectAllStatuses).toHaveBeenCalled();
+  });
+
+  it("applies the stage tone classes and hides empty stages", () => {
+    renderPanel({
+      criteria: {
+        projectId: "host-project",
+        projectIds: ["host-project"],
+        statuses: ["Waitlist"],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+      },
+    });
+
+    const waitlistButton = Array.from(document.querySelectorAll("button")).find(
+      (button) =>
+        button.getAttribute("aria-label") ===
+        "Toggle expedition-member status Waitlist",
+    );
+    const deniedButton = Array.from(document.querySelectorAll("button")).find(
+      (button) =>
+        button.getAttribute("aria-label") ===
+        "Toggle expedition-member status Denied",
+    );
+
+    if (!(waitlistButton instanceof HTMLButtonElement)) {
+      throw new Error("Waitlist status button not found");
+    }
+    if (!(deniedButton instanceof HTMLButtonElement)) {
+      throw new Error("Denied status button not found");
+    }
+
+    expect(waitlistButton.getAttribute("aria-checked")).toBe("true");
+    expect(waitlistButton.className).toContain("bg-emerald-600");
+    expect(deniedButton.className).toContain("bg-rose-50");
+    expect(document.body.textContent).not.toContain("Mid-funnel");
   });
 });

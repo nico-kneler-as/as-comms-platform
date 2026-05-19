@@ -24,7 +24,7 @@ function buildAudienceCriteria(): CreateDraftInput["audienceCriteria"] {
   return {
     projectId: "project-1",
     projectIds: ["project-1"],
-    statuses: ["Active"],
+    statuses: ["Waitlist"],
     contactIds: [],
     expeditionIds: ["expedition-1"],
     lastActivityWindow: "last_90_days",
