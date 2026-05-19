@@ -58,6 +58,7 @@ describe("Stage 1 DB schema", () => {
       "messageAttachments",
       "orgSettings",
       "pendingComposerOutbounds",
+      "postmarkWebhookDeadLetter",
       "projectAliases",
       "projectDimensions",
       "projectKnowledgeEntries",
