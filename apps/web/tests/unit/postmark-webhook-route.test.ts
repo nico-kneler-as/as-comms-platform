@@ -2,8 +2,11 @@ import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { createStage5RepositoryBundle } from "@as-comms/db";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  createStage5RepositoryBundle,
+  postmarkWebhookDeadLetter,
+} from "@as-comms/db";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "../../app/api/webhooks/postmark/route";
 import {
@@ -36,6 +39,10 @@ function signRequest(rawBody: string): Request {
     },
     body: rawBody,
   });
+}
+
+async function listDeadLetters(runtime: Stage1WebTestRuntime) {
+  return runtime.context.db.select().from(postmarkWebhookDeadLetter);
 }
 
 async function seedRunAndSnapshot(
@@ -200,6 +207,9 @@ describe("Postmark webhook route handler", () => {
   });
 
   it("returns 200 for unknown Postmark event types to avoid retries", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
     const rawBody = JSON.stringify({
       RecordType: "UnknownFutureEvent",
       MessageID: FIXTURE_MESSAGE_ID,
@@ -208,6 +218,41 @@ describe("Postmark webhook route handler", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
+
+    const deadLetters = await listDeadLetters(runtime);
+    expect(deadLetters).toHaveLength(1);
+    expect(deadLetters[0]).toMatchObject({
+      recordType: "UnknownFutureEvent",
+      messageId: FIXTURE_MESSAGE_ID,
+      failureKind: "unknown_event_type",
+      status: "terminal",
+      terminalReason: "Postmark RecordType not handled by current code",
+    });
+  });
+
+  it("records schema validation failures as terminal dead-letter rows and returns 200", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    const rawBody = JSON.stringify({
+      RecordType: "Delivery",
+      MessageID: FIXTURE_MESSAGE_ID,
+    });
+
+    const response = await POST(signRequest(rawBody));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+
+    const deadLetters = await listDeadLetters(runtime);
+    expect(deadLetters).toHaveLength(1);
+    expect(deadLetters[0]).toMatchObject({
+      recordType: null,
+      messageId: null,
+      failureKind: "schema_error",
+      status: "terminal",
+      terminalReason: "Malformed Postmark payload after signature verification",
+    });
   });
 
   it("processes a Delivery event into audience_snapshots + canonical event", async () => {
@@ -353,12 +398,15 @@ describe("Postmark webhook route handler", () => {
     expect(consentRows[0]?.scopeId).toBeNull();
   });
 
-  it("returns 200 (no-op) and logs when the MessageID has no matching audience snapshot", async () => {
+  it("returns 200 (no-op) and records a pending dead-letter when the MessageID has no matching audience snapshot", async () => {
     if (runtime === null) {
       throw new Error("Runtime not initialized.");
     }
     const campaigns = requireCampaigns();
     // Do NOT seed a snapshot — the lookup will return null.
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
 
     const rawBody = loadFixture("delivery.json");
     const response = await POST(signRequest(rawBody));
@@ -369,6 +417,60 @@ describe("Postmark webhook route handler", () => {
       new Date("2099-01-01T00:00:00Z"),
     );
     expect(suppressed).toBe(false);
+
+    const deadLetters = await listDeadLetters(runtime);
+    expect(deadLetters).toHaveLength(1);
+    expect(deadLetters[0]).toMatchObject({
+      recordType: "Delivery",
+      messageId: FIXTURE_MESSAGE_ID,
+      failureKind: "snapshot_not_found",
+      status: "pending",
+      terminalReason: null,
+    });
+    expect(deadLetters[0]?.sourceEvidenceId).not.toBeNull();
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("recipientLogId");
+    expect(warnSpy.mock.calls[0]?.[0]).not.toContain("john@example.com");
+    warnSpy.mockRestore();
+  });
+
+  it("records retryable processing failures as pending dead-letter rows and returns 500", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    await seedRunAndSnapshot(runtime, requireCampaigns());
+
+    const originalUpdateDeliveryEvent =
+      runtime.runtime.campaigns.audienceSnapshots.updateDeliveryEvent.bind(
+        runtime.runtime.campaigns.audienceSnapshots,
+      );
+    runtime.runtime.campaigns.audienceSnapshots.updateDeliveryEvent =
+      () => Promise.reject(new Error("forced downstream failure"));
+
+    const rawBody = loadFixture("delivery.json");
+    const response = await POST(signRequest(rawBody));
+
+    runtime.runtime.campaigns.audienceSnapshots.updateDeliveryEvent =
+      originalUpdateDeliveryEvent;
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      code: "processing_failed",
+      message: "Postmark webhook processing failed.",
+    });
+
+    const deadLetters = await listDeadLetters(runtime);
+    expect(deadLetters).toHaveLength(1);
+    expect(deadLetters[0]).toMatchObject({
+      recordType: "Delivery",
+      messageId: FIXTURE_MESSAGE_ID,
+      failureKind: "processing_error",
+      status: "pending",
+      terminalReason: null,
+    });
+    expect(deadLetters[0]?.sourceEvidenceId).not.toBeNull();
   });
 
   it("is idempotent: re-delivering the same Delivery event does not double-write", async () => {

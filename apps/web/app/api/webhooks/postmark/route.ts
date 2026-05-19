@@ -27,6 +27,14 @@ function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+function recipientLogId(recipient: string): string {
+  return sha256(recipient.trim().toLowerCase());
+}
+
+function toFailureMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function toOccurredAt(event: PostmarkWebhookEvent): string {
   switch (event.RecordType) {
     case "Delivery":
@@ -262,7 +270,6 @@ async function processEvent(
     return;
   }
   const sourceEvidenceId = sourceEvidence.record.id;
-  void sourceEvidenceId;
   const snapshot =
     event.MessageID === null
       ? null
@@ -278,87 +285,110 @@ async function processEvent(
   }
 
   if (snapshot === null) {
+    await runtime.campaigns.webhookDeadLetter.record({
+      recordType: event.RecordType,
+      messageId: event.MessageID,
+      sourceEvidenceId,
+      payloadJson: event,
+      failureKind: "snapshot_not_found",
+      failureMessage:
+        "Postmark MessageID has no matching audience snapshot",
+    });
+
     console.warn(
       JSON.stringify({
         event: "postmark.webhook.snapshot_not_found",
         recordType: event.RecordType,
         messageId: event.MessageID,
-        recipient: event.Recipient,
+        recipientLogId: recipientLogId(event.Recipient),
       }),
     );
     return;
   }
-  const run = await runtime.campaigns.campaignRuns.findById(
-    snapshot.campaignRunId,
-  );
-  const shouldUpdateAggregateMetrics =
-    run?.state !== "finalized" ||
-    run.finalizedAt === null ||
-    new Date(occurredAt).getTime() <= new Date(run.finalizedAt).getTime();
 
-  const activity: "open" | "click" | undefined =
-    event.RecordType === "Open"
-      ? "open"
-      : event.RecordType === "Click"
-        ? "click"
-        : undefined;
-  if (shouldUpdateAggregateMetrics) {
-    await runtime.campaigns.audienceSnapshots.updateDeliveryEvent(
-      snapshot.id,
-      activity === undefined
-        ? {
-            status: toAudienceEventStatus(event),
-            at: new Date(occurredAt),
-            providerEventId: buildProviderRecordId(event),
-          }
-        : {
-            status: toAudienceEventStatus(event),
-            at: new Date(occurredAt),
-            activity,
-            providerEventId: buildProviderRecordId(event),
-          },
+  try {
+    const run = await runtime.campaigns.campaignRuns.findById(
+      snapshot.campaignRunId,
     );
-  }
+    const shouldUpdateAggregateMetrics =
+      run?.state !== "finalized" ||
+      run.finalizedAt === null ||
+      new Date(occurredAt).getTime() <= new Date(run.finalizedAt).getTime();
 
-  const bounceReason = toBounceReason(event);
-  if (bounceReason !== null) {
-    await runtime.campaigns.suppressionList.upsertFromBounce(
-      event.Recipient,
-      bounceReason,
-      buildProviderRecordId(event),
-      new Date(occurredAt),
-    );
-  }
-
-  if (event.RecordType === "SpamComplaint") {
-    await writeSpamComplaintReview({
-      runtime,
-      sourceEvidenceId,
-      contactId: snapshot.contactId,
-      recipient: event.Recipient,
-    });
-  }
-
-  if (isRecipientUnsubscribe(event)) {
-    if (run !== null) {
-      await runtime.campaigns.contactConsent.recordOptOut(
-        snapshot.contactId,
-        run.kind === "project" && run.projectId !== null
-          ? { type: "project", id: run.projectId }
-          : { type: "newsletter" },
-        "provider_event",
-        run.id,
+    const activity: "open" | "click" | undefined =
+      event.RecordType === "Open"
+        ? "open"
+        : event.RecordType === "Click"
+          ? "click"
+          : undefined;
+    if (shouldUpdateAggregateMetrics) {
+      await runtime.campaigns.audienceSnapshots.updateDeliveryEvent(
+        snapshot.id,
+        activity === undefined
+          ? {
+              status: toAudienceEventStatus(event),
+              at: new Date(occurredAt),
+              providerEventId: buildProviderRecordId(event),
+            }
+          : {
+              status: toAudienceEventStatus(event),
+              at: new Date(occurredAt),
+              activity,
+              providerEventId: buildProviderRecordId(event),
+            },
       );
     }
-  }
 
-  await persistence.persistCanonicalEvent(
-    buildCanonicalEvent({
-      event,
+    const bounceReason = toBounceReason(event);
+    if (bounceReason !== null) {
+      await runtime.campaigns.suppressionList.upsertFromBounce(
+        event.Recipient,
+        bounceReason,
+        buildProviderRecordId(event),
+        new Date(occurredAt),
+      );
+    }
+
+    if (event.RecordType === "SpamComplaint") {
+      await writeSpamComplaintReview({
+        runtime,
+        sourceEvidenceId,
+        contactId: snapshot.contactId,
+        recipient: event.Recipient,
+      });
+    }
+
+    if (isRecipientUnsubscribe(event)) {
+      if (run !== null) {
+        await runtime.campaigns.contactConsent.recordOptOut(
+          snapshot.contactId,
+          run.kind === "project" && run.projectId !== null
+            ? { type: "project", id: run.projectId }
+            : { type: "newsletter" },
+          "provider_event",
+          run.id,
+        );
+      }
+    }
+
+    await persistence.persistCanonicalEvent(
+      buildCanonicalEvent({
+        event,
+        sourceEvidenceId,
+        contactId: snapshot.contactId,
+      }),
+    );
+  } catch (error) {
+    await runtime.campaigns.webhookDeadLetter.record({
+      recordType: event.RecordType,
+      messageId: event.MessageID,
       sourceEvidenceId,
-      contactId: snapshot.contactId,
-    }),
-  );
+      payloadJson: event,
+      failureKind: "processing_error",
+      failureMessage: toFailureMessage(error),
+    });
+    throw error;
+  }
 }
 
 export async function POST(request: Request) {
@@ -405,6 +435,32 @@ export async function POST(request: Request) {
   }
 
   if (isUnknownRecordType(payload)) {
+    const runtime = await getStage1WebRuntime();
+    const recordType =
+      typeof payload === "object" &&
+      payload !== null &&
+      "RecordType" in payload &&
+      typeof payload.RecordType === "string"
+        ? payload.RecordType
+        : null;
+    const messageId =
+      typeof payload === "object" &&
+      payload !== null &&
+      "MessageID" in payload &&
+      typeof payload.MessageID === "string" &&
+      payload.MessageID.trim().length > 0
+        ? payload.MessageID
+        : null;
+
+    await runtime.campaigns.webhookDeadLetter.record({
+      recordType,
+      messageId,
+      sourceEvidenceId: null,
+      payloadJson: payload,
+      failureKind: "unknown_event_type",
+      failureMessage: `Postmark RecordType ${recordType ?? "unknown"} is not handled by current code`,
+      terminalReason: "Postmark RecordType not handled by current code",
+    });
     return ok();
   }
 
@@ -413,7 +469,17 @@ export async function POST(request: Request) {
     event = postmarkWebhookEventSchema.parse(payload);
   } catch (error) {
     console.error("Postmark webhook payload validation failed.");
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(toFailureMessage(error));
+    const runtime = await getStage1WebRuntime();
+    await runtime.campaigns.webhookDeadLetter.record({
+      recordType: null,
+      messageId: null,
+      sourceEvidenceId: null,
+      payloadJson: payload,
+      failureKind: "schema_error",
+      failureMessage: toFailureMessage(error),
+      terminalReason: "Malformed Postmark payload after signature verification",
+    });
     return ok();
   }
 
@@ -421,8 +487,19 @@ export async function POST(request: Request) {
     const runtime = await getStage1WebRuntime();
     await processEvent(runtime, rawBody, event);
   } catch (error) {
-    console.error("Postmark webhook processing failed.");
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(
+      JSON.stringify({
+        event: "postmark.webhook.processing_error",
+        recordType: event.RecordType,
+        messageId: event.MessageID,
+        error: toFailureMessage(error),
+      }),
+    );
+    return safeError(
+      "processing_failed",
+      "Postmark webhook processing failed.",
+      500,
+    );
   }
 
   return ok();

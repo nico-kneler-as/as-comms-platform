@@ -15,6 +15,8 @@ import type {
   PostmarkSenderStatus,
   RunState,
   SuppressionReason,
+  WebhookDeadLetterFailureKind,
+  WebhookDeadLetterStatus,
 } from "@as-comms/contracts";
 import {
   bigint,
@@ -29,6 +31,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 
 import {
@@ -126,6 +129,50 @@ export const sourceEvidenceQuarantine = pgTable(
       table.provider,
       table.idempotencyKey,
     ),
+  ],
+);
+
+export const postmarkWebhookDeadLetter = pgTable(
+  "postmark_webhook_dead_letter",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    receivedAt: timestamp("received_at", {
+      mode: "date",
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+    recordType: text("record_type"),
+    messageId: text("message_id"),
+    sourceEvidenceId: text("source_evidence_id").references(
+      () => sourceEvidenceLog.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    payloadJson: jsonb("payload_json").notNull(),
+    failureKind: text("failure_kind")
+      .$type<WebhookDeadLetterFailureKind>()
+      .notNull(),
+    failureMessage: text("failure_message").notNull(),
+    retryCount: integer("retry_count").notNull().default(0),
+    lastRetryAt: timestamp("last_retry_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    status: text("status").$type<WebhookDeadLetterStatus>().notNull().default(
+      "pending",
+    ),
+    terminalReason: text("terminal_reason"),
+  },
+  (table) => [
+    index("postmark_webhook_dead_letter_status_received_at_idx").on(
+      table.status,
+      table.receivedAt,
+    ),
+    index("postmark_webhook_dead_letter_message_id_idx")
+      .on(table.messageId)
+      .where(isNotNull(table.messageId)),
   ],
 );
 
