@@ -546,14 +546,14 @@ export default async function CampaignsPage({
       <div className="h-[54px] border-b border-slate-200 bg-white px-6">
         <div className="mx-auto flex h-full w-full max-w-[1180px] items-center justify-between gap-4">
           <div className="flex min-w-0 items-baseline gap-3">
-            <h1 className="text-lg font-semibold text-slate-900">Campaigns</h1>
+            <h1 className="text-lg font-semibold text-slate-900">Broadcasts</h1>
             <p className="text-[12px] tabular-nums text-slate-500">
               {activeCount.toLocaleString()}
             </p>
           </div>
           {currentUser.role === "admin" ? (
             <Button asChild size="sm">
-              <Link href="/campaigns/new">+ New campaign</Link>
+              <Link href="/broadcasts/new">+ New broadcast</Link>
             </Button>
           ) : null}
         </div>

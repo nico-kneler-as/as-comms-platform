@@ -1,7 +1,7 @@
 # Data Core
 
 **Role:** canonical data and identity contract  
-**Audience:** implementers touching persistence, projections, sync, Inbox, AI, or Campaigns  
+**Audience:** implementers touching persistence, projections, sync, Inbox, AI, or Broadcasts  
 **When to read:** before data model, integration, worker, or projection work  
 **Authority:** authoritative for canonical concepts, identity rules, dedupe, projections, review queues  
 **Decides:** what durable concepts must exist and how identity/projection logic behaves  
@@ -26,7 +26,7 @@
 | routing review queue | project or routing ambiguity |
 | contact timeline projection | chronological person history |
 | contact inbox projection | contact-centric Inbox read model |
-| campaign projections | audience, runs, snapshots |
+| broadcast projections | audience, runs, snapshots |
 | sync + parity state | cursors, backfills, parity, dead letters |
 | audit + policy evidence | audit records, webhook verification, policy decisions |
 | AI durable state | knowledge cache, resolved reply examples, assistant feedback |
@@ -61,7 +61,7 @@
 - `needsFollowUp` is a separate explicit follow-up flag, not a replacement for bucket state.
 - Unresolved review is layered on top of the row state model, not its own bucket.
 - Default Inbox ordering is `lastInboundAt desc`, falling back to `lastActivityAt desc` when `lastInboundAt` is missing.
-- Campaign events appear in the timeline but do not drive Inbox bucket changes.
+- Broadcast events appear in the timeline but do not drive Inbox bucket changes.
 
 ## Manual Resolution Model
 
@@ -75,5 +75,5 @@
 
 ## Read Next
 
-- product-facing behavior: [`product-core.md`](./product-core.md)
-- task-focused implementation: open the relevant file under [`../02-bundles`](../02-bundles)
+- product-facing behavior: [product-core.md](./product-core.md)
+- task-focused implementation: open the relevant file under [02-bundles](../02-bundles)

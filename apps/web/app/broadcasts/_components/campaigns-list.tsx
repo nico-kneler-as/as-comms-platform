@@ -222,12 +222,12 @@ export function CampaignsList({
           <EmptyState
             size="lg"
             icon={<MegaphoneIcon className="size-7 text-slate-500" />}
-            title="No campaigns yet"
+            title="No broadcasts yet"
             description="Start your first one."
             action={
               showNewCampaignCta ? (
                 <Button asChild>
-                  <Link href="/campaigns/new">New campaign</Link>
+                  <Link href="/broadcasts/new">New broadcast</Link>
                 </Button>
               ) : undefined
             }
@@ -340,7 +340,7 @@ export function CampaignsList({
                   onInput={(event) => {
                     setSearchDraft(event.currentTarget.value);
                   }}
-                  placeholder="Search campaigns"
+                  placeholder="Search broadcasts"
                   className="w-full bg-transparent text-slate-900 placeholder:text-slate-400 focus:outline-none"
                 />
               </label>
@@ -353,8 +353,8 @@ export function CampaignsList({
             <EmptyState
               size="lg"
               icon={<SearchIcon className="size-7 text-slate-500" />}
-              title="No campaigns match these filters."
-              description="Clear the current filters to see more campaign history."
+              title="No broadcasts match these filters."
+              description="Clear the current filters to see more broadcast history."
               action={
                 <Button
                   type="button"

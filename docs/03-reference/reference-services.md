@@ -12,10 +12,10 @@
 | Gmail | one-to-one email history and live one-to-one transport | Inbox, email replies, historical email import |
 | Salesforce | identity anchor, memberships, journey context, outbound communication metadata | identity, routing, project context, lifecycle events |
 | SimpleTexting | one-to-one SMS/MMS history and live SMS/MMS transport | Inbox SMS, compliance events |
-| Mailchimp | historical and transition-period campaign email ingest | transition-period Campaigns data |
+| Mailchimp | historical and transition-period broadcast email ingest | transition-period Broadcasts data |
 | Notion | AI instructions and approved knowledge source | AI knowledge sync/cache |
 | OpenAI | request-time draft generation | AI assistant |
-| Postmark | Campaigns Email delivery provider (Stage 5A) | Email Campaigns transport, Broadcast Message Streams, Events Webhook |
+| Postmark | Broadcasts Email delivery provider (Stage 5A) | Email Broadcasts transport, Broadcast Message Streams, Events Webhook |
 | Supabase/Postgres | durable persistence | canonical state, projections, replay, audit |
 
 ## Frequent Reminders
@@ -23,7 +23,7 @@
 - Gmail stays the one-to-one email transport after cutover.
 - Salesforce Contact ID is the primary identity anchor.
 - Mailchimp remains transition ingest scope, not the future authoring UX.
-- Postmark delivers Email Campaigns (`D-045`); Stage 5A authoring + audience + frozen review stay product-owned in our DB.
+- Postmark delivers Email Broadcasts (`D-045`); Stage 5A authoring + audience + frozen review stay product-owned in our DB.
 
 ## Notion
 
@@ -37,7 +37,7 @@
 
 ## Deep References
 
-- full service dossiers live in [`../../restart-prd`](../../restart-prd)
+- full service dossiers live in [restart-prd](../../restart-prd)
 - especially useful donor docs:
   - `service-gmail.md`
   - `service-salesforce.md`

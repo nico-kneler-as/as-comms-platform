@@ -73,8 +73,8 @@ Alert `nico@adventurescientists.org`. Include:
 ## Related
 
 - **Code paths:**
-  - [`apps/web/src/server/ai/provider.ts:12`](../../apps/web/src/server/ai/provider.ts) — reads `ANTHROPIC_API_KEY`, `AI_DAILY_CAP_USD` (default $20), `ANTHROPIC_MODEL`
-  - [`apps/web/src/server/ai/cost-counter.ts:35`](../../apps/web/src/server/ai/cost-counter.ts) — in-process daily cost state; resets at midnight UTC
-  - [`apps/web/src/server/ai/types.ts:12`](../../apps/web/src/server/ai/types.ts) — warning codes: `provider_not_configured`, `provider_timeout`, `provider_rate_limited`, `provider_unavailable`, `budget_warn`, `grounding_empty`
-  - [`apps/web/src/server/ai/draft-generator.ts:279`](../../apps/web/src/server/ai/draft-generator.ts) — error classification and fallback dispatch
+  - [provider.ts](../../apps/web/src/server/ai/provider.ts) — reads `ANTHROPIC_API_KEY`, `AI_DAILY_CAP_USD` (default $20), `ANTHROPIC_MODEL`
+  - [cost-counter.ts](../../apps/web/src/server/ai/cost-counter.ts) — in-process daily cost state; resets at midnight UTC
+  - [types.ts](../../apps/web/src/server/ai/types.ts) — warning codes: `provider_not_configured`, `provider_timeout`, `provider_rate_limited`, `provider_unavailable`, `budget_warn`, `grounding_empty`
+  - [draft-generator.ts](../../apps/web/src/server/ai/draft-generator.ts) — error classification and fallback dispatch
 - **Other runbooks:** [morning-ops-checks.md](./morning-ops-checks.md), [ai-knowledge-sync-failed.md](./ai-knowledge-sync-failed.md)

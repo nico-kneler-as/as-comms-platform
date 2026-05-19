@@ -34,7 +34,7 @@ These were not locked by canon, so Stage 0 uses the lightest pragmatic options t
 - repository implementations and durable Stage 1 entities
 - provider adapters, ingest, replay, projections, or cutover logic
 - auth flows, role UX, and auditable admin mutations
-- Inbox, timeline, notes, AI, and campaign product behavior
+- Inbox, timeline, notes, AI, and broadcast product behavior
 
 ## Install note
 

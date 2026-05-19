@@ -36,7 +36,7 @@ export function CancelModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Cancel this campaign?</DialogTitle>
+          <DialogTitle>Cancel this broadcast?</DialogTitle>
           <DialogDescription className="space-y-3 pt-2 text-sm leading-6 text-slate-600">
             <span className="block">
               We&apos;ll stop sending to remaining recipients.{" "}
@@ -81,7 +81,7 @@ export function CancelModal({
               });
             }}
           >
-            {pending ? "Cancelling…" : "Cancel campaign"}
+            {pending ? "Cancelling…" : "Cancel broadcast"}
           </Button>
         </DialogFooter>
       </DialogContent>

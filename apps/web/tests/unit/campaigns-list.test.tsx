@@ -35,7 +35,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({
     replace: replaceMock,
   }),
-  usePathname: () => "/campaigns",
+  usePathname: () => "/broadcasts",
   useSearchParams: () => searchParamsValue,
 }));
 
@@ -62,7 +62,7 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
   }) => <div onClick={onSelect}>{children}</div>,
 }));
 
-import { CampaignsList } from "../../app/campaigns/_components/campaigns-list";
+import { CampaignsList } from "../../app/broadcasts/_components/campaigns-list";
 
 type CampaignListItem = React.ComponentProps<
   typeof CampaignsList
@@ -90,7 +90,7 @@ let domWindow: (Window & typeof globalThis & { close: () => void }) | null =
 
 function setupDom() {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-    url: "http://localhost/campaigns",
+    url: "http://localhost/broadcasts",
     pretendToBeVisual: true,
   });
 
@@ -204,7 +204,7 @@ afterEach(() => {
   domWindow = null;
 });
 
-describe("CampaignsList snapshots", () => {
+describe("broadcasts list snapshots", () => {
   it("matches the empty state snapshot", () => {
     const container = setupDom();
     const html = renderList(container);
@@ -450,7 +450,7 @@ describe("CampaignsList snapshots", () => {
       "[data-campaign-search]",
     );
     if (!(searchInput instanceof HTMLInputElement)) {
-      throw new Error("Expected campaign search input to render.");
+      throw new Error("Expected broadcast search input to render.");
     }
 
     act(() => {
@@ -474,7 +474,7 @@ describe("CampaignsList snapshots", () => {
     });
 
     expect(replaceMock).toHaveBeenCalledWith(
-      "/campaigns?state=complete&q=whale",
+      "/broadcasts?state=complete&q=whale",
       { scroll: false },
     );
   });
@@ -501,7 +501,7 @@ describe("CampaignsList snapshots", () => {
       "[data-campaign-search]",
     );
     if (!(searchInput instanceof HTMLInputElement)) {
-      throw new Error("Expected campaign search input to render.");
+      throw new Error("Expected broadcast search input to render.");
     }
 
     act(() => {
@@ -530,7 +530,7 @@ describe("CampaignsList snapshots", () => {
     });
 
     expect(replaceMock).toHaveBeenCalledWith(
-      "/campaigns?projectId=project-kelp&q=whale",
+      "/broadcasts?projectId=project-kelp&q=whale",
       { scroll: false },
     );
   });

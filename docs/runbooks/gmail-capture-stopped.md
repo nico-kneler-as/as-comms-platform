@@ -64,9 +64,9 @@ Alert `nico@adventurescientists.org`. Include:
 ## Related
 
 - **Code paths:**
-  - [`apps/worker/src/jobs/integration-health/email.ts`](../../apps/worker/src/jobs/integration-health/email.ts) — alert email sender; fires when status flips
-  - [`apps/web/src/server/settings/integration-health.ts`](../../apps/web/src/server/settings/integration-health.ts) — polls capture service `/health`, updates DB record
-  - [`packages/contracts/src/settings-records.ts:22`](../../packages/contracts/src/settings-records.ts) — status enum: `healthy` / `needs_attention` / `disconnected`
-  - [`packages/db/src/schema/tables.ts:692`](../../packages/db/src/schema/tables.ts) — `consecutive_failure_count` and `dead_letter_count` on `sync_state`
+  - [email.ts](../../apps/worker/src/jobs/integration-health/email.ts) — alert email sender; fires when status flips
+  - [integration-health.ts](../../apps/web/src/server/settings/integration-health.ts) — polls capture service `/health`, updates DB record
+  - [settings-records.ts](../../packages/contracts/src/settings-records.ts) — status enum: `healthy` / `needs_attention` / `disconnected`
+  - [tables.ts](../../packages/db/src/schema/tables.ts) — `consecutive_failure_count` and `dead_letter_count` on `sync_state`
 - **Other runbooks:** [worker-queue-stuck.md](./worker-queue-stuck.md), [morning-ops-checks.md](./morning-ops-checks.md)
 - **Recent incidents:** PR #200 (2026-04) — dead-letter SF live_ingest after 5 consecutive failures; same pattern applies to Gmail

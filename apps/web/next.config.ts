@@ -74,6 +74,20 @@ const nextConfig: NextConfig = {
       },
     ]);
   },
+  redirects() {
+    return Promise.resolve([
+      {
+        source: "/campaigns",
+        destination: "/broadcasts",
+        permanent: true,
+      },
+      {
+        source: "/campaigns/:path*",
+        destination: "/broadcasts/:path*",
+        permanent: true,
+      },
+    ]);
+  },
   rewrites() {
     return Promise.resolve([
       // Flow map documentation — static HTML served from /public/flow.html.

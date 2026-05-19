@@ -57,7 +57,7 @@ export function LaunchTypeStep({
         </h2>
         <p className="mt-2 max-w-2xl text-pretty text-[13px] leading-relaxed text-slate-500">
           Phase A ships the Normal Email path first, but the wizard makes the
-          full campaign model visible now so operators know what is coming next.
+          full broadcast model visible now so operators know what is coming next.
         </p>
       </div>
 

@@ -45,7 +45,7 @@ vi.mock("@/components/ui/dialog", () => ({
   ),
 }));
 
-import { ReviewStep } from "../../app/campaigns/new/_components/review-step";
+import { ReviewStep } from "../../app/broadcasts/new/_components/review-step";
 
 const baseProps: React.ComponentProps<typeof ReviewStep> = {
   kind: "project",

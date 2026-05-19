@@ -5,7 +5,7 @@ import { PrimaryIconRail } from "@/app/_components/primary-icon-rail";
 import { requireSession } from "@/src/server/auth/session";
 
 export const metadata = {
-  title: "Campaigns",
+  title: "Broadcasts",
 };
 
 export const dynamic = "force-dynamic";

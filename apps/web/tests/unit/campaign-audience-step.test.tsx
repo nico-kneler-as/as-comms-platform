@@ -21,7 +21,7 @@ vi.mock("@/components/ui/input", () => ({
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
 }));
 
-import { AudienceBuilderStep } from "../../app/campaigns/new/_components/audience-builder-step";
+import { AudienceBuilderStep } from "../../app/broadcasts/new/_components/audience-builder-step";
 
 const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   criteria: {

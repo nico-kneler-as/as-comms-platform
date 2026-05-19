@@ -11,9 +11,9 @@ Close work with evidence, not optimism.
 
 ## Required Reading
 
-1. [`../00-index.md`](../00-index.md)
-2. [`../01-core/delivery-core.md`](../01-core/delivery-core.md)
-3. [`../01-core/decision-core.md`](../01-core/decision-core.md)
+1. [00-index.md](../00-index.md)
+2. [delivery-core.md](../01-core/delivery-core.md)
+3. [decision-core.md](../01-core/decision-core.md)
 
 ## Required Loop
 
@@ -66,5 +66,5 @@ Do not close work if:
 
 ## Read Next
 
-- testing isolation reference: [`../03-reference/reference-testing-mocks.md`](../03-reference/reference-testing-mocks.md)
-- full donor reference if needed: [`../03-reference/reference-legacy-conflicts.md`](../03-reference/reference-legacy-conflicts.md)
+- testing isolation reference: [reference-testing-mocks.md](../03-reference/reference-testing-mocks.md)
+- full donor reference if needed: [reference-legacy-conflicts.md](../03-reference/reference-legacy-conflicts.md)

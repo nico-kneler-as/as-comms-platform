@@ -34,7 +34,7 @@ vi.mock("@/components/ui/tooltip", () => ({
   ),
 }));
 
-import { NameAndSenderStep } from "../../app/campaigns/new/_components/name-and-sender-step";
+import { NameAndSenderStep } from "../../app/broadcasts/new/_components/name-and-sender-step";
 
 const baseProps: React.ComponentProps<typeof NameAndSenderStep> = {
   name: "May forests volunteer update",
@@ -65,7 +65,7 @@ const baseProps: React.ComponentProps<typeof NameAndSenderStep> = {
 };
 
 describe("NameAndSenderStep", () => {
-  it("renders campaign name and verified-aware sender rows", () => {
+  it("renders broadcast name and verified-aware sender rows", () => {
     const markup = renderToStaticMarkup(<NameAndSenderStep {...baseProps} />);
 
     expect(markup).toContain("May forests volunteer update");

@@ -184,7 +184,7 @@ export async function loadUnsubscribePageModel(input: {
     variant: "project",
     headline: `You've been unsubscribed from ${projectName} emails.`,
     body:
-      "You won't receive any more campaign emails from this project. Your project-team correspondence — replies to direct conversations, trip logistics, gear pickups — will keep flowing as usual.",
+      "You won't receive any more broadcast emails from this project. Your project-team correspondence — replies to direct conversations, trip logistics, gear pickups — will keep flowing as usual.",
     email: target.email,
     ctaPrompt:
       "Want to unsubscribe from all Adventure Scientists emails instead?",
