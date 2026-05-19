@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { POST as unsubscribeAllPost } from "../../app/u/[token]/all/route";
-import { POST as unsubscribePost } from "../../app/u/[token]/route";
+import { POST as unsubscribePost } from "../../app/u/[token]/confirm/route";
 import UnsubscribeTokenPage from "../../app/u/[token]/page";
 import { UnsubscribePageView } from "../../app/u/[token]/_components/unsubscribe-page-view";
 import type { UnsubscribePageModel } from "../../app/u/[token]/_lib/unsubscribe";
@@ -143,7 +143,7 @@ describe("public unsubscribe page", () => {
     expect(html).toContain("Unsubscribe from Forests emails?");
     expect(html).toContain("Confirm unsubscribe");
     expect(html).toContain("taylor@example.org");
-    expect(html).toContain('action="/u/token-project"');
+    expect(html).toContain('action="/u/token-project/confirm"');
     if (!runtime) {
       throw new Error("runtime not initialized");
     }
@@ -156,7 +156,7 @@ describe("public unsubscribe page", () => {
 
   it("POST records the scope-specific opt-out and redirects with ?confirmed=1", async () => {
     const response = await unsubscribePost(
-      new Request("http://localhost/u/token-project", { method: "POST" }),
+      new Request("http://localhost/u/token-project/confirm", { method: "POST" }),
       { params: Promise.resolve({ token: "token-project" }) },
     );
 

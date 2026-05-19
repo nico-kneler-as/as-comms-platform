@@ -4,7 +4,7 @@ import { createConsentLedger } from "@as-comms/domain";
 
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 
-import { resolveUnsubscribeScope, resolveUnsubscribeTarget } from "./_lib/unsubscribe";
+import { resolveUnsubscribeScope, resolveUnsubscribeTarget } from "../_lib/unsubscribe";
 
 export const dynamic = "force-dynamic";
 

@@ -99,7 +99,7 @@ export function UnsubscribePageView({
             ) : null}
 
             {model.state === "pending" ? (
-              <form action={`/u/${encodeURIComponent(model.token)}`} method="post">
+              <form action={`/u/${encodeURIComponent(model.token)}/confirm`} method="post">
                 <button
                   type="submit"
                   className="inline-flex items-center justify-center rounded-full bg-[#253746] px-5 py-3 text-sm font-semibold text-white transition-colors duration-150 hover:bg-[#1c2933] focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
