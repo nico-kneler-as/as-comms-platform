@@ -211,6 +211,17 @@ function buildCampaignSendDependencies(input: {
     return undefined;
   }
 
+  const appUrl =
+    readOptionalTrimmedEnv(input.env.NEXT_PUBLIC_APP_URL) ??
+    readOptionalTrimmedEnv(input.env.WEB_BASE_URL);
+
+  if (appUrl === null) {
+    console.warn(
+      "Skipping campaign-send wiring because NEXT_PUBLIC_APP_URL (or WEB_BASE_URL) is missing — required for unsubscribe links.",
+    );
+    return undefined;
+  }
+
   const audienceResolver = createAudienceResolver({
     repositories: {
       contacts: input.repositories.contacts,
@@ -243,12 +254,14 @@ function buildCampaignSendDependencies(input: {
         campaignRuns: input.campaigns.campaignRuns,
         audienceSnapshots: input.campaigns.audienceSnapshots,
         settingsProjects: input.settings.projects,
+        orgSettings: input.campaigns.orgSettings,
         auditEvidence: input.repositories.auditEvidence,
       },
       audienceResolver,
       exclusionFilter,
       mergeRenderer,
       postmarkClient,
+      appUrl,
     }),
   };
 }

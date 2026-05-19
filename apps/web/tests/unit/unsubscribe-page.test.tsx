@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { POST as unsubscribeAllPost } from "../../app/u/[token]/all/route";
+import { POST as unsubscribePost } from "../../app/u/[token]/route";
 import UnsubscribeTokenPage from "../../app/u/[token]/page";
 import { UnsubscribePageView } from "../../app/u/[token]/_components/unsubscribe-page-view";
 import type { UnsubscribePageModel } from "../../app/u/[token]/_lib/unsubscribe";
@@ -132,15 +133,37 @@ describe("public unsubscribe page", () => {
     runtime = null;
   });
 
-  it("records an opt-out and renders the success page for a valid token", async () => {
+  it("GET renders a pending confirmation page without recording an opt-out", async () => {
     const page = await UnsubscribeTokenPage({
       params: Promise.resolve({ token: "token-project" }),
       searchParams: Promise.resolve({}),
     });
     const html = renderToStaticMarkup(page);
 
-    expect(html).toContain("You&#x27;ve been unsubscribed from Forests emails.");
+    expect(html).toContain("Unsubscribe from Forests emails?");
+    expect(html).toContain("Confirm unsubscribe");
     expect(html).toContain("taylor@example.org");
+    expect(html).toContain('action="/u/token-project"');
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+    const campaigns = (await getStage1WebRuntime()).campaigns;
+    const consentRows = await campaigns.contactConsent.listForContact(
+      "contact-unsubscribe",
+    );
+    expect(consentRows).toHaveLength(0);
+  });
+
+  it("POST records the scope-specific opt-out and redirects with ?confirmed=1", async () => {
+    const response = await unsubscribePost(
+      new Request("http://localhost/u/token-project", { method: "POST" }),
+      { params: Promise.resolve({ token: "token-project" }) },
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      "http://localhost/u/token-project?confirmed=1",
+    );
     if (!runtime) {
       throw new Error("runtime not initialized");
     }
@@ -155,6 +178,37 @@ describe("public unsubscribe page", () => {
       source: "recipient_click",
       sourceRunId: "run-project",
     });
+  });
+
+  it("GET with ?confirmed=1 renders the success page", async () => {
+    const page = await UnsubscribeTokenPage({
+      params: Promise.resolve({ token: "token-project" }),
+      searchParams: Promise.resolve({ confirmed: "1" }),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("You&#x27;ve been unsubscribed from Forests emails.");
+    expect(html).toContain("taylor@example.org");
+  });
+
+  it("GET does not record an opt-out for link prefetchers (regression test)", async () => {
+    // Simulates Outlook/Gmail link scanners that load the URL.
+    // This test is the load-bearing assertion for the GET-unsubscribe
+    // fix — link scanners must not be able to silently opt anyone out.
+    for (let pass = 0; pass < 3; pass += 1) {
+      await UnsubscribeTokenPage({
+        params: Promise.resolve({ token: "token-project" }),
+        searchParams: Promise.resolve({}),
+      });
+    }
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+    const campaigns = (await getStage1WebRuntime()).campaigns;
+    const consentRows = await campaigns.contactConsent.listForContact(
+      "contact-unsubscribe",
+    );
+    expect(consentRows).toHaveLength(0);
   });
 
   it("renders a friendly error page for an invalid token", async () => {
