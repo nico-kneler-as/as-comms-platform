@@ -27,4 +27,4 @@
 
 ## Deep Reference
 
-- donor reuse map: [`../../restart-prd/donor-map.md`](../../restart-prd/donor-map.md)
+- donor reuse map: [donor-map.md](../../restart-prd/donor-map.md)

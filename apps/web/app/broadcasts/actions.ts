@@ -252,7 +252,7 @@ async function assertCampaignAdmin():
         ok: false,
         error: errorResult(
           "unauthorized",
-          "You must be signed in to manage campaigns.",
+          "You must be signed in to manage broadcasts.",
         ),
       };
     }
@@ -260,7 +260,7 @@ async function assertCampaignAdmin():
     if (error instanceof Error && error.message === "FORBIDDEN") {
       return {
         ok: false,
-        error: errorResult("forbidden", "Only admins can manage campaigns."),
+        error: errorResult("forbidden", "Only admins can manage broadcasts."),
       };
     }
 
@@ -337,13 +337,13 @@ export async function sendNow(
     const runtime = await getStage1WebRuntime();
     const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
     if (run === null) {
-      return errorResult("campaign_not_found", "Campaign draft not found.");
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
     }
 
     const senderError = await validateVerifiedSender({
       runtime,
       email: run.fromEmail,
-      failureMessage: "Choose a verified sender alias before sending this campaign.",
+      failureMessage: "Choose a verified sender alias before sending this broadcast.",
     });
     if (senderError !== null) {
       return senderError;
@@ -391,7 +391,7 @@ export async function sendNow(
   } catch (error) {
     return errorResult(
       "campaign_send_failed",
-      error instanceof Error ? error.message : "Unable to start the campaign send.",
+      error instanceof Error ? error.message : "Unable to start the broadcast send.",
       true,
     );
   }
@@ -415,13 +415,13 @@ export async function schedule(
     const runtime = await getStage1WebRuntime();
     const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
     if (run === null) {
-      return errorResult("campaign_not_found", "Campaign draft not found.");
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
     }
 
     const senderError = await validateVerifiedSender({
       runtime,
       email: run.fromEmail,
-      failureMessage: "Choose a verified sender alias before scheduling this campaign.",
+      failureMessage: "Choose a verified sender alias before scheduling this broadcast.",
     });
     if (senderError !== null) {
       return senderError;
@@ -470,7 +470,7 @@ export async function schedule(
   } catch (error) {
     return errorResult(
       "campaign_schedule_failed",
-      error instanceof Error ? error.message : "Unable to schedule the campaign.",
+      error instanceof Error ? error.message : "Unable to schedule the broadcast.",
       true,
     );
   }
@@ -501,7 +501,7 @@ export async function testSend(
     const runtime = await getStage1WebRuntime();
     const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
     if (run === null) {
-      return errorResult("campaign_not_found", "Campaign draft not found.");
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
     }
 
     const resolver = createAudienceResolver({
@@ -595,7 +595,7 @@ export async function testSend(
       "campaign_test_send_failed",
       error instanceof Error
         ? error.message
-        : "Unable to send the test campaign email.",
+        : "Unable to send the test broadcast email.",
       true,
     );
   }
@@ -623,7 +623,7 @@ export async function listCampaignRecipients(input: {
   } catch {
     return errorResult(
       "campaign_recipients_load_failed",
-      "Unable to load campaign recipients.",
+      "Unable to load broadcast recipients.",
       true,
     );
   }
@@ -704,7 +704,7 @@ export async function cancel(
   } catch (error) {
     return errorResult(
       "campaign_cancel_failed",
-      error instanceof Error ? error.message : "Unable to cancel the campaign.",
+      error instanceof Error ? error.message : "Unable to cancel the broadcast.",
       true,
     );
   }
@@ -721,7 +721,7 @@ export async function duplicateCampaignRun(
     if (existing === null) {
       return errorResult(
         "campaign_duplicate_missing",
-        "Campaign run was not found.",
+        "Broadcast run was not found.",
       );
     }
 
@@ -765,7 +765,7 @@ export async function duplicateCampaignRun(
   } catch (error) {
     return errorResult(
       "campaign_duplicate_failed",
-      error instanceof Error ? error.message : "Unable to duplicate the campaign.",
+      error instanceof Error ? error.message : "Unable to duplicate the broadcast.",
       true,
     );
   }

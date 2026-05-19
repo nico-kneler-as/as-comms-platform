@@ -85,7 +85,7 @@ Prove that one Salesforce-anchored contact can be explained cleanly across Gmail
 
 ### Purpose
 
-Validate the deferred Stage 1 backend paths for SimpleTexting and Mailchimp without widening into frontend, campaigns-product, or operator workflow work.
+Validate the deferred Stage 1 backend paths for SimpleTexting and Mailchimp without widening into frontend, broadcasts-product, or operator workflow work.
 
 ### Scope
 
@@ -97,14 +97,14 @@ Validate the deferred Stage 1 backend paths for SimpleTexting and Mailchimp with
 ### Non-goals
 
 - no frontend validation
-- no campaign authoring, approval, or product-webhook work
+- no broadcast authoring, approval, or product-webhook work
 - no Gmail or Salesforce redesign or broad revalidation unless a direct duplicate-collapse or routing dependency is exposed
 - no widening beyond the Stage 1 event taxonomy and provider ingest matrix
 
 ### Exit Criteria
 
 - SimpleTexting backend validation proves historical and live one-to-one SMS/MMS plus compliance events through the shared normalization path
-- Mailchimp backend validation proves historical and transition-period campaign ingest through the shared normalization path
+- Mailchimp backend validation proves historical and transition-period broadcast ingest through the shared normalization path
 - provider-specific tie-break and review rules remain intact:
   - SimpleTexting stays primary for official SMS transport and compliance events
   - Mailchimp campaign events stay distinct from one-to-one email events
@@ -134,7 +134,7 @@ Run one final cross-provider backend confidence pass in the same style as Stage 
 ### Scope
 
 - one-contact or small-contact-set merged story across all validated Stage 1 providers
-- timeline explainability across one-to-one email, one-to-one SMS, lifecycle, and campaign-event history
+- timeline explainability across one-to-one email, one-to-one SMS, lifecycle, and broadcast-event history
 - Inbox bucket semantics and unresolved overlays with all four providers enabled
 - replay, rebuild, parity, and cutover-support trust after the deferred providers are added
 
@@ -142,7 +142,7 @@ Run one final cross-provider backend confidence pass in the same style as Stage 
 
 - no frontend or operator tooling work
 - no new provider onboarding beyond Gmail, Salesforce, SimpleTexting, and Mailchimp
-- no Stage 2, Inbox-stage, or Campaigns-stage product expansion
+- no Stage 2, Inbox-stage, or Broadcasts-stage product expansion
 
 ### Exit Criteria
 

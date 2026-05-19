@@ -9,7 +9,7 @@
 
 - Projections are derived views, never durable truth.
 - Timeline and Inbox projections must rebuild from canonical inputs.
-- Campaign activity belongs in timeline history but must not change Inbox bucket state.
+- Broadcast activity belongs in timeline history but must not change Inbox bucket state.
 - Projection behavior must stay explainable from canonical events, source evidence, and review state.
 
 ## Contact Timeline Projection
@@ -18,7 +18,7 @@
 
 - one projection row per canonical event
 - one timeline per canonical contact
-- timeline rows may include lifecycle, one-to-one communication, and transition-period campaign events
+- timeline rows may include lifecycle, one-to-one communication, and transition-period broadcast events
 
 ### Ordering and sort guidance
 
@@ -50,7 +50,7 @@ Each timeline row should preserve enough information to explain:
 
 - one Inbox row per canonical contact
 - Inbox rows are driven by one-to-one communication events plus explicit follow-up state
-- lifecycle and campaign events may enrich timeline history but must not create or rebucket Inbox rows on their own
+- lifecycle and broadcast events may enrich timeline history but must not create or rebucket Inbox rows on their own
 
 ### Row refresh rules
 
@@ -90,7 +90,7 @@ Each timeline row should preserve enough information to explain:
 - open identity conflicts tied to an already chosen anchored contact may also set `hasUnresolved=true`
 - identity cases with no chosen contact do not create a synthetic Inbox row
 
-### Campaign-event non-effects
+### Broadcast-event non-effects
 
 - `campaign.email.*` events appear in timeline history only
 - they must not set or reset `New`

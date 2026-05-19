@@ -59,9 +59,9 @@ Alert `nico@adventurescientists.org`. Include:
 ## Related
 
 - **Code paths:**
-  - [`apps/worker/src/jobs/integration-health/email.ts`](../../apps/worker/src/jobs/integration-health/email.ts) — alert email; fires on status flip
-  - [`apps/web/src/server/settings/integration-health.ts`](../../apps/web/src/server/settings/integration-health.ts) — health poll and DB update
-  - [`packages/contracts/src/settings-records.ts:22`](../../packages/contracts/src/settings-records.ts) — status enum
-  - [`packages/db/src/schema/tables.ts:692`](../../packages/db/src/schema/tables.ts) — `consecutive_failure_count`, `dead_letter_count`
+  - [email.ts](../../apps/worker/src/jobs/integration-health/email.ts) — alert email; fires on status flip
+  - [integration-health.ts](../../apps/web/src/server/settings/integration-health.ts) — health poll and DB update
+  - [settings-records.ts](../../packages/contracts/src/settings-records.ts) — status enum
+  - [tables.ts](../../packages/db/src/schema/tables.ts) — `consecutive_failure_count`, `dead_letter_count`
 - **Other runbooks:** [worker-queue-stuck.md](./worker-queue-stuck.md), [morning-ops-checks.md](./morning-ops-checks.md)
 - **Recent incidents:** PR #211 (2026-04) — SF capture blocked by provider text cap; PR #216 (2026-04) — dimensions/memberships FK ordering; PR #243 (2026-05) — null membership task routing

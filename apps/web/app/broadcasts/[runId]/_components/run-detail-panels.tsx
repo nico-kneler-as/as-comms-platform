@@ -46,7 +46,7 @@ export function EmailContentPanel({
         <div className="space-y-2 text-[12.5px] leading-6 text-slate-600">
           <p>Email content not retained from Mailchimp import.</p>
           <p>
-            We have the campaign metadata + per-recipient engagement, but the
+            We have the broadcast metadata + per-recipient engagement, but the
             original HTML body is not stored on our side.
           </p>
         </div>

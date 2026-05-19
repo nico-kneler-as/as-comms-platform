@@ -35,28 +35,28 @@ If the compact canon and deeper donor evidence differ, use the compact canon for
 
 Read these in order for any non-trivial task:
 
-1. [`01-core/product-core.md`](./01-core/product-core.md)
-2. [`01-core/system-core.md`](./01-core/system-core.md)
-3. [`01-core/data-core.md`](./01-core/data-core.md)
-4. [`01-core/interfaces-core.md`](./01-core/interfaces-core.md)
-5. [`01-core/engineering-core.md`](./01-core/engineering-core.md)
-6. [`01-core/frontend-patterns.md`](./01-core/frontend-patterns.md)
-7. [`01-core/delivery-core.md`](./01-core/delivery-core.md)
-8. [`01-core/decision-core.md`](./01-core/decision-core.md)
+1. [product-core.md](./01-core/product-core.md)
+2. [system-core.md](./01-core/system-core.md)
+3. [data-core.md](./01-core/data-core.md)
+4. [interfaces-core.md](./01-core/interfaces-core.md)
+5. [engineering-core.md](./01-core/engineering-core.md)
+6. [frontend-patterns.md](./01-core/frontend-patterns.md)
+7. [delivery-core.md](./01-core/delivery-core.md)
+8. [decision-core.md](./01-core/decision-core.md)
 
-Open [`01-core/decision-log.md`](./01-core/decision-log.md) when a task may reopen a locked choice, depends on stage-scoped decision history, or needs supersession context.
+Open [decision-log.md](./01-core/decision-log.md) when a task may reopen a locked choice, depends on stage-scoped decision history, or needs supersession context.
 
 ## Task Bundle Table
 
 | Task | Start here | Typical total reading set |
 | --- | --- | --- |
-| New repo bootstrap | [`bootstrap-bundle.md`](./02-bundles/bootstrap-bundle.md) | `00-index` + `engineering-core` + `interfaces-core` + `delivery-core` + `decision-core` + bundle |
-| Data foundation | [`data-foundation-bundle.md`](./02-bundles/data-foundation-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `delivery-core` + bundle + relevant docs in [`04-implementation-specs`](./04-implementation-specs/README.md) |
-| Settings/admin | [`settings-bundle.md`](./02-bundles/settings-bundle.md) | `00-index` + `product-core` + `system-core` + `engineering-core` + `frontend-patterns` + bundle |
-| Inbox | [`inbox-bundle.md`](./02-bundles/inbox-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `frontend-patterns` + bundle |
-| AI | [`ai-bundle.md`](./02-bundles/ai-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `frontend-patterns` + bundle |
-| Campaigns | [`campaigns-bundle.md`](./02-bundles/campaigns-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `frontend-patterns` + bundle |
-| Verification/security | [`verification-security-bundle.md`](./02-bundles/verification-security-bundle.md) | `00-index` + `delivery-core` + `decision-core` + `reference-testing-mocks` + bundle |
+| New repo bootstrap | [bootstrap-bundle.md](./02-bundles/bootstrap-bundle.md) | `00-index` + `engineering-core` + `interfaces-core` + `delivery-core` + `decision-core` + bundle |
+| Data foundation | [data-foundation-bundle.md](./02-bundles/data-foundation-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `delivery-core` + bundle + relevant docs in [README.md](./04-implementation-specs/README.md) |
+| Settings/admin | [settings-bundle.md](./02-bundles/settings-bundle.md) | `00-index` + `product-core` + `system-core` + `engineering-core` + `frontend-patterns` + bundle |
+| Inbox | [inbox-bundle.md](./02-bundles/inbox-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `frontend-patterns` + bundle |
+| AI | [ai-bundle.md](./02-bundles/ai-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `frontend-patterns` + bundle |
+| Broadcasts | [campaigns-bundle.md](./02-bundles/campaigns-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `frontend-patterns` + bundle |
+| Verification/security | [verification-security-bundle.md](./02-bundles/verification-security-bundle.md) | `00-index` + `delivery-core` + `decision-core` + `reference-testing-mocks` + bundle |
 
 ## Quick Rules
 
@@ -69,11 +69,11 @@ Open [`01-core/decision-log.md`](./01-core/decision-log.md) when a task may reop
 
 ## Read Next
 
-- If bootstrapping the new repo: [`02-bundles/bootstrap-bundle.md`](./02-bundles/bootstrap-bundle.md)
-- If starting Stage 1 data implementation after reading the bundle: [`04-implementation-specs/README.md`](./04-implementation-specs/README.md)
-- If validating narrowed Stage 1 Gmail + Salesforce launch scope: [`stage-1-acceptance.md`](./stage-1-acceptance.md)
-- If deploying or wiring the Stage 1 Gmail/Salesforce capture services: [`stage-1-capture-services.md`](./stage-1-capture-services.md)
-- If running sandbox or non-production Stage 1 validation: [`stage-1-validation-runbook.md`](./stage-1-validation-runbook.md)
-- If planning backend follow-on validation after Stage 1 completion: [`stage-1-post-validation-roadmap.md`](./stage-1-post-validation-roadmap.md)
-- If reconciling locked choices or adding new decision records: [`01-core/decision-log.md`](./01-core/decision-log.md)
-- If implementing product behavior: open the matching file under [`02-bundles`](./02-bundles)
+- If bootstrapping the new repo: [bootstrap-bundle.md](./02-bundles/bootstrap-bundle.md)
+- If starting Stage 1 data implementation after reading the bundle: [README.md](./04-implementation-specs/README.md)
+- If validating narrowed Stage 1 Gmail + Salesforce launch scope: [stage-1-acceptance.md](./stage-1-acceptance.md)
+- If deploying or wiring the Stage 1 Gmail/Salesforce capture services: [stage-1-capture-services.md](./stage-1-capture-services.md)
+- If running sandbox or non-production Stage 1 validation: [stage-1-validation-runbook.md](./stage-1-validation-runbook.md)
+- If planning backend follow-on validation after Stage 1 completion: [stage-1-post-validation-roadmap.md](./stage-1-post-validation-roadmap.md)
+- If reconciling locked choices or adding new decision records: [decision-log.md](./01-core/decision-log.md)
+- If implementing product behavior: open the matching file under [02-bundles](./02-bundles)

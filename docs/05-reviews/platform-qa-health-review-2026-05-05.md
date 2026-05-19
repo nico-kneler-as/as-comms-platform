@@ -113,7 +113,7 @@ Recommended fix:
 
 - Extract message/body normalization into a small module with pure functions and fixtures.
 - Keep selector tests for integration behavior, but move formatting edge cases to narrow fixture tests.
-- Add real anonymized fixtures for the recurring bugs: flattened Salesforce bodies, Gmail HTML bodies, quoted-printable, signatures, replies beginning with "Thanks,", and campaign snippets.
+- Add real anonymized fixtures for the recurring bugs: flattened Salesforce bodies, Gmail HTML bodies, quoted-printable, signatures, replies beginning with "Thanks,", and broadcast snippets.
 
 ## act101 Health Snapshot
 

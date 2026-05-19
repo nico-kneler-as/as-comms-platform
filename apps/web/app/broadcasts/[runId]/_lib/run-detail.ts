@@ -371,7 +371,7 @@ function buildHeaderModel(input: {
   return {
     runId: input.run.id,
     state: input.run.state,
-    subject: subject.length > 0 ? subject : "Untitled campaign",
+    subject: subject.length > 0 ? subject : "Untitled broadcast",
     preheader: (() => {
       const trimmed = input.run.preheader?.trim() ?? "";
       return trimmed.length > 0 ? trimmed : null;

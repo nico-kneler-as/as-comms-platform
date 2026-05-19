@@ -44,7 +44,7 @@ vi.mock("@/components/ui/dialog", () => ({
   ),
 }));
 
-import { PreviewStep } from "../../app/campaigns/new/_components/preview-step";
+import { PreviewStep } from "../../app/broadcasts/new/_components/preview-step";
 
 const baseProps: React.ComponentProps<typeof PreviewStep> = {
   subject: "Gear pickup for {{firstName}}",

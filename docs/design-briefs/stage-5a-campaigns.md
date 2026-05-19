@@ -1,4 +1,4 @@
-# Stage 5A Email Campaigns — UI Design Brief
+# Stage 5A Email Broadcasts — UI Design Brief
 
 **Audience:** product designer
 **Companion document:** [PRD #412](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
@@ -9,9 +9,9 @@
 
 ## Context
 
-We're building the **Email Campaigns** surface in the Adventure Scientists internal communications platform. This replaces our current Mailchimp workflow with an in-app way for staff to send one-to-many emails to volunteers and other AS contacts. The rollout is phased: we ship the basics first with the existing Markdown composer, then add a drag-and-drop HTML editor, then migrate the monthly newsletter off Mailchimp.
+We're building the **Email Broadcasts** surface in the Adventure Scientists internal communications platform. This replaces our current Mailchimp workflow with an in-app way for staff to send one-to-many emails to volunteers and other AS contacts. The rollout is phased: we ship the basics first with the existing Markdown composer, then add a drag-and-drop HTML editor, then migrate the monthly newsletter off Mailchimp.
 
-The platform already has a strong design language across Inbox, Composer, Settings, and AI Knowledge surfaces. Campaigns must feel **like a native chapter of the existing app**, not a bolted-on second tool.
+The platform already has a strong design language across Inbox, Composer, Settings, and AI Knowledge surfaces. Broadcasts must feel **like a native chapter of the existing app**, not a bolted-on second tool.
 
 ## Who uses this
 
@@ -23,16 +23,16 @@ The platform already has a strong design language across Inbox, Composer, Settin
 ## Visual harmonization — match the existing design language
 
 - **Don't reinvent the chrome.** Use the existing nav, page layout, and design tokens (Claude Design v2 — same palette, spacing, type scale, button styles, card patterns as Inbox and Settings).
-- Match the **Inbox list row aesthetic** for the Campaigns list page (avatar/icon, primary text, secondary text, status chip on the right, hover state, click-to-detail).
+- Match the **Inbox list row aesthetic** for the Broadcasts list page (avatar/icon, primary text, secondary text, status chip on the right, hover state, click-to-detail).
 - Match the **Settings page rhythm** for any settings surfaces we add (single-page sections stacked with section headers, not a sidebar).
-- Match the **Composer inline draft pane** for the campaign compose surface — operators already know how to write emails in the platform; this should feel like an extension of that.
+- Match the **Composer inline draft pane** for the broadcast compose surface — operators already know how to write emails in the platform; this should feel like an extension of that.
 - Match the **Project filter chip / dropdown** from Inbox for the audience builder filters.
 - Match the **frozen review state** pattern from Inbox's read-only message view (clearly non-editable, but legible and inspectable).
 
 ## High-level operator flow
 
 ```
-Campaigns list → Create new campaign → Pick launch type → Pick campaign kind
+Broadcasts list → Create new broadcast → Pick launch type → Pick broadcast kind
    → Build audience → Compose + preview → Review (frozen) → Schedule or send now
    → Run detail (live counters during send) → Run history view
 ```
@@ -41,17 +41,17 @@ Recipients receive the email and may click an unsubscribe link, which takes them
 
 ## Screen inventory
 
-### 1. Campaigns list page
+### 1. Broadcasts list page
 
-**Route:** `/campaigns`
+**Route:** `/broadcasts`
 
-**Purpose:** the home page of the Campaigns surface. Shows all campaigns the team has run plus all historical Mailchimp campaigns we've ingested, in identical row shape.
+**Purpose:** the home page of the Broadcasts surface. Shows all broadcasts the team has run plus all historical Mailchimp campaigns we've ingested, in identical row shape.
 
 **Required elements:**
 
-- A primary "New campaign" call-to-action at the top
-- A list of campaigns sorted by most recent activity, with each row showing:
-  - Campaign name
+- A primary "New broadcast" call-to-action at the top
+- A list of broadcasts sorted by most recent activity, with each row showing:
+  - Broadcast name
   - Sender alias (e.g., `forests@adventurescientists.org`)
   - Kind chip (Newsletter / Project email)
   - State chip (Draft / Scheduled / Sending / Complete / Cancelled / Finalized)
@@ -59,19 +59,19 @@ Recipients receive the email and may click an unsubscribe link, which takes them
   - Provider badge — small, unobtrusive ("Postmark" or "Mailchimp"); only for forensic clarity
   - Sent date (or scheduled date if upcoming)
 - A project filter chip (multi-select), matching the existing Inbox project filter behavior
-- A search field for searching by campaign name
-- Empty state: "No campaigns yet" with the New Campaign CTA front-and-center
+- A search field for searching by broadcast name
+- Empty state: "No broadcasts yet" with the New Broadcast CTA front-and-center
 
 **States to design:**
 
 - Empty (first-time use)
-- A few rows (3-10 campaigns)
+- A few rows (3-10 broadcasts)
 - Many rows (filtering and pagination behavior)
 - Filtered to no results
 
-### 2. Create campaign — Step 1: Launch type
+### 2. Create broadcast — Step 1: Launch type
 
-**Purpose:** the first decision when starting a new campaign.
+**Purpose:** the first decision when starting a new broadcast.
 
 Three large card-like buttons or tiles:
 
@@ -81,7 +81,7 @@ Three large card-like buttons or tiles:
 
 **Important:** the two "Coming soon" tiles must be visible from day 1 — they signal to operators that more is coming and shape the mental model. They should not be hidden.
 
-### 3. Create campaign — Step 2: Campaign kind
+### 3. Create broadcast — Step 2: Broadcast kind
 
 **Purpose:** affects unsubscribe footer wording and audience-builder defaults.
 
@@ -92,7 +92,7 @@ Two options:
 
 (In Phase A, the Newsletter path is functional but mostly used after Phase C migration. The Project email path is the primary Phase A use.)
 
-### 4. Create campaign — Step 3: Audience builder
+### 4. Create broadcast — Step 3: Audience builder
 
 **Purpose:** the operator builds a filtered list of recipients from our canonical contact database.
 
@@ -103,7 +103,7 @@ Two options:
 - **Expedition** — multi-select dropdown of recent expeditions
 - **Last activity** — date range or relative picker ("Active in the last 30 days", "Last 90 days", "Last year", "All time")
 - **Has replied** — yes/no/either
-- **Has clicked a prior campaign** — yes/no/either
+- **Has clicked a prior broadcast** — yes/no/either
 
 **Live recipient count** updates as filters change. Prominent display ("**1,247** recipients match").
 
@@ -111,7 +111,7 @@ Two options:
 
 **Below the count:** an expandable "Preview audience" section that lists the first 20-50 recipients with their name + email + project, so the operator can sanity-check.
 
-### 5. Create campaign — Step 4: Compose + preview
+### 5. Create broadcast — Step 4: Compose + preview
 
 **Purpose:** the operator writes the email content.
 
@@ -133,17 +133,17 @@ Two options:
 
 - Default target: the logged-in operator's email address
 - Configurable to send to any address (text input next to the button)
-- Emails sent this way are flagged internally as test sends and never count toward campaign metrics
+- Emails sent this way are flagged internally as test sends and never count toward broadcast metrics
 
 **Validation surface:** if any merge tokens fail to resolve for any audience contact, a yellow warning surfaces above the editor: "5 contacts will get a blank firstName. [Review affected contacts] | [Proceed anyway]"
 
-### 6. Create campaign — Step 5: Review + send
+### 6. Create broadcast — Step 5: Review + send
 
 **Purpose:** the explicit, irreversible-after-confirmation moment.
 
 A single full-page review that shows:
 
-- Campaign name (editable inline)
+- Broadcast name (editable inline)
 - Kind chip (Newsletter / Project)
 - Sender — dropdown of verified project aliases; default to the alias suggested by the audience composition (e.g., audience is single-project Beech → suggests `forests@`)
 - **Reply-to is fixed to match the sender** — display only, with a small explainer ("Replies go to the same address")
@@ -154,23 +154,23 @@ A single full-page review that shows:
   - "Schedule for later" — date/time picker in America/Denver timezone (the org's locked timezone)
 - Final confirmation: a big button labeled either "Send now" or "Schedule send", with one modal confirmation dialog that summarizes ("Send 1,247 emails from forests@ right now?")
 
-**Frozen state styling:** Once confirmed, the entire page transitions to a frozen / read-only style — all inputs become non-editable, with a banner explaining: "This campaign is scheduled for X — content and audience are locked. To edit, cancel and start a new draft."
+**Frozen state styling:** Once confirmed, the entire page transitions to a frozen / read-only style — all inputs become non-editable, with a banner explaining: "This broadcast is scheduled for X — content and audience are locked. To edit, cancel and start a new draft."
 
 ### 7. Run detail page
 
-**Route:** `/campaigns/[runId]`
+**Route:** `/broadcasts/[runId]`
 
-**Purpose:** the campaign's "passport" — at-a-glance state plus drill-down.
+**Purpose:** the broadcast's "passport" — at-a-glance state plus drill-down.
 
 **Top section — header:**
 
-- Campaign name (large, bold)
+- Broadcast name (large, bold)
 - State chip prominently (Draft / Scheduled / Sending / Complete / Cancelled / Finalized)
 - Sender alias
 - Kind chip
 - Sent / scheduled date
-- For in-flight or upcoming campaigns: a **Cancel** button
-- A "Duplicate this campaign" action that creates a new draft with the same content + criteria
+- For in-flight or upcoming broadcasts: a **Cancel** button
+- A "Duplicate this broadcast" action that creates a new draft with the same content + criteria
 
 **Middle section — metric tiles (live-updating during send):**
 
@@ -187,26 +187,26 @@ A single full-page review that shows:
 **Side rail:**
 
 - A "Replies in Inbox →" panel showing reply count + recent replies, with click-through to Inbox
-- Campaign audit log: who created, scheduled, cancelled (timestamped)
+- Broadcast audit log: who created, scheduled, cancelled (timestamped)
 - Audience criteria snapshot (the filters used, displayed for forensic reference)
 
 **Cancel-while-running confirmation modal:**
 
-- Title: "Cancel this campaign?"
+- Title: "Cancel this broadcast?"
 - Body: "We'll stop sending to remaining recipients. **Already-sent emails cannot be recalled.** 643 of 1,247 emails have been sent so far."
-- Buttons: "Cancel campaign" (destructive red) | "Keep sending" (default)
+- Buttons: "Cancel broadcast" (destructive red) | "Keep sending" (default)
 
 ### 8. Public unsubscribe page
 
-**Route:** `/u/[token]` — accessible without login, by anyone with the personalized link from a campaign footer
+**Route:** `/u/[token]` — accessible without login, by anyone with the personalized link from a broadcast footer
 
 **Purpose:** recipient-facing one-click opt-out.
 
-**On landing (default scope = the campaign's scope):**
+**On landing (default scope = the broadcast's scope):**
 
 - AS logo at the top
 - Plain text headline: "You've been unsubscribed from Forests emails."
-- One line of body: "You won't receive campaign emails from this project anymore."
+- One line of body: "You won't receive broadcast emails from this project anymore."
 - A secondary action below: "Want to unsubscribe from **all** Adventure Scientists emails instead?" → clicking confirms a broader opt-out
 - Footer with our physical address + a "Did this happen by mistake? Contact us" link
 
@@ -227,12 +227,12 @@ A single full-page review that shows:
 
 **New section: Organization settings → Physical address**
 
-- A simple form with street, city, state, zip — used for the legal footer on every campaign email
+- A simple form with street, city, state, zip — used for the legal footer on every broadcast email
 - One section, one save button; edit-in-place pattern
 
 ### 10. The email itself (the footer template)
 
-**Footer chrome on every campaign email** (operator can't accidentally delete this):
+**Footer chrome on every broadcast email** (operator can't accidentally delete this):
 
 - AS logo (small, top of footer)
 - Physical mailing address (pulled from Organization settings)
@@ -278,9 +278,9 @@ To keep the scope honest:
 
 - SMS launch type (placeholder only)
 - HTML Email drag-and-drop editor (placeholder only in this pass; Phase B will need its own design pass once we're ready)
-- Recurring or drip-series campaigns (single-shot only)
+- Recurring or drip-series broadcasts (single-shot only)
 - A/B testing UI
-- Saved/named audiences reusable across campaigns
+- Saved/named audiences reusable across broadcasts
 - Conditional content blocks in merge tokens
 - In-app notifications / "request review" workflow between operators
 
@@ -297,9 +297,9 @@ This design pass is for **Phase A** (Normal Email path, project-specific sends).
 
 ## Reference points in the existing platform
 
-- **Inbox list page** — match the row aesthetic for the Campaigns list
+- **Inbox list page** — match the row aesthetic for the Broadcasts list
 - **Inbox contact detail + timeline** — match the rhythm for the Run detail page
 - **Composer inline draft pane** — reuse the Markdown editor surface for compose
 - **Settings → Projects** — match the section pattern for adding the Postmark verification section
-- **AI Knowledge activation wizard** — match the multi-step flow shape for the Create Campaign wizard
+- **AI Knowledge activation wizard** — match the multi-step flow shape for the Create Broadcast wizard
 - **Project filter dropdown in Inbox** — reuse for the audience builder's project filter

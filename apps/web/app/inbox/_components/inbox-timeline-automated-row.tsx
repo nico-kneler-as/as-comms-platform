@@ -87,7 +87,7 @@ function describeEventRow(input: {
 }): EventRowDescriptor {
   if (input.role === "campaign") {
     return {
-      label: input.isEmail ? "Campaign" : "Campaign SMS",
+      label: input.isEmail ? "Broadcast" : "Broadcast SMS",
       Icon: MegaphoneIcon,
       shellClassName: "border-violet-200/70 bg-violet-50/30",
       hoverClassName: "hover:bg-violet-50/60",

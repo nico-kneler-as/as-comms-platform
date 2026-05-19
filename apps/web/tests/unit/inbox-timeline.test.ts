@@ -345,7 +345,7 @@ describe("InboxTimeline", () => {
     );
   });
 
-  it("keeps campaign email rows collapsed to the resolved headline only", () => {
+  it("keeps broadcast email rows collapsed to the resolved headline only", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -362,13 +362,13 @@ describe("InboxTimeline", () => {
       }),
     );
 
-    expect(markup).toContain("Campaign");
+    expect(markup).toContain("Broadcast");
     expect(markup).toContain("Your Adventure Awaits");
     expect(markup).not.toContain("Please review the latest field update.");
     expect(markup).not.toContain("rounded-full border px-2 py-1");
   });
 
-  it("collapses consecutive automated and campaign rows into a count summary", () => {
+  it("collapses consecutive automated and broadcast rows into a count summary", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -392,13 +392,13 @@ describe("InboxTimeline", () => {
       }),
     );
 
-    expect(markup).toContain("2 automated · 1 campaign");
+    expect(markup).toContain("2 automated · 1 broadcast");
     expect(markup).not.toContain("Training details");
     expect(markup).not.toContain("Reminder details");
     expect(markup).not.toContain("April field update");
   });
 
-  it("renders the collapsed group pill as a violet card with one campaign icon", () => {
+  it("renders the collapsed group pill as a violet card with one broadcast icon", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -551,7 +551,7 @@ describe("InboxTimeline", () => {
     );
   });
 
-  it("shows one consolidated campaign state while keeping the row in the purple campaign treatment", () => {
+  it("shows one consolidated broadcast state while keeping the row in the purple broadcast treatment", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
         entries: [
@@ -609,7 +609,7 @@ describe("InboxTimeline", () => {
     ]);
 
     const button = session.container.querySelector("button");
-    expect(button?.textContent).toContain("2 automated · 1 campaign");
+    expect(button?.textContent).toContain("2 automated · 1 broadcast");
 
     await act(async () => {
       button?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));

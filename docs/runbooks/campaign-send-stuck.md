@@ -1,4 +1,4 @@
-# Runbook: Campaign send is stuck
+# Runbook: Broadcast send is stuck
 
 **Severity:** S1  
 **Average time to recover:** ~10 minutes  
@@ -6,7 +6,7 @@
 
 ## Symptom
 
-A campaign run is stuck in `scheduled` or `sending`, the audience snapshot table
+A broadcast run is stuck in `scheduled` or `sending`, the audience snapshot table
 still has `delivery_status = 'pending'` rows, and recipients stop advancing
 even though the worker service is healthy.
 
@@ -59,7 +59,7 @@ Alert `nico@adventurescientists.org`. Include:
 
 ## Related
 
-- [`apps/worker/src/jobs/campaign-send/index.ts`](../../apps/worker/src/jobs/campaign-send/index.ts)
-- [`packages/domain/src/campaign-send-orchestrator.ts`](../../packages/domain/src/campaign-send-orchestrator.ts)
-- [`apps/worker/src/ops/cli.ts`](../../apps/worker/src/ops/cli.ts)
-- [`docs/runbooks/worker-queue-stuck.md`](./worker-queue-stuck.md)
+- [index.ts](../../apps/worker/src/jobs/campaign-send/index.ts)
+- [campaign-send-orchestrator.ts](../../packages/domain/src/campaign-send-orchestrator.ts)
+- [cli.ts](../../apps/worker/src/ops/cli.ts)
+- [worker-queue-stuck.md](./worker-queue-stuck.md)
