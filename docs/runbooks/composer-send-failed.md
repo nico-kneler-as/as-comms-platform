@@ -71,8 +71,8 @@ Alert `nico@adventurescientists.org`. Include:
 ## Related
 
 - **Code paths:**
-  - [`apps/web/src/server/composer/gmail-send.ts:63`](../../apps/web/src/server/composer/gmail-send.ts) — `sendComposerGmailMessage`; reads `GMAIL_*` env vars, resolves threadId via rfc822
-  - [`packages/db/src/schema/tables.ts:885`](../../packages/db/src/schema/tables.ts) — `failed_detail` and `failed_reason` on `pending_composer_outbounds`
-  - [`apps/worker/src/jobs/sweep-pending-outbounds.ts`](../../apps/worker/src/jobs/sweep-pending-outbounds.ts) — sweeps orphaned outbounds older than 30 min
+  - [gmail-send.ts](../../apps/web/src/server/composer/gmail-send.ts) — `sendComposerGmailMessage`; reads `GMAIL_*` env vars, resolves threadId via rfc822
+  - [tables.ts](../../packages/db/src/schema/tables.ts) — `failed_detail` and `failed_reason` on `pending_composer_outbounds`
+  - [sweep-pending-outbounds.ts](../../apps/worker/src/jobs/sweep-pending-outbounds.ts) — sweeps orphaned outbounds older than 30 min
 - **Other runbooks:** [gmail-capture-stopped.md](./gmail-capture-stopped.md), [morning-ops-checks.md](./morning-ops-checks.md)
 - **Recent incidents:** PR #227 (2026-04) — rfc822 threadId resolution for mbox-imported threads; PR #223 (2026-04) — forward Gmail send error into `failed_detail`

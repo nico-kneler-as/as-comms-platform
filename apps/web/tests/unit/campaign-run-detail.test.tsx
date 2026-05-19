@@ -55,7 +55,7 @@ vi.mock("@/components/ui/progress", () => ({
   ),
 }));
 
-vi.mock("../../app/campaigns/actions", () => ({
+vi.mock("../../app/broadcasts/actions", () => ({
   cancel: () => Promise.resolve({ ok: true, data: {}, requestId: "req" }),
   duplicateCampaignRun: () =>
     Promise.resolve({
@@ -74,17 +74,17 @@ vi.mock("../../app/campaigns/actions", () => ({
 import type {
   RunDetailHeaderModel,
   RunDetailModel,
-} from "../../app/campaigns/[runId]/_lib/run-detail";
-import { MetricTiles } from "../../app/campaigns/[runId]/_components/metric-tiles";
-import { RecipientsTable } from "../../app/campaigns/[runId]/_components/recipients-table";
-import { RepliesInInboxPanel } from "../../app/campaigns/[runId]/_components/replies-in-inbox-panel";
-import { RunAuditLog } from "../../app/campaigns/[runId]/_components/run-audit-log";
+} from "../../app/broadcasts/[runId]/_lib/run-detail";
+import { MetricTiles } from "../../app/broadcasts/[runId]/_components/metric-tiles";
+import { RecipientsTable } from "../../app/broadcasts/[runId]/_components/recipients-table";
+import { RepliesInInboxPanel } from "../../app/broadcasts/[runId]/_components/replies-in-inbox-panel";
+import { RunAuditLog } from "../../app/broadcasts/[runId]/_components/run-audit-log";
 import {
   AudienceCriteriaPanel,
   EmailContentPanel,
   SendDetailsPanel,
-} from "../../app/campaigns/[runId]/_components/run-detail-panels";
-import { RunDetailShell } from "../../app/campaigns/[runId]/_components/run-detail-shell";
+} from "../../app/broadcasts/[runId]/_components/run-detail-panels";
+import { RunDetailShell } from "../../app/broadcasts/[runId]/_components/run-detail-shell";
 
 function buildPostmarkModel(
   state: RunDetailModel["run"]["state"],
@@ -101,7 +101,7 @@ function buildPostmarkModel(
       fromEmail: "forests@adventurescientists.org",
       fromName: "Adventure Scientists",
       replyToEmail: "forests@adventurescientists.org",
-      subjectTemplate: `Campaign ${state}`,
+      subjectTemplate: `Broadcast ${state}`,
       bodyHtmlTemplate: "<p>Hello</p>",
       bodyTextTemplate: "Hello",
       preheader: "Important update",
@@ -352,7 +352,7 @@ function buildHeader(model: RunDetailModel): RunDetailHeaderModel {
   return {
     runId: model.run.id,
     state: model.run.state,
-    subject: model.run.subjectTemplate ?? "Untitled campaign",
+    subject: model.run.subjectTemplate ?? "Untitled broadcast",
     preheader: model.run.preheader,
     senderAlias: model.senderAlias,
     kindLabel: model.kindLabel,
@@ -404,7 +404,7 @@ function renderShell(model: RunDetailModel) {
   );
 }
 
-describe("campaign run detail", () => {
+describe("broadcast run detail", () => {
   it("matches the sending Postmark snapshot", () => {
     expect(renderShell(buildPostmarkModel("sending"))).toMatchSnapshot();
   });

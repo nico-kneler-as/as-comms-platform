@@ -75,8 +75,8 @@ records into the database.
 ## Related
 
 - **Code paths:**
-  - [`apps/worker/src/jobs/reconcile-routing-review-queue.ts`](../../apps/worker/src/jobs/reconcile-routing-review-queue.ts) — routing review reconciler
-  - [`apps/worker/src/jobs/reconcile-identity-queue.ts`](../../apps/worker/src/jobs/reconcile-identity-queue.ts) — identity queue; resolves new senders to SF contacts
-  - [`packages/contracts/src/settings-records.ts:22`](../../packages/contracts/src/settings-records.ts) — integration health status values
+  - [reconcile-routing-review-queue.ts](../../apps/worker/src/jobs/reconcile-routing-review-queue.ts) — routing review reconciler
+  - [reconcile-identity-queue.ts](../../apps/worker/src/jobs/reconcile-identity-queue.ts) — identity queue; resolves new senders to SF contacts
+  - [settings-records.ts](../../packages/contracts/src/settings-records.ts) — integration health status values
 - **Other runbooks:** [gmail-capture-stopped.md](./gmail-capture-stopped.md), [worker-queue-stuck.md](./worker-queue-stuck.md), [morning-ops-checks.md](./morning-ops-checks.md)
 - **Recent incidents:** PR #193 (2026-04) — identity queue stuck cases; PR #224 (2026-05) — 1,558 anchor-less queue cases fixed

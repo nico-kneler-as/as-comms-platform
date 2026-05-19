@@ -125,6 +125,6 @@ const service = buildWorkerServices(workerDeps);
 
 ## Deep References
 
-- engineering rules: [`../01-core/engineering-core.md`](../01-core/engineering-core.md)
-- web mutation and error rules: [`../01-core/frontend-patterns.md`](../01-core/frontend-patterns.md)
-- donor/full testing context: [`../../restart-prd/quality-gates.md`](../../restart-prd/quality-gates.md)
+- engineering rules: [engineering-core.md](../01-core/engineering-core.md)
+- web mutation and error rules: [frontend-patterns.md](../01-core/frontend-patterns.md)
+- donor/full testing context: [quality-gates.md](../../restart-prd/quality-gates.md)

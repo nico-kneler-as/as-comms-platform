@@ -669,7 +669,7 @@ export async function seedInboxCampaignEmailEvent(
     occurredAt: input.occurredAt,
     sortKey: `${input.occurredAt}::${canonicalEventId}`,
     eventType,
-    summary: input.campaignName ?? input.campaignId ?? "Campaign email",
+    summary: input.campaignName ?? input.campaignId ?? "Broadcast email",
     channel: "campaign_email",
     primaryProvider: "mailchimp",
     reviewState: "clear",

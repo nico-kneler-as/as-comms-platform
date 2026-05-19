@@ -423,7 +423,7 @@ function formatSystemGroupSummary(
   group: InboxTimelineSystemGroupViewModel,
 ): string {
   if (group.campaignCount > 0 && group.automatedCount === 0) {
-    return `${String(group.campaignCount)} campaign${group.campaignCount === 1 ? "" : "s"}`;
+    return `${String(group.campaignCount)} broadcast${group.campaignCount === 1 ? "" : "s"}`;
   }
 
   if (group.automatedCount > 0 && group.campaignCount === 0) {
@@ -438,7 +438,7 @@ function formatSystemGroupSummary(
 
   if (group.campaignCount > 0) {
     parts.push(
-      `${String(group.campaignCount)} campaign${group.campaignCount === 1 ? "" : "s"}`,
+      `${String(group.campaignCount)} broadcast${group.campaignCount === 1 ? "" : "s"}`,
     );
   }
 

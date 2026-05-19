@@ -3,7 +3,7 @@
 **Role:** the executable audit that Brief C0 produces a written report against  
 **Audience:** the architect (operator with SF + Mailchimp + Railway Postgres access)  
 **When to read:** when ready to plan Phase C newsletter migration (any time post-D-045)  
-**Authority:** implementation-spec layer; pairs with [`stage-5a-campaigns.md`](./stage-5a-campaigns.md)  
+**Authority:** implementation-spec layer; pairs with [stage-5a-campaigns.md](./stage-5a-campaigns.md)  
 **Decides:** what we know about the newsletter audience before migration  
 **Does not decide:** the actual migration approach (that's Brief C1, informed by this audit)
 
@@ -364,6 +364,6 @@ Anytime after `D-045` is locked (which is now). The audit is read-only on both s
 
 ## Read next
 
-- the Stage 5A impl spec this prep feeds into: [`stage-5a-campaigns.md`](./stage-5a-campaigns.md) (Brief C0)
-- the Mailchimp decommission runbook that runs after Phase C: [`../runbooks/mailchimp-decommission.md`](../runbooks/mailchimp-decommission.md)
+- the Stage 5A impl spec this prep feeds into: [stage-5a-campaigns.md](./stage-5a-campaigns.md) (Brief C0)
+- the Mailchimp decommission runbook that runs after Phase C: [mailchimp-decommission.md](../runbooks/mailchimp-decommission.md)
 - canon authority: `D-027` (non-SF contacts first-class), `D-033` (SF comms ingest excludes non-volunteers)

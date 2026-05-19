@@ -19,7 +19,7 @@
 | one-to-one email | `email` | `communication.email.inbound`, `communication.email.outbound` | drafts, read-state, labels, delivery/bounce detail, thread-close semantics |
 | one-to-one SMS | `sms` | `communication.sms.inbound`, `communication.sms.outbound`, `communication.sms.opt_in`, `communication.sms.opt_out` | delivery receipts, media enrichment, bulk-SMS analytics |
 | lifecycle | `lifecycle` | `lifecycle.signed_up`, `lifecycle.received_training`, `lifecycle.completed_training`, `lifecycle.submitted_first_data` | later lifecycle milestones, inferred volunteer journey states |
-| transition-period campaign email | `campaign_email` | `campaign.email.sent`, `campaign.email.opened`, `campaign.email.clicked`, `campaign.email.unsubscribed` | native campaign authoring state, automation internals, richer deliverability families |
+| transition-period broadcast email | `campaign_email` | `campaign.email.sent`, `campaign.email.opened`, `campaign.email.clicked`, `campaign.email.unsubscribed` | native broadcast authoring state, automation internals, richer deliverability families |
 
 ## Not Canonical Events In First Pass
 
@@ -50,7 +50,7 @@ Minimum provenance expectations:
 
 ## Review-State Expectations
 
-Use the shared Stage 1 review-state vocabulary from [`README.md`](./README.md).
+Use the shared Stage 1 review-state vocabulary from [README.md](./README.md).
 
 ### Expected usage
 
@@ -66,7 +66,7 @@ If Stage 1 cannot pick one canonical contact safely, prefer opening an identity 
 ## Duplicate-Collapse And Tie-Break Rules
 
 - Collapse only within the same canonical event type and the same canonical contact.
-- Never collapse one-to-one email events into campaign-email events.
+- Never collapse one-to-one email events into broadcast-email events.
 - Never collapse lifecycle events into membership state rows.
 - Keep SMS compliance events distinct from SMS message events even when timestamps match.
 - When Gmail and Salesforce describe the same outbound one-to-one email, emit one canonical `communication.email.outbound` event and keep Gmail as the primary provenance winner.
@@ -87,5 +87,5 @@ If Stage 1 cannot pick one canonical contact safely, prefer opening an identity 
 - any broader event family not listed above
 - fine-grained delivery state families
 - provider-specific thread or conversation state
-- campaign authoring or approval events
+- broadcast authoring or approval events
 - AI or note-specific events

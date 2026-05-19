@@ -317,7 +317,7 @@ export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftDa
     actorId: session.id,
     action: "campaign_run.created",
     runId: created.id,
-    summary: "Draft created from the campaign wizard.",
+    summary: "Draft created from the broadcast wizard.",
   });
 
   return mapDraftRecord(created, session.email);
@@ -621,7 +621,7 @@ export async function loadComposePreviewAction(input: {
       "campaign_preview_failed",
       error instanceof Error
         ? error.message
-        : "Unable to render the campaign preview.",
+        : "Unable to render the broadcast preview.",
       true,
     );
   }
@@ -729,7 +729,7 @@ export async function saveCampaignWizardDraftAction(input: {
   } catch (error) {
     return errorResult(
       "campaign_draft_save_failed",
-      error instanceof Error ? error.message : "Unable to save the campaign draft.",
+      error instanceof Error ? error.message : "Unable to save the broadcast draft.",
       true,
     );
   }

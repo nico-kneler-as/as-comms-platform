@@ -11,7 +11,7 @@
 
 - Build a new internal platform for Adventure Scientists that unifies volunteer history and communication in one trusted place.
 - The restart is a fresh build, not a continuation of the current repo.
-- Core progression: data foundation first, then settings, then inbox, then AI, then campaigns, then later reporting.
+- Core progression: data foundation first, then settings, then inbox, then AI, then broadcasts, then later reporting.
 
 ## Locked Product Truth
 
@@ -21,7 +21,7 @@
 | `P-02` | Contact-centric Inbox, not thread-centric Inbox. |
 | `P-03` | Explicit manual resolution beats wrong auto-linking. |
 | `P-04` | AI is human-in-the-loop only. |
-| `P-05` | Campaigns share the same identity and timeline foundation as Inbox. |
+| `P-05` | Broadcasts share the same identity and timeline foundation as Inbox. |
 
 ## Users
 
@@ -39,9 +39,9 @@
 | `3` | one-to-one Inbox on canonical projections (read surface, follow-up, overlays) |
 | `3.5` | Composer: real send/reply via Gmail with optimistic UI, net-new to SF contacts and external partners |
 | `4` | grounded AI drafts and reusable memory (depends on Composer) |
-| `V` | validation gate — real operator use of Inbox + Composer + AI in production, harden before Campaigns |
-| `5A` | Email Campaigns (gated on `V`) |
-| `5B` | SMS Campaigns after Email trust gates pass |
+| `V` | validation gate — real operator use of Inbox + Composer + AI in production, harden before Broadcasts |
+| `5A` | Email Broadcasts (gated on `V`) |
+| `5B` | SMS Broadcasts after Email trust gates pass |
 | `6` | later reporting only after the operating system is stable |
 
 ## Inbox Model
@@ -63,8 +63,8 @@
 - Internal notes are in the first restart Inbox release.
 - Owners and tags are out of the first restart Inbox release.
 - Gmail remains the one-to-one email transport after cutover.
-- Platform-native Email Campaigns ship before SMS Campaigns.
-- Mailchimp historical and transition-period live campaign events remain in transition scope until native Email Campaigns are trusted.
+- Platform-native Email Broadcasts ship before SMS Broadcasts.
+- Mailchimp historical and transition-period live broadcast events remain in transition scope until native Email Broadcasts are trusted.
 - Organization timezone is `America/Denver`.
 
 ## Highest-Value Non-Goals
@@ -77,6 +77,6 @@
 
 ## Read Next
 
-- system shape: [`system-core.md`](./system-core.md)
-- canonical entities and queues: [`data-core.md`](./data-core.md)
-- stage order and gates: [`delivery-core.md`](./delivery-core.md)
+- system shape: [system-core.md](./system-core.md)
+- canonical entities and queues: [data-core.md](./data-core.md)
+- stage order and gates: [delivery-core.md](./delivery-core.md)

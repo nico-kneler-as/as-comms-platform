@@ -32,7 +32,7 @@
 - multi-model comparison / A-B draft UIs
 - manual memory-curation tooling (bulk edit, delete approved-reply examples)
 - operator-specific style memory (e.g., "Jordan writes shorter"; may ship later)
-- campaign authoring drafts (Stage 5A territory)
+- broadcast authoring drafts (Stage 5A territory)
 - SMS drafts (Stage 4 scope is email one-to-one; SMS is so terse that LLM drafting is low-value)
 
 ## Grounding Order
@@ -197,7 +197,7 @@ Capture happens only once the send succeeds. Send failure does not capture memor
 Stage 4 splits durable state across two tables:
 
 - **`ai_knowledge_entries`** (new table, migration `0020`): tier 1–3 cache — general instructions, project instructions, approved knowledge — populated by the Notion background sync job per `D-008`. Keyed by `(source_provider, source_id)`; each row carries a `scope` column (`global` | `project`) and `scope_key` (NULL for global, `project_id` for project). Discovery matches Notion's `Project ID` property to `project_dimensions.project_id` — there is no per-project URL wiring. See brief `.codex-stage4-notion-knowledge-sync-2026-04-21.md`.
-- **`aiDurableState`** (existing contract — see [`../01-core/interfaces-core.md`](../01-core/interfaces-core.md)): tier 5 reusable memory and operator feedback only. Knowledge does NOT live here.
+- **`aiDurableState`** (existing contract — see [interfaces-core.md](../01-core/interfaces-core.md)): tier 5 reusable memory and operator feedback only. Knowledge does NOT live here.
 
 Expected `kind` values on `aiDurableState`:
 
@@ -244,11 +244,11 @@ The UI MAY collapse this behind an "About this draft" disclosure. It MUST NOT hi
 - multi-model comparison / best-of-N drafts
 - streaming token-by-token UI
 - manual memory curation tools
-- campaign authoring drafts (belongs to Stage 5A)
+- broadcast authoring drafts (belongs to Stage 5A)
 - SMS drafting (email-only in Stage 4; SMS may arrive when Stage 1C SimpleTexting activation returns)
 
 ## Read Next
 
-- decision context: [`../01-core/decision-core.md`](../01-core/decision-core.md) (`D-008`, `D-009`, `D-026`, `D-032`)
-- data model: [`../01-core/data-core.md`](../01-core/data-core.md) + [`../01-core/interfaces-core.md`](../01-core/interfaces-core.md) (`aiDurableState`)
+- decision context: [decision-core.md](../01-core/decision-core.md) (`D-008`, `D-009`, `D-026`, `D-032`)
+- data model: [data-core.md](../01-core/data-core.md) + [interfaces-core.md](../01-core/interfaces-core.md) (`aiDurableState`)
 - Composer scope: `../02-bundles/composer-bundle.md` (pending — authored when Composer build begins per `D-026`)
