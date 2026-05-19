@@ -554,7 +554,7 @@ describe("groupInboxTimelineSystemMessages", () => {
     });
   });
 
-  it("collapses mixed consecutive automated and campaign entries with separate counts", () => {
+  it("collapses mixed consecutive automated and broadcast entries with separate counts", () => {
     const grouped = groupInboxTimelineSystemMessages([
       buildTimelineEntry({
         id: "timeline:auto-1",
@@ -611,7 +611,7 @@ describe("groupInboxTimelineSystemMessages", () => {
     const campaign = buildTimelineEntry({
       id: "timeline:campaign-1",
       kind: "outbound-campaign-email",
-      body: "Campaign body",
+      body: "Broadcast body",
     });
     const autoTwo = buildTimelineEntry({
       id: "timeline:auto-2",
@@ -639,7 +639,7 @@ describe("groupInboxTimelineSystemMessages", () => {
     ]);
     expect(grouped[0].entries.map((entry) => entry.body)).toEqual([
       "First automation body",
-      "Campaign body",
+      "Broadcast body",
       "Second automation body",
     ]);
   });
@@ -4971,7 +4971,7 @@ describe("real inbox selectors", () => {
     expect(markup).toContain("text-[11px] text-slate-400");
   });
 
-  it("does not borrow email or campaign timeline entries when no lifecycle activity exists", async () => {
+  it("does not borrow email or broadcast timeline entries when no lifecycle activity exists", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -4982,7 +4982,7 @@ describe("real inbox selectors", () => {
       occurredAt: "2026-04-15T09:00:00.000Z",
       activityType: "opened",
       campaignName: "Spring Kickoff",
-      snippet: "Opened the kickoff campaign.",
+      snippet: "Opened the kickoff broadcast.",
     });
 
     const detail = await getInboxDetail("contact:lisa-zhang");
@@ -5720,7 +5720,7 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("prefers campaign name for campaign email headlines while keeping the expanded body", async () => {
+  it("prefers broadcast name for broadcast email headlines while keeping the expanded body", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -5741,7 +5741,7 @@ describe("real inbox selectors", () => {
         "Please bring your field notebook.",
         "",
         "Forwarded message:",
-        "From: Older campaign thread",
+        "From: Older broadcast thread",
       ].join("\n"),
     });
 
@@ -5759,7 +5759,7 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("surfaces opened and clicked metadata on consolidated campaign email rows while keeping the sent body", async () => {
+  it("surfaces opened and clicked metadata on consolidated broadcast email rows while keeping the sent body", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -5788,7 +5788,7 @@ describe("real inbox selectors", () => {
       activityType: "opened",
       campaignId: "campaign:april-field-update",
       campaignName: "April Volunteer Update",
-      snippet: "Campaign opened",
+      snippet: "Broadcast opened",
     });
     await seedInboxCampaignEmailEvent(runtime.context, {
       id: "sarah-campaign-email-consolidated-clicked",
@@ -5821,7 +5821,7 @@ describe("real inbox selectors", () => {
     ).toEqual(["opened", "clicked"]);
   });
 
-  it("falls back to stripped campaign subjects when no campaign name exists", async () => {
+  it("falls back to stripped broadcast subjects when no broadcast name exists", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -5905,7 +5905,7 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("hides unusable automated and campaign email fallback subjects while keeping meaningful body and embedded URLs", async () => {
+  it("hides unusable automated and broadcast email fallback subjects while keeping meaningful body and embedded URLs", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -6001,7 +6001,7 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("does not duplicate the campaign subject as the expanded body when no body content is cached", async () => {
+  it("does not duplicate the broadcast subject as the expanded body when no body content is cached", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -6033,7 +6033,7 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("returns null for campaign email headlines when both campaign name and usable subject are missing", async () => {
+  it("returns null for broadcast email headlines when both broadcast name and usable subject are missing", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -6707,7 +6707,7 @@ describe("real inbox selectors", () => {
     expect(secondPage.page.nextCursor).toBeNull();
   });
 
-  it("excludes campaign and automated outbound activity from sent mode", async () => {
+  it("excludes broadcast and automated outbound activity from sent mode", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
     }
@@ -6715,7 +6715,7 @@ describe("real inbox selectors", () => {
     await seedInboxContact(runtime.context, {
       contactId: "contact:campaign-only-outbound",
       salesforceContactId: "003-campaign-only-outbound",
-      displayName: "Campaign Only Outbound",
+      displayName: "Broadcast Only Outbound",
       primaryEmail: "campaign-only@example.org",
       primaryPhone: null,
     });
@@ -6726,7 +6726,7 @@ describe("real inbox selectors", () => {
       occurredAt: "2026-04-16T09:00:00.000Z",
       direction: "inbound",
       subject: "Checking in",
-      snippet: "I had one inbound note before campaign activity.",
+      snippet: "I had one inbound note before broadcast activity.",
     });
 
     await seedInboxProjection(runtime.context, {
@@ -6737,7 +6737,7 @@ describe("real inbox selectors", () => {
       lastInboundAt: "2026-04-16T09:00:00.000Z",
       lastOutboundAt: null,
       lastActivityAt: "2026-04-16T09:00:00.000Z",
-      snippet: "I had one inbound note before campaign activity.",
+      snippet: "I had one inbound note before broadcast activity.",
       lastCanonicalEventId: inbound.canonicalEventId,
       lastEventType: "communication.email.inbound",
     });
@@ -6748,7 +6748,7 @@ describe("real inbox selectors", () => {
       occurredAt: "2026-04-16T12:00:00.000Z",
       activityType: "sent",
       campaignName: "Spring Check-In",
-      snippet: "Campaign send should not make this contact appear in Sent.",
+      snippet: "Broadcast send should not make this contact appear in Sent.",
     });
 
     await seedInboxAutoEmailEvent(runtime.context, {

@@ -142,8 +142,8 @@ export function CampaignRow({
         : "";
   const href =
     item.provider === "mailchimp"
-      ? `/campaigns/${encodeURIComponent(item.runId)}?provider=mailchimp`
-      : `/campaigns/${encodeURIComponent(item.runId)}`;
+      ? `/broadcasts/${encodeURIComponent(item.runId)}?provider=mailchimp`
+      : `/broadcasts/${encodeURIComponent(item.runId)}`;
   const typeMeta = readTypeMeta(item);
   const TypeIcon = typeMeta.Icon;
   const projectAliasTag = item.projectAlias?.trim().length

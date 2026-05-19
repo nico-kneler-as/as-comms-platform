@@ -2,7 +2,7 @@
 
 **Role:** high-level architecture and trust-boundary canon  
 **Audience:** implementers touching runtime shape or integrations  
-**When to read:** before architecture, backend, Inbox, AI, Campaigns, or cutover work  
+**When to read:** before architecture, backend, Inbox, AI, Broadcasts, or cutover work  
 **Authority:** authoritative for layer model, truth precedence, cutover, trust boundaries  
 **Decides:** where truth lives, how layers relate, what boundaries are critical  
 **Does not decide:** table names, exact APIs, detailed provider mapping fields
@@ -39,7 +39,7 @@
 - Salesforce is the primary source for contact identity and expedition/project context
 - SimpleTexting is the source for official SMS compliance events
 - Notion is the source for AI instructions and approved knowledge
-- Postmark is the delivery provider for Campaigns Email (Stage 5A), not the authoring source of truth (see `D-045`)
+- Postmark is the delivery provider for Broadcasts Email (Stage 5A), not the authoring source of truth (see `D-045`)
 
 ## Cutover Model
 
@@ -72,6 +72,6 @@
 
 ## Read Next
 
-- canonical entities and queues: [`data-core.md`](./data-core.md)
-- implementation shape: [`engineering-core.md`](./engineering-core.md)
-- delivery and gate rules: [`delivery-core.md`](./delivery-core.md)
+- canonical entities and queues: [data-core.md](./data-core.md)
+- implementation shape: [engineering-core.md](./engineering-core.md)
+- delivery and gate rules: [delivery-core.md](./delivery-core.md)

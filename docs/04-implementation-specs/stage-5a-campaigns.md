@@ -1,4 +1,4 @@
-# Stage 5A Email Campaigns — Implementation Spec
+# Stage 5A Email Broadcasts — Implementation Spec
 
 **Role:** load-bearing constraint scaffolding for the Phase A → C build  
 **Audience:** Codex briefs + reviewing engineers + future agents picking up Stage 5A work  
@@ -18,10 +18,10 @@
 
 ## Locked dependencies
 
-- PRD: [`apps#412`](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
+- PRD: [412](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
 - Decision: `D-045` (this spec); locks Postmark + the Phase A → C phasing
-- Inherited canon: `P-02` (Inbox contact-centric), `P-05` (campaigns share identity + timeline), `D-014`, `D-015`, `D-027`, `D-029`, `D-031`, `D-040` (force-dynamic), `D-041`, `D-042`, `D-044`
-- Design brief: [`docs/design-briefs/stage-5a-campaigns.md`](../design-briefs/stage-5a-campaigns.md)
+- Inherited canon: `P-02` (Inbox contact-centric), `P-05` (broadcasts share identity + timeline), `D-014`, `D-015`, `D-027`, `D-029`, `D-031`, `D-040` (force-dynamic), `D-041`, `D-042`, `D-044`
+- Design brief: [stage-5a-campaigns.md](../design-briefs/stage-5a-campaigns.md)
 
 ## Module placement
 
@@ -29,11 +29,11 @@ Eight deep modules + their package homes. Repo shape is locked (`D-021`); these 
 
 | Module | Package | File | Why this package |
 |---|---|---|---|
-| AudienceResolver | `packages/domain` | `src/campaigns/audience-resolver.ts` | Pure business rules over canonical contact + membership + identity; reads via repos, no provider imports |
-| ExclusionFilter | `packages/domain` | `src/campaigns/exclusion-filter.ts` | Consults ConsentLedger + SuppressionManager; pure decision function |
-| MergeRenderer | `packages/domain` | `src/campaigns/merge-renderer.ts` | Pure HTML/text rendering + token validation; no I/O |
+| AudienceResolver | `packages/domain` | `src/broadcasts/audience-resolver.ts` | Pure business rules over canonical contact + membership + identity; reads via repos, no provider imports |
+| ExclusionFilter | `packages/domain` | `src/broadcasts/exclusion-filter.ts` | Consults ConsentLedger + SuppressionManager; pure decision function |
+| MergeRenderer | `packages/domain` | `src/broadcasts/merge-renderer.ts` | Pure HTML/text rendering + token validation; no I/O |
 | ConsentLedger | `packages/domain` | extends existing `src/consent.ts` | Reuse the existing ConsentRecord shape; add `scope` discriminator |
-| SuppressionManager | `packages/domain` | `src/campaigns/suppression.ts` | Pure decision over suppression rows; webhook event mapper kept here |
+| SuppressionManager | `packages/domain` | `src/broadcasts/suppression.ts` | Pure decision over suppression rows; webhook event mapper kept here |
 | CampaignSendOrchestrator | `apps/worker` | `src/jobs/campaign-send/orchestrator.ts` + `index.ts` | Worker-owned per `engineering-core.md` job rules; structure mirrors `synthesize-project-knowledge/` |
 | PostmarkClient | `packages/integrations` | `src/providers/postmark.ts` | Provider adapter package; sibling to twilio/notion/anthropic |
 | CampaignRunProjection | `packages/db` | extension of `src/repositories.ts` + `src/schema/views.ts` (new) | Read model via SQL UNION; lives next to existing repositories |
@@ -44,16 +44,16 @@ Eight deep modules + their package homes. Repo shape is locked (`D-021`); these 
 
 | Need | Existing module to reuse | Notes |
 |---|---|---|
-| Consent storage shape | `packages/domain/src/consent.ts` (`ConsentRecord`) | Extend with `scope: 'project' | 'newsletter' | 'all'` + nullable `scopeId`. Existing SMS consent stays unchanged; campaigns layer on. |
+| Consent storage shape | `packages/domain/src/consent.ts` (`ConsentRecord`) | Extend with `scope: 'project' | 'newsletter' | 'all'` + nullable `scopeId`. Existing SMS consent stays unchanged; broadcasts layer on. |
 | Email body composition surface | `apps/web/app/inbox/_components/composer-editor-surface.tsx` + `composer-toolbar.tsx` + `composer-html.ts` + `composer-shared.ts` | Phase A Markdown compose is a thin wrapper around these. Do NOT fork. |
 | HMAC webhook handler | `apps/sms-capture/src/server.ts` (Twilio inbound) + `apps/web/app/api/internal/revalidate/route.ts` shared-secret pattern | Postmark webhook follows the same `timingSafeEqual` pattern (per `project_pr218_sf_capture_regression_2026_04_30.md`, never use `===` for shared-secret comparisons). |
 | Worker job structure | `apps/worker/src/jobs/synthesize-project-knowledge/` (`index.ts` + `orchestrator.ts`) | Direct template for `campaign-send/`. |
 | Polled-projection cron pattern | `apps/worker/src/jobs/integration-health/` | Direct template for `poll-postmark-sender-status` cron. |
 | Provider client + Zod webhook schema | `packages/integrations/src/providers/twilio.ts` (exports schemas) | Direct template for `postmark.ts`. |
-| Inbox-like server page caching | `apps/web/app/inbox/layout.tsx` `export const dynamic = 'force-dynamic'` | Apply to `apps/web/app/campaigns/layout.tsx` per `D-040`. No `revalidateTag` calls. |
-| Project filter dropdown | Existing inbox project filter (excludes connected subs per `D-044`) | **Audience builder uses a DIFFERENT picker** — host + subs as equal-rank. Do not blindly reuse the Inbox filter component; build a sibling picker in `apps/web/app/campaigns/_components/`. |
-| Activation wizard step pattern | `apps/web/app/settings/_components/activation-wizard/` | Direct template for the 5-step campaign create wizard's left rail + step navigation. |
-| Composer canonical modal test pattern | `apps/web/app/inbox/_components/__tests__/composer-canonical-modal.test.tsx` | When testing the campaign wizard modal, mirror this pattern — and heed the gotchas in `project_composer_canonical_modal_test_gotchas.md`. |
+| Inbox-like server page caching | `apps/web/app/inbox/layout.tsx` `export const dynamic = 'force-dynamic'` | Apply to `apps/web/app/broadcasts/layout.tsx` per `D-040`. No `revalidateTag` calls. |
+| Project filter dropdown | Existing inbox project filter (excludes connected subs per `D-044`) | **Audience builder uses a DIFFERENT picker** — host + subs as equal-rank. Do not blindly reuse the Inbox filter component; build a sibling picker in `apps/web/app/broadcasts/_components/`. |
+| Activation wizard step pattern | `apps/web/app/settings/_components/activation-wizard/` | Direct template for the 5-step broadcast create wizard's left rail + step navigation. |
+| Composer canonical modal test pattern | `apps/web/app/inbox/_components/__tests__/composer-canonical-modal.test.tsx` | When testing the broadcast wizard modal, mirror this pattern — and heed the gotchas in `project_composer_canonical_modal_test_gotchas.md`. |
 | Canonical event taxonomy | `packages/contracts/src/stage1-taxonomy.ts` — `campaign.email.sent/opened/clicked/unsubscribed`, channel `campaign_email`, `communication_message_kind='campaign'` | Already present. Phase A adds `campaign.email.delivered` + `campaign.email.bounced` + `campaign.email.complained` only if not already there (verify in Brief A1). |
 | Mailchimp historical data | `mailchimp_campaign_activity_details`, `mailchimp_campaign_tail_state` | Read-only during Phase A/B. Basis for the UNION view in `CampaignRunProjection`. Do not modify schema. |
 | Identity rules + canonical contact creation | `packages/domain/src/contact-resolution.ts` `ensureCanonicalContactForEmail` | Audience builder reads canonical contacts; no resolver changes needed. |
@@ -74,18 +74,18 @@ Eight deep modules + their package homes. Repo shape is locked (`D-021`); these 
 | `apps/web/app/api/webhooks/postmark/route.ts` | `apps/web` | A2 |
 | `apps/worker/src/jobs/campaign-send/` | `apps/worker` | A3 |
 | `apps/worker/src/jobs/poll-postmark-sender-status/` cron | `apps/worker` | A2 |
-| `apps/web/app/campaigns/` route tree | `apps/web` | A4-A6, A8 |
+| `apps/web/app/broadcasts/` route tree | `apps/web` | A4-A6, A8 |
 | `apps/web/app/u/[token]/` public unsubscribe route | `apps/web` | A7 |
 
 ### Decision: `contact_consent` table vs extending `consent_records`
 
-The existing `consent_records` table is phone-keyed and SMS-specific (STOP/HELP/UNSTOP per `D-042`). The campaigns consent model is email-keyed with a 3-scope discriminator (project / newsletter / all).
+The existing `consent_records` table is phone-keyed and SMS-specific (STOP/HELP/UNSTOP per `D-042`). The broadcasts consent model is email-keyed with a 3-scope discriminator (project / newsletter / all).
 
 **Decision: new `contact_consent` table.** Reasons:
 - Different key (email vs phone) means different unique constraints and indexes
 - Different lifecycle (recipient click on per-recipient unsubscribe token vs Twilio compliance event)
 - Mixing them complicates the `canSendTo` function and the audit log
-- The `packages/domain/src/consent.ts` `canSendTo` helper stays SMS-only; campaigns gets its own `isConsentedFor` function in `consent.ts` alongside
+- The `packages/domain/src/consent.ts` `canSendTo` helper stays SMS-only; broadcasts gets its own `isConsentedFor` function in `consent.ts` alongside
 
 Both tables follow the same ConsentRecord-like shape (subject + status + source + timestamps) so the audit pattern stays uniform.
 
@@ -93,7 +93,7 @@ Both tables follow the same ConsentRecord-like shape (subject + status + source 
 
 | Don't | Why | Memory reference |
 |---|---|---|
-| Add a 5th invalidation signal for worker-driven writes | `D-040` resolved this by going `force-dynamic` everywhere; campaign read pages MUST follow | `feedback_merge_and_railway_authority.md` + `D-040` |
+| Add a 5th invalidation signal for worker-driven writes | `D-040` resolved this by going `force-dynamic` everywhere; broadcast read pages MUST follow | `feedback_merge_and_railway_authority.md` + `D-040` |
 | Stack a 6th dedup layer when handling Postmark events that overlap Mailchimp historical | The dedup architecture already has 5 layers; consolidate via Message-ID + content fingerprint, do not extend | `project_dedup_architecture_debt.md` |
 | Auto-link ambiguous identity in the audience builder | `D-004` + `D-027`: unmatched email auto-creates a canonical contact; only true ambiguity opens review | `project_email_only_contact_dupe_pattern.md` |
 | Use `z.string().min(1).nullable()` on Postmark response fields | Providers return `""` and `null` interchangeably; one empty string poison-pills the whole batch with a 400 | `project_zod_provider_response_empty_strings.md` |
@@ -138,9 +138,9 @@ Brief A1 must verify the existing aliases table location before writing migratio
 ## Web app surface
 
 ```text
-apps/web/app/campaigns/
+apps/web/app/broadcasts/
 ├── layout.tsx                          # export const dynamic = 'force-dynamic'  (D-040)
-├── page.tsx                            # Campaigns list (Brief A4 + A8)
+├── page.tsx                            # Broadcasts list (Brief A4 + A8)
 ├── new/
 │   └── page.tsx                        # 5-step create wizard (Briefs A4, A5)
 ├── [runId]/
@@ -169,9 +169,9 @@ apps/web/app/settings/projects/[id]/_components/
 apps/web/app/settings/organization/   # may already exist; Brief A1 adds the org_settings form
 ```
 
-**Layout rules:** every page under `/campaigns` and the `/u/[token]` route set `export const dynamic = 'force-dynamic'`. No `revalidateTag` calls anywhere in the campaigns feature.
+**Layout rules:** every page under `/broadcasts` and the `/u/[token]` route set `export const dynamic = 'force-dynamic'`. No `revalidateTag` calls anywhere in the broadcasts feature.
 
-**Server Action admin gate:** every mutation in `apps/web/app/campaigns/actions.ts` that transitions a run state (schedule, cancel, delete) calls a shared `assertAdmin()` helper. Drafting (create/edit/test-send) does not. Per the PRD: everyone is admin today; the gate is future-active.
+**Server Action admin gate:** every mutation in `apps/web/app/broadcasts/actions.ts` that transitions a run state (schedule, cancel, delete) calls a shared `assertAdmin()` helper. Drafting (create/edit/test-send) does not. Per the PRD: everyone is admin today; the gate is future-active.
 
 ## Worker surface
 
@@ -243,7 +243,7 @@ unsubscribeRequestSchema                                      # public unsubscri
 canonicalEventTypeSchema (campaign.* subset)
 ```
 
-Add `'./stage5-campaigns.js'` to the package barrel export. Do NOT export campaign types from stage1 files.
+Add `'./stage5-campaigns.js'` to the package barrel export. Do NOT export broadcast types from stage1 files.
 
 ## Test guardrails
 
@@ -284,7 +284,7 @@ Each brief includes: `pnpm install --force` warm-up, validate-before-done (`pnpm
 
 Before Brief A1 merges to `main`, these doc updates must be in place. Recommendation: ship as a single docs-only PR alongside this implementation spec.
 
-1. **New decision-log entry** dated 2026-05-15 — "Stage 5A delivery provider is Postmark; campaign architecture locked (D-045)"
+1. **New decision-log entry** dated 2026-05-15 — "Stage 5A delivery provider is Postmark; broadcast architecture locked (D-045)"
 2. **`docs/01-core/decision-core.md`** — add `D-045` row pointing to the decision-log entry
 3. **`docs/01-core/system-core.md`** — replace SendGrid line with Postmark in both "Source-Of-Truth Precedence" → "Provider truth" and the "Highest-Risk Trust Boundaries" if mentioned
 4. **`docs/03-reference/reference-services.md`** — replace the SendGrid row with a Postmark row; SendGrid removed from the Service Summary table
@@ -305,7 +305,7 @@ Per `D-031`, none of the Phase A code in `apps/` or `packages/` merges to `main`
 
 ## Read next
 
-- the PRD that this spec implements: [`apps#412`](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
-- the canon updates required before code merges: [`../01-core/decision-log.md`](../01-core/decision-log.md) (D-045 entry)
-- the design brief this spec pairs with: [`../design-briefs/stage-5a-campaigns.md`](../design-briefs/stage-5a-campaigns.md)
-- the Mailchimp decommission runbook that Phase C executes: [`../runbooks/mailchimp-decommission.md`](../runbooks/mailchimp-decommission.md)
+- the PRD that this spec implements: [412](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
+- the canon updates required before code merges: [decision-log.md](../01-core/decision-log.md) (D-045 entry)
+- the design brief this spec pairs with: [stage-5a-campaigns.md](../design-briefs/stage-5a-campaigns.md)
+- the Mailchimp decommission runbook that Phase C executes: [mailchimp-decommission.md](../runbooks/mailchimp-decommission.md)

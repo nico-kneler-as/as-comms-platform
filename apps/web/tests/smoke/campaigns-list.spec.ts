@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("campaigns list loads and campaign filters update the URL-backed view", async ({
+test("broadcasts list loads and broadcast filters update the URL-backed view", async ({
   page,
 }) => {
   const devAuthResponse = await page.request.get(
@@ -15,11 +15,11 @@ test("campaigns list loads and campaign filters update the URL-backed view", asy
   }
   expect(devAuthResponse.ok()).toBeTruthy();
 
-  await page.goto("/campaigns");
-  await expect(page.getByRole("heading", { name: "Campaigns" })).toBeVisible();
+  await page.goto("/broadcasts");
+  await expect(page.getByRole("heading", { name: "Broadcasts" })).toBeVisible();
 
-  if (await page.getByText("No campaigns yet").isVisible()) {
-    test.skip(true, "No campaigns are available in this environment.");
+  if (await page.getByText("No broadcasts yet").isVisible()) {
+    test.skip(true, "No broadcasts are available in this environment.");
     return;
   }
 

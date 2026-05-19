@@ -11,15 +11,15 @@ Build the one-to-one operator workspace on top of canonical projections.
 
 ## Required Reading
 
-1. [`../00-index.md`](../00-index.md)
-2. [`../01-core/product-core.md`](../01-core/product-core.md)
-3. [`../01-core/system-core.md`](../01-core/system-core.md)
-4. [`../01-core/data-core.md`](../01-core/data-core.md)
-5. [`../01-core/interfaces-core.md`](../01-core/interfaces-core.md)
-6. [`../01-core/engineering-core.md`](../01-core/engineering-core.md)
-7. [`../01-core/frontend-patterns.md`](../01-core/frontend-patterns.md)
-8. [`../01-core/delivery-core.md`](../01-core/delivery-core.md)
-9. [`../01-core/decision-core.md`](../01-core/decision-core.md)
+1. [00-index.md](../00-index.md)
+2. [product-core.md](../01-core/product-core.md)
+3. [system-core.md](../01-core/system-core.md)
+4. [data-core.md](../01-core/data-core.md)
+5. [interfaces-core.md](../01-core/interfaces-core.md)
+6. [engineering-core.md](../01-core/engineering-core.md)
+7. [frontend-patterns.md](../01-core/frontend-patterns.md)
+8. [delivery-core.md](../01-core/delivery-core.md)
+9. [decision-core.md](../01-core/decision-core.md)
 
 ## Locked
 
@@ -67,7 +67,7 @@ Build the one-to-one operator workspace on top of canonical projections.
 - timeline remains correct for volunteers and non-volunteer contacts
 - unresolved/manual-link flows refresh context without duplicate history
 - opening, replying, new inbound resets, and follow-up toggles stay consistent without collapsing bucket and follow-up semantics
-- campaign events do not mutate Inbox bucket state
+- broadcast events do not mutate Inbox bucket state
 - inbox server views render dynamically (D-040): `revalidateInboxContact` is preserved as an integration point but currently a no-op; interactive actions call `router.refresh()` to re-read fresh server-rendered state without disturbing client editor / composer state
 - staff/admin Gmail delivered to the monitored inbox counts as inbound attention unless it is sent from the monitored mailbox/project alias itself (D-041); do not broaden the default Inbox beyond inbound 1:1 communication rows
 - non-volunteer rows render as `AS` (green) when the contact's primary email is `@adventurescientists.org`, otherwise as `External` (amber)
@@ -85,5 +85,5 @@ Build the one-to-one operator workspace on top of canonical projections.
 
 ## Reference Links
 
-- services summary: [`../03-reference/reference-services.md`](../03-reference/reference-services.md)
-- donor reuse guide: [`../03-reference/reference-donor-reuse.md`](../03-reference/reference-donor-reuse.md)
+- services summary: [reference-services.md](../03-reference/reference-services.md)
+- donor reuse guide: [reference-donor-reuse.md](../03-reference/reference-donor-reuse.md)

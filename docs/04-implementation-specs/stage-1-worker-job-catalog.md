@@ -32,7 +32,7 @@
 | Deferred responsibility | Why it stays out of first implementation |
 | --- | --- |
 | AI knowledge sync and prompt-cache jobs | belongs to later AI stages |
-| campaign authoring, rollout, or approval jobs | belongs to campaign stages, not Stage 1 data foundation |
+| broadcast authoring, rollout, or approval jobs | belongs to broadcast stages, not Stage 1 data foundation |
 | provider-specific enrichment or non-essential analytics rollups | not required to establish trusted canonical history |
 | web-driven inline long-running sync work | violates the locked web versus worker boundary |
 

@@ -283,7 +283,7 @@ describe("public unsubscribe page", () => {
       variant: "project",
       headline: "You've been unsubscribed from Forests emails.",
       body:
-        "You won't receive any more campaign emails from this project. Your project-team correspondence — replies to direct conversations, trip logistics, gear pickups — will keep flowing as usual.",
+        "You won't receive any more broadcast emails from this project. Your project-team correspondence — replies to direct conversations, trip logistics, gear pickups — will keep flowing as usual.",
       email: "taylor@example.org",
       ctaPrompt:
         "Want to unsubscribe from all Adventure Scientists emails instead?",
@@ -323,7 +323,7 @@ describe("public unsubscribe page", () => {
       variant: "project",
       headline: "You've been unsubscribed from Forests emails.",
       body:
-        "You won't receive any more campaign emails from this project. Your project-team correspondence — replies to direct conversations, trip logistics, gear pickups — will keep flowing as usual.",
+        "You won't receive any more broadcast emails from this project. Your project-team correspondence — replies to direct conversations, trip logistics, gear pickups — will keep flowing as usual.",
       email: "taylor@example.org",
       ctaPrompt:
         "Want to unsubscribe from all Adventure Scientists emails instead?",

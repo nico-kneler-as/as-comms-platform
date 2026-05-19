@@ -1,8 +1,8 @@
-# Campaigns Bundle
+# Broadcasts Bundle
 
-**Role:** task packet for Stage 5 campaigns work  
+**Role:** task packet for Stage 5 broadcasts work  
 **Audience:** implementers working on one-to-many messaging  
-**When to read:** before campaign audience, compose, review, send, or monitor work  
+**When to read:** before broadcast audience, compose, review, send, or monitor work  
 **Authority:** derivative bundle; core truth lives in `01-core/*`
 
 ## Purpose
@@ -11,59 +11,59 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 
 ## Required Reading
 
-1. [`../00-index.md`](../00-index.md)
-2. [`../01-core/product-core.md`](../01-core/product-core.md)
-3. [`../01-core/system-core.md`](../01-core/system-core.md)
-4. [`../01-core/data-core.md`](../01-core/data-core.md)
-5. [`../01-core/interfaces-core.md`](../01-core/interfaces-core.md)
-6. [`../01-core/engineering-core.md`](../01-core/engineering-core.md)
-7. [`../01-core/frontend-patterns.md`](../01-core/frontend-patterns.md)
-8. [`../01-core/delivery-core.md`](../01-core/delivery-core.md)
-9. [`../01-core/decision-core.md`](../01-core/decision-core.md)
+1. [00-index.md](../00-index.md)
+2. [product-core.md](../01-core/product-core.md)
+3. [system-core.md](../01-core/system-core.md)
+4. [data-core.md](../01-core/data-core.md)
+5. [interfaces-core.md](../01-core/interfaces-core.md)
+6. [engineering-core.md](../01-core/engineering-core.md)
+7. [frontend-patterns.md](../01-core/frontend-patterns.md)
+8. [delivery-core.md](../01-core/delivery-core.md)
+9. [decision-core.md](../01-core/decision-core.md)
 
 ## Locked
 
-- `5A` Email Campaigns precede `5B` SMS Campaigns
-- campaign runs remain single-channel
+- `5A` Email Broadcasts precede `5B` SMS Broadcasts
+- broadcast runs remain single-channel
 - audience uses canonical platform identity and exclusions
-- campaign content, review state, and frozen audience remain product-owned
+- broadcast content, review state, and frozen audience remain product-owned
 - Postmark is the Email delivery provider, not the authoring source of truth (`D-045`)
-- Phase A: project-specific Normal Email sends via Composer; Phase B: Unlayer drag-and-drop HTML editor; Phase C: newsletter migration + Mailchimp decommission; Phase D (5B): SMS — see PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and [`../04-implementation-specs/stage-5a-campaigns.md`](../04-implementation-specs/stage-5a-campaigns.md)
-- Mailchimp remains historical and transition-period live ingest scope until native Email Campaigns are trusted
+- Phase A: project-specific Normal Email sends via Composer; Phase B: Unlayer drag-and-drop HTML editor; Phase C: newsletter migration + Mailchimp decommission; Phase D (5B): SMS — see PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and [stage-5a-campaigns.md](../04-implementation-specs/stage-5a-campaigns.md)
+- Mailchimp remains historical and transition-period live ingest scope until native Email Broadcasts are trusted
 - transition-period live Mailchimp ingest is now operational for the cutover window; see PRD #283 and the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
 
 ## Required Interfaces / Concepts
 
-- recent campaign runs and run detail
+- recent broadcast runs and run detail
 - guided audience builder
 - compose, preview, and optional test send
 - frozen review and final confirmation
 - send now, schedule, monitoring, cancel, retry
-- timeline visibility for campaign events
+- timeline visibility for broadcast events
 
 ## Allowed / Not Allowed
 
 | Allowed | Not allowed |
 | --- | --- |
 | Email-first rollout | early bulk SMS expansion before Email trust is proven |
-| product-owned campaign review state | provider-owned authoring truth |
-| campaign timeline visibility | campaign events mutating Inbox bucket state |
+| product-owned broadcast review state | provider-owned authoring truth |
+| broadcast timeline visibility | broadcast events mutating Inbox bucket state |
 | transition-period Mailchimp ingest | treating Mailchimp as the future authoring UX |
 
 ## Acceptance
 
-- campaign state is durable and auditable
+- broadcast state is durable and auditable
 - review and frozen-audience safeguards block unsafe launch behavior
 - timeline integration does not corrupt Inbox state
-- Email Campaigns are operationally trusted before SMS expansion
+- Email Broadcasts are operationally trusted before SMS expansion
 
 ## Common Failure Modes
 
 - export-first audience workflows
 - hidden exclusions or dedupe behavior
-- turning Campaigns into a separate identity universe from Inbox
+- turning Broadcasts into a separate identity universe from Inbox
 
 ## Reference Links
 
-- services summary: [`../03-reference/reference-services.md`](../03-reference/reference-services.md)
-- Salesforce mapping reference: [`../03-reference/reference-salesforce-mapping.md`](../03-reference/reference-salesforce-mapping.md)
+- services summary: [reference-services.md](../03-reference/reference-services.md)
+- Salesforce mapping reference: [reference-salesforce-mapping.md](../03-reference/reference-salesforce-mapping.md)

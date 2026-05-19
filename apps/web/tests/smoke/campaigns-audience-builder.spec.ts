@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("campaign audience builder updates live count and preview when seeded data exists", async ({
+test("broadcast audience builder updates live count and preview when seeded data exists", async ({
   page,
 }) => {
   const devAuthResponse = await page.request.get(
@@ -15,7 +15,7 @@ test("campaign audience builder updates live count and preview when seeded data 
   }
   expect(devAuthResponse.ok()).toBeTruthy();
 
-  await page.goto("/campaigns/new");
+  await page.goto("/broadcasts/new");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
 

@@ -18,9 +18,9 @@
 ## When You Hit A Conflict
 
 1. prefer `restart-agent-focus/01-core/*`
-2. if needed, confirm in [`../01-core/decision-log.md`](../01-core/decision-log.md)
+2. if needed, confirm in [decision-log.md](../01-core/decision-log.md)
 3. do not import the legacy behavior unless the canon is updated first
 
 ## Deep Reference
 
-- repo-local decision history: [`../01-core/decision-log.md`](../01-core/decision-log.md)
+- repo-local decision history: [decision-log.md](../01-core/decision-log.md)
