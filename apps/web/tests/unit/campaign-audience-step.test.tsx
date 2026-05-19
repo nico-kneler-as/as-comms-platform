@@ -8,6 +8,7 @@ vi.mock("lucide-react", () => ({
   AlertTriangle: () => null,
   Check: () => null,
   CheckCircle2: () => null,
+  LoaderCircle: () => null,
   Lock: () => null,
   Search: () => null,
   Sparkles: () => null,
@@ -54,10 +55,11 @@ const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   projectOptions: [],
   statusOptions: ["Waitlist"],
   statusCounts: {},
+  statusCountsLoading: false,
   statusCountsErrorMessage: null,
   onInitialFilterChange: () => undefined,
   onProjectChange: () => undefined,
-  onSelectAllStatuses: () => undefined,
+  onToggleAllStatuses: () => undefined,
   onStatusToggle: () => undefined,
   onVolunteerSearchQueryChange: () => undefined,
   onVolunteerToggle: () => undefined,
@@ -133,6 +135,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).toContain("Audience filters");
     expect(markup).toContain("Inherited from forests@");
     expect(markup).toContain("Member status");
+    expect(markup).toContain("TOP-FUNNEL");
     expect(markup).not.toContain("Search by name or email");
     expect(markup).not.toContain("Find volunteers");
   });

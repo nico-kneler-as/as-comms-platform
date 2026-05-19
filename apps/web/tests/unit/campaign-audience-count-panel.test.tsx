@@ -7,6 +7,7 @@ Object.assign(globalThis, { React });
 vi.mock("lucide-react", () => ({
   AlertTriangle: () => null,
   CheckCircle2: () => null,
+  LoaderCircle: () => null,
   Search: () => null,
   Sparkles: () => null,
   X: () => null,

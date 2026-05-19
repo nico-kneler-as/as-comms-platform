@@ -2,6 +2,7 @@
 
 import { Eye } from "lucide-react";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import type { AudiencePreviewRow } from "../../_lib/audience-data-source";
@@ -19,8 +20,28 @@ export function AudiencePreviewList({
 }: AudiencePreviewListProps) {
   if (loading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
-        Loading the first 50 matching recipients…
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
+          <Eye className="size-3.5" aria-hidden="true" />
+          Audience preview
+        </div>
+        <div className="space-y-3 px-4 py-4">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div
+              key={`audience-preview-skeleton-${String(index)}`}
+              className="flex items-center gap-3"
+            >
+              <Skeleton className="size-10 shrink-0 rounded-full bg-slate-200/70" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <Skeleton className="h-3.5 w-32 bg-slate-200/80" />
+                  <Skeleton className="h-5 w-20 rounded-full bg-slate-200/70" />
+                </div>
+                <Skeleton className="h-3 w-44 bg-slate-100" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

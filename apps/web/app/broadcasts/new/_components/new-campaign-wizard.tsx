@@ -382,7 +382,11 @@ export function NewCampaignWizard({
   const [previewRows, setPreviewRows] = useState<readonly AudiencePreviewRow[]>(
     [],
   );
+  const [previewErrorMessage, setPreviewErrorMessage] = useState<string | null>(
+    null,
+  );
   const [statusCounts, setStatusCounts] = useState<AudienceStatusCounts>({});
+  const [statusCountsLoading, setStatusCountsLoading] = useState(false);
   const [statusCountsErrorMessage, setStatusCountsErrorMessage] = useState<
     string | null
   >(null);
@@ -414,8 +418,10 @@ export function NewCampaignWizard({
   const [runState, setRunState] = useState(draft.state);
   const [scheduledAt, setScheduledAt] = useState(draft.scheduledAt);
   const [toast, setToast] = useState<ToastState>(null);
-  const [countPending, startCountTransition] = useTransition();
-  const [previewPending, startPreviewTransition] = useTransition();
+  const [countLoading, setCountLoading] = useState(false);
+  const [audiencePreviewLoading, setAudiencePreviewLoading] = useState(false);
+  const [, startCountTransition] = useTransition();
+  const [composePreviewPending, startComposePreviewTransition] = useTransition();
   const [, startStatusCountsTransition] = useTransition();
   const [volunteerSearchPending, startVolunteerSearchTransition] =
     useTransition();
@@ -431,9 +437,6 @@ export function NewCampaignWizard({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousLaunchTypeRef = useRef(draft.launchType);
   const previousFromEmailRef = useRef(draft.fromEmail);
-  const shouldAutoSelectStatusesRef = useRef(
-    (criteria.initialFilter ?? "project_status") === "project_status",
-  );
 
   const frozen = runState !== "draft";
   const previewFingerprint = useMemo(
@@ -556,7 +559,6 @@ export function NewCampaignWizard({
       return;
     }
 
-    shouldAutoSelectStatusesRef.current = currentMode === "project_status";
     setCriteria((current) =>
       buildCriteriaForMode({
         current,
@@ -572,7 +574,6 @@ export function NewCampaignWizard({
     }
 
     previousLaunchTypeRef.current = launchType;
-    shouldAutoSelectStatusesRef.current = true;
     setCriteria((current) =>
       buildCriteriaForMode({
         current,
@@ -591,8 +592,6 @@ export function NewCampaignWizard({
     }
 
     previousFromEmailRef.current = fromEmail;
-    shouldAutoSelectStatusesRef.current =
-      (criteria.initialFilter ?? "project_status") === "project_status";
     setCriteria((current) =>
       buildCriteriaForMode({
         current,
@@ -612,11 +611,21 @@ export function NewCampaignWizard({
   useEffect(() => {
     if ((criteria.initialFilter ?? "project_status") !== "project_status") {
       setStatusCounts({});
+      setStatusCountsLoading(false);
+      setStatusCountsErrorMessage(null);
+      return;
+    }
+
+    if (selectedProjectIds.length === 0) {
+      setStatusCounts({});
+      setStatusCountsLoading(false);
       setStatusCountsErrorMessage(null);
       return;
     }
 
     const requestId = ++statusCountsRequestRef.current;
+    setStatusCountsLoading(true);
+    setStatusCountsErrorMessage(null);
     startStatusCountsTransition(async () => {
       const result = await loadMemberStatusCountsForProjects(selectedProjectIds);
       if (requestId !== statusCountsRequestRef.current) {
@@ -624,11 +633,14 @@ export function NewCampaignWizard({
       }
 
       if (!result.ok) {
+        setStatusCounts({});
+        setStatusCountsLoading(false);
         setStatusCountsErrorMessage(result.message);
         return;
       }
 
       setStatusCounts(result.data);
+      setStatusCountsLoading(false);
       setStatusCountsErrorMessage(null);
       setCriteria((current) => {
         const availableStatuses = bootstrap.statuses.filter(
@@ -638,20 +650,12 @@ export function NewCampaignWizard({
           availableStatuses.includes(status),
         );
 
-        if (!shouldAutoSelectStatusesRef.current) {
-          return selectedStatuses.length === current.statuses.length
-            ? current
-            : {
-                ...current,
-                statuses: selectedStatuses,
-              };
-        }
-
-        shouldAutoSelectStatusesRef.current = false;
-        return {
-          ...current,
-          statuses: availableStatuses,
-        };
+        return selectedStatuses.length === current.statuses.length
+          ? current
+          : {
+              ...current,
+              statuses: selectedStatuses,
+            };
       });
     });
   }, [bootstrap.statuses, criteria.initialFilter, selectedProjectIds]);
@@ -668,48 +672,52 @@ export function NewCampaignWizard({
 
   useEffect(() => {
     if (frozen) {
+      setCountLoading(false);
       return;
     }
 
     const requestId = ++countRequestRef.current;
-    const timer = setTimeout(() => {
-      startCountTransition(async () => {
-        const result = await resolveAudienceCountAction({ kind, criteria });
-        if (requestId !== countRequestRef.current || !result.ok) {
-          if (!result.ok && requestId === countRequestRef.current) {
-            setSaveMessage(result.message);
-          }
-          return;
-        }
-
-        setCountState(result.data);
-      });
-    }, 300);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [criteria, frozen, kind]);
-
-  useEffect(() => {
-    if (currentStep !== 2) {
-      return;
-    }
-
-    const requestId = ++audiencePreviewRequestRef.current;
-    startPreviewTransition(async () => {
-      const result = await previewAudienceAction({ kind, criteria });
-      if (requestId !== audiencePreviewRequestRef.current) {
+    setCountLoading(true);
+    startCountTransition(async () => {
+      const result = await resolveAudienceCountAction({ kind, criteria });
+      if (requestId !== countRequestRef.current) {
         return;
       }
 
+      setCountLoading(false);
       if (!result.ok) {
         setSaveMessage(result.message);
         return;
       }
 
-      setPreviewRows(result.data);
+      setCountState(result.data);
     });
+  }, [criteria, frozen, kind]);
+
+  useEffect(() => {
+    if (currentStep !== 2) {
+      setAudiencePreviewLoading(false);
+      return;
+    }
+
+    const requestId = ++audiencePreviewRequestRef.current;
+    setAudiencePreviewLoading(true);
+    setPreviewErrorMessage(null);
+    void (async () => {
+      const result = await previewAudienceAction({ kind, criteria });
+      if (requestId !== audiencePreviewRequestRef.current) {
+        return;
+      }
+
+      setAudiencePreviewLoading(false);
+      if (!result.ok) {
+        setPreviewErrorMessage(result.message);
+        return;
+      }
+
+      setPreviewRows(result.data);
+      setPreviewErrorMessage(null);
+    })();
   }, [criteria, currentStep, kind]);
 
   useEffect(() => {
@@ -763,7 +771,7 @@ export function NewCampaignWizard({
 
     const requestId = ++composePreviewRequestRef.current;
     const timer = setTimeout(() => {
-      startPreviewTransition(async () => {
+      startComposePreviewTransition(async () => {
         const result = await loadComposePreviewAction({
           kind,
           criteria,
@@ -928,7 +936,6 @@ export function NewCampaignWizard({
   }
 
   function changeInitialFilter(value: AudienceInitialFilter) {
-    shouldAutoSelectStatusesRef.current = value === "project_status";
     updateCriteria((current) =>
       buildCriteriaForMode({
         current,
@@ -958,16 +965,19 @@ export function NewCampaignWizard({
       contactIds: [],
       statuses: [],
     }));
-    shouldAutoSelectStatusesRef.current = true;
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
   }
 
-  function selectAllStatuses() {
+  function toggleAllStatuses(selectAll: boolean) {
     updateCriteria((current) => ({
       ...current,
-      statuses: bootstrap.statuses.filter((status) => (statusCounts[status] ?? 0) > 0),
+      statuses: !selectAll
+        ? []
+        : bootstrap.statuses.filter((status) => {
+            return statusCountsLoading || (statusCounts[status] ?? 0) > 0;
+          }),
     }));
   }
 
@@ -1142,9 +1152,9 @@ export function NewCampaignWizard({
                 criteria={criteria}
                 countState={countState}
                 previewRows={previewRows}
-                countLoading={countPending}
-                previewLoading={previewPending}
-                previewErrorMessage={saveState === "error" ? saveMessage : null}
+                countLoading={countLoading}
+                previewLoading={audiencePreviewLoading}
+                previewErrorMessage={previewErrorMessage}
                 volunteerSearchQuery={volunteerSearchQuery}
                 volunteerSearchRows={volunteerSearchRows}
                 volunteerSearchLoading={volunteerSearchPending}
@@ -1152,10 +1162,11 @@ export function NewCampaignWizard({
                 projectOptions={aliasProjects}
                 statusOptions={bootstrap.statuses}
                 statusCounts={statusCounts}
+                statusCountsLoading={statusCountsLoading}
                 statusCountsErrorMessage={statusCountsErrorMessage}
                 onInitialFilterChange={changeInitialFilter}
                 onProjectChange={toggleProject}
-                onSelectAllStatuses={selectAllStatuses}
+                onToggleAllStatuses={toggleAllStatuses}
                 onStatusToggle={toggleStatus}
                 onVolunteerSearchQueryChange={setVolunteerSearchQuery}
                 onVolunteerToggle={toggleVolunteer}
@@ -1195,7 +1206,7 @@ export function NewCampaignWizard({
                 subject={subject}
                 preheader={preheader}
                 previewData={composePreview}
-                previewLoading={previewPending}
+                previewLoading={composePreviewPending}
                 warningDismissed={warningDismissed}
                 affectedContactsOpen={affectedContactsOpen}
                 testSendOpen={testSendOpen}

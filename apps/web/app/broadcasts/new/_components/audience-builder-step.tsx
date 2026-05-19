@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  LoaderCircle,
   Search,
   Sparkles,
   X,
@@ -75,10 +76,11 @@ interface AudienceBuilderStepProps {
   readonly projectOptions: readonly CampaignProjectOption[];
   readonly statusOptions: readonly ExpeditionMemberStatus[];
   readonly statusCounts: AudienceStatusCounts;
+  readonly statusCountsLoading: boolean;
   readonly statusCountsErrorMessage: string | null;
   readonly onInitialFilterChange: (value: AudienceInitialFilter) => void;
   readonly onProjectChange: (projectId: string) => void;
-  readonly onSelectAllStatuses: () => void;
+  readonly onToggleAllStatuses: (selectAll: boolean) => void;
   readonly onStatusToggle: (status: ExpeditionMemberStatus) => void;
   readonly onVolunteerSearchQueryChange: (value: string) => void;
   readonly onVolunteerToggle: (contactId: string) => void;
@@ -101,10 +103,11 @@ export function AudienceBuilderStep({
   projectOptions,
   statusOptions,
   statusCounts,
+  statusCountsLoading,
   statusCountsErrorMessage,
   onInitialFilterChange,
   onProjectChange,
-  onSelectAllStatuses,
+  onToggleAllStatuses,
   onStatusToggle,
   onVolunteerSearchQueryChange,
   onVolunteerToggle,
@@ -113,7 +116,8 @@ export function AudienceBuilderStep({
 }: AudienceBuilderStepProps) {
   const initialFilter = criteria.initialFilter ?? "project_status";
   const canContinue =
-    initialFilter === "project_status"
+    !countLoading &&
+    (initialFilter === "project_status"
       ? [
           ...(criteria.projectId == null ? [] : [criteria.projectId]),
           ...criteria.projectIds,
@@ -123,7 +127,7 @@ export function AudienceBuilderStep({
         countState.count > 0
       : initialFilter === "specific"
         ? (criteria.contactIds?.length ?? 0) > 0 && countState.count > 0
-        : countState.count > 0;
+        : countState.count > 0);
 
   return (
     <section className="flex h-full flex-col">
@@ -156,9 +160,10 @@ export function AudienceBuilderStep({
               projectOptions={projectOptions}
               statusOptions={statusOptions}
               statusCounts={statusCounts}
+              statusCountsLoading={statusCountsLoading}
               statusCountsErrorMessage={statusCountsErrorMessage}
               onProjectChange={onProjectChange}
-              onSelectAllStatuses={onSelectAllStatuses}
+              onToggleAllStatuses={onToggleAllStatuses}
               onStatusToggle={onStatusToggle}
             />
 
@@ -323,21 +328,30 @@ export function AudienceCountPanel({
                 : "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
           )}
         >
-          {tone === "neutral" ? (
+          {loading ? (
+            <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
+          ) : tone === "neutral" ? (
             <Sparkles className="size-3.5" aria-hidden="true" />
           ) : tone === "positive" ? (
             <CheckCircle2 className="size-3.5" aria-hidden="true" />
           ) : (
             <AlertTriangle className="size-3.5" aria-hidden="true" />
           )}
-          {loading ? "Updating live count…" : "Live audience"}
+          {loading ? "Calculating audience…" : "Live audience"}
         </div>
         <div className="mt-3 flex items-end gap-3">
-          <span className="text-[32px] font-semibold leading-none tabular-nums text-slate-900">
-            {countState.hasAppliedFilters
-              ? countState.count.toLocaleString()
-              : "—"}
-          </span>
+          {loading ? (
+            <span
+              aria-hidden="true"
+              className="skeleton-pulse block h-8 w-20 rounded-md"
+            />
+          ) : (
+            <span className="text-[32px] font-semibold leading-none tabular-nums text-slate-900">
+              {countState.hasAppliedFilters
+                ? countState.count.toLocaleString()
+                : "—"}
+            </span>
+          )}
           <span className="pb-1 text-[12px] text-slate-500">
             recipients match · live as you change filters
           </span>
@@ -351,7 +365,7 @@ export function AudienceCountPanel({
         </p>
       </div>
 
-      {countState.count > 5000 ? (
+      {!loading && countState.count > 5000 ? (
         <div className="mt-4 rounded-md border border-amber-200 bg-white px-3 py-2.5 text-[12.5px] text-amber-800">
           This is a large send. Double-check the filters before continuing.
         </div>
