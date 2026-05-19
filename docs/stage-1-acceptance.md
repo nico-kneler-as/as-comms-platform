@@ -44,7 +44,7 @@ Deferred for launch completion, while keeping the generic architecture intact:
 
 ## What remains after Stage 1B
 
-- Stage 1 remains backend-first; later user-facing stages still include Settings/Admin, Inbox, AI, and Campaigns under the locked stage order in [docs/01-core/delivery-core.md](./01-core/delivery-core.md) and [docs/01-core/product-core.md](./01-core/product-core.md)
+- Stage 1 remains backend-first; later user-facing stages still include Settings/Admin, Inbox, AI, and Broadcasts under the locked stage order in [docs/01-core/delivery-core.md](./01-core/delivery-core.md) and [docs/01-core/product-core.md](./01-core/product-core.md)
 - deferred-provider backend validation now moves to Stage `1C`, with the final four-provider confidence pass in Stage `1D`
 - residual launch-scope notes should be treated as non-blocking cleanup unless they reopen locked mappings, invalidate representative-contact proofs, or break replay, parity, cutover, or audit trust
 

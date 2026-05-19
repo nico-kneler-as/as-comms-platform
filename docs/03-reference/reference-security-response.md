@@ -23,7 +23,7 @@
 | `SALESFORCE_CAPTURE_TOKEN` | `worker`, `salesforce-capture`              | Railway service variables           | Must match on both sides of the service-to-service call.                  |
 | `INBOX_REVALIDATE_TOKEN`   | `worker`, `web`                             | Railway service variables           | Internal-only shared secret for inbox revalidation calls.                 |
 | `MAILCHIMP_CAPTURE_TOKEN`  | future `worker` + Mailchimp capture service | Railway service variables           | Deferred until Mailchimp capture resumes.                                 |
-| `SENDGRID_API_KEY`         | future campaigns service                    | Railway service variables           | Deferred until Campaigns Email lands.                                     |
+| `SENDGRID_API_KEY`         | future broadcasts service                    | Railway service variables           | Deferred until Broadcasts Email lands.                                     |
 | `ANTHROPIC_API_KEY`        | `web`                                       | Railway service variables           | Powers Stage 4 AI drafting in the web service only.                       |
 | `GMAIL_LIVE_ACCOUNT`       | `web`, `worker`, `gmail-capture`            | Railway service variables           | `web` uses it for composer sends; `worker`/`gmail-capture` for ingestion. |
 | `GMAIL_GOOGLE_OAUTH_CLIENT_ID` | `web`, `worker`, `gmail-capture`        | Railway service variables           | Same OAuth app; rotate the client ID across all three services together.  |

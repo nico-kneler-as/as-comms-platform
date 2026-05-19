@@ -11,13 +11,13 @@ Make routing, access, integration health, timezone, and AI knowledge configurati
 
 ## Required Reading
 
-1. [`../00-index.md`](../00-index.md)
-2. [`../01-core/product-core.md`](../01-core/product-core.md)
-3. [`../01-core/system-core.md`](../01-core/system-core.md)
-4. [`../01-core/engineering-core.md`](../01-core/engineering-core.md)
-5. [`../01-core/frontend-patterns.md`](../01-core/frontend-patterns.md)
-6. [`../01-core/delivery-core.md`](../01-core/delivery-core.md)
-7. [`../01-core/decision-core.md`](../01-core/decision-core.md)
+1. [00-index.md](../00-index.md)
+2. [product-core.md](../01-core/product-core.md)
+3. [system-core.md](../01-core/system-core.md)
+4. [engineering-core.md](../01-core/engineering-core.md)
+5. [frontend-patterns.md](../01-core/frontend-patterns.md)
+6. [delivery-core.md](../01-core/delivery-core.md)
+7. [decision-core.md](../01-core/decision-core.md)
 
 ## Locked
 
@@ -91,4 +91,4 @@ Make routing, access, integration health, timezone, and AI knowledge configurati
 
 ## Read Next
 
-- after Stage 2, most operator-facing work starts from [`inbox-bundle.md`](./inbox-bundle.md)
+- after Stage 2, most operator-facing work starts from [inbox-bundle.md](./inbox-bundle.md)

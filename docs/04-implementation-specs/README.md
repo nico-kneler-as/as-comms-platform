@@ -13,25 +13,25 @@ They are meant to prevent code-first guessing, not to replace the bundle or core
 
 ## Read Order For Stage 1
 
-1. [`../02-bundles/data-foundation-bundle.md`](../02-bundles/data-foundation-bundle.md)
-2. [`stage-1-event-taxonomy.md`](./stage-1-event-taxonomy.md)
-3. [`stage-1-provider-ingest-matrix.md`](./stage-1-provider-ingest-matrix.md)
-4. [`stage-1-review-queue-reason-codes.md`](./stage-1-review-queue-reason-codes.md)
-5. [`stage-1-projection-rules.md`](./stage-1-projection-rules.md)
-6. [`stage-1-worker-job-catalog.md`](./stage-1-worker-job-catalog.md)
+1. [data-foundation-bundle.md](../02-bundles/data-foundation-bundle.md)
+2. [stage-1-event-taxonomy.md](./stage-1-event-taxonomy.md)
+3. [stage-1-provider-ingest-matrix.md](./stage-1-provider-ingest-matrix.md)
+4. [stage-1-review-queue-reason-codes.md](./stage-1-review-queue-reason-codes.md)
+5. [stage-1-projection-rules.md](./stage-1-projection-rules.md)
+6. [stage-1-worker-job-catalog.md](./stage-1-worker-job-catalog.md)
 
 ## Read Order For Stage 4
 
-1. [`../02-bundles/ai-bundle.md`](../02-bundles/ai-bundle.md)
-2. [`stage-4-ai-pipeline.md`](./stage-4-ai-pipeline.md)
+1. [ai-bundle.md](../02-bundles/ai-bundle.md)
+2. [stage-4-ai-pipeline.md](./stage-4-ai-pipeline.md)
 
 ## Read Order For Stage 5A
 
-1. PRD [`apps#412`](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
-2. [`../02-bundles/campaigns-bundle.md`](../02-bundles/campaigns-bundle.md)
-3. [`stage-5a-campaigns.md`](./stage-5a-campaigns.md)
-4. [`../design-briefs/stage-5a-campaigns.md`](../design-briefs/stage-5a-campaigns.md) (UI/UX, pairs with the impl spec)
-5. [`stage-5a-phase-c-newsletter-audit.md`](./stage-5a-phase-c-newsletter-audit.md) (Brief C0 prep — read before Phase C planning, not Phase A)
+1. PRD [412](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
+2. [campaigns-bundle.md](../02-bundles/campaigns-bundle.md)
+3. [stage-5a-campaigns.md](./stage-5a-campaigns.md)
+4. [stage-5a-campaigns.md](../design-briefs/stage-5a-campaigns.md) (UI/UX, pairs with the impl spec)
+5. [stage-5a-phase-c-newsletter-audit.md](./stage-5a-phase-c-newsletter-audit.md) (Brief C0 prep — read before Phase C planning, not Phase A)
 
 ## Shared Stage 1 Vocabulary
 

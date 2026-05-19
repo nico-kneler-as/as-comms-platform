@@ -16,10 +16,10 @@ async function signInForSmoke(page: Page) {
 }
 
 async function reachComposeStep(page: Page) {
-  await page.goto("/campaigns/new");
+  await page.goto("/broadcasts/new");
   await page.getByRole("button", { name: "Continue" }).click();
 
-  await page.getByLabel("Campaign name").fill("Smoke test campaign");
+  await page.getByLabel("Broadcast name").fill("Smoke test broadcast");
   const senderTrigger = page.locator("#campaign-from-email");
   if ((await senderTrigger.count()) === 0) {
     test.skip(true, "Sender selection did not render.");
@@ -53,18 +53,18 @@ async function reachComposeStep(page: Page) {
   const recipientCount = page.locator("span.text-5xl.tabular-nums").first();
   const countText = (await recipientCount.textContent())?.trim() ?? "";
   if (countText === "0" || countText === "—") {
-    test.skip(true, "The selected project has no campaign recipients.");
+    test.skip(true, "The selected project has no broadcast recipients.");
     return false;
   }
 
   await page.getByRole("button", { name: "Continue to compose" }).click();
   await expect(
-    page.getByRole("heading", { name: "Compose the campaign" }),
+    page.getByRole("heading", { name: "Write your email" }),
   ).toBeVisible();
   return true;
 }
 
-test("campaign compose step rotates preview contacts and posts the test-send action", async ({
+test("broadcast compose step rotates preview contacts and posts the test-send action", async ({
   page,
 }) => {
   if (!(await signInForSmoke(page))) {
@@ -75,7 +75,7 @@ test("campaign compose step rotates preview contacts and posts the test-send act
   }
 
   await page
-    .getByLabel("Campaign subject")
+    .getByLabel("Broadcast subject")
     .fill("Gear pickup for {{firstName}}");
   await page.locator('[role="textbox"][aria-label="Message"]').click();
   await page
@@ -97,7 +97,7 @@ test("campaign compose step rotates preview contacts and posts the test-send act
   await actionRequest;
 });
 
-test("campaign review step can freeze a scheduled campaign from the wizard", async ({
+test("broadcast review step can freeze a scheduled broadcast from the wizard", async ({
   page,
 }) => {
   if (!(await signInForSmoke(page))) {
@@ -108,7 +108,7 @@ test("campaign review step can freeze a scheduled campaign from the wizard", asy
   }
 
   await page
-    .getByLabel("Campaign subject")
+    .getByLabel("Broadcast subject")
     .fill("Gear pickup for {{firstName}}");
   await page.locator('[role="textbox"][aria-label="Message"]').click();
   await page

@@ -90,7 +90,7 @@ export function ComposeStep({
             disabled={frozen}
             placeholder="What recipients see in their inbox"
             className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[14.5px] font-semibold tracking-tight text-slate-900 shadow-none placeholder:font-normal focus-visible:ring-0"
-            aria-label="Campaign subject"
+            aria-label="Broadcast subject"
           />
           <span
             className={
@@ -119,7 +119,7 @@ export function ComposeStep({
             disabled={frozen}
             placeholder="Preheader text - shown next to the subject in most clients"
             className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[12.5px] text-slate-800 shadow-none focus-visible:ring-0"
-            aria-label="Campaign preheader"
+            aria-label="Broadcast preheader"
           />
         </div>
 

@@ -6,17 +6,17 @@
 
 ## Purpose
 
-Retire the temporary Mailchimp live-ingest path once native Postmark campaign
+Retire the temporary Mailchimp live-ingest path once native Postmark broadcast
 sending is fully trusted. This removes scheduler activity and the dedicated
 `mailchimp-capture` service without deleting canonical history.
 
 Stage 5A context: this runbook executes at the end of **Phase C** (newsletter
 migration) per PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
-and [`../04-implementation-specs/stage-5a-campaigns.md`](../04-implementation-specs/stage-5a-campaigns.md).
+and [stage-5a-campaigns.md](../04-implementation-specs/stage-5a-campaigns.md).
 
 ## Preconditions
 
-1. Postmark native campaign sending is fully validated in production.
+1. Postmark native broadcast sending is fully validated in production.
 2. Operators have confirmed no active Mailchimp campaign sends remain scheduled.
 3. The fallback path is understood: re-enable transition ingest only if
    Postmark issues require a temporary rollback.
@@ -36,7 +36,7 @@ and [`../04-implementation-specs/stage-5a-campaigns.md`](../04-implementation-sp
 ### 2. Confirm Mailchimp authoring is idle
 
 1. Confirm with operations that no Mailchimp campaign sends remain scheduled.
-2. Confirm with the architect that Postmark is now the only active campaign
+2. Confirm with the architect that Postmark is now the only active broadcast
    send path.
 3. If any Mailchimp campaign is still scheduled, stop here. Do not disable the
    ingest tail early.

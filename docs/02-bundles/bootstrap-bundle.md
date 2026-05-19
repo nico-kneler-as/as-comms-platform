@@ -11,11 +11,11 @@ Bootstrap the new restart repo so product work starts on locked boundaries inste
 
 ## Required Reading
 
-1. [`../00-index.md`](../00-index.md)
-2. [`../01-core/engineering-core.md`](../01-core/engineering-core.md)
-3. [`../01-core/interfaces-core.md`](../01-core/interfaces-core.md)
-4. [`../01-core/delivery-core.md`](../01-core/delivery-core.md)
-5. [`../01-core/decision-core.md`](../01-core/decision-core.md)
+1. [00-index.md](../00-index.md)
+2. [engineering-core.md](../01-core/engineering-core.md)
+3. [interfaces-core.md](../01-core/interfaces-core.md)
+4. [delivery-core.md](../01-core/delivery-core.md)
+5. [decision-core.md](../01-core/decision-core.md)
 
 ## Locked
 
@@ -54,6 +54,6 @@ Bootstrap the new restart repo so product work starts on locked boundaries inste
 
 ## Read Next
 
-- after Stage 0: [`data-foundation-bundle.md`](./data-foundation-bundle.md)
-- testing isolation reference: [`../03-reference/reference-testing-mocks.md`](../03-reference/reference-testing-mocks.md)
-- deep repo details if needed: [`../03-reference/reference-donor-reuse.md`](../03-reference/reference-donor-reuse.md)
+- after Stage 0: [data-foundation-bundle.md](./data-foundation-bundle.md)
+- testing isolation reference: [reference-testing-mocks.md](../03-reference/reference-testing-mocks.md)
+- deep repo details if needed: [reference-donor-reuse.md](../03-reference/reference-donor-reuse.md)

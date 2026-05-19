@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("campaign run detail stop-unsent flow", async ({ page }) => {
+test("broadcast run detail stop-unsent flow", async ({ page }) => {
   const devAuthResponse = await page.request.get(
     "/api/dev-auth?email=nico@adventurescientists.org",
   );
@@ -17,20 +17,20 @@ test("campaign run detail stop-unsent flow", async ({ page }) => {
   if (!runId) {
     test.skip(
       true,
-      "Set E2E_CAMPAIGN_RUN_ID to a sending campaign run to exercise this flow.",
+      "Set E2E_CAMPAIGN_RUN_ID to a sending broadcast run to exercise this flow.",
     );
     return;
   }
 
-  await page.goto(`/campaigns/${encodeURIComponent(runId)}`);
+  await page.goto(`/broadcasts/${encodeURIComponent(runId)}`);
   await expect(page.getByText("Recipients")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Stop unsent" }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Stop unsent" }).click();
-  await expect(page.getByText("Cancel this campaign?")).toBeVisible();
-  await page.getByRole("button", { name: "Cancel campaign" }).click();
+  await expect(page.getByText("Cancel this broadcast?")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel broadcast" }).click();
 
   await expect(page.getByText("Cancelled")).toBeVisible();
 });

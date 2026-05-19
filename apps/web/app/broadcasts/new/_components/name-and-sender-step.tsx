@@ -90,7 +90,7 @@ export function NameAndSenderStep({
           Name and sender
         </h2>
         <p className="mt-2 max-w-2xl text-pretty text-[13px] leading-relaxed text-slate-500">
-          Set the internal campaign name and choose the verified alias that
+          Set the internal broadcast name and choose the verified alias that
           recipients will see in their inbox.
         </p>
       </div>
@@ -101,7 +101,7 @@ export function NameAndSenderStep({
             htmlFor="campaign-name"
             className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500"
           >
-            Campaign name
+            Broadcast name
           </label>
           <Input
             id="campaign-name"

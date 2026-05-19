@@ -11,13 +11,13 @@ Build canonical identity, source evidence, normalized history, review queues, pr
 
 ## Required Reading
 
-1. [`../00-index.md`](../00-index.md)
-2. [`../01-core/product-core.md`](../01-core/product-core.md)
-3. [`../01-core/system-core.md`](../01-core/system-core.md)
-4. [`../01-core/data-core.md`](../01-core/data-core.md)
-5. [`../01-core/interfaces-core.md`](../01-core/interfaces-core.md)
-6. [`../01-core/delivery-core.md`](../01-core/delivery-core.md)
-7. [`../01-core/decision-core.md`](../01-core/decision-core.md)
+1. [00-index.md](../00-index.md)
+2. [product-core.md](../01-core/product-core.md)
+3. [system-core.md](../01-core/system-core.md)
+4. [data-core.md](../01-core/data-core.md)
+5. [interfaces-core.md](../01-core/interfaces-core.md)
+6. [delivery-core.md](../01-core/delivery-core.md)
+7. [decision-core.md](../01-core/decision-core.md)
 
 ## Locked
 
@@ -64,6 +64,6 @@ Build canonical identity, source evidence, normalized history, review queues, pr
 
 ## Reference Links
 
-- services summary: [`../03-reference/reference-services.md`](../03-reference/reference-services.md)
-- Salesforce mapping: [`../03-reference/reference-salesforce-mapping.md`](../03-reference/reference-salesforce-mapping.md)
-- deep donor details if needed: [`../03-reference/reference-donor-reuse.md`](../03-reference/reference-donor-reuse.md)
+- services summary: [reference-services.md](../03-reference/reference-services.md)
+- Salesforce mapping: [reference-salesforce-mapping.md](../03-reference/reference-salesforce-mapping.md)
+- deep donor details if needed: [reference-donor-reuse.md](../03-reference/reference-donor-reuse.md)
