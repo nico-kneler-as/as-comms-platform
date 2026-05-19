@@ -10,7 +10,7 @@ Retire the temporary Mailchimp live-ingest path once native Postmark broadcast
 sending is fully trusted. This removes scheduler activity and the dedicated
 `mailchimp-capture` service without deleting canonical history.
 
-Stage 5A context: this runbook executes at the end of **Phase C** (newsletter
+Stage context: this runbook executes at the end of **Stage 5C** (newsletter
 migration) per PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
 and [stage-5a-campaigns.md](../04-implementation-specs/stage-5a-campaigns.md).
 

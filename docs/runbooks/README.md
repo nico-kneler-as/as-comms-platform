@@ -42,7 +42,7 @@ edit the markdown here and re-mirror.
 | Runbook | Symptom |
 |---|---|
 | [worker-queue-stuck.md](./worker-queue-stuck.md) | Worker is running but jobs not advancing; no `reconcile.completed` logs |
-| [mailchimp-decommission.md](./mailchimp-decommission.md) | Planned Postmark cutover is complete (Stage 5A Phase C) and the temporary Mailchimp ingest path must be retired |
+| [mailchimp-decommission.md](./mailchimp-decommission.md) | Planned Postmark cutover is complete (Stage 5C per `D-046`; was "Stage 5A Phase C" pre-2026-05-19 restructure) and the temporary Mailchimp ingest path must be retired |
 
 ## Investigation guides
 
