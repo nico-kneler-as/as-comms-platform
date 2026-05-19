@@ -166,6 +166,7 @@ function createOrchestrator(
         campaignRuns: campaigns.campaignRuns,
         audienceSnapshots: campaigns.audienceSnapshots,
         settingsProjects: context.settings.projects,
+        orgSettings: campaigns.orgSettings,
       },
       audienceResolver: createAudienceResolver({
         repositories: {
@@ -185,6 +186,7 @@ function createOrchestrator(
       }),
       mergeRenderer: createMergeRenderer(),
       postmarkClient,
+      appUrl: "https://test.example",
       batchSize,
     }),
   };

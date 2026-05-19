@@ -4,7 +4,7 @@ import { createConsentLedger } from "@as-comms/domain";
 import type { Stage1WebRuntime } from "@/src/server/stage1-runtime";
 
 export interface UnsubscribePageModel {
-  readonly state: "success" | "invalid";
+  readonly state: "pending" | "success" | "invalid";
   readonly token: string;
   readonly variant: "project" | "newsletter";
   readonly headline: string;
@@ -22,7 +22,7 @@ interface ResolvedProjectScope {
   readonly name: string | null;
 }
 
-interface UnsubscribeTarget {
+export interface UnsubscribeTarget {
   readonly contactId: string;
   readonly email: string;
   readonly runId: string;
@@ -119,10 +119,41 @@ function hasAllOptOut(records: readonly ContactConsentRecord[]): boolean {
   return records.some((record) => record.scopeType === "all");
 }
 
+function hasScopeOptOut(
+  records: readonly ContactConsentRecord[],
+  scope: { readonly type: "project" | "newsletter"; readonly id?: string },
+): boolean {
+  if (scope.type === "newsletter") {
+    return records.some((record) => record.scopeType === "newsletter");
+  }
+  return records.some(
+    (record) => record.scopeType === "project" && record.scopeId === scope.id,
+  );
+}
+
+export interface UnsubscribeScope {
+  readonly type: "project" | "newsletter";
+  readonly id?: string;
+}
+
+export function resolveUnsubscribeScope(
+  target: UnsubscribeTarget,
+): UnsubscribeScope | null {
+  if (target.kind === "newsletter") {
+    return { type: "newsletter" };
+  }
+  const projectId = target.project.id;
+  if (projectId === null) {
+    return null;
+  }
+  return { type: "project", id: projectId };
+}
+
 export async function loadUnsubscribePageModel(input: {
   readonly runtime: Stage1WebRuntime;
   readonly token: string;
   readonly requestedAllBanner: boolean;
+  readonly confirmed: boolean;
 }): Promise<UnsubscribePageModel> {
   const footerAddress = formatAddress(await input.runtime.campaigns.orgSettings.read());
   const target = await resolveUnsubscribeTarget(input.runtime, input.token);
@@ -131,35 +162,40 @@ export async function loadUnsubscribePageModel(input: {
     return buildInvalidModel(input.token, footerAddress);
   }
 
-  const consentLedger = createConsentLedger({
-    repositories: input.runtime.campaigns,
-  });
   if (target.kind === "project" && target.project.id === null) {
     return buildInvalidModel(input.token, footerAddress);
   }
 
-  let scope: { readonly type: "project" | "newsletter"; readonly id?: string };
-  if (target.kind === "newsletter") {
-    scope = { type: "newsletter" };
-  } else {
-    const projectId = target.project.id;
-    if (projectId === null) {
-      return buildInvalidModel(input.token, footerAddress);
-    }
-    scope = { type: "project", id: projectId };
+  const scope = resolveUnsubscribeScope(target);
+  if (scope === null) {
+    return buildInvalidModel(input.token, footerAddress);
   }
 
-  await consentLedger.recordOptOut({
-    contactId: target.contactId,
-    scope,
-    source: "recipient_click",
-    sourceRunId: target.runId,
+  const consentLedger = createConsentLedger({
+    repositories: input.runtime.campaigns,
   });
-
   const consentRows = await consentLedger.listForContact(target.contactId);
   const allOptedOut = hasAllOptOut(consentRows);
+  const alreadyOptedOut = allOptedOut || hasScopeOptOut(consentRows, scope);
+  const isSuccess = input.confirmed || alreadyOptedOut;
 
   if (target.kind === "newsletter") {
+    if (!isSuccess) {
+      return {
+        state: "pending",
+        token: input.token,
+        variant: "newsletter",
+        headline: "Unsubscribe from the AS newsletter?",
+        body:
+          "Click confirm to stop receiving the monthly Adventure Scientists newsletter. Project-specific emails will keep coming if you're an active volunteer.",
+        email: target.email,
+        ctaPrompt: null,
+        ctaLabel: null,
+        showAllBanner: false,
+        showAllCta: false,
+        footerAddress,
+      };
+    }
     return {
       state: "success",
       token: input.token,
@@ -178,6 +214,22 @@ export async function loadUnsubscribePageModel(input: {
   }
 
   const projectName = target.project.name ?? "this project";
+  if (!isSuccess) {
+    return {
+      state: "pending",
+      token: input.token,
+      variant: "project",
+      headline: `Unsubscribe from ${projectName} emails?`,
+      body:
+        "Click confirm to stop receiving campaign emails from this project. Your project-team correspondence — replies to direct conversations, trip logistics, gear pickups — will keep flowing as usual.",
+      email: target.email,
+      ctaPrompt: null,
+      ctaLabel: null,
+      showAllBanner: false,
+      showAllCta: false,
+      footerAddress,
+    };
+  }
   return {
     state: "success",
     token: input.token,

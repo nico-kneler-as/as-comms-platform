@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { sql } from "drizzle-orm";
 
 import type { CampaignRunProjectionRow, RunState } from "@as-comms/contracts";
 import { createCampaignRunProjectionReader } from "@as-comms/domain";
@@ -91,25 +92,292 @@ function resolveFilterStates(filterId: CampaignFilterId) {
   );
 }
 
-function buildPreviewMaps(input: {
-  readonly rows: readonly CampaignRunProjectionRow[];
-  readonly postmarkPreheaders: ReadonlyMap<string, string | null>;
-  readonly mailchimpSnippets: ReadonlyMap<string, string | null>;
-}) {
-  return new Map(
-    input.rows.map((row) => {
-      if (row.provider === "postmark") {
-        return [
-          row.runId,
-          input.postmarkPreheaders.get(row.runId) ?? null,
-        ] as const;
-      }
+interface CampaignProjectionSqlRow {
+  readonly runId: string;
+  readonly provider: "postmark";
+  readonly kind: CampaignRunProjectionRow["kind"];
+  readonly launchType: CampaignRunProjectionRow["launchType"];
+  readonly state: CampaignRunProjectionRow["state"];
+  readonly projectId: string | null;
+  readonly sender: string;
+  readonly subject: string;
+  readonly audienceSize: number | null;
+  readonly scheduledAt: Date | null;
+  readonly startedAt: Date | null;
+  readonly completedAt: Date | null;
+  readonly cancelledAt: Date | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
 
-      return [
-        row.runId,
-        input.mailchimpSnippets.get(row.runId) ?? null,
-      ] as const;
-    }),
+interface CampaignProjectionCountSqlRow {
+  readonly total: number | string;
+}
+
+interface CampaignProjectionStateCountSqlRow {
+  readonly state: RunState;
+  readonly total: number | string;
+}
+
+interface CampaignMetricSqlRow {
+  readonly runId: string;
+  readonly sent: number | string;
+  readonly opened: number | string;
+  readonly total: number | string;
+}
+
+type CampaignMetricByRunId = Map<
+  string,
+  {
+    readonly sent: number;
+    readonly opened: number;
+    readonly total: number;
+  }
+>;
+
+function buildPostmarkProjectionWhereClause(input: {
+  readonly states: readonly RunState[] | null;
+  readonly projectIds: readonly string[] | null;
+  readonly searchQuery: string | null;
+}) {
+  const conditions = [sql`"provider" = 'postmark'`];
+
+  if (input.projectIds !== null) {
+    conditions.push(
+      input.projectIds.length === 0
+        ? sql`1 = 0`
+        : sql`"project_id" in (${sql.join(
+            input.projectIds.map((projectId) => sql`${projectId}`),
+            sql`, `,
+          )})`,
+    );
+  }
+
+  if (input.states !== null) {
+    conditions.push(
+      input.states.length === 0
+        ? sql`1 = 0`
+        : sql`"state" in (${sql.join(
+            input.states.map((state) => sql`${state}`),
+            sql`, `,
+          )})`,
+    );
+  }
+
+  if (input.searchQuery !== null) {
+    const pattern = `%${input.searchQuery.replace(/[\\%_]/g, "\\$&")}%`;
+    conditions.push(sql`"subject" ilike ${pattern} escape '\\'`);
+  }
+
+  return sql`where ${sql.join(conditions, sql` and `)}`;
+}
+
+function mapProjectionSqlRow(
+  row: CampaignProjectionSqlRow,
+): CampaignRunProjectionRow {
+  return {
+    runId: row.runId,
+    provider: row.provider,
+    kind: row.kind,
+    launchType: row.launchType,
+    state: row.state,
+    projectId: row.projectId,
+    sender: row.sender,
+    subject: row.subject,
+    audienceSize: row.audienceSize,
+    scheduledAt: row.scheduledAt?.toISOString() ?? null,
+    startedAt: row.startedAt?.toISOString() ?? null,
+    completedAt: row.completedAt?.toISOString() ?? null,
+    cancelledAt: row.cancelledAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+async function listRecentPostmarkRows(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly activeStates: readonly RunState[] | null;
+  readonly selectedProjectIds: readonly string[];
+  readonly searchQuery: string;
+  readonly limit: number;
+  readonly offset: number;
+}) {
+  const connection = input.runtime.connection;
+  if (connection === null) {
+    const reader = createCampaignRunProjectionReader({
+      repositories: input.runtime.campaigns,
+    });
+    return (await reader.listRecent({
+      ...(input.activeStates === null ? {} : { states: [...input.activeStates] }),
+      ...(input.selectedProjectIds.length === 0
+        ? {}
+        : { projectIds: [...input.selectedProjectIds] }),
+      ...(input.searchQuery.length === 0
+        ? {}
+        : { searchQuery: input.searchQuery }),
+      limit: input.limit,
+      offset: input.offset,
+    })).filter((row) => row.provider === "postmark");
+  }
+
+  const result = await connection.db.execute(sql<CampaignProjectionSqlRow>`
+    select
+      "run_id" as "runId",
+      "provider" as "provider",
+      "kind" as "kind",
+      "launch_type" as "launchType",
+      "state" as "state",
+      "project_id" as "projectId",
+      "sender" as "sender",
+      "subject" as "subject",
+      "audience_size" as "audienceSize",
+      "scheduled_at" as "scheduledAt",
+      "started_at" as "startedAt",
+      "completed_at" as "completedAt",
+      "cancelled_at" as "cancelledAt",
+      "created_at" as "createdAt",
+      "updated_at" as "updatedAt"
+    from "campaign_run_projection"
+    ${buildPostmarkProjectionWhereClause({
+      states: input.activeStates,
+      projectIds:
+        input.selectedProjectIds.length === 0 ? null : input.selectedProjectIds,
+      searchQuery: input.searchQuery.length === 0 ? null : input.searchQuery,
+    })}
+    order by "updated_at" desc, "created_at" desc, "run_id" asc
+    limit ${input.limit}
+    offset ${input.offset}
+  `);
+
+  const rows =
+    (result as { readonly rows?: readonly CampaignProjectionSqlRow[] }).rows ??
+    [];
+  return rows.map(mapProjectionSqlRow);
+}
+
+async function countPostmarkRows(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly activeStates: readonly RunState[] | null;
+  readonly selectedProjectIds: readonly string[];
+  readonly searchQuery: string;
+}) {
+  const connection = input.runtime.connection;
+  if (connection === null) {
+    const reader = createCampaignRunProjectionReader({
+      repositories: input.runtime.campaigns,
+    });
+    return reader.count({
+      ...(input.activeStates === null ? {} : { states: [...input.activeStates] }),
+      ...(input.selectedProjectIds.length === 0
+        ? {}
+        : { projectIds: [...input.selectedProjectIds] }),
+      ...(input.searchQuery.length === 0
+        ? {}
+        : { searchQuery: input.searchQuery }),
+    });
+  }
+
+  const result = await connection.db.execute(sql<CampaignProjectionCountSqlRow>`
+    select count(*)::int as "total"
+    from "campaign_run_projection"
+    ${buildPostmarkProjectionWhereClause({
+      states: input.activeStates,
+      projectIds:
+        input.selectedProjectIds.length === 0 ? null : input.selectedProjectIds,
+      searchQuery: input.searchQuery.length === 0 ? null : input.searchQuery,
+    })}
+  `);
+  const [row] =
+    (
+      result as {
+        readonly rows?: readonly CampaignProjectionCountSqlRow[];
+      }
+    ).rows ?? [];
+
+  return Number(row?.total ?? 0);
+}
+
+async function countPostmarkRowsByState(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly selectedProjectIds: readonly string[];
+}) {
+  const connection = input.runtime.connection;
+  if (connection === null) {
+    const reader = createCampaignRunProjectionReader({
+      repositories: input.runtime.campaigns,
+    });
+    return reader.countByState({
+      ...(input.selectedProjectIds.length === 0
+        ? {}
+        : { projectIds: [...input.selectedProjectIds] }),
+    });
+  }
+
+  const result = await connection.db.execute(sql<CampaignProjectionStateCountSqlRow>`
+    select "state" as "state", count(*)::int as "total"
+    from "campaign_run_projection"
+    ${buildPostmarkProjectionWhereClause({
+      states: null,
+      projectIds:
+        input.selectedProjectIds.length === 0 ? null : input.selectedProjectIds,
+      searchQuery: null,
+    })}
+    group by "state"
+  `);
+  const rows =
+    (
+      result as {
+        readonly rows?: readonly CampaignProjectionStateCountSqlRow[];
+      }
+    ).rows ?? [];
+  const counts: Partial<Record<RunState, number>> = {};
+  for (const row of rows) {
+    counts[row.state] = Number(row.total);
+  }
+  return counts;
+}
+
+async function readMetricsByRunId(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly runIds: readonly string[];
+}): Promise<CampaignMetricByRunId> {
+  if (input.runIds.length === 0) {
+    return new Map();
+  }
+
+  const connection = input.runtime.connection;
+  if (connection === null) {
+    return new Map();
+  }
+
+  const result = await connection.db.execute(sql<CampaignMetricSqlRow>`
+    select
+      campaign_run_id as "runId",
+      count(*) filter (
+        where sent_at is not null
+          or delivery_status in ('sent', 'delivered', 'bounced', 'complained', 'unsubscribed')
+      )::int as "sent",
+      count(*) filter (where opened_at is not null)::int as "opened",
+      count(*)::int as "total"
+    from audience_snapshots
+    where campaign_run_id in (${sql.join(
+      input.runIds.map((runId) => sql`${runId}`),
+      sql`, `,
+    )})
+    group by campaign_run_id
+  `);
+
+  const rows =
+    (result as { readonly rows?: readonly CampaignMetricSqlRow[] }).rows ?? [];
+  return new Map(
+    rows.map((row) => [
+      row.runId,
+      {
+        sent: Number(row.sent),
+        opened: Number(row.opened),
+        total: Number(row.total),
+      },
+    ]),
   );
 }
 
@@ -142,17 +410,11 @@ async function CampaignRowsSection(input: {
   }[];
 }) {
   const runtime = await getStage1WebRuntime();
-  const reader = createCampaignRunProjectionReader({
-    repositories: runtime.campaigns,
-  });
-  const rows = await reader.listRecent({
-    ...(input.activeStates === null ? {} : { states: [...input.activeStates] }),
-    ...(input.selectedProjectIds.length === 0
-      ? {}
-      : { projectIds: [...input.selectedProjectIds] }),
-    ...(input.searchQuery.length === 0
-      ? {}
-      : { searchQuery: input.searchQuery }),
+  const rows = await listRecentPostmarkRows({
+    runtime,
+    activeStates: input.activeStates,
+    selectedProjectIds: input.selectedProjectIds,
+    searchQuery: input.searchQuery,
     limit: CAMPAIGNS_PAGE_SIZE,
     offset: (input.currentPage - 1) * CAMPAIGNS_PAGE_SIZE,
   });
@@ -169,28 +431,9 @@ async function CampaignRowsSection(input: {
   const postmarkPreheaders = new Map(
     postmarkRuns.map((run) => [run.id, run.preheader] as const),
   );
-  const mailchimpSnippets = new Map<string, string | null>();
-  const mailchimpRunIds = rows
-    .filter((row) => row.provider === "mailchimp")
-    .map((row) => row.runId);
-  const mailchimpDetails =
-    runtime.repositories.mailchimpCampaignActivityDetails.listByCampaignIds ===
-    undefined
-      ? []
-      : await runtime.repositories.mailchimpCampaignActivityDetails.listByCampaignIds(
-          mailchimpRunIds,
-        );
-  for (const detail of mailchimpDetails) {
-    if (!detail.campaignId || mailchimpSnippets.has(detail.campaignId)) {
-      continue;
-    }
-    mailchimpSnippets.set(detail.campaignId, detail.snippet);
-  }
-
-  const previewByRunId = buildPreviewMaps({
-    rows,
-    postmarkPreheaders,
-    mailchimpSnippets,
+  const metricByRunId = await readMetricsByRunId({
+    runtime,
+    runIds: postmarkRunIds,
   });
   const projectMetaById = new Map(
     input.activeProjects.map((project) => [
@@ -203,33 +446,38 @@ async function CampaignRowsSection(input: {
   );
   const items: readonly CampaignRowViewModel[] = rows.map((row) => ({
     ...row,
-    name:
-      row.provider === "mailchimp"
-        ? row.subject
-        : (postmarkRunById.get(row.runId)?.name ?? null),
+    name: postmarkRunById.get(row.runId)?.name ?? null,
     audienceType:
-      row.provider === "mailchimp" || row.kind === "newsletter"
+      row.kind === "newsletter"
         ? "newsletter"
-        : (postmarkRunById.get(row.runId)?.audienceCriteria.projectIds.length ??
-              0) === 0
+        : (postmarkRunById.get(row.runId)?.audienceCriteria.contactIds.length ??
+              0) > 0
           ? "specific"
           : "project",
+    projectName:
+      row.projectId === null
+        ? null
+        : (projectMetaById.get(row.projectId)?.name ?? null),
     projectAlias:
       row.projectId === null
         ? null
+        : (projectMetaById.get(row.projectId)?.alias ?? null),
+    projectLabel:
+      row.projectId === null
+        ? null
         : (() => {
-            const senderAlias = row.sender.split("@")[0]?.trim() ?? "";
-            if (senderAlias.length > 0) {
-              return senderAlias;
-            }
-
-            return projectMetaById.get(row.projectId)?.alias ?? null;
+            const projectMeta = projectMetaById.get(row.projectId);
+            return projectMeta?.alias ?? projectMeta?.name ?? null;
           })(),
-    previewText: previewByRunId.get(row.runId) ?? null,
+    previewText: postmarkPreheaders.get(row.runId) ?? null,
+    selectedContactCount:
+      postmarkRunById.get(row.runId)?.audienceCriteria.contactIds.length ?? 0,
+    sentCount: metricByRunId.get(row.runId)?.sent ?? null,
+    openedCount: metricByRunId.get(row.runId)?.opened ?? null,
   }));
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div className="divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white">
       {items.map((item) => (
         <CampaignRow key={`${item.provider}:${item.runId}`} item={item} />
       ))}
@@ -245,30 +493,24 @@ export default async function CampaignsPage({
   const params: CampaignsSearchParams = (await searchParams) ?? {};
   const currentUser = await requireSession();
   const runtime = await getStage1WebRuntime();
-  const reader = createCampaignRunProjectionReader({
-    repositories: runtime.campaigns,
-  });
 
   const activeFilterId = parseFilterId(params.state);
   const activeStates = resolveFilterStates(activeFilterId);
   const selectedProjectIds = normalizeProjectIds(params.projectId);
   const searchQuery = normalizeSearchQuery(params.q);
   const requestedPage = normalizePage(params.page);
-  const countOptions: Parameters<typeof reader.count>[0] = {
-    ...(activeStates === null ? {} : { states: [...activeStates] }),
-    ...(selectedProjectIds.length === 0
-      ? {}
-      : { projectIds: selectedProjectIds }),
-    ...(searchQuery.length === 0 ? {} : { searchQuery }),
-  };
 
   const [allProjects, totalMatchingCount, countsByState] = await Promise.all([
     runtime.settings.projects.listAll(),
-    reader.count(countOptions),
-    reader.countByState({
-      ...(selectedProjectIds.length === 0
-        ? {}
-        : { projectIds: selectedProjectIds }),
+    countPostmarkRows({
+      runtime,
+      activeStates,
+      selectedProjectIds,
+      searchQuery,
+    }),
+    countPostmarkRowsByState({
+      runtime,
+      selectedProjectIds,
     }),
   ]);
   const totalPages = Math.max(

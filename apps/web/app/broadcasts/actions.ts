@@ -162,16 +162,30 @@ function buildLivePostmarkClient() {
   });
 }
 
+function trimNonEmpty(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? null : trimmed;
+}
+
 function createCampaignSendOrchestratorForRepositories(input: {
   readonly campaigns: Stage1WebRuntime["campaigns"];
   readonly repositories: Stage1WebRuntime["repositories"];
   readonly settings: Stage1WebRuntime["settings"];
 }) {
+  // Web-side orchestrator only handles freeze/cancel/etc.; the worker
+  // does the actual sendBatch. appUrl is still required by the deps
+  // interface so unsubscribe-footer wiring stays consistent end-to-end.
+  const appUrl =
+    trimNonEmpty(process.env.NEXT_PUBLIC_APP_URL) ??
+    trimNonEmpty(process.env.WEB_BASE_URL) ??
+    "http://localhost:3000";
+
   return createCampaignSendOrchestrator({
     repositories: {
       campaignRuns: input.campaigns.campaignRuns,
       audienceSnapshots: input.campaigns.audienceSnapshots,
       settingsProjects: input.settings.projects,
+      orgSettings: input.campaigns.orgSettings,
       auditEvidence: input.repositories.auditEvidence,
     },
     audienceResolver: createAudienceResolver({
@@ -192,12 +206,12 @@ function createCampaignSendOrchestratorForRepositories(input: {
     }),
     mergeRenderer: createMergeRenderer(),
     postmarkClient: buildPostmarkClientForActions(),
+    appUrl,
   });
 }
 
 async function createCampaignOrchestrator() {
   const runtime = await getStage1WebRuntime();
-
   return {
     runtime,
     orchestrator: createCampaignSendOrchestratorForRepositories(runtime),
