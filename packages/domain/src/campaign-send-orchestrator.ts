@@ -3,8 +3,10 @@ import { randomUUID } from "node:crypto";
 import type {
   AuditEvidenceRecord,
   AudienceSnapshotRecord,
+  CampaignKind,
   CampaignRunRecord,
   NewAudienceSnapshot,
+  OrgSettingsRecord,
   RunState,
 } from "@as-comms/contracts";
 
@@ -75,8 +77,85 @@ interface CampaignSendRepositories {
     ): Promise<AudienceSnapshotRecord>;
   };
   readonly settingsProjects: Pick<SettingsProjectsRepository, "findById">;
+  readonly orgSettings: {
+    read(): Promise<OrgSettingsRecord>;
+  };
   readonly auditEvidence?: {
     append(record: AuditEvidenceRecord): Promise<AuditEvidenceRecord>;
+  };
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatOrgAddress(input: OrgSettingsRecord): string | null {
+  const line1 = input.physicalAddressLine1.trim();
+  const line2 = input.physicalAddressLine2.trim();
+  const city = input.physicalCity.trim();
+  const state = input.physicalState.trim();
+  const zip = input.physicalZip.trim();
+  const country = input.physicalCountry.trim();
+  const cityLine = [city, state, zip].filter((part) => part.length > 0).join(", ");
+  const parts = [line1, line2, cityLine, country].filter((part) => part.length > 0);
+  return parts.length === 0 ? null : parts.join(" • ");
+}
+
+function buildUnsubscribeFooter(input: {
+  readonly kind: CampaignKind;
+  readonly projectName: string | null;
+  readonly footerAddress: string | null;
+  readonly scopedHref: string;
+  readonly allHref: string;
+}): { readonly html: string; readonly text: string } {
+  const scopedLabel =
+    input.kind === "newsletter"
+      ? "Unsubscribe from the AS newsletter"
+      : `Unsubscribe from ${input.projectName ?? "this project"} emails`;
+  const allLabel = "Unsubscribe from all Adventure Scientists emails";
+
+  const linkLabels =
+    input.kind === "newsletter" ? [scopedLabel] : [scopedLabel, allLabel];
+  const textLinks =
+    input.kind === "newsletter"
+      ? `${scopedLabel}: ${input.scopedHref}`
+      : `${scopedLabel}: ${input.scopedHref}\n${allLabel}: ${input.allHref}`;
+  const htmlLinks =
+    input.kind === "newsletter"
+      ? `<a href="${escapeHtml(input.scopedHref)}" target="_blank" rel="noreferrer noopener">${escapeHtml(scopedLabel)}</a>`
+      : [
+          `<a href="${escapeHtml(input.scopedHref)}" target="_blank" rel="noreferrer noopener">${escapeHtml(scopedLabel)}</a>`,
+          `<a href="${escapeHtml(input.allHref)}" target="_blank" rel="noreferrer noopener">${escapeHtml(allLabel)}</a>`,
+        ].join(" &middot; ");
+
+  return {
+    html: [
+      '<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">',
+      `<div style="color:#64748b;font-size:12px;line-height:1.6;">${htmlLinks}</div>`,
+      input.footerAddress === null
+        ? ""
+        : `<div style="color:#64748b;font-size:12px;line-height:1.6;margin-top:8px;">${escapeHtml(input.footerAddress)}</div>`,
+    ].join(""),
+    text: [linkLabels.join(" · "), textLinks, input.footerAddress]
+      .filter((part): part is string => part !== null && part.length > 0)
+      .join("\n"),
+  };
+}
+
+function buildUnsubscribeUrls(input: {
+  readonly appUrl: string;
+  readonly unsubscribeToken: string;
+}): { readonly scopedHref: string; readonly allHref: string } {
+  const base = input.appUrl.replace(/\/+$/u, "");
+  const encoded = encodeURIComponent(input.unsubscribeToken);
+  return {
+    scopedHref: `${base}/u/${encoded}`,
+    allHref: `${base}/u/${encoded}/all`,
   };
 }
 
@@ -212,6 +291,7 @@ export function createCampaignSendOrchestrator(deps: {
   exclusionFilter: ExclusionFilter;
   mergeRenderer: MergeRenderer;
   postmarkClient: PostmarkClientLike;
+  appUrl: string;
   batchSize?: number;
   logger?: Pick<Console, "error" | "info" | "warn">;
   now?: () => Date;
@@ -219,6 +299,12 @@ export function createCampaignSendOrchestrator(deps: {
   const batchSize = deps.batchSize ?? 500;
   const logger = deps.logger ?? console;
   const now = deps.now ?? (() => new Date());
+  const appUrl = deps.appUrl.trim();
+  if (appUrl.length === 0) {
+    throw new Error(
+      "createCampaignSendOrchestrator requires a non-empty appUrl for unsubscribe links.",
+    );
+  }
 
   return {
     async freeze(runId, at) {
@@ -322,6 +408,9 @@ export function createCampaignSendOrchestrator(deps: {
         throw new Error(`Campaign run ${runId} must be frozen before sending.`);
       }
 
+      const orgSettings = await deps.repositories.orgSettings.read();
+      const footerAddress = formatOrgAddress(orgSettings);
+
       const snapshots = (await deps.repositories.audienceSnapshots.listForRun(runId)).filter(
         (snapshot) => snapshot.deliveryStatus === "pending",
       );
@@ -373,11 +462,25 @@ export function createCampaignSendOrchestrator(deps: {
             continue;
           }
 
+          const unsubscribeUrls = buildUnsubscribeUrls({
+            appUrl,
+            unsubscribeToken: snapshot.unsubscribeToken,
+          });
+          const footer = buildUnsubscribeFooter({
+            kind: run.kind,
+            projectName: snapshot.frozenProjectName,
+            footerAddress,
+            scopedHref: unsubscribeUrls.scopedHref,
+            allHref: unsubscribeUrls.allHref,
+          });
+
           const rendered = deps.mergeRenderer.render(
             {
               subject: run.subjectTemplate ?? "",
-              bodyHtml: run.bodyHtmlTemplate ?? "",
-              bodyText: run.bodyTextTemplate ?? "",
+              bodyHtml: `${run.bodyHtmlTemplate ?? ""}${footer.html}`,
+              bodyText: [run.bodyTextTemplate ?? "", footer.text]
+                .filter((part) => part.length > 0)
+                .join("\n\n"),
             },
             toMergeContext(member),
           );

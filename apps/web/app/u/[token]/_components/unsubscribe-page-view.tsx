@@ -20,6 +20,24 @@ function CheckIcon() {
   );
 }
 
+function MailIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-8 w-8"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3.5" y="6" width="17" height="12" rx="2" className="fill-current/10" />
+      <path d="M4 7.5l8 5.5 8-5.5" />
+    </svg>
+  );
+}
+
 export function UnsubscribePageView({
   model,
 }: {
@@ -43,14 +61,27 @@ export function UnsubscribePageView({
           </div>
 
           <div className="space-y-6 px-6 py-8 sm:px-8 sm:py-10">
-            <div className="flex items-center gap-3 text-emerald-700">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50">
-                <CheckIcon />
+            {model.state === "pending" ? (
+              <div className="flex items-center gap-3 text-slate-700">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                  <MailIcon />
+                </div>
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-700/80">
+                  Confirm your choice
+                </div>
               </div>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700/80">
-                Email preferences updated
+            ) : (
+              <div className="flex items-center gap-3 text-emerald-700">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50">
+                  <CheckIcon />
+                </div>
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-700/80">
+                  {model.state === "success"
+                    ? "Email preferences updated"
+                    : "Link not found"}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-3">
               <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
@@ -65,6 +96,17 @@ export function UnsubscribePageView({
               <div className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700">
                 {model.email}
               </div>
+            ) : null}
+
+            {model.state === "pending" ? (
+              <form action={`/u/${encodeURIComponent(model.token)}/confirm`} method="post">
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center rounded-full bg-[#253746] px-5 py-3 text-sm font-semibold text-white transition-colors duration-150 hover:bg-[#1c2933] focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                >
+                  Confirm unsubscribe
+                </button>
+              </form>
             ) : null}
 
             {model.state === "success" ? (
