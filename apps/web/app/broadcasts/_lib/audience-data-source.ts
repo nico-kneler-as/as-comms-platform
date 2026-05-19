@@ -824,18 +824,18 @@ export async function loadComposePreviewAction(input: {
 }
 
 export async function searchProjectVolunteersAction(input: {
-  readonly projectIds: readonly string[];
+  readonly aliasProjectIds: readonly string[];
   readonly query: string;
 }): Promise<UiResult<readonly AudienceVolunteerSearchRow[]>> {
   await requireSession();
 
-  const projectIds = input.projectIds
+  const aliasProjectIds = input.aliasProjectIds
     .map((projectId) => projectId.trim())
     .filter((projectId, index, values) => {
       return projectId.length > 0 && values.indexOf(projectId) === index;
     });
   const query = input.query.trim();
-  if (projectIds.length === 0 || query.length < 2) {
+  if (aliasProjectIds.length === 0 || query.length < 2) {
     return successResult([]);
   }
 
@@ -855,12 +855,12 @@ export async function searchProjectVolunteersAction(input: {
         contacts.map((contact) => contact.id),
       );
     const projects = await runtime.repositories.projectDimensions.listByIds(
-      projectIds,
+      aliasProjectIds,
     );
     const projectsById = new Map(
       projects.map((project) => [project.projectId, project] as const),
     );
-    const selectedProjectIds = new Set(projectIds);
+    const selectedProjectIds = new Set(aliasProjectIds);
     const membershipsByContact = new Map<
       string,
       (typeof memberships)[number][]

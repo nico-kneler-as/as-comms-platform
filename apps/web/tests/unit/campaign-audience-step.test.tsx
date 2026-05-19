@@ -6,7 +6,9 @@ Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
   AlertTriangle: () => null,
+  Check: () => null,
   CheckCircle2: () => null,
+  Lock: () => null,
   Search: () => null,
   Sparkles: () => null,
   X: () => null,
@@ -49,7 +51,7 @@ const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   volunteerSearchRows: [],
   volunteerSearchLoading: false,
   volunteerSearchErrorMessage: null,
-  projectGroups: [],
+  projectOptions: [],
   statusOptions: ["Waitlist"],
   statusCounts: {},
   statusCountsErrorMessage: null,
@@ -86,6 +88,99 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).toContain("All approved contacts");
     expect(markup).toContain(
       "This broadcast goes to every approved contact across all projects, minus auto-exclusions.",
+    );
+  });
+
+  it("renders only the project and status surface in project mode", () => {
+    const markup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        projectOptions={[
+          {
+            id: "project-1",
+            name: "Restoring Butternut Forest Health",
+            alias: null,
+            aliasHint: "forests@",
+            connectedToProjectId: "host-project",
+            isSubProject: true,
+          },
+          {
+            id: "project-2",
+            name: "Saving American Beech",
+            alias: null,
+            aliasHint: "forests@",
+            connectedToProjectId: "host-project",
+            isSubProject: true,
+          },
+        ]}
+        criteria={{
+          ...baseProps.criteria,
+          projectId: "project-1",
+          projectIds: ["project-1", "project-2"],
+          statuses: ["Waitlist"],
+          initialFilter: "project_status",
+        }}
+        countState={{
+          count: 42,
+          hasAppliedFilters: true,
+        }}
+        statusCounts={{
+          Waitlist: 42,
+        }}
+      />,
+    );
+
+    expect(markup).toContain("Audience filters");
+    expect(markup).toContain("Inherited from forests@");
+    expect(markup).toContain("Member status");
+    expect(markup).not.toContain("Search by name or email");
+    expect(markup).not.toContain("Find volunteers");
+  });
+
+  it("renders only the volunteer search surface in individual mode", () => {
+    const markup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        criteria={{
+          ...baseProps.criteria,
+          projectId: "project-1",
+          projectIds: ["project-1", "project-2"],
+          contactIds: [],
+          initialFilter: "specific",
+        }}
+      />,
+    );
+
+    expect(markup).toContain("Find volunteers");
+    expect(markup).toContain("Search by name or email");
+    expect(markup).not.toContain("Audience filters");
+    expect(markup).not.toContain("Member status");
+    expect(markup).not.toContain("Toggle expedition-member status");
+  });
+
+  it("disables continue when the live audience is zero", () => {
+    const invalidMarkup = renderToStaticMarkup(<AudienceBuilderStep {...baseProps} />);
+    const validMarkup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        criteria={{
+          ...baseProps.criteria,
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: ["Waitlist"],
+        }}
+        countState={{
+          count: 12,
+          hasAppliedFilters: true,
+        }}
+      />,
+    );
+
+    expect(invalidMarkup).toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue to compose<\/button>/,
+    );
+    expect(validMarkup).not.toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue to compose<\/button>/,
     );
   });
 });

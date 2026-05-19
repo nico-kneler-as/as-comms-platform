@@ -1,11 +1,10 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check, Lock } from "lucide-react";
 
 import {
   FOCUS_RING,
   RADIUS,
-  SHADOW,
   TONE_CLASSES,
   TRANSITION,
   type ToneNameV2,
@@ -16,7 +15,7 @@ import { cn } from "@/lib/utils";
 
 import type {
   AudienceStatusCounts,
-  CampaignProjectGroup,
+  CampaignProjectOption,
 } from "../../_lib/audience-data-source";
 import type { CampaignAudienceCriteria } from "./audience-builder-step";
 
@@ -71,7 +70,7 @@ const SELECTED_RING_CLASSES: Record<ToneNameV2, string> = {
 
 interface AudienceFilterPanelProps {
   readonly criteria: CampaignAudienceCriteria;
-  readonly projectGroups: readonly CampaignProjectGroup[];
+  readonly projectOptions: readonly CampaignProjectOption[];
   readonly statusOptions: readonly ExpeditionMemberStatus[];
   readonly statusCounts: AudienceStatusCounts;
   readonly statusCountsErrorMessage: string | null;
@@ -84,7 +83,7 @@ interface AudienceFilterPanelProps {
 
 export function AudienceFilterPanel({
   criteria,
-  projectGroups,
+  projectOptions,
   statusOptions,
   statusCounts,
   statusCountsErrorMessage,
@@ -106,6 +105,8 @@ export function AudienceFilterPanel({
     populatedStatuses.length > 0 &&
     populatedStatuses.every((status) => criteria.statuses.includes(status));
   const knownStatuses = new Set(statusOptions);
+  const projectAliasHint = projectOptions[0]?.aliasHint ?? null;
+  const hasSingleLockedProject = projectOptions.length === 1;
   const stageSections = Object.values(STAGE_GROUPS)
     .map((group) => {
       const statuses = group.statuses.filter(
@@ -136,32 +137,33 @@ export function AudienceFilterPanel({
         {showProjectSection ? (
           <FilterSection
             title="Project"
-            description="Connected sub-projects stay separate choices even when they share the same alias."
+            {...(projectAliasHint === null
+              ? {}
+              : {
+                  description: hasSingleLockedProject
+                    ? `Inherited from ${projectAliasHint}`
+                    : `Inherited from ${projectAliasHint} · pick one or more sub-projects`,
+                })}
           >
-            <div className="space-y-2">
-              {projectGroups.map((group) => (
-                <div key={group.host.id} className="space-y-2">
-                  <ProjectOptionRow
-                    id={group.host.id}
-                    name={group.host.name}
-                    aliasHint={group.host.aliasHint}
-                    selected={selectedProjectIdSet.has(group.host.id)}
+            <div className="flex flex-wrap gap-2">
+              {projectOptions.map((project) =>
+                hasSingleLockedProject ? (
+                  <LockedProjectPill
+                    key={project.id}
+                    name={project.name}
+                    aliasHint={project.aliasHint}
+                  />
+                ) : (
+                  <ProjectOptionPill
+                    key={project.id}
+                    id={project.id}
+                    name={project.name}
+                    aliasHint={project.aliasHint}
+                    selected={selectedProjectIdSet.has(project.id)}
                     onSelect={onProjectChange}
                   />
-                  {group.connectedSubs.map((subProject) => (
-                    <div key={subProject.id} className="pl-5">
-                      <ProjectOptionRow
-                        id={subProject.id}
-                        name={subProject.name}
-                        aliasHint={subProject.aliasHint}
-                        selected={selectedProjectIdSet.has(subProject.id)}
-                        onSelect={onProjectChange}
-                        isSubProject
-                      />
-                    </div>
-                  ))}
-                </div>
-              ))}
+                ),
+              )}
             </div>
           </FilterSection>
         ) : null}
@@ -254,20 +256,18 @@ function FilterSection({
   );
 }
 
-function ProjectOptionRow({
+function ProjectOptionPill({
   id,
   name,
   aliasHint,
   selected,
   onSelect,
-  isSubProject = false,
 }: {
   readonly id: string;
   readonly name: string;
   readonly aliasHint: string | null;
   readonly selected: boolean;
   readonly onSelect: (projectId: string) => void;
-  readonly isSubProject?: boolean;
 }) {
   return (
     <button
@@ -278,37 +278,52 @@ function ProjectOptionRow({
         onSelect(id);
       }}
       className={cn(
-        `flex w-full items-start gap-3 border px-3 py-3 text-left ${RADIUS.lg} ${SHADOW.sm} ${TRANSITION.fast} ${FOCUS_RING}`,
+        `inline-flex items-center gap-2.5 px-3 py-2 text-left text-[12px] font-semibold ${RADIUS.full} ${TRANSITION.fast} ${FOCUS_RING}`,
         selected
-          ? "border-slate-950 bg-slate-50 ring-1 ring-slate-950/10"
-          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+          ? "bg-slate-900 text-white ring-1 ring-slate-900"
+          : "bg-slate-50 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 hover:text-slate-900",
       )}
     >
-      <span
-        className={cn(
-          "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
-          selected ? "border-slate-950" : "border-slate-300",
-        )}
-        aria-hidden="true"
-      >
-        {selected ? <Check className="size-3 text-slate-950" /> : null}
-      </span>
-      <span className="min-w-0">
+      {selected ? <Check className="size-3.5 shrink-0" aria-hidden="true" /> : null}
+      <span className="min-w-0 truncate">{name}</span>
+      {aliasHint ? (
         <span
           className={cn(
-            "block text-[12.5px] text-slate-900",
-            isSubProject ? "font-medium" : "font-semibold",
+            "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+            selected
+              ? "bg-white/15 text-white"
+              : "bg-white text-slate-500 ring-1 ring-slate-200",
           )}
         >
-          {name}
+          {aliasHint}
         </span>
-        {aliasHint ? (
-          <span className="mt-0.5 block text-[11px] text-slate-500">
-            {aliasHint}
-          </span>
-        ) : null}
-      </span>
+      ) : null}
     </button>
+  );
+}
+
+function LockedProjectPill({
+  name,
+  aliasHint,
+}: {
+  readonly name: string;
+  readonly aliasHint: string | null;
+}) {
+  return (
+    <div
+      className={cn(
+        `inline-flex items-center gap-2.5 bg-slate-100 px-3 py-2 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-200 ${RADIUS.full}`,
+      )}
+      aria-label={`Project ${name} is locked to this sender alias`}
+    >
+      <Lock className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+      <span className="min-w-0 truncate">{name}</span>
+      {aliasHint ? (
+        <span className="shrink-0 rounded-full bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 ring-1 ring-slate-200">
+          {aliasHint}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

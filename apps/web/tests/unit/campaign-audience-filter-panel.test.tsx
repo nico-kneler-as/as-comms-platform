@@ -9,6 +9,7 @@ Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
   Check: () => null,
+  Lock: () => null,
 }));
 
 import { AudienceFilterPanel } from "../../app/broadcasts/new/_components/audience-filter-panel";
@@ -60,8 +61,8 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AudienceFilt
 
   const props: React.ComponentProps<typeof AudienceFilterPanel> = {
     criteria: {
-      projectId: "host-project",
-      projectIds: ["host-project"],
+      projectId: "project-a",
+      projectIds: ["project-a", "project-b"],
       statuses: [],
       contactIds: [],
       expeditionIds: [],
@@ -69,26 +70,22 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AudienceFilt
       hasReplied: "either",
       hasClicked: "either",
     },
-    projectGroups: [
+    projectOptions: [
       {
-        host: {
-          id: "host-project",
-          name: "Forests",
-          alias: "forests",
-          aliasHint: "forests@",
-          connectedToProjectId: null,
-          isSubProject: false,
-        },
-        connectedSubs: [
-          {
-            id: "sub-project",
-            name: "Butternut Canker",
-            alias: null,
-            aliasHint: "forests@",
-            connectedToProjectId: "host-project",
-            isSubProject: true,
-          },
-        ],
+        id: "project-a",
+        name: "Restoring Butternut Forest Health",
+        alias: null,
+        aliasHint: "forests@",
+        connectedToProjectId: "host-project",
+        isSubProject: true,
+      },
+      {
+        id: "project-b",
+        name: "Saving American Beech",
+        alias: null,
+        aliasHint: "forests@",
+        connectedToProjectId: "host-project",
+        isSubProject: true,
       },
     ],
     statusOptions: ["Waitlist", "In Progress", "Denied"],
@@ -127,17 +124,20 @@ describe("AudienceFilterPanel", () => {
 
     expect(
       Array.from(document.querySelectorAll("button")).some(
-        (button) => button.getAttribute("aria-label") === "Choose project Forests",
+        (button) =>
+          button.getAttribute("aria-label") ===
+          "Choose project Restoring Butternut Forest Health",
       ),
     ).toBe(true);
     expect(
       Array.from(document.querySelectorAll("button")).some(
         (button) =>
           button.getAttribute("aria-label") ===
-          "Choose project Butternut Canker",
+          "Choose project Saving American Beech",
       ),
     ).toBe(true);
     expect(document.body.textContent).toContain("forests@");
+    expect(document.body.textContent).toContain("pick one or more sub-projects");
     expect(
       Array.from(document.querySelectorAll("button")).some((button) =>
         button.getAttribute("aria-label") ===
@@ -161,7 +161,9 @@ describe("AudienceFilterPanel", () => {
     });
 
     const hostButton = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.getAttribute("aria-label") === "Choose project Forests",
+      (button) =>
+        button.getAttribute("aria-label") ===
+        "Choose project Restoring Butternut Forest Health",
     );
     if (!(hostButton instanceof HTMLButtonElement)) {
       throw new Error("Host project button not found");
@@ -195,7 +197,7 @@ describe("AudienceFilterPanel", () => {
       selectAllButton.click();
     });
 
-    expect(projectChange).toHaveBeenCalledWith("host-project");
+    expect(projectChange).toHaveBeenCalledWith("project-a");
     expect(statusToggle).toHaveBeenCalledWith("Waitlist");
     expect(selectAllStatuses).toHaveBeenCalled();
   });
@@ -203,8 +205,8 @@ describe("AudienceFilterPanel", () => {
   it("applies the stage tone classes and hides empty stages", () => {
     renderPanel({
       criteria: {
-        projectId: "host-project",
-        projectIds: ["host-project"],
+        projectId: "project-a",
+        projectIds: ["project-a", "project-b"],
         statuses: ["Waitlist"],
         contactIds: [],
         expeditionIds: [],
@@ -236,5 +238,38 @@ describe("AudienceFilterPanel", () => {
     expect(waitlistButton.className).toContain("bg-emerald-600");
     expect(deniedButton.className).toContain("bg-rose-50");
     expect(document.body.textContent).not.toContain("Mid-funnel");
+  });
+
+  it("renders a locked pill for single-project aliases", () => {
+    renderPanel({
+      criteria: {
+        projectId: "project-a",
+        projectIds: ["project-a"],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+      },
+      projectOptions: [
+        {
+          id: "project-a",
+          name: "CA Biodiversity",
+          alias: "cabio",
+          aliasHint: "cabio@",
+          connectedToProjectId: null,
+          isSubProject: false,
+        },
+      ],
+    });
+
+    expect(document.body.textContent).toContain("Inherited from cabio@");
+    expect(document.body.textContent).toContain("CA Biodiversity");
+    expect(
+      Array.from(document.querySelectorAll("button")).some((button) =>
+        button.getAttribute("aria-label")?.startsWith("Choose project "),
+      ),
+    ).toBe(false);
   });
 });
