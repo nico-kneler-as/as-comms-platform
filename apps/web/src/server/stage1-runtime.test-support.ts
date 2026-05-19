@@ -27,6 +27,7 @@ export type { TestStage1Context } from "@as-comms/db/test-helpers";
 
 export interface Stage1WebTestRuntime {
   readonly context: TestStage1Context;
+  readonly runtime: Stage1WebRuntime;
   dispose(): Promise<void>;
 }
 
@@ -55,6 +56,7 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
 
   return {
     context,
+    runtime,
     async dispose() {
       setStage1WebRuntimeForTests(null);
       await context.client.close();

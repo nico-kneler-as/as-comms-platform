@@ -64,6 +64,31 @@ export const postmarkSenderStatusValues = [
 export const postmarkSenderStatusSchema = z.enum(postmarkSenderStatusValues);
 export type PostmarkSenderStatus = z.infer<typeof postmarkSenderStatusSchema>;
 
+export const webhookDeadLetterFailureKindValues = [
+  "snapshot_not_found",
+  "schema_error",
+  "processing_error",
+  "unknown_event_type",
+] as const;
+export const webhookDeadLetterFailureKindSchema = z.enum(
+  webhookDeadLetterFailureKindValues,
+);
+export type WebhookDeadLetterFailureKind = z.infer<
+  typeof webhookDeadLetterFailureKindSchema
+>;
+
+export const webhookDeadLetterStatusValues = [
+  "pending",
+  "retried",
+  "terminal",
+] as const;
+export const webhookDeadLetterStatusSchema = z.enum(
+  webhookDeadLetterStatusValues,
+);
+export type WebhookDeadLetterStatus = z.infer<
+  typeof webhookDeadLetterStatusSchema
+>;
+
 export const deliveryStatusValues = [
   "pending",
   "sent",
@@ -401,6 +426,24 @@ export const orgSettingsRecordSchema = z.object({
   updatedAt: timestampSchema,
 });
 export type OrgSettingsRecord = z.infer<typeof orgSettingsRecordSchema>;
+
+export const postmarkWebhookDeadLetterRecordSchema = z.object({
+  id: z.string().uuid(),
+  receivedAt: timestampSchema,
+  recordType: nullableStringSchema.default(null),
+  messageId: nullableStringSchema.default(null),
+  sourceEvidenceId: nullableStringSchema.default(null),
+  payloadJson: z.unknown(),
+  failureKind: webhookDeadLetterFailureKindSchema,
+  failureMessage: z.string().min(1),
+  retryCount: z.number().int().nonnegative(),
+  lastRetryAt: nullableTimestampSchema.default(null),
+  status: webhookDeadLetterStatusSchema,
+  terminalReason: nullableStringSchema.default(null),
+});
+export type PostmarkWebhookDeadLetterRecord = z.infer<
+  typeof postmarkWebhookDeadLetterRecordSchema
+>;
 
 export const campaignRunProjectionRowSchema = z.object({
   runId: idSchema,

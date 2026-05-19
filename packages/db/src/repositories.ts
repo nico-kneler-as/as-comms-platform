@@ -45,6 +45,7 @@ import {
   deliveryStatusSchema,
   newAudienceSnapshotSchema,
   orgSettingsRecordSchema,
+  postmarkWebhookDeadLetterRecordSchema,
   runStateSchema,
   suppressionListRecordSchema,
   updateDraftInputSchema,
@@ -58,10 +59,12 @@ import {
   type DeliveryStatus,
   type NewAudienceSnapshot,
   type OrgSettingsRecord,
+  type PostmarkWebhookDeadLetterRecord,
   type RunState,
   type SuppressionListRecord,
   type SuppressionReason,
   type UpdateDraftInput,
+  type WebhookDeadLetterFailureKind,
 } from "@as-comms/contracts";
 
 import type { DatabaseConnection } from "./client.js";
@@ -142,6 +145,7 @@ import {
   messageAttachments,
   manualNoteDetails,
   orgSettings,
+  postmarkWebhookDeadLetter,
   pendingComposerOutbounds,
   projectAliases,
   projectKnowledgeEntries,
@@ -325,6 +329,22 @@ export interface Stage5RepositoryBundle {
   readonly orgSettings: {
     read(): Promise<OrgSettingsRecord>;
     update(input: Partial<OrgSettingsRecord>): Promise<OrgSettingsRecord>;
+  };
+  readonly webhookDeadLetter: {
+    record(input: {
+      readonly recordType: string | null;
+      readonly messageId: string | null;
+      readonly sourceEvidenceId: string | null;
+      readonly payloadJson: unknown;
+      readonly failureKind: WebhookDeadLetterFailureKind;
+      readonly failureMessage: string;
+      readonly terminalReason?: string;
+    }): Promise<PostmarkWebhookDeadLetterRecord>;
+    listPending(
+      limit?: number,
+    ): Promise<readonly PostmarkWebhookDeadLetterRecord[]>;
+    markRetried(id: string, at: Date): Promise<void>;
+    markTerminal(id: string, reason: string): Promise<void>;
   };
   readonly campaignRunProjection: {
     listRecent(opts?: {
@@ -5779,6 +5799,7 @@ type AudienceSnapshotRow = typeof audienceSnapshots.$inferSelect;
 type ContactConsentRow = typeof contactConsent.$inferSelect;
 type SuppressionListRow = typeof suppressionList.$inferSelect;
 type OrgSettingsRow = typeof orgSettings.$inferSelect;
+type PostmarkWebhookDeadLetterRow = typeof postmarkWebhookDeadLetter.$inferSelect;
 
 interface CampaignRunProjectionRowDb {
   readonly runId: string;
@@ -6051,6 +6072,41 @@ function mapOrgSettingsRow(row: OrgSettingsRow): OrgSettingsRecord {
     createdAt: toIsoDate(row.createdAt),
     updatedAt: toIsoDate(row.updatedAt),
   });
+}
+
+function mapPostmarkWebhookDeadLetterRow(
+  row: PostmarkWebhookDeadLetterRow,
+): PostmarkWebhookDeadLetterRecord {
+  return postmarkWebhookDeadLetterRecordSchema.parse({
+    id: row.id,
+    receivedAt: toIsoDate(row.receivedAt),
+    recordType: row.recordType,
+    messageId: row.messageId,
+    sourceEvidenceId: row.sourceEvidenceId,
+    payloadJson: row.payloadJson,
+    failureKind: row.failureKind,
+    failureMessage: row.failureMessage,
+    retryCount: row.retryCount,
+    lastRetryAt: toNullableIsoDate(row.lastRetryAt),
+    status: row.status,
+    terminalReason: row.terminalReason,
+  });
+}
+
+function isTerminalWebhookDeadLetterFailureKind(
+  failureKind: WebhookDeadLetterFailureKind,
+): boolean {
+  return (
+    failureKind === "schema_error" || failureKind === "unknown_event_type"
+  );
+}
+
+function clampWebhookDeadLetterListLimit(limit: number | undefined): number {
+  if (limit === undefined) {
+    return 100;
+  }
+
+  return Math.max(1, Math.min(limit, 500));
 }
 
 function coerceRequiredDate(value: Date | string): Date {
@@ -6759,6 +6815,87 @@ export function createStage5RepositoryBundle(
             "Expected org_settings singleton row to be returned from update.",
           ),
         );
+      },
+    },
+
+    webhookDeadLetter: {
+      async record(input) {
+        const isTerminal = isTerminalWebhookDeadLetterFailureKind(
+          input.failureKind,
+        );
+        const terminalReason =
+          input.terminalReason === undefined
+            ? null
+            : input.terminalReason.trim().length === 0
+              ? null
+              : input.terminalReason.trim();
+
+        if (isTerminal && terminalReason === null) {
+          throw new Error(
+            `terminalReason is required for ${input.failureKind} dead-letter records.`,
+          );
+        }
+        if (!isTerminal && terminalReason !== null) {
+          throw new Error(
+            `terminalReason must be omitted for retryable ${input.failureKind} dead-letter records.`,
+          );
+        }
+
+        const [row] = await db
+          .insert(postmarkWebhookDeadLetter)
+          .values({
+            recordType: input.recordType,
+            messageId: input.messageId,
+            sourceEvidenceId: input.sourceEvidenceId,
+            payloadJson: input.payloadJson,
+            failureKind: input.failureKind,
+            failureMessage: input.failureMessage,
+            status: isTerminal ? "terminal" : "pending",
+            terminalReason,
+          })
+          .returning();
+
+        return mapPostmarkWebhookDeadLetterRow(
+          requireRow(
+            row,
+            "Expected postmark webhook dead-letter row to be returned from record.",
+          ),
+        );
+      },
+
+      async listPending(limit) {
+        const rows = await db
+          .select()
+          .from(postmarkWebhookDeadLetter)
+          .where(eq(postmarkWebhookDeadLetter.status, "pending"))
+          .orderBy(
+            asc(postmarkWebhookDeadLetter.receivedAt),
+            asc(postmarkWebhookDeadLetter.id),
+          )
+          .limit(clampWebhookDeadLetterListLimit(limit));
+
+        return rows.map(mapPostmarkWebhookDeadLetterRow);
+      },
+
+      async markRetried(id, at) {
+        await db
+          .update(postmarkWebhookDeadLetter)
+          .set({
+            retryCount: sql`${postmarkWebhookDeadLetter.retryCount} + 1`,
+            lastRetryAt: at,
+            status: "retried",
+          })
+          .where(eq(postmarkWebhookDeadLetter.id, id));
+      },
+
+      async markTerminal(id, reason) {
+        await db
+          .update(postmarkWebhookDeadLetter)
+          .set({
+            status: "terminal",
+            terminalReason: reason,
+          })
+          .where(eq(postmarkWebhookDeadLetter.id, id));
       },
     },
 
