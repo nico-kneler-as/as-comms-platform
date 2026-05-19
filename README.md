@@ -2,7 +2,7 @@
 
 Internal volunteer communications platform for Adventure Scientists. Backend-first rebuild of an agent-assisted operator inbox that unifies Gmail + Salesforce + SMS + Mailchimp into a single canonical timeline per volunteer.
 
-The platform is **pre-production**, running on Railway under a single admin account during the validation phase. SMS transport is in final launch prep (Twilio A2P 10DLC port from SimpleTexting completed 2026-05-11; consent backfill + sender seed scripts merged in #402).
+The platform is **pre-production**, running on Railway under a single admin account during the validation phase. Stage 5A Email Broadcasts Phase A landed mid-May (#418-#436); Postmark is wired with signed webhooks, audience snapshots, suppression-list, public unsubscribe page, and a coexistence projection that unions native sends with historical Mailchimp runs. SMS transport launch is queued behind 5A Phase C (Twilio A2P 10DLC port completed 2026-05-11; consent backfill + sender seed scripts merged in #402).
 
 ## Stages shipped
 
@@ -15,12 +15,12 @@ The platform is **pre-production**, running on Railway under a single admin acco
 | 3 — Inbox read surface | ✓ shipped | mixed-list contact inbox, follow-up flag, unresolved overlay, **unified search bar** (contacts + conversations), **AS / External row chips**, **unread blue dot + count**, project filter (excludes connected subs), keyboard shortcuts, optimistic UI |
 | 3.5 — Composer | ✓ shipped | Gmail send client, per-alias signature, durable send action + pending-outbounds reconciliation, inline draft pane + recipient picker + optimistic timeline, **Pin Note**, **"Write a message"** collapsed bar, **Forward action**, SMS surface |
 | 4 — AI drafting | ✓ shipped | Claude Sonnet 4.6 drafts; three-layer grounding; **multi-source AI Knowledge registry** (Notion + web URLs per project, merged into one cached doc); **auto-sync schedule** (`Never` / `Daily` / `Weekly`); **skip-if-unchanged** hashing; **threshold-triggered re-synthesis** after ≥5 "Send and save for AI" flags; **alias-host-hop fallback** so connected sub-projects inherit AI Knowledge from their host |
-| V — Validation gate | 🟡 active | real operator use of Inbox + Composer + AI in production; pre-launch security hardening (#396, #398); hardening before Campaigns |
-| 5A — Email campaigns | deferred | post-validation |
-| 5B — SMS campaigns | deferred | after 5A; Twilio transport landing first |
+| V — Validation gate | 🟡 active | real operator use of Inbox + Composer + AI in production; pre-launch security hardening (#396, #398); ongoing in parallel with 5A Phase A |
+| 5A — Email Broadcasts | 🟡 active | **Phase A shipped** (#418-#436): Postmark client + signed webhook + dead-letter, audience builder + frozen snapshot, send orchestrator + merge renderer, run detail + metric tiles + cancel + 30-day finalization, public unsubscribe page + per-recipient tokens (3 scopes), broadcasts list with Mailchimp UNION projection, 6-step wizard, trusted-admin gate. **Phase B** (Unlayer drag-and-drop HTML editor) and **Phase C** (newsletter migration + Mailchimp decommission) queued. See `D-045`. |
+| 5B — SMS Broadcasts | deferred | after 5A Phase C; Twilio transport landing first |
 | 6 — Reporting | deferred | — |
 
-**Active phase:** Validation. AI Knowledge architecture rebuilt (PRD #366, locked as D-043); connected-projects shared-alias rollup shipped (PRs #384/#388/#389, locked as D-044); pre-launch security sweep underway (PRs #396, #398); SMS launch ops scripts merged (#402).
+**Active phase:** Validation + Stage 5A Phase A in parallel. Postmark provider locked (D-045, PR #415); Phase A schema + Postmark client + send orchestrator + audience builder + run detail + unsubscribe + broadcasts list shipped across PRs #418-#433; campaign → broadcast rename in UI/routes/docs (#434, Tier 2 — code identifiers, DB schema, and Mailchimp product wording intentionally preserved); post-merge QA fixed P0/P1 compliance + PII gaps (#435) and added a durable Postmark webhook dead-letter table for post-signature failures (#436). Stage 4 AI Knowledge architecture rebuilt earlier (PRD #366, D-043); connected-projects shared-alias rollup is live (D-044). SMS launch (Stage 5B) queued behind 5A Phase C.
 
 ## Locked stack
 
