@@ -304,8 +304,8 @@ describe("createAudienceResolver", () => {
     const resolver = createResolver({
       contacts: [buildContact("active"), buildContact("inactive")],
       memberships: [
-        buildMembership("m-1", "active", "project-a", { status: "Active" }),
-        buildMembership("m-2", "inactive", "project-a", { status: "Inactive" }),
+        buildMembership("m-1", "active", "project-a", { status: "Waitlist" }),
+        buildMembership("m-2", "inactive", "project-a", { status: "Denied" }),
       ],
       projects: [buildProject("project-a", "Project A")],
       settingsProjects: [
@@ -318,7 +318,7 @@ describe("createAudienceResolver", () => {
     });
 
     const audience = await resolver.resolveAudience(
-      buildCriteria({ statuses: ["Active"] }),
+      buildCriteria({ statuses: ["Waitlist"] }),
       new Date("2026-05-15T12:00:00.000Z"),
     );
 

@@ -88,20 +88,48 @@ export type CampaignRunProjectionProvider = z.infer<
   typeof campaignRunProjectionProviderSchema
 >;
 
-// TODO Phase C / Brief C0 — verify against production SF picklist. Current values are best-guess.
 export const expeditionMemberStatusValues = [
-  "In the Field",
+  "Waitlist",
+  "Lead",
+  "Applied",
+  "Pending Acceptance",
+  "Accepted",
+  "Confirmed",
   "In Training",
-  "Active",
-  "Inactive",
-  "Withdrawn",
+  "In Progress",
+  "Trip Planning",
+  "In the Field",
+  "Successful",
+  "Completed",
+  "Returning Gear",
+  "Denied",
+  "Aborted",
+  "Soft Denied",
+  "Failed",
 ] as const;
-export const expeditionMemberStatusSchema = z.enum(
-  expeditionMemberStatusValues,
-);
+const expeditionMemberStatusEnumSchema = z.enum(expeditionMemberStatusValues);
+export const expeditionMemberStatusSchema = z.preprocess((value) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  return trimmed === "Soft Dened" ? "Soft Denied" : trimmed;
+}, expeditionMemberStatusEnumSchema);
 export type ExpeditionMemberStatus = z.infer<
   typeof expeditionMemberStatusSchema
 >;
+
+export function normalizeExpeditionMemberStatus(
+  value: string | null | undefined,
+): ExpeditionMemberStatus | null {
+  if (value == null) {
+    return null;
+  }
+
+  const result = expeditionMemberStatusSchema.safeParse(value);
+  return result.success ? result.data : null;
+}
 
 export const audienceLastActivityWindowValues = [
   "all_time",
@@ -142,24 +170,23 @@ export const audienceCriteriaSchema = z
       typeof input.projectId === "string" && input.projectId.trim().length > 0
         ? input.projectId.trim()
         : null;
-    const projectIds = Array.isArray(input.projectIds)
-      ? input.projectIds.filter(
-          (entry): entry is string =>
-            typeof entry === "string" && entry.trim().length > 0,
-        )
-      : [];
-    const normalizedProjectId = projectId ?? projectIds[0] ?? null;
+    const normalizedProjectIds = [
+      ...(projectId === null ? [] : [projectId]),
+      ...(Array.isArray(input.projectIds)
+        ? input.projectIds.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.trim().length > 0,
+          )
+        : []),
+    ].filter((entry, index, values) => values.indexOf(entry) === index);
 
     return {
       ...input,
-      projectId: normalizedProjectId,
-      projectIds:
-        normalizedProjectId === null ? projectIds : [normalizedProjectId],
+      projectId: normalizedProjectIds[0] ?? null,
+      projectIds: normalizedProjectIds,
     };
   }, z.object({
     projectId: coercingNullableString.default(audienceCriteriaDefaults.projectId),
-    // Keep `projectIds` as a derived compatibility field while Stage 5A
-    // callers move to the single-select `projectId` contract.
     projectIds: z
       .array(z.string().min(1))
       .default(audienceCriteriaDefaults.projectIds),
@@ -184,7 +211,10 @@ export const audienceCriteriaSchema = z
   }))
   .transform((value) => ({
     ...value,
-    projectIds: value.projectId === null ? value.projectIds : [value.projectId],
+    projectIds: [
+      ...(value.projectId === null ? [] : [value.projectId]),
+      ...value.projectIds,
+    ].filter((entry, index, values) => values.indexOf(entry) === index),
   }));
 type ParsedAudienceCriteria = z.infer<typeof audienceCriteriaSchema>;
 export type AudienceCriteria = Omit<

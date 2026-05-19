@@ -2,18 +2,25 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
-import type { CampaignKind, LaunchType } from "@as-comms/contracts";
+import type {
+  CampaignKind,
+  ExpeditionMemberStatus,
+  LaunchType,
+} from "@as-comms/contracts";
 
 import type {
   AudienceBuilderBootstrap,
+  AudienceStatusCounts,
   AudiencePreviewRow,
   AudienceVolunteerSearchRow,
+  CampaignProjectOption,
   CampaignSenderOption,
   ComposePreviewData,
   CampaignWizardDraftData,
 } from "../../_lib/audience-data-source";
 import { cn } from "@/lib/utils";
 import {
+  loadMemberStatusCountsForProjects,
   loadComposePreviewAction,
   previewAudienceAction,
   resolveAudienceCountAction,
@@ -72,20 +79,57 @@ type ToastState = {
   readonly message: string;
 } | null;
 
-function hasAppliedAudienceFilters(criteria: CampaignAudienceCriteria): boolean {
-  return (
-    criteria.projectId != null ||
-    criteria.statuses.length > 0 ||
-    (criteria.contactIds?.length ?? 0) > 0
+function normalizeProjectIds(projectIds: readonly string[]): string[] {
+  return projectIds.filter(
+    (projectId, index, values) =>
+      projectId.trim().length > 0 && values.indexOf(projectId) === index,
   );
+}
+
+function readProjectIds(criteria: CampaignAudienceCriteria): string[] {
+  return normalizeProjectIds([
+    ...(criteria.projectId == null ? [] : [criteria.projectId]),
+    ...criteria.projectIds,
+  ]);
+}
+
+function defaultAudienceModeForLaunchType(
+  launchType: LaunchType,
+): AudienceInitialFilter {
+  return launchType === "html_email" ? "all_approved" : "project_status";
+}
+
+function readAudienceModesForLaunchType(
+  launchType: LaunchType,
+): readonly AudienceInitialFilter[] {
+  return launchType === "html_email"
+    ? ["all_approved", "project_status"]
+    : ["project_status", "specific"];
+}
+
+function hasAppliedAudienceFilters(criteria: CampaignAudienceCriteria): boolean {
+  switch (criteria.initialFilter ?? "project_status") {
+    case "all_approved":
+    case "project_status":
+    case "specific":
+      return true;
+  }
 }
 
 function deriveInitialFilter(
   draft: CampaignWizardDraftData,
 ): AudienceInitialFilter {
+  if (draft.kind === "newsletter") {
+    return "all_approved";
+  }
+
   return (draft.audienceCriteria.contactIds?.length ?? 0) > 0
     ? "specific"
-    : "project_status";
+    : defaultAudienceModeForLaunchType(draft.launchType);
+}
+
+function kindForAudienceMode(mode: AudienceInitialFilter): CampaignKind {
+  return mode === "all_approved" ? "newsletter" : "project";
 }
 
 function formatAutosaveLabel(lastSavedAtIso: string): string {
@@ -182,17 +226,80 @@ function deriveSuggestedSenderEmail(input: {
   readonly criteria: CampaignAudienceCriteria;
   readonly bootstrap: AudienceBuilderBootstrap;
 }): string | null {
-  if (input.kind !== "project" || input.criteria.projectId == null) {
+  if (input.kind !== "project") {
+    return null;
+  }
+
+  const projectId = readProjectIds(input.criteria)[0] ?? null;
+  if (projectId === null) {
     return null;
   }
 
   return (
     input.bootstrap.senderOptions.find(
       (option) =>
-        option.projectId === input.criteria.projectId &&
+        option.projectId === projectId &&
         option.status === "verified",
     )?.email ?? null
   );
+}
+
+function readAliasProjectsForSender(
+  bootstrap: AudienceBuilderBootstrap,
+  senderOption: CampaignSenderOption | null,
+): readonly CampaignProjectOption[] {
+  if (senderOption === null) {
+    return [];
+  }
+
+  const hostProjectId = senderOption.connectedToProjectId ?? senderOption.projectId;
+  const group =
+    bootstrap.projects.find((candidate) => candidate.host.id === hostProjectId) ??
+    null;
+  if (group === null) {
+    return [];
+  }
+
+  return group.connectedSubs.length > 0 ? group.connectedSubs : [group.host];
+}
+
+function buildCriteriaForMode(input: {
+  readonly current: CampaignAudienceCriteria;
+  readonly mode: AudienceInitialFilter;
+  readonly aliasProjects: readonly CampaignProjectOption[];
+}): CampaignAudienceCriteria {
+  const aliasProjectIds = input.aliasProjects.map((project) => project.id);
+
+  if (input.mode === "all_approved") {
+    return {
+      ...input.current,
+      initialFilter: "all_approved",
+      projectId: null,
+      projectIds: [],
+      statuses: [],
+      contactIds: [],
+    };
+  }
+
+  if (input.mode === "specific") {
+    return {
+      ...input.current,
+      initialFilter: "specific",
+      projectId: aliasProjectIds[0] ?? null,
+      projectIds: aliasProjectIds,
+      statuses: [],
+      contactIds: [],
+    };
+  }
+
+  return {
+    ...input.current,
+    initialFilter: "project_status",
+    projectId: aliasProjectIds[0] ?? null,
+    projectIds: aliasProjectIds,
+    statuses: [],
+    contactIds: [],
+  };
 }
 
 function readProjectChipLabel(
@@ -212,9 +319,21 @@ function readProjectChipLabel(
       ),
     ]),
   );
-  return criteria.projectId == null
-    ? "Project"
-    : (byId.get(criteria.projectId) ?? "Project");
+  const selectedProjectIds = readProjectIds(criteria);
+  if (selectedProjectIds.length === 0) {
+    return "Project";
+  }
+
+  const selectedProjectNames = selectedProjectIds
+    .map((projectId) => byId.get(projectId))
+    .filter((projectName): projectName is string => projectName !== undefined);
+  if (selectedProjectNames.length === 0) {
+    return "Project";
+  }
+
+  return selectedProjectNames.length === 1
+    ? (selectedProjectNames[0] ?? "Project")
+    : `${selectedProjectNames[0] ?? "Project"} +${String(selectedProjectNames.length - 1)} more`;
 }
 
 export function NewCampaignWizard({
@@ -241,7 +360,10 @@ export function NewCampaignWizard({
   const [bodyHtml, setBodyHtml] = useState(draft.bodyHtmlTemplate ?? "");
   const [criteria, setCriteria] = useState<CampaignAudienceCriteria>({
     ...draft.audienceCriteria,
-    projectId: draft.audienceCriteria.projectId ?? draft.audienceCriteria.projectIds[0] ?? null,
+    projectId:
+      draft.audienceCriteria.projectId ??
+      draft.audienceCriteria.projectIds[0] ??
+      null,
     contactIds: draft.audienceCriteria.contactIds ?? [],
     initialFilter: deriveInitialFilter(draft),
   });
@@ -260,6 +382,10 @@ export function NewCampaignWizard({
   const [previewRows, setPreviewRows] = useState<readonly AudiencePreviewRow[]>(
     [],
   );
+  const [statusCounts, setStatusCounts] = useState<AudienceStatusCounts>({});
+  const [statusCountsErrorMessage, setStatusCountsErrorMessage] = useState<
+    string | null
+  >(null);
   const [volunteerSearchQuery, setVolunteerSearchQuery] = useState("");
   const [volunteerSearchRows, setVolunteerSearchRows] = useState<
     readonly AudienceVolunteerSearchRow[]
@@ -290,24 +416,48 @@ export function NewCampaignWizard({
   const [toast, setToast] = useState<ToastState>(null);
   const [countPending, startCountTransition] = useTransition();
   const [previewPending, startPreviewTransition] = useTransition();
+  const [, startStatusCountsTransition] = useTransition();
   const [volunteerSearchPending, startVolunteerSearchTransition] =
     useTransition();
   const [savePending, startSaveTransition] = useTransition();
   const [submitPending, startSubmitTransition] = useTransition();
   const [testSendPending, startTestSendTransition] = useTransition();
   const countRequestRef = useRef(0);
+  const statusCountsRequestRef = useRef(0);
   const audiencePreviewRequestRef = useRef(0);
   const volunteerSearchRequestRef = useRef(0);
   const composePreviewRequestRef = useRef(0);
   const savedFingerprintRef = useRef("");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousLaunchTypeRef = useRef(draft.launchType);
+  const previousFromEmailRef = useRef(draft.fromEmail);
+  const shouldAutoSelectStatusesRef = useRef(
+    (criteria.initialFilter ?? "project_status") === "project_status",
+  );
 
   const frozen = runState !== "draft";
-  const kind: CampaignKind = "project";
   const previewFingerprint = useMemo(
     () => JSON.stringify({ subject, bodyPlaintext, bodyHtml }),
     [bodyHtml, bodyPlaintext, subject],
   );
+  const selectedSenderOption = useMemo<CampaignSenderOption | null>(() => {
+    if (fromEmail === null) {
+      return null;
+    }
+
+    return (
+      bootstrap.senderOptions.find(
+        (option) => option.email === fromEmail && option.status === "verified",
+      ) ??
+      bootstrap.senderOptions.find((option) => option.email === fromEmail) ??
+      null
+    );
+  }, [bootstrap.senderOptions, fromEmail]);
+  const aliasProjects = useMemo(
+    () => readAliasProjectsForSender(bootstrap, selectedSenderOption),
+    [bootstrap, selectedSenderOption],
+  );
+  const kind = kindForAudienceMode(criteria.initialFilter ?? "project_status");
   const fingerprint = useMemo(
     () =>
       JSON.stringify({
@@ -339,19 +489,6 @@ export function NewCampaignWizard({
     ],
   );
   const dirty = fingerprint !== savedFingerprintRef.current;
-  const selectedSenderOption = useMemo<CampaignSenderOption | null>(() => {
-    if (fromEmail === null) {
-      return null;
-    }
-
-    return (
-      bootstrap.senderOptions.find(
-        (option) => option.email === fromEmail && option.status === "verified",
-      ) ??
-      bootstrap.senderOptions.find((option) => option.email === fromEmail) ??
-      null
-    );
-  }, [bootstrap.senderOptions, fromEmail]);
   const selectedSenderVerified = frozen
     ? true
     : selectedSenderOption?.status === "verified";
@@ -363,6 +500,7 @@ export function NewCampaignWizard({
     () => formatAutosaveLabel(lastSavedAtIso),
     [autosaveTick, lastSavedAtIso],
   );
+  const selectedProjectIds = useMemo(() => readProjectIds(criteria), [criteria]);
   const warningDismissed =
     warningDismissFingerprint !== null &&
     warningDismissFingerprint === previewFingerprint;
@@ -374,11 +512,12 @@ export function NewCampaignWizard({
         draft.audienceCriteria.projectId ??
         draft.audienceCriteria.projectIds[0] ??
         null,
+      contactIds: draft.audienceCriteria.contactIds ?? [],
       initialFilter: deriveInitialFilter(draft),
     };
     savedFingerprintRef.current = JSON.stringify({
       launchType: draft.launchType,
-      kind: "project",
+      kind: kindForAudienceMode(initialCriteria.initialFilter),
       name: draft.name,
       fromEmail: draft.fromEmail,
       replyToEmail: draft.replyToEmail,
@@ -399,23 +538,119 @@ export function NewCampaignWizard({
   }, [fromEmail, suggestedSenderEmail]);
 
   useEffect(() => {
-    if (criteria.projectId != null || selectedSenderOption === null) {
+    const currentMode = criteria.initialFilter ?? "project_status";
+    if (
+      selectedSenderOption === null ||
+      currentMode === "all_approved" ||
+      aliasProjects.length === 0
+    ) {
       return;
     }
 
+    const currentProjectIds = readProjectIds(criteria);
+    if (currentProjectIds.length > 0) {
+      return;
+    }
+
+    shouldAutoSelectStatusesRef.current = currentMode === "project_status";
     setCriteria((current) =>
-      current.projectId === null
-        ? {
-            ...current,
-            projectId: selectedSenderOption.projectId,
-          }
-        : current,
+      buildCriteriaForMode({
+        current,
+        mode: current.initialFilter ?? "project_status",
+        aliasProjects,
+      }),
     );
-  }, [criteria.projectId, selectedSenderOption]);
+  }, [aliasProjects, criteria, selectedSenderOption]);
+
+  useEffect(() => {
+    if (previousLaunchTypeRef.current === launchType) {
+      return;
+    }
+
+    previousLaunchTypeRef.current = launchType;
+    shouldAutoSelectStatusesRef.current = true;
+    setCriteria((current) =>
+      buildCriteriaForMode({
+        current,
+        mode: defaultAudienceModeForLaunchType(launchType),
+        aliasProjects,
+      }),
+    );
+    setVolunteerSearchQuery("");
+    setVolunteerSearchRows([]);
+    setVolunteerSearchErrorMessage(null);
+  }, [aliasProjects, launchType]);
+
+  useEffect(() => {
+    if (previousFromEmailRef.current === fromEmail) {
+      return;
+    }
+
+    previousFromEmailRef.current = fromEmail;
+    shouldAutoSelectStatusesRef.current =
+      (criteria.initialFilter ?? "project_status") === "project_status";
+    setCriteria((current) =>
+      buildCriteriaForMode({
+        current,
+        mode: current.initialFilter ?? defaultAudienceModeForLaunchType(launchType),
+        aliasProjects,
+      }),
+    );
+    setVolunteerSearchQuery("");
+    setVolunteerSearchRows([]);
+    setVolunteerSearchErrorMessage(null);
+  }, [aliasProjects, criteria.initialFilter, fromEmail, launchType]);
 
   useEffect(() => {
     setReplyToEmail(fromEmail);
   }, [fromEmail]);
+
+  useEffect(() => {
+    if ((criteria.initialFilter ?? "project_status") !== "project_status") {
+      setStatusCounts({});
+      setStatusCountsErrorMessage(null);
+      return;
+    }
+
+    const requestId = ++statusCountsRequestRef.current;
+    startStatusCountsTransition(async () => {
+      const result = await loadMemberStatusCountsForProjects(selectedProjectIds);
+      if (requestId !== statusCountsRequestRef.current) {
+        return;
+      }
+
+      if (!result.ok) {
+        setStatusCountsErrorMessage(result.message);
+        return;
+      }
+
+      setStatusCounts(result.data);
+      setStatusCountsErrorMessage(null);
+      setCriteria((current) => {
+        const availableStatuses = bootstrap.statuses.filter(
+          (status) => (result.data[status] ?? 0) > 0,
+        );
+        const selectedStatuses = current.statuses.filter((status) =>
+          availableStatuses.includes(status),
+        );
+
+        if (!shouldAutoSelectStatusesRef.current) {
+          return selectedStatuses.length === current.statuses.length
+            ? current
+            : {
+                ...current,
+                statuses: selectedStatuses,
+              };
+        }
+
+        shouldAutoSelectStatusesRef.current = false;
+        return {
+          ...current,
+          statuses: availableStatuses,
+        };
+      });
+    });
+  }, [bootstrap.statuses, criteria.initialFilter, selectedProjectIds]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -435,7 +670,7 @@ export function NewCampaignWizard({
     const requestId = ++countRequestRef.current;
     const timer = setTimeout(() => {
       startCountTransition(async () => {
-        const result = await resolveAudienceCountAction({ criteria });
+        const result = await resolveAudienceCountAction({ kind, criteria });
         if (requestId !== countRequestRef.current || !result.ok) {
           if (!result.ok && requestId === countRequestRef.current) {
             setSaveMessage(result.message);
@@ -450,7 +685,7 @@ export function NewCampaignWizard({
     return () => {
       clearTimeout(timer);
     };
-  }, [criteria, frozen]);
+  }, [criteria, frozen, kind]);
 
   useEffect(() => {
     if (currentStep !== 2) {
@@ -459,7 +694,7 @@ export function NewCampaignWizard({
 
     const requestId = ++audiencePreviewRequestRef.current;
     startPreviewTransition(async () => {
-      const result = await previewAudienceAction({ criteria });
+      const result = await previewAudienceAction({ kind, criteria });
       if (requestId !== audiencePreviewRequestRef.current) {
         return;
       }
@@ -471,7 +706,7 @@ export function NewCampaignWizard({
 
       setPreviewRows(result.data);
     });
-  }, [criteria, currentStep]);
+  }, [criteria, currentStep, kind]);
 
   useEffect(() => {
     if (currentStep !== 2 || criteria.initialFilter !== "specific") {
@@ -480,7 +715,7 @@ export function NewCampaignWizard({
       return;
     }
 
-    if (criteria.projectId == null || volunteerSearchQuery.trim().length < 2) {
+    if (selectedProjectIds.length === 0 || volunteerSearchQuery.trim().length < 2) {
       setVolunteerSearchRows([]);
       setVolunteerSearchErrorMessage(null);
       return;
@@ -490,7 +725,7 @@ export function NewCampaignWizard({
     const timer = setTimeout(() => {
       startVolunteerSearchTransition(async () => {
         const result = await searchProjectVolunteersAction({
-          projectId: criteria.projectId ?? null,
+          projectIds: selectedProjectIds,
           query: volunteerSearchQuery,
         });
         if (requestId !== volunteerSearchRequestRef.current) {
@@ -512,8 +747,8 @@ export function NewCampaignWizard({
     };
   }, [
     criteria.initialFilter,
-    criteria.projectId,
     currentStep,
+    selectedProjectIds,
     volunteerSearchQuery,
   ]);
 
@@ -689,32 +924,55 @@ export function NewCampaignWizard({
   }
 
   function changeInitialFilter(value: AudienceInitialFilter) {
-    updateCriteria((current) => ({
-      ...current,
-      initialFilter: value,
-      contactIds: value === "specific" ? (current.contactIds ?? []) : [],
-    }));
-  }
-
-  function changeProject(projectId: string) {
-    updateCriteria((current) => ({
-      ...current,
-      projectId,
-      projectIds: [projectId],
-      contactIds:
-        current.projectId === projectId ? (current.contactIds ?? []) : [],
-    }));
+    shouldAutoSelectStatusesRef.current = value === "project_status";
+    updateCriteria((current) =>
+      buildCriteriaForMode({
+        current,
+        mode: value,
+        aliasProjects,
+      }),
+    );
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
   }
 
-  function toggleStatus(status: string) {
+  function toggleProject(projectId: string) {
+    updateCriteria((current) => ({
+      ...current,
+      projectIds: normalizeProjectIds(
+        readProjectIds(current).includes(projectId)
+          ? readProjectIds(current).filter((value) => value !== projectId)
+          : [...readProjectIds(current), projectId],
+      ),
+      projectId:
+        normalizeProjectIds(
+          readProjectIds(current).includes(projectId)
+            ? readProjectIds(current).filter((value) => value !== projectId)
+            : [...readProjectIds(current), projectId],
+        )[0] ?? null,
+      contactIds: [],
+      statuses: [],
+    }));
+    shouldAutoSelectStatusesRef.current = true;
+    setVolunteerSearchQuery("");
+    setVolunteerSearchRows([]);
+    setVolunteerSearchErrorMessage(null);
+  }
+
+  function selectAllStatuses() {
+    updateCriteria((current) => ({
+      ...current,
+      statuses: bootstrap.statuses.filter((status) => (statusCounts[status] ?? 0) > 0),
+    }));
+  }
+
+  function toggleStatus(status: ExpeditionMemberStatus) {
     updateCriteria((current) => ({
       ...current,
       statuses: current.statuses.includes(status as never)
         ? current.statuses.filter((value) => value !== status)
-        : [...current.statuses, status as never],
+        : [...current.statuses, status],
     }));
   }
 
@@ -876,6 +1134,7 @@ export function NewCampaignWizard({
 
             {currentStep === 2 ? (
               <AudienceBuilderStep
+                availableModes={readAudienceModesForLaunchType(launchType)}
                 criteria={criteria}
                 countState={countState}
                 previewRows={previewRows}
@@ -888,8 +1147,11 @@ export function NewCampaignWizard({
                 volunteerSearchErrorMessage={volunteerSearchErrorMessage}
                 projectGroups={bootstrap.projects}
                 statusOptions={bootstrap.statuses}
+                statusCounts={statusCounts}
+                statusCountsErrorMessage={statusCountsErrorMessage}
                 onInitialFilterChange={changeInitialFilter}
-                onProjectChange={changeProject}
+                onProjectChange={toggleProject}
+                onSelectAllStatuses={selectAllStatuses}
                 onStatusToggle={toggleStatus}
                 onVolunteerSearchQueryChange={setVolunteerSearchQuery}
                 onVolunteerToggle={toggleVolunteer}

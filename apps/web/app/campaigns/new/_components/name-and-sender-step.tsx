@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Info } from "lucide-react";
+import { Info } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +80,9 @@ export function NameAndSenderStep({
   onBack,
   onContinue,
 }: NameAndSenderStepProps) {
+  const canContinue =
+    (fromEmail?.trim().length ?? 0) > 0 && name.trim().length > 0;
+
   return (
     <section className="flex h-full flex-col">
       <div className="pb-5">
@@ -233,9 +236,21 @@ export function NameAndSenderStep({
         <Button variant="outline" onClick={onBack}>
           Back
         </Button>
-        <Button onClick={onContinue}>
-          Continue
-          <CheckCircle2 className="size-3.5" aria-hidden="true" />
+        <Button
+          type="button"
+          aria-disabled={!canContinue}
+          onClick={() => {
+            if (canContinue) {
+              onContinue();
+            }
+          }}
+          className={cn(
+            !canContinue
+              ? "cursor-not-allowed bg-slate-200 text-slate-500 shadow-none hover:bg-slate-200"
+              : "",
+          )}
+        >
+          Continue ›
         </Button>
       </div>
     </section>

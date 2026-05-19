@@ -5,6 +5,7 @@ import type {
   ContactRecord,
   ProjectDimensionRecord,
 } from "@as-comms/contracts";
+import { normalizeExpeditionMemberStatus } from "@as-comms/contracts";
 
 import type {
   CanonicalEventRepository,
@@ -166,7 +167,7 @@ function filterMemberships(
   criteria: AudienceCriteria,
 ): ContactMembershipRecord[] {
   const projectIds = new Set(criteria.projectIds);
-  const statuses = new Set<string>(criteria.statuses);
+  const statuses = new Set(criteria.statuses);
   const expeditionIds = new Set(criteria.expeditionIds);
 
   return memberships.filter((membership) => {
@@ -174,7 +175,8 @@ function filterMemberships(
       return false;
     }
 
-    if (statuses.size > 0 && !statuses.has(membership.status ?? "")) {
+    const normalizedStatus = normalizeExpeditionMemberStatus(membership.status);
+    if (statuses.size > 0 && (normalizedStatus === null || !statuses.has(normalizedStatus))) {
       return false;
     }
 
