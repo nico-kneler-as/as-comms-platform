@@ -86,6 +86,27 @@ export async function requireSession(): Promise<UserRecord> {
   return user;
 }
 
+/**
+ * Returns the current user if they have the `admin` role; throws `FORBIDDEN` otherwise.
+ *
+ * Trust model (Stage 5+): admins are **globally trusted across all projects**.
+ * Campaign actions, audience reads, run mutations, and Stage 5A wizard server actions
+ * rely on this helper for authorization and DO NOT perform per-project membership
+ * checks against `project_id`. This is intentional — the operator pool is 1–3 internal
+ * staff who all need access to every project for triage and broadcast review (see
+ * `project_operator_scale.md` in the architect's auto-memory).
+ *
+ * The overnight broadcasts security review (2026-05-19,
+ * `.codex-worktrees/broadcasts-overnight-review/REVIEW-FINDINGS-2026-05-19.md`)
+ * flagged the absence of resource-level project authorization as a P0 — the architect
+ * reviewed and accepted that risk because the trust model above makes per-project
+ * gating cost without benefit at current scale.
+ *
+ * If the trust model changes (operator pool grows past ~5, or a project needs
+ * isolation from other admins), this is the choke point: add a project-membership
+ * check here or at every campaign action entry. `git grep requireAdmin` enumerates
+ * the callers.
+ */
 export async function requireAdmin(): Promise<UserRecord> {
   const user = await requireSession();
   if (user.role !== "admin") {
