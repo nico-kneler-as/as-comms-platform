@@ -414,7 +414,7 @@ export function createCampaignSendOrchestrator(deps: {
           logger.error(
             `Campaign batch send failed for run ${runId}: ${error instanceof Error ? error.message : String(error)}`,
           );
-          return;
+          throw error;
         }
 
         for (let messageIndex = 0; messageIndex < messages.length; messageIndex += 1) {

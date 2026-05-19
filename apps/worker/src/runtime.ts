@@ -49,6 +49,7 @@ import { readPollPostmarkSenderStatusConfig } from "./jobs/poll-postmark-sender-
 import { dedupHistoricalLedgerJobName } from "./jobs/dedup-historical-ledger.js";
 import { reconcileCaptureGapsJobName } from "./jobs/reconcile-capture-gaps.js";
 import { reconcileRoutingReviewQueueJobName } from "./jobs/reconcile-routing-review-queue.js";
+import { reconcileStrandedCampaignRunsJobName } from "./jobs/reconcile-stranded-campaign-runs.js";
 import { type SynthesizeProjectKnowledgeDependencies } from "./jobs/synthesize-project-knowledge/index.js";
 import {
   createStage1SyncStateService,
@@ -155,6 +156,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `0 3 * * * ${campaignEventsTailFinalizeJobName} ?id=campaign-events-tail-finalize&max=1`,
     `*/5 * * * * ${sweepPendingOutboundsJobName} ?id=composer-orphan-sweep&max=1`,
     `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
+    `*/5 * * * * ${reconcileStrandedCampaignRunsJobName} ?id=stranded-campaign-run-reconcile&max=1`,
     `*/15 * * * * ${reconcileIdentityQueueJobName} ?id=identity-queue-reconcile&max=1`,
     `0 10 * * * ${dedupHistoricalLedgerJobName} ?id=dedup-historical-ledger&max=1`,
     `30 10 * * * ${reconcileCaptureGapsJobName} ?id=capture-gap-reconcile&max=1`,
@@ -640,6 +642,10 @@ export async function createStage1WorkerRuntimeServices(
         repositories,
         syncState,
         leaseThresholdMs,
+      },
+      reconcileStrandedCampaignRuns: {
+        db: connection.db,
+        repositories,
       },
     }),
     dispose() {
