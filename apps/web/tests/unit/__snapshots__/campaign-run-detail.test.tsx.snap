@@ -6,7 +6,7 @@ exports[`broadcast run detail > matches the sending Postmark snapshot 1`] = `
     &quot;project-1&quot;
   ],
   &quot;statuses&quot;: [
-    &quot;Active&quot;
+    &quot;Waitlist&quot;
   ],
   &quot;expeditionIds&quot;: [],
   &quot;lastActivityWindow&quot;: &quot;all_time&quot;,
