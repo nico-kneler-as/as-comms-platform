@@ -430,7 +430,7 @@ describe("Postmark webhook route handler", () => {
     expect(deadLetters[0]?.sourceEvidenceId).not.toBeNull();
 
     expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0]?.[0]).toContain("recipientLogId");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("recipientHash");
     expect(warnSpy.mock.calls[0]?.[0]).not.toContain("john@example.com");
     warnSpy.mockRestore();
   });
