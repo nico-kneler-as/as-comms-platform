@@ -33,12 +33,12 @@
 | routing review queue | `RoutingReviewCase` | `routingReviewSchema` | `routingReviewQueue` | `id`, `contactId`, `sourceEvidenceId`, `reasonCode`, `status`, `openedAt`, `resolvedAt` |
 | contact inbox projection | `InboxProjectionRow` | `inboxProjectionSchema` | `contactInboxProjection` | `contactId`, `bucket`, `needsFollowUp`, `hasUnresolved`, `lastInboundAt`, `lastOutboundAt`, `lastActivityAt`, `snippet`, `lastEventType` |
 | contact timeline projection | `TimelineProjectionRow` | `timelineProjectionSchema` | `contactTimelineProjection` | `id`, `contactId`, `canonicalEventId`, `occurredAt`, `sortKey`, `eventType`, `summary`, `channel` |
-| campaign runs | `CampaignRunRecord` | `campaignRunRecordSchema` | `campaignRuns` | `id`, `kind`, `launchType`, `state`, `projectId`, `audienceCriteria`, `createdAt`, `updatedAt` |
+| broadcast runs | `CampaignRunRecord` | `campaignRunRecordSchema` | `campaignRuns` | `id`, `kind`, `launchType`, `state`, `projectId`, `audienceCriteria`, `createdAt`, `updatedAt` |
 | audience snapshots | `AudienceSnapshotRecord` | `audienceSnapshotRecordSchema` | `audienceSnapshots` | `id`, `campaignRunId`, `contactId`, `frozenEmail`, `unsubscribeToken`, `deliveryStatus`, `createdAt` |
-| campaign contact consent | `ContactConsentRecord` | `contactConsentRecordSchema` | `contactConsent` | `id`, `contactId`, `scopeType`, `scopeId`, `source`, `optedOutAt`, `createdAt` |
-| campaign suppression list | `SuppressionListRecord` | `suppressionListRecordSchema` | `suppressionList` | `id`, `normalizedEmail`, `reason`, `firstEventAt`, `lastEventAt`, `createdAt`, `updatedAt` |
+| broadcast contact consent | `ContactConsentRecord` | `contactConsentRecordSchema` | `contactConsent` | `id`, `contactId`, `scopeType`, `scopeId`, `source`, `optedOutAt`, `createdAt` |
+| broadcast suppression list | `SuppressionListRecord` | `suppressionListRecordSchema` | `suppressionList` | `id`, `normalizedEmail`, `reason`, `firstEventAt`, `lastEventAt`, `createdAt`, `updatedAt` |
 | organization settings | `OrgSettingsRecord` | `orgSettingsRecordSchema` | `orgSettings` | `id`, `physicalAddressLine1`, `physicalCity`, `physicalState`, `physicalZip`, `physicalCountry`, `createdAt`, `updatedAt` |
-| campaign run projection | `CampaignRunProjectionRow` | `campaignRunProjectionRowSchema` | `campaign_run_projection` view | `runId`, `provider`, `kind`, `launchType`, `state`, `subject`, `createdAt`, `updatedAt` |
+| broadcast run projection | `CampaignRunProjectionRow` | `campaignRunProjectionRowSchema` | `campaign_run_projection` view | `runId`, `provider`, `kind`, `launchType`, `state`, `subject`, `createdAt`, `updatedAt` |
 | sync/parity/backfill state | `SyncStateRecord` | `syncStateSchema` | `syncState` | `id`, `provider`, `jobType`, `cursor`, `windowStart`, `windowEnd`, `status`, `parityPercent`, `lastSuccessfulAt`, `deadLetterCount` |
 | audit/policy evidence | `AuditEvidenceRecord` | `auditEvidenceSchema` | `auditPolicyEvidence` | `id`, `actorType`, `actorId`, `action`, `entityType`, `entityId`, `occurredAt`, `result`, `policyCode`, `metadataJson` |
 | AI durable state | `AiDurableStateRecord` | `aiDurableStateSchema` | `aiDurableState` | `id`, `contactId`, `kind`, `scopeKey`, `contentRef`, `sourceRef`, `approvedAt`, `feedbackLabel` |
@@ -72,6 +72,6 @@
 
 ## Read Next
 
-- conceptual semantics: [`data-core.md`](./data-core.md)
-- web mutation and caching rules: [`frontend-patterns.md`](./frontend-patterns.md)
-- Stage 1 implementation packet: [`../02-bundles/data-foundation-bundle.md`](../02-bundles/data-foundation-bundle.md)
+- conceptual semantics: [data-core.md](./data-core.md)
+- web mutation and caching rules: [frontend-patterns.md](./frontend-patterns.md)
+- Stage 1 implementation packet: [data-foundation-bundle.md](../02-bundles/data-foundation-bundle.md)

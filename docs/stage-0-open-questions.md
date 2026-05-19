@@ -20,4 +20,4 @@ These are intentionally deferred and should be resolved in their proper stage ra
 - internal note semantics
 - provider ingest and webhook topology for Gmail, Salesforce, SimpleTexting, and Mailchimp
 - replay, projection, parity, and cutover workflows
-- AI durable state and campaign authoring flows
+- AI durable state and broadcast authoring flows

@@ -75,11 +75,11 @@ working while diagnosis happens.
 ## Related
 
 - **Code paths:**
-  - [`apps/worker/src/jobs/synthesize-project-knowledge/orchestrator.ts:380`](../../apps/worker/src/jobs/synthesize-project-knowledge/orchestrator.ts) — orchestrator; returns `project_missing` / `no_healthy_sources` / `llm_failed`
-  - [`apps/worker/src/jobs/synthesize-project-knowledge/orchestrator.ts:30`](../../apps/worker/src/jobs/synthesize-project-knowledge/orchestrator.ts) — `DEFAULT_SYNTHESIS_TIMEOUT_MS` (180s, raised in PR #387)
-  - [`apps/web/app/settings/_components/project-ai-knowledge-section.tsx:155`](../../apps/web/app/settings/_components/project-ai-knowledge-section.tsx) — Settings UI, banner copy, polling cadence
-  - [`apps/worker/src/runtime.ts:142`](../../apps/worker/src/runtime.ts) — hourly cron `pollAiKnowledgeAutoSyncJob` re-triggers daily/weekly auto-sync
-  - [`apps/worker/package.json:36`](../../apps/worker/package.json) — `ops:synthesize-project-knowledge` manual trigger
+  - [orchestrator.ts](../../apps/worker/src/jobs/synthesize-project-knowledge/orchestrator.ts) — orchestrator; returns `project_missing` / `no_healthy_sources` / `llm_failed`
+  - [orchestrator.ts](../../apps/worker/src/jobs/synthesize-project-knowledge/orchestrator.ts) — `DEFAULT_SYNTHESIS_TIMEOUT_MS` (180s, raised in PR #387)
+  - [project-ai-knowledge-section.tsx](../../apps/web/app/settings/_components/project-ai-knowledge-section.tsx) — Settings UI, banner copy, polling cadence
+  - [runtime.ts](../../apps/worker/src/runtime.ts) — hourly cron `pollAiKnowledgeAutoSyncJob` re-triggers daily/weekly auto-sync
+  - [package.json](../../apps/worker/package.json) — `ops:synthesize-project-knowledge` manual trigger
 - **Other runbooks:** [ai-draft-failed-or-malformed.md](./ai-draft-failed-or-malformed.md), [worker-queue-stuck.md](./worker-queue-stuck.md), [morning-ops-checks.md](./morning-ops-checks.md)
 - **Recent incidents:**
   - PR #387 (2026-05-01) — bumped Anthropic timeout to 180s after synthesis hit the previous 60s cap on large corpora.

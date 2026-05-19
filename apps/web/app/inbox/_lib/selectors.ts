@@ -1457,13 +1457,13 @@ function fallbackLatestSubject(eventType: CanonicalEventType): string {
     case "lifecycle.submitted_first_data":
       return "Submitted first data";
     case "campaign.email.sent":
-      return "Campaign email sent";
+      return "Broadcast email sent";
     case "campaign.email.opened":
-      return "Campaign email opened";
+      return "Broadcast email opened";
     case "campaign.email.clicked":
-      return "Campaign email clicked";
+      return "Broadcast email clicked";
     case "campaign.email.unsubscribed":
-      return "Campaign email unsubscribed";
+      return "Broadcast email unsubscribed";
     case "note.internal.created":
       return "Internal note created";
     default:
@@ -1796,7 +1796,7 @@ function timelineActorLabel(
       return item.sourceLabel;
     case "campaign_email":
     case "campaign_sms":
-      return "Campaigns";
+      return "Broadcasts";
     case "internal_note":
       return item.authorDisplayName ?? "Internal note";
     case "salesforce_event":

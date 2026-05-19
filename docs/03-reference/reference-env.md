@@ -55,5 +55,5 @@ review in Settings.
 
 ## Deep References
 
-- full donor lookup: [`../../restart-prd/env-and-secrets-matrix.md`](../../restart-prd/env-and-secrets-matrix.md)
-- security model: [`../01-core/system-core.md`](../01-core/system-core.md)
+- full donor lookup: [env-and-secrets-matrix.md](../../restart-prd/env-and-secrets-matrix.md)
+- security model: [system-core.md](../01-core/system-core.md)

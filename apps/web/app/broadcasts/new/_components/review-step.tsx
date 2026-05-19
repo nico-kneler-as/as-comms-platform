@@ -141,7 +141,7 @@ export function ReviewStep({
         <Section title="FINAL CHECK">
           <div className="grid gap-4 px-4 py-4 md:grid-cols-2">
             <div className="space-y-2.5">
-              <SummaryRow label="Name" value={runName ?? "Untitled campaign"} />
+              <SummaryRow label="Name" value={runName ?? "Untitled broadcast"} />
               <SummaryRow
                 label="Kind"
                 value={kind === "newsletter" ? "Newsletter" : "Project email"}
@@ -214,7 +214,7 @@ export function ReviewStep({
             <div className="flex items-start gap-2.5">
               <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
               <p>
-                This campaign is {frozenState} for{" "}
+                This broadcast is {frozenState} for{" "}
                 {formatDenverTimestamp(frozenScheduledAt)}. Content and audience
                 are locked. To edit, cancel and start a new draft.
               </p>
@@ -360,8 +360,8 @@ export function ReviewStep({
           <DialogHeader>
             <DialogTitle>
               {sendMode === "later"
-                ? "Schedule this campaign?"
-                : "Send this campaign now?"}
+                ? "Schedule this broadcast?"
+                : "Send this broadcast now?"}
             </DialogTitle>
             <DialogDescription>{confirmationLine}</DialogDescription>
           </DialogHeader>

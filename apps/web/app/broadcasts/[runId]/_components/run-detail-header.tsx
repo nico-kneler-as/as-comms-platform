@@ -29,10 +29,10 @@ export function RunDetailHeader({
       <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 px-6 py-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <Link
-            href="/campaigns"
+            href="/broadcasts"
             className="mb-2 inline-flex text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-900"
           >
-            ‹ Campaigns
+            ‹ Broadcasts
           </Link>
           <div className="flex flex-wrap items-center gap-2">
             <RunStateChip state={header.state} />
@@ -81,7 +81,7 @@ export function RunDetailHeader({
 
                   setDuplicateError(null);
                   router.push(
-                    `/campaigns/new?runId=${encodeURIComponent(result.data.runId)}`,
+                    `/broadcasts/new?runId=${encodeURIComponent(result.data.runId)}`,
                   );
                 });
               }}

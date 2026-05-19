@@ -67,10 +67,10 @@ Alert `nico@adventurescientists.org`. Include:
 ## Related
 
 - **Code paths:**
-  - [`apps/worker/src/jobs/reconcile-stale-running.ts`](../../apps/worker/src/jobs/reconcile-stale-running.ts) — sweeps `sync_state` rows with stale `heartbeat_at`
-  - [`apps/worker/src/jobs/reconcile-identity-queue.ts`](../../apps/worker/src/jobs/reconcile-identity-queue.ts) — identity queue reconciler; throws if no progress + errors
-  - [`packages/db/src/schema/tables.ts:681`](../../packages/db/src/schema/tables.ts) — `sync_state` table: `status`, `consecutive_failure_count`, `lease_owner`, `heartbeat_at`, `dead_letter_count`
-  - [`packages/contracts/src/stage1-taxonomy.ts:229`](../../packages/contracts/src/stage1-taxonomy.ts) — sync status enum: `pending / running / succeeded / failed / quarantined / cancelled`
-  - [`apps/worker/src/orchestration/service.ts:510`](../../apps/worker/src/orchestration/service.ts) — dead-letter disposition logic (5 retries → `dead_letter`)
+  - [reconcile-stale-running.ts](../../apps/worker/src/jobs/reconcile-stale-running.ts) — sweeps `sync_state` rows with stale `heartbeat_at`
+  - [reconcile-identity-queue.ts](../../apps/worker/src/jobs/reconcile-identity-queue.ts) — identity queue reconciler; throws if no progress + errors
+  - [tables.ts](../../packages/db/src/schema/tables.ts) — `sync_state` table: `status`, `consecutive_failure_count`, `lease_owner`, `heartbeat_at`, `dead_letter_count`
+  - [stage1-taxonomy.ts](../../packages/contracts/src/stage1-taxonomy.ts) — sync status enum: `pending / running / succeeded / failed / quarantined / cancelled`
+  - [service.ts](../../apps/worker/src/orchestration/service.ts) — dead-letter disposition logic (5 retries → `dead_letter`)
 - **Other runbooks:** [gmail-capture-stopped.md](./gmail-capture-stopped.md), [salesforce-capture-stopped.md](./salesforce-capture-stopped.md), [morning-ops-checks.md](./morning-ops-checks.md)
 - **Recent incidents:** PR #206 (2026-04) — Mailchimp lease/heartbeat fix + stale-running sweeper; PR #212 (2026-04) — carry `consecutive_failure_count` across cron polls

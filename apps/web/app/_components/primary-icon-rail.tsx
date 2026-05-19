@@ -60,10 +60,10 @@ const ITEMS: readonly RailItem[] = [
   },
   {
     id: "campaigns",
-    label: "Campaigns",
+    label: "Broadcasts",
     Icon: MegaphoneIcon,
-    href: "/campaigns",
-    activePrefixes: ["/campaigns"]
+    href: "/broadcasts",
+    activePrefixes: ["/broadcasts"]
   },
   {
     id: "settings",

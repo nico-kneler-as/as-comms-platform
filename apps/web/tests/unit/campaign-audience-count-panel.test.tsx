@@ -19,7 +19,7 @@ vi.mock("@/components/ui/button", () => ({
   }) => <button {...props}>{children}</button>,
 }));
 
-import { AudienceCountPanel } from "../../app/campaigns/new/_components/audience-builder-step";
+import { AudienceCountPanel } from "../../app/broadcasts/new/_components/audience-builder-step";
 
 describe("AudienceCountPanel snapshots", () => {
   it("renders the neutral empty state", () => {
