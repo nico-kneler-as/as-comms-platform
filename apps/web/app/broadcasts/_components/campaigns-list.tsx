@@ -374,7 +374,7 @@ export function CampaignsList({
         ) : (
           <>
             {rowsSection ?? (
-              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <div className="divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white">
                 {items.map((item) => (
                   <CampaignRow
                     key={`${item.provider}:${item.runId}`}
