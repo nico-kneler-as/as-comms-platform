@@ -7,7 +7,11 @@ export interface CampaignSendTaskDependencies {
   readonly orchestrator: CampaignSendOrchestrator;
 }
 
-export { campaignSendJobName, campaignSendPayloadSchema } from "@as-comms/contracts";
+export {
+  campaignSendJobName,
+  campaignSendJobMaxAttempts,
+  campaignSendPayloadSchema,
+} from "@as-comms/contracts";
 export type { CampaignSendPayload } from "@as-comms/contracts";
 
 export function createCampaignSendTask(

@@ -3,6 +3,7 @@ import process from "node:process";
 
 import {
   campaignSendJobName,
+  campaignSendJobMaxAttempts,
   campaignSendPayloadSchema,
 } from "@as-comms/contracts";
 import {
@@ -398,7 +399,7 @@ async function runReprocessPendingCampaignSends(
           payload => ${JSON.stringify(payload)}::json,
           job_key => ${`campaign-send:${run.id}`},
           job_key_mode => 'replace',
-          max_attempts => 1
+          max_attempts => ${campaignSendJobMaxAttempts}
         )
       `;
 

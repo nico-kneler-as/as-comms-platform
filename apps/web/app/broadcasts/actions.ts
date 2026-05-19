@@ -3,10 +3,12 @@
 import { randomUUID } from "node:crypto";
 
 import { headers } from "next/headers";
+import { sql } from "drizzle-orm";
 
 import {
   cancelRunInputSchema,
   campaignSendJobName,
+  campaignSendJobMaxAttempts,
   campaignSendPayloadSchema,
   scheduleSendInputSchema,
   sendNowInputSchema,
@@ -24,7 +26,11 @@ import type { UiError, UiSuccess } from "@/src/server/ui-result";
 
 import { requireAdmin, requireSession } from "@/src/server/auth/session";
 import { readWebEnv } from "@/src/server/env";
-import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
+import {
+  getStage1WebRuntime,
+  withStage1WebTransaction,
+  type Stage1WebRuntime,
+} from "@/src/server/stage1-runtime";
 
 import {
   buildCampaignFooterPreview,
@@ -107,9 +113,14 @@ async function appendCampaignAudit(input: {
   readonly runId: string;
   readonly detail: string;
   readonly metadataJson?: Record<string, unknown>;
+  readonly auditEvidence?: Pick<
+    Awaited<ReturnType<typeof getStage1WebRuntime>>["repositories"]["auditEvidence"],
+    "append"
+  >;
 }) {
-  const runtime = await getStage1WebRuntime();
-  await runtime.repositories.auditEvidence.append({
+  const auditEvidence =
+    input.auditEvidence ?? (await getStage1WebRuntime()).repositories.auditEvidence;
+  await auditEvidence.append({
     id: randomUUID(),
     actorType: input.actorType,
     actorId: input.actorId,
@@ -156,8 +167,11 @@ function trimNonEmpty(value: string | undefined): string | null {
   return trimmed === undefined || trimmed.length === 0 ? null : trimmed;
 }
 
-async function createCampaignOrchestrator() {
-  const runtime = await getStage1WebRuntime();
+function createCampaignSendOrchestratorForRepositories(input: {
+  readonly campaigns: Stage1WebRuntime["campaigns"];
+  readonly repositories: Stage1WebRuntime["repositories"];
+  readonly settings: Stage1WebRuntime["settings"];
+}) {
   // Web-side orchestrator only handles freeze/cancel/etc.; the worker
   // does the actual sendBatch. appUrl is still required by the deps
   // interface so unsubscribe-footer wiring stays consistent end-to-end.
@@ -166,75 +180,76 @@ async function createCampaignOrchestrator() {
     trimNonEmpty(process.env.WEB_BASE_URL) ??
     "http://localhost:3000";
 
+  return createCampaignSendOrchestrator({
+    repositories: {
+      campaignRuns: input.campaigns.campaignRuns,
+      audienceSnapshots: input.campaigns.audienceSnapshots,
+      settingsProjects: input.settings.projects,
+      orgSettings: input.campaigns.orgSettings,
+      auditEvidence: input.repositories.auditEvidence,
+    },
+    audienceResolver: createAudienceResolver({
+      repositories: {
+        contacts: input.repositories.contacts,
+        contactMemberships: input.repositories.contactMemberships,
+        canonicalEvents: input.repositories.canonicalEvents,
+        projectDimensions: input.repositories.projectDimensions,
+        settingsProjects: input.settings.projects,
+      },
+    }),
+    exclusionFilter: createExclusionFilter({
+      repositories: {
+        campaignRuns: input.campaigns.campaignRuns,
+        contactConsent: input.campaigns.contactConsent,
+        suppressionList: input.campaigns.suppressionList,
+      },
+    }),
+    mergeRenderer: createMergeRenderer(),
+    postmarkClient: buildPostmarkClientForActions(),
+    appUrl,
+  });
+}
+
+async function createCampaignOrchestrator() {
+  const runtime = await getStage1WebRuntime();
   return {
     runtime,
-    orchestrator: createCampaignSendOrchestrator({
-      repositories: {
-        campaignRuns: runtime.campaigns.campaignRuns,
-        audienceSnapshots: runtime.campaigns.audienceSnapshots,
-        settingsProjects: runtime.settings.projects,
-        orgSettings: runtime.campaigns.orgSettings,
-        auditEvidence: runtime.repositories.auditEvidence,
-      },
-      audienceResolver: createAudienceResolver({
-        repositories: {
-          contacts: runtime.repositories.contacts,
-          contactMemberships: runtime.repositories.contactMemberships,
-          canonicalEvents: runtime.repositories.canonicalEvents,
-          projectDimensions: runtime.repositories.projectDimensions,
-          settingsProjects: runtime.settings.projects,
-        },
-      }),
-      exclusionFilter: createExclusionFilter({
-        repositories: {
-          campaignRuns: runtime.campaigns.campaignRuns,
-          contactConsent: runtime.campaigns.contactConsent,
-          suppressionList: runtime.campaigns.suppressionList,
-        },
-      }),
-      mergeRenderer: createMergeRenderer(),
-      postmarkClient: buildPostmarkClientForActions(),
-      appUrl,
-    }),
+    orchestrator: createCampaignSendOrchestratorForRepositories(runtime),
   };
 }
 
 async function enqueueCampaignSendJob(input: {
+  readonly db: Pick<NonNullable<Stage1WebRuntime["connection"]>["db"], "execute">;
   readonly runId: string;
   readonly scheduledAt?: Date;
 }): Promise<void> {
-  const runtime = await getStage1WebRuntime();
-  if (runtime.connection === null) {
-    return;
-  }
-
   const payload = campaignSendPayloadSchema.parse({
     runId: input.runId,
   });
 
   if (input.scheduledAt === undefined) {
-    await runtime.connection.sql`
+    await input.db.execute(sql`
       select graphile_worker.add_job(
         identifier => ${campaignSendJobName},
         payload => ${JSON.stringify(payload)}::json,
         job_key => ${`campaign-send:${input.runId}`},
         job_key_mode => 'replace',
-        max_attempts => 1
+        max_attempts => ${campaignSendJobMaxAttempts}
       )
-    `;
+    `);
     return;
   }
 
-  await runtime.connection.sql`
+  await input.db.execute(sql`
     select graphile_worker.add_job(
       identifier => ${campaignSendJobName},
       payload => ${JSON.stringify(payload)}::json,
       run_at => ${input.scheduledAt.toISOString()}::timestamptz,
       job_key => ${`campaign-send:${input.runId}`},
       job_key_mode => 'replace',
-      max_attempts => 1
+      max_attempts => ${campaignSendJobMaxAttempts}
     )
-  `;
+  `);
 }
 
 async function assertCampaignAdmin():
@@ -333,7 +348,7 @@ export async function sendNow(
       runId,
       actorUserId: admin.userId,
     });
-    const { runtime, orchestrator } = await createCampaignOrchestrator();
+    const runtime = await getStage1WebRuntime();
     const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
     if (run === null) {
       return errorResult("campaign_not_found", "Broadcast draft not found.");
@@ -348,21 +363,32 @@ export async function sendNow(
       return senderError;
     }
 
-    const frozen = await orchestrator.freeze(parsed.runId, new Date());
     const scheduledAt = new Date();
-    await runtime.campaigns.campaignRuns.update(parsed.runId, {
-      scheduledAt: scheduledAt.toISOString(),
-      lastEditedByUserId: admin.userId,
-    });
-    await enqueueCampaignSendJob({
-      runId: parsed.runId,
-    });
-    await appendCampaignAudit({
-      actorType: "user",
-      actorId: admin.userId,
-      action: "campaign_run.scheduled",
-      runId: parsed.runId,
-      detail: "Send now requested; the worker will start immediately.",
+    const frozen = await withStage1WebTransaction(async (transaction) => {
+      const transactionalOrchestrator =
+        createCampaignSendOrchestratorForRepositories(transaction);
+      const frozenResult = await transactionalOrchestrator.freeze(
+        parsed.runId,
+        scheduledAt,
+      );
+      await transaction.campaigns.campaignRuns.update(parsed.runId, {
+        scheduledAt: scheduledAt.toISOString(),
+        lastEditedByUserId: admin.userId,
+      });
+      await enqueueCampaignSendJob({
+        db: transaction.db,
+        runId: parsed.runId,
+      });
+      await appendCampaignAudit({
+        actorType: "user",
+        actorId: admin.userId,
+        action: "campaign_run.scheduled",
+        runId: parsed.runId,
+        detail: "Send now requested; the worker will start immediately.",
+        auditEvidence: transaction.repositories.auditEvidence,
+      });
+
+      return frozenResult;
     });
 
     return {
@@ -400,7 +426,7 @@ export async function schedule(
       scheduledAt: sendAt.toISOString(),
       actorUserId: admin.userId,
     });
-    const { runtime, orchestrator } = await createCampaignOrchestrator();
+    const runtime = await getStage1WebRuntime();
     const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
     if (run === null) {
       return errorResult("campaign_not_found", "Broadcast draft not found.");
@@ -415,21 +441,33 @@ export async function schedule(
       return senderError;
     }
 
-    const frozen = await orchestrator.freeze(parsed.runId, new Date());
-    await runtime.campaigns.campaignRuns.update(parsed.runId, {
-      scheduledAt: parsed.scheduledAt,
-      lastEditedByUserId: admin.userId,
-    });
-    await enqueueCampaignSendJob({
-      runId: parsed.runId,
-      scheduledAt: new Date(parsed.scheduledAt),
-    });
-    await appendCampaignAudit({
-      actorType: "user",
-      actorId: admin.userId,
-      action: "campaign_run.scheduled",
-      runId: parsed.runId,
-      detail: `Scheduled for ${parsed.scheduledAt}.`,
+    const scheduledAt = new Date(parsed.scheduledAt);
+    const frozen = await withStage1WebTransaction(async (transaction) => {
+      const transactionalOrchestrator =
+        createCampaignSendOrchestratorForRepositories(transaction);
+      const frozenResult = await transactionalOrchestrator.freeze(
+        parsed.runId,
+        scheduledAt,
+      );
+      await transaction.campaigns.campaignRuns.update(parsed.runId, {
+        scheduledAt: parsed.scheduledAt,
+        lastEditedByUserId: admin.userId,
+      });
+      await enqueueCampaignSendJob({
+        db: transaction.db,
+        runId: parsed.runId,
+        scheduledAt,
+      });
+      await appendCampaignAudit({
+        actorType: "user",
+        actorId: admin.userId,
+        action: "campaign_run.scheduled",
+        runId: parsed.runId,
+        detail: `Scheduled for ${parsed.scheduledAt}.`,
+        auditEvidence: transaction.repositories.auditEvidence,
+      });
+
+      return frozenResult;
     });
 
     return {

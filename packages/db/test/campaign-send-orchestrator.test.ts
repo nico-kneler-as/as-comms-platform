@@ -230,6 +230,36 @@ describe("Campaign send orchestrator", () => {
     expect(refreshedRun?.state).toBe("complete");
   });
 
+  it("rethrows batch send failures so the worker can retry", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 1);
+    const runtime = createOrchestrator(
+      context,
+      createMockPostmarkClient({ throwOnCall: [1] }),
+      1,
+    );
+    const run = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-batch-failure-rethrow" }),
+    );
+
+    await runtime.orchestrator.freeze(
+      run.id,
+      new Date("2026-05-15T12:00:00.000Z"),
+    );
+
+    await expect(runtime.orchestrator.processSendRequest(run.id)).rejects.toThrow(
+      "Simulated batch failure on call 1.",
+    );
+
+    const [snapshot] = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+    const refreshedRun = await runtime.campaigns.campaignRuns.findById(run.id);
+
+    expect(snapshot?.deliveryStatus).toBe("pending");
+    expect(refreshedRun?.state).toBe("sending");
+  });
+
   it("stops between batches when the run is cancelled mid-send", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);
@@ -289,7 +319,9 @@ describe("Campaign send orchestrator", () => {
       run.id,
       new Date("2026-05-15T12:00:00.000Z"),
     );
-    await runtime.orchestrator.processSendRequest(run.id);
+    await expect(runtime.orchestrator.processSendRequest(run.id)).rejects.toThrow(
+      "Simulated batch failure on call 2.",
+    );
 
     expect(
       (await runtime.campaigns.audienceSnapshots.listForRun(run.id)).filter(

@@ -2,7 +2,7 @@
 
 Internal volunteer communications platform for Adventure Scientists. Backend-first rebuild of an agent-assisted operator inbox that unifies Gmail + Salesforce + SMS + Mailchimp into a single canonical timeline per volunteer.
 
-The platform is **pre-production**, running on Railway under a single admin account during the validation phase. SMS transport is in final launch prep (Twilio A2P 10DLC port from SimpleTexting completed 2026-05-11; consent backfill + sender seed scripts merged in #402).
+The platform is **pre-production**, running on Railway under a single admin account during the validation phase. Stage 5A (Email Broadcasts, project-scope) shipped mid-May (#418-#436): Postmark is wired with signed webhooks, audience snapshots, suppression-list, public unsubscribe page, and a coexistence projection that unions native sends with historical Mailchimp runs. Stages 5C (Newsletters + HTML composer + Mailchimp decommission) and 5B (SMS Broadcasts; gated on A2P 10DLC port approval) are queued; Stage 6 (Workflows replacing Salesforce Auto-Emails) is undefined roadmap intent. SMS launch ops scripts merged in #402; Twilio A2P 10DLC port from SimpleTexting completed 2026-05-11.
 
 ## Stages shipped
 
@@ -15,12 +15,15 @@ The platform is **pre-production**, running on Railway under a single admin acco
 | 3 — Inbox read surface | ✓ shipped | mixed-list contact inbox, follow-up flag, unresolved overlay, **unified search bar** (contacts + conversations), **AS / External row chips**, **unread blue dot + count**, project filter (excludes connected subs), keyboard shortcuts, optimistic UI |
 | 3.5 — Composer | ✓ shipped | Gmail send client, per-alias signature, durable send action + pending-outbounds reconciliation, inline draft pane + recipient picker + optimistic timeline, **Pin Note**, **"Write a message"** collapsed bar, **Forward action**, SMS surface |
 | 4 — AI drafting | ✓ shipped | Claude Sonnet 4.6 drafts; three-layer grounding; **multi-source AI Knowledge registry** (Notion + web URLs per project, merged into one cached doc); **auto-sync schedule** (`Never` / `Daily` / `Weekly`); **skip-if-unchanged** hashing; **threshold-triggered re-synthesis** after ≥5 "Send and save for AI" flags; **alias-host-hop fallback** so connected sub-projects inherit AI Knowledge from their host |
-| V — Validation gate | 🟡 active | real operator use of Inbox + Composer + AI in production; pre-launch security hardening (#396, #398); hardening before Campaigns |
-| 5A — Email campaigns | deferred | post-validation |
-| 5B — SMS campaigns | deferred | after 5A; Twilio transport landing first |
-| 6 — Reporting | deferred | — |
+| V — Validation gate (Inbox + Composer + AI) | 🟡 active | real operator use of Inbox + Composer + AI in production; pre-launch security hardening (#396, #398); ran in parallel with Stage 5A code merges |
+| 5A — Email Broadcasts (project-scope) | 🟡 in validation | shipped #418-#436 on Postmark with a Markdown composer: signed webhook + durable dead-letter, audience builder + frozen snapshot, send orchestrator + merge renderer, run detail + metric tiles + cancel + 30-day finalization, public unsubscribe page + per-recipient tokens (3 scopes), broadcasts list with Mailchimp UNION projection, 6-step wizard, trusted-admin gate. See `D-045`, `D-046`. |
+| Validation gate (Stage 5A) | ⏳ target end-May 2026 | real operator use of project broadcasts in production; clears the gate to Stage 5C |
+| 5B — SMS Broadcasts | ⏳ awaiting A2P approval | Twilio A2P 10DLC port approval is the external gate; independent of 5A and 5C (`D-046`). Ops scripts merged in #402 |
+| 5C — Newsletters + HTML Composer + Mailchimp decommission | ⏳ deferred behind 5A | embedded Unlayer drag-and-drop HTML editor, monthly newsletter audience migration off Mailchimp, full Mailchimp decommission. See `D-046` |
+| Validation gate (Stage 5C) | ⏳ target mid-June 2026 | real operator use of the newsletter in production; clears the gate to Stage 6 |
+| 6 — Workflows (replace Salesforce Auto-Emails) | ⏳ roadmap intent | no product definition yet — deliberately undefined until 5C ships (`D-046`) |
 
-**Active phase:** Validation. AI Knowledge architecture rebuilt (PRD #366, locked as D-043); connected-projects shared-alias rollup shipped (PRs #384/#388/#389, locked as D-044); pre-launch security sweep underway (PRs #396, #398); SMS launch ops scripts merged (#402).
+**Active phase:** Stage 5A operator validation (target: end of May 2026). Postmark provider locked (D-045, PR #415); Stage 5A schema + Postmark client + send orchestrator + audience builder + run detail + unsubscribe + broadcasts list shipped across PRs #418-#433; campaign → broadcast rename in UI/routes/docs (#434, Tier 2 — code identifiers, DB schema, and Mailchimp product wording intentionally preserved); post-merge QA fixed P0/P1 compliance + PII gaps (#435) and added a durable Postmark webhook dead-letter table for post-signature failures (#436). Stage 5 was restructured on 2026-05-19 (D-046) — what was D-045's "Phase A/B/C/D" rollout is now discrete Stages 5A / 5B / 5C / 6, each with its own gate. Stage 4 AI Knowledge architecture rebuilt earlier (PRD #366, D-043); connected-projects shared-alias rollup is live (D-044).
 
 ## Locked stack
 

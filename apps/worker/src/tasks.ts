@@ -38,6 +38,11 @@ import {
   type ReconcileStaleRunningTaskDependencies,
 } from "./jobs/reconcile-stale-running.js";
 import {
+  createReconcileStrandedCampaignRunsTask,
+  reconcileStrandedCampaignRunsJobName,
+  type ReconcileStrandedCampaignRunsTaskDependencies,
+} from "./jobs/reconcile-stranded-campaign-runs.js";
+import {
   createReconcileCaptureGapsTask,
   reconcileCaptureGapsJobName,
   type ReconcileCaptureGapsTaskDependencies,
@@ -79,6 +84,7 @@ export function createTaskList(
     readonly reconcileRoutingReviewQueue?: ReconcileRoutingReviewQueueTaskDependencies;
     readonly reconcileCaptureGaps?: ReconcileCaptureGapsTaskDependencies;
     readonly reconcileStaleRunning?: ReconcileStaleRunningTaskDependencies;
+    readonly reconcileStrandedCampaignRuns?: ReconcileStrandedCampaignRunsTaskDependencies;
     readonly synthesizeProjectKnowledge?: SynthesizeProjectKnowledgeDependencies;
     readonly pollPostmarkSenderStatus?: PollPostmarkSenderStatusDependencies;
   },
@@ -140,6 +146,14 @@ export function createTaskList(
           [reconcileStaleRunningJobName]: createReconcileStaleRunningTask(
             input.reconcileStaleRunning
           )
+        }),
+    ...(input?.reconcileStrandedCampaignRuns === undefined
+      ? {}
+      : {
+          [reconcileStrandedCampaignRunsJobName]:
+            createReconcileStrandedCampaignRunsTask(
+              input.reconcileStrandedCampaignRuns,
+            ),
         }),
     ...(input?.notionKnowledgeSync === undefined
       ? {}
