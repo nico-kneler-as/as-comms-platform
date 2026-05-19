@@ -9,6 +9,7 @@ Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
   Check: () => null,
+  LoaderCircle: () => null,
   Lock: () => null,
 }));
 
@@ -94,8 +95,9 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AudienceFilt
       "In Progress": 0,
       Denied: 3,
     },
+    statusCountsLoading: false,
     statusCountsErrorMessage: null,
-    onSelectAllStatuses: () => undefined,
+    onToggleAllStatuses: () => undefined,
     onProjectChange: () => undefined,
     onStatusToggle: () => undefined,
     ...overrides,
@@ -144,19 +146,19 @@ describe("AudienceFilterPanel", () => {
         "Toggle expedition-member status Waitlist",
       ),
     ).toBe(true);
-    expect(document.body.textContent).toContain("Top-funnel");
-    expect(document.body.textContent).toContain("Off-funnel");
-    expect(document.body.textContent).not.toContain("Mid-funnel");
+    expect(document.body.textContent).toContain("TOP-FUNNEL");
+    expect(document.body.textContent).toContain("OFF-FUNNEL");
+    expect(document.body.textContent).not.toContain("MID-FUNNEL");
   });
 
   it("fires project, select-all, and status callbacks when those controls change", () => {
     const projectChange = vi.fn();
-    const selectAllStatuses = vi.fn();
+    const toggleAllStatuses = vi.fn();
     const statusToggle = vi.fn();
 
     renderPanel({
       onProjectChange: projectChange,
-      onSelectAllStatuses: selectAllStatuses,
+      onToggleAllStatuses: toggleAllStatuses,
       onStatusToggle: statusToggle,
     });
 
@@ -199,7 +201,7 @@ describe("AudienceFilterPanel", () => {
 
     expect(projectChange).toHaveBeenCalledWith("project-a");
     expect(statusToggle).toHaveBeenCalledWith("Waitlist");
-    expect(selectAllStatuses).toHaveBeenCalled();
+    expect(toggleAllStatuses).toHaveBeenCalledWith(true);
   });
 
   it("applies the stage tone classes and hides empty stages", () => {
@@ -237,7 +239,7 @@ describe("AudienceFilterPanel", () => {
     expect(waitlistButton.getAttribute("aria-checked")).toBe("true");
     expect(waitlistButton.className).toContain("bg-emerald-600");
     expect(deniedButton.className).toContain("bg-rose-50");
-    expect(document.body.textContent).not.toContain("Mid-funnel");
+    expect(document.body.textContent).not.toContain("MID-FUNNEL");
   });
 
   it("renders a locked pill for single-project aliases", () => {
