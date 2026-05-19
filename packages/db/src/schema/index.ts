@@ -24,6 +24,7 @@ import {
   messageAttachments,
   manualNoteDetails,
   orgSettings,
+  postmarkWebhookDeadLetter,
   pendingComposerOutbounds,
   projectAliases,
   projectKnowledgeEntries,
@@ -46,6 +47,7 @@ import {
 export const databaseSchema = {
   sourceEvidenceLog,
   sourceEvidenceQuarantine,
+  postmarkWebhookDeadLetter,
   aiKnowledgeEntries,
   campaignRuns,
   audienceSnapshots,
