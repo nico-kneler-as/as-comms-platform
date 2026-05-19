@@ -28,7 +28,7 @@ function sha256(value: string): string {
 }
 
 function recipientLogId(recipient: string): string {
-  return sha256(recipient.trim().toLowerCase());
+  return sha256(recipient.trim().toLowerCase()).slice(0, 16);
 }
 
 function toFailureMessage(error: unknown): string {
@@ -300,7 +300,7 @@ async function processEvent(
         event: "postmark.webhook.snapshot_not_found",
         recordType: event.RecordType,
         messageId: event.MessageID,
-        recipientLogId: recipientLogId(event.Recipient),
+        recipientHash: recipientLogId(event.Recipient),
       }),
     );
     return;

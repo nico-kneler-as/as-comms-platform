@@ -151,8 +151,20 @@ function buildLivePostmarkClient() {
   });
 }
 
+function trimNonEmpty(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? null : trimmed;
+}
+
 async function createCampaignOrchestrator() {
   const runtime = await getStage1WebRuntime();
+  // Web-side orchestrator only handles freeze/cancel/etc.; the worker
+  // does the actual sendBatch. appUrl is still required by the deps
+  // interface so unsubscribe-footer wiring stays consistent end-to-end.
+  const appUrl =
+    trimNonEmpty(process.env.NEXT_PUBLIC_APP_URL) ??
+    trimNonEmpty(process.env.WEB_BASE_URL) ??
+    "http://localhost:3000";
 
   return {
     runtime,
@@ -161,6 +173,7 @@ async function createCampaignOrchestrator() {
         campaignRuns: runtime.campaigns.campaignRuns,
         audienceSnapshots: runtime.campaigns.audienceSnapshots,
         settingsProjects: runtime.settings.projects,
+        orgSettings: runtime.campaigns.orgSettings,
         auditEvidence: runtime.repositories.auditEvidence,
       },
       audienceResolver: createAudienceResolver({
@@ -181,6 +194,7 @@ async function createCampaignOrchestrator() {
       }),
       mergeRenderer: createMergeRenderer(),
       postmarkClient: buildPostmarkClientForActions(),
+      appUrl,
     }),
   };
 }
