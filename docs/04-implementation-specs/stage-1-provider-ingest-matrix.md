@@ -9,7 +9,7 @@
 
 - narrowed launch-scope completion is Gmail + Salesforce only
 - SimpleTexting remains a valid Stage 1 architecture path, but it is deferred for initial launch acceptance
-- Mailchimp is now an active transition-period live-ingest path until Postmark cutover (Stage 5A Phase C per `D-045`); see the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
+- Mailchimp is now an active transition-period live-ingest path until Postmark cutover (Stage 5C per `D-046`); see the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
 - Historical backfill and live ingest must map into the same normalization path.
 - Keep provider scope narrow and explicit.
 - If a source record cannot be mapped safely in Stage 1, defer it or send it to review; do not widen the matrix by guesswork.
@@ -133,7 +133,7 @@
 
 Launch-scope note:
 
-- live transition path active until Postmark cutover (Stage 5A Phase C per `D-045`)
+- live transition path active until Postmark cutover (Stage 5C per `D-046`)
 - decommission sequence: [mailchimp-decommission.md](../runbooks/mailchimp-decommission.md)
 
 ### Required first pass
@@ -227,7 +227,7 @@ Launch-scope note:
 ### Historical backfill vs live ingest
 
 - historical broadcast activity is the first-priority Stage 1 scope
-- transition-period live ingest is active during the Mailchimp → Postmark cutover window (Stage 5A Phase C per `D-045`) and uses the same event taxonomy and normalization path
+- transition-period live ingest is active during the Mailchimp → Postmark cutover window (Stage 5C per `D-046`) and uses the same event taxonomy and normalization path
 - once Postmark is trusted, disable scheduling, drain the 30-day tail, and retire the capture service per the decommission runbook
 
 ### Tie-break and identity-anchor notes

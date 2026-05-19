@@ -1,11 +1,13 @@
 # Stage 5A Email Broadcasts — Implementation Spec
 
-**Role:** load-bearing constraint scaffolding for the Phase A → C build  
-**Audience:** Codex briefs + reviewing engineers + future agents picking up Stage 5A work  
-**When to read:** before writing any Phase A code; after PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and `02-bundles/campaigns-bundle.md`  
-**Authority:** implementation-spec layer under the core canon; `01-core/*` + `D-045` win on contradictions  
+**Role:** load-bearing constraint scaffolding for the Stage 5A build (historical "Phase A → C" naming preserved below; see mapping note)  
+**Audience:** Codex briefs + reviewing engineers + future agents picking up Stage 5A / 5B / 5C work  
+**When to read:** before writing any Stage 5A / 5C code; after PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and `02-bundles/campaigns-bundle.md`  
+**Authority:** implementation-spec layer under the core canon; `01-core/*` + `D-045` + `D-046` win on contradictions  
 **Decides:** module-to-package placement, naming, reuse vs new, migration ordering, brief dependency graph  
 **Does not decide:** product behavior (PRD) or visual design (design brief at `docs/design-briefs/stage-5a-campaigns.md`)
+
+> **Naming note (2026-05-19, `D-046`):** this spec was authored when Stage 5A bundled four phases (A / B / C / D=5B). The terminology was restructured into discrete stages on 2026-05-19. **Map old → new while reading:** "Phase A" → **Stage 5A** (Email Broadcasts, project-scope, shipped); "Phase B" + "Phase C" → **Stage 5C** (Newsletters + Unlayer HTML + Mailchimp decommission, deferred behind 5A operator validation); "Phase D / 5B" → **Stage 5B** (SMS, gated on A2P 10DLC approval, independent of email work); "Stage 6 (Reporting)" → **Stage 6 (Workflows replacing Salesforce Auto-Emails, undefined roadmap intent)**. The Phase A schema and code described below are accurate to what shipped; the Phase B/C plans below feed into Stage 5C work whenever it's dispatched.
 
 ## Summary
 
