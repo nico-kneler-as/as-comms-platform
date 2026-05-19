@@ -457,6 +457,10 @@ export function NewCampaignWizard({
     () => readAliasProjectsForSender(bootstrap, selectedSenderOption),
     [bootstrap, selectedSenderOption],
   );
+  const aliasProjectIds = useMemo(
+    () => normalizeProjectIds(aliasProjects.map((project) => project.id)),
+    [aliasProjects],
+  );
   const kind = kindForAudienceMode(criteria.initialFilter ?? "project_status");
   const fingerprint = useMemo(
     () =>
@@ -715,7 +719,7 @@ export function NewCampaignWizard({
       return;
     }
 
-    if (selectedProjectIds.length === 0 || volunteerSearchQuery.trim().length < 2) {
+    if (aliasProjectIds.length === 0 || volunteerSearchQuery.trim().length < 2) {
       setVolunteerSearchRows([]);
       setVolunteerSearchErrorMessage(null);
       return;
@@ -725,7 +729,7 @@ export function NewCampaignWizard({
     const timer = setTimeout(() => {
       startVolunteerSearchTransition(async () => {
         const result = await searchProjectVolunteersAction({
-          projectIds: selectedProjectIds,
+          aliasProjectIds,
           query: volunteerSearchQuery,
         });
         if (requestId !== volunteerSearchRequestRef.current) {
@@ -746,9 +750,9 @@ export function NewCampaignWizard({
       clearTimeout(timer);
     };
   }, [
+    aliasProjectIds,
     criteria.initialFilter,
     currentStep,
-    selectedProjectIds,
     volunteerSearchQuery,
   ]);
 
@@ -1145,7 +1149,7 @@ export function NewCampaignWizard({
                 volunteerSearchRows={volunteerSearchRows}
                 volunteerSearchLoading={volunteerSearchPending}
                 volunteerSearchErrorMessage={volunteerSearchErrorMessage}
-                projectGroups={bootstrap.projects}
+                projectOptions={aliasProjects}
                 statusOptions={bootstrap.statuses}
                 statusCounts={statusCounts}
                 statusCountsErrorMessage={statusCountsErrorMessage}

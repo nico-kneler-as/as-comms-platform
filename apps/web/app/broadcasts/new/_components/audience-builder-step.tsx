@@ -25,7 +25,7 @@ import type {
   AudiencePreviewRow,
   AudienceStatusCounts,
   AudienceVolunteerSearchRow,
-  CampaignProjectGroup,
+  CampaignProjectOption,
 } from "../../_lib/audience-data-source";
 import { AudienceFilterPanel } from "./audience-filter-panel";
 import { AudiencePreviewList } from "./audience-preview-list";
@@ -72,7 +72,7 @@ interface AudienceBuilderStepProps {
   readonly volunteerSearchRows: readonly AudienceVolunteerSearchRow[];
   readonly volunteerSearchLoading: boolean;
   readonly volunteerSearchErrorMessage: string | null;
-  readonly projectGroups: readonly CampaignProjectGroup[];
+  readonly projectOptions: readonly CampaignProjectOption[];
   readonly statusOptions: readonly ExpeditionMemberStatus[];
   readonly statusCounts: AudienceStatusCounts;
   readonly statusCountsErrorMessage: string | null;
@@ -98,7 +98,7 @@ export function AudienceBuilderStep({
   volunteerSearchRows,
   volunteerSearchLoading,
   volunteerSearchErrorMessage,
-  projectGroups,
+  projectOptions,
   statusOptions,
   statusCounts,
   statusCountsErrorMessage,
@@ -112,6 +112,18 @@ export function AudienceBuilderStep({
   onContinue,
 }: AudienceBuilderStepProps) {
   const initialFilter = criteria.initialFilter ?? "project_status";
+  const canContinue =
+    initialFilter === "project_status"
+      ? [
+          ...(criteria.projectId == null ? [] : [criteria.projectId]),
+          ...criteria.projectIds,
+        ].filter((projectId, index, values) => values.indexOf(projectId) === index)
+          .length > 0 &&
+        criteria.statuses.length > 0 &&
+        countState.count > 0
+      : initialFilter === "specific"
+        ? (criteria.contactIds?.length ?? 0) > 0 && countState.count > 0
+        : countState.count > 0;
 
   return (
     <section className="flex h-full flex-col">
@@ -141,7 +153,7 @@ export function AudienceBuilderStep({
           <>
             <AudienceFilterPanel
               criteria={criteria}
-              projectGroups={projectGroups}
+              projectOptions={projectOptions}
               statusOptions={statusOptions}
               statusCounts={statusCounts}
               statusCountsErrorMessage={statusCountsErrorMessage}
@@ -155,28 +167,11 @@ export function AudienceBuilderStep({
               loading={previewLoading}
               errorMessage={previewErrorMessage}
             />
-
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11.5px] text-slate-600">
-              Always auto-excluded: unsubscribed contacts, hard-bounced
-              addresses, and anyone without an email on file.
-            </div>
           </>
         ) : null}
 
         {initialFilter === "specific" ? (
           <>
-            <AudienceFilterPanel
-              criteria={criteria}
-              projectGroups={projectGroups}
-              statusOptions={statusOptions}
-              statusCounts={statusCounts}
-              statusCountsErrorMessage={statusCountsErrorMessage}
-              showStatusSection={false}
-              onProjectChange={onProjectChange}
-              onSelectAllStatuses={onSelectAllStatuses}
-              onStatusToggle={onStatusToggle}
-            />
-
             <SpecificVolunteerSelector
               criteria={criteria}
               query={volunteerSearchQuery}
@@ -192,11 +187,6 @@ export function AudienceBuilderStep({
               loading={previewLoading}
               errorMessage={previewErrorMessage}
             />
-
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11.5px] text-slate-600">
-              Always auto-excluded: unsubscribed contacts, hard-bounced
-              addresses, and anyone without an email on file.
-            </div>
           </>
         ) : null}
 
@@ -222,7 +212,17 @@ export function AudienceBuilderStep({
         <Button variant="outline" onClick={onBack}>
           Back
         </Button>
-        <Button onClick={onContinue}>Continue to compose</Button>
+        <Button
+          onClick={() => {
+            if (canContinue) {
+              onContinue();
+            }
+          }}
+          aria-disabled={!canContinue}
+          disabled={!canContinue}
+        >
+          Continue to compose
+        </Button>
       </div>
     </section>
   );
@@ -386,7 +386,7 @@ function SpecificVolunteerSelector({
   if (selectedProjectIds.length === 0) {
     return (
       <section className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-[12.5px] text-slate-600">
-        Select at least one project above to find volunteers.
+        No sender-scoped projects are available for volunteer search.
       </section>
     );
   }
@@ -425,11 +425,11 @@ function SpecificVolunteerSelector({
           </div>
         ) : query.trim().length < 2 ? (
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-[12px] text-slate-500">
-            Type at least 2 characters to search within the selected projects.
+            Type at least 2 characters to search within this sender alias.
           </div>
         ) : rows.length === 0 ? (
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-[12px] text-slate-500">
-            No matching volunteers found in the selected projects.
+            No matching volunteers found for this sender alias.
           </div>
         ) : (
           <div
