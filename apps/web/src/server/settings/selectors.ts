@@ -271,7 +271,11 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   mailchimp: "Mailchimp",
   postmark: "Postmark"
 };
-const MAILCHIMP_HEALTHY_WINDOW_MS = 70 * 60 * 1000;
+// Mailchimp is in transition-period scaling (D-046 Stage 5C, target mid-June 2026
+// decommission). Newsletter cadence is irregular, and multi-hour quiet periods are
+// routine, so only surface "Sync stale" for likely breakage rather than expected gaps
+// between campaigns. Remove this once Mailchimp is fully decommissioned.
+const MAILCHIMP_HEALTHY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAILCHIMP_AUTO_HIDE_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
 
 interface MailchimpSnapshotRow {
