@@ -37,7 +37,7 @@ export type AudienceInitialFilter =
   | "all_approved";
 
 export type CampaignAudienceCriteria = AudienceCriteria & {
-  readonly initialFilter?: AudienceInitialFilter;
+  readonly initialFilter?: AudienceInitialFilter | undefined;
 };
 
 const MODE_META: Record<
@@ -63,6 +63,7 @@ const MODE_META: Record<
 
 interface AudienceBuilderStepProps {
   readonly availableModes: readonly AudienceInitialFilter[];
+  readonly hasPickedMode: boolean;
   readonly criteria: CampaignAudienceCriteria;
   readonly countState: AudienceCountData;
   readonly previewRows: readonly AudiencePreviewRow[];
@@ -90,6 +91,7 @@ interface AudienceBuilderStepProps {
 
 export function AudienceBuilderStep({
   availableModes,
+  hasPickedMode,
   criteria,
   countState,
   previewRows,
@@ -114,9 +116,10 @@ export function AudienceBuilderStep({
   onBack,
   onContinue,
 }: AudienceBuilderStepProps) {
-  const initialFilter = criteria.initialFilter ?? "project_status";
+  const initialFilter = criteria.initialFilter;
   const canContinue =
     !countLoading &&
+    initialFilter !== undefined &&
     (initialFilter === "project_status"
       ? [
           ...(criteria.projectId == null ? [] : [criteria.projectId]),
@@ -147,70 +150,80 @@ export function AudienceBuilderStep({
       <div className="space-y-4">
         <AudienceCountPanel countState={countState} loading={countLoading} />
 
-        <InitialFilterSelector
-          modes={availableModes}
-          value={initialFilter}
-          onChange={onInitialFilterChange}
-        />
-
-        {initialFilter === "project_status" ? (
+        {hasPickedMode ? (
           <>
-            <AudienceFilterPanel
-              criteria={criteria}
-              projectOptions={projectOptions}
-              statusOptions={statusOptions}
-              statusCounts={statusCounts}
-              statusCountsLoading={statusCountsLoading}
-              statusCountsErrorMessage={statusCountsErrorMessage}
-              onProjectChange={onProjectChange}
-              onToggleAllStatuses={onToggleAllStatuses}
-              onStatusToggle={onStatusToggle}
+            <ModeSegmentedControl
+              modes={availableModes}
+              value={initialFilter}
+              onChange={onInitialFilterChange}
             />
 
-            <AudiencePreviewList
-              rows={previewRows}
-              loading={previewLoading}
-              errorMessage={previewErrorMessage}
-            />
+            {initialFilter === "project_status" ? (
+              <>
+                <AudienceFilterPanel
+                  criteria={criteria}
+                  projectOptions={projectOptions}
+                  statusOptions={statusOptions}
+                  statusCounts={statusCounts}
+                  statusCountsLoading={statusCountsLoading}
+                  statusCountsErrorMessage={statusCountsErrorMessage}
+                  onProjectChange={onProjectChange}
+                  onToggleAllStatuses={onToggleAllStatuses}
+                  onStatusToggle={onStatusToggle}
+                />
+
+                <AudiencePreviewList
+                  rows={previewRows}
+                  loading={previewLoading}
+                  errorMessage={previewErrorMessage}
+                />
+              </>
+            ) : null}
+
+            {initialFilter === "specific" ? (
+              <>
+                <SpecificVolunteerSelector
+                  criteria={criteria}
+                  query={volunteerSearchQuery}
+                  rows={volunteerSearchRows}
+                  loading={volunteerSearchLoading}
+                  errorMessage={volunteerSearchErrorMessage}
+                  onQueryChange={onVolunteerSearchQueryChange}
+                  onToggle={onVolunteerToggle}
+                />
+
+                <AudiencePreviewList
+                  rows={previewRows}
+                  loading={previewLoading}
+                  errorMessage={previewErrorMessage}
+                />
+              </>
+            ) : null}
+
+            {initialFilter === "all_approved" ? (
+              <>
+                <section className="rounded-lg border border-slate-200 bg-white px-4 py-4">
+                  <p className="text-[13px] leading-relaxed text-slate-600">
+                    This broadcast goes to every approved contact across all
+                    projects, minus auto-exclusions.
+                  </p>
+                </section>
+
+                <AudiencePreviewList
+                  rows={previewRows}
+                  loading={previewLoading}
+                  errorMessage={previewErrorMessage}
+                />
+              </>
+            ) : null}
           </>
-        ) : null}
-
-        {initialFilter === "specific" ? (
-          <>
-            <SpecificVolunteerSelector
-              criteria={criteria}
-              query={volunteerSearchQuery}
-              rows={volunteerSearchRows}
-              loading={volunteerSearchLoading}
-              errorMessage={volunteerSearchErrorMessage}
-              onQueryChange={onVolunteerSearchQueryChange}
-              onToggle={onVolunteerToggle}
-            />
-
-            <AudiencePreviewList
-              rows={previewRows}
-              loading={previewLoading}
-              errorMessage={previewErrorMessage}
-            />
-          </>
-        ) : null}
-
-        {initialFilter === "all_approved" ? (
-          <>
-            <section className="rounded-lg border border-slate-200 bg-white px-4 py-4">
-              <p className="text-[13px] leading-relaxed text-slate-600">
-                This broadcast goes to every approved contact across all
-                projects, minus auto-exclusions.
-              </p>
-            </section>
-
-            <AudiencePreviewList
-              rows={previewRows}
-              loading={previewLoading}
-              errorMessage={previewErrorMessage}
-            />
-          </>
-        ) : null}
+        ) : (
+          <InitialFilterSelector
+            modes={availableModes}
+            value={undefined}
+            onChange={onInitialFilterChange}
+          />
+        )}
       </div>
 
       <div className="mt-5 flex items-center justify-between border-t border-slate-200 pt-5">
@@ -239,7 +252,7 @@ function InitialFilterSelector({
   onChange,
 }: {
   readonly modes: readonly AudienceInitialFilter[];
-  readonly value: AudienceInitialFilter;
+  readonly value: AudienceInitialFilter | undefined;
   readonly onChange: (value: AudienceInitialFilter) => void;
 }) {
   return (
@@ -301,6 +314,47 @@ function InitialFilterSelector({
   );
 }
 
+function ModeSegmentedControl({
+  modes,
+  value,
+  onChange,
+}: {
+  readonly modes: readonly AudienceInitialFilter[];
+  readonly value: AudienceInitialFilter | undefined;
+  readonly onChange: (value: AudienceInitialFilter) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Audience mode"
+      className="inline-flex items-center gap-0 rounded-full border border-slate-200 bg-slate-50 p-0.5"
+    >
+      {modes.map((mode) => {
+        const selected = value === mode;
+        return (
+          <button
+            key={mode}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => {
+              onChange(mode);
+            }}
+            className={cn(
+              `rounded-full px-3.5 py-1.5 text-[12.5px] font-medium ${TRANSITION.fast} ${FOCUS_RING}`,
+              selected
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900",
+            )}
+          >
+            {MODE_META[mode].title}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AudienceCountPanel({
   countState,
   loading,
@@ -358,7 +412,7 @@ export function AudienceCountPanel({
         </div>
         <p className="mt-2 text-[12.5px] text-slate-600">
           {!countState.hasAppliedFilters
-            ? "Pick a project or volunteer selection to start."
+            ? "Pick an audience mode to start."
             : countState.count > 0
               ? "The live audience is ready to inspect."
               : "No recipients match the current filters."}
@@ -487,7 +541,7 @@ function SpecificVolunteerSelector({
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                      {row.projectAliasHint ?? row.project ?? "No project"}
+                      {row.projectAlias ?? row.project ?? "No project"}
                     </span>
                     {selected ? (
                       <span

@@ -6,6 +6,7 @@ import {
   FOCUS_RING,
   TONE_CLASSES,
   TRANSITION,
+  type ToneClassesV2,
   type ToneNameV2,
 } from "@/app/_lib/design-tokens-v2";
 import type { ExpeditionMemberStatus } from "@as-comms/contracts";
@@ -50,6 +51,16 @@ const STAGE_GROUPS = {
     readonly statuses: readonly ExpeditionMemberStatus[];
   }
 >;
+
+const PROJECT_PILL_TONES = [
+  "emerald",
+  "sky",
+  "violet",
+  "amber",
+  "rose",
+  "indigo",
+  "teal",
+] as const satisfies readonly ToneNameV2[];
 
 interface AudienceFilterPanelProps {
   readonly criteria: CampaignAudienceCriteria;
@@ -131,7 +142,7 @@ export function AudienceFilterPanel({
               )
             }
           >
-            <div className="space-y-2.5">
+            <div className="flex flex-wrap gap-2">
               {projectOptions.map((project) =>
                 hasSingleLockedProject ? (
                   <LockedProjectRow key={project.id} project={project} />
@@ -245,7 +256,7 @@ function ProjectOptionRow({
   readonly selected: boolean;
   readonly onSelect: (projectId: string) => void;
 }) {
-  const aliasAddress = readAliasAddress(project);
+  const tone = readProjectTone(project.id);
 
   return (
     <button
@@ -256,35 +267,24 @@ function ProjectOptionRow({
         onSelect(project.id);
       }}
       className={cn(
-        `flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left ${TRANSITION.fast} ${FOCUS_RING}`,
+        `inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium ring-1 ring-inset ${TRANSITION.fast} ${FOCUS_RING}`,
         selected
-          ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-          : "border-slate-200 bg-slate-50/70 text-slate-700 hover:border-slate-300 hover:bg-white hover:text-slate-900",
+          ? `${tone.bg} text-white ring-transparent shadow-sm`
+          : `${tone.subtle} ${tone.subtleText} ${tone.ring} hover:opacity-90`,
       )}
     >
-      <div className="flex min-w-0 items-center gap-3">
-        <ProjectSelectionIndicator selected={selected} />
+      {selected ? (
+        <Check className="size-3 shrink-0" aria-hidden="true" />
+      ) : (
         <span
           className={cn(
             "size-1.5 shrink-0 rounded-full",
-            selected ? "bg-white/70" : "bg-slate-300",
+            tone.dot,
           )}
           aria-hidden="true"
         />
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold">{project.name}</p>
-          {aliasAddress ? (
-            <p
-              className={cn(
-                "truncate text-[11.5px]",
-                selected ? "text-white/70" : "text-slate-500",
-              )}
-            >
-              {aliasAddress}
-            </p>
-          ) : null}
-        </div>
-      </div>
+      )}
+      <span className="max-w-full truncate">{project.name}</span>
     </button>
   );
 }
@@ -381,24 +381,13 @@ function StageStatusSection({
   );
 }
 
-function ProjectSelectionIndicator({
-  selected,
-}: {
-  readonly selected: boolean;
-}) {
-  return (
-    <span
-      className={cn(
-        "flex size-5 shrink-0 items-center justify-center rounded-full border",
-        selected
-          ? "border-white/20 bg-white/15 text-white"
-          : "border-slate-300 bg-white text-transparent",
-      )}
-      aria-hidden="true"
-    >
-      {selected ? <Check className="size-3" aria-hidden="true" /> : null}
-    </span>
+function readProjectTone(projectId: string): ToneClassesV2 {
+  const hash = Array.from(projectId).reduce(
+    (total, character) => total + character.charCodeAt(0),
+    0,
   );
+  const toneName = PROJECT_PILL_TONES.at(hash % PROJECT_PILL_TONES.length) ?? "emerald";
+  return TONE_CLASSES[toneName];
 }
 
 function readAliasAddress(project: CampaignProjectOption): string | null {
