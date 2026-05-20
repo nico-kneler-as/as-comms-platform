@@ -125,11 +125,28 @@ export interface IntegrationHealthRepository {
   upsert(record: IntegrationHealthRecord): Promise<IntegrationHealthRecord>;
 }
 
+export interface OpsAlertStateRepository {
+  getLastSentAt(
+    category: string,
+    dedupKey: string
+  ): Promise<{
+    readonly lastSentAt: string;
+    readonly lastStatus: string;
+  } | null>;
+  recordSent(input: {
+    readonly category: string;
+    readonly dedupKey: string;
+    readonly sentAt: string;
+    readonly status: "sent";
+  }): Promise<void>;
+}
+
 export interface Stage2RepositoryBundle {
   readonly smsMessages: SmsMessageRepository;
   readonly consentRecords: ConsentRecordRepository;
   readonly smsSenders: SmsSenderRepository;
   readonly integrationHealth: IntegrationHealthRepository;
+  readonly opsAlertState: OpsAlertStateRepository;
   readonly projects: SettingsProjectsRepository;
   readonly users: UsersRepository;
   readonly aliases: ProjectAliasesRepository;

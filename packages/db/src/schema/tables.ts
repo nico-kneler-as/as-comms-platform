@@ -176,6 +176,32 @@ export const postmarkWebhookDeadLetter = pgTable(
   ],
 );
 
+export const opsAlertState = pgTable(
+  "ops_alert_state",
+  {
+    category: text("category").notNull(),
+    dedupKey: text("dedup_key").notNull(),
+    lastSentAt: timestamp("last_sent_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    lastStatus: text("last_status").notNull(),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.category, table.dedupKey],
+      name: "ops_alert_state_pkey",
+    }),
+    check(
+      "ops_alert_state_last_status_check",
+      sql`${table.lastStatus} IN ('sent')`,
+    ),
+    index("ops_alert_state_last_sent_at_idx").on(table.lastSentAt),
+  ],
+);
+
 export const contacts = pgTable(
   "contacts",
   {

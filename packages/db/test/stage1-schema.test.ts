@@ -20,6 +20,7 @@ import {
   databaseSchema,
   internalNotes,
   messageAttachments,
+  opsAlertState,
   orgSettings,
   projectKnowledgeEntries,
   suppressionList,
@@ -56,6 +57,7 @@ describe("Stage 1 DB schema", () => {
       "mailchimpCampaignTailState",
       "manualNoteDetails",
       "messageAttachments",
+      "opsAlertState",
       "orgSettings",
       "pendingComposerOutbounds",
       "postmarkWebhookDeadLetter",
@@ -84,6 +86,7 @@ describe("Stage 1 DB schema", () => {
       "project_knowledge_entries"
     );
     expect(getTableName(messageAttachments)).toBe("message_attachments");
+    expect(getTableName(opsAlertState)).toBe("ops_alert_state");
     expect(getTableName(sourceEvidenceLog)).toBe("source_evidence_log");
     expect(getTableName(sourceEvidenceQuarantine)).toBe(
       "source_evidence_quarantine"

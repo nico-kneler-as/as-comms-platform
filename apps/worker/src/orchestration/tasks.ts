@@ -29,9 +29,11 @@ import {
   type IntegrationHealthRecord
 } from "@as-comms/contracts";
 import type { IntegrationHealthRepository } from "@as-comms/domain";
+import type { OpsAlertStateRepository } from "@as-comms/domain";
 
 import {
-  createIntegrationHealthAlertSender,
+  createIntegrationHealthAlertSenderWithStateRepository,
+  readIntegrationHealthAlertRecipient,
   type IntegrationHealthAlertSender
 } from "../jobs/integration-health/email.js";
 import { mailchimpTransitionSchedulerJobName } from "./mailchimp-transition-scheduler.js";
@@ -55,6 +57,7 @@ const integrationHealthAlertCooldownMs = 60 * 60 * 1000;
 
 export interface IntegrationHealthTaskDependencies {
   readonly integrationHealth: IntegrationHealthRepository;
+  readonly opsAlertState: OpsAlertStateRepository;
   readonly captureBaseUrls: {
     readonly gmail: string;
     readonly salesforce: string;
@@ -336,7 +339,11 @@ function createPollIntegrationHealthTask(
   const now = dependencies.now ?? (() => new Date());
   const alertSender =
     dependencies.alertSender ??
-    createIntegrationHealthAlertSender(process.env, fetchImplementation);
+    createIntegrationHealthAlertSenderWithStateRepository({
+      env: process.env,
+      fetchImplementation,
+      stateRepository: dependencies.opsAlertState,
+    });
   const logger = dependencies.logger ?? console;
 
   return async () => {
@@ -412,18 +419,13 @@ function createPollIntegrationHealthTask(
 
           if (isSuccessfulGmailSendResult(sendResult)) {
             alertSent = true;
-            const configuredRecipient =
-              process.env.INTEGRATION_HEALTH_ALERT_RECIPIENT?.trim();
             logger.info(
               JSON.stringify({
                 event: "integration_health.alert_sent",
                 service,
                 fromStatus: record.status,
                 toStatus: polledRecord.status,
-                recipient:
-                  configuredRecipient && configuredRecipient.length > 0
-                    ? configuredRecipient
-                    : "nico@adventurescientists.org",
+                recipient: readIntegrationHealthAlertRecipient(process.env),
                 occurredAt: occurredAtIso
               })
             );

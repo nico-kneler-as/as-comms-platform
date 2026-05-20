@@ -143,6 +143,7 @@ import {
   mailchimpCampaignActivityDetails,
   mailchimpCampaignTailState,
   messageAttachments,
+  opsAlertState,
   manualNoteDetails,
   orgSettings,
   postmarkWebhookDeadLetter,
@@ -5057,6 +5058,54 @@ function createStage2RepositoriesInternal(
             "Expected integration health row to be returned from upsert.",
           ),
         );
+      },
+    },
+
+    opsAlertState: {
+      async getLastSentAt(category, dedupKey) {
+        const [row] = await db
+          .select({
+            lastSentAt: opsAlertState.lastSentAt,
+            lastStatus: opsAlertState.lastStatus,
+          })
+          .from(opsAlertState)
+          .where(
+            and(
+              eq(opsAlertState.category, category),
+              eq(opsAlertState.dedupKey, dedupKey),
+            ),
+          )
+          .limit(1);
+
+        if (row === undefined) {
+          return null;
+        }
+
+        return {
+          lastSentAt: row.lastSentAt.toISOString(),
+          lastStatus: row.lastStatus,
+        };
+      },
+
+      async recordSent(input) {
+        const sentAt = new Date(input.sentAt);
+
+        await db
+          .insert(opsAlertState)
+          .values({
+            category: input.category,
+            dedupKey: input.dedupKey,
+            lastSentAt: sentAt,
+            lastStatus: input.status,
+          })
+          .onConflictDoUpdate({
+            target: [opsAlertState.category, opsAlertState.dedupKey],
+            set: {
+              lastSentAt: sentAt,
+              lastStatus: input.status,
+              updatedAt: new Date(),
+            },
+          });
       },
     },
 
