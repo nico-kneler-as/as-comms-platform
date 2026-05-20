@@ -627,6 +627,105 @@ describe("settings selectors", () => {
     ]);
   });
 
+  it("preserves active-provider status when the latest probe is still fresh", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    await runtime.context.settings.integrationHealth.seedDefaults();
+    const gmailHealth =
+      await runtime.context.settings.integrationHealth.findById("gmail");
+
+    if (gmailHealth === null) {
+      throw new Error("Expected seeded Gmail integration health row");
+    }
+
+    await runtime.context.settings.integrationHealth.upsert({
+      ...gmailHealth,
+      status: "healthy",
+      detail: "Gmail capture healthy",
+      lastCheckedAt: "2026-05-03T11:45:00.000Z",
+      updatedAt: "2026-05-03T11:45:00.000Z",
+    });
+
+    const viewModel = await loadIntegrationHealth();
+    const gmail = viewModel.integrations.find(
+      (integration) => integration.serviceName === "gmail",
+    );
+
+    expect(gmail).toMatchObject({
+      status: "healthy",
+      detail: "Gmail capture healthy",
+      lastCheckedAt: "2026-05-03T11:45:00.000Z",
+    });
+  });
+
+  it("marks active-provider probes older than 30 minutes as needs attention", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    await runtime.context.settings.integrationHealth.seedDefaults();
+    const postmarkHealth =
+      await runtime.context.settings.integrationHealth.findById("postmark");
+
+    if (postmarkHealth === null) {
+      throw new Error("Expected seeded Postmark integration health row");
+    }
+
+    await runtime.context.settings.integrationHealth.upsert({
+      ...postmarkHealth,
+      status: "healthy",
+      detail: "Postmark sender verified",
+      lastCheckedAt: "2026-05-03T10:00:00.000Z",
+      updatedAt: "2026-05-03T10:00:00.000Z",
+    });
+
+    const viewModel = await loadIntegrationHealth();
+    const postmark = viewModel.integrations.find(
+      (integration) => integration.serviceName === "postmark",
+    );
+
+    expect(postmark).toMatchObject({
+      status: "needs_attention",
+      detail: "Health probe last ran 2 hours ago",
+      lastCheckedAt: "2026-05-03T10:00:00.000Z",
+    });
+  });
+
+  it("does not apply probe staleness to notion", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    await runtime.context.settings.integrationHealth.seedDefaults();
+    const notionHealth =
+      await runtime.context.settings.integrationHealth.findById("notion");
+
+    if (notionHealth === null) {
+      throw new Error("Expected seeded Notion integration health row");
+    }
+
+    await runtime.context.settings.integrationHealth.upsert({
+      ...notionHealth,
+      status: "healthy",
+      detail: "Knowledge sync healthy",
+      lastCheckedAt: "2026-04-22T12:00:00.000Z",
+      updatedAt: "2026-04-22T12:00:00.000Z",
+    });
+
+    const viewModel = await loadIntegrationHealth();
+    const notion = viewModel.integrations.find(
+      (integration) => integration.serviceName === "notion",
+    );
+
+    expect(notion).toMatchObject({
+      status: "healthy",
+      detail: "Knowledge sync healthy",
+      lastCheckedAt: "2026-04-22T12:00:00.000Z",
+    });
+  });
+
   it("derives Mailchimp connected health from the latest successful transition sync and canonical events", async () => {
     if (!runtime) {
       throw new Error("runtime not initialized");
