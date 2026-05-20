@@ -400,7 +400,12 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
                 </span>
               )}
             </div>
-            <div className="hidden items-center gap-1.5 sm:flex">
+            <div className="flex items-center gap-1.5">
+              {detail.isSpam === true ? (
+                <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                  Spam
+                </span>
+              ) : null}
               {contact.hasUnresolved ? (
                 <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                   Unresolved

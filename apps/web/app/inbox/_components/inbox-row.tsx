@@ -49,6 +49,7 @@ export function InboxRow({ item, isActive }: RowProps) {
     Boolean(item.projectLabel) ||
     showAsBadge ||
     showExternalBadge ||
+    item.isSpam === true ||
     item.needsFollowUp;
 
   const prefetchDetail = useCallback(() => {
@@ -154,6 +155,11 @@ export function InboxRow({ item, isActive }: RowProps) {
                 {showExternalBadge ? (
                   <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
                     External
+                  </span>
+                ) : null}
+                {item.isSpam === true ? (
+                  <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                    Spam
                   </span>
                 ) : null}
                 {item.needsFollowUp ? (

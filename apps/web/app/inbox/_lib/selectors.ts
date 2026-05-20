@@ -115,6 +115,29 @@ function findNewestCanonicalEvent(
   return newestEvent;
 }
 
+function hasSpamLabel(labelIds: readonly string[] | null | undefined): boolean {
+  return Array.isArray(labelIds) && labelIds.includes("SPAM");
+}
+
+function hasSpamLabeledInboundGmailEvidence<
+  TGmailDetail extends {
+    readonly labelIds?: readonly string[] | null | undefined;
+  },
+>(input: {
+  readonly events: readonly CanonicalEventRecord[];
+  readonly gmailDetailBySourceEvidenceId: ReadonlyMap<string, TGmailDetail>;
+}): boolean {
+  return input.events.some((event) => {
+    if (event.eventType !== "communication.email.inbound") {
+      return false;
+    }
+
+    return hasSpamLabel(
+      input.gmailDetailBySourceEvidenceId.get(event.sourceEvidenceId)?.labelIds,
+    );
+  });
+}
+
 interface InboxListCacheRow {
   readonly contact: ContactRecord;
   readonly inboxProjection: InboxProjectionRow;
@@ -126,6 +149,7 @@ interface InboxListCacheRow {
   readonly lastInboundAlias: string | null;
   readonly lastNonAliasMessageAt: string | null;
   readonly isUnread: boolean;
+  readonly isSpam: boolean;
   /**
    * Per-contact map of `projectId -> latest occurredAt` for that project's
    * Salesforce lifecycle events. Powers the same "primary project by last
@@ -173,6 +197,7 @@ interface InboxDetailCacheData {
   readonly inboxProjection: InboxDetailProjection;
   readonly projectionAvailable: boolean;
   readonly isUnread: boolean;
+  readonly isSpam: boolean;
   readonly memberships: readonly ContactMembershipRecord[];
   readonly latestNote: {
     readonly body: string;
@@ -208,6 +233,7 @@ interface InboxDetailSummaryCacheData {
   readonly inboxProjection: InboxDetailProjection;
   readonly projectionAvailable: boolean;
   readonly isUnread: boolean;
+  readonly isSpam: boolean;
   readonly memberships: readonly ContactMembershipRecord[];
   readonly latestNote: {
     readonly body: string;
@@ -3363,16 +3389,14 @@ async function readInboxListCacheData(input: {
   const canonicalEventsByContactId =
     groupCanonicalEventsByContactId(canonicalEvents);
   const auditEntriesByContactId = groupAuditEntriesByEntityId(auditEntries);
-  const gmailSourceEvidenceIds = uniqueStrings(
-    canonicalEvents
-      .filter((event) => event.eventType === "communication.email.outbound")
-      .map((event) => event.sourceEvidenceId),
+  const canonicalSourceEvidenceIds = uniqueStrings(
+    canonicalEvents.map((event) => event.sourceEvidenceId),
   );
   const gmailDetails =
-    gmailSourceEvidenceIds.length === 0
+    canonicalSourceEvidenceIds.length === 0
       ? []
       : await runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
-          gmailSourceEvidenceIds,
+          canonicalSourceEvidenceIds,
         );
   const gmailDetailBySourceEvidenceId = new Map(
     gmailDetails.map((detail) => [detail.sourceEvidenceId, detail]),
@@ -3471,6 +3495,10 @@ async function readInboxListCacheData(input: {
           lastInboundAliasByContactId.get(inboxProjection.contactId) ?? null,
         lastNonAliasMessageAt,
         isUnread,
+        isSpam: hasSpamLabeledInboundGmailEvidence({
+          events: rowCanonicalEvents,
+          gmailDetailBySourceEvidenceId,
+        }),
         lastOccurredAtByProjectId,
         conversationProjectFallback,
       } satisfies InboxListCacheRow,
@@ -3650,19 +3678,14 @@ async function readInboxDetailCacheData(
     canonicalEvents.some((event) =>
       occurredAtIsBeforePlatformFullCaptureCutover(event.occurredAt),
     );
-  const gmailSourceEvidenceIds = uniqueStrings(
-    canonicalEvents
-      .filter((event) => event.eventType === "communication.email.outbound")
-      .map((event) => event.sourceEvidenceId),
-  );
   const canonicalSourceEvidenceIds = uniqueStrings(
     canonicalEvents.map((event) => event.sourceEvidenceId),
   );
   const gmailDetails =
-    gmailSourceEvidenceIds.length === 0
+    canonicalSourceEvidenceIds.length === 0
       ? []
       : await runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
-          gmailSourceEvidenceIds,
+          canonicalSourceEvidenceIds,
         );
   const salesforceEventContexts =
     canonicalSourceEvidenceIds.length === 0
@@ -3770,6 +3793,10 @@ async function readInboxDetailCacheData(
     inboxProjection: detailProjection,
     projectionAvailable,
     isUnread,
+    isSpam: hasSpamLabeledInboundGmailEvidence({
+      events: canonicalEvents,
+      gmailDetailBySourceEvidenceId,
+    }),
     memberships,
     latestNote,
     activityTimelineItems,
@@ -3902,19 +3929,14 @@ async function readInboxDetailSummaryCacheData(
     aliasesByProjectId.set(aliasRecord.projectId, aliases);
   }
 
-  const gmailSourceEvidenceIds = uniqueStrings(
-    canonicalEvents
-      .filter((event) => event.eventType === "communication.email.outbound")
-      .map((event) => event.sourceEvidenceId),
-  );
   const canonicalSourceEvidenceIds = uniqueStrings(
     canonicalEvents.map((event) => event.sourceEvidenceId),
   );
   const [gmailDetails, salesforceEventContexts] = await Promise.all([
-    gmailSourceEvidenceIds.length === 0
+    canonicalSourceEvidenceIds.length === 0
       ? Promise.resolve([])
       : runtime.repositories.gmailMessageDetails.listBySourceEvidenceIds(
-          gmailSourceEvidenceIds,
+          canonicalSourceEvidenceIds,
         ),
     canonicalSourceEvidenceIds.length === 0
       ? Promise.resolve([])
@@ -3948,6 +3970,10 @@ async function readInboxDetailSummaryCacheData(
     inboxProjection: detailProjection,
     projectionAvailable,
     isUnread,
+    isSpam: hasSpamLabeledInboundGmailEvidence({
+      events: canonicalEvents,
+      gmailDetailBySourceEvidenceId,
+    }),
     memberships,
     latestNote,
     activityTimelineItems,
@@ -4176,6 +4202,7 @@ function toListItemViewModel(
     volunteerStage: mapVolunteerStage(sortedMemberships),
     bucket: mapBucket(row.inboxProjection.bucket),
     needsFollowUp: row.inboxProjection.needsFollowUp,
+    isSpam: row.isSpam,
     hasUnresolved: row.inboxProjection.hasUnresolved,
     isArchived: row.inboxProjection.archivedAt !== null,
     isUnread: row.isUnread,
@@ -4391,6 +4418,7 @@ function buildInboxDetailSummaryViewModel(input: {
     avatarTone: avatarToneForContact(input.cachedData.contact.id),
     bucket: mapBucket(input.cachedData.inboxProjection.bucket),
     needsFollowUp: input.cachedData.inboxProjection.needsFollowUp,
+    isSpam: input.cachedData.isSpam,
     isArchived: input.cachedData.inboxProjection.archivedAt !== null,
     isUnread: input.cachedData.isUnread,
     smsEligible: input.cachedData.contact.primaryPhone !== null,

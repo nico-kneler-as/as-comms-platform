@@ -93,6 +93,7 @@ const baseItem: InboxListItemViewModel = {
   volunteerStage: "active",
   bucket: "new",
   needsFollowUp: false,
+  isSpam: false,
   hasUnresolved: false,
   isArchived: false,
   isUnread: true,
@@ -245,5 +246,18 @@ describe("InboxRow unread dot", () => {
       container.querySelector('[data-testid="inbox-row-unread-dot"]'),
     ).toBeNull();
     expect(container.textContent).not.toContain("Unread");
+  });
+
+  it("renders a Spam badge when the inbox row is flagged as spam", () => {
+    const container = renderRow({
+      isSpam: true,
+      projectLabel: null,
+      needsFollowUp: false,
+      volunteerStage: "active",
+      primaryEmail: "alex@example.com",
+    });
+
+    expect(container.textContent).toContain("Spam");
+    expect(container.textContent).not.toContain("External");
   });
 });

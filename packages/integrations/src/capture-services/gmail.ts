@@ -334,7 +334,7 @@ export function createGmailMailboxApiClient(
           `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(mailbox)}/messages`
         );
         url.searchParams.set("maxResults", "500");
-        url.searchParams.set("includeSpamTrash", "false");
+        url.searchParams.set("includeSpamTrash", "true");
         if (query !== null) {
           url.searchParams.set("q", query);
         }
@@ -397,7 +397,7 @@ function isGmailMessageRecord(record: GmailRecord): record is GmailMessageRecord
   return record.recordType === "message";
 }
 
-function buildGmailListQuery(input: {
+export function buildGmailListQuery(input: {
   readonly windowStart: string | null;
   readonly windowEnd: string | null;
 }): string | null {
