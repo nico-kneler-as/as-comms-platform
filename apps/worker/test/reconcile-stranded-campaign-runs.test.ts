@@ -54,17 +54,67 @@ function buildDraftInput(
   }
 }
 
-async function installGraphileJobsTable(context: WorkerContext): Promise<void> {
+async function installGraphileWorkerSchema(context: WorkerContext): Promise<void> {
   await context.client.exec(`
     create schema if not exists graphile_worker;
-    create table if not exists graphile_worker.jobs (
+
+    create table if not exists graphile_worker._private_tasks (
+      id integer primary key,
+      identifier text not null unique
+    );
+
+    create table if not exists graphile_worker._private_jobs (
       id text primary key,
-      task_identifier text not null,
-      payload jsonb not null default '{}'::jsonb,
+      task_id integer not null references graphile_worker._private_tasks(id),
+      payload json not null default '{}'::json,
       run_at timestamptz not null default now(),
       attempts integer not null default 0,
       max_attempts integer not null default 25,
       locked_at timestamptz null
+    );
+
+    create or replace view graphile_worker.jobs as
+      select
+        jobs.id,
+        tasks.identifier as task_identifier,
+        jobs.run_at,
+        jobs.attempts,
+        jobs.max_attempts,
+        jobs.locked_at
+      from graphile_worker._private_jobs jobs
+      join graphile_worker._private_tasks tasks on tasks.id = jobs.task_id;
+  `)
+}
+
+async function seedGraphileWorkerJob(
+  context: WorkerContext,
+  input: {
+    readonly id: string
+    readonly taskIdentifier: string
+    readonly payload: string
+    readonly attempts?: number
+    readonly maxAttempts?: number
+  },
+): Promise<void> {
+  await context.client.exec(`
+    insert into graphile_worker._private_tasks (id, identifier)
+    values (1, '${input.taskIdentifier}')
+    on conflict (id) do update
+      set identifier = excluded.identifier;
+
+    insert into graphile_worker._private_jobs (
+      id,
+      task_id,
+      payload,
+      attempts,
+      max_attempts
+    )
+    values (
+      '${input.id}',
+      1,
+      '${input.payload}'::json,
+      ${String(input.attempts ?? 0)},
+      ${String(input.maxAttempts ?? campaignSendJobMaxAttempts)}
     );
   `)
 }
@@ -125,7 +175,7 @@ describe("reconcile stranded campaign runs", () => {
     const scheduled: string[] = []
 
     try {
-      await installGraphileJobsTable(context)
+      await installGraphileWorkerSchema(context)
       await seedProject(context)
       const runId = await seedSendingRun(context)
 
@@ -170,7 +220,7 @@ describe("reconcile stranded campaign runs", () => {
     const addJob = vi.fn(() => Promise.resolve(null))
 
     try {
-      await installGraphileJobsTable(context)
+      await installGraphileWorkerSchema(context)
       await seedProject(context)
       const runId = await seedSendingRun(context, {
         runId: "run-stranded-task",
@@ -205,6 +255,48 @@ describe("reconcile stranded campaign runs", () => {
       })
 
       expect(taskList[reconcileStrandedCampaignRunsJobName]).toBeDefined()
+    } finally {
+      await context.dispose()
+    }
+  })
+
+  it("does not re-enqueue sending runs that still have a live campaign-send job", async () => {
+    const context = await createTestWorkerContext()
+    const scheduled: string[] = []
+
+    try {
+      await installGraphileWorkerSchema(context)
+      await seedProject(context)
+      const runId = await seedSendingRun(context, {
+        runId: "run-live-job",
+      })
+
+      await seedGraphileWorkerJob(context, {
+        id: "job-live-run",
+        taskIdentifier: campaignSendJobName,
+        payload: JSON.stringify({ runId }),
+      })
+
+      const report = await reconcileStrandedCampaignRuns({
+        db: context.db,
+        repositories: context.repositories,
+        scheduleRecovery: (candidateRunId) => {
+          scheduled.push(candidateRunId)
+          return Promise.resolve()
+        },
+        now: () => new Date("2026-05-15T14:00:00.000Z"),
+        logger: {
+          log: () => undefined,
+        },
+      })
+
+      expect(report).toMatchObject({
+        scanned: 0,
+        reenqueued: 0,
+        agedOut: 0,
+        runIds: [],
+      })
+      expect(scheduled).toEqual([])
     } finally {
       await context.dispose()
     }

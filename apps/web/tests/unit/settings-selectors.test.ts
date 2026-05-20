@@ -825,7 +825,7 @@ describe("settings selectors", () => {
     });
   });
 
-  it("marks Mailchimp stale when the last successful transition sync is older than 70 minutes", async () => {
+  it("marks Mailchimp stale when the last successful transition sync is older than 24 hours", async () => {
     if (!runtime) {
       throw new Error("runtime not initialized");
     }
@@ -839,13 +839,13 @@ describe("settings selectors", () => {
       provider: "mailchimp",
       jobType: "live_ingest",
       cursor: null,
-      windowStart: "2026-05-03T09:00:00.000Z",
-      windowEnd: "2026-05-03T09:10:00.000Z",
+      windowStart: "2026-05-02T11:00:00.000Z",
+      windowEnd: "2026-05-02T11:10:00.000Z",
       status: "succeeded",
       parityPercent: null,
       freshnessP95Seconds: null,
       freshnessP99Seconds: null,
-      lastSuccessfulAt: "2026-05-03T09:10:00.000Z",
+      lastSuccessfulAt: "2026-05-02T11:10:00.000Z",
       consecutiveFailureCount: 0,
       leaseOwner: null,
       heartbeatAt: null,
