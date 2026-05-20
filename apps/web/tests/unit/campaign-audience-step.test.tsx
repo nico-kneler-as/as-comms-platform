@@ -1,6 +1,10 @@
+import { createRequire } from "node:module";
+
 import React from "react";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 Object.assign(globalThis, { React });
 
@@ -26,6 +30,68 @@ vi.mock("@/components/ui/input", () => ({
 }));
 
 import { AudienceBuilderStep } from "../../app/broadcasts/new/_components/audience-builder-step";
+import type {
+  AudienceBuilderBootstrap,
+  CampaignWizardDraftData,
+} from "../../app/broadcasts/_lib/audience-data-source";
+
+const workerRequire = createRequire(import.meta.url);
+const { JSDOM } = workerRequire("jsdom") as {
+  readonly JSDOM: new (
+    html?: string,
+    options?: {
+      readonly url?: string;
+      readonly pretendToBeVisual?: boolean;
+    },
+  ) => {
+    readonly window: Window & typeof globalThis;
+  };
+};
+
+let root: Root | null = null;
+
+function setupDom() {
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    url: "http://localhost/broadcasts/new",
+    pretendToBeVisual: true,
+  });
+
+  globalThis.window = dom.window;
+  globalThis.document = dom.window.document;
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: dom.window.navigator,
+  });
+  globalThis.HTMLElement = dom.window.HTMLElement;
+  globalThis.HTMLButtonElement = dom.window.HTMLButtonElement;
+  globalThis.HTMLInputElement = dom.window.HTMLInputElement;
+  globalThis.MouseEvent = dom.window.MouseEvent;
+  globalThis.Event = dom.window.Event;
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+    true;
+
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+}
+
+async function settleAsyncWork() {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+afterEach(() => {
+  act(() => {
+    root?.unmount();
+  });
+  if (typeof document !== "undefined") {
+    document.body.innerHTML = "";
+  }
+  root = null;
+  vi.resetModules();
+  vi.clearAllMocks();
+});
 
 const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   availableModes: ["project_status", "specific"],
@@ -184,6 +250,262 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
     expect(validMarkup).not.toMatch(
       /<button[^>]*aria-disabled="true"[^>]*>Continue to compose<\/button>/,
+    );
+  });
+
+  it("does not retrigger the member-status-counts fetch when only statuses change", async () => {
+    setupDom();
+
+    const loadMemberStatusCountsForProjects = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: { Waitlist: 5 },
+      }),
+    );
+    const resolveAudienceCountAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: { count: 5, hasAppliedFilters: true },
+      }),
+    );
+    const previewAudienceAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: [],
+      }),
+    );
+    const searchProjectVolunteersAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: [],
+      }),
+    );
+    const loadComposePreviewAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: {
+          audienceSize: 0,
+          sampleIndex: 0,
+          sampleCount: 0,
+          sample: null,
+          warningCount: 0,
+          affectedContacts: [],
+          footerAddress: null,
+        },
+      }),
+    );
+    const saveCampaignWizardDraftAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: {
+          runId: "run-1",
+          launchType: "normal_email",
+          kind: "project",
+          name: null,
+          fromEmail: "forests@adventurescientists.org",
+          replyToEmail: "forests@adventurescientists.org",
+          subjectTemplate: null,
+          bodyHtmlTemplate: null,
+          bodyTextTemplate: null,
+          preheader: null,
+          audienceCriteria: {
+            projectId: null,
+            projectIds: [],
+            statuses: [],
+            contactIds: [],
+            expeditionIds: [],
+            lastActivityWindow: "all_time",
+            hasReplied: "either",
+            hasClicked: "either",
+          },
+          audienceSize: null,
+          state: "draft",
+          scheduledAt: null,
+          updatedAt: "2026-05-20T12:00:00.000Z",
+          operatorEmail: "operator@example.com",
+        },
+      }),
+    );
+
+    vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
+      loadMemberStatusCountsForProjects,
+      loadComposePreviewAction,
+      previewAudienceAction,
+      resolveAudienceCountAction,
+      saveCampaignWizardDraftAction,
+      searchProjectVolunteersAction,
+    }));
+    vi.doMock("../../app/broadcasts/actions", () => ({
+      schedule: vi.fn(),
+      sendNow: vi.fn(),
+      testSend: vi.fn(),
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/launch-type-step", () => ({
+      LaunchTypeStep: ({
+        onContinue,
+      }: {
+        readonly onContinue: () => void;
+      }) => <button onClick={onContinue}>Launch continue</button>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/name-and-sender-step", () => ({
+      NameAndSenderStep: ({
+        onContinue,
+      }: {
+        readonly onContinue: () => void;
+      }) => <button onClick={onContinue}>Sender continue</button>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
+      AudienceBuilderStep: ({
+        onStatusToggle,
+      }: {
+        readonly onStatusToggle: (status: string) => void;
+      }) => (
+        <button
+          onClick={() => {
+            onStatusToggle("Waitlist");
+          }}
+        >
+          Toggle Waitlist
+        </button>
+      ),
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/compose-step", () => ({
+      ComposeStep: () => <div>Compose</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/preview-step", () => ({
+      PreviewStep: () => <div>Preview</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/review-step", () => ({
+      ReviewStep: () => <div>Review</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/wizard-rail", () => ({
+      WizardRail: () => null,
+    }));
+
+    const { NewCampaignWizard } = await import(
+      "../../app/broadcasts/new/_components/new-campaign-wizard"
+    );
+
+    const bootstrap: AudienceBuilderBootstrap = {
+      projects: [
+        {
+          host: {
+            id: "host-project",
+            name: "Saving American Beech",
+            alias: null,
+            aliasHint: "forests@",
+            connectedToProjectId: null,
+            isSubProject: false,
+          },
+          connectedSubs: [
+            {
+              id: "sub-project",
+              name: "Restoring Butternut Forest Health",
+              alias: null,
+              aliasHint: "forests@",
+              connectedToProjectId: "host-project",
+              isSubProject: true,
+            },
+          ],
+        },
+      ],
+      expeditions: [],
+      statuses: ["Waitlist", "Denied"],
+      senderOptions: [
+        {
+          projectId: "host-project",
+          projectName: "Saving American Beech",
+          projectAliasLabel: "forests@",
+          email: "forests@adventurescientists.org",
+          connectedToProjectId: null,
+          status: "verified",
+        },
+      ],
+    };
+    const draft: CampaignWizardDraftData = {
+      runId: "run-1",
+      launchType: "normal_email",
+      kind: "project",
+      name: null,
+      fromEmail: "forests@adventurescientists.org",
+      replyToEmail: "forests@adventurescientists.org",
+      subjectTemplate: null,
+      bodyHtmlTemplate: null,
+      bodyTextTemplate: null,
+      preheader: null,
+      audienceCriteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+      },
+      audienceSize: null,
+      state: "draft",
+      scheduledAt: null,
+      updatedAt: "2026-05-20T12:00:00.000Z",
+      operatorEmail: "operator@example.com",
+    };
+
+    act(() => {
+      root?.render(
+        <NewCampaignWizard bootstrap={bootstrap} draft={draft} isAdmin={true} />,
+      );
+    });
+    await settleAsyncWork();
+
+    const launchContinueButton = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Launch continue");
+    if (!(launchContinueButton instanceof HTMLButtonElement)) {
+      throw new Error("Launch continue button not found");
+    }
+
+    act(() => {
+      launchContinueButton.click();
+    });
+    await settleAsyncWork();
+
+    const senderContinueButton = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Sender continue");
+    if (!(senderContinueButton instanceof HTMLButtonElement)) {
+      throw new Error("Sender continue button not found");
+    }
+
+    act(() => {
+      senderContinueButton.click();
+    });
+    await settleAsyncWork();
+    await settleAsyncWork();
+    await settleAsyncWork();
+
+    expect(loadMemberStatusCountsForProjects).toHaveBeenCalledTimes(1);
+    const initialAudienceCountCalls = resolveAudienceCountAction.mock.calls.length;
+
+    const toggleWaitlistButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Toggle Waitlist",
+    );
+    if (!(toggleWaitlistButton instanceof HTMLButtonElement)) {
+      throw new Error("Toggle Waitlist button not found");
+    }
+
+    act(() => {
+      toggleWaitlistButton.click();
+    });
+    await settleAsyncWork();
+
+    act(() => {
+      toggleWaitlistButton.click();
+    });
+    await settleAsyncWork();
+
+    expect(loadMemberStatusCountsForProjects).toHaveBeenCalledTimes(1);
+    expect(resolveAudienceCountAction.mock.calls.length).toBeGreaterThan(
+      initialAudienceCountCalls,
     );
   });
 });

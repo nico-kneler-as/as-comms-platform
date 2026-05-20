@@ -530,14 +530,17 @@ export async function getCampaignWizardDraft(
 export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBootstrap> {
   await requireSession();
   const runtime = await getStage1WebRuntime();
-  const settingsProjects = (await runtime.settings.projects.listAll()).filter(
+  const allConnectedProjects = (await runtime.settings.projects.listAll()).filter(
+    (project) => project.isActive || project.connectedToProjectId !== null,
+  );
+  const activeProjects = allConnectedProjects.filter(
     (project) => project.isActive,
   );
   const projectsById = new Map(
-    settingsProjects.map((project) => [project.projectId, project] as const),
+    allConnectedProjects.map((project) => [project.projectId, project] as const),
   );
 
-  const projectOptions = settingsProjects
+  const projectOptions = allConnectedProjects
     .map((project) => {
       const primaryEmail = readPrimaryEmail(project);
       const hostProject =
@@ -569,7 +572,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
       (project) => project.connectedToProjectId === host.id,
     ),
   }));
-  const senderOptions = settingsProjects
+  const senderOptions = activeProjects
     .map((project) => {
       const email = readPrimaryEmail(project);
       if (email === null) {
