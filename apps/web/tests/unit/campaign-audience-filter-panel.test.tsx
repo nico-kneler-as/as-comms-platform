@@ -238,8 +238,48 @@ describe("AudienceFilterPanel", () => {
 
     expect(waitlistButton.getAttribute("aria-checked")).toBe("true");
     expect(waitlistButton.className).toContain("bg-emerald-600");
-    expect(deniedButton.className).toContain("bg-rose-50");
+    expect(deniedButton.className).toContain("bg-white");
+    expect(deniedButton.querySelector(".bg-rose-500")).not.toBeNull();
     expect(document.body.textContent).not.toContain("MID-FUNNEL");
+  });
+
+  it("renders packed status pills in a flex-wrap row instead of the old grid", () => {
+    renderPanel();
+
+    const waitlistButton = Array.from(document.querySelectorAll("button")).find(
+      (button) =>
+        button.getAttribute("aria-label") ===
+        "Toggle expedition-member status Waitlist",
+    );
+
+    if (!(waitlistButton instanceof HTMLButtonElement)) {
+      throw new Error("Waitlist status button not found");
+    }
+
+    const pillContainer = waitlistButton.parentElement;
+    if (!(pillContainer instanceof HTMLElement)) {
+      throw new Error("Status pill container not found");
+    }
+
+    expect(pillContainer.className).toContain("flex-wrap");
+    expect(pillContainer.className).not.toContain("grid-cols-");
+  });
+
+  it("renders compact rounded-full status pills without the legacy fixed height", () => {
+    renderPanel();
+
+    const waitlistButton = Array.from(document.querySelectorAll("button")).find(
+      (button) =>
+        button.getAttribute("aria-label") ===
+        "Toggle expedition-member status Waitlist",
+    );
+
+    if (!(waitlistButton instanceof HTMLButtonElement)) {
+      throw new Error("Waitlist status button not found");
+    }
+
+    expect(waitlistButton.className).toContain("rounded-full");
+    expect(waitlistButton.className).not.toContain("min-h-[48px]");
   });
 
   it("renders a locked pill for single-project aliases", () => {
@@ -273,5 +313,25 @@ describe("AudienceFilterPanel", () => {
         button.getAttribute("aria-label")?.startsWith("Choose project "),
       ),
     ).toBe(false);
+  });
+
+  it("renders both forests sub-projects as toggleable project rows when two options exist", () => {
+    renderPanel();
+
+    const projectButtons = Array.from(document.querySelectorAll("button")).filter(
+      (button) => button.getAttribute("aria-label")?.startsWith("Choose project "),
+    );
+
+    expect(projectButtons).toHaveLength(2);
+    expect(
+      document.querySelector(
+        '[aria-label="Project Restoring Butternut Forest Health is locked to this sender alias"]',
+      ),
+    ).toBeNull();
+    expect(
+      document.querySelector(
+        '[aria-label="Project Saving American Beech is locked to this sender alias"]',
+      ),
+    ).toBeNull();
   });
 });

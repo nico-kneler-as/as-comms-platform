@@ -56,17 +56,6 @@ const STAGE_GROUPS = {
   }
 >;
 
-const SELECTED_RING_CLASSES: Record<ToneNameV2, string> = {
-  slate: "ring-slate-600",
-  sky: "ring-sky-600",
-  indigo: "ring-indigo-600",
-  emerald: "ring-emerald-600",
-  amber: "ring-amber-500",
-  rose: "ring-rose-500",
-  violet: "ring-violet-500",
-  teal: "ring-teal-600",
-};
-
 interface AudienceFilterPanelProps {
   readonly criteria: CampaignAudienceCriteria;
   readonly projectOptions: readonly CampaignProjectOption[];
@@ -379,7 +368,7 @@ function StageStatusSection({
         )}
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="flex flex-wrap gap-1.5">
         {statuses.map((status) => {
           const selected = selectedStatuses.includes(status);
           const countForStatus = statusCounts[status] ?? 0;
@@ -395,16 +384,21 @@ function StageStatusSection({
                 onStatusToggle(status);
               }}
               className={cn(
-                `flex min-h-[48px] items-center justify-between gap-3 rounded-xl border px-3.5 py-3 text-left text-[12.5px] font-semibold ${TRANSITION.fast} ${FOCUS_RING}`,
+                `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium ring-1 ring-inset ${TRANSITION.fast} ${FOCUS_RING}`,
                 selected
-                  ? `${tone.bg} text-white ring-1 ${SELECTED_RING_CLASSES[color]}`
-                  : `${tone.subtle} ${tone.subtleText} border-transparent ring-1 ${tone.ring} hover:opacity-90`,
+                  ? `${tone.bg} text-white ring-transparent`
+                  : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50",
               )}
             >
-              <span className="flex min-w-0 items-center gap-3">
-                <StatusSelectionIndicator color={color} selected={selected} />
-                <span className="truncate">{status}</span>
-              </span>
+              {selected ? (
+                <Check className="size-2.5 shrink-0" aria-hidden="true" />
+              ) : (
+                <span
+                  className={cn("size-1.5 shrink-0 rounded-full", tone.dot)}
+                  aria-hidden="true"
+                />
+              )}
+              <span>{status}</span>
               {loading ? (
                 <span
                   aria-hidden="true"
@@ -413,8 +407,8 @@ function StageStatusSection({
               ) : (
                 <span
                   className={cn(
-                    "shrink-0 tabular-nums",
-                    selected ? "text-white" : tone.text,
+                    "tabular-nums text-[11.5px]",
+                    selected ? "text-white/90" : "text-slate-500/90",
                   )}
                 >
                   {countForStatus.toLocaleString()}
@@ -444,32 +438,6 @@ function ProjectSelectionIndicator({
       aria-hidden="true"
     >
       {selected ? <Check className="size-3" aria-hidden="true" /> : null}
-    </span>
-  );
-}
-
-function StatusSelectionIndicator({
-  color,
-  selected,
-}: {
-  readonly color: ToneNameV2;
-  readonly selected: boolean;
-}) {
-  const tone = TONE_CLASSES[color];
-
-  return (
-    <span
-      className={cn(
-        "flex size-5 shrink-0 items-center justify-center rounded-full border",
-        selected
-          ? "border-white/30 bg-white/15 text-white"
-          : `bg-white/70 ${tone.text} ${tone.ring}`,
-      )}
-      aria-hidden="true"
-    >
-      {selected ? (
-        <Check className="size-3" aria-hidden="true" />
-      ) : null}
     </span>
   );
 }

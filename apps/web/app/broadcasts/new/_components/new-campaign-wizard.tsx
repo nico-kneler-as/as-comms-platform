@@ -507,7 +507,8 @@ export function NewCampaignWizard({
     () => formatAutosaveLabel(lastSavedAtIso),
     [autosaveTick, lastSavedAtIso],
   );
-  const selectedProjectIds = useMemo(() => readProjectIds(criteria), [criteria]);
+  const selectedProjectIds = readProjectIds(criteria);
+  const selectedProjectIdsKey = selectedProjectIds.join(",");
   const warningDismissed =
     warningDismissFingerprint !== null &&
     warningDismissFingerprint === previewFingerprint;
@@ -658,7 +659,7 @@ export function NewCampaignWizard({
             };
       });
     });
-  }, [bootstrap.statuses, criteria.initialFilter, selectedProjectIds]);
+  }, [bootstrap.statuses, criteria.initialFilter, selectedProjectIdsKey]);
 
   useEffect(() => {
     const timer = setInterval(() => {
