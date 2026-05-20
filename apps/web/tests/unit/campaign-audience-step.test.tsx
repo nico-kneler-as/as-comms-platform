@@ -96,6 +96,7 @@ afterEach(() => {
 
 const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   availableModes: ["project_status", "specific"],
+  hasPickedMode: false,
   criteria: {
     projectId: null,
     projectIds: [],
@@ -105,7 +106,6 @@ const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
     lastActivityWindow: "all_time",
     hasReplied: "either",
     hasClicked: "either",
-    initialFilter: "project_status",
   },
   countState: {
     count: 0,
@@ -135,17 +135,21 @@ const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
 };
 
 describe("AudienceBuilderStep initial filter gate", () => {
-  it("renders the initial filter choices", () => {
+  it("renders the pre-choice mode chooser without the downstream panels", () => {
     const markup = renderToStaticMarkup(<AudienceBuilderStep {...baseProps} />);
 
     expect(markup).toContain("Project / status");
     expect(markup).toContain("Individual volunteers");
+    expect(markup).not.toContain("Audience filters");
+    expect(markup).not.toContain("Find volunteers");
+    expect(markup).not.toContain("Audience preview");
   });
 
   it("renders the all-approved branch copy for html mode", () => {
     const markup = renderToStaticMarkup(
       <AudienceBuilderStep
         {...baseProps}
+        hasPickedMode={true}
         availableModes={["all_approved", "project_status"]}
         criteria={{
           ...baseProps.criteria,
@@ -164,11 +168,13 @@ describe("AudienceBuilderStep initial filter gate", () => {
     const markup = renderToStaticMarkup(
       <AudienceBuilderStep
         {...baseProps}
+        hasPickedMode={true}
         projectOptions={[
           {
             id: "project-1",
             name: "Restoring Butternut Forest Health",
             alias: null,
+            projectAlias: "Beech & Butternut",
             aliasHint: "forests@",
             connectedToProjectId: "host-project",
             isSubProject: true,
@@ -177,6 +183,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
             id: "project-2",
             name: "Saving American Beech",
             alias: null,
+            projectAlias: "Beech & Butternut",
             aliasHint: "forests@",
             connectedToProjectId: "host-project",
             isSubProject: true,
@@ -212,6 +219,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
     const markup = renderToStaticMarkup(
       <AudienceBuilderStep
         {...baseProps}
+        hasPickedMode={true}
         criteria={{
           ...baseProps.criteria,
           projectId: "project-1",
@@ -229,12 +237,13 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).not.toContain("Toggle expedition-member status");
   });
 
-  it("renders alias labels for volunteer search results and preview rows", () => {
+  it("renders human project aliases for volunteer search results and preview rows", () => {
     const longProjectName =
       "Passive Acoustic Monitoring of Pacific Northwest Forests";
     const markup = renderToStaticMarkup(
       <AudienceBuilderStep
         {...baseProps}
+        hasPickedMode={true}
         criteria={{
           ...baseProps.criteria,
           projectId: "project-1",
@@ -249,6 +258,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
             name: "Nicole Moss",
             email: "nic@example.org",
             project: longProjectName,
+            projectAlias: "PNW Biodiversity",
             projectAliasHint: "pnwbio@",
           },
         ]}
@@ -258,13 +268,15 @@ describe("AudienceBuilderStep initial filter gate", () => {
             name: "Nicole Moss",
             email: "nic@example.org",
             project: longProjectName,
+            projectAlias: "PNW Biodiversity",
             projectAliasHint: "pnwbio@",
           },
         ]}
       />,
     );
 
-    expect(markup).toContain("pnwbio@");
+    expect(markup).toContain("PNW Biodiversity");
+    expect(markup).not.toContain("pnwbio@");
     expect(markup).not.toContain(longProjectName);
   });
 
@@ -273,11 +285,13 @@ describe("AudienceBuilderStep initial filter gate", () => {
     const validMarkup = renderToStaticMarkup(
       <AudienceBuilderStep
         {...baseProps}
+        hasPickedMode={true}
         criteria={{
           ...baseProps.criteria,
           projectId: "project-1",
           projectIds: ["project-1"],
           statuses: ["Waitlist"],
+          initialFilter: "project_status",
         }}
         countState={{
           count: 12,
@@ -292,6 +306,58 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(validMarkup).not.toMatch(
       /<button[^>]*aria-disabled="true"[^>]*>Continue to compose<\/button>/,
     );
+  });
+
+  it("collapses into the segmented control after the operator picks a mode", () => {
+    setupDom();
+
+    function Harness() {
+      const [criteria, setCriteria] = React.useState(baseProps.criteria);
+      const [hasPickedMode, setHasPickedMode] = React.useState(false);
+
+      return (
+        <AudienceBuilderStep
+          {...baseProps}
+          hasPickedMode={hasPickedMode}
+          criteria={criteria}
+          onInitialFilterChange={(value) => {
+            setHasPickedMode(true);
+            setCriteria((current) => ({
+              ...current,
+              initialFilter: value,
+            }));
+          }}
+        />
+      );
+    }
+
+    act(() => {
+      root?.render(<Harness />);
+    });
+
+    expect(document.body.textContent).toContain("Project / status");
+    expect(document.body.textContent).not.toContain("Audience filters");
+    expect(document.body.textContent).not.toContain("Find volunteers");
+
+    const projectStatusButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent.includes("Project / status"),
+    );
+    if (!(projectStatusButton instanceof HTMLButtonElement)) {
+      throw new Error("Project / status chooser button not found");
+    }
+
+    act(() => {
+      projectStatusButton.click();
+    });
+
+    const tablist = document.querySelector('[role="tablist"][aria-label="Audience mode"]');
+    if (!(tablist instanceof HTMLElement)) {
+      throw new Error("Audience mode segmented control not found");
+    }
+
+    expect(tablist.className).toContain("rounded-full");
+    expect(document.body.textContent).toContain("Audience filters");
+    expect(document.body.textContent).not.toContain("Find volunteers");
   });
 
   it("does not retrigger the member-status-counts fetch when only statuses change", async () => {
@@ -434,6 +500,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
             id: "host-project",
             name: "Saving American Beech",
             alias: null,
+            projectAlias: "Beech & Butternut",
             aliasHint: "forests@",
             connectedToProjectId: null,
             isSubProject: false,
@@ -443,6 +510,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
               id: "sub-project",
               name: "Restoring Butternut Forest Health",
               alias: null,
+              projectAlias: "Beech & Butternut",
               aliasHint: "forests@",
               connectedToProjectId: "host-project",
               isSubProject: true,
@@ -475,8 +543,8 @@ describe("AudienceBuilderStep initial filter gate", () => {
       bodyTextTemplate: null,
       preheader: null,
       audienceCriteria: {
-        projectId: null,
-        projectIds: [],
+        projectId: "host-project",
+        projectIds: ["host-project", "sub-project"],
         statuses: [],
         contactIds: [],
         expeditionIds: [],
@@ -676,6 +744,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
             id: "project-1",
             name: "Pacific Northwest Bio",
             alias: null,
+            projectAlias: "PNW Biodiversity",
             aliasHint: "pnwbio@",
             connectedToProjectId: null,
             isSubProject: false,
@@ -708,8 +777,8 @@ describe("AudienceBuilderStep initial filter gate", () => {
       bodyTextTemplate: null,
       preheader: null,
       audienceCriteria: {
-        projectId: null,
-        projectIds: [],
+        projectId: "project-1",
+        projectIds: ["project-1"],
         statuses: [],
         contactIds: [],
         expeditionIds: [],
@@ -899,6 +968,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
             id: "project-butternut",
             name: "Restoring Butternut Forest Health",
             alias: null,
+            projectAlias: "Beech & Butternut",
             aliasHint: "forests@",
             connectedToProjectId: null,
             isSubProject: false,
@@ -908,6 +978,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
               id: "project-beech",
               name: "Saving American Beech",
               alias: null,
+              projectAlias: "Beech & Butternut",
               aliasHint: "forests@",
               connectedToProjectId: "project-butternut",
               isSubProject: true,
@@ -940,8 +1011,8 @@ describe("AudienceBuilderStep initial filter gate", () => {
       bodyTextTemplate: null,
       preheader: null,
       audienceCriteria: {
-        projectId: null,
-        projectIds: [],
+        projectId: "project-butternut",
+        projectIds: ["project-butternut", "project-beech"],
         statuses: [],
         contactIds: [],
         expeditionIds: [],

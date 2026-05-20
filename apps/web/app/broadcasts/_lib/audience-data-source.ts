@@ -40,6 +40,7 @@ export interface CampaignProjectOption {
   readonly id: string;
   readonly name: string;
   readonly alias: string | null;
+  readonly projectAlias: string | null;
   readonly aliasHint: string | null;
   readonly connectedToProjectId: string | null;
   readonly isSubProject: boolean;
@@ -67,6 +68,7 @@ export interface AudiencePreviewRow {
   readonly name: string;
   readonly email: string;
   readonly project: string | null;
+  readonly projectAlias: string | null;
   readonly projectAliasHint: string | null;
 }
 
@@ -93,6 +95,7 @@ export interface AudienceVolunteerSearchRow {
   readonly name: string;
   readonly email: string;
   readonly project: string | null;
+  readonly projectAlias: string | null;
   readonly projectAliasHint: string | null;
 }
 
@@ -555,6 +558,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
         id: project.projectId,
         name: project.projectName,
         alias: project.projectAlias,
+        projectAlias: project.projectAlias,
         aliasHint: normalizeAliasHint(
           project.connectedToProjectId === null ? primaryEmail : hostPrimaryEmail,
         ),
@@ -694,6 +698,10 @@ export async function previewAudienceAction(input: {
   try {
     const runtime = await getStage1WebRuntime();
     const aliasCache = new Map<string, Promise<string | null>>();
+    const settingsProjects = await runtime.settings.projects.listAll();
+    const projectsById = new Map(
+      settingsProjects.map((project) => [project.projectId, project] as const),
+    );
     const audience = await resolveWizardAudience(
       input.kind,
       input.criteria,
@@ -702,19 +710,27 @@ export async function previewAudienceAction(input: {
 
     return successResult(
       await Promise.all(
-        audience.slice(0, PREVIEW_LIMIT).map(async (member) => ({
-          contactId: member.contactId,
-          name: member.frozenFirstName ?? member.frozenEmail,
-          email: member.frozenEmail,
-          project: member.frozenProjectName,
-          projectAliasHint: normalizeAliasHint(
-            await resolvePrimaryAliasEmail(
-              runtime,
-              member.frozenProjectId ?? null,
-              aliasCache,
+        audience.slice(0, PREVIEW_LIMIT).map(async (member) => {
+          const project =
+            member.frozenProjectId == null
+              ? null
+              : (projectsById.get(member.frozenProjectId) ?? null);
+
+          return {
+            contactId: member.contactId,
+            name: member.frozenFirstName ?? member.frozenEmail,
+            email: member.frozenEmail,
+            project: member.frozenProjectName,
+            projectAlias: project?.projectAlias ?? null,
+            projectAliasHint: normalizeAliasHint(
+              await resolvePrimaryAliasEmail(
+                runtime,
+                member.frozenProjectId ?? null,
+                aliasCache,
+              ),
             ),
-          ),
-        })),
+          };
+        }),
       ),
     );
   } catch (error) {
@@ -857,6 +873,10 @@ export async function searchProjectVolunteersAction(input: {
   try {
     const runtime = await getStage1WebRuntime();
     const aliasCache = new Map<string, Promise<string | null>>();
+    const settingsProjects = await runtime.settings.projects.listAll();
+    const projectsById = new Map(
+      settingsProjects.map((project) => [project.projectId, project] as const),
+    );
     const contacts = await runtime.repositories.contacts.searchByQuery({
       query,
       limit: 25,
@@ -870,12 +890,6 @@ export async function searchProjectVolunteersAction(input: {
       await runtime.repositories.contactMemberships.listByContactIds(
         contacts.map((contact) => contact.id),
       );
-    const projects = await runtime.repositories.projectDimensions.listByIds(
-      aliasProjectIds,
-    );
-    const projectsById = new Map(
-      projects.map((project) => [project.projectId, project] as const),
-    );
     const membershipsByContact = new Map<
       string,
       (typeof memberships)[number][]
@@ -926,6 +940,7 @@ export async function searchProjectVolunteersAction(input: {
                 : (contact.primaryEmail ?? contact.id),
               email: contact.primaryEmail ?? "",
               project: project?.projectName ?? null,
+              projectAlias: project?.projectAlias ?? null,
               projectAliasHint: normalizeAliasHint(
                 await resolvePrimaryAliasEmail(
                   runtime,

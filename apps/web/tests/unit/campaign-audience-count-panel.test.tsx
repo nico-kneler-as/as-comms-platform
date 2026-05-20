@@ -33,7 +33,7 @@ describe("AudienceCountPanel snapshots", () => {
           loading={false}
         />,
       ),
-    ).toMatchInlineSnapshot(`"<div class="rounded-lg border border-slate-200 bg-slate-50 p-4"><div class="min-w-0"><div aria-live="polite" class="inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11.5px] font-semibold bg-white text-slate-600 ring-1 ring-slate-200">Live audience</div><div class="mt-3 flex items-end gap-3"><span class="text-[32px] font-semibold leading-none tabular-nums text-slate-900">—</span><span class="pb-1 text-[12px] text-slate-500">recipients match · live as you change filters</span></div><p class="mt-2 text-[12.5px] text-slate-600">Pick a project or volunteer selection to start.</p></div></div>"`);
+    ).toMatchInlineSnapshot(`"<div class="rounded-lg border border-slate-200 bg-slate-50 p-4"><div class="min-w-0"><div aria-live="polite" class="inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11.5px] font-semibold bg-white text-slate-600 ring-1 ring-slate-200">Live audience</div><div class="mt-3 flex items-end gap-3"><span class="text-[32px] font-semibold leading-none tabular-nums text-slate-900">—</span><span class="pb-1 text-[12px] text-slate-500">recipients match · live as you change filters</span></div><p class="mt-2 text-[12.5px] text-slate-600">Pick an audience mode to start.</p></div></div>"`);
   });
 
   it("renders the positive matched state", () => {

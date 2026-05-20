@@ -86,7 +86,7 @@ export function AudiencePreviewList({
             </div>
             <div className="min-w-0">
               <p className="truncate text-slate-500">
-                {row.projectAliasHint ?? row.project ?? "No project"}
+                {row.projectAlias ?? row.project ?? "No project"}
               </p>
             </div>
           </div>
