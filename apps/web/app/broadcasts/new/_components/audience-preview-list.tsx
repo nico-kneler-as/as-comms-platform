@@ -85,7 +85,9 @@ export function AudiencePreviewList({
               <p className="truncate text-slate-600">{row.email}</p>
             </div>
             <div className="min-w-0">
-              <p className="truncate text-slate-500">{row.project ?? "No project"}</p>
+              <p className="truncate text-slate-500">
+                {row.projectAliasHint ?? row.project ?? "No project"}
+              </p>
             </div>
           </div>
         ))}

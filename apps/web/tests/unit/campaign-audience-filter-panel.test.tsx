@@ -146,9 +146,11 @@ describe("AudienceFilterPanel", () => {
         "Toggle expedition-member status Waitlist",
       ),
     ).toBe(true);
-    expect(document.body.textContent).toContain("TOP-FUNNEL");
-    expect(document.body.textContent).toContain("OFF-FUNNEL");
+    expect(document.body.textContent).toContain("Waitlist");
+    expect(document.body.textContent).toContain("Denied");
+    expect(document.body.textContent).not.toContain("TOP-FUNNEL");
     expect(document.body.textContent).not.toContain("MID-FUNNEL");
+    expect(document.body.textContent).not.toContain("OFF-FUNNEL");
   });
 
   it("fires project, select-all, and status callbacks when those controls change", () => {
@@ -204,7 +206,7 @@ describe("AudienceFilterPanel", () => {
     expect(toggleAllStatuses).toHaveBeenCalledWith(true);
   });
 
-  it("applies the stage tone classes and hides empty stages", () => {
+  it("applies the stage tone classes and hides pills from empty stages", () => {
     renderPanel({
       criteria: {
         projectId: "project-a",
@@ -216,6 +218,11 @@ describe("AudienceFilterPanel", () => {
         hasReplied: "either",
         hasClicked: "either",
       },
+      statusCounts: {
+        Waitlist: 12,
+        "In Progress": 0,
+        Denied: 0,
+      },
     });
 
     const waitlistButton = Array.from(document.querySelectorAll("button")).find(
@@ -223,24 +230,25 @@ describe("AudienceFilterPanel", () => {
         button.getAttribute("aria-label") ===
         "Toggle expedition-member status Waitlist",
     );
-    const deniedButton = Array.from(document.querySelectorAll("button")).find(
-      (button) =>
-        button.getAttribute("aria-label") ===
-        "Toggle expedition-member status Denied",
-    );
 
     if (!(waitlistButton instanceof HTMLButtonElement)) {
       throw new Error("Waitlist status button not found");
     }
-    if (!(deniedButton instanceof HTMLButtonElement)) {
-      throw new Error("Denied status button not found");
-    }
 
     expect(waitlistButton.getAttribute("aria-checked")).toBe("true");
     expect(waitlistButton.className).toContain("bg-emerald-600");
-    expect(deniedButton.className).toContain("bg-white");
-    expect(deniedButton.querySelector(".bg-rose-500")).not.toBeNull();
+    expect(
+      document.querySelector(
+        '[aria-label="Toggle expedition-member status Denied"]',
+      ),
+    ).toBeNull();
+    expect(
+      document.querySelector(
+        '[aria-label="Toggle expedition-member status Failed"]',
+      ),
+    ).toBeNull();
     expect(document.body.textContent).not.toContain("MID-FUNNEL");
+    expect(document.body.textContent).not.toContain("OFF-FUNNEL");
   });
 
   it("renders packed status pills in a flex-wrap row instead of the old grid", () => {
