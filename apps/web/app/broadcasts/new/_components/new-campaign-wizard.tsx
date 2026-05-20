@@ -260,7 +260,7 @@ function readAliasProjectsForSender(
     return [];
   }
 
-  return group.connectedSubs.length > 0 ? group.connectedSubs : [group.host];
+  return [group.host, ...group.connectedSubs];
 }
 
 function buildCriteriaForMode(input: {
@@ -674,6 +674,14 @@ export function NewCampaignWizard({
   useEffect(() => {
     if (frozen) {
       setCountLoading(false);
+      return;
+    }
+
+    const audienceMode = criteria.initialFilter ?? "project_status";
+    if (audienceMode === "project_status" && criteria.statuses.length === 0) {
+      countRequestRef.current += 1;
+      setCountLoading(false);
+      setCountState({ count: 0, hasAppliedFilters: true });
       return;
     }
 

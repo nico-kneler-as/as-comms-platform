@@ -67,6 +67,7 @@ export interface AudiencePreviewRow {
   readonly name: string;
   readonly email: string;
   readonly project: string | null;
+  readonly projectAliasHint: string | null;
 }
 
 export interface AudienceCountData {
@@ -691,6 +692,8 @@ export async function previewAudienceAction(input: {
   await requireSession();
 
   try {
+    const runtime = await getStage1WebRuntime();
+    const aliasCache = new Map<string, Promise<string | null>>();
     const audience = await resolveWizardAudience(
       input.kind,
       input.criteria,
@@ -698,12 +701,21 @@ export async function previewAudienceAction(input: {
     );
 
     return successResult(
-      audience.slice(0, PREVIEW_LIMIT).map((member) => ({
-        contactId: member.contactId,
-        name: member.frozenFirstName ?? member.frozenEmail,
-        email: member.frozenEmail,
-        project: member.frozenProjectName,
-      })),
+      await Promise.all(
+        audience.slice(0, PREVIEW_LIMIT).map(async (member) => ({
+          contactId: member.contactId,
+          name: member.frozenFirstName ?? member.frozenEmail,
+          email: member.frozenEmail,
+          project: member.frozenProjectName,
+          projectAliasHint: normalizeAliasHint(
+            await resolvePrimaryAliasEmail(
+              runtime,
+              member.frozenProjectId ?? null,
+              aliasCache,
+            ),
+          ),
+        })),
+      ),
     );
   } catch (error) {
     return errorResult(
@@ -848,6 +860,7 @@ export async function searchProjectVolunteersAction(input: {
     const contacts = await runtime.repositories.contacts.searchByQuery({
       query,
       limit: 25,
+      projectIds: aliasProjectIds,
     });
     if (contacts.length === 0) {
       return successResult([]);
@@ -863,16 +876,12 @@ export async function searchProjectVolunteersAction(input: {
     const projectsById = new Map(
       projects.map((project) => [project.projectId, project] as const),
     );
-    const selectedProjectIds = new Set(aliasProjectIds);
     const membershipsByContact = new Map<
       string,
       (typeof memberships)[number][]
     >(contacts.map((contact) => [contact.id, []]));
     for (const membership of memberships) {
-      if (
-        membership.projectId === null ||
-        !selectedProjectIds.has(membership.projectId)
-      ) {
+      if (membership.projectId === null) {
         continue;
       }
 

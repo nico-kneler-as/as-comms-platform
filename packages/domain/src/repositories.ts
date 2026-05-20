@@ -307,6 +307,7 @@ export interface ContactRepository {
   searchByQuery(input: {
     readonly query: string;
     readonly limit: number;
+    readonly projectIds?: readonly string[];
   }): Promise<readonly ContactRecord[]>;
   /**
    * Unified inbox search. Returns contacts matching name / primary email /

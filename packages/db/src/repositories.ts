@@ -2437,17 +2437,31 @@ function createStage1RepositoriesInternal(
           return [];
         }
 
-        const limit = Math.max(1, Math.min(input.limit, 8));
+        const limit = Math.max(1, Math.min(input.limit, 50));
         const pattern = `%${normalizedQuery}%`;
+        const baseWhere = or(
+          sql`lower(${contacts.displayName}) like ${pattern}`,
+          sql`lower(coalesce(${contacts.primaryEmail}, '')) like ${pattern}`,
+        );
+        const projectIdList = (input.projectIds ?? []).filter(
+          (projectId) => projectId.trim().length > 0,
+        );
+        const whereClause =
+          projectIdList.length === 0
+            ? baseWhere
+            : and(
+                baseWhere,
+                sql`exists (
+                  select 1
+                  from ${contactMemberships}
+                  where ${contactMemberships.contactId} = ${contacts.id}
+                    and ${inArray(contactMemberships.projectId, projectIdList)}
+                )`,
+              );
         const rows = await db
           .select()
           .from(contacts)
-          .where(
-            or(
-              sql`lower(${contacts.displayName}) like ${pattern}`,
-              sql`lower(coalesce(${contacts.primaryEmail}, '')) like ${pattern}`,
-            ),
-          )
+          .where(whereClause)
           .orderBy(
             sql`case when lower(${contacts.displayName}) like ${pattern} then 0 else 1 end`,
             asc(contacts.displayName),

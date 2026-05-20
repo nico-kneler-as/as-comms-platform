@@ -12,6 +12,7 @@ vi.mock("lucide-react", () => ({
   AlertTriangle: () => null,
   Check: () => null,
   CheckCircle2: () => null,
+  Eye: () => null,
   LoaderCircle: () => null,
   Lock: () => null,
   Search: () => null,
@@ -201,7 +202,8 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).toContain("Audience filters");
     expect(markup).toContain("Inherited from forests@");
     expect(markup).toContain("Member status");
-    expect(markup).toContain("TOP-FUNNEL");
+    expect(markup).toContain("Waitlist");
+    expect(markup).not.toContain("TOP-FUNNEL");
     expect(markup).not.toContain("Search by name or email");
     expect(markup).not.toContain("Find volunteers");
   });
@@ -225,6 +227,45 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).not.toContain("Audience filters");
     expect(markup).not.toContain("Member status");
     expect(markup).not.toContain("Toggle expedition-member status");
+  });
+
+  it("renders alias labels for volunteer search results and preview rows", () => {
+    const longProjectName =
+      "Passive Acoustic Monitoring of Pacific Northwest Forests";
+    const markup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        criteria={{
+          ...baseProps.criteria,
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          contactIds: ["contact-1"],
+          initialFilter: "specific",
+        }}
+        volunteerSearchQuery="nic"
+        volunteerSearchRows={[
+          {
+            contactId: "contact-1",
+            name: "Nicole Moss",
+            email: "nic@example.org",
+            project: longProjectName,
+            projectAliasHint: "pnwbio@",
+          },
+        ]}
+        previewRows={[
+          {
+            contactId: "contact-1",
+            name: "Nicole Moss",
+            email: "nic@example.org",
+            project: longProjectName,
+            projectAliasHint: "pnwbio@",
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("pnwbio@");
+    expect(markup).not.toContain(longProjectName);
   });
 
   it("disables continue when the live audience is zero", () => {
@@ -507,5 +548,461 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(resolveAudienceCountAction.mock.calls.length).toBeGreaterThan(
       initialAudienceCountCalls,
     );
+  });
+
+  it("shows a default zero audience and skips the count action until a status is selected", async () => {
+    setupDom();
+
+    const loadMemberStatusCountsForProjects = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: { Waitlist: 5 },
+      }),
+    );
+    const resolveAudienceCountAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: { count: 5, hasAppliedFilters: true },
+      }),
+    );
+    const previewAudienceAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: [],
+      }),
+    );
+    const searchProjectVolunteersAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: [],
+      }),
+    );
+    const loadComposePreviewAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: {
+          audienceSize: 0,
+          sampleIndex: 0,
+          sampleCount: 0,
+          sample: null,
+          warningCount: 0,
+          affectedContacts: [],
+          footerAddress: null,
+        },
+      }),
+    );
+    const saveCampaignWizardDraftAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: {
+          runId: "run-1",
+          launchType: "normal_email",
+          kind: "project",
+          name: null,
+          fromEmail: "pnwbio@adventurescientists.org",
+          replyToEmail: "pnwbio@adventurescientists.org",
+          subjectTemplate: null,
+          bodyHtmlTemplate: null,
+          bodyTextTemplate: null,
+          preheader: null,
+          audienceCriteria: {
+            projectId: null,
+            projectIds: [],
+            statuses: [],
+            contactIds: [],
+            expeditionIds: [],
+            lastActivityWindow: "all_time",
+            hasReplied: "either",
+            hasClicked: "either",
+          },
+          audienceSize: null,
+          state: "draft",
+          scheduledAt: null,
+          updatedAt: "2026-05-20T12:00:00.000Z",
+          operatorEmail: "operator@example.com",
+        },
+      }),
+    );
+
+    vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
+      loadMemberStatusCountsForProjects,
+      loadComposePreviewAction,
+      previewAudienceAction,
+      resolveAudienceCountAction,
+      saveCampaignWizardDraftAction,
+      searchProjectVolunteersAction,
+    }));
+    vi.doMock("../../app/broadcasts/actions", () => ({
+      schedule: vi.fn(),
+      sendNow: vi.fn(),
+      testSend: vi.fn(),
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/launch-type-step", () => ({
+      LaunchTypeStep: ({
+        onContinue,
+      }: {
+        readonly onContinue: () => void;
+      }) => <button onClick={onContinue}>Launch continue</button>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/name-and-sender-step", () => ({
+      NameAndSenderStep: ({
+        onContinue,
+      }: {
+        readonly onContinue: () => void;
+      }) => <button onClick={onContinue}>Sender continue</button>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/compose-step", () => ({
+      ComposeStep: () => <div>Compose</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/preview-step", () => ({
+      PreviewStep: () => <div>Preview</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/review-step", () => ({
+      ReviewStep: () => <div>Review</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/wizard-rail", () => ({
+      WizardRail: () => null,
+    }));
+    vi.doUnmock("../../app/broadcasts/new/_components/audience-builder-step");
+
+    const { NewCampaignWizard } = await import(
+      "../../app/broadcasts/new/_components/new-campaign-wizard"
+    );
+
+    const bootstrap: AudienceBuilderBootstrap = {
+      projects: [
+        {
+          host: {
+            id: "project-1",
+            name: "Pacific Northwest Bio",
+            alias: null,
+            aliasHint: "pnwbio@",
+            connectedToProjectId: null,
+            isSubProject: false,
+          },
+          connectedSubs: [],
+        },
+      ],
+      expeditions: [],
+      statuses: ["Waitlist"],
+      senderOptions: [
+        {
+          projectId: "project-1",
+          projectName: "Pacific Northwest Bio",
+          projectAliasLabel: "pnwbio@",
+          email: "pnwbio@adventurescientists.org",
+          connectedToProjectId: null,
+          status: "verified",
+        },
+      ],
+    };
+    const draft: CampaignWizardDraftData = {
+      runId: "run-1",
+      launchType: "normal_email",
+      kind: "project",
+      name: null,
+      fromEmail: "pnwbio@adventurescientists.org",
+      replyToEmail: "pnwbio@adventurescientists.org",
+      subjectTemplate: null,
+      bodyHtmlTemplate: null,
+      bodyTextTemplate: null,
+      preheader: null,
+      audienceCriteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+      },
+      audienceSize: null,
+      state: "draft",
+      scheduledAt: null,
+      updatedAt: "2026-05-20T12:00:00.000Z",
+      operatorEmail: "operator@example.com",
+    };
+
+    act(() => {
+      root?.render(
+        <NewCampaignWizard bootstrap={bootstrap} draft={draft} isAdmin={true} />,
+      );
+    });
+    await settleAsyncWork();
+
+    const launchContinueButton = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Launch continue");
+    if (!(launchContinueButton instanceof HTMLButtonElement)) {
+      throw new Error("Launch continue button not found");
+    }
+
+    act(() => {
+      launchContinueButton.click();
+    });
+    await settleAsyncWork();
+
+    const senderContinueButton = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Sender continue");
+    if (!(senderContinueButton instanceof HTMLButtonElement)) {
+      throw new Error("Sender continue button not found");
+    }
+
+    act(() => {
+      senderContinueButton.click();
+    });
+    await settleAsyncWork();
+    await settleAsyncWork();
+    await settleAsyncWork();
+
+    expect(resolveAudienceCountAction).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain(
+      "No recipients match the current filters.",
+    );
+
+    const continueButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Continue to compose",
+    );
+    if (!(continueButton instanceof HTMLButtonElement)) {
+      throw new Error("Continue button not found");
+    }
+
+    expect(continueButton.disabled).toBe(true);
+    expect(continueButton.getAttribute("aria-disabled")).toBe("true");
+    expect(document.body.textContent).toContain("0");
+  });
+
+  it("renders both forests host and connected sub-projects as toggleable project rows", async () => {
+    setupDom();
+
+    const loadMemberStatusCountsForProjects = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: { Waitlist: 8 },
+      }),
+    );
+    const resolveAudienceCountAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: { count: 8, hasAppliedFilters: true },
+      }),
+    );
+    const previewAudienceAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: [],
+      }),
+    );
+    const searchProjectVolunteersAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: [],
+      }),
+    );
+    const loadComposePreviewAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: {
+          audienceSize: 0,
+          sampleIndex: 0,
+          sampleCount: 0,
+          sample: null,
+          warningCount: 0,
+          affectedContacts: [],
+          footerAddress: null,
+        },
+      }),
+    );
+    const saveCampaignWizardDraftAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: {
+          runId: "run-1",
+          launchType: "normal_email",
+          kind: "project",
+          name: null,
+          fromEmail: "forests@adventurescientists.org",
+          replyToEmail: "forests@adventurescientists.org",
+          subjectTemplate: null,
+          bodyHtmlTemplate: null,
+          bodyTextTemplate: null,
+          preheader: null,
+          audienceCriteria: {
+            projectId: null,
+            projectIds: [],
+            statuses: [],
+            contactIds: [],
+            expeditionIds: [],
+            lastActivityWindow: "all_time",
+            hasReplied: "either",
+            hasClicked: "either",
+          },
+          audienceSize: null,
+          state: "draft",
+          scheduledAt: null,
+          updatedAt: "2026-05-20T12:00:00.000Z",
+          operatorEmail: "operator@example.com",
+        },
+      }),
+    );
+
+    vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
+      loadMemberStatusCountsForProjects,
+      loadComposePreviewAction,
+      previewAudienceAction,
+      resolveAudienceCountAction,
+      saveCampaignWizardDraftAction,
+      searchProjectVolunteersAction,
+    }));
+    vi.doMock("../../app/broadcasts/actions", () => ({
+      schedule: vi.fn(),
+      sendNow: vi.fn(),
+      testSend: vi.fn(),
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/launch-type-step", () => ({
+      LaunchTypeStep: ({
+        onContinue,
+      }: {
+        readonly onContinue: () => void;
+      }) => <button onClick={onContinue}>Launch continue</button>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/name-and-sender-step", () => ({
+      NameAndSenderStep: ({
+        onContinue,
+      }: {
+        readonly onContinue: () => void;
+      }) => <button onClick={onContinue}>Sender continue</button>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/compose-step", () => ({
+      ComposeStep: () => <div>Compose</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/preview-step", () => ({
+      PreviewStep: () => <div>Preview</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/review-step", () => ({
+      ReviewStep: () => <div>Review</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/wizard-rail", () => ({
+      WizardRail: () => null,
+    }));
+
+    const { NewCampaignWizard } = await import(
+      "../../app/broadcasts/new/_components/new-campaign-wizard"
+    );
+
+    const bootstrap: AudienceBuilderBootstrap = {
+      projects: [
+        {
+          host: {
+            id: "project-butternut",
+            name: "Restoring Butternut Forest Health",
+            alias: null,
+            aliasHint: "forests@",
+            connectedToProjectId: null,
+            isSubProject: false,
+          },
+          connectedSubs: [
+            {
+              id: "project-beech",
+              name: "Saving American Beech",
+              alias: null,
+              aliasHint: "forests@",
+              connectedToProjectId: "project-butternut",
+              isSubProject: true,
+            },
+          ],
+        },
+      ],
+      expeditions: [],
+      statuses: ["Waitlist"],
+      senderOptions: [
+        {
+          projectId: "project-butternut",
+          projectName: "Restoring Butternut Forest Health",
+          projectAliasLabel: "forests@",
+          email: "forests@adventurescientists.org",
+          connectedToProjectId: null,
+          status: "verified",
+        },
+      ],
+    };
+    const draft: CampaignWizardDraftData = {
+      runId: "run-1",
+      launchType: "normal_email",
+      kind: "project",
+      name: null,
+      fromEmail: "forests@adventurescientists.org",
+      replyToEmail: "forests@adventurescientists.org",
+      subjectTemplate: null,
+      bodyHtmlTemplate: null,
+      bodyTextTemplate: null,
+      preheader: null,
+      audienceCriteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+      },
+      audienceSize: null,
+      state: "draft",
+      scheduledAt: null,
+      updatedAt: "2026-05-20T12:00:00.000Z",
+      operatorEmail: "operator@example.com",
+    };
+
+    act(() => {
+      root?.render(
+        <NewCampaignWizard bootstrap={bootstrap} draft={draft} isAdmin={true} />,
+      );
+    });
+    await settleAsyncWork();
+
+    const launchContinueButton = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Launch continue");
+    if (!(launchContinueButton instanceof HTMLButtonElement)) {
+      throw new Error("Launch continue button not found");
+    }
+
+    act(() => {
+      launchContinueButton.click();
+    });
+    await settleAsyncWork();
+
+    const senderContinueButton = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Sender continue");
+    if (!(senderContinueButton instanceof HTMLButtonElement)) {
+      throw new Error("Sender continue button not found");
+    }
+
+    act(() => {
+      senderContinueButton.click();
+    });
+    await settleAsyncWork();
+    await settleAsyncWork();
+    await settleAsyncWork();
+
+    const projectButtons = Array.from(document.querySelectorAll("button")).filter(
+      (button) => button.getAttribute("aria-label")?.startsWith("Choose project "),
+    );
+
+    expect(projectButtons).toHaveLength(2);
+    expect(
+      document.querySelector(
+        '[aria-label="Project Restoring Butternut Forest Health is locked to this sender alias"]',
+      ),
+    ).toBeNull();
+    expect(
+      document.querySelector(
+        '[aria-label="Project Saving American Beech is locked to this sender alias"]',
+      ),
+    ).toBeNull();
   });
 });

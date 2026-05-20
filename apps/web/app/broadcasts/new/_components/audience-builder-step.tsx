@@ -487,7 +487,7 @@ function SpecificVolunteerSelector({
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                      {row.project ?? "No project"}
+                      {row.projectAliasHint ?? row.project ?? "No project"}
                     </span>
                     {selected ? (
                       <span

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, LoaderCircle, Lock } from "lucide-react";
+import { Check, Lock } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -20,7 +20,6 @@ import type { CampaignAudienceCriteria } from "./audience-builder-step";
 
 const STAGE_GROUPS = {
   top: {
-    label: "TOP-FUNNEL",
     color: "emerald",
     statuses: [
       "Waitlist",
@@ -33,24 +32,20 @@ const STAGE_GROUPS = {
     ],
   },
   mid: {
-    label: "MID-FUNNEL",
     color: "sky",
     statuses: ["In Progress", "Trip Planning", "In the Field"],
   },
   bottom: {
-    label: "BOTTOM-FUNNEL",
     color: "violet",
     statuses: ["Successful", "Completed", "Returning Gear"],
   },
   off: {
-    label: "OFF-FUNNEL",
     color: "rose",
     statuses: ["Denied", "Aborted", "Soft Denied", "Failed"],
   },
 } as const satisfies Record<
   string,
   {
-    readonly label: string;
     readonly color: ToneNameV2;
     readonly statuses: readonly ExpeditionMemberStatus[];
   }
@@ -106,10 +101,6 @@ export function AudienceFilterPanel({
       return {
         ...group,
         statuses,
-        count: statuses.reduce(
-          (total, status) => total + (statusCounts[status] ?? 0),
-          0,
-        ),
       };
     })
     .filter((group) => group.statuses.length > 0);
@@ -196,11 +187,8 @@ export function AudienceFilterPanel({
               <div className="space-y-5">
                 {stageSections.map((group) => (
                   <StageStatusSection
-                    key={group.label}
-                    count={group.count}
+                    key={group.color}
                     color={group.color}
-                    label={group.label}
-                    loading={statusCountsLoading}
                     selectedStatuses={criteria.statuses}
                     statusCounts={statusCounts}
                     statuses={group.statuses}
@@ -330,44 +318,22 @@ function LockedProjectRow({
 }
 
 function StageStatusSection({
-  label,
   color,
   statuses,
   statusCounts,
   selectedStatuses,
-  count,
-  loading,
   onStatusToggle,
 }: {
-  readonly label: string;
   readonly color: ToneNameV2;
   readonly statuses: readonly ExpeditionMemberStatus[];
   readonly statusCounts: AudienceStatusCounts;
   readonly selectedStatuses: readonly ExpeditionMemberStatus[];
-  readonly count: number;
-  readonly loading: boolean;
   readonly onStatusToggle: (status: ExpeditionMemberStatus) => void;
 }) {
   const tone = TONE_CLASSES[color];
 
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 pb-2">
-        <p className="text-[10.5px] font-semibold tracking-wider text-slate-500">
-          {label}
-        </p>
-        {loading ? (
-          <LoaderCircle
-            className={cn(`size-3.5 animate-spin ${tone.text}`)}
-            aria-label={`Loading ${label} total`}
-          />
-        ) : (
-          <span className="text-[12px] font-medium tabular-nums text-slate-500">
-            {count.toLocaleString()}
-          </span>
-        )}
-      </div>
-
+    <section>
       <div className="flex flex-wrap gap-1.5">
         {statuses.map((status) => {
           const selected = selectedStatuses.includes(status);
@@ -399,21 +365,14 @@ function StageStatusSection({
                 />
               )}
               <span>{status}</span>
-              {loading ? (
-                <span
-                  aria-hidden="true"
-                  className="skeleton-pulse block h-3.5 w-5 shrink-0 rounded"
-                />
-              ) : (
-                <span
-                  className={cn(
-                    "tabular-nums text-[11.5px]",
-                    selected ? "text-white/90" : "text-slate-500/90",
-                  )}
-                >
-                  {countForStatus.toLocaleString()}
-                </span>
-              )}
+              <span
+                className={cn(
+                  "tabular-nums text-[11.5px]",
+                  selected ? "text-white/90" : "text-slate-500/90",
+                )}
+              >
+                {countForStatus.toLocaleString()}
+              </span>
             </button>
           );
         })}
