@@ -1,28 +1,20 @@
 import { z } from "zod";
 
-import {
-  sendGmailMessage,
-  type GmailSendResult
-} from "@as-comms/integrations";
+import type { OpsAlertStateRepository } from "@as-comms/domain";
 import type {
   IntegrationHealthRecord,
-  IntegrationHealthStatus
+  IntegrationHealthStatus,
 } from "@as-comms/contracts";
+import type { GmailSendResult } from "@as-comms/integrations";
+
+import { sendOpsAlertMessage } from "../../ops-alert/sender.js";
 
 const DEFAULT_ALERT_RECIPIENT = "nico@adventurescientists.org";
 const DEFAULT_ALERT_FROM_ALIAS = "volunteers@adventurescientists.org";
 const SETTINGS_INTEGRATIONS_PATH = "/settings/integrations";
 
 const integrationHealthAlertConfigSchema = z.object({
-  liveAccount: z.string().email(),
-  oauthClientId: z.string().min(1),
-  oauthClientSecret: z.string().min(1),
-  oauthRefreshToken: z.string().min(1),
-  tokenUri: z.string().url().default("https://oauth2.googleapis.com/token"),
-  timeoutMs: z.number().int().positive().default(15_000),
-  recipient: z.string().email().default(DEFAULT_ALERT_RECIPIENT),
-  fromAlias: z.string().email().default(DEFAULT_ALERT_FROM_ALIAS),
-  settingsIntegrationsUrl: z.string().url()
+  settingsIntegrationsUrl: z.string().url(),
 });
 
 export interface IntegrationHealthAlertInput {
@@ -36,21 +28,53 @@ export interface IntegrationHealthAlertSender {
   send(input: IntegrationHealthAlertInput): Promise<GmailSendResult>;
 }
 
-function readOptionalEmailEnv(
-  env: NodeJS.ProcessEnv,
-  name: string,
-  fallback: string
-): string {
-  const value = env[name]?.trim();
-  return value && value.length > 0 ? value : fallback;
+function createNoopOpsAlertStateRepository(): OpsAlertStateRepository {
+  return {
+    getLastSentAt() {
+      return Promise.resolve(null);
+    },
+    recordSent() {
+      return Promise.resolve();
+    },
+  };
 }
 
 function readOptionalStringEnv(
   env: NodeJS.ProcessEnv,
-  name: string
+  name: string,
 ): string | null {
   const value = env[name]?.trim();
   return value && value.length > 0 ? value : null;
+}
+
+export function readIntegrationHealthAlertRecipient(
+  env: NodeJS.ProcessEnv,
+): string {
+  const explicit = env.INTEGRATION_HEALTH_ALERT_RECIPIENT?.trim();
+
+  if (explicit && explicit.length > 0) {
+    return explicit;
+  }
+
+  const opsAlertRecipient = env.OPS_ALERT_RECIPIENT?.trim();
+  return opsAlertRecipient && opsAlertRecipient.length > 0
+    ? opsAlertRecipient
+    : DEFAULT_ALERT_RECIPIENT;
+}
+
+export function readIntegrationHealthAlertFromAlias(
+  env: NodeJS.ProcessEnv,
+): string {
+  const explicit = env.INTEGRATION_HEALTH_ALERT_FROM_ALIAS?.trim();
+
+  if (explicit && explicit.length > 0) {
+    return explicit;
+  }
+
+  const opsAlertAlias = env.OPS_ALERT_FROM_ALIAS?.trim();
+  return opsAlertAlias && opsAlertAlias.length > 0
+    ? opsAlertAlias
+    : DEFAULT_ALERT_FROM_ALIAS;
 }
 
 function readSettingsIntegrationsUrl(env: NodeJS.ProcessEnv): string {
@@ -72,29 +96,7 @@ function readSettingsIntegrationsUrl(env: NodeJS.ProcessEnv): string {
 
 function readIntegrationHealthAlertConfig(env: NodeJS.ProcessEnv) {
   return integrationHealthAlertConfigSchema.parse({
-    liveAccount: env.GMAIL_LIVE_ACCOUNT,
-    oauthClientId: env.GMAIL_GOOGLE_OAUTH_CLIENT_ID,
-    oauthClientSecret: env.GMAIL_GOOGLE_OAUTH_CLIENT_SECRET,
-    oauthRefreshToken: env.GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN,
-    tokenUri:
-      env.GMAIL_GOOGLE_TOKEN_URI?.trim().length
-        ? env.GMAIL_GOOGLE_TOKEN_URI.trim()
-        : "https://oauth2.googleapis.com/token",
-    timeoutMs:
-      env.GMAIL_SEND_TIMEOUT_MS === undefined
-        ? 15_000
-        : Number.parseInt(env.GMAIL_SEND_TIMEOUT_MS, 10),
-    recipient: readOptionalEmailEnv(
-      env,
-      "INTEGRATION_HEALTH_ALERT_RECIPIENT",
-      DEFAULT_ALERT_RECIPIENT
-    ),
-    fromAlias: readOptionalEmailEnv(
-      env,
-      "INTEGRATION_HEALTH_ALERT_FROM_ALIAS",
-      DEFAULT_ALERT_FROM_ALIAS
-    ),
-    settingsIntegrationsUrl: readSettingsIntegrationsUrl(env)
+    settingsIntegrationsUrl: readSettingsIntegrationsUrl(env),
   });
 }
 
@@ -112,7 +114,7 @@ function stringifyMetadata(record: IntegrationHealthRecord): string {
 
 export function buildIntegrationHealthAlertMessage(
   input: IntegrationHealthAlertInput,
-  settingsIntegrationsUrl: string
+  settingsIntegrationsUrl: string,
 ) {
   const metadata = stringifyMetadata(input.record);
   const subject = `[AS Comms] ${input.service} integration degraded — ${input.record.status}`;
@@ -124,35 +126,55 @@ export function buildIntegrationHealthAlertMessage(
     "",
     `Settings → Integrations: ${settingsIntegrationsUrl}`,
     "",
-    "This alert won't repeat for the same service for 1 hour."
+    "This alert won't repeat for the same service for 1 hour.",
   ].join("\n");
   const bodyHtml = [
     `<p>${escapeHtml(input.service)} status flipped from ${escapeHtml(
-      input.fromStatus
+      input.fromStatus,
     )} to ${escapeHtml(input.record.status)} at ${escapeHtml(
-      input.occurredAt
+      input.occurredAt,
     )}.</p>`,
     "<p>Last error metadata:</p>",
     `<pre>${escapeHtml(metadata)}</pre>`,
     `<p><a href="${escapeHtml(
-      settingsIntegrationsUrl
+      settingsIntegrationsUrl,
     )}">Settings → Integrations</a></p>`,
-    "<p>This alert won't repeat for the same service for 1 hour.</p>"
+    "<p>This alert won't repeat for the same service for 1 hour.</p>",
   ].join("");
 
   return {
     subject,
     bodyPlaintext,
-    bodyHtml
+    bodyHtml,
   };
 }
 
-export function createIntegrationHealthAlertSender(
-  env: NodeJS.ProcessEnv = process.env,
-  fetchImplementation: typeof fetch = fetch
-): IntegrationHealthAlertSender {
+function mapOpsAlertResultToLegacyGmailResult(
+  result: Awaited<ReturnType<typeof sendOpsAlertMessage>>,
+): GmailSendResult {
+  switch (result.kind) {
+    case "success":
+      return result;
+    case "skipped_cooldown":
+      return {
+        kind: "transient",
+        detail: `Integration health alert skipped due to cooldown (${result.lastSentAt}).`,
+      };
+    default:
+      return result;
+  }
+}
+
+export function createIntegrationHealthAlertSenderWithStateRepository(input: {
+  readonly env?: NodeJS.ProcessEnv;
+  readonly fetchImplementation?: typeof fetch;
+  readonly stateRepository: OpsAlertStateRepository;
+}): IntegrationHealthAlertSender {
+  const env = input.env ?? process.env;
+  const fetchImplementation = input.fetchImplementation ?? fetch;
+
   return {
-    async send(input) {
+    async send(alertInput) {
       let config;
 
       try {
@@ -160,36 +182,48 @@ export function createIntegrationHealthAlertSender(
       } catch {
         return {
           kind: "auth_error",
-          detail: "Integration health alert email is not configured."
+          detail: "Integration health alert email is not configured.",
         };
       }
 
       const message = buildIntegrationHealthAlertMessage(
-        input,
-        config.settingsIntegrationsUrl
+        alertInput,
+        config.settingsIntegrationsUrl,
       );
 
-      return sendGmailMessage(
+      const result = await sendOpsAlertMessage(
         {
-          fromAlias: config.fromAlias,
-          to: config.recipient,
-          subject: message.subject,
-          bodyPlaintext: message.bodyPlaintext,
-          bodyHtml: message.bodyHtml,
-          attachments: []
+          env: {
+            ...env,
+            OPS_ALERT_RECIPIENT: readIntegrationHealthAlertRecipient(env),
+            OPS_ALERT_FROM_ALIAS: readIntegrationHealthAlertFromAlias(env),
+            OPS_ALERT_DEFAULT_COOLDOWN_MS:
+              env.OPS_ALERT_DEFAULT_COOLDOWN_MS?.trim().length
+                ? env.OPS_ALERT_DEFAULT_COOLDOWN_MS
+                : "3600000",
+          },
+          fetchImplementation,
+          stateRepository: input.stateRepository,
         },
         {
-          liveAccount: config.liveAccount,
-          oauthClient: {
-            clientId: config.oauthClientId,
-            clientSecret: config.oauthClientSecret,
-            tokenUri: config.tokenUri
-          },
-          oauthRefreshToken: config.oauthRefreshToken,
-          fetchImplementation,
-          timeoutMs: config.timeoutMs
-        }
+          category: "integration_health",
+          dedupKey: alertInput.service,
+          rendered: message,
+        },
       );
-    }
+
+      return mapOpsAlertResultToLegacyGmailResult(result);
+    },
   };
+}
+
+export function createIntegrationHealthAlertSender(
+  env: NodeJS.ProcessEnv = process.env,
+  fetchImplementation: typeof fetch = fetch,
+): IntegrationHealthAlertSender {
+  return createIntegrationHealthAlertSenderWithStateRepository({
+    env,
+    fetchImplementation,
+    stateRepository: createNoopOpsAlertStateRepository(),
+  });
 }

@@ -80,6 +80,7 @@ describe("integration health poller task", () => {
       const taskList = createTaskList(context.orchestration, {
         integrationHealth: {
           integrationHealth: context.settings.integrationHealth,
+          opsAlertState: context.settings.opsAlertState,
           captureBaseUrls: {
             gmail: "https://gmail-capture.example.test",
             salesforce: "https://salesforce-capture.example.test",
@@ -201,6 +202,7 @@ describe("integration health poller task", () => {
       const taskList = createTaskList(context.orchestration, {
         integrationHealth: {
           integrationHealth: context.settings.integrationHealth,
+          opsAlertState: context.settings.opsAlertState,
           captureBaseUrls: {
             gmail: "https://gmail-capture.example.test",
             salesforce: "https://salesforce-capture.example.test",
