@@ -57,9 +57,11 @@ export async function reconcileStrandedCampaignRuns(
       from campaign_runs
       where campaign_runs.state = 'sending'
         and not exists (
+          -- Use the private tables because graphile_worker.jobs is a public view without payload in graphile-worker 0.16+.
           select 1
-          from graphile_worker.jobs jobs
-          where jobs.task_identifier = ${campaignSendJobName}
+          from graphile_worker._private_jobs jobs
+          join graphile_worker._private_tasks tasks on tasks.id = jobs.task_id
+          where tasks.identifier = ${campaignSendJobName}
             and jobs.payload::jsonb ->> 'runId' = campaign_runs.id
             and jobs.attempts < jobs.max_attempts
         )
