@@ -271,6 +271,12 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   mailchimp: "Mailchimp",
   postmark: "Postmark"
 };
+const PROBE_STALENESS_THRESHOLD_MS = 30 * 60 * 1000;
+const PROBE_FRESHNESS_REQUIRED_SERVICES = new Set<string>([
+  "salesforce",
+  "gmail",
+  "postmark"
+]);
 // Mailchimp is in transition-period scaling (D-046 Stage 5C, target mid-June 2026
 // decommission). Newsletter cadence is irregular, and multi-hour quiet periods are
 // routine, so only surface "Sync stale" for likely breakage rather than expected gaps
@@ -317,6 +323,54 @@ function coerceIsoTimestamp(value: Date | string | null | undefined): string | n
 function readMailchimpCaptureBaseUrl(): string | null {
   const baseUrl = process.env.MAILCHIMP_CAPTURE_BASE_URL?.trim();
   return baseUrl && baseUrl.length > 0 ? baseUrl : null;
+}
+
+function getTimestampMs(value: Date | string | null | undefined): number | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.getTime();
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const timestampMs = Date.parse(value);
+  return Number.isFinite(timestampMs) ? timestampMs : null;
+}
+
+function isProbeStale(
+  serviceName: string,
+  lastCheckedAt: Date | string | null,
+  now: Date
+): boolean {
+  if (!PROBE_FRESHNESS_REQUIRED_SERVICES.has(serviceName)) {
+    return false;
+  }
+  if (lastCheckedAt === null) {
+    return false;
+  }
+
+  const lastCheckedAtMs = getTimestampMs(lastCheckedAt);
+  if (lastCheckedAtMs === null) {
+    return false;
+  }
+
+  return now.getTime() - lastCheckedAtMs > PROBE_STALENESS_THRESHOLD_MS;
+}
+
+function formatProbeAge(ageMs: number): string {
+  const minutes = Math.max(1, Math.round(ageMs / 60_000));
+  if (minutes < 60) {
+    return `${String(minutes)} min ago`;
+  }
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) {
+    return `${String(hours)} ${hours === 1 ? "hour" : "hours"} ago`;
+  }
+
+  const days = Math.round(hours / 24);
+  return `${String(days)} ${days === 1 ? "day" : "days"} ago`;
 }
 
 function getLatestSuccessfulMailchimpTransitionSync(
@@ -797,6 +851,8 @@ async function readIntegrationHealth(): Promise<
 > {
   const runtime = await getStage1WebRuntime();
   const env = readWebEnv();
+  const now = new Date();
+  const nowMs = now.getTime();
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
@@ -822,11 +878,11 @@ async function readIntegrationHealth(): Promise<
   const latestMailchimpSyncAgeMs =
     latestMailchimpSyncAt === null
       ? null
-      : Date.now() - Date.parse(latestMailchimpSyncAt);
+      : nowMs - Date.parse(latestMailchimpSyncAt);
   const mailchimpActivityAgeMs =
     mailchimpSnapshot.latestActivityAt === null
       ? null
-      : Date.now() - Date.parse(mailchimpSnapshot.latestActivityAt);
+      : nowMs - Date.parse(mailchimpSnapshot.latestActivityAt);
   const hasFreshMailchimpSync =
     latestMailchimpSyncAgeMs !== null &&
     Number.isFinite(latestMailchimpSyncAgeMs) &&
@@ -895,12 +951,19 @@ async function readIntegrationHealth(): Promise<
     // the AI draft ledger for a successful call within a rolling window.
     // Until that worker probe lands, we surface `not_checked` when the API key
     // is present so the card doesn't falsely show "Not configured".
-    const effectiveStatus =
-      serviceName === "openai" &&
-      record.status === "not_configured" &&
-      (process.env.ANTHROPIC_API_KEY?.trim().length ?? 0) > 0
+    const probeIsStale = isProbeStale(serviceName, record.lastCheckedAt, now);
+    const effectiveStatus = probeIsStale
+      ? "needs_attention"
+      : serviceName === "openai" &&
+          record.status === "not_configured" &&
+          (process.env.ANTHROPIC_API_KEY?.trim().length ?? 0) > 0
         ? ("not_checked" as const)
         : record.status;
+    const lastCheckedAtMs = getTimestampMs(record.lastCheckedAt);
+    const detail =
+      probeIsStale && lastCheckedAtMs !== null
+        ? `Health probe last ran ${formatProbeAge(nowMs - lastCheckedAtMs)}`
+        : record.detail;
 
     integrations.push({
       serviceName: record.serviceName,
@@ -909,7 +972,7 @@ async function readIntegrationHealth(): Promise<
       category: record.category,
       status: effectiveStatus,
       lastCheckedAt: record.lastCheckedAt,
-      detail: record.detail,
+      detail,
       supportsRefresh: meta.supportsRefresh,
       mailchimp: null,
     });
@@ -918,7 +981,7 @@ async function readIntegrationHealth(): Promise<
   const hasActiveSender = activeSmsSenders.length > 0;
   const deliveredWithinLastDay =
     latestDelivered !== null &&
-    Date.now() - latestDelivered.updatedAt.getTime() <= 24 * 60 * 60 * 1000;
+    nowMs - latestDelivered.updatedAt.getTime() <= 24 * 60 * 60 * 1000;
   const twilioCardStatus =
     !env.SMS_ENABLED || !hasActiveSender
       ? "not-configured"
