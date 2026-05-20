@@ -1039,6 +1039,76 @@ describe("Stage 1 DB repositories", () => {
     ]);
   });
 
+  it("preserves operator-managed AI knowledge fields when a resync upsert passes nulls", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await repositories.projectDimensions.upsert({
+      projectId: "project_1",
+      projectName: "Project Antarctica",
+      projectAlias: "Antarctica",
+      source: "salesforce",
+      isActive: true,
+      aiKnowledgeUrl: "https://www.notion.so/abc",
+      aiKnowledgeSyncedAt: "2026-05-01T00:00:00.000Z",
+    });
+
+    await repositories.projectDimensions.upsert({
+      projectId: "project_1",
+      projectName: "Project Antarctica Resynced",
+      projectAlias: "Antarctica",
+      source: "salesforce",
+      isActive: true,
+      aiKnowledgeUrl: null,
+      aiKnowledgeSyncedAt: null,
+    });
+
+    await expect(
+      repositories.projectDimensions.listByIds(["project_1"]),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        projectId: "project_1",
+        projectName: "Project Antarctica Resynced",
+        aiKnowledgeUrl: "https://www.notion.so/abc",
+        aiKnowledgeSyncedAt: "2026-05-01T00:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it("allows explicit non-null AI knowledge fields to overwrite existing values", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await repositories.projectDimensions.upsert({
+      projectId: "project_1",
+      projectName: "Project Antarctica",
+      projectAlias: "Antarctica",
+      source: "salesforce",
+      isActive: true,
+      aiKnowledgeUrl: "https://www.notion.so/abc",
+      aiKnowledgeSyncedAt: "2026-05-01T00:00:00.000Z",
+    });
+
+    await repositories.projectDimensions.upsert({
+      projectId: "project_1",
+      projectName: "Project Antarctica Resynced",
+      projectAlias: "Antarctica",
+      source: "salesforce",
+      isActive: true,
+      aiKnowledgeUrl: "https://www.notion.so/xyz",
+      aiKnowledgeSyncedAt: "2026-05-03T00:00:00.000Z",
+    });
+
+    await expect(
+      repositories.projectDimensions.listByIds(["project_1"]),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        projectId: "project_1",
+        projectName: "Project Antarctica Resynced",
+        aiKnowledgeUrl: "https://www.notion.so/xyz",
+        aiKnowledgeSyncedAt: "2026-05-03T00:00:00.000Z",
+      }),
+    ]);
+  });
+
   it("persists sync state and audit evidence with contract-shaped results", async () => {
     const { repositories } = await createTestStage1Context();
 

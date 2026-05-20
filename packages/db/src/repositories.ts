@@ -3075,8 +3075,16 @@ function createStage1RepositoriesInternal(
               )}, ${projectDimensions.connectedToProjectId})`,
               // isActive intentionally NOT updated: admins manage it in Settings,
               // and Salesforce capture must not overwrite that app-owned state.
-              aiKnowledgeUrl: values.aiKnowledgeUrl,
-              aiKnowledgeSyncedAt: values.aiKnowledgeSyncedAt,
+              // aiKnowledgeUrl / aiKnowledgeSyncedAt follow the same
+              // operator-managed rule as alias/connected host metadata:
+              // Salesforce capture has no opinion here and must not wipe
+              // Settings-managed or synthesis-managed state with nulls.
+              aiKnowledgeUrl: sql`COALESCE(EXCLUDED.${sql.identifier(
+                "ai_knowledge_url",
+              )}, ${projectDimensions.aiKnowledgeUrl})`,
+              aiKnowledgeSyncedAt: sql`COALESCE(EXCLUDED.${sql.identifier(
+                "ai_knowledge_synced_at",
+              )}, ${projectDimensions.aiKnowledgeSyncedAt})`,
               aiKnowledgeSources:
                 values.aiKnowledgeSources ??
                 projectDimensions.aiKnowledgeSources,
