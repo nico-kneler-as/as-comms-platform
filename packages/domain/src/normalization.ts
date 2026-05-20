@@ -1124,7 +1124,7 @@ function resolveInboxSnippet(
   return "";
 }
 
-async function rebuildInboxProjectionForContact(
+export async function rebuildInboxProjectionForContact(
   persistence: Stage1PersistenceService,
   contactId: string,
 ): Promise<InboxProjectionRow | null> {

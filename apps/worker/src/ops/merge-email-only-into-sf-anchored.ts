@@ -5,8 +5,13 @@ import { pathToFileURL } from "node:url";
 import {
   closeDatabaseConnection,
   createDatabaseConnection,
+  createStage1RepositoryBundle,
   type Stage1Database,
 } from "@as-comms/db";
+import {
+  createStage1PersistenceService,
+  rebuildInboxProjectionForContact,
+} from "@as-comms/domain";
 import { sql as drizzleSql } from "drizzle-orm";
 
 import {
@@ -56,6 +61,7 @@ interface MergeExecutionResult {
   readonly notesRepointed: number;
   readonly routingRepointed: number;
   readonly identityCasesResolved: number;
+  readonly inboxProjectionsRebuilt: number;
   readonly contactsDeleted: number;
 }
 
@@ -67,6 +73,7 @@ interface MergeSummary {
   readonly notesRepointed: number;
   readonly routingRepointed: number;
   readonly identityCasesResolved: number;
+  readonly inboxProjectionsRebuilt: number;
   readonly contactsDeleted: number;
   readonly errors: readonly {
     readonly emailOnlyId: string;
@@ -256,6 +263,7 @@ function createEmptySummary(): MergeSummary {
     notesRepointed: 0,
     routingRepointed: 0,
     identityCasesResolved: 0,
+    inboxProjectionsRebuilt: 0,
     contactsDeleted: 0,
     errors: [],
   };
@@ -276,6 +284,8 @@ function addPairSuccess(
     routingRepointed: summary.routingRepointed + result.routingRepointed,
     identityCasesResolved:
       summary.identityCasesResolved + result.identityCasesResolved,
+    inboxProjectionsRebuilt:
+      summary.inboxProjectionsRebuilt + result.inboxProjectionsRebuilt,
     contactsDeleted: summary.contactsDeleted + result.contactsDeleted,
   };
 }
@@ -308,6 +318,7 @@ function buildPlanResult(plan: MergePlan): MergeExecutionResult {
     notesRepointed: plan.noteIds.length,
     routingRepointed: plan.routingRowIds.length,
     identityCasesResolved: plan.identityCaseIds.length,
+    inboxProjectionsRebuilt: 0,
     contactsDeleted: 1,
   };
 }
@@ -334,6 +345,8 @@ export async function applyMergeForPair(input: {
 
   const runInTransaction = async (tx: Stage1Database) => {
     const sql = createDbSqlRunner(tx);
+    const repositories = createStage1RepositoryBundle(tx);
+    const persistence = createStage1PersistenceService(repositories);
     const canonicalEventIds = await updateRowsAndReturnIds(
       sql,
       `
@@ -439,12 +452,19 @@ export async function applyMergeForPair(input: {
       throw new DryRunRollback();
     }
 
+    const inboxProjection =
+      await rebuildInboxProjectionForContact(
+        persistence,
+        input.pair.sfAnchoredId,
+      );
+
     return {
       canonicalEventsRepointed: canonicalEventIds.length,
       timelineRowsRepointed: timelineRowIds.length,
       notesRepointed: noteIds.length,
       routingRepointed: routingRowIds.length,
       identityCasesResolved: identityCaseIds.length,
+      inboxProjectionsRebuilt: inboxProjection === null ? 0 : 1,
       contactsDeleted: deletedContactIds.length,
     };
   };
@@ -480,6 +500,7 @@ function printPairAudit(input: {
   readonly logger: Logger;
   readonly dryRun: boolean;
   readonly plan: MergePlan;
+  readonly result?: MergeExecutionResult;
   readonly status: "planned" | "applied" | "error";
   readonly errorMessage?: string;
 }): void {
@@ -504,6 +525,7 @@ function printPairAudit(input: {
         routingRows: input.plan.routingRowIds.length,
         identityCases: input.plan.identityCaseIds.length,
         inboxRows: input.plan.inboxProjectionContactIds.length,
+        inboxProjectionsRebuilt: input.result?.inboxProjectionsRebuilt ?? 0,
       },
       ...(input.errorMessage === undefined
         ? {}
@@ -530,6 +552,7 @@ function printSummary(input: {
       notesRepointed: input.summary.notesRepointed,
       routingRepointed: input.summary.routingRepointed,
       identityCasesResolved: input.summary.identityCasesResolved,
+      inboxProjectionsRebuilt: input.summary.inboxProjectionsRebuilt,
       contactsDeleted: input.summary.contactsDeleted,
       errors: input.summary.errors,
     }),
@@ -593,6 +616,7 @@ export async function main(
           logger,
           dryRun,
           plan,
+          result,
           status: dryRun ? "planned" : "applied",
         });
         summary = addPairSuccess(summary, result);
