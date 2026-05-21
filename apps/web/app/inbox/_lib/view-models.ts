@@ -93,6 +93,7 @@ export interface InboxListItemViewModel {
   // ── Row states (all separate, not collapsed) ──
   readonly bucket: InboxBucket;
   readonly needsFollowUp: boolean;
+  readonly isSpam?: boolean;
   readonly hasUnresolved: boolean;
   readonly isArchived: boolean;
   readonly isUnread: boolean;
@@ -461,6 +462,7 @@ export interface InboxDetailSummaryViewModel {
   readonly avatarTone: InboxAvatarTone;
   readonly bucket: InboxBucket;
   readonly needsFollowUp: boolean;
+  readonly isSpam?: boolean;
   readonly isArchived: boolean;
   readonly isUnread: boolean;
   readonly smsEligible: boolean;

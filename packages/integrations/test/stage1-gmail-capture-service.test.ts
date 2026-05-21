@@ -446,6 +446,72 @@ describe("Gmail capture service", () => {
     expect(record.bodyTextPreview).toHaveLength(longBody.length);
   });
 
+  it("captures spam-labeled inbound Gmail messages and preserves the SPAM label", async () => {
+    const service = createGmailCaptureService(
+      {
+        bearerToken: "gmail-token",
+        liveAccount: "volunteers@example.org",
+        projectInboxAliases: ["project-oceans@example.org"],
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
+      },
+      {
+        apiClient: {
+          listMessageIds: () => Promise.resolve(["gmail-spam-1"]),
+          getMessage: ({ messageId }) =>
+            Promise.resolve({
+              id: messageId,
+              threadId: "thread-spam-1",
+              labelIds: ["INBOX", "SPAM"],
+              snippet: "Question from a volunteer that Gmail marked as spam.",
+              internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
+              payload: buildFullMessagePayload({
+                bodyText:
+                  "Can my friends join me on this hex if they have accounts too?",
+                headers: {
+                  Date: "Mon, 05 Jan 2026 00:00:00 +0000",
+                  From: "Volunteer <volunteer@example.org>",
+                  To: "Project Oceans <project-oceans@example.org>",
+                  Subject: "Adding others to a Hex",
+                  "Message-ID": "<gmail-spam-1@example.org>"
+                }
+              })
+            })
+        },
+        now: () => new Date("2026-01-05T00:01:00.000Z")
+      }
+    );
+
+    const result = await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:gmail:live:spam",
+      correlationId: "corr:gmail:live:spam",
+      traceId: null,
+      batchId: "batch:gmail:live:spam",
+      syncStateId: "sync:gmail:live:spam",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "gmail",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: "2026-01-05T00:00:00.000Z",
+      windowEnd: "2026-01-05T00:05:00.000Z",
+      recordIds: [],
+      maxRecords: 25
+    });
+
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]).toMatchObject({
+      recordType: "message",
+      direction: "inbound",
+      subject: "Adding others to a Hex",
+      labelIds: ["INBOX", "SPAM"],
+    });
+  });
+
   it("uses OAuth refresh-token exchange before polling the live mailbox", async () => {
     const requests: {
       readonly url: string;
@@ -536,6 +602,8 @@ describe("Gmail capture service", () => {
     expect(requests[1]?.url).toContain(
       "/gmail/v1/users/volunteers%40example.org/messages"
     );
+    expect(new URL(requests[1]?.url ?? "").searchParams.get("includeSpamTrash"))
+      .toBe("true");
   });
 
   it("accepts Gmail API message parts with empty body data", async () => {

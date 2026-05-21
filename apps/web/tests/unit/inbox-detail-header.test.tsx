@@ -183,6 +183,7 @@ function buildDetail(
     timeline: [],
     bucket: "opened",
     needsFollowUp: false,
+    isSpam: false,
     isArchived: false,
     isUnread: false,
     smsEligible: false,
@@ -450,6 +451,16 @@ describe("Inbox detail header", () => {
 
     expect(activeSession.container.textContent).toContain("Amazon Basin");
     expect(activeSession.container.textContent).not.toContain("via ");
+  });
+
+  it("renders a Spam badge in the header when the conversation is spam-flagged", async () => {
+    activeSession = await renderDetail(
+      buildDetail({
+        isSpam: true,
+      }),
+    );
+
+    expect(activeSession.container.textContent).toContain("Spam");
   });
 
   it("keeps the follow-up toggle clickable while a request is in flight and queues the latest intent", async () => {
