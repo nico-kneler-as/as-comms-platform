@@ -19,6 +19,20 @@ import {
   type RunMetricCounts,
 } from "../../_lib/run-recipients";
 
+function normalizeSqlResultRows<TRow>(
+  result:
+    | readonly TRow[]
+    | {
+        readonly rows?: readonly TRow[];
+      },
+): readonly TRow[] {
+  if (Array.isArray(result)) {
+    return result as readonly TRow[];
+  }
+
+  return (result as { readonly rows?: readonly TRow[] }).rows ?? [];
+}
+
 export interface RunMetricTileData {
   readonly key:
     | "queued"
@@ -540,14 +554,14 @@ export async function getRunDetailModel(input: {
           )
       `,
     );
-    const recentReplyRows =
-      (replyRowsResult as { readonly rows?: readonly ReplyRowDb[] }).rows ?? [];
-    const [countRow] =
-      (
-        countResult as {
-          readonly rows?: readonly { readonly count: number }[];
-        }
-      ).rows ?? [];
+    const recentReplyRows = normalizeSqlResultRows<ReplyRowDb>(
+      replyRowsResult as { readonly rows?: readonly ReplyRowDb[] },
+    );
+    const [countRow] = normalizeSqlResultRows<{ readonly count: number }>(
+      countResult as {
+        readonly rows?: readonly { readonly count: number }[];
+      },
+    );
 
     repliesCount = countRow?.count ?? 0;
     recentReplies = recentReplyRows.map((row) => ({
