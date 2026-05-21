@@ -30,6 +30,7 @@ If the compact canon and deeper donor evidence differ, use the compact canon for
 | Task bundles | `02-bundles/*` | task-scoped working packets | per task |
 | Reference | `03-reference/*` | compact lookup and donor pointers | only when needed |
 | Implementation specs | `04-implementation-specs/*` | stage-scoped execution narrowing after canon is read | only when beginning implementation for that stage |
+| Backlog | `backlog.md` | durable list of noticed-but-not-scoped follow-up items | when planning the next scope of work, or before opening a new issue |
 
 ## Core Canon
 
@@ -77,3 +78,4 @@ Open [decision-log.md](./01-core/decision-log.md) when a task may reopen a locke
 - If planning backend follow-on validation after Stage 1 completion: [stage-1-post-validation-roadmap.md](./stage-1-post-validation-roadmap.md)
 - If reconciling locked choices or adding new decision records: [decision-log.md](./01-core/decision-log.md)
 - If implementing product behavior: open the matching file under [02-bundles](./02-bundles)
+- If planning new work or checking for known follow-ups before filing a new issue: [backlog.md](./backlog.md)
