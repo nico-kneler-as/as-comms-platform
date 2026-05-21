@@ -205,10 +205,17 @@ export const audienceCriteriaSchema = z
         : []),
     ].filter((entry, index, values) => values.indexOf(entry) === index);
 
+    const filteredStatuses = Array.isArray(input.statuses)
+      ? input.statuses.filter(
+          (entry) => expeditionMemberStatusSchema.safeParse(entry).success,
+        )
+      : input.statuses;
+
     return {
       ...input,
       projectId: normalizedProjectIds[0] ?? null,
       projectIds: normalizedProjectIds,
+      statuses: filteredStatuses,
     };
   }, z.object({
     projectId: coercingNullableString.default(audienceCriteriaDefaults.projectId),

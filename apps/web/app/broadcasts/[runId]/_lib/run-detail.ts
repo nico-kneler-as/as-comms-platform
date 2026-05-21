@@ -33,6 +33,13 @@ function normalizeSqlResultRows<TRow>(
   return (result as { readonly rows?: readonly TRow[] }).rows ?? [];
 }
 
+function requireIsoTimestamp(value: Date | string): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return new Date(value).toISOString();
+}
+
 export interface RunMetricTileData {
   readonly key:
     | "queued"
@@ -107,7 +114,7 @@ interface ReplyRowDb {
   readonly contactId: string;
   readonly contactName: string | null;
   readonly email: string | null;
-  readonly occurredAt: Date;
+  readonly occurredAt: Date | string;
 }
 
 interface MailchimpCampaignAggregates {
@@ -568,7 +575,7 @@ export async function getRunDetailModel(input: {
       contactId: row.contactId,
       contactName: row.contactName ?? row.email ?? row.contactId,
       email: row.email,
-      occurredAt: row.occurredAt.toISOString(),
+      occurredAt: requireIsoTimestamp(row.occurredAt),
     }));
   }
 

@@ -106,6 +106,18 @@ function normalizeSqlResultRows<TRow>(
   return (result as { readonly rows?: readonly TRow[] }).rows ?? [];
 }
 
+function requireIsoTimestamp(value: Date | string): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return new Date(value).toISOString();
+}
+
+function coerceIsoTimestamp(value: Date | string | null): string | null {
+  if (value === null) return null;
+  return requireIsoTimestamp(value);
+}
+
 interface CampaignProjectionSqlRow {
   readonly runId: string;
   readonly provider: "postmark";
@@ -116,12 +128,12 @@ interface CampaignProjectionSqlRow {
   readonly sender: string;
   readonly subject: string;
   readonly audienceSize: number | null;
-  readonly scheduledAt: Date | null;
-  readonly startedAt: Date | null;
-  readonly completedAt: Date | null;
-  readonly cancelledAt: Date | null;
-  readonly createdAt: Date;
-  readonly updatedAt: Date;
+  readonly scheduledAt: Date | string | null;
+  readonly startedAt: Date | string | null;
+  readonly completedAt: Date | string | null;
+  readonly cancelledAt: Date | string | null;
+  readonly createdAt: Date | string;
+  readonly updatedAt: Date | string;
 }
 
 interface CampaignProjectionCountSqlRow {
@@ -199,12 +211,12 @@ function mapProjectionSqlRow(
     sender: row.sender,
     subject: row.subject,
     audienceSize: row.audienceSize,
-    scheduledAt: row.scheduledAt?.toISOString() ?? null,
-    startedAt: row.startedAt?.toISOString() ?? null,
-    completedAt: row.completedAt?.toISOString() ?? null,
-    cancelledAt: row.cancelledAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    scheduledAt: coerceIsoTimestamp(row.scheduledAt),
+    startedAt: coerceIsoTimestamp(row.startedAt),
+    completedAt: coerceIsoTimestamp(row.completedAt),
+    cancelledAt: coerceIsoTimestamp(row.cancelledAt),
+    createdAt: requireIsoTimestamp(row.createdAt),
+    updatedAt: requireIsoTimestamp(row.updatedAt),
   };
 }
 
