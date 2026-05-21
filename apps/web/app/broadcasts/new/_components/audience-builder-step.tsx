@@ -2,12 +2,13 @@
 
 import {
   AlertTriangle,
-  CheckCircle2,
-  LoaderCircle,
+  Filter,
   Search,
-  Sparkles,
+  User,
+  Users,
   X,
 } from "lucide-react";
+import type { ComponentType, SVGProps } from "react";
 
 import {
   FOCUS_RING,
@@ -15,7 +16,6 @@ import {
   SHADOW,
   TRANSITION,
 } from "@/app/_lib/design-tokens-v2";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +30,7 @@ import type {
 } from "../../_lib/audience-data-source";
 import { AudienceFilterPanel } from "./audience-filter-panel";
 import { AudiencePreviewList } from "./audience-preview-list";
+import { StepHeader, WizardFooter } from "./wizard-shell";
 
 export type AudienceInitialFilter =
   | "project_status"
@@ -45,19 +46,23 @@ const MODE_META: Record<
   {
     readonly title: string;
     readonly hint: string;
+    readonly Icon: ComponentType<SVGProps<SVGSVGElement>>;
   }
 > = {
   project_status: {
     title: "Project / status",
     hint: "Start with one or more projects, then narrow by member status.",
+    Icon: Filter,
   },
   specific: {
     title: "Individual volunteers",
     hint: "Search within the selected projects and hand-pick recipients.",
+    Icon: User,
   },
   all_approved: {
     title: "All approved contacts",
     hint: "Every approved contact across all projects, minus auto-exclusions.",
+    Icon: Users,
   },
 };
 
@@ -134,18 +139,10 @@ export function AudienceBuilderStep({
 
   return (
     <section className="flex h-full flex-col">
-      <div className="pb-5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          Step 3
-        </p>
-        <h2 className="mt-2 text-balance text-xl font-semibold text-slate-900">
-          Build the audience
-        </h2>
-        <p className="mt-2 max-w-3xl text-pretty text-[13px] leading-relaxed text-slate-500">
-          Live counts update from canonical contacts as you refine the audience
-          mode, filters, and volunteer selection.
-        </p>
-      </div>
+      <StepHeader
+        title="Build the audience"
+        description="Live counts update from canonical contacts as you refine the audience mode, filters, and volunteer selection."
+      />
 
       <div className="space-y-4">
         <AudienceCountPanel countState={countState} loading={countLoading} />
@@ -226,22 +223,12 @@ export function AudienceBuilderStep({
         )}
       </div>
 
-      <div className="mt-5 flex items-center justify-between border-t border-slate-200 pt-5">
-        <Button variant="outline" onClick={onBack}>
-          Back
-        </Button>
-        <Button
-          onClick={() => {
-            if (canContinue) {
-              onContinue();
-            }
-          }}
-          aria-disabled={!canContinue}
-          disabled={!canContinue}
-        >
-          Continue to compose
-        </Button>
-      </div>
+      <WizardFooter
+        onBack={onBack}
+        primaryLabel="Continue"
+        primaryAction={onContinue}
+        primaryDisabled={!canContinue}
+      />
     </section>
   );
 }
@@ -327,10 +314,11 @@ function ModeSegmentedControl({
     <div
       role="tablist"
       aria-label="Audience mode"
-      className="inline-flex items-center gap-0 rounded-full border border-slate-200 bg-slate-50 p-0.5"
+      className="inline-flex rounded-md bg-slate-100 p-0.5 text-[12.5px]"
     >
       {modes.map((mode) => {
         const selected = value === mode;
+        const Icon = MODE_META[mode].Icon;
         return (
           <button
             key={mode}
@@ -341,12 +329,13 @@ function ModeSegmentedControl({
               onChange(mode);
             }}
             className={cn(
-              `rounded-full px-3.5 py-1.5 text-[12.5px] font-medium ${TRANSITION.fast} ${FOCUS_RING}`,
+              `inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion}`,
               selected
-                ? "bg-slate-900 text-white shadow-sm"
-                : "text-slate-600 hover:text-slate-900",
+                ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
+                : "text-slate-500 hover:text-slate-700",
             )}
           >
+            <Icon className="size-3.5" aria-hidden="true" />
             {MODE_META[mode].title}
           </button>
         );
@@ -367,61 +356,49 @@ export function AudienceCountPanel({
     : countState.count > 0
       ? "positive"
       : "warning";
+  const helperText = loading
+    ? "Calculating audience…"
+    : !countState.hasAppliedFilters
+      ? "Pick an audience mode to start."
+      : countState.count > 0
+        ? "recipients match"
+        : "No recipients match the current filters.";
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <div className="min-w-0">
-        <div
-          aria-live="polite"
-          className={cn(
-            "inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11.5px] font-semibold",
-            tone === "neutral"
-              ? "bg-white text-slate-600 ring-1 ring-slate-200"
-              : tone === "positive"
-                ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                : "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
-          )}
-        >
-          {loading ? (
-            <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
-          ) : tone === "neutral" ? (
-            <Sparkles className="size-3.5" aria-hidden="true" />
-          ) : tone === "positive" ? (
-            <CheckCircle2 className="size-3.5" aria-hidden="true" />
-          ) : (
-            <AlertTriangle className="size-3.5" aria-hidden="true" />
-          )}
-          {loading ? "Calculating audience…" : "Live audience"}
-        </div>
-        <div className="mt-3 flex items-end gap-3">
-          {loading ? (
-            <span
-              aria-hidden="true"
-              className="skeleton-pulse block h-8 w-20 rounded-md"
-            />
-          ) : (
-            <span className="text-[32px] font-semibold leading-none tabular-nums text-slate-900">
-              {countState.hasAppliedFilters
-                ? countState.count.toLocaleString()
-                : "—"}
-            </span>
-          )}
-          <span className="pb-1 text-[12px] text-slate-500">
-            recipients match · live as you change filters
+    <div
+      aria-live="polite"
+      className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
+    >
+      <div className="flex items-baseline gap-3">
+        {loading ? (
+          <span
+            aria-hidden="true"
+            className="skeleton-pulse block h-7 w-16 rounded-md"
+          />
+        ) : (
+          <span
+            className={cn(
+              "text-[28px] font-semibold leading-none tabular-nums",
+              tone === "warning" ? "text-slate-400" : "text-slate-900",
+            )}
+          >
+            {countState.hasAppliedFilters
+              ? countState.count.toLocaleString()
+              : "—"}
           </span>
-        </div>
-        <p className="mt-2 text-[12.5px] text-slate-600">
-          {!countState.hasAppliedFilters
-            ? "Pick an audience mode to start."
-            : countState.count > 0
-              ? "The live audience is ready to inspect."
-              : "No recipients match the current filters."}
-        </p>
+        )}
+        <span className="text-[12px] text-slate-500">{helperText}</span>
       </div>
 
       {!loading && countState.count > 5000 ? (
-        <div className="mt-4 rounded-md border border-amber-200 bg-white px-3 py-2.5 text-[12.5px] text-amber-800">
-          This is a large send. Double-check the filters before continuing.
+        <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-white px-3 py-2 text-[12px] text-amber-800">
+          <AlertTriangle
+            className="mt-0.5 size-3.5 shrink-0"
+            aria-hidden="true"
+          />
+          <span>
+            This is a large send. Double-check the filters before continuing.
+          </span>
         </div>
       ) : null}
     </div>

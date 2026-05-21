@@ -13,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { RichTextComposerEditor } from "@/app/inbox/_components/composer-editor-surface";
 import { ComposerToolbar } from "@/app/inbox/_components/composer-toolbar";
 
+import { StepHeader, WizardFooter } from "./wizard-shell";
+
 const MERGE_TOKENS = [
   "{{firstName}}",
   "{{projectName}}",
@@ -23,7 +25,6 @@ interface ComposeStepProps {
   readonly subject: string;
   readonly preheader: string;
   readonly bodyPlaintext: string;
-  readonly autosaveLabel: string;
   readonly frozen: boolean;
   readonly onSubjectChange: (value: string) => void;
   readonly onPreheaderChange: (value: string) => void;
@@ -39,7 +40,6 @@ export function ComposeStep({
   subject,
   preheader,
   bodyPlaintext,
-  autosaveLabel,
   frozen,
   onSubjectChange,
   onPreheaderChange,
@@ -52,26 +52,15 @@ export function ComposeStep({
   const wordCount = bodyPlaintext.trim()
     ? bodyPlaintext.trim().split(/\s+/u).length
     : 0;
+  const canContinue =
+    subject.trim().length > 0 && bodyPlaintext.trim().length > 0;
 
   return (
     <section className="flex h-full flex-col">
-      <div className="flex items-start justify-between gap-4 pb-5">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Step 4
-          </p>
-          <h2 className="mt-2 text-balance text-xl font-semibold text-slate-900">
-            Write your email
-          </h2>
-          <p className="mt-2 max-w-3xl text-pretty text-[13px] leading-relaxed text-slate-500">
-            Draft the subject, preheader, and body. The rendered email preview
-            comes next.
-          </p>
-        </div>
-        <div className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
-          {autosaveLabel}
-        </div>
-      </div>
+      <StepHeader
+        title="Write your email"
+        description="Draft the subject, preheader, and body. The rendered email preview comes next."
+      />
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2.5">
@@ -130,7 +119,7 @@ export function ComposeStep({
           onChange={onBodyChange}
           onClearErrors={() => undefined}
           frameClassName="overflow-hidden rounded-none border-0"
-          contentClassName="min-h-[300px] bg-white px-4 py-4 text-[13.5px] leading-[1.65]"
+          contentClassName="min-h-[300px] bg-white px-4 py-3 text-sm leading-6"
           toolbarFooter={({ activeCommands, onCommand, insertText }) => (
             <div className="border-t border-slate-200 bg-slate-50/70">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-1.5">
@@ -186,12 +175,12 @@ export function ComposeStep({
         />
       </div>
 
-      <div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-5">
-        <Button variant="outline" onClick={onBack}>
-          Back
-        </Button>
-        <Button onClick={onContinue}>Continue to preview</Button>
-      </div>
+      <WizardFooter
+        onBack={onBack}
+        primaryLabel="Continue"
+        primaryAction={onContinue}
+        primaryDisabled={!canContinue}
+      />
     </section>
   );
 }

@@ -6,6 +6,8 @@ Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
   AlertTriangle: () => null,
+  ArrowLeft: () => null,
+  ArrowRight: () => null,
   ChevronLeft: () => null,
   ChevronRight: () => null,
   Info: () => null,
@@ -20,6 +22,18 @@ vi.mock("@/components/ui/button", () => ({
 
 vi.mock("@/components/ui/input", () => ({
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
+}));
+
+vi.mock("@/components/ui/popover", () => ({
+  Popover: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  PopoverTrigger: ({ children }: { readonly children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+  PopoverContent: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
@@ -102,16 +116,13 @@ describe("PreviewStep", () => {
 
     expect(markup).toContain('aria-label="Previous sample contact"');
     expect(markup).toContain('aria-label="Next sample contact"');
-    expect(markup).toContain("Continue to review");
+    expect(markup).toContain("Continue");
   });
 
-  it("renders the inline send-test controls when expanded", () => {
-    const markup = renderToStaticMarkup(
-      <PreviewStep {...baseProps} testSendOpen={true} />,
-    );
+  it("exposes the send-test action as a trigger button", () => {
+    const markup = renderToStaticMarkup(<PreviewStep {...baseProps} />);
 
-    expect(markup).toContain("Send a test to:");
-    expect(markup).toContain("nico@adventurescientists.org");
-    expect(markup).toContain("Cancel");
+    // Popover content portals at runtime; SSR only captures the trigger.
+    expect(markup).toMatch(/<button[^>]*>[^<]*Send test[^<]*<\/button>/);
   });
 });

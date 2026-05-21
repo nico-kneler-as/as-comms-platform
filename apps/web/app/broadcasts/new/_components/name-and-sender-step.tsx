@@ -2,7 +2,6 @@
 
 import { Info } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Tooltip,
@@ -15,6 +14,7 @@ import { cn } from "@/lib/utils";
 import type { PostmarkSenderStatus } from "@as-comms/contracts";
 
 import type { CampaignSenderOption } from "../../_lib/audience-data-source";
+import { SectionPanel, StepHeader, WizardFooter } from "./wizard-shell";
 
 interface NameAndSenderStepProps {
   readonly name: string;
@@ -85,25 +85,14 @@ export function NameAndSenderStep({
 
   return (
     <section className="flex h-full flex-col">
-      <div className="pb-5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          Step 2
-        </p>
-        <h2 className="mt-2 text-balance text-xl font-semibold text-slate-900">
-          Name and sender
-        </h2>
-        <p className="mt-2 max-w-2xl text-pretty text-[13px] leading-relaxed text-slate-500">
-          Set the internal broadcast name and choose the verified alias that
-          recipients will see in their inbox.
-        </p>
-      </div>
+      <StepHeader
+        title="Name and sender"
+        description="Set the internal broadcast name and choose the verified alias that recipients will see in their inbox."
+      />
 
       <div className="space-y-4">
-        <section className="rounded-lg border border-slate-200 bg-white p-5">
-          <label
-            htmlFor="campaign-name"
-            className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500"
-          >
+        <SectionPanel label="Broadcast name" bodyClassName="px-4 py-4">
+          <label htmlFor="campaign-name" className="sr-only">
             Broadcast name
           </label>
           <Input
@@ -114,145 +103,125 @@ export function NameAndSenderStep({
             }}
             disabled={frozen}
             placeholder="e.g. Whitebark Pine - June kickoff"
-            className="mt-2 h-11 text-lg font-semibold tracking-tight"
+            className="h-11 text-base font-semibold tracking-tight"
           />
-          <p className="mt-1.5 text-[11.5px] text-slate-500">
-            Internal name only; recipients see the subject line.
+          <p className="mt-2 text-[11px] text-slate-500">
+            Internal name only — recipients see the subject line.
           </p>
-        </section>
+        </SectionPanel>
 
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-2">
-            <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
-              Sending account
-            </p>
-          </div>
-          <div className="p-4">
-            <TooltipProvider delayDuration={200}>
-              <div className="space-y-2">
-                {senderOptions.map((option) => {
-                  const meta = SENDER_STATUS_META[option.status];
-                  const selected = fromEmail === option.email;
-                  const card = (
-                    <div
+        <SectionPanel label="Sending account" bodyClassName="p-4">
+          <TooltipProvider delayDuration={200}>
+            <div className="space-y-2">
+              {senderOptions.map((option) => {
+                const meta = SENDER_STATUS_META[option.status];
+                const selected = fromEmail === option.email;
+                const card = (
+                  <div
+                    className={cn(
+                      "flex items-start gap-3 rounded-lg border px-3 py-3 transition-colors",
+                      selected
+                        ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900/10"
+                        : "border-slate-200 bg-white",
+                      meta.selectable
+                        ? "hover:border-slate-300 hover:bg-slate-50"
+                        : "text-slate-500",
+                    )}
+                  >
+                    <span
                       className={cn(
-                        "flex items-start gap-3 rounded-xl border px-3 py-3 transition-colors",
-                        selected
-                          ? "border-slate-950 bg-slate-50 ring-1 ring-slate-950/10"
-                          : "border-slate-200 bg-white",
-                        meta.selectable
-                          ? "hover:border-slate-300 hover:bg-slate-50"
-                          : "text-slate-500",
+                        "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+                        selected ? "border-slate-900" : "border-slate-300",
+                      )}
+                      aria-hidden="true"
+                    >
+                      {selected ? (
+                        <span className="size-2 rounded-full bg-slate-900" />
+                      ) : null}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-[12.5px] font-medium text-slate-900">
+                        {option.email}
+                      </p>
+                      <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                        {option.projectAliasLabel}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                        meta.chipClassName,
                       )}
                     >
                       <span
                         className={cn(
-                          "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
-                          selected ? "border-slate-950" : "border-slate-300",
+                          "size-1 rounded-full",
+                          option.status === "verified"
+                            ? "bg-emerald-500"
+                            : option.status === "pending"
+                              ? "bg-amber-500"
+                              : "bg-slate-400",
                         )}
-                        aria-hidden="true"
-                      >
-                        {selected ? (
-                          <span className="size-2 rounded-full bg-slate-950" />
-                        ) : null}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-mono text-[12.5px] font-medium text-slate-900">
-                          {option.email}
-                        </p>
-                        <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                          {option.projectAliasLabel}
-                        </p>
-                      </div>
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                          meta.chipClassName,
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "size-1 rounded-full",
-                            option.status === "verified"
-                              ? "bg-emerald-500"
-                              : option.status === "pending"
-                                ? "bg-amber-500"
-                                : "bg-slate-400",
-                          )}
-                        />
-                        {meta.chipLabel}
-                      </span>
-                    </div>
-                  );
+                      />
+                      {meta.chipLabel}
+                    </span>
+                  </div>
+                );
 
-                  if (!meta.selectable) {
-                    return (
-                      <Tooltip key={`${option.projectId}:${option.email}`}>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            disabled
-                            aria-disabled="true"
-                            className="block w-full cursor-not-allowed text-left"
-                          >
-                            {card}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="right" className="max-w-72 text-pretty">
-                          {meta.tooltip}
-                        </TooltipContent>
-                      </Tooltip>
-                    );
-                  }
-
+                if (!meta.selectable) {
                   return (
-                    <button
-                      key={`${option.projectId}:${option.email}`}
-                      type="button"
-                      aria-pressed={selected}
-                      disabled={frozen}
-                      onClick={() => {
-                        onFromEmailChange(option.email);
-                      }}
-                      className="block w-full text-left disabled:cursor-not-allowed"
-                    >
-                      {card}
-                    </button>
+                    <Tooltip key={`${option.projectId}:${option.email}`}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          disabled
+                          aria-disabled="true"
+                          className="block w-full cursor-not-allowed text-left"
+                        >
+                          {card}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-72 text-pretty">
+                        {meta.tooltip}
+                      </TooltipContent>
+                    </Tooltip>
                   );
-                })}
-              </div>
-            </TooltipProvider>
-          </div>
-        </section>
+                }
 
-        <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3 text-[12px] text-slate-600">
-          <Info className="mr-1.5 inline size-3.5 text-slate-500" />
-          Replies route to the same address. To add a new verified sender, ask
-          an admin in Settings.
-        </div>
+                return (
+                  <button
+                    key={`${option.projectId}:${option.email}`}
+                    type="button"
+                    aria-pressed={selected}
+                    disabled={frozen}
+                    onClick={() => {
+                      onFromEmailChange(option.email);
+                    }}
+                    className="block w-full rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed"
+                  >
+                    {card}
+                  </button>
+                );
+              })}
+            </div>
+          </TooltipProvider>
+        </SectionPanel>
+
+        <p className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3 text-[12px] leading-relaxed text-slate-600">
+          <Info className="mt-0.5 size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+          <span>
+            Replies route to the same address. To add a new verified sender, ask
+            an admin in Settings.
+          </span>
+        </p>
       </div>
 
-      <div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-5">
-        <Button variant="outline" onClick={onBack}>
-          Back
-        </Button>
-        <Button
-          type="button"
-          aria-disabled={!canContinue}
-          onClick={() => {
-            if (canContinue) {
-              onContinue();
-            }
-          }}
-          className={cn(
-            !canContinue
-              ? "cursor-not-allowed bg-slate-200 text-slate-500 shadow-none hover:bg-slate-200"
-              : "",
-          )}
-        >
-          Continue ›
-        </Button>
-      </div>
+      <WizardFooter
+        onBack={onBack}
+        primaryLabel="Continue"
+        primaryAction={onContinue}
+        primaryDisabled={!canContinue}
+      />
     </section>
   );
 }

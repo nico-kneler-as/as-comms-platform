@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, Clock, Send } from "lucide-react";
+import type { ComponentType, SVGProps } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +17,8 @@ import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { cn } from "@/lib/utils";
 
 import type { CampaignKind, CampaignRunRecord } from "@as-comms/contracts";
+
+import { SectionPanel, StepHeader, WizardFooter } from "./wizard-shell";
 
 interface ReviewStepProps {
   readonly kind: CampaignKind;
@@ -53,25 +56,6 @@ function formatDenverTimestamp(value: string | null): string {
   }).format(new Date(value));
 }
 
-function Section({
-  title,
-  children,
-}: {
-  readonly title: string;
-  readonly children: React.ReactNode;
-}) {
-  return (
-    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-2">
-        <h3 className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
-          {title}
-        </h3>
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function SummaryRow({
   label,
   value,
@@ -80,11 +64,11 @@ function SummaryRow({
   readonly value: React.ReactNode;
 }) {
   return (
-    <div className="flex gap-3 text-[12.5px]">
-      <span className="w-20 shrink-0 text-[10.5px] uppercase tracking-wide text-slate-500">
+    <div className="flex items-baseline gap-4 px-4 py-2.5 text-[12.5px]">
+      <dt className="w-16 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
         {label}
-      </span>
-      <span className="min-w-0 text-slate-800">{value}</span>
+      </dt>
+      <dd className="min-w-0 flex-1 text-slate-800">{value}</dd>
     </div>
   );
 }
@@ -124,78 +108,37 @@ export function ReviewStep({
 
   return (
     <section className="flex h-full flex-col">
-      <div className="pb-5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          Step 6
-        </p>
-        <h2 className="mt-2 text-balance text-xl font-semibold text-slate-900">
-          Review and send
-        </h2>
-        <p className="mt-2 max-w-3xl text-pretty text-[13px] leading-relaxed text-slate-500">
-          Final check before launch. Content and audience freeze after this
-          point.
-        </p>
-      </div>
+      <StepHeader
+        title="Review and send"
+        description="Final check before launch. Content and audience freeze after this point."
+      />
 
       <div className="space-y-4">
-        <Section title="FINAL CHECK">
-          <div className="grid gap-4 px-4 py-4 md:grid-cols-2">
-            <div className="space-y-2.5">
-              <SummaryRow label="Name" value={runName ?? "Untitled broadcast"} />
-              <SummaryRow
-                label="Kind"
-                value={kind === "newsletter" ? "Newsletter" : "Project email"}
-              />
-              <SummaryRow
-                label="From"
-                value={
-                  <span className="font-mono">
-                    {fromEmail ?? "Choose a verified sender"}
+        <SectionPanel label="Final check">
+          <dl className="divide-y divide-slate-100">
+            <SummaryRow label="Name" value={runName ?? "Untitled broadcast"} />
+            <SummaryRow
+              label="From"
+              value={
+                <span className="font-mono">
+                  {fromEmail ?? "Choose a verified sender"}
+                </span>
+              }
+            />
+            <SummaryRow
+              label="To"
+              value={
+                <span>
+                  <span className="font-semibold tabular-nums text-slate-900">
+                    {(audienceSize ?? 0).toLocaleString()}
+                  </span>{" "}
+                  recipients in{" "}
+                  <span className="text-slate-900">
+                    {kind === "newsletter" ? "All AS" : projectChipLabel}
                   </span>
-                }
-              />
-            </div>
-            <div className="space-y-2.5">
-              <SummaryRow
-                label="Audience"
-                value={
-                  <span>
-                    <span className="font-mono font-semibold tabular-nums text-slate-900">
-                      {(audienceSize ?? 0).toLocaleString()}
-                    </span>{" "}
-                    recipients
-                  </span>
-                }
-              />
-              <SummaryRow
-                label="Scope"
-                value={kind === "newsletter" ? "All AS" : projectChipLabel}
-              />
-              <SummaryRow
-                label="Sender"
-                value={
-                  selectedSenderVerified ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-emerald-800">
-                      <span className="size-1 rounded-full bg-emerald-500" />
-                      Verified
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-amber-800">
-                      Verification required
-                    </span>
-                  )
-                }
-              />
-            </div>
-          </div>
-          <div className="border-t border-slate-200 bg-slate-50/60 px-4 py-2 text-[10.5px] text-slate-500">
-            Audience freezes at launch. Auto-excludes unsubscribed,
-            hard-bounced, and contacts without an email on file.
-          </div>
-        </Section>
-
-        <Section title="Email content">
-          <div className="space-y-1.5 px-4 py-3 text-[12.5px]">
+                </span>
+              }
+            />
             <SummaryRow
               label="Subject"
               value={
@@ -206,97 +149,53 @@ export function ReviewStep({
                 )
               }
             />
+          </dl>
+          <div className="border-t border-slate-200 bg-slate-50/60 px-4 py-2 text-[11px] leading-relaxed text-slate-500">
+            Audience freezes at launch. Auto-excludes unsubscribed,
+            hard-bounced, and contacts without an email on file.
           </div>
-        </Section>
+        </SectionPanel>
 
         {frozen ? (
-          <section className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-[12.5px] text-emerald-900">
-            <div className="flex items-start gap-2.5">
-              <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
-              <p>
-                This broadcast is {frozenState} for{" "}
-                {formatDenverTimestamp(frozenScheduledAt)}. Content and audience
-                are locked. To edit, cancel and start a new draft.
-              </p>
-            </div>
+          <section
+            role="status"
+            className="flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[12.5px] leading-relaxed text-emerald-900"
+          >
+            <CheckCircle2
+              className="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <p>
+              This broadcast is {frozenState} for{" "}
+              {formatDenverTimestamp(frozenScheduledAt)}. Content and audience
+              are locked. To edit, cancel and start a new draft.
+            </p>
           </section>
         ) : (
-          <Section title="When to send">
-            <div className="grid gap-3 p-4 md:grid-cols-2">
-              <button
-                type="button"
-                className={cn(
-                  "flex gap-3 rounded-lg border p-3 text-left transition-colors",
-                  sendMode === "now"
-                    ? "border-slate-950 bg-white text-slate-950 ring-1 ring-slate-950/20"
-                    : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50",
-                )}
-                onClick={() => {
+          <SectionPanel label="When to send">
+            <div
+              role="radiogroup"
+              aria-label="Send timing"
+              className="grid gap-3 p-4 md:grid-cols-2"
+            >
+              <SendModeOption
+                selected={sendMode === "now"}
+                title="Send now"
+                description="Recipients start receiving immediately."
+                Icon={Send}
+                onSelect={() => {
                   onSendModeChange("now");
                 }}
-              >
-                <span
-                  className={cn(
-                    "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
-                    sendMode === "now" ? "border-slate-950" : "border-slate-300",
-                  )}
-                  aria-hidden="true"
-                >
-                  {sendMode === "now" ? (
-                    <span className="size-2 rounded-full bg-slate-950" />
-                  ) : null}
-                </span>
-                <Send
-                  className="mt-0.5 size-4 shrink-0 text-slate-700"
-                  aria-hidden="true"
-                />
-                <span>
-                  <span className="block text-[13px] font-semibold">
-                    Send now
-                  </span>
-                  <span className="mt-0.5 block text-[11.5px] text-slate-500">
-                    Recipients start receiving immediately.
-                  </span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "flex gap-3 rounded-lg border p-3 text-left transition-colors",
-                  sendMode === "later"
-                    ? "border-slate-950 bg-white text-slate-950 ring-1 ring-slate-950/20"
-                    : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50",
-                )}
-                onClick={() => {
+              />
+              <SendModeOption
+                selected={sendMode === "later"}
+                title="Schedule for later"
+                description="Pick a date and time. Locked to America/Denver."
+                Icon={Clock}
+                onSelect={() => {
                   onSendModeChange("later");
                 }}
-              >
-                <span
-                  className={cn(
-                    "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
-                    sendMode === "later"
-                      ? "border-slate-950"
-                      : "border-slate-300",
-                  )}
-                  aria-hidden="true"
-                >
-                  {sendMode === "later" ? (
-                    <span className="size-2 rounded-full bg-slate-950" />
-                  ) : null}
-                </span>
-                <Clock
-                  className="mt-0.5 size-4 shrink-0 text-slate-700"
-                  aria-hidden="true"
-                />
-                <span>
-                  <span className="block text-[13px] font-semibold">
-                    Schedule for later
-                  </span>
-                  <span className="mt-0.5 block text-[11.5px] text-slate-500">
-                    Pick a date and time. Locked to America/Denver.
-                  </span>
-                </span>
-              </button>
+              />
             </div>
 
             {sendMode === "later" ? (
@@ -335,25 +234,27 @@ export function ReviewStep({
                 </div>
               </div>
             ) : null}
-          </Section>
+          </SectionPanel>
         )}
       </div>
 
-      <div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-5">
-        <Button variant="outline" onClick={onBack} disabled={frozen}>
-          Back
-        </Button>
-        {frozen ? null : (
-          <Button
-            onClick={() => {
-              onConfirmOpenChange(true);
-            }}
-            disabled={!fromEmail || !selectedSenderVerified}
-          >
-            {submitLabel}
-          </Button>
-        )}
-      </div>
+      <WizardFooter
+        onBack={onBack}
+        backDisabled={frozen}
+        primaryLabel={submitLabel}
+        primaryAction={() => {
+          onConfirmOpenChange(true);
+        }}
+        primaryDisabled={!fromEmail || !selectedSenderVerified}
+        primaryIcon={
+          sendMode === "later" ? (
+            <Clock className="size-3.5" aria-hidden="true" />
+          ) : (
+            <Send className="size-3.5" aria-hidden="true" />
+          )
+        }
+        showPrimary={!frozen}
+      />
 
       <Dialog open={confirmOpen} onOpenChange={onConfirmOpenChange}>
         <DialogContent className="max-w-lg">
@@ -384,5 +285,56 @@ export function ReviewStep({
         </DialogContent>
       </Dialog>
     </section>
+  );
+}
+
+function SendModeOption({
+  selected,
+  title,
+  description,
+  Icon,
+  onSelect,
+}: {
+  readonly selected: boolean;
+  readonly title: string;
+  readonly description: string;
+  readonly Icon: ComponentType<SVGProps<SVGSVGElement>>;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn(
+        "flex gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1",
+        selected
+          ? "border-slate-900 bg-white text-slate-950 ring-1 ring-slate-900/15"
+          : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50",
+      )}
+    >
+      <span
+        className={cn(
+          "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+          selected ? "border-slate-900" : "border-slate-300",
+        )}
+        aria-hidden="true"
+      >
+        {selected ? (
+          <span className="size-2 rounded-full bg-slate-900" />
+        ) : null}
+      </span>
+      <Icon
+        className="mt-0.5 size-4 shrink-0 text-slate-700"
+        aria-hidden="true"
+      />
+      <span className="min-w-0">
+        <span className="block text-[13px] font-semibold">{title}</span>
+        <span className="mt-0.5 block text-[11.5px] leading-snug text-slate-500">
+          {description}
+        </span>
+      </span>
+    </button>
   );
 }

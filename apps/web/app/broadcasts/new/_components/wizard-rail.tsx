@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Circle, Megaphone } from "lucide-react";
+import { Check, Megaphone } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -25,31 +25,98 @@ interface WizardRailProps {
   readonly onStepChange: (index: number) => void;
 }
 
+function readStatusTone(
+  statusLabel: string,
+): "saving" | "error" | "saved" | "dirty" {
+  if (/sav(ing|e failed|ailed)|fail/i.test(statusLabel)) {
+    if (/fail/i.test(statusLabel)) {
+      return "error";
+    }
+    return "saving";
+  }
+  if (/unsaved/i.test(statusLabel)) {
+    return "dirty";
+  }
+  return "saved";
+}
+
+const STATUS_TONE_CLASS: Record<
+  ReturnType<typeof readStatusTone>,
+  { container: string; dot: string }
+> = {
+  saved: {
+    container: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    dot: "bg-emerald-500",
+  },
+  saving: {
+    container: "border-slate-200 bg-white text-slate-600",
+    dot: "bg-slate-400 animate-pulse",
+  },
+  dirty: {
+    container: "border-amber-200 bg-amber-50 text-amber-800",
+    dot: "bg-amber-500",
+  },
+  error: {
+    container: "border-rose-200 bg-rose-50 text-rose-800",
+    dot: "bg-rose-500",
+  },
+};
+
+const PROGRESS_LINE_WIDTH = 286;
+
 export function WizardRail({
   steps,
   currentStep,
   statusLabel,
   onStepChange,
 }: WizardRailProps) {
+  const tone = readStatusTone(statusLabel);
+  const toneClass = STATUS_TONE_CLASS[tone];
+  const progressPercent = Math.round(((currentStep + 1) / steps.length) * 100);
+
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b border-slate-200 bg-slate-50 lg:w-[286px] lg:border-b-0 lg:border-r">
+    <aside
+      className="flex w-full shrink-0 flex-col border-b border-slate-200 bg-slate-50 lg:w-[286px] lg:border-b-0 lg:border-r"
+      style={{ minWidth: PROGRESS_LINE_WIDTH }}
+    >
       <div className="border-b border-slate-200 px-5 py-5">
         <div className="flex items-center gap-3">
           <span className="flex size-8 items-center justify-center rounded-lg bg-[#253746] text-white">
             <Megaphone className="size-4" aria-hidden="true" />
           </span>
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-[13px] font-semibold text-slate-900">
               New broadcast
             </p>
-            <p className="text-[11.5px] text-slate-500">
+            <p className="text-[11px] tabular-nums text-slate-500">
               Step {String(currentStep + 1)} of {String(steps.length)}
             </p>
           </div>
         </div>
-        <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11.5px] font-medium text-emerald-800">
-          <span className="mr-2 inline-block size-1.5 rounded-full bg-emerald-500 align-middle" />
-          {statusLabel}
+
+        <div
+          aria-hidden="true"
+          className="mt-4 h-1 overflow-hidden rounded-full bg-slate-200"
+        >
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-[width] duration-200 ease-out motion-reduce:transition-none"
+            style={{ width: `${String(progressPercent)}%` }}
+          />
+        </div>
+
+        <div
+          role="status"
+          aria-live="polite"
+          className={cn(
+            "mt-3 flex items-center gap-2 rounded-md border px-3 py-2 text-[11.5px] font-medium",
+            toneClass.container,
+          )}
+        >
+          <span
+            className={cn("inline-block size-1.5 rounded-full", toneClass.dot)}
+            aria-hidden="true"
+          />
+          <span className="truncate">{statusLabel}</span>
         </div>
       </div>
 
@@ -83,7 +150,7 @@ export function WizardRail({
                 disabled={index > currentStep}
                 aria-current={index === currentStep ? "step" : undefined}
                 className={cn(
-                  "relative z-10 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left",
+                  "relative z-10 flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1",
                   state === "current"
                     ? "bg-white shadow-sm ring-1 ring-slate-200"
                     : "",
@@ -94,7 +161,7 @@ export function WizardRail({
               >
                 <span
                   className={cn(
-                    "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
+                    "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold tabular-nums",
                     state === "done"
                       ? "bg-emerald-500 text-white"
                       : state === "current"
@@ -128,40 +195,6 @@ export function WizardRail({
           );
         })}
       </div>
-
-      <div className="border-t border-slate-200 px-5 py-4 max-lg:hidden">
-        <div className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-          You&apos;ll set up
-        </div>
-        <ul className="mt-2 space-y-1 text-[11.5px] text-slate-600">
-          {steps.map((step, index) => (
-            <ChecklistRow
-              key={step.id}
-              label={step.title}
-              ok={index <= currentStep}
-            />
-          ))}
-        </ul>
-      </div>
     </aside>
-  );
-}
-
-function ChecklistRow({
-  label,
-  ok,
-}: {
-  readonly label: string;
-  readonly ok: boolean;
-}) {
-  return (
-    <li className="flex items-center gap-2">
-      {ok ? (
-        <Check className="size-3.5 text-emerald-500" aria-hidden="true" />
-      ) : (
-        <Circle className="size-3.5 text-slate-300" aria-hidden="true" />
-      )}
-      <span className={ok ? "text-slate-700" : "text-slate-500"}>{label}</span>
-    </li>
   );
 }
