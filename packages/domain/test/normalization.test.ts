@@ -24,6 +24,7 @@ import type {
 } from "@as-comms/contracts";
 
 import {
+  buildTimelineSortKey,
   computePendingComposerOutboundFingerprint,
   createStage1NormalizationService,
   createStage1PersistenceService,
@@ -56,7 +57,16 @@ const emailIdentity: ContactIdentityRecord = {
 interface TestContext {
   readonly normalization: ReturnType<typeof createStage1NormalizationService>;
   readonly getInboxProjection: () => InboxProjectionRow | null;
+  readonly getInboxProjectionForContact: (
+    contactId: string,
+  ) => InboxProjectionRow | null;
   readonly getInboxSaveCount: () => number;
+  readonly getContact: (contactId: string) => ContactRecord | null;
+  readonly getCanonicalEvent: (eventId: string) => CanonicalEventRecord | null;
+  readonly getTimelineRow: (
+    canonicalEventId: string,
+  ) => TimelineProjectionRow | null;
+  readonly getAuditEvidence: () => readonly AuditEvidenceRecord[];
   readonly getPendingOutbound: (
     id: string,
   ) => PendingComposerOutboundRecord | null;
@@ -94,6 +104,7 @@ function buildSourceEvidence(input: {
 function buildEvent(input: {
   readonly key: string;
   readonly occurredAt: string;
+  readonly contactId?: string;
   readonly direction?: "inbound" | "outbound" | null;
   readonly eventType?: CanonicalEventRecord["eventType"];
   readonly provider?: CanonicalEventRecord["provenance"]["primaryProvider"];
@@ -120,7 +131,7 @@ function buildEvent(input: {
 
   return {
     id: `event:${input.key}`,
-    contactId: contact.id,
+    contactId: input.contactId ?? contact.id,
     eventType,
     channel,
     occurredAt: input.occurredAt,
@@ -145,12 +156,15 @@ function buildEvent(input: {
 }
 
 function buildExistingProjection(input: {
+  readonly contactId?: string;
   readonly bucket: InboxBucket;
   readonly needsFollowUp?: boolean;
+  readonly hasUnresolved?: boolean;
   readonly lastInboundAt: string | null;
   readonly lastOutboundAt?: string | null;
   readonly lastCanonicalEventId?: string;
   readonly lastEventType?: InboxProjectionRow["lastEventType"];
+  readonly snippet?: string;
 }): InboxProjectionRow {
   const lastOutboundAt = input.lastOutboundAt ?? null;
   const lastActivityAt =
@@ -165,14 +179,14 @@ function buildExistingProjection(input: {
   }
 
   return {
-    contactId: contact.id,
+    contactId: input.contactId ?? contact.id,
     bucket: input.bucket,
     needsFollowUp: input.needsFollowUp ?? false,
-    hasUnresolved: false,
+    hasUnresolved: input.hasUnresolved ?? false,
     lastInboundAt: input.lastInboundAt,
     lastOutboundAt,
     lastActivityAt,
-    snippet: "Existing snippet",
+    snippet: input.snippet ?? "Existing snippet",
     archivedAt: null,
     lastCanonicalEventId: input.lastCanonicalEventId ?? "event:existing",
     lastEventType: input.lastEventType ?? "communication.email.inbound",
@@ -302,9 +316,15 @@ function buildReplayInput(
 function buildContext(input: {
   readonly events: readonly CanonicalEventRecord[];
   readonly existingProjection?: InboxProjectionRow | null;
+  readonly inboxProjections?: readonly InboxProjectionRow[];
   readonly contacts?: readonly ContactRecord[];
   readonly contactIdentities?: readonly ContactIdentityRecord[];
+  readonly contactMemberships?: readonly ContactMembershipRecord[];
   readonly gmailMessageDetails?: readonly GmailMessageDetailRecord[];
+  readonly timelineRows?: readonly TimelineProjectionRow[];
+  readonly identityCases?: readonly IdentityResolutionCase[];
+  readonly routingCases?: readonly RoutingReviewCase[];
+  readonly auditEvidence?: readonly AuditEvidenceRecord[];
   readonly pendingOutbounds?: readonly PendingComposerOutboundRecord[];
   readonly sourceProvider?: SourceEvidenceRecord["provider"];
   readonly onContactIdentityUpsert?: (record: ContactIdentityRecord) => void;
@@ -319,17 +339,21 @@ function buildContext(input: {
   ) => void;
   readonly onPendingOutboundConfirmed?: (record: PendingComposerOutboundRecord) => void;
 }): TestContext {
-  const contacts = input.contacts ?? [contact];
-  const contactIdentities = input.contactIdentities ?? [emailIdentity];
-  const contactsById = new Map(contacts.map((entry) => [entry.id, entry]));
-  const contactsBySalesforceContactId = new Map(
-    contacts
-      .filter(
-        (entry): entry is ContactRecord & { salesforceContactId: string } =>
-          entry.salesforceContactId !== null,
-      )
-      .map((entry) => [entry.salesforceContactId, entry]),
+  interface StoredInternalNote {
+    readonly id: string;
+    readonly contactId: string;
+    readonly body: string;
+    readonly authorDisplayName: string | null;
+    readonly authorId: string;
+    readonly createdAt: Date;
+    readonly updatedAt: Date;
+  }
+
+  const contactRecords = new Map(
+    (input.contacts ?? [contact]).map((entry) => [entry.id, entry]),
   );
+  const contactIdentityRecords = [...(input.contactIdentities ?? [emailIdentity])];
+  const contactMembershipRecords = [...(input.contactMemberships ?? [])];
   const sourceEvidenceById = new Map(
     input.events.map((event) => [
       event.sourceEvidenceId,
@@ -359,7 +383,13 @@ function buildContext(input: {
   const timelineRowsByCanonicalEventId = new Map<
     string,
     TimelineProjectionRow
-  >();
+  >((input.timelineRows ?? []).map((row) => [row.canonicalEventId, row]));
+  const identityCasesById = new Map(
+    (input.identityCases ?? []).map((record) => [record.id, record]),
+  );
+  const routingCasesById = new Map(
+    (input.routingCases ?? []).map((record) => [record.id, record]),
+  );
   const gmailDetailsBySourceEvidenceId = new Map<
     string,
     GmailMessageDetailRecord
@@ -372,6 +402,8 @@ function buildContext(input: {
   const pendingOutboundsById = new Map(
     (input.pendingOutbounds ?? []).map((record) => [record.id, record]),
   );
+  const internalNotesById = new Map<string, StoredInternalNote>();
+  const auditEvidenceRecords = [...(input.auditEvidence ?? [])];
   const sourceEvidenceQuarantineEntries = new Array<{
     id: string;
     provider: SourceEvidenceRecord["provider"];
@@ -383,8 +415,22 @@ function buildContext(input: {
     details: Readonly<Record<string, unknown>>;
     createdAt: Date;
   }>();
-  let inboxProjection = input.existingProjection ?? null;
+  const inboxProjectionByContactId = new Map(
+    [
+      ...(input.inboxProjections ?? []),
+      ...(input.existingProjection === undefined || input.existingProjection === null
+        ? []
+        : [input.existingProjection]),
+    ].map((projection) => [projection.contactId, projection]),
+  );
   let inboxSaveCount = 0;
+
+  const listContacts = (): ContactRecord[] =>
+    [...contactRecords.values()].sort((left, right) => left.id.localeCompare(right.id));
+  const listContactIdentities = (): ContactIdentityRecord[] =>
+    [...contactIdentityRecords];
+  const getInboxProjection = (contactId: string): InboxProjectionRow | null =>
+    inboxProjectionByContactId.get(contactId) ?? null;
 
   const bundle: Stage1RepositoryBundle = defineStage1RepositoryBundle({
     sourceEvidence: {
@@ -525,55 +571,199 @@ function buildContext(input: {
       countCapturedSinceTimestamp: () => Promise.resolve(0),
     },
     contacts: {
-      findById: (id) => Promise.resolve(contactsById.get(id) ?? null),
+      findById: (id) => Promise.resolve(contactRecords.get(id) ?? null),
       findBySalesforceContactId: (salesforceContactId) =>
         Promise.resolve(
-          contactsBySalesforceContactId.get(salesforceContactId) ?? null,
+          listContacts().find(
+            (entry) => entry.salesforceContactId === salesforceContactId,
+          ) ?? null,
         ),
       findByPrimaryPhone: (phoneE164) =>
         Promise.resolve(
-          contacts.find((contact) => contact.primaryPhone === phoneE164) ??
+          listContacts().find((contact) => contact.primaryPhone === phoneE164) ??
             null,
         ),
-      listAll: () => Promise.resolve([...contacts]),
+      listAll: () => Promise.resolve(listContacts()),
       listByIds: (ids) =>
         Promise.resolve(
           ids
-            .map((id) => contactsById.get(id))
+            .map((id) => contactRecords.get(id))
             .filter((entry): entry is ContactRecord => entry !== undefined),
         ),
-      searchByQuery: () => Promise.resolve([...contacts]),
+      searchByQuery: () => Promise.resolve(listContacts()),
       searchInboxUnified: () =>
         Promise.resolve({
           volunteers: [],
           contacts: [],
           totals: { volunteers: 0, contacts: 0 },
         }),
-      upsert: (record) => Promise.resolve(record),
+      upsert: (record) => {
+        contactRecords.set(record.id, record);
+        return Promise.resolve(record);
+      },
+    },
+    mergeEmailOnlyContactIntoAnchored: (mergeInput: {
+      readonly emailOnlyContactId: string;
+      readonly anchoredContactId: string;
+    }) => {
+      let canonicalEventsRepointed = 0;
+      for (const [eventId, event] of canonicalEventsById.entries()) {
+        if (event.contactId !== mergeInput.emailOnlyContactId) {
+          continue;
+        }
+
+        canonicalEventsRepointed += 1;
+        canonicalEventsById.set(eventId, {
+          ...event,
+          contactId: mergeInput.anchoredContactId,
+        });
+      }
+
+      let timelineRowsRepointed = 0;
+      for (const [canonicalEventId, row] of timelineRowsByCanonicalEventId.entries()) {
+        if (row.contactId !== mergeInput.emailOnlyContactId) {
+          continue;
+        }
+
+        timelineRowsRepointed += 1;
+        timelineRowsByCanonicalEventId.set(canonicalEventId, {
+          ...row,
+          contactId: mergeInput.anchoredContactId,
+        });
+      }
+
+      let notesRepointed = 0;
+      for (const [noteId, note] of internalNotesById.entries()) {
+        if (note.contactId !== mergeInput.emailOnlyContactId) {
+          continue;
+        }
+
+        notesRepointed += 1;
+        internalNotesById.set(noteId, {
+          ...note,
+          contactId: mergeInput.anchoredContactId,
+          updatedAt: new Date(0),
+        });
+      }
+
+      let routingRowsRepointed = 0;
+      for (const [caseId, routingCase] of routingCasesById.entries()) {
+        if (routingCase.contactId !== mergeInput.emailOnlyContactId) {
+          continue;
+        }
+
+        routingRowsRepointed += 1;
+        routingCasesById.set(caseId, {
+          ...routingCase,
+          contactId: mergeInput.anchoredContactId,
+        });
+      }
+
+      let identityCasesRepointed = 0;
+      for (const [caseId, identityCase] of identityCasesById.entries()) {
+        const nextAnchoredContactId =
+          identityCase.anchoredContactId === mergeInput.emailOnlyContactId
+            ? mergeInput.anchoredContactId
+            : identityCase.anchoredContactId;
+        const nextCandidateContactIds = [
+          ...new Set(
+            identityCase.candidateContactIds
+              .map((contactId) =>
+                contactId === mergeInput.emailOnlyContactId
+                  ? mergeInput.anchoredContactId
+                  : contactId,
+              )
+              .filter((contactId) => contactId !== mergeInput.emailOnlyContactId),
+          ),
+        ];
+
+        if (
+          nextAnchoredContactId === identityCase.anchoredContactId &&
+          nextCandidateContactIds.length === identityCase.candidateContactIds.length &&
+          nextCandidateContactIds.every(
+            (contactId, index) =>
+              contactId === identityCase.candidateContactIds[index],
+          )
+        ) {
+          continue;
+        }
+
+        identityCasesRepointed += 1;
+        identityCasesById.set(caseId, {
+          ...identityCase,
+          anchoredContactId: nextAnchoredContactId,
+          candidateContactIds: nextCandidateContactIds,
+        });
+      }
+
+      const contactDeleted = contactRecords.delete(mergeInput.emailOnlyContactId);
+      inboxProjectionByContactId.delete(mergeInput.emailOnlyContactId);
+      for (let index = contactIdentityRecords.length - 1; index >= 0; index -= 1) {
+        if (contactIdentityRecords[index]?.contactId === mergeInput.emailOnlyContactId) {
+          contactIdentityRecords.splice(index, 1);
+        }
+      }
+
+      return Promise.resolve({
+        canonicalEventsRepointed,
+        timelineRowsRepointed,
+        notesRepointed,
+        routingRowsRepointed,
+        identityCasesRepointed,
+        contactDeleted,
+      });
     },
     contactIdentities: {
       listByContactId: (contactId) =>
         Promise.resolve(
-          contactIdentities.filter(
+          listContactIdentities().filter(
             (identity) => identity.contactId === contactId,
           ),
         ),
-      listByNormalizedValue: ({ normalizedValue }) =>
+      listByNormalizedValue: ({ kind, normalizedValue }) =>
         Promise.resolve(
-          contactIdentities.filter(
-            (identity) => identity.normalizedValue === normalizedValue,
+          listContactIdentities().filter(
+            (identity) =>
+              identity.kind === kind &&
+              identity.normalizedValue === normalizedValue,
           ),
         ),
       upsert: (record) => {
         input.onContactIdentityUpsert?.(record);
+        const existingIndex = contactIdentityRecords.findIndex(
+          (entry) => entry.id === record.id,
+        );
+        if (existingIndex >= 0) {
+          contactIdentityRecords.splice(existingIndex, 1, record);
+        } else {
+          contactIdentityRecords.push(record);
+        }
         return Promise.resolve(record);
       },
     },
     contactMemberships: {
-      listByContactId: () => Promise.resolve([]),
-      listByContactIds: () => Promise.resolve([]),
+      listByContactId: (contactId) =>
+        Promise.resolve(
+          contactMembershipRecords.filter(
+            (record) => record.contactId === contactId,
+          ),
+        ),
+      listByContactIds: (contactIds) =>
+        Promise.resolve(
+          contactMembershipRecords.filter((record) =>
+            contactIds.includes(record.contactId),
+          ),
+        ),
       upsert: (record: ContactMembershipRecord) => {
         input.onContactMembershipUpsert?.(record);
+        const existingIndex = contactMembershipRecords.findIndex(
+          (entry) => entry.id === record.id,
+        );
+        if (existingIndex >= 0) {
+          contactMembershipRecords.splice(existingIndex, 1, record);
+        } else {
+          contactMembershipRecords.push(record);
+        }
         return Promise.resolve(record);
       },
     },
@@ -686,26 +876,44 @@ function buildContext(input: {
       deleteByAuthor: () => Promise.resolve(0),
     },
     internalNotes: {
-      create: (input) =>
-        Promise.resolve({
-          ...input,
+      create: (noteInput) => {
+        const record: StoredInternalNote = {
+          id: noteInput.id,
+          contactId: noteInput.contactId,
+          body: noteInput.body,
           authorDisplayName: null,
-          createdAt: new Date(0),
-          updatedAt: new Date(0),
-        }),
-      findById: () => Promise.resolve(undefined),
-      findByContactId: () => Promise.resolve([]),
-      update: (input) =>
-        Promise.resolve({
-          id: input.id,
-          contactId: "contact_1",
-          body: input.body,
-          authorDisplayName: "Author",
-          authorId: "user:author",
-          createdAt: new Date(0),
-          updatedAt: new Date(0),
-        }),
-      delete: () => Promise.resolve(),
+          authorId: noteInput.authorId,
+          createdAt: noteInput.createdAt ?? new Date(0),
+          updatedAt: noteInput.updatedAt ?? new Date(0),
+        };
+        internalNotesById.set(record.id, record);
+        return Promise.resolve(record);
+      },
+      findById: (id) => Promise.resolve(internalNotesById.get(id)),
+      findByContactId: (contactId) =>
+        Promise.resolve(
+          [...internalNotesById.values()].filter(
+            (note) => note.contactId === contactId,
+          ),
+        ),
+      update: (noteInput) => {
+        const existing = internalNotesById.get(noteInput.id);
+        const updated: StoredInternalNote = {
+          id: noteInput.id,
+          contactId: existing?.contactId ?? "contact_1",
+          body: noteInput.body,
+          authorDisplayName: existing?.authorDisplayName ?? "Author",
+          authorId: existing?.authorId ?? "user:author",
+          createdAt: existing?.createdAt ?? new Date(0),
+          updatedAt: noteInput.updatedAt ?? new Date(0),
+        };
+        internalNotesById.set(updated.id, updated);
+        return Promise.resolve(updated);
+      },
+      delete: (id) => {
+        internalNotesById.delete(id);
+        return Promise.resolve();
+      },
     },
     pendingOutbounds: {
       insert: ({ id }) => Promise.resolve(id),
@@ -766,86 +974,143 @@ function buildContext(input: {
       findForContact: () => Promise.resolve([...pendingOutboundsById.values()]),
     },
     identityResolutionQueue: {
-      findById: () => Promise.resolve(null),
-      listOpenByContactId: () => Promise.resolve([]),
-      listOpenByReasonCode: () => Promise.resolve([]),
-      upsert: (record: IdentityResolutionCase) => Promise.resolve(record),
+      findById: (id) => Promise.resolve(identityCasesById.get(id) ?? null),
+      listOpenByContactId: (contactId) =>
+        Promise.resolve(
+          [...identityCasesById.values()].filter(
+            (record) =>
+              record.status === "open" &&
+              (record.anchoredContactId === contactId ||
+                record.candidateContactIds.includes(contactId)),
+          ),
+        ),
+      listOpenByReasonCode: (reasonCode) =>
+        Promise.resolve(
+          [...identityCasesById.values()].filter(
+            (record) =>
+              record.status === "open" && record.reasonCode === reasonCode,
+          ),
+        ),
+      upsert: (record: IdentityResolutionCase) => {
+        identityCasesById.set(record.id, record);
+        return Promise.resolve(record);
+      },
     },
     routingReviewQueue: {
-      findById: () => Promise.resolve(null),
-      listOpenByContactId: () => Promise.resolve([]),
-      listOpenByReasonCode: () => Promise.resolve([]),
-      upsert: (record: RoutingReviewCase) => Promise.resolve(record),
+      findById: (id) => Promise.resolve(routingCasesById.get(id) ?? null),
+      listOpenByContactId: (contactId) =>
+        Promise.resolve(
+          [...routingCasesById.values()].filter(
+            (record) =>
+              record.status === "open" && record.contactId === contactId,
+          ),
+        ),
+      listOpenByReasonCode: (reasonCode) =>
+        Promise.resolve(
+          [...routingCasesById.values()].filter(
+            (record) =>
+              record.status === "open" && record.reasonCode === reasonCode,
+          ),
+        ),
+      upsert: (record: RoutingReviewCase) => {
+        routingCasesById.set(record.id, record);
+        return Promise.resolve(record);
+      },
     },
     inboxProjection: {
-      countAll: () => Promise.resolve(inboxProjection === null ? 0 : 1),
+      countAll: () => Promise.resolve(inboxProjectionByContactId.size),
       countInvalidRecencyRows: () => Promise.resolve(0),
-      findByContactId: () => Promise.resolve(inboxProjection),
+      findByContactId: (contactId) =>
+        Promise.resolve(getInboxProjection(contactId)),
       listInvalidRecencyContactIds: () => Promise.resolve([]),
       listAllOrderedByRecency: () =>
-        Promise.resolve(inboxProjection === null ? [] : [inboxProjection]),
+        Promise.resolve([...inboxProjectionByContactId.values()]),
       searchPageOrderedByRecency: () =>
         Promise.resolve({
-          rows: inboxProjection === null ? [] : [inboxProjection],
-          total: inboxProjection === null ? 0 : 1,
+          rows: [...inboxProjectionByContactId.values()],
+          total: inboxProjectionByContactId.size,
         }),
       listPageOrderedByRecency: () =>
-        Promise.resolve(inboxProjection === null ? [] : [inboxProjection]),
+        Promise.resolve([...inboxProjectionByContactId.values()]),
       countByFilters: () =>
         Promise.resolve({
-          all: inboxProjection === null ? 0 : 1,
-          unread: inboxProjection?.bucket === "New" ? 1 : 0,
-          followUp: inboxProjection?.needsFollowUp === true ? 1 : 0,
-          unresolved: inboxProjection?.hasUnresolved === true ? 1 : 0,
-          sent: inboxProjection?.lastOutboundAt === null ? 0 : 1,
-          archived:
-            inboxProjection !== null && inboxProjection.archivedAt !== null
-              ? 1
-              : 0,
+          all: inboxProjectionByContactId.size,
+          unread: [...inboxProjectionByContactId.values()].filter(
+            (record) => record.bucket === "New",
+          ).length,
+          followUp: [...inboxProjectionByContactId.values()].filter(
+            (record) => record.needsFollowUp,
+          ).length,
+          unresolved: [...inboxProjectionByContactId.values()].filter(
+            (record) => record.hasUnresolved,
+          ).length,
+          sent: [...inboxProjectionByContactId.values()].filter(
+            (record) => record.lastOutboundAt !== null,
+          ).length,
+          archived: [...inboxProjectionByContactId.values()].filter(
+            (record) => record.archivedAt !== null,
+          ).length,
         }),
       getFreshness: () =>
         Promise.resolve({
-          total: inboxProjection === null ? 0 : 1,
+          total: inboxProjectionByContactId.size,
           latestUpdatedAt: null,
         }),
-      getFreshnessByContactId: () => Promise.resolve(null),
-      deleteByContactId: () => {
-        inboxProjection = null;
+      getFreshnessByContactId: (contactId) =>
+        Promise.resolve(
+          inboxProjectionByContactId.has(contactId)
+            ? { contactId, updatedAt: null }
+            : null,
+        ),
+      deleteByContactId: (contactId) => {
+        inboxProjectionByContactId.delete(contactId);
         return Promise.resolve();
       },
-      setNeedsFollowUp: ({ needsFollowUp }) => {
-        inboxProjection =
-          inboxProjection === null
+      setNeedsFollowUp: ({ contactId, needsFollowUp }) => {
+        const existing = inboxProjectionByContactId.get(contactId) ?? null;
+        const updated =
+          existing === null
             ? null
             : {
-                ...inboxProjection,
+                ...existing,
                 needsFollowUp,
               };
-        return Promise.resolve(inboxProjection);
+        if (updated !== null) {
+          inboxProjectionByContactId.set(contactId, updated);
+        }
+        return Promise.resolve(updated);
       },
-      setArchived: ({ archived }) => {
-        inboxProjection =
-          inboxProjection === null
+      setArchived: ({ contactId, archived }) => {
+        const existing = inboxProjectionByContactId.get(contactId) ?? null;
+        const updated =
+          existing === null
             ? null
             : {
-                ...inboxProjection,
+                ...existing,
                 archivedAt: archived ? "2026-04-14T00:00:00.000Z" : null,
               };
-        return Promise.resolve(inboxProjection);
+        if (updated !== null) {
+          inboxProjectionByContactId.set(contactId, updated);
+        }
+        return Promise.resolve(updated);
       },
-      setBucket: ({ bucket }) => {
-        inboxProjection =
-          inboxProjection === null
+      setBucket: ({ contactId, bucket }) => {
+        const existing = inboxProjectionByContactId.get(contactId) ?? null;
+        const updated =
+          existing === null
             ? null
             : {
-                ...inboxProjection,
+                ...existing,
                 bucket,
               };
-        return Promise.resolve(inboxProjection);
+        if (updated !== null) {
+          inboxProjectionByContactId.set(contactId, updated);
+        }
+        return Promise.resolve(updated);
       },
       upsert: (record) => {
         inboxSaveCount += 1;
-        inboxProjection = record;
+        inboxProjectionByContactId.set(record.contactId, record);
         return Promise.resolve(record);
       },
     },
@@ -855,16 +1120,30 @@ function buildContext(input: {
         Promise.resolve(
           timelineRowsByCanonicalEventId.get(canonicalEventId) ?? null,
         ),
-      listByContactId: () =>
-        Promise.resolve([...timelineRowsByCanonicalEventId.values()]),
-      listRecentByContactId: () =>
-        Promise.resolve([...timelineRowsByCanonicalEventId.values()]),
-      countByContactId: () =>
-        Promise.resolve(timelineRowsByCanonicalEventId.size),
-      getFreshnessByContactId: () =>
+      listByContactId: (contactId) =>
+        Promise.resolve(
+          [...timelineRowsByCanonicalEventId.values()].filter(
+            (record) => record.contactId === contactId,
+          ),
+        ),
+      listRecentByContactId: ({ contactId }) =>
+        Promise.resolve(
+          [...timelineRowsByCanonicalEventId.values()].filter(
+            (record) => record.contactId === contactId,
+          ),
+        ),
+      countByContactId: (contactId) =>
+        Promise.resolve(
+          [...timelineRowsByCanonicalEventId.values()].filter(
+            (record) => record.contactId === contactId,
+          ).length,
+        ),
+      getFreshnessByContactId: (contactId) =>
         Promise.resolve({
-          contactId: contacts[0]?.id ?? contact.id,
-          total: timelineRowsByCanonicalEventId.size,
+          contactId,
+          total: [...timelineRowsByCanonicalEventId.values()].filter(
+            (record) => record.contactId === contactId,
+          ).length,
           latestUpdatedAt: null,
           latestSortKey: null,
         }),
@@ -880,9 +1159,26 @@ function buildContext(input: {
       upsert: (record) => Promise.resolve(record),
     },
     auditEvidence: {
-      append: (record: AuditEvidenceRecord) => Promise.resolve(record),
-      listByEntity: () => Promise.resolve([]),
-      listByEntities: () => Promise.resolve([]),
+      append: (record: AuditEvidenceRecord) => {
+        auditEvidenceRecords.push(record);
+        return Promise.resolve(record);
+      },
+      listByEntity: ({ entityType, entityId }) =>
+        Promise.resolve(
+          auditEvidenceRecords.filter(
+            (record) =>
+              record.entityType === entityType &&
+              record.entityId === entityId,
+          ),
+        ),
+      listByEntities: ({ entityType, entityIds }) =>
+        Promise.resolve(
+          auditEvidenceRecords.filter(
+            (record) =>
+              record.entityType === entityType &&
+              entityIds.includes(record.entityId),
+          ),
+        ),
     },
   });
 
@@ -890,8 +1186,14 @@ function buildContext(input: {
 
   return {
     normalization: createStage1NormalizationService(persistence),
-    getInboxProjection: () => inboxProjection,
+    getInboxProjection: () => getInboxProjection(contact.id),
+    getInboxProjectionForContact: (contactId) => getInboxProjection(contactId),
     getInboxSaveCount: () => inboxSaveCount,
+    getContact: (contactId) => contactRecords.get(contactId) ?? null,
+    getCanonicalEvent: (eventId) => canonicalEventsById.get(eventId) ?? null,
+    getTimelineRow: (canonicalEventId) =>
+      timelineRowsByCanonicalEventId.get(canonicalEventId) ?? null,
+    getAuditEvidence: () => [...auditEvidenceRecords],
     getPendingOutbound: (id) => pendingOutboundsById.get(id) ?? null,
   };
 }
@@ -1360,6 +1662,148 @@ describe("identity resolution hardening", () => {
       throw new Error("Expected applied result.");
     }
     expect(result.canonicalEvent.contactId).toBe(anchoredContact.id);
+  });
+
+  it("auto-merges pure email-only conflicts into the Salesforce-anchored contact", async () => {
+    const sfAnchoredContact: ContactRecord = {
+      ...contact,
+      id: "contact:salesforce:sf-contact-1",
+      salesforceContactId: "sf-contact-1",
+      primaryEmail: "foo@bar.com",
+    };
+    const emailOnlyContact: ContactRecord = {
+      ...contact,
+      id: "contact:email:foo@bar.com",
+      primaryEmail: "foo@bar.com",
+      displayName: "Foo Bar",
+    };
+    const strandedInbound = buildEvent({
+      key: "stranded-inbound",
+      contactId: emailOnlyContact.id,
+      occurredAt: "2026-05-17T12:44:00.000Z",
+      direction: "inbound",
+    });
+    const context = buildContext({
+      events: [strandedInbound],
+      contacts: [emailOnlyContact, sfAnchoredContact],
+      contactIdentities: [
+        {
+          ...emailIdentity,
+          id: "identity:email-only:foo",
+          contactId: emailOnlyContact.id,
+          normalizedValue: "foo@bar.com",
+          source: "gmail",
+        },
+        {
+          ...emailIdentity,
+          id: "identity:sf:foo",
+          contactId: sfAnchoredContact.id,
+          normalizedValue: "foo@bar.com",
+          source: "salesforce",
+        },
+      ],
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "stranded-inbound",
+          direction: "inbound",
+          subject: "Volunteer reply",
+          bodyTextPreview: "I can help this weekend.",
+        }),
+      ],
+      timelineRows: [
+        {
+          id: "timeline:event:stranded-inbound",
+          contactId: emailOnlyContact.id,
+          canonicalEventId: strandedInbound.id,
+          occurredAt: strandedInbound.occurredAt,
+          sortKey: buildTimelineSortKey(
+            strandedInbound.id,
+            strandedInbound.occurredAt,
+            strandedInbound.eventType,
+          ),
+          eventType: strandedInbound.eventType,
+          summary: "Volunteer replied",
+          channel: strandedInbound.channel,
+          primaryProvider: strandedInbound.provenance.primaryProvider,
+          reviewState: strandedInbound.reviewState,
+        },
+      ],
+      inboxProjections: [
+        buildExistingProjection({
+          contactId: emailOnlyContact.id,
+          bucket: "Opened",
+          lastInboundAt: strandedInbound.occurredAt,
+          lastCanonicalEventId: strandedInbound.id,
+          lastEventType: strandedInbound.eventType,
+          snippet: "I can help this weekend.",
+        }),
+      ],
+    });
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        ...buildSourceEvidence({
+          key: "salesforce-signup",
+          occurredAt: "2026-05-17T12:45:00.000Z",
+          provider: "salesforce",
+          providerRecordType: "task",
+        }),
+        provider: "salesforce",
+      },
+      canonicalEvent: {
+        id: "event:salesforce-signup:replay",
+        eventType: "lifecycle.signed_up",
+        occurredAt: "2026-05-17T12:45:00.000Z",
+        idempotencyKey: "canonical:salesforce-signup",
+        summary: "Signed up",
+        snippet: "Signed up",
+      },
+      identity: {
+        salesforceContactId: "sf-contact-1",
+        volunteerIdPlainValues: [],
+        normalizedEmails: ["foo@bar.com"],
+        normalizedPhones: [],
+      },
+      routing: {
+        required: false,
+        projectId: null,
+        expeditionId: null,
+        projectName: null,
+        expeditionName: null,
+      },
+      supportingSources: [],
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      throw new Error("Expected applied result.");
+    }
+    expect(result.identityCase).toBeNull();
+    expect(context.getContact(emailOnlyContact.id)).toBeNull();
+    expect(context.getCanonicalEvent(strandedInbound.id)?.contactId).toBe(
+      sfAnchoredContact.id,
+    );
+    expect(context.getTimelineRow(strandedInbound.id)?.contactId).toBe(
+      sfAnchoredContact.id,
+    );
+    expect(context.getInboxProjectionForContact(emailOnlyContact.id)).toBeNull();
+
+    const anchoredProjection = context.getInboxProjectionForContact(
+      sfAnchoredContact.id,
+    );
+    expect(anchoredProjection?.hasUnresolved).toBe(false);
+    expect(anchoredProjection?.lastInboundAt).toBe(strandedInbound.occurredAt);
+
+    expect(
+      context.getAuditEvidence().find(
+        (record) =>
+          record.policyCode ===
+            "stage1.identity.auto_merge_email_only_into_salesforce_anchored" &&
+          record.entityType === "contact_merge" &&
+          record.entityId ===
+            `${emailOnlyContact.id}->${sfAnchoredContact.id}`,
+      ),
+    ).toBeDefined();
   });
 
   it("ignores salesforceContactId from non-Salesforce intakes", async () => {

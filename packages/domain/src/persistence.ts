@@ -75,6 +75,30 @@ export type CanonicalEventWriteResult =
       readonly reason: CanonicalEventConflictReason;
     };
 
+export interface EmailOnlyContactMergeResult {
+  readonly anchoredContact: ContactRecord;
+  readonly canonicalEventsRepointed: number;
+  readonly timelineRowsRepointed: number;
+  readonly notesRepointed: number;
+  readonly routingRowsRepointed: number;
+  readonly identityCasesRepointed: number;
+}
+
+interface EmailOnlyContactMergeCapableRepositories
+  extends Stage1RepositoryBundle {
+  mergeEmailOnlyContactIntoAnchored?(input: {
+    readonly emailOnlyContactId: string;
+    readonly anchoredContactId: string;
+  }): Promise<{
+    readonly canonicalEventsRepointed: number;
+    readonly timelineRowsRepointed: number;
+    readonly notesRepointed: number;
+    readonly routingRowsRepointed: number;
+    readonly identityCasesRepointed: number;
+    readonly contactDeleted: boolean;
+  }>;
+}
+
 export interface Stage1PersistenceService {
   readonly repositories: Stage1RepositoryBundle;
   findSourceEvidenceByIdempotencyKey(
@@ -130,6 +154,10 @@ export interface Stage1PersistenceService {
   ): Promise<TimelineProjectionRow>;
   saveSyncState(record: SyncStateRecord): Promise<SyncStateRecord>;
   recordAuditEvidence(record: AuditEvidenceRecord): Promise<AuditEvidenceRecord>;
+  mergeEmailOnlyContactIntoAnchored(input: {
+    readonly emailOnlyContactId: string;
+    readonly anchoredContactId: string;
+  }): Promise<EmailOnlyContactMergeResult>;
 }
 
 function arraysEqual(
@@ -217,6 +245,9 @@ function buildSourceEvidenceQuarantineDetails(
 export function createStage1PersistenceService(
   repositories: Stage1RepositoryBundle
 ): Stage1PersistenceService {
+  const mergeCapableRepositories =
+    repositories as EmailOnlyContactMergeCapableRepositories;
+
   return {
     repositories,
 
@@ -471,6 +502,42 @@ export function createStage1PersistenceService(
 
     recordAuditEvidence(record) {
       return repositories.auditEvidence.append(auditEvidenceSchema.parse(record));
+    },
+
+    async mergeEmailOnlyContactIntoAnchored(input) {
+      const anchoredContact = await repositories.contacts.findById(
+        input.anchoredContactId,
+      );
+
+      if (anchoredContact === null) {
+        throw new Error(
+          `Cannot merge email-only contact ${input.emailOnlyContactId} into missing anchored contact ${input.anchoredContactId}.`,
+        );
+      }
+
+      if (mergeCapableRepositories.mergeEmailOnlyContactIntoAnchored === undefined) {
+        throw new Error(
+          "Stage1 repository bundle does not support mergeEmailOnlyContactIntoAnchored.",
+        );
+      }
+
+      const result =
+        await mergeCapableRepositories.mergeEmailOnlyContactIntoAnchored(input);
+
+      if (!result.contactDeleted) {
+        throw new Error(
+          `Expected to delete email-only contact ${input.emailOnlyContactId} during merge.`,
+        );
+      }
+
+      return {
+        anchoredContact,
+        canonicalEventsRepointed: result.canonicalEventsRepointed,
+        timelineRowsRepointed: result.timelineRowsRepointed,
+        notesRepointed: result.notesRepointed,
+        routingRowsRepointed: result.routingRowsRepointed,
+        identityCasesRepointed: result.identityCasesRepointed,
+      };
     }
   };
 }

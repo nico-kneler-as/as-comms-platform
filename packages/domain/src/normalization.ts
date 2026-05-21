@@ -99,6 +99,7 @@ const lifecycleTimelineOrdinalByEventType: Partial<
 };
 
 interface IdentityResolutionContext {
+  readonly persistence: Stage1PersistenceService;
   loadContactsForIdentityKind(
     kind: ContactIdentityKind,
     values: readonly string[],
@@ -445,6 +446,13 @@ function buildSkipAuditId(
   action: "skipped_non_volunteer_task",
 ): string {
   return `audit:${entityType}:${entityId}:${action}`;
+}
+
+function buildEmailOnlyAutoMergeAuditId(
+  emailOnlyContactId: string,
+  anchoredContactId: string,
+): string {
+  return `audit:contact_merge:${emailOnlyContactId}:${anchoredContactId}:auto_merge_email_only_contact`;
 }
 
 function buildSyntheticContactId(input: {
@@ -1371,6 +1379,8 @@ function createIdentityResolutionContext(
   };
 
   return {
+    persistence,
+
     async loadContactsForIdentityKind(kind, values) {
       const contactGroups = await Promise.all(
         uniqueStrings(values).map(async (normalizedValue) => {
@@ -1438,6 +1448,58 @@ function createIdentityResolutionContext(
   };
 }
 
+function isPureEmailOnlyConflict(input: {
+  readonly contact: ContactRecord;
+  readonly emailMatches: ContactLookupMap;
+  readonly phoneMatches: ContactLookupMap;
+  readonly volunteerMatches: ContactLookupMap;
+}): boolean {
+  return (
+    input.contact.id.startsWith("contact:email:") &&
+    input.contact.salesforceContactId === null &&
+    input.emailMatches.has(input.contact.id) &&
+    !input.phoneMatches.has(input.contact.id) &&
+    !input.volunteerMatches.has(input.contact.id)
+  );
+}
+
+async function autoMergeEmailOnlyConflictsIntoAnchored(
+  context: IdentityResolutionContext,
+  input: {
+    readonly sourceEvidenceId: string;
+    readonly openedAt: string;
+    readonly normalizedIdentityValues: ReturnType<
+      typeof buildNormalizedIdentityValues
+    >;
+    readonly anchoredContactId: string;
+    readonly conflictingContacts: readonly ContactRecord[];
+  },
+): Promise<void> {
+  for (const conflictingContact of input.conflictingContacts) {
+    const mergeResult = await context.persistence.mergeEmailOnlyContactIntoAnchored(
+      {
+        emailOnlyContactId: conflictingContact.id,
+        anchoredContactId: input.anchoredContactId,
+      },
+    );
+
+    await recordEmailOnlyAutoMergeAuditOnce(context.persistence, {
+      sourceEvidenceId: input.sourceEvidenceId,
+      occurredAt: input.openedAt,
+      normalizedIdentityValues: input.normalizedIdentityValues,
+      emailOnlyContactId: conflictingContact.id,
+      anchoredContactId: input.anchoredContactId,
+      mergeResult,
+    });
+  }
+
+  context.clear();
+  await rebuildInboxProjectionForContact(
+    context.persistence,
+    input.anchoredContactId,
+  );
+}
+
 async function resolveIdentityDecision(
   context: IdentityResolutionContext,
   sourceEvidenceId: string,
@@ -1492,6 +1554,42 @@ async function resolveIdentityDecision(
     );
 
     if (conflictingContactIds.length > 0) {
+      const conflictingContacts = conflictingContactIds
+        .map(
+          (contactId) =>
+            emailMatches.get(contactId) ??
+            phoneMatches.get(contactId) ??
+            volunteerMatches.get(contactId) ??
+            null,
+        )
+        .filter((contact): contact is ContactRecord => contact !== null);
+      const allConflictsArePureEmailOnly =
+        conflictingContacts.length === conflictingContactIds.length &&
+        conflictingContacts.every((contact) =>
+          isPureEmailOnlyConflict({
+            contact,
+            emailMatches,
+            phoneMatches,
+            volunteerMatches,
+          }),
+        );
+
+      if (allConflictsArePureEmailOnly) {
+        await autoMergeEmailOnlyConflictsIntoAnchored(context, {
+          sourceEvidenceId,
+          openedAt,
+          normalizedIdentityValues,
+          anchoredContactId: anchored.id,
+          conflictingContacts,
+        });
+
+        return {
+          outcome: "resolved",
+          contact: anchored,
+          reviewInput: null,
+        };
+      }
+
       return {
         outcome: "resolved",
         contact: anchored,
@@ -1910,6 +2008,69 @@ async function recordQuarantineAuditOnce(
     result: "recorded",
     policyCode,
     metadataJson: input.metadataJson,
+  });
+}
+
+async function recordEmailOnlyAutoMergeAuditOnce(
+  persistence: Stage1PersistenceService,
+  input: {
+    readonly sourceEvidenceId: string;
+    readonly occurredAt: string;
+    readonly normalizedIdentityValues: ReturnType<
+      typeof buildNormalizedIdentityValues
+    >;
+    readonly emailOnlyContactId: string;
+    readonly anchoredContactId: string;
+    readonly mergeResult: {
+      readonly canonicalEventsRepointed: number;
+      readonly timelineRowsRepointed: number;
+      readonly notesRepointed: number;
+      readonly routingRowsRepointed: number;
+      readonly identityCasesRepointed: number;
+    };
+  },
+): Promise<AuditEvidenceRecord> {
+  const entityType = "contact_merge";
+  const entityId = `${input.emailOnlyContactId}->${input.anchoredContactId}`;
+  const policyCode =
+    "stage1.identity.auto_merge_email_only_into_salesforce_anchored";
+  const existingRecords =
+    await persistence.repositories.auditEvidence.listByEntity({
+      entityType,
+      entityId,
+    });
+  const existingRecord = existingRecords.find(
+    (record) => record.policyCode === policyCode,
+  );
+
+  if (existingRecord !== undefined) {
+    return existingRecord;
+  }
+
+  return persistence.recordAuditEvidence({
+    id: buildEmailOnlyAutoMergeAuditId(
+      input.emailOnlyContactId,
+      input.anchoredContactId,
+    ),
+    actorType: "system",
+    actorId: "stage1-normalization",
+    action: "auto_merge_email_only_contact",
+    entityType,
+    entityId,
+    occurredAt: input.occurredAt,
+    result: "recorded",
+    policyCode,
+    metadataJson: {
+      sourceEvidenceId: input.sourceEvidenceId,
+      emailOnlyContactId: input.emailOnlyContactId,
+      anchoredContactId: input.anchoredContactId,
+      normalizedIdentityValues: input.normalizedIdentityValues,
+      canonicalEventsRepointed: input.mergeResult.canonicalEventsRepointed,
+      timelineRowsRepointed: input.mergeResult.timelineRowsRepointed,
+      notesRepointed: input.mergeResult.notesRepointed,
+      routingRowsRepointed: input.mergeResult.routingRowsRepointed,
+      identityCasesRepointed: input.mergeResult.identityCasesRepointed,
+    },
   });
 }
 

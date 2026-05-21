@@ -2741,6 +2741,143 @@ function createStage1RepositoriesInternal(
       },
     },
 
+    async mergeEmailOnlyContactIntoAnchored(input: {
+      readonly emailOnlyContactId: string;
+      readonly anchoredContactId: string;
+    }) {
+      return db.transaction(async (tx: Stage1Database) => {
+        const canonicalEventsResult = await tx.execute(sql<{
+          readonly id: string;
+        }>`
+          update ${canonicalEventLedger}
+          set
+            ${canonicalEventLedger.contactId} = ${input.anchoredContactId},
+            ${canonicalEventLedger.updatedAt} = timezone('utc', now())
+          where ${canonicalEventLedger.contactId} = ${input.emailOnlyContactId}
+          returning ${canonicalEventLedger.id} as id
+        `);
+        const timelineRowsResult = await tx.execute(sql<{
+          readonly id: string;
+        }>`
+          update ${contactTimelineProjection}
+          set
+            ${contactTimelineProjection.contactId} = ${input.anchoredContactId},
+            ${contactTimelineProjection.updatedAt} = timezone('utc', now())
+          where ${contactTimelineProjection.contactId} = ${input.emailOnlyContactId}
+          returning ${contactTimelineProjection.id} as id
+        `);
+        const noteRowsResult = await tx.execute(sql<{
+          readonly id: string;
+        }>`
+          update ${internalNotes}
+          set
+            ${internalNotes.contactId} = ${input.anchoredContactId},
+            ${internalNotes.updatedAt} = timezone('utc', now())
+          where ${internalNotes.contactId} = ${input.emailOnlyContactId}
+          returning ${internalNotes.id} as id
+        `);
+        const routingRowsResult = await tx.execute(sql<{
+          readonly id: string;
+        }>`
+          update ${routingReviewQueue}
+          set
+            ${routingReviewQueue.contactId} = ${input.anchoredContactId},
+            ${routingReviewQueue.updatedAt} = timezone('utc', now())
+          where ${routingReviewQueue.contactId} = ${input.emailOnlyContactId}
+          returning ${routingReviewQueue.id} as id
+        `);
+        const identityCasesResult = await tx.execute(sql<{
+          readonly id: string;
+        }>`
+          update ${identityResolutionQueue}
+          set
+            ${identityResolutionQueue.anchoredContactId} = case
+              when ${identityResolutionQueue.anchoredContactId} = ${input.emailOnlyContactId}
+                then ${input.anchoredContactId}
+              else ${identityResolutionQueue.anchoredContactId}
+            end,
+            ${identityResolutionQueue.candidateContactIds} = (
+              select coalesce(
+                array_agg(candidate_id order by candidate_id),
+                array[]::text[]
+              )
+              from (
+                select distinct candidate_id
+                from unnest(
+                  case
+                    when ${identityResolutionQueue.candidateContactIds} && array[${input.emailOnlyContactId}]::text[]
+                      then array_replace(
+                        ${identityResolutionQueue.candidateContactIds},
+                        ${input.emailOnlyContactId},
+                        ${input.anchoredContactId}
+                      )
+                    else ${identityResolutionQueue.candidateContactIds}
+                  end
+                ) as candidate_id
+                where candidate_id <> ${input.emailOnlyContactId}
+              ) deduped_candidates
+            ),
+            ${identityResolutionQueue.updatedAt} = timezone('utc', now())
+          where ${identityResolutionQueue.anchoredContactId} = ${input.emailOnlyContactId}
+             or ${identityResolutionQueue.candidateContactIds} && array[${input.emailOnlyContactId}]::text[]
+          returning ${identityResolutionQueue.id} as id
+        `);
+        const deletedContactsResult = await tx.execute(sql<{
+          readonly id: string;
+        }>`
+          delete from ${contacts}
+          where ${contacts.id} = ${input.emailOnlyContactId}
+          returning ${contacts.id} as id
+        `);
+        const deletedContactRows = normalizeSqlResultRows<{
+          readonly id: string;
+        }>(
+          deletedContactsResult as {
+            readonly rows?: readonly { readonly id: string }[];
+          },
+        );
+
+        if (deletedContactRows.length !== 1) {
+          throw new Error(
+            `Expected to delete exactly one email-only contact for ${input.emailOnlyContactId}; deleted ${deletedContactRows.length.toString()}.`,
+          );
+        }
+
+        return {
+          canonicalEventsRepointed:
+            normalizeSqlResultRows<{ readonly id: string }>(
+              canonicalEventsResult as {
+                readonly rows?: readonly { readonly id: string }[];
+              },
+            ).length,
+          timelineRowsRepointed:
+            normalizeSqlResultRows<{ readonly id: string }>(
+              timelineRowsResult as {
+                readonly rows?: readonly { readonly id: string }[];
+              },
+            ).length,
+          notesRepointed: normalizeSqlResultRows<{ readonly id: string }>(
+            noteRowsResult as {
+              readonly rows?: readonly { readonly id: string }[];
+            },
+          ).length,
+          routingRowsRepointed:
+            normalizeSqlResultRows<{ readonly id: string }>(
+              routingRowsResult as {
+                readonly rows?: readonly { readonly id: string }[];
+              },
+            ).length,
+          identityCasesRepointed:
+            normalizeSqlResultRows<{ readonly id: string }>(
+              identityCasesResult as {
+                readonly rows?: readonly { readonly id: string }[];
+              },
+            ).length,
+          contactDeleted: true,
+        };
+      });
+    },
+
     contactIdentities: {
       async listByContactId(contactId) {
         const rows = await db
