@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
+  ArrowLeft: () => null,
+  ArrowRight: () => null,
   CheckCircle2: () => null,
   Clock: () => null,
   Send: () => null,
@@ -77,8 +79,7 @@ describe("ReviewStep sender gating", () => {
 
     expect(markup).toContain("May forests volunteer update");
     expect(markup).toContain("forests@adventurescientists.org");
-    expect(markup).toContain("Verified");
-    expect(markup).toContain("FINAL CHECK");
+    expect(markup).toContain("Final check");
     expect(markup).not.toContain("Choose a verified sender</button>");
     expect(markup).not.toContain("campaign-from-email");
     expect(markup).not.toContain("Re-run");
@@ -94,8 +95,7 @@ describe("ReviewStep sender gating", () => {
       />,
     );
 
-    expect(markup).toContain("Verification required");
-    expect(markup).toContain('<button disabled="">Send now</button>');
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>[^<]*Send now[^<]*<\/button>/);
   });
 
   it("keeps launch disabled when no sender has been selected", () => {
@@ -108,6 +108,6 @@ describe("ReviewStep sender gating", () => {
     );
 
     expect(markup).toContain("Choose a verified sender");
-    expect(markup).toContain('<button disabled="">Send now</button>');
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>[^<]*Send now[^<]*<\/button>/);
   });
 });

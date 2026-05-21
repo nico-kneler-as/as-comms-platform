@@ -13,6 +13,10 @@ interface AudiencePreviewListProps {
   readonly errorMessage: string | null;
 }
 
+// Cap rendered rows + lock the scroll viewport to ~4 rows tall.
+const PREVIEW_ROW_CAP = 10;
+const PREVIEW_VIEWPORT_HEIGHT = "max-h-[200px]";
+
 export function AudiencePreviewList({
   rows,
   loading,
@@ -21,23 +25,20 @@ export function AudiencePreviewList({
   if (loading) {
     return (
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
+        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
           <Eye className="size-3.5" aria-hidden="true" />
           Audience preview
         </div>
-        <div className="space-y-3 px-4 py-4">
-          {Array.from({ length: 4 }, (_, index) => (
+        <div className="space-y-3 px-4 py-3">
+          {Array.from({ length: 3 }, (_, index) => (
             <div
               key={`audience-preview-skeleton-${String(index)}`}
               className="flex items-center gap-3"
             >
-              <Skeleton className="size-10 shrink-0 rounded-full bg-slate-200/70" />
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <Skeleton className="h-3.5 w-32 bg-slate-200/80" />
-                  <Skeleton className="h-5 w-20 rounded-full bg-slate-200/70" />
-                </div>
-                <Skeleton className="h-3 w-44 bg-slate-100" />
+              <Skeleton className="size-8 shrink-0 rounded-full bg-slate-200/70" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Skeleton className="h-3 w-32 bg-slate-200/80" />
+                <Skeleton className="h-2.5 w-44 bg-slate-100" />
               </div>
             </div>
           ))}
@@ -62,19 +63,21 @@ export function AudiencePreviewList({
     );
   }
 
+  const visibleRows = rows.slice(0, PREVIEW_ROW_CAP);
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
+      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
         <Eye className="size-3.5" aria-hidden="true" />
-        First {String(rows.length)} recipients
+        First {String(visibleRows.length)} recipients
       </div>
-      <div className="max-h-[340px] overflow-y-auto">
-        {rows.map((row, index) => (
+      <div className={cn(PREVIEW_VIEWPORT_HEIGHT, "overflow-y-auto")}>
+        {visibleRows.map((row, index) => (
           <div
             key={row.contactId}
             className={cn(
-              "grid grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-3 px-4 py-3 text-sm",
-              index < rows.length - 1 ? "border-b border-slate-100" : "",
+              "grid grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-3 px-4 py-2.5 text-[12.5px]",
+              index < visibleRows.length - 1 ? "border-b border-slate-100" : "",
             )}
             style={{ contentVisibility: "auto" }}
           >

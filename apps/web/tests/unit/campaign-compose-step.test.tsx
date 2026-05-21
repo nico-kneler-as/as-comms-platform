@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
+  ArrowLeft: () => null,
+  ArrowRight: () => null,
   Braces: () => null,
   Info: () => null,
 }));
@@ -84,7 +86,6 @@ const baseProps: React.ComponentProps<typeof ComposeStep> = {
   subject: "",
   preheader: "",
   bodyPlaintext: "",
-  autosaveLabel: "Saved 12s ago",
   frozen: false,
   onSubjectChange: () => undefined,
   onPreheaderChange: () => undefined,

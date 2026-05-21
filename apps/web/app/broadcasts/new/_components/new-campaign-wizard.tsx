@@ -147,14 +147,6 @@ function kindForAudienceMode(mode: AudienceInitialFilter): CampaignKind {
   return mode === "all_approved" ? "newsletter" : "project";
 }
 
-function formatAutosaveLabel(lastSavedAtIso: string): string {
-  const diffSeconds = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(lastSavedAtIso).getTime()) / 1000),
-  );
-  return `Saved ${diffSeconds.toString()}s ago`;
-}
-
 function readTimeZoneParts(
   date: Date,
   timeZone: string,
@@ -450,8 +442,6 @@ export function NewCampaignWizard({
   const [sampleIndex, setSampleIndex] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [lastSavedAtIso, setLastSavedAtIso] = useState(draft.updatedAt);
-  const [autosaveTick, setAutosaveTick] = useState(0);
   const [warningDismissFingerprint, setWarningDismissFingerprint] = useState<
     string | null
   >(null);
@@ -554,10 +544,6 @@ export function NewCampaignWizard({
   const suggestedSenderEmail = useMemo(
     () => deriveSuggestedSenderEmail({ kind, criteria, bootstrap }),
     [bootstrap, criteria, kind],
-  );
-  const autosaveLabel = useMemo(
-    () => formatAutosaveLabel(lastSavedAtIso),
-    [autosaveTick, lastSavedAtIso],
   );
   const selectedProjectIds = readProjectIds(criteria);
   const selectedProjectIdsKey = selectedProjectIds.join(",");
@@ -725,16 +711,6 @@ export function NewCampaignWizard({
       });
     });
   }, [bootstrap.statuses, criteria.initialFilter, hasPickedAudienceMode, selectedProjectIdsKey]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setAutosaveTick((current) => current + 1);
-    }, 30_000);
-
-    return () => {
-      clearInterval(timer);
-    };
-  }, []);
 
   useEffect(() => {
     if (frozen) {
@@ -1008,7 +984,6 @@ export function NewCampaignWizard({
         });
         setSaveState("saved");
         setSaveMessage(successMessage);
-        setLastSavedAtIso(new Date().toISOString());
 
         if (saveTimeoutRef.current !== null) {
           clearTimeout(saveTimeoutRef.current);
@@ -1280,7 +1255,6 @@ export function NewCampaignWizard({
                 subject={subject}
                 preheader={preheader}
                 bodyPlaintext={bodyPlaintext}
-                autosaveLabel={autosaveLabel}
                 frozen={frozen}
                 onSubjectChange={setSubject}
                 onPreheaderChange={setPreheader}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Lock } from "lucide-react";
+import { Check } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -123,11 +123,8 @@ export function AudienceFilterPanel({
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-4 py-3">
+      <div className="border-b border-slate-200 px-4 py-2.5">
         <h3 className="text-sm font-semibold text-slate-900">Audience filters</h3>
-        <p className="mt-1 text-pretty text-[11.5px] leading-5 text-slate-500">
-          Pick one or more projects, then narrow by expedition-member status.
-        </p>
       </div>
 
       <div className="space-y-7 px-4 py-4">
@@ -294,26 +291,23 @@ function LockedProjectRow({
 }: {
   readonly project: CampaignProjectOption;
 }) {
-  const aliasAddress = readAliasAddress(project);
+  // Locked projects always render in violet so operators read them as
+  // "fixed to this sender alias" regardless of which project they belong to.
+  const tone = TONE_CLASSES.violet;
 
   return (
-    <div
-      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-left"
+    <span
+      role="status"
       aria-label={`Project ${project.name} is locked to this sender alias`}
+      className={cn(
+        "inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium shadow-sm ring-1 ring-inset ring-transparent",
+        tone.bg,
+        "text-white",
+      )}
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500">
-        <Lock className="size-4" aria-hidden="true" />
-      </span>
-      <span className="size-1.5 shrink-0 rounded-full bg-slate-300" aria-hidden="true" />
-      <div className="min-w-0">
-        <p className="truncate text-[13px] font-semibold text-slate-900">
-          {project.name}
-        </p>
-        {aliasAddress ? (
-          <p className="truncate text-[11.5px] text-slate-500">{aliasAddress}</p>
-        ) : null}
-      </div>
-    </div>
+      <Check className="size-3 shrink-0" aria-hidden="true" />
+      <span className="truncate">{project.name}</span>
+    </span>
   );
 }
 
@@ -390,10 +384,3 @@ function readProjectTone(projectId: string): ToneClassesV2 {
   return TONE_CLASSES[toneName];
 }
 
-function readAliasAddress(project: CampaignProjectOption): string | null {
-  if (project.aliasHint === null) {
-    return null;
-  }
-
-  return `${project.aliasHint}adventurescientists.org`;
-}

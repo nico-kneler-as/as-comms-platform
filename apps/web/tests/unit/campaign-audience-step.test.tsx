@@ -10,13 +10,18 @@ Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
   AlertTriangle: () => null,
+  ArrowLeft: () => null,
+  ArrowRight: () => null,
   Check: () => null,
   CheckCircle2: () => null,
   Eye: () => null,
+  Filter: () => null,
   LoaderCircle: () => null,
   Lock: () => null,
   Search: () => null,
   Sparkles: () => null,
+  User: () => null,
+  Users: () => null,
   X: () => null,
 }));
 
@@ -301,10 +306,10 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
 
     expect(invalidMarkup).toMatch(
-      /<button[^>]*aria-disabled="true"[^>]*>Continue to compose<\/button>/,
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
     );
     expect(validMarkup).not.toMatch(
-      /<button[^>]*aria-disabled="true"[^>]*>Continue to compose<\/button>/,
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
     );
   });
 
@@ -355,7 +360,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
       throw new Error("Audience mode segmented control not found");
     }
 
-    expect(tablist.className).toContain("rounded-full");
+    expect(tablist.className).toContain("rounded-md");
     expect(document.body.textContent).toContain("Audience filters");
     expect(document.body.textContent).not.toContain("Find volunteers");
   });
@@ -832,7 +837,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
 
     const continueButton = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent === "Continue to compose",
+      (button) => button.textContent === "Continue",
     );
     if (!(continueButton instanceof HTMLButtonElement)) {
       throw new Error("Continue button not found");

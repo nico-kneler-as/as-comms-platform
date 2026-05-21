@@ -11,9 +11,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 import type { ComposePreviewData } from "../../_lib/audience-data-source";
+import { StepHeader, WizardFooter } from "./wizard-shell";
 
 interface PreviewStepProps {
   readonly subject: string;
@@ -89,18 +95,10 @@ export function PreviewStep({
 
   return (
     <section className="flex h-full flex-col">
-      <div className="pb-5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          Step 5
-        </p>
-        <h2 className="mt-2 text-balance text-xl font-semibold text-slate-900">
-          Preview the email
-        </h2>
-        <p className="mt-2 max-w-3xl text-pretty text-[13px] leading-relaxed text-slate-500">
-          Review the rendered message for sample recipients and send a test
-          before the final checkpoint.
-        </p>
-      </div>
+      <StepHeader
+        title="Preview the email"
+        description="Review the rendered message for sample recipients and send a test before the final checkpoint."
+      />
 
       <div className="space-y-3">
         {warningSummary !== null ? (
@@ -134,62 +132,29 @@ export function PreviewStep({
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-2">
-            <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
               Email preview
             </p>
             <div className="flex items-center gap-2">
-              {testSendOpen ? (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1">
-                  <span className="text-[11.5px] text-slate-600">
-                    Send a test to:
-                  </span>
-                  <Input
-                    id="campaign-test-recipient"
-                    type="email"
-                    value={testRecipientEmail}
-                    onChange={(event) => {
-                      onTestRecipientEmailChange(event.currentTarget.value);
-                    }}
-                    className="h-7 w-[220px] text-[12.5px]"
-                  />
-                  <Button
-                    size="sm"
-                    className="h-7 text-[11.5px]"
-                    onClick={onSendTest}
-                    disabled={testSendPending || !selectedSenderVerified}
-                  >
-                    {testSendPending ? "Sending..." : "Send test"}
-                  </Button>
-                  <button
-                    type="button"
-                    className="text-[11.5px] text-slate-500 underline underline-offset-2"
-                    onClick={() => {
-                      onTestSendOpenChange(false);
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-[11.5px]"
-                  onClick={() => {
-                    onTestSendOpenChange(true);
-                  }}
-                  disabled={frozen || !selectedSenderVerified}
-                  title={
-                    selectedSenderVerified
-                      ? undefined
-                      : "Choose a verified sender alias before sending a test."
-                  }
-                >
-                  <Send className="size-3" aria-hidden="true" />
-                  Send test
-                </Button>
-              )}
-              <div className="flex items-center gap-1.5">
+              <SendTestPopover
+                open={testSendOpen}
+                disabled={frozen || !selectedSenderVerified}
+                disabledReason={
+                  selectedSenderVerified
+                    ? undefined
+                    : "Choose a verified sender alias before sending a test."
+                }
+                pending={testSendPending}
+                recipientEmail={testRecipientEmail}
+                onOpenChange={onTestSendOpenChange}
+                onRecipientChange={onTestRecipientEmailChange}
+                onSend={onSendTest}
+              />
+              <div
+                role="group"
+                aria-label="Sample contact"
+                className="flex items-center gap-0.5 rounded-md border border-slate-200 bg-white px-0.5 py-0.5"
+              >
                 <Button
                   variant="ghost"
                   size="icon"
@@ -202,7 +167,7 @@ export function PreviewStep({
                 >
                   <ChevronLeft className="size-3.5" />
                 </Button>
-                <span className="font-mono text-[10.5px] text-slate-700">
+                <span className="min-w-[68px] px-1 text-center font-mono text-[10.5px] text-slate-700">
                   {sampleLabel}
                 </span>
                 <Button
@@ -266,12 +231,11 @@ export function PreviewStep({
         </div>
       </div>
 
-      <div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-5">
-        <Button variant="outline" onClick={onBack}>
-          Back
-        </Button>
-        <Button onClick={onContinue}>Continue to review</Button>
-      </div>
+      <WizardFooter
+        onBack={onBack}
+        primaryLabel="Continue"
+        primaryAction={onContinue}
+      />
 
       <Dialog
         open={affectedContactsOpen}
@@ -305,5 +269,98 @@ export function PreviewStep({
         </DialogContent>
       </Dialog>
     </section>
+  );
+}
+
+function SendTestPopover({
+  open,
+  disabled,
+  disabledReason,
+  pending,
+  recipientEmail,
+  onOpenChange,
+  onRecipientChange,
+  onSend,
+}: {
+  readonly open: boolean;
+  readonly disabled: boolean;
+  readonly disabledReason: string | undefined;
+  readonly pending: boolean;
+  readonly recipientEmail: string;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onRecipientChange: (value: string) => void;
+  readonly onSend: () => void;
+}) {
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1.5 text-[11.5px]"
+          disabled={disabled}
+          title={disabledReason}
+        >
+          <Send className="size-3" aria-hidden="true" />
+          Send test
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 p-3" sideOffset={6}>
+        <form
+          className="space-y-2.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!pending) {
+              onSend();
+            }
+          }}
+        >
+          <label
+            htmlFor="campaign-test-recipient"
+            className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500"
+          >
+            Send test email to
+          </label>
+          <Input
+            id="campaign-test-recipient"
+            type="email"
+            value={recipientEmail}
+            onChange={(event) => {
+              onRecipientChange(event.currentTarget.value);
+            }}
+            placeholder="you@example.com"
+            className="h-9 text-[13px]"
+            autoFocus
+          />
+          <p className="text-[11px] leading-relaxed text-slate-500">
+            We&apos;ll deliver one test render through the same alias to verify
+            formatting.
+          </p>
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-[12px]"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              className="h-7 gap-1.5 text-[12px]"
+              disabled={pending || recipientEmail.trim().length === 0}
+            >
+              <Send className="size-3" aria-hidden="true" />
+              {pending ? "Sending…" : "Send"}
+            </Button>
+          </div>
+        </form>
+      </PopoverContent>
+    </Popover>
   );
 }
