@@ -4,6 +4,20 @@ import type { AudienceSnapshotRecord } from "@as-comms/contracts";
 
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 
+function normalizeSqlResultRows<TRow>(
+  result:
+    | readonly TRow[]
+    | {
+        readonly rows?: readonly TRow[];
+      },
+): readonly TRow[] {
+  if (Array.isArray(result)) {
+    return result as readonly TRow[];
+  }
+
+  return (result as { readonly rows?: readonly TRow[] }).rows ?? [];
+}
+
 export type RecipientLatestState =
   | "queued"
   | "sent"
@@ -439,17 +453,19 @@ export async function listRunRecipients(input: {
     `),
   ]);
 
-  const rows = (rowsResult as { readonly rows?: readonly RecipientRowDb[] })
-    .rows;
-  const [countRow] =
-    (
-      countResult as {
-        readonly rows?: readonly { readonly count: number | string }[];
-      }
-    ).rows ?? [];
+  const rows = normalizeSqlResultRows<RecipientRowDb>(
+    rowsResult as { readonly rows?: readonly RecipientRowDb[] },
+  );
+  const [countRow] = normalizeSqlResultRows<{
+    readonly count: number | string;
+  }>(
+    countResult as {
+      readonly rows?: readonly { readonly count: number | string }[];
+    },
+  );
 
   return {
-    rows: (rows ?? []).map(mapRecipientRow),
+    rows: rows.map(mapRecipientRow),
     total: Number(countRow?.count ?? 0),
   };
 }
@@ -487,8 +503,9 @@ export async function readRunMetricCounts(input: {
     from audience_snapshots
     where campaign_run_id = ${input.runId}
   `);
-  const [row] =
-    (result as { readonly rows?: readonly RunMetricCounts[] }).rows ?? [];
+  const [row] = normalizeSqlResultRows<RunMetricCounts>(
+    result as { readonly rows?: readonly RunMetricCounts[] },
+  );
 
   return (
     row ?? {

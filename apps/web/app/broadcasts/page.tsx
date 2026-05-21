@@ -92,6 +92,20 @@ function resolveFilterStates(filterId: CampaignFilterId) {
   );
 }
 
+function normalizeSqlResultRows<TRow>(
+  result:
+    | readonly TRow[]
+    | {
+        readonly rows?: readonly TRow[];
+      },
+): readonly TRow[] {
+  if (Array.isArray(result)) {
+    return result as readonly TRow[];
+  }
+
+  return (result as { readonly rows?: readonly TRow[] }).rows ?? [];
+}
+
 interface CampaignProjectionSqlRow {
   readonly runId: string;
   readonly provider: "postmark";
@@ -249,9 +263,9 @@ async function listRecentPostmarkRows(input: {
     offset ${input.offset}
   `);
 
-  const rows =
-    (result as { readonly rows?: readonly CampaignProjectionSqlRow[] }).rows ??
-    [];
+  const rows = normalizeSqlResultRows<CampaignProjectionSqlRow>(
+    result as { readonly rows?: readonly CampaignProjectionSqlRow[] },
+  );
   return rows.map(mapProjectionSqlRow);
 }
 
@@ -287,12 +301,9 @@ async function countPostmarkRows(input: {
       searchQuery: input.searchQuery.length === 0 ? null : input.searchQuery,
     })}
   `);
-  const [row] =
-    (
-      result as {
-        readonly rows?: readonly CampaignProjectionCountSqlRow[];
-      }
-    ).rows ?? [];
+  const [row] = normalizeSqlResultRows<CampaignProjectionCountSqlRow>(
+    result as { readonly rows?: readonly CampaignProjectionCountSqlRow[] },
+  );
 
   return Number(row?.total ?? 0);
 }
@@ -324,12 +335,9 @@ async function countPostmarkRowsByState(input: {
     })}
     group by "state"
   `);
-  const rows =
-    (
-      result as {
-        readonly rows?: readonly CampaignProjectionStateCountSqlRow[];
-      }
-    ).rows ?? [];
+  const rows = normalizeSqlResultRows<CampaignProjectionStateCountSqlRow>(
+    result as { readonly rows?: readonly CampaignProjectionStateCountSqlRow[] },
+  );
   const counts: Partial<Record<RunState, number>> = {};
   for (const row of rows) {
     counts[row.state] = Number(row.total);
@@ -367,8 +375,9 @@ async function readMetricsByRunId(input: {
     group by campaign_run_id
   `);
 
-  const rows =
-    (result as { readonly rows?: readonly CampaignMetricSqlRow[] }).rows ?? [];
+  const rows = normalizeSqlResultRows<CampaignMetricSqlRow>(
+    result as { readonly rows?: readonly CampaignMetricSqlRow[] },
+  );
   return new Map(
     rows.map((row) => [
       row.runId,
