@@ -18,6 +18,14 @@ function normalizeSqlResultRows<TRow>(
   return (result as { readonly rows?: readonly TRow[] }).rows ?? [];
 }
 
+function coerceIsoTimestamp(value: Date | string | null): string | null {
+  if (value === null) return null;
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return new Date(value).toISOString();
+}
+
 export type RecipientLatestState =
   | "queued"
   | "sent"
@@ -74,7 +82,7 @@ interface RecipientRowDb {
   readonly email: string | null;
   readonly project: string | null;
   readonly latestState: RecipientLatestState;
-  readonly lastEventAt: Date | null;
+  readonly lastEventAt: Date | string | null;
 }
 
 interface MailchimpRecipientRowSource {
@@ -300,7 +308,7 @@ function mapRecipientRow(row: RecipientRowDb): RecipientRowData {
     project: row.project,
     latestState: row.latestState,
     latestStateLabel: recipientStateLabel(row.latestState),
-    lastEventAt: row.lastEventAt?.toISOString() ?? null,
+    lastEventAt: coerceIsoTimestamp(row.lastEventAt),
   };
 }
 
