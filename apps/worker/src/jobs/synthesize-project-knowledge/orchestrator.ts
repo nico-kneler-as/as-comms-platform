@@ -157,6 +157,10 @@ export type SynthesizeProjectKnowledgeOrchestratorResult =
       readonly ok: true;
       readonly unchanged: true;
       readonly sourcesChecked: number;
+      // Carry the existing hash forward so the caller can stamp
+      // ai_optimized_last_checked_at without disturbing
+      // ai_optimized_synthesized_at or ai_optimized_input_hash.
+      readonly inputHash: string | null;
     }
   | {
       readonly ok: false;
@@ -423,6 +427,7 @@ export async function synthesizeProjectKnowledgeOrchestrator(
     return {
       ok: true,
       unchanged: true,
+      inputHash: nextInputHash,
       sourcesChecked: syncPass.sourcesChecked,
     };
   }

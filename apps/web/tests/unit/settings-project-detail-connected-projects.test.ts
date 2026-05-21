@@ -133,6 +133,7 @@ function makeProject(
     aiOperatingContext: "",
     aiAutoSyncSchedule: "never",
     aiOptimizedSynthesizedAt: null,
+    aiOptimizedLastCheckedAt: null,
     aiOptimizedInputHash: null,
     aiKnowledgeSynthesisStale: false,
     memberCount: 5,

@@ -414,6 +414,7 @@ describe("synthesizeProjectKnowledgeOrchestrator", () => {
       ok: true,
       unchanged: true,
       sourcesChecked: 2,
+      inputHash: inputHashFromSources(sources),
     });
     expect(notionFetch).toHaveBeenCalledWith(
       expect.objectContaining({

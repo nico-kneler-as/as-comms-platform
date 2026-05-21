@@ -3176,16 +3176,27 @@ function createStage1RepositoriesInternal(
       },
 
       async setSynthesisMetadata(projectId, input) {
+        // Build the SET clause selectively: undefined means "leave the
+        // existing value alone" (e.g. the skip-if-unchanged path passes
+        // lastCheckedAt + inputHash but not synthesizedAt). Explicit null is
+        // still passed through to clear a field.
+        const updates: Partial<typeof projectDimensions.$inferInsert> = {
+          updatedAt: new Date(),
+        };
+        if (input.synthesizedAt !== undefined) {
+          updates.aiOptimizedSynthesizedAt =
+            input.synthesizedAt === null ? null : new Date(input.synthesizedAt);
+        }
+        if (input.lastCheckedAt !== undefined) {
+          updates.aiOptimizedLastCheckedAt =
+            input.lastCheckedAt === null ? null : new Date(input.lastCheckedAt);
+        }
+        if (input.inputHash !== undefined) {
+          updates.aiOptimizedInputHash = input.inputHash;
+        }
         await db
           .update(projectDimensions)
-          .set({
-            aiOptimizedSynthesizedAt:
-              input.synthesizedAt === null
-                ? null
-                : new Date(input.synthesizedAt),
-            aiOptimizedInputHash: input.inputHash,
-            updatedAt: new Date(),
-          })
+          .set(updates)
           .where(eq(projectDimensions.projectId, projectId));
       },
 

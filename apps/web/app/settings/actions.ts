@@ -277,6 +277,7 @@ function serializeProjectMutationData(input: {
   readonly aiKnowledgeSources?: readonly AiKnowledgeSource[];
   readonly aiOperatingContext?: string;
   readonly aiOptimizedSynthesizedAt?: Date | null;
+  readonly aiOptimizedLastCheckedAt?: Date | null;
   readonly aiOptimizedInputHash?: string | null;
   readonly emails: readonly {
     readonly id: string;
@@ -298,6 +299,8 @@ function serializeProjectMutationData(input: {
     aiOperatingContext: input.aiOperatingContext ?? "",
     aiOptimizedSynthesizedAt:
       input.aiOptimizedSynthesizedAt?.toISOString() ?? null,
+    aiOptimizedLastCheckedAt:
+      input.aiOptimizedLastCheckedAt?.toISOString() ?? null,
     aiOptimizedInputHash: input.aiOptimizedInputHash ?? null,
     activationRequirementsMet: hasActivationRequirements({
       projectAlias: input.projectAlias,
@@ -708,6 +711,7 @@ export interface ProjectMutationData {
   readonly aiKnowledgeSources: readonly AiKnowledgeSource[];
   readonly aiOperatingContext: string;
   readonly aiOptimizedSynthesizedAt: string | null;
+  readonly aiOptimizedLastCheckedAt: string | null;
   readonly aiOptimizedInputHash: string | null;
   readonly activationRequirementsMet: boolean;
   readonly emails: readonly ProjectEmailMutationData[];

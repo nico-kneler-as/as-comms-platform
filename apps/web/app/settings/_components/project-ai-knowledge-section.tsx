@@ -172,6 +172,7 @@ export function ProjectAiKnowledgeSection({
   initialOperatingContext,
   initialAutoSyncSchedule,
   aiOptimizedSynthesizedAt,
+  aiOptimizedLastCheckedAt,
   aiKnowledgeSynthesisStale
 }: {
   readonly projectId: string;
@@ -180,6 +181,7 @@ export function ProjectAiKnowledgeSection({
   readonly initialOperatingContext: string;
   readonly initialAutoSyncSchedule: "never" | "daily" | "weekly";
   readonly aiOptimizedSynthesizedAt: string | null;
+  readonly aiOptimizedLastCheckedAt: string | null;
   readonly aiKnowledgeSynthesisStale: boolean;
 }) {
   const router = useRouter();
@@ -641,29 +643,39 @@ export function ProjectAiKnowledgeSection({
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <p className="text-sm font-medium text-slate-900">Synthesis status</p>
-          <p
-            className={cn(
-              TYPE.caption,
-              "mt-1 flex items-start gap-1.5 text-slate-600"
-            )}
-          >
-            {enqueuedAt !== null ? (
-              <>
-                <RefreshCw
-                  className="mt-0.5 size-3 shrink-0 animate-spin text-sky-600"
-                  aria-hidden="true"
-                />
-                <span>
-                  Synthesizing now — Claude call + Notion publish typically
-                  takes 30–90s.
-                </span>
-              </>
-            ) : aiOptimizedSynthesizedAt === null ? (
-              <span>Not yet synthesized.</span>
-            ) : (
-              <span>{`Last synthesized: ${formatTimestamp(aiOptimizedSynthesizedAt)} (${String(enabledHealthySources.length)} healthy enabled sources, model metadata unavailable).`}</span>
-            )}
-          </p>
+          {enqueuedAt !== null ? (
+            <p
+              className={cn(
+                TYPE.caption,
+                "mt-1 flex items-start gap-1.5 text-slate-600"
+              )}
+            >
+              <RefreshCw
+                className="mt-0.5 size-3 shrink-0 animate-spin text-sky-600"
+                aria-hidden="true"
+              />
+              <span>
+                Synthesizing now. Claude call + Notion publish typically takes
+                30 to 90 seconds.
+              </span>
+            </p>
+          ) : aiOptimizedSynthesizedAt === null ? (
+            <p className={cn(TYPE.caption, "mt-1 text-slate-600")}>
+              Not yet synthesized.
+            </p>
+          ) : (
+            <div className={cn(TYPE.caption, "mt-1 space-y-1 text-slate-600")}>
+              <p>
+                {`Last synthesized: ${formatTimestamp(aiOptimizedSynthesizedAt)} (${String(enabledHealthySources.length)} healthy enabled sources).`}
+              </p>
+              {aiOptimizedLastCheckedAt !== null &&
+              aiOptimizedLastCheckedAt !== aiOptimizedSynthesizedAt ? (
+                <p>
+                  {`Auto-sync last checked: ${formatTimestamp(aiOptimizedLastCheckedAt)} (sources unchanged, no re-synthesis needed).`}
+                </p>
+              ) : null}
+            </div>
+          )}
           {aiKnowledgeSynthesisStale && enqueuedAt === null ? (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
               Synthesis is stale. One or more source hashes no longer match the

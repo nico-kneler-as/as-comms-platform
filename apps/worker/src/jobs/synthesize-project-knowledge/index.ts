@@ -168,6 +168,18 @@ export async function runSynthesizeProjectKnowledge(
   }
 
   if ("unchanged" in orchestratorResult) {
+    // Bump only ai_optimized_last_checked_at so operators can see auto-sync
+    // is running. Leave ai_optimized_synthesized_at alone — content was not
+    // regenerated. Re-stamp ai_optimized_input_hash with the same value
+    // we just compared against (no-op write, kept for symmetry).
+    await deps.repositories.projectDimensions.setSynthesisMetadata(
+      payload.projectId,
+      {
+        lastCheckedAt: now().toISOString(),
+        inputHash: orchestratorResult.inputHash,
+      },
+    );
+
     return {
       ok: true,
       unchanged: true,
@@ -220,6 +232,8 @@ export async function runSynthesizeProjectKnowledge(
       payload.projectId,
       {
         synthesizedAt: synthesizedAt.toISOString(),
+        // Content was just regenerated, so checked-at == synthesized-at.
+        lastCheckedAt: synthesizedAt.toISOString(),
         inputHash,
       },
     );

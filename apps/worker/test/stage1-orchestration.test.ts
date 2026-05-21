@@ -504,6 +504,7 @@ Alias drift outbound message.
           aiOperatingContext: "",
           aiAutoSyncSchedule: "never",
           aiOptimizedSynthesizedAt: null,
+          aiOptimizedLastCheckedAt: null,
           aiOptimizedInputHash: null
         }
       ]);

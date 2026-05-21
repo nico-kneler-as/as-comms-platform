@@ -75,6 +75,7 @@ function buildProjectState(
     aiKnowledgeSources: project.aiKnowledgeSources,
     aiOperatingContext: project.aiOperatingContext,
     aiOptimizedSynthesizedAt: project.aiOptimizedSynthesizedAt,
+    aiOptimizedLastCheckedAt: project.aiOptimizedLastCheckedAt,
     aiOptimizedInputHash: project.aiOptimizedInputHash,
     activationRequirementsMet: project.activationRequirementsMet,
     emails: project.emails
@@ -1054,6 +1055,7 @@ export function ProjectDetail({
             initialOperatingContext={project.aiOperatingContext}
             initialAutoSyncSchedule={project.aiAutoSyncSchedule}
             aiOptimizedSynthesizedAt={project.aiOptimizedSynthesizedAt}
+            aiOptimizedLastCheckedAt={project.aiOptimizedLastCheckedAt}
             aiKnowledgeSynthesisStale={project.aiKnowledgeSynthesisStale}
           />
         )}

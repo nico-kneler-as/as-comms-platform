@@ -459,11 +459,22 @@ export interface ProjectDimensionRepository {
     projectId: string,
     schedule: "never" | "daily" | "weekly",
   ): Promise<void>;
+  /**
+   * Stamp synthesis-related timestamps + input hash for a project.
+   * - `synthesizedAt`: bump only on actual Anthropic synthesis runs (content
+   *   was regenerated). Pass `undefined` to leave the existing value alone.
+   * - `lastCheckedAt`: bump on every successful orchestrator run, including
+   *   skip-if-unchanged paths where no Anthropic call was made. Lets the UI
+   *   distinguish "content gen time" from "auto-sync verification cycle".
+   * - `inputHash`: source-content hash for the next skip-if-unchanged check.
+   *   Pass `undefined` to leave the existing value alone.
+   */
   setSynthesisMetadata(
     projectId: string,
     input: {
-      readonly synthesizedAt: string | null;
-      readonly inputHash: string | null;
+      readonly synthesizedAt?: string | null;
+      readonly lastCheckedAt?: string | null;
+      readonly inputHash?: string | null;
     },
   ): Promise<void>;
   upsert(record: ProjectDimensionRecord): Promise<ProjectDimensionRecord>;
