@@ -151,6 +151,7 @@ describe("ProjectDetail role-aware rendering", () => {
           aiOperatingContext: "",
           aiAutoSyncSchedule: "never",
           aiOptimizedSynthesizedAt: null,
+          aiOptimizedLastCheckedAt: null,
           aiOptimizedInputHash: null,
           aiKnowledgeSynthesisStale: false,
           memberCount: 0,

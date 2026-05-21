@@ -82,6 +82,7 @@ export interface ProjectSettingsDetailViewModel extends ProjectRowViewModel {
   readonly aiOperatingContext: string;
   readonly aiAutoSyncSchedule: "never" | "daily" | "weekly";
   readonly aiOptimizedSynthesizedAt: string | null;
+  readonly aiOptimizedLastCheckedAt: string | null;
   readonly aiOptimizedInputHash: string | null;
   readonly aiKnowledgeSynthesisStale: boolean;
   readonly emails: readonly {
@@ -750,6 +751,7 @@ async function readProjectSettingsDetail(
     aiOperatingContext: dimension?.aiOperatingContext ?? "",
     aiAutoSyncSchedule: dimension?.aiAutoSyncSchedule ?? "never",
     aiOptimizedSynthesizedAt: dimension?.aiOptimizedSynthesizedAt ?? null,
+    aiOptimizedLastCheckedAt: dimension?.aiOptimizedLastCheckedAt ?? null,
     aiOptimizedInputHash,
     // Only consider synthesis "stale" when a prior synthesis exists to
     // compare against. Otherwise (never-synthesized), the project is in a

@@ -546,6 +546,7 @@ export function mapProjectDimensionRow(
     aiOperatingContext: row.aiOperatingContext,
     aiAutoSyncSchedule: row.aiAutoSyncSchedule,
     aiOptimizedSynthesizedAt: fromDate(row.aiOptimizedSynthesizedAt),
+    aiOptimizedLastCheckedAt: fromDate(row.aiOptimizedLastCheckedAt),
     aiOptimizedInputHash: row.aiOptimizedInputHash,
   });
 }
@@ -579,6 +580,12 @@ export function mapProjectDimensionToInsert(
         : parsed.aiOptimizedSynthesizedAt === null
           ? null
           : toDate(parsed.aiOptimizedSynthesizedAt),
+    aiOptimizedLastCheckedAt:
+      parsed.aiOptimizedLastCheckedAt === undefined
+        ? undefined
+        : parsed.aiOptimizedLastCheckedAt === null
+          ? null
+          : toDate(parsed.aiOptimizedLastCheckedAt),
     aiOptimizedInputHash:
       parsed.aiOptimizedInputHash === undefined
         ? undefined

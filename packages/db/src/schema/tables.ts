@@ -337,6 +337,14 @@ export const projectDimensions = pgTable(
       mode: "date",
       withTimezone: true,
     }),
+    // Bumped on every successful synthesis orchestrator run, including
+    // skip-if-unchanged paths where Anthropic was not called. Lets the UI
+    // distinguish "content gen time" from "auto-sync verification cycle"
+    // so a Weekly schedule with stable sources doesn't look broken.
+    aiOptimizedLastCheckedAt: timestamp("ai_optimized_last_checked_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
     aiOptimizedInputHash: text("ai_optimized_input_hash"),
     source: recordSourceEnum("source").notNull(),
     createdAt: createdAtColumn,

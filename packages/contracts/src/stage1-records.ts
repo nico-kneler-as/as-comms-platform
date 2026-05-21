@@ -166,6 +166,10 @@ export const projectDimensionSchema = z.object({
   aiOperatingContext: z.string().optional(),
   aiAutoSyncSchedule: z.enum(["never", "daily", "weekly"]).optional(),
   aiOptimizedSynthesizedAt: optionalTimestampSchema.optional(),
+  // Bumped on every successful synthesis orchestrator run, including the
+  // skip-if-unchanged path. Lets the UI show "auto-sync ran at X, no
+  // changes detected" separately from "content last regenerated at Y".
+  aiOptimizedLastCheckedAt: optionalTimestampSchema.optional(),
   aiOptimizedInputHash: nullableStringSchema.optional(),
 });
 export type ProjectDimensionRecord = z.input<typeof projectDimensionSchema>;
