@@ -125,6 +125,17 @@ async function seedMergePair(
     idempotencyKey: "source-evidence:gmail:message:dupe-case-2",
     checksum: "checksum:dupe-case-2",
   });
+  await context.repositories.sourceEvidence.append({
+    id: "source-evidence:gmail:message:sf-anchor-older",
+    provider: "gmail",
+    providerRecordType: "message",
+    providerRecordId: "sf-anchor-older",
+    receivedAt: "2026-05-02T01:00:00.000Z",
+    occurredAt: "2026-05-02T01:00:00.000Z",
+    payloadRef: "gmail://message/sf-anchor-older",
+    idempotencyKey: "source-evidence:gmail:message:sf-anchor-older",
+    checksum: "checksum:sf-anchor-older",
+  });
 
   await context.repositories.canonicalEvents.upsert({
     id: "canonical-event:dupe-1",
@@ -141,6 +152,21 @@ async function seedMergePair(
     }),
     reviewState: "clear",
   });
+  await context.repositories.canonicalEvents.upsert({
+    id: "canonical-event:sf-anchor-older",
+    contactId: sfAnchoredId,
+    eventType: "communication.email.outbound",
+    channel: "email",
+    occurredAt: "2026-05-02T01:00:00.000Z",
+    contentFingerprint: null,
+    sourceEvidenceId: "source-evidence:gmail:message:sf-anchor-older",
+    idempotencyKey: "canonical-event:sf-anchor-older",
+    provenance: buildCanonicalProvenance({
+      sourceEvidenceId: "source-evidence:gmail:message:sf-anchor-older",
+      providerRecordId: "sf-anchor-older",
+    }),
+    reviewState: "clear",
+  });
 
   await context.db.insert(contactTimelineProjection).values({
     id: "timeline:dupe-1",
@@ -153,6 +179,31 @@ async function seedMergePair(
     channel: "email",
     primaryProvider: "gmail",
     reviewState: "clear",
+  });
+  await context.db.insert(contactTimelineProjection).values({
+    id: "timeline:sf-anchor-older",
+    contactId: sfAnchoredId,
+    canonicalEventId: "canonical-event:sf-anchor-older",
+    occurredAt: new Date("2026-05-02T01:00:00.000Z"),
+    sortKey: "2026-05-02T01:00:00.000Z#canonical-event:sf-anchor-older",
+    eventType: "communication.email.outbound",
+    summary: "Older outbound email",
+    channel: "email",
+    primaryProvider: "gmail",
+    reviewState: "clear",
+  });
+  await context.repositories.inboxProjection.upsert({
+    contactId: sfAnchoredId,
+    bucket: "Opened",
+    needsFollowUp: false,
+    hasUnresolved: true,
+    lastInboundAt: "2026-05-02T00:59:00.000Z",
+    lastOutboundAt: "2026-05-02T01:00:00.000Z",
+    lastActivityAt: "2026-05-02T01:00:00.000Z",
+    snippet: "Stale projection",
+    archivedAt: null,
+    lastCanonicalEventId: "canonical-event:sf-anchor-older",
+    lastEventType: "communication.email.outbound",
   });
 
   await context.repositories.identityResolutionQueue.upsert({
@@ -279,6 +330,7 @@ describe("merge-email-only-into-sf-anchored", () => {
         canonicalEventsRepointed: 1,
         timelineRowsRepointed: 1,
         identityCasesResolved: 2,
+        inboxProjectionsRebuilt: 0,
         contactsDeleted: 1,
       });
 
@@ -321,6 +373,15 @@ describe("merge-email-only-into-sf-anchored", () => {
           anchoredContactId: pairIds.emailOnlyId,
         },
       ]);
+      await expect(
+        context.repositories.inboxProjection.findByContactId(pairIds.sfAnchoredId),
+      ).resolves.toMatchObject({
+        contactId: pairIds.sfAnchoredId,
+        hasUnresolved: true,
+        lastInboundAt: "2026-05-02T00:59:00.000Z",
+        lastCanonicalEventId: "canonical-event:sf-anchor-older",
+        lastEventType: "communication.email.outbound",
+      });
     } finally {
       await context.dispose();
     }
@@ -357,6 +418,7 @@ describe("merge-email-only-into-sf-anchored", () => {
         canonicalEventsRepointed: 1,
         timelineRowsRepointed: 1,
         identityCasesResolved: 2,
+        inboxProjectionsRebuilt: 1,
         contactsDeleted: 1,
       });
 
@@ -432,6 +494,15 @@ describe("merge-email-only-into-sf-anchored", () => {
         `merged duplicate contact ${pairIds.emailOnlyId} into ${pairIds.sfAnchoredId} (architect cleanup 2026-05-02)`,
       );
 
+      await expect(
+        context.repositories.inboxProjection.findByContactId(pairIds.sfAnchoredId),
+      ).resolves.toMatchObject({
+        contactId: pairIds.sfAnchoredId,
+        hasUnresolved: false,
+        lastInboundAt: "2026-05-02T01:01:00.000Z",
+        lastCanonicalEventId: "canonical-event:dupe-1",
+        lastEventType: "communication.email.inbound",
+      });
       await expect(
         context.repositories.contacts.findById(pairIds.emailOnlyId),
       ).resolves.toBeNull();
