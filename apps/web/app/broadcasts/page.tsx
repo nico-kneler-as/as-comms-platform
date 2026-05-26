@@ -564,19 +564,31 @@ export default async function CampaignsPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-100">
-      <div className="h-[54px] border-b border-slate-200 bg-white px-6">
-        <div className="mx-auto flex h-full w-full max-w-[1180px] items-center justify-between gap-4">
-          <div className="flex min-w-0 items-baseline gap-3">
-            <h1 className="text-lg font-semibold text-slate-900">Broadcasts</h1>
-            <p className="text-[12px] tabular-nums text-slate-500">
-              {activeCount.toLocaleString()}
-            </p>
-          </div>
-          {currentUser.role === "admin" ? (
-            <Button asChild size="sm">
-              <Link href="/broadcasts/new">+ New broadcast</Link>
-            </Button>
-          ) : null}
+      <div className="px-6 pt-6 pb-4">
+        <div className="mx-auto w-full max-w-[1180px]">
+          <header className="flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2">
+                <h1 className="text-lg font-semibold tracking-tight text-balance text-slate-950">
+                  Broadcasts
+                </h1>
+                <span className="text-sm tabular-nums text-slate-500">
+                  {activeCount.toLocaleString()}
+                </span>
+              </div>
+              <p className="mt-0.5 text-sm text-pretty text-slate-500">
+                Recently broadcasted messages. Does not include Mailchimp
+                messages
+              </p>
+            </div>
+            {currentUser.role === "admin" ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <Button asChild size="sm">
+                  <Link href="/broadcasts/new">+ New broadcast</Link>
+                </Button>
+              </div>
+            ) : null}
+          </header>
         </div>
       </div>
 

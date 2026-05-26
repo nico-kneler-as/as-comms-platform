@@ -3,7 +3,7 @@ import { Eye, Mail, Megaphone, MessageSquare, Users } from "lucide-react";
 
 import type { CampaignRunProjectionRow } from "@as-comms/contracts";
 
-import { TONE_CLASSES, TYPE, FOCUS_RING, RADIUS, TRANSITION } from "@/app/_lib/design-tokens-v2";
+import { TONE_CLASSES, FOCUS_RING, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { projectToneFromName } from "@/app/inbox/_lib/project-tone";
 import { cn } from "@/lib/utils";
@@ -14,10 +14,10 @@ import { RunStateChip } from "../[runId]/_components/run-state-chip";
 const ACTIVE_ACCENT_CLASS: Partial<Record<CampaignRunProjectionRow["state"], string>> =
   {
     sending: "bg-sky-500",
-    scheduled: "bg-violet-500",
+    scheduled: "bg-indigo-400",
   };
 
-const COMPLETE_OPEN_RATE_ICON_CLASS = "size-3 text-slate-500";
+const COMPLETE_OPEN_RATE_ICON_CLASS = "size-2.5 text-slate-500";
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -45,25 +45,25 @@ function resolveAudienceTotal(item: CampaignRowViewModel): number | null {
 
 function readTypeMeta(item: CampaignRowViewModel) {
   if (item.launchType === "html_email") {
-    return {
-      Icon: Megaphone,
-      label: "HTML broadcast",
-      className: "bg-violet-50 text-violet-600",
-    };
-  }
+      return {
+        Icon: Megaphone,
+        label: "HTML broadcast",
+        className: "bg-violet-50 text-violet-600 ring-violet-100",
+      };
+    }
 
   if (item.launchType === "sms") {
     if (item.selectedContactCount > 0) {
       return {
         Icon: Users,
         label: "SMS to specific contacts",
-        className: "bg-indigo-50 text-indigo-600",
+        className: "bg-indigo-50 text-indigo-600 ring-indigo-100",
       };
     }
     return {
       Icon: MessageSquare,
       label: "Project SMS",
-      className: "bg-indigo-50 text-indigo-600",
+      className: "bg-indigo-50 text-indigo-600 ring-indigo-100",
     };
   }
 
@@ -71,14 +71,14 @@ function readTypeMeta(item: CampaignRowViewModel) {
     return {
       Icon: Users,
       label: "Specific contacts",
-      className: "bg-sky-50 text-sky-600",
+      className: "bg-sky-50 text-sky-600 ring-sky-100",
     };
   }
 
   return {
     Icon: Mail,
     label: "Project audience",
-    className: "bg-sky-50 text-sky-600",
+    className: "bg-sky-50 text-sky-600 ring-sky-100",
   };
 }
 
@@ -243,7 +243,7 @@ export function CampaignRow({
         data-campaign-provider={item.provider}
         data-campaign-state={item.state}
         className={cn(
-          "group relative grid grid-cols-[44px_minmax(0,1fr)] gap-x-4 gap-y-3 overflow-hidden bg-white px-5 py-6 sm:grid-cols-[44px_minmax(0,1fr)_max-content] sm:items-start",
+          "group relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 overflow-hidden bg-white px-5 py-3",
           TRANSITION.fast,
           TRANSITION.reduceMotion,
           "hover:bg-slate-50",
@@ -252,52 +252,43 @@ export function CampaignRow({
       >
         <span
           aria-hidden="true"
-          className={cn("absolute inset-y-0 left-0 w-[3px]", accentClass)}
+          className={cn("absolute inset-y-0 left-0 w-0.5", accentClass)}
         />
         <span
           className={cn(
-            "mt-0.5 flex size-11 items-center justify-center",
-            RADIUS.md,
+            "flex size-9 items-center justify-center rounded-md ring-1 ring-inset",
             typeMeta.className,
           )}
           title={typeMeta.label}
         >
-          <TypeIcon className="size-5" aria-hidden="true" />
+          <TypeIcon className="size-4" aria-hidden="true" />
         </span>
 
         <div className="min-w-0">
           <p
             className={cn(
-              TYPE.headingMd,
-              "truncate leading-6",
+              "truncate text-[13.5px] font-semibold text-slate-900",
               untitledDraft && "italic text-slate-500",
             )}
           >
             {title}
           </p>
 
-          <div className="mt-2 flex min-w-0 items-center gap-2">
+          <div className="mt-1 flex min-w-0 items-center gap-2">
             {showProjectPill ? (
               <span
                 className={cn(
-                  "shrink-0 px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
-                  RADIUS.sm,
+                  "inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-1.5 py-px text-[10px] font-semibold tracking-tight",
                   projectTone.subtle,
                   projectTone.subtleText,
-                  projectTone.ring,
                 )}
               >
                 {projectLabel}
               </span>
             ) : null}
-            {showProjectPill ? (
-              <span className="text-slate-400" aria-hidden="true">
-                ·
-              </span>
-            ) : null}
             <p
               className={cn(
-                "min-w-0 truncate text-sm",
+                "min-w-0 truncate text-[12px]",
                 trimmedSubject.length > 0
                   ? "text-slate-600"
                   : "italic text-slate-500",
@@ -308,12 +299,12 @@ export function CampaignRow({
           </div>
         </div>
 
-        <div className="col-start-2 flex min-w-0 flex-col items-start gap-1 text-left sm:col-start-3 sm:items-end sm:text-right">
+        <div className="flex flex-col items-end gap-1 whitespace-nowrap text-right">
           <RunStateChip state={item.state} variant="list" />
-          <p className="flex items-center gap-1.5 text-xs text-slate-600">
+          <p className="flex items-center gap-1.5 text-[11px] tabular-nums text-slate-500">
             {renderMetric(item)}
           </p>
-          <p className="flex items-center gap-1.5 text-xs text-slate-500">
+          <p className="flex items-center gap-1.5 text-[10.5px] text-slate-500">
             {renderDateLine(item)}
           </p>
         </div>
