@@ -217,7 +217,7 @@ export function CampaignsList({
 
   if (showColdStart) {
     return (
-      <div className="flex flex-1 px-4 py-6 sm:px-6">
+      <div className="flex flex-1 px-6 py-6">
         <div className="mx-auto flex w-full max-w-[1180px] flex-1 rounded-lg border border-slate-200 bg-white">
           <EmptyState
             size="lg"
@@ -239,7 +239,7 @@ export function CampaignsList({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 px-4 py-4 sm:px-6">
+    <div className="flex min-h-0 flex-1 px-6 py-4">
       <div className="mx-auto flex min-h-0 w-full max-w-[1180px] flex-1 flex-col">
         <div className="pb-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -470,16 +470,20 @@ export function CampaignRowsSkeleton({
       {Array.from({ length: rows }, (_, index) => (
         <div
           key={`campaign-row-skeleton-${String(index)}`}
-          className="grid min-h-[92px] grid-cols-[40px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-4 py-3 sm:min-h-0 sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,190px)] sm:items-center sm:gap-4"
+          className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 border-b border-slate-200 bg-white px-5 py-3 last:border-b-0"
         >
           <Skeleton className="size-9 rounded-md" />
-          <div className="space-y-2">
-            <Skeleton className="h-3.5 w-52" />
-            <Skeleton className="h-3 w-72 max-w-full" />
+          <div className="min-w-0 space-y-2">
+            <Skeleton className="h-3.5 w-44 max-w-full" />
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-16 rounded-md" />
+              <Skeleton className="h-3 w-40 max-w-full" />
+            </div>
           </div>
-          <div className="col-span-2 space-y-2 sm:col-span-1 sm:ml-auto sm:w-[190px]">
-            <Skeleton className="ml-auto h-3.5 w-24 max-w-full" />
-            <Skeleton className="ml-auto h-3 w-32 max-w-full" />
+          <div className="ml-auto flex w-[140px] flex-col items-end gap-2">
+            <Skeleton className="h-5 w-20 rounded-full" />
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-20" />
           </div>
         </div>
       ))}
