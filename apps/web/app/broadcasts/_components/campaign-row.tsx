@@ -8,7 +8,6 @@ import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { projectToneFromName } from "@/app/inbox/_lib/project-tone";
 import { cn } from "@/lib/utils";
 
-import { LocalDateTime } from "../[runId]/_components/local-date-time";
 import { RunStateChip } from "../[runId]/_components/run-state-chip";
 
 const ACTIVE_ACCENT_CLASS: Partial<Record<CampaignRunProjectionRow["state"], string>> =
@@ -19,15 +18,66 @@ const ACTIVE_ACCENT_CLASS: Partial<Record<CampaignRunProjectionRow["state"], str
 
 const COMPLETE_OPEN_RATE_ICON_CLASS = "size-2.5 text-slate-500";
 
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
+const SHORT_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
   timeZone: ORG_TIMEZONE,
-  timeZoneName: "short",
 });
+
+const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: ORG_TIMEZONE,
+});
+
+const SHORT_DATE_WITH_YEAR_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: ORG_TIMEZONE,
+});
+
+function readDateParts(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: ORG_TIMEZONE,
+  }).formatToParts(date);
+
+  return {
+    year: parts.find((part) => part.type === "year")?.value ?? "",
+    month: parts.find((part) => part.type === "month")?.value ?? "",
+    day: parts.find((part) => part.type === "day")?.value ?? "",
+  };
+}
+
+function readDateKey(date: Date) {
+  const { year, month, day } = readDateParts(date);
+  return `${year}-${month}-${day}`;
+}
+
+function formatShortOrgDateTime(iso: string, now = new Date()) {
+  const date = new Date(iso);
+  const todayKey = readDateKey(now);
+  const yesterdayKey = readDateKey(
+    new Date(now.getTime() - 24 * 60 * 60 * 1000),
+  );
+  const targetKey = readDateKey(date);
+  const timeLabel = SHORT_TIME_FORMATTER.format(date);
+
+  if (targetKey === todayKey) {
+    return `Today ${timeLabel}`;
+  }
+
+  if (targetKey === yesterdayKey) {
+    return `Yesterday ${timeLabel}`;
+  }
+
+  return readDateParts(date).year === readDateParts(now).year
+    ? SHORT_DATE_FORMATTER.format(date)
+    : SHORT_DATE_WITH_YEAR_FORMATTER.format(date);
+}
 
 function formatCount(value: number) {
   return value.toLocaleString();
@@ -130,6 +180,7 @@ function renderMetric(item: CampaignRowViewModel) {
 }
 
 function renderDateLine(item: CampaignRowViewModel) {
+  const now = new Date();
   const label = (() => {
     switch (item.state) {
       case "sending":
@@ -162,12 +213,12 @@ function renderDateLine(item: CampaignRowViewModel) {
   })();
 
   return label === null ? (
-    <time dateTime={iso}>{DATE_TIME_FORMATTER.format(new Date(iso))}</time>
+    <time dateTime={iso}>{formatShortOrgDateTime(iso, now)}</time>
   ) : (
     <>
       <span>{label}</span>
       <span className="text-slate-400">·</span>
-      <LocalDateTime iso={iso} />
+      <time dateTime={iso}>{formatShortOrgDateTime(iso, now)}</time>
     </>
   );
 }
