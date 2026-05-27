@@ -14,6 +14,12 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("lucide-react", () => ({
   Copy: () => null,
+  Archive: () => null,
+  Calendar: () => null,
+  Check: () => null,
+  Pencil: () => null,
+  Send: () => null,
+  X: () => null,
 }));
 
 vi.mock("@/components/ui/button", () => ({
