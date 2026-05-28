@@ -29,6 +29,7 @@ import {
   parseCommunicationPreview,
   resolvePreferredMessagePreview,
   sanitizePreviewText,
+  stripDuplicateOutboundEcho,
   stripSignature,
   trimQuotedReplyContent,
 } from "./message-formatting";
@@ -2048,6 +2049,44 @@ function timelineBody(item: TimelineItem): string {
   }
 }
 
+function resolveTimelineEmailBody(item: Extract<TimelineItem, { family: "one_to_one_email" }>): string {
+  const preview = resolvePreferredMessagePreview({
+    explicitSubjects: [item.subject],
+    rawCandidates: [item.bodyPreview, item.snippet],
+  });
+
+  return preview.body.length > 0 ? preview.body : timelineBody(item);
+}
+
+function findRecentOutboundThreadBody(input: {
+  readonly activityTimelineItems: readonly TimelineItem[];
+  readonly inboundItem: Extract<TimelineItem, { family: "one_to_one_email" }>;
+}): string | null {
+  const threadId = input.inboundItem.threadId ?? null;
+
+  if (threadId === null || threadId.trim().length === 0) {
+    return null;
+  }
+
+  for (let index = input.activityTimelineItems.length - 1; index >= 0; index -= 1) {
+    const candidate = input.activityTimelineItems[index];
+
+    if (
+      candidate?.family !== "one_to_one_email" ||
+      candidate.direction !== "outbound" ||
+      candidate.threadId !== threadId ||
+      candidate.occurredAt >= input.inboundItem.occurredAt
+    ) {
+      continue;
+    }
+
+    const body = resolveTimelineEmailBody(candidate);
+    return body.length > 0 ? body : null;
+  }
+
+  return null;
+}
+
 function projectLabelForAlias(input: {
   readonly alias: string | null | undefined;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
@@ -2222,6 +2261,7 @@ function buildTimelineEntry(input: {
   readonly projectMetadataById: InboxDetailCacheData["projectMetadataById"];
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
   readonly referenceNowIso: string;
+  readonly activityTimelineItems: readonly TimelineItem[];
   readonly attachmentsByCanonicalEventId: ReadonlyMap<
     string,
     readonly MessageAttachmentRecord[]
@@ -2290,9 +2330,19 @@ function buildTimelineEntry(input: {
         ? itemPreview.body
         : body
       : body;
+  const bodyWithDuplicateOutboundEchoStripped =
+    input.item.family === "one_to_one_email" && visualEmailDirection === "inbound"
+      ? stripDuplicateOutboundEcho({
+          inboundBody: resolvedBody,
+          recentOutboundBody: findRecentOutboundThreadBody({
+            activityTimelineItems: input.activityTimelineItems,
+            inboundItem: input.item,
+          }),
+        })
+      : resolvedBody;
   const hasRenderableEmailContent =
     kind === "inbound-email" || kind === "outbound-email"
-      ? subject !== null || resolvedBody.trim().length > 0
+      ? subject !== null || bodyWithDuplicateOutboundEchoStripped.trim().length > 0
       : true;
   const finalKind =
     !hasRenderableEmailContent && input.item.family === "one_to_one_email"
@@ -2362,7 +2412,7 @@ function buildTimelineEntry(input: {
       canonicalSenderDisplayName,
     ),
     subject,
-    body: resolvedBody,
+    body: bodyWithDuplicateOutboundEchoStripped,
     channel: timelineChannel(input.item),
     isUnread,
     isPreview: isPreviewTimelineItem(input.item),
@@ -4450,6 +4500,7 @@ function buildInboxDetailTimelineViewModel(input: {
       projectMetadataById: input.cachedData.projectMetadataById,
       projectLabelByAlias: input.cachedData.projectLabelByAlias,
       referenceNowIso: input.referenceNowIso,
+      activityTimelineItems: input.cachedData.activityTimelineItems,
       attachmentsByCanonicalEventId:
         input.cachedData.attachmentsByCanonicalEventId,
     }),
