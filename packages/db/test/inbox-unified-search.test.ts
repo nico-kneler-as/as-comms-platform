@@ -262,7 +262,7 @@ async function seedInboundSalesforceEmail(
     sourceEvidenceId,
     providerRecordId: `sf-${input.idSuffix}`,
     channel: "email",
-    messageKind: "human",
+    messageKind: "one_to_one",
     subject: input.subject,
     snippet: "salesforce snippet",
     sourceLabel: "Salesforce",
