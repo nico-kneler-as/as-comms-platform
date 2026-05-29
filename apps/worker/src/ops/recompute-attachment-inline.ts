@@ -41,6 +41,7 @@ interface CandidateAttachmentRow {
   readonly gmailAttachmentId: string;
   readonly mimeType: string;
   readonly isInline: boolean;
+  readonly partIndexPath: string | null;
 }
 
 interface CachedMessageData {
@@ -157,6 +158,25 @@ function logEntry(
   logger.log(JSON.stringify(entry));
 }
 
+function parsePartIndexPathFromAttachmentId(
+  attachmentId: string,
+): string | null {
+  const prefix = "att:gmail:";
+
+  if (!attachmentId.startsWith(prefix)) {
+    return null;
+  }
+
+  const messageIdDelimiterIndex = attachmentId.indexOf(":", prefix.length);
+
+  if (messageIdDelimiterIndex < 0) {
+    return null;
+  }
+
+  const partIndexPath = attachmentId.slice(messageIdDelimiterIndex + 1).trim();
+  return partIndexPath.length > 0 ? partIndexPath : null;
+}
+
 async function loadCandidateRows(input: {
   readonly db: Stage1Database;
   readonly since: string;
@@ -194,6 +214,7 @@ async function loadCandidateRows(input: {
       gmailAttachmentId: row.gmailAttachmentId,
       mimeType: row.mimeType,
       isInline: row.isInline,
+      partIndexPath: parsePartIndexPathFromAttachmentId(row.id),
     })),
     truncated: rows.length > input.limit,
   };
@@ -285,8 +306,20 @@ export async function recomputeAttachmentInline(input: {
       continue;
     }
 
+    if (candidate.partIndexPath === null) {
+      skipped += 1;
+      logEntry(logger, {
+        id: candidate.id,
+        sourceEvidenceId: candidate.sourceEvidenceId,
+        gmailAttachmentId: candidate.gmailAttachmentId,
+        action: "skipped",
+        reason: "attachment_not_in_message",
+      });
+      continue;
+    }
+
     const attachment = messageData.attachmentMetadata.find(
-      (value) => value.gmailAttachmentId === candidate.gmailAttachmentId,
+      (value) => value.partIndexPath === candidate.partIndexPath,
     );
 
     if (attachment === undefined) {
