@@ -426,6 +426,111 @@ export function trimQuotedReplyContent(value: string): string {
   ).trim();
 }
 
+function normalizeWhitespaceForComparison(value: string): {
+  readonly normalized: string;
+  readonly normalizedIndexToOriginalIndex: readonly number[];
+} {
+  let normalized = "";
+  const normalizedIndexToOriginalIndex: number[] = [];
+  let pendingWhitespace = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index] ?? "";
+
+    if (/\s/u.test(character)) {
+      pendingWhitespace = normalized.length > 0;
+      continue;
+    }
+
+    if (pendingWhitespace) {
+      normalizedIndexToOriginalIndex.push(index);
+      normalized += " ";
+      pendingWhitespace = false;
+    }
+
+    normalizedIndexToOriginalIndex.push(index);
+    normalized += character.toLowerCase();
+  }
+
+  return {
+    normalized,
+    normalizedIndexToOriginalIndex,
+  };
+}
+
+export function stripDuplicateOutboundEcho(input: {
+  readonly inboundBody: string;
+  readonly recentOutboundBody: string | null;
+}): string {
+  const sanitizedOutbound =
+    input.recentOutboundBody === null
+      ? ""
+      : stripSignature(sanitizePreviewText(input.recentOutboundBody));
+
+  if (sanitizedOutbound.length === 0) {
+    return input.inboundBody;
+  }
+
+  const sanitizedInbound = stripSignature(sanitizePreviewText(input.inboundBody));
+
+  if (sanitizedInbound.length === 0) {
+    return input.inboundBody;
+  }
+
+  const normalizedInbound = normalizeWhitespaceForComparison(sanitizedInbound);
+  const normalizedOutbound = normalizeWhitespaceForComparison(sanitizedOutbound);
+
+  if (normalizedInbound.normalized.length === 0) {
+    return input.inboundBody;
+  }
+
+  let bestMatchLength = 0;
+  let bestMatchInboundStart = -1;
+
+  for (
+    let outboundStart = 0;
+    outboundStart < normalizedOutbound.normalized.length;
+    outboundStart += 1
+  ) {
+    for (
+      let outboundEnd = normalizedOutbound.normalized.length;
+      outboundEnd > outboundStart + bestMatchLength;
+      outboundEnd -= 1
+    ) {
+      const candidate = normalizedOutbound.normalized.slice(
+        outboundStart,
+        outboundEnd,
+      );
+      const inboundStart = normalizedInbound.normalized.indexOf(candidate);
+
+      if (inboundStart === -1) {
+        continue;
+      }
+
+      bestMatchLength = candidate.length;
+      bestMatchInboundStart = inboundStart;
+      break;
+    }
+  }
+
+  if (
+    bestMatchLength < 60 ||
+    bestMatchLength < Math.ceil(normalizedOutbound.normalized.length * 0.3) ||
+    bestMatchInboundStart <= 0
+  ) {
+    return input.inboundBody;
+  }
+
+  const originalSliceIndex =
+    normalizedInbound.normalizedIndexToOriginalIndex[bestMatchInboundStart];
+
+  if (originalSliceIndex === undefined || originalSliceIndex <= 0) {
+    return input.inboundBody;
+  }
+
+  return sanitizedInbound.slice(0, originalSliceIndex).trimEnd();
+}
+
 function signatureLooksLikeClosing(
   lines: readonly string[],
   index: number,

@@ -25,7 +25,6 @@ jobs:
           --health-retries=5
     env:
       CI: "true"
-      PLAYWRIGHT_BROWSERS_PATH: 0
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/test
     steps:
       - name: Checkout
@@ -45,8 +44,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      # Playwright browser binary lives in ~/.cache/ms-playwright by default
+      # (we no longer pin PLAYWRIGHT_BROWSERS_PATH=0 — that forced install
+      # into node_modules and defeated this cache). Key includes the
+      # Playwright version pulled into the lockfile so a Playwright upgrade
+      # invalidates automatically. ubuntu-latest ships the system libs
+      # Chromium needs, so we drop the `--with-deps` apt path that was
+      # hanging for >1h on transient apt-mirror stalls.
+      - name: Cache Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 5
+        run: pnpm exec playwright install chromium
 
       - name: Lint
         run: pnpm lint

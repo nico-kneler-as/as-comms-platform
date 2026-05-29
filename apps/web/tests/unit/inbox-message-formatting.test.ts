@@ -5,6 +5,7 @@ import {
   parseCommunicationPreview,
   resolvePreferredMessagePreview,
   sanitizePreviewText,
+  stripDuplicateOutboundEcho,
   stripSignature,
   trimQuotedReplyContent,
 } from "../../app/inbox/_lib/message-formatting";
@@ -141,5 +142,91 @@ describe("inbox message formatting", () => {
       "Please can you send me a link to log in",
     );
     expect(resolved.body).not.toContain("�");
+  });
+
+  describe("stripDuplicateOutboundEcho", () => {
+    it("trims outlook-style exact outbound echoes", () => {
+      expect(
+        stripDuplicateOutboundEcho({
+          inboundBody:
+            "Hi, thanks for reaching out! Yes, I'll be there.\n\nHey Tammy, Could you try the link again and see if you now have access?",
+          recentOutboundBody:
+            "Hey Tammy, Could you try the link again and see if you now have access?",
+        }),
+      ).toBe("Hi, thanks for reaching out! Yes, I'll be there.");
+    });
+
+    it("does not trim paraphrased outbound echoes", () => {
+      const inboundBody = [
+        "Hi, thanks for reaching out! Yes, I'll be there.",
+        "",
+        "Hey Tammy, please try the link again and see whether access is working now.",
+      ].join("\n");
+
+      expect(
+        stripDuplicateOutboundEcho({
+          inboundBody,
+          recentOutboundBody:
+            "Hey Tammy, Could you try the link again and see if you now have access?",
+        }),
+      ).toBe(inboundBody);
+    });
+
+    it("is a no-op when quote markers already let the outer trimmer work", () => {
+      const inboundBody = trimQuotedReplyContent(
+        [
+          "Hi, thanks for reaching out! Yes, I'll be there.",
+          "",
+          "On May 1, 2026, Adventure Scientists wrote:",
+          "Hey Tammy, Could you try the link again and see if you now have access?",
+        ].join("\n"),
+      );
+
+      expect(
+        stripDuplicateOutboundEcho({
+          inboundBody,
+          recentOutboundBody:
+            "Hey Tammy, Could you try the link again and see if you now have access?",
+        }),
+      ).toBe("Hi, thanks for reaching out! Yes, I'll be there.");
+    });
+
+    it("is a no-op when outbound is null", () => {
+      const inboundBody = "Hi, thanks for reaching out! Yes, I'll be there.";
+
+      expect(
+        stripDuplicateOutboundEcho({
+          inboundBody,
+          recentOutboundBody: null,
+        }),
+      ).toBe(inboundBody);
+    });
+
+    it("does not trim when the match starts at character 0", () => {
+      const inboundBody =
+        "Hey Tammy, Could you try the link again and see if you now have access?";
+
+      expect(
+        stripDuplicateOutboundEcho({
+          inboundBody,
+          recentOutboundBody: inboundBody,
+        }),
+      ).toBe(inboundBody);
+    });
+
+    it("strips outbound signatures before matching", () => {
+      expect(
+        stripDuplicateOutboundEcho({
+          inboundBody:
+            "Hi, thanks for reaching out! Yes, I'll be there.\n\nHey Tammy, Could you try the link again and see if you now have access?",
+          recentOutboundBody: [
+            "Hey Tammy, Could you try the link again and see if you now have access?",
+            "",
+            "Best,",
+            "Samantha",
+          ].join("\n"),
+        }),
+      ).toBe("Hi, thanks for reaching out! Yes, I'll be there.");
+    });
   });
 });
