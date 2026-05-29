@@ -201,12 +201,15 @@ async function main() {
 
   try {
     const ciWorkflow = await readText(".github/workflows/ci.yml");
+    // `pnpm test:e2e` intentionally NOT in this list — the Playwright job
+    // was removed from CI in #477 because of an upstream Chromium-install
+    // hang. The `test:e2e` script stays in package.json for local runs and
+    // can be restored to CI in one commit when the upstream issue clears.
     for (const command of [
       "pnpm lint",
       "pnpm typecheck",
       "pnpm build",
       "pnpm test:unit",
-      "pnpm test:e2e",
       "pnpm boundaries",
       "pnpm security",
       "pnpm verify"
