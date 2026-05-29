@@ -2579,8 +2579,19 @@ function createStage1RepositoriesInternal(
             or coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'
             or coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'
             or coalesce(${contactInboxProjection.snippet}, '') ilike ${pattern} escape '\\'
-            or coalesce(${gmailMessageDetails.subject}, '') ilike ${pattern} escape '\\'
-            or coalesce(${salesforceCommunicationDetailsTable.subject}, '') ilike ${pattern} escape '\\'
+            or exists (
+              select 1
+              from ${canonicalEventLedger}
+              left join ${gmailMessageDetails}
+                on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+              left join ${salesforceCommunicationDetailsTable}
+                on ${salesforceCommunicationDetailsTable.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+              where ${canonicalEventLedger.contactId} = ${contacts.id}
+                and (
+                  coalesce(${gmailMessageDetails.subject}, '') ilike ${pattern} escape '\\'
+                  or coalesce(${salesforceCommunicationDetailsTable.subject}, '') ilike ${pattern} escape '\\'
+                )
+            )
           )
           order by la.last_activity_at desc nulls last, ${contacts.createdAt} desc, ${contacts.id} asc
         `);

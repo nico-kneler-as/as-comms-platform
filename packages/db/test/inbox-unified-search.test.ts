@@ -927,7 +927,7 @@ describe("contact repository searchInboxUnified", () => {
     }
   });
 
-  it("does not return a contact when only an older subject matches and the latest message does not", async () => {
+  it("returns a contact when an older Gmail subject matches and the latest message does not", async () => {
     const context = await seedFixture();
 
     try {
@@ -953,8 +953,8 @@ describe("contact repository searchInboxUnified", () => {
         idSuffix: "older-subject-latest",
         subject: "Weekly newsletter",
       });
-      // Accepted v1 limitation: the join only sees the subject on
-      // contactInboxProjection.lastCanonicalEventId, i.e. the latest message.
+      // v1.5 broader match: the search should match any historical subject
+      // while still displaying latest-message metadata from the projection.
       await seedInboxProjection(context, {
         contactId,
         snippet: "Latest snippet that does not match.",
@@ -968,8 +968,209 @@ describe("contact repository searchInboxUnified", () => {
       });
 
       expect(result.volunteers).toEqual([]);
-      expect(result.contacts).toEqual([]);
-      expect(result.totals).toEqual({ volunteers: 0, contacts: 0 });
+      expect(result.contacts).toHaveLength(1);
+      expect(result.contacts[0]?.contact.id).toBe(contactId);
+      expect(result.contacts[0]?.latestMessageSubject).toBe("Weekly newsletter");
+      expect(result.totals).toEqual({ volunteers: 0, contacts: 1 });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("matches a contact by an arbitrary historical Gmail subject across many events", async () => {
+    const context = await seedFixture();
+
+    try {
+      const contactId = "contact:historical-gmail-subject";
+      await context.repositories.contacts.upsert({
+        id: contactId,
+        salesforceContactId: "003-hist",
+        displayName: "Harper Ridge",
+        primaryEmail: "harper@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+
+      await seedInboundEmail(context, {
+        contactId,
+        occurredAt: "2026-04-16T16:00:00.000Z",
+        idSuffix: "hist-01",
+        subject: "Bird count welcome",
+      });
+      await seedInboundEmail(context, {
+        contactId,
+        occurredAt: "2026-04-17T16:00:00.000Z",
+        idSuffix: "hist-02",
+        subject: "Camp logistics",
+      });
+      await seedInboundEmail(context, {
+        contactId,
+        occurredAt: "2026-04-18T16:00:00.000Z",
+        idSuffix: "hist-03",
+        subject: "Hex 19738 and 23816",
+      });
+      await seedInboundEmail(context, {
+        contactId,
+        occurredAt: "2026-04-19T16:00:00.000Z",
+        idSuffix: "hist-04",
+        subject: "Field supplies update",
+      });
+      const { canonicalEventId } = await seedInboundEmail(context, {
+        contactId,
+        occurredAt: "2026-04-20T16:00:00.000Z",
+        idSuffix: "hist-05",
+        subject: "Weekly digest",
+      });
+      await seedInboxProjection(context, {
+        contactId,
+        snippet: "Latest snippet without the target phrase.",
+        occurredAt: "2026-04-20T16:00:00.000Z",
+        canonicalEventId,
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "Hex 19738",
+        limit: 25,
+      });
+
+      expect(result.volunteers).toEqual([]);
+      expect(result.contacts).toHaveLength(1);
+      expect(result.contacts[0]?.contact.id).toBe(contactId);
+      expect(result.contacts[0]?.latestMessageSubject).toBe("Weekly digest");
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("matches multiple contacts when each has an older subject match on different threads", async () => {
+    const context = await seedFixture();
+
+    try {
+      const alphaId = "contact:cross-thread-alpha";
+      await context.repositories.contacts.upsert({
+        id: alphaId,
+        salesforceContactId: "003-cross-a",
+        displayName: "Avery Summit",
+        primaryEmail: "avery@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await seedInboundEmail(context, {
+        contactId: alphaId,
+        occurredAt: "2026-04-18T16:00:00.000Z",
+        idSuffix: "cross-a-match",
+        subject: "Hex 19738 thread alpha",
+      });
+      const { canonicalEventId: alphaLatestEventId } = await seedInboundEmail(
+        context,
+        {
+          contactId: alphaId,
+          occurredAt: "2026-04-20T16:00:00.000Z",
+          idSuffix: "cross-a-latest",
+          subject: "Status check-in",
+        },
+      );
+      await seedInboxProjection(context, {
+        contactId: alphaId,
+        snippet: "Alpha latest snippet without the search term.",
+        occurredAt: "2026-04-20T16:00:00.000Z",
+        canonicalEventId: alphaLatestEventId,
+      });
+
+      const betaId = "contact:cross-thread-beta";
+      await context.repositories.contacts.upsert({
+        id: betaId,
+        salesforceContactId: "003-cross-b",
+        displayName: "Blair Canyon",
+        primaryEmail: "blair@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await seedInboundEmail(context, {
+        contactId: betaId,
+        occurredAt: "2026-04-17T16:00:00.000Z",
+        idSuffix: "cross-b-match",
+        subject: "Re: Hex 19738 records",
+      });
+      const { canonicalEventId: betaLatestEventId } = await seedInboundEmail(
+        context,
+        {
+          contactId: betaId,
+          occurredAt: "2026-04-19T16:00:00.000Z",
+          idSuffix: "cross-b-latest",
+          subject: "Weekend logistics",
+        },
+      );
+      await seedInboxProjection(context, {
+        contactId: betaId,
+        snippet: "Beta latest snippet without the search term.",
+        occurredAt: "2026-04-19T16:00:00.000Z",
+        canonicalEventId: betaLatestEventId,
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "Hex 19738",
+        limit: 25,
+      });
+
+      expect(result.volunteers).toEqual([]);
+      expect(result.contacts.map((row) => row.contact.id)).toEqual([
+        alphaId,
+        betaId,
+      ]);
+      expect(result.totals).toEqual({ volunteers: 0, contacts: 2 });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("matches a contact by a historical Salesforce subject even when the latest event does not match", async () => {
+    const context = await seedFixture();
+
+    try {
+      const contactId = "contact:historical-salesforce-subject";
+      await context.repositories.contacts.upsert({
+        id: contactId,
+        salesforceContactId: "003-hist-sf",
+        displayName: "Sage Hollow",
+        primaryEmail: "sage@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await seedInboundSalesforceEmail(context, {
+        contactId,
+        occurredAt: "2026-04-19T16:00:00.000Z",
+        idSuffix: "hist-sf-match",
+        subject: "Hex 19738 in Salesforce",
+      });
+      const { canonicalEventId } = await seedInboundSalesforceEmail(context, {
+        contactId,
+        occurredAt: "2026-04-20T16:00:00.000Z",
+        idSuffix: "hist-sf-latest",
+        subject: "General volunteer update",
+      });
+      await seedInboxProjection(context, {
+        contactId,
+        snippet: "Latest Salesforce snippet without the search term.",
+        occurredAt: "2026-04-20T16:00:00.000Z",
+        canonicalEventId,
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "Hex 19738",
+        limit: 25,
+      });
+
+      expect(result.volunteers).toEqual([]);
+      expect(result.contacts).toHaveLength(1);
+      expect(result.contacts[0]?.contact.id).toBe(contactId);
+      expect(result.contacts[0]?.latestMessageSubject).toBe(
+        "General volunteer update",
+      );
     } finally {
       await context.dispose();
     }
