@@ -7010,6 +7010,104 @@ describe("real inbox selectors", () => {
     ]);
   });
 
+  it("hides outbound attachments that are quoted duplicates of an inbound on the same thread", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:quoted-dupe",
+      salesforceContactId: "003-quoted-dupe",
+      displayName: "Quoted Dupe Test",
+      primaryEmail: "qd@example.org",
+      primaryPhone: null,
+    });
+    // Inbound from volunteer with a screenshot attached. The seed helper
+    // groups events by contactId into one Gmail thread, so the outbound
+    // below sits on the same `threadId` automatically.
+    const inbound = await seedInboxEmailEvent(runtime.context, {
+      id: "qd-inbound-1",
+      contactId: "contact:quoted-dupe",
+      occurredAt: "2026-05-28T07:44:00.000Z",
+      direction: "inbound",
+      subject: "Re: Claim Your Adventure Today",
+      snippet: "Hi Samantha, I tried to claim a zone…",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:qd-inbound-1",
+      id: "att:gmail:qd-inbound-1:1",
+      mimeType: "image/png",
+      filename: "Screenshot 2026-05-28 at 10.21.54 AM.png",
+      sizeBytes: 45_817,
+      storageKey: "gmail/qd/att:gmail:qd-inbound-1:1",
+    });
+    // Operator's reply quotes the inbound. Gmail re-attaches the
+    // screenshot byte-for-byte with the same filename, but as a fresh
+    // MIME part with Content-Disposition: attachment (so the
+    // capture-time inline classifier can't tell it's a dupe). Plus a
+    // unique outbound-only attachment to confirm it survives the filter.
+    const outbound = await seedInboxEmailEvent(runtime.context, {
+      id: "qd-outbound-1",
+      contactId: "contact:quoted-dupe",
+      occurredAt: "2026-05-28T09:12:00.000Z",
+      direction: "outbound",
+      subject: "Re: Claim Your Adventure Today",
+      snippet: "Hey Michael! I will look into why this message is popping up…",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:qd-outbound-1",
+      id: "att:gmail:qd-outbound-1:1",
+      mimeType: "image/png",
+      filename: "Screenshot 2026-05-28 at 10.21.54 AM.png",
+      sizeBytes: 45_817,
+      storageKey: "gmail/qd/att:gmail:qd-outbound-1:1",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:qd-outbound-1",
+      id: "att:gmail:qd-outbound-1:2",
+      mimeType: "application/pdf",
+      filename: "instructions.pdf",
+      sizeBytes: 12_345,
+      storageKey: "gmail/qd/att:gmail:qd-outbound-1:2",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:quoted-dupe",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-28T07:44:00.000Z",
+      lastOutboundAt: "2026-05-28T09:12:00.000Z",
+      lastActivityAt: "2026-05-28T09:12:00.000Z",
+      snippet: "Hey Michael! I will look into why this message is popping up…",
+      lastCanonicalEventId: outbound.canonicalEventId,
+      lastEventType: "communication.email.outbound",
+    });
+
+    const detail = await getInboxDetail("contact:quoted-dupe");
+
+    const inboundEntry = detail?.timeline.find(
+      (entry) => entry.kind === "inbound-email",
+    );
+    const outboundEntry = detail?.timeline.find(
+      (entry) => entry.kind === "outbound-email",
+    );
+
+    // Inbound original screenshot stays visible (it's the real file
+    // the volunteer attached; this is the only copy the operator
+    // should see).
+    expect(inboundEntry?.attachments).toHaveLength(1);
+    expect(inboundEntry?.attachments[0]?.filename).toBe(
+      "Screenshot 2026-05-28 at 10.21.54 AM.png",
+    );
+
+    // Outbound's quoted copy of the screenshot is filtered (same
+    // filename + sizeBytes as the inbound on the same thread).
+    // The genuinely-new outbound attachment (instructions.pdf)
+    // survives.
+    expect(outboundEntry?.attachments).toHaveLength(1);
+    expect(outboundEntry?.attachments[0]?.filename).toBe("instructions.pdf");
+  });
+
   it("falls back to pending attachment metadata when pending outbounds have no canonical attachments yet", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
