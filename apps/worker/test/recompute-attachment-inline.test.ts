@@ -17,6 +17,7 @@ function buildAttachmentPayload(input: {
   readonly gmailAttachmentId: string;
   readonly contentDisposition: string;
   readonly contentId?: string;
+  readonly attachmentAtRoot?: boolean;
 }): GmailMessageMetadata["payload"] {
   const html = input.contentId
     ? `<html><body><img src="cid:${input.contentId.replace(/^<|>$/gu, "")}" /></body></html>`
@@ -34,50 +35,68 @@ function buildAttachmentPayload(input: {
     body: {
       size: 0,
     },
-    parts: [
-      {
-        mimeType: "text/html",
-        filename: "",
-        headers: [
+    parts: input.attachmentAtRoot
+      ? [
           {
-            name: "Content-Type",
-            value: "text/html; charset=UTF-8",
+            mimeType: "text/html",
+            filename: "",
+            headers: [
+              {
+                name: "Content-Type",
+                value: "text/html; charset=UTF-8",
+              },
+            ],
+            body: {
+              data: Buffer.from(html, "utf8").toString("base64url"),
+              size: html.length,
+            },
+            parts: [],
+          },
+        ]
+      : [
+          {
+            mimeType: "text/html",
+            filename: "",
+            headers: [
+              {
+                name: "Content-Type",
+                value: "text/html; charset=UTF-8",
+              },
+            ],
+            body: {
+              data: Buffer.from(html, "utf8").toString("base64url"),
+              size: html.length,
+            },
+            parts: [],
+          },
+          {
+            mimeType: "image/png",
+            filename: "screenshot.png",
+            headers: [
+              {
+                name: "Content-Type",
+                value: 'image/png; name="screenshot.png"',
+              },
+              {
+                name: "Content-Disposition",
+                value: input.contentDisposition,
+              },
+              ...(input.contentId === undefined
+                ? []
+                : [
+                    {
+                      name: "Content-ID",
+                      value: input.contentId,
+                    },
+                  ]),
+            ],
+            body: {
+              attachmentId: input.gmailAttachmentId,
+              size: 128,
+            },
+            parts: [],
           },
         ],
-        body: {
-          data: Buffer.from(html, "utf8").toString("base64url"),
-          size: html.length,
-        },
-        parts: [],
-      },
-      {
-        mimeType: "image/png",
-        filename: "screenshot.png",
-        headers: [
-          {
-            name: "Content-Type",
-            value: 'image/png; name="screenshot.png"',
-          },
-          {
-            name: "Content-Disposition",
-            value: input.contentDisposition,
-          },
-          ...(input.contentId === undefined
-            ? []
-            : [
-                {
-                  name: "Content-ID",
-                  value: input.contentId,
-                },
-              ]),
-        ],
-        body: {
-          attachmentId: input.gmailAttachmentId,
-          size: 128,
-        },
-        parts: [],
-      },
-    ],
   };
 }
 
@@ -86,6 +105,7 @@ function buildMessageMetadata(input: {
   readonly gmailAttachmentId: string;
   readonly contentDisposition: string;
   readonly contentId?: string;
+  readonly attachmentAtRoot?: boolean;
 }): GmailMessageMetadata {
   return {
     id: input.messageId,
@@ -104,14 +124,17 @@ async function seedGmailMessageContext(input: {
   readonly createdAt: string;
   readonly mimeType?: string;
   readonly gmailAttachmentId?: string;
+  readonly partIndexPath?: string;
 }): Promise<{
   readonly attachmentId: string;
   readonly gmailAttachmentId: string;
+  readonly partIndexPath: string;
 }> {
   const gmailAttachmentId = input.gmailAttachmentId ?? "gmail-attachment-1";
+  const partIndexPath = input.partIndexPath ?? "1";
   const attachmentId = buildGmailMessageAttachmentId({
     messageId: input.messageId,
-    partIndexPath: "1.2",
+    partIndexPath,
   });
 
   await input.context.repositories.sourceEvidence.append({
@@ -160,6 +183,7 @@ async function seedGmailMessageContext(input: {
   return {
     attachmentId,
     gmailAttachmentId,
+    partIndexPath,
   };
 }
 
@@ -199,7 +223,7 @@ describe("recompute-attachment-inline", () => {
             Promise.resolve(
               buildMessageMetadata({
                 messageId: "msg-1",
-                gmailAttachmentId: seeded.gmailAttachmentId,
+                gmailAttachmentId: "ephemeral-live-id-1",
                 contentDisposition: "inline",
                 contentId: "<inline-image-1>",
               }),
@@ -258,7 +282,7 @@ describe("recompute-attachment-inline", () => {
             Promise.resolve(
               buildMessageMetadata({
                 messageId: "msg-2",
-                gmailAttachmentId: seeded.gmailAttachmentId,
+                gmailAttachmentId: "ephemeral-live-id-2",
                 contentDisposition: "inline",
                 contentId: "<inline-image-2>",
               }),
@@ -306,7 +330,7 @@ describe("recompute-attachment-inline", () => {
             Promise.resolve(
               buildMessageMetadata({
                 messageId: "msg-3",
-                gmailAttachmentId: seeded.gmailAttachmentId,
+                gmailAttachmentId: "ephemeral-live-id-3",
                 contentDisposition: "attachment",
               }),
             ),
@@ -404,6 +428,109 @@ describe("recompute-attachment-inline", () => {
         gmailAttachmentId: seeded.gmailAttachmentId,
         action: "skipped",
         reason: "gmail_message_not_found",
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("recomputes when the live Gmail attachment id changed but partIndexPath stayed stable", async () => {
+    const context = await createTestWorkerContext();
+
+    try {
+      const sourceEvidenceId = buildSourceEvidenceId("gmail", "message", "msg-ephemeral");
+      const seeded = await seedGmailMessageContext({
+        context,
+        sourceEvidenceId,
+        messageId: "msg-ephemeral",
+        createdAt: "2026-05-20T10:00:00.000Z",
+        gmailAttachmentId: "OLD_ID",
+      });
+
+      const result = await recomputeAttachmentInline({
+        db: context.db,
+        repositories: context.repositories,
+        apiClient: {
+          listMessageIds: () => Promise.resolve([]),
+          getMessage: () =>
+            Promise.resolve(
+              buildMessageMetadata({
+                messageId: "msg-ephemeral",
+                gmailAttachmentId: "NEW_ID",
+                contentDisposition: "inline",
+                contentId: "<inline-image-ephemeral>",
+              }),
+            ),
+        },
+        mailbox: "volunteers@adventurescientists.org",
+        since: "2026-05-01T00:00:00.000Z",
+        until: "2026-05-29T23:59:59.999Z",
+        execute: true,
+        limit: 1000,
+      });
+
+      expect(result).toMatchObject({
+        recomputed: 1,
+        skipped: 0,
+      });
+      await expect(
+        context.repositories.messageAttachments.findById(seeded.attachmentId),
+      ).resolves.toMatchObject({
+        gmailAttachmentId: "OLD_ID",
+        isInline: true,
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("skips rows when the partIndexPath is no longer present in the live Gmail message", async () => {
+    const context = await createTestWorkerContext();
+    const logs: RecomputeAttachmentInlineLogEntry[] = [];
+
+    try {
+      const sourceEvidenceId = buildSourceEvidenceId("gmail", "message", "msg-missing-part");
+      const seeded = await seedGmailMessageContext({
+        context,
+        sourceEvidenceId,
+        messageId: "msg-missing-part",
+        createdAt: "2026-05-20T10:00:00.000Z",
+      });
+
+      const result = await recomputeAttachmentInline({
+        db: context.db,
+        repositories: context.repositories,
+        apiClient: {
+          listMessageIds: () => Promise.resolve([]),
+          getMessage: () =>
+            Promise.resolve(
+              buildMessageMetadata({
+                messageId: "msg-missing-part",
+                gmailAttachmentId: "other-live-id",
+                contentDisposition: "inline",
+                contentId: "<inline-image-missing-part>",
+                attachmentAtRoot: true,
+              }),
+            ),
+        },
+        mailbox: "volunteers@adventurescientists.org",
+        since: "2026-05-01T00:00:00.000Z",
+        until: "2026-05-29T23:59:59.999Z",
+        execute: false,
+        limit: 1000,
+        logger: createLogger(logs),
+      });
+
+      expect(result).toMatchObject({
+        skipped: 1,
+        recomputed: 0,
+      });
+      expect(logs).toContainEqual({
+        id: seeded.attachmentId,
+        sourceEvidenceId,
+        gmailAttachmentId: seeded.gmailAttachmentId,
+        action: "skipped",
+        reason: "attachment_not_in_message",
       });
     } finally {
       await context.dispose();
