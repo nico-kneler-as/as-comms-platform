@@ -90,6 +90,18 @@ function isInlineAttachment(input: {
   };
   readonly htmlBodyCidReferences: ReadonlySet<string>;
 }): boolean {
+  const dispositionType = resolveContentDispositionType(
+    input.attachment.contentDisposition,
+  );
+
+  if (dispositionType === "attachment") {
+    return false;
+  }
+
+  if (dispositionType === "inline") {
+    return true;
+  }
+
   const normalizedContentId = normalizeContentId(input.attachment.contentId);
   if (
     normalizedContentId === null ||
@@ -98,10 +110,7 @@ function isInlineAttachment(input: {
     return false;
   }
 
-  return (
-    resolveContentDispositionType(input.attachment.contentDisposition) !==
-    "attachment"
-  );
+  return true;
 }
 
 function decodeBase64Url(value: string): Buffer {

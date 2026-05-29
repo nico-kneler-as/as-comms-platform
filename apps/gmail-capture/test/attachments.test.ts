@@ -270,7 +270,7 @@ describe("gmail attachment sync", () => {
     }
   });
 
-  it("keeps inline disposition attachments visible when the HTML body does not reference their CID", async () => {
+  it("marks inline disposition attachments as inline when the HTML body does not reference their CID", async () => {
     const context = await createTestStage1Context();
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
     const attachmentBytes = Buffer.from("inline-image", "utf8");
@@ -311,7 +311,7 @@ describe("gmail attachment sync", () => {
       ).resolves.toMatchObject([
         {
           sourceEvidenceId,
-          isInline: false,
+          isInline: true,
         },
       ]);
     } finally {
