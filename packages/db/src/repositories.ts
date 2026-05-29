@@ -2578,6 +2578,9 @@ function createStage1RepositoriesInternal(
             ${contacts.displayName} ilike ${pattern} escape '\\'
             or coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'
             or coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'
+            or coalesce(${contactInboxProjection.snippet}, '') ilike ${pattern} escape '\\'
+            or coalesce(${gmailMessageDetails.subject}, '') ilike ${pattern} escape '\\'
+            or coalesce(${salesforceCommunicationDetailsTable.subject}, '') ilike ${pattern} escape '\\'
           )
           order by la.last_activity_at desc nulls last, ${contacts.createdAt} desc, ${contacts.id} asc
         `);

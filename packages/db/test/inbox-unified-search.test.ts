@@ -212,6 +212,64 @@ async function seedOutboundEmail(
   });
 }
 
+async function seedInboundSalesforceEmail(
+  context: Awaited<ReturnType<typeof seedFixture>>,
+  input: {
+    readonly contactId: string;
+    readonly occurredAt: string;
+    readonly idSuffix: string;
+    readonly subject: string | null;
+  },
+) {
+  const sourceEvidenceId = `sev-${input.idSuffix}`;
+  await context.repositories.sourceEvidence.append({
+    id: sourceEvidenceId,
+    provider: "salesforce",
+    providerRecordType: "task",
+    providerRecordId: `sf-${input.idSuffix}`,
+    receivedAt: input.occurredAt,
+    occurredAt: input.occurredAt,
+    payloadRef: `payloads/salesforce/${input.idSuffix}.json`,
+    idempotencyKey: `salesforce:${input.idSuffix}`,
+    checksum: `checksum:${input.idSuffix}`,
+  });
+  const canonicalEventId = `evt-${input.idSuffix}`;
+  await context.repositories.canonicalEvents.upsert({
+    id: canonicalEventId,
+    contactId: input.contactId,
+    eventType: "communication.email.inbound",
+    channel: "email",
+    occurredAt: input.occurredAt,
+    contentFingerprint: null,
+    sourceEvidenceId,
+    idempotencyKey: `canonical:evt-${input.idSuffix}`,
+    provenance: {
+      primaryProvider: "salesforce",
+      primarySourceEvidenceId: sourceEvidenceId,
+      supportingSourceEvidenceIds: [],
+      winnerReason: "single_source",
+      sourceRecordType: "task",
+      sourceRecordId: `sf-${input.idSuffix}`,
+      messageKind: "one_to_one",
+      campaignRef: null,
+      threadRef: null,
+      direction: "inbound",
+      notes: null,
+    },
+    reviewState: "clear",
+  });
+  await context.repositories.salesforceCommunicationDetails.upsert({
+    sourceEvidenceId,
+    providerRecordId: `sf-${input.idSuffix}`,
+    channel: "email",
+    messageKind: "human",
+    subject: input.subject,
+    snippet: "salesforce snippet",
+    sourceLabel: "Salesforce",
+  });
+  return { sourceEvidenceId, canonicalEventId };
+}
+
 async function seedCampaignSentEvent(
   context: Awaited<ReturnType<typeof seedFixture>>,
   input: {
@@ -723,17 +781,119 @@ describe("contact repository searchInboxUnified", () => {
     }
   });
 
-  it("does NOT return a `bodyMatches` field — body-match search has been removed", async () => {
+  it("matches a volunteer by the latest Gmail subject even when contact attributes do not match", async () => {
     const context = await seedFixture();
 
     try {
-      const contactId = "contact:body-only";
+      const contactId = "contact:gmail-subject-only";
       const occurredAt = "2026-04-20T16:00:00.000Z";
       await context.repositories.contacts.upsert({
         id: contactId,
-        salesforceContactId: "003-bo",
+        salesforceContactId: "003-gso",
         displayName: "Quincy Adams",
         primaryEmail: "quincy@example.org",
+        primaryPhone: "+15555550100",
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await context.repositories.contactMemberships.upsert({
+        id: "membership-gmail-subject-only",
+        contactId,
+        projectId: "project-pollinators",
+        expeditionId: null,
+        salesforceMembershipId: "sf-gso",
+        role: "volunteer",
+        status: "active",
+        source: "salesforce",
+        createdAt: BASE_TIMESTAMP,
+      });
+      const { canonicalEventId } = await seedInboundEmail(context, {
+        contactId,
+        occurredAt,
+        idSuffix: "gmail-subject-only",
+        subject: "Hex 19738 and 23816",
+      });
+      await seedInboxProjection(context, {
+        contactId,
+        snippet: "General follow-up without the magic term.",
+        occurredAt,
+        canonicalEventId,
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "Hex 19738",
+        limit: 25,
+      });
+
+      expect(result.volunteers[0]?.contact.displayName).not.toContain("Hex 19738");
+      expect(result.volunteers[0]?.contact.primaryEmail).not.toContain("Hex 19738");
+      expect(result.volunteers[0]?.contact.primaryPhone).not.toContain("Hex 19738");
+      expect(result.volunteers).toHaveLength(1);
+      expect(result.volunteers[0]?.contact.id).toBe(contactId);
+      expect(result.volunteers[0]?.latestMessageSubject).toBe(
+        "Hex 19738 and 23816",
+      );
+      expect(result.contacts).toEqual([]);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("matches a contact by the latest Salesforce subject", async () => {
+    const context = await seedFixture();
+
+    try {
+      const contactId = "contact:salesforce-subject";
+      const occurredAt = "2026-04-20T16:00:00.000Z";
+      await context.repositories.contacts.upsert({
+        id: contactId,
+        salesforceContactId: "003-sfs",
+        displayName: "Taylor Rivers",
+        primaryEmail: "taylor@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      const { canonicalEventId } = await seedInboundSalesforceEmail(context, {
+        contactId,
+        occurredAt,
+        idSuffix: "salesforce-subject",
+        subject: "Volunteer onboarding follow-up",
+      });
+      await seedInboxProjection(context, {
+        contactId,
+        snippet: "General follow-up without the match term.",
+        occurredAt,
+        canonicalEventId,
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "onboarding",
+        limit: 25,
+      });
+
+      expect(result.volunteers).toEqual([]);
+      expect(result.contacts).toHaveLength(1);
+      expect(result.contacts[0]?.contact.id).toBe(contactId);
+      expect(result.contacts[0]?.latestMessageSubject).toBe(
+        "Volunteer onboarding follow-up",
+      );
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("matches a contact by inbox projection snippet", async () => {
+    const context = await seedFixture();
+
+    try {
+      const contactId = "contact:snippet-match";
+      const occurredAt = "2026-04-20T16:00:00.000Z";
+      await context.repositories.contacts.upsert({
+        id: contactId,
+        salesforceContactId: null,
+        displayName: "Maya Lantern",
+        primaryEmail: "maya@example.org",
         primaryPhone: null,
         createdAt: BASE_TIMESTAMP,
         updatedAt: BASE_TIMESTAMP,
@@ -741,30 +901,75 @@ describe("contact repository searchInboxUnified", () => {
       const { canonicalEventId } = await seedInboundEmail(context, {
         contactId,
         occurredAt,
-        idSuffix: "qa-body",
-        subject: "Hello there",
+        idSuffix: "snippet-match",
+        subject: "Routine check-in",
       });
       await seedInboxProjection(context, {
         contactId,
-        snippet: "thanks for the helpful biodiversity update",
+        snippet: "Reaching out to see if anyone might be available soon.",
         occurredAt,
         canonicalEventId,
       });
 
-      // Searching for a body-only term ("biodiversity") that doesn't appear
-      // in name/email/phone should now return zero results — body matching
-      // was dropped.
       const result = await context.repositories.contacts.searchInboxUnified({
-        query: "biodiversity",
+        query: "Reaching out",
+        limit: 25,
+      });
+
+      expect(result.volunteers).toEqual([]);
+      expect(result.contacts).toHaveLength(1);
+      expect(result.contacts[0]?.contact.id).toBe(contactId);
+      expect(result.contacts[0]?.snippet).toBe(
+        "Reaching out to see if anyone might be available soon.",
+      );
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("does not return a contact when only an older subject matches and the latest message does not", async () => {
+    const context = await seedFixture();
+
+    try {
+      const contactId = "contact:older-subject-only";
+      await context.repositories.contacts.upsert({
+        id: contactId,
+        salesforceContactId: "003-older",
+        displayName: "Morgan Trail",
+        primaryEmail: "morgan@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await seedInboundEmail(context, {
+        contactId,
+        occurredAt: "2026-04-19T16:00:00.000Z",
+        idSuffix: "older-subject-match",
+        subject: "Hex 19738",
+      });
+      const { canonicalEventId } = await seedInboundEmail(context, {
+        contactId,
+        occurredAt: "2026-04-20T16:00:00.000Z",
+        idSuffix: "older-subject-latest",
+        subject: "Weekly newsletter",
+      });
+      // Accepted v1 limitation: the join only sees the subject on
+      // contactInboxProjection.lastCanonicalEventId, i.e. the latest message.
+      await seedInboxProjection(context, {
+        contactId,
+        snippet: "Latest snippet that does not match.",
+        occurredAt: "2026-04-20T16:00:00.000Z",
+        canonicalEventId,
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "Hex 19738",
         limit: 25,
       });
 
       expect(result.volunteers).toEqual([]);
       expect(result.contacts).toEqual([]);
       expect(result.totals).toEqual({ volunteers: 0, contacts: 0 });
-
-      // Sanity-check that the function shape doesn't include bodyMatches.
-      expect("bodyMatches" in result).toBe(false);
     } finally {
       await context.dispose();
     }
