@@ -225,6 +225,10 @@ interface InboxDetailCacheData {
     string,
     readonly MessageAttachmentRecord[]
   >;
+  readonly inboundAttachmentSignaturesByThread: ReadonlyMap<
+    string,
+    ReadonlySet<string>
+  >;
   readonly timelinePage: InboxDetailTimelinePageViewModel;
   readonly freshness: InboxDetailFreshnessViewModel;
 }
@@ -2266,6 +2270,19 @@ function buildTimelineEntry(input: {
     string,
     readonly MessageAttachmentRecord[]
   >;
+  /**
+   * Per-Gmail-thread set of `(filename:sizeBytes)` signatures for all
+   * inbound attachments seen across the loaded timeline. Used by the
+   * email attachment builder to hide outbound quoted duplicates so
+   * the screenshot the volunteer attached doesn't visually float
+   * under the operator's reply bubble (and vice versa for any later
+   * outbound quoting). Built once per page assembly; see
+   * `buildInboundAttachmentSignaturesByThread`.
+   */
+  readonly inboundAttachmentSignaturesByThread: ReadonlyMap<
+    string,
+    ReadonlySet<string>
+  >;
 }): InboxTimelineEntryViewModel {
   const latestProjectionSnippet =
     input.item.family === "one_to_one_email" &&
@@ -2377,6 +2394,14 @@ function buildTimelineEntry(input: {
               input.item.canonicalEventId,
             ) ?? [],
           pending: input.item.pendingAttachmentMetadata ?? [],
+          inboundAttachmentSignaturesOnThread:
+            input.item.direction === "outbound" &&
+            input.item.threadId !== null &&
+            input.item.threadId.length > 0
+              ? (input.inboundAttachmentSignaturesByThread.get(
+                  input.item.threadId,
+                ) ?? null)
+              : null,
         })
       : [];
   const headerProjectLabel =
@@ -2540,6 +2565,92 @@ function looksLikeInlineSignatureImage(attachment: {
   return INLINE_SIGNATURE_FILENAME_PATTERN.test(trimmed);
 }
 
+/**
+ * Build a thread-scoped signature for a given message attachment.
+ * Used to detect outbound attachments that are quoted copies of an
+ * inbound attachment on the same Gmail thread — Gmail's reply-quote
+ * machinery re-attaches images with `Content-Disposition: attachment`
+ * (not inline), so the capture-time inline classifier can't tell
+ * them apart from a real new attachment. We catch those at render
+ * time by matching `(filename, sizeBytes)` against the set of
+ * inbound attachments already seen on the thread.
+ */
+function buildAttachmentSignature(input: {
+  readonly filename: string | null;
+  readonly sizeBytes: number;
+}): string {
+  return `${input.filename ?? ""}:${String(input.sizeBytes)}`;
+}
+
+/**
+ * Walk the loaded timeline items once, collect `(filename, sizeBytes)`
+ * signatures for every attachment on an INBOUND email, and group by
+ * Gmail thread. Returned map is consumed by
+ * `buildEmailAttachmentsForEntry` to suppress outbound quoted dupes.
+ *
+ * Scope note: signature set is built from the items currently loaded
+ * for the contact's detail page (i.e., the visible window). A
+ * thread spanning more pages than what's loaded only filters within
+ * the loaded slice; the operator can still scroll to see the older
+ * inbound original. The signature itself is intentionally minimal
+ * (filename + size) — Gmail's quote-reply preserves both byte-for-byte
+ * for the attachment parts we care about, and the false-positive risk
+ * (volunteer legitimately re-sends an identical filename and exact
+ * size) is acceptable given the operator can still see the original
+ * copy on the inbound bubble.
+ */
+function buildInboundAttachmentSignaturesByThread(input: {
+  readonly items: readonly TimelineItem[];
+  readonly attachmentsBySourceEvidenceId: ReadonlyMap<
+    string,
+    readonly MessageAttachmentRecord[]
+  >;
+  readonly sourceEvidenceIdByCanonicalEventId: ReadonlyMap<string, string>;
+}): Map<string, Set<string>> {
+  const byThread = new Map<string, Set<string>>();
+
+  for (const item of input.items) {
+    if (item.family !== "one_to_one_email" || item.direction !== "inbound") {
+      continue;
+    }
+
+    const threadId = item.threadId;
+    if (threadId === null || threadId.length === 0) {
+      continue;
+    }
+
+    const sourceEvidenceId = input.sourceEvidenceIdByCanonicalEventId.get(
+      item.canonicalEventId,
+    );
+    if (sourceEvidenceId === undefined) {
+      continue;
+    }
+
+    const attachments =
+      input.attachmentsBySourceEvidenceId.get(sourceEvidenceId);
+    if (attachments === undefined || attachments.length === 0) {
+      continue;
+    }
+
+    let signatures = byThread.get(threadId);
+    if (signatures === undefined) {
+      signatures = new Set<string>();
+      byThread.set(threadId, signatures);
+    }
+
+    for (const attachment of attachments) {
+      signatures.add(
+        buildAttachmentSignature({
+          filename: attachment.filename,
+          sizeBytes: attachment.sizeBytes,
+        }),
+      );
+    }
+  }
+
+  return byThread;
+}
+
 function buildEmailAttachmentsForEntry(input: {
   readonly canonical: readonly MessageAttachmentRecord[];
   readonly pending: readonly {
@@ -2547,12 +2658,33 @@ function buildEmailAttachmentsForEntry(input: {
     readonly contentType: string;
     readonly sizeBytes: number;
   }[];
+  /**
+   * When the entry being rendered is outbound on a Gmail thread, this
+   * is the set of `(filename:sizeBytes)` signatures of attachments
+   * previously seen on inbound messages of the same thread. Any
+   * outbound canonical attachment whose signature is in this set is
+   * a quoted duplicate of the inbound's original and gets hidden
+   * from the outbound bubble (the original is still visible on the
+   * inbound bubble). `null` for inbound entries, or when the thread
+   * is unknown / has no inbound attachments to compare against.
+   */
+  readonly inboundAttachmentSignaturesOnThread: ReadonlySet<string> | null;
 }): InboxTimelineEntryViewModel["attachments"] {
   const canonicalAttachments = input.canonical
     .filter(
       (attachment) =>
         !attachment.isInline && !looksLikeInlineSignatureImage(attachment),
     )
+    .filter((attachment) => {
+      if (input.inboundAttachmentSignaturesOnThread === null) {
+        return true;
+      }
+      const signature = buildAttachmentSignature({
+        filename: attachment.filename,
+        sizeBytes: attachment.sizeBytes,
+      });
+      return !input.inboundAttachmentSignaturesOnThread.has(signature);
+    })
     .map((attachment) => ({
       id: attachment.id,
       mimeType: attachment.mimeType,
@@ -3881,6 +4013,13 @@ async function readInboxDetailCacheData(
         ) ?? [],
       ]),
     ),
+    inboundAttachmentSignaturesByThread: buildInboundAttachmentSignaturesByThread(
+      {
+        items: timelinePage.items,
+        attachmentsBySourceEvidenceId,
+        sourceEvidenceIdByCanonicalEventId,
+      },
+    ),
     timelinePage: {
       hasMore: timelinePage.hasMore,
       hasHiddenEarlierHistory,
@@ -4503,6 +4642,8 @@ function buildInboxDetailTimelineViewModel(input: {
       activityTimelineItems: input.cachedData.activityTimelineItems,
       attachmentsByCanonicalEventId:
         input.cachedData.attachmentsByCanonicalEventId,
+      inboundAttachmentSignaturesByThread:
+        input.cachedData.inboundAttachmentSignaturesByThread,
     }),
   );
 
