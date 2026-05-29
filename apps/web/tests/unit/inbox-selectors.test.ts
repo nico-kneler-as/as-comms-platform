@@ -7025,7 +7025,7 @@ describe("real inbox selectors", () => {
     // Inbound from volunteer with a screenshot attached. The seed helper
     // groups events by contactId into one Gmail thread, so the outbound
     // below sits on the same `threadId` automatically.
-    const inbound = await seedInboxEmailEvent(runtime.context, {
+    await seedInboxEmailEvent(runtime.context, {
       id: "qd-inbound-1",
       contactId: "contact:quoted-dupe",
       occurredAt: "2026-05-28T07:44:00.000Z",
