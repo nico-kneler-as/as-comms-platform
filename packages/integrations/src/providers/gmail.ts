@@ -78,7 +78,7 @@ export const gmailMessageRecordSchema = z.object({
     .default([]),
   htmlBodyCidReferences: stringArraySchema.default([]),
 });
-export type GmailMessageRecord = z.input<typeof gmailMessageRecordSchema>;
+export type GmailMessageRecord = z.infer<typeof gmailMessageRecordSchema>;
 
 export const gmailUnsupportedRecordSchema = z
   .object({
@@ -88,13 +88,13 @@ export const gmailUnsupportedRecordSchema = z
   .refine((record) => record.recordType !== "message", {
     message: "Unsupported Gmail records must not use the message record type."
   });
-export type GmailUnsupportedRecord = z.input<typeof gmailUnsupportedRecordSchema>;
+export type GmailUnsupportedRecord = z.infer<typeof gmailUnsupportedRecordSchema>;
 
 export const gmailRecordSchema = z.union([
   gmailMessageRecordSchema,
   gmailUnsupportedRecordSchema
 ]);
-export type GmailRecord = z.input<typeof gmailRecordSchema>;
+export type GmailRecord = GmailMessageRecord | GmailUnsupportedRecord;
 
 function resolveGmailEventType(
   direction: GmailMessageRecord["direction"]
