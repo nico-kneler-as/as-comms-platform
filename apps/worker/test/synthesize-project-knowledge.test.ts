@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
-import { projectDimensions } from "@as-comms/db";
+import { aiKnowledgeEntries, projectDimensions } from "@as-comms/db";
 import type { AiKnowledgeSource } from "@as-comms/contracts";
 
 import { runSynthesizeProjectKnowledge } from "../src/jobs/synthesize-project-knowledge/index.js";
@@ -112,11 +112,14 @@ describe("runSynthesizeProjectKnowledge", () => {
           notion: {
             apiKey: "notion-key",
             createMarkdownPage: vi.fn().mockResolvedValue({
-              id: "new-notion-page-id",
+              // Real Notion returns a 32-hex-character page ID;
+              // normalizeNotionId rejects anything else.
+              id: "cccccccccccccccccccccccccccccccc",
               url: "https://www.notion.so/new-synthesized-page",
               blockCount: 12,
             }),
           },
+          db: context.db,
           now: () => new Date("2026-05-09T15:30:00.000Z"),
         },
         {
@@ -153,6 +156,129 @@ describe("runSynthesizeProjectKnowledge", () => {
         expect(source.last_sync_status).toBe("healthy");
         expect(source.source_content_hash).toBeTruthy();
       }
+
+      // The synthesis output should land in ai_knowledge_entries
+      // immediately (closes the synthesis-vs-cache seam that left every
+      // project's draft pipeline ungrounded until a separate
+      // notion-knowledge-sync was manually enqueued).
+      const [cacheEntry] = await context.db
+        .select()
+        .from(aiKnowledgeEntries)
+        .where(
+          and(
+            eq(aiKnowledgeEntries.scope, "project"),
+            eq(aiKnowledgeEntries.scopeKey, "project:synth"),
+          ),
+        );
+      expect(cacheEntry).toBeTruthy();
+      expect(cacheEntry?.content).toBe("# Synthesized AI Knowledge");
+      expect(cacheEntry?.sourceProvider).toBe("notion");
+      expect(cacheEntry?.sourceUrl).toBe(
+        "https://www.notion.so/new-synthesized-page",
+      );
+      expect(cacheEntry?.sourceLastEditedAt).toEqual(
+        new Date("2026-05-09T15:30:00.000Z"),
+      );
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("deletes stale Notion-scoped cache entries when synthesis publishes a new page", async () => {
+    const context = await createTestWorkerContext();
+
+    try {
+      await context.repositories.projectDimensions.upsert({
+        projectId: "project:stale",
+        projectName: "Stale Project",
+        projectAlias: "Stale",
+        source: "salesforce",
+        aiKnowledgeUrl: null,
+        aiKnowledgeSyncedAt: null,
+        aiKnowledgeSources: [
+          buildSource({
+            id: "44444444-4444-4444-8444-444444444444",
+            kind: "inline_text",
+            url: "https://example.test/inline-stale",
+          }),
+        ],
+      });
+
+      // Seed a stale project-scoped cache entry that references the OLD
+      // synthesis Notion page. After a fresh synthesis lands, this should
+      // be deleted in favour of the new entry. sourceId is in the dashed
+      // form normalizeNotionId emits (32-hex split into 8-4-4-4-12).
+      await context.db.insert(aiKnowledgeEntries).values({
+        id: "ai_knowledge:notion:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        scope: "project",
+        scopeKey: "project:stale",
+        sourceProvider: "notion",
+        sourceId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        sourceUrl: "https://www.notion.so/old-stale-page",
+        title: "Stale Project — AI Knowledge (synthesized 2026-04-15T00:00)",
+        content: "# Old synthesized content",
+        contentHash: "hash:stale",
+        metadataJson: {},
+        sourceLastEditedAt: new Date("2026-04-15T00:00:00.000Z"),
+        syncedAt: new Date("2026-04-15T00:00:00.000Z"),
+        updatedAt: new Date("2026-04-15T00:00:00.000Z"),
+        createdAt: new Date("2026-04-15T00:00:00.000Z"),
+      });
+
+      await runSynthesizeProjectKnowledge(
+        {
+          repositories: {
+            projectDimensions: context.repositories.projectDimensions,
+            projectKnowledge: context.repositories.projectKnowledge,
+            settingsProjects: context.settings.projects,
+          },
+          fetchers: {
+            inline_text: {
+              fetch: vi.fn().mockResolvedValue({
+                ok: true,
+                unchanged: false,
+                content: "Operator context refreshed",
+                contentHash: "hash:inline-2",
+                lastModified: null,
+              }),
+            },
+            notion: { fetch: vi.fn() },
+            web_page: { fetch: vi.fn() },
+          },
+          invokeModel: vi.fn().mockResolvedValue({
+            text: "# Fresh synthesized content",
+            usage: { inputTokens: 100, outputTokens: 50 },
+            stopReason: "end_turn",
+            model: "claude-sonnet-4-6",
+          }),
+          notion: {
+            apiKey: "notion-key",
+            createMarkdownPage: vi.fn().mockResolvedValue({
+              id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              url: "https://www.notion.so/new-stale-page",
+              blockCount: 5,
+            }),
+          },
+          db: context.db,
+          now: () => new Date("2026-05-21T12:00:00.000Z"),
+        },
+        { projectId: "project:stale" },
+      );
+
+      const cacheEntries = await context.db
+        .select()
+        .from(aiKnowledgeEntries)
+        .where(
+          and(
+            eq(aiKnowledgeEntries.scope, "project"),
+            eq(aiKnowledgeEntries.scopeKey, "project:stale"),
+          ),
+        );
+      expect(cacheEntries).toHaveLength(1);
+      expect(cacheEntries[0]?.content).toBe("# Fresh synthesized content");
+      expect(cacheEntries[0]?.sourceUrl).toBe(
+        "https://www.notion.so/new-stale-page",
+      );
     } finally {
       await context.dispose();
     }

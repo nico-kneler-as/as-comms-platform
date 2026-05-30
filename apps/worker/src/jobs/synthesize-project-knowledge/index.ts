@@ -1,4 +1,5 @@
 import type { Task } from "graphile-worker";
+import { and, eq, ne } from "drizzle-orm";
 
 import {
   synthesizeProjectKnowledgeJobName,
@@ -6,6 +7,10 @@ import {
   type ProjectDimensionRecord,
   type SynthesizeProjectKnowledgePayload,
 } from "@as-comms/contracts";
+import {
+  aiKnowledgeEntries,
+  type Stage1Database,
+} from "@as-comms/db";
 import type {
   ProjectDimensionRepository,
   SettingsProjectsRepository,
@@ -18,6 +23,11 @@ import {
   type NotionClient,
 } from "@as-comms/integrations";
 
+import {
+  upsertAiKnowledgeEntry,
+  type UpsertAiKnowledgeEntryInput,
+  type UpsertAiKnowledgeEntryResult,
+} from "../notion-knowledge-sync/upsert.js";
 import {
   synthesizeProjectKnowledgeOrchestrator,
   type SynthesizeProjectKnowledgeOrchestratorDependencies,
@@ -106,6 +116,17 @@ export interface SynthesizeProjectKnowledgeDependencies
     >;
     readonly settingsProjects: Pick<SettingsProjectsRepository, "setAiKnowledgeUrl">;
   };
+  /**
+   * DB connection used to write the synthesis output to ai_knowledge_entries
+   * (the cache the AI Draft retriever reads). Injected separately so the job
+   * tests can stub upsertEntry without standing up the full repository
+   * bundle. Mirrors the pattern in notion-knowledge-sync.
+   */
+  readonly db: Stage1Database;
+  readonly upsertEntry?: (
+    db: Stage1Database,
+    payload: UpsertAiKnowledgeEntryInput,
+  ) => Promise<UpsertAiKnowledgeEntryResult>;
 }
 
 export type SynthesizeProjectKnowledgeResult =
@@ -228,6 +249,50 @@ export async function runSynthesizeProjectKnowledge(
       payload.projectId,
       notionPage.url,
     );
+
+    // Write the synthesis output directly to ai_knowledge_entries so the
+    // AI Draft retriever (which reads from that cache, not from Notion)
+    // picks up the new content on the very next draft. Before this landed,
+    // operators had to separately enqueue notion-knowledge-sync to populate
+    // the cache, and the gap between synthesis and cache-write caused
+    // "Project-specific AI grounding is missing" warnings on every project
+    // that had synthesized but never been sync'd (root cause confirmed in
+    // prod 2026-05-29; all 4 active projects had empty cache while every
+    // synthesis run looked successful).
+    const upsertEntry = deps.upsertEntry ?? upsertAiKnowledgeEntry;
+    const normalizedPageId = normalizeNotionId(notionPage.id);
+    await upsertEntry(deps.db, {
+      scope: "project",
+      scopeKey: payload.projectId,
+      sourceProvider: "notion",
+      sourceId: normalizedPageId,
+      sourceUrl: notionPage.url,
+      title: pageTitle,
+      content,
+      metadata: {
+        projectId: payload.projectId,
+        trigger: "synthesize-project-knowledge",
+      },
+      sourceLastEditedAt: synthesizedAt,
+      syncedAt: synthesizedAt,
+    });
+
+    // Each synthesis creates a fresh Notion page (immutable archive), so
+    // older project-scoped Notion entries for this project are stale once
+    // the new one lands. Drop them so the retriever has exactly one
+    // Notion-sourced project entry per project — mirrors the cleanup in
+    // notion-knowledge-sync.
+    await deps.db
+      .delete(aiKnowledgeEntries)
+      .where(
+        and(
+          eq(aiKnowledgeEntries.scope, "project"),
+          eq(aiKnowledgeEntries.scopeKey, payload.projectId),
+          eq(aiKnowledgeEntries.sourceProvider, "notion"),
+          ne(aiKnowledgeEntries.sourceId, normalizedPageId),
+        ),
+      );
+
     await deps.repositories.projectDimensions.setSynthesisMetadata(
       payload.projectId,
       {

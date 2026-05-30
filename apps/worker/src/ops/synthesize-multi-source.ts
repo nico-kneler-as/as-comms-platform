@@ -64,6 +64,7 @@ function buildDependencies(): SynthesizeProjectKnowledgeDependencies {
     },
     model: readAnthropicModel(),
     invokeModel: (input) => invokeModel(anthropicClient, input),
+    db: connection.db,
   };
 
   return Object.assign(base, {
