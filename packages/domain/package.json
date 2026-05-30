@@ -25,6 +25,7 @@
   "scripts": {
     "build": "node ../../scripts/clean-dist.mjs dist && tsc -p tsconfig.build.json",
     "lint": "eslint src test --max-warnings=0",
+    "test": "pnpm test:unit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:unit": "vitest run --config ../../vitest.config.ts"
   },
