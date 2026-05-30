@@ -121,15 +121,12 @@ function mapGmailMessageRecord(
   const eventType = resolveGmailEventType(record.direction);
   const providerRecordType = record.recordType;
   const providerRecordId = record.recordId;
-  const crossProviderCollapseKey = record.crossProviderCollapseKey ?? null;
-  const snippetClean = record.snippetClean ?? "";
-  const snippet = record.snippet ?? "";
-  const bodyTextPreviewRaw = record.bodyTextPreview ?? "";
+  const crossProviderCollapseKey = record.crossProviderCollapseKey;
   const cleanSnippet =
-    snippetClean.trim().length > 0 ? snippetClean : snippet;
+    record.snippetClean.trim().length > 0 ? record.snippetClean : record.snippet;
   const bodyTextPreview =
-    bodyTextPreviewRaw.trim().length > 0
-      ? bodyTextPreviewRaw
+    record.bodyTextPreview.trim().length > 0
+      ? record.bodyTextPreview
       : cleanSnippet;
 
   return {
@@ -169,14 +166,12 @@ function mapGmailMessageRecord(
       snippet: cleanSnippet
     },
     identity: {
-      salesforceContactId: record.salesforceContactId ?? null,
-      volunteerIdPlainValues: uniqueStrings(record.volunteerIdPlainValues ?? []),
+      salesforceContactId: record.salesforceContactId,
+      volunteerIdPlainValues: uniqueStrings(record.volunteerIdPlainValues),
       normalizedEmails: uniqueStrings(record.normalizedParticipantEmails),
-      normalizedPhones: uniqueStrings(record.normalizedPhones ?? [])
+      normalizedPhones: uniqueStrings(record.normalizedPhones)
     },
-    supportingSources: buildSupportingSourceReferences(
-      record.supportingRecords ?? [],
-    ),
+    supportingSources: buildSupportingSourceReferences(record.supportingRecords),
     communicationClassification: {
       messageKind: "one_to_one",
       sourceRecordType: providerRecordType,
@@ -184,7 +179,7 @@ function mapGmailMessageRecord(
       campaignRef: null,
       threadRef: {
         crossProviderCollapseKey,
-        providerThreadId: record.threadId ?? null
+        providerThreadId: record.threadId
       },
       direction: record.direction
     },
@@ -195,23 +190,23 @@ function mapGmailMessageRecord(
         providerRecordId
       ),
       providerRecordId,
-      gmailThreadId: record.threadId ?? null,
-      rfc822MessageId: record.rfc822MessageId ?? null,
+      gmailThreadId: record.threadId,
+      rfc822MessageId: record.rfc822MessageId,
       direction: record.direction,
-      subject: record.subject ?? null,
-      fromHeader: record.fromHeader ?? null,
-      toHeader: record.toHeader ?? null,
-      ccHeader: record.ccHeader ?? null,
-      fromEmails: record.fromEmails ?? [],
-      toEmails: record.toEmails ?? [],
-      ccEmails: record.ccEmails ?? [],
-      bccEmails: record.bccEmails ?? [],
+      subject: record.subject,
+      fromHeader: record.fromHeader,
+      toHeader: record.toHeader,
+      ccHeader: record.ccHeader,
+      fromEmails: record.fromEmails,
+      toEmails: record.toEmails,
+      ccEmails: record.ccEmails,
+      bccEmails: record.bccEmails,
       labelIds: record.labelIds,
       snippetClean: cleanSnippet,
       bodyTextPreview,
       bodyKind: record.bodyKind ?? "plaintext",
-      capturedMailbox: record.capturedMailbox ?? null,
-      projectInboxAlias: record.projectInboxAlias ?? null
+      capturedMailbox: record.capturedMailbox,
+      projectInboxAlias: record.projectInboxAlias
     }
   };
 }

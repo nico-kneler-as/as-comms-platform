@@ -366,7 +366,7 @@ export const gmailMessageDetailSchema = z.object({
   capturedMailbox: nullableStringSchema,
   projectInboxAlias: nullableStringSchema,
 });
-export type GmailMessageDetailRecord = z.input<typeof gmailMessageDetailSchema>;
+export type GmailMessageDetailRecord = z.infer<typeof gmailMessageDetailSchema>;
 
 export const canonicalEventAudienceSchema = z.object({
   canonicalEventId: idSchema,
