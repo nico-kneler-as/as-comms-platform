@@ -1,4 +1,5 @@
 export * from "./audience-resolver.js";
+export * from "./canonical-event-audience.js";
 export * from "./campaign-run-projection.js";
 export * from "./campaign-send-orchestrator.js";
 export * from "./campaign-types.js";
