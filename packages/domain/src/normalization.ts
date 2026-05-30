@@ -293,6 +293,172 @@ export interface Stage1NormalizationService {
   ): Promise<NormalizedCanonicalEventResult>;
 }
 
+export interface CanonicalEventAudienceApplyDeps {
+  readonly persistence: Stage1PersistenceService;
+  readonly service: Pick<
+    Stage1NormalizationService,
+    "ensureCanonicalContactForEmail" | "refreshInboxReviewOverlay"
+  >;
+}
+
+export async function applyCanonicalEventAudience(
+  deps: CanonicalEventAudienceApplyDeps,
+  input: {
+    readonly canonicalEvent: CanonicalEventRecord;
+    readonly gmailMessageDetail: NormalizedCanonicalEventIntake["gmailMessageDetail"];
+    readonly openedAt: string;
+  },
+): Promise<number> {
+  if (input.gmailMessageDetail === undefined) {
+    return 0;
+  }
+
+  const audience = resolveCanonicalEventAudience({
+    fromEmails: input.gmailMessageDetail.fromEmails ?? [],
+    toEmails: input.gmailMessageDetail.toEmails ?? [],
+    ccEmails: input.gmailMessageDetail.ccEmails ?? [],
+    bccEmails: input.gmailMessageDetail.bccEmails ?? [],
+  });
+
+  if (audience.participants.length === 0) {
+    return 0;
+  }
+
+  const rowsByContactId = new Map<string, CanonicalEventAudienceRecord>();
+
+  for (const participant of audience.participants) {
+    const normalizedEmail = normalizeEmailAddress(participant.email);
+
+    if (normalizedEmail === null) {
+      continue;
+    }
+
+    const identities =
+      await deps.persistence.repositories.contactIdentities.listByNormalizedValue(
+        {
+          kind: "email",
+          normalizedValue: normalizedEmail,
+        },
+      );
+    const candidateContactIds = uniqueStrings(
+      identities.map((identity) => identity.contactId),
+    );
+
+    let contact: ContactRecord;
+
+    if (candidateContactIds.length === 0) {
+      contact = await deps.service.ensureCanonicalContactForEmail({
+        emailAddress: normalizedEmail,
+        createdAt: input.openedAt,
+        source: "gmail",
+      });
+    } else if (candidateContactIds.length === 1) {
+      const candidateContactId = requireValue(
+        candidateContactIds[0],
+        "Expected a single audience contact candidate.",
+      );
+      const matchedContact =
+        await deps.persistence.repositories.contacts.findById(candidateContactId);
+
+      if (matchedContact === null) {
+        throw new Error("Audience email matched a missing contact.");
+      }
+
+      contact = matchedContact;
+    } else {
+      const contacts = await deps.persistence.repositories.contacts.listByIds(
+        candidateContactIds,
+      );
+      const projections = await Promise.all(
+        contacts.map(async (candidateContact) => ({
+          contact: candidateContact,
+          projection:
+            await deps.persistence.repositories.inboxProjection.findByContactId(
+              candidateContact.id,
+            ),
+        })),
+      );
+      const [winner] = projections.sort((left, right) => {
+        const inboundComparison = compareNullableIsoDesc(
+          left.projection?.lastInboundAt ?? null,
+          right.projection?.lastInboundAt ?? null,
+        );
+
+        if (inboundComparison !== 0) {
+          return inboundComparison;
+        }
+
+        const activityComparison = compareNullableIsoDesc(
+          left.projection?.lastActivityAt ?? null,
+          right.projection?.lastActivityAt ?? null,
+        );
+
+        if (activityComparison !== 0) {
+          return activityComparison;
+        }
+
+        return left.contact.id.localeCompare(right.contact.id);
+      });
+
+      if (winner === undefined) {
+        throw new Error(
+          "Audience email candidates did not resolve to canonical contacts.",
+        );
+      }
+
+      contact = winner.contact;
+
+      await deps.persistence.saveIdentityResolutionCase({
+        id: buildAudienceIdentityCaseId(
+          input.canonicalEvent.sourceEvidenceId,
+          normalizedEmail,
+          "identity_multi_candidate",
+        ),
+        sourceEvidenceId: input.canonicalEvent.sourceEvidenceId,
+        candidateContactIds: candidateContactIds.filter(
+          (contactId) => contactId !== contact.id,
+        ),
+        reasonCode: "identity_multi_candidate",
+        status: "open",
+        openedAt: input.openedAt,
+        resolvedAt: null,
+        normalizedIdentityValues: [normalizedEmail],
+        anchoredContactId: contact.id,
+        explanation: buildIdentityConflictExplanation(
+          "identity_multi_candidate",
+        ),
+      });
+      await deps.service.refreshInboxReviewOverlay({
+        contactId: contact.id,
+      });
+    }
+
+    const nextRecord = canonicalEventAudienceSchema.parse({
+      canonicalEventId: input.canonicalEvent.id,
+      contactId: contact.id,
+      participantRole: participant.role,
+      normalizedEmail,
+    });
+    const existingRecord = rowsByContactId.get(contact.id);
+    rowsByContactId.set(
+      contact.id,
+      existingRecord === undefined
+        ? nextRecord
+        : preferAudienceRecord(existingRecord, nextRecord),
+    );
+  }
+
+  const rows = [...rowsByContactId.values()].sort((left, right) =>
+    left.contactId.localeCompare(right.contactId),
+  );
+
+  for (const row of rows) {
+    await deps.persistence.saveCanonicalEventAudience(row);
+  }
+
+  return rows.length;
+}
+
 function uniqueStrings(values: readonly string[]): string[] {
   return Array.from(new Set(values)).sort((left, right) =>
     left.localeCompare(right),
@@ -2922,11 +3088,17 @@ export function createStage1NormalizationService(
                   canonicalEvent: persistedEvent,
                   summary: existingTimelineProjection.summary,
                 });
-        await applyCanonicalEventAudience({
-          canonicalEvent: persistedEvent,
-          gmailMessageDetail: parsed.gmailMessageDetail,
-          openedAt: parsed.sourceEvidence.receivedAt,
-        });
+        await applyCanonicalEventAudience(
+          {
+            persistence,
+            service,
+          },
+          {
+            canonicalEvent: persistedEvent,
+            gmailMessageDetail: parsed.gmailMessageDetail,
+            openedAt: parsed.sourceEvidence.receivedAt,
+          },
+        );
         const inboxProjection = qualifiesForInboxProjection(persistedEvent)
           ? await rebuildInboxProjectionForContact(
               persistence,
@@ -3106,11 +3278,17 @@ export function createStage1NormalizationService(
             : (duplicateMatch.existingTimelineProjection?.summary ??
               parsed.canonicalEvent.summary),
         });
-        await applyCanonicalEventAudience({
-          canonicalEvent: persistedEvent,
-          gmailMessageDetail: parsed.gmailMessageDetail,
-          openedAt: parsed.sourceEvidence.receivedAt,
-        });
+        await applyCanonicalEventAudience(
+          {
+            persistence,
+            service,
+          },
+          {
+            canonicalEvent: persistedEvent,
+            gmailMessageDetail: parsed.gmailMessageDetail,
+            openedAt: parsed.sourceEvidence.receivedAt,
+          },
+        );
         const inboxProjection = await rebuildInboxProjectionForContact(
           persistence,
           persistedEvent.contactId,
@@ -3178,11 +3356,17 @@ export function createStage1NormalizationService(
         canonicalEvent: persistedEvent,
         summary: parsed.canonicalEvent.summary,
       });
-      await applyCanonicalEventAudience({
-        canonicalEvent: persistedEvent,
-        gmailMessageDetail: parsed.gmailMessageDetail,
-        openedAt: parsed.sourceEvidence.receivedAt,
-      });
+      await applyCanonicalEventAudience(
+        {
+          persistence,
+          service,
+        },
+        {
+          canonicalEvent: persistedEvent,
+          gmailMessageDetail: parsed.gmailMessageDetail,
+          openedAt: parsed.sourceEvidence.receivedAt,
+        },
+      );
       const inboxProjection = qualifiesForInboxProjection(persistedEvent)
         ? await service.applyInboxProjection({
             canonicalEvent: persistedEvent,
@@ -3208,157 +3392,6 @@ export function createStage1NormalizationService(
         auditEvidence: null,
       };
     },
-  };
-
-  const applyCanonicalEventAudience = async (input: {
-    readonly canonicalEvent: CanonicalEventRecord;
-    readonly gmailMessageDetail: NormalizedCanonicalEventIntake["gmailMessageDetail"];
-    readonly openedAt: string;
-  }): Promise<void> => {
-    if (input.gmailMessageDetail === undefined) {
-      return;
-    }
-
-    const audience = resolveCanonicalEventAudience({
-      fromEmails: input.gmailMessageDetail.fromEmails ?? [],
-      toEmails: input.gmailMessageDetail.toEmails ?? [],
-      ccEmails: input.gmailMessageDetail.ccEmails ?? [],
-      bccEmails: input.gmailMessageDetail.bccEmails ?? [],
-    });
-
-    if (audience.participants.length === 0) {
-      return;
-    }
-
-    const rowsByContactId = new Map<string, CanonicalEventAudienceRecord>();
-
-    for (const participant of audience.participants) {
-      const normalizedEmail = normalizeEmailAddress(participant.email);
-
-      if (normalizedEmail === null) {
-        continue;
-      }
-
-      const identities =
-        await persistence.repositories.contactIdentities.listByNormalizedValue({
-          kind: "email",
-          normalizedValue: normalizedEmail,
-        });
-      const candidateContactIds = uniqueStrings(
-        identities.map((identity) => identity.contactId),
-      );
-
-      let contact: ContactRecord;
-
-      if (candidateContactIds.length === 0) {
-        contact = await service.ensureCanonicalContactForEmail({
-          emailAddress: normalizedEmail,
-          createdAt: input.openedAt,
-          source: "gmail",
-        });
-      } else if (candidateContactIds.length === 1) {
-        const candidateContactId = requireValue(
-          candidateContactIds[0],
-          "Expected a single audience contact candidate.",
-        );
-        const matchedContact =
-          await persistence.repositories.contacts.findById(candidateContactId);
-
-        if (matchedContact === null) {
-          throw new Error("Audience email matched a missing contact.");
-        }
-
-        contact = matchedContact;
-      } else {
-        const contacts = await persistence.repositories.contacts.listByIds(
-          candidateContactIds,
-        );
-        const projections = await Promise.all(
-          contacts.map(async (candidateContact) => ({
-            contact: candidateContact,
-            projection:
-              await persistence.repositories.inboxProjection.findByContactId(
-                candidateContact.id,
-              ),
-          })),
-        );
-        const [winner] = projections.sort((left, right) => {
-          const inboundComparison = compareNullableIsoDesc(
-            left.projection?.lastInboundAt ?? null,
-            right.projection?.lastInboundAt ?? null,
-          );
-
-          if (inboundComparison !== 0) {
-            return inboundComparison;
-          }
-
-          const activityComparison = compareNullableIsoDesc(
-            left.projection?.lastActivityAt ?? null,
-            right.projection?.lastActivityAt ?? null,
-          );
-
-          if (activityComparison !== 0) {
-            return activityComparison;
-          }
-
-          return left.contact.id.localeCompare(right.contact.id);
-        });
-
-        if (winner === undefined) {
-          throw new Error(
-            "Audience email candidates did not resolve to canonical contacts.",
-          );
-        }
-
-        contact = winner.contact;
-
-        await persistence.saveIdentityResolutionCase({
-          id: buildAudienceIdentityCaseId(
-            input.canonicalEvent.sourceEvidenceId,
-            normalizedEmail,
-            "identity_multi_candidate",
-          ),
-          sourceEvidenceId: input.canonicalEvent.sourceEvidenceId,
-          candidateContactIds: candidateContactIds.filter(
-            (contactId) => contactId !== contact.id,
-          ),
-          reasonCode: "identity_multi_candidate",
-          status: "open",
-          openedAt: input.openedAt,
-          resolvedAt: null,
-          normalizedIdentityValues: [normalizedEmail],
-          anchoredContactId: contact.id,
-          explanation: buildIdentityConflictExplanation(
-            "identity_multi_candidate",
-          ),
-        });
-        await service.refreshInboxReviewOverlay({
-          contactId: contact.id,
-        });
-      }
-
-      const nextRecord = canonicalEventAudienceSchema.parse({
-        canonicalEventId: input.canonicalEvent.id,
-        contactId: contact.id,
-        participantRole: participant.role,
-        normalizedEmail,
-      });
-      const existingRecord = rowsByContactId.get(contact.id);
-      rowsByContactId.set(
-        contact.id,
-        existingRecord === undefined
-          ? nextRecord
-          : preferAudienceRecord(existingRecord, nextRecord),
-      );
-    }
-
-    const rows = [...rowsByContactId.values()].sort((left, right) =>
-      left.contactId.localeCompare(right.contactId),
-    );
-
-    for (const row of rows) {
-      await persistence.saveCanonicalEventAudience(row);
-    }
   };
 
   return service;
