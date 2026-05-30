@@ -9,6 +9,7 @@ import {
   createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
   type DatabaseConnection,
+  type Stage1Database,
 } from "@as-comms/db";
 import {
   createAudienceResolver,
@@ -273,6 +274,7 @@ function buildSynthesizeProjectKnowledgeDependencies(input: {
   readonly fetchImplementation: FetchImplementation;
   readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
   readonly settings: ReturnType<typeof createStage2RepositoryBundleFromConnection>;
+  readonly db: Stage1Database;
 }): SynthesizeProjectKnowledgeDependencies | undefined {
   const notionApiKey = readOptionalTrimmedEnv(input.env.NOTION_API_KEY);
   const anthropicApiKey = readOptionalTrimmedEnv(input.env.ANTHROPIC_API_KEY);
@@ -311,6 +313,7 @@ function buildSynthesizeProjectKnowledgeDependencies(input: {
     },
     model,
     invokeModel: (payload) => invokeModel(anthropicClient, payload),
+    db: input.db,
   };
 }
 
@@ -538,6 +541,7 @@ export async function createStage1WorkerRuntimeServices(
       fetchImplementation,
       repositories,
       settings,
+      db: connection.db,
     },
   );
   const capture = {
