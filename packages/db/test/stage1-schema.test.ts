@@ -12,6 +12,7 @@ import {
 import {
   aiKnowledgeEntries,
   audienceSnapshots,
+  canonicalEventAudience,
   canonicalEventLedger,
   campaignRuns,
   contactInboxProjection,
@@ -40,6 +41,7 @@ describe("Stage 1 DB schema", () => {
       "audienceSnapshots",
       "auditPolicyEvidence",
       "campaignRuns",
+      "canonicalEventAudience",
       "canonicalEventLedger",
       "consentRecords",
       "contactConsent",
@@ -97,6 +99,9 @@ describe("Stage 1 DB schema", () => {
     expect(getTableName(suppressionList)).toBe("suppression_list");
     expect(getTableName(orgSettings)).toBe("org_settings");
     expect(getTableName(canonicalEventLedger)).toBe("canonical_event_ledger");
+    expect(getTableName(canonicalEventAudience)).toBe(
+      "canonical_event_audience"
+    );
     expect(getTableName(internalNotes)).toBe("internal_notes");
     expect(getTableName(contactInboxProjection)).toBe(
       "contact_inbox_projection"

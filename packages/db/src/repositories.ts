@@ -73,6 +73,8 @@ import {
   mapAiKnowledgeEntryToInsert,
   mapAuditEvidenceRow,
   mapAuditEvidenceToInsert,
+  mapCanonicalEventAudienceRow,
+  mapCanonicalEventAudienceToInsert,
   mapCanonicalEventRow,
   mapCanonicalEventToInsert,
   mapConsentRecordRow,
@@ -126,6 +128,7 @@ import {
   audienceSnapshots,
   aiKnowledgeEntries,
   auditPolicyEvidence,
+  canonicalEventAudience,
   canonicalEventLedger,
   campaignRuns,
   consentRecords,
@@ -4875,6 +4878,34 @@ function createStage1RepositoriesInternal(
 
         return mapTimelineProjectionRow(
           requireRow(row, "Expected timeline projection row to be returned."),
+        );
+      },
+    },
+
+    canonicalEventAudience: {
+      async upsert(record) {
+        const values = mapCanonicalEventAudienceToInsert(record);
+        const [row] = await db
+          .insert(canonicalEventAudience)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [
+              canonicalEventAudience.canonicalEventId,
+              canonicalEventAudience.contactId,
+            ],
+            set: {
+              participantRole: values.participantRole,
+              normalizedEmail: values.normalizedEmail,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+
+        return mapCanonicalEventAudienceRow(
+          requireRow(
+            row,
+            "Expected canonical event audience row to be returned.",
+          ),
         );
       },
     },

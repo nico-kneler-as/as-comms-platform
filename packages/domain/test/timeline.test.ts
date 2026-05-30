@@ -442,6 +442,9 @@ function createRepositoryBundle(input: {
       },
       upsert: (record) => Promise.resolve(record),
     },
+    canonicalEventAudience: {
+      upsert: (record) => Promise.resolve(record),
+    },
     syncState: {
       findById: () => Promise.resolve(null),
       findLatest: () => Promise.resolve(null),

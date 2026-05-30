@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   AuditEvidenceRecord,
   CanonicalEventRecord,
+  CanonicalEventAudienceRecord,
   ContactIdentityRecord,
   ContactMembershipRecord,
   ContactRecord,
@@ -66,6 +67,9 @@ interface TestContext {
   readonly getTimelineRow: (
     canonicalEventId: string,
   ) => TimelineProjectionRow | null;
+  readonly getCanonicalEventAudienceRows: (
+    canonicalEventId: string,
+  ) => readonly CanonicalEventAudienceRecord[];
   readonly getAuditEvidence: () => readonly AuditEvidenceRecord[];
   readonly getPendingOutbound: (
     id: string,
@@ -216,6 +220,16 @@ function buildGmailDetail(input: {
         ? "Volunteer <volunteer@example.org>"
         : "Forests <forests@adventurescientists.org>",
     ccHeader: null,
+    fromEmails:
+      input.direction === "outbound"
+        ? ["forests@adventurescientists.org"]
+        : ["volunteer@example.org"],
+    toEmails:
+      input.direction === "outbound"
+        ? ["volunteer@example.org"]
+        : ["forests@adventurescientists.org"],
+    ccEmails: [],
+    bccEmails: [],
     snippetClean: input.bodyTextPreview ?? `Snippet ${input.key}`,
     bodyTextPreview: input.bodyTextPreview ?? `Body ${input.key}`,
     capturedMailbox: "volunteers@adventurescientists.org",
@@ -384,6 +398,10 @@ function buildContext(input: {
     string,
     TimelineProjectionRow
   >((input.timelineRows ?? []).map((row) => [row.canonicalEventId, row]));
+  const canonicalEventAudienceRowsByKey = new Map<
+    string,
+    CanonicalEventAudienceRecord
+  >();
   const identityCasesById = new Map(
     (input.identityCases ?? []).map((record) => [record.id, record]),
   );
@@ -1152,6 +1170,15 @@ function buildContext(input: {
         return Promise.resolve(record);
       },
     },
+    canonicalEventAudience: {
+      upsert: (record) => {
+        canonicalEventAudienceRowsByKey.set(
+          `${record.canonicalEventId}:${record.contactId}`,
+          record,
+        );
+        return Promise.resolve(record);
+      },
+    },
     syncState: {
       findById: () => Promise.resolve(null),
       findLatest: () => Promise.resolve(null),
@@ -1193,6 +1220,10 @@ function buildContext(input: {
     getCanonicalEvent: (eventId) => canonicalEventsById.get(eventId) ?? null,
     getTimelineRow: (canonicalEventId) =>
       timelineRowsByCanonicalEventId.get(canonicalEventId) ?? null,
+    getCanonicalEventAudienceRows: (canonicalEventId) =>
+      [...canonicalEventAudienceRowsByKey.values()]
+        .filter((row) => row.canonicalEventId === canonicalEventId)
+        .sort((left, right) => left.contactId.localeCompare(right.contactId)),
     getAuditEvidence: () => [...auditEvidenceRecords],
     getPendingOutbound: (id) => pendingOutboundsById.get(id) ?? null,
   };
@@ -1907,6 +1938,244 @@ describe("identity resolution hardening", () => {
         [contact.id, duplicateContact.id].sort(),
       );
     }
+  });
+
+  describe("canonical event audience writes", () => {
+    const occurredAt = "2026-05-30T12:00:00.000Z";
+
+    const buildAudienceContact = (
+      contactId: string,
+      email: string,
+    ): ContactRecord => ({
+      id: contactId,
+      salesforceContactId: null,
+      displayName: email,
+      primaryEmail: email,
+      primaryPhone: null,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    });
+
+    const buildAudienceIdentity = (
+      contactId: string,
+      email: string,
+    ): ContactIdentityRecord => ({
+      id: `identity:${contactId}:email`,
+      contactId,
+      kind: "email",
+      normalizedValue: email,
+      isPrimary: true,
+      source: "gmail",
+      verifiedAt: "2026-05-01T00:00:00.000Z",
+    });
+
+    const buildAudienceGmailInput = (input?: {
+      readonly eventKey?: string;
+      readonly identityEmails?: readonly string[];
+      readonly fromEmails?: readonly string[];
+      readonly toEmails?: readonly string[];
+      readonly ccEmails?: readonly string[];
+      readonly bccEmails?: readonly string[];
+    }): NormalizedCanonicalEventIntake => {
+      const eventKey = input?.eventKey ?? "fanout";
+
+      return {
+        sourceEvidence: buildSourceEvidence({
+          key: eventKey,
+          occurredAt,
+        }),
+        canonicalEvent: {
+          id: `event:${eventKey}`,
+          eventType: "communication.email.inbound",
+          occurredAt,
+          idempotencyKey: `canonical:${eventKey}`,
+          summary: "Inbound email received",
+          snippet: "Audience test message",
+        },
+        identity: {
+          salesforceContactId: null,
+          volunteerIdPlainValues: [],
+          normalizedEmails: [...(input?.identityEmails ?? ["sender@example.org"])],
+          normalizedPhones: [],
+        },
+        supportingSources: [],
+        communicationClassification: {
+          messageKind: "one_to_one",
+          sourceRecordType: "message",
+          sourceRecordId: `gmail:${eventKey}`,
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: null,
+            providerThreadId: `thread:${eventKey}`,
+          },
+          direction: "inbound",
+        },
+        gmailMessageDetail: {
+          ...buildGmailDetail({
+            key: eventKey,
+            direction: "inbound",
+          }),
+          fromEmails: [...(input?.fromEmails ?? ["sender@example.org"])],
+          toEmails: [...(input?.toEmails ?? ["direct@example.org"])],
+          ccEmails: [...(input?.ccEmails ?? ["cc@example.org"])],
+          bccEmails: [...(input?.bccEmails ?? ["bcc@example.org"])],
+        },
+      };
+    };
+
+    it("writes one audience row per Gmail participant with the correct role", async () => {
+      const contacts = [
+        buildAudienceContact("contact:sender", "sender@example.org"),
+        buildAudienceContact("contact:direct", "direct@example.org"),
+        buildAudienceContact("contact:cc", "cc@example.org"),
+        buildAudienceContact("contact:bcc", "bcc@example.org"),
+      ];
+      const identities = contacts.map((entry) =>
+        buildAudienceIdentity(entry.id, entry.primaryEmail ?? ""),
+      );
+      const context = buildContext({
+        events: [],
+        contacts,
+        contactIdentities: identities,
+      });
+
+      const result = await context.normalization.applyNormalizedCanonicalEvent(
+        buildAudienceGmailInput(),
+      );
+
+      expect(result.outcome).toBe("applied");
+      expect(
+        context.getCanonicalEventAudienceRows("event:fanout"),
+      ).toStrictEqual([
+        {
+          canonicalEventId: "event:fanout",
+          contactId: "contact:bcc",
+          participantRole: "bcc",
+          normalizedEmail: "bcc@example.org",
+        },
+        {
+          canonicalEventId: "event:fanout",
+          contactId: "contact:cc",
+          participantRole: "cc",
+          normalizedEmail: "cc@example.org",
+        },
+        {
+          canonicalEventId: "event:fanout",
+          contactId: "contact:direct",
+          participantRole: "direct_recipient",
+          normalizedEmail: "direct@example.org",
+        },
+        {
+          canonicalEventId: "event:fanout",
+          contactId: "contact:sender",
+          participantRole: "sender",
+          normalizedEmail: "sender@example.org",
+        },
+      ]);
+    });
+
+    it("keeps audience rows replay-idempotent when the same Gmail canonical event is applied twice", async () => {
+      const contacts = [
+        buildAudienceContact("contact:sender", "sender@example.org"),
+        buildAudienceContact("contact:direct", "direct@example.org"),
+      ];
+      const identities = contacts.map((entry) =>
+        buildAudienceIdentity(entry.id, entry.primaryEmail ?? ""),
+      );
+      const context = buildContext({
+        events: [],
+        contacts,
+        contactIdentities: identities,
+      });
+      const input = buildAudienceGmailInput({
+        eventKey: "fanout-replay",
+        toEmails: ["direct@example.org"],
+        ccEmails: [],
+        bccEmails: [],
+      });
+
+      await context.normalization.applyNormalizedCanonicalEvent(input);
+      const replayResult =
+        await context.normalization.applyNormalizedCanonicalEvent(input);
+
+      expect(replayResult.outcome).toBe("duplicate");
+      expect(
+        context.getCanonicalEventAudienceRows("event:fanout-replay"),
+      ).toStrictEqual([
+        {
+          canonicalEventId: "event:fanout-replay",
+          contactId: "contact:direct",
+          participantRole: "direct_recipient",
+          normalizedEmail: "direct@example.org",
+        },
+        {
+          canonicalEventId: "event:fanout-replay",
+          contactId: "contact:sender",
+          participantRole: "sender",
+          normalizedEmail: "sender@example.org",
+        },
+      ]);
+    });
+
+    it("skips audience rows for non-Gmail canonical events", async () => {
+      const context = buildContext({
+        events: [],
+      });
+
+      const result = await context.normalization.applyNormalizedCanonicalEvent({
+        sourceEvidence: {
+          id: "source:sms-fanout-skip",
+          provider: "simpletexting",
+          providerRecordType: "message",
+          providerRecordId: "sms-fanout-skip",
+          receivedAt: occurredAt,
+          occurredAt,
+          payloadRef: "payloads/simpletexting/sms-fanout-skip.json",
+          idempotencyKey: "simpletexting:message:sms-fanout-skip",
+          checksum: "checksum:sms-fanout-skip",
+        },
+        canonicalEvent: {
+          id: "event:sms-fanout-skip",
+          eventType: "communication.sms.inbound",
+          occurredAt,
+          idempotencyKey: "canonical:sms-fanout-skip",
+          summary: "Inbound SMS received",
+          snippet: "SMS fan-out should not run",
+        },
+        identity: {
+          salesforceContactId: null,
+          volunteerIdPlainValues: [],
+          normalizedEmails: [],
+          normalizedPhones: ["+14065550142"],
+        },
+        supportingSources: [],
+        communicationClassification: {
+          messageKind: "one_to_one",
+          sourceRecordType: "message",
+          sourceRecordId: "sms-fanout-skip",
+          campaignRef: null,
+          threadRef: null,
+          direction: "inbound",
+        },
+        simpleTextingMessageDetail: {
+          sourceEvidenceId: "source:sms-fanout-skip",
+          providerRecordId: "sms-fanout-skip",
+          direction: "inbound",
+          messageKind: "one_to_one",
+          messageTextPreview: "SMS fan-out should not run",
+          normalizedPhone: "+14065550142",
+          campaignId: null,
+          campaignName: null,
+          providerThreadId: null,
+          threadKey: null,
+        },
+      });
+
+      expect(result.outcome).toBe("applied");
+      expect(
+        context.getCanonicalEventAudienceRows("event:sms-fanout-skip"),
+      ).toStrictEqual([]);
+    });
   });
 });
 

@@ -272,7 +272,10 @@ describe("defineStage1RepositoryBundle", () => {
             total: 0,
             latestUpdatedAt: null,
             latestSortKey: null,
-          }),
+        }),
+        upsert: (record) => Promise.resolve(record),
+      },
+      canonicalEventAudience: {
         upsert: (record) => Promise.resolve(record),
       },
       syncState: {

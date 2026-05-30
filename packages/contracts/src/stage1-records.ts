@@ -330,6 +330,16 @@ export const gmailMessageBodyKindSchema = z.enum([
 ]);
 export type GmailMessageBodyKind = z.infer<typeof gmailMessageBodyKindSchema>;
 
+export const canonicalEventParticipantRoleSchema = z.enum([
+  "sender",
+  "direct_recipient",
+  "cc",
+  "bcc",
+]);
+export type CanonicalEventParticipantRole = z.infer<
+  typeof canonicalEventParticipantRoleSchema
+>;
+
 export const messageAttachmentProviderSchema = z.literal("gmail");
 export type MessageAttachmentProvider = z.infer<
   typeof messageAttachmentProviderSchema
@@ -345,6 +355,10 @@ export const gmailMessageDetailSchema = z.object({
   fromHeader: nullableStringSchema.default(null),
   toHeader: nullableStringSchema.default(null),
   ccHeader: nullableStringSchema.default(null),
+  fromEmails: stringArraySchema.default([]),
+  toEmails: stringArraySchema.default([]),
+  ccEmails: stringArraySchema.default([]),
+  bccEmails: stringArraySchema.default([]),
   labelIds: stringArraySchema.nullable().optional(),
   snippetClean: z.string(),
   bodyTextPreview: z.string(),
@@ -352,7 +366,17 @@ export const gmailMessageDetailSchema = z.object({
   capturedMailbox: nullableStringSchema,
   projectInboxAlias: nullableStringSchema,
 });
-export type GmailMessageDetailRecord = z.infer<typeof gmailMessageDetailSchema>;
+export type GmailMessageDetailRecord = z.input<typeof gmailMessageDetailSchema>;
+
+export const canonicalEventAudienceSchema = z.object({
+  canonicalEventId: idSchema,
+  contactId: idSchema,
+  participantRole: canonicalEventParticipantRoleSchema,
+  normalizedEmail: z.string().email(),
+});
+export type CanonicalEventAudienceRecord = z.infer<
+  typeof canonicalEventAudienceSchema
+>;
 
 export const messageAttachmentSchema = z.object({
   id: idSchema,
