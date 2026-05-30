@@ -934,6 +934,37 @@ export const contactTimelineProjection = pgTable(
   ],
 );
 
+/*
+ * Junction table for PRD #482 Gmail timeline fan-out. Stores one row per
+ * canonical event and audience contact so later read paths can project the
+ * same canonical event onto every participant's contact timeline.
+ */
+export const canonicalEventAudience = pgTable(
+  "canonical_event_audience",
+  {
+    canonicalEventId: text("canonical_event_id")
+      .notNull()
+      .references(() => canonicalEventLedger.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    participantRole: text("participant_role").notNull(),
+    normalizedEmail: text("normalized_email").notNull(),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.canonicalEventId, table.contactId],
+      name: "canonical_event_audience_pkey",
+    }),
+    index("canonical_event_audience_contact_idx").on(
+      table.contactId,
+      table.canonicalEventId,
+    ),
+  ],
+);
+
 export const syncState = pgTable(
   "sync_state",
   {
