@@ -56,6 +56,7 @@
 - Inbox is one row per person, not one row per thread.
 - Inbox is one mixed contact list sorted by most recent inbound message.
 - Timeline is one chronological history per person.
+- Timeline read merges the 1-to-1 anchor projection with the audience junction (`canonical_event_audience`) so every participant of a Gmail thread sees every message they were on. The anchor projection row stays 1-to-1 with the canonical event; fan-out is a read-time union.
 - `New` and `Opened` remain projection-driven bucket states, but they are row states and filters rather than the primary Inbox partition.
 - Unread is derived from bucket state.
 - `needsFollowUp` is a separate explicit follow-up flag, not a replacement for bucket state.

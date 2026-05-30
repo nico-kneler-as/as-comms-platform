@@ -295,7 +295,10 @@ function buildRepositoryBundle(input: {
           total: 0,
           latestUpdatedAt: null,
           latestSortKey: null,
-        }),
+      }),
+      upsert: (record) => Promise.resolve(record),
+    },
+    canonicalEventAudience: {
       upsert: (record) => Promise.resolve(record),
     },
     syncState: {
@@ -356,6 +359,10 @@ function buildGmailDetail(input: {
     fromHeader: "Volunteer <volunteer@example.org>",
     toHeader: "captured@example.org",
     ccHeader: null,
+    fromEmails: [],
+    toEmails: [],
+    ccEmails: [],
+    bccEmails: [],
     snippetClean: `Snippet ${input.id}`,
     bodyTextPreview: `Body ${input.id}`,
     capturedMailbox: "captured@example.org",

@@ -3,6 +3,7 @@ import type {
   AiKnowledgeEntryRecord,
   AuditEvidenceRecord,
   CanonicalEventRecord,
+  CanonicalEventAudienceRecord,
   ContactIdentityKind,
   ContactIdentityRecord,
   ContactMembershipRecord,
@@ -840,6 +841,12 @@ export interface AuditEvidenceRepository {
   }): Promise<readonly AuditEvidenceRecord[]>;
 }
 
+export interface CanonicalEventAudienceRepository {
+  upsert(
+    record: CanonicalEventAudienceRecord,
+  ): Promise<CanonicalEventAudienceRecord>;
+}
+
 export interface Stage1RepositoryBundle {
   readonly sourceEvidence: SourceEvidenceRepository;
   readonly sourceEvidenceQuarantine: SourceEvidenceQuarantineRepository;
@@ -867,6 +874,7 @@ export interface Stage1RepositoryBundle {
   readonly routingReviewQueue: RoutingReviewRepository;
   readonly inboxProjection: InboxProjectionRepository;
   readonly timelineProjection: TimelineProjectionRepository;
+  readonly canonicalEventAudience: CanonicalEventAudienceRepository;
   readonly syncState: SyncStateRepository;
   readonly auditEvidence: AuditEvidenceRepository;
 }

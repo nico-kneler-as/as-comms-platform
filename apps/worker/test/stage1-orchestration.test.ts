@@ -1448,6 +1448,10 @@ Alias drift outbound message.
         fromHeader: "Volunteer <volunteer@example.org>",
         toHeader: "PNW Bio <pnwbio@adventurescientists.org>",
         ccHeader: null,
+        fromEmails: [],
+        toEmails: [],
+        ccEmails: [],
+        bccEmails: [],
         snippetClean: "Thanks for checking in. I'll claim some hexes soon.",
         bodyTextPreview:
           "Thanks for checking in. I'll claim some hexes soon. A piece of feedback on the web map...",

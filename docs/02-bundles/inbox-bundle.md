@@ -36,6 +36,7 @@ Build the one-to-one operator workspace on top of canonical projections.
 - internal notes are included and stored separately from the canonical event ledger (per `D-029`); team-visible, plain text, inline in the timeline
 - owners and tags are not in the first Inbox release
 - send behavior defaults to send and remain opened
+- Gmail timeline reads fan out to every participant's contact page (PRD #482, `D-048`). The inbox queue row state is NOT affected — sender-driven priority and bucket transitions remain anchored to the single sender contact
 - first release does not depend on close / reopen lifecycle actions
 
 ## Required Interfaces / Concepts

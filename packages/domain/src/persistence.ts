@@ -1,6 +1,7 @@
 import {
   auditEvidenceSchema,
   canonicalEventSchema,
+  canonicalEventAudienceSchema,
   contactIdentitySchema,
   contactMembershipSchema,
   contactSchema,
@@ -20,6 +21,7 @@ import {
   timelineProjectionSchema,
   type AuditEvidenceRecord,
   type CanonicalEventRecord,
+  type CanonicalEventAudienceRecord,
   type ContactIdentityRecord,
   type ContactMembershipRecord,
   type ContactRecord,
@@ -152,6 +154,9 @@ export interface Stage1PersistenceService {
   saveTimelineProjection(
     record: TimelineProjectionRow
   ): Promise<TimelineProjectionRow>;
+  saveCanonicalEventAudience(
+    record: CanonicalEventAudienceRecord
+  ): Promise<CanonicalEventAudienceRecord>;
   saveSyncState(record: SyncStateRecord): Promise<SyncStateRecord>;
   recordAuditEvidence(record: AuditEvidenceRecord): Promise<AuditEvidenceRecord>;
   mergeEmailOnlyContactIntoAnchored(input: {
@@ -493,6 +498,12 @@ export function createStage1PersistenceService(
     saveTimelineProjection(record) {
       return repositories.timelineProjection.upsert(
         timelineProjectionSchema.parse(record)
+      );
+    },
+
+    saveCanonicalEventAudience(record) {
+      return repositories.canonicalEventAudience.upsert(
+        canonicalEventAudienceSchema.parse(record)
       );
     },
 

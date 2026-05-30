@@ -442,6 +442,9 @@ function createRepositoryBundle(input: {
       },
       upsert: (record) => Promise.resolve(record),
     },
+    canonicalEventAudience: {
+      upsert: (record) => Promise.resolve(record),
+    },
     syncState: {
       findById: () => Promise.resolve(null),
       findLatest: () => Promise.resolve(null),
@@ -597,6 +600,10 @@ function buildGmailOutboundEmailEvent(input: {
       fromHeader: "PNW Project <pnw@example.org>",
       toHeader: "Stage One Volunteer <volunteer@example.org>",
       ccHeader: null,
+      fromEmails: [],
+      toEmails: [],
+      ccEmails: [],
+      bccEmails: [],
       snippetClean: input.snippet,
       bodyTextPreview: input.bodyPreview,
       capturedMailbox,

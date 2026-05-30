@@ -3,6 +3,7 @@ import {
   aiKnowledgeEntrySchema,
   auditEvidenceSchema,
   canonicalEventSchema,
+  canonicalEventAudienceSchema,
   contactIdentitySchema,
   contactMembershipSchema,
   contactSchema,
@@ -26,6 +27,7 @@ import {
   type AuditEvidenceRecord,
   type AiKnowledgeEntryRecord,
   type CanonicalEventRecord,
+  type CanonicalEventAudienceRecord,
   type ContactIdentityRecord,
   type ContactMembershipRecord,
   type ContactRecord,
@@ -63,6 +65,7 @@ import type {
   aiKnowledgeEntries,
   auditPolicyEvidence,
   canonicalEventLedger,
+  canonicalEventAudience,
   consentRecords,
   contactIdentities,
   contactInboxProjection,
@@ -97,6 +100,7 @@ type SourceEvidenceQuarantineRow = typeof sourceEvidenceQuarantine.$inferSelect;
 type AiKnowledgeEntryRow = typeof aiKnowledgeEntries.$inferSelect;
 type ProjectKnowledgeEntryRow = typeof projectKnowledgeEntries.$inferSelect;
 type CanonicalEventRow = typeof canonicalEventLedger.$inferSelect;
+type CanonicalEventAudienceRow = typeof canonicalEventAudience.$inferSelect;
 type ContactRow = typeof contacts.$inferSelect;
 type ContactIdentityRow = typeof contactIdentities.$inferSelect;
 type ContactMembershipRow = typeof contactMemberships.$inferSelect;
@@ -325,6 +329,30 @@ export function mapCanonicalEventToInsert(
     idempotencyKey: parsed.idempotencyKey,
     provenance: parsed.provenance,
     reviewState: parsed.reviewState,
+  };
+}
+
+export function mapCanonicalEventAudienceRow(
+  row: CanonicalEventAudienceRow,
+): CanonicalEventAudienceRecord {
+  return canonicalEventAudienceSchema.parse({
+    canonicalEventId: row.canonicalEventId,
+    contactId: row.contactId,
+    participantRole: row.participantRole,
+    normalizedEmail: row.normalizedEmail,
+  });
+}
+
+export function mapCanonicalEventAudienceToInsert(
+  record: CanonicalEventAudienceRecord,
+): typeof canonicalEventAudience.$inferInsert {
+  const parsed = canonicalEventAudienceSchema.parse(record);
+
+  return {
+    canonicalEventId: parsed.canonicalEventId,
+    contactId: parsed.contactId,
+    participantRole: parsed.participantRole,
+    normalizedEmail: parsed.normalizedEmail,
   };
 }
 
@@ -672,6 +700,10 @@ export function mapGmailMessageDetailRow(
     fromHeader: row.fromHeader,
     toHeader: row.toHeader,
     ccHeader: row.ccHeader,
+    fromEmails: row.fromEmails,
+    toEmails: row.toEmails,
+    ccEmails: row.ccEmails,
+    bccEmails: row.bccEmails,
     labelIds: row.labelIds,
     snippetClean: row.snippetClean,
     bodyTextPreview: row.bodyTextPreview,
@@ -696,6 +728,10 @@ export function mapGmailMessageDetailToInsert(
     fromHeader: parsed.fromHeader,
     toHeader: parsed.toHeader,
     ccHeader: parsed.ccHeader,
+    fromEmails: [...parsed.fromEmails],
+    toEmails: [...parsed.toEmails],
+    ccEmails: [...parsed.ccEmails],
+    bccEmails: [...parsed.bccEmails],
     labelIds: parsed.labelIds,
     snippetClean: parsed.snippetClean,
     bodyTextPreview: parsed.bodyTextPreview,
