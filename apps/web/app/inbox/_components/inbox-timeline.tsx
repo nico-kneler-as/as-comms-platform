@@ -292,7 +292,17 @@ function TimelineEntry({
       }
 
       if (entry.kind === "inbound-email" || entry.kind === "outbound-email") {
-        const direction = entry.sideOfBubble === "right" ? "outbound" : "inbound";
+        // Fall back to the kind-derived direction when sideOfBubble is
+        // undefined (e.g., pending/optimistic outbound rows that merge in
+        // via a different path and never pass through the alias-aware
+        // view-model builder). Preserves prior behavior for any entry the
+        // selector couldn't classify.
+        const direction =
+          entry.sideOfBubble === "right"
+            ? "outbound"
+            : entry.sideOfBubble === "left"
+              ? "inbound"
+              : "inbound";
 
         return (
           <MessageBubble
@@ -326,7 +336,16 @@ function TimelineEntry({
       }
 
       if (entry.kind === "inbound-email" || entry.kind === "outbound-email") {
-        const direction = entry.sideOfBubble === "right" ? "outbound" : "inbound";
+        // Same fallback as the inbound branch above: undefined sideOfBubble
+        // means an entry that didn't pass through the alias-aware
+        // view-model builder (e.g., pending/optimistic outbound rows).
+        // Fall back to the kind-derived role, which here means outbound.
+        const direction =
+          entry.sideOfBubble === "right"
+            ? "outbound"
+            : entry.sideOfBubble === "left"
+              ? "inbound"
+              : "outbound";
 
         return (
           <MessageBubble
