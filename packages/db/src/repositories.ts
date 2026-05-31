@@ -2763,13 +2763,17 @@ function createStage1RepositoriesInternal(
       readonly anchoredContactId: string;
     }) {
       return db.transaction(async (tx: Stage1Database) => {
+        // Note: UPDATE SET clauses use bare column names (e.g., `contact_id`,
+        // not `${table.column}`) because PostgreSQL treats `"table"."column"`
+        // in a SET target as a composite-type subfield reference, not a table
+        // qualification, and rejects it.
         const canonicalEventsResult = await tx.execute(sql<{
           readonly id: string;
         }>`
           update ${canonicalEventLedger}
           set
-            ${canonicalEventLedger.contactId} = ${input.anchoredContactId},
-            ${canonicalEventLedger.updatedAt} = timezone('utc', now())
+            contact_id = ${input.anchoredContactId},
+            updated_at = timezone('utc', now())
           where ${canonicalEventLedger.contactId} = ${input.emailOnlyContactId}
           returning ${canonicalEventLedger.id} as id
         `);
@@ -2778,8 +2782,8 @@ function createStage1RepositoriesInternal(
         }>`
           update ${contactTimelineProjection}
           set
-            ${contactTimelineProjection.contactId} = ${input.anchoredContactId},
-            ${contactTimelineProjection.updatedAt} = timezone('utc', now())
+            contact_id = ${input.anchoredContactId},
+            updated_at = timezone('utc', now())
           where ${contactTimelineProjection.contactId} = ${input.emailOnlyContactId}
           returning ${contactTimelineProjection.id} as id
         `);
@@ -2788,8 +2792,8 @@ function createStage1RepositoriesInternal(
         }>`
           update ${internalNotes}
           set
-            ${internalNotes.contactId} = ${input.anchoredContactId},
-            ${internalNotes.updatedAt} = timezone('utc', now())
+            contact_id = ${input.anchoredContactId},
+            updated_at = timezone('utc', now())
           where ${internalNotes.contactId} = ${input.emailOnlyContactId}
           returning ${internalNotes.id} as id
         `);
@@ -2798,8 +2802,8 @@ function createStage1RepositoriesInternal(
         }>`
           update ${routingReviewQueue}
           set
-            ${routingReviewQueue.contactId} = ${input.anchoredContactId},
-            ${routingReviewQueue.updatedAt} = timezone('utc', now())
+            contact_id = ${input.anchoredContactId},
+            updated_at = timezone('utc', now())
           where ${routingReviewQueue.contactId} = ${input.emailOnlyContactId}
           returning ${routingReviewQueue.id} as id
         `);
@@ -2808,12 +2812,12 @@ function createStage1RepositoriesInternal(
         }>`
           update ${identityResolutionQueue}
           set
-            ${identityResolutionQueue.anchoredContactId} = case
+            anchored_contact_id = case
               when ${identityResolutionQueue.anchoredContactId} = ${input.emailOnlyContactId}
                 then ${input.anchoredContactId}
               else ${identityResolutionQueue.anchoredContactId}
             end,
-            ${identityResolutionQueue.candidateContactIds} = (
+            candidate_contact_ids = (
               select coalesce(
                 array_agg(candidate_id order by candidate_id),
                 array[]::text[]
@@ -2834,10 +2838,33 @@ function createStage1RepositoriesInternal(
                 where candidate_id <> ${input.emailOnlyContactId}
               ) deduped_candidates
             ),
-            ${identityResolutionQueue.updatedAt} = timezone('utc', now())
+            updated_at = timezone('utc', now())
           where ${identityResolutionQueue.anchoredContactId} = ${input.emailOnlyContactId}
              or ${identityResolutionQueue.candidateContactIds} && array[${input.emailOnlyContactId}]::text[]
           returning ${identityResolutionQueue.id} as id
+        `);
+        // Drop email-only audience rows that would collide with an existing
+        // anchored row on the same canonical event before repointing the rest.
+        // canonical_event_audience cascades on contact deletion, so this must
+        // happen before the contact DELETE below.
+        await tx.execute(sql`
+          delete from ${canonicalEventAudience}
+          where ${canonicalEventAudience.contactId} = ${input.emailOnlyContactId}
+            and ${canonicalEventAudience.canonicalEventId} in (
+              select ${canonicalEventAudience.canonicalEventId}
+              from ${canonicalEventAudience}
+              where ${canonicalEventAudience.contactId} = ${input.anchoredContactId}
+            )
+        `);
+        const audienceRowsResult = await tx.execute(sql<{
+          readonly canonical_event_id: string;
+        }>`
+          update ${canonicalEventAudience}
+          set
+            contact_id = ${input.anchoredContactId},
+            updated_at = timezone('utc', now())
+          where ${canonicalEventAudience.contactId} = ${input.emailOnlyContactId}
+          returning ${canonicalEventAudience.canonicalEventId} as canonical_event_id
         `);
         const deletedContactsResult = await tx.execute(sql<{
           readonly id: string;
@@ -2890,6 +2917,13 @@ function createStage1RepositoriesInternal(
                 readonly rows?: readonly { readonly id: string }[];
               },
             ).length,
+          audienceRowsRepointed: normalizeSqlResultRows<{
+            readonly canonical_event_id: string;
+          }>(
+            audienceRowsResult as {
+              readonly rows?: readonly { readonly canonical_event_id: string }[];
+            },
+          ).length,
           contactDeleted: true,
         };
       });

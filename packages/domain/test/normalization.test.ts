@@ -728,6 +728,7 @@ function buildContext(input: {
         notesRepointed,
         routingRowsRepointed,
         identityCasesRepointed,
+        audienceRowsRepointed: 0,
         contactDeleted,
       });
     },

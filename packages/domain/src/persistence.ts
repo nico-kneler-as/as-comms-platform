@@ -84,6 +84,7 @@ export interface EmailOnlyContactMergeResult {
   readonly notesRepointed: number;
   readonly routingRowsRepointed: number;
   readonly identityCasesRepointed: number;
+  readonly audienceRowsRepointed: number;
 }
 
 interface EmailOnlyContactMergeCapableRepositories
@@ -97,6 +98,7 @@ interface EmailOnlyContactMergeCapableRepositories
     readonly notesRepointed: number;
     readonly routingRowsRepointed: number;
     readonly identityCasesRepointed: number;
+    readonly audienceRowsRepointed: number;
     readonly contactDeleted: boolean;
   }>;
 }
@@ -548,6 +550,7 @@ export function createStage1PersistenceService(
         notesRepointed: result.notesRepointed,
         routingRowsRepointed: result.routingRowsRepointed,
         identityCasesRepointed: result.identityCasesRepointed,
+        audienceRowsRepointed: result.audienceRowsRepointed,
       };
     }
   };

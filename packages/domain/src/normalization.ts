@@ -2249,6 +2249,7 @@ async function recordEmailOnlyAutoMergeAuditOnce(
       readonly notesRepointed: number;
       readonly routingRowsRepointed: number;
       readonly identityCasesRepointed: number;
+      readonly audienceRowsRepointed: number;
     };
   },
 ): Promise<AuditEvidenceRecord> {
@@ -2292,6 +2293,7 @@ async function recordEmailOnlyAutoMergeAuditOnce(
       notesRepointed: input.mergeResult.notesRepointed,
       routingRowsRepointed: input.mergeResult.routingRowsRepointed,
       identityCasesRepointed: input.mergeResult.identityCasesRepointed,
+      audienceRowsRepointed: input.mergeResult.audienceRowsRepointed,
     },
   });
 }
