@@ -306,6 +306,15 @@ export const projectDimensions = pgTable(
     projectId: text("project_id").primaryKey(),
     projectName: text("project_name").notNull(),
     projectAlias: text("project_alias"),
+    // Historical project_alias values this project has used. Appended by
+    // setProjectAlias when the current alias is replaced with a different
+    // value. Read alongside projectAlias by listAllProjectAliases so the
+    // email timeline bubble-side renderer (D-049) keeps messages from
+    // prior aliases on the right side after a rename.
+    previousAliases: text("previous_aliases")
+      .array()
+      .notNull()
+      .default([]),
     postmarkSenderStatus: text("postmark_sender_status")
       .$type<PostmarkSenderStatus>()
       .notNull()

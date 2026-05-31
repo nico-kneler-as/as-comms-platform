@@ -3119,6 +3119,40 @@ function createStage1RepositoriesInternal(
         return rows.map(mapProjectDimensionRow);
       },
 
+      async listAllProjectAliases() {
+        // Returns every project_alias the platform considers "ours" for the
+        // email bubble-side renderer (D-049): the current project_alias of
+        // every project_dimensions row (active or inactive) UNION every
+        // value tracked in project_dimensions.previous_aliases (the
+        // rename-preservation array populated by setProjectAlias).
+        //
+        // Aliases are lowercased + trimmed + deduplicated. Empty/null
+        // values are filtered out.
+        const result = await db.execute(sql<{
+          readonly alias: string;
+        }>`
+          select alias
+          from (
+            select lower(trim(${projectDimensions.projectAlias})) as alias
+            from ${projectDimensions}
+            where coalesce(trim(${projectDimensions.projectAlias}), '') <> ''
+
+            union
+
+            select lower(trim(prev_alias)) as alias
+            from ${projectDimensions},
+                 unnest(${projectDimensions.previousAliases}) as prev_alias
+            where coalesce(trim(prev_alias), '') <> ''
+          ) all_aliases
+          group by alias
+          order by alias
+        `);
+
+        return normalizeSqlResultRows<{ readonly alias: string }>(
+          result as { readonly rows?: readonly { readonly alias: string }[] },
+        ).map((row) => row.alias);
+      },
+
       async listByIds(projectIds) {
         if (projectIds.length === 0) {
           return [];
@@ -5537,16 +5571,63 @@ function createStage2RepositoriesInternal(
       },
 
       async setProjectAlias(projectId: string, projectAlias: string | null) {
-        const [row] = await db
-          .update(projectDimensions)
-          .set({
-            projectAlias,
-            updatedAt: new Date(),
-          })
-          .where(eq(projectDimensions.projectId, projectId))
-          .returning({
-            projectId: projectDimensions.projectId,
-          });
+        // Two-step update so we can capture the prior project_alias into
+        // previous_aliases when it's being replaced with a different
+        // non-null value. Preserves the bubble-side rule (D-049) across
+        // alias renames: messages from a prior alias keep rendering on
+        // the right side even after the admin sets a new alias.
+        //
+        // Append rules:
+        //   - The current alias must be non-empty (we don't track null→X
+        //     as history; only X→Y where X was previously set).
+        //   - The new alias must differ from the current alias after
+        //     normalization (lowercased trim). Identical-after-normalize
+        //     edits don't pollute history.
+        //   - Skip the append if the current alias is already in
+        //     previous_aliases (dedupe at write time).
+        const [row] = await db.transaction(async (tx) => {
+          const [existing] = await tx
+            .select({
+              projectAlias: projectDimensions.projectAlias,
+              previousAliases: projectDimensions.previousAliases,
+            })
+            .from(projectDimensions)
+            .where(eq(projectDimensions.projectId, projectId))
+            .limit(1);
+
+          if (existing === undefined) {
+            return [];
+          }
+
+          const priorAlias = existing.projectAlias?.trim() ?? "";
+          const priorAliasNormalized = priorAlias.toLowerCase();
+          const nextAliasNormalized = (projectAlias ?? "")
+            .trim()
+            .toLowerCase();
+          const previousAliases = existing.previousAliases;
+          const previousAliasesNormalized = new Set(
+            previousAliases.map((alias) => alias.trim().toLowerCase()),
+          );
+
+          const shouldAppendHistory =
+            priorAlias.length > 0 &&
+            priorAliasNormalized !== nextAliasNormalized &&
+            !previousAliasesNormalized.has(priorAliasNormalized);
+
+          return tx
+            .update(projectDimensions)
+            .set({
+              projectAlias,
+              previousAliases: shouldAppendHistory
+                ? [...previousAliases, priorAlias]
+                : previousAliases,
+              updatedAt: new Date(),
+            })
+            .where(eq(projectDimensions.projectId, projectId))
+            .returning({
+              projectId: projectDimensions.projectId,
+            });
+        });
 
         if (row === undefined) {
           return null;

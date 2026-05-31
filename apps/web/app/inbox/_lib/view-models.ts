@@ -260,6 +260,14 @@ export interface InboxTimelineEntryViewModel {
    * parsing is a future follow-up.
    */
   readonly participantRows?: readonly InboxTimelineEntryParticipantRowViewModel[];
+  /**
+   * Per-message bubble alignment for email entries. Right when the sender
+   * email is one of the project_dimensions.project_alias values (active or
+   * inactive), left otherwise — including AS staff sending from personal
+   * AS emails. SMS entries do not populate this field; SMS continues to
+   * use the kind-derived inbound/outbound role for alignment.
+   */
+  readonly sideOfBubble?: "right" | "left" | undefined;
   readonly ccHeader: string | null;
   readonly mailbox: string | null;
   readonly threadId: string | null;

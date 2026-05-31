@@ -419,6 +419,7 @@ export interface ProjectDimensionRepository {
   findById(projectId: string): Promise<ProjectDimensionRecord | null>;
   listAll(): Promise<readonly ProjectDimensionRecord[]>;
   listActive(): Promise<readonly ProjectDimensionRecord[]>;
+  listAllProjectAliases(): Promise<readonly string[]>;
   listByIds(
     projectIds: readonly string[],
   ): Promise<readonly ProjectDimensionRecord[]>;

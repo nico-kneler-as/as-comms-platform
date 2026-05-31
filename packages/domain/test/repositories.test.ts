@@ -119,6 +119,7 @@ describe("defineStage1RepositoryBundle", () => {
         findById: () => Promise.resolve(null),
         listAll: () => Promise.resolve([]),
         listActive: () => Promise.resolve([]),
+        listAllProjectAliases: () => Promise.resolve([]),
         listByIds: () => Promise.resolve([]),
         listConnectedProjects: () => Promise.resolve([]),
         listAvailableConnectionCandidates: () => Promise.resolve([]),

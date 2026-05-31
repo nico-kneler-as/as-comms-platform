@@ -221,6 +221,7 @@ interface InboxDetailCacheData {
   >;
   readonly contactDisplayNameByEmail: ReadonlyMap<string, string>;
   readonly projectLabelByAlias: ReadonlyMap<string, string>;
+  readonly allProjectAliasesLower: readonly string[];
   readonly attachmentsByCanonicalEventId: ReadonlyMap<
     string,
     readonly MessageAttachmentRecord[]
@@ -2258,6 +2259,7 @@ function buildTimelineEntry(input: {
   readonly operatorDisplayName: string;
   readonly inboxProjection: InboxDetailProjection;
   readonly item: TimelineItem;
+  readonly allProjectAliasesLower: readonly string[];
   readonly campaignActivitySummaryByCampaignId: Readonly<
     Record<string, CampaignActivitySummary>
   >;
@@ -2284,6 +2286,7 @@ function buildTimelineEntry(input: {
     ReadonlySet<string>
   >;
 }): InboxTimelineEntryViewModel {
+  const allProjectAliasesLowerSet = new Set(input.allProjectAliasesLower);
   const latestProjectionSnippet =
     input.item.family === "one_to_one_email" &&
     input.item.canonicalEventId === input.inboxProjection.lastCanonicalEventId
@@ -2419,6 +2422,27 @@ function buildTimelineEntry(input: {
           participantHeaderEmail(input.item.fromHeader ?? null) ?? "",
         ) ?? null)
       : null;
+  const participantRows =
+    input.item.family === "one_to_one_email"
+      ? buildParticipantRows({
+          item: input.item,
+          contactDisplayName: input.contactDisplayName,
+          contactPrimaryEmail: input.contactPrimaryEmail,
+          contactDisplayNameByEmail: input.contactDisplayNameByEmail,
+          projectLabelByAlias: input.projectLabelByAlias,
+          operatorDisplayName: input.operatorDisplayName,
+          headerProjectLabel,
+          visualDirection: visualEmailDirection ?? input.item.direction,
+        })
+      : undefined;
+  const sideOfBubble =
+    finalKind === "inbound-email" || finalKind === "outbound-email"
+      ? resolveEmailBubbleSide({
+          fromHeader: input.item.family === "one_to_one_email" ? input.item.fromHeader : null,
+          participantRows,
+          allProjectAliasesLowerSet,
+        })
+      : undefined;
 
   return {
     id: input.item.id,
@@ -2457,6 +2481,7 @@ function buildTimelineEntry(input: {
       projectLabelByAlias: input.projectLabelByAlias,
       visualDirection: visualEmailDirection,
     }),
+    sideOfBubble,
     ccHeader:
       input.item.family === "one_to_one_email"
         ? (input.item.ccHeader ?? null)
@@ -2505,24 +2530,30 @@ function buildTimelineEntry(input: {
     attachments,
     campaignActivity,
     headerProjectLabel,
-    ...(input.item.family === "one_to_one_email"
-      ? {
-          participantRows: buildParticipantRows({
-            item: input.item,
-            contactDisplayName: input.contactDisplayName,
-            contactPrimaryEmail: input.contactPrimaryEmail,
-            contactDisplayNameByEmail: input.contactDisplayNameByEmail,
-            projectLabelByAlias: input.projectLabelByAlias,
-            operatorDisplayName: input.operatorDisplayName,
-            headerProjectLabel,
-            visualDirection: visualEmailDirection ?? input.item.direction,
-          }),
-        }
-      : {}),
+    ...(participantRows === undefined ? {} : { participantRows }),
     noteId: input.item.family === "internal_note" ? input.item.noteId : null,
     authorId:
       input.item.family === "internal_note" ? input.item.authorId : null,
   };
+}
+
+function resolveEmailBubbleSide(input: {
+  readonly fromHeader: string | null;
+  readonly participantRows:
+    | readonly InboxTimelineEntryParticipantRowViewModel[]
+    | undefined;
+  readonly allProjectAliasesLowerSet: ReadonlySet<string>;
+}): "right" | "left" {
+  const senderFromParticipantRows = input.participantRows?.[0]?.email ?? null;
+  const senderEmail =
+    normalizeEmailAddress(senderFromParticipantRows) ??
+    participantHeaderEmail(input.fromHeader);
+
+  if (senderEmail === null) {
+    return "left";
+  }
+
+  return input.allProjectAliasesLowerSet.has(senderEmail) ? "right" : "left";
 }
 
 /**
@@ -3774,6 +3805,7 @@ async function readInboxDetailCacheData(
     timelineFreshness,
     canonicalEvents,
     projectAliasRecords,
+    allProjectAliasesLower,
     attentionReadAudits,
   ] = await Promise.all([
     runtime.repositories.contacts.findById(contactId),
@@ -3797,6 +3829,7 @@ async function readInboxDetailCacheData(
     runtime.repositories.timelineProjection.getFreshnessByContactId(contactId),
     runtime.repositories.canonicalEvents.listByContactId(contactId),
     runtime.settings.aliases.listAssigned(),
+    runtime.repositories.projectDimensions.listAllProjectAliases(),
     runtime.repositories.auditEvidence.listByEntity({
       entityType: "contact",
       entityId: contactId,
@@ -4005,6 +4038,7 @@ async function readInboxDetailCacheData(
     ),
     contactDisplayNameByEmail,
     projectLabelByAlias: await loadProjectLabelByAlias(projectAliasRecords),
+    allProjectAliasesLower,
     attachmentsByCanonicalEventId: new Map(
       timelinePage.items.map((item) => [
         item.canonicalEventId,
@@ -4633,6 +4667,7 @@ function buildInboxDetailTimelineViewModel(input: {
       operatorDisplayName: input.operatorDisplayName,
       inboxProjection: input.cachedData.inboxProjection,
       item,
+      allProjectAliasesLower: input.cachedData.allProjectAliasesLower,
       campaignActivitySummaryByCampaignId:
         input.cachedData.campaignActivitySummaryByCampaignId,
       memberships: input.cachedData.memberships,

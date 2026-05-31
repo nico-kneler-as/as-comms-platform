@@ -291,6 +291,29 @@ function TimelineEntry({
         );
       }
 
+      if (entry.kind === "inbound-email" || entry.kind === "outbound-email") {
+        // Fall back to the kind-derived direction when sideOfBubble is
+        // undefined (e.g., pending/optimistic outbound rows that merge in
+        // via a different path and never pass through the alias-aware
+        // view-model builder). Preserves prior behavior for any entry the
+        // selector couldn't classify.
+        const direction =
+          entry.sideOfBubble === "right"
+            ? "outbound"
+            : entry.sideOfBubble === "left"
+              ? "inbound"
+              : "inbound";
+
+        return (
+          <MessageBubble
+            entry={entry}
+            direction={direction}
+            {...(onForward === undefined ? {} : { onForward })}
+            {...(onReply === undefined ? {} : { onReply })}
+          />
+        );
+      }
+
       return (
         <MessageBubble
           entry={entry}
@@ -306,6 +329,30 @@ function TimelineEntry({
             entry={entry}
             direction="outbound"
             isRetrying={retryingEntryId === entry.id}
+            {...(onReply === undefined ? {} : { onReply })}
+            {...(onRetryPending === undefined ? {} : { onRetryPending })}
+          />
+        );
+      }
+
+      if (entry.kind === "inbound-email" || entry.kind === "outbound-email") {
+        // Same fallback as the inbound branch above: undefined sideOfBubble
+        // means an entry that didn't pass through the alias-aware
+        // view-model builder (e.g., pending/optimistic outbound rows).
+        // Fall back to the kind-derived role, which here means outbound.
+        const direction =
+          entry.sideOfBubble === "right"
+            ? "outbound"
+            : entry.sideOfBubble === "left"
+              ? "inbound"
+              : "outbound";
+
+        return (
+          <MessageBubble
+            entry={entry}
+            direction={direction}
+            isRetrying={retryingEntryId === entry.id}
+            {...(onForward === undefined ? {} : { onForward })}
             {...(onReply === undefined ? {} : { onReply })}
             {...(onRetryPending === undefined ? {} : { onRetryPending })}
           />
