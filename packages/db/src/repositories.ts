@@ -2595,6 +2595,34 @@ function createStage1RepositoriesInternal(
             ${contacts.displayName} ilike ${pattern} escape '\\'
             or coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'
             or coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'
+            or ${contacts.id} in (
+              select distinct header_subject.subject_contact_id
+              from (
+                select
+                  ${canonicalEventLedger.contactId} as subject_contact_id,
+                  ${gmailMessageDetails.fromHeader} as from_header,
+                  ${gmailMessageDetails.toHeader} as to_header,
+                  ${gmailMessageDetails.ccHeader} as cc_header
+                from ${canonicalEventLedger}
+                inner join ${gmailMessageDetails}
+                  on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+                union
+                select
+                  ${canonicalEventAudience.contactId} as subject_contact_id,
+                  ${gmailMessageDetails.fromHeader} as from_header,
+                  ${gmailMessageDetails.toHeader} as to_header,
+                  ${gmailMessageDetails.ccHeader} as cc_header
+                from ${canonicalEventAudience}
+                inner join ${canonicalEventLedger}
+                  on ${canonicalEventLedger.id} = ${canonicalEventAudience.canonicalEventId}
+                inner join ${gmailMessageDetails}
+                  on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+              ) as header_subject
+              where
+                coalesce(header_subject.from_header, '') ilike ${pattern} escape '\\'
+                or coalesce(header_subject.to_header, '') ilike ${pattern} escape '\\'
+                or coalesce(header_subject.cc_header, '') ilike ${pattern} escape '\\'
+            )
             or coalesce(${contactInboxProjection.snippet}, '') ilike ${pattern} escape '\\'
             or exists (
               select 1
