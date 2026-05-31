@@ -28,6 +28,25 @@ interface StrandedCampaignRunRow {
   readonly startedAt: Date | null
 }
 
+// postgres-js returns query results as an Array directly; PGlite (in tests)
+// wraps them in `{ rows }`. Drizzle's tx.execute() type permits either shape,
+// so the runtime cast `(result as { rows }).rows` blows up on production
+// with `TypeError: <var> is not iterable`. See PR #462 for the same fix in
+// broadcasts.
+function normalizeSqlResultRows<TRow>(
+  result:
+    | readonly TRow[]
+    | {
+        readonly rows?: readonly TRow[]
+      },
+): readonly TRow[] {
+  if (Array.isArray(result)) {
+    return result as readonly TRow[]
+  }
+
+  return (result as { readonly rows?: readonly TRow[] }).rows ?? []
+}
+
 export interface ReconcileStrandedCampaignRunsDependencies {
   readonly db: Stage1Database
   readonly repositories: Pick<Stage1RepositoryBundle, "auditEvidence">
@@ -49,26 +68,27 @@ export async function reconcileStrandedCampaignRuns(
   const maxRunAgeHours = dependencies.maxRunAgeHours ?? 24
   const cutoff = subtractHours(now(), maxRunAgeHours)
 
-  const strandedRuns = (
-    (await dependencies.db.execute(sql<StrandedCampaignRunRow>`
-      select
-        campaign_runs.id as "runId",
-        campaign_runs.started_at as "startedAt"
-      from campaign_runs
-      where campaign_runs.state = 'sending'
-        and not exists (
-          -- Use the private tables because graphile_worker.jobs is a public view without payload in graphile-worker 0.16+.
-          select 1
-          from graphile_worker._private_jobs jobs
-          join graphile_worker._private_tasks tasks on tasks.id = jobs.task_id
-          where tasks.identifier = ${campaignSendJobName}
-            and jobs.payload::jsonb ->> 'runId' = campaign_runs.id
-            and jobs.attempts < jobs.max_attempts
-        )
-    `)) as {
-      readonly rows: readonly StrandedCampaignRunRow[]
-    }
-  ).rows
+  const strandedRunsResult = await dependencies.db.execute(sql<StrandedCampaignRunRow>`
+    select
+      campaign_runs.id as "runId",
+      campaign_runs.started_at as "startedAt"
+    from campaign_runs
+    where campaign_runs.state = 'sending'
+      and not exists (
+        -- Use the private tables because graphile_worker.jobs is a public view without payload in graphile-worker 0.16+.
+        select 1
+        from graphile_worker._private_jobs jobs
+        join graphile_worker._private_tasks tasks on tasks.id = jobs.task_id
+        where tasks.identifier = ${campaignSendJobName}
+          and jobs.payload::jsonb ->> 'runId' = campaign_runs.id
+          and jobs.attempts < jobs.max_attempts
+      )
+  `)
+  const strandedRuns = normalizeSqlResultRows<StrandedCampaignRunRow>(
+    strandedRunsResult as
+      | readonly StrandedCampaignRunRow[]
+      | { readonly rows?: readonly StrandedCampaignRunRow[] },
+  )
   const errors: ReconcileStrandedCampaignRunsError[] = []
   const runIds: string[] = []
   let reenqueued = 0
