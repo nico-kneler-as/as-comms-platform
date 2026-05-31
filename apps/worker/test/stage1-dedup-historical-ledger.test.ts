@@ -407,6 +407,43 @@ function createSilentLogger() {
   };
 }
 
+async function upsertAudienceRow(input: {
+  readonly context: Awaited<ReturnType<typeof createTestWorkerContext>>;
+  readonly canonicalEventId: string;
+  readonly contactId: string;
+  readonly participantRole: "sender" | "direct_recipient" | "cc" | "bcc";
+  readonly normalizedEmail: string;
+}): Promise<void> {
+  await input.context.repositories.canonicalEventAudience.upsert({
+    canonicalEventId: input.canonicalEventId,
+    contactId: input.contactId,
+    participantRole: input.participantRole,
+    normalizedEmail: input.normalizedEmail
+  });
+}
+
+async function loadAudienceRows(
+  context: Awaited<ReturnType<typeof createTestWorkerContext>>
+): Promise<
+  readonly {
+    readonly canonical_event_id: string;
+    readonly contact_id: string;
+    readonly participant_role: string;
+  }[]
+> {
+  const result = await context.client.query<{
+    readonly canonical_event_id: string;
+    readonly contact_id: string;
+    readonly participant_role: string;
+  }>(
+    `select canonical_event_id, contact_id, participant_role
+     from canonical_event_audience
+     order by canonical_event_id, contact_id, participant_role`
+  );
+
+  return result.rows;
+}
+
 describe("dedup-historical-ledger", () => {
   it("plans Gmail-over-Salesforce and earliest-Gmail winners with the live heuristic", () => {
     const plans = planHistoricalLedgerDedup([
@@ -523,6 +560,11 @@ describe("dedup-historical-ledger", () => {
           table: "contact_timeline_projection",
           column: "canonical_event_id",
           action: "delete_loser_projection_row"
+        },
+        {
+          table: "canonical_event_audience",
+          column: "canonical_event_id",
+          action: "repoint_audience_to_winner"
         }
       ]);
       expect(
@@ -548,6 +590,7 @@ describe("dedup-historical-ledger", () => {
         deletedTimelineCount: 6
       });
       expect(executed.repointedInboxCount).toBeGreaterThanOrEqual(4);
+      expect(executed.repointedAudienceCount).toBe(0);
       expect(
         executeWriter.lines.filter((line) =>
           line.includes("\"operation\":\"merged\"")
@@ -609,6 +652,288 @@ describe("dedup-historical-ledger", () => {
       expect(secondDryRun.plannedClusterCount).toBe(0);
       expect(secondDryRun.plannedLoserCount).toBe(0);
       expect(secondDryRunWriter.lines).toEqual([]);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("repoints loser audience rows onto the winner when there is no collision", async () => {
+    const context = await createTestWorkerContext();
+
+    try {
+      await seedContact({
+        context,
+        contactId: "contact_audience_owner",
+        salesforceContactId: "003-audience-owner",
+        email: "owner@example.org",
+        displayName: "Audience Owner"
+      });
+      await seedContact({
+        context,
+        contactId: "contact_audience_a",
+        salesforceContactId: "003-audience-a",
+        email: "a@example.org",
+        displayName: "Audience A"
+      });
+      await seedContact({
+        context,
+        contactId: "contact_audience_b",
+        salesforceContactId: "003-audience-b",
+        email: "b@example.org",
+        displayName: "Audience B"
+      });
+      await seedContact({
+        context,
+        contactId: "contact_audience_c",
+        salesforceContactId: "003-audience-c",
+        email: "c@example.org",
+        displayName: "Audience C"
+      });
+      await seedContact({
+        context,
+        contactId: "contact_audience_d",
+        salesforceContactId: "003-audience-d",
+        email: "d@example.org",
+        displayName: "Audience D"
+      });
+
+      const winner = await seedDirtyOutboundEmail({
+        context,
+        contactId: "contact_audience_owner",
+        key: "audience-winner",
+        provider: "gmail",
+        occurredAt: "2026-05-01T09:00:00.000Z",
+        receivedAt: "2026-05-01T09:00:05.000Z",
+        subject: "Audience merge",
+        body: "Same body",
+        messageKind: "one_to_one"
+      });
+      const loser = await seedDirtyOutboundEmail({
+        context,
+        contactId: "contact_audience_owner",
+        key: "audience-loser",
+        provider: "salesforce",
+        occurredAt: "2026-05-01T09:00:00.000Z",
+        receivedAt: "2026-05-01T09:00:20.000Z",
+        subject: "Audience merge",
+        body: "Same body",
+        messageKind: "auto"
+      });
+
+      await upsertAudienceRow({
+        context,
+        canonicalEventId: winner.id,
+        contactId: "contact_audience_a",
+        participantRole: "direct_recipient",
+        normalizedEmail: "a@example.org"
+      });
+      await upsertAudienceRow({
+        context,
+        canonicalEventId: winner.id,
+        contactId: "contact_audience_b",
+        participantRole: "cc",
+        normalizedEmail: "b@example.org"
+      });
+      await upsertAudienceRow({
+        context,
+        canonicalEventId: loser.id,
+        contactId: "contact_audience_c",
+        participantRole: "direct_recipient",
+        normalizedEmail: "c@example.org"
+      });
+      await upsertAudienceRow({
+        context,
+        canonicalEventId: loser.id,
+        contactId: "contact_audience_d",
+        participantRole: "cc",
+        normalizedEmail: "d@example.org"
+      });
+
+      const dryRun = await dedupHistoricalLedger({
+        db: context.db,
+        repositories: context.repositories,
+        dryRun: true,
+        logger: createSilentLogger()
+      });
+      expect(dryRun.repointedAudienceCount).toBe(0);
+      // loadAudienceRows orders by canonical_event_id ASC.
+      // `evt_audience-loser` < `evt_audience-winner` lexicographically, so
+      // loser rows come first in the result.
+      await expect(loadAudienceRows(context)).resolves.toEqual([
+        {
+          canonical_event_id: loser.id,
+          contact_id: "contact_audience_c",
+          participant_role: "direct_recipient"
+        },
+        {
+          canonical_event_id: loser.id,
+          contact_id: "contact_audience_d",
+          participant_role: "cc"
+        },
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_audience_a",
+          participant_role: "direct_recipient"
+        },
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_audience_b",
+          participant_role: "cc"
+        }
+      ]);
+
+      const executed = await dedupHistoricalLedger({
+        db: context.db,
+        repositories: context.repositories,
+        dryRun: false,
+        logger: createSilentLogger()
+      });
+
+      expect(executed.repointedAudienceCount).toBe(2);
+      expect(executed.auditLines).toContainEqual(
+        expect.objectContaining({
+          loserId: loser.id,
+          operation: "merged",
+          repointedAudienceCount: 2
+        })
+      );
+      await expect(loadAudienceRows(context)).resolves.toEqual([
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_audience_a",
+          participant_role: "direct_recipient"
+        },
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_audience_b",
+          participant_role: "cc"
+        },
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_audience_c",
+          participant_role: "direct_recipient"
+        },
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_audience_d",
+          participant_role: "cc"
+        }
+      ]);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("de-dupes colliding audience rows before repointing the loser", async () => {
+    const context = await createTestWorkerContext();
+
+    try {
+      await seedContact({
+        context,
+        contactId: "contact_collision_owner",
+        salesforceContactId: "003-collision-owner",
+        email: "owner2@example.org",
+        displayName: "Collision Owner"
+      });
+      await seedContact({
+        context,
+        contactId: "contact_collision_a",
+        salesforceContactId: "003-collision-a",
+        email: "collision-a@example.org",
+        displayName: "Collision A"
+      });
+      await seedContact({
+        context,
+        contactId: "contact_collision_b",
+        salesforceContactId: "003-collision-b",
+        email: "collision-b@example.org",
+        displayName: "Collision B"
+      });
+      await seedContact({
+        context,
+        contactId: "contact_collision_c",
+        salesforceContactId: "003-collision-c",
+        email: "collision-c@example.org",
+        displayName: "Collision C"
+      });
+
+      const winner = await seedDirtyOutboundEmail({
+        context,
+        contactId: "contact_collision_owner",
+        key: "collision-winner",
+        provider: "gmail",
+        occurredAt: "2026-05-02T10:00:00.000Z",
+        receivedAt: "2026-05-02T10:00:05.000Z",
+        subject: "Collision merge",
+        body: "Same body collision",
+        messageKind: "one_to_one"
+      });
+      const loser = await seedDirtyOutboundEmail({
+        context,
+        contactId: "contact_collision_owner",
+        key: "collision-loser",
+        provider: "salesforce",
+        occurredAt: "2026-05-02T10:00:00.000Z",
+        receivedAt: "2026-05-02T10:00:20.000Z",
+        subject: "Collision merge",
+        body: "Same body collision",
+        messageKind: "auto"
+      });
+
+      await upsertAudienceRow({
+        context,
+        canonicalEventId: winner.id,
+        contactId: "contact_collision_a",
+        participantRole: "direct_recipient",
+        normalizedEmail: "collision-a@example.org"
+      });
+      await upsertAudienceRow({
+        context,
+        canonicalEventId: winner.id,
+        contactId: "contact_collision_b",
+        participantRole: "cc",
+        normalizedEmail: "collision-b@example.org"
+      });
+      await upsertAudienceRow({
+        context,
+        canonicalEventId: loser.id,
+        contactId: "contact_collision_a",
+        participantRole: "bcc",
+        normalizedEmail: "collision-a@example.org"
+      });
+      await upsertAudienceRow({
+        context,
+        canonicalEventId: loser.id,
+        contactId: "contact_collision_c",
+        participantRole: "direct_recipient",
+        normalizedEmail: "collision-c@example.org"
+      });
+
+      const executed = await dedupHistoricalLedger({
+        db: context.db,
+        repositories: context.repositories,
+        dryRun: false,
+        logger: createSilentLogger()
+      });
+
+      expect(executed.repointedAudienceCount).toBe(1);
+      await expect(loadAudienceRows(context)).resolves.toEqual([
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_collision_a",
+          participant_role: "direct_recipient"
+        },
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_collision_b",
+          participant_role: "cc"
+        },
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_collision_c",
+          participant_role: "direct_recipient"
+        }
+      ]);
     } finally {
       await context.dispose();
     }
