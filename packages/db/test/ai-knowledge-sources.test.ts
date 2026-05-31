@@ -352,8 +352,8 @@ describe("0055_ai_knowledge_auto_sync_schedule migration", () => {
       );
       // Apply later migrations so the table schema matches the Drizzle table
       // definition (which includes connected_to_project_id from 0056,
-      // postmark_sender_status from 0057, and ai_optimized_last_checked_at
-      // from 0063).
+      // postmark_sender_status from 0057, ai_optimized_last_checked_at from
+      // 0063, and previous_aliases from 0066).
       await applySingleMigration(
         client,
         "0056_project_dimensions_connected_to.sql",
@@ -365,6 +365,10 @@ describe("0055_ai_knowledge_auto_sync_schedule migration", () => {
       await applySingleMigration(
         client,
         "0063_ai_optimized_last_checked_at.sql",
+      );
+      await applySingleMigration(
+        client,
+        "0066_project_previous_aliases.sql",
       );
 
       const db = drizzle(client) as Stage1Database;
@@ -469,7 +473,7 @@ describe("0054_ai_knowledge_source_registry migration", () => {
       // definition (which includes columns added after 0054, e.g.,
       // ai_auto_sync_schedule from 0055, connected_to_project_id from 0056,
       // postmark_sender_status from 0057, ai_optimized_last_checked_at
-      // from 0063).
+      // from 0063, and previous_aliases from 0066).
       await applySingleMigration(
         client,
         "0055_ai_knowledge_auto_sync_schedule.sql",
@@ -485,6 +489,10 @@ describe("0054_ai_knowledge_source_registry migration", () => {
       await applySingleMigration(
         client,
         "0063_ai_optimized_last_checked_at.sql",
+      );
+      await applySingleMigration(
+        client,
+        "0066_project_previous_aliases.sql",
       );
 
       const db = drizzle(client) as Stage1Database;
