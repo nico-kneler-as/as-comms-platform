@@ -49,6 +49,100 @@ interface ManualNoteDetailRecord {
   readonly authorId: string | null;
 }
 
+type Stage1TestRepositories = Awaited<
+  ReturnType<typeof createTestStage1Context>
+>["repositories"];
+
+async function seedTimelineFanoutContact(
+  repositories: Stage1TestRepositories,
+  contactId: string,
+): Promise<void> {
+  await repositories.contacts.upsert({
+    id: contactId,
+    salesforceContactId: `003-${contactId}`,
+    displayName: `Contact ${contactId}`,
+    primaryEmail: `${contactId}@example.org`,
+    primaryPhone: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+}
+
+async function seedTimelineFanoutEvent(input: {
+  readonly repositories: Stage1TestRepositories;
+  readonly eventId: string;
+  readonly anchorContactId: string;
+  readonly occurredAt: string;
+  readonly direction: "inbound" | "outbound";
+  readonly summary?: string;
+}): Promise<{
+  readonly canonicalEvent: Awaited<
+    ReturnType<Stage1TestRepositories["canonicalEvents"]["upsert"]>
+  >;
+  readonly timelineProjection: Awaited<
+    ReturnType<Stage1TestRepositories["timelineProjection"]["upsert"]>
+  >;
+}> {
+  const sourceEvidenceId = `sev:${input.eventId}`;
+  await input.repositories.sourceEvidence.append({
+    id: sourceEvidenceId,
+    provider: "gmail",
+    providerRecordType: "message",
+    providerRecordId: input.eventId,
+    receivedAt: input.occurredAt,
+    occurredAt: input.occurredAt,
+    payloadRef: `payloads/gmail/${input.eventId}.json`,
+    idempotencyKey: `gmail:${input.eventId}`,
+    checksum: `checksum:${input.eventId}`,
+  });
+
+  const canonicalEvent = await input.repositories.canonicalEvents.upsert({
+    id: input.eventId,
+    contactId: input.anchorContactId,
+    eventType: `communication.email.${input.direction}`,
+    channel: "email",
+    occurredAt: input.occurredAt,
+    contentFingerprint: null,
+    sourceEvidenceId,
+    idempotencyKey: `canonical:${input.eventId}`,
+    provenance: {
+      primaryProvider: "gmail",
+      primarySourceEvidenceId: sourceEvidenceId,
+      supportingSourceEvidenceIds: [],
+      winnerReason: "single_source",
+      sourceRecordType: "message",
+      sourceRecordId: input.eventId,
+      messageKind: "one_to_one",
+      campaignRef: null,
+      threadRef: {
+        providerThreadId: `thread:${input.eventId}`,
+        crossProviderCollapseKey: null,
+      },
+      direction: input.direction,
+      notes: null,
+    },
+    reviewState: "clear",
+  });
+
+  const timelineProjection = await input.repositories.timelineProjection.upsert({
+    id: `timeline:${input.eventId}`,
+    contactId: input.anchorContactId,
+    canonicalEventId: input.eventId,
+    occurredAt: input.occurredAt,
+    sortKey: `${input.occurredAt}::${input.eventId}`,
+    eventType: canonicalEvent.eventType,
+    summary: input.summary ?? input.eventId,
+    channel: "email",
+    primaryProvider: "gmail",
+    reviewState: "clear",
+  });
+
+  return {
+    canonicalEvent,
+    timelineProjection,
+  };
+}
+
 async function seedSharedInboxRecencyFixture(): Promise<{
   readonly repositories: Awaited<
     ReturnType<typeof createTestStage1Context>
@@ -1041,6 +1135,184 @@ describe("Stage 1 DB repositories", () => {
         isActive: true,
       }),
     ]);
+  });
+
+  it("preserves anchor-only timeline reads when no audience rows exist", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await seedTimelineFanoutContact(repositories, "contact_anchor");
+    const event = await seedTimelineFanoutEvent({
+      repositories,
+      eventId: "evt_anchor_only",
+      anchorContactId: "contact_anchor",
+      occurredAt: "2026-02-01T00:00:00.000Z",
+      direction: "inbound",
+    });
+
+    await expect(
+      repositories.timelineProjection.listByContactId("contact_anchor"),
+    ).resolves.toEqual([event.timelineProjection]);
+    await expect(
+      repositories.canonicalEvents.listByContactId("contact_anchor"),
+    ).resolves.toEqual([event.canonicalEvent]);
+    await expect(
+      repositories.timelineProjection.listByContactId("contact_missing"),
+    ).resolves.toEqual([]);
+    await expect(
+      repositories.canonicalEvents.listByContactId("contact_missing"),
+    ).resolves.toEqual([]);
+  });
+
+  it("returns audience fan-in rows for non-anchor contacts", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await seedTimelineFanoutContact(repositories, "contact_anchor");
+    await seedTimelineFanoutContact(repositories, "contact_audience");
+    const event = await seedTimelineFanoutEvent({
+      repositories,
+      eventId: "evt_audience_only",
+      anchorContactId: "contact_anchor",
+      occurredAt: "2026-02-01T00:01:00.000Z",
+      direction: "outbound",
+    });
+    await repositories.canonicalEventAudience.upsert({
+      canonicalEventId: event.canonicalEvent.id,
+      contactId: "contact_audience",
+      participantRole: "direct_recipient",
+      normalizedEmail: "contact_audience@example.org",
+    });
+
+    await expect(
+      repositories.timelineProjection.listByContactId("contact_audience"),
+    ).resolves.toEqual([event.timelineProjection]);
+    await expect(
+      repositories.canonicalEvents.listByContactId("contact_audience"),
+    ).resolves.toEqual([event.canonicalEvent]);
+  });
+
+  it("de-duplicates rows when the anchor contact is also in audience", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await seedTimelineFanoutContact(repositories, "contact_anchor");
+    const event = await seedTimelineFanoutEvent({
+      repositories,
+      eventId: "evt_anchor_and_audience",
+      anchorContactId: "contact_anchor",
+      occurredAt: "2026-02-01T00:02:00.000Z",
+      direction: "inbound",
+    });
+    await repositories.canonicalEventAudience.upsert({
+      canonicalEventId: event.canonicalEvent.id,
+      contactId: "contact_anchor",
+      participantRole: "sender",
+      normalizedEmail: "contact_anchor@example.org",
+    });
+
+    await expect(
+      repositories.timelineProjection.listByContactId("contact_anchor"),
+    ).resolves.toEqual([event.timelineProjection]);
+    await expect(
+      repositories.canonicalEvents.listByContactId("contact_anchor"),
+    ).resolves.toEqual([event.canonicalEvent]);
+  });
+
+  it("preserves timeline and ledger ordering across anchor and audience rows", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await seedTimelineFanoutContact(repositories, "contact_anchor_a");
+    await seedTimelineFanoutContact(repositories, "contact_anchor_b");
+    await seedTimelineFanoutContact(repositories, "contact_reader");
+
+    const first = await seedTimelineFanoutEvent({
+      repositories,
+      eventId: "evt_b",
+      anchorContactId: "contact_anchor_a",
+      occurredAt: "2026-02-01T00:00:00.000Z",
+      direction: "inbound",
+    });
+    const second = await seedTimelineFanoutEvent({
+      repositories,
+      eventId: "evt_a",
+      anchorContactId: "contact_anchor_b",
+      occurredAt: "2026-02-01T00:00:00.000Z",
+      direction: "outbound",
+    });
+    const third = await seedTimelineFanoutEvent({
+      repositories,
+      eventId: "evt_c",
+      anchorContactId: "contact_reader",
+      occurredAt: "2026-02-01T00:03:00.000Z",
+      direction: "outbound",
+    });
+
+    for (const canonicalEventId of [
+      first.canonicalEvent.id,
+      second.canonicalEvent.id,
+    ]) {
+      await repositories.canonicalEventAudience.upsert({
+        canonicalEventId,
+        contactId: "contact_reader",
+        participantRole: "cc",
+        normalizedEmail: "contact_reader@example.org",
+      });
+    }
+
+    await expect(
+      repositories.timelineProjection.listByContactId("contact_reader"),
+    ).resolves.toEqual([
+      second.timelineProjection,
+      first.timelineProjection,
+      third.timelineProjection,
+    ]);
+    await expect(
+      repositories.canonicalEvents.listByContactId("contact_reader"),
+    ).resolves.toEqual([
+      second.canonicalEvent,
+      first.canonicalEvent,
+      third.canonicalEvent,
+    ]);
+  });
+
+  it("does not leak unrelated anchor rows across contacts", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await seedTimelineFanoutContact(repositories, "contact_anchor");
+    await seedTimelineFanoutContact(repositories, "contact_reader");
+    await seedTimelineFanoutContact(repositories, "contact_unrelated");
+
+    const sharedEvent = await seedTimelineFanoutEvent({
+      repositories,
+      eventId: "evt_shared",
+      anchorContactId: "contact_anchor",
+      occurredAt: "2026-02-01T00:04:00.000Z",
+      direction: "inbound",
+    });
+    const unrelatedEvent = await seedTimelineFanoutEvent({
+      repositories,
+      eventId: "evt_unrelated",
+      anchorContactId: "contact_unrelated",
+      occurredAt: "2026-02-01T00:05:00.000Z",
+      direction: "outbound",
+    });
+    await repositories.canonicalEventAudience.upsert({
+      canonicalEventId: sharedEvent.canonicalEvent.id,
+      contactId: "contact_reader",
+      participantRole: "direct_recipient",
+      normalizedEmail: "contact_reader@example.org",
+    });
+
+    await expect(
+      repositories.timelineProjection.listByContactId("contact_reader"),
+    ).resolves.toEqual([sharedEvent.timelineProjection]);
+    await expect(
+      repositories.canonicalEvents.listByContactId("contact_reader"),
+    ).resolves.toEqual([sharedEvent.canonicalEvent]);
+    await expect(
+      repositories.timelineProjection.listByContactId("contact_unrelated"),
+    ).resolves.toEqual([unrelatedEvent.timelineProjection]);
+    await expect(
+      repositories.canonicalEvents.listByContactId("contact_unrelated"),
+    ).resolves.toEqual([unrelatedEvent.canonicalEvent]);
   });
 
   it("preserves operator-managed AI knowledge fields when a resync upsert passes nulls", async () => {

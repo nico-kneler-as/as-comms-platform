@@ -1801,6 +1801,108 @@ describe("Stage 1 timeline presenter", () => {
     ]);
   });
 
+  it("shows gmail fan-out events on audience participant timelines without projection-gap warnings", async () => {
+    const fanoutEvent = buildGmailOutboundEmailEvent({
+      id: "evt_gmail_fanout",
+      sourceEvidenceId: "sev_gmail_fanout",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      subject: "Shared thread update",
+      snippet: "Reply all with every participant copied.",
+      bodyPreview: "Reply all with every participant copied.",
+    });
+    const audienceTimelineRow: TimelineProjectionRow = {
+      ...fanoutEvent.timelineRow,
+      contactId: "contact_1",
+    };
+    const repositories = createRepositoryBundle({
+      canonicalEvents: [fanoutEvent.canonicalEvent],
+      sourceEvidence: [
+        buildSourceEvidence({
+          id: "sev_gmail_fanout",
+          provider: "gmail",
+          providerRecordId: "gmail-fanout",
+          providerRecordType: "gmail_message",
+        }),
+      ],
+      gmailMessageDetails: [fanoutEvent.detail],
+      salesforceCommunicationDetails: [],
+      timelineRows: [audienceTimelineRow],
+    });
+    const audienceContact = {
+      id: "contact_2",
+      salesforceContactId: "003-stage1-audience",
+      displayName: "Audience Participant",
+      primaryEmail: "audience@example.org",
+      primaryPhone: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    } as const;
+    const fanoutRepositories = defineStage1RepositoryBundle({
+      ...repositories,
+      contacts: {
+        ...repositories.contacts,
+        findById: (contactId) =>
+          Promise.resolve(
+            contactId === audienceContact.id
+              ? audienceContact
+              : repositories.contacts.findById(contactId),
+          ),
+        listByIds: (contactIds) =>
+          Promise.all(contactIds.map((contactId) => {
+            if (contactId === audienceContact.id) {
+              return Promise.resolve(audienceContact);
+            }
+
+            return repositories.contacts.findById(contactId);
+          })).then((contacts) =>
+            contacts.filter((contact) => contact !== null),
+          ),
+      },
+      canonicalEvents: {
+        ...repositories.canonicalEvents,
+        listByContactId: (contactId) =>
+          contactId === audienceContact.id
+            ? Promise.resolve([
+                {
+                  ...fanoutEvent.canonicalEvent,
+                  contactId: audienceContact.id,
+                },
+              ])
+            : repositories.canonicalEvents.listByContactId(contactId),
+      },
+      timelineProjection: {
+        ...repositories.timelineProjection,
+        listByContactId: (contactId) =>
+          contactId === audienceContact.id
+            ? Promise.resolve([audienceTimelineRow])
+            : repositories.timelineProjection.listByContactId(contactId),
+      },
+    });
+    const presenter = createStage1TimelinePresentationService(fanoutRepositories);
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    const items = await presenter.listTimelineItemsByContactId(audienceContact.id);
+    const page = await presenter.listTimelineItemsPageByContactId(
+      audienceContact.id,
+      {
+        limit: 10,
+        beforeSortKey: null,
+      },
+    );
+
+    expect(items.map((item) => item.canonicalEventId)).toEqual([
+      fanoutEvent.canonicalEvent.id,
+    ]);
+    expect(page.items.map((item) => item.canonicalEventId)).toEqual([
+      fanoutEvent.canonicalEvent.id,
+    ]);
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
+
   it("does not collapse duplicate internal notes", async () => {
     const repositories = createRepositoryBundle({
       canonicalEvents: [],
