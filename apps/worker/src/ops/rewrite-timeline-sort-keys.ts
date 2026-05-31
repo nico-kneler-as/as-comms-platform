@@ -2,6 +2,11 @@
 /**
  * rewrite-timeline-sort-keys
  *
+ * Audience note: this script only rewrites
+ * `contact_timeline_projection.sort_key`. It does not touch
+ * `canonical_event_audience`; PRD #482 reads audience timelines through the
+ * canonical event's `occurred_at`, not a stored audience sort key.
+ *
  * Usage:
  *   pnpm --filter @as-comms/worker ops:rewrite-timeline-sort-keys
  *   pnpm --filter @as-comms/worker ops:rewrite-timeline-sort-keys --limit 100

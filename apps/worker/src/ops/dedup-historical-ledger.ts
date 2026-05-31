@@ -17,7 +17,8 @@ import process from "node:process";
 import {
   asc,
   eq,
-  inArray
+  inArray,
+  sql
 } from "drizzle-orm";
 
 import {
@@ -29,6 +30,7 @@ import {
   closeDatabaseConnection,
   createStage1RepositoryBundle,
   createStage1RepositoryBundleFromConnection,
+  canonicalEventAudience,
   canonicalEventLedger,
   contactInboxProjection,
   contactTimelineProjection,
@@ -68,9 +70,15 @@ interface AuditWriter {
 }
 
 interface CanonicalEventReference {
-  readonly table: "contact_inbox_projection" | "contact_timeline_projection";
+  readonly table:
+    | "contact_inbox_projection"
+    | "contact_timeline_projection"
+    | "canonical_event_audience";
   readonly column: "last_canonical_event_id" | "canonical_event_id";
-  readonly action: "repoint_to_winner" | "delete_loser_projection_row";
+  readonly action:
+    | "repoint_to_winner"
+    | "delete_loser_projection_row"
+    | "repoint_audience_to_winner";
 }
 
 interface HistoricalOutboundEmailCandidate {
@@ -98,6 +106,7 @@ interface HistoricalDedupAuditLine {
   readonly occurredAt: string;
   readonly reason: HistoricalDedupClusterPlan["reason"];
   readonly operation: "would_merge" | "merged" | "skipped_already_merged";
+  readonly repointedAudienceCount: number;
 }
 
 export interface HistoricalLedgerDedupResult {
@@ -109,6 +118,7 @@ export interface HistoricalLedgerDedupResult {
   readonly deletedCanonicalCount: number;
   readonly deletedTimelineCount: number;
   readonly repointedInboxCount: number;
+  readonly repointedAudienceCount: number;
   readonly skippedAlreadyMergedCount: number;
   readonly auditLines: readonly HistoricalDedupAuditLine[];
 }
@@ -183,6 +193,11 @@ function knownCanonicalEventReferences(): readonly CanonicalEventReference[] {
       table: "contact_timeline_projection",
       column: "canonical_event_id",
       action: "delete_loser_projection_row"
+    },
+    {
+      table: "canonical_event_audience",
+      column: "canonical_event_id",
+      action: "repoint_audience_to_winner"
     }
   ];
 }
@@ -612,7 +627,8 @@ function buildAuditLinesForPlans(
       contactId: plan.winner.event.contactId,
       occurredAt: loser.event.occurredAt,
       reason: plan.reason,
-      operation
+      operation,
+      repointedAudienceCount: 0
     }))
   );
 }
@@ -626,6 +642,7 @@ async function applyDedupPlans(input: {
   readonly deletedCanonicalCount: number;
   readonly deletedTimelineCount: number;
   readonly repointedInboxCount: number;
+  readonly repointedAudienceCount: number;
   readonly skippedAlreadyMergedCount: number;
   readonly auditLines: readonly HistoricalDedupAuditLine[];
 }> {
@@ -633,6 +650,7 @@ async function applyDedupPlans(input: {
   let deletedCanonicalCount = 0;
   let deletedTimelineCount = 0;
   let repointedInboxCount = 0;
+  let repointedAudienceCount = 0;
   let skippedAlreadyMergedCount = 0;
 
   for (const batch of chunkPlansByLoserCount(input.plans, executeBatchLoserLimit)) {
@@ -654,7 +672,8 @@ async function applyDedupPlans(input: {
               contactId: plan.winner.event.contactId,
               occurredAt: loser.event.occurredAt,
               reason: plan.reason,
-              operation: "skipped_already_merged"
+              operation: "skipped_already_merged",
+              repointedAudienceCount: 0
             };
             auditLines.push(auditLine);
             input.auditWriter.writeLine(JSON.stringify(auditLine));
@@ -685,7 +704,8 @@ async function applyDedupPlans(input: {
             contactId: winner.contactId,
             occurredAt: loser.event.occurredAt,
             reason: plan.reason,
-            operation: "skipped_already_merged"
+            operation: "skipped_already_merged",
+            repointedAudienceCount: 0
           };
           auditLines.push(auditLine);
           input.auditWriter.writeLine(JSON.stringify(auditLine));
@@ -723,6 +743,31 @@ async function applyDedupPlans(input: {
           });
         deletedTimelineCount += deletedTimelineRows.length;
 
+        // Drop losing audience rows that would collide on the winner's
+        // (canonical_event_id, contact_id) key before repointing the rest.
+        await tx.execute(sql`
+          delete from ${canonicalEventAudience}
+          where ${canonicalEventAudience.canonicalEventId} in ${presentLoserIds}
+            and ${canonicalEventAudience.contactId} in (
+              select ${canonicalEventAudience.contactId}
+              from ${canonicalEventAudience}
+              where ${canonicalEventAudience.canonicalEventId} = ${mergedWinner.id}
+            )
+        `);
+        const repointedAudienceRows = await tx
+          .update(canonicalEventAudience)
+          .set({
+            canonicalEventId: mergedWinner.id,
+            updatedAt: new Date()
+          })
+          .where(inArray(canonicalEventAudience.canonicalEventId, presentLoserIds))
+          .returning({
+            canonicalEventId: canonicalEventAudience.canonicalEventId,
+            contactId: canonicalEventAudience.contactId
+          });
+        const repointedAudienceRowsCount = repointedAudienceRows.length;
+        repointedAudienceCount += repointedAudienceRowsCount;
+
         const deletedCanonicalRows = await tx
           .delete(canonicalEventLedger)
           .where(inArray(canonicalEventLedger.id, presentLoserIds))
@@ -740,7 +785,8 @@ async function applyDedupPlans(input: {
             contactId: mergedWinner.contactId,
             occurredAt: loser.occurredAt,
             reason: plan.reason,
-            operation: "merged"
+            operation: "merged",
+            repointedAudienceCount: repointedAudienceRowsCount
           };
           auditLines.push(auditLine);
           input.auditWriter.writeLine(JSON.stringify(auditLine));
@@ -753,6 +799,7 @@ async function applyDedupPlans(input: {
     deletedCanonicalCount,
     deletedTimelineCount,
     repointedInboxCount,
+    repointedAudienceCount,
     skippedAlreadyMergedCount,
     auditLines
   };
@@ -809,6 +856,7 @@ export async function dedupHistoricalLedger(input: {
       deletedCanonicalCount: 0,
       deletedTimelineCount: 0,
       repointedInboxCount: 0,
+      repointedAudienceCount: 0,
       skippedAlreadyMergedCount: 0,
       auditLines
     };
@@ -833,6 +881,7 @@ export async function dedupHistoricalLedger(input: {
     deletedCanonicalCount: applied.deletedCanonicalCount,
     deletedTimelineCount: applied.deletedTimelineCount,
     repointedInboxCount: applied.repointedInboxCount,
+    repointedAudienceCount: applied.repointedAudienceCount,
     skippedAlreadyMergedCount: applied.skippedAlreadyMergedCount,
     auditLines: applied.auditLines
   };

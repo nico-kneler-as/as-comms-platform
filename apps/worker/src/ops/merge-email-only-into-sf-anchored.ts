@@ -1,4 +1,9 @@
 #!/usr/bin/env tsx
+/**
+ * Audience note: `mergeEmailOnlyContactIntoAnchored` already repoints and
+ * de-dupes `canonical_event_audience` rows as part of PR #488 for PRD #482, so
+ * this ops wrapper inherits the audience-aware behavior without extra SQL here.
+ */
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
