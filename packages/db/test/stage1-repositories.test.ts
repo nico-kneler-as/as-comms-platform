@@ -2047,4 +2047,189 @@ describe("Stage 1 DB repositories", () => {
       "contact:in-sub-c",
     ]);
   });
+
+  it("repoints canonical_event_audience rows when merging an email-only contact into an anchored one", async () => {
+    const { client, repositories } = await createTestStage1Context();
+
+    // Two contacts: email-only (to be merged away) and anchored (the survivor).
+    await repositories.contacts.upsert({
+      id: "contact:email-only",
+      salesforceContactId: null,
+      displayName: "Dean Schie (email-only)",
+      primaryEmail: "deanschie@example.org",
+      primaryPhone: null,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    });
+    await repositories.contacts.upsert({
+      id: "contact:anchored",
+      salesforceContactId: "0033600000ROVpSAAX",
+      displayName: "Dean Schie",
+      primaryEmail: "deanschie@example.org",
+      primaryPhone: null,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    });
+
+    // Two canonical events, one anchored on each contact.
+    await repositories.sourceEvidence.append({
+      id: "sev:merge-a",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-merge-a",
+      receivedAt: "2026-05-01T12:00:00.000Z",
+      occurredAt: "2026-05-01T12:00:00.000Z",
+      payloadRef: "payloads/gmail/gmail-merge-a.json",
+      idempotencyKey: "gmail:message:gmail-merge-a",
+      checksum: "checksum-merge-a",
+    });
+    await repositories.canonicalEvents.upsert({
+      id: "evt:merge-a",
+      contactId: "contact:email-only",
+      eventType: "communication.email.inbound",
+      channel: "email",
+      occurredAt: "2026-05-01T12:00:00.000Z",
+      contentFingerprint: null,
+      sourceEvidenceId: "sev:merge-a",
+      idempotencyKey: "canonical:gmail-merge-a",
+      provenance: {
+        primaryProvider: "gmail",
+        primarySourceEvidenceId: "sev:merge-a",
+        supportingSourceEvidenceIds: [],
+        winnerReason: "single_source",
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-merge-a",
+        messageKind: "one_to_one",
+        campaignRef: null,
+        threadRef: null,
+        direction: "inbound",
+        notes: null,
+      },
+      reviewState: "clear",
+    });
+    await repositories.sourceEvidence.append({
+      id: "sev:merge-b",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-merge-b",
+      receivedAt: "2026-05-02T12:00:00.000Z",
+      occurredAt: "2026-05-02T12:00:00.000Z",
+      payloadRef: "payloads/gmail/gmail-merge-b.json",
+      idempotencyKey: "gmail:message:gmail-merge-b",
+      checksum: "checksum-merge-b",
+    });
+    await repositories.canonicalEvents.upsert({
+      id: "evt:merge-b",
+      contactId: "contact:anchored",
+      eventType: "communication.email.inbound",
+      channel: "email",
+      occurredAt: "2026-05-02T12:00:00.000Z",
+      contentFingerprint: null,
+      sourceEvidenceId: "sev:merge-b",
+      idempotencyKey: "canonical:gmail-merge-b",
+      provenance: {
+        primaryProvider: "gmail",
+        primarySourceEvidenceId: "sev:merge-b",
+        supportingSourceEvidenceIds: [],
+        winnerReason: "single_source",
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-merge-b",
+        messageKind: "one_to_one",
+        campaignRef: null,
+        threadRef: null,
+        direction: "inbound",
+        notes: null,
+      },
+      reviewState: "clear",
+    });
+
+    // Audience setup:
+    //   evt:merge-a — email-only is a recipient (will be repointed).
+    //   evt:merge-b — BOTH email-only and anchored are recipients (collision:
+    //                 email-only side must drop, anchored side must survive).
+    await repositories.canonicalEventAudience.upsert({
+      canonicalEventId: "evt:merge-a",
+      contactId: "contact:email-only",
+      participantRole: "direct_recipient",
+      normalizedEmail: "deanschie@example.org",
+    });
+    await repositories.canonicalEventAudience.upsert({
+      canonicalEventId: "evt:merge-b",
+      contactId: "contact:email-only",
+      participantRole: "cc",
+      normalizedEmail: "deanschie@example.org",
+    });
+    await repositories.canonicalEventAudience.upsert({
+      canonicalEventId: "evt:merge-b",
+      contactId: "contact:anchored",
+      participantRole: "direct_recipient",
+      normalizedEmail: "deanschie@example.org",
+    });
+
+    // The merge method is exposed at runtime but not on the public
+    // Stage1RepositoryBundle interface (production callers reach it via
+    // the EmailOnlyContactMergeCapableRepositories extension type in
+    // packages/domain/src/persistence.ts).
+    const mergeCapable = repositories as typeof repositories & {
+      mergeEmailOnlyContactIntoAnchored(input: {
+        readonly emailOnlyContactId: string;
+        readonly anchoredContactId: string;
+      }): Promise<{
+        readonly canonicalEventsRepointed: number;
+        readonly timelineRowsRepointed: number;
+        readonly notesRepointed: number;
+        readonly routingRowsRepointed: number;
+        readonly identityCasesRepointed: number;
+        readonly audienceRowsRepointed: number;
+        readonly contactDeleted: boolean;
+      }>;
+    };
+    const result = await mergeCapable.mergeEmailOnlyContactIntoAnchored({
+      emailOnlyContactId: "contact:email-only",
+      anchoredContactId: "contact:anchored",
+    });
+
+    // Only one audience row had no collision and got repointed in place.
+    expect(result.audienceRowsRepointed).toBe(1);
+    expect(result.contactDeleted).toBe(true);
+
+    // Inspect surviving audience rows directly via raw SQL — we want to see
+    // both branches of the merge (repointed survivor + dedup of the collision).
+    const surviving = await client.query<{
+      readonly canonical_event_id: string;
+      readonly contact_id: string;
+      readonly participant_role: string;
+    }>(
+      `select canonical_event_id, contact_id, participant_role
+       from canonical_event_audience
+       order by canonical_event_id, contact_id`,
+    );
+
+    // No rows should reference the email-only contact (cascade safety net).
+    expect(
+      surviving.rows.every((row) => row.contact_id !== "contact:email-only"),
+    ).toBe(true);
+
+    // evt:merge-a should now point at the anchored contact (repointed).
+    expect(surviving.rows).toContainEqual(
+      expect.objectContaining({
+        canonical_event_id: "evt:merge-a",
+        contact_id: "contact:anchored",
+        participant_role: "direct_recipient",
+      }),
+    );
+
+    // evt:merge-b's anchored row survives, with the original 'direct_recipient'
+    // role (not overwritten by the 'cc' role that came from the email-only side).
+    expect(surviving.rows).toContainEqual(
+      expect.objectContaining({
+        canonical_event_id: "evt:merge-b",
+        contact_id: "contact:anchored",
+        participant_role: "direct_recipient",
+      }),
+    );
+
+    // Exactly two rows total — one repointed, one survivor of the collision.
+    expect(surviving.rows.length).toBe(2);
+  });
 });

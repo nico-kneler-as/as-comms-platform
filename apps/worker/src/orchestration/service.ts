@@ -525,12 +525,64 @@ function calculateFreshnessMetrics(
   };
 }
 
+// Postgres error fields surfaced by postgres-js. Captured into the failure
+// message so Stage1TaskOutcomeError prints the underlying ERROR cause (code,
+// severity, detail, constraint) alongside the original message — otherwise
+// only error.message survives, which often contains the SQL but not the
+// reason it failed (statement_timeout, FK violation, etc.).
+const POSTGRES_ERROR_DETAIL_KEYS = [
+  "severity",
+  "detail",
+  "hint",
+  "constraint_name",
+  "table_name",
+  "column_name",
+  "schema_name",
+  "where",
+  "position",
+  "routine"
+] as const;
+
+function formatPostgresErrorContext(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+
+  const record = error as Record<string, unknown>;
+  const code = typeof record.code === "string" ? record.code : null;
+
+  if (code === null) {
+    return null;
+  }
+
+  const parts: string[] = [`code=${code}`];
+
+  for (const key of POSTGRES_ERROR_DETAIL_KEYS) {
+    const value = record[key];
+
+    if (typeof value === "string" && value.length > 0) {
+      parts.push(`${key}=${value}`);
+    } else if (typeof value === "number") {
+      parts.push(`${key}=${value.toString()}`);
+    }
+  }
+
+  return `[pg ${parts.join(" ")}]`;
+}
+
+function formatJobFailureMessage(error: unknown): string {
+  const baseMessage = error instanceof Error ? error.message : String(error);
+  const pgContext = formatPostgresErrorContext(error);
+
+  return pgContext === null ? baseMessage : `${baseMessage} ${pgContext}`;
+}
+
 function buildJobFailure(
   error: unknown,
   attempt: number,
   maxAttempts: number
 ): Stage1JobFailure {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = formatJobFailureMessage(error);
 
   if (error instanceof Stage1NonRetryableJobError || error instanceof ZodError) {
     return {
