@@ -107,6 +107,9 @@ async function seedInboundEmail(
     readonly occurredAt: string;
     readonly idSuffix: string;
     readonly subject: string | null;
+    readonly fromHeader?: string | null;
+    readonly toHeader?: string | null;
+    readonly ccHeader?: string | null;
   },
 ) {
   const sourceEvidenceId = `sev-${input.idSuffix}`;
@@ -152,9 +155,9 @@ async function seedInboundEmail(
     gmailThreadId: `thread-${input.idSuffix}`,
     rfc822MessageId: `<msg-${input.idSuffix}@gmail.test>`,
     direction: "inbound",
-    fromHeader: "sender@example.org",
-    toHeader: "alias@example.org",
-    ccHeader: null,
+    fromHeader: input.fromHeader ?? "sender@example.org",
+    toHeader: input.toHeader ?? "alias@example.org",
+    ccHeader: input.ccHeader ?? null,
     fromEmails: [],
     toEmails: [],
     ccEmails: [],
@@ -168,6 +171,23 @@ async function seedInboundEmail(
     projectInboxAlias: null,
   });
   return { sourceEvidenceId, canonicalEventId };
+}
+
+async function seedAudienceParticipant(
+  context: Awaited<ReturnType<typeof seedFixture>>,
+  input: {
+    readonly canonicalEventId: string;
+    readonly contactId: string;
+    readonly participantRole: "sender" | "direct_recipient" | "cc" | "bcc";
+    readonly normalizedEmail: string;
+  },
+) {
+  await context.repositories.canonicalEventAudience.upsert({
+    canonicalEventId: input.canonicalEventId,
+    contactId: input.contactId,
+    participantRole: input.participantRole,
+    normalizedEmail: input.normalizedEmail,
+  });
 }
 
 async function seedOutboundEmail(
@@ -926,6 +946,333 @@ describe("contact repository searchInboxUnified", () => {
       expect(result.contacts[0]?.snippet).toBe(
         "Reaching out to see if anyone might be available soon.",
       );
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("preserves direct contact-attribute matches for display name and primary email", async () => {
+    const context = await seedFixture();
+
+    try {
+      await context.repositories.contacts.upsert({
+        id: "contact:display-name-match",
+        salesforceContactId: null,
+        displayName: "Display Name Dana",
+        primaryEmail: "display-name@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await context.repositories.contacts.upsert({
+        id: "contact:primary-email-match",
+        salesforceContactId: null,
+        displayName: "Mailbox Max",
+        primaryEmail: "unique-mailbox-match@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+
+      const displayNameResult =
+        await context.repositories.contacts.searchInboxUnified({
+          query: "Dana",
+          limit: 25,
+        });
+      const primaryEmailResult =
+        await context.repositories.contacts.searchInboxUnified({
+          query: "unique-mailbox-match",
+          limit: 25,
+        });
+
+      expect(displayNameResult.contacts.map((row) => row.contact.id)).toEqual([
+        "contact:display-name-match",
+      ]);
+      expect(primaryEmailResult.contacts.map((row) => row.contact.id)).toEqual([
+        "contact:primary-email-match",
+      ]);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("matches a contact by display name seen in a Gmail from_header", async () => {
+    const context = await seedFixture();
+
+    try {
+      const contactId = "contact:header-from";
+      const occurredAt = "2026-04-20T16:00:00.000Z";
+      await context.repositories.contacts.upsert({
+        id: contactId,
+        salesforceContactId: null,
+        displayName: "Alias Placeholder From",
+        primaryEmail: "or-rural-coordinator@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      const { canonicalEventId } = await seedInboundEmail(context, {
+        contactId,
+        occurredAt,
+        idSuffix: "header-from",
+        subject: "Rural update",
+        fromHeader: '"Scotty Stalp" <or-rural-coordinator@example.org>',
+      });
+      await seedInboxProjection(context, {
+        contactId,
+        snippet: "Latest snippet without the search term.",
+        occurredAt,
+        canonicalEventId,
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "Scotty",
+        limit: 25,
+      });
+
+      expect(result.contacts.map((row) => row.contact.id)).toEqual([contactId]);
+      expect(result.totals).toEqual({ volunteers: 0, contacts: 1 });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("matches an audience-only contact by display name seen in a Gmail to_header", async () => {
+    const context = await seedFixture();
+
+    try {
+      const anchorId = "contact:header-to-anchor";
+      const audienceId = "contact:header-to-audience";
+      const occurredAt = "2026-04-20T16:00:00.000Z";
+      await context.repositories.contacts.upsert({
+        id: anchorId,
+        salesforceContactId: null,
+        displayName: "Anchor Avery",
+        primaryEmail: "anchor@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await context.repositories.contacts.upsert({
+        id: audienceId,
+        salesforceContactId: null,
+        displayName: "Alias Placeholder To",
+        primaryEmail: "alias-recipient@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      const { canonicalEventId } = await seedInboundEmail(context, {
+        contactId: anchorId,
+        occurredAt,
+        idSuffix: "header-to",
+        subject: "Recipient match",
+        toHeader: '"Scotty Stalp" <alias-recipient@example.org>',
+      });
+      await seedAudienceParticipant(context, {
+        canonicalEventId,
+        contactId: audienceId,
+        participantRole: "direct_recipient",
+        normalizedEmail: "alias-recipient@example.org",
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "Scotty",
+        limit: 25,
+      });
+
+      expect(result.contacts.map((row) => row.contact.id)).toContain(audienceId);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("matches an audience-only volunteer by display name seen in a Gmail cc_header", async () => {
+    const context = await seedFixture();
+
+    try {
+      const anchorId = "contact:header-cc-anchor";
+      const audienceId = "contact:header-cc-volunteer";
+      const occurredAt = "2026-04-20T16:00:00.000Z";
+      await context.repositories.contacts.upsert({
+        id: anchorId,
+        salesforceContactId: null,
+        displayName: "Anchor Casey",
+        primaryEmail: "cc-anchor@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await context.repositories.contacts.upsert({
+        id: audienceId,
+        salesforceContactId: "003-header-cc",
+        displayName: "Alias Placeholder Cc",
+        primaryEmail: "volunteer-cc@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await context.repositories.contactMemberships.upsert({
+        id: "membership-header-cc",
+        contactId: audienceId,
+        projectId: "project-pollinators",
+        expeditionId: null,
+        salesforceMembershipId: "sf-header-cc",
+        role: "volunteer",
+        status: "active",
+        source: "salesforce",
+        createdAt: BASE_TIMESTAMP,
+      });
+      const { canonicalEventId } = await seedInboundEmail(context, {
+        contactId: anchorId,
+        occurredAt,
+        idSuffix: "header-cc",
+        subject: "CC match",
+        ccHeader: '"Scotty Stalp" <volunteer-cc@example.org>',
+      });
+      await seedAudienceParticipant(context, {
+        canonicalEventId,
+        contactId: audienceId,
+        participantRole: "cc",
+        normalizedEmail: "volunteer-cc@example.org",
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "Scotty",
+        limit: 25,
+      });
+
+      expect(result.volunteers.map((row) => row.contact.id)).toEqual([
+        audienceId,
+      ]);
+      expect(result.contacts.map((row) => row.contact.id)).toContain(anchorId);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("keeps section assignment based on membership even when the match comes only from headers", async () => {
+    const context = await seedFixture();
+
+    try {
+      const volunteerId = "contact:header-volunteer";
+      const contactId = "contact:header-plain";
+      const occurredAt = "2026-04-20T16:00:00.000Z";
+      await context.repositories.contacts.upsert({
+        id: volunteerId,
+        salesforceContactId: "003-header-vol",
+        displayName: "Alias Placeholder Volunteer",
+        primaryEmail: "header-volunteer@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await context.repositories.contacts.upsert({
+        id: contactId,
+        salesforceContactId: null,
+        displayName: "Alias Placeholder Contact",
+        primaryEmail: "header-plain@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await context.repositories.contactMemberships.upsert({
+        id: "membership-header-volunteer",
+        contactId: volunteerId,
+        projectId: "project-pollinators",
+        expeditionId: null,
+        salesforceMembershipId: "sf-header-volunteer",
+        role: "volunteer",
+        status: "active",
+        source: "salesforce",
+        createdAt: BASE_TIMESTAMP,
+      });
+      const volunteerEvent = await seedInboundEmail(context, {
+        contactId: volunteerId,
+        occurredAt,
+        idSuffix: "header-volunteer",
+        subject: "Volunteer header match",
+        fromHeader: '"Scotty Stalp" <header-volunteer@example.org>',
+      });
+      const contactEvent = await seedInboundEmail(context, {
+        contactId,
+        occurredAt: "2026-04-20T16:01:00.000Z",
+        idSuffix: "header-plain",
+        subject: "Plain header match",
+        fromHeader: '"Scotty Stalp" <header-plain@example.org>',
+      });
+      await seedInboxProjection(context, {
+        contactId: volunteerId,
+        snippet: "Volunteer header snippet.",
+        occurredAt,
+        canonicalEventId: volunteerEvent.canonicalEventId,
+      });
+      await seedInboxProjection(context, {
+        contactId,
+        snippet: "Plain header snippet.",
+        occurredAt: "2026-04-20T16:01:00.000Z",
+        canonicalEventId: contactEvent.canonicalEventId,
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "Scotty",
+        limit: 25,
+      });
+
+      expect(result.volunteers.map((row) => row.contact.id)).toEqual([
+        volunteerId,
+      ]);
+      expect(result.contacts.map((row) => row.contact.id)).toEqual([contactId]);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("escapes ilike metacharacters for header-name matching", async () => {
+    const context = await seedFixture();
+
+    try {
+      await context.repositories.contacts.upsert({
+        id: "contact:header-literal",
+        salesforceContactId: null,
+        displayName: "Alias Placeholder Literal",
+        primaryEmail: "header-literal@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await context.repositories.contacts.upsert({
+        id: "contact:header-wildcard",
+        salesforceContactId: null,
+        displayName: "Alias Placeholder Wildcard",
+        primaryEmail: "header-wildcard@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await seedInboundEmail(context, {
+        contactId: "contact:header-literal",
+        occurredAt: "2026-04-20T16:00:00.000Z",
+        idSuffix: "header-literal",
+        subject: "Literal header match",
+        fromHeader: '"Scotty_100% Real" <header-literal@example.org>',
+      });
+      await seedInboundEmail(context, {
+        contactId: "contact:header-wildcard",
+        occurredAt: "2026-04-20T16:01:00.000Z",
+        idSuffix: "header-wildcard",
+        subject: "Wildcard decoy",
+        fromHeader: '"ScottyX100Y Real" <header-wildcard@example.org>',
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "Scotty_100%",
+        limit: 25,
+      });
+
+      expect(result.contacts.map((row) => row.contact.id)).toEqual([
+        "contact:header-literal",
+      ]);
     } finally {
       await context.dispose();
     }
