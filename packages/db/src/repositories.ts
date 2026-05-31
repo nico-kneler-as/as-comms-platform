@@ -1982,13 +1982,27 @@ function createStage1RepositoriesInternal(
         const rows = await db
           .select()
           .from(canonicalEventLedger)
-          .where(eq(canonicalEventLedger.contactId, contactId))
+          .leftJoin(
+            canonicalEventAudience,
+            and(
+              eq(canonicalEventAudience.canonicalEventId, canonicalEventLedger.id),
+              eq(canonicalEventAudience.contactId, contactId),
+            ),
+          )
+          .where(
+            or(
+              eq(canonicalEventLedger.contactId, contactId),
+              eq(canonicalEventAudience.contactId, contactId),
+            ),
+          )
           .orderBy(
             asc(canonicalEventLedger.occurredAt),
-            asc(canonicalEventLedger.createdAt),
+            asc(canonicalEventLedger.id),
           );
 
-        return rows.map(mapCanonicalEventRow);
+        return rows.map((row) =>
+          mapCanonicalEventRow(row.canonical_event_ledger),
+        );
       },
 
       async listByContactIds(contactIds) {
@@ -4797,10 +4811,27 @@ function createStage1RepositoriesInternal(
         const rows = await db
           .select()
           .from(contactTimelineProjection)
-          .where(eq(contactTimelineProjection.contactId, contactId))
+          .leftJoin(
+            canonicalEventAudience,
+            and(
+              eq(
+                canonicalEventAudience.canonicalEventId,
+                contactTimelineProjection.canonicalEventId,
+              ),
+              eq(canonicalEventAudience.contactId, contactId),
+            ),
+          )
+          .where(
+            or(
+              eq(contactTimelineProjection.contactId, contactId),
+              eq(canonicalEventAudience.contactId, contactId),
+            ),
+          )
           .orderBy(asc(contactTimelineProjection.sortKey));
 
-        return rows.map(mapTimelineProjectionRow);
+        return rows.map((row) =>
+          mapTimelineProjectionRow(row.contact_timeline_projection),
+        );
       },
 
       async listRecentByContactId(input) {
