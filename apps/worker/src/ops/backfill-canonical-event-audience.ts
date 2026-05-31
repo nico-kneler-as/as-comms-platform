@@ -19,6 +19,7 @@ import {
   createStage1PersistenceService,
 } from "@as-comms/domain";
 import type { GmailMessageDetailRecord } from "@as-comms/contracts";
+import { parseHeaderEmailList } from "@as-comms/integrations";
 import { and, asc, eq, gte, isNull, lte } from "drizzle-orm";
 
 import {
@@ -114,6 +115,31 @@ function hasHeaderEmails(detail: {
     detail.ccEmails.length > 0 ||
     detail.bccEmails.length > 0
   );
+}
+
+/**
+ * Historical gmail_message_details rows predate migration 0065, so their
+ * fromEmails / toEmails / ccEmails / bccEmails columns default to []. Fall back
+ * to re-parsing the raw RFC-822 fromHeader / toHeader / ccHeader strings that
+ * have always been persisted, so the backfill can populate audience rows for
+ * the full historical archive (PRD #482's locked "backfill everything in one
+ * pass" decision). bccHeader is not stored on gmail_message_details, so Bcc
+ * stays empty for historical events.
+ */
+function ensureHeaderEmailsParsed(
+  detail: GmailMessageDetailRecord,
+): GmailMessageDetailRecord {
+  if (hasHeaderEmails(detail)) {
+    return detail;
+  }
+
+  return {
+    ...detail,
+    fromEmails: parseHeaderEmailList(detail.fromHeader ?? undefined),
+    toEmails: parseHeaderEmailList(detail.toHeader ?? undefined),
+    ccEmails: parseHeaderEmailList(detail.ccHeader ?? undefined),
+    bccEmails: [],
+  };
 }
 
 async function loadCandidateRows(input: {
@@ -265,7 +291,9 @@ export async function backfillCanonicalEventAudience(input: {
       continue;
     }
 
-    if (!hasHeaderEmails(gmailMessageDetail)) {
+    const effectiveDetail = ensureHeaderEmailsParsed(gmailMessageDetail);
+
+    if (!hasHeaderEmails(effectiveDetail)) {
       skipped += 1;
       byReason.no_header_emails += 1;
       logEntry(logger, {
@@ -280,7 +308,7 @@ export async function backfillCanonicalEventAudience(input: {
     const audienceCount = await applyAudienceBackfillForEvent({
       db: input.db,
       canonicalEvent,
-      gmailMessageDetail,
+      gmailMessageDetail: effectiveDetail,
       execute: input.execute,
     });
 
@@ -357,11 +385,31 @@ async function main(): Promise<void> {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   void main().catch((error: unknown) => {
-    console.error(
-      error instanceof Error
-        ? error.message
-        : "Canonical event audience backfill failed.",
-    );
+    if (error instanceof Error) {
+      console.error("Canonical event audience backfill failed.");
+      console.error("message:", error.message);
+      const errAny = error as unknown as Record<string, unknown>;
+      for (const key of [
+        "name",
+        "code",
+        "severity",
+        "detail",
+        "hint",
+        "where",
+        "table",
+        "column",
+        "constraint",
+      ]) {
+        if (errAny[key] !== undefined) {
+          console.error(`${key}:`, errAny[key]);
+        }
+      }
+      if (error.cause !== undefined) {
+        console.error("cause:", error.cause);
+      }
+    } else {
+      console.error("Canonical event audience backfill failed:", error);
+    }
     process.exitCode = 1;
   });
 }
