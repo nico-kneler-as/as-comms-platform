@@ -4447,6 +4447,147 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("computes email bubble side from the all-time project alias set and leaves SMS unset", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:active-alias",
+      projectName: "Active Alias Project",
+      projectAlias: "pnwbio@adventurescientists.org",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:inactive-alias",
+      projectName: "Inactive Alias Project",
+      projectAlias: "past-orcas@adventurescientists.org",
+      source: "salesforce",
+      isActive: false,
+    });
+
+    const cases = [
+      {
+        contactId: "contact:active-alias-side",
+        displayName: "Active Alias Side",
+        primaryEmail: "active-alias-side@example.org",
+        direction: "inbound" as const,
+        fromHeader: "PNW Bio <PNWBio@AdventureScientists.org>",
+        expected: "right" as const,
+      },
+      {
+        contactId: "contact:inactive-alias-side",
+        displayName: "Inactive Alias Side",
+        primaryEmail: "inactive-alias-side@example.org",
+        direction: "outbound" as const,
+        fromHeader: "Past Orcas <past-orcas@adventurescientists.org>",
+        expected: "right" as const,
+      },
+      {
+        contactId: "contact:staff-personal-side",
+        displayName: "Staff Personal Side",
+        primaryEmail: "staff-personal-side@example.org",
+        direction: "inbound" as const,
+        fromHeader: "Samantha <samantha@adventurescientists.org>",
+        expected: "left" as const,
+      },
+      {
+        contactId: "contact:external-side",
+        displayName: "External Side",
+        primaryEmail: "external-side@example.org",
+        direction: "inbound" as const,
+        fromHeader: "Volunteer <volunteer@example.org>",
+        expected: "left" as const,
+      },
+      {
+        contactId: "contact:missing-side",
+        displayName: "Missing Side",
+        primaryEmail: null,
+        direction: "inbound" as const,
+        fromHeader: null,
+        expected: "left" as const,
+      },
+    ] as const;
+
+    for (const entry of cases) {
+      await seedInboxContact(runtime.context, {
+        contactId: entry.contactId,
+        salesforceContactId: null,
+        displayName: entry.displayName,
+        primaryEmail: entry.primaryEmail,
+        primaryPhone: null,
+      });
+      const latest = await seedInboxEmailEvent(runtime.context, {
+        id: `${entry.contactId}-latest`,
+        contactId: entry.contactId,
+        occurredAt: "2026-05-01T12:00:00.000Z",
+        direction: entry.direction,
+        subject: "Bubble side",
+        snippet: "Bubble side body.",
+        bodyTextPreview: "Bubble side body.",
+        fromHeader: entry.fromHeader,
+      });
+      await seedInboxProjection(runtime.context, {
+        contactId: entry.contactId,
+        bucket: entry.direction === "inbound" ? "New" : "Opened",
+        needsFollowUp: false,
+        hasUnresolved: false,
+        lastInboundAt:
+          entry.direction === "inbound" ? "2026-05-01T12:00:00.000Z" : null,
+        lastOutboundAt:
+          entry.direction === "outbound" ? "2026-05-01T12:00:00.000Z" : null,
+        lastActivityAt: "2026-05-01T12:00:00.000Z",
+        snippet: "Bubble side body.",
+        lastCanonicalEventId: latest.canonicalEventId,
+        lastEventType:
+          entry.direction === "inbound"
+            ? "communication.email.inbound"
+            : "communication.email.outbound",
+      });
+    }
+
+    for (const entry of cases) {
+      const detail = await getInboxDetail(entry.contactId);
+      expect(detail?.timeline.at(-1)).toMatchObject({
+        sideOfBubble: entry.expected,
+      });
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:sms-side",
+      salesforceContactId: null,
+      displayName: "SMS Side",
+      primaryEmail: null,
+      primaryPhone: "+15550000010",
+    });
+    await seedInboxSmsEvent(runtime.context, {
+      id: "sms-side",
+      contactId: "contact:sms-side",
+      occurredAt: "2026-05-01T13:00:00.000Z",
+      direction: "outbound",
+      summary: "SMS body.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:sms-side",
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: "2026-05-01T13:00:00.000Z",
+      lastActivityAt: "2026-05-01T13:00:00.000Z",
+      snippet: "SMS body.",
+      lastCanonicalEventId: "event:sms-side",
+      lastEventType: "communication.sms.outbound",
+    });
+
+    const smsDetail = await getInboxDetail("contact:sms-side");
+    expect(smsDetail?.timeline.at(-1)).toMatchObject({
+      kind: "outbound-sms",
+      sideOfBubble: undefined,
+    });
+  });
+
   it("preserves Stage 1 timeline families instead of flattening them into generic system events", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");

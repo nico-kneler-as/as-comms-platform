@@ -751,6 +751,40 @@ describe("InboxTimeline", () => {
     expect(markup).toContain("Reply");
   });
 
+  it("uses sideOfBubble for email alignment while leaving the underlying kind unchanged", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [
+          {
+            ...baseEntry,
+            id: "timeline:staff-personal-left",
+            kind: "outbound-email" as const,
+            actorLabel: "Samantha",
+            subject: "Needs attention",
+            fromHeader: "Samantha <samantha@adventurescientists.org>",
+            toHeader: "Volunteer <volunteer@example.org>",
+            sideOfBubble: "left" as const,
+          },
+          {
+            ...baseEntry,
+            id: "timeline:project-alias-right",
+            kind: "inbound-email" as const,
+            actorLabel: "PNW Project",
+            subject: "Project alias reply",
+            fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
+            toHeader: "Volunteer <volunteer@example.org>",
+            sideOfBubble: "right" as const,
+          },
+        ],
+        volunteerFirstName: "Volunteer",
+        currentOperatorUserId: "user:operator",
+      }),
+    );
+
+    expect(markup).toContain("justify-start");
+    expect(markup).toContain("justify-end");
+  });
+
   it("renders sanitized rich html bodies for email timeline entries", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
@@ -879,6 +913,7 @@ describe("InboxTimeline", () => {
             actorLabel: "Your Operator",
             fromHeader: "PNW Project <pnwbio@adventurescientists.org>",
             toHeader: "Shaina Dotson <shaina.dotson@gmail.com>",
+            sideOfBubble: "right" as const,
           },
         ],
         volunteerFirstName: "Shaina",

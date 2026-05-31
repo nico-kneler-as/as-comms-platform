@@ -565,6 +565,7 @@ export function mapProjectDimensionRow(
     projectId: row.projectId,
     projectName: row.projectName,
     projectAlias: row.projectAlias,
+    previousAliases: row.previousAliases,
     connectedToProjectId: row.connectedToProjectId,
     source: row.source,
     isActive: row.isActive,

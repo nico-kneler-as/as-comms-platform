@@ -291,6 +291,19 @@ function TimelineEntry({
         );
       }
 
+      if (entry.kind === "inbound-email" || entry.kind === "outbound-email") {
+        const direction = entry.sideOfBubble === "right" ? "outbound" : "inbound";
+
+        return (
+          <MessageBubble
+            entry={entry}
+            direction={direction}
+            {...(onForward === undefined ? {} : { onForward })}
+            {...(onReply === undefined ? {} : { onReply })}
+          />
+        );
+      }
+
       return (
         <MessageBubble
           entry={entry}
@@ -306,6 +319,21 @@ function TimelineEntry({
             entry={entry}
             direction="outbound"
             isRetrying={retryingEntryId === entry.id}
+            {...(onReply === undefined ? {} : { onReply })}
+            {...(onRetryPending === undefined ? {} : { onRetryPending })}
+          />
+        );
+      }
+
+      if (entry.kind === "inbound-email" || entry.kind === "outbound-email") {
+        const direction = entry.sideOfBubble === "right" ? "outbound" : "inbound";
+
+        return (
+          <MessageBubble
+            entry={entry}
+            direction={direction}
+            isRetrying={retryingEntryId === entry.id}
+            {...(onForward === undefined ? {} : { onForward })}
             {...(onReply === undefined ? {} : { onReply })}
             {...(onRetryPending === undefined ? {} : { onRetryPending })}
           />

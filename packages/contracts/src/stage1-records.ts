@@ -153,6 +153,10 @@ export const projectDimensionSchema = z.object({
   projectId: idSchema,
   projectName: z.string().min(1),
   projectAlias: nullableStringSchema.optional(),
+  // Historical project_alias values, appended by setProjectAlias on
+  // rename so the email bubble-side renderer (D-049) keeps messages
+  // from prior aliases on the right side.
+  previousAliases: z.array(z.string()).optional(),
   // Pointer to the host project this row rolls up into (NULL = host or
   // standalone). See migration 0056. The platform supports two Salesforce
   // projects sharing one inbox alias / AI knowledge by marking one as the
