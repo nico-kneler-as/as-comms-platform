@@ -756,17 +756,10 @@ describe("dedup-historical-ledger", () => {
         logger: createSilentLogger()
       });
       expect(dryRun.repointedAudienceCount).toBe(0);
+      // loadAudienceRows orders by canonical_event_id ASC.
+      // `evt_audience-loser` < `evt_audience-winner` lexicographically, so
+      // loser rows come first in the result.
       await expect(loadAudienceRows(context)).resolves.toEqual([
-        {
-          canonical_event_id: winner.id,
-          contact_id: "contact_audience_a",
-          participant_role: "direct_recipient"
-        },
-        {
-          canonical_event_id: winner.id,
-          contact_id: "contact_audience_b",
-          participant_role: "cc"
-        },
         {
           canonical_event_id: loser.id,
           contact_id: "contact_audience_c",
@@ -775,6 +768,16 @@ describe("dedup-historical-ledger", () => {
         {
           canonical_event_id: loser.id,
           contact_id: "contact_audience_d",
+          participant_role: "cc"
+        },
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_audience_a",
+          participant_role: "direct_recipient"
+        },
+        {
+          canonical_event_id: winner.id,
+          contact_id: "contact_audience_b",
           participant_role: "cc"
         }
       ]);
