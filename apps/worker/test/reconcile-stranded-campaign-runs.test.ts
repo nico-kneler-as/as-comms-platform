@@ -260,6 +260,58 @@ describe("reconcile stranded campaign runs", () => {
     }
   })
 
+  it("iterates rows when db.execute returns a postgres-js Array (no .rows wrapper)", async () => {
+    // postgres-js returns query results as an Array directly, while PGlite
+    // wraps them in { rows: [...] }. The Drizzle type permits both, so the
+    // op needs to normalize the shape before iterating. Regression test for
+    // the production `TypeError: strandedRuns is not iterable` failure.
+    const context = await createTestWorkerContext()
+    const scheduled: string[] = []
+
+    try {
+      await seedProject(context)
+      const runId = await seedSendingRun(context, {
+        runId: "run-array-shape",
+      })
+
+      const arrayShapeRow = {
+        runId,
+        startedAt: new Date("2026-05-15T13:00:00.000Z"),
+      }
+      const fakeDb = {
+        execute: () =>
+          Promise.resolve(
+            [arrayShapeRow] as unknown as ReturnType<
+              typeof context.db.execute
+            >,
+          ),
+      } as unknown as typeof context.db
+
+      const report = await reconcileStrandedCampaignRuns({
+        db: fakeDb,
+        repositories: context.repositories,
+        scheduleRecovery: (candidateRunId) => {
+          scheduled.push(candidateRunId)
+          return Promise.resolve()
+        },
+        now: () => new Date("2026-05-15T14:00:00.000Z"),
+        logger: {
+          log: () => undefined,
+        },
+      })
+
+      expect(report).toMatchObject({
+        scanned: 1,
+        reenqueued: 1,
+        agedOut: 0,
+        runIds: [runId],
+      })
+      expect(scheduled).toEqual([runId])
+    } finally {
+      await context.dispose()
+    }
+  })
+
   it("does not re-enqueue sending runs that still have a live campaign-send job", async () => {
     const context = await createTestWorkerContext()
     const scheduled: string[] = []
