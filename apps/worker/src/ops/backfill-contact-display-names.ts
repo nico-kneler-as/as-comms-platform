@@ -267,8 +267,8 @@ async function loadHeaderMatchesForContact(input: {
         on gmd.source_evidence_id = cel.source_evidence_id
       where sel.provider = 'gmail'
         and cel.contact_id = ${input.contactId}
-        and cel.occurred_at >= ${new Date(input.since)}
-        and cel.occurred_at <= ${new Date(input.until)}
+        and cel.occurred_at >= ${input.since}
+        and cel.occurred_at <= ${input.until}
         and (
           lower(coalesce(gmd.from_header, '')) like ${input.emailPattern}
           or lower(coalesce(gmd.to_header, '')) like ${input.emailPattern}
@@ -291,8 +291,8 @@ async function loadHeaderMatchesForContact(input: {
         on gmd.source_evidence_id = cel.source_evidence_id
       where sel.provider = 'gmail'
         and cea.contact_id = ${input.contactId}
-        and cel.occurred_at >= ${new Date(input.since)}
-        and cel.occurred_at <= ${new Date(input.until)}
+        and cel.occurred_at >= ${input.since}
+        and cel.occurred_at <= ${input.until}
         and (
           lower(coalesce(gmd.from_header, '')) like ${input.emailPattern}
           or lower(coalesce(gmd.to_header, '')) like ${input.emailPattern}
@@ -525,7 +525,31 @@ async function main(): Promise<void> {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   void main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    if (error instanceof Error) {
+      console.error("Contact display-name backfill failed.");
+      console.error("message:", error.message);
+      const errAny = error as unknown as Record<string, unknown>;
+      for (const key of [
+        "name",
+        "code",
+        "severity",
+        "detail",
+        "hint",
+        "where",
+        "table",
+        "column",
+        "constraint",
+      ]) {
+        if (errAny[key] !== undefined) {
+          console.error(`${key}:`, errAny[key]);
+        }
+      }
+      if (error.cause !== undefined) {
+        console.error("cause:", error.cause);
+      }
+    } else {
+      console.error("Contact display-name backfill failed:", error);
+    }
     process.exitCode = 1;
   });
 }
