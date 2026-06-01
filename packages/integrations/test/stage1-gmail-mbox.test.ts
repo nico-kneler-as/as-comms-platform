@@ -4,6 +4,7 @@ import {
   buildGmailMessageRecord,
   importGmailMboxRecords,
   mapGmailRecord,
+  parseHeaderDisplayNameForEmail,
 } from "../src/index.js";
 
 const mboxText = `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
@@ -17,6 +18,104 @@ Hello from an exported mailbox.
 `;
 
 describe("Stage 1 Gmail .mbox import", () => {
+  describe("parseHeaderDisplayNameForEmail", () => {
+    it("extracts a quoted display name for the matching email", () => {
+      expect(
+        parseHeaderDisplayNameForEmail(
+          '"Scotty Stalp" <or-rural-coordinator@example.org>',
+          "or-rural-coordinator@example.org",
+        ),
+      ).toBe("Scotty Stalp");
+    });
+
+    it("extracts an unquoted display name for the matching email", () => {
+      expect(
+        parseHeaderDisplayNameForEmail(
+          "Scotty Stalp <or-rural-coordinator@example.org>",
+          "or-rural-coordinator@example.org",
+        ),
+      ).toBe("Scotty Stalp");
+    });
+
+    it("returns null for bare-email entries", () => {
+      expect(
+        parseHeaderDisplayNameForEmail(
+          "or-rural-coordinator@example.org",
+          "or-rural-coordinator@example.org",
+        ),
+      ).toBeNull();
+    });
+
+    it("returns null when the display name equals the email local part", () => {
+      expect(
+        parseHeaderDisplayNameForEmail(
+          '"or-rural-coordinator" <or-rural-coordinator@example.org>',
+          "or-rural-coordinator@example.org",
+        ),
+      ).toBeNull();
+    });
+
+    it("returns null when the display name equals the email address", () => {
+      expect(
+        parseHeaderDisplayNameForEmail(
+          '"or-rural-coordinator@example.org" <or-rural-coordinator@example.org>',
+          "or-rural-coordinator@example.org",
+        ),
+      ).toBeNull();
+    });
+
+    it("finds the matching entry in a multi-entry header", () => {
+      expect(
+        parseHeaderDisplayNameForEmail(
+          '"Bob" <bob@x.com>, "Alice" <alice@y.org>',
+          "alice@y.org",
+        ),
+      ).toBe("Alice");
+    });
+
+    it("decodes RFC-2047 encoded display names", () => {
+      expect(
+        parseHeaderDisplayNameForEmail(
+          "=?UTF-8?Q?Scotty_Stalp?= <or-rural-coordinator@example.org>",
+          "or-rural-coordinator@example.org",
+        ),
+      ).toBe("Scotty_Stalp");
+    });
+
+    it("returns null for null and empty headers", () => {
+      expect(
+        parseHeaderDisplayNameForEmail(
+          null,
+          "or-rural-coordinator@example.org",
+        ),
+      ).toBeNull();
+      expect(
+        parseHeaderDisplayNameForEmail(
+          "   ",
+          "or-rural-coordinator@example.org",
+        ),
+      ).toBeNull();
+    });
+
+    it("returns null when the target email is missing", () => {
+      expect(
+        parseHeaderDisplayNameForEmail(
+          '"Scotty Stalp" <or-rural-coordinator@example.org>',
+          "another@example.org",
+        ),
+      ).toBeNull();
+    });
+
+    it("tolerates surrounding whitespace", () => {
+      expect(
+        parseHeaderDisplayNameForEmail(
+          '  "Scotty Stalp" <or-rural-coordinator@example.org>  ',
+          "or-rural-coordinator@example.org",
+        ),
+      ).toBe("Scotty Stalp");
+    });
+  });
+
   it("parses .mbox messages into the Gmail provider-close record shape", async () => {
     const records = await importGmailMboxRecords({
       mboxText,

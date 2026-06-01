@@ -107,6 +107,115 @@ export function parseHeaderEmailList(value: string | undefined): string[] {
   );
 }
 
+function splitHeaderEntries(value: string): string[] {
+  return value
+    .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/gu)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function decodeHeaderDisplayName(value: string): string {
+  try {
+    return libmime.decodeWords(value).trim();
+  } catch {
+    return value.trim();
+  }
+}
+
+function normalizeObservedDisplayName(
+  value: string,
+  email: string,
+): string | null {
+  const trimmed = value.trim().replace(/^"(.*)"$/u, "$1").trim();
+
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const decoded = decodeHeaderDisplayName(trimmed);
+
+  if (decoded.length === 0) {
+    return null;
+  }
+
+  const normalizedDisplayName = decoded.trim().toLowerCase();
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedLocalPart = normalizedEmail.split("@", 1)[0] ?? normalizedEmail;
+
+  if (
+    normalizedDisplayName === normalizedEmail ||
+    normalizedDisplayName === normalizedLocalPart
+  ) {
+    return null;
+  }
+
+  return decoded;
+}
+
+function parseHeaderEntry(value: string): { email: string | null; displayName: string | null } {
+  const bracketMatch = /^(.*?)(?:<([^>]+)>)$/u.exec(value);
+
+  if (bracketMatch !== null) {
+    const [, rawDisplayName = "", rawEmail = ""] = bracketMatch;
+    return {
+      email: normalizeEmail(rawEmail),
+      displayName: rawDisplayName.trim().length > 0 ? rawDisplayName.trim() : null,
+    };
+  }
+
+  const emailMatch = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu.exec(value);
+
+  if (emailMatch === null) {
+    return {
+      email: null,
+      displayName: null,
+    };
+  }
+
+  const rawEmail = emailMatch[0];
+  const displayName = value.replace(rawEmail, "").trim();
+
+  return {
+    email: normalizeEmail(rawEmail),
+    displayName: displayName.length > 0 ? displayName : null,
+  };
+}
+
+/**
+ * Extract the display name portion of an RFC-822 header entry that matches
+ * `targetEmail`.
+ */
+export function parseHeaderDisplayNameForEmail(
+  header: string | null | undefined,
+  targetEmail: string,
+): string | null {
+  const normalizedTargetEmail = normalizeEmail(targetEmail);
+
+  if (
+    typeof header !== "string" ||
+    header.trim().length === 0 ||
+    normalizedTargetEmail === null
+  ) {
+    return null;
+  }
+
+  for (const entry of splitHeaderEntries(header)) {
+    const parsed = parseHeaderEntry(entry);
+
+    if (parsed.email !== normalizedTargetEmail) {
+      continue;
+    }
+
+    if (parsed.displayName === null) {
+      return null;
+    }
+
+    return normalizeObservedDisplayName(parsed.displayName, normalizedTargetEmail);
+  }
+
+  return null;
+}
+
 function resolveProjectInboxAlias(input: {
   readonly capturedMailbox: string;
   readonly fromEmails: readonly string[];
