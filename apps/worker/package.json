@@ -30,6 +30,7 @@
     "ops:recover-gmail-spam-window": "tsx src/ops/recover-gmail-spam-window.ts",
     "ops:recompute-attachment-inline": "tsx src/ops/recompute-attachment-inline.ts",
     "ops:backfill-canonical-event-audience": "tsx src/ops/backfill-canonical-event-audience.ts",
+    "ops:backfill-contact-display-names": "tsx src/ops/backfill-contact-display-names.ts",
     "ops:recover-orphan-gmail-details": "tsx src/ops/recover-orphan-gmail-details.ts",
     "ops:recover-orphan-task-details": "tsx src/ops/recover-orphan-task-details.ts",
     "ops:rewrite-timeline-sort-keys": "tsx src/ops/rewrite-timeline-sort-keys.ts",
