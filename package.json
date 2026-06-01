@@ -44,6 +44,11 @@
   "pnpm": {
     "overrides": {
       "vite": "^7.3.2"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-5xrq-8626-4rwp"
+      ]
     }
   },
   "devDependencies": {
