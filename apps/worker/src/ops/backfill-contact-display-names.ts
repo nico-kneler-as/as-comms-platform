@@ -227,7 +227,13 @@ async function loadCandidateRows(input: {
     limit ${input.limit + 1}
   `);
 
-  const rows = (result as { readonly rows: readonly CandidateContactRow[] }).rows.map((row) => ({
+  // postgres-js (Railway prod) returns `db.execute(sql\`…\`)` as an Array
+  // directly; PGlite (tests) wraps the rows under `{ rows }`. Normalize
+  // before reading or `.map` throws "Cannot read properties of undefined".
+  const rawRows = Array.isArray(result)
+    ? (result as readonly CandidateContactRow[])
+    : ((result as { readonly rows?: readonly CandidateContactRow[] }).rows ?? []);
+  const rows = rawRows.map((row) => ({
     id: row.id,
     primaryEmail: row.primaryEmail,
     displayName:
@@ -296,7 +302,11 @@ async function loadHeaderMatchesForContact(input: {
     order by "occurredAt" desc
   `);
 
-  return (result as { readonly rows: readonly HeaderMatchRow[] }).rows.map((row) => ({
+  // Same Array-vs-{rows} normalization as loadCandidateContacts above.
+  const rawRows = Array.isArray(result)
+    ? (result as readonly HeaderMatchRow[])
+    : ((result as { readonly rows?: readonly HeaderMatchRow[] }).rows ?? []);
+  return rawRows.map((row) => ({
     occurredAt: row.occurredAt,
     fromHeader: row.fromHeader,
     toHeader: row.toHeader,
