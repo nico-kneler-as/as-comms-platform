@@ -57,7 +57,7 @@
 - Inbox is one mixed contact list sorted by most recent inbound message.
 - Timeline is one chronological history per person.
 - Timeline read merges the 1-to-1 anchor projection with the audience junction (`canonical_event_audience`) so every participant of a Gmail thread sees every message they were on. The anchor projection row stays 1-to-1 with the canonical event; fan-out is a read-time union.
-- Email timeline bubbles render right-side iff the sender email is either (a) the current `project_dimensions.project_alias` of any row (active or inactive) or (b) preserved in `project_dimensions.previous_aliases` (rename-history array). All other senders render left-side. This is presentation-only: canonical event `direction`, bucket state, queue semantics, and SMS alignment stay unchanged.
+- Email timeline bubbles render right-side iff the sender email is one of our project inbox aliases — any value in `project_aliases.alias`. All other senders render left-side. This is presentation-only: canonical event `direction`, bucket state, queue semantics, and SMS alignment stay unchanged.
 - `New` and `Opened` remain projection-driven bucket states, but they are row states and filters rather than the primary Inbox partition.
 - Unread is derived from bucket state.
 - `needsFollowUp` is a separate explicit follow-up flag, not a replacement for bucket state.

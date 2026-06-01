@@ -3120,32 +3120,34 @@ function createStage1RepositoriesInternal(
       },
 
       async listAllProjectAliases() {
-        // Returns every project_alias the platform considers "ours" for the
-        // email bubble-side renderer (D-049): the current project_alias of
-        // every project_dimensions row (active or inactive) UNION every
-        // value tracked in project_dimensions.previous_aliases (the
-        // rename-preservation array populated by setProjectAlias).
+        // Returns every project inbox email alias the platform considers
+        // "ours" for the email bubble-side renderer (D-049). The source of
+        // truth is the `project_aliases.alias` column — the admin-managed
+        // table of project inbox email addresses (e.g.
+        // `pnwbio@adventurescientists.org`). NOT `project_dimensions.project_alias`,
+        // which is a separate "short internal project name" / display label
+        // (e.g. `PNW Biodiversity`) and does NOT contain email addresses.
         //
-        // Aliases are lowercased + trimmed + deduplicated. Empty/null
-        // values are filtered out.
+        // The initial D-049 cut queried the wrong column and consequently
+        // every right-side bubble rendered as left-side because no real
+        // email matched a project-name label. Switched to project_aliases.
+        //
+        // Aliases are lowercased + trimmed + deduplicated. Empty values
+        // are filtered out for safety.
+        //
+        // Note: rename-preservation across alias changes (the original
+        // `previous_aliases` array column on project_dimensions, also
+        // shipped under the wrong-table bug) is parked as a future
+        // follow-up — would belong on `project_aliases`, either as a
+        // sibling history table or a soft-delete column.
         const result = await db.execute(sql<{
           readonly alias: string;
         }>`
-          select alias
-          from (
-            select lower(trim(${projectDimensions.projectAlias})) as alias
-            from ${projectDimensions}
-            where coalesce(trim(${projectDimensions.projectAlias}), '') <> ''
-
-            union
-
-            select lower(trim(prev_alias)) as alias
-            from ${projectDimensions},
-                 unnest(${projectDimensions.previousAliases}) as prev_alias
-            where coalesce(trim(prev_alias), '') <> ''
-          ) all_aliases
-          group by alias
-          order by alias
+          select lower(trim(${projectAliases.alias})) as alias
+          from ${projectAliases}
+          where coalesce(trim(${projectAliases.alias}), '') <> ''
+          group by lower(trim(${projectAliases.alias}))
+          order by lower(trim(${projectAliases.alias}))
         `);
 
         return normalizeSqlResultRows<{ readonly alias: string }>(
