@@ -265,6 +265,7 @@ export interface Stage1NormalizationService {
     readonly emailAddress: string;
     readonly createdAt?: string;
     readonly source?: ContactIdentityRecord["source"];
+    readonly observedDisplayName?: string | null;
   }): Promise<ContactRecord>;
   upsertNormalizedContactGraph(
     input: NormalizedContactGraphUpsertInput,
@@ -328,6 +329,13 @@ export async function applyCanonicalEventAudience(
 
   for (const participant of audience.participants) {
     const normalizedEmail = normalizeEmailAddress(participant.email);
+    const observedDisplayName = parseHeaderDisplayNameForEmail(
+      resolveHeaderValueForParticipantRole(
+        input.gmailMessageDetail,
+        participant.role,
+      ),
+      participant.email,
+    );
 
     if (normalizedEmail === null) {
       continue;
@@ -346,25 +354,13 @@ export async function applyCanonicalEventAudience(
 
     let contact: ContactRecord;
 
-    if (candidateContactIds.length === 0) {
+    if (candidateContactIds.length <= 1) {
       contact = await deps.service.ensureCanonicalContactForEmail({
         emailAddress: normalizedEmail,
         createdAt: input.openedAt,
         source: "gmail",
+        observedDisplayName,
       });
-    } else if (candidateContactIds.length === 1) {
-      const candidateContactId = requireValue(
-        candidateContactIds[0],
-        "Expected a single audience contact candidate.",
-      );
-      const matchedContact =
-        await deps.persistence.repositories.contacts.findById(candidateContactId);
-
-      if (matchedContact === null) {
-        throw new Error("Audience email matched a missing contact.");
-      }
-
-      contact = matchedContact;
     } else {
       const contacts = await deps.persistence.repositories.contacts.listByIds(
         candidateContactIds,
@@ -649,6 +645,7 @@ function buildSyntheticContactGraphInput(input: {
   readonly normalizedPhone: string | null;
   readonly createdAt: string;
   readonly source: ContactIdentityRecord["source"];
+  readonly observedDisplayName?: string | null;
 }): NormalizedContactGraphUpsertInput {
   const contactId = buildSyntheticContactId({
     normalizedEmail: input.normalizedEmail,
@@ -690,7 +687,10 @@ function buildSyntheticContactGraphInput(input: {
       id: contactId,
       salesforceContactId: null,
       displayName:
-        input.normalizedEmail ?? input.normalizedPhone ?? "(unknown)",
+        normalizeContactDisplayName(input.observedDisplayName) ??
+        input.normalizedEmail ??
+        input.normalizedPhone ??
+        "(unknown)",
       primaryEmail: input.normalizedEmail,
       primaryPhone: input.normalizedPhone,
       createdAt: input.createdAt,
@@ -704,6 +704,151 @@ function buildSyntheticContactGraphInput(input: {
 function normalizeEmailAddress(value: string): string | null {
   const normalized = value.trim().toLowerCase();
   return normalized.length === 0 ? null : normalized;
+}
+
+function splitHeaderEntries(value: string): string[] {
+  return value
+    .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/gu)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function parseHeaderEntry(value: string): {
+  readonly email: string | null;
+  readonly displayName: string | null;
+} {
+  const bracketMatch = /^(.*?)(?:<([^>]+)>)$/u.exec(value);
+
+  if (bracketMatch !== null) {
+    const [, rawDisplayName = "", rawEmail = ""] = bracketMatch;
+    return {
+      email: normalizeEmailAddress(rawEmail),
+      displayName: rawDisplayName.trim().length > 0 ? rawDisplayName.trim() : null,
+    };
+  }
+
+  const emailMatch = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu.exec(value);
+
+  if (emailMatch === null) {
+    return {
+      email: null,
+      displayName: null,
+    };
+  }
+
+  const rawEmail = emailMatch[0];
+  const displayName = value.replace(rawEmail, "").trim();
+
+  return {
+    email: normalizeEmailAddress(rawEmail),
+    displayName: displayName.length > 0 ? displayName : null,
+  };
+}
+
+function parseHeaderDisplayNameForEmail(
+  header: string | null | undefined,
+  targetEmail: string,
+): string | null {
+  const normalizedTargetEmail = normalizeEmailAddress(targetEmail);
+
+  if (
+    typeof header !== "string" ||
+    header.trim().length === 0 ||
+    normalizedTargetEmail === null
+  ) {
+    return null;
+  }
+
+  for (const entry of splitHeaderEntries(header)) {
+    const parsed = parseHeaderEntry(entry);
+
+    if (parsed.email !== normalizedTargetEmail || parsed.displayName === null) {
+      continue;
+    }
+
+    const normalizedDisplayName = parsed.displayName
+      .trim()
+      .replace(/^"(.*)"$/u, "$1")
+      .trim();
+
+    if (normalizedDisplayName.length === 0) {
+      return null;
+    }
+
+    const normalizedLocalPart =
+      normalizedTargetEmail.split("@", 1)[0] ?? normalizedTargetEmail;
+    const loweredDisplayName = normalizedDisplayName.toLowerCase();
+
+    if (
+      loweredDisplayName === normalizedTargetEmail ||
+      loweredDisplayName === normalizedLocalPart
+    ) {
+      return null;
+    }
+
+    return normalizedDisplayName;
+  }
+
+  return null;
+}
+
+function normalizeContactDisplayName(
+  value: string | null | undefined,
+): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function shouldReplaceObservedDisplayName(input: {
+  readonly contact: ContactRecord;
+  readonly observedDisplayName: string | null | undefined;
+}): boolean {
+  const normalizedObservedDisplayName = normalizeContactDisplayName(
+    input.observedDisplayName,
+  );
+
+  if (normalizedObservedDisplayName === null) {
+    return false;
+  }
+
+  const existingDisplayName = normalizeContactDisplayName(
+    input.contact.displayName,
+  );
+  const normalizedPrimaryEmail = normalizeEmailAddress(input.contact.primaryEmail ?? "");
+
+  if (existingDisplayName === null) {
+    return true;
+  }
+
+  if (normalizedPrimaryEmail === null) {
+    return false;
+  }
+
+  return existingDisplayName.toLowerCase() === normalizedPrimaryEmail;
+}
+
+function resolveHeaderValueForParticipantRole(
+  detail: {
+    readonly fromHeader?: string | null | undefined;
+    readonly toHeader?: string | null | undefined;
+    readonly ccHeader?: string | null | undefined;
+  },
+  role: CanonicalEventParticipantRole,
+): string | null {
+  switch (role) {
+    case "sender":
+      return detail.fromHeader ?? null;
+    case "direct_recipient":
+      return detail.toHeader ?? null;
+    case "cc":
+      return detail.ccHeader ?? null;
+    case "bcc":
+      return null;
+  }
 }
 
 function compareNullableIsoDesc(left: string | null, right: string | null): number {
@@ -2555,6 +2700,9 @@ export function createStage1NormalizationService(
 
     async ensureCanonicalContactForEmail(input) {
       const normalizedEmail = normalizeEmailAddress(input.emailAddress);
+      const observedDisplayName = normalizeContactDisplayName(
+        input.observedDisplayName,
+      );
 
       if (normalizedEmail === null) {
         throw new Error("Cannot ensure a canonical contact without an email.");
@@ -2595,6 +2743,19 @@ export function createStage1NormalizationService(
           });
         }
 
+        if (
+          shouldReplaceObservedDisplayName({
+            contact: existingContact,
+            observedDisplayName,
+          })
+        ) {
+          return persistence.repositories.contacts.upsert({
+            ...existingContact,
+            displayName: observedDisplayName ?? existingContact.displayName,
+            updatedAt: input.createdAt ?? new Date().toISOString(),
+          });
+        }
+
         return existingContact;
       }
 
@@ -2605,6 +2766,7 @@ export function createStage1NormalizationService(
             normalizedPhone: null,
             createdAt: input.createdAt ?? new Date().toISOString(),
             source: input.source ?? "manual",
+            observedDisplayName,
           }),
         )
       ).contact;

@@ -1906,6 +1906,134 @@ describe("identity resolution hardening", () => {
     });
   });
 
+  it("sets displayName from the observed header value when creating a new contact", async () => {
+    const context = buildContext({
+      events: [],
+      contacts: [],
+      contactIdentities: [],
+    });
+
+    const created = await context.normalization.ensureCanonicalContactForEmail({
+      emailAddress: "or-rural-coordinator@example.org",
+      createdAt: "2026-05-31T12:00:00.000Z",
+      source: "gmail",
+      observedDisplayName: "Scotty Stalp",
+    });
+
+    expect(created).toMatchObject({
+      primaryEmail: "or-rural-coordinator@example.org",
+      displayName: "Scotty Stalp",
+    });
+    expect(context.getContact(created.id)).toMatchObject({
+      displayName: "Scotty Stalp",
+    });
+  });
+
+  it("falls back to the email address when creating a new contact without an observed display name", async () => {
+    const context = buildContext({
+      events: [],
+      contacts: [],
+      contactIdentities: [],
+    });
+
+    const created = await context.normalization.ensureCanonicalContactForEmail({
+      emailAddress: "or-rural-coordinator@example.org",
+      createdAt: "2026-05-31T12:00:00.000Z",
+      source: "gmail",
+    });
+
+    expect(created).toMatchObject({
+      primaryEmail: "or-rural-coordinator@example.org",
+      displayName: "or-rural-coordinator@example.org",
+    });
+  });
+
+  it("updates an existing contact when displayName is effectively unset", async () => {
+    const legacyContact: ContactRecord = {
+      ...contact,
+      displayName: null as unknown as string,
+      primaryEmail: "or-rural-coordinator@example.org",
+    };
+    const legacyIdentity: ContactIdentityRecord = {
+      ...emailIdentity,
+      contactId: legacyContact.id,
+      normalizedValue: "or-rural-coordinator@example.org",
+    };
+    const context = buildContext({
+      events: [],
+      contacts: [legacyContact],
+      contactIdentities: [legacyIdentity],
+    });
+
+    const resolved = await context.normalization.ensureCanonicalContactForEmail({
+      emailAddress: "or-rural-coordinator@example.org",
+      createdAt: "2026-05-31T12:00:00.000Z",
+      source: "gmail",
+      observedDisplayName: "Scotty Stalp",
+    });
+
+    expect(resolved.displayName).toBe("Scotty Stalp");
+    expect(context.getContact(legacyContact.id)?.displayName).toBe("Scotty Stalp");
+  });
+
+  it("updates an existing contact when displayName equals the primary email", async () => {
+    const emailNamedContact: ContactRecord = {
+      ...contact,
+      displayName: "or-rural-coordinator@example.org",
+      primaryEmail: "or-rural-coordinator@example.org",
+    };
+    const emailNamedIdentity: ContactIdentityRecord = {
+      ...emailIdentity,
+      contactId: emailNamedContact.id,
+      normalizedValue: "or-rural-coordinator@example.org",
+    };
+    const context = buildContext({
+      events: [],
+      contacts: [emailNamedContact],
+      contactIdentities: [emailNamedIdentity],
+    });
+
+    const resolved = await context.normalization.ensureCanonicalContactForEmail({
+      emailAddress: "or-rural-coordinator@example.org",
+      createdAt: "2026-05-31T12:00:00.000Z",
+      source: "gmail",
+      observedDisplayName: "Scotty Stalp",
+    });
+
+    expect(resolved.displayName).toBe("Scotty Stalp");
+    expect(context.getContact(emailNamedContact.id)?.displayName).toBe(
+      "Scotty Stalp",
+    );
+  });
+
+  it("does not overwrite an existing real displayName with an observed header value", async () => {
+    const context = buildContext({
+      events: [],
+      contacts: [
+        {
+          ...contact,
+          displayName: "Scott Stalp",
+          primaryEmail: "or-rural-coordinator@example.org",
+        },
+      ],
+      contactIdentities: [
+        {
+          ...emailIdentity,
+          normalizedValue: "or-rural-coordinator@example.org",
+        },
+      ],
+    });
+
+    const resolved = await context.normalization.ensureCanonicalContactForEmail({
+      emailAddress: "or-rural-coordinator@example.org",
+      createdAt: "2026-05-31T12:00:00.000Z",
+      source: "gmail",
+      observedDisplayName: "Scotty Stalp",
+    });
+
+    expect(resolved.displayName).toBe("Scott Stalp");
+  });
+
   it("throws CanonicalContactAmbiguityError when the email maps to multiple contacts", async () => {
     const duplicateContact: ContactRecord = {
       ...contact,
