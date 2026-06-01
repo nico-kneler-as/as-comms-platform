@@ -4452,19 +4452,44 @@ describe("real inbox selectors", () => {
       throw new Error("Expected inbox test runtime");
     }
 
+    // Source of truth for bubble-side matching is `project_aliases.alias`
+    // (admin-managed inbox emails), NOT `project_dimensions.project_alias`
+    // (which is a project label like "PNW Biodiversity"). Seed both: the
+    // project rows satisfy the FK from `project_aliases.project_id`, and the
+    // alias rows are what `listAllProjectAliases()` reads.
     await runtime.context.repositories.projectDimensions.upsert({
       projectId: "project:active-alias",
       projectName: "Active Alias Project",
-      projectAlias: "pnwbio@adventurescientists.org",
+      projectAlias: "Active Alias Project",
       source: "salesforce",
       isActive: true,
     });
     await runtime.context.repositories.projectDimensions.upsert({
       projectId: "project:inactive-alias",
       projectName: "Inactive Alias Project",
-      projectAlias: "past-orcas@adventurescientists.org",
+      projectAlias: "Inactive Alias Project",
       source: "salesforce",
       isActive: false,
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:active-bubble",
+      alias: "pnwbio@adventurescientists.org",
+      signature: "",
+      projectId: "project:active-alias",
+      createdAt: new Date("2026-04-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-01T00:00:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
+    });
+    await runtime.context.settings.aliases.create({
+      id: "alias:inactive-bubble",
+      alias: "past-orcas@adventurescientists.org",
+      signature: "",
+      projectId: "project:inactive-alias",
+      createdAt: new Date("2026-04-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-01T00:00:00.000Z"),
+      createdBy: null,
+      updatedBy: null,
     });
 
     const cases = [
