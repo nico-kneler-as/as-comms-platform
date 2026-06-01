@@ -65,21 +65,27 @@ describe("Stage 1 Gmail .mbox import", () => {
     });
 
     it("finds the matching entry in a multi-entry header", () => {
+      // Display names must differ from the local part of the email, or the
+      // resolver intentionally treats them as no real display name (the
+      // "alice@…" → "alice" suppression). Use full names to exercise the
+      // entry-matching logic without tripping that suppression.
       expect(
         parseHeaderDisplayNameForEmail(
-          '"Bob" <bob@x.com>, "Alice" <alice@y.org>',
+          '"Bob Smith" <bob@x.com>, "Alice Johnson" <alice@y.org>',
           "alice@y.org",
         ),
-      ).toBe("Alice");
+      ).toBe("Alice Johnson");
     });
 
     it("decodes RFC-2047 encoded display names", () => {
+      // Per RFC-2047 Q-encoding, `_` represents a space in the encoded
+      // text; `Scotty_Stalp` decodes to `Scotty Stalp`.
       expect(
         parseHeaderDisplayNameForEmail(
           "=?UTF-8?Q?Scotty_Stalp?= <or-rural-coordinator@example.org>",
           "or-rural-coordinator@example.org",
         ),
-      ).toBe("Scotty_Stalp");
+      ).toBe("Scotty Stalp");
     });
 
     it("returns null for null and empty headers", () => {
