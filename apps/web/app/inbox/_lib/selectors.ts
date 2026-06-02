@@ -230,6 +230,14 @@ interface InboxDetailCacheData {
     string,
     ReadonlySet<string>
   >;
+  /**
+   * Captured project-inbox alias per timeline canonical event, sourced
+   * from `gmail_message_details.project_inbox_alias`. Used by
+   * `buildTimelineEntry` as a fallback when the wire-level `from_header`
+   * is absent (mbox-imported rows). See the field doc on the
+   * `buildTimelineEntry` input for direction-gating rules.
+   */
+  readonly gmailMailboxAliasByCanonicalEventId: ReadonlyMap<string, string>;
   readonly timelinePage: InboxDetailTimelinePageViewModel;
   readonly freshness: InboxDetailFreshnessViewModel;
 }
@@ -2285,6 +2293,19 @@ function buildTimelineEntry(input: {
     string,
     ReadonlySet<string>
   >;
+  /**
+   * Captured project-inbox alias (e.g. `pnwbio@…`) per timeline item,
+   * keyed by canonical event id. Sourced from
+   * `gmail_message_details.project_inbox_alias`. Populated for both
+   * directions; downstream code MUST gate by outbound-email before using
+   * it as a sender signal (see `resolveEmailBubbleSide` /
+   * `buildParticipantRows`).
+   *
+   * The mbox importer never populated `from_header` — without this
+   * fallback every mbox-imported outbound row silently rendered on the
+   * left because the wire-level sender was unknown.
+   */
+  readonly gmailMailboxAliasByCanonicalEventId: ReadonlyMap<string, string>;
 }): InboxTimelineEntryViewModel {
   const allProjectAliasesLowerSet = new Set(input.allProjectAliasesLower);
   const latestProjectionSnippet =
@@ -2422,6 +2443,12 @@ function buildTimelineEntry(input: {
           participantHeaderEmail(input.item.fromHeader ?? null) ?? "",
         ) ?? null)
       : null;
+  const itemMailboxAlias =
+    input.item.family === "one_to_one_email"
+      ? (input.gmailMailboxAliasByCanonicalEventId.get(
+          input.item.canonicalEventId,
+        ) ?? null)
+      : null;
   const participantRows =
     input.item.family === "one_to_one_email"
       ? buildParticipantRows({
@@ -2433,6 +2460,10 @@ function buildTimelineEntry(input: {
           operatorDisplayName: input.operatorDisplayName,
           headerProjectLabel,
           visualDirection: visualEmailDirection ?? input.item.direction,
+          mailboxAlias:
+            (visualEmailDirection ?? input.item.direction) === "outbound"
+              ? itemMailboxAlias
+              : null,
         })
       : undefined;
   const sideOfBubble =
@@ -2441,6 +2472,8 @@ function buildTimelineEntry(input: {
           fromHeader: input.item.family === "one_to_one_email" ? input.item.fromHeader : null,
           participantRows,
           allProjectAliasesLowerSet,
+          mailboxAlias:
+            finalKind === "outbound-email" ? itemMailboxAlias : null,
         })
       : undefined;
 
@@ -2543,11 +2576,25 @@ function resolveEmailBubbleSide(input: {
     | readonly InboxTimelineEntryParticipantRowViewModel[]
     | undefined;
   readonly allProjectAliasesLowerSet: ReadonlySet<string>;
+  /**
+   * Captured project-inbox alias for this message (e.g. `pnwbio@…`), or
+   * null when unavailable. Used as a fallback when the From header is
+   * missing — mbox-imported outbound rows have an empty `from_header` but
+   * a populated `project_inbox_alias`, so without this fallback they
+   * silently render on the left.
+   *
+   * Caller MUST gate this to outbound-email entries — for inbound rows the
+   * mailbox alias represents the recipient mailbox (where the message was
+   * received), so using it as the "sender" signal would flip volunteer
+   * replies to the right side.
+   */
+  readonly mailboxAlias: string | null;
 }): "right" | "left" {
   const senderFromParticipantRows = input.participantRows?.[0]?.email ?? null;
   const senderEmail =
     normalizeEmailAddress(senderFromParticipantRows) ??
-    participantHeaderEmail(input.fromHeader);
+    participantHeaderEmail(input.fromHeader) ??
+    normalizeEmailAddress(input.mailboxAlias);
 
   if (senderEmail === null) {
     return "left";
@@ -2808,12 +2855,22 @@ function buildParticipantRows(input: {
   readonly operatorDisplayName: string;
   readonly headerProjectLabel: string | null;
   readonly visualDirection: "inbound" | "outbound";
+  /**
+   * Captured project-inbox alias (e.g. `pnwbio@…`). Used as a fallback
+   * for the outbound From slot when the wire-level `from_header` is
+   * absent — mbox-imported outbound rows have an empty header but a
+   * populated `project_inbox_alias`, and without this fallback their
+   * compact bubble header reads as the operator name instead of the
+   * project. Caller MUST pass null for inbound entries; using the
+   * mailbox alias as a From signal there would flip volunteer replies.
+   */
+  readonly mailboxAlias: string | null;
 }): readonly InboxTimelineEntryParticipantRowViewModel[] {
   const fromEmail =
     participantHeaderEmail(input.item.fromHeader ?? null) ??
     (input.visualDirection === "inbound"
       ? normalizeEmailAddress(input.contactPrimaryEmail)
-      : null);
+      : normalizeEmailAddress(input.mailboxAlias));
   const toEmail = participantHeaderEmail(input.item.toHeader ?? null);
   const fromHeaderDisplayName = participantHeaderLabel(
     input.item.fromHeader ?? null,
@@ -4054,6 +4111,21 @@ async function readInboxDetailCacheData(
         sourceEvidenceIdByCanonicalEventId,
       },
     ),
+    gmailMailboxAliasByCanonicalEventId: new Map(
+      timelinePage.items.flatMap((item) => {
+        const sourceEvidenceId = sourceEvidenceIdByCanonicalEventId.get(
+          item.canonicalEventId,
+        );
+        if (sourceEvidenceId === undefined) {
+          return [];
+        }
+        const detail = gmailDetailBySourceEvidenceId.get(sourceEvidenceId);
+        const alias = normalizeEmailAddress(detail?.projectInboxAlias ?? null);
+        return alias === null
+          ? []
+          : [[item.canonicalEventId, alias] as const];
+      }),
+    ),
     timelinePage: {
       hasMore: timelinePage.hasMore,
       hasHiddenEarlierHistory,
@@ -4679,6 +4751,8 @@ function buildInboxDetailTimelineViewModel(input: {
         input.cachedData.attachmentsByCanonicalEventId,
       inboundAttachmentSignaturesByThread:
         input.cachedData.inboundAttachmentSignaturesByThread,
+      gmailMailboxAliasByCanonicalEventId:
+        input.cachedData.gmailMailboxAliasByCanonicalEventId,
     }),
   );
 

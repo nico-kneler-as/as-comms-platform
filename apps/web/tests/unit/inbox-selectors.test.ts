@@ -4533,6 +4533,32 @@ describe("real inbox selectors", () => {
         fromHeader: null,
         expected: "left" as const,
       },
+      {
+        // Mbox-imported outbound: wire-level fromHeader is empty (the
+        // mbox importer never preserved From), but project_inbox_alias
+        // is populated with the project's alias. Without the
+        // mailbox-alias fallback this row would silently render left.
+        contactId: "contact:mbox-outbound-side",
+        displayName: "Mbox Outbound Side",
+        primaryEmail: "mbox-outbound-side@example.org",
+        direction: "outbound" as const,
+        fromHeader: null,
+        projectInboxAlias: "pnwbio@adventurescientists.org",
+        expected: "right" as const,
+      },
+      {
+        // Mbox-imported inbound: project_inbox_alias is the *recipient*
+        // mailbox, not a sender signal. The fallback MUST be
+        // direction-gated; using the alias for an inbound row would
+        // flip volunteer replies to the right side.
+        contactId: "contact:mbox-inbound-side",
+        displayName: "Mbox Inbound Side",
+        primaryEmail: "mbox-inbound-side@example.org",
+        direction: "inbound" as const,
+        fromHeader: null,
+        projectInboxAlias: "pnwbio@adventurescientists.org",
+        expected: "left" as const,
+      },
     ] as const;
 
     for (const entry of cases) {
@@ -4552,6 +4578,9 @@ describe("real inbox selectors", () => {
         snippet: "Bubble side body.",
         bodyTextPreview: "Bubble side body.",
         fromHeader: entry.fromHeader,
+        ...("projectInboxAlias" in entry
+          ? { projectInboxAlias: entry.projectInboxAlias }
+          : {}),
       });
       await seedInboxProjection(runtime.context, {
         contactId: entry.contactId,
