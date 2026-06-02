@@ -46,7 +46,7 @@ import { runCleanupGmailDraftEventsCommand } from "./cleanup-gmail-draft-events.
 import { runCleanupSalesforceOwnerScopeCommand } from "./cleanup-salesforce-owner-scope.js";
 import { main as runMergeEmailOnlyIntoSfAnchoredCommand } from "./merge-email-only-into-sf-anchored.js";
 import { runRecoverGmailSpamWindowCommand } from "./recover-gmail-spam-window.js";
-import { runRecomputeAttachmentInlineCommand } from "./recompute-attachment-inline.js";
+import { runRecomputeAttachmentDecorationCommand } from "./recompute-attachment-decoration.js";
 import { runBackfillCanonicalEventAudienceCommand } from "./backfill-canonical-event-audience.js";
 import { runRecoverOrphanGmailDetailsCommand } from "./recover-orphan-gmail-details.js";
 import { reconcileIdentityQueue } from "./reconcile-identity-queue.js";
@@ -476,8 +476,8 @@ async function main(): Promise<void> {
     case "recover-gmail-spam-window":
       await runRecoverGmailSpamWindowCommand(rest, process.env);
       return;
-    case "recompute-attachment-inline":
-      await runRecomputeAttachmentInlineCommand(rest, process.env);
+    case "recompute-attachment-decoration":
+      await runRecomputeAttachmentDecorationCommand(rest, process.env);
       return;
     case "backfill-canonical-event-audience":
       await runBackfillCanonicalEventAudienceCommand(rest, process.env);
@@ -511,7 +511,7 @@ async function main(): Promise<void> {
       return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, re-extract-signed-envelope-bodies, backfill-mailchimp-campaign-body, mailchimp-capture-historical, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, recover-orphan-gmail-details, recover-gmail-spam-window, recompute-attachment-inline, backfill-canonical-event-audience, reprocess-pending-campaign-sends, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction, reconcile-stale-canonical, reconcile-superseded-projections.",
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, re-extract-signed-envelope-bodies, backfill-mailchimp-campaign-body, mailchimp-capture-historical, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, recover-orphan-gmail-details, recover-gmail-spam-window, recompute-attachment-decoration, backfill-canonical-event-audience, reprocess-pending-campaign-sends, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction, reconcile-stale-canonical, reconcile-superseded-projections.",
       );
   }
 }

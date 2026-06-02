@@ -256,7 +256,6 @@ describe("gmail attachment sync", () => {
           sizeBytes: attachmentBytes.length,
           storageKey: buildGmailMessageAttachmentStorageKey(attachmentId),
           isDecoration: false,
-          isInline: false,
         },
       ]);
       await expect(
@@ -325,7 +324,7 @@ describe("gmail attachment sync", () => {
     }
   });
 
-  it("writes isDecoration and keeps isInline in sync for decoration placeholders", async () => {
+  it("writes isDecoration for decoration placeholders", async () => {
     const context = await createTestStage1Context();
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
     const attachmentBytes = Buffer.from("inline-image", "utf8");
@@ -369,7 +368,6 @@ describe("gmail attachment sync", () => {
           sourceEvidenceId,
           filename: "image001.png",
           isDecoration: true,
-          isInline: true,
         },
       ]);
     } finally {

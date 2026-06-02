@@ -551,7 +551,6 @@ export const messageAttachments = pgTable(
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     storageKey: text("storage_key").notNull(),
     isDecoration: boolean("is_decoration").notNull().default(false),
-    isInline: boolean("is_inline").notNull().default(false),
     createdAt: createdAtColumn,
   },
   (table) => [index("message_attachments_source_idx").on(table.sourceEvidenceId)],

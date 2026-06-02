@@ -564,7 +564,6 @@ describe("Stage 1 DB repositories", () => {
           sizeBytes: 2048,
           storageKey: "gmail/ab/att:gmail:gmail-message-1:0",
           isDecoration: true,
-          isInline: true,
         },
       ],
     );
@@ -581,7 +580,6 @@ describe("Stage 1 DB repositories", () => {
         sizeBytes: 2048,
         storageKey: "gmail/ab/att:gmail:gmail-message-1:0",
         isDecoration: true,
-        isInline: true,
       },
     ]);
     await expect(
