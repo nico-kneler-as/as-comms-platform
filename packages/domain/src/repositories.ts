@@ -511,7 +511,6 @@ export interface MessageAttachmentInsert {
   readonly sizeBytes: number;
   readonly storageKey: string;
   readonly isDecoration: boolean;
-  readonly isInline: boolean;
 }
 
 export interface MessageAttachmentRepository {

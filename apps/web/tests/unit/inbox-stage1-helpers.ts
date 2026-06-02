@@ -191,10 +191,9 @@ export async function seedInboxMessageAttachment(
     readonly storageKey: string;
     readonly gmailAttachmentId?: string;
     readonly isDecoration?: boolean;
-    readonly isInline?: boolean;
   },
 ): Promise<void> {
-  const isDecoration = input.isDecoration ?? input.isInline ?? false;
+  const isDecoration = input.isDecoration ?? false;
 
   await context.repositories.messageAttachments.upsertManyForMessage(
     input.sourceEvidenceId,
@@ -208,7 +207,6 @@ export async function seedInboxMessageAttachment(
         sizeBytes: input.sizeBytes,
         storageKey: input.storageKey,
         isDecoration,
-        isInline: isDecoration,
       },
     ],
   );

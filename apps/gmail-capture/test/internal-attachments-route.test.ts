@@ -91,7 +91,6 @@ async function seedAttachment(input: {
         sizeBytes: input.sizeBytes,
         storageKey: input.storageKey,
         isDecoration: false,
-        isInline: false,
       },
     ],
   );

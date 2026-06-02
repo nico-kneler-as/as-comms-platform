@@ -259,7 +259,6 @@ export async function syncGmailMessageAttachments(input: {
       readonly sizeBytes: number;
       readonly storageKey: string;
       readonly isDecoration: boolean;
-      readonly isInline: boolean;
     }[] = [];
 
     for (const attachment of parsedRecord.data.attachmentMetadata) {
@@ -341,7 +340,6 @@ export async function syncGmailMessageAttachments(input: {
         sizeBytes: cachedAttachment.sizeBytes,
         storageKey,
         isDecoration,
-        isInline: isDecoration,
       });
     }
 

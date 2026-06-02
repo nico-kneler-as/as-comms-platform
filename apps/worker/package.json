@@ -28,7 +28,7 @@
     "ops:cleanup-salesforce-owner-scope": "tsx src/ops/cleanup-salesforce-owner-scope.ts",
     "ops:backfill-inbox-projection-coverage": "tsx src/ops/backfill-inbox-projection-coverage.ts",
     "ops:recover-gmail-spam-window": "tsx src/ops/recover-gmail-spam-window.ts",
-    "ops:recompute-attachment-inline": "tsx src/ops/recompute-attachment-inline.ts",
+    "ops:recompute-attachment-decoration": "tsx src/ops/recompute-attachment-decoration.ts",
     "ops:backfill-canonical-event-audience": "tsx src/ops/backfill-canonical-event-audience.ts",
     "ops:backfill-contact-display-names": "tsx src/ops/backfill-contact-display-names.ts",
     "ops:recover-orphan-gmail-details": "tsx src/ops/recover-orphan-gmail-details.ts",
