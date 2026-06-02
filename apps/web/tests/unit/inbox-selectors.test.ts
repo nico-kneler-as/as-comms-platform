@@ -7168,7 +7168,7 @@ describe("real inbox selectors", () => {
       filename: "field-photo.jpg",
       sizeBytes: 1234,
       storageKey: "gmail/ab/att:gmail:attachment-email-1:0/1",
-      isInline: true,
+      isDecoration: true,
     });
     await seedInboxMessageAttachment(runtime.context, {
       sourceEvidenceId: "source:attachment-email-1",
@@ -7201,6 +7201,62 @@ describe("real inbox selectors", () => {
         filename: "packet.pdf",
         sizeBytes: 4567,
         proxyUrl: "/api/attachments/att%3Agmail%3Aattachment-email-1%3A0%2F2",
+      },
+    ]);
+  });
+
+  it("shows non-decoration image attachments as chips with a proxy URL", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:karen-attachment",
+      salesforceContactId: "003-karen-attachment",
+      displayName: "Karen Attachment Test",
+      primaryEmail: "karen@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "karen-attachment-email-1",
+      contactId: "contact:karen-attachment",
+      occurredAt: "2026-05-27T18:26:38.000Z",
+      direction: "inbound",
+      subject: "Trail photo",
+      snippet: "See attached.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:karen-attachment",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-27T18:26:38.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-27T18:26:38.000Z",
+      snippet: "See attached.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:karen-attachment-email-1",
+      id: "att:gmail:karen-attachment-email-1:0/1",
+      mimeType: "image/png",
+      filename: "trail distance.png",
+      sizeBytes: 4_321,
+      storageKey: "gmail/ka/att:gmail:karen-attachment-email-1:0/1",
+      isDecoration: false,
+    });
+
+    const detail = await getInboxDetail("contact:karen-attachment");
+
+    expect(detail?.timeline[0]?.attachments).toEqual([
+      {
+        id: "att:gmail:karen-attachment-email-1:0/1",
+        mimeType: "image/png",
+        filename: "trail distance.png",
+        sizeBytes: 4321,
+        proxyUrl:
+          "/api/attachments/att%3Agmail%3Akaren-attachment-email-1%3A0%2F1",
       },
     ]);
   });

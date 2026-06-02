@@ -5,11 +5,10 @@ import type { createStage1RepositoryBundleFromConnection } from "@as-comms/db";
 import {
   buildGmailMessageAttachmentId,
   buildGmailMessageAttachmentStorageKey,
+  classifyAttachment,
   exchangeGmailAccessToken,
   gmailMessageRecordSchema,
-  isInlineAttachment,
   mapGmailRecord,
-  normalizeContentId,
   type GmailAccessTokenCacheEntry,
   type GmailRecord,
 } from "@as-comms/integrations";
@@ -251,12 +250,6 @@ export async function syncGmailMessageAttachments(input: {
     const existingAttachmentIds = new Set(
       existingAttachments.map((attachment) => attachment.id),
     );
-    const htmlBodyCidReferences = new Set(
-      parsedRecord.data.htmlBodyCidReferences.flatMap((value) => {
-        const normalized = normalizeContentId(value);
-        return normalized === null ? [] : [normalized];
-      }),
-    );
     const rowsToInsert: {
       readonly id: string;
       readonly provider: "gmail";
@@ -265,6 +258,7 @@ export async function syncGmailMessageAttachments(input: {
       readonly filename: string | null;
       readonly sizeBytes: number;
       readonly storageKey: string;
+      readonly isDecoration: boolean;
       readonly isInline: boolean;
     }[] = [];
 
@@ -321,6 +315,10 @@ export async function syncGmailMessageAttachments(input: {
         attachmentVolumePath: parsedRuntimeConfig.attachmentVolumePath,
         storageKey,
       });
+      const { isDecoration } = classifyAttachment({
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+      });
 
       try {
         await mkdir(path.dirname(absolutePath), { recursive: true });
@@ -342,10 +340,8 @@ export async function syncGmailMessageAttachments(input: {
         filename: attachment.filename,
         sizeBytes: cachedAttachment.sizeBytes,
         storageKey,
-        isInline: isInlineAttachment({
-          attachment,
-          htmlBodyCidReferences,
-        }),
+        isDecoration,
+        isInline: isDecoration,
       });
     }
 

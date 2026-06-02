@@ -90,6 +90,7 @@ async function seedAttachment(input: {
         filename: input.filename ?? "field-photo.jpg",
         sizeBytes: input.sizeBytes,
         storageKey: input.storageKey,
+        isDecoration: false,
         isInline: false,
       },
     ],

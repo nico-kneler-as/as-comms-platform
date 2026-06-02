@@ -180,6 +180,7 @@ async function seedGmailMessageContext(input: {
     filename: "screenshot.png",
     sizeBytes: 128,
     storageKey: `attachments/${attachmentId}`,
+    isDecoration: false,
     isInline: false,
     createdAt: new Date(input.createdAt),
   });
