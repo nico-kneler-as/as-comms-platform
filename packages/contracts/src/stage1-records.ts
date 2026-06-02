@@ -391,6 +391,7 @@ export const messageAttachmentSchema = z.object({
   filename: nullableStringSchema,
   sizeBytes: z.number().int().nonnegative(),
   storageKey: z.string().min(1),
+  isDecoration: z.boolean(),
   isInline: z.boolean(),
   createdAt: timestampSchema,
 });

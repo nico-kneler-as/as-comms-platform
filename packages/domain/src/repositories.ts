@@ -510,6 +510,7 @@ export interface MessageAttachmentInsert {
   readonly filename: string | null;
   readonly sizeBytes: number;
   readonly storageKey: string;
+  readonly isDecoration: boolean;
   readonly isInline: boolean;
 }
 

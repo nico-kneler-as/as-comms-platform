@@ -7,6 +7,7 @@ import {
   buildGmailMessageAttachmentId,
   buildGmailMessageAttachmentStorageKey,
   buildSourceEvidenceId,
+  classifyAttachment,
   type GmailRecord,
 } from "@as-comms/integrations";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,9 +18,8 @@ function buildGmailRecord(input: {
   readonly direction: "inbound" | "outbound";
   readonly recordId: string;
   readonly attachmentSizeBytes: number;
-  readonly contentDisposition?: string | null;
-  readonly contentId?: string | null;
-  readonly htmlBodyCidReferences?: readonly string[];
+  readonly mimeType?: string;
+  readonly filename?: string | null;
 }): GmailRecord {
   return {
     recordType: "message",
@@ -58,15 +58,15 @@ function buildGmailRecord(input: {
     attachmentMetadata: [
       {
         partIndexPath: "0/1",
-        mimeType: "image/jpeg",
-        filename: "field-photo.jpg",
+        mimeType: input.mimeType ?? "image/jpeg",
+        filename: input.filename ?? "field-photo.jpg",
         sizeBytes: input.attachmentSizeBytes,
         gmailAttachmentId: "gmail-attachment-1",
-        contentDisposition: input.contentDisposition ?? null,
-        contentId: input.contentId ?? null,
+        contentDisposition: null,
+        contentId: null,
       },
     ],
-    htmlBodyCidReferences: [...(input.htmlBodyCidReferences ?? [])],
+    htmlBodyCidReferences: [],
   };
 }
 
@@ -104,6 +104,60 @@ function buildSuccessfulFetchImplementation(
     );
   }) as unknown as typeof fetch;
 }
+
+describe("classifyAttachment", () => {
+  it.each([
+    {
+      input: { filename: "trail distance.png", mimeType: "image/png" },
+      expected: { isDecoration: false },
+    },
+    {
+      input: {
+        filename: "Screenshot 2026-05-27 at 11.26.38 AM.png",
+        mimeType: "image/png",
+      },
+      expected: { isDecoration: false },
+    },
+    {
+      input: { filename: "image001.png", mimeType: "image/png" },
+      expected: { isDecoration: true },
+    },
+    {
+      input: { filename: "image.jpg", mimeType: "image/jpeg" },
+      expected: { isDecoration: true },
+    },
+    {
+      input: { filename: "ATT00001.png", mimeType: "image/png" },
+      expected: { isDecoration: true },
+    },
+    {
+      input: { filename: "noname", mimeType: "image/png" },
+      expected: { isDecoration: true },
+    },
+    {
+      input: { filename: null, mimeType: "image/png" },
+      expected: { isDecoration: true },
+    },
+    {
+      input: { filename: "  ", mimeType: "image/png" },
+      expected: { isDecoration: true },
+    },
+    {
+      input: { filename: "report.pdf", mimeType: "application/pdf" },
+      expected: { isDecoration: false },
+    },
+    {
+      input: { filename: "image001.png", mimeType: "application/pdf" },
+      expected: { isDecoration: false },
+    },
+    {
+      input: { filename: "IMAGE001.PNG", mimeType: "IMAGE/PNG" },
+      expected: { isDecoration: true },
+    },
+  ])("classifies $input.filename / $input.mimeType", ({ input, expected }) => {
+    expect(classifyAttachment(input)).toEqual(expected);
+  });
+});
 
 describe("gmail attachment sync", () => {
   afterEach(() => {
@@ -201,6 +255,7 @@ describe("gmail attachment sync", () => {
           filename: "field-photo.jpg",
           sizeBytes: attachmentBytes.length,
           storageKey: buildGmailMessageAttachmentStorageKey(attachmentId),
+          isDecoration: false,
           isInline: false,
         },
       ]);
@@ -270,26 +325,27 @@ describe("gmail attachment sync", () => {
     }
   });
 
-  it("marks inline disposition attachments as inline when the HTML body does not reference their CID", async () => {
+  it("writes isDecoration and keeps isInline in sync for decoration placeholders", async () => {
     const context = await createTestStage1Context();
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
     const attachmentBytes = Buffer.from("inline-image", "utf8");
+    const sourceEvidenceId = buildSourceEvidenceId(
+      "gmail",
+      "message",
+      "gmail-decoration-1",
+    );
 
     try {
-      const record = buildGmailRecord({
-        direction: "inbound",
-        recordId: "gmail-inline-disposition-1",
-        attachmentSizeBytes: attachmentBytes.length,
-        contentDisposition: "inline; filename=\"image001.png\"",
-      });
-      const sourceEvidenceId = buildSourceEvidenceId(
-        "gmail",
-        "message",
-        "gmail-inline-disposition-1",
-      );
-
       await syncGmailMessageAttachments({
-        records: [record],
+        records: [
+          buildGmailRecord({
+            direction: "inbound",
+            recordId: "gmail-decoration-1",
+            attachmentSizeBytes: attachmentBytes.length,
+            mimeType: "image/png",
+            filename: "image001.png",
+          }),
+        ],
         repositories: context.repositories,
         serviceConfig: {
           liveAccount: "volunteers@example.org",
@@ -311,212 +367,9 @@ describe("gmail attachment sync", () => {
       ).resolves.toMatchObject([
         {
           sourceEvidenceId,
+          filename: "image001.png",
+          isDecoration: true,
           isInline: true,
-        },
-      ]);
-    } finally {
-      await context.dispose();
-      await rm(tempDir, { recursive: true, force: true });
-    }
-  });
-
-  it("marks inline disposition attachments as inline when the HTML body references their CID", async () => {
-    const context = await createTestStage1Context();
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
-    const attachmentBytes = Buffer.from("inline-image", "utf8");
-
-    try {
-      const record = buildGmailRecord({
-        direction: "inbound",
-        recordId: "gmail-inline-disposition-cid-1",
-        attachmentSizeBytes: attachmentBytes.length,
-        contentDisposition: "inline; filename=\"image001.png\"",
-        contentId: "<logo123>",
-        htmlBodyCidReferences: ["logo123"],
-      });
-      const sourceEvidenceId = buildSourceEvidenceId(
-        "gmail",
-        "message",
-        "gmail-inline-disposition-cid-1",
-      );
-
-      await syncGmailMessageAttachments({
-        records: [record],
-        repositories: context.repositories,
-        serviceConfig: {
-          liveAccount: "volunteers@example.org",
-          oauthClientId: "gmail-oauth-client-id",
-          oauthClientSecret: "gmail-oauth-client-secret",
-          oauthRefreshToken: "gmail-oauth-refresh-token",
-          tokenUri: "https://oauth2.googleapis.com/token",
-          timeoutMs: 15_000,
-        },
-        runtimeConfig: {
-          attachmentVolumePath: tempDir,
-          maxAttachmentBytesPerAttachment: 52_428_800,
-        },
-        fetchImplementation: buildSuccessfulFetchImplementation(attachmentBytes),
-      });
-
-      await expect(
-        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
-      ).resolves.toMatchObject([
-        {
-          sourceEvidenceId,
-          isInline: true,
-        },
-      ]);
-    } finally {
-      await context.dispose();
-      await rm(tempDir, { recursive: true, force: true });
-    }
-  });
-
-  it("marks Content-ID attachments referenced by sibling HTML as inline when disposition is missing", async () => {
-    const context = await createTestStage1Context();
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
-    const attachmentBytes = Buffer.from("cid-image", "utf8");
-
-    try {
-      const record = buildGmailRecord({
-        direction: "inbound",
-        recordId: "gmail-inline-cid-1",
-        attachmentSizeBytes: attachmentBytes.length,
-        contentId: "<abc@x>",
-        htmlBodyCidReferences: ["abc@x"],
-      });
-      const sourceEvidenceId = buildSourceEvidenceId(
-        "gmail",
-        "message",
-        "gmail-inline-cid-1",
-      );
-
-      await syncGmailMessageAttachments({
-        records: [record],
-        repositories: context.repositories,
-        serviceConfig: {
-          liveAccount: "volunteers@example.org",
-          oauthClientId: "gmail-oauth-client-id",
-          oauthClientSecret: "gmail-oauth-client-secret",
-          oauthRefreshToken: "gmail-oauth-refresh-token",
-          tokenUri: "https://oauth2.googleapis.com/token",
-          timeoutMs: 15_000,
-        },
-        runtimeConfig: {
-          attachmentVolumePath: tempDir,
-          maxAttachmentBytesPerAttachment: 52_428_800,
-        },
-        fetchImplementation: buildSuccessfulFetchImplementation(attachmentBytes),
-      });
-
-      await expect(
-        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
-      ).resolves.toMatchObject([
-        {
-          sourceEvidenceId,
-          isInline: true,
-        },
-      ]);
-    } finally {
-      await context.dispose();
-      await rm(tempDir, { recursive: true, force: true });
-    }
-  });
-
-  it("keeps attachment disposition attachments visible even when their CID appears in the HTML body", async () => {
-    const context = await createTestStage1Context();
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
-    const attachmentBytes = Buffer.from("plain-attachment", "utf8");
-
-    try {
-      const record = buildGmailRecord({
-        direction: "inbound",
-        recordId: "gmail-plain-attachment-1",
-        attachmentSizeBytes: attachmentBytes.length,
-        contentDisposition: "attachment; filename=\"field-photo.jpg\"",
-        contentId: "<field-photo@example.org>",
-        htmlBodyCidReferences: ["field-photo@example.org"],
-      });
-      const sourceEvidenceId = buildSourceEvidenceId(
-        "gmail",
-        "message",
-        "gmail-plain-attachment-1",
-      );
-
-      await syncGmailMessageAttachments({
-        records: [record],
-        repositories: context.repositories,
-        serviceConfig: {
-          liveAccount: "volunteers@example.org",
-          oauthClientId: "gmail-oauth-client-id",
-          oauthClientSecret: "gmail-oauth-client-secret",
-          oauthRefreshToken: "gmail-oauth-refresh-token",
-          tokenUri: "https://oauth2.googleapis.com/token",
-          timeoutMs: 15_000,
-        },
-        runtimeConfig: {
-          attachmentVolumePath: tempDir,
-          maxAttachmentBytesPerAttachment: 52_428_800,
-        },
-        fetchImplementation: buildSuccessfulFetchImplementation(attachmentBytes),
-      });
-
-      await expect(
-        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
-      ).resolves.toMatchObject([
-        {
-          sourceEvidenceId,
-          isInline: false,
-        },
-      ]);
-    } finally {
-      await context.dispose();
-      await rm(tempDir, { recursive: true, force: true });
-    }
-  });
-
-  it("keeps missing disposition attachments visible when their CID is not referenced by the HTML body", async () => {
-    const context = await createTestStage1Context();
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
-    const attachmentBytes = Buffer.from("plain-attachment", "utf8");
-
-    try {
-      const record = buildGmailRecord({
-        direction: "inbound",
-        recordId: "gmail-missing-disposition-no-cid-1",
-        attachmentSizeBytes: attachmentBytes.length,
-        contentId: "<not-referenced@example.org>",
-      });
-      const sourceEvidenceId = buildSourceEvidenceId(
-        "gmail",
-        "message",
-        "gmail-missing-disposition-no-cid-1",
-      );
-
-      await syncGmailMessageAttachments({
-        records: [record],
-        repositories: context.repositories,
-        serviceConfig: {
-          liveAccount: "volunteers@example.org",
-          oauthClientId: "gmail-oauth-client-id",
-          oauthClientSecret: "gmail-oauth-client-secret",
-          oauthRefreshToken: "gmail-oauth-refresh-token",
-          tokenUri: "https://oauth2.googleapis.com/token",
-          timeoutMs: 15_000,
-        },
-        runtimeConfig: {
-          attachmentVolumePath: tempDir,
-          maxAttachmentBytesPerAttachment: 52_428_800,
-        },
-        fetchImplementation: buildSuccessfulFetchImplementation(attachmentBytes),
-      });
-
-      await expect(
-        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
-      ).resolves.toMatchObject([
-        {
-          sourceEvidenceId,
-          isInline: false,
         },
       ]);
     } finally {
