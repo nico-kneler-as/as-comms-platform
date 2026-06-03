@@ -334,6 +334,7 @@ function buildContext(input: {
   readonly contacts?: readonly ContactRecord[];
   readonly contactIdentities?: readonly ContactIdentityRecord[];
   readonly contactMemberships?: readonly ContactMembershipRecord[];
+  readonly projectAliases?: readonly string[];
   readonly gmailMessageDetails?: readonly GmailMessageDetailRecord[];
   readonly timelineRows?: readonly TimelineProjectionRow[];
   readonly identityCases?: readonly IdentityResolutionCase[];
@@ -810,7 +811,7 @@ function buildContext(input: {
       findById: () => Promise.resolve(null),
       listAll: () => Promise.resolve([]),
       listActive: () => Promise.resolve([]),
-      listAllProjectAliases: () => Promise.resolve([]),
+      listAllProjectAliases: () => Promise.resolve(input.projectAliases ?? []),
       listByIds: () => Promise.resolve([]),
       listConnectedProjects: () => Promise.resolve([]),
       listAvailableConnectionCandidates: () => Promise.resolve([]),
@@ -1652,6 +1653,83 @@ describe("upsertNormalizedContactGraph write ordering", () => {
     expect(firstMembershipIndex).toBeGreaterThanOrEqual(0);
     expect(firstProjectDimensionIndex).toBeLessThan(firstMembershipIndex);
     expect(firstExpeditionDimensionIndex).toBeLessThan(firstMembershipIndex);
+  });
+
+  it("skips Salesforce email identity upserts when the email matches an internal project alias", async () => {
+    const upsertedIdentityKinds: ContactIdentityRecord["kind"][] = [];
+    const context = buildContext({
+      events: [],
+      contacts: [],
+      contactIdentities: [],
+      projectAliases: ["orcas@adventurescientists.org"],
+      onContactIdentityUpsert: (record) => {
+        upsertedIdentityKinds.push(record.kind);
+      },
+    });
+
+    await context.normalization.upsertNormalizedContactGraph({
+      contact: {
+        id: "contact:salesforce:003-alias-owner",
+        salesforceContactId: "003-alias-owner",
+        displayName: "Slack Test Test",
+        primaryEmail: "orcas@adventurescientists.org",
+        primaryPhone: null,
+        createdAt: "2026-06-03T00:00:00.000Z",
+        updatedAt: "2026-06-03T00:00:00.000Z",
+      },
+      identities: [
+        {
+          id: "identity:sf-contact-id",
+          contactId: "contact:salesforce:003-alias-owner",
+          kind: "salesforce_contact_id",
+          normalizedValue: "003-alias-owner",
+          isPrimary: true,
+          source: "salesforce",
+          verifiedAt: "2026-06-03T00:00:00.000Z",
+        },
+        {
+          id: "identity:sf-alias-email",
+          contactId: "contact:salesforce:003-alias-owner",
+          kind: "email",
+          normalizedValue: "orcas@adventurescientists.org",
+          isPrimary: true,
+          source: "salesforce",
+          verifiedAt: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+      memberships: [
+        {
+          id: "membership:sf-alias-owner",
+          contactId: "contact:salesforce:003-alias-owner",
+          projectId: "sf-project-orcas",
+          expeditionId: "sf-expedition-orcas",
+          salesforceMembershipId: "a0B-orcas",
+          role: "volunteer",
+          status: "active",
+          source: "salesforce",
+          createdAt: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+      projectDimensions: [
+        {
+          projectId: "sf-project-orcas",
+          projectName: "Orcas",
+          source: "salesforce",
+          isActive: false,
+        },
+      ],
+      expeditionDimensions: [
+        {
+          expeditionId: "sf-expedition-orcas",
+          projectId: "sf-project-orcas",
+          expeditionName: "Orcas Expedition",
+          source: "salesforce",
+        },
+      ],
+    });
+
+    expect(upsertedIdentityKinds).toContain("salesforce_contact_id");
+    expect(upsertedIdentityKinds).not.toContain("email");
   });
 });
 

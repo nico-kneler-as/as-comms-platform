@@ -1793,18 +1793,6 @@ function timelineActorLabel(
   }
 
   if (kind === "outbound-email" && item.family === "one_to_one_email") {
-    const normalizedCanonicalContactName =
-      canonicalContactDisplayName === null
-        ? ""
-        : normalizeDisplayName(canonicalContactDisplayName);
-
-    if (
-      normalizedCanonicalContactName.length > 0 &&
-      !isEmailLikeName(normalizedCanonicalContactName)
-    ) {
-      return normalizedCanonicalContactName;
-    }
-
     const senderLabel = participantHeaderLabel(item.fromHeader ?? null);
     const normalizedSenderLabel =
       senderLabel === null ? "" : normalizeDisplayName(senderLabel);
