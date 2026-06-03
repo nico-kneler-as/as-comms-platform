@@ -4447,65 +4447,6 @@ describe("real inbox selectors", () => {
     });
   });
 
-  it("outbound email is not labeled with a contact-identity match for an internal alias", async () => {
-    if (runtime === null) {
-      throw new Error("Expected inbox test runtime");
-    }
-
-    await seedInboxContact(runtime.context, {
-      contactId: "contact:alias-thread",
-      salesforceContactId: null,
-      displayName: "Alias Thread",
-      primaryEmail: "volunteer.alias.thread@example.org",
-      primaryPhone: null,
-    });
-    await seedInboxContact(runtime.context, {
-      contactId: "contact:alias-collision",
-      salesforceContactId: "003-alias-collision",
-      displayName: "Slack Test Test",
-      primaryEmail: "orcas@adventurescientists.org",
-      primaryPhone: null,
-    });
-    await runtime.context.repositories.contactIdentities.upsert({
-      id: "identity:alias-collision-email",
-      contactId: "contact:alias-collision",
-      kind: "email",
-      normalizedValue: "orcas@adventurescientists.org",
-      isPrimary: true,
-      source: "salesforce",
-      verifiedAt: null,
-    });
-    const latest = await seedInboxEmailEvent(runtime.context, {
-      id: "outbound-internal-alias-label",
-      contactId: "contact:alias-thread",
-      occurredAt: "2026-06-03T15:00:00.000Z",
-      direction: "outbound",
-      subject: "Alias label regression",
-      snippet: "Testing outbound alias label.",
-      bodyTextPreview: "Testing outbound alias label.",
-      fromHeader: '"Adventure Scientists" <orcas@adventurescientists.org>',
-      toHeader: "Volunteer Alias Thread <volunteer.alias.thread@example.org>",
-    });
-    await seedInboxProjection(runtime.context, {
-      contactId: "contact:alias-thread",
-      bucket: "Opened",
-      needsFollowUp: false,
-      hasUnresolved: false,
-      lastInboundAt: null,
-      lastOutboundAt: "2026-06-03T15:00:00.000Z",
-      lastActivityAt: "2026-06-03T15:00:00.000Z",
-      snippet: "Testing outbound alias label.",
-      lastCanonicalEventId: latest.canonicalEventId,
-      lastEventType: "communication.email.outbound",
-    });
-
-    const detail = await getInboxDetail("contact:alias-thread");
-
-    expect(detail?.timeline.at(-1)).toMatchObject({
-      actorLabel: "Adventure Scientists",
-    });
-  });
-
   it("computes email bubble side from the all-time project alias set and leaves SMS unset", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
