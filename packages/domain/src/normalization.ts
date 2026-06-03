@@ -2648,6 +2648,14 @@ export function createStage1NormalizationService(
       const contact = await persistence.upsertCanonicalContact(
         contactSchema.parse(parsed.contact),
       );
+      const shouldFilterSalesforceAliasEmails = parsed.identities.some(
+        (identity) => identity.source === "salesforce" && identity.kind === "email",
+      );
+      const internalProjectAliasSet = !shouldFilterSalesforceAliasEmails
+        ? null
+        : new Set(
+            await persistence.repositories.projectDimensions.listAllProjectAliases(),
+          );
 
       const identities: ContactIdentityRecord[] = [];
       for (const identity of parsed.identities) {
@@ -2657,6 +2665,16 @@ export function createStage1NormalizationService(
           throw new Error(
             `Contact identity ${parsedIdentity.id} does not belong to contact ${parsed.contact.id}.`,
           );
+        }
+
+        // Brief 2026-06-03: skip Salesforce-owned internal project aliases so
+        // contact_identities cannot hijack outbound actor labels.
+        if (
+          parsedIdentity.source === "salesforce" &&
+          parsedIdentity.kind === "email" &&
+          internalProjectAliasSet?.has(parsedIdentity.normalizedValue)
+        ) {
+          continue;
         }
 
         identities.push(
