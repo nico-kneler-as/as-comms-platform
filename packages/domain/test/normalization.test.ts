@@ -30,6 +30,7 @@ import {
   createStage1NormalizationService,
   createStage1PersistenceService,
   defineStage1RepositoryBundle,
+  rebuildInboxProjectionForContact,
   type PendingComposerOutboundRecord,
   type Stage1RepositoryBundle,
 } from "../src/index.js";
@@ -200,6 +201,7 @@ function buildExistingProjection(input: {
 function buildGmailDetail(input: {
   readonly key: string;
   readonly direction: GmailMessageDetailRecord["direction"];
+  readonly gmailThreadId?: string | null;
   readonly rfc822MessageId?: string | null;
   readonly subject?: string | null;
   readonly bodyTextPreview?: string;
@@ -207,7 +209,7 @@ function buildGmailDetail(input: {
   return {
     sourceEvidenceId: `source:${input.key}`,
     providerRecordId: `gmail:${input.key}`,
-    gmailThreadId: `thread:${input.key}`,
+    gmailThreadId: input.gmailThreadId ?? `thread:${input.key}`,
     rfc822MessageId: input.rfc822MessageId ?? `<${input.key}@example.org>`,
     direction: input.direction,
     subject: input.subject ?? `Subject ${input.key}`,
@@ -241,6 +243,7 @@ function buildPendingOutbound(input: {
   readonly id: string;
   readonly fingerprint: string;
   readonly status: PendingComposerOutboundRecord["status"];
+  readonly inReplyToRfc822?: string | null;
   readonly sentRfc822MessageId?: string | null;
   readonly reconciledEventId?: string | null;
 }): PendingComposerOutboundRecord {
@@ -259,7 +262,7 @@ function buildPendingOutbound(input: {
     bodySha256: "sha256:pending",
     attachmentMetadata: [],
     gmailThreadId: null,
-    inReplyToRfc822: null,
+    inReplyToRfc822: input.inReplyToRfc822 ?? null,
     attemptedAt: "2026-04-24T10:00:00.000Z",
     reconciledEventId: input.reconciledEventId ?? null,
     reconciledAt:
@@ -1250,6 +1253,150 @@ async function replayEvent(
 }
 
 describe("rebuildInboxProjectionForContact bucket semantics", () => {
+  it("transitions New to Opened when the latest outbound is an in-thread reply", async () => {
+    const inbound = buildEvent({
+      key: "reply-thread-inbound",
+      occurredAt: "2026-04-24T09:00:00.000Z",
+      direction: "inbound",
+    });
+    const outboundReply = buildEvent({
+      key: "reply-thread-outbound",
+      occurredAt: "2026-04-24T09:30:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [inbound, outboundReply],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: inbound.occurredAt,
+        lastCanonicalEventId: inbound.id,
+      }),
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "reply-thread-inbound",
+          direction: "inbound",
+          gmailThreadId: "thread:shared-reply",
+        }),
+        buildGmailDetail({
+          key: "reply-thread-outbound",
+          direction: "outbound",
+          gmailThreadId: "thread:shared-reply",
+        }),
+      ],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      outboundReply.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: inbound.occurredAt,
+      lastOutboundAt: outboundReply.occurredAt,
+    });
+  });
+
+  it("keeps New when the latest outbound is a compose-new message on a different thread", async () => {
+    const inbound = buildEvent({
+      key: "compose-new-inbound",
+      occurredAt: "2026-04-24T09:45:00.000Z",
+      direction: "inbound",
+    });
+    const composeNewOutbound = buildEvent({
+      key: "compose-new-outbound",
+      occurredAt: "2026-04-24T10:15:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [inbound, composeNewOutbound],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: inbound.occurredAt,
+        lastCanonicalEventId: inbound.id,
+      }),
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "compose-new-inbound",
+          direction: "inbound",
+          gmailThreadId: "thread:inbound-original",
+        }),
+        buildGmailDetail({
+          key: "compose-new-outbound",
+          direction: "outbound",
+          gmailThreadId: "thread:fresh-compose",
+        }),
+      ],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      composeNewOutbound.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: inbound.occurredAt,
+      lastOutboundAt: composeNewOutbound.occurredAt,
+    });
+  });
+
+  it("keeps newer inbound precedence over an earlier in-thread reply", async () => {
+    const inbound = buildEvent({
+      key: "reply-then-newer-inbound-first",
+      occurredAt: "2026-04-24T10:30:00.000Z",
+      direction: "inbound",
+    });
+    const outboundReply = buildEvent({
+      key: "reply-then-newer-inbound-outbound",
+      occurredAt: "2026-04-24T11:00:00.000Z",
+      direction: "outbound",
+    });
+    const newerInbound = buildEvent({
+      key: "reply-then-newer-inbound-latest",
+      occurredAt: "2026-04-24T11:30:00.000Z",
+      direction: "inbound",
+    });
+    const context = buildContext({
+      events: [inbound, outboundReply, newerInbound],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: inbound.occurredAt,
+        lastOutboundAt: outboundReply.occurredAt,
+        lastCanonicalEventId: outboundReply.id,
+        lastEventType: outboundReply.eventType,
+      }),
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "reply-then-newer-inbound-first",
+          direction: "inbound",
+          gmailThreadId: "thread:shared-newer-inbound",
+        }),
+        buildGmailDetail({
+          key: "reply-then-newer-inbound-outbound",
+          direction: "outbound",
+          gmailThreadId: "thread:shared-newer-inbound",
+        }),
+        buildGmailDetail({
+          key: "reply-then-newer-inbound-latest",
+          direction: "inbound",
+          gmailThreadId: "thread:shared-newer-inbound",
+        }),
+      ],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      newerInbound.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: newerInbound.occurredAt,
+      lastOutboundAt: outboundReply.occurredAt,
+    });
+  });
+
   it("flips Opened to New when rebuild advances lastInboundAt after an outbound reply and keeps follow-up", async () => {
     const firstInbound = buildEvent({
       key: "first-inbound",
