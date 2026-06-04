@@ -525,6 +525,34 @@ function isOutboundProjectionEvent(
   );
 }
 
+function tierRankForEventType(
+  eventType: CanonicalEventRecord["eventType"],
+): 1 | 2 | 3 {
+  switch (eventType) {
+    case "communication.email.inbound":
+    case "communication.email.outbound":
+    case "communication.sms.inbound":
+    case "communication.sms.outbound":
+    case "note.internal.created":
+      return 1;
+    case "lifecycle.signed_up":
+    case "lifecycle.received_training":
+    case "lifecycle.completed_training":
+    case "lifecycle.submitted_first_data":
+    case "communication.sms.opt_in":
+    case "communication.sms.opt_out":
+    case "campaign.email.unsubscribed":
+      return 2;
+    case "campaign.email.sent":
+    case "campaign.email.delivered":
+    case "campaign.email.opened":
+    case "campaign.email.clicked":
+    case "campaign.email.bounced":
+    case "campaign.email.complained":
+      return 3;
+  }
+}
+
 function compareCanonicalEventRecency(
   left: Pick<CanonicalEventRecord, "id" | "occurredAt">,
   right: Pick<CanonicalEventRecord, "id" | "occurredAt">,
@@ -1475,28 +1503,70 @@ function resolveInboxSnippet(
       return "";
     }
 
-    return detail.snippetClean.length > 0
+    const snippet =
+      detail.snippetClean.length > 0
       ? detail.snippetClean
       : detail.bodyTextPreview;
+
+    if (snippet.length > 0) {
+      return snippet;
+    }
   }
 
   if (event.provenance.primaryProvider === "salesforce") {
-    return (
+    const snippet =
       detailMaps.salesforceCommunicationDetailBySourceEvidenceId.get(
         event.sourceEvidenceId,
-      )?.snippet ?? ""
-    );
+      )?.snippet ?? "";
+
+    if (snippet.length > 0) {
+      return snippet;
+    }
   }
 
   if (event.provenance.primaryProvider === "simpletexting") {
-    return (
+    const snippet =
       detailMaps.simpleTextingMessageDetailBySourceEvidenceId.get(
         event.sourceEvidenceId,
-      )?.messageTextPreview ?? ""
-    );
+      )?.messageTextPreview ?? "";
+
+    if (snippet.length > 0) {
+      return snippet;
+    }
   }
 
-  return "";
+  switch (event.eventType) {
+    case "lifecycle.signed_up":
+      return "Signed up";
+    case "lifecycle.received_training":
+      return "Received training";
+    case "lifecycle.completed_training":
+      return "Completed training";
+    case "lifecycle.submitted_first_data":
+      return "Submitted first data";
+    case "communication.sms.opt_in":
+      return "SMS opted in";
+    case "communication.sms.opt_out":
+      return "SMS opted out";
+    case "campaign.email.sent":
+      return "Campaign email sent";
+    case "campaign.email.delivered":
+      return "Campaign email delivered";
+    case "campaign.email.opened":
+      return "Campaign email opened";
+    case "campaign.email.clicked":
+      return "Campaign email clicked";
+    case "campaign.email.bounced":
+      return "Campaign email bounced";
+    case "campaign.email.complained":
+      return "Campaign email complained";
+    case "campaign.email.unsubscribed":
+      return "Campaign email unsubscribed";
+    case "note.internal.created":
+      return "Internal note added";
+    default:
+      return "";
+  }
 }
 
 function latestOutboundMatchesEarlierInboundThread(input: {
@@ -1597,10 +1667,40 @@ export async function rebuildInboxProjectionForContact(
         : latest,
     null,
   );
+  const snippetEvent = qualifyingEvents.reduce<CanonicalEventRecord | null>(
+    (currentSnippetEvent, event) => {
+      if (currentSnippetEvent === null) {
+        return event;
+      }
+
+      const currentTierRank = tierRankForEventType(
+        currentSnippetEvent.eventType,
+      );
+      const nextTierRank = tierRankForEventType(event.eventType);
+
+      if (nextTierRank < currentTierRank) {
+        return event;
+      }
+
+      if (nextTierRank > currentTierRank) {
+        return currentSnippetEvent;
+      }
+
+      return compareCanonicalEventRecency(event, currentSnippetEvent) > 0
+        ? event
+        : currentSnippetEvent;
+    },
+    null,
+  );
 
   if (latestEvent === null) {
     throw new Error(
       "Expected a qualifying event when rebuilding inbox projection.",
+    );
+  }
+  if (snippetEvent === null) {
+    throw new Error(
+      "Expected a snippet event when rebuilding inbox projection.",
     );
   }
   let lastInboundAt: string | null = null;
@@ -1652,7 +1752,7 @@ export async function rebuildInboxProjectionForContact(
     lastInboundAt,
     lastOutboundAt,
     lastActivityAt,
-    snippet: resolveInboxSnippet(latestEvent, detailMaps),
+    snippet: resolveInboxSnippet(snippetEvent, detailMaps),
     archivedAt: existing?.archivedAt ?? null,
     lastCanonicalEventId: latestEvent.id,
     lastEventType: latestEvent.eventType,

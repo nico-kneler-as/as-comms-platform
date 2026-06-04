@@ -1708,6 +1708,108 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
   });
 });
 
+describe("rebuildInboxProjectionForContact snippet selection", () => {
+  it("prefers the latest tier-1 communication snippet over newer campaign engagement", async () => {
+    const inbound = buildEvent({
+      key: "snippet-tier-1-inbound",
+      occurredAt: "2026-04-24T10:00:00.000Z",
+      direction: "inbound",
+    });
+    const campaignOpened = buildEvent({
+      key: "snippet-tier-3-open",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "campaign.email.opened",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [inbound, campaignOpened],
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "snippet-tier-1-inbound",
+          direction: "inbound",
+          bodyTextPreview:
+            "I went to pick it up today and Weaverville had no units to give me.",
+        }),
+      ],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      inbound.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      snippet:
+        "I went to pick it up today and Weaverville had no units to give me.",
+      lastEventType: "campaign.email.opened",
+      lastCanonicalEventId: campaignOpened.id,
+    });
+  });
+
+  it("falls back to a friendly campaign label when only campaign opens exist", async () => {
+    const campaignOpened = buildEvent({
+      key: "snippet-campaign-only-open",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "campaign.email.opened",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [campaignOpened],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      campaignOpened.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      snippet: "Campaign email opened",
+      lastEventType: "campaign.email.opened",
+    });
+  });
+
+  it("prefers the latest tier-2 lifecycle snippet over newer tier-3 campaign activity", async () => {
+    const lifecycle = buildEvent({
+      key: "snippet-tier-2-lifecycle",
+      occurredAt: "2026-04-24T11:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      direction: null,
+      provider: "salesforce",
+      sourceRecordType: "contact_membership",
+      messageKind: null,
+    });
+    const campaignSent = buildEvent({
+      key: "snippet-tier-3-sent",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "campaign.email.sent",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [lifecycle, campaignSent],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      lifecycle.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      snippet: "Signed up",
+      lastEventType: "campaign.email.sent",
+      lastCanonicalEventId: campaignSent.id,
+    });
+  });
+});
+
 describe("upsertNormalizedContactGraph write ordering", () => {
   it("writes project and expedition dimensions before contact memberships for a new expedition", async () => {
     const callOrder: { kind: string; id: string }[] = [];
