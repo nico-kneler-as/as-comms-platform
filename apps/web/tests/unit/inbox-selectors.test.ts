@@ -7305,7 +7305,7 @@ describe("real inbox selectors", () => {
         "",
         "[image: Image]",
         "",
-        "thanks",
+        "Trees were leafing up last week.",
       ].join("\n"),
     });
     await seedInboxProjection(runtime.context, {
@@ -7323,7 +7323,9 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:inline-image-placeholder");
 
-    expect(detail?.timeline[0]?.body).toBe("Hi\n\nIMG_1234.jpeg\n\nthanks");
+    expect(detail?.timeline[0]?.body).toBe(
+      "Hi\n\nIMG_1234.jpeg\n\nTrees were leafing up last week.",
+    );
   });
 
   it("shows non-decoration image attachments as chips with a proxy URL", async () => {
