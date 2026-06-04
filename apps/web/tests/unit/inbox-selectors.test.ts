@@ -7205,6 +7205,127 @@ describe("real inbox selectors", () => {
     ]);
   });
 
+  it("falls back to captured mailbox when inbound To matches inbound From", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:captured-mailbox-fallback",
+      salesforceContactId: "003-captured-mailbox-fallback",
+      displayName: "Captured Mailbox Fallback",
+      primaryEmail: "fallback@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "captured-mailbox-fallback-1",
+      contactId: "contact:captured-mailbox-fallback",
+      occurredAt: "2026-05-28T11:00:00.000Z",
+      direction: "inbound",
+      subject: "Newsletter",
+      snippet: "Mailing list test.",
+      fromHeader: "Foo <a@b.com>",
+      toHeader: "Adventure Scientists <a@b.com>",
+    });
+    await runtime.context.repositories.gmailMessageDetails.upsert({
+      sourceEvidenceId: "source:captured-mailbox-fallback-1",
+      providerRecordId: "captured-mailbox-fallback-1",
+      gmailThreadId: "thread:contact:captured-mailbox-fallback",
+      rfc822MessageId: "<captured-mailbox-fallback-1@example.org>",
+      direction: "inbound",
+      subject: "Newsletter",
+      fromHeader: "Foo <a@b.com>",
+      toHeader: "Adventure Scientists <a@b.com>",
+      ccHeader: null,
+      fromEmails: [],
+      toEmails: [],
+      ccEmails: [],
+      bccEmails: [],
+      snippetClean: "Mailing list test.",
+      bodyTextPreview: "Mailing list test.",
+      bodyKind: "plaintext",
+      capturedMailbox: "orcas@adventurescientists.org",
+      projectInboxAlias: "orcas@adventurescientists.org",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:captured-mailbox-fallback",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-28T11:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-28T11:00:00.000Z",
+      snippet: "Mailing list test.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:captured-mailbox-fallback");
+    const entry = detail?.timeline[0];
+
+    expect(entry?.participantRows).toEqual([
+      {
+        label: "From",
+        name: "Foo",
+        email: "a@b.com",
+      },
+      {
+        label: "To",
+        name: "Adventure Scientists",
+        email: "orcas@adventurescientists.org",
+      },
+    ]);
+  });
+
+  it("strips standalone inline-image placeholders from rendered email bodies", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:inline-image-placeholder",
+      salesforceContactId: "003-inline-image-placeholder",
+      displayName: "Inline Image Placeholder",
+      primaryEmail: "inline-image@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "inline-image-placeholder-1",
+      contactId: "contact:inline-image-placeholder",
+      occurredAt: "2026-05-28T12:00:00.000Z",
+      direction: "inbound",
+      subject: "Winter check-in",
+      snippet: "Hi there, see attached.",
+      bodyTextPreview: [
+        "Hi",
+        "",
+        "[image: Image]",
+        "",
+        "IMG_1234.jpeg",
+        "",
+        "[image: Image]",
+        "",
+        "thanks",
+      ].join("\n"),
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:inline-image-placeholder",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-28T12:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-28T12:00:00.000Z",
+      snippet: "Hi there, see attached.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:inline-image-placeholder");
+
+    expect(detail?.timeline[0]?.body).toBe("Hi\n\nIMG_1234.jpeg\n\nthanks");
+  });
+
   it("shows non-decoration image attachments as chips with a proxy URL", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
@@ -7357,6 +7478,100 @@ describe("real inbox selectors", () => {
     // survives.
     expect(outboundEntry?.attachments).toHaveLength(1);
     expect(outboundEntry?.attachments[0]?.filename).toBe("instructions.pdf");
+  });
+
+  it("hides inbound attachments that duplicate a strictly earlier inbound on the same thread", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:inbound-dupe",
+      salesforceContactId: "003-inbound-dupe",
+      displayName: "Inbound Dupe Test",
+      primaryEmail: "inbound-dupe@example.org",
+      primaryPhone: null,
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "inbound-dupe-1",
+      contactId: "contact:inbound-dupe",
+      occurredAt: "2026-05-28T07:44:00.000Z",
+      direction: "inbound",
+      subject: "Re: Trail update",
+      snippet: "First reply with attachment.",
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "inbound-dupe-2",
+      contactId: "contact:inbound-dupe",
+      occurredAt: "2026-05-28T08:10:00.000Z",
+      direction: "inbound",
+      subject: "Re: Trail update",
+      snippet: "Quoted reply with the same screenshot.",
+    });
+    const thirdInbound = await seedInboxEmailEvent(runtime.context, {
+      id: "inbound-dupe-3",
+      contactId: "contact:inbound-dupe",
+      occurredAt: "2026-05-28T08:30:00.000Z",
+      direction: "inbound",
+      subject: "Re: Trail update",
+      snippet: "Fresh attachment in a later reply.",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:inbound-dupe-1",
+      id: "att:gmail:inbound-dupe-1:1",
+      mimeType: "image/jpeg",
+      filename: "photo.jpg",
+      sizeBytes: 45_817,
+      storageKey: "gmail/dupe/att:gmail:inbound-dupe-1:1",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:inbound-dupe-2",
+      id: "att:gmail:inbound-dupe-2:1",
+      mimeType: "image/jpeg",
+      filename: "photo.jpg",
+      sizeBytes: 45_817,
+      storageKey: "gmail/dupe/att:gmail:inbound-dupe-2:1",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:inbound-dupe-3",
+      id: "att:gmail:inbound-dupe-3:1",
+      mimeType: "image/jpeg",
+      filename: "different.jpg",
+      sizeBytes: 22_222,
+      storageKey: "gmail/dupe/att:gmail:inbound-dupe-3:1",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:inbound-dupe",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-28T08:30:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-28T08:30:00.000Z",
+      snippet: "Fresh attachment in a later reply.",
+      lastCanonicalEventId: thirdInbound.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:inbound-dupe");
+
+    const firstEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:inbound-dupe-1",
+    );
+    const secondEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:inbound-dupe-2",
+    );
+    const thirdEntry = detail?.timeline.find(
+      (entry) => entry.id === "timeline:inbound-dupe-3",
+    );
+
+    expect(firstEntry?.attachments.map((attachment) => attachment.filename)).toEqual([
+      "photo.jpg",
+    ]);
+    expect(secondEntry?.attachments).toEqual([]);
+    expect(thirdEntry?.attachments.map((attachment) => attachment.filename)).toEqual([
+      "different.jpg",
+    ]);
   });
 
   it("falls back to pending attachment metadata when pending outbounds have no canonical attachments yet", async () => {

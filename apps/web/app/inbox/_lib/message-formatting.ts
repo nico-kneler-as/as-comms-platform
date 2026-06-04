@@ -55,6 +55,7 @@ const FORWARDED_HEADER_LINE_PATTERN =
 const STRUCTURED_EMAIL_HEADER_PATTERN =
   /(?:^|\n)(From|To|Recipients|Cc|Bcc|Reply-To|Sent|Date|Subject|Body):/i;
 const FROM_HEADER_PATTERN = /(?:^|\n)From:\s*(.+?)(?:\n|$)/i;
+const INLINE_IMAGE_PLACEHOLDER_LINE_PATTERN = /^\s*\[image:[^\]]*\]\s*$/gm;
 const RECIPIENTS_HEADER_PATTERN = /(?:^|\n)(?:Recipients|To):\s*(.+?)(?:\n|$)/i;
 const CC_HEADER_PATTERN = /(?:^|\n)Cc:\s*(.+?)(?:\n|$)/i;
 const BCC_HEADER_PATTERN = /(?:^|\n)Bcc:\s*(.+?)(?:\n|$)/i;
@@ -188,6 +189,12 @@ export function sanitizePreviewText(value: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+export function stripInlineImagePlaceholders(value: string): string {
+  return value
+    .replace(INLINE_IMAGE_PLACEHOLDER_LINE_PATTERN, "")
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 function isLikelyPreviewNoise(value: string): boolean {

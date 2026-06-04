@@ -29,6 +29,7 @@ import {
   parseCommunicationPreview,
   resolvePreferredMessagePreview,
   sanitizePreviewText,
+  stripInlineImagePlaceholders,
   stripDuplicateOutboundEcho,
   stripSignature,
   trimQuotedReplyContent,
@@ -226,9 +227,9 @@ interface InboxDetailCacheData {
     string,
     readonly MessageAttachmentRecord[]
   >;
-  readonly inboundAttachmentSignaturesByThread: ReadonlyMap<
+  readonly inboundFirstOccurrenceByThread: ReadonlyMap<
     string,
-    ReadonlySet<string>
+    ReadonlyMap<string, string>
   >;
   /**
    * Captured project-inbox alias per timeline canonical event, sourced
@@ -2281,17 +2282,15 @@ function buildTimelineEntry(input: {
     readonly MessageAttachmentRecord[]
   >;
   /**
-   * Per-Gmail-thread set of `(filename:sizeBytes)` signatures for all
-   * inbound attachments seen across the loaded timeline. Used by the
-   * email attachment builder to hide outbound quoted duplicates so
-   * the screenshot the volunteer attached doesn't visually float
-   * under the operator's reply bubble (and vice versa for any later
-   * outbound quoting). Built once per page assembly; see
-   * `buildInboundAttachmentSignaturesByThread`.
+   * Per-Gmail-thread first-occurrence map for inbound attachment
+   * signatures: `threadId -> (filename:sizeBytes -> canonicalEventId)`.
+   * Used by the email attachment builder to hide both outbound quoted
+   * duplicates and later inbound quoted duplicates without stripping the
+   * original inbound attachment that introduced the file.
    */
-  readonly inboundAttachmentSignaturesByThread: ReadonlyMap<
+  readonly inboundFirstOccurrenceByThread: ReadonlyMap<
     string,
-    ReadonlySet<string>
+    ReadonlyMap<string, string>
   >;
   /**
    * Captured project-inbox alias (e.g. `pnwbio@…`) per timeline item,
@@ -2381,9 +2380,13 @@ function buildTimelineEntry(input: {
           }),
         })
       : resolvedBody;
+  const renderableEmailBody =
+    input.item.family === "one_to_one_email"
+      ? stripInlineImagePlaceholders(bodyWithDuplicateOutboundEchoStripped)
+      : bodyWithDuplicateOutboundEchoStripped;
   const hasRenderableEmailContent =
     kind === "inbound-email" || kind === "outbound-email"
-      ? subject !== null || bodyWithDuplicateOutboundEchoStripped.trim().length > 0
+      ? subject !== null || renderableEmailBody.trim().length > 0
       : true;
   const finalKind =
     !hasRenderableEmailContent && input.item.family === "one_to_one_email"
@@ -2418,13 +2421,12 @@ function buildTimelineEntry(input: {
               input.item.canonicalEventId,
             ) ?? [],
           pending: input.item.pendingAttachmentMetadata ?? [],
-          inboundAttachmentSignaturesOnThread:
-            input.item.direction === "outbound" &&
-            input.item.threadId !== null &&
-            input.item.threadId.length > 0
-              ? (input.inboundAttachmentSignaturesByThread.get(
-                  input.item.threadId,
-                ) ?? null)
+          itemDirection: input.item.direction,
+          canonicalEventId: input.item.canonicalEventId,
+          inboundFirstOccurrenceOnThread:
+            input.item.threadId !== null && input.item.threadId.length > 0
+              ? (input.inboundFirstOccurrenceByThread.get(input.item.threadId) ??
+                null)
               : null,
         })
       : [];
@@ -2494,7 +2496,7 @@ function buildTimelineEntry(input: {
       canonicalSenderDisplayName,
     ),
     subject,
-    body: bodyWithDuplicateOutboundEchoStripped,
+    body: renderableEmailBody,
     channel: timelineChannel(input.item),
     isUnread,
     isPreview: isPreviewTimelineItem(input.item),
@@ -2621,10 +2623,11 @@ function buildAttachmentSignature(input: {
 }
 
 /**
- * Walk the loaded timeline items once, collect `(filename, sizeBytes)`
- * signatures for every attachment on an INBOUND email, and group by
- * Gmail thread. Returned map is consumed by
- * `buildEmailAttachmentsForEntry` to suppress outbound quoted dupes.
+ * Walk the loaded timeline items once, record which inbound canonical
+ * event first introduced each `(filename, sizeBytes)` signature on a
+ * Gmail thread, and group by thread. Returned map is consumed by
+ * `buildEmailAttachmentsForEntry` to suppress outbound quoted dupes and
+ * later inbound quoted dupes while preserving the original inbound.
  *
  * Scope note: signature set is built from the items currently loaded
  * for the contact's detail page (i.e., the visible window). A
@@ -2637,15 +2640,15 @@ function buildAttachmentSignature(input: {
  * size) is acceptable given the operator can still see the original
  * copy on the inbound bubble.
  */
-function buildInboundAttachmentSignaturesByThread(input: {
+function buildInboundFirstOccurrenceByThread(input: {
   readonly items: readonly TimelineItem[];
   readonly attachmentsBySourceEvidenceId: ReadonlyMap<
     string,
     readonly MessageAttachmentRecord[]
   >;
   readonly sourceEvidenceIdByCanonicalEventId: ReadonlyMap<string, string>;
-}): Map<string, Set<string>> {
-  const byThread = new Map<string, Set<string>>();
+}): Map<string, Map<string, string>> {
+  const byThread = new Map<string, Map<string, string>>();
 
   for (const item of input.items) {
     if (item.family !== "one_to_one_email" || item.direction !== "inbound") {
@@ -2670,19 +2673,20 @@ function buildInboundAttachmentSignaturesByThread(input: {
       continue;
     }
 
-    let signatures = byThread.get(threadId);
-    if (signatures === undefined) {
-      signatures = new Set<string>();
-      byThread.set(threadId, signatures);
+    let firstOccurrenceBySignature = byThread.get(threadId);
+    if (firstOccurrenceBySignature === undefined) {
+      firstOccurrenceBySignature = new Map<string, string>();
+      byThread.set(threadId, firstOccurrenceBySignature);
     }
 
     for (const attachment of attachments) {
-      signatures.add(
-        buildAttachmentSignature({
-          filename: attachment.filename,
-          sizeBytes: attachment.sizeBytes,
-        }),
-      );
+      const signature = buildAttachmentSignature({
+        filename: attachment.filename,
+        sizeBytes: attachment.sizeBytes,
+      });
+      if (!firstOccurrenceBySignature.has(signature)) {
+        firstOccurrenceBySignature.set(signature, item.canonicalEventId);
+      }
     }
   }
 
@@ -2696,29 +2700,32 @@ function buildEmailAttachmentsForEntry(input: {
     readonly contentType: string;
     readonly sizeBytes: number;
   }[];
-  /**
-   * When the entry being rendered is outbound on a Gmail thread, this
-   * is the set of `(filename:sizeBytes)` signatures of attachments
-   * previously seen on inbound messages of the same thread. Any
-   * outbound canonical attachment whose signature is in this set is
-   * a quoted duplicate of the inbound's original and gets hidden
-   * from the outbound bubble (the original is still visible on the
-   * inbound bubble). `null` for inbound entries, or when the thread
-   * is unknown / has no inbound attachments to compare against.
-   */
-  readonly inboundAttachmentSignaturesOnThread: ReadonlySet<string> | null;
+  readonly itemDirection: "inbound" | "outbound";
+  readonly canonicalEventId: string;
+  readonly inboundFirstOccurrenceOnThread: ReadonlyMap<string, string> | null;
 }): InboxTimelineEntryViewModel["attachments"] {
   const canonicalAttachments = input.canonical
     .filter((attachment) => !attachment.isDecoration)
     .filter((attachment) => {
-      if (input.inboundAttachmentSignaturesOnThread === null) {
+      if (input.inboundFirstOccurrenceOnThread === null) {
         return true;
       }
       const signature = buildAttachmentSignature({
         filename: attachment.filename,
         sizeBytes: attachment.sizeBytes,
       });
-      return !input.inboundAttachmentSignaturesOnThread.has(signature);
+      const firstOccurrenceCanonicalEventId =
+        input.inboundFirstOccurrenceOnThread.get(signature);
+
+      if (firstOccurrenceCanonicalEventId === undefined) {
+        return true;
+      }
+
+      if (input.itemDirection === "outbound") {
+        return false;
+      }
+
+      return firstOccurrenceCanonicalEventId === input.canonicalEventId;
     })
     .map((attachment) => ({
       id: attachment.id,
@@ -2905,10 +2912,13 @@ function buildParticipantRows(input: {
       email: fromEmail,
     });
     // Inbound captures sometimes drop the To header (older
-    // Salesforce-derived items, mbox imports). Fall back to the
+    // Salesforce-derived items, mbox imports) or preserve a broken
+    // value equal to the sender's own address. Fall back to the
     // captured `mailbox` so the compact header always has a right
-    // side and the expanded view always shows a To row.
-    const inboundToEmail = toEmail ?? input.item.mailbox ?? null;
+    // side and the expanded view always shows a trustworthy To row.
+    const inboundToEmail = shouldFallbackToCapturedMailbox(toEmail, fromEmail)
+      ? (input.item.mailbox ?? null)
+      : toEmail;
     rows.push({
       label: "To",
       name: input.headerProjectLabel ?? "Adventure Scientists",
@@ -2925,6 +2935,17 @@ function buildParticipantRows(input: {
   }
 
   return rows;
+}
+
+function shouldFallbackToCapturedMailbox(
+  toEmail: string | null,
+  fromEmail: string | null,
+): boolean {
+  if (toEmail === null) {
+    return true;
+  }
+
+  return fromEmail !== null && toEmail.toLowerCase() === fromEmail.toLowerCase();
 }
 
 /**
@@ -4061,7 +4082,7 @@ async function readInboxDetailCacheData(
         ) ?? [],
       ]),
     ),
-    inboundAttachmentSignaturesByThread: buildInboundAttachmentSignaturesByThread(
+    inboundFirstOccurrenceByThread: buildInboundFirstOccurrenceByThread(
       {
         items: timelinePage.items,
         attachmentsBySourceEvidenceId,
@@ -4706,8 +4727,8 @@ function buildInboxDetailTimelineViewModel(input: {
       activityTimelineItems: input.cachedData.activityTimelineItems,
       attachmentsByCanonicalEventId:
         input.cachedData.attachmentsByCanonicalEventId,
-      inboundAttachmentSignaturesByThread:
-        input.cachedData.inboundAttachmentSignaturesByThread,
+      inboundFirstOccurrenceByThread:
+        input.cachedData.inboundFirstOccurrenceByThread,
       gmailMailboxAliasByCanonicalEventId:
         input.cachedData.gmailMailboxAliasByCanonicalEventId,
     }),
