@@ -1499,6 +1499,71 @@ function resolveInboxSnippet(
   return "";
 }
 
+function latestOutboundMatchesEarlierInboundThread(input: {
+  readonly latestEvent: CanonicalEventRecord;
+  readonly qualifyingEvents: readonly CanonicalEventRecord[];
+  readonly detailMaps: ProviderDetailMaps;
+}): boolean {
+  if (!isOutboundProjectionEvent(input.latestEvent.eventType)) {
+    return false;
+  }
+
+  const latestThreadId =
+    input.detailMaps.gmailMessageDetailBySourceEvidenceId.get(
+      input.latestEvent.sourceEvidenceId,
+    )?.gmailThreadId ?? null;
+
+  if (latestThreadId === null) {
+    return false;
+  }
+
+  return input.qualifyingEvents.some(
+    (event) =>
+      event.id !== input.latestEvent.id &&
+      isInboundEvent(event.eventType) &&
+      compareCanonicalEventRecency(event, input.latestEvent) < 0 &&
+      input.detailMaps.gmailMessageDetailBySourceEvidenceId.get(
+        event.sourceEvidenceId,
+      )?.gmailThreadId === latestThreadId,
+  );
+}
+
+async function latestOutboundMatchesPendingReplySignal(input: {
+  readonly persistence: Stage1PersistenceService;
+  readonly contactId: string;
+  readonly latestEvent: CanonicalEventRecord;
+  readonly detailMaps: ProviderDetailMaps;
+}): Promise<boolean> {
+  if (!isOutboundProjectionEvent(input.latestEvent.eventType)) {
+    return false;
+  }
+
+  const pendingOutbounds =
+    await input.persistence.repositories.pendingOutbounds.findForContact(
+      input.contactId,
+      {
+        limit: Number.MAX_SAFE_INTEGER,
+      },
+    );
+  const latestRfc822MessageId =
+    input.detailMaps.gmailMessageDetailBySourceEvidenceId.get(
+      input.latestEvent.sourceEvidenceId,
+    )?.rfc822MessageId ?? null;
+  const matchingPendingOutbound =
+    pendingOutbounds.find(
+      (pendingOutbound) => pendingOutbound.reconciledEventId === input.latestEvent.id,
+    ) ??
+    (latestRfc822MessageId === null
+      ? null
+      : pendingOutbounds.find(
+          (pendingOutbound) =>
+            pendingOutbound.reconciledEventId === null &&
+            pendingOutbound.sentRfc822MessageId === latestRfc822MessageId,
+        ) ?? null);
+
+  return (matchingPendingOutbound?.inReplyToRfc822 ?? null) !== null;
+}
+
 export async function rebuildInboxProjectionForContact(
   persistence: Stage1PersistenceService,
   contactId: string,
@@ -1561,13 +1626,27 @@ export async function rebuildInboxProjectionForContact(
   const hasNewerInbound =
     lastInboundAt !== null &&
     (existing?.lastInboundAt == null || lastInboundAt > existing.lastInboundAt);
+  const latestOutboundIsInThreadReply =
+    latestOutboundMatchesEarlierInboundThread({
+      latestEvent,
+      qualifyingEvents,
+      detailMaps,
+    }) ||
+    (await latestOutboundMatchesPendingReplySignal({
+      persistence,
+      contactId,
+      latestEvent,
+      detailMaps,
+    }));
 
   return persistence.saveInboxProjection({
     contactId,
     bucket: hasNewerInbound
       ? "New"
-      : (existing?.bucket ??
-        (isInboundEvent(latestEvent.eventType) ? "New" : "Opened")),
+      : (latestOutboundIsInThreadReply && existing?.bucket === "New"
+          ? "Opened"
+          : (existing?.bucket ??
+            (isInboundEvent(latestEvent.eventType) ? "New" : "Opened"))),
     needsFollowUp: existing?.needsFollowUp ?? false,
     hasUnresolved: await contactHasUnresolved(persistence, contactId),
     lastInboundAt,
