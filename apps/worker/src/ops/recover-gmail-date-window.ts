@@ -10,6 +10,7 @@ import {
 import {
   createStage1NormalizationService,
   createStage1PersistenceService,
+  type Stage1PersistenceService,
   type Stage1RepositoryBundle,
 } from "@as-comms/domain";
 import {
@@ -252,6 +253,34 @@ export async function recoverGmailDateWindow(input: {
   };
 }
 
+export async function runGmailDateWindowRecovery(input: {
+  readonly persistence: Stage1PersistenceService;
+  readonly windowStart: string;
+  readonly windowEnd: string;
+  readonly mailbox?: string | null;
+  readonly execute?: boolean;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly logger?: Logger;
+}): Promise<RecoverGmailDateWindowResult> {
+  const env = input.env ?? process.env;
+  const gmail = buildGmailApiClientFromEnv(env, input.mailbox ?? null);
+
+  return recoverGmailDateWindow({
+    repositories: input.persistence.repositories,
+    ingest: createStage1IngestService(
+      createStage1NormalizationService(input.persistence),
+    ),
+    apiClient: gmail.client,
+    mailbox: gmail.mailbox,
+    liveAccount: gmail.liveAccount,
+    projectInboxAliases: gmail.projectInboxAliases,
+    windowStart: input.windowStart,
+    windowEnd: input.windowEnd,
+    execute: input.execute ?? true,
+    ...(input.logger === undefined ? {} : { logger: input.logger }),
+  });
+}
+
 export async function runRecoverGmailDateWindowCommand(
   args: readonly string[] = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env,
@@ -275,19 +304,13 @@ export async function runRecoverGmailDateWindowCommand(
   try {
     const repositories = createStage1RepositoryBundleFromConnection(connection);
     const persistence = createStage1PersistenceService(repositories);
-    const normalization = createStage1NormalizationService(persistence);
-    const ingest = createStage1IngestService(normalization);
-    const gmail = buildGmailApiClientFromEnv(env, mailbox);
-    const result = await recoverGmailDateWindow({
-      repositories,
-      ingest,
-      apiClient: gmail.client,
-      mailbox: gmail.mailbox,
-      liveAccount: gmail.liveAccount,
-      projectInboxAliases: gmail.projectInboxAliases,
+    const result = await runGmailDateWindowRecovery({
+      persistence,
       windowStart,
       windowEnd,
+      mailbox,
       execute: !dryRun,
+      env,
       logger,
     });
 

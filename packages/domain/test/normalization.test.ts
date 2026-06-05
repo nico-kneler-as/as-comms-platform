@@ -997,6 +997,15 @@ function buildContext(input: {
       sweepOrphans: () => Promise.resolve(0),
       findForContact: () => Promise.resolve([...pendingOutboundsById.values()]),
     },
+    integrationBackfillJobs: {
+      insert: () => Promise.resolve(null),
+      countAll: () => Promise.resolve(0),
+      findById: () => Promise.resolve(null),
+      findByIdempotencyKey: () => Promise.resolve(null),
+      markRunning: () => Promise.resolve(null),
+      markCompleted: () => Promise.resolve(null),
+      markFailed: () => Promise.resolve(null),
+    },
     identityResolutionQueue: {
       findById: (id) => Promise.resolve(identityCasesById.get(id) ?? null),
       listOpenByContactId: (contactId) =>

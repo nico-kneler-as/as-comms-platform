@@ -459,6 +459,27 @@ export const manualNoteDetailSchema = z.object({
 });
 export type ManualNoteDetailRecord = z.infer<typeof manualNoteDetailSchema>;
 
+export const integrationBackfillJobSchema = z.object({
+  id: idSchema,
+  service: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  triggeredBy: z.string().min(1),
+  windowStart: timestampSchema,
+  windowEnd: timestampSchema,
+  mailbox: nullableStringSchema,
+  status: z.enum(["pending", "running", "completed", "failed"]),
+  enqueuedAt: timestampSchema,
+  startedAt: optionalTimestampSchema,
+  completedAt: optionalTimestampSchema,
+  resultJson: metadataJsonSchema.nullable(),
+  failureReason: nullableStringSchema,
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+export type IntegrationBackfillJobRecord = z.infer<
+  typeof integrationBackfillJobSchema
+>;
+
 export const identityResolutionSchema = z
   .object({
     id: idSchema,

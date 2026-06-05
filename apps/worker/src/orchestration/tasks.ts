@@ -32,6 +32,11 @@ import type { IntegrationHealthRepository } from "@as-comms/domain";
 import type { OpsAlertStateRepository } from "@as-comms/domain";
 
 import {
+  createIntegrationBackfillGmailTask,
+  integrationBackfillGmailTaskName,
+  type IntegrationBackfillGmailTaskDependencies,
+} from "./integration-backfill.js";
+import {
   createIntegrationHealthAlertSenderWithStateRepository,
   readIntegrationHealthAlertRecipient,
   type IntegrationHealthAlertSender
@@ -47,6 +52,7 @@ import type { Stage1WorkerOrchestrationService } from "./types.js";
 export const pollGmailLiveJobName = "poll-gmail-live" as const;
 export const pollSalesforceLiveJobName = "poll-salesforce-live" as const;
 export const pollIntegrationHealthJobName = "poll-integration-health" as const;
+export { integrationBackfillGmailTaskName };
 export { pollAiKnowledgeAutoSyncJobName };
 const polledIntegrationServices = [
   "salesforce",
@@ -473,6 +479,7 @@ export function createStage1TaskList(
   input?: {
     readonly integrationHealth?: IntegrationHealthTaskDependencies;
     readonly aiKnowledgeAutoSync?: PollAiKnowledgeAutoSyncTaskDependencies;
+    readonly integrationBackfill?: IntegrationBackfillGmailTaskDependencies;
   }
 ): TaskList {
   return {
@@ -523,6 +530,13 @@ export function createStage1TaskList(
           [pollIntegrationHealthJobName]: createPollIntegrationHealthTask(
             input.integrationHealth
           )
+        }),
+    ...(input?.integrationBackfill === undefined
+      ? {}
+      : {
+          [integrationBackfillGmailTaskName]: createIntegrationBackfillGmailTask(
+            input.integrationBackfill,
+          ),
         }),
     [simpleTextingHistoricalCaptureBatchJobName]: createStage1Task(
       (payload) => simpleTextingHistoricalCaptureBatchPayloadSchema.parse(payload),

@@ -239,6 +239,15 @@ function buildRepositoryBundle(input: {
       sweepOrphans: () => Promise.resolve(0),
       findForContact: () => Promise.resolve([]),
     },
+    integrationBackfillJobs: {
+      insert: () => Promise.resolve(null),
+      countAll: () => Promise.resolve(0),
+      findById: () => Promise.resolve(null),
+      findByIdempotencyKey: () => Promise.resolve(null),
+      markRunning: () => Promise.resolve(null),
+      markCompleted: () => Promise.resolve(null),
+      markFailed: () => Promise.resolve(null),
+    },
     identityResolutionQueue: {
       findById: () => Promise.resolve(null),
       listOpenByContactId: () => Promise.resolve([]),
