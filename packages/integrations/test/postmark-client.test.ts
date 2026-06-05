@@ -157,10 +157,11 @@ describe("PostmarkClient — sendBatch", () => {
     const headers = init?.headers as Record<string, string>;
     expect(headers["X-Postmark-Server-Token"]).toBe(TEST_SERVER_TOKEN);
     expect(headers["X-AS-Test"]).toBeUndefined();
-    const sentBody = JSON.parse(init?.body as string) as {
-      Messages: unknown[];
-    };
-    expect(sentBody.Messages).toHaveLength(1);
+    // Postmark `/email/batch` requires a bare array — not a `{ Messages: [...] }`
+    // wrapper (that shape is reserved for `/email/batchWithTemplates`).
+    const sentBody = JSON.parse(init?.body as string) as unknown[];
+    expect(Array.isArray(sentBody)).toBe(true);
+    expect(sentBody).toHaveLength(1);
   });
 
   it("adds the X-AS-Test header and uses the test token when isTest is true", async () => {
