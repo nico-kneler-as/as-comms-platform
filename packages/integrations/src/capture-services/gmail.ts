@@ -690,6 +690,18 @@ export function createGmailCaptureService(
           });
         }
 
+        const cause = error instanceof Error ? error : new Error(String(error));
+        console.error(
+          JSON.stringify({
+            event: "gmail_capture.http.unhandled_error",
+            method: request.method,
+            path: request.path,
+            errorName: cause.name,
+            errorMessage: cause.message,
+            errorStack: cause.stack
+          })
+        );
+
         return jsonResponse(500, {
           error: "internal_error"
         });

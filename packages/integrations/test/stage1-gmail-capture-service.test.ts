@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createGmailCaptureService,
@@ -7,6 +7,15 @@ import {
   gmailMessageRecordSchema
 } from "../src/index.js";
 import { sha256Json } from "../src/capture-services/shared.js";
+
+interface LoggedUnhandledHttpError {
+  readonly event: string;
+  readonly method: string;
+  readonly path: string;
+  readonly errorName: string;
+  readonly errorMessage: string;
+  readonly errorStack?: string;
+}
 
 function buildFullMessagePayload(input: {
   readonly bodyText: string;
@@ -297,6 +306,84 @@ describe("Gmail capture service", () => {
       capturedMailbox: "volunteers@example.org",
       projectInboxAlias: "project-oceans@example.org"
     });
+  });
+
+  it("logs one-line structured error payloads for unhandled live capture failures", async () => {
+    const syntheticFailure = new Error("synthetic failure");
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const service = createGmailCaptureService(
+      {
+        bearerToken: "gmail-token",
+        liveAccount: "volunteers@example.org",
+        projectInboxAliases: ["project-oceans@example.org"],
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
+      },
+      {
+        apiClient: {
+          listMessageIds: () => Promise.resolve([]),
+          getMessage: () => Promise.resolve(null)
+        }
+      }
+    );
+
+    const captureLiveBatchSpy = vi
+      .spyOn(service, "captureLiveBatch")
+      .mockRejectedValue(syntheticFailure);
+
+    try {
+      const response = await service.handleHttpRequest({
+        method: "POST",
+        path: "/live",
+        headers: {
+          authorization: "Bearer gmail-token"
+        },
+        bodyText: JSON.stringify({
+          version: 1,
+          jobId: "job:gmail:live:error",
+          correlationId: "corr:gmail:live:error",
+          traceId: null,
+          batchId: "batch:gmail:live:error",
+          syncStateId: "sync:gmail:live:error",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "gmail",
+          mode: "live",
+          jobType: "live_ingest",
+          cursor: null,
+          checkpoint: null,
+          windowStart: "2026-01-05T00:00:00.000Z",
+          windowEnd: "2026-01-05T00:05:00.000Z",
+          recordIds: [],
+          maxRecords: 25
+        })
+      });
+
+      expect(response.status).toBe(500);
+      expect(JSON.parse(response.body)).toEqual({
+        error: "internal_error"
+      });
+      expect(captureLiveBatchSpy).toHaveBeenCalledOnce();
+      expect(errorSpy).toHaveBeenCalledOnce();
+
+      const loggedPayload: LoggedUnhandledHttpError = JSON.parse(
+        String(errorSpy.mock.calls[0]?.[0] ?? "")
+      ) as LoggedUnhandledHttpError;
+      expect(loggedPayload).toMatchObject({
+        event: "gmail_capture.http.unhandled_error",
+        method: "POST",
+        path: "/live",
+        errorName: syntheticFailure.name,
+        errorMessage: syntheticFailure.message,
+        errorStack: syntheticFailure.stack
+      });
+    } finally {
+      captureLiveBatchSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
   });
 
   it("keeps live Gmail checksum material backward-compatible when Subject is fetched", async () => {
