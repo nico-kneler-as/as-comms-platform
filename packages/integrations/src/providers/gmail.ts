@@ -76,6 +76,16 @@ export const gmailMessageRecordSchema = z.object({
       }),
     )
     .default([]),
+  driveAttachmentMetadata: z
+    .array(
+      z.object({
+        driveFileId: z.string().min(1),
+        driveUrl: z.string().min(1),
+        filename: nullableStringSchema,
+        mimeType: z.literal("application/vnd.gmail-drive-attachment"),
+      }),
+    )
+    .default([]),
   htmlBodyCidReferences: stringArraySchema.default([]),
 });
 export type GmailMessageRecord = z.infer<typeof gmailMessageRecordSchema>;
