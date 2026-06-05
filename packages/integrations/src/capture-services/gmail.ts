@@ -21,6 +21,7 @@ import {
 } from "../providers/gmail-record-builder.js";
 import {
   collectGmailAttachmentMetadata,
+  collectGmailDriveAttachments,
   collectGmailHtmlCidReferences,
   cleanGmailBodyPreviewText,
   extractDsnOriginalMessageId,
@@ -443,6 +444,10 @@ export async function mapLiveGmailMessageToRecord(input: {
       ? cleanedGmailSnippet
       : null;
   const attachmentMetadata = collectGmailAttachmentMetadata(input.message.payload);
+  const driveAttachmentMetadata = collectGmailDriveAttachments(
+    input.message.payload,
+    { messageIdentifier: input.message.id },
+  );
   const htmlBodyCidReferences = collectGmailHtmlCidReferences(
     input.message.payload,
     {
@@ -469,6 +474,7 @@ export async function mapLiveGmailMessageToRecord(input: {
     bodyTextPreview: usableSnippetFallback ?? bodyPreviewResult.bodyTextPreview,
     bodyKind: usableSnippetFallback === null ? bodyPreviewResult.bodyKind : "plaintext",
     attachmentMetadata,
+    driveAttachmentMetadata,
     htmlBodyCidReferences,
     internalDate: input.message.internalDate,
     headers,

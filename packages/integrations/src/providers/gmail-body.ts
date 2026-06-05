@@ -87,6 +87,13 @@ export interface GmailAttachmentMetadata {
   readonly contentId: string | null;
 }
 
+export interface GmailDriveAttachmentMetadata {
+  readonly driveFileId: string;
+  readonly driveUrl: string;
+  readonly filename: string | null;
+  readonly mimeType: "application/vnd.gmail-drive-attachment";
+}
+
 const ENCRYPTED_MESSAGE_PLACEHOLDER =
   "[Encrypted message — open in Gmail to read]";
 const BINARY_FALLBACK_PLACEHOLDER =
@@ -945,6 +952,92 @@ export function collectGmailHtmlCidReferences(
 
   walk(payload, 0);
   return [...references].sort((left, right) => left.localeCompare(right));
+}
+
+export function collectGmailDriveAttachments(
+  payload: GmailApiMessagePart,
+  options?: {
+    readonly messageIdentifier?: string | null;
+  },
+): readonly GmailDriveAttachmentMetadata[] {
+  const attachments: GmailDriveAttachmentMetadata[] = [];
+  const seenDriveFileIds = new Set<string>();
+  const context = createGmailMimeBudgetContext(options?.messageIdentifier);
+  const decodeState: GmailMimeDecodeState = {
+    decodedBytes: 0,
+    budgetExceeded: false,
+  };
+  const driveAnchorPattern =
+    /<a\b[^>]*?href=(["'])(https?:\/\/drive\.google\.com\/file\/d\/([^/"']*)\/[^"']*)\1[^>]*>([\s\S]*?)<\/a>/giu;
+
+  function walk(part: GmailApiMessagePart, depth: number): void {
+    if (depth > context.bounds.maxDepth || decodeState.budgetExceeded) {
+      return;
+    }
+
+    const mimeType = normalizeMimeType(part.mimeType);
+
+    if (mimeType === "text/html" && !isAttachmentPart(part)) {
+      const decodedHtml = decodePartBodyToString(part, context, decodeState);
+
+      if (decodedHtml !== null) {
+        for (const match of decodedHtml.matchAll(driveAnchorPattern)) {
+          const driveUrl = match[2]?.trim() ?? "";
+          const driveFileId = match[3]?.trim() ?? "";
+
+          if (driveFileId.length === 0) {
+            console.warn("Drive attachment parse failed.", {
+              event: "drive_attachment.parse_failed",
+              gmailMessageId: options?.messageIdentifier ?? null,
+              reason: "empty_drive_file_id",
+            });
+            continue;
+          }
+
+          if (/[\/\s]/u.test(driveFileId)) {
+            console.warn("Drive attachment parse failed.", {
+              event: "drive_attachment.parse_failed",
+              gmailMessageId: options?.messageIdentifier ?? null,
+              reason: "invalid_drive_file_id",
+            });
+            continue;
+          }
+
+          if (seenDriveFileIds.has(driveFileId)) {
+            continue;
+          }
+
+          seenDriveFileIds.add(driveFileId);
+
+          const anchorText = decodeHtmlEntities(
+            (match[4] ?? "").replace(/<[^>]+>/gu, " "),
+          ).trim();
+          const filename = anchorText.length > 0 ? anchorText : null;
+
+          attachments.push({
+            driveFileId,
+            driveUrl,
+            filename,
+            mimeType: "application/vnd.gmail-drive-attachment",
+          });
+
+          console.info("Drive attachment captured.", {
+            event: "drive_attachment.captured",
+            gmailMessageId: options?.messageIdentifier ?? null,
+            driveFileId,
+            filename,
+          });
+        }
+      }
+    }
+
+    for (const childPart of part.parts ?? []) {
+      walk(childPart, depth + 1);
+    }
+  }
+
+  walk(payload, 0);
+  return attachments;
 }
 
 function collectCandidateBodyPartsInternal(

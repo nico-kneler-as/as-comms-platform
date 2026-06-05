@@ -533,6 +533,97 @@ describe("Gmail capture service", () => {
     expect(record.bodyTextPreview).toHaveLength(longBody.length);
   });
 
+  it("threads captured Drive anchors into the Gmail record", async () => {
+    const service = createGmailCaptureService(
+      {
+        bearerToken: "gmail-token",
+        liveAccount: "volunteers@example.org",
+        projectInboxAliases: ["project-oceans@example.org"],
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
+      },
+      {
+        apiClient: {
+          listMessageIds: () => Promise.resolve(["gmail-drive-anchor-1"]),
+          getMessage: ({ messageId }) =>
+            Promise.resolve({
+              id: messageId,
+              threadId: "thread-drive-anchor-1",
+              labelIds: ["INBOX"],
+              snippet: "Drive file shared",
+              internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
+              payload: {
+                mimeType: "multipart/alternative",
+                headers: [
+                  { name: "From", value: "Volunteer <volunteer@example.org>" },
+                  {
+                    name: "To",
+                    value: "Project Oceans <project-oceans@example.org>"
+                  },
+                  { name: "Subject", value: "Shared files" },
+                  {
+                    name: "Message-ID",
+                    value: "<gmail-drive-anchor-1@example.org>"
+                  },
+                  { name: "Date", value: "Mon, 05 Jan 2026 00:00:00 +0000" },
+                ],
+                parts: [
+                  {
+                    mimeType: "text/html",
+                    headers: [
+                      {
+                        name: "Content-Type",
+                        value: 'text/html; charset="UTF-8"'
+                      },
+                    ],
+                    body: {
+                      data: Buffer.from(
+                        '<a href="https://drive.google.com/file/d/abc123/view?usp=drive_link">IMG_2634.jpeg</a>',
+                        "utf8",
+                      ).toString("base64url"),
+                    },
+                  },
+                ],
+              },
+            })
+        },
+        now: () => new Date("2026-01-05T00:01:00.000Z")
+      }
+    );
+
+    const result = await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:gmail:live:drive-anchor",
+      correlationId: "corr:gmail:live:drive-anchor",
+      traceId: null,
+      batchId: "batch:gmail:live:drive-anchor",
+      syncStateId: "sync:gmail:live:drive-anchor",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "gmail",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: "2026-01-05T00:00:00.000Z",
+      windowEnd: "2026-01-05T00:05:00.000Z",
+      recordIds: [],
+      maxRecords: 25
+    });
+
+    const record = gmailMessageRecordSchema.parse(result.records[0]);
+    expect(record.driveAttachmentMetadata).toEqual([
+      {
+        driveFileId: "abc123",
+        driveUrl:
+          "https://drive.google.com/file/d/abc123/view?usp=drive_link",
+        filename: "IMG_2634.jpeg",
+        mimeType: "application/vnd.gmail-drive-attachment",
+      },
+    ]);
+  });
+
   it("captures spam-labeled inbound Gmail messages and preserves the SPAM label", async () => {
     const service = createGmailCaptureService(
       {
