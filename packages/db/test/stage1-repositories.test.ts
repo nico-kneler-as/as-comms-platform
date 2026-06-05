@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { messageAttachmentSchema } from "@as-comms/contracts";
 
 import { createTestStage1Context } from "./helpers.js";
 import {
@@ -563,6 +564,7 @@ describe("Stage 1 DB repositories", () => {
           filename: "image001.png",
           sizeBytes: 2048,
           storageKey: "gmail/ab/att:gmail:gmail-message-1:0",
+          externalUrl: null,
           isDecoration: true,
         },
       ],
@@ -579,6 +581,7 @@ describe("Stage 1 DB repositories", () => {
         filename: "image001.png",
         sizeBytes: 2048,
         storageKey: "gmail/ab/att:gmail:gmail-message-1:0",
+        externalUrl: null,
         isDecoration: true,
       },
     ]);
@@ -607,6 +610,138 @@ describe("Stage 1 DB repositories", () => {
         sourceEvidence.id,
       ]),
     ).resolves.toEqual([manualNoteDetail]);
+  });
+
+  it("round-trips a drive attachment row", async () => {
+    const { repositories } = await createTestStage1Context();
+    const sourceEvidence = await repositories.sourceEvidence.append({
+      id: "sev-drive-attachment",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-drive-attachment",
+      receivedAt: "2026-01-01T00:00:00.000Z",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      payloadRef: "payloads/gmail/drive-attachment.json",
+      idempotencyKey: "gmail:drive-attachment",
+      checksum: "checksum-drive-attachment",
+    });
+
+    await repositories.messageAttachments.upsertManyForMessage(sourceEvidence.id, [
+      {
+        id: "att:drive:gmail-drive-attachment:drive-file-1",
+        provider: "drive",
+        gmailAttachmentId: null,
+        mimeType: "application/octet-stream",
+        filename: "shared-file.pdf",
+        sizeBytes: 0,
+        storageKey: null,
+        externalUrl: "https://drive.google.com/file/d/drive-file-1/view",
+        isDecoration: false,
+      },
+    ]);
+
+    await expect(
+      repositories.messageAttachments.findById(
+        "att:drive:gmail-drive-attachment:drive-file-1",
+      ),
+    ).resolves.toMatchObject({
+      id: "att:drive:gmail-drive-attachment:drive-file-1",
+      provider: "drive",
+      gmailAttachmentId: null,
+      storageKey: null,
+      externalUrl: "https://drive.google.com/file/d/drive-file-1/view",
+    });
+  });
+
+  it("round-trips Gmail and Drive attachments from one batch", async () => {
+    const { repositories } = await createTestStage1Context();
+    const sourceEvidence = await repositories.sourceEvidence.append({
+      id: "sev-mixed-attachments",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "gmail-mixed-attachments",
+      receivedAt: "2026-01-01T00:00:00.000Z",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      payloadRef: "payloads/gmail/mixed-attachments.json",
+      idempotencyKey: "gmail:mixed-attachments",
+      checksum: "checksum-mixed-attachments",
+    });
+
+    await repositories.messageAttachments.upsertManyForMessage(sourceEvidence.id, [
+      {
+        id: "att:gmail:gmail-mixed-attachments:0/1",
+        provider: "gmail",
+        gmailAttachmentId: "gmail-attachment-1",
+        mimeType: "image/png",
+        filename: "image001.png",
+        sizeBytes: 2048,
+        storageKey: "gmail/ab/att:gmail:gmail-mixed-attachments:0/1",
+        externalUrl: null,
+        isDecoration: true,
+      },
+      {
+        id: "att:drive:gmail-mixed-attachments:drive-file-2",
+        provider: "drive",
+        gmailAttachmentId: null,
+        mimeType: "application/octet-stream",
+        filename: "shared-file.pdf",
+        sizeBytes: 0,
+        storageKey: null,
+        externalUrl: "https://drive.google.com/file/d/drive-file-2/view",
+        isDecoration: false,
+      },
+    ]);
+
+    await expect(
+      repositories.messageAttachments.findByMessageIds([sourceEvidence.id]),
+    ).resolves.toMatchObject([
+      {
+        id: "att:drive:gmail-mixed-attachments:drive-file-2",
+        provider: "drive",
+        externalUrl: "https://drive.google.com/file/d/drive-file-2/view",
+      },
+      {
+        id: "att:gmail:gmail-mixed-attachments:0/1",
+        provider: "gmail",
+        externalUrl: null,
+      },
+    ]);
+  });
+
+  it("rejects malformed drive attachment rows", () => {
+    expect(() =>
+      messageAttachmentSchema.parse({
+        id: "att:drive:bad",
+        sourceEvidenceId: "sev-bad-drive",
+        provider: "drive",
+        gmailAttachmentId: null,
+        mimeType: "application/octet-stream",
+        filename: null,
+        sizeBytes: 0,
+        storageKey: null,
+        externalUrl: null,
+        isDecoration: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects malformed gmail attachment rows", () => {
+    expect(() =>
+      messageAttachmentSchema.parse({
+        id: "att:gmail:bad",
+        sourceEvidenceId: "sev-bad-gmail",
+        provider: "gmail",
+        gmailAttachmentId: null,
+        mimeType: "image/png",
+        filename: "image001.png",
+        sizeBytes: 2048,
+        storageKey: "gmail/ab/att:gmail:bad",
+        externalUrl: null,
+        isDecoration: true,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toThrow();
   });
 
   it("returns no source-evidence collisions when the table is empty", async () => {

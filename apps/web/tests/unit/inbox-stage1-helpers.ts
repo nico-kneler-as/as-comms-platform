@@ -206,6 +206,7 @@ export async function seedInboxMessageAttachment(
         filename: input.filename,
         sizeBytes: input.sizeBytes,
         storageKey: input.storageKey,
+        externalUrl: null,
         isDecoration,
       },
     ],

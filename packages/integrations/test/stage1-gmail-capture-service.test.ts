@@ -619,7 +619,6 @@ describe("Gmail capture service", () => {
         driveUrl:
           "https://drive.google.com/file/d/abc123/view?usp=drive_link",
         filename: "IMG_2634.jpeg",
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
     ]);
   });

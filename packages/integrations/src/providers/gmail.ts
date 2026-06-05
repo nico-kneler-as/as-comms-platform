@@ -82,7 +82,6 @@ export const gmailMessageRecordSchema = z.object({
         driveFileId: z.string().min(1),
         driveUrl: z.string().min(1),
         filename: nullableStringSchema,
-        mimeType: z.literal("application/vnd.gmail-drive-attachment"),
       }),
     )
     .default([]),
