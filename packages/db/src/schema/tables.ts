@@ -1474,6 +1474,54 @@ export const pendingComposerOutbounds = pgTable(
   ],
 );
 
+export const integrationBackfillJobs = pgTable(
+  "integration_backfill_jobs",
+  {
+    id: text("id").primaryKey(),
+    service: text("service").notNull(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    triggeredBy: text("triggered_by").notNull(),
+    windowStart: timestamp("window_start", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    windowEnd: timestamp("window_end", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    mailbox: text("mailbox"),
+    status: text("status").notNull().default("pending"),
+    enqueuedAt: timestamp("enqueued_at", {
+      mode: "date",
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+    startedAt: timestamp("started_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    completedAt: timestamp("completed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    resultJson: jsonb("result_json").$type<Record<string, unknown> | null>(),
+    failureReason: text("failure_reason"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    index("integration_backfill_jobs_status_idx").on(
+      table.status,
+      table.enqueuedAt,
+    ),
+    index("integration_backfill_jobs_service_idx").on(
+      table.service,
+      sql`${table.enqueuedAt} DESC`,
+    ),
+  ],
+);
+
 export const aiKnowledgeEntries = pgTable(
   "ai_knowledge_entries",
   {

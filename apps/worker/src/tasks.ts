@@ -66,6 +66,7 @@ import { runStage0NoopJob } from "./jobs/noop.js";
 import {
   createStage1TaskList,
   type IntegrationHealthTaskDependencies,
+  type IntegrationBackfillGmailTaskDependencies,
   type PollAiKnowledgeAutoSyncTaskDependencies,
   type Stage1WorkerOrchestrationService,
 } from "./orchestration/index.js";
@@ -77,6 +78,7 @@ export function createTaskList(
     readonly campaignEventsTailFinalize?: CampaignEventsTailFinalizeDependencies;
     readonly dedupHistoricalLedger?: DedupHistoricalLedgerTaskDependencies;
     readonly integrationHealth?: IntegrationHealthTaskDependencies;
+    readonly integrationBackfill?: IntegrationBackfillGmailTaskDependencies;
     readonly aiKnowledgeAutoSync?: PollAiKnowledgeAutoSyncTaskDependencies;
     readonly notionKnowledgeSync?: NotionKnowledgeSyncDependencies;
     readonly pendingOutboundSweep?: PendingOutboundSweepTaskDependencies;

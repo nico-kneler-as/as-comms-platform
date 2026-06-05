@@ -603,6 +603,9 @@ export async function createStage1WorkerRuntimeServices(
         },
         fetchImplementation,
       },
+      integrationBackfill: {
+        persistence,
+      },
       notionKnowledgeSync: {
         db: connection.db,
         integrationHealth: settings.integrationHealth,
