@@ -1844,7 +1844,7 @@ describe("applyNormalizedCanonicalEvent snippet selection", () => {
       messageKind: "campaign",
     });
     const context = buildContext({
-      events: [campaignOpened],
+      events: [],
       existingProjection: buildExistingProjection({
         bucket: "Opened",
         lastInboundAt: "2026-04-24T10:00:00.000Z",
@@ -1856,8 +1856,8 @@ describe("applyNormalizedCanonicalEvent snippet selection", () => {
       snippet: "",
     });
 
-    expect(result.outcome).toBe("duplicate");
-    if (result.outcome !== "duplicate") {
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
       return;
     }
 
@@ -1878,7 +1878,7 @@ describe("applyNormalizedCanonicalEvent snippet selection", () => {
       messageKind: null,
     });
     const context = buildContext({
-      events: [lifecycle],
+      events: [],
       existingProjection: buildExistingProjection({
         bucket: "Opened",
         lastInboundAt: "2026-04-24T10:00:00.000Z",
@@ -1890,8 +1890,8 @@ describe("applyNormalizedCanonicalEvent snippet selection", () => {
       snippet: "",
     });
 
-    expect(result.outcome).toBe("duplicate");
-    if (result.outcome !== "duplicate") {
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
       return;
     }
 
@@ -1908,7 +1908,7 @@ describe("applyNormalizedCanonicalEvent snippet selection", () => {
       direction: "inbound",
     });
     const context = buildContext({
-      events: [inbound],
+      events: [],
       existingProjection: buildExistingProjection({
         bucket: "Opened",
         lastInboundAt: "2026-04-24T10:00:00.000Z",
@@ -1920,8 +1920,8 @@ describe("applyNormalizedCanonicalEvent snippet selection", () => {
       snippet: "new text",
     });
 
-    expect(result.outcome).toBe("duplicate");
-    if (result.outcome !== "duplicate") {
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
       return;
     }
 
@@ -1942,7 +1942,7 @@ describe("applyNormalizedCanonicalEvent snippet selection", () => {
       messageKind: "campaign",
     });
     const context = buildContext({
-      events: [campaignOpened],
+      events: [],
       existingProjection: buildExistingProjection({
         bucket: "Opened",
         lastInboundAt: "2026-04-24T10:00:00.000Z",
@@ -1954,8 +1954,8 @@ describe("applyNormalizedCanonicalEvent snippet selection", () => {
       snippet: "",
     });
 
-    expect(result.outcome).toBe("duplicate");
-    if (result.outcome !== "duplicate") {
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
       return;
     }
 
@@ -1976,7 +1976,7 @@ describe("applyNormalizedCanonicalEvent snippet selection", () => {
       messageKind: null,
     });
     const context = buildContext({
-      events: [lifecycle],
+      events: [],
       existingProjection: buildExistingProjection({
         bucket: "Opened",
         lastInboundAt: "2026-04-24T10:00:00.000Z",
@@ -1988,8 +1988,8 @@ describe("applyNormalizedCanonicalEvent snippet selection", () => {
       snippet: "",
     });
 
-    expect(result.outcome).toBe("duplicate");
-    if (result.outcome !== "duplicate") {
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
       return;
     }
 
