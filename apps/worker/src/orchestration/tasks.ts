@@ -28,11 +28,15 @@ import {
   simpleTextingLiveCaptureBatchPayloadSchema,
   type IntegrationHealthRecord
 } from "@as-comms/contracts";
-import type { IntegrationHealthRepository } from "@as-comms/domain";
-import type { OpsAlertStateRepository } from "@as-comms/domain";
+import type {
+  IntegrationHealthRepository,
+  OpsAlertStateRepository,
+  Stage1PersistenceService,
+} from "@as-comms/domain";
 
 import {
   createIntegrationBackfillGmailTask,
+  enqueueIntegrationBackfillGmailJob,
   integrationBackfillGmailTaskName,
   type IntegrationBackfillGmailTaskDependencies,
 } from "./integration-backfill.js";
@@ -60,10 +64,13 @@ const polledIntegrationServices = [
   "mailchimp"
 ] as const satisfies readonly IntegrationHealthRecord["id"][];
 const integrationHealthAlertCooldownMs = 60 * 60 * 1000;
+const integrationBackfillMaxWindowMs = 24 * 60 * 60 * 1000;
+const integrationBackfillSupportedService = "gmail";
 
 export interface IntegrationHealthTaskDependencies {
   readonly integrationHealth: IntegrationHealthRepository;
   readonly opsAlertState: OpsAlertStateRepository;
+  readonly persistence: Stage1PersistenceService;
   readonly captureBaseUrls: {
     readonly gmail: string;
     readonly salesforce: string;
@@ -73,6 +80,81 @@ export interface IntegrationHealthTaskDependencies {
   readonly alertSender?: IntegrationHealthAlertSender;
   readonly now?: () => Date;
   readonly logger?: Pick<Console, "error" | "warn" | "info">;
+}
+
+function isDegradedStatus(
+  status: IntegrationHealthRecord["status"],
+): boolean {
+  return status === "needs_attention" || status === "disconnected";
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function maybeBuildIntegrationBackfillRecovery(
+  record: IntegrationHealthRecord,
+  polledRecord: IntegrationHealthRecord,
+  occurredAt: Date,
+  logger: Pick<Console, "info">,
+): {
+  readonly service: "gmail";
+  readonly idempotencyKey: string;
+  readonly windowStart: string;
+  readonly windowEnd: string;
+} | null {
+  if (!isDegradedStatus(record.status) || polledRecord.status !== "healthy") {
+    return null;
+  }
+
+  if (record.degradedSinceAt === null) {
+    return null;
+  }
+
+  logger.info(
+    JSON.stringify({
+      event: "integration_health.transition_detected",
+      service: record.id,
+      prior_status: record.status,
+      new_status: polledRecord.status,
+      degraded_since_at: record.degradedSinceAt,
+      duration_ms: occurredAt.getTime() - Date.parse(record.degradedSinceAt),
+    }),
+  );
+
+  if (record.id !== integrationBackfillSupportedService) {
+    logger.info(
+      JSON.stringify({
+        event: "integration_backfill.skipped",
+        service: record.id,
+        reason: "service_not_yet_supported",
+      }),
+    );
+    return null;
+  }
+
+  let windowStart = new Date(record.degradedSinceAt);
+  const windowEnd = occurredAt;
+  const originalWindowStart = windowStart;
+
+  if (windowEnd.getTime() - windowStart.getTime() > integrationBackfillMaxWindowMs) {
+    windowStart = new Date(windowEnd.getTime() - integrationBackfillMaxWindowMs);
+    logger.info(
+      JSON.stringify({
+        event: "integration_backfill.window_capped",
+        service: record.id,
+        original_start: originalWindowStart.toISOString(),
+        new_start: windowStart.toISOString(),
+      }),
+    );
+  }
+
+  return {
+    service: "gmail",
+    idempotencyKey: `gmail:${record.degradedSinceAt}`,
+    windowStart: windowStart.toISOString(),
+    windowEnd: windowEnd.toISOString(),
+  };
 }
 
 function isFailedStage1TaskOutcome(
@@ -352,7 +434,7 @@ function createPollIntegrationHealthTask(
     });
   const logger = dependencies.logger ?? console;
 
-  return async () => {
+  return async (_payload, helpers) => {
     if (typeof fetchImplementation !== "function") {
       logger.error(
         "Integration health poller skipped because global fetch is unavailable."
@@ -453,6 +535,38 @@ function createPollIntegrationHealthTask(
         occurredAt: occurredAtIso,
         alertSent
       });
+      const backfillRecovery = maybeBuildIntegrationBackfillRecovery(
+        record,
+        polledRecord,
+        occurredAt,
+        logger,
+      );
+
+      if (backfillRecovery !== null) {
+        try {
+          await enqueueIntegrationBackfillGmailJob({
+            persistence: dependencies.persistence,
+            addJob: helpers.addJob,
+            service: backfillRecovery.service,
+            triggeredBy: "integration_health_transition",
+            idempotencyKey: backfillRecovery.idempotencyKey,
+            windowStart: backfillRecovery.windowStart,
+            windowEnd: backfillRecovery.windowEnd,
+            mailbox: null,
+            logger,
+          });
+        } catch (error) {
+          logger.error(
+            JSON.stringify({
+              event: "integration_backfill.enqueue_failed",
+              service: backfillRecovery.service,
+              reason: describeError(error),
+              idempotency_key: backfillRecovery.idempotencyKey,
+            }),
+          );
+          continue;
+        }
+      }
 
       try {
         await dependencies.integrationHealth.upsert(nextRecord);
@@ -466,7 +580,7 @@ function createPollIntegrationHealthTask(
 
         logger.error(
           `Integration health upsert failed for ${service}: ${
-            error instanceof Error ? error.message : String(error)
+            describeError(error)
           }`
         );
       }

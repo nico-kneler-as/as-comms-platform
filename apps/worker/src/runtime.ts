@@ -596,6 +596,7 @@ export async function createStage1WorkerRuntimeServices(
       integrationHealth: {
         integrationHealth: settings.integrationHealth,
         opsAlertState: settings.opsAlertState,
+        persistence,
         captureBaseUrls: {
           gmail: config.capture.gmail.baseUrl,
           salesforce: config.capture.salesforce.baseUrl,
