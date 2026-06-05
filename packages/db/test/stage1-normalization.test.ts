@@ -1655,9 +1655,14 @@ describe("Stage 1 normalization service", () => {
     expect(campaignResult.outcome).toBe("applied");
     if (campaignResult.outcome === "applied") {
       // Campaign opens are now qualifying events: they advance lastActivityAt /
-      // lastEventType / snippet / lastCanonicalEventId, but they do NOT count as
-      // outbound (only campaign.email.sent does), and they do NOT flip bucket
-      // (bucket only flips to "New" on a newer inbound).
+      // lastEventType / lastCanonicalEventId, but they do NOT count as outbound
+      // (only campaign.email.sent does), and they do NOT flip bucket (bucket
+      // only flips to "New" on a newer inbound).
+      //
+      // Per the tier-aware snippet logic (PR #516 / PRD #509), a tier-3
+      // campaign event arriving on top of an existing tier-1 inbound snippet
+      // does NOT overwrite the snippet — the human-readable inbound text is
+      // preserved.
       expect(campaignResult.inboxProjection).toMatchObject({
         contactId: "contact_1",
         bucket: beforeCampaign?.bucket,
@@ -1666,7 +1671,7 @@ describe("Stage 1 normalization service", () => {
         lastActivityAt: "2026-01-01T00:02:00.000Z",
         lastCanonicalEventId: "evt_2",
         lastEventType: "campaign.email.opened",
-        snippet: "Campaign open"
+        snippet: "Initial inbound"
       });
     }
 
