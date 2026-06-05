@@ -553,6 +553,65 @@ function tierRankForEventType(
   }
 }
 
+function ingestSnippetFallbackForEventType(
+  eventType: CanonicalEventRecord["eventType"],
+): string {
+  switch (eventType) {
+    case "lifecycle.signed_up":
+      return "Signed up";
+    case "lifecycle.received_training":
+      return "Received training";
+    case "lifecycle.completed_training":
+      return "Completed training";
+    case "lifecycle.submitted_first_data":
+      return "Submitted first data";
+    case "communication.sms.opt_in":
+      return "SMS opted in";
+    case "communication.sms.opt_out":
+      return "SMS opted out";
+    case "campaign.email.sent":
+      return "Campaign email sent";
+    case "campaign.email.delivered":
+      return "Campaign email delivered";
+    case "campaign.email.opened":
+      return "Campaign email opened";
+    case "campaign.email.clicked":
+      return "Campaign email clicked";
+    case "campaign.email.bounced":
+      return "Campaign email bounced";
+    case "campaign.email.complained":
+      return "Campaign email complained";
+    case "campaign.email.unsubscribed":
+      return "Campaign email unsubscribed";
+    case "note.internal.created":
+      return "Internal note added";
+    default:
+      return "";
+  }
+}
+
+function pickIngestSnippet(input: {
+  readonly incomingEventType: CanonicalEventRecord["eventType"];
+  readonly incomingSnippet: string;
+  readonly existingSnippet: string | null | undefined;
+}): string {
+  const incomingTier = tierRankForEventType(input.incomingEventType);
+  const existingSnippet = input.existingSnippet ?? "";
+  const incomingSnippet = input.incomingSnippet.trim();
+
+  if (incomingTier === 1) {
+    return incomingSnippet.length > 0 ? incomingSnippet : existingSnippet;
+  }
+
+  if (existingSnippet.length > 0) {
+    return existingSnippet;
+  }
+
+  return incomingSnippet.length > 0
+    ? incomingSnippet
+    : ingestSnippetFallbackForEventType(input.incomingEventType);
+}
+
 function compareCanonicalEventRecency(
   left: Pick<CanonicalEventRecord, "id" | "occurredAt">,
   right: Pick<CanonicalEventRecord, "id" | "occurredAt">,
@@ -3094,7 +3153,11 @@ export function createStage1NormalizationService(
         lastOutboundAt,
         lastActivityAt,
         snippet: incomingIsLatestKnown
-          ? parsed.snippet
+          ? pickIngestSnippet({
+              incomingEventType: parsed.canonicalEvent.eventType,
+              incomingSnippet: parsed.snippet,
+              existingSnippet: existing?.snippet,
+            })
           : (existing?.snippet ?? parsed.snippet),
         archivedAt: existing?.archivedAt ?? null,
         lastCanonicalEventId: incomingIsLatestKnown

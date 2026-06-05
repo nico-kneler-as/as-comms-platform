@@ -280,6 +280,9 @@ function buildPendingOutbound(input: {
 
 function buildReplayInput(
   event: CanonicalEventRecord,
+  overrides?: {
+    readonly snippet?: string;
+  },
 ): NormalizedCanonicalEventIntake {
   const direction = event.provenance.direction;
   const communicationClassification = event.eventType.startsWith(
@@ -310,7 +313,7 @@ function buildReplayInput(
       occurredAt: event.occurredAt,
       idempotencyKey: event.idempotencyKey,
       summary: "Replayed email",
-      snippet: "Replayed snippet",
+      snippet: overrides?.snippet ?? "Replayed snippet",
     },
     identity: {
       salesforceContactId: null,
@@ -1244,13 +1247,23 @@ function buildContext(input: {
   };
 }
 
+async function applyReplayEvent(
+  context: TestContext,
+  event: CanonicalEventRecord,
+  overrides?: {
+    readonly snippet?: string;
+  },
+) {
+  return context.normalization.applyNormalizedCanonicalEvent(
+    buildReplayInput(event, overrides),
+  );
+}
+
 async function replayEvent(
   context: TestContext,
   event: CanonicalEventRecord,
 ): Promise<InboxProjectionRow | null> {
-  const result = await context.normalization.applyNormalizedCanonicalEvent(
-    buildReplayInput(event),
-  );
+  const result = await applyReplayEvent(context, event);
 
   expect(result.outcome).toBe("duplicate");
 
@@ -1815,6 +1828,174 @@ describe("rebuildInboxProjectionForContact snippet selection", () => {
       snippet: "Signed up",
       lastEventType: "campaign.email.sent",
       lastCanonicalEventId: campaignSent.id,
+    });
+  });
+});
+
+describe("applyNormalizedCanonicalEvent snippet selection", () => {
+  it("keeps an existing tier-1 snippet when a newer tier-3 campaign event arrives", async () => {
+    const campaignOpened = buildEvent({
+      key: "ingest-tier-3-open",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "campaign.email.opened",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T10:00:00.000Z",
+        snippet: "I went to pick it up today",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, campaignOpened, {
+      snippet: "",
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      snippet: "I went to pick it up today",
+      lastEventType: "campaign.email.opened",
+    });
+  });
+
+  it("keeps an existing tier-1 snippet when a newer tier-2 lifecycle event arrives", async () => {
+    const lifecycle = buildEvent({
+      key: "ingest-tier-2-training",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      direction: null,
+      provider: "salesforce",
+      sourceRecordType: "contact_membership",
+      messageKind: null,
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T10:00:00.000Z",
+        snippet: "I went to pick it up today",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, lifecycle, {
+      snippet: "",
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      snippet: "I went to pick it up today",
+      lastEventType: "lifecycle.received_training",
+    });
+  });
+
+  it("updates the snippet when a tier-1 inbound arrives", async () => {
+    const inbound = buildEvent({
+      key: "ingest-tier-1-inbound",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      direction: "inbound",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T10:00:00.000Z",
+        snippet: "old text",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, inbound, {
+      snippet: "new text",
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      snippet: "new text",
+      lastEventType: "communication.email.inbound",
+    });
+  });
+
+  it("uses a friendly fallback when a tier-3 event arrives with no existing snippet", async () => {
+    const campaignOpened = buildEvent({
+      key: "ingest-tier-3-open-fallback",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "campaign.email.opened",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T10:00:00.000Z",
+        snippet: "",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, campaignOpened, {
+      snippet: "",
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      snippet: "Campaign email opened",
+      lastEventType: "campaign.email.opened",
+    });
+  });
+
+  it("uses a friendly fallback when a tier-2 lifecycle event arrives with no existing snippet", async () => {
+    const lifecycle = buildEvent({
+      key: "ingest-tier-2-training-fallback",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      direction: null,
+      provider: "salesforce",
+      sourceRecordType: "contact_membership",
+      messageKind: null,
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T10:00:00.000Z",
+        snippet: "",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, lifecycle, {
+      snippet: "",
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      snippet: "Received training",
+      lastEventType: "lifecycle.received_training",
     });
   });
 });
