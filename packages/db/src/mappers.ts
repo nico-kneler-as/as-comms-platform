@@ -758,6 +758,7 @@ export function mapMessageAttachmentRow(
     filename: row.filename,
     sizeBytes: row.sizeBytes,
     storageKey: row.storageKey,
+    externalUrl: row.externalUrl,
     isDecoration: row.isDecoration,
     createdAt: row.createdAt.toISOString(),
   });
@@ -777,6 +778,7 @@ export function mapMessageAttachmentToInsert(
     filename: parsed.filename,
     sizeBytes: parsed.sizeBytes,
     storageKey: parsed.storageKey,
+    externalUrl: parsed.externalUrl,
     isDecoration: parsed.isDecoration,
     createdAt: toDate(parsed.createdAt),
   };

@@ -503,16 +503,29 @@ export interface GmailMessageDetailRepository {
   upsert(record: GmailMessageDetailRecord): Promise<GmailMessageDetailRecord>;
 }
 
-export interface MessageAttachmentInsert {
-  readonly id: string;
-  readonly provider: "gmail";
-  readonly gmailAttachmentId: string;
-  readonly mimeType: string;
-  readonly filename: string | null;
-  readonly sizeBytes: number;
-  readonly storageKey: string;
-  readonly isDecoration: boolean;
-}
+export type MessageAttachmentInsert =
+  | {
+      readonly id: string;
+      readonly provider: "gmail";
+      readonly gmailAttachmentId: string;
+      readonly mimeType: string;
+      readonly filename: string | null;
+      readonly sizeBytes: number;
+      readonly storageKey: string;
+      readonly externalUrl: null;
+      readonly isDecoration: boolean;
+    }
+  | {
+      readonly id: string;
+      readonly provider: "drive";
+      readonly gmailAttachmentId: null;
+      readonly mimeType: string;
+      readonly filename: string | null;
+      readonly sizeBytes: number;
+      readonly storageKey: null;
+      readonly externalUrl: string;
+      readonly isDecoration: boolean;
+    };
 
 export interface MessageAttachmentRepository {
   findById(id: string): Promise<MessageAttachmentRecord | null>;

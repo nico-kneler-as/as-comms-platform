@@ -341,7 +341,6 @@ describe("Gmail body extraction", () => {
         driveUrl:
           "https://drive.google.com/file/d/abc123/view?usp=drive_link",
         filename: "IMG_2634.jpeg",
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
     ]);
     expect(infoSpy).toHaveBeenCalledWith(
@@ -381,31 +380,26 @@ describe("Gmail body extraction", () => {
         driveFileId: "id-1",
         driveUrl: "https://drive.google.com/file/d/id-1/view",
         filename: "one.jpg",
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
       {
         driveFileId: "id-2",
         driveUrl: "https://drive.google.com/file/d/id-2/view",
         filename: "two.jpg",
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
       {
         driveFileId: "id-3",
         driveUrl: "https://drive.google.com/file/d/id-3/view",
         filename: "three.jpg",
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
       {
         driveFileId: "id-4",
         driveUrl: "https://drive.google.com/file/d/id-4/view",
         filename: "four.jpg",
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
       {
         driveFileId: "id-5",
         driveUrl: "https://drive.google.com/file/d/id-5/view",
         filename: "five.jpg",
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
     ]);
   });
@@ -433,7 +427,6 @@ describe("Gmail body extraction", () => {
         driveFileId: "shared-id",
         driveUrl: "https://drive.google.com/file/d/shared-id/view",
         filename: "first-name.jpg",
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
     ]);
   });
@@ -458,7 +451,6 @@ describe("Gmail body extraction", () => {
         driveFileId: "xyz",
         driveUrl: "https://drive.google.com/file/d/xyz/view",
         filename: "Photo & notes.png",
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
     ]);
   });
@@ -483,7 +475,6 @@ describe("Gmail body extraction", () => {
         driveFileId: "empty",
         driveUrl: "https://drive.google.com/file/d/empty/view",
         filename: null,
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
     ]);
   });
@@ -508,7 +499,6 @@ describe("Gmail body extraction", () => {
         driveFileId: "nested",
         driveUrl: "https://drive.google.com/file/d/nested/view",
         filename: "real_name.jpg",
-        mimeType: "application/vnd.gmail-drive-attachment",
       },
     ]);
   });

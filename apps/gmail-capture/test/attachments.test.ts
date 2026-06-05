@@ -5,6 +5,7 @@ import path from "node:path";
 import { createTestStage1Context } from "@as-comms/db/test-helpers";
 import {
   buildGmailMessageAttachmentId,
+  buildGmailMessageDriveAttachmentId,
   buildGmailMessageAttachmentStorageKey,
   buildSourceEvidenceId,
   classifyAttachment,
@@ -14,13 +15,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { syncGmailMessageAttachments } from "../src/attachments.js";
 
+type GmailMessageRecord = Extract<GmailRecord, { recordType: "message" }>;
+
 function buildGmailRecord(input: {
   readonly direction: "inbound" | "outbound";
   readonly recordId: string;
-  readonly attachmentSizeBytes: number;
+  readonly attachmentSizeBytes?: number;
   readonly mimeType?: string;
   readonly filename?: string | null;
-}): GmailRecord {
+  readonly attachmentMetadata?: GmailMessageRecord["attachmentMetadata"];
+  readonly driveAttachmentMetadata?: GmailMessageRecord["driveAttachmentMetadata"];
+}): GmailMessageRecord {
   return {
     recordType: "message",
     recordId: input.recordId,
@@ -50,22 +55,33 @@ function buildGmailRecord(input: {
     capturedMailbox: "volunteers@example.org",
     projectInboxAlias: "project-oceans@example.org",
     normalizedParticipantEmails: ["volunteer@example.org"],
+    fromEmails:
+      input.direction === "outbound"
+        ? ["volunteers@example.org"]
+        : ["volunteer@example.org"],
+    toEmails:
+      input.direction === "outbound"
+        ? ["volunteer@example.org"]
+        : ["volunteers@example.org"],
+    ccEmails: [],
+    bccEmails: [],
     salesforceContactId: null,
     volunteerIdPlainValues: [],
     normalizedPhones: [],
     supportingRecords: [],
     crossProviderCollapseKey: null,
-    attachmentMetadata: [
+    attachmentMetadata: input.attachmentMetadata ?? [
       {
         partIndexPath: "0/1",
         mimeType: input.mimeType ?? "image/jpeg",
         filename: input.filename ?? "field-photo.jpg",
-        sizeBytes: input.attachmentSizeBytes,
+        sizeBytes: input.attachmentSizeBytes ?? 0,
         gmailAttachmentId: "gmail-attachment-1",
         contentDisposition: null,
         contentId: null,
       },
     ],
+    driveAttachmentMetadata: input.driveAttachmentMetadata ?? [],
     htmlBodyCidReferences: [],
   };
 }
@@ -255,6 +271,7 @@ describe("gmail attachment sync", () => {
           filename: "field-photo.jpg",
           sizeBytes: attachmentBytes.length,
           storageKey: buildGmailMessageAttachmentStorageKey(attachmentId),
+          externalUrl: null,
           isDecoration: false,
         },
       ]);
@@ -367,9 +384,202 @@ describe("gmail attachment sync", () => {
         {
           sourceEvidenceId,
           filename: "image001.png",
+          externalUrl: null,
           isDecoration: true,
         },
       ]);
+    } finally {
+      await context.dispose();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("captures a Drive attachment as a drive provider row without fetching Gmail bytes", async () => {
+    const context = await createTestStage1Context();
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
+    const fetchImplementation = vi.fn();
+    const sourceEvidenceId = buildSourceEvidenceId(
+      "gmail",
+      "message",
+      "gmail-drive-only-1",
+    );
+    const driveAttachmentId = buildGmailMessageDriveAttachmentId({
+      messageId: "gmail-drive-only-1",
+      driveFileId: "drive-file-1",
+    });
+
+    try {
+      await syncGmailMessageAttachments({
+        records: [
+          buildGmailRecord({
+            direction: "inbound",
+            recordId: "gmail-drive-only-1",
+            attachmentMetadata: [],
+            driveAttachmentMetadata: [
+              {
+                driveFileId: "drive-file-1",
+                driveUrl: "https://drive.google.com/file/d/drive-file-1/view",
+                filename: "shared-photo.jpg",
+              },
+            ],
+          }),
+        ],
+        repositories: context.repositories,
+        serviceConfig: {
+          liveAccount: "volunteers@example.org",
+          oauthClientId: "gmail-oauth-client-id",
+          oauthClientSecret: "gmail-oauth-client-secret",
+          oauthRefreshToken: "gmail-oauth-refresh-token",
+          tokenUri: "https://oauth2.googleapis.com/token",
+          timeoutMs: 15_000,
+        },
+        runtimeConfig: {
+          attachmentVolumePath: tempDir,
+          maxAttachmentBytesPerAttachment: 52_428_800,
+        },
+        fetchImplementation: fetchImplementation as unknown as typeof fetch,
+      });
+
+      expect(fetchImplementation).not.toHaveBeenCalled();
+      await expect(
+        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
+      ).resolves.toMatchObject([
+        {
+          id: driveAttachmentId,
+          sourceEvidenceId,
+          provider: "drive",
+          gmailAttachmentId: null,
+          mimeType: "application/octet-stream",
+          filename: "shared-photo.jpg",
+          sizeBytes: 0,
+          storageKey: null,
+          externalUrl: "https://drive.google.com/file/d/drive-file-1/view",
+          isDecoration: false,
+        },
+      ]);
+    } finally {
+      await context.dispose();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("captures Gmail and Drive attachments in one batch", async () => {
+    const context = await createTestStage1Context();
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
+    const attachmentBytes = Buffer.from("hello-image", "utf8");
+    const sourceEvidenceId = buildSourceEvidenceId(
+      "gmail",
+      "message",
+      "gmail-mixed-1",
+    );
+    const gmailAttachmentId = buildGmailMessageAttachmentId({
+      messageId: "gmail-mixed-1",
+      partIndexPath: "0/1",
+    });
+    const driveAttachmentId = buildGmailMessageDriveAttachmentId({
+      messageId: "gmail-mixed-1",
+      driveFileId: "drive-file-2",
+    });
+
+    try {
+      await syncGmailMessageAttachments({
+        records: [
+          buildGmailRecord({
+            direction: "inbound",
+            recordId: "gmail-mixed-1",
+            attachmentSizeBytes: attachmentBytes.length,
+            driveAttachmentMetadata: [
+              {
+                driveFileId: "drive-file-2",
+                driveUrl: "https://drive.google.com/file/d/drive-file-2/view",
+                filename: "field-notes.pdf",
+              },
+            ],
+          }),
+        ],
+        repositories: context.repositories,
+        serviceConfig: {
+          liveAccount: "volunteers@example.org",
+          oauthClientId: "gmail-oauth-client-id",
+          oauthClientSecret: "gmail-oauth-client-secret",
+          oauthRefreshToken: "gmail-oauth-refresh-token",
+          tokenUri: "https://oauth2.googleapis.com/token",
+          timeoutMs: 15_000,
+        },
+        runtimeConfig: {
+          attachmentVolumePath: tempDir,
+          maxAttachmentBytesPerAttachment: 52_428_800,
+        },
+        fetchImplementation: buildSuccessfulFetchImplementation(attachmentBytes),
+      });
+
+      await expect(
+        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
+      ).resolves.toMatchObject([
+        {
+          id: driveAttachmentId,
+          provider: "drive",
+          externalUrl: "https://drive.google.com/file/d/drive-file-2/view",
+        },
+        {
+          id: gmailAttachmentId,
+          provider: "gmail",
+          externalUrl: null,
+        },
+      ]);
+    } finally {
+      await context.dispose();
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not create Drive rows when driveAttachmentMetadata is empty", async () => {
+    const context = await createTestStage1Context();
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "gmail-attachments-"));
+    const attachmentBytes = Buffer.from("hello-image", "utf8");
+    const sourceEvidenceId = buildSourceEvidenceId(
+      "gmail",
+      "message",
+      "gmail-no-drive-1",
+    );
+
+    try {
+      await syncGmailMessageAttachments({
+        records: [
+          buildGmailRecord({
+            direction: "inbound",
+            recordId: "gmail-no-drive-1",
+            attachmentSizeBytes: attachmentBytes.length,
+            driveAttachmentMetadata: [],
+          }),
+        ],
+        repositories: context.repositories,
+        serviceConfig: {
+          liveAccount: "volunteers@example.org",
+          oauthClientId: "gmail-oauth-client-id",
+          oauthClientSecret: "gmail-oauth-client-secret",
+          oauthRefreshToken: "gmail-oauth-refresh-token",
+          tokenUri: "https://oauth2.googleapis.com/token",
+          timeoutMs: 15_000,
+        },
+        runtimeConfig: {
+          attachmentVolumePath: tempDir,
+          maxAttachmentBytesPerAttachment: 52_428_800,
+        },
+        fetchImplementation: buildSuccessfulFetchImplementation(attachmentBytes),
+      });
+
+      await expect(
+        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
+      ).resolves.toMatchObject([
+        {
+          provider: "gmail",
+          externalUrl: null,
+        },
+      ]);
+      await expect(
+        context.repositories.messageAttachments.findByMessageIds([sourceEvidenceId]),
+      ).resolves.toHaveLength(1);
     } finally {
       await context.dispose();
       await rm(tempDir, { recursive: true, force: true });

@@ -344,10 +344,20 @@ export type CanonicalEventParticipantRole = z.infer<
   typeof canonicalEventParticipantRoleSchema
 >;
 
-export const messageAttachmentProviderSchema = z.literal("gmail");
+export const messageAttachmentProviderSchema = z.enum(["gmail", "drive"]);
 export type MessageAttachmentProvider = z.infer<
   typeof messageAttachmentProviderSchema
 >;
+
+const messageAttachmentCommonFields = {
+  id: idSchema,
+  sourceEvidenceId: idSchema,
+  mimeType: z.string().min(1),
+  filename: nullableStringSchema,
+  sizeBytes: z.number().int().nonnegative(),
+  isDecoration: z.boolean(),
+  createdAt: timestampSchema,
+};
 
 export const gmailMessageDetailSchema = z.object({
   sourceEvidenceId: idSchema,
@@ -382,18 +392,22 @@ export type CanonicalEventAudienceRecord = z.infer<
   typeof canonicalEventAudienceSchema
 >;
 
-export const messageAttachmentSchema = z.object({
-  id: idSchema,
-  sourceEvidenceId: idSchema,
-  provider: messageAttachmentProviderSchema,
-  gmailAttachmentId: z.string().min(1),
-  mimeType: z.string().min(1),
-  filename: nullableStringSchema,
-  sizeBytes: z.number().int().nonnegative(),
-  storageKey: z.string().min(1),
-  isDecoration: z.boolean(),
-  createdAt: timestampSchema,
-});
+export const messageAttachmentSchema = z.discriminatedUnion("provider", [
+  z.object({
+    ...messageAttachmentCommonFields,
+    provider: z.literal("gmail"),
+    gmailAttachmentId: z.string().min(1),
+    storageKey: z.string().min(1),
+    externalUrl: z.null(),
+  }),
+  z.object({
+    ...messageAttachmentCommonFields,
+    provider: z.literal("drive"),
+    gmailAttachmentId: z.null(),
+    storageKey: z.null(),
+    externalUrl: z.string().min(1),
+  }),
+]);
 export type MessageAttachmentRecord = z.infer<typeof messageAttachmentSchema>;
 
 export const salesforceEventContextSchema = z.object({

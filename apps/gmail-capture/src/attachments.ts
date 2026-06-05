@@ -4,6 +4,7 @@ import path from "node:path";
 import type { createStage1RepositoryBundleFromConnection } from "@as-comms/db";
 import {
   buildGmailMessageAttachmentId,
+  buildGmailMessageDriveAttachmentId,
   buildGmailMessageAttachmentStorageKey,
   classifyAttachment,
   exchangeGmailAccessToken,
@@ -40,6 +41,8 @@ type AttachmentRepositories = Pick<
   ReturnType<typeof createStage1RepositoryBundleFromConnection>,
   "messageAttachments" | "sourceEvidence"
 >;
+type MessageAttachmentInsert =
+  Parameters<AttachmentRepositories["messageAttachments"]["upsertManyForMessage"]>[1][number];
 
 interface AttachmentLogger {
   warn(message: string, metadata?: Record<string, unknown>): void;
@@ -218,7 +221,13 @@ export async function syncGmailMessageAttachments(input: {
   for (const record of input.records) {
     const parsedRecord = gmailMessageRecordSchema.safeParse(record);
 
-    if (!parsedRecord.success || parsedRecord.data.attachmentMetadata.length === 0) {
+    if (
+      !parsedRecord.success ||
+      (
+        parsedRecord.data.attachmentMetadata.length === 0 &&
+        parsedRecord.data.driveAttachmentMetadata.length === 0
+      )
+    ) {
       continue;
     }
 
@@ -250,16 +259,7 @@ export async function syncGmailMessageAttachments(input: {
     const existingAttachmentIds = new Set(
       existingAttachments.map((attachment) => attachment.id),
     );
-    const rowsToInsert: {
-      readonly id: string;
-      readonly provider: "gmail";
-      readonly gmailAttachmentId: string;
-      readonly mimeType: string;
-      readonly filename: string | null;
-      readonly sizeBytes: number;
-      readonly storageKey: string;
-      readonly isDecoration: boolean;
-    }[] = [];
+    const rowsToInsert: MessageAttachmentInsert[] = [];
 
     for (const attachment of parsedRecord.data.attachmentMetadata) {
       const attachmentId = buildGmailMessageAttachmentId({
@@ -339,7 +339,31 @@ export async function syncGmailMessageAttachments(input: {
         filename: attachment.filename,
         sizeBytes: cachedAttachment.sizeBytes,
         storageKey,
+        externalUrl: null,
         isDecoration,
+      });
+    }
+
+    for (const driveAttachment of parsedRecord.data.driveAttachmentMetadata) {
+      const driveAttachmentId = buildGmailMessageDriveAttachmentId({
+        messageId: parsedRecord.data.recordId,
+        driveFileId: driveAttachment.driveFileId,
+      });
+
+      if (existingAttachmentIds.has(driveAttachmentId)) {
+        continue;
+      }
+
+      rowsToInsert.push({
+        id: driveAttachmentId,
+        provider: "drive",
+        gmailAttachmentId: null,
+        mimeType: "application/octet-stream",
+        filename: driveAttachment.filename,
+        sizeBytes: 0,
+        storageKey: null,
+        externalUrl: driveAttachment.driveUrl,
+        isDecoration: false,
       });
     }
 

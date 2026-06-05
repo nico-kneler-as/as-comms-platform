@@ -91,7 +91,6 @@ export interface GmailDriveAttachmentMetadata {
   readonly driveFileId: string;
   readonly driveUrl: string;
   readonly filename: string | null;
-  readonly mimeType: "application/vnd.gmail-drive-attachment";
 }
 
 const ENCRYPTED_MESSAGE_PLACEHOLDER =
@@ -850,6 +849,13 @@ export function buildGmailMessageAttachmentId(input: {
   return `att:gmail:${input.messageId}:${input.partIndexPath}`;
 }
 
+export function buildGmailMessageDriveAttachmentId(input: {
+  readonly messageId: string;
+  readonly driveFileId: string;
+}): string {
+  return `att:drive:${input.messageId}:${input.driveFileId}`;
+}
+
 export function buildGmailMessageAttachmentStorageKey(
   attachmentId: string,
 ): string {
@@ -1018,7 +1024,6 @@ export function collectGmailDriveAttachments(
             driveFileId,
             driveUrl,
             filename,
-            mimeType: "application/vnd.gmail-drive-attachment",
           });
 
           console.info("Drive attachment captured.", {
