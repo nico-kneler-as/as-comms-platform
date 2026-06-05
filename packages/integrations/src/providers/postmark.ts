@@ -374,11 +374,11 @@ export function createPostmarkClient(opts: {
     async sendBatch(req) {
       assertBatchSize(req.messages);
 
-      const payload = {
-        Messages: req.messages.map((message) => ({
-          ...message,
-        })),
-      };
+      // Postmark `/email/batch` expects a bare JSON array of messages;
+      // only `/email/batchWithTemplates` takes a `{ Messages: [...] }`
+      // wrapper. Sending the wrapped shape here yields a 422 with the
+      // surprising `Message: "Invalid JSON"` text.
+      const messages = req.messages.map((message) => ({ ...message }));
       const token = req.isTest ? POSTMARK_TEST_TOKEN : opts.serverToken;
       const results = await executeJsonRequest<readonly PostmarkBatchSendResult[]>(
         req.isTest
@@ -387,7 +387,7 @@ export function createPostmarkClient(opts: {
               method: "POST",
               token,
               tokenHeader: "X-Postmark-Server-Token",
-              body: payload,
+              body: messages,
               extraHeaders: { "X-AS-Test": "true" },
               retry5xx: true,
             }
@@ -396,7 +396,7 @@ export function createPostmarkClient(opts: {
               method: "POST",
               token,
               tokenHeader: "X-Postmark-Server-Token",
-              body: payload,
+              body: messages,
               retry5xx: true,
             },
       );
