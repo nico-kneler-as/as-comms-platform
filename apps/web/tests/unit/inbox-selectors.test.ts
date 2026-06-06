@@ -74,6 +74,7 @@ import {
   sortMembershipsByCreatedAt,
   stripSignature,
 } from "../../app/inbox/_lib/selectors";
+import { stripDriveAttachmentBareFilenames } from "../../app/inbox/_lib/message-formatting";
 import { InboxContactRail } from "../../app/inbox/_components/inbox-contact-rail";
 import type {
   InboxListItemViewModel,
@@ -7197,10 +7198,12 @@ describe("real inbox selectors", () => {
     expect(detail?.timeline[0]?.attachments).toEqual([
       {
         id: "att:gmail:attachment-email-1:0/2",
+        provider: "gmail",
         mimeType: "application/pdf",
         filename: "packet.pdf",
         sizeBytes: 4567,
         proxyUrl: "/api/attachments/att%3Agmail%3Aattachment-email-1%3A0%2F2",
+        externalUrl: null,
       },
     ]);
   });
@@ -7375,11 +7378,13 @@ describe("real inbox selectors", () => {
     expect(detail?.timeline[0]?.attachments).toEqual([
       {
         id: "att:gmail:karen-attachment-email-1:0/1",
+        provider: "gmail",
         mimeType: "image/png",
         filename: "trail distance.png",
         sizeBytes: 4321,
         proxyUrl:
           "/api/attachments/att%3Agmail%3Akaren-attachment-email-1%3A0%2F1",
+        externalUrl: null,
       },
     ]);
   });
@@ -7642,10 +7647,12 @@ describe("real inbox selectors", () => {
     expect(pendingEntry?.attachments).toEqual([
       {
         id: null,
+        provider: "pending",
         mimeType: "application/zip",
         filename: "x.zip",
         sizeBytes: 1234,
         proxyUrl: null,
+        externalUrl: null,
       },
     ]);
   });
@@ -7725,12 +7732,394 @@ describe("real inbox selectors", () => {
     expect(canonicalEntry?.attachments).toEqual([
       {
         id: "att:gmail:canonical-attachment-email-1:0/1",
+        provider: "gmail",
         mimeType: "application/pdf",
         filename: "canonical.pdf",
         sizeBytes: 4567,
         proxyUrl:
           "/api/attachments/att%3Agmail%3Acanonical-attachment-email-1%3A0%2F1",
+        externalUrl: null,
       },
     ]);
+  });
+
+  it("surfaces Drive attachments with an external URL instead of a proxy URL", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:drive-attachment",
+      salesforceContactId: "003-drive-attachment",
+      displayName: "Drive Attachment Test",
+      primaryEmail: "drive@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "drive-attachment-email-1",
+      contactId: "contact:drive-attachment",
+      occurredAt: "2026-05-28T15:00:00.000Z",
+      direction: "inbound",
+      subject: "Photo update",
+      snippet: "See the Drive attachment.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:drive-attachment",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-28T15:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-28T15:00:00.000Z",
+      snippet: "See the Drive attachment.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:drive-attachment-email-1",
+      id: "att:drive:drive-attachment-email-1:0/1",
+      provider: "drive",
+      mimeType: "image/jpeg",
+      filename: "IMG_2634.jpeg",
+      sizeBytes: 0,
+      storageKey: null,
+      externalUrl: "https://drive.google.com/file/d/abc/view",
+    });
+
+    const detail = await getInboxDetail("contact:drive-attachment");
+
+    expect(detail?.timeline[0]?.attachments).toEqual([
+      {
+        id: "att:drive:drive-attachment-email-1:0/1",
+        provider: "drive",
+        mimeType: "image/jpeg",
+        filename: "IMG_2634.jpeg",
+        sizeBytes: 0,
+        proxyUrl: null,
+        externalUrl: "https://drive.google.com/file/d/abc/view",
+      },
+    ]);
+  });
+
+  it("keeps Drive and Gmail attachments distinct in the same entry", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:mixed-attachments",
+      salesforceContactId: "003-mixed-attachments",
+      displayName: "Mixed Attachment Test",
+      primaryEmail: "mixed@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "mixed-attachment-email-1",
+      contactId: "contact:mixed-attachments",
+      occurredAt: "2026-05-28T16:00:00.000Z",
+      direction: "inbound",
+      subject: "Mixed files",
+      snippet: "One Gmail file and one Drive file.",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:mixed-attachments",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-28T16:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-28T16:00:00.000Z",
+      snippet: "One Gmail file and one Drive file.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:mixed-attachment-email-1",
+      id: "att:gmail:mixed-attachment-email-1:0/1",
+      mimeType: "application/pdf",
+      filename: "packet.pdf",
+      sizeBytes: 4567,
+      storageKey: "gmail/mixed/att:gmail:mixed-attachment-email-1:0/1",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:mixed-attachment-email-1",
+      id: "att:drive:mixed-attachment-email-1:0/2",
+      provider: "drive",
+      mimeType: "image/jpeg",
+      filename: "IMG_2634.jpeg",
+      sizeBytes: 0,
+      storageKey: null,
+      externalUrl: "https://drive.google.com/file/d/mixed/view",
+    });
+
+    const detail = await getInboxDetail("contact:mixed-attachments");
+
+    // Selector orders attachments by id ascending; "att:drive:..." sorts
+    // before "att:gmail:..." alphabetically.
+    expect(detail?.timeline[0]?.attachments).toEqual([
+      {
+        id: "att:drive:mixed-attachment-email-1:0/2",
+        provider: "drive",
+        mimeType: "image/jpeg",
+        filename: "IMG_2634.jpeg",
+        sizeBytes: 0,
+        proxyUrl: null,
+        externalUrl: "https://drive.google.com/file/d/mixed/view",
+      },
+      {
+        id: "att:gmail:mixed-attachment-email-1:0/1",
+        provider: "gmail",
+        mimeType: "application/pdf",
+        filename: "packet.pdf",
+        sizeBytes: 4567,
+        proxyUrl:
+          "/api/attachments/att%3Agmail%3Amixed-attachment-email-1%3A0%2F1",
+        externalUrl: null,
+      },
+    ]);
+  });
+
+  it("strips bare Drive filenames from rendered email bodies", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:drive-body-strip",
+      salesforceContactId: "003-drive-body-strip",
+      displayName: "Drive Body Strip Test",
+      primaryEmail: "drive-body@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "drive-body-strip-1",
+      contactId: "contact:drive-body-strip",
+      occurredAt: "2026-05-28T17:00:00.000Z",
+      direction: "inbound",
+      subject: "Drive photo",
+      snippet: "Hi!",
+      // Trailing line is a substantive sentence so the existing signature
+      // stripper (which strips a bare "thanks" suffix) doesn't remove it
+      // before the Drive bare-filename strip runs.
+      bodyTextPreview: [
+        "Hi!",
+        "",
+        "IMG_2634.jpeg",
+        "",
+        "Photo from yesterday's survey.",
+      ].join("\n"),
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:drive-body-strip",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-28T17:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-28T17:00:00.000Z",
+      snippet: "Hi!",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:drive-body-strip-1",
+      id: "att:drive:drive-body-strip-1:0/1",
+      provider: "drive",
+      mimeType: "image/jpeg",
+      filename: "IMG_2634.jpeg",
+      sizeBytes: 0,
+      storageKey: null,
+      externalUrl: "https://drive.google.com/file/d/body-strip/view",
+    });
+
+    const detail = await getInboxDetail("contact:drive-body-strip");
+
+    expect(detail?.timeline[0]?.body).toBe(
+      "Hi!\n\nPhoto from yesterday's survey.",
+    );
+  });
+
+  it("leaves unrelated bare filenames alone when there is no matching Drive attachment", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:drive-body-unrelated",
+      salesforceContactId: "003-drive-body-unrelated",
+      displayName: "Drive Body Unrelated Test",
+      primaryEmail: "drive-unrelated@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "drive-body-unrelated-1",
+      contactId: "contact:drive-body-unrelated",
+      occurredAt: "2026-05-28T18:00:00.000Z",
+      direction: "inbound",
+      subject: "No Drive match",
+      snippet: "Hi!",
+      bodyTextPreview: [
+        "Hi!",
+        "",
+        "IMG_2634.jpeg",
+        "",
+        "Photo from yesterday's survey.",
+      ].join("\n"),
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:drive-body-unrelated",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-28T18:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-28T18:00:00.000Z",
+      snippet: "Hi!",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+
+    const detail = await getInboxDetail("contact:drive-body-unrelated");
+
+    expect(detail?.timeline[0]?.body).toBe(
+      "Hi!\n\nIMG_2634.jpeg\n\nPhoto from yesterday's survey.",
+    );
+  });
+
+  it("treats bare Drive filename stripping as case-sensitive", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:drive-body-case",
+      salesforceContactId: "003-drive-body-case",
+      displayName: "Drive Body Case Test",
+      primaryEmail: "drive-case@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "drive-body-case-1",
+      contactId: "contact:drive-body-case",
+      occurredAt: "2026-05-28T19:00:00.000Z",
+      direction: "inbound",
+      subject: "Case-sensitive",
+      snippet: "Hi!",
+      bodyTextPreview: [
+        "Hi!",
+        "",
+        "img_2634.jpeg",
+        "",
+        "Photo from yesterday's survey.",
+      ].join("\n"),
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:drive-body-case",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-28T19:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-28T19:00:00.000Z",
+      snippet: "Hi!",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+    await seedInboxMessageAttachment(runtime.context, {
+      sourceEvidenceId: "source:drive-body-case-1",
+      id: "att:drive:drive-body-case-1:0/1",
+      provider: "drive",
+      mimeType: "image/jpeg",
+      filename: "IMG_2634.jpeg",
+      sizeBytes: 0,
+      storageKey: null,
+      externalUrl: "https://drive.google.com/file/d/case/view",
+    });
+
+    const detail = await getInboxDetail("contact:drive-body-case");
+
+    expect(detail?.timeline[0]?.body).toBe(
+      "Hi!\n\nimg_2634.jpeg\n\nPhoto from yesterday's survey.",
+    );
+  });
+
+  it("strips multiple matching Drive filenames from the rendered body", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:drive-body-multiple",
+      salesforceContactId: "003-drive-body-multiple",
+      displayName: "Drive Body Multiple Test",
+      primaryEmail: "drive-multiple@example.org",
+      primaryPhone: null,
+    });
+    const latest = await seedInboxEmailEvent(runtime.context, {
+      id: "drive-body-multiple-1",
+      contactId: "contact:drive-body-multiple",
+      occurredAt: "2026-05-28T20:00:00.000Z",
+      direction: "inbound",
+      subject: "Multiple Drive files",
+      snippet: "Files attached.",
+      bodyTextPreview: [
+        "file-1.pdf",
+        "file-2.pdf",
+        "",
+        "Notes",
+        "",
+        "file-3.pdf",
+        "file-4.pdf",
+        "file-5.pdf",
+      ].join("\n"),
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: "contact:drive-body-multiple",
+      bucket: "New",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-05-28T20:00:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-05-28T20:00:00.000Z",
+      snippet: "Files attached.",
+      lastCanonicalEventId: latest.canonicalEventId,
+      lastEventType: "communication.email.inbound",
+    });
+    for (const filename of [
+      "file-1.pdf",
+      "file-2.pdf",
+      "file-3.pdf",
+      "file-4.pdf",
+      "file-5.pdf",
+    ]) {
+      await seedInboxMessageAttachment(runtime.context, {
+        sourceEvidenceId: "source:drive-body-multiple-1",
+        id: `att:drive:drive-body-multiple-1:${filename}`,
+        provider: "drive",
+        mimeType: "application/pdf",
+        filename,
+        sizeBytes: 0,
+        storageKey: null,
+        externalUrl: `https://drive.google.com/file/d/${filename}/view`,
+      });
+    }
+
+    const detail = await getInboxDetail("contact:drive-body-multiple");
+
+    expect(detail?.timeline[0]?.body).toBe("Notes");
+  });
+
+  it("keeps stripDriveAttachmentBareFilenames idempotent", () => {
+    const value = ["Hi!", "", "IMG_2634.jpeg", "", "thanks"].join("\n");
+    const filenames = ["IMG_2634.jpeg"] as const;
+
+    const strippedOnce = stripDriveAttachmentBareFilenames(value, filenames);
+    const strippedTwice = stripDriveAttachmentBareFilenames(
+      strippedOnce,
+      filenames,
+    );
+
+    expect(strippedOnce).toBe("Hi!\n\nthanks");
+    expect(strippedTwice).toBe(strippedOnce);
   });
 });

@@ -123,12 +123,19 @@ function MessageAttachments({
     return null;
   }
 
-  const imageAttachments = attachments.filter((attachment) =>
-    attachment.proxyUrl !== null && attachment.mimeType.startsWith("image/"),
+  const imageAttachments = attachments.filter(
+    (attachment) =>
+      attachment.provider === "gmail" &&
+      attachment.proxyUrl !== null &&
+      attachment.mimeType.startsWith("image/"),
+  );
+  const driveAttachments = attachments.filter(
+    (attachment) => attachment.provider === "drive",
   );
   const fileAttachments = attachments.filter(
     (attachment) =>
-      attachment.proxyUrl === null || !attachment.mimeType.startsWith("image/"),
+      attachment.provider !== "drive" &&
+      (attachment.proxyUrl === null || !attachment.mimeType.startsWith("image/")),
   );
 
   return (
@@ -170,6 +177,37 @@ function MessageAttachments({
                   />
                 </DialogContent>
               </Dialog>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {driveAttachments.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {driveAttachments.map((attachment, index) => {
+            const label = attachmentLabel(attachment.filename);
+            const attachmentKey = attachment.id ?? `drive-${String(index)}`;
+
+            if (attachment.externalUrl === null) {
+              return null;
+            }
+
+            return (
+              <a
+                key={attachmentKey}
+                href={attachment.externalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Open ${label} in Google Drive`}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors duration-150 ease-out hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+              >
+                <FileDocIcon className="size-3.5 shrink-0" />
+                <span className="max-w-[16rem] truncate">{label}</span>
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-500">
+                  Drive
+                </span>
+                <ArrowUpRightIcon className="size-3 shrink-0 text-slate-400" />
+              </a>
             );
           })}
         </div>

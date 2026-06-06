@@ -197,6 +197,24 @@ export function stripInlineImagePlaceholders(value: string): string {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+export function stripDriveAttachmentBareFilenames(
+  value: string,
+  driveFilenames: readonly string[],
+): string {
+  if (driveFilenames.length === 0) {
+    return value;
+  }
+
+  const escaped = driveFilenames
+    .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const pattern = new RegExp(`^\\s*(?:${escaped})\\s*$`, "gmu");
+  return value
+    .replace(pattern, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\s+|\s+$/g, "");
+}
+
 function isLikelyPreviewNoise(value: string): boolean {
   const normalized = value.trim();
 
