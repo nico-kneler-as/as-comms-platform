@@ -930,6 +930,7 @@ export function useNewCampaignWizardState({
     setToast,
     countLoading,
     audiencePreviewLoading,
+    savePending,
     startSaveTransition,
     submitPending,
     startSubmitTransition,

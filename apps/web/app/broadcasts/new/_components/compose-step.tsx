@@ -27,6 +27,12 @@ interface ComposeStepProps {
   readonly bodyPlaintext: string;
   readonly selectedAliasSignature: string;
   readonly frozen: boolean;
+  /**
+   * True while the draft-save server action triggered by Continue is in
+   * flight. Used to show a pending state on the primary button so the
+   * operator has visible feedback during the save → step-transition gap.
+   */
+  readonly continuePending?: boolean;
   readonly onSubjectChange: (value: string) => void;
   readonly onPreheaderChange: (value: string) => void;
   readonly onBodyChange: (value: {
@@ -43,6 +49,7 @@ export function ComposeStep({
   bodyPlaintext,
   selectedAliasSignature,
   frozen,
+  continuePending = false,
   onSubjectChange,
   onPreheaderChange,
   onBodyChange,
@@ -186,9 +193,10 @@ export function ComposeStep({
 
       <WizardFooter
         onBack={onBack}
-        primaryLabel="Continue"
+        primaryLabel={continuePending ? "Saving…" : "Continue"}
         primaryAction={onContinue}
         primaryDisabled={!canContinue}
+        primaryLoading={continuePending}
       />
     </section>
   );

@@ -436,6 +436,7 @@ export function NewCampaignWizard({
     setToast,
     countLoading,
     audiencePreviewLoading,
+    savePending,
     startSaveTransition,
     submitPending,
     startSubmitTransition,
@@ -771,6 +772,7 @@ export function NewCampaignWizard({
                 bodyPlaintext={bodyPlaintext}
                 selectedAliasSignature={selectedAliasSignature}
                 frozen={frozen}
+                continuePending={savePending}
                 onSubjectChange={setSubject}
                 onPreheaderChange={setPreheader}
                 onBodyChange={(value) => {
