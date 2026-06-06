@@ -209,7 +209,10 @@ export function stripDriveAttachmentBareFilenames(
     .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
     .join("|");
   const pattern = new RegExp(`^\\s*(?:${escaped})\\s*$`, "gmu");
-  return value.replace(pattern, "").replace(/\n{3,}/g, "\n\n");
+  return value
+    .replace(pattern, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\s+|\s+$/g, "");
 }
 
 function isLikelyPreviewNoise(value: string): boolean {

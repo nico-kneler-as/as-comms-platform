@@ -7854,7 +7854,18 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:mixed-attachments");
 
+    // Selector orders attachments by id ascending; "att:drive:..." sorts
+    // before "att:gmail:..." alphabetically.
     expect(detail?.timeline[0]?.attachments).toEqual([
+      {
+        id: "att:drive:mixed-attachment-email-1:0/2",
+        provider: "drive",
+        mimeType: "image/jpeg",
+        filename: "IMG_2634.jpeg",
+        sizeBytes: 0,
+        proxyUrl: null,
+        externalUrl: "https://drive.google.com/file/d/mixed/view",
+      },
       {
         id: "att:gmail:mixed-attachment-email-1:0/1",
         provider: "gmail",
@@ -7864,15 +7875,6 @@ describe("real inbox selectors", () => {
         proxyUrl:
           "/api/attachments/att%3Agmail%3Amixed-attachment-email-1%3A0%2F1",
         externalUrl: null,
-      },
-      {
-        id: "att:drive:mixed-attachment-email-1:0/2",
-        provider: "drive",
-        mimeType: "image/jpeg",
-        filename: "IMG_2634.jpeg",
-        sizeBytes: 0,
-        proxyUrl: null,
-        externalUrl: "https://drive.google.com/file/d/mixed/view",
       },
     ]);
   });
@@ -7896,7 +7898,16 @@ describe("real inbox selectors", () => {
       direction: "inbound",
       subject: "Drive photo",
       snippet: "Hi!",
-      bodyTextPreview: ["Hi!", "", "IMG_2634.jpeg", "", "thanks"].join("\n"),
+      // Trailing line is a substantive sentence so the existing signature
+      // stripper (which strips a bare "thanks" suffix) doesn't remove it
+      // before the Drive bare-filename strip runs.
+      bodyTextPreview: [
+        "Hi!",
+        "",
+        "IMG_2634.jpeg",
+        "",
+        "Photo from yesterday's survey.",
+      ].join("\n"),
     });
     await seedInboxProjection(runtime.context, {
       contactId: "contact:drive-body-strip",
@@ -7923,7 +7934,9 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:drive-body-strip");
 
-    expect(detail?.timeline[0]?.body).toBe("Hi!\n\nthanks");
+    expect(detail?.timeline[0]?.body).toBe(
+      "Hi!\n\nPhoto from yesterday's survey.",
+    );
   });
 
   it("leaves unrelated bare filenames alone when there is no matching Drive attachment", async () => {
@@ -7945,7 +7958,13 @@ describe("real inbox selectors", () => {
       direction: "inbound",
       subject: "No Drive match",
       snippet: "Hi!",
-      bodyTextPreview: ["Hi!", "", "IMG_2634.jpeg", "", "thanks"].join("\n"),
+      bodyTextPreview: [
+        "Hi!",
+        "",
+        "IMG_2634.jpeg",
+        "",
+        "Photo from yesterday's survey.",
+      ].join("\n"),
     });
     await seedInboxProjection(runtime.context, {
       contactId: "contact:drive-body-unrelated",
@@ -7962,7 +7981,9 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:drive-body-unrelated");
 
-    expect(detail?.timeline[0]?.body).toBe("Hi!\n\nIMG_2634.jpeg\n\nthanks");
+    expect(detail?.timeline[0]?.body).toBe(
+      "Hi!\n\nIMG_2634.jpeg\n\nPhoto from yesterday's survey.",
+    );
   });
 
   it("treats bare Drive filename stripping as case-sensitive", async () => {
@@ -7984,7 +8005,13 @@ describe("real inbox selectors", () => {
       direction: "inbound",
       subject: "Case-sensitive",
       snippet: "Hi!",
-      bodyTextPreview: ["Hi!", "", "img_2634.jpeg", "", "thanks"].join("\n"),
+      bodyTextPreview: [
+        "Hi!",
+        "",
+        "img_2634.jpeg",
+        "",
+        "Photo from yesterday's survey.",
+      ].join("\n"),
     });
     await seedInboxProjection(runtime.context, {
       contactId: "contact:drive-body-case",
@@ -8011,7 +8038,9 @@ describe("real inbox selectors", () => {
 
     const detail = await getInboxDetail("contact:drive-body-case");
 
-    expect(detail?.timeline[0]?.body).toBe("Hi!\n\nimg_2634.jpeg\n\nthanks");
+    expect(detail?.timeline[0]?.body).toBe(
+      "Hi!\n\nimg_2634.jpeg\n\nPhoto from yesterday's survey.",
+    );
   });
 
   it("strips multiple matching Drive filenames from the rendered body", async () => {
