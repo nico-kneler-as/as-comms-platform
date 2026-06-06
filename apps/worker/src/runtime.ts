@@ -257,6 +257,7 @@ function buildCampaignSendDependencies(input: {
         campaignRuns: input.campaigns.campaignRuns,
         audienceSnapshots: input.campaigns.audienceSnapshots,
         settingsProjects: input.settings.projects,
+        settingsAliases: input.settings.aliases,
         orgSettings: input.campaigns.orgSettings,
         auditEvidence: input.repositories.auditEvidence,
       },

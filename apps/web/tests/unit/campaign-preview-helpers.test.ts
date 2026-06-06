@@ -14,6 +14,7 @@ describe("buildCampaignFooterPreview", () => {
 
     expect(footer.html).toContain("Unsubscribe from PNW Biodiversity emails");
     expect(footer.text).toContain("Unsubscribe from PNW Biodiversity emails");
+    expect(footer.html.match(/\{\{\{ pm:unsubscribe \}\}\}/gu)).toHaveLength(1);
   });
 
   it("falls back to the project name when there is no alias", () => {

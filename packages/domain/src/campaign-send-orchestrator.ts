@@ -16,14 +16,19 @@ import type {
 } from "./campaign-types.js";
 import {
   buildBroadcastPreheaderHtml,
+  buildBroadcastSignatureBlock,
   buildBroadcastUnsubscribeUrls,
+  buildPostmarkUnsubscribePlaceholderHtml,
   escapeHtml,
   formatBroadcastFromHeader,
 } from "./broadcast-email-render.js";
 import type { AudienceResolver } from "./audience-resolver.js";
 import type { ExclusionFilter } from "./exclusion-filter.js";
 import type { MergeRenderer } from "./merge-renderer.js";
-import type { SettingsProjectsRepository } from "./settings/repositories.js";
+import type {
+  ProjectAliasesRepository,
+  SettingsProjectsRepository,
+} from "./settings/repositories.js";
 
 export interface CampaignSendOrchestrator {
   freeze(
@@ -87,6 +92,7 @@ interface CampaignSendRepositories {
     ): Promise<AudienceSnapshotRecord>;
   };
   readonly settingsProjects: Pick<SettingsProjectsRepository, "findById">;
+  readonly settingsAliases: Pick<ProjectAliasesRepository, "findByAlias">;
   readonly orgSettings: {
     read(): Promise<OrgSettingsRecord>;
   };
@@ -142,11 +148,17 @@ function buildUnsubscribeFooter(input: {
       input.footerAddress === null
         ? ""
         : `<div style="color:#64748b;font-size:12px;line-height:1.6;margin-top:8px;">${escapeHtml(input.footerAddress)}</div>`,
+      buildPostmarkUnsubscribePlaceholderHtml(),
     ].join(""),
     text: [linkLabels.join(" · "), textLinks, input.footerAddress]
       .filter((part): part is string => part !== null && part.length > 0)
       .join("\n"),
   };
+}
+
+function normalizeAliasEmail(value: string | null): string | null {
+  const trimmed = value?.trim().toLowerCase() ?? "";
+  return trimmed.length === 0 ? null : trimmed;
 }
 
 function normalizeReason(reason: string): string | null {
@@ -409,6 +421,18 @@ export function createCampaignSendOrchestrator(deps: {
       const snapshots = (await deps.repositories.audienceSnapshots.listForRun(runId)).filter(
         (snapshot) => snapshot.deliveryStatus === "pending",
       );
+      const senderAliasEmail = normalizeAliasEmail(
+        run.fromEmail ?? snapshots[0]?.frozenAliasEmail ?? null,
+      );
+      const signatureBlock = buildBroadcastSignatureBlock(
+        senderAliasEmail === null
+          ? null
+          : (
+              await deps.repositories.settingsAliases.findByAlias(
+                senderAliasEmail,
+              )
+            )?.signature ?? null,
+      );
 
       for (let index = 0; index < snapshots.length; index += batchSize) {
         const stateCheck = await deps.repositories.campaignRuns.findById(runId);
@@ -479,9 +503,9 @@ export function createCampaignSendOrchestrator(deps: {
           const rendered = deps.mergeRenderer.render(
             {
               subject: run.subjectTemplate ?? "",
-              bodyHtml: `${preheaderHtml}${run.bodyHtmlTemplate ?? ""}${footer.html}`,
-              bodyText: [run.bodyTextTemplate ?? "", footer.text]
-                .filter((part) => part.length > 0)
+              bodyHtml: `${preheaderHtml}${run.bodyHtmlTemplate ?? ""}${signatureBlock.html}${footer.html}`,
+              bodyText: [run.bodyTextTemplate ?? "", signatureBlock.text, footer.text]
+                .filter((part) => part.trim().length > 0)
                 .join("\n\n"),
             },
             toMergeContext(member),

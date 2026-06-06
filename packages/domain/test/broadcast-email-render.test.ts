@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildBroadcastPreheaderHtml,
+  buildBroadcastSignatureBlock,
+  buildPostmarkUnsubscribePlaceholderHtml,
   buildBroadcastUnsubscribeUrls,
   formatBroadcastFromHeader,
 } from "../src/broadcast-email-render.js";
@@ -33,6 +35,32 @@ describe("broadcast-email-render helpers", () => {
   it("returns an empty preheader wrapper for blank values", () => {
     expect(buildBroadcastPreheaderHtml("   ")).toBe("");
     expect(buildBroadcastPreheaderHtml(null)).toBe("");
+  });
+
+  it("builds the hidden Postmark unsubscribe placeholder wrapper", () => {
+    expect(buildPostmarkUnsubscribePlaceholderHtml()).toBe(
+      '<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;color:transparent;font-size:1px;line-height:1px;">{{{ pm:unsubscribe }}}</div>',
+    );
+  });
+
+  it("builds a trimmed signature block for both text and html", () => {
+    expect(
+      buildBroadcastSignatureBlock("  Thanks,\nThe <AS> Team  "),
+    ).toEqual({
+      text: "Thanks,\nThe <AS> Team",
+      html: '<p style="margin:16px 0;color:#0f172a;font-size:14px;line-height:1.6;">Thanks,<br>The &lt;AS&gt; Team</p>',
+    });
+  });
+
+  it("skips empty signature blocks", () => {
+    expect(buildBroadcastSignatureBlock("   ")).toEqual({
+      text: "",
+      html: "",
+    });
+    expect(buildBroadcastSignatureBlock(null)).toEqual({
+      text: "",
+      html: "",
+    });
   });
 
   it("builds scoped and all unsubscribe URLs from the app origin", () => {

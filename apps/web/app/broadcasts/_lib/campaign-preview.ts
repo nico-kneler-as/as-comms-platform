@@ -2,7 +2,10 @@ import type {
   CampaignKind,
   OrgSettingsRecord,
 } from "@as-comms/contracts";
-import { escapeHtml } from "@as-comms/domain";
+import {
+  buildPostmarkUnsubscribePlaceholderHtml,
+  escapeHtml,
+} from "@as-comms/domain";
 
 export function formatOrgAddress(input: OrgSettingsRecord): string | null {
   const line1 = input.physicalAddressLine1.trim();
@@ -55,6 +58,7 @@ export function buildCampaignFooterPreview(input: {
       input.footerAddress === null
         ? ""
         : `<div style="color:#64748b;font-size:12px;line-height:1.6;margin-top:8px;">${escapeHtml(input.footerAddress)}</div>`,
+      buildPostmarkUnsubscribePlaceholderHtml(),
     ].join(""),
     text: [linkLabels.join(" · "), textLinks, input.footerAddress].filter(Boolean).join("\n"),
   };

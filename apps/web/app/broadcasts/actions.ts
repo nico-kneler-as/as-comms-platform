@@ -15,6 +15,7 @@ import {
 } from "@as-comms/contracts";
 import {
   buildBroadcastPreheaderHtml,
+  buildBroadcastSignatureBlock,
   buildBroadcastUnsubscribeUrls,
   createAudienceResolver,
   createCampaignSendOrchestrator,
@@ -170,6 +171,11 @@ function trimNonEmpty(value: string | undefined): string | null {
   return trimmed === undefined || trimmed.length === 0 ? null : trimmed;
 }
 
+function normalizeAliasEmail(value: string | null): string | null {
+  const trimmed = value?.trim().toLowerCase() ?? "";
+  return trimmed.length === 0 ? null : trimmed;
+}
+
 function createCampaignSendOrchestratorForRepositories(input: {
   readonly campaigns: Stage1WebRuntime["campaigns"];
   readonly repositories: Stage1WebRuntime["repositories"];
@@ -188,6 +194,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
       campaignRuns: input.campaigns.campaignRuns,
       audienceSnapshots: input.campaigns.audienceSnapshots,
       settingsProjects: input.settings.projects,
+      settingsAliases: input.settings.aliases,
       orgSettings: input.campaigns.orgSettings,
       auditEvidence: input.repositories.auditEvidence,
     },
@@ -564,6 +571,14 @@ export async function testSend(
       run.projectId === null
         ? null
         : (await runtime.settings.projects.findById(run.projectId))?.projectAlias ?? null;
+    const normalizedSenderAlias = normalizeAliasEmail(fromEmail);
+    const signatureBlock = buildBroadcastSignatureBlock(
+      normalizedSenderAlias === null
+        ? null
+        : (
+            await runtime.settings.aliases.findByAlias(normalizedSenderAlias)
+          )?.signature ?? null,
+    );
     const unsubscribeUrls = buildBroadcastUnsubscribeUrls({
       appUrl: origin,
       unsubscribeToken: `preview-${run.kind}`,
@@ -581,8 +596,10 @@ export async function testSend(
     const rendered = mergeRenderer.render(
       {
         subject: run.subjectTemplate ?? "",
-        bodyHtml: `${preheaderHtml}${run.bodyHtmlTemplate ?? ""}${footer.html}`,
-        bodyText: [run.bodyTextTemplate ?? "", footer.text].filter(Boolean).join("\n\n"),
+        bodyHtml: `${preheaderHtml}${run.bodyHtmlTemplate ?? ""}${signatureBlock.html}${footer.html}`,
+        bodyText: [run.bodyTextTemplate ?? "", signatureBlock.text, footer.text]
+          .filter((part) => part.trim().length > 0)
+          .join("\n\n"),
       },
       {
         firstName: sample.frozenFirstName,
