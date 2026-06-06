@@ -38,6 +38,11 @@ import {
   type ReconcileStaleRunningTaskDependencies,
 } from "./jobs/reconcile-stale-running.js";
 import {
+  createReconcileSupersededProjectionsTask,
+  reconcileSupersededProjectionsJobName,
+  type ReconcileSupersededProjectionsTaskDependencies,
+} from "./jobs/reconcile-superseded-projections.js";
+import {
   createReconcileStrandedCampaignRunsTask,
   reconcileStrandedCampaignRunsJobName,
   type ReconcileStrandedCampaignRunsTaskDependencies,
@@ -86,6 +91,7 @@ export function createTaskList(
     readonly reconcileRoutingReviewQueue?: ReconcileRoutingReviewQueueTaskDependencies;
     readonly reconcileCaptureGaps?: ReconcileCaptureGapsTaskDependencies;
     readonly reconcileStaleRunning?: ReconcileStaleRunningTaskDependencies;
+    readonly reconcileSupersededProjections?: ReconcileSupersededProjectionsTaskDependencies;
     readonly reconcileStrandedCampaignRuns?: ReconcileStrandedCampaignRunsTaskDependencies;
     readonly synthesizeProjectKnowledge?: SynthesizeProjectKnowledgeDependencies;
     readonly pollPostmarkSenderStatus?: PollPostmarkSenderStatusDependencies;
@@ -148,6 +154,14 @@ export function createTaskList(
           [reconcileStaleRunningJobName]: createReconcileStaleRunningTask(
             input.reconcileStaleRunning
           )
+        }),
+    ...(input?.reconcileSupersededProjections === undefined
+      ? {}
+      : {
+          [reconcileSupersededProjectionsJobName]:
+            createReconcileSupersededProjectionsTask(
+              input.reconcileSupersededProjections,
+            ),
         }),
     ...(input?.reconcileStrandedCampaignRuns === undefined
       ? {}

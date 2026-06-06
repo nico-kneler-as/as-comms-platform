@@ -43,16 +43,23 @@ export interface StaleCanonicalTarget {
   readonly sourceOccurredAt: string;
 }
 
-interface ReconcileSummary {
+export interface ReconcileSupersededProjectionsSummary {
   occurredAtUpdated: number;
   alreadyAligned: number;
   missingCanonical: number;
   errors: number;
 }
 
-interface ErrorExample {
+export interface ReconcileSupersededProjectionsErrorExample {
   readonly canonicalEventId: string;
   readonly message: string;
+}
+
+export interface ReconcileSupersededProjectionsReport {
+  readonly summary: ReconcileSupersededProjectionsSummary;
+  readonly errorExamples: readonly ReconcileSupersededProjectionsErrorExample[];
+  readonly contactIds: readonly string[];
+  readonly targetCount: number;
 }
 
 class DryRunRollback extends Error {
@@ -213,6 +220,98 @@ function buildSampleRows(
   }));
 }
 
+// Core reconciler — dependency-injected so both the CLI wrapper and the
+// Graphile-cron task share one code path. Returns the per-key outcomes plus
+// the distinct contact IDs that need a projection-rebuild to refresh their
+// timeline/inbox rows from the updated canonicals.
+export async function reconcileSupersededProjections(input: {
+  readonly db: Stage1Database;
+  readonly sql: SqlRunner;
+  readonly dryRun: boolean;
+  readonly limit: number | null;
+  readonly logger?: Pick<Console, "log" | "error">;
+  readonly emitPlanEvent?: boolean;
+}): Promise<ReconcileSupersededProjectionsReport> {
+  const logger = input.logger ?? console;
+  const targets = await loadStaleCanonicals({
+    sql: input.sql,
+    limit: input.limit,
+  });
+
+  const distinctContactIds = Array.from(
+    new Set(targets.map((target) => target.contactId)),
+  ).sort((left, right) => left.localeCompare(right));
+
+  if (input.emitPlanEvent !== false) {
+    logger.log(
+      JSON.stringify(
+        {
+          event: "reconcile_superseded_projections.plan",
+          dryRun: input.dryRun,
+          limit: input.limit,
+          targetCount: targets.length,
+          distinctContactCount: distinctContactIds.length,
+          sample: buildSampleRows(targets),
+        },
+        null,
+        2,
+      ),
+    );
+  }
+
+  const summary: ReconcileSupersededProjectionsSummary = {
+    occurredAtUpdated: 0,
+    alreadyAligned: 0,
+    missingCanonical: 0,
+    errors: 0,
+  };
+  const errorExamples: ReconcileSupersededProjectionsErrorExample[] = [];
+
+  for (const target of targets) {
+    try {
+      const outcome = await applyOccurredAtUpdate({
+        db: input.db,
+        target,
+        dryRun: input.dryRun,
+      });
+
+      switch (outcome) {
+        case "updated":
+          summary.occurredAtUpdated += 1;
+          break;
+        case "already_aligned":
+          summary.alreadyAligned += 1;
+          break;
+        case "missing_canonical":
+          summary.missingCanonical += 1;
+          break;
+      }
+    } catch (error) {
+      const resolvedError =
+        error instanceof Error ? error : new Error(String(error));
+      summary.errors += 1;
+
+      if (errorExamples.length < DEFAULT_SAMPLE_LIMIT) {
+        errorExamples.push({
+          canonicalEventId: target.canonicalEventId,
+          message: resolvedError.message,
+        });
+      }
+
+      logger.error(
+        `Failed updating canonical ${target.canonicalEventId}: ${resolvedError.message}`,
+      );
+    }
+  }
+
+  return {
+    summary,
+    errorExamples,
+    contactIds: distinctContactIds,
+    targetCount: targets.length,
+  };
+}
+
 export async function runReconcileSupersededProjectionsCommand(
   args: readonly string[] = process.argv.slice(2),
   env: NodeJS.ProcessEnv = process.env,
@@ -226,78 +325,17 @@ export async function runReconcileSupersededProjectionsCommand(
   });
 
   try {
-    const targets = await loadStaleCanonicals({
+    const report = await reconcileSupersededProjections({
+      db: connection.db,
       sql: connection.sql as unknown as SqlRunner,
+      dryRun,
       limit,
+      logger,
     });
 
-    const distinctContactIds = Array.from(
-      new Set(targets.map((target) => target.contactId)),
-    ).sort((left, right) => left.localeCompare(right));
-
-    logger.log(
-      JSON.stringify(
-        {
-          event: "reconcile_superseded_projections.plan",
-          dryRun,
-          limit,
-          targetCount: targets.length,
-          distinctContactCount: distinctContactIds.length,
-          sample: buildSampleRows(targets),
-        },
-        null,
-        2,
-      ),
-    );
-
-    if (targets.length === 0) {
+    if (report.targetCount === 0) {
       logger.log("No canonical-event rows have a stale occurred_at.");
       return;
-    }
-
-    const summary: ReconcileSummary = {
-      occurredAtUpdated: 0,
-      alreadyAligned: 0,
-      missingCanonical: 0,
-      errors: 0,
-    };
-    const errorExamples: ErrorExample[] = [];
-
-    for (const target of targets) {
-      try {
-        const outcome = await applyOccurredAtUpdate({
-          db: connection.db,
-          target,
-          dryRun,
-        });
-
-        switch (outcome) {
-          case "updated":
-            summary.occurredAtUpdated += 1;
-            break;
-          case "already_aligned":
-            summary.alreadyAligned += 1;
-            break;
-          case "missing_canonical":
-            summary.missingCanonical += 1;
-            break;
-        }
-      } catch (error) {
-        const resolvedError =
-          error instanceof Error ? error : new Error(String(error));
-        summary.errors += 1;
-
-        if (errorExamples.length < DEFAULT_SAMPLE_LIMIT) {
-          errorExamples.push({
-            canonicalEventId: target.canonicalEventId,
-            message: resolvedError.message,
-          });
-        }
-
-        logger.error(
-          `Failed updating canonical ${target.canonicalEventId}: ${resolvedError.message}`,
-        );
-      }
     }
 
     logger.log(
@@ -305,12 +343,12 @@ export async function runReconcileSupersededProjectionsCommand(
         {
           event: "reconcile_superseded_projections.completed",
           dryRun,
-          summary,
-          errorExamples,
-          contactsForProjectionRebuild: distinctContactIds,
+          summary: report.summary,
+          errorExamples: report.errorExamples,
+          contactsForProjectionRebuild: report.contactIds,
           rebuildCommandHint:
-            distinctContactIds.length > 0
-              ? `pnpm --filter @as-comms/worker run ops enqueue projection-rebuild --contact-ids ${distinctContactIds.join(",")} --projection all --include-review-overlay-refresh true`
+            report.contactIds.length > 0
+              ? `pnpm --filter @as-comms/worker run ops enqueue projection-rebuild --contact-ids ${report.contactIds.join(",")} --projection all --include-review-overlay-refresh true`
               : null,
         },
         null,
