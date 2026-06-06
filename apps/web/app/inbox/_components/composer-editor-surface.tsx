@@ -18,6 +18,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import {
+  COMPOSER_LINK_SCHEMES,
+  COMPOSER_LINK_SCHEME_PREFIXES_REGEX,
+} from "@/src/lib/composer-link-schemes";
 import { sanitizeComposerHtml } from "@/src/lib/html-sanitizer";
 
 import { plaintextToComposerHtml } from "./composer-html";
@@ -44,7 +48,7 @@ function promptForLinkUrl(): string | null {
   // `sms:` and `tel:` are included because they're the standard URI schemes
   // for tap-to-text and tap-to-call links (supported by Gmail / iOS Mail /
   // most modern clients), which we use for SMS opt-in / phone CTAs.
-  if (/^(https?:\/\/|mailto:|sms:|tel:)/iu.test(trimmed)) {
+  if (COMPOSER_LINK_SCHEME_PREFIXES_REGEX.test(trimmed)) {
     return trimmed;
   }
 
@@ -221,6 +225,7 @@ export function RichTextComposerEditor({
       }),
       Link.configure({
         openOnClick: false,
+        protocols: [...COMPOSER_LINK_SCHEMES],
         HTMLAttributes: {
           rel: "noopener noreferrer",
           target: "_blank",

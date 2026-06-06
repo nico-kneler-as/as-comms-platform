@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import type {
   AuditEvidenceRecord,
   AudienceSnapshotRecord,
-  CampaignKind,
   CampaignRunRecord,
   NewAudienceSnapshot,
   OrgSettingsRecord,
@@ -15,12 +14,10 @@ import type {
   MergeContext,
 } from "./campaign-types.js";
 import {
-  buildBroadcastPreheaderHtml,
-  buildBroadcastSignatureBlock,
   buildBroadcastUnsubscribeUrls,
-  buildPostmarkUnsubscribePlaceholderHtml,
-  escapeHtml,
-  formatBroadcastFromHeader,
+  formatOrgAddress,
+  normalizeAliasEmail,
+  renderBroadcastEmail,
 } from "./broadcast-email-render.js";
 import type { AudienceResolver } from "./audience-resolver.js";
 import type { ExclusionFilter } from "./exclusion-filter.js";
@@ -99,66 +96,6 @@ interface CampaignSendRepositories {
   readonly auditEvidence?: {
     append(record: AuditEvidenceRecord): Promise<AuditEvidenceRecord>;
   };
-}
-
-function formatOrgAddress(input: OrgSettingsRecord): string | null {
-  const line1 = input.physicalAddressLine1.trim();
-  const line2 = input.physicalAddressLine2.trim();
-  const city = input.physicalCity.trim();
-  const state = input.physicalState.trim();
-  const zip = input.physicalZip.trim();
-  const country = input.physicalCountry.trim();
-  const cityLine = [city, state, zip].filter((part) => part.length > 0).join(", ");
-  const parts = [line1, line2, cityLine, country].filter((part) => part.length > 0);
-  return parts.length === 0 ? null : parts.join(" • ");
-}
-
-function buildUnsubscribeFooter(input: {
-  readonly kind: CampaignKind;
-  readonly projectName: string | null;
-  readonly projectAlias: string | null;
-  readonly footerAddress: string | null;
-  readonly scopedHref: string;
-  readonly allHref: string;
-}): { readonly html: string; readonly text: string } {
-  const scopedLabel =
-    input.kind === "newsletter"
-      ? "Unsubscribe from the AS newsletter"
-      : `Unsubscribe from ${input.projectAlias ?? input.projectName ?? "this project"} emails`;
-  const allLabel = "Unsubscribe from all Adventure Scientists emails";
-
-  const linkLabels =
-    input.kind === "newsletter" ? [scopedLabel] : [scopedLabel, allLabel];
-  const textLinks =
-    input.kind === "newsletter"
-      ? `${scopedLabel}: ${input.scopedHref}`
-      : `${scopedLabel}: ${input.scopedHref}\n${allLabel}: ${input.allHref}`;
-  const htmlLinks =
-    input.kind === "newsletter"
-      ? `<a href="${escapeHtml(input.scopedHref)}" target="_blank" rel="noreferrer noopener">${escapeHtml(scopedLabel)}</a>`
-      : [
-          `<a href="${escapeHtml(input.scopedHref)}" target="_blank" rel="noreferrer noopener">${escapeHtml(scopedLabel)}</a>`,
-          `<a href="${escapeHtml(input.allHref)}" target="_blank" rel="noreferrer noopener">${escapeHtml(allLabel)}</a>`,
-        ].join(" &middot; ");
-
-  return {
-    html: [
-      '<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">',
-      `<div style="color:#64748b;font-size:12px;line-height:1.6;">${htmlLinks}</div>`,
-      input.footerAddress === null
-        ? ""
-        : `<div style="color:#64748b;font-size:12px;line-height:1.6;margin-top:8px;">${escapeHtml(input.footerAddress)}</div>`,
-      buildPostmarkUnsubscribePlaceholderHtml(),
-    ].join(""),
-    text: [linkLabels.join(" · "), textLinks, input.footerAddress]
-      .filter((part): part is string => part !== null && part.length > 0)
-      .join("\n"),
-  };
-}
-
-function normalizeAliasEmail(value: string | null): string | null {
-  const trimmed = value?.trim().toLowerCase() ?? "";
-  return trimmed.length === 0 ? null : trimmed;
 }
 
 function normalizeReason(reason: string): string | null {
@@ -424,15 +361,14 @@ export function createCampaignSendOrchestrator(deps: {
       const senderAliasEmail = normalizeAliasEmail(
         run.fromEmail ?? snapshots[0]?.frozenAliasEmail ?? null,
       );
-      const signatureBlock = buildBroadcastSignatureBlock(
+      const signature =
         senderAliasEmail === null
           ? null
           : (
               await deps.repositories.settingsAliases.findByAlias(
                 senderAliasEmail,
               )
-            )?.signature ?? null,
-      );
+            )?.signature ?? null;
 
       for (let index = 0; index < snapshots.length; index += batchSize) {
         const stateCheck = await deps.repositories.campaignRuns.findById(runId);
@@ -489,24 +425,25 @@ export function createCampaignSendOrchestrator(deps: {
             appUrl,
             unsubscribeToken: snapshot.unsubscribeToken,
           });
-          const footer = buildUnsubscribeFooter({
+          const composed = renderBroadcastEmail({
             kind: run.kind,
             projectName: snapshot.frozenProjectName,
             projectAlias,
             footerAddress,
-            scopedHref: unsubscribeUrls.scopedHref,
-            allHref: unsubscribeUrls.allHref,
+            preheader: run.preheader,
+            bodyHtmlTemplate: run.bodyHtmlTemplate ?? "",
+            bodyTextTemplate: run.bodyTextTemplate ?? "",
+            signature,
+            scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
+            allUnsubscribeHref: unsubscribeUrls.allHref,
+            senderEmail: sender,
           });
-          const preheaderHtml = buildBroadcastPreheaderHtml(run.preheader);
-          const fromHeader = formatBroadcastFromHeader(sender, projectAlias);
 
           const rendered = deps.mergeRenderer.render(
             {
               subject: run.subjectTemplate ?? "",
-              bodyHtml: `${preheaderHtml}${run.bodyHtmlTemplate ?? ""}${signatureBlock.html}${footer.html}`,
-              bodyText: [run.bodyTextTemplate ?? "", signatureBlock.text, footer.text]
-                .filter((part) => part.trim().length > 0)
-                .join("\n\n"),
+              bodyHtml: composed.bodyHtml,
+              bodyText: composed.bodyText,
             },
             toMergeContext(member),
           );
@@ -514,7 +451,7 @@ export function createCampaignSendOrchestrator(deps: {
           messages.push({
             snapshot,
             payload: {
-              From: fromHeader,
+              From: composed.fromHeader,
               To: snapshot.frozenEmail,
               ...(run.replyToEmail === null ? {} : { ReplyTo: run.replyToEmail }),
               Subject: rendered.subject,
@@ -529,7 +466,7 @@ export function createCampaignSendOrchestrator(deps: {
               Headers: [
                 {
                   Name: "List-Unsubscribe",
-                  Value: `<${unsubscribeUrls.scopedHref}>`,
+                  Value: composed.listUnsubscribeHeaderValue,
                 },
                 {
                   Name: "List-Unsubscribe-Post",

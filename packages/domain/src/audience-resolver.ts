@@ -13,6 +13,7 @@ import type {
   ContactRepository,
   ProjectDimensionRepository,
 } from "./repositories.js";
+import { normalizeAliasEmail } from "./broadcast-email-render.js";
 import type { SettingsProjectsRepository } from "./settings/repositories.js";
 import type { AudienceMember } from "./campaign-types.js";
 
@@ -40,11 +41,6 @@ function readFirstName(displayName: string): string | null {
 
   const [firstName] = trimmed.split(/\s+/u);
   return firstName?.trim().length ? firstName.trim() : null;
-}
-
-function normalizeAliasEmail(address: string | null | undefined): string | null {
-  const trimmed = address?.trim() ?? "";
-  return trimmed.length === 0 ? null : trimmed.toLowerCase();
 }
 
 function buildWindowStart(

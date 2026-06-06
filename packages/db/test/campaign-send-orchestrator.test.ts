@@ -463,7 +463,7 @@ describe("Campaign send orchestrator", () => {
     const htmlBody = capturedMessage?.HtmlBody ?? "";
     const textBody = capturedMessage?.TextBody ?? "";
     expect(htmlBody).toContain(
-      '<p>Project One</p><p style="margin:16px 0;color:#0f172a;font-size:14px;line-height:1.6;">Thanks,<br>Volunteer Team</p><hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">',
+      '<p>Project One</p><p style="margin-top:16px;">Thanks,<br>Volunteer Team</p><hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">',
     );
     expect(textBody).toContain(
       "project-one@example.org\n\nThanks,\nVolunteer Team\n\nUnsubscribe from project-one emails · Unsubscribe from all Adventure Scientists emails",
