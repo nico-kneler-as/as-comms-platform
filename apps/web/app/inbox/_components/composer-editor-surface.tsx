@@ -36,7 +36,31 @@ function promptForLinkUrl(): string | null {
   }
 
   const trimmed = url.trim();
-  return /^(https?:\/\/|mailto:)/iu.test(trimmed) ? trimmed : null;
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  // Already has an accepted scheme — pass through unchanged.
+  if (/^(https?:\/\/|mailto:)/iu.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Bare email → mailto:
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(trimmed)) {
+    return `mailto:${trimmed}`;
+  }
+
+  // Looks like a domain (no whitespace, contains a dot, no scheme) →
+  // auto-prefix https:// rather than silently dropping the link, which is
+  // the most common cause of "the link button doesn't work."
+  if (!/\s/u.test(trimmed) && trimmed.includes(".")) {
+    return `https://${trimmed}`;
+  }
+
+  window.alert(
+    `"${trimmed}" doesn't look like a valid URL. Use https://, http://, or mailto:.`,
+  );
+  return null;
 }
 
 export function ComposerField({
