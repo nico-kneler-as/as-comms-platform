@@ -791,9 +791,16 @@ export async function loadComposePreviewAction(input: {
       ((input.sampleIndex % audience.length) + audience.length) % audience.length;
     const sample = audience[normalizedSampleIndex] ?? audience[0];
     const origin = await readRequestOrigin();
+    const projectId =
+      input.criteria.projectId ?? input.criteria.projectIds[0] ?? null;
+    const projectAlias =
+      projectId === null
+        ? null
+        : (await runtime.settings.projects.findById(projectId))?.projectAlias ?? null;
     const footer = buildCampaignFooterPreview({
       kind: input.kind,
       projectName: sample?.frozenProjectName ?? null,
+      projectAlias,
       footerAddress,
       origin,
     });

@@ -14,9 +14,12 @@ import {
   sendNowInputSchema,
 } from "@as-comms/contracts";
 import {
+  buildBroadcastPreheaderHtml,
+  buildBroadcastUnsubscribeUrls,
   createAudienceResolver,
   createCampaignSendOrchestrator,
   createExclusionFilter,
+  formatBroadcastFromHeader,
   createMergeRenderer,
 } from "@as-comms/domain";
 import { createPostmarkClient } from "@as-comms/integrations";
@@ -556,17 +559,29 @@ export async function testSend(
     }
 
     const footerAddress = formatOrgAddress(await runtime.campaigns.orgSettings.read());
+    const origin = await readRequestOrigin();
+    const projectAlias =
+      run.projectId === null
+        ? null
+        : (await runtime.settings.projects.findById(run.projectId))?.projectAlias ?? null;
+    const unsubscribeUrls = buildBroadcastUnsubscribeUrls({
+      appUrl: origin,
+      unsubscribeToken: `preview-${run.kind}`,
+    });
     const footer = buildCampaignFooterPreview({
       kind: run.kind,
       projectName: sample.frozenProjectName,
+      projectAlias,
       footerAddress,
-      origin: await readRequestOrigin(),
+      origin,
     });
+    const fromHeader = formatBroadcastFromHeader(fromEmail, projectAlias);
+    const preheaderHtml = buildBroadcastPreheaderHtml(run.preheader);
     const mergeRenderer = createMergeRenderer();
     const rendered = mergeRenderer.render(
       {
         subject: run.subjectTemplate ?? "",
-        bodyHtml: `${run.bodyHtmlTemplate ?? ""}${footer.html}`,
+        bodyHtml: `${preheaderHtml}${run.bodyHtmlTemplate ?? ""}${footer.html}`,
         bodyText: [run.bodyTextTemplate ?? "", footer.text].filter(Boolean).join("\n\n"),
       },
       {
@@ -580,7 +595,7 @@ export async function testSend(
       isTest: true,
       messages: [
         {
-          From: fromEmail,
+          From: fromHeader,
           To: parsed.recipientEmail,
           ...(run.replyToEmail === null ? {} : { ReplyTo: run.replyToEmail }),
           Subject: rendered.subject,
@@ -592,6 +607,16 @@ export async function testSend(
             campaignType: "test",
             operatorUserId: session.id,
           },
+          Headers: [
+            {
+              Name: "List-Unsubscribe",
+              Value: `<${unsubscribeUrls.scopedHref}>`,
+            },
+            {
+              Name: "List-Unsubscribe-Post",
+              Value: "List-Unsubscribe=One-Click",
+            },
+          ],
         },
       ],
     });

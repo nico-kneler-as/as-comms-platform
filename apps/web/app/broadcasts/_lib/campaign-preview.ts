@@ -2,6 +2,7 @@ import type {
   CampaignKind,
   OrgSettingsRecord,
 } from "@as-comms/contracts";
+import { escapeHtml } from "@as-comms/domain";
 
 export function formatOrgAddress(input: OrgSettingsRecord): string | null {
   const line1 = input.physicalAddressLine1.trim();
@@ -15,18 +16,10 @@ export function formatOrgAddress(input: OrgSettingsRecord): string | null {
   return parts.length === 0 ? null : parts.join(" • ");
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
 export function buildCampaignFooterPreview(input: {
   readonly kind: CampaignKind;
   readonly projectName: string | null;
+  readonly projectAlias: string | null;
   readonly footerAddress: string | null;
   readonly origin: string;
 }): {
@@ -36,7 +29,7 @@ export function buildCampaignFooterPreview(input: {
   const scopedLabel =
     input.kind === "newsletter"
       ? "Unsubscribe from the AS newsletter"
-      : `Unsubscribe from ${input.projectName ?? "this project"} emails`;
+      : `Unsubscribe from ${input.projectAlias ?? input.projectName ?? "this project"} emails`;
   const scopedHref = `${input.origin}/u/preview-${input.kind}`;
   const allHref = `${input.origin}/u/preview-all`;
   const linkLabels =
