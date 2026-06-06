@@ -41,7 +41,10 @@ function promptForLinkUrl(): string | null {
   }
 
   // Already has an accepted scheme — pass through unchanged.
-  if (/^(https?:\/\/|mailto:)/iu.test(trimmed)) {
+  // `sms:` and `tel:` are included because they're the standard URI schemes
+  // for tap-to-text and tap-to-call links (supported by Gmail / iOS Mail /
+  // most modern clients), which we use for SMS opt-in / phone CTAs.
+  if (/^(https?:\/\/|mailto:|sms:|tel:)/iu.test(trimmed)) {
     return trimmed;
   }
 
@@ -58,7 +61,7 @@ function promptForLinkUrl(): string | null {
   }
 
   window.alert(
-    `"${trimmed}" doesn't look like a valid URL. Use https://, http://, or mailto:.`,
+    `"${trimmed}" doesn't look like a valid URL. Use https://, http://, mailto:, sms:, or tel:.`,
   );
   return null;
 }
