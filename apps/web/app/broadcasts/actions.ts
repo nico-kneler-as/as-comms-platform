@@ -608,8 +608,12 @@ export async function testSend(
       },
     );
 
+    // The wizard's "Send test" surface posts to this action and the operator
+    // expects the message to land in the recipient's inbox. The sandbox token
+    // (`isTest: true`) only validates the request shape and does NOT deliver,
+    // which historically caused "I sent a test but never got it" confusion —
+    // route through the real server token so the test is a real send.
     await client.sendBatch({
-      isTest: true,
       messages: [
         {
           From: fromHeader,
