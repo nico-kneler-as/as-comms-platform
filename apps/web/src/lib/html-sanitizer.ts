@@ -1,3 +1,5 @@
+import { isAllowedComposerLinkHref } from "./composer-link-schemes";
+
 const ALLOWED_CONTAINER_TAGS = new Set([
   "blockquote",
   "code",
@@ -63,19 +65,9 @@ function escapeHtml(value: string): string {
     .replace(/"/gu, "&quot;");
 }
 
-function isAllowedHref(value: string): boolean {
-  const trimmed = value.trim();
-
-  if (trimmed.length === 0) {
-    return false;
-  }
-
-  return /^(https?:\/\/|mailto:)/iu.test(trimmed);
-}
-
 function sanitizeHref(value: string): string | null {
   const trimmed = value.trim();
-  return isAllowedHref(trimmed) ? escapeHtml(trimmed) : null;
+  return isAllowedComposerLinkHref(trimmed) ? escapeHtml(trimmed) : null;
 }
 
 function readTagName(rawTag: string): string | null {

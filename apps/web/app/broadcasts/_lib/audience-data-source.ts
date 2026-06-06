@@ -16,10 +16,12 @@ import {
   type PostmarkSenderStatus,
 } from "@as-comms/contracts";
 import {
-  buildBroadcastPreheaderHtml,
-  buildBroadcastSignatureBlock,
+  buildBroadcastUnsubscribeUrls,
   createAudienceResolver,
   createMergeRenderer,
+  formatOrgAddress,
+  normalizeAliasEmail,
+  renderBroadcastEmail,
   type AudienceMember,
 } from "@as-comms/domain";
 
@@ -28,12 +30,7 @@ import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 import { requireAdmin, requireSession } from "@/src/server/auth/session";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 
-import {
-  buildCampaignFooterPreview,
-  deriveInitials,
-  formatOrgAddress,
-} from "./campaign-preview";
-import { normalizeAliasEmail } from "./normalize-alias-email";
+import { deriveInitials } from "./campaign-preview";
 
 const EMPTY_AUDIENCE_CRITERIA = audienceCriteriaSchema.parse({});
 const RECENT_EXPEDITION_WINDOW_DAYS = 365;
@@ -842,12 +839,9 @@ export async function loadComposePreviewAction(input: {
         ? null
         : ((await runtime.settings.projects.findById(projectId))
             ?.projectAlias ?? null);
-    const footer = buildCampaignFooterPreview({
-      kind: input.kind,
-      projectName: sample?.frozenProjectName ?? null,
-      projectAlias,
-      footerAddress,
-      origin,
+    const unsubscribeUrls = buildBroadcastUnsubscribeUrls({
+      appUrl: origin,
+      unsubscribeToken: `preview-${input.kind}`,
     });
     const normalizedSenderAlias = normalizeAliasEmail(input.fromEmail);
     const signature =
@@ -855,15 +849,25 @@ export async function loadComposePreviewAction(input: {
         ? null
         : ((await runtime.settings.aliases.findByAlias(normalizedSenderAlias))
             ?.signature ?? null);
-    const signatureBlock = buildBroadcastSignatureBlock(signature);
-    const preheaderHtml = buildBroadcastPreheaderHtml(input.preheader);
+    const composed = renderBroadcastEmail({
+      kind: input.kind,
+      projectName: sample?.frozenProjectName ?? null,
+      projectAlias,
+      footerAddress,
+      preheader: input.preheader,
+      bodyHtmlTemplate: input.bodyHtmlTemplate,
+      bodyTextTemplate: input.bodyTextTemplate,
+      signature,
+      scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
+      allUnsubscribeHref: unsubscribeUrls.allHref,
+      senderEmail:
+        input.fromEmail ?? sample?.frozenAliasEmail ?? "preview@example.invalid",
+    });
     const rendered = mergeRenderer.render(
       {
         subject: input.subjectTemplate,
-        bodyHtml: `${preheaderHtml}${input.bodyHtmlTemplate}${signatureBlock.html}${footer.html}`,
-        bodyText: [input.bodyTextTemplate, signatureBlock.text, footer.text]
-          .filter((part) => part.trim().length > 0)
-          .join("\n\n"),
+        bodyHtml: composed.bodyHtml,
+        bodyText: composed.bodyText,
       },
       {
         firstName: sample?.frozenFirstName ?? null,

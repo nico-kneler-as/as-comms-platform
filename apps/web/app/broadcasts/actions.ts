@@ -14,14 +14,14 @@ import {
   sendNowInputSchema,
 } from "@as-comms/contracts";
 import {
-  buildBroadcastPreheaderHtml,
-  buildBroadcastSignatureBlock,
   buildBroadcastUnsubscribeUrls,
   createAudienceResolver,
   createCampaignSendOrchestrator,
   createExclusionFilter,
-  formatBroadcastFromHeader,
   createMergeRenderer,
+  formatOrgAddress,
+  normalizeAliasEmail,
+  renderBroadcastEmail,
 } from "@as-comms/domain";
 import { createPostmarkClient } from "@as-comms/integrations";
 import { z } from "zod";
@@ -36,11 +36,6 @@ import {
   type Stage1WebRuntime,
 } from "@/src/server/stage1-runtime";
 
-import {
-  buildCampaignFooterPreview,
-  formatOrgAddress,
-} from "./_lib/campaign-preview";
-import { normalizeAliasEmail } from "./_lib/normalize-alias-email";
 import {
   listRunRecipients,
   type RecipientFilter,
@@ -588,33 +583,34 @@ export async function testSend(
         : ((await runtime.settings.projects.findById(run.projectId))
             ?.projectAlias ?? null);
     const normalizedSenderAlias = normalizeAliasEmail(fromEmail);
-    const signatureBlock = buildBroadcastSignatureBlock(
+    const signature =
       normalizedSenderAlias === null
         ? null
         : ((await runtime.settings.aliases.findByAlias(normalizedSenderAlias))
-            ?.signature ?? null),
-    );
+            ?.signature ?? null);
     const unsubscribeUrls = buildBroadcastUnsubscribeUrls({
       appUrl: origin,
       unsubscribeToken: `preview-${run.kind}`,
     });
-    const footer = buildCampaignFooterPreview({
+    const composed = renderBroadcastEmail({
       kind: run.kind,
       projectName: sample.frozenProjectName,
       projectAlias,
       footerAddress,
-      origin,
+      preheader: run.preheader,
+      bodyHtmlTemplate: run.bodyHtmlTemplate ?? "",
+      bodyTextTemplate: run.bodyTextTemplate ?? "",
+      signature,
+      scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
+      allUnsubscribeHref: unsubscribeUrls.allHref,
+      senderEmail: fromEmail,
     });
-    const fromHeader = formatBroadcastFromHeader(fromEmail, projectAlias);
-    const preheaderHtml = buildBroadcastPreheaderHtml(run.preheader);
     const mergeRenderer = createMergeRenderer();
     const rendered = mergeRenderer.render(
       {
         subject: run.subjectTemplate ?? "",
-        bodyHtml: `${preheaderHtml}${run.bodyHtmlTemplate ?? ""}${signatureBlock.html}${footer.html}`,
-        bodyText: [run.bodyTextTemplate ?? "", signatureBlock.text, footer.text]
-          .filter((part) => part.trim().length > 0)
-          .join("\n\n"),
+        bodyHtml: composed.bodyHtml,
+        bodyText: composed.bodyText,
       },
       {
         firstName: sample.frozenFirstName,
@@ -631,7 +627,7 @@ export async function testSend(
     await client.sendBatch({
       messages: [
         {
-          From: fromHeader,
+          From: composed.fromHeader,
           To: parsed.recipientEmail,
           ...(run.replyToEmail === null ? {} : { ReplyTo: run.replyToEmail }),
           Subject: rendered.subject,
@@ -646,7 +642,7 @@ export async function testSend(
           Headers: [
             {
               Name: "List-Unsubscribe",
-              Value: `<${unsubscribeUrls.scopedHref}>`,
+              Value: composed.listUnsubscribeHeaderValue,
             },
             {
               Name: "List-Unsubscribe-Post",
