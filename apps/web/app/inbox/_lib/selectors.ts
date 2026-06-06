@@ -29,6 +29,7 @@ import {
   parseCommunicationPreview,
   resolvePreferredMessagePreview,
   sanitizePreviewText,
+  stripDriveAttachmentBareFilenames,
   stripInlineImagePlaceholders,
   stripDuplicateOutboundEcho,
   stripSignature,
@@ -2380,9 +2381,36 @@ function buildTimelineEntry(input: {
           }),
         })
       : resolvedBody;
+  const attachments =
+    input.item.family === "one_to_one_email"
+      ? buildEmailAttachmentsForEntry({
+          canonical:
+            input.attachmentsByCanonicalEventId.get(
+              input.item.canonicalEventId,
+            ) ?? [],
+          pending: input.item.pendingAttachmentMetadata ?? [],
+          itemDirection: input.item.direction,
+          canonicalEventId: input.item.canonicalEventId,
+          inboundFirstOccurrenceOnThread:
+            input.item.threadId !== null && input.item.threadId.length > 0
+              ? (input.inboundFirstOccurrenceByThread.get(input.item.threadId) ??
+                null)
+              : null,
+        })
+      : [];
   const renderableEmailBody =
     input.item.family === "one_to_one_email"
-      ? stripInlineImagePlaceholders(bodyWithDuplicateOutboundEchoStripped)
+      ? stripDriveAttachmentBareFilenames(
+          stripInlineImagePlaceholders(bodyWithDuplicateOutboundEchoStripped),
+          attachments
+            .filter(
+              (
+                attachment,
+              ): attachment is (typeof attachment & { readonly filename: string }) =>
+                attachment.provider === "drive" && attachment.filename !== null,
+            )
+            .map((attachment) => attachment.filename),
+        )
       : bodyWithDuplicateOutboundEchoStripped;
   const hasRenderableEmailContent =
     kind === "inbound-email" || kind === "outbound-email"
@@ -2413,23 +2441,6 @@ function buildTimelineEntry(input: {
           input.item.canonicalEventId ===
             input.inboxProjection.lastCanonicalEventId
         : false;
-  const attachments =
-    input.item.family === "one_to_one_email"
-      ? buildEmailAttachmentsForEntry({
-          canonical:
-            input.attachmentsByCanonicalEventId.get(
-              input.item.canonicalEventId,
-            ) ?? [],
-          pending: input.item.pendingAttachmentMetadata ?? [],
-          itemDirection: input.item.direction,
-          canonicalEventId: input.item.canonicalEventId,
-          inboundFirstOccurrenceOnThread:
-            input.item.threadId !== null && input.item.threadId.length > 0
-              ? (input.inboundFirstOccurrenceByThread.get(input.item.threadId) ??
-                null)
-              : null,
-        })
-      : [];
   const headerProjectLabel =
     input.item.family === "one_to_one_email"
       ? resolveHeaderProjectLabel({
@@ -2727,13 +2738,29 @@ function buildEmailAttachmentsForEntry(input: {
 
       return firstOccurrenceCanonicalEventId === input.canonicalEventId;
     })
-    .map((attachment) => ({
-      id: attachment.id,
-      mimeType: attachment.mimeType,
-      filename: attachment.filename,
-      sizeBytes: attachment.sizeBytes,
-      proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
-    }));
+    .map((attachment) => {
+      if (attachment.provider === "drive") {
+        return {
+          id: attachment.id,
+          provider: "drive" as const,
+          mimeType: attachment.mimeType,
+          filename: attachment.filename,
+          sizeBytes: attachment.sizeBytes,
+          proxyUrl: null,
+          externalUrl: attachment.externalUrl,
+        };
+      }
+
+      return {
+        id: attachment.id,
+        provider: "gmail" as const,
+        mimeType: attachment.mimeType,
+        filename: attachment.filename,
+        sizeBytes: attachment.sizeBytes,
+        proxyUrl: `/api/attachments/${encodeURIComponent(attachment.id)}`,
+        externalUrl: null,
+      };
+    });
 
   if (canonicalAttachments.length > 0) {
     return canonicalAttachments;
@@ -2742,10 +2769,12 @@ function buildEmailAttachmentsForEntry(input: {
   if (input.pending.length > 0) {
     return input.pending.map((attachment) => ({
       id: null,
+      provider: "pending" as const,
       mimeType: attachment.contentType,
       filename: attachment.filename,
       sizeBytes: attachment.sizeBytes,
       proxyUrl: null,
+      externalUrl: null,
     }));
   }
 

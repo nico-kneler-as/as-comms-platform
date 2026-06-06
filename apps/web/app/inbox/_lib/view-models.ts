@@ -279,10 +279,12 @@ export interface InboxTimelineEntryViewModel {
   readonly attachmentCount: number;
   readonly attachments: readonly {
     readonly id: string | null;
+    readonly provider: "gmail" | "drive" | "pending";
     readonly mimeType: string;
     readonly filename: string | null;
     readonly sizeBytes: number;
     readonly proxyUrl: string | null;
+    readonly externalUrl: string | null;
   }[];
   readonly campaignActivity: readonly InboxTimelineCampaignActivityViewModel[];
   readonly noteId?: string | null;
