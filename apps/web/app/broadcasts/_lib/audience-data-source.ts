@@ -16,6 +16,8 @@ import {
   type PostmarkSenderStatus,
 } from "@as-comms/contracts";
 import {
+  buildBroadcastPreheaderHtml,
+  buildBroadcastSignatureBlock,
   createAudienceResolver,
   createMergeRenderer,
   type AudienceMember,
@@ -31,6 +33,7 @@ import {
   deriveInitials,
   formatOrgAddress,
 } from "./campaign-preview";
+import { normalizeAliasEmail } from "./normalize-alias-email";
 
 const EMPTY_AUDIENCE_CRITERIA = audienceCriteriaSchema.parse({});
 const RECENT_EXPEDITION_WINDOW_DAYS = 365;
@@ -146,6 +149,31 @@ export interface ComposePreviewData {
   readonly warningCount: number;
   readonly affectedContacts: readonly ComposePreviewWarningContact[];
   readonly footerAddress: string | null;
+}
+
+export async function loadSelectedAliasSignatureAction(input: {
+  readonly aliasEmail: string | null;
+}): Promise<UiResult<string>> {
+  await requireSession();
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const normalizedAliasEmail = normalizeAliasEmail(input.aliasEmail);
+    const signature =
+      normalizedAliasEmail === null
+        ? ""
+        : ((await runtime.settings.aliases.findByAlias(normalizedAliasEmail))
+            ?.signature ?? "");
+    return successResult(signature);
+  } catch (error) {
+    return errorResult(
+      "campaign_alias_signature_load_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to load the sender signature.",
+      true,
+    );
+  }
 }
 
 function newRequestId(): string {
@@ -288,7 +316,7 @@ function deriveProjectId(
     return null;
   }
 
-  return criteria.projectId ?? (criteria.projectIds[0] ?? null);
+  return criteria.projectId ?? criteria.projectIds[0] ?? null;
 }
 
 function toStoredAudienceCriteria(
@@ -302,7 +330,9 @@ function toStoredAudienceCriteria(
   };
 }
 
-function filterAudienceMembersBySelection<T extends { readonly contactId: string }>(
+function filterAudienceMembersBySelection<
+  T extends { readonly contactId: string },
+>(
   rows: readonly T[],
   criteria: AudienceCriteria & {
     readonly initialFilter?: "project_status" | "specific" | "all_approved";
@@ -371,7 +401,9 @@ async function createResolver() {
   });
 }
 
-function buildAllProjectsCriteria(projectIds: readonly string[]): AudienceCriteria {
+function buildAllProjectsCriteria(
+  projectIds: readonly string[],
+): AudienceCriteria {
   return audienceCriteriaSchema.parse({
     projectIds,
     statuses: [],
@@ -398,13 +430,15 @@ async function loadApprovedContactsAudience(
     return resolver.resolveAudience(criteria, at);
   }
 
-  const rows = await runtime.connection.sql<{
-    contactId: string;
-    displayName: string;
-    email: string;
-    projectId: string | null;
-    projectName: string | null;
-  }[]>`
+  const rows = await runtime.connection.sql<
+    {
+      contactId: string;
+      displayName: string;
+      email: string;
+      projectId: string | null;
+      projectName: string | null;
+    }[]
+  >`
     with ranked_memberships as (
       select
         cm.contact_id,
@@ -534,14 +568,18 @@ export async function getCampaignWizardDraft(
 export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBootstrap> {
   await requireSession();
   const runtime = await getStage1WebRuntime();
-  const allConnectedProjects = (await runtime.settings.projects.listAll()).filter(
+  const allConnectedProjects = (
+    await runtime.settings.projects.listAll()
+  ).filter(
     (project) => project.isActive || project.connectedToProjectId !== null,
   );
   const activeProjects = allConnectedProjects.filter(
     (project) => project.isActive,
   );
   const projectsById = new Map(
-    allConnectedProjects.map((project) => [project.projectId, project] as const),
+    allConnectedProjects.map(
+      (project) => [project.projectId, project] as const,
+    ),
   );
 
   const projectOptions = allConnectedProjects
@@ -560,7 +598,9 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
         alias: project.projectAlias,
         projectAlias: project.projectAlias,
         aliasHint: normalizeAliasHint(
-          project.connectedToProjectId === null ? primaryEmail : hostPrimaryEmail,
+          project.connectedToProjectId === null
+            ? primaryEmail
+            : hostPrimaryEmail,
         ),
         connectedToProjectId: project.connectedToProjectId,
         isSubProject: project.connectedToProjectId !== null,
@@ -608,10 +648,12 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
   const minimumTouchedAt = new Date(
     Date.now() - RECENT_EXPEDITION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
   );
-  const expeditionRows = await runtime.connection.sql<{
-    expeditionId: string;
-    expeditionName: string | null;
-  }[]>`
+  const expeditionRows = await runtime.connection.sql<
+    {
+      expeditionId: string;
+      expeditionName: string | null;
+    }[]
+  >`
     select
       cm.expedition_id as "expeditionId",
       ed.expedition_name as "expeditionName"
@@ -751,6 +793,7 @@ export async function loadComposePreviewAction(input: {
   };
   readonly fromEmail: string | null;
   readonly subjectTemplate: string;
+  readonly preheader: string;
   readonly bodyHtmlTemplate: string;
   readonly bodyTextTemplate: string;
   readonly sampleIndex: number;
@@ -788,7 +831,8 @@ export async function loadComposePreviewAction(input: {
       audience,
     );
     const normalizedSampleIndex =
-      ((input.sampleIndex % audience.length) + audience.length) % audience.length;
+      ((input.sampleIndex % audience.length) + audience.length) %
+      audience.length;
     const sample = audience[normalizedSampleIndex] ?? audience[0];
     const origin = await readRequestOrigin();
     const projectId =
@@ -796,7 +840,8 @@ export async function loadComposePreviewAction(input: {
     const projectAlias =
       projectId === null
         ? null
-        : (await runtime.settings.projects.findById(projectId))?.projectAlias ?? null;
+        : ((await runtime.settings.projects.findById(projectId))
+            ?.projectAlias ?? null);
     const footer = buildCampaignFooterPreview({
       kind: input.kind,
       projectName: sample?.frozenProjectName ?? null,
@@ -804,11 +849,21 @@ export async function loadComposePreviewAction(input: {
       footerAddress,
       origin,
     });
+    const normalizedSenderAlias = normalizeAliasEmail(input.fromEmail);
+    const signature =
+      normalizedSenderAlias === null
+        ? null
+        : ((await runtime.settings.aliases.findByAlias(normalizedSenderAlias))
+            ?.signature ?? null);
+    const signatureBlock = buildBroadcastSignatureBlock(signature);
+    const preheaderHtml = buildBroadcastPreheaderHtml(input.preheader);
     const rendered = mergeRenderer.render(
       {
         subject: input.subjectTemplate,
-        bodyHtml: `${input.bodyHtmlTemplate}${footer.html}`,
-        bodyText: [input.bodyTextTemplate, footer.text].filter(Boolean).join("\n\n"),
+        bodyHtml: `${preheaderHtml}${input.bodyHtmlTemplate}${signatureBlock.html}${footer.html}`,
+        bodyText: [input.bodyTextTemplate, signatureBlock.text, footer.text]
+          .filter((part) => part.trim().length > 0)
+          .join("\n\n"),
       },
       {
         firstName: sample?.frozenFirstName ?? null,
@@ -942,9 +997,10 @@ export async function searchProjectVolunteersAction(input: {
 
             return {
               contactId: contact.id,
-              name: contact.displayName.trim().length > 0
-                ? contact.displayName
-                : (contact.primaryEmail ?? contact.id),
+              name:
+                contact.displayName.trim().length > 0
+                  ? contact.displayName
+                  : (contact.primaryEmail ?? contact.id),
               email: contact.primaryEmail ?? "",
               project: project?.projectName ?? null,
               projectAlias: project?.projectAlias ?? null,
@@ -1058,31 +1114,37 @@ export async function saveCampaignWizardDraftAction(input: {
 
   try {
     const runtime = await getStage1WebRuntime();
-    const audienceCriteria = audienceCriteriaSchema.parse(input.audienceCriteria);
-    const updated = await runtime.campaigns.campaignRuns.updateDraft(input.runId, {
-      launchType: input.launchType,
-      kind: input.kind,
-      projectId: deriveProjectId(input.kind, audienceCriteria),
-      name: input.name,
-      fromEmail: input.fromEmail,
-      replyToEmail: input.replyToEmail,
-      subjectTemplate: input.subjectTemplate,
-      bodyHtmlTemplate: input.bodyHtmlTemplate,
-      bodyTextTemplate: input.bodyTextTemplate,
-      preheader: input.preheader,
-      audienceCriteria:
-        toStoredAudienceCriteria(
+    const audienceCriteria = audienceCriteriaSchema.parse(
+      input.audienceCriteria,
+    );
+    const updated = await runtime.campaigns.campaignRuns.updateDraft(
+      input.runId,
+      {
+        launchType: input.launchType,
+        kind: input.kind,
+        projectId: deriveProjectId(input.kind, audienceCriteria),
+        name: input.name,
+        fromEmail: input.fromEmail,
+        replyToEmail: input.replyToEmail,
+        subjectTemplate: input.subjectTemplate,
+        bodyHtmlTemplate: input.bodyHtmlTemplate,
+        bodyTextTemplate: input.bodyTextTemplate,
+        preheader: input.preheader,
+        audienceCriteria: toStoredAudienceCriteria(
           audienceCriteria,
         ) as CampaignRunRecord["audienceCriteria"],
-      audienceSize: input.audienceSize,
-      lastEditedByUserId: session.id,
-    });
+        audienceSize: input.audienceSize,
+        lastEditedByUserId: session.id,
+      },
+    );
 
     return successResult(mapDraftRecord(updated, session.email));
   } catch (error) {
     return errorResult(
       "campaign_draft_save_failed",
-      error instanceof Error ? error.message : "Unable to save the broadcast draft.",
+      error instanceof Error
+        ? error.message
+        : "Unable to save the broadcast draft.",
       true,
     );
   }
