@@ -108,7 +108,7 @@ export function sanitizeComposerHtml(input: string): string {
       continue;
     }
 
-    output += escapeHtml(input.slice(cursor, tagStart));
+    output += input.slice(cursor, tagStart);
     cursor = tagStart + rawTag.length;
 
     if (tagName === null) {
@@ -157,7 +157,7 @@ export function sanitizeComposerHtml(input: string): string {
   }
 
   if (strippedContentTag === null) {
-    output += escapeHtml(input.slice(cursor));
+    output += input.slice(cursor);
   }
 
   return output.trim();

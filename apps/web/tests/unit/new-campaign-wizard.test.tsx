@@ -10,6 +10,7 @@ const saveCampaignWizardDraftActionMock = vi.hoisted(() => vi.fn());
 const resolveAudienceCountActionMock = vi.hoisted(() => vi.fn());
 const previewAudienceActionMock = vi.hoisted(() => vi.fn());
 const loadComposePreviewActionMock = vi.hoisted(() => vi.fn());
+const loadSelectedAliasSignatureActionMock = vi.hoisted(() => vi.fn());
 const loadMemberStatusCountsForProjectsMock = vi.hoisted(() => vi.fn());
 const searchProjectVolunteersActionMock = vi.hoisted(() => vi.fn());
 const testSendMock = vi.hoisted(() => vi.fn());
@@ -19,6 +20,7 @@ const sendNowMock = vi.hoisted(() => vi.fn());
 vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
   loadComposePreviewAction: loadComposePreviewActionMock,
   loadMemberStatusCountsForProjects: loadMemberStatusCountsForProjectsMock,
+  loadSelectedAliasSignatureAction: loadSelectedAliasSignatureActionMock,
   previewAudienceAction: previewAudienceActionMock,
   resolveAudienceCountAction: resolveAudienceCountActionMock,
   saveCampaignWizardDraftAction: saveCampaignWizardDraftActionMock,
@@ -141,7 +143,10 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
       value: "project_status" | "specific" | "all_approved",
     ) => void;
     readonly onVolunteerSearchQueryChange: (value: string) => void;
-    readonly previewRows: readonly { readonly contactId: string; readonly name: string }[];
+    readonly previewRows: readonly {
+      readonly contactId: string;
+      readonly name: string;
+    }[];
     readonly volunteerSearchQuery: string;
     readonly volunteerSearchRows: readonly {
       readonly contactId: string;
@@ -203,11 +208,7 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
       <button type="button" aria-label="audience-back" onClick={onBack}>
         Back
       </button>
-      <button
-        type="button"
-        aria-label="audience-continue"
-        onClick={onContinue}
-      >
+      <button type="button" aria-label="audience-continue" onClick={onContinue}>
         Continue
       </button>
     </section>
@@ -219,15 +220,18 @@ vi.mock("../../app/broadcasts/new/_components/compose-step", () => ({
     onBack,
     onContinue,
     onSubjectChange,
+    selectedAliasSignature,
     subject,
   }: {
     readonly onBack: () => void;
     readonly onContinue: () => void;
     readonly onSubjectChange: (value: string) => void;
+    readonly selectedAliasSignature: string;
     readonly subject: string;
   }) => (
     <section data-testid="compose-step">
       <div>ComposeStep</div>
+      <div data-testid="compose-signature">{selectedAliasSignature}</div>
       <input
         aria-label="broadcast-subject"
         value={subject}
@@ -333,7 +337,11 @@ import type {
   CampaignWizardDraftData,
   ComposePreviewData,
 } from "../../app/broadcasts/_lib/audience-data-source";
-import type { CampaignKind, ExpeditionMemberStatus, LaunchType } from "@as-comms/contracts";
+import type {
+  CampaignKind,
+  ExpeditionMemberStatus,
+  LaunchType,
+} from "@as-comms/contracts";
 
 const workerRequire = createRequire(import.meta.url);
 const { JSDOM } = workerRequire("jsdom") as {
@@ -523,8 +531,9 @@ function setupDom() {
   globalThis.HTMLInputElement = dom.window.HTMLInputElement;
   globalThis.Event = dom.window.Event;
   globalThis.MouseEvent = dom.window.MouseEvent;
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true;
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
 
   const container = document.createElement("div");
   document.body.append(container);
@@ -553,7 +562,9 @@ async function renderWizard({
 }
 
 function getByTestId(testId: string): HTMLElement {
-  const element = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+  const element = document.querySelector<HTMLElement>(
+    `[data-testid="${testId}"]`,
+  );
   if (element === null) {
     throw new Error(`Missing element with test id "${testId}"`);
   }
@@ -561,7 +572,9 @@ function getByTestId(testId: string): HTMLElement {
 }
 
 function getByLabelText(label: string): HTMLElement {
-  const element = document.querySelector<HTMLElement>(`[aria-label="${label}"]`);
+  const element = document.querySelector<HTMLElement>(
+    `[aria-label="${label}"]`,
+  );
   if (element === null) {
     throw new Error(`Missing element with aria-label "${label}"`);
   }
@@ -624,6 +637,10 @@ beforeEach(() => {
   loadComposePreviewActionMock.mockResolvedValue({
     ok: true,
     data: buildComposePreviewData(),
+  });
+  loadSelectedAliasSignatureActionMock.mockResolvedValue({
+    ok: true,
+    data: "Adventure Scientists\n123 Main St",
   });
   loadMemberStatusCountsForProjectsMock.mockResolvedValue({
     ok: true,
@@ -733,6 +750,32 @@ describe("NewCampaignWizard", () => {
     expect(getByTestId("status-label").textContent).toBe("Unsaved changes");
   });
 
+  it("loads the alias signature and includes preheader in compose preview requests", async () => {
+    vi.useFakeTimers();
+
+    await renderWizard({
+      draft: buildDraft({
+        fromEmail: "forests@adventurescientists.org",
+        preheader: "Preview copy",
+      }),
+    });
+
+    await goToComposeStep();
+    await advanceTimersBy(200);
+
+    expect(getByTestId("compose-signature").textContent).toBe(
+      "Adventure Scientists\n123 Main St",
+    );
+    expect(loadSelectedAliasSignatureActionMock).toHaveBeenCalledWith({
+      aliasEmail: "forests@adventurescientists.org",
+    });
+    expect(loadComposePreviewActionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preheader: "Preview copy",
+      }),
+    );
+  });
+
   it("moves save state through saving, saved, and idle after autosave succeeds", async () => {
     vi.useFakeTimers();
     const deferred = createDeferred<ReturnType<typeof buildSaveResult>>();
@@ -753,9 +796,7 @@ describe("NewCampaignWizard", () => {
       throw new Error("Expected saveCampaignWizardDraftAction to be called.");
     }
 
-    deferred.resolve(
-      buildSaveResult(saveInput),
-    );
+    deferred.resolve(buildSaveResult(saveInput));
     await flush();
 
     expect(getByTestId("status-label").textContent).toBe("Saved");
@@ -776,7 +817,9 @@ describe("NewCampaignWizard", () => {
     await advanceTimersBy(300);
 
     expect(searchProjectVolunteersActionMock).toHaveBeenCalled();
-    expect(getByTestId("volunteer-rows").textContent).toContain("Alice Example");
+    expect(getByTestId("volunteer-rows").textContent).toContain(
+      "Alice Example",
+    );
 
     await click("go-step-0");
     await click("set-launch-html");

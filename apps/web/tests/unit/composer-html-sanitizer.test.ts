@@ -18,6 +18,9 @@ describe("composer html sanitizer", () => {
   });
 
   it("keeps safe email presentation tags without preserving attributes", () => {
+    expect(sanitizeComposerHtml("<p>Msg &amp; data</p>")).toBe(
+      "<p>Msg &amp; data</p>",
+    );
     expect(sanitizeComposerHtml("<blockquote>quoted</blockquote>")).toBe(
       "<blockquote>quoted</blockquote>",
     );

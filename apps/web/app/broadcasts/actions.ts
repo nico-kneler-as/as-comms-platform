@@ -40,6 +40,7 @@ import {
   buildCampaignFooterPreview,
   formatOrgAddress,
 } from "./_lib/campaign-preview";
+import { normalizeAliasEmail } from "./_lib/normalize-alias-email";
 import {
   listRunRecipients,
   type RecipientFilter,
@@ -118,12 +119,15 @@ async function appendCampaignAudit(input: {
   readonly detail: string;
   readonly metadataJson?: Record<string, unknown>;
   readonly auditEvidence?: Pick<
-    Awaited<ReturnType<typeof getStage1WebRuntime>>["repositories"]["auditEvidence"],
+    Awaited<
+      ReturnType<typeof getStage1WebRuntime>
+    >["repositories"]["auditEvidence"],
     "append"
   >;
 }) {
   const auditEvidence =
-    input.auditEvidence ?? (await getStage1WebRuntime()).repositories.auditEvidence;
+    input.auditEvidence ??
+    (await getStage1WebRuntime()).repositories.auditEvidence;
   await auditEvidence.append({
     id: randomUUID(),
     actorType: input.actorType,
@@ -169,11 +173,6 @@ function buildLivePostmarkClient() {
 function trimNonEmpty(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed === undefined || trimmed.length === 0 ? null : trimmed;
-}
-
-function normalizeAliasEmail(value: string | null): string | null {
-  const trimmed = value?.trim().toLowerCase() ?? "";
-  return trimmed.length === 0 ? null : trimmed;
 }
 
 function createCampaignSendOrchestratorForRepositories(input: {
@@ -229,7 +228,10 @@ async function createCampaignOrchestrator() {
 }
 
 async function enqueueCampaignSendJob(input: {
-  readonly db: Pick<NonNullable<Stage1WebRuntime["connection"]>["db"], "execute">;
+  readonly db: Pick<
+    NonNullable<Stage1WebRuntime["connection"]>["db"],
+    "execute"
+  >;
   readonly runId: string;
   readonly scheduledAt?: Date;
 }): Promise<void> {
@@ -262,8 +264,10 @@ async function enqueueCampaignSendJob(input: {
   `);
 }
 
-async function assertCampaignAdmin():
-  Promise<{ readonly ok: true; readonly userId: string } | { readonly ok: false; readonly error: UiError }> {
+async function assertCampaignAdmin(): Promise<
+  | { readonly ok: true; readonly userId: string }
+  | { readonly ok: false; readonly error: UiError }
+> {
   try {
     const user = await requireAdmin();
     return {
@@ -306,7 +310,9 @@ async function validateVerifiedSender(input: {
     return errorResult("campaign_sender_unverified", input.failureMessage);
   }
 
-  const hasVerifiedSender = (await input.runtime.settings.projects.listAll()).some(
+  const hasVerifiedSender = (
+    await input.runtime.settings.projects.listAll()
+  ).some(
     (project) =>
       readPrimaryEmail(project)?.trim().toLowerCase() === normalizedEmail &&
       project.postmarkSenderStatus === "verified",
@@ -333,10 +339,9 @@ async function readRequestOrigin(): Promise<string> {
   return `${protocol}://${host}`;
 }
 
-function filterAudienceMembersBySelectedContacts<T extends { readonly contactId: string }>(
-  rows: readonly T[],
-  contactIds: readonly string[],
-): readonly T[] {
+function filterAudienceMembersBySelectedContacts<
+  T extends { readonly contactId: string },
+>(rows: readonly T[], contactIds: readonly string[]): readonly T[] {
   if (contactIds.length === 0) {
     return rows;
   }
@@ -367,7 +372,8 @@ export async function sendNow(
     const senderError = await validateVerifiedSender({
       runtime,
       email: run.fromEmail,
-      failureMessage: "Choose a verified sender alias before sending this broadcast.",
+      failureMessage:
+        "Choose a verified sender alias before sending this broadcast.",
     });
     if (senderError !== null) {
       return senderError;
@@ -415,7 +421,9 @@ export async function sendNow(
   } catch (error) {
     return errorResult(
       "campaign_send_failed",
-      error instanceof Error ? error.message : "Unable to start the broadcast send.",
+      error instanceof Error
+        ? error.message
+        : "Unable to start the broadcast send.",
       true,
     );
   }
@@ -445,7 +453,8 @@ export async function schedule(
     const senderError = await validateVerifiedSender({
       runtime,
       email: run.fromEmail,
-      failureMessage: "Choose a verified sender alias before scheduling this broadcast.",
+      failureMessage:
+        "Choose a verified sender alias before scheduling this broadcast.",
     });
     if (senderError !== null) {
       return senderError;
@@ -494,7 +503,9 @@ export async function schedule(
   } catch (error) {
     return errorResult(
       "campaign_schedule_failed",
-      error instanceof Error ? error.message : "Unable to schedule the broadcast.",
+      error instanceof Error
+        ? error.message
+        : "Unable to schedule the broadcast.",
       true,
     );
   }
@@ -507,13 +518,15 @@ export async function testSend(
   const session = await requireSession();
 
   try {
-    const parsed = z.object({
-      runId: z.string().trim().min(1),
-      recipientEmail: z.string().trim().email(),
-    }).parse({
-      runId,
-      recipientEmail,
-    });
+    const parsed = z
+      .object({
+        runId: z.string().trim().min(1),
+        recipientEmail: z.string().trim().email(),
+      })
+      .parse({
+        runId,
+        recipientEmail,
+      });
     const client = buildLivePostmarkClient();
     if (client === null) {
       return errorResult(
@@ -565,19 +578,21 @@ export async function testSend(
       );
     }
 
-    const footerAddress = formatOrgAddress(await runtime.campaigns.orgSettings.read());
+    const footerAddress = formatOrgAddress(
+      await runtime.campaigns.orgSettings.read(),
+    );
     const origin = await readRequestOrigin();
     const projectAlias =
       run.projectId === null
         ? null
-        : (await runtime.settings.projects.findById(run.projectId))?.projectAlias ?? null;
+        : ((await runtime.settings.projects.findById(run.projectId))
+            ?.projectAlias ?? null);
     const normalizedSenderAlias = normalizeAliasEmail(fromEmail);
     const signatureBlock = buildBroadcastSignatureBlock(
       normalizedSenderAlias === null
         ? null
-        : (
-            await runtime.settings.aliases.findByAlias(normalizedSenderAlias)
-          )?.signature ?? null,
+        : ((await runtime.settings.aliases.findByAlias(normalizedSenderAlias))
+            ?.signature ?? null),
     );
     const unsubscribeUrls = buildBroadcastUnsubscribeUrls({
       appUrl: origin,
@@ -699,11 +714,16 @@ export async function cancelDraft(
 
   try {
     const runtime = await getStage1WebRuntime();
-    await runtime.campaigns.campaignRuns.transitionState(runId, "draft", "cancelled", {
-      cancelledAt: new Date().toISOString(),
-      cancelledReason: "Draft cancelled before launch.",
-      lastEditedByUserId: admin.userId,
-    });
+    await runtime.campaigns.campaignRuns.transitionState(
+      runId,
+      "draft",
+      "cancelled",
+      {
+        cancelledAt: new Date().toISOString(),
+        cancelledReason: "Draft cancelled before launch.",
+        lastEditedByUserId: admin.userId,
+      },
+    );
 
     return {
       ok: true,
@@ -764,7 +784,9 @@ export async function cancel(
   } catch (error) {
     return errorResult(
       "campaign_cancel_failed",
-      error instanceof Error ? error.message : "Unable to cancel the broadcast.",
+      error instanceof Error
+        ? error.message
+        : "Unable to cancel the broadcast.",
       true,
     );
   }
@@ -825,7 +847,9 @@ export async function duplicateCampaignRun(
   } catch (error) {
     return errorResult(
       "campaign_duplicate_failed",
-      error instanceof Error ? error.message : "Unable to duplicate the broadcast.",
+      error instanceof Error
+        ? error.message
+        : "Unable to duplicate the broadcast.",
       true,
     );
   }
