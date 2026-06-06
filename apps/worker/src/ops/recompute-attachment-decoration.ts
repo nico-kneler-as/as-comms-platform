@@ -1,4 +1,5 @@
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 import { and, asc, eq, sql } from "drizzle-orm";
 
@@ -215,9 +216,16 @@ async function main() {
   await runRecomputeAttachmentDecorationCommand();
 }
 
-void main().catch((error: unknown) => {
-  const resolvedError =
-    error instanceof Error ? error : new Error(String(error));
-  console.error(resolvedError.message);
-  process.exitCode = 1;
-});
+// Only auto-run when invoked as a CLI entry point. cli.ts imports
+// `runRecomputeAttachmentDecorationCommand` from this module; without
+// this guard, every cli.ts dispatch (e.g. reconcile-superseded-projections)
+// re-runs main() on import, which last fired across 291 attachment rows
+// during an unrelated ops command.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  void main().catch((error: unknown) => {
+    const resolvedError =
+      error instanceof Error ? error : new Error(String(error));
+    console.error(resolvedError.message);
+    process.exitCode = 1;
+  });
+}
