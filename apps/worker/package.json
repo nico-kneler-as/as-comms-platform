@@ -30,6 +30,7 @@
     "ops:apply-mbox-direction-backfill": "tsx src/ops/cli.ts apply-mbox-direction-backfill",
     "ops:backfill-inbox-projection-coverage": "tsx src/ops/backfill-inbox-projection-coverage.ts",
     "ops:recover-gmail-date-window": "tsx src/ops/cli.ts recover-gmail-date-window",
+    "ops:backfill-drive-attachments": "tsx src/ops/cli.ts backfill-drive-attachments",
     "ops:enqueue-integration-backfill-gmail": "tsx src/ops/cli.ts enqueue-integration-backfill-gmail",
     "ops:recover-gmail-spam-window": "tsx src/ops/recover-gmail-spam-window.ts",
     "ops:recompute-attachment-decoration": "tsx src/ops/recompute-attachment-decoration.ts",
