@@ -44,6 +44,7 @@ export interface RunMetricTileData {
   readonly key:
     | "queued"
     | "sent"
+    | "replied"
     | "delivered"
     | "opened"
     | "clicked"
@@ -83,6 +84,7 @@ export interface RunDetailHeaderModel {
   readonly canStopUnsent: boolean;
   readonly canDuplicate: boolean;
   readonly totalAudience: number | null;
+  readonly projectLabel?: string | null;
 }
 
 export interface RunDetailModel {
@@ -105,6 +107,7 @@ export interface RunDetailModel {
   readonly inboxRecipientsHref: string;
   readonly auditEntries: readonly RunAuditEntry[];
   readonly audienceCriteria: AudienceCriteria;
+  readonly projectLabelsById?: Readonly<Record<string, string>>;
   readonly canStopUnsent: boolean;
   readonly canDuplicate: boolean;
   readonly isAdmin: boolean;
@@ -166,6 +169,7 @@ function resolveRunDate(run: CampaignRunRecord): {
 function buildMetricTiles(
   counts: RunMetricCounts,
   total: number,
+  repliesCount: number,
 ): readonly RunMetricTileData[] {
   return [
     {
@@ -173,13 +177,6 @@ function buildMetricTiles(
       label: "Queued",
       value: counts.queued,
       percentage: formatPercentage(counts.queued, total),
-      subtitle: null,
-    },
-    {
-      key: "sent",
-      label: "Sent",
-      value: counts.sent,
-      percentage: formatPercentage(counts.sent, total),
       subtitle: null,
     },
     {
@@ -201,6 +198,13 @@ function buildMetricTiles(
       label: "Clicked",
       value: counts.clicked,
       percentage: formatPercentage(counts.clicked, total),
+      subtitle: null,
+    },
+    {
+      key: "replied",
+      label: "Replied",
+      value: repliesCount,
+      percentage: formatPercentage(repliesCount, total),
       subtitle: null,
     },
     {
@@ -233,6 +237,7 @@ function buildMailchimpMetricTiles(
   const sent = aggregates.sent;
   const denominator = sent <= 0 ? 0 : sent;
   const delivered = Math.max(0, sent - aggregates.bounced);
+  const replies = (aggregates as { readonly replies?: number }).replies ?? 0;
 
   return [
     {
@@ -240,13 +245,6 @@ function buildMailchimpMetricTiles(
       label: "Queued",
       value: aggregates.distinctMembers,
       percentage: formatPercentage(aggregates.distinctMembers, denominator),
-      subtitle: null,
-    },
-    {
-      key: "sent",
-      label: "Sent",
-      value: sent,
-      percentage: formatPercentage(sent, denominator),
       subtitle: null,
     },
     {
@@ -268,6 +266,13 @@ function buildMailchimpMetricTiles(
       label: "Clicked",
       value: aggregates.clicked,
       percentage: formatPercentage(aggregates.clicked, denominator),
+      subtitle: null,
+    },
+    {
+      key: "replied",
+      label: "Replied",
+      value: replies,
+      percentage: formatPercentage(replies, denominator),
       subtitle: null,
     },
     {
@@ -379,12 +384,45 @@ function getMailchimpRepository(
   return runtime.repositories.mailchimpCampaignActivityDetails;
 }
 
+async function listProjects(
+  runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>,
+) {
+  return runtime.settings.projects.listAll();
+}
+
+function buildProjectLabelsById(
+  projects: Awaited<ReturnType<typeof listProjects>>,
+): Readonly<Record<string, string>> {
+  const entries: (readonly [string, string])[] = [];
+
+  for (const project of projects) {
+    const label = project.projectAlias ?? project.projectName;
+    entries.push([project.projectId, label] as const);
+  }
+
+  return Object.fromEntries(entries);
+}
+
+function resolvePrimaryProjectLabel(input: {
+  readonly projects: Awaited<ReturnType<typeof listProjects>>;
+  readonly run: CampaignRunRecord;
+}): string | null {
+  const primaryProjectId = input.run.audienceCriteria.projectIds[0] ?? null;
+  const projectMeta = primaryProjectId
+    ? input.projects.find((project) => project.projectId === primaryProjectId) ??
+      null
+    : null;
+
+  return projectMeta?.projectAlias ?? projectMeta?.projectName ?? null;
+}
+
 function buildHeaderModel(input: {
   readonly provider: "postmark" | "mailchimp";
   readonly run: CampaignRunRecord;
   readonly senderAlias: string | null;
   readonly isAdmin: boolean;
   readonly totalAudience: number | null;
+  readonly projectLabel: string | null;
 }): RunDetailHeaderModel {
   const { label: dateLabel, iso: dateIso } = resolveRunDate(input.run);
   const subject = input.run.subjectTemplate?.trim() ?? "";
@@ -411,6 +449,7 @@ function buildHeaderModel(input: {
         input.run.state === "finalized" ||
         input.run.state === "cancelled"),
     totalAudience: input.totalAudience,
+    projectLabel: input.projectLabel,
   };
 }
 
@@ -440,6 +479,7 @@ export async function getRunDetailHeaderModel(input: {
     provider === "mailchimp"
       ? run.audienceSize
       : (projection?.audienceSize ?? run.audienceSize);
+  const allProjects = await listProjects(runtime);
 
   return buildHeaderModel({
     provider,
@@ -447,6 +487,7 @@ export async function getRunDetailHeaderModel(input: {
     senderAlias: run.fromEmail ?? (provider === "mailchimp" ? "Mailchimp" : null),
     isAdmin: input.isAdmin,
     totalAudience,
+    projectLabel: resolvePrimaryProjectLabel({ projects: allProjects, run }),
   });
 }
 
@@ -488,35 +529,6 @@ export async function getRunDetailModel(input: {
     provider === "mailchimp"
       ? mailchimpAggregates?.distinctMembers ?? 0
       : run.audienceSize ?? metricCounts?.total ?? 0;
-  const metrics =
-    provider === "mailchimp" && mailchimpAggregates !== null
-      ? buildMailchimpMetricTiles(mailchimpAggregates)
-      : buildMetricTiles(
-          metricCounts ?? {
-            queued: 0,
-            sent: 0,
-            delivered: 0,
-            opened: 0,
-            clicked: 0,
-            bounced: 0,
-            unsubscribed: 0,
-            complained: 0,
-            total: 0,
-          },
-          totalAudience,
-        );
-  const sentCount = metrics.find((metric) => metric.key === "sent")?.value ?? 0;
-  const queuedCount =
-    metrics.find((metric) => metric.key === "queued")?.value ?? 0;
-  const progressPercent =
-    totalAudience === 0 ? 0 : Math.round((sentCount / totalAudience) * 100);
-  const estimatedMinutesRemaining = estimateMinutesRemaining({
-    runState: run.state,
-    startedAt: run.startedAt,
-    sentCount,
-    totalAudience,
-    now: new Date(),
-  });
   const recipients = recipientQuery.rows;
 
   let repliesCount = 0;
@@ -578,6 +590,39 @@ export async function getRunDetailModel(input: {
       occurredAt: requireIsoTimestamp(row.occurredAt),
     }));
   }
+  const metrics =
+    provider === "mailchimp" && mailchimpAggregates !== null
+      ? buildMailchimpMetricTiles(mailchimpAggregates)
+      : buildMetricTiles(
+          metricCounts ?? {
+            queued: 0,
+            sent: 0,
+            delivered: 0,
+            opened: 0,
+            clicked: 0,
+            bounced: 0,
+            unsubscribed: 0,
+            complained: 0,
+            total: 0,
+          },
+          totalAudience,
+          repliesCount,
+        );
+  const sentCount =
+    provider === "mailchimp"
+      ? mailchimpAggregates?.sent ?? 0
+      : metricCounts?.sent ?? 0;
+  const queuedCount =
+    metrics.find((metric) => metric.key === "queued")?.value ?? 0;
+  const progressPercent =
+    totalAudience === 0 ? 0 : Math.round((sentCount / totalAudience) * 100);
+  const estimatedMinutesRemaining = estimateMinutesRemaining({
+    runState: run.state,
+    startedAt: run.startedAt,
+    sentCount,
+    totalAudience,
+    now: new Date(),
+  });
 
   const audits =
     provider === "mailchimp"
@@ -586,6 +631,7 @@ export async function getRunDetailModel(input: {
           entityType: "campaign_run",
           entityId: run.id,
         });
+  const allProjects = await listProjects(runtime);
   const { label: dateLabel, iso: dateIso } = resolveRunDate(run);
 
   return {
@@ -609,6 +655,7 @@ export async function getRunDetailModel(input: {
     inboxRecipientsHref: "/inbox",
     auditEntries: audits.map(buildAuditEntry),
     audienceCriteria: run.audienceCriteria,
+    projectLabelsById: buildProjectLabelsById(allProjects),
     canStopUnsent:
       provider === "postmark" &&
       input.isAdmin &&
