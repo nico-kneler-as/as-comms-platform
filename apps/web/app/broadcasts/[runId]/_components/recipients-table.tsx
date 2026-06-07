@@ -175,19 +175,17 @@ export function RecipientsTable({
   const offsetY = startIndex * ROW_HEIGHT;
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900">Recipients</h2>
-          <p className="mt-1 text-[12.5px] text-slate-500">
-            Search the frozen audience and jump directly into each
-            contact&apos;s Inbox detail.
-          </p>
-          <p className="mt-1 text-xs text-slate-500" aria-live="polite">
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/60 px-4 py-2">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h2 className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+            Recipients · {serverTotal.toLocaleString()}
+          </h2>
+          <span className="text-[10.5px] text-slate-400" aria-live="polite">
             Showing {serverRows.length.toLocaleString()} of{" "}
-            {serverTotal.toLocaleString()} recipients
-            {pending ? " · Updating..." : ""}
-          </p>
+            {serverTotal.toLocaleString()}
+            {pending ? " · Updating…" : ""}
+          </span>
         </div>
         <Input
           value={query}
@@ -195,17 +193,17 @@ export function RecipientsTable({
             setQuery(event.target.value);
           }}
           placeholder="Search name, email, or project"
-          className="h-9 w-full max-w-sm text-[13px]"
+          className="h-8 w-full max-w-[260px] text-[12px]"
         />
       </div>
 
       {errorMessage ? (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
+        <div className="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
           {errorMessage}
         </div>
       ) : null}
 
-      <div className="mt-4 flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 px-3 py-2">
         {(Object.keys(FILTER_LABELS) as RecipientFilter[]).map((value) => (
           <button
             key={value}
@@ -214,10 +212,10 @@ export function RecipientsTable({
               setFilter(value);
             }}
             className={cn(
-              "rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors",
+              "flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] font-medium transition-colors",
               filter === value
                 ? "bg-slate-900 text-white"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+                : "text-slate-700 hover:bg-slate-100",
             )}
           >
             {FILTER_LABELS[value]}
@@ -225,7 +223,7 @@ export function RecipientsTable({
         ))}
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+      <div className="overflow-x-auto">
         <div className="min-w-[760px]">
           <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_160px_150px] border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
             <div>Recipient</div>
@@ -329,7 +327,7 @@ export function RecipientsTable({
       </div>
 
       {hasMoreRows ? (
-        <div className="mt-4 flex justify-center">
+        <div className="mx-4 mb-4 mt-4 flex justify-center">
           <Button variant="outline" onClick={loadMore} disabled={pending}>
             {pending ? "Loading recipients..." : "Load more recipients"}
           </Button>

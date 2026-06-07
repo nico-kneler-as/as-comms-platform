@@ -30,31 +30,46 @@ export function RunAuditLog({
   readonly entries: readonly RunAuditEntry[];
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-slate-900">Run audit log</h2>
-      <div className="mt-3 space-y-3">
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 bg-slate-50/60 px-4 py-2">
+        <h2 className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+          Audit log
+        </h2>
+      </div>
+      <ul className="space-y-2.5 px-4 py-3 text-[11.5px]">
         {entries.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-500">
+          <li className="text-[11.5px] italic text-slate-500">
             No audit entries recorded yet.
-          </div>
+          </li>
         ) : (
           entries.map((entry) => (
-            <div key={entry.id} className="border-l-2 border-slate-200 pl-3">
-              <div className="text-[12.5px] font-medium text-slate-900">
-                {labelForAction(entry.action)}
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                <LocalDateTime iso={entry.occurredAt} /> · {entry.actorLabel}
-              </div>
-              {entry.detail ? (
-                <div className="mt-1 text-[12px] text-slate-600">
-                  {entry.detail}
+            <li key={entry.id} className="flex items-start gap-2">
+              <span
+                className="mt-1 size-1.5 shrink-0 rounded-full bg-slate-400"
+                aria-hidden="true"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium text-slate-900">
+                    {labelForAction(entry.action)}
+                  </span>
+                  <span className="text-[10.5px] tabular-nums text-slate-500">
+                    <LocalDateTime iso={entry.occurredAt} />
+                  </span>
                 </div>
-              ) : null}
-            </div>
+                <div className="truncate font-mono text-[10.5px] text-slate-500">
+                  {entry.actorLabel}
+                </div>
+                {entry.detail ? (
+                  <div className="mt-0.5 text-[11px] italic text-slate-600">
+                    "{entry.detail}"
+                  </div>
+                ) : null}
+              </div>
+            </li>
           ))
         )}
-      </div>
+      </ul>
     </section>
   );
 }
