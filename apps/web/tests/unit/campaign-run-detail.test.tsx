@@ -13,12 +13,22 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("lucide-react", () => ({
-  Copy: () => null,
+  AlertCircle: () => null,
   Archive: () => null,
+  ArrowDownLeft: () => null,
+  ArrowUpRight: () => null,
   Calendar: () => null,
   Check: () => null,
+  CheckCheck: () => null,
+  ChevronRight: () => null,
+  Copy: () => null,
+  CornerUpLeft: () => null,
+  Eye: () => null,
+  Flag: () => null,
+  MousePointerClick: () => null,
   Pencil: () => null,
   Send: () => null,
+  Users: () => null,
   X: () => null,
 }));
 
