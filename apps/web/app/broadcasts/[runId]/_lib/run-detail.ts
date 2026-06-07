@@ -407,7 +407,8 @@ function resolvePrimaryProjectLabel(input: {
   readonly projects: Awaited<ReturnType<typeof listProjects>>;
   readonly run: CampaignRunRecord;
 }): string | null {
-  const primaryProjectId = input.run.audienceCriteria.projectIds[0] ?? null;
+  const primaryProjectId =
+    input.run.projectId ?? input.run.audienceCriteria.projectIds[0] ?? null;
   const projectMeta = primaryProjectId
     ? input.projects.find((project) => project.projectId === primaryProjectId) ??
       null
