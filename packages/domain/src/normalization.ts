@@ -525,6 +525,15 @@ function isOutboundProjectionEvent(
   );
 }
 
+function isDirectOutboundEvent(
+  eventType: CanonicalEventRecord["eventType"],
+): boolean {
+  return (
+    eventType === "communication.email.outbound" ||
+    eventType === "communication.sms.outbound"
+  );
+}
+
 function tierRankForEventType(
   eventType: CanonicalEventRecord["eventType"],
 ): 1 | 2 | 3 {
@@ -1764,6 +1773,7 @@ export async function rebuildInboxProjectionForContact(
   }
   let lastInboundAt: string | null = null;
   let lastOutboundAt: string | null = null;
+  let lastDirectOutboundAt: string | null = null;
   let lastActivityAt: string | null = null;
 
   for (const event of qualifyingEvents) {
@@ -1773,6 +1783,13 @@ export async function rebuildInboxProjectionForContact(
 
     if (isOutboundProjectionEvent(event.eventType)) {
       lastOutboundAt = newestTimestamp(lastOutboundAt, event.occurredAt);
+    }
+
+    if (isDirectOutboundEvent(event.eventType)) {
+      lastDirectOutboundAt = newestTimestamp(
+        lastDirectOutboundAt,
+        event.occurredAt,
+      );
     }
 
     lastActivityAt = newestTimestamp(lastActivityAt, event.occurredAt);
@@ -1802,7 +1819,11 @@ export async function rebuildInboxProjectionForContact(
     contactId,
     bucket: hasNewerInbound
       ? "New"
-      : (latestOutboundIsInThreadReply && existing?.bucket === "New"
+      : (existing?.bucket === "New" &&
+            lastDirectOutboundAt !== null &&
+            (lastInboundAt === null || lastDirectOutboundAt >= lastInboundAt)
+          ? "Opened"
+          : latestOutboundIsInThreadReply && existing?.bucket === "New"
           ? "Opened"
           : (existing?.bucket ??
             (isInboundEvent(latestEvent.eventType) ? "New" : "Opened"))),
@@ -3105,6 +3126,9 @@ export function createStage1NormalizationService(
       const incomingIsOutboundProjectionEvent = isOutboundProjectionEvent(
         parsed.canonicalEvent.eventType,
       );
+      const incomingIsDirectOutbound = isDirectOutboundEvent(
+        parsed.canonicalEvent.eventType,
+      );
       const lastInboundAt = incomingIsInbound
         ? newestTimestamp(
             existing?.lastInboundAt ?? null,
@@ -3142,6 +3166,11 @@ export function createStage1NormalizationService(
               (existing.lastInboundAt === null ||
                 parsed.canonicalEvent.occurredAt > existing.lastInboundAt)
             ? "New"
+            : incomingIsDirectOutbound &&
+                existing.bucket === "New" &&
+                (existing.lastInboundAt === null ||
+                  parsed.canonicalEvent.occurredAt >= existing.lastInboundAt)
+              ? "Opened"
             : existing.bucket;
 
       return persistence.saveInboxProjection({
