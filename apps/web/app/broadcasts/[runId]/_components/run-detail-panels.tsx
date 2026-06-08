@@ -47,7 +47,7 @@ export function EmailContentPanel({
   if (model.provider === "mailchimp") {
     return (
       <Panel title="Email content">
-        <div className="space-y-2 text-[12.5px] leading-6 text-slate-600">
+        <div className="space-y-2 text-[12.5px] leading-6 text-pretty text-slate-600">
           <p>Email content not retained from Mailchimp import.</p>
           <p>
             We have the broadcast metadata + per-recipient engagement, but the
@@ -96,7 +96,7 @@ export function AudienceCriteriaPanel({
   if (model.provider === "mailchimp") {
     return (
       <Panel title="Audience criteria">
-        <div className="space-y-2 text-[12.5px] leading-6 text-slate-600">
+        <div className="space-y-2 text-[12.5px] leading-6 text-pretty text-slate-600">
           <p>Mailchimp historical audience.</p>
           <p>
             The audience list was managed externally in Mailchimp; criteria were

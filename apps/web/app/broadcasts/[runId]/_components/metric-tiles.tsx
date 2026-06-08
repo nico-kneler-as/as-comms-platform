@@ -77,7 +77,7 @@ export function MetricTiles({
                 </span>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
-                <span className="font-mono text-[24px] font-semibold leading-none tabular-nums text-slate-900">
+                <span className="text-[24px] font-semibold leading-none tabular-nums text-slate-900">
                   {metric.value.toLocaleString()}
                 </span>
                 <span className={cn("text-[11.5px] tabular-nums", tone.subtleText)}>
@@ -86,10 +86,7 @@ export function MetricTiles({
               </div>
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
                 <div
-                  className={cn(
-                    "h-full rounded-full transition-[width] duration-200",
-                    tone.bg,
-                  )}
+                  className={cn("h-full rounded-full", tone.bg)}
                   style={{ width: `${String(Math.max(2, pct))}%` }}
                 />
               </div>
@@ -125,7 +122,7 @@ export function MetricTiles({
       ) : null}
 
       {model.run.state === "complete" ? (
-        <p className="px-1 text-[12.5px] text-slate-600">
+        <p className="px-1 text-[12.5px] text-pretty text-slate-600">
           Per-recipient delivery and engagement appear here. Run finalizes after
           30-day events tail.
         </p>

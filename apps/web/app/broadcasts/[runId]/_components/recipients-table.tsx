@@ -181,7 +181,10 @@ export function RecipientsTable({
           <h2 className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
             Recipients · {serverTotal.toLocaleString()}
           </h2>
-          <span className="text-[10.5px] text-slate-400" aria-live="polite">
+          <span
+            className="text-[10.5px] tabular-nums text-slate-400"
+            aria-live="polite"
+          >
             Showing {serverRows.length.toLocaleString()} of{" "}
             {serverTotal.toLocaleString()}
             {pending ? " · Updating…" : ""}
@@ -317,8 +320,20 @@ export function RecipientsTable({
               </div>
 
               {serverRows.length === 0 ? (
-                <div className="absolute inset-0 flex items-center justify-center text-[12.5px] text-slate-500">
-                  No recipients match the current search or filter.
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-[12.5px] text-slate-500">
+                  <span>No recipients match the current search or filter.</span>
+                  {filter !== "all" || query.trim().length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilter("all");
+                        setQuery("");
+                      }}
+                      className="text-[11.5px] font-medium text-slate-700 underline underline-offset-4 hover:text-slate-900"
+                    >
+                      Clear filters
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
