@@ -6548,6 +6548,7 @@ function mapCampaignRunRow(row: CampaignRunRow): CampaignRunRecord {
     replyToEmail: row.replyToEmail,
     subjectTemplate: row.subjectTemplate,
     bodyHtmlTemplate: row.bodyHtmlTemplate,
+    bodyDesignJson: row.bodyDesignJson,
     bodyTextTemplate: row.bodyTextTemplate,
     preheader: row.preheader,
     audienceCriteria: audienceCriteriaSchema.parse(row.audienceCriteria),
@@ -6739,6 +6740,9 @@ function mapCampaignRunMutationFields(
   if ("bodyHtmlTemplate" in input && input.bodyHtmlTemplate !== undefined) {
     values.bodyHtmlTemplate = input.bodyHtmlTemplate;
   }
+  if ("bodyDesignJson" in input && input.bodyDesignJson !== undefined) {
+    values.bodyDesignJson = input.bodyDesignJson;
+  }
   if ("bodyTextTemplate" in input && input.bodyTextTemplate !== undefined) {
     values.bodyTextTemplate = input.bodyTextTemplate;
   }
@@ -6929,6 +6933,7 @@ export function createStage5RepositoryBundle(
             replyToEmail: parsed.replyToEmail,
             subjectTemplate: parsed.subjectTemplate,
             bodyHtmlTemplate: parsed.bodyHtmlTemplate,
+            bodyDesignJson: parsed.bodyDesignJson,
             bodyTextTemplate: parsed.bodyTextTemplate,
             preheader: parsed.preheader,
             audienceCriteria: audienceCriteriaSchema.parse(
