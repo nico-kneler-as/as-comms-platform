@@ -1177,6 +1177,7 @@ export const campaignRuns = pgTable(
     subjectTemplate: text("subject_template"),
     bodyHtmlTemplate: text("body_html_template"),
     bodyTextTemplate: text("body_text_template"),
+    bodyDesignJson: jsonb("body_design_json").$type<unknown>(),
     preheader: text("preheader"),
     audienceCriteria: jsonb("audience_criteria")
       .$type<AudienceCriteria>()
