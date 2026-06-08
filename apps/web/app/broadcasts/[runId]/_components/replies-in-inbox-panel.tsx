@@ -38,7 +38,7 @@ export function RepliesInInboxPanel({
 
       <div className="px-4 pt-3">
         <div className="flex items-baseline gap-2">
-          <span className="font-mono text-[20px] font-semibold tabular-nums text-slate-900">
+          <span className="text-[20px] font-semibold tabular-nums text-slate-900">
             {repliesCount.toLocaleString()}
           </span>
           <span className="text-[11.5px] text-slate-500">
