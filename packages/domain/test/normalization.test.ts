@@ -1354,7 +1354,7 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
     });
   });
 
-  it("keeps New when the latest outbound is a compose-new message on a different thread", async () => {
+  it("clears New when the latest direct outbound is newer than the last inbound even on a different thread", async () => {
     const inbound = buildEvent({
       key: "compose-new-inbound",
       occurredAt: "2026-04-24T09:45:00.000Z",
@@ -1392,7 +1392,7 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
     );
 
     expect(projection).toMatchObject({
-      bucket: "New",
+      bucket: "Opened",
       lastInboundAt: inbound.occurredAt,
       lastOutboundAt: composeNewOutbound.occurredAt,
     });
@@ -1568,6 +1568,298 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
     expect(projection).toMatchObject({
       bucket: "Opened",
       lastInboundAt: inbound.occurredAt,
+    });
+  });
+
+  it("clears New to Opened on apply when a direct email outbound is newer than the last inbound", async () => {
+    const outbound = buildEvent({
+      key: "apply-direct-outbound-newer-email",
+      occurredAt: "2026-04-24T13:30:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: "2026-04-24T13:00:00.000Z",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, outbound);
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: "2026-04-24T13:00:00.000Z",
+      lastOutboundAt: outbound.occurredAt,
+    });
+  });
+
+  it("keeps New on apply when a direct email outbound is older than the last inbound", async () => {
+    const outbound = buildEvent({
+      key: "apply-direct-outbound-older-email",
+      occurredAt: "2026-04-24T13:15:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: "2026-04-24T13:30:00.000Z",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, outbound);
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: "2026-04-24T13:30:00.000Z",
+      lastOutboundAt: outbound.occurredAt,
+    });
+  });
+
+  it("keeps New on apply when a newer campaign send arrives", async () => {
+    const campaignSent = buildEvent({
+      key: "apply-campaign-sent-newer",
+      occurredAt: "2026-04-24T13:45:00.000Z",
+      eventType: "campaign.email.sent",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: "2026-04-24T13:30:00.000Z",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, campaignSent);
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: "2026-04-24T13:30:00.000Z",
+      lastOutboundAt: campaignSent.occurredAt,
+      lastEventType: "campaign.email.sent",
+    });
+  });
+
+  it("clears New to Opened on apply when a direct sms outbound is newer than the last inbound", async () => {
+    const outbound = buildEvent({
+      key: "apply-direct-outbound-newer-sms",
+      occurredAt: "2026-04-24T14:00:00.000Z",
+      direction: "outbound",
+      eventType: "communication.sms.outbound",
+      channel: "sms",
+      provider: "simpletexting",
+      sourceRecordType: "message",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: "2026-04-24T13:50:00.000Z",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, outbound);
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: "2026-04-24T13:50:00.000Z",
+      lastOutboundAt: outbound.occurredAt,
+      lastEventType: "communication.sms.outbound",
+    });
+  });
+
+  it("keeps Opened on apply when outbound arrives for an already Opened row", async () => {
+    const outbound = buildEvent({
+      key: "apply-opened-idempotent-outbound",
+      occurredAt: "2026-04-24T14:15:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T14:00:00.000Z",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, outbound);
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: "2026-04-24T14:00:00.000Z",
+      lastOutboundAt: outbound.occurredAt,
+    });
+  });
+
+  it("clears New to Opened on rebuild when a direct email outbound is newer than the last inbound", async () => {
+    const inbound = buildEvent({
+      key: "rebuild-direct-outbound-newer-inbound",
+      occurredAt: "2026-04-24T14:30:00.000Z",
+      direction: "inbound",
+    });
+    const outbound = buildEvent({
+      key: "rebuild-direct-outbound-newer-email",
+      occurredAt: "2026-04-24T14:45:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [inbound, outbound],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: inbound.occurredAt,
+        lastCanonicalEventId: inbound.id,
+      }),
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "rebuild-direct-outbound-newer-inbound",
+          direction: "inbound",
+          gmailThreadId: "thread:rebuild-direct-outbound-newer",
+        }),
+        buildGmailDetail({
+          key: "rebuild-direct-outbound-newer-email",
+          direction: "outbound",
+          gmailThreadId: "thread:different-compose",
+        }),
+      ],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      outbound.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: inbound.occurredAt,
+      lastOutboundAt: outbound.occurredAt,
+    });
+  });
+
+  it("keeps New on rebuild when a direct email outbound is older than the last inbound", async () => {
+    const outbound = buildEvent({
+      key: "rebuild-direct-outbound-older-email",
+      occurredAt: "2026-04-24T15:00:00.000Z",
+      direction: "outbound",
+    });
+    const inbound = buildEvent({
+      key: "rebuild-direct-outbound-older-inbound",
+      occurredAt: "2026-04-24T15:15:00.000Z",
+      direction: "inbound",
+    });
+    const context = buildContext({
+      events: [outbound, inbound],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: inbound.occurredAt,
+        lastCanonicalEventId: inbound.id,
+      }),
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      inbound.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: inbound.occurredAt,
+      lastOutboundAt: outbound.occurredAt,
+    });
+  });
+
+  it("keeps New on rebuild when only a newer campaign send follows the last inbound", async () => {
+    const inbound = buildEvent({
+      key: "rebuild-campaign-newer-inbound",
+      occurredAt: "2026-04-24T15:30:00.000Z",
+      direction: "inbound",
+    });
+    const campaignSent = buildEvent({
+      key: "rebuild-campaign-newer-sent",
+      occurredAt: "2026-04-24T15:45:00.000Z",
+      eventType: "campaign.email.sent",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [inbound, campaignSent],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: inbound.occurredAt,
+        lastCanonicalEventId: inbound.id,
+      }),
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      campaignSent.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: inbound.occurredAt,
+      lastOutboundAt: campaignSent.occurredAt,
+      lastEventType: "campaign.email.sent",
+    });
+  });
+
+  it("clears New to Opened on rebuild for outbound-only direct communication", async () => {
+    const outbound = buildEvent({
+      key: "rebuild-outbound-only-direct",
+      occurredAt: "2026-04-24T16:00:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [outbound],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: null,
+        lastOutboundAt: outbound.occurredAt,
+        lastCanonicalEventId: outbound.id,
+        lastEventType: outbound.eventType,
+      }),
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      outbound.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: null,
+      lastOutboundAt: outbound.occurredAt,
     });
   });
 
