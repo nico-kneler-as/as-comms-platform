@@ -17,10 +17,10 @@ The HTML composer is the Markdown composer with its body block swapped for an Un
 |---|---|---|
 | Step rail (left side, vertical progression) | `wizard-shell.tsx` | Unchanged |
 | Step header (`<StepHeader>`) | `wizard-shell.tsx` | Title + description only — copy below |
-| Subject input row | `compose-step.tsx:65-93` | Verbatim, including `46px` label gutter and `14.5px/font-semibold` input |
+| Subject input row | `compose-step.tsx:66-93` | Verbatim, including `46px` label gutter and `14.5px/font-semibold` input |
 | Preheader input row | `compose-step.tsx:95-113` | Verbatim, including `12.5px` input and "Preview" label |
 | Footer (Back / Continue) | `<WizardFooter>` | Unchanged Back/Continue behavior |
-| Outer card | `compose-step.tsx:65` | Same `rounded-xl border border-slate-200 bg-white` outer frame; body slot is the only delta |
+| Outer card | `compose-step.tsx:65` | Same `overflow-hidden rounded-xl border border-slate-200 bg-white` outer frame; body slot is the only delta |
 
 The composer card looks like the Markdown composer card. The differences are inside the body slot.
 
@@ -29,7 +29,7 @@ The composer card looks like the Markdown composer card. The differences are ins
 ```
 ┌─ <StepHeader title="Compose your HTML email" desc="…" />
 │
-├─ Compose card (rounded-xl border-slate-200 bg-white)
+├─ Compose card (overflow-hidden rounded-xl border-slate-200 bg-white)
 │   ├─ Subject row       — same as Markdown variant
 │   ├─ Preheader row     — same as Markdown variant
 │   └─ Body slot         — Unlayer iframe + per-state chrome (this spec)
@@ -76,7 +76,22 @@ The body slot sits below the Preheader row inside the same compose card. It has 
 
 **Height rationale:** 720px gives the operator one above-the-fold scroll worth of canvas on a 1440×900 laptop. Less and they're scrolling within Unlayer's scrollbar AND the wizard's scrollbar simultaneously, which is a known confusion point. More and the Continue button drops off the visible page on common laptop sizes. Engineering: do not let the Unlayer iframe resize the wizard page itself — keep wizard page height stable, scroll inside the iframe.
 
+**Expandability — deferred.** The brief notes the editor should be "expandable". This spec narrows that to a **fixed 720px** for Brick B; expandability ships in a follow-up brick only if test-send feedback proves the fixed height is restrictive. Reason: shipping the expand interaction requires a state machine for "expanded vs collapsed", layout-shift accounting in the wizard column, and an extra accessibility audit. None of that is essential to validate the editor's UX with operators.
+
 **Width:** matches the compose card's inner width (which is itself the wizard column width, ~960px maximum, narrower on smaller viewports). Unlayer renders its own canvas at 600px and centers it — that's correct behavior because 600px is the canonical desktop email width. Do not override.
+
+### Status / warning band
+
+A horizontal slot between the Preheader row and the Editor band. **Zero height when empty** (no border, no padding — it does not reserve vertical space). When one or more ribbons fire (size warning §4.5, hard size error §4.6, deleted-variable warning §4.7), they stack vertically inside this band, top-most being the most severe (rose-toned hard errors above amber-toned warnings).
+
+**Container tokens (per ribbon):**
+- Spacing: `border-b border-{tone}-200 px-4 py-2.5`
+- Background: `bg-{tone}-50/60` (amber for warning, rose for error)
+- Layout: `flex items-start gap-2.5`
+
+**Stacking rule.** Two ribbons in the band sit one above the other with **no inter-ribbon gap** — each contributes its own `border-b`, and the cumulative border treatment reads as a single tinted block. The Editor band's top edge stays flush with whichever ribbon is bottom-most.
+
+**Dismissibility.** Warning-class ribbons (amber) include an `X` dismiss button at the far right (`text-{tone}-700/70 size-3.5`). Error-class ribbons (rose) do not — they're blocking.
 
 ### Helper band
 
@@ -84,14 +99,20 @@ Below the iframe, inside the same card, a single thin row:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ ⓘ The AS footer with the unsubscribe link is added when this is     ┃ 4 blocks
-│   sent. You don't need to add another one.                          ┃
+│ ⓘ The AS unsubscribe footer is added automatically.                 ┃ 4 blocks
+│   You don't need to add one.                                        ┃
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-- Left side: `text-[11px] text-slate-500`, prefixed with the `Info` lucide icon at `size-3` and `text-slate-500`.
+- Left side: `text-[11px] text-slate-500`, prefixed with the `Info` lucide icon at `size-3` and `text-slate-500`. Copy is verbatim from the brief — see §8 microcopy index.
 - Right side: `text-[10.5px] font-mono tabular-nums text-slate-500` — Unlayer's block count as a substitute for "words" (we can't count words inside an iframe-hosted HTML editor without a roundtrip). Word-count surfaces in the Markdown variant; block-count is its closest analog here.
 - Border-top: `border-t border-slate-200`, background `bg-slate-50/70` — mirrors the Markdown variant's `toolbarFooter` slot.
+
+### Save-state indicator (autosave)
+
+Inherits the Markdown variant verbatim — same wording, same position, same timing, same component as `compose-step.tsx`'s autosave indicator. Placement: inside the Helper band, between the footer-reassurance text and the block-count chip. Cadence: re-renders on every successful save (debounced to 1500ms; see [stage-5c-unlayer-config.md §6](stage-5c-unlayer-config.md#6-save--load-lifecycle)).
+
+If the Markdown variant doesn't yet ship a visible autosave indicator (today it's implicit — autosave fires on `onBodyChange`), then the HTML composer inherits the same implicit posture: no visible indicator. **Do not introduce an HTML-only autosave indicator** — keep parity with the Markdown path.
 
 ---
 
@@ -119,7 +140,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 **Tokens.**
 - Logo image src: `/brand/as-mark.png` (rendered at 64x64 — engineering passes the absolute URL via `APP_URL + '/brand/as-mark.png'`)
 - Body text default font: Geist Sans 16px / line-height 1.6 / color #334155 (slate-700)
-- Footer styling: copies `buildUnsubscribeFooter` inline-style output verbatim from [campaign-send-orchestrator.ts:137-143](../../packages/domain/src/campaign-send-orchestrator.ts)
+- Footer styling: mirrors `buildUnsubscribeFooter`'s inline-style output from [campaign-send-orchestrator.ts:137-143](../../packages/domain/src/campaign-send-orchestrator.ts), including `target="_blank" rel="noreferrer noopener"` on both anchor tags. The exact constant lives at [stage-5c-unlayer-config.md §5.2](stage-5c-unlayer-config.md) and is the single source of truth for the in-canvas preview; engineering should re-export from the domain package rather than duplicate.
 
 **Microcopy.** Placeholder body: `Write your message here…` (with the trailing ellipsis, not three dots).
 
@@ -232,7 +253,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 - Icon: `<AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700">`
 - Text: `text-[12.5px] text-amber-900 leading-relaxed`
 - Dismiss button: `<button aria-label="Dismiss warning">` with `<X className="size-3.5 text-amber-700/70">`
-- This mirrors the merge-token-gap warning ribbon in [preview-step.tsx:104-131](../../apps/web/app/broadcasts/new/_components/preview-step.tsx) for visual consistency across the wizard.
+- **Shape note:** this is a horizontal band ribbon (full-width, `border-b`) — visually distinct from the rounded card-style amber ribbon at [preview-step.tsx:105](../../apps/web/app/broadcasts/new/_components/preview-step.tsx) which uses `rounded-lg border border-amber-300`. The compose-step uses the band shape because it sticks to the top of the body slot inside an already-rounded card; the preview-step uses the card shape because it floats above the preview panel without a parent card. Same palette tone (amber), different geometry by container context.
 
 **Microcopy.**
 - "This design is getting large. Consider linking images instead of embedding."
@@ -264,7 +285,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 
 **When it shows.** Operator inserts a merge variable (e.g., `{{firstName}}`) into an Unlayer block, but the underlying merge field no longer resolves for the audience — typically because audience filters changed and now include contacts where that field is null.
 
-The check runs at the same point as Stage 5A's existing merge-token validation, just over Unlayer's HTML output instead of the Markdown source.
+**Reuse, don't reimplement.** The detection pipeline at [audience-data-source.ts:803](../../apps/web/app/broadcasts/_lib/audience-data-source.ts) and [preview-step.tsx:91-95](../../apps/web/app/broadcasts/new/_components/preview-step.tsx) already produces `previewData.warningCount` by scanning resolved HTML samples. **The only delta in Brick B is that `sample.html` now comes from `editor.exportHtml()` instead of the markdown renderer** — the warning detection itself, the affected-contacts dialog, and the surface ribbon all reuse the Stage 5A pipeline unchanged. Engineering must NOT reimplement merge-token detection over Unlayer's design tree.
 
 **Visual.** A warning chip floating above the affected block within the canvas, AND a summary ribbon at the top of the body slot.
 
@@ -366,11 +387,13 @@ For `launchType === 'html_email'`, replace the prose `<div>` with a real `<ifram
 
 **Why iframe and not just a different wrapper class.** Unlayer's HTML contains its own `<style>` tags, link colors, and font-family declarations. Rendering that inside the same DOM as the wizard means the wizard's Tailwind reset applies, the wizard's link styles apply, the wizard's body font applies — all wrong. An iframe is the only way to get the recipient's-eye view honestly.
 
+**Prop threading note.** Neither `PreviewStepProps` ([preview-step.tsx:24-45](../../apps/web/app/broadcasts/new/_components/preview-step.tsx)) nor `ComposeStepProps` ([compose-step.tsx:24-37](../../apps/web/app/broadcasts/new/_components/compose-step.tsx)) currently exposes `launchType`. Brick B must thread it from the wizard state (`use-new-campaign-wizard-state.ts`) into both component prop interfaces. This is a ~5-minute addition but the spec calls it out so Codex doesn't get stuck looking for an existing prop.
+
 **Height handling.** 720px is a reasonable default. Engineering can grow it dynamically by reading `iframe.contentDocument.documentElement.scrollHeight` after `iframe.onload`, but a static 720 covers the typical case.
 
 **Sandbox.** `sandbox="allow-same-origin"` lets the iframe render its own styles and images. Do NOT allow `allow-scripts` (Unlayer's exported HTML has no scripts; if any appear, it's a corruption / injection and we should fail closed).
 
-**Effort estimate for engineering:** ~30 minutes including the conditional render and one snapshot test. Goes in Brick B alongside the editor wiring.
+**Effort estimate for engineering:** ~45 minutes — the conditional render, threading `launchType` from wizard state into `ComposeStepProps` + `PreviewStepProps`, and one snapshot test. Goes in Brick B alongside the editor wiring.
 
 ### What stays the same in Step 5
 
@@ -409,8 +432,8 @@ For `launchType === 'html_email'`, replace the prose `<div>` with a real `<ifram
 
 All token combinations specified above hit AA against white:
 - `text-slate-500` (#64748b) on `bg-white` — 4.83:1 ✓
-- `text-amber-900` (#78350f) on `bg-amber-50` (#fffbeb) — 8.71:1 ✓
-- `text-rose-900` (#881337) on `bg-rose-50` (#fff1f2) — 9.92:1 ✓
+- `text-amber-900` (#78350f) on `bg-amber-50` (#fffbeb) — 8.71:1 ✓ (the spec uses `bg-amber-50/60`, 60% alpha-blended over white; effective bg ≈ `#fffdf1`, contrast is still ≥ 8:1 ✓)
+- `text-rose-900` (#881337) on `bg-rose-50` (#fff1f2) — 9.92:1 ✓ (the spec uses `bg-rose-50/70`, 70% alpha-blended over white; effective bg ≈ `#fff5f6`, contrast is still ≥ 9:1 ✓)
 - Unlayer's `modern_light` theme toolbar icons hit AA. The slate-900-on-white active state we configure in customCSS hits 16.78:1. ✓
 
 ---
@@ -422,7 +445,7 @@ All token combinations specified above hit AA against white:
 | Step 4 header — title | `Compose your HTML email` |
 | Step 4 header — description | `Drag blocks onto the canvas to build the message. Subject and preheader above are what recipients see in their inbox. Preview opens on the next step.` |
 | Body block placeholder | `Write your message here…` |
-| Helper band — footer reassurance | `The AS footer with the unsubscribe link is added when this is sent. You don't need to add another one.` |
+| Helper band — footer reassurance | `The AS unsubscribe footer is added automatically. You don't need to add one.` |
 | Loading announcement | `Loading the email editor` (visually-hidden, aria-live) |
 | Editor-failed title | `The editor couldn't load.` |
 | Editor-failed body | `Reload the page and try again — your draft is saved.` |
@@ -454,10 +477,13 @@ The brief is explicit; reproducing here as a check-the-work list:
 
 Before dispatching Brick B to Codex:
 
-- [ ] Confirm `react-email-editor` v1.7.x or v1.8.x is pre-installed in the parent worktree (per architect memory rules)
+- [ ] Confirm `react-email-editor@1.8.5` (exact pin per [stage-5c-unlayer-config.md §9](stage-5c-unlayer-config.md#9-version-pin)) is pre-installed in the parent worktree per architect memory rules
 - [ ] Confirm the AS logo at `/brand/as-mark.png` is reachable from preview environments (no Vercel/Railway routing issues with the `/brand/*` path)
+- [ ] Confirm `NEXT_PUBLIC_APP_URL` is configured at build time in every deploy environment — the brand-default starter's logo `src` resolves through it (no relative-path fallback; gmail's image proxy treats those inconsistently)
 - [ ] Confirm the locked-footer custom block strategy works in self-hosted Unlayer (see [stage-5c-unlayer-config.md §5](stage-5c-unlayer-config.md) for the approach — if Unlayer's self-hosted edition doesn't support `registerTool`, fall back to injecting the footer block as a normal (deletable) block and warn the operator at submit if it's missing).
-- [ ] Confirm `body_design_json` round-trips at the schema layer (Brick A) before Brick B mounts the editor against it.
+- [ ] Confirm `body_design_json` round-trips at the schema layer (Brick A, [PR #537](https://github.com/nico-kneler-as/as-comms-platform/pull/537)) before Brick B mounts the editor against it.
+- [ ] Brief Codex to thread `launchType` from `use-new-campaign-wizard-state.ts` into `ComposeStepProps` AND `PreviewStepProps` — neither currently exposes it (§6 prop-threading note).
+- [ ] Brief Codex to run `pnpm build` (in addition to typecheck + lint + boundaries) per the architect memory rule "Run pnpm build before pushing route.ts / page.tsx changes" — Brick B touches `compose-step.tsx` + `preview-step.tsx` which are transitively imported by `/broadcasts/new/page.tsx`.
 - [ ] Spec the snapshot test for the preview-step `launchType === 'html_email'` branch using the [stage-5c-specimen.html](stage-5c-specimen.html) sample.
 
 ---
@@ -477,9 +503,9 @@ The specimen is the canonical Unlayer export shape:
 - VML / `mso-` properties present where they matter (`mso-line-height-rule:exactly` on spacers, the conditional Office settings block in `<head>`)
 - Hidden preheader `<div>` reserved at the top of `<body>` — the wizard's preheader field populates this server-side at send time
 
-### Known-good in these clients (by construction)
+### Expected-good in these clients (pending real-client verification)
 
-The specimen follows the patterns Unlayer's own export emits and the patterns the existing Stage 5A footer already ships. By construction it renders correctly in:
+The specimen follows the patterns Unlayer's own export emits and the patterns the existing Stage 5A footer already ships. By construction it should render correctly in:
 
 - **Gmail web** — fixed-width 600px tables, hidden preheader, inline styles all hit the rendering path Gmail uses
 - **Gmail mobile (iOS / Android app)** — auto-resize triggers because of `<meta name="viewport">`; 600px fixed-width tables get scaled, not letterboxed

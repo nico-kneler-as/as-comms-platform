@@ -11,7 +11,7 @@ This document specifies the exact configuration values to pass to `react-email-e
 
 ## 1. Library + mount strategy
 
-**Library:** [`react-email-editor`](https://www.npmjs.com/package/react-email-editor) v1.8.x (latest as of 2026-06-08). This is Unlayer's official React wrapper.
+**Library:** [`react-email-editor`](https://www.npmjs.com/package/react-email-editor) — **exact pin `1.8.5`** (see §9 for rationale). This is Unlayer's official React wrapper.
 
 **Self-hosted iframe.** The editor renders inside an iframe that loads its core JS from `editor.unlayer.com` (the JS host, not the cloud editor service). No project ID, no Unlayer account, no design saved to Unlayer's servers — we persist the design tree ourselves via `body_design_json` (Brick A).
 
@@ -157,6 +157,8 @@ const FONTS = {
 
 ### 3.5 `mergeTags`
 
+> **Verify before Brick B:** Unlayer's documented merge-tag shape may use the literal tag value (`first_name`) as the map key rather than a camelCase alias. Confirm against Unlayer's published schema at brief-dispatch time and adjust the keys if needed; the `value` field is canonical regardless.
+
 Identical to the Markdown variant — keep the contract surface stable.
 
 ```ts
@@ -191,13 +193,15 @@ This sets the `<iframe title>` on Unlayer's host iframe. Required for accessibil
 
 ### 3.7 `features`
 
+> **Verify before Brick B:** Not every key below is documented in `react-email-editor` v1.8's public schema. `preview` and `preheaderText` are stable; `textEditor.spellChecker`, `smartMergeTags`, and `audit` should be confirmed against Unlayer's release notes or by reading the package's type definitions at brief-dispatch time. Any unrecognized key is silently ignored — not an error — but if a key is renamed, our intent leaks. Default to dropping unverified keys rather than hoping.
+
 ```ts
 const FEATURES = {
-  preview: false,             // we own preview at Step 5
-  preheaderText: false,       // we own preheader at the wizard subject row
-  textEditor: { spellChecker: true },
-  smartMergeTags: true,       // typing "{{" surfaces the dropdown
-  audit: false,
+  preview: false,             // we own preview at Step 5 — STABLE
+  preheaderText: false,       // we own preheader at the wizard subject row — STABLE
+  textEditor: { spellChecker: true },  // VERIFY
+  smartMergeTags: true,       // typing "{{" surfaces the dropdown — VERIFY
+  audit: false,               // VERIFY (likely Unlayer cloud-only)
 } as const;
 ```
 
@@ -248,13 +252,48 @@ The brief asks for the platform palette (slate-900 active, slate-100 hover, whit
 }
 ```
 
-Pass as a string (Unlayer accepts string or array of strings):
+Pass as a string (Unlayer accepts string or array of strings). Use a tagged template literal so the CSS stays editable next to the comment that documents each rule:
 
 ```ts
-const CUSTOM_CSS = [
-  // single string, contents above
-] as const;
+const CUSTOM_CSS = `
+/* Active tool button — slate-900 */
+.blockbuilder-content-tool[aria-selected="true"],
+.blockbuilder-content-tool.active,
+.actions-container .btn-primary {
+  background-color: #0f172a !important;
+  border-color: #0f172a !important;
+  color: #ffffff !important;
+}
+
+/* Hover on tool button — slate-100 */
+.blockbuilder-content-tool:hover:not([aria-selected="true"]):not(.active) {
+  background-color: #f1f5f9 !important;
+}
+
+/* Properties panel accent color — slate-700 (text) */
+.property-tools button.active,
+.property-tools button[aria-pressed="true"] {
+  color: #334155 !important;
+}
+
+/* Primary action button (Save / Done if visible) — slate-900 */
+.action-bar .btn-primary {
+  background-color: #0f172a !important;
+  border-color: #0f172a !important;
+}
+.action-bar .btn-primary:hover {
+  background-color: #1e293b !important;
+}
+
+/* Drag-target highlight — slate-200 (lighter than Unlayer's default blue) */
+.drag-target.drop-zone {
+  border-color: #cbd5e1 !important;
+  background-color: rgba(241, 245, 249, 0.6) !important;
+}
+` as const;
 ```
+
+(The duplicated `<style>` block above is the same CSS — keep one copy. The block earlier in §3.8 was the design intent; this is the engineering payload.)
 
 **Note on `!important`:** Unlayer's iframe ships its own inline styles that win without `!important`. This is the documented workaround in their forum threads. Acceptable for a vendor's internal CSS we're targeting deliberately.
 
@@ -271,8 +310,21 @@ The locked footer block is registered via `customJS` because it requires running
 When the operator lands on Step 4 for the first time (empty / first-load state), engineering calls `editor.loadDesign(BRAND_DEFAULT_STARTER)` with this design tree:
 
 ```ts
+// NEXT_PUBLIC_APP_URL is REQUIRED. The starter's logo cannot fall through to a
+// relative path — Gmail's image proxy treats relative URLs inconsistently.
+// Engineering: read at module-init and throw on null/empty so misconfigured
+// environments fail loud, not silently.
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
+if (!APP_URL) {
+  throw new Error(
+    "NEXT_PUBLIC_APP_URL is required for the broadcast HTML composer brand-default starter",
+  );
+}
+
 export const BRAND_DEFAULT_STARTER = {
-  counters: { u_column: 1, u_row: 3, u_content_text: 1, u_content_image: 1, u_content_html: 1 },
+  // Counters set to the next available slot AFTER the placed contents below
+  // (img-1, text-1, footer-html-1 consume index 1 of their respective namespaces).
+  counters: { u_column: 4, u_row: 4, u_content_text: 2, u_content_image: 2, u_content_html: 2 },
   body: {
     id: "body",
     rows: [
@@ -288,7 +340,7 @@ export const BRAND_DEFAULT_STARTER = {
                 type: "image",
                 values: {
                   src: {
-                    url: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/brand/as-mark.png`,
+                    url: `${APP_URL}/brand/as-mark.png`,
                     width: 512,
                     height: 512,
                   },
@@ -413,18 +465,20 @@ This is the WYSIWYG preview of what `buildUnsubscribeFooter` ([campaign-send-orc
 ```html
 <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">
 <div style="color:#64748b;font-size:12px;line-height:1.6;">
-  <a href="#" style="color:#64748b;text-decoration:underline;">Unsubscribe from {{projectName}} emails</a>
+  <a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from {{projectName}} emails</a>
   &middot;
-  <a href="#" style="color:#64748b;text-decoration:underline;">Unsubscribe from all Adventure Scientists emails</a>
+  <a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from all Adventure Scientists emails</a>
 </div>
 <div style="color:#64748b;font-size:12px;line-height:1.6;margin-top:8px;">
-  Adventure Scientists · 1881 9th St, Suite 201 · Bozeman, MT 59715
+  Adventure Scientists • 1881 9th St, Suite 201 • Bozeman, MT 59715
 </div>
 ```
 
-**Live URLs vs `#`:** the in-editor preview uses `#` because real unsubscribe URLs are per-recipient and not known at compose time. At send time, the worker strips this preview footer (it knows it's the brand-default block by content-id) and appends the live `buildUnsubscribeFooter` output. **Or** — simpler — the worker always appends regardless, and engineering writes a one-line de-dup pass that removes the in-design preview before appending. Engineering's call; spec doesn't dictate.
+`target="_blank" rel="noreferrer noopener"` mirrors `buildUnsubscribeFooter`'s anchor attributes verbatim ([campaign-send-orchestrator.ts:130,132-133](../../packages/domain/src/campaign-send-orchestrator.ts)). The address separator is the bullet character `•` (U+2022, space-padded) to match `formatOrgAddress`'s join at [campaign-send-orchestrator.ts:106](../../packages/domain/src/campaign-send-orchestrator.ts) — not `&middot;` (U+00B7) which would render slightly differently.
 
-**Address line:** the spec shows the Bozeman address as a placeholder. Engineering: pull from `OrgSettingsRecord` at compose time so the preview shows the actual configured address.
+**Live URLs vs `#`:** the in-editor preview uses `#` because real unsubscribe URLs are per-recipient and not known at compose time. At send time, **the worker always appends `buildUnsubscribeFooter` regardless**, and Brick B/C engineering adds a one-line de-dup pass that detects and removes the locked footer block from the operator's HTML by `data-content-id="footer-html-1"` (the stable id assigned at §4 line `id: "footer-html-1"`). Single rule: append always, strip the in-canvas preview if present. No conditional append logic; one code path; the canvas footer is purely operator-facing.
+
+**Address line:** the spec shows the Bozeman address as a placeholder. Engineering: pull from `OrgSettingsRecord` at compose time so the preview shows the actual configured address — same source `formatOrgAddress` reads at send time.
 
 ### 5.3 If row-level lock doesn't hold on this Unlayer version
 
