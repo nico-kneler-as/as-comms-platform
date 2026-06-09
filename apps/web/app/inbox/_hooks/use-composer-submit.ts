@@ -71,6 +71,7 @@ function resolveSupplementaryRecipientEmails(input: {
 function toOptimisticAttachment(attachment: AttachmentDraft, index: number) {
   return {
     id: `optimistic-attachment:${attachment.id}:${String(index)}`,
+    provider: "gmail" as const,
     mimeType: attachment.contentType,
     filename: attachment.filename,
     sizeBytes: attachment.size,
@@ -78,6 +79,7 @@ function toOptimisticAttachment(attachment: AttachmentDraft, index: number) {
       attachment.contentBase64 === null
         ? ""
         : `data:${attachment.contentType};base64,${attachment.contentBase64}`,
+    externalUrl: null,
   };
 }
 

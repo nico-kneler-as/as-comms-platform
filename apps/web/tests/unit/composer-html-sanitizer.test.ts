@@ -18,6 +18,9 @@ describe("composer html sanitizer", () => {
   });
 
   it("keeps safe email presentation tags without preserving attributes", () => {
+    expect(sanitizeComposerHtml("<p>Msg &amp; data</p>")).toBe(
+      "<p>Msg &amp; data</p>",
+    );
     expect(sanitizeComposerHtml("<blockquote>quoted</blockquote>")).toBe(
       "<blockquote>quoted</blockquote>",
     );
@@ -38,7 +41,23 @@ describe("composer html sanitizer", () => {
     );
   });
 
-  it("removes unsafe link hrefs but keeps link text", () => {
+  it("preserves sms: and tel: anchors", () => {
+    expect(
+      sanitizeComposerHtml(
+        '<p><a href="sms:+14062891988?body=START">Text START</a></p>',
+      ),
+    ).toBe(
+      '<p><a href="sms:+14062891988?body=START" class="text-sky-700 hover:underline" target="_blank" rel="noopener noreferrer">Text START</a></p>',
+    );
+
+    expect(
+      sanitizeComposerHtml('<p><a href="tel:+14062891988">Call us</a></p>'),
+    ).toBe(
+      '<p><a href="tel:+14062891988" class="text-sky-700 hover:underline" target="_blank" rel="noopener noreferrer">Call us</a></p>',
+    );
+  });
+
+  it("continues to strip unsafe schemes", () => {
     expect(
       sanitizeComposerHtml(
         '<p><a href="javascript:alert(1)" class="bad">Click me</a></p>',

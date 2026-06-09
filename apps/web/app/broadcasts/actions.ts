@@ -14,10 +14,14 @@ import {
   sendNowInputSchema,
 } from "@as-comms/contracts";
 import {
+  buildBroadcastUnsubscribeUrls,
   createAudienceResolver,
   createCampaignSendOrchestrator,
   createExclusionFilter,
   createMergeRenderer,
+  formatOrgAddress,
+  normalizeAliasEmail,
+  renderBroadcastEmail,
 } from "@as-comms/domain";
 import { createPostmarkClient } from "@as-comms/integrations";
 import { z } from "zod";
@@ -32,10 +36,6 @@ import {
   type Stage1WebRuntime,
 } from "@/src/server/stage1-runtime";
 
-import {
-  buildCampaignFooterPreview,
-  formatOrgAddress,
-} from "./_lib/campaign-preview";
 import {
   listRunRecipients,
   type RecipientFilter,
@@ -114,12 +114,15 @@ async function appendCampaignAudit(input: {
   readonly detail: string;
   readonly metadataJson?: Record<string, unknown>;
   readonly auditEvidence?: Pick<
-    Awaited<ReturnType<typeof getStage1WebRuntime>>["repositories"]["auditEvidence"],
+    Awaited<
+      ReturnType<typeof getStage1WebRuntime>
+    >["repositories"]["auditEvidence"],
     "append"
   >;
 }) {
   const auditEvidence =
-    input.auditEvidence ?? (await getStage1WebRuntime()).repositories.auditEvidence;
+    input.auditEvidence ??
+    (await getStage1WebRuntime()).repositories.auditEvidence;
   await auditEvidence.append({
     id: randomUUID(),
     actorType: input.actorType,
@@ -185,6 +188,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
       campaignRuns: input.campaigns.campaignRuns,
       audienceSnapshots: input.campaigns.audienceSnapshots,
       settingsProjects: input.settings.projects,
+      settingsAliases: input.settings.aliases,
       orgSettings: input.campaigns.orgSettings,
       auditEvidence: input.repositories.auditEvidence,
     },
@@ -219,7 +223,10 @@ async function createCampaignOrchestrator() {
 }
 
 async function enqueueCampaignSendJob(input: {
-  readonly db: Pick<NonNullable<Stage1WebRuntime["connection"]>["db"], "execute">;
+  readonly db: Pick<
+    NonNullable<Stage1WebRuntime["connection"]>["db"],
+    "execute"
+  >;
   readonly runId: string;
   readonly scheduledAt?: Date;
 }): Promise<void> {
@@ -252,8 +259,10 @@ async function enqueueCampaignSendJob(input: {
   `);
 }
 
-async function assertCampaignAdmin():
-  Promise<{ readonly ok: true; readonly userId: string } | { readonly ok: false; readonly error: UiError }> {
+async function assertCampaignAdmin(): Promise<
+  | { readonly ok: true; readonly userId: string }
+  | { readonly ok: false; readonly error: UiError }
+> {
   try {
     const user = await requireAdmin();
     return {
@@ -296,7 +305,9 @@ async function validateVerifiedSender(input: {
     return errorResult("campaign_sender_unverified", input.failureMessage);
   }
 
-  const hasVerifiedSender = (await input.runtime.settings.projects.listAll()).some(
+  const hasVerifiedSender = (
+    await input.runtime.settings.projects.listAll()
+  ).some(
     (project) =>
       readPrimaryEmail(project)?.trim().toLowerCase() === normalizedEmail &&
       project.postmarkSenderStatus === "verified",
@@ -323,10 +334,9 @@ async function readRequestOrigin(): Promise<string> {
   return `${protocol}://${host}`;
 }
 
-function filterAudienceMembersBySelectedContacts<T extends { readonly contactId: string }>(
-  rows: readonly T[],
-  contactIds: readonly string[],
-): readonly T[] {
+function filterAudienceMembersBySelectedContacts<
+  T extends { readonly contactId: string },
+>(rows: readonly T[], contactIds: readonly string[]): readonly T[] {
   if (contactIds.length === 0) {
     return rows;
   }
@@ -357,7 +367,8 @@ export async function sendNow(
     const senderError = await validateVerifiedSender({
       runtime,
       email: run.fromEmail,
-      failureMessage: "Choose a verified sender alias before sending this broadcast.",
+      failureMessage:
+        "Choose a verified sender alias before sending this broadcast.",
     });
     if (senderError !== null) {
       return senderError;
@@ -405,7 +416,9 @@ export async function sendNow(
   } catch (error) {
     return errorResult(
       "campaign_send_failed",
-      error instanceof Error ? error.message : "Unable to start the broadcast send.",
+      error instanceof Error
+        ? error.message
+        : "Unable to start the broadcast send.",
       true,
     );
   }
@@ -435,7 +448,8 @@ export async function schedule(
     const senderError = await validateVerifiedSender({
       runtime,
       email: run.fromEmail,
-      failureMessage: "Choose a verified sender alias before scheduling this broadcast.",
+      failureMessage:
+        "Choose a verified sender alias before scheduling this broadcast.",
     });
     if (senderError !== null) {
       return senderError;
@@ -484,7 +498,9 @@ export async function schedule(
   } catch (error) {
     return errorResult(
       "campaign_schedule_failed",
-      error instanceof Error ? error.message : "Unable to schedule the broadcast.",
+      error instanceof Error
+        ? error.message
+        : "Unable to schedule the broadcast.",
       true,
     );
   }
@@ -497,13 +513,15 @@ export async function testSend(
   const session = await requireSession();
 
   try {
-    const parsed = z.object({
-      runId: z.string().trim().min(1),
-      recipientEmail: z.string().trim().email(),
-    }).parse({
-      runId,
-      recipientEmail,
-    });
+    const parsed = z
+      .object({
+        runId: z.string().trim().min(1),
+        recipientEmail: z.string().trim().email(),
+      })
+      .parse({
+        runId,
+        recipientEmail,
+      });
     const client = buildLivePostmarkClient();
     if (client === null) {
       return errorResult(
@@ -555,19 +573,44 @@ export async function testSend(
       );
     }
 
-    const footerAddress = formatOrgAddress(await runtime.campaigns.orgSettings.read());
-    const footer = buildCampaignFooterPreview({
+    const footerAddress = formatOrgAddress(
+      await runtime.campaigns.orgSettings.read(),
+    );
+    const origin = await readRequestOrigin();
+    const projectAlias =
+      run.projectId === null
+        ? null
+        : ((await runtime.settings.projects.findById(run.projectId))
+            ?.projectAlias ?? null);
+    const normalizedSenderAlias = normalizeAliasEmail(fromEmail);
+    const signature =
+      normalizedSenderAlias === null
+        ? null
+        : ((await runtime.settings.aliases.findByAlias(normalizedSenderAlias))
+            ?.signature ?? null);
+    const unsubscribeUrls = buildBroadcastUnsubscribeUrls({
+      appUrl: origin,
+      unsubscribeToken: `preview-${run.kind}`,
+    });
+    const composed = renderBroadcastEmail({
       kind: run.kind,
       projectName: sample.frozenProjectName,
+      projectAlias,
       footerAddress,
-      origin: await readRequestOrigin(),
+      preheader: run.preheader,
+      bodyHtmlTemplate: run.bodyHtmlTemplate ?? "",
+      bodyTextTemplate: run.bodyTextTemplate ?? "",
+      signature,
+      scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
+      allUnsubscribeHref: unsubscribeUrls.allHref,
+      senderEmail: fromEmail,
     });
     const mergeRenderer = createMergeRenderer();
     const rendered = mergeRenderer.render(
       {
         subject: run.subjectTemplate ?? "",
-        bodyHtml: `${run.bodyHtmlTemplate ?? ""}${footer.html}`,
-        bodyText: [run.bodyTextTemplate ?? "", footer.text].filter(Boolean).join("\n\n"),
+        bodyHtml: composed.bodyHtml,
+        bodyText: composed.bodyText,
       },
       {
         firstName: sample.frozenFirstName,
@@ -576,11 +619,15 @@ export async function testSend(
       },
     );
 
+    // The wizard's "Send test" surface posts to this action and the operator
+    // expects the message to land in the recipient's inbox. The sandbox token
+    // (`isTest: true`) only validates the request shape and does NOT deliver,
+    // which historically caused "I sent a test but never got it" confusion —
+    // route through the real server token so the test is a real send.
     await client.sendBatch({
-      isTest: true,
       messages: [
         {
-          From: fromEmail,
+          From: composed.fromHeader,
           To: parsed.recipientEmail,
           ...(run.replyToEmail === null ? {} : { ReplyTo: run.replyToEmail }),
           Subject: rendered.subject,
@@ -592,6 +639,16 @@ export async function testSend(
             campaignType: "test",
             operatorUserId: session.id,
           },
+          Headers: [
+            {
+              Name: "List-Unsubscribe",
+              Value: composed.listUnsubscribeHeaderValue,
+            },
+            {
+              Name: "List-Unsubscribe-Post",
+              Value: "List-Unsubscribe=One-Click",
+            },
+          ],
         },
       ],
     });
@@ -653,11 +710,16 @@ export async function cancelDraft(
 
   try {
     const runtime = await getStage1WebRuntime();
-    await runtime.campaigns.campaignRuns.transitionState(runId, "draft", "cancelled", {
-      cancelledAt: new Date().toISOString(),
-      cancelledReason: "Draft cancelled before launch.",
-      lastEditedByUserId: admin.userId,
-    });
+    await runtime.campaigns.campaignRuns.transitionState(
+      runId,
+      "draft",
+      "cancelled",
+      {
+        cancelledAt: new Date().toISOString(),
+        cancelledReason: "Draft cancelled before launch.",
+        lastEditedByUserId: admin.userId,
+      },
+    );
 
     return {
       ok: true,
@@ -718,7 +780,9 @@ export async function cancel(
   } catch (error) {
     return errorResult(
       "campaign_cancel_failed",
-      error instanceof Error ? error.message : "Unable to cancel the broadcast.",
+      error instanceof Error
+        ? error.message
+        : "Unable to cancel the broadcast.",
       true,
     );
   }
@@ -779,7 +843,9 @@ export async function duplicateCampaignRun(
   } catch (error) {
     return errorResult(
       "campaign_duplicate_failed",
-      error instanceof Error ? error.message : "Unable to duplicate the broadcast.",
+      error instanceof Error
+        ? error.message
+        : "Unable to duplicate the broadcast.",
       true,
     );
   }

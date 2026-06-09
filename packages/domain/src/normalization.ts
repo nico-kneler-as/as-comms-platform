@@ -525,6 +525,93 @@ function isOutboundProjectionEvent(
   );
 }
 
+function tierRankForEventType(
+  eventType: CanonicalEventRecord["eventType"],
+): 1 | 2 | 3 {
+  switch (eventType) {
+    case "communication.email.inbound":
+    case "communication.email.outbound":
+    case "communication.sms.inbound":
+    case "communication.sms.outbound":
+    case "note.internal.created":
+      return 1;
+    case "lifecycle.signed_up":
+    case "lifecycle.received_training":
+    case "lifecycle.completed_training":
+    case "lifecycle.submitted_first_data":
+    case "communication.sms.opt_in":
+    case "communication.sms.opt_out":
+    case "campaign.email.unsubscribed":
+      return 2;
+    case "campaign.email.sent":
+    case "campaign.email.delivered":
+    case "campaign.email.opened":
+    case "campaign.email.clicked":
+    case "campaign.email.bounced":
+    case "campaign.email.complained":
+      return 3;
+  }
+}
+
+function ingestSnippetFallbackForEventType(
+  eventType: CanonicalEventRecord["eventType"],
+): string {
+  switch (eventType) {
+    case "lifecycle.signed_up":
+      return "Signed up";
+    case "lifecycle.received_training":
+      return "Received training";
+    case "lifecycle.completed_training":
+      return "Completed training";
+    case "lifecycle.submitted_first_data":
+      return "Submitted first data";
+    case "communication.sms.opt_in":
+      return "SMS opted in";
+    case "communication.sms.opt_out":
+      return "SMS opted out";
+    case "campaign.email.sent":
+      return "Campaign email sent";
+    case "campaign.email.delivered":
+      return "Campaign email delivered";
+    case "campaign.email.opened":
+      return "Campaign email opened";
+    case "campaign.email.clicked":
+      return "Campaign email clicked";
+    case "campaign.email.bounced":
+      return "Campaign email bounced";
+    case "campaign.email.complained":
+      return "Campaign email complained";
+    case "campaign.email.unsubscribed":
+      return "Campaign email unsubscribed";
+    case "note.internal.created":
+      return "Internal note added";
+    default:
+      return "";
+  }
+}
+
+function pickIngestSnippet(input: {
+  readonly incomingEventType: CanonicalEventRecord["eventType"];
+  readonly incomingSnippet: string;
+  readonly existingSnippet: string | null | undefined;
+}): string {
+  const incomingTier = tierRankForEventType(input.incomingEventType);
+  const existingSnippet = input.existingSnippet ?? "";
+  const incomingSnippet = input.incomingSnippet.trim();
+
+  if (incomingTier === 1) {
+    return incomingSnippet.length > 0 ? incomingSnippet : existingSnippet;
+  }
+
+  if (existingSnippet.length > 0) {
+    return existingSnippet;
+  }
+
+  return incomingSnippet.length > 0
+    ? incomingSnippet
+    : ingestSnippetFallbackForEventType(input.incomingEventType);
+}
+
 function compareCanonicalEventRecency(
   left: Pick<CanonicalEventRecord, "id" | "occurredAt">,
   right: Pick<CanonicalEventRecord, "id" | "occurredAt">,
@@ -1475,28 +1562,135 @@ function resolveInboxSnippet(
       return "";
     }
 
-    return detail.snippetClean.length > 0
+    const snippet =
+      detail.snippetClean.length > 0
       ? detail.snippetClean
       : detail.bodyTextPreview;
+
+    if (snippet.length > 0) {
+      return snippet;
+    }
   }
 
   if (event.provenance.primaryProvider === "salesforce") {
-    return (
+    const snippet =
       detailMaps.salesforceCommunicationDetailBySourceEvidenceId.get(
         event.sourceEvidenceId,
-      )?.snippet ?? ""
-    );
+      )?.snippet ?? "";
+
+    if (snippet.length > 0) {
+      return snippet;
+    }
   }
 
   if (event.provenance.primaryProvider === "simpletexting") {
-    return (
+    const snippet =
       detailMaps.simpleTextingMessageDetailBySourceEvidenceId.get(
         event.sourceEvidenceId,
-      )?.messageTextPreview ?? ""
-    );
+      )?.messageTextPreview ?? "";
+
+    if (snippet.length > 0) {
+      return snippet;
+    }
   }
 
-  return "";
+  switch (event.eventType) {
+    case "lifecycle.signed_up":
+      return "Signed up";
+    case "lifecycle.received_training":
+      return "Received training";
+    case "lifecycle.completed_training":
+      return "Completed training";
+    case "lifecycle.submitted_first_data":
+      return "Submitted first data";
+    case "communication.sms.opt_in":
+      return "SMS opted in";
+    case "communication.sms.opt_out":
+      return "SMS opted out";
+    case "campaign.email.sent":
+      return "Campaign email sent";
+    case "campaign.email.delivered":
+      return "Campaign email delivered";
+    case "campaign.email.opened":
+      return "Campaign email opened";
+    case "campaign.email.clicked":
+      return "Campaign email clicked";
+    case "campaign.email.bounced":
+      return "Campaign email bounced";
+    case "campaign.email.complained":
+      return "Campaign email complained";
+    case "campaign.email.unsubscribed":
+      return "Campaign email unsubscribed";
+    case "note.internal.created":
+      return "Internal note added";
+    default:
+      return "";
+  }
+}
+
+function latestOutboundMatchesEarlierInboundThread(input: {
+  readonly latestEvent: CanonicalEventRecord;
+  readonly qualifyingEvents: readonly CanonicalEventRecord[];
+  readonly detailMaps: ProviderDetailMaps;
+}): boolean {
+  if (!isOutboundProjectionEvent(input.latestEvent.eventType)) {
+    return false;
+  }
+
+  const latestThreadId =
+    input.detailMaps.gmailMessageDetailBySourceEvidenceId.get(
+      input.latestEvent.sourceEvidenceId,
+    )?.gmailThreadId ?? null;
+
+  if (latestThreadId === null) {
+    return false;
+  }
+
+  return input.qualifyingEvents.some(
+    (event) =>
+      event.id !== input.latestEvent.id &&
+      isInboundEvent(event.eventType) &&
+      compareCanonicalEventRecency(event, input.latestEvent) < 0 &&
+      input.detailMaps.gmailMessageDetailBySourceEvidenceId.get(
+        event.sourceEvidenceId,
+      )?.gmailThreadId === latestThreadId,
+  );
+}
+
+async function latestOutboundMatchesPendingReplySignal(input: {
+  readonly persistence: Stage1PersistenceService;
+  readonly contactId: string;
+  readonly latestEvent: CanonicalEventRecord;
+  readonly detailMaps: ProviderDetailMaps;
+}): Promise<boolean> {
+  if (!isOutboundProjectionEvent(input.latestEvent.eventType)) {
+    return false;
+  }
+
+  const pendingOutbounds =
+    await input.persistence.repositories.pendingOutbounds.findForContact(
+      input.contactId,
+      {
+        limit: Number.MAX_SAFE_INTEGER,
+      },
+    );
+  const latestRfc822MessageId =
+    input.detailMaps.gmailMessageDetailBySourceEvidenceId.get(
+      input.latestEvent.sourceEvidenceId,
+    )?.rfc822MessageId ?? null;
+  const matchingPendingOutbound =
+    pendingOutbounds.find(
+      (pendingOutbound) => pendingOutbound.reconciledEventId === input.latestEvent.id,
+    ) ??
+    (latestRfc822MessageId === null
+      ? null
+      : pendingOutbounds.find(
+          (pendingOutbound) =>
+            pendingOutbound.reconciledEventId === null &&
+            pendingOutbound.sentRfc822MessageId === latestRfc822MessageId,
+        ) ?? null);
+
+  return (matchingPendingOutbound?.inReplyToRfc822 ?? null) !== null;
 }
 
 export async function rebuildInboxProjectionForContact(
@@ -1532,10 +1726,40 @@ export async function rebuildInboxProjectionForContact(
         : latest,
     null,
   );
+  const snippetEvent = qualifyingEvents.reduce<CanonicalEventRecord | null>(
+    (currentSnippetEvent, event) => {
+      if (currentSnippetEvent === null) {
+        return event;
+      }
+
+      const currentTierRank = tierRankForEventType(
+        currentSnippetEvent.eventType,
+      );
+      const nextTierRank = tierRankForEventType(event.eventType);
+
+      if (nextTierRank < currentTierRank) {
+        return event;
+      }
+
+      if (nextTierRank > currentTierRank) {
+        return currentSnippetEvent;
+      }
+
+      return compareCanonicalEventRecency(event, currentSnippetEvent) > 0
+        ? event
+        : currentSnippetEvent;
+    },
+    null,
+  );
 
   if (latestEvent === null) {
     throw new Error(
       "Expected a qualifying event when rebuilding inbox projection.",
+    );
+  }
+  if (snippetEvent === null) {
+    throw new Error(
+      "Expected a snippet event when rebuilding inbox projection.",
     );
   }
   let lastInboundAt: string | null = null;
@@ -1561,19 +1785,33 @@ export async function rebuildInboxProjectionForContact(
   const hasNewerInbound =
     lastInboundAt !== null &&
     (existing?.lastInboundAt == null || lastInboundAt > existing.lastInboundAt);
+  const latestOutboundIsInThreadReply =
+    latestOutboundMatchesEarlierInboundThread({
+      latestEvent,
+      qualifyingEvents,
+      detailMaps,
+    }) ||
+    (await latestOutboundMatchesPendingReplySignal({
+      persistence,
+      contactId,
+      latestEvent,
+      detailMaps,
+    }));
 
   return persistence.saveInboxProjection({
     contactId,
     bucket: hasNewerInbound
       ? "New"
-      : (existing?.bucket ??
-        (isInboundEvent(latestEvent.eventType) ? "New" : "Opened")),
+      : (latestOutboundIsInThreadReply && existing?.bucket === "New"
+          ? "Opened"
+          : (existing?.bucket ??
+            (isInboundEvent(latestEvent.eventType) ? "New" : "Opened"))),
     needsFollowUp: existing?.needsFollowUp ?? false,
     hasUnresolved: await contactHasUnresolved(persistence, contactId),
     lastInboundAt,
     lastOutboundAt,
     lastActivityAt,
-    snippet: resolveInboxSnippet(latestEvent, detailMaps),
+    snippet: resolveInboxSnippet(snippetEvent, detailMaps),
     archivedAt: existing?.archivedAt ?? null,
     lastCanonicalEventId: latestEvent.id,
     lastEventType: latestEvent.eventType,
@@ -2648,6 +2886,14 @@ export function createStage1NormalizationService(
       const contact = await persistence.upsertCanonicalContact(
         contactSchema.parse(parsed.contact),
       );
+      const shouldFilterSalesforceAliasEmails = parsed.identities.some(
+        (identity) => identity.source === "salesforce" && identity.kind === "email",
+      );
+      const internalProjectAliasSet = !shouldFilterSalesforceAliasEmails
+        ? null
+        : new Set(
+            await persistence.repositories.projectDimensions.listAllProjectAliases(),
+          );
 
       const identities: ContactIdentityRecord[] = [];
       for (const identity of parsed.identities) {
@@ -2657,6 +2903,16 @@ export function createStage1NormalizationService(
           throw new Error(
             `Contact identity ${parsedIdentity.id} does not belong to contact ${parsed.contact.id}.`,
           );
+        }
+
+        // Brief 2026-06-03: skip Salesforce-owned internal project aliases so
+        // contact_identities cannot hijack outbound actor labels.
+        if (
+          parsedIdentity.source === "salesforce" &&
+          parsedIdentity.kind === "email" &&
+          internalProjectAliasSet?.has(parsedIdentity.normalizedValue)
+        ) {
+          continue;
         }
 
         identities.push(
@@ -2897,7 +3153,11 @@ export function createStage1NormalizationService(
         lastOutboundAt,
         lastActivityAt,
         snippet: incomingIsLatestKnown
-          ? parsed.snippet
+          ? pickIngestSnippet({
+              incomingEventType: parsed.canonicalEvent.eventType,
+              incomingSnippet: parsed.snippet,
+              existingSnippet: existing?.snippet,
+            })
           : (existing?.snippet ?? parsed.snippet),
         archivedAt: existing?.archivedAt ?? null,
         lastCanonicalEventId: incomingIsLatestKnown

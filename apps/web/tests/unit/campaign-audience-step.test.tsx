@@ -73,8 +73,9 @@ function setupDom() {
   globalThis.HTMLInputElement = dom.window.HTMLInputElement;
   globalThis.MouseEvent = dom.window.MouseEvent;
   globalThis.Event = dom.window.Event;
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true;
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
 
   const container = document.createElement("div");
   document.body.append(container);
@@ -286,7 +287,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
   });
 
   it("disables continue when the live audience is zero", () => {
-    const invalidMarkup = renderToStaticMarkup(<AudienceBuilderStep {...baseProps} />);
+    const invalidMarkup = renderToStaticMarkup(
+      <AudienceBuilderStep {...baseProps} />,
+    );
     const validMarkup = renderToStaticMarkup(
       <AudienceBuilderStep
         {...baseProps}
@@ -344,9 +347,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(document.body.textContent).not.toContain("Audience filters");
     expect(document.body.textContent).not.toContain("Find volunteers");
 
-    const projectStatusButton = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent.includes("Project / status"),
-    );
+    const projectStatusButton = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent.includes("Project / status"));
     if (!(projectStatusButton instanceof HTMLButtonElement)) {
       throw new Error("Project / status chooser button not found");
     }
@@ -355,7 +358,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
       projectStatusButton.click();
     });
 
-    const tablist = document.querySelector('[role="tablist"][aria-label="Audience mode"]');
+    const tablist = document.querySelector(
+      '[role="tablist"][aria-label="Audience mode"]',
+    );
     if (!(tablist instanceof HTMLElement)) {
       throw new Error("Audience mode segmented control not found");
     }
@@ -442,6 +447,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
       loadMemberStatusCountsForProjects,
       loadComposePreviewAction,
+      loadSelectedAliasSignatureAction: vi.fn(() =>
+        Promise.resolve({ ok: true as const, data: "" }),
+      ),
       previewAudienceAction,
       resolveAudienceCountAction,
       saveCampaignWizardDraftAction,
@@ -453,34 +461,38 @@ describe("AudienceBuilderStep initial filter gate", () => {
       testSend: vi.fn(),
     }));
     vi.doMock("../../app/broadcasts/new/_components/launch-type-step", () => ({
-      LaunchTypeStep: ({
-        onContinue,
-      }: {
-        readonly onContinue: () => void;
-      }) => <button onClick={onContinue}>Launch continue</button>,
-    }));
-    vi.doMock("../../app/broadcasts/new/_components/name-and-sender-step", () => ({
-      NameAndSenderStep: ({
-        onContinue,
-      }: {
-        readonly onContinue: () => void;
-      }) => <button onClick={onContinue}>Sender continue</button>,
-    }));
-    vi.doMock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
-      AudienceBuilderStep: ({
-        onStatusToggle,
-      }: {
-        readonly onStatusToggle: (status: string) => void;
-      }) => (
-        <button
-          onClick={() => {
-            onStatusToggle("Waitlist");
-          }}
-        >
-          Toggle Waitlist
-        </button>
+      LaunchTypeStep: ({ onContinue }: { readonly onContinue: () => void }) => (
+        <button onClick={onContinue}>Launch continue</button>
       ),
     }));
+    vi.doMock(
+      "../../app/broadcasts/new/_components/name-and-sender-step",
+      () => ({
+        NameAndSenderStep: ({
+          onContinue,
+        }: {
+          readonly onContinue: () => void;
+        }) => <button onClick={onContinue}>Sender continue</button>,
+      }),
+    );
+    vi.doMock(
+      "../../app/broadcasts/new/_components/audience-builder-step",
+      () => ({
+        AudienceBuilderStep: ({
+          onStatusToggle,
+        }: {
+          readonly onStatusToggle: (status: string) => void;
+        }) => (
+          <button
+            onClick={() => {
+              onStatusToggle("Waitlist");
+            }}
+          >
+            Toggle Waitlist
+          </button>
+        ),
+      }),
+    );
     vi.doMock("../../app/broadcasts/new/_components/compose-step", () => ({
       ComposeStep: () => <div>Compose</div>,
     }));
@@ -494,9 +506,8 @@ describe("AudienceBuilderStep initial filter gate", () => {
       WizardRail: () => null,
     }));
 
-    const { NewCampaignWizard } = await import(
-      "../../app/broadcasts/new/_components/new-campaign-wizard"
-    );
+    const { NewCampaignWizard } =
+      await import("../../app/broadcasts/new/_components/new-campaign-wizard");
 
     const bootstrap: AudienceBuilderBootstrap = {
       projects: [
@@ -566,7 +577,11 @@ describe("AudienceBuilderStep initial filter gate", () => {
 
     act(() => {
       root?.render(
-        <NewCampaignWizard bootstrap={bootstrap} draft={draft} isAdmin={true} />,
+        <NewCampaignWizard
+          bootstrap={bootstrap}
+          draft={draft}
+          isAdmin={true}
+        />,
       );
     });
     await settleAsyncWork();
@@ -598,11 +613,12 @@ describe("AudienceBuilderStep initial filter gate", () => {
     await settleAsyncWork();
 
     expect(loadMemberStatusCountsForProjects).toHaveBeenCalledTimes(1);
-    const initialAudienceCountCalls = resolveAudienceCountAction.mock.calls.length;
+    const initialAudienceCountCalls =
+      resolveAudienceCountAction.mock.calls.length;
 
-    const toggleWaitlistButton = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent === "Toggle Waitlist",
-    );
+    const toggleWaitlistButton = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Toggle Waitlist");
     if (!(toggleWaitlistButton instanceof HTMLButtonElement)) {
       throw new Error("Toggle Waitlist button not found");
     }
@@ -700,6 +716,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
       loadMemberStatusCountsForProjects,
       loadComposePreviewAction,
+      loadSelectedAliasSignatureAction: vi.fn(() =>
+        Promise.resolve({ ok: true as const, data: "" }),
+      ),
       previewAudienceAction,
       resolveAudienceCountAction,
       saveCampaignWizardDraftAction,
@@ -711,19 +730,20 @@ describe("AudienceBuilderStep initial filter gate", () => {
       testSend: vi.fn(),
     }));
     vi.doMock("../../app/broadcasts/new/_components/launch-type-step", () => ({
-      LaunchTypeStep: ({
-        onContinue,
-      }: {
-        readonly onContinue: () => void;
-      }) => <button onClick={onContinue}>Launch continue</button>,
+      LaunchTypeStep: ({ onContinue }: { readonly onContinue: () => void }) => (
+        <button onClick={onContinue}>Launch continue</button>
+      ),
     }));
-    vi.doMock("../../app/broadcasts/new/_components/name-and-sender-step", () => ({
-      NameAndSenderStep: ({
-        onContinue,
-      }: {
-        readonly onContinue: () => void;
-      }) => <button onClick={onContinue}>Sender continue</button>,
-    }));
+    vi.doMock(
+      "../../app/broadcasts/new/_components/name-and-sender-step",
+      () => ({
+        NameAndSenderStep: ({
+          onContinue,
+        }: {
+          readonly onContinue: () => void;
+        }) => <button onClick={onContinue}>Sender continue</button>,
+      }),
+    );
     vi.doMock("../../app/broadcasts/new/_components/compose-step", () => ({
       ComposeStep: () => <div>Compose</div>,
     }));
@@ -738,9 +758,8 @@ describe("AudienceBuilderStep initial filter gate", () => {
     }));
     vi.doUnmock("../../app/broadcasts/new/_components/audience-builder-step");
 
-    const { NewCampaignWizard } = await import(
-      "../../app/broadcasts/new/_components/new-campaign-wizard"
-    );
+    const { NewCampaignWizard } =
+      await import("../../app/broadcasts/new/_components/new-campaign-wizard");
 
     const bootstrap: AudienceBuilderBootstrap = {
       projects: [
@@ -800,7 +819,11 @@ describe("AudienceBuilderStep initial filter gate", () => {
 
     act(() => {
       root?.render(
-        <NewCampaignWizard bootstrap={bootstrap} draft={draft} isAdmin={true} />,
+        <NewCampaignWizard
+          bootstrap={bootstrap}
+          draft={draft}
+          isAdmin={true}
+        />,
       );
     });
     await settleAsyncWork();
@@ -925,6 +948,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
       loadMemberStatusCountsForProjects,
       loadComposePreviewAction,
+      loadSelectedAliasSignatureAction: vi.fn(() =>
+        Promise.resolve({ ok: true as const, data: "" }),
+      ),
       previewAudienceAction,
       resolveAudienceCountAction,
       saveCampaignWizardDraftAction,
@@ -936,19 +962,20 @@ describe("AudienceBuilderStep initial filter gate", () => {
       testSend: vi.fn(),
     }));
     vi.doMock("../../app/broadcasts/new/_components/launch-type-step", () => ({
-      LaunchTypeStep: ({
-        onContinue,
-      }: {
-        readonly onContinue: () => void;
-      }) => <button onClick={onContinue}>Launch continue</button>,
+      LaunchTypeStep: ({ onContinue }: { readonly onContinue: () => void }) => (
+        <button onClick={onContinue}>Launch continue</button>
+      ),
     }));
-    vi.doMock("../../app/broadcasts/new/_components/name-and-sender-step", () => ({
-      NameAndSenderStep: ({
-        onContinue,
-      }: {
-        readonly onContinue: () => void;
-      }) => <button onClick={onContinue}>Sender continue</button>,
-    }));
+    vi.doMock(
+      "../../app/broadcasts/new/_components/name-and-sender-step",
+      () => ({
+        NameAndSenderStep: ({
+          onContinue,
+        }: {
+          readonly onContinue: () => void;
+        }) => <button onClick={onContinue}>Sender continue</button>,
+      }),
+    );
     vi.doMock("../../app/broadcasts/new/_components/compose-step", () => ({
       ComposeStep: () => <div>Compose</div>,
     }));
@@ -962,9 +989,8 @@ describe("AudienceBuilderStep initial filter gate", () => {
       WizardRail: () => null,
     }));
 
-    const { NewCampaignWizard } = await import(
-      "../../app/broadcasts/new/_components/new-campaign-wizard"
-    );
+    const { NewCampaignWizard } =
+      await import("../../app/broadcasts/new/_components/new-campaign-wizard");
 
     const bootstrap: AudienceBuilderBootstrap = {
       projects: [
@@ -1034,7 +1060,11 @@ describe("AudienceBuilderStep initial filter gate", () => {
 
     act(() => {
       root?.render(
-        <NewCampaignWizard bootstrap={bootstrap} draft={draft} isAdmin={true} />,
+        <NewCampaignWizard
+          bootstrap={bootstrap}
+          draft={draft}
+          isAdmin={true}
+        />,
       );
     });
     await settleAsyncWork();
@@ -1065,8 +1095,10 @@ describe("AudienceBuilderStep initial filter gate", () => {
     await settleAsyncWork();
     await settleAsyncWork();
 
-    const projectButtons = Array.from(document.querySelectorAll("button")).filter(
-      (button) => button.getAttribute("aria-label")?.startsWith("Choose project "),
+    const projectButtons = Array.from(
+      document.querySelectorAll("button"),
+    ).filter((button) =>
+      button.getAttribute("aria-label")?.startsWith("Choose project "),
     );
 
     expect(projectButtons).toHaveLength(2);

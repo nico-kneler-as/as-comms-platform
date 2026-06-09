@@ -50,7 +50,12 @@ function buildDraftInput(
   };
 }
 
-async function seedProject(context: Stage1Context) {
+async function seedProject(
+  context: Stage1Context,
+  input: {
+    readonly signature?: string;
+  } = {},
+) {
   await context.repositories.projectDimensions.upsert({
     projectId: "project-1",
     projectName: "Project One",
@@ -69,7 +74,7 @@ async function seedProject(context: Stage1Context) {
   await context.settings.aliases.create({
     id: "alias-project-1",
     alias: "project-one@example.org",
-    signature: "",
+    signature: input.signature ?? "",
     projectId: "project-1",
     createdAt: new Date("2026-05-15T12:00:00.000Z"),
     updatedAt: new Date("2026-05-15T12:00:00.000Z"),
@@ -113,7 +118,13 @@ async function seedAudience(
 }
 
 function createMockPostmarkClient(input: {
-  onBatch?: (messages: readonly { readonly To: string }[]) => Promise<void> | void;
+  onBatch?: (
+    messages: readonly {
+      readonly To: string;
+      readonly HtmlBody?: string;
+      readonly TextBody?: string;
+    }[],
+  ) => Promise<void> | void;
   resultFor?: (email: string) => { readonly errorCode: number; readonly message: string };
   throwOnCall?: readonly number[];
 }) {
@@ -123,6 +134,8 @@ function createMockPostmarkClient(input: {
     async sendBatch(req: {
       readonly messages: readonly {
         readonly To: string;
+        readonly HtmlBody?: string;
+        readonly TextBody?: string;
       }[];
     }) {
       calls += 1;
@@ -166,6 +179,7 @@ function createOrchestrator(
         campaignRuns: campaigns.campaignRuns,
         audienceSnapshots: campaigns.audienceSnapshots,
         settingsProjects: context.settings.projects,
+        settingsAliases: context.settings.aliases,
         orgSettings: campaigns.orgSettings,
       },
       audienceResolver: createAudienceResolver({
@@ -411,5 +425,49 @@ describe("Campaign send orchestrator", () => {
     expect(
       snapshots.filter((snapshot) => snapshot.deliveryStatus === "sent"),
     ).toHaveLength(2);
+  });
+
+  it("appends the alias signature and hidden Postmark placeholder to sent bodies", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context, {
+      signature: "Thanks,\n{{firstName}} Team",
+    });
+    await seedAudience(context, 1);
+    let capturedMessage:
+      | {
+          readonly HtmlBody?: string;
+          readonly TextBody?: string;
+        }
+      | undefined;
+    const runtime = createOrchestrator(
+      context,
+      createMockPostmarkClient({
+        onBatch(messages) {
+          capturedMessage = messages[0];
+        },
+      }),
+      1,
+    );
+    const run = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-signature-and-placeholder" }),
+    );
+
+    await runtime.orchestrator.freeze(
+      run.id,
+      new Date("2026-05-15T12:00:00.000Z"),
+    );
+    await runtime.orchestrator.processSendRequest(run.id);
+
+    expect(capturedMessage).toBeDefined();
+    const htmlBody = capturedMessage?.HtmlBody ?? "";
+    const textBody = capturedMessage?.TextBody ?? "";
+    expect(htmlBody).toContain(
+      '<p>Project One</p><p style="margin-top:16px;">Thanks,<br>Volunteer Team</p><hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">',
+    );
+    expect(textBody).toContain(
+      "project-one@example.org\n\nThanks,\nVolunteer Team\n\nUnsubscribe from project-one emails · Unsubscribe from all Adventure Scientists emails",
+    );
+    expect(htmlBody.match(/\{\{\{ pm:unsubscribe \}\}\}/gu)).toHaveLength(1);
   });
 });

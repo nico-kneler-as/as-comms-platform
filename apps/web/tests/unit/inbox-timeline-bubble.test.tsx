@@ -220,24 +220,30 @@ describe("MessageBubble attachments", () => {
           attachments: [
             {
               id: "image-1",
+              provider: "gmail",
               mimeType: "image/jpeg",
               filename: "field-photo.jpg",
               sizeBytes: 1234,
               proxyUrl: "/api/attachments/image-1",
+              externalUrl: null,
             },
             {
               id: "image-2",
+              provider: "gmail",
               mimeType: "image/png",
               filename: "map.png",
               sizeBytes: 5678,
               proxyUrl: "/api/attachments/image-2",
+              externalUrl: null,
             },
             {
               id: "pdf-1",
+              provider: "gmail",
               mimeType: "application/pdf",
               filename: "packet.pdf",
               sizeBytes: 91011,
               proxyUrl: "/api/attachments/pdf-1",
+              externalUrl: null,
             },
           ],
         }),
@@ -261,10 +267,12 @@ describe("MessageBubble attachments", () => {
           attachments: [
             {
               id: "pdf-null",
+              provider: "gmail",
               mimeType: "application/pdf",
               filename: null,
               sizeBytes: 2048,
               proxyUrl: "/api/attachments/pdf-null",
+              externalUrl: null,
             },
           ],
         }),
@@ -274,6 +282,32 @@ describe("MessageBubble attachments", () => {
 
     expect(markup).toContain("Download Attachment");
     expect(markup).toContain(">Attachment<");
+  });
+
+  it("renders Drive attachments as external chips with a Drive badge", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MessageBubble, {
+        entry: buildEntry({
+          attachmentCount: 1,
+          attachments: [
+            {
+              id: "drive-1",
+              provider: "drive",
+              mimeType: "image/jpeg",
+              filename: "IMG_2634.jpeg",
+              sizeBytes: 0,
+              proxyUrl: null,
+              externalUrl: "https://drive.google.com/file/d/abc/view",
+            },
+          ],
+        }),
+        direction: "inbound",
+      }),
+    );
+
+    expect(markup).toContain("https://drive.google.com/file/d/abc/view");
+    expect(markup).toContain("Open IMG_2634.jpeg in Google Drive");
+    expect(markup).toContain(">Drive<");
   });
 });
 

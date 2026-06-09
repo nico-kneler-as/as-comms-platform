@@ -89,6 +89,8 @@ import {
   mapExpeditionDimensionToInsert,
   mapGmailMessageDetailRow,
   mapGmailMessageDetailToInsert,
+  mapIntegrationBackfillJobRow,
+  mapIntegrationBackfillJobToInsert,
   mapIntegrationHealthRow,
   mapIntegrationHealthToInsert,
   mapIdentityResolutionRow,
@@ -140,6 +142,7 @@ import {
   contacts,
   expeditionDimensions,
   gmailMessageDetails,
+  integrationBackfillJobs,
   integrationHealth,
   identityResolutionQueue,
   internalNotes,
@@ -903,6 +906,11 @@ const manualNoteDetailsTable = manualNoteDetails as typeof manualNoteDetails & {
 const pendingComposerOutboundsTable =
   pendingComposerOutbounds as typeof pendingComposerOutbounds & {
     readonly id: typeof pendingComposerOutbounds.id;
+  };
+const integrationBackfillJobsTable =
+  integrationBackfillJobs as typeof integrationBackfillJobs & {
+    readonly id: typeof integrationBackfillJobs.id;
+    readonly idempotencyKey: typeof integrationBackfillJobs.idempotencyKey;
   };
 
 function requireRow<T>(row: T | undefined, message: string): T {
@@ -4469,6 +4477,117 @@ function createStage1RepositoriesInternal(
       },
     },
 
+    integrationBackfillJobs: {
+      async insert(input) {
+        const now = new Date();
+        const [row] = await db
+          .insert(integrationBackfillJobs)
+          .values(
+            mapIntegrationBackfillJobToInsert({
+              id: input.id,
+              service: input.service,
+              idempotencyKey: input.idempotencyKey,
+              triggeredBy: input.triggeredBy,
+              windowStart: input.windowStart,
+              windowEnd: input.windowEnd,
+              mailbox: input.mailbox,
+              status: "pending",
+              enqueuedAt: now.toISOString(),
+              startedAt: null,
+              completedAt: null,
+              resultJson: null,
+              failureReason: null,
+              createdAt: now.toISOString(),
+              updatedAt: now.toISOString(),
+            }),
+          )
+          .onConflictDoNothing({
+            target: integrationBackfillJobsTable.idempotencyKey,
+          })
+          .returning({ id: integrationBackfillJobsTable.id });
+
+        return row?.id ?? null;
+      },
+
+      async countAll() {
+        const [row] = await db
+          .select({ total: count() })
+          .from(integrationBackfillJobs);
+
+        return row?.total ?? 0;
+      },
+
+      async findById(id) {
+        const [row] = await db
+          .select()
+          .from(integrationBackfillJobs)
+          .where(eq(integrationBackfillJobs.id, id))
+          .limit(1);
+
+        return row === undefined ? null : mapIntegrationBackfillJobRow(row);
+      },
+
+      async findByIdempotencyKey(idempotencyKey) {
+        const [row] = await db
+          .select()
+          .from(integrationBackfillJobs)
+          .where(eq(integrationBackfillJobs.idempotencyKey, idempotencyKey))
+          .limit(1);
+
+        return row === undefined ? null : mapIntegrationBackfillJobRow(row);
+      },
+
+      async markRunning(input) {
+        const [row] = await db
+          .update(integrationBackfillJobs)
+          .set({
+            status: "running",
+            startedAt: new Date(input.startedAt),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(integrationBackfillJobs.id, input.id),
+              eq(integrationBackfillJobs.status, "pending"),
+            ),
+          )
+          .returning();
+
+        return row === undefined ? null : mapIntegrationBackfillJobRow(row);
+      },
+
+      async markCompleted(input) {
+        const [row] = await db
+          .update(integrationBackfillJobs)
+          .set({
+            status: "completed",
+            completedAt: new Date(input.completedAt),
+            resultJson: input.resultJson,
+            failureReason: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(integrationBackfillJobs.id, input.id))
+          .returning();
+
+        return row === undefined ? null : mapIntegrationBackfillJobRow(row);
+      },
+
+      async markFailed(input) {
+        const [row] = await db
+          .update(integrationBackfillJobs)
+          .set({
+            status: "failed",
+            completedAt: new Date(input.completedAt),
+            failureReason: input.failureReason,
+            updatedAt: new Date(),
+          })
+          .where(eq(integrationBackfillJobs.id, input.id))
+          .returning();
+
+        return row === undefined ? null : mapIntegrationBackfillJobRow(row);
+      },
+    },
+
     identityResolutionQueue: {
       async findById(id) {
         const [row] = await db
@@ -6429,6 +6548,7 @@ function mapCampaignRunRow(row: CampaignRunRow): CampaignRunRecord {
     replyToEmail: row.replyToEmail,
     subjectTemplate: row.subjectTemplate,
     bodyHtmlTemplate: row.bodyHtmlTemplate,
+    bodyDesignJson: row.bodyDesignJson,
     bodyTextTemplate: row.bodyTextTemplate,
     preheader: row.preheader,
     audienceCriteria: audienceCriteriaSchema.parse(row.audienceCriteria),
@@ -6620,6 +6740,9 @@ function mapCampaignRunMutationFields(
   if ("bodyHtmlTemplate" in input && input.bodyHtmlTemplate !== undefined) {
     values.bodyHtmlTemplate = input.bodyHtmlTemplate;
   }
+  if ("bodyDesignJson" in input && input.bodyDesignJson !== undefined) {
+    values.bodyDesignJson = input.bodyDesignJson;
+  }
   if ("bodyTextTemplate" in input && input.bodyTextTemplate !== undefined) {
     values.bodyTextTemplate = input.bodyTextTemplate;
   }
@@ -6810,6 +6933,7 @@ export function createStage5RepositoryBundle(
             replyToEmail: parsed.replyToEmail,
             subjectTemplate: parsed.subjectTemplate,
             bodyHtmlTemplate: parsed.bodyHtmlTemplate,
+            bodyDesignJson: parsed.bodyDesignJson,
             bodyTextTemplate: parsed.bodyTextTemplate,
             preheader: parsed.preheader,
             audienceCriteria: audienceCriteriaSchema.parse(

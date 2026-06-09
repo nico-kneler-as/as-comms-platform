@@ -133,9 +133,7 @@ export function deriveInitialFilter(
   return undefined;
 }
 
-export function kindForAudienceMode(
-  mode: AudienceInitialFilter,
-): CampaignKind {
+export function kindForAudienceMode(mode: AudienceInitialFilter): CampaignKind {
   return mode === "all_approved" ? "newsletter" : "project";
 }
 
@@ -237,8 +235,7 @@ export function deriveSuggestedSenderEmail(input: {
   return (
     input.bootstrap.senderOptions.find(
       (option) =>
-        option.projectId === projectId &&
-        option.status === "verified",
+        option.projectId === projectId && option.status === "verified",
     )?.email ?? null
   );
 }
@@ -251,10 +248,12 @@ export function readAliasProjectsForSender(
     return [];
   }
 
-  const hostProjectId = senderOption.connectedToProjectId ?? senderOption.projectId;
+  const hostProjectId =
+    senderOption.connectedToProjectId ?? senderOption.projectId;
   const group =
-    bootstrap.projects.find((candidate) => candidate.host.id === hostProjectId) ??
-    null;
+    bootstrap.projects.find(
+      (candidate) => candidate.host.id === hostProjectId,
+    ) ?? null;
   if (group === null) {
     return [];
   }
@@ -391,6 +390,7 @@ export function NewCampaignWizard({
     setBodyPlaintext,
     bodyHtml,
     setBodyHtml,
+    selectedAliasSignature,
     criteria,
     setCriteria,
     hasPickedAudienceMode,
@@ -436,6 +436,7 @@ export function NewCampaignWizard({
     setToast,
     countLoading,
     audiencePreviewLoading,
+    savePending,
     startSaveTransition,
     submitPending,
     startSubmitTransition,
@@ -769,7 +770,9 @@ export function NewCampaignWizard({
                 subject={subject}
                 preheader={preheader}
                 bodyPlaintext={bodyPlaintext}
+                selectedAliasSignature={selectedAliasSignature}
                 frozen={frozen}
+                continuePending={savePending}
                 onSubjectChange={setSubject}
                 onPreheaderChange={setPreheader}
                 onBodyChange={(value) => {

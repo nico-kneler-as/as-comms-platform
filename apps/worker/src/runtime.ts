@@ -67,6 +67,10 @@ import {
 import { createTaskList } from "./tasks.js";
 import { reconcileIdentityQueueJobName } from "./jobs/reconcile-identity-queue.js";
 import { reconcileStaleRunningJobName } from "./jobs/reconcile-stale-running.js";
+import {
+  reconcileSupersededProjectionsJobName,
+  type ReconcileSupersededProjectionsTaskDependencies,
+} from "./jobs/reconcile-superseded-projections.js";
 import { sweepPendingOutboundsJobName } from "./jobs/sweep-pending-outbounds.js";
 import { pollPostmarkSenderStatusJobName } from "./jobs/poll-postmark-sender-status/index.js";
 
@@ -162,6 +166,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `0 10 * * * ${dedupHistoricalLedgerJobName} ?id=dedup-historical-ledger&max=1`,
     `30 10 * * * ${reconcileCaptureGapsJobName} ?id=capture-gap-reconcile&max=1`,
     `*/15 * * * * ${reconcileRoutingReviewQueueJobName} ?id=routing-review-queue-reconcile&max=1`,
+    `0 11 * * 0 ${reconcileSupersededProjectionsJobName} ?id=superseded-projections-reconcile&max=1`,
   ].join("\n");
 }
 
@@ -257,6 +262,7 @@ function buildCampaignSendDependencies(input: {
         campaignRuns: input.campaigns.campaignRuns,
         audienceSnapshots: input.campaigns.audienceSnapshots,
         settingsProjects: input.settings.projects,
+        settingsAliases: input.settings.aliases,
         orgSettings: input.campaigns.orgSettings,
         auditEvidence: input.repositories.auditEvidence,
       },
@@ -596,12 +602,16 @@ export async function createStage1WorkerRuntimeServices(
       integrationHealth: {
         integrationHealth: settings.integrationHealth,
         opsAlertState: settings.opsAlertState,
+        persistence,
         captureBaseUrls: {
           gmail: config.capture.gmail.baseUrl,
           salesforce: config.capture.salesforce.baseUrl,
           mailchimp: config.capture.mailchimp?.baseUrl ?? null,
         },
         fetchImplementation,
+      },
+      integrationBackfill: {
+        persistence,
       },
       notionKnowledgeSync: {
         db: connection.db,
@@ -660,6 +670,11 @@ export async function createStage1WorkerRuntimeServices(
         repositories,
         syncState,
         leaseThresholdMs,
+      },
+      reconcileSupersededProjections: {
+        db: connection.db,
+        sql: connection.sql as unknown as ReconcileSupersededProjectionsTaskDependencies["sql"],
+        connectionString: config.connectionString,
       },
       reconcileStrandedCampaignRuns: {
         db: connection.db,

@@ -40,6 +40,7 @@ vi.mock("mailparser", async () => {
 import {
   cleanGmailBodyPreviewText,
   collectGmailAttachmentMetadata,
+  collectGmailDriveAttachments,
   collectGmailHtmlCidReferences,
   extractDsnOriginalMessageId,
   extractGmailBodyPreviewFromMimeMessageResult,
@@ -312,6 +313,301 @@ describe("Gmail body extraction", () => {
     };
 
     expect(collectGmailHtmlCidReferences(payload)).toEqual(["abc@x", "def@x"]);
+  });
+
+  it("captures a single Drive anchor", () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: encodeBase64Url(
+              '<a href="https://drive.google.com/file/d/abc123/view?usp=drive_link">IMG_2634.jpeg</a>',
+            ),
+          },
+        },
+      ],
+    };
+
+    expect(
+      collectGmailDriveAttachments(payload, {
+        messageIdentifier: "gmail-drive-single",
+      }),
+    ).toEqual([
+      {
+        driveFileId: "abc123",
+        driveUrl:
+          "https://drive.google.com/file/d/abc123/view?usp=drive_link",
+        filename: "IMG_2634.jpeg",
+      },
+    ]);
+    expect(infoSpy).toHaveBeenCalledWith(
+      "Drive attachment captured.",
+      expect.objectContaining({
+        event: "drive_attachment.captured",
+        gmailMessageId: "gmail-drive-single",
+        driveFileId: "abc123",
+        filename: "IMG_2634.jpeg",
+      }),
+    );
+  });
+
+  it("captures multiple Drive anchors in insertion order", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: encodeBase64Url(
+              [
+                '<a href="https://drive.google.com/file/d/id-1/view">one.jpg</a>',
+                '<a href="https://drive.google.com/file/d/id-2/view">two.jpg</a>',
+                '<a href="https://drive.google.com/file/d/id-3/view">three.jpg</a>',
+                '<a href="https://drive.google.com/file/d/id-4/view">four.jpg</a>',
+                '<a href="https://drive.google.com/file/d/id-5/view">five.jpg</a>',
+              ].join(" "),
+            ),
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailDriveAttachments(payload)).toEqual([
+      {
+        driveFileId: "id-1",
+        driveUrl: "https://drive.google.com/file/d/id-1/view",
+        filename: "one.jpg",
+      },
+      {
+        driveFileId: "id-2",
+        driveUrl: "https://drive.google.com/file/d/id-2/view",
+        filename: "two.jpg",
+      },
+      {
+        driveFileId: "id-3",
+        driveUrl: "https://drive.google.com/file/d/id-3/view",
+        filename: "three.jpg",
+      },
+      {
+        driveFileId: "id-4",
+        driveUrl: "https://drive.google.com/file/d/id-4/view",
+        filename: "four.jpg",
+      },
+      {
+        driveFileId: "id-5",
+        driveUrl: "https://drive.google.com/file/d/id-5/view",
+        filename: "five.jpg",
+      },
+    ]);
+  });
+
+  it("dedupes anchors with the same driveFileId", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: encodeBase64Url(
+              [
+                '<a href="https://drive.google.com/file/d/shared-id/view">first-name.jpg</a>',
+                '<a href="https://drive.google.com/file/d/shared-id/preview">second-name.jpg</a>',
+              ].join(" "),
+            ),
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailDriveAttachments(payload)).toEqual([
+      {
+        driveFileId: "shared-id",
+        driveUrl: "https://drive.google.com/file/d/shared-id/view",
+        filename: "first-name.jpg",
+      },
+    ]);
+  });
+
+  it("decodes html entities in a Drive attachment filename", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: encodeBase64Url(
+              '<a href="https://drive.google.com/file/d/xyz/view">Photo &amp; notes.png</a>',
+            ),
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailDriveAttachments(payload)).toEqual([
+      {
+        driveFileId: "xyz",
+        driveUrl: "https://drive.google.com/file/d/xyz/view",
+        filename: "Photo & notes.png",
+      },
+    ]);
+  });
+
+  it("stores a null filename when the Drive anchor text is empty", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: encodeBase64Url(
+              '<a href="https://drive.google.com/file/d/empty/view"></a>',
+            ),
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailDriveAttachments(payload)).toEqual([
+      {
+        driveFileId: "empty",
+        driveUrl: "https://drive.google.com/file/d/empty/view",
+        filename: null,
+      },
+    ]);
+  });
+
+  it("strips nested html from Drive anchor text", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: encodeBase64Url(
+              '<a href="https://drive.google.com/file/d/nested/view"><span>real_name.jpg</span></a>',
+            ),
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailDriveAttachments(payload)).toEqual([
+      {
+        driveFileId: "nested",
+        driveUrl: "https://drive.google.com/file/d/nested/view",
+        filename: "real_name.jpg",
+      },
+    ]);
+  });
+
+  it("ignores non-Drive urls", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: encodeBase64Url(
+              [
+                '<a href="https://docs.google.com/document/d/abc/edit">Doc</a>',
+                '<a href="https://example.org/file/d/abc/view">Other</a>',
+              ].join(" "),
+            ),
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailDriveAttachments(payload)).toEqual([]);
+  });
+
+  it("ignores anchors inside text/plain parts", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        buildTextBodyPart(
+          '<a href="https://drive.google.com/file/d/plain-ignored/view">plain.txt</a>',
+        ),
+      ],
+    };
+
+    expect(collectGmailDriveAttachments(payload)).toEqual([]);
+  });
+
+  it("ignores anchors inside attachment parts", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/mixed",
+      parts: [
+        {
+          mimeType: "text/html",
+          filename: "x.html",
+          headers: [
+            { name: "Content-Type", value: "text/html; charset=utf-8" },
+            {
+              name: "Content-Disposition",
+              value: 'attachment; filename="x.html"',
+            },
+          ],
+          body: {
+            data: encodeBase64Url(
+              '<a href="https://drive.google.com/file/d/attached/view">attached.html</a>',
+            ),
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailDriveAttachments(payload)).toEqual([]);
+  });
+
+  it("returns an empty array when no Drive anchors exist", () => {
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: encodeBase64Url("<p>No attachments here.</p>"),
+          },
+        },
+      ],
+    };
+
+    expect(collectGmailDriveAttachments(payload)).toEqual([]);
+  });
+
+  it("warns and skips malformed Drive file ids", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const payload: GmailApiMessagePart = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: encodeBase64Url(
+              '<a href="https://drive.google.com/file/d//view">x</a>',
+            ),
+          },
+        },
+      ],
+    };
+
+    expect(
+      collectGmailDriveAttachments(payload, {
+        messageIdentifier: "gmail-drive-malformed",
+      }),
+    ).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Drive attachment parse failed.",
+      expect.objectContaining({
+        event: "drive_attachment.parse_failed",
+        gmailMessageId: "gmail-drive-malformed",
+      }),
+    );
   });
 
   it("treats a text/plain part containing decoded binary noise as a binary fallback", async () => {

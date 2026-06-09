@@ -53,6 +53,7 @@ describe("Stage 1 DB schema", () => {
       "expeditionDimensions",
       "gmailMessageDetails",
       "identityResolutionQueue",
+      "integrationBackfillJobs",
       "integrationHealth",
       "internalNotes",
       "mailchimpCampaignActivityDetails",

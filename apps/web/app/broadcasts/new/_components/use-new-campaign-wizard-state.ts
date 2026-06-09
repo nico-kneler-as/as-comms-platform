@@ -19,6 +19,7 @@ import type {
 import {
   loadComposePreviewAction,
   loadMemberStatusCountsForProjects,
+  loadSelectedAliasSignatureAction,
   previewAudienceAction,
   resolveAudienceCountAction,
   searchProjectVolunteersAction,
@@ -50,7 +51,9 @@ function defaultAudienceModeForLaunchType(
   return launchType === "html_email" ? "all_approved" : "project_status";
 }
 
-function hasAppliedAudienceFilters(criteria: CampaignAudienceCriteria): boolean {
+function hasAppliedAudienceFilters(
+  criteria: CampaignAudienceCriteria,
+): boolean {
   if (criteria.initialFilter === undefined) {
     return false;
   }
@@ -175,8 +178,9 @@ function readAliasProjectsForSender(
   const hostProjectId =
     senderOption.connectedToProjectId ?? senderOption.projectId;
   const group =
-    bootstrap.projects.find((candidate) => candidate.host.id === hostProjectId) ??
-    null;
+    bootstrap.projects.find(
+      (candidate) => candidate.host.id === hostProjectId,
+    ) ?? null;
   if (group === null) {
     return [];
   }
@@ -275,6 +279,7 @@ export function useNewCampaignWizardState({
     draft.bodyTextTemplate ?? "",
   );
   const [bodyHtml, setBodyHtml] = useState(draft.bodyHtmlTemplate ?? "");
+  const [selectedAliasSignature, setSelectedAliasSignature] = useState("");
   const [criteria, setCriteria] = useState<CampaignAudienceCriteria>({
     ...draft.audienceCriteria,
     projectId:
@@ -344,7 +349,8 @@ export function useNewCampaignWizardState({
   const [countLoading, setCountLoading] = useState(false);
   const [audiencePreviewLoading, setAudiencePreviewLoading] = useState(false);
   const [, startCountTransition] = useTransition();
-  const [composePreviewPending, startComposePreviewTransition] = useTransition();
+  const [composePreviewPending, startComposePreviewTransition] =
+    useTransition();
   const [, startStatusCountsTransition] = useTransition();
   const [volunteerSearchPending, startVolunteerSearchTransition] =
     useTransition();
@@ -356,6 +362,7 @@ export function useNewCampaignWizardState({
   const audiencePreviewRequestRef = useRef(0);
   const volunteerSearchRequestRef = useRef(0);
   const composePreviewRequestRef = useRef(0);
+  const signatureRequestRef = useRef(0);
   const savedFingerprintRef = useRef("");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousLaunchTypeRef = useRef(draft.launchType);
@@ -552,6 +559,21 @@ export function useNewCampaignWizardState({
   }, [fromEmail]);
 
   useEffect(() => {
+    const requestId = ++signatureRequestRef.current;
+
+    void (async () => {
+      const result = await loadSelectedAliasSignatureAction({
+        aliasEmail: fromEmail,
+      });
+      if (requestId !== signatureRequestRef.current) {
+        return;
+      }
+
+      setSelectedAliasSignature(result.ok ? result.data : "");
+    })();
+  }, [fromEmail]);
+
+  useEffect(() => {
     if (!hasPickedAudienceMode || criteria.initialFilter !== "project_status") {
       setStatusCounts({});
       setStatusCountsLoading(false);
@@ -570,7 +592,8 @@ export function useNewCampaignWizardState({
     setStatusCountsLoading(true);
     setStatusCountsErrorMessage(null);
     startStatusCountsTransition(async () => {
-      const result = await loadMemberStatusCountsForProjects(selectedProjectIds);
+      const result =
+        await loadMemberStatusCountsForProjects(selectedProjectIds);
       if (requestId !== statusCountsRequestRef.current) {
         return;
       }
@@ -692,7 +715,10 @@ export function useNewCampaignWizardState({
       return;
     }
 
-    if (aliasProjectIds.length === 0 || volunteerSearchQuery.trim().length < 2) {
+    if (
+      aliasProjectIds.length === 0 ||
+      volunteerSearchQuery.trim().length < 2
+    ) {
       setVolunteerSearchRows([]);
       setVolunteerSearchErrorMessage(null);
       return;
@@ -743,6 +769,7 @@ export function useNewCampaignWizardState({
           criteria: toActionCriteria(criteria),
           fromEmail,
           subjectTemplate: subject,
+          preheader,
           bodyHtmlTemplate: bodyHtml,
           bodyTextTemplate: bodyPlaintext,
           sampleIndex,
@@ -774,6 +801,7 @@ export function useNewCampaignWizardState({
     currentStep,
     fromEmail,
     kind,
+    preheader,
     sampleIndex,
     subject,
   ]);
@@ -856,6 +884,7 @@ export function useNewCampaignWizardState({
     setBodyPlaintext,
     bodyHtml,
     setBodyHtml,
+    selectedAliasSignature,
     criteria,
     setCriteria,
     hasPickedAudienceMode,
@@ -901,6 +930,7 @@ export function useNewCampaignWizardState({
     setToast,
     countLoading,
     audiencePreviewLoading,
+    savePending,
     startSaveTransition,
     submitPending,
     startSubmitTransition,

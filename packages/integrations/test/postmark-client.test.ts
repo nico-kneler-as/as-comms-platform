@@ -157,10 +157,58 @@ describe("PostmarkClient — sendBatch", () => {
     const headers = init?.headers as Record<string, string>;
     expect(headers["X-Postmark-Server-Token"]).toBe(TEST_SERVER_TOKEN);
     expect(headers["X-AS-Test"]).toBeUndefined();
+    // Postmark `/email/batch` requires a bare array — not a `{ Messages: [...] }`
+    // wrapper (that shape is reserved for `/email/batchWithTemplates`).
+    const sentBody = JSON.parse(init?.body as string) as unknown[];
+    expect(Array.isArray(sentBody)).toBe(true);
+    expect(sentBody).toHaveLength(1);
+  });
+
+  it("preserves custom message headers in the batch payload", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      buildResponse({ body: [] }),
+    );
+    const client = createPostmarkClient({
+      serverToken: TEST_SERVER_TOKEN,
+      webhookSigningSecret: TEST_SECRET,
+      fetchImpl,
+    });
+
+    await client.sendBatch({
+      messages: [
+        {
+          ...buildBatchMessage(),
+          Headers: [
+            {
+              Name: "List-Unsubscribe",
+              Value: "<https://as.example.org/u/token>",
+            },
+            {
+              Name: "List-Unsubscribe-Post",
+              Value: "List-Unsubscribe=One-Click",
+            },
+          ],
+        },
+      ],
+    });
+
+    const [, init] = fetchImpl.mock.calls[0] ?? [];
     const sentBody = JSON.parse(init?.body as string) as {
-      Messages: unknown[];
-    };
-    expect(sentBody.Messages).toHaveLength(1);
+      readonly Headers?: readonly {
+        readonly Name: string;
+        readonly Value: string;
+      }[];
+    }[];
+    expect(sentBody[0]?.Headers).toEqual([
+      {
+        Name: "List-Unsubscribe",
+        Value: "<https://as.example.org/u/token>",
+      },
+      {
+        Name: "List-Unsubscribe-Post",
+        Value: "List-Unsubscribe=One-Click",
+      },
+    ]);
   });
 
   it("adds the X-AS-Test header and uses the test token when isTest is true", async () => {

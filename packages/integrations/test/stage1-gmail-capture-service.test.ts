@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createGmailCaptureService,
@@ -7,6 +7,15 @@ import {
   gmailMessageRecordSchema
 } from "../src/index.js";
 import { sha256Json } from "../src/capture-services/shared.js";
+
+interface LoggedUnhandledHttpError {
+  readonly event: string;
+  readonly method: string;
+  readonly path: string;
+  readonly errorName: string;
+  readonly errorMessage: string;
+  readonly errorStack?: string;
+}
 
 function buildFullMessagePayload(input: {
   readonly bodyText: string;
@@ -299,6 +308,84 @@ describe("Gmail capture service", () => {
     });
   });
 
+  it("logs one-line structured error payloads for unhandled live capture failures", async () => {
+    const syntheticFailure = new Error("synthetic failure");
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const service = createGmailCaptureService(
+      {
+        bearerToken: "gmail-token",
+        liveAccount: "volunteers@example.org",
+        projectInboxAliases: ["project-oceans@example.org"],
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
+      },
+      {
+        apiClient: {
+          listMessageIds: () => Promise.resolve([]),
+          getMessage: () => Promise.resolve(null)
+        }
+      }
+    );
+
+    const captureLiveBatchSpy = vi
+      .spyOn(service, "captureLiveBatch")
+      .mockRejectedValue(syntheticFailure);
+
+    try {
+      const response = await service.handleHttpRequest({
+        method: "POST",
+        path: "/live",
+        headers: {
+          authorization: "Bearer gmail-token"
+        },
+        bodyText: JSON.stringify({
+          version: 1,
+          jobId: "job:gmail:live:error",
+          correlationId: "corr:gmail:live:error",
+          traceId: null,
+          batchId: "batch:gmail:live:error",
+          syncStateId: "sync:gmail:live:error",
+          attempt: 1,
+          maxAttempts: 3,
+          provider: "gmail",
+          mode: "live",
+          jobType: "live_ingest",
+          cursor: null,
+          checkpoint: null,
+          windowStart: "2026-01-05T00:00:00.000Z",
+          windowEnd: "2026-01-05T00:05:00.000Z",
+          recordIds: [],
+          maxRecords: 25
+        })
+      });
+
+      expect(response.status).toBe(500);
+      expect(JSON.parse(response.body)).toEqual({
+        error: "internal_error"
+      });
+      expect(captureLiveBatchSpy).toHaveBeenCalledOnce();
+      expect(errorSpy).toHaveBeenCalledOnce();
+
+      const loggedPayload: LoggedUnhandledHttpError = JSON.parse(
+        String(errorSpy.mock.calls[0]?.[0] ?? "")
+      ) as LoggedUnhandledHttpError;
+      expect(loggedPayload).toMatchObject({
+        event: "gmail_capture.http.unhandled_error",
+        method: "POST",
+        path: "/live",
+        errorName: syntheticFailure.name,
+        errorMessage: syntheticFailure.message,
+        errorStack: syntheticFailure.stack
+      });
+    } finally {
+      captureLiveBatchSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
   it("keeps live Gmail checksum material backward-compatible when Subject is fetched", async () => {
     const service = createGmailCaptureService(
       {
@@ -444,6 +531,96 @@ describe("Gmail capture service", () => {
     const record = gmailMessageRecordSchema.parse(result.records[0]);
 
     expect(record.bodyTextPreview).toHaveLength(longBody.length);
+  });
+
+  it("threads captured Drive anchors into the Gmail record", async () => {
+    const service = createGmailCaptureService(
+      {
+        bearerToken: "gmail-token",
+        liveAccount: "volunteers@example.org",
+        projectInboxAliases: ["project-oceans@example.org"],
+        oauthClientId: "gmail-oauth-client-id",
+        oauthClientSecret: "gmail-oauth-client-secret",
+        oauthRefreshToken: "gmail-oauth-refresh-token"
+      },
+      {
+        apiClient: {
+          listMessageIds: () => Promise.resolve(["gmail-drive-anchor-1"]),
+          getMessage: ({ messageId }) =>
+            Promise.resolve({
+              id: messageId,
+              threadId: "thread-drive-anchor-1",
+              labelIds: ["INBOX"],
+              snippet: "Drive file shared",
+              internalDate: String(Date.parse("2026-01-05T00:00:00.000Z")),
+              payload: {
+                mimeType: "multipart/alternative",
+                headers: [
+                  { name: "From", value: "Volunteer <volunteer@example.org>" },
+                  {
+                    name: "To",
+                    value: "Project Oceans <project-oceans@example.org>"
+                  },
+                  { name: "Subject", value: "Shared files" },
+                  {
+                    name: "Message-ID",
+                    value: "<gmail-drive-anchor-1@example.org>"
+                  },
+                  { name: "Date", value: "Mon, 05 Jan 2026 00:00:00 +0000" },
+                ],
+                parts: [
+                  {
+                    mimeType: "text/html",
+                    headers: [
+                      {
+                        name: "Content-Type",
+                        value: 'text/html; charset="UTF-8"'
+                      },
+                    ],
+                    body: {
+                      data: Buffer.from(
+                        '<a href="https://drive.google.com/file/d/abc123/view?usp=drive_link">IMG_2634.jpeg</a>',
+                        "utf8",
+                      ).toString("base64url"),
+                    },
+                  },
+                ],
+              },
+            })
+        },
+        now: () => new Date("2026-01-05T00:01:00.000Z")
+      }
+    );
+
+    const result = await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:gmail:live:drive-anchor",
+      correlationId: "corr:gmail:live:drive-anchor",
+      traceId: null,
+      batchId: "batch:gmail:live:drive-anchor",
+      syncStateId: "sync:gmail:live:drive-anchor",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "gmail",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: "2026-01-05T00:00:00.000Z",
+      windowEnd: "2026-01-05T00:05:00.000Z",
+      recordIds: [],
+      maxRecords: 25
+    });
+
+    const record = gmailMessageRecordSchema.parse(result.records[0]);
+    expect(record.driveAttachmentMetadata).toEqual([
+      {
+        driveFileId: "abc123",
+        driveUrl:
+          "https://drive.google.com/file/d/abc123/view?usp=drive_link",
+        filename: "IMG_2634.jpeg",
+      },
+    ]);
   });
 
   it("captures spam-labeled inbound Gmail messages and preserves the SPAM label", async () => {

@@ -18,6 +18,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import {
+  COMPOSER_LINK_SCHEMES,
+  COMPOSER_LINK_SCHEME_PREFIXES_REGEX,
+} from "@/src/lib/composer-link-schemes";
 import { sanitizeComposerHtml } from "@/src/lib/html-sanitizer";
 
 import { plaintextToComposerHtml } from "./composer-html";
@@ -36,7 +40,34 @@ function promptForLinkUrl(): string | null {
   }
 
   const trimmed = url.trim();
-  return /^(https?:\/\/|mailto:)/iu.test(trimmed) ? trimmed : null;
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  // Already has an accepted scheme — pass through unchanged.
+  // `sms:` and `tel:` are included because they're the standard URI schemes
+  // for tap-to-text and tap-to-call links (supported by Gmail / iOS Mail /
+  // most modern clients), which we use for SMS opt-in / phone CTAs.
+  if (COMPOSER_LINK_SCHEME_PREFIXES_REGEX.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Bare email → mailto:
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(trimmed)) {
+    return `mailto:${trimmed}`;
+  }
+
+  // Looks like a domain (no whitespace, contains a dot, no scheme) →
+  // auto-prefix https:// rather than silently dropping the link, which is
+  // the most common cause of "the link button doesn't work."
+  if (!/\s/u.test(trimmed) && trimmed.includes(".")) {
+    return `https://${trimmed}`;
+  }
+
+  window.alert(
+    `"${trimmed}" doesn't look like a valid URL. Use https://, http://, mailto:, sms:, or tel:.`,
+  );
+  return null;
 }
 
 export function ComposerField({
@@ -194,6 +225,7 @@ export function RichTextComposerEditor({
       }),
       Link.configure({
         openOnClick: false,
+        protocols: [...COMPOSER_LINK_SCHEMES],
         HTMLAttributes: {
           rel: "noopener noreferrer",
           target: "_blank",

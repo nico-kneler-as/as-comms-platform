@@ -30,6 +30,7 @@ import {
   createStage1NormalizationService,
   createStage1PersistenceService,
   defineStage1RepositoryBundle,
+  rebuildInboxProjectionForContact,
   type PendingComposerOutboundRecord,
   type Stage1RepositoryBundle,
 } from "../src/index.js";
@@ -200,6 +201,7 @@ function buildExistingProjection(input: {
 function buildGmailDetail(input: {
   readonly key: string;
   readonly direction: GmailMessageDetailRecord["direction"];
+  readonly gmailThreadId?: string | null;
   readonly rfc822MessageId?: string | null;
   readonly subject?: string | null;
   readonly bodyTextPreview?: string;
@@ -207,7 +209,7 @@ function buildGmailDetail(input: {
   return {
     sourceEvidenceId: `source:${input.key}`,
     providerRecordId: `gmail:${input.key}`,
-    gmailThreadId: `thread:${input.key}`,
+    gmailThreadId: input.gmailThreadId ?? `thread:${input.key}`,
     rfc822MessageId: input.rfc822MessageId ?? `<${input.key}@example.org>`,
     direction: input.direction,
     subject: input.subject ?? `Subject ${input.key}`,
@@ -241,6 +243,7 @@ function buildPendingOutbound(input: {
   readonly id: string;
   readonly fingerprint: string;
   readonly status: PendingComposerOutboundRecord["status"];
+  readonly inReplyToRfc822?: string | null;
   readonly sentRfc822MessageId?: string | null;
   readonly reconciledEventId?: string | null;
 }): PendingComposerOutboundRecord {
@@ -259,7 +262,7 @@ function buildPendingOutbound(input: {
     bodySha256: "sha256:pending",
     attachmentMetadata: [],
     gmailThreadId: null,
-    inReplyToRfc822: null,
+    inReplyToRfc822: input.inReplyToRfc822 ?? null,
     attemptedAt: "2026-04-24T10:00:00.000Z",
     reconciledEventId: input.reconciledEventId ?? null,
     reconciledAt:
@@ -277,6 +280,9 @@ function buildPendingOutbound(input: {
 
 function buildReplayInput(
   event: CanonicalEventRecord,
+  overrides?: {
+    readonly snippet?: string;
+  },
 ): NormalizedCanonicalEventIntake {
   const direction = event.provenance.direction;
   const communicationClassification = event.eventType.startsWith(
@@ -307,7 +313,7 @@ function buildReplayInput(
       occurredAt: event.occurredAt,
       idempotencyKey: event.idempotencyKey,
       summary: "Replayed email",
-      snippet: "Replayed snippet",
+      snippet: overrides?.snippet ?? "Replayed snippet",
     },
     identity: {
       salesforceContactId: null,
@@ -334,6 +340,7 @@ function buildContext(input: {
   readonly contacts?: readonly ContactRecord[];
   readonly contactIdentities?: readonly ContactIdentityRecord[];
   readonly contactMemberships?: readonly ContactMembershipRecord[];
+  readonly projectAliases?: readonly string[];
   readonly gmailMessageDetails?: readonly GmailMessageDetailRecord[];
   readonly timelineRows?: readonly TimelineProjectionRow[];
   readonly identityCases?: readonly IdentityResolutionCase[];
@@ -810,7 +817,7 @@ function buildContext(input: {
       findById: () => Promise.resolve(null),
       listAll: () => Promise.resolve([]),
       listActive: () => Promise.resolve([]),
-      listAllProjectAliases: () => Promise.resolve([]),
+      listAllProjectAliases: () => Promise.resolve(input.projectAliases ?? []),
       listByIds: () => Promise.resolve([]),
       listConnectedProjects: () => Promise.resolve([]),
       listAvailableConnectionCandidates: () => Promise.resolve([]),
@@ -992,6 +999,15 @@ function buildContext(input: {
       markSuperseded: () => Promise.resolve(),
       sweepOrphans: () => Promise.resolve(0),
       findForContact: () => Promise.resolve([...pendingOutboundsById.values()]),
+    },
+    integrationBackfillJobs: {
+      insert: () => Promise.resolve(null),
+      countAll: () => Promise.resolve(0),
+      findById: () => Promise.resolve(null),
+      findByIdempotencyKey: () => Promise.resolve(null),
+      markRunning: () => Promise.resolve(null),
+      markCompleted: () => Promise.resolve(null),
+      markFailed: () => Promise.resolve(null),
     },
     identityResolutionQueue: {
       findById: (id) => Promise.resolve(identityCasesById.get(id) ?? null),
@@ -1231,13 +1247,23 @@ function buildContext(input: {
   };
 }
 
+async function applyReplayEvent(
+  context: TestContext,
+  event: CanonicalEventRecord,
+  overrides?: {
+    readonly snippet?: string;
+  },
+) {
+  return context.normalization.applyNormalizedCanonicalEvent(
+    buildReplayInput(event, overrides),
+  );
+}
+
 async function replayEvent(
   context: TestContext,
   event: CanonicalEventRecord,
 ): Promise<InboxProjectionRow | null> {
-  const result = await context.normalization.applyNormalizedCanonicalEvent(
-    buildReplayInput(event),
-  );
+  const result = await applyReplayEvent(context, event);
 
   expect(result.outcome).toBe("duplicate");
 
@@ -1249,6 +1275,150 @@ async function replayEvent(
 }
 
 describe("rebuildInboxProjectionForContact bucket semantics", () => {
+  it("transitions New to Opened when the latest outbound is an in-thread reply", async () => {
+    const inbound = buildEvent({
+      key: "reply-thread-inbound",
+      occurredAt: "2026-04-24T09:00:00.000Z",
+      direction: "inbound",
+    });
+    const outboundReply = buildEvent({
+      key: "reply-thread-outbound",
+      occurredAt: "2026-04-24T09:30:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [inbound, outboundReply],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: inbound.occurredAt,
+        lastCanonicalEventId: inbound.id,
+      }),
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "reply-thread-inbound",
+          direction: "inbound",
+          gmailThreadId: "thread:shared-reply",
+        }),
+        buildGmailDetail({
+          key: "reply-thread-outbound",
+          direction: "outbound",
+          gmailThreadId: "thread:shared-reply",
+        }),
+      ],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      outboundReply.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: inbound.occurredAt,
+      lastOutboundAt: outboundReply.occurredAt,
+    });
+  });
+
+  it("keeps New when the latest outbound is a compose-new message on a different thread", async () => {
+    const inbound = buildEvent({
+      key: "compose-new-inbound",
+      occurredAt: "2026-04-24T09:45:00.000Z",
+      direction: "inbound",
+    });
+    const composeNewOutbound = buildEvent({
+      key: "compose-new-outbound",
+      occurredAt: "2026-04-24T10:15:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [inbound, composeNewOutbound],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: inbound.occurredAt,
+        lastCanonicalEventId: inbound.id,
+      }),
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "compose-new-inbound",
+          direction: "inbound",
+          gmailThreadId: "thread:inbound-original",
+        }),
+        buildGmailDetail({
+          key: "compose-new-outbound",
+          direction: "outbound",
+          gmailThreadId: "thread:fresh-compose",
+        }),
+      ],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      composeNewOutbound.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: inbound.occurredAt,
+      lastOutboundAt: composeNewOutbound.occurredAt,
+    });
+  });
+
+  it("keeps newer inbound precedence over an earlier in-thread reply", async () => {
+    const inbound = buildEvent({
+      key: "reply-then-newer-inbound-first",
+      occurredAt: "2026-04-24T10:30:00.000Z",
+      direction: "inbound",
+    });
+    const outboundReply = buildEvent({
+      key: "reply-then-newer-inbound-outbound",
+      occurredAt: "2026-04-24T11:00:00.000Z",
+      direction: "outbound",
+    });
+    const newerInbound = buildEvent({
+      key: "reply-then-newer-inbound-latest",
+      occurredAt: "2026-04-24T11:30:00.000Z",
+      direction: "inbound",
+    });
+    const context = buildContext({
+      events: [inbound, outboundReply, newerInbound],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: inbound.occurredAt,
+        lastOutboundAt: outboundReply.occurredAt,
+        lastCanonicalEventId: outboundReply.id,
+        lastEventType: outboundReply.eventType,
+      }),
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "reply-then-newer-inbound-first",
+          direction: "inbound",
+          gmailThreadId: "thread:shared-newer-inbound",
+        }),
+        buildGmailDetail({
+          key: "reply-then-newer-inbound-outbound",
+          direction: "outbound",
+          gmailThreadId: "thread:shared-newer-inbound",
+        }),
+        buildGmailDetail({
+          key: "reply-then-newer-inbound-latest",
+          direction: "inbound",
+          gmailThreadId: "thread:shared-newer-inbound",
+        }),
+      ],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      newerInbound.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: newerInbound.occurredAt,
+      lastOutboundAt: outboundReply.occurredAt,
+    });
+  });
+
   it("flips Opened to New when rebuild advances lastInboundAt after an outbound reply and keeps follow-up", async () => {
     const firstInbound = buildEvent({
       key: "first-inbound",
@@ -1560,6 +1730,276 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
   });
 });
 
+describe("rebuildInboxProjectionForContact snippet selection", () => {
+  it("prefers the latest tier-1 communication snippet over newer campaign engagement", async () => {
+    const inbound = buildEvent({
+      key: "snippet-tier-1-inbound",
+      occurredAt: "2026-04-24T10:00:00.000Z",
+      direction: "inbound",
+    });
+    const campaignOpened = buildEvent({
+      key: "snippet-tier-3-open",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "campaign.email.opened",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [inbound, campaignOpened],
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "snippet-tier-1-inbound",
+          direction: "inbound",
+          bodyTextPreview:
+            "I went to pick it up today and Weaverville had no units to give me.",
+        }),
+      ],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      inbound.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      snippet:
+        "I went to pick it up today and Weaverville had no units to give me.",
+      lastEventType: "campaign.email.opened",
+      lastCanonicalEventId: campaignOpened.id,
+    });
+  });
+
+  it("falls back to a friendly campaign label when only campaign opens exist", async () => {
+    const campaignOpened = buildEvent({
+      key: "snippet-campaign-only-open",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "campaign.email.opened",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [campaignOpened],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      campaignOpened.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      snippet: "Campaign email opened",
+      lastEventType: "campaign.email.opened",
+    });
+  });
+
+  it("prefers the latest tier-2 lifecycle snippet over newer tier-3 campaign activity", async () => {
+    const lifecycle = buildEvent({
+      key: "snippet-tier-2-lifecycle",
+      occurredAt: "2026-04-24T11:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      direction: null,
+      provider: "salesforce",
+      sourceRecordType: "contact_membership",
+      messageKind: null,
+    });
+    const campaignSent = buildEvent({
+      key: "snippet-tier-3-sent",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "campaign.email.sent",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [lifecycle, campaignSent],
+    });
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.normalization.persistence,
+      lifecycle.contactId,
+    );
+
+    expect(projection).toMatchObject({
+      snippet: "Signed up",
+      lastEventType: "campaign.email.sent",
+      lastCanonicalEventId: campaignSent.id,
+    });
+  });
+});
+
+describe("applyNormalizedCanonicalEvent snippet selection", () => {
+  it("keeps an existing tier-1 snippet when a newer tier-3 campaign event arrives", async () => {
+    const campaignOpened = buildEvent({
+      key: "ingest-tier-3-open",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "campaign.email.opened",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T10:00:00.000Z",
+        snippet: "I went to pick it up today",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, campaignOpened, {
+      snippet: "",
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      snippet: "I went to pick it up today",
+      lastEventType: "campaign.email.opened",
+    });
+  });
+
+  it("keeps an existing tier-1 snippet when a newer tier-2 lifecycle event arrives", async () => {
+    const lifecycle = buildEvent({
+      key: "ingest-tier-2-training",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      direction: null,
+      provider: "salesforce",
+      sourceRecordType: "contact_membership",
+      messageKind: null,
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T10:00:00.000Z",
+        snippet: "I went to pick it up today",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, lifecycle, {
+      snippet: "",
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      snippet: "I went to pick it up today",
+      lastEventType: "lifecycle.received_training",
+    });
+  });
+
+  it("updates the snippet when a tier-1 inbound arrives", async () => {
+    const inbound = buildEvent({
+      key: "ingest-tier-1-inbound",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      direction: "inbound",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T10:00:00.000Z",
+        snippet: "old text",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, inbound, {
+      snippet: "new text",
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      snippet: "new text",
+      lastEventType: "communication.email.inbound",
+    });
+  });
+
+  it("uses a friendly fallback when a tier-3 event arrives with no existing snippet", async () => {
+    const campaignOpened = buildEvent({
+      key: "ingest-tier-3-open-fallback",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "campaign.email.opened",
+      direction: null,
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      messageKind: "campaign",
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T10:00:00.000Z",
+        snippet: "",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, campaignOpened, {
+      snippet: "",
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      snippet: "Campaign email opened",
+      lastEventType: "campaign.email.opened",
+    });
+  });
+
+  it("uses a friendly fallback when a tier-2 lifecycle event arrives with no existing snippet", async () => {
+    const lifecycle = buildEvent({
+      key: "ingest-tier-2-training-fallback",
+      occurredAt: "2026-04-24T12:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      direction: null,
+      provider: "salesforce",
+      sourceRecordType: "contact_membership",
+      messageKind: null,
+    });
+    const context = buildContext({
+      events: [],
+      existingProjection: buildExistingProjection({
+        bucket: "Opened",
+        lastInboundAt: "2026-04-24T10:00:00.000Z",
+        snippet: "",
+      }),
+    });
+
+    const result = await applyReplayEvent(context, lifecycle, {
+      snippet: "",
+    });
+
+    expect(result.outcome).toBe("applied");
+    if (result.outcome !== "applied") {
+      return;
+    }
+
+    expect(result.inboxProjection).toMatchObject({
+      snippet: "Received training",
+      lastEventType: "lifecycle.received_training",
+    });
+  });
+});
+
 describe("upsertNormalizedContactGraph write ordering", () => {
   it("writes project and expedition dimensions before contact memberships for a new expedition", async () => {
     const callOrder: { kind: string; id: string }[] = [];
@@ -1652,6 +2092,83 @@ describe("upsertNormalizedContactGraph write ordering", () => {
     expect(firstMembershipIndex).toBeGreaterThanOrEqual(0);
     expect(firstProjectDimensionIndex).toBeLessThan(firstMembershipIndex);
     expect(firstExpeditionDimensionIndex).toBeLessThan(firstMembershipIndex);
+  });
+
+  it("skips Salesforce email identity upserts when the email matches an internal project alias", async () => {
+    const upsertedIdentityKinds: ContactIdentityRecord["kind"][] = [];
+    const context = buildContext({
+      events: [],
+      contacts: [],
+      contactIdentities: [],
+      projectAliases: ["orcas@adventurescientists.org"],
+      onContactIdentityUpsert: (record) => {
+        upsertedIdentityKinds.push(record.kind);
+      },
+    });
+
+    await context.normalization.upsertNormalizedContactGraph({
+      contact: {
+        id: "contact:salesforce:003-alias-owner",
+        salesforceContactId: "003-alias-owner",
+        displayName: "Slack Test Test",
+        primaryEmail: "orcas@adventurescientists.org",
+        primaryPhone: null,
+        createdAt: "2026-06-03T00:00:00.000Z",
+        updatedAt: "2026-06-03T00:00:00.000Z",
+      },
+      identities: [
+        {
+          id: "identity:sf-contact-id",
+          contactId: "contact:salesforce:003-alias-owner",
+          kind: "salesforce_contact_id",
+          normalizedValue: "003-alias-owner",
+          isPrimary: true,
+          source: "salesforce",
+          verifiedAt: "2026-06-03T00:00:00.000Z",
+        },
+        {
+          id: "identity:sf-alias-email",
+          contactId: "contact:salesforce:003-alias-owner",
+          kind: "email",
+          normalizedValue: "orcas@adventurescientists.org",
+          isPrimary: true,
+          source: "salesforce",
+          verifiedAt: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+      memberships: [
+        {
+          id: "membership:sf-alias-owner",
+          contactId: "contact:salesforce:003-alias-owner",
+          projectId: "sf-project-orcas",
+          expeditionId: "sf-expedition-orcas",
+          salesforceMembershipId: "a0B-orcas",
+          role: "volunteer",
+          status: "active",
+          source: "salesforce",
+          createdAt: "2026-06-03T00:00:00.000Z",
+        },
+      ],
+      projectDimensions: [
+        {
+          projectId: "sf-project-orcas",
+          projectName: "Orcas",
+          source: "salesforce",
+          isActive: false,
+        },
+      ],
+      expeditionDimensions: [
+        {
+          expeditionId: "sf-expedition-orcas",
+          projectId: "sf-project-orcas",
+          expeditionName: "Orcas Expedition",
+          source: "salesforce",
+        },
+      ],
+    });
+
+    expect(upsertedIdentityKinds).toContain("salesforce_contact_id");
+    expect(upsertedIdentityKinds).not.toContain("email");
   });
 });
 

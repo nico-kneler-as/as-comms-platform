@@ -47,6 +47,7 @@ function buildDraftInput(
     replyToEmail: null,
     subjectTemplate: null,
     bodyHtmlTemplate: null,
+    bodyDesignJson: null,
     bodyTextTemplate: null,
     preheader: null,
     audienceCriteria: buildAudienceCriteria(),
@@ -224,6 +225,65 @@ describe("Stage 5 campaigns repositories", () => {
     expect(orgSettingsAfter.physicalCity).toBe("Bozeman");
     expect(orgSettingsAfter.physicalState).toBe("MT");
     expect(orgSettingsAfter.physicalZip).toBe("59715");
+  });
+
+  it("round-trips bodyDesignJson for html_email campaign runs", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+
+    const bodyDesignJson = {
+      rows: [
+        {
+          cells: [
+            {
+              contents: [
+                {
+                  type: "text",
+                  values: { text: "hello" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const created = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-html-design-json",
+        launchType: "html_email",
+        bodyHtmlTemplate: "<p>hello</p>",
+        bodyDesignJson,
+        bodyTextTemplate: "hello",
+      }),
+    );
+    const fetched = await campaigns.campaignRuns.findById(created.id);
+
+    expect(created.bodyDesignJson).toEqual(bodyDesignJson);
+    expect(fetched?.bodyDesignJson).toEqual(bodyDesignJson);
+  });
+
+  it("round-trips null bodyDesignJson for normal_email campaign runs", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+
+    const created = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-normal-null-design-json",
+        launchType: "normal_email",
+        bodyDesignJson: null,
+      }),
+    );
+    const fetched = await campaigns.campaignRuns.findById(created.id);
+
+    expect(created.bodyDesignJson).toBeNull();
+    expect(fetched?.bodyDesignJson).toBeNull();
   });
 
   it("enforces the audience snapshot run/contact uniqueness constraint", async () => {

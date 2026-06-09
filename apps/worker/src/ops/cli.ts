@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import process from "node:process";
 
+import { quickAddJob } from "graphile-worker";
 import {
   campaignSendJobName,
   campaignSendJobMaxAttempts,
@@ -26,6 +27,7 @@ import {
 import { buildSafeRuntimeConfigSummary, readWorkerConfig } from "../runtime.js";
 import { createStage1IngestService } from "../ingest/index.js";
 import { createStage1SyncStateService } from "../orchestration/index.js";
+import { enqueueIntegrationBackfillGmailJob } from "../orchestration/integration-backfill.js";
 import { buildStage1EnqueueRequest, enqueueStage1Job } from "./enqueue.js";
 import { createStage1GmailMboxImportService } from "./gmail-mbox.js";
 import {
@@ -37,6 +39,7 @@ import {
 import { runBackfillSalesforceCommunicationDetailsCommand } from "./backfill-salesforce-communication-details.js";
 import { runBackfillMembershipSfIdsCommand } from "./backfill-membership-sf-ids.js";
 import { runBackfillGmailMboxBodiesCommand } from "./backfill-gmail-mbox-bodies.js";
+import { runBackfillDriveAttachmentsCommand } from "./backfill-drive-attachments.js";
 import { runBackfillContentFingerprintCommand } from "./backfill-content-fingerprint.js";
 import { runBackfillGarbledMessageBodiesCommand } from "./backfill-garbled-message-bodies.js";
 import { runReExtractSignedEnvelopeBodiesCommand } from "./re-extract-signed-envelope-bodies.js";
@@ -44,11 +47,16 @@ import { runBackfillMailchimpCampaignBodyCommand } from "./backfill-mailchimp-ca
 import { runMailchimpHistoricalCaptureCommand } from "./mailchimp-capture-historical.js";
 import { runCleanupGmailDraftEventsCommand } from "./cleanup-gmail-draft-events.js";
 import { runCleanupSalesforceOwnerScopeCommand } from "./cleanup-salesforce-owner-scope.js";
+import { runDetectMboxDirectionMisclassificationCommand } from "./detect-mbox-direction-misclassification.js";
+import { runApplyMboxDirectionBackfillCommand } from "./apply-mbox-direction-backfill.js";
 import { main as runMergeEmailOnlyIntoSfAnchoredCommand } from "./merge-email-only-into-sf-anchored.js";
+import { runRecoverGmailDateWindowCommand } from "./recover-gmail-date-window.js";
 import { runRecoverGmailSpamWindowCommand } from "./recover-gmail-spam-window.js";
-import { runRecomputeAttachmentInlineCommand } from "./recompute-attachment-inline.js";
+import { runRecomputeAttachmentDecorationCommand } from "./recompute-attachment-decoration.js";
 import { runBackfillCanonicalEventAudienceCommand } from "./backfill-canonical-event-audience.js";
 import { runRecoverOrphanGmailDetailsCommand } from "./recover-orphan-gmail-details.js";
+import { runRebuildInboxProjectionStuckOnNewCommand } from "./rebuild-inbox-projection-stuck-on-new.js";
+import { runRebuildInboxProjectionSnippetBiasCommand } from "./rebuild-inbox-projection-snippet-bias.js";
 import { reconcileIdentityQueue } from "./reconcile-identity-queue.js";
 import { reconcileRoutingReviewQueue } from "./reconcile-routing-review-queue.js";
 import { runReconcileStaleCanonicalCommand } from "./reconcile-stale-canonical.js";
@@ -143,6 +151,53 @@ async function runEnqueue(args: readonly string[]): Promise<void> {
   });
 
   console.info(JSON.stringify(result, null, 2));
+}
+
+async function runEnqueueIntegrationBackfillGmail(
+  args: readonly string[],
+): Promise<void> {
+  const flags = parseCliFlags(args);
+  const triggeredBy = readOptionalStringFlag(flags, "triggered-by") ?? "manual";
+
+  if (
+    triggeredBy !== "manual" &&
+    triggeredBy !== "integration_health_transition"
+  ) {
+    throw new Error(
+      "--triggered-by must be one of: manual, integration_health_transition.",
+    );
+  }
+
+  const connection = createDatabaseConnection({
+    connectionString: readConnectionString(process.env),
+  });
+
+  try {
+    const repositories = createStage1RepositoryBundleFromConnection(connection);
+    const persistence = createStage1PersistenceService(repositories);
+    const result = await enqueueIntegrationBackfillGmailJob({
+      persistence,
+      addJob: (identifier, payload, spec) =>
+        quickAddJob(
+          {
+            connectionString: readConnectionString(process.env),
+          },
+          identifier,
+          payload,
+          spec,
+        ),
+      service: "gmail",
+      idempotencyKey: readRequiredFlag(flags, "idempotency-key"),
+      triggeredBy,
+      windowStart: readRequiredFlag(flags, "window-start"),
+      windowEnd: readRequiredFlag(flags, "window-end"),
+      mailbox: readOptionalStringFlag(flags, "mailbox"),
+    });
+
+    console.info(JSON.stringify(result, null, 2));
+  } finally {
+    await closeDatabaseConnection(connection);
+  }
 }
 
 async function runImportGmailMbox(args: readonly string[]): Promise<void> {
@@ -449,6 +504,9 @@ async function main(): Promise<void> {
     case "backfill-gmail-mbox-bodies":
       await runBackfillGmailMboxBodiesCommand(rest, process.env);
       return;
+    case "backfill-drive-attachments":
+      await runBackfillDriveAttachmentsCommand(rest, process.env);
+      return;
     case "backfill-content-fingerprint":
       await runBackfillContentFingerprintCommand(rest, process.env);
       return;
@@ -470,14 +528,32 @@ async function main(): Promise<void> {
     case "cleanup-gmail-draft-events":
       await runCleanupGmailDraftEventsCommand(rest, process.env);
       return;
+    case "detect-mbox-direction-misclassification":
+      await runDetectMboxDirectionMisclassificationCommand(rest, process.env);
+      return;
+    case "apply-mbox-direction-backfill":
+      await runApplyMboxDirectionBackfillCommand(rest, process.env);
+      return;
     case "recover-orphan-gmail-details":
       await runRecoverOrphanGmailDetailsCommand(rest, process.env);
+      return;
+    case "recover-gmail-date-window":
+      await runRecoverGmailDateWindowCommand(rest, process.env);
+      return;
+    case "enqueue-integration-backfill-gmail":
+      await runEnqueueIntegrationBackfillGmail(rest);
       return;
     case "recover-gmail-spam-window":
       await runRecoverGmailSpamWindowCommand(rest, process.env);
       return;
-    case "recompute-attachment-inline":
-      await runRecomputeAttachmentInlineCommand(rest, process.env);
+    case "recompute-attachment-decoration":
+      await runRecomputeAttachmentDecorationCommand(rest, process.env);
+      return;
+    case "rebuild-inbox-projection-stuck-on-new":
+      await runRebuildInboxProjectionStuckOnNewCommand(process.env);
+      return;
+    case "rebuild-inbox-projection-snippet-bias":
+      await runRebuildInboxProjectionSnippetBiasCommand(process.env);
       return;
     case "backfill-canonical-event-audience":
       await runBackfillCanonicalEventAudienceCommand(rest, process.env);
@@ -511,7 +587,7 @@ async function main(): Promise<void> {
       return;
     default:
       throw new Error(
-        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-content-fingerprint, backfill-garbled-message-bodies, re-extract-signed-envelope-bodies, backfill-mailchimp-campaign-body, mailchimp-capture-historical, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, recover-orphan-gmail-details, recover-gmail-spam-window, recompute-attachment-inline, backfill-canonical-event-audience, reprocess-pending-campaign-sends, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction, reconcile-stale-canonical, reconcile-superseded-projections.",
+        "Unknown Stage 1 ops command. Use one of: check-config, enqueue, import-gmail-mbox, inspect, backfill-salesforce-communication-details, backfill-membership-sf-ids, backfill-gmail-mbox-bodies, backfill-drive-attachments, backfill-content-fingerprint, backfill-garbled-message-bodies, re-extract-signed-envelope-bodies, backfill-mailchimp-campaign-body, mailchimp-capture-historical, cleanup-gmail-draft-events, cleanup-salesforce-owner-scope, detect-mbox-direction-misclassification, apply-mbox-direction-backfill, recover-orphan-gmail-details, recover-gmail-date-window, enqueue-integration-backfill-gmail, recover-gmail-spam-window, recompute-attachment-decoration, rebuild-inbox-projection-stuck-on-new, rebuild-inbox-projection-snippet-bias, backfill-canonical-event-audience, reprocess-pending-campaign-sends, dedup-historical-ledger, merge-email-only-into-sf-anchored, reconcile-identity-queue, reconcile-routing-review-queue, reclassify-sf-direction, reconcile-stale-canonical, reconcile-superseded-projections.",
       );
   }
 }

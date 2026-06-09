@@ -38,6 +38,11 @@ import {
   type ReconcileStaleRunningTaskDependencies,
 } from "./jobs/reconcile-stale-running.js";
 import {
+  createReconcileSupersededProjectionsTask,
+  reconcileSupersededProjectionsJobName,
+  type ReconcileSupersededProjectionsTaskDependencies,
+} from "./jobs/reconcile-superseded-projections.js";
+import {
   createReconcileStrandedCampaignRunsTask,
   reconcileStrandedCampaignRunsJobName,
   type ReconcileStrandedCampaignRunsTaskDependencies,
@@ -66,6 +71,7 @@ import { runStage0NoopJob } from "./jobs/noop.js";
 import {
   createStage1TaskList,
   type IntegrationHealthTaskDependencies,
+  type IntegrationBackfillGmailTaskDependencies,
   type PollAiKnowledgeAutoSyncTaskDependencies,
   type Stage1WorkerOrchestrationService,
 } from "./orchestration/index.js";
@@ -77,6 +83,7 @@ export function createTaskList(
     readonly campaignEventsTailFinalize?: CampaignEventsTailFinalizeDependencies;
     readonly dedupHistoricalLedger?: DedupHistoricalLedgerTaskDependencies;
     readonly integrationHealth?: IntegrationHealthTaskDependencies;
+    readonly integrationBackfill?: IntegrationBackfillGmailTaskDependencies;
     readonly aiKnowledgeAutoSync?: PollAiKnowledgeAutoSyncTaskDependencies;
     readonly notionKnowledgeSync?: NotionKnowledgeSyncDependencies;
     readonly pendingOutboundSweep?: PendingOutboundSweepTaskDependencies;
@@ -84,6 +91,7 @@ export function createTaskList(
     readonly reconcileRoutingReviewQueue?: ReconcileRoutingReviewQueueTaskDependencies;
     readonly reconcileCaptureGaps?: ReconcileCaptureGapsTaskDependencies;
     readonly reconcileStaleRunning?: ReconcileStaleRunningTaskDependencies;
+    readonly reconcileSupersededProjections?: ReconcileSupersededProjectionsTaskDependencies;
     readonly reconcileStrandedCampaignRuns?: ReconcileStrandedCampaignRunsTaskDependencies;
     readonly synthesizeProjectKnowledge?: SynthesizeProjectKnowledgeDependencies;
     readonly pollPostmarkSenderStatus?: PollPostmarkSenderStatusDependencies;
@@ -146,6 +154,14 @@ export function createTaskList(
           [reconcileStaleRunningJobName]: createReconcileStaleRunningTask(
             input.reconcileStaleRunning
           )
+        }),
+    ...(input?.reconcileSupersededProjections === undefined
+      ? {}
+      : {
+          [reconcileSupersededProjectionsJobName]:
+            createReconcileSupersededProjectionsTask(
+              input.reconcileSupersededProjections,
+            ),
         }),
     ...(input?.reconcileStrandedCampaignRuns === undefined
       ? {}

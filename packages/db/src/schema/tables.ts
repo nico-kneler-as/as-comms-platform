@@ -545,12 +545,13 @@ export const messageAttachments = pgTable(
       .notNull()
       .references(() => sourceEvidenceLog.id, { onDelete: "cascade" }),
     provider: text("provider").notNull(),
-    gmailAttachmentId: text("gmail_attachment_id").notNull(),
+    gmailAttachmentId: text("gmail_attachment_id"),
     mimeType: text("mime_type").notNull(),
     filename: text("filename"),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
-    storageKey: text("storage_key").notNull(),
-    isInline: boolean("is_inline").notNull().default(false),
+    storageKey: text("storage_key"),
+    externalUrl: text("external_url"),
+    isDecoration: boolean("is_decoration").notNull().default(false),
     createdAt: createdAtColumn,
   },
   (table) => [index("message_attachments_source_idx").on(table.sourceEvidenceId)],
@@ -1176,6 +1177,7 @@ export const campaignRuns = pgTable(
     subjectTemplate: text("subject_template"),
     bodyHtmlTemplate: text("body_html_template"),
     bodyTextTemplate: text("body_text_template"),
+    bodyDesignJson: jsonb("body_design_json").$type<unknown>(),
     preheader: text("preheader"),
     audienceCriteria: jsonb("audience_criteria")
       .$type<AudienceCriteria>()
@@ -1471,6 +1473,54 @@ export const pendingComposerOutbounds = pgTable(
     index("pending_composer_outbounds_pending_sweep_idx")
       .on(table.status, table.attemptedAt)
       .where(sql`${table.status} = 'pending'`),
+  ],
+);
+
+export const integrationBackfillJobs = pgTable(
+  "integration_backfill_jobs",
+  {
+    id: text("id").primaryKey(),
+    service: text("service").notNull(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    triggeredBy: text("triggered_by").notNull(),
+    windowStart: timestamp("window_start", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    windowEnd: timestamp("window_end", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    mailbox: text("mailbox"),
+    status: text("status").notNull().default("pending"),
+    enqueuedAt: timestamp("enqueued_at", {
+      mode: "date",
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+    startedAt: timestamp("started_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    completedAt: timestamp("completed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    resultJson: jsonb("result_json").$type<Record<string, unknown> | null>(),
+    failureReason: text("failure_reason"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    index("integration_backfill_jobs_status_idx").on(
+      table.status,
+      table.enqueuedAt,
+    ),
+    index("integration_backfill_jobs_service_idx").on(
+      table.service,
+      sql`${table.enqueuedAt} DESC`,
+    ),
   ],
 );
 

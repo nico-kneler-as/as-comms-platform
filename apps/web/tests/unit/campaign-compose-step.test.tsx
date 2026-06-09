@@ -12,12 +12,9 @@ vi.mock("lucide-react", () => ({
 }));
 
 vi.mock("@/components/ui/button", () => ({
-  Button: ({
-    children,
-    ...props
-  }: {
-    readonly children: React.ReactNode;
-  }) => <button {...props}>{children}</button>,
+  Button: ({ children, ...props }: { readonly children: React.ReactNode }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 vi.mock("@/components/ui/input", () => ({
@@ -86,6 +83,7 @@ const baseProps: React.ComponentProps<typeof ComposeStep> = {
   subject: "",
   preheader: "",
   bodyPlaintext: "",
+  selectedAliasSignature: "",
   frozen: false,
   onSubjectChange: () => undefined,
   onPreheaderChange: () => undefined,

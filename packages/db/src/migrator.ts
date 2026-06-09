@@ -6,11 +6,11 @@ import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 
 const TRACKING_TABLE = "applied_migrations";
-// Column added by 0049_inline_attachments. Used as the bootstrap sentinel:
-// its presence means migrations 0000-0049 have been applied to the DB
-// (whether by drizzle-kit push, manual SQL, or any future mix).
+// Stable primary-key column on a long-lived table. Its presence means the
+// pre-tracking schema already exists in a form new enough to seed the
+// migration journal during bootstrap.
 const SENTINEL_TABLE = "message_attachments";
-const SENTINEL_COLUMN = "is_inline";
+const SENTINEL_COLUMN = "id";
 
 // Stable Postgres advisory-lock key. Picked from a SHA-256 prefix of
 // "as-comms:migrator"; well within JS safe-integer range so we can keep it

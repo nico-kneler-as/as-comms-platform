@@ -10,6 +10,7 @@ import type {
   ContactRecord,
   ExpeditionDimensionRecord,
   GmailMessageDetailRecord,
+  IntegrationBackfillJobRecord,
   IdentityResolutionCase,
   IdentityResolutionReasonCode,
   InboxBucket,
@@ -502,16 +503,29 @@ export interface GmailMessageDetailRepository {
   upsert(record: GmailMessageDetailRecord): Promise<GmailMessageDetailRecord>;
 }
 
-export interface MessageAttachmentInsert {
-  readonly id: string;
-  readonly provider: "gmail";
-  readonly gmailAttachmentId: string;
-  readonly mimeType: string;
-  readonly filename: string | null;
-  readonly sizeBytes: number;
-  readonly storageKey: string;
-  readonly isInline: boolean;
-}
+export type MessageAttachmentInsert =
+  | {
+      readonly id: string;
+      readonly provider: "gmail";
+      readonly gmailAttachmentId: string;
+      readonly mimeType: string;
+      readonly filename: string | null;
+      readonly sizeBytes: number;
+      readonly storageKey: string;
+      readonly externalUrl: null;
+      readonly isDecoration: boolean;
+    }
+  | {
+      readonly id: string;
+      readonly provider: "drive";
+      readonly gmailAttachmentId: null;
+      readonly mimeType: string;
+      readonly filename: string | null;
+      readonly sizeBytes: number;
+      readonly storageKey: null;
+      readonly externalUrl: string;
+      readonly isDecoration: boolean;
+    };
 
 export interface MessageAttachmentRepository {
   findById(id: string): Promise<MessageAttachmentRecord | null>;
@@ -700,6 +714,37 @@ export interface PendingComposerOutboundRepository {
   ): Promise<readonly PendingComposerOutboundRecord[]>;
 }
 
+export interface IntegrationBackfillJobRepository {
+  insert(input: {
+    readonly id: string;
+    readonly service: string;
+    readonly idempotencyKey: string;
+    readonly triggeredBy: string;
+    readonly windowStart: string;
+    readonly windowEnd: string;
+    readonly mailbox: string | null;
+  }): Promise<string | null>;
+  countAll(): Promise<number>;
+  findById(id: string): Promise<IntegrationBackfillJobRecord | null>;
+  findByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<IntegrationBackfillJobRecord | null>;
+  markRunning(input: {
+    readonly id: string;
+    readonly startedAt: string;
+  }): Promise<IntegrationBackfillJobRecord | null>;
+  markCompleted(input: {
+    readonly id: string;
+    readonly completedAt: string;
+    readonly resultJson: Record<string, unknown>;
+  }): Promise<IntegrationBackfillJobRecord | null>;
+  markFailed(input: {
+    readonly id: string;
+    readonly completedAt: string;
+    readonly failureReason: string;
+  }): Promise<IntegrationBackfillJobRecord | null>;
+}
+
 export interface IdentityResolutionRepository {
   findById(id: string): Promise<IdentityResolutionCase | null>;
   listOpenByContactId(
@@ -871,6 +916,7 @@ export interface Stage1RepositoryBundle {
   readonly manualNoteDetails: ManualNoteDetailRepository;
   readonly internalNotes: InternalNoteRepository;
   readonly pendingOutbounds: PendingComposerOutboundRepository;
+  readonly integrationBackfillJobs: IntegrationBackfillJobRepository;
   readonly identityResolutionQueue: IdentityResolutionRepository;
   readonly routingReviewQueue: RoutingReviewRepository;
   readonly inboxProjection: InboxProjectionRepository;
@@ -878,6 +924,18 @@ export interface Stage1RepositoryBundle {
   readonly canonicalEventAudience: CanonicalEventAudienceRepository;
   readonly syncState: SyncStateRepository;
   readonly auditEvidence: AuditEvidenceRepository;
+  mergeEmailOnlyContactIntoAnchored?(input: {
+    readonly emailOnlyContactId: string;
+    readonly anchoredContactId: string;
+  }): Promise<{
+    readonly canonicalEventsRepointed: number;
+    readonly timelineRowsRepointed: number;
+    readonly notesRepointed: number;
+    readonly routingRowsRepointed: number;
+    readonly identityCasesRepointed: number;
+    readonly audienceRowsRepointed: number;
+    readonly contactDeleted: boolean;
+  }>;
 }
 
 export function defineStage1RepositoryBundle<T extends Stage1RepositoryBundle>(

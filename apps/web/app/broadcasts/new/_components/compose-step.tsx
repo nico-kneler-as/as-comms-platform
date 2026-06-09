@@ -25,7 +25,14 @@ interface ComposeStepProps {
   readonly subject: string;
   readonly preheader: string;
   readonly bodyPlaintext: string;
+  readonly selectedAliasSignature: string;
   readonly frozen: boolean;
+  /**
+   * True while the draft-save server action triggered by Continue is in
+   * flight. Used to show a pending state on the primary button so the
+   * operator has visible feedback during the save → step-transition gap.
+   */
+  readonly continuePending?: boolean;
   readonly onSubjectChange: (value: string) => void;
   readonly onPreheaderChange: (value: string) => void;
   readonly onBodyChange: (value: {
@@ -40,7 +47,9 @@ export function ComposeStep({
   subject,
   preheader,
   bodyPlaintext,
+  selectedAliasSignature,
   frozen,
+  continuePending = false,
   onSubjectChange,
   onPreheaderChange,
   onBodyChange,
@@ -120,6 +129,13 @@ export function ComposeStep({
           onClearErrors={() => undefined}
           frameClassName="overflow-hidden rounded-none border-0"
           contentClassName="min-h-[300px] bg-white px-4 py-3 text-sm leading-6"
+          bottomSlot={
+            selectedAliasSignature.length > 0 ? (
+              <div className="px-4 pb-3 pt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
+                {selectedAliasSignature}
+              </div>
+            ) : undefined
+          }
           toolbarFooter={({ activeCommands, onCommand, insertText }) => (
             <div className="border-t border-slate-200 bg-slate-50/70">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-1.5">
@@ -177,9 +193,10 @@ export function ComposeStep({
 
       <WizardFooter
         onBack={onBack}
-        primaryLabel="Continue"
+        primaryLabel={continuePending ? "Saving…" : "Continue"}
         primaryAction={onContinue}
         primaryDisabled={!canContinue}
+        primaryLoading={continuePending}
       />
     </section>
   );

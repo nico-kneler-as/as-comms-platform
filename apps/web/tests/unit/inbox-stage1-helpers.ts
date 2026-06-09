@@ -185,28 +185,46 @@ export async function seedInboxMessageAttachment(
   input: {
     readonly sourceEvidenceId: string;
     readonly id: string;
+    readonly provider?: "gmail" | "drive";
     readonly mimeType: string;
     readonly filename: string | null;
     readonly sizeBytes: number;
-    readonly storageKey: string;
+    readonly storageKey: string | null;
+    readonly externalUrl?: string | null;
     readonly gmailAttachmentId?: string;
-    readonly isInline?: boolean;
+    readonly isDecoration?: boolean;
   },
 ): Promise<void> {
+  const isDecoration = input.isDecoration ?? false;
+  const provider = input.provider ?? "gmail";
+  const attachment =
+    provider === "drive"
+      ? {
+          id: input.id,
+          provider: "drive" as const,
+          gmailAttachmentId: null,
+          mimeType: input.mimeType,
+          filename: input.filename,
+          sizeBytes: input.sizeBytes,
+          storageKey: null,
+          externalUrl: input.externalUrl ?? "",
+          isDecoration,
+        }
+      : {
+          id: input.id,
+          provider: "gmail" as const,
+          gmailAttachmentId: input.gmailAttachmentId ?? `gmail:${input.id}`,
+          mimeType: input.mimeType,
+          filename: input.filename,
+          sizeBytes: input.sizeBytes,
+          storageKey: input.storageKey ?? "",
+          externalUrl: null,
+          isDecoration,
+        };
+
   await context.repositories.messageAttachments.upsertManyForMessage(
     input.sourceEvidenceId,
-    [
-      {
-        id: input.id,
-        provider: "gmail",
-        gmailAttachmentId: input.gmailAttachmentId ?? `gmail:${input.id}`,
-        mimeType: input.mimeType,
-        filename: input.filename,
-        sizeBytes: input.sizeBytes,
-        storageKey: input.storageKey,
-        isInline: input.isInline ?? false,
-      },
-    ],
+    [attachment],
   );
 }
 

@@ -9,6 +9,7 @@ import {
   contactSchema,
   expeditionDimensionSchema,
   gmailMessageDetailSchema,
+  integrationBackfillJobSchema,
   integrationHealthSchema,
   identityResolutionSchema,
   inboxProjectionSchema,
@@ -33,6 +34,7 @@ import {
   type ContactRecord,
   type ExpeditionDimensionRecord,
   type GmailMessageDetailRecord,
+  type IntegrationBackfillJobRecord,
   type IntegrationHealthRecord,
   type IdentityResolutionCase,
   type InboxProjectionRow,
@@ -74,6 +76,7 @@ import type {
   contacts,
   expeditionDimensions,
   gmailMessageDetails,
+  integrationBackfillJobs,
   integrationHealth,
   identityResolutionQueue,
   mailchimpCampaignActivityDetails,
@@ -110,6 +113,7 @@ type SmsSenderRow = typeof smsSenders.$inferSelect;
 type ProjectDimensionRow = typeof projectDimensions.$inferSelect;
 type ExpeditionDimensionRow = typeof expeditionDimensions.$inferSelect;
 type GmailMessageDetailRow = typeof gmailMessageDetails.$inferSelect;
+type IntegrationBackfillJobRow = typeof integrationBackfillJobs.$inferSelect;
 type IntegrationHealthRow = typeof integrationHealth.$inferSelect;
 type SalesforceEventContextRow = typeof salesforceEventContext.$inferSelect;
 type SalesforceCommunicationDetailRow =
@@ -754,7 +758,8 @@ export function mapMessageAttachmentRow(
     filename: row.filename,
     sizeBytes: row.sizeBytes,
     storageKey: row.storageKey,
-    isInline: row.isInline,
+    externalUrl: row.externalUrl,
+    isDecoration: row.isDecoration,
     createdAt: row.createdAt.toISOString(),
   });
 }
@@ -773,7 +778,8 @@ export function mapMessageAttachmentToInsert(
     filename: parsed.filename,
     sizeBytes: parsed.sizeBytes,
     storageKey: parsed.storageKey,
-    isInline: parsed.isInline,
+    externalUrl: parsed.externalUrl,
+    isDecoration: parsed.isDecoration,
     createdAt: toDate(parsed.createdAt),
   };
 }
@@ -1249,6 +1255,53 @@ export function mapPendingComposerOutboundToInsert(
     orphanedAt: record.orphanedAt === null ? null : toDate(record.orphanedAt),
     createdAt: toDate(record.createdAt),
     updatedAt: toDate(record.updatedAt),
+  };
+}
+
+export function mapIntegrationBackfillJobRow(
+  row: IntegrationBackfillJobRow,
+): IntegrationBackfillJobRecord {
+  return integrationBackfillJobSchema.parse({
+    id: row.id,
+    service: row.service,
+    idempotencyKey: row.idempotencyKey,
+    triggeredBy: row.triggeredBy,
+    windowStart: row.windowStart.toISOString(),
+    windowEnd: row.windowEnd.toISOString(),
+    mailbox: row.mailbox,
+    status: row.status,
+    enqueuedAt: row.enqueuedAt.toISOString(),
+    startedAt: fromDate(row.startedAt),
+    completedAt: fromDate(row.completedAt),
+    resultJson: row.resultJson,
+    failureReason: row.failureReason,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  });
+}
+
+export function mapIntegrationBackfillJobToInsert(
+  record: IntegrationBackfillJobRecord,
+): typeof integrationBackfillJobs.$inferInsert {
+  const parsed = integrationBackfillJobSchema.parse(record);
+
+  return {
+    id: parsed.id,
+    service: parsed.service,
+    idempotencyKey: parsed.idempotencyKey,
+    triggeredBy: parsed.triggeredBy,
+    windowStart: toDate(parsed.windowStart),
+    windowEnd: toDate(parsed.windowEnd),
+    mailbox: parsed.mailbox,
+    status: parsed.status,
+    enqueuedAt: toDate(parsed.enqueuedAt),
+    startedAt: parsed.startedAt === null ? null : toDate(parsed.startedAt),
+    completedAt:
+      parsed.completedAt === null ? null : toDate(parsed.completedAt),
+    resultJson: parsed.resultJson,
+    failureReason: parsed.failureReason,
+    createdAt: toDate(parsed.createdAt),
+    updatedAt: toDate(parsed.updatedAt),
   };
 }
 

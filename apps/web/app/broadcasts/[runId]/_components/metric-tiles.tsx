@@ -1,18 +1,38 @@
-import { Progress } from "@/components/ui/progress";
+import {
+  AlertCircle,
+  ArrowDownLeft,
+  CheckCheck,
+  CornerUpLeft,
+  Eye,
+  Flag,
+  MousePointerClick,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 
-import type { RunDetailModel } from "../_lib/run-detail";
+import {
+  TONE_CLASSES,
+  type ToneNameV2,
+} from "@/app/_lib/design-tokens-v2";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
+
+import type { RunDetailModel, RunMetricTileData } from "../_lib/run-detail";
 import { LocalDateTime } from "./local-date-time";
 
-const METRIC_DOT_CLASS: Record<string, string> = {
-  queued: "bg-slate-400",
-  sent: "bg-emerald-500",
-  delivered: "bg-emerald-500",
-  opened: "bg-sky-500",
-  clicked: "bg-indigo-500",
-  replied: "bg-violet-500",
-  bounced: "bg-rose-500",
-  unsubscribed: "bg-amber-500",
-  complained: "bg-rose-500",
+const METRIC_META: Record<
+  RunMetricTileData["key"],
+  { readonly Icon: LucideIcon; readonly tone: ToneNameV2 }
+> = {
+  queued: { Icon: Users, tone: "slate" },
+  sent: { Icon: CheckCheck, tone: "emerald" },
+  delivered: { Icon: CheckCheck, tone: "emerald" },
+  opened: { Icon: Eye, tone: "sky" },
+  clicked: { Icon: MousePointerClick, tone: "indigo" },
+  replied: { Icon: CornerUpLeft, tone: "emerald" },
+  bounced: { Icon: AlertCircle, tone: "rose" },
+  unsubscribed: { Icon: ArrowDownLeft, tone: "amber" },
+  complained: { Icon: Flag, tone: "rose" },
 };
 
 export function MetricTiles({
@@ -30,41 +50,53 @@ export function MetricTiles({
 }) {
   return (
     <section className="space-y-3">
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <div className="grid md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
-          {model.metrics.map((metric) => (
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+        {model.metrics.map((metric) => {
+          const meta = METRIC_META[metric.key];
+          const tone = TONE_CLASSES[meta.tone];
+          const Icon = meta.Icon;
+          const pct = Math.max(0, Math.min(100, metric.percentage));
+
+          return (
             <article
               key={metric.key}
-              className="min-w-0 border-b border-slate-200 px-3.5 py-3 md:border-r xl:border-b-0"
+              className="overflow-hidden rounded-xl border border-slate-200 bg-white p-4"
             >
-              <div className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+              <div className="flex items-start justify-between gap-2">
                 <span
-                  className={`size-1.5 rounded-full ${
-                    METRIC_DOT_CLASS[metric.key] ?? "bg-slate-300"
-                  }`}
-                  aria-hidden="true"
-                />
-                {metric.label}
+                  className={cn(
+                    "flex size-7 items-center justify-center rounded-md",
+                    tone.subtle,
+                    tone.subtleText,
+                  )}
+                >
+                  <Icon className="size-3.5" aria-hidden="true" />
+                </span>
+                <span className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+                  {metric.label}
+                </span>
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
-                <div className="text-[20px] font-semibold leading-none tabular-nums text-slate-900">
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-[24px] font-semibold leading-none tabular-nums text-slate-900">
                   {metric.value.toLocaleString()}
-                </div>
-                <div className="text-[11px] font-medium tabular-nums text-slate-500">
+                </span>
+                <span className={cn("text-[11.5px] tabular-nums", tone.subtleText)}>
                   {metric.percentage.toFixed(1)}%
-                </div>
+                </span>
               </div>
-              <div className="mt-1 truncate text-[11px] text-slate-500">
-                {metric.subtitle ??
-                  `${metric.value.toLocaleString()} of ${model.totalAudience.toLocaleString()}`}
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className={cn("h-full rounded-full", tone.bg)}
+                  style={{ width: `${String(Math.max(2, pct))}%` }}
+                />
               </div>
             </article>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
       {model.run.state === "sending" ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4">
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
           <div className="flex items-center justify-between gap-3 text-[12.5px]">
             <span className="font-medium text-slate-900">
               {model.sentCount.toLocaleString()} of{" "}
@@ -90,7 +122,7 @@ export function MetricTiles({
       ) : null}
 
       {model.run.state === "complete" ? (
-        <p className="px-1 text-[12.5px] text-slate-600">
+        <p className="px-1 text-[12.5px] text-pretty text-slate-600">
           Per-recipient delivery and engagement appear here. Run finalizes after
           30-day events tail.
         </p>

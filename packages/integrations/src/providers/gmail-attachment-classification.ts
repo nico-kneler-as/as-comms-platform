@@ -1,59 +1,18 @@
-export function normalizeContentId(
-  value: string | null | undefined,
-): string | null {
-  if (typeof value !== "string") {
-    return null;
+const PLACEHOLDER_FILENAME_PATTERN =
+  /^(noname|image\d*\.(?:png|jpe?g|gif|webp)|ATT\d+\.(?:png|jpe?g|gif|webp))$/iu;
+
+export function classifyAttachment(input: {
+  readonly filename: string | null;
+  readonly mimeType: string;
+}): { readonly isDecoration: boolean } {
+  if (!input.mimeType.toLowerCase().startsWith("image/")) {
+    return { isDecoration: false };
   }
 
-  const trimmed = value.trim();
-
-  if (trimmed.length === 0) {
-    return null;
+  const trimmed = input.filename?.trim();
+  if (trimmed === undefined || trimmed.length === 0) {
+    return { isDecoration: true };
   }
 
-  const normalized = trimmed.replace(/^<|>$/gu, "").toLowerCase();
-  return normalized.length > 0 ? normalized : null;
-}
-
-export function resolveContentDispositionType(
-  contentDisposition: string | null | undefined,
-): string | null {
-  if (typeof contentDisposition !== "string") {
-    return null;
-  }
-
-  const dispositionType = contentDisposition.split(";")[0]?.trim().toLowerCase();
-  return dispositionType && dispositionType.length > 0
-    ? dispositionType
-    : null;
-}
-
-export function isInlineAttachment(input: {
-  readonly attachment: {
-    readonly contentDisposition?: string | null;
-    readonly contentId?: string | null;
-  };
-  readonly htmlBodyCidReferences: ReadonlySet<string>;
-}): boolean {
-  const dispositionType = resolveContentDispositionType(
-    input.attachment.contentDisposition,
-  );
-
-  if (dispositionType === "attachment") {
-    return false;
-  }
-
-  if (dispositionType === "inline") {
-    return true;
-  }
-
-  const normalizedContentId = normalizeContentId(input.attachment.contentId);
-  if (
-    normalizedContentId === null ||
-    !input.htmlBodyCidReferences.has(normalizedContentId)
-  ) {
-    return false;
-  }
-
-  return true;
+  return { isDecoration: PLACEHOLDER_FILENAME_PATTERN.test(trimmed) };
 }
