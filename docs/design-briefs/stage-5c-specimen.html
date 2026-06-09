@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="x-apple-disable-message-reformatting">
+<title>Project broadcast — brand-default starter</title>
+<!--[if mso]>
+<noscript>
+  <xml>
+    <o:OfficeDocumentSettings>
+      <o:PixelsPerInch>96</o:PixelsPerInch>
+    </o:OfficeDocumentSettings>
+  </xml>
+</noscript>
+<![endif]-->
+<!--
+  Stage 5C HTML composer — brand-default starter specimen.
+  Companion to docs/design-briefs/stage-5c-html-composer-spec.md.
+
+  Approximates the HTML that react-email-editor will export from the
+  BRAND_DEFAULT_STARTER design tree specified in
+  docs/design-briefs/stage-5c-unlayer-config.md §4.
+
+  Self-contained: inline styles only. Single external asset (the AS logo).
+  Compatible with Gmail web, Outlook 2019/365 desktop, Outlook.com web,
+  Apple Mail, iOS Mail.
+-->
+</head>
+<body style="margin:0;padding:0;background-color:#f8fafc;font-family:'Geist Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;line-height:1.6;">
+
+<!-- Hidden preheader (shown next to subject in Gmail / Outlook web) -->
+<div style="display:none;font-size:1px;color:#f8fafc;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
+  Preheader text appears here when Step 4's preheader field is populated.
+</div>
+
+<!-- Outer 100% wrapper — sets the page background -->
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#f8fafc" style="background-color:#f8fafc;border-collapse:collapse;width:100%;">
+  <tr>
+    <td align="center" style="padding:24px 8px;">
+
+      <!-- Email body — fixed 600px width centered -->
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" bgcolor="#ffffff" style="background-color:#ffffff;border-collapse:collapse;width:600px;max-width:600px;margin:0 auto;">
+
+        <!-- Row 1 — Logo header -->
+        <!-- In production this URL is built from NEXT_PUBLIC_APP_URL; specimen pins prod for portability. -->
+        <tr>
+          <td align="center" style="padding:24px 32px 8px 32px;">
+            <img
+              src="https://comms.adventurescientists.org/brand/as-mark.png"
+              width="64"
+              height="64"
+              alt="Adventure Scientists"
+              style="display:block;border:0;outline:none;text-decoration:none;width:64px !important;height:64px;max-width:64px;"
+            >
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:0 32px 8px 32px;font-family:'Geist Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;line-height:1.4;color:#0f172a;">
+            Adventure Scientists
+          </td>
+        </tr>
+
+        <!-- Spacer 16 -->
+        <tr>
+          <td style="font-size:0;line-height:0;height:16px;mso-line-height-rule:exactly;">&nbsp;</td>
+        </tr>
+
+        <!-- Row 2 — Body text placeholder -->
+        <tr>
+          <td style="padding:0 32px;font-family:'Geist Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#334155;">
+            <p style="margin:0;padding:0;font-family:'Geist Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#334155;">
+              Write your message here&hellip;
+            </p>
+          </td>
+        </tr>
+
+        <!-- Spacer 32 -->
+        <tr>
+          <td style="font-size:0;line-height:0;height:32px;mso-line-height-rule:exactly;">&nbsp;</td>
+        </tr>
+
+        <!-- Row 3 — Footer (locked block; mirrors buildUnsubscribeFooter output) -->
+        <tr>
+          <td style="padding:0 32px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;width:100%;">
+              <tr>
+                <td style="border-top:1px solid #e2e8f0;font-size:0;line-height:0;height:1px;">&nbsp;</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <!-- Spacer 16 between hr and links -->
+        <tr>
+          <td style="font-size:0;line-height:0;height:16px;mso-line-height-rule:exactly;">&nbsp;</td>
+        </tr>
+        <tr>
+          <td style="padding:0 32px;font-family:'Geist Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#64748b;">
+            <a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from {{projectName}} emails</a>
+            &middot;
+            <a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from all Adventure Scientists emails</a>
+          </td>
+        </tr>
+        <!-- Spacer 8 between links and address -->
+        <tr>
+          <td style="font-size:0;line-height:0;height:8px;mso-line-height-rule:exactly;">&nbsp;</td>
+        </tr>
+        <tr>
+          <td style="padding:0 32px 32px 32px;font-family:'Geist Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#64748b;">
+            Adventure Scientists &bull; 1881 9th St, Suite 201 &bull; Bozeman, MT 59715
+          </td>
+        </tr>
+
+      </table>
+      <!-- /Email body -->
+
+    </td>
+  </tr>
+</table>
+<!-- /Outer wrapper -->
+
+</body>
+</html>
