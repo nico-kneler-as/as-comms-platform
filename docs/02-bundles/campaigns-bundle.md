@@ -28,7 +28,7 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 - audience uses canonical platform identity and exclusions
 - broadcast content, review state, and frozen audience remain product-owned
 - Postmark is the Email delivery provider, not the authoring source of truth (`D-045`)
-- Stage structure locked by `D-046` (2026-05-19): **5A** = project-specific Normal Email sends via the Composer-style Markdown editor (shipped #418-#436; gate to 5C is real operator use of project broadcasts in production); **5B** = SMS Broadcasts, gated on A2P 10DLC approval (external, independent of 5A and 5C); **5C** = Newsletters + Unlayer drag-and-drop HTML composer + full Mailchimp decommission, gated on 5A operator validation; **Stage 6** = Workflows replacing Salesforce Auto-Emails, roadmap intent only (no product definition yet). Supersedes the prior D-045 "Phase A → B → C → D=5B" rollout shape. See PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and [stage-5a-campaigns.md](../04-implementation-specs/stage-5a-campaigns.md)
+- Stage structure locked by `D-046` (2026-05-19): **5A** = project-specific Normal Email sends via the Composer-style Markdown editor (shipped #418-#436; gate to 5C is real operator use of project broadcasts in production); **5B** = SMS Broadcasts, gated on A2P 10DLC approval (external, independent of 5A and 5C); **5C** = Newsletters + full Mailchimp decommission (deferred); HTML composer carved out and shipped 2026-06-09 per PRD #536; **Stage 6** = Workflows replacing Salesforce Auto-Emails, roadmap intent only (no product definition yet). Supersedes the prior D-045 "Phase A → B → C → D=5B" rollout shape. See PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and [stage-5a-campaigns.md](../04-implementation-specs/stage-5a-campaigns.md)
 - Mailchimp remains historical and transition-period live ingest scope until Stage 5C decommissions it
 - transition-period live Mailchimp ingest is now operational for the cutover window; see PRD #283 and the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
 
@@ -67,3 +67,6 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 
 - services summary: [reference-services.md](../03-reference/reference-services.md)
 - Salesforce mapping reference: [reference-salesforce-mapping.md](../03-reference/reference-salesforce-mapping.md)
+- HTML composer carve-out PRD: [#536](https://github.com/nico-kneler-as/as-comms-platform/issues/536)
+- HTML composer design spec: [docs/design-briefs/stage-5c-html-composer-spec.md](../design-briefs/stage-5c-html-composer-spec.md)
+- HTML composer Unlayer config: [docs/design-briefs/stage-5c-unlayer-config.md](../design-briefs/stage-5c-unlayer-config.md)

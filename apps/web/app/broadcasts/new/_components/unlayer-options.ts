@@ -44,7 +44,8 @@ export const CUSTOM_CSS = `
 }
 ` as const;
 
-export const FOOTER_HTML = `<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">
+export const FOOTER_HTML = `<!-- as-locked-footer-start -->
+<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">
 <div style="color:#64748b;font-size:12px;line-height:1.6;">
   <a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from {{projectName}} emails</a>
   &middot;
@@ -52,7 +53,8 @@ export const FOOTER_HTML = `<hr style="border:none;border-top:1px solid #e2e8f0;
 </div>
 <div style="color:#64748b;font-size:12px;line-height:1.6;margin-top:8px;">
   Adventure Scientists • 1881 9th St, Suite 201 • Bozeman, MT 59715
-</div>` as const;
+</div>
+<!-- as-locked-footer-end -->` as const;
 
 export const UNLAYER_OPTIONS = {
   displayMode: "email",
