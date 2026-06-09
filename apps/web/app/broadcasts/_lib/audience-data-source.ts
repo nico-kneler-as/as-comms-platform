@@ -107,6 +107,7 @@ export interface CampaignWizardDraftData {
   readonly fromEmail: string | null;
   readonly replyToEmail: string | null;
   readonly subjectTemplate: string | null;
+  readonly bodyDesignJson: unknown;
   readonly bodyHtmlTemplate: string | null;
   readonly bodyTextTemplate: string | null;
   readonly preheader: string | null;
@@ -372,6 +373,7 @@ function mapDraftRecord(
     fromEmail: record.fromEmail,
     replyToEmail: record.replyToEmail,
     subjectTemplate: record.subjectTemplate,
+    bodyDesignJson: record.bodyDesignJson ?? null,
     bodyHtmlTemplate: record.bodyHtmlTemplate,
     bodyTextTemplate: record.bodyTextTemplate,
     preheader: record.preheader,
@@ -1106,6 +1108,7 @@ export async function saveCampaignWizardDraftAction(input: {
   readonly fromEmail: string | null;
   readonly replyToEmail: string | null;
   readonly subjectTemplate: string | null;
+  readonly bodyDesignJson: unknown;
   readonly bodyHtmlTemplate: string | null;
   readonly bodyTextTemplate: string | null;
   readonly preheader: string | null;
@@ -1131,6 +1134,7 @@ export async function saveCampaignWizardDraftAction(input: {
         fromEmail: input.fromEmail,
         replyToEmail: input.replyToEmail,
         subjectTemplate: input.subjectTemplate,
+        bodyDesignJson: input.bodyDesignJson,
         bodyHtmlTemplate: input.bodyHtmlTemplate,
         bodyTextTemplate: input.bodyTextTemplate,
         preheader: input.preheader,

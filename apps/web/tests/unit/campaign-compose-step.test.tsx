@@ -4,11 +4,29 @@ import { describe, expect, it, vi } from "vitest";
 
 Object.assign(globalThis, { React });
 
+const unlayerHostMock = vi.hoisted(() => vi.fn());
+
 vi.mock("lucide-react", () => ({
   ArrowLeft: () => null,
   ArrowRight: () => null,
   Braces: () => null,
   Info: () => null,
+}));
+
+vi.mock("next/dynamic", () => ({
+  default: () => {
+    return (props: {
+      readonly savedDesign: unknown;
+    }) => {
+      unlayerHostMock(props);
+      return (
+        <div
+          data-unlayer-host="true"
+          data-saved-design={JSON.stringify(props.savedDesign)}
+        />
+      );
+    };
+  },
 }));
 
 vi.mock("@/components/ui/button", () => ({
@@ -80,9 +98,11 @@ vi.mock("@/app/inbox/_components/composer-editor-surface", () => ({
 import { ComposeStep } from "../../app/broadcasts/new/_components/compose-step";
 
 const baseProps: React.ComponentProps<typeof ComposeStep> = {
+  launchType: "normal_email",
   subject: "",
   preheader: "",
   bodyPlaintext: "",
+  savedDesign: null,
   selectedAliasSignature: "",
   frozen: false,
   onSubjectChange: () => undefined,
@@ -115,5 +135,44 @@ describe("ComposeStep snapshots", () => {
         />,
       ),
     ).toMatchSnapshot();
+  });
+
+  it("renders the markdown composer for normal_email", () => {
+    const markup = renderToStaticMarkup(
+      <ComposeStep {...baseProps} launchType="normal_email" bodyPlaintext="Hi" />,
+    );
+
+    expect(markup).toContain('data-editor="true"');
+    expect(markup).not.toContain('data-unlayer-host="true"');
+  });
+
+  it("renders the Unlayer host for html_email", () => {
+    const markup = renderToStaticMarkup(
+      <ComposeStep
+        {...baseProps}
+        launchType="html_email"
+        subject="Newsletter"
+        bodyPlaintext="Fallback text"
+      />,
+    );
+
+    expect(markup).toContain('data-unlayer-host="true"');
+  });
+
+  it("passes savedDesign through to the Unlayer host", () => {
+    const savedDesign = { body: { rows: [{ id: "row-1" }] } };
+
+    renderToStaticMarkup(
+      <ComposeStep
+        {...baseProps}
+        launchType="html_email"
+        subject="Newsletter"
+        bodyPlaintext="Fallback text"
+        savedDesign={savedDesign}
+      />,
+    );
+
+    expect(unlayerHostMock).toHaveBeenCalled();
+    expect(unlayerHostMock.mock.lastCall?.[0]).toMatchObject({ savedDesign });
   });
 });
