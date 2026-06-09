@@ -390,6 +390,8 @@ export function NewCampaignWizard({
     setBodyPlaintext,
     bodyHtml,
     setBodyHtml,
+    bodyDesignJson,
+    setBodyDesignJson,
     selectedAliasSignature,
     criteria,
     setCriteria,
@@ -471,6 +473,7 @@ export function NewCampaignWizard({
           fromEmail,
           replyToEmail,
           subjectTemplate: subject.trim().length === 0 ? null : subject,
+          bodyDesignJson,
           bodyHtmlTemplate: bodyHtml.trim().length === 0 ? null : bodyHtml,
           bodyTextTemplate:
             bodyPlaintext.trim().length === 0 ? null : bodyPlaintext,
@@ -496,6 +499,7 @@ export function NewCampaignWizard({
           preheader: result.data.preheader ?? "",
           bodyPlaintext: result.data.bodyTextTemplate ?? "",
           bodyHtml: result.data.bodyHtmlTemplate ?? "",
+          bodyDesignJson: JSON.stringify(result.data.bodyDesignJson ?? null),
           criteria: {
             ...result.data.audienceCriteria,
             projectId:
@@ -581,7 +585,9 @@ export function NewCampaignWizard({
     updateCriteria((current) => ({
       ...current,
       statuses: current.statuses.includes(status as never)
-        ? current.statuses.filter((value) => value !== status)
+        ? current.statuses.filter(
+            (value: ExpeditionMemberStatus) => value !== status,
+          )
         : [...current.statuses, status],
     }));
   }
@@ -767,15 +773,18 @@ export function NewCampaignWizard({
 
             {currentStep === 3 ? (
               <ComposeStep
+                launchType={launchType}
                 subject={subject}
                 preheader={preheader}
                 bodyPlaintext={bodyPlaintext}
+                savedDesign={bodyDesignJson}
                 selectedAliasSignature={selectedAliasSignature}
                 frozen={frozen}
                 continuePending={savePending}
                 onSubjectChange={setSubject}
                 onPreheaderChange={setPreheader}
                 onBodyChange={(value) => {
+                  setBodyDesignJson(value.bodyDesignJson);
                   setBodyPlaintext(value.bodyPlaintext);
                   setBodyHtml(value.bodyHtml);
                 }}
@@ -790,6 +799,7 @@ export function NewCampaignWizard({
 
             {currentStep === 4 ? (
               <PreviewStep
+                launchType={launchType}
                 subject={subject}
                 preheader={preheader}
                 previewData={composePreview}

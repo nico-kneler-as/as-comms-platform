@@ -413,6 +413,7 @@ function buildDraft(
     fromEmail: "forests@example.org",
     replyToEmail: "forests@example.org",
     subjectTemplate: "Default subject",
+    bodyDesignJson: null,
     bodyHtmlTemplate: "<p>Hello {{firstName}}</p>",
     bodyTextTemplate: "Hello {{firstName}}",
     preheader: "Preview line",

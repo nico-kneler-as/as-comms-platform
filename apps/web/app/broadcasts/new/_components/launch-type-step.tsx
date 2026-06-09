@@ -29,8 +29,8 @@ const OPTIONS = [
     description:
       "Drag-and-drop newsletter-quality emails with images and richer layout.",
     Icon: PanelTop,
-    disabled: true,
-    tag: "COMING SOON",
+    disabled: false,
+    tag: null,
   },
   {
     value: "sms",
@@ -119,8 +119,7 @@ export function LaunchTypeStep({
       </div>
 
       <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] leading-relaxed text-slate-600">
-        Phase A ships Normal Email only. HTML Email arrives once the
-        drag-and-drop builder lands; SMS follows.
+        SMS arrives once carrier approval lands.
       </p>
 
       <WizardFooter primaryLabel="Continue" primaryAction={onContinue} />
