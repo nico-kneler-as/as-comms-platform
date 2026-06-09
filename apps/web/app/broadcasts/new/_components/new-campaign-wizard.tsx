@@ -33,7 +33,7 @@ const STEPS: readonly CampaignWizardStepDefinition[] = [
   {
     id: "launch",
     title: "Launch type",
-    subtitle: "Normal Email is the only active path in Phase A.",
+    subtitle: "Pick Normal Email for Markdown sends or HTML Email for the drag-and-drop composer.",
   },
   {
     id: "setup",
@@ -92,7 +92,7 @@ function readAudienceModesForLaunchType(
   launchType: LaunchType,
 ): readonly AudienceInitialFilter[] {
   return launchType === "html_email"
-    ? ["all_approved", "project_status"]
+    ? ["all_approved", "specific", "project_status"]
     : ["project_status", "specific"];
 }
 
