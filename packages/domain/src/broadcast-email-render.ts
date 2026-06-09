@@ -152,6 +152,21 @@ export interface BroadcastEmailRenderOutput {
   readonly listUnsubscribeHeaderValue: string;
 }
 
+/**
+ * Removes the in-canvas locked footer block the HTML composer injects into the
+ * Unlayer canvas. The worker's renderBroadcastEmail appends the authoritative
+ * footer via buildBroadcastUnsubscribeFooter regardless; without this dedup pass,
+ * html_email broadcasts would ship with two footers. Safe to apply unconditionally
+ * — if the markers aren't present (normal_email broadcasts), the function is a
+ * no-op.
+ */
+export function stripLockedFooterBlock(html: string): string {
+  return html.replace(
+    /<!--\s*as-locked-footer-start\s*-->[\s\S]*?<!--\s*as-locked-footer-end\s*-->/giu,
+    "",
+  );
+}
+
 export function renderBroadcastEmail(
   input: BroadcastEmailRenderInput,
 ): BroadcastEmailRenderOutput {
@@ -169,10 +184,11 @@ export function renderBroadcastEmail(
     scopedHref: input.scopedUnsubscribeHref,
     allHref: input.allUnsubscribeHref,
   });
+  const sanitizedBodyHtml = stripLockedFooterBlock(input.bodyHtmlTemplate);
 
   return {
     fromHeader,
-    bodyHtml: `${preheaderHtml}${input.bodyHtmlTemplate}${signatureBlock.html}${footer.html}`,
+    bodyHtml: `${preheaderHtml}${sanitizedBodyHtml}${signatureBlock.html}${footer.html}`,
     bodyText: [input.bodyTextTemplate, signatureBlock.text, footer.text]
       .filter((part) => part.trim().length > 0)
       .join("\n\n"),

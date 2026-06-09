@@ -7,11 +7,11 @@
 **Decides:** module-to-package placement, naming, reuse vs new, migration ordering, brief dependency graph  
 **Does not decide:** product behavior (PRD) or visual design (design brief at `docs/design-briefs/stage-5a-campaigns.md`)
 
-> **Naming note (2026-05-19, `D-046`):** this spec was authored when Stage 5A bundled four phases (A / B / C / D=5B). The terminology was restructured into discrete stages on 2026-05-19. **Map old → new while reading:** "Phase A" → **Stage 5A** (Email Broadcasts, project-scope, shipped); "Phase B" + "Phase C" → **Stage 5C** (Newsletters + Unlayer HTML + Mailchimp decommission, deferred behind 5A operator validation); "Phase D / 5B" → **Stage 5B** (SMS, gated on A2P 10DLC approval, independent of email work); "Stage 6 (Reporting)" → **Stage 6 (Workflows replacing Salesforce Auto-Emails, undefined roadmap intent)**. The Phase A schema and code described below are accurate to what shipped; the Phase B/C plans below feed into Stage 5C work whenever it's dispatched.
+> **Naming note (2026-05-19, `D-046`):** this spec was authored when Stage 5A bundled four phases (A / B / C / D=5B). The terminology was restructured into discrete stages on 2026-05-19. **Map old → new while reading:** "Phase A" → **Stage 5A** (Email Broadcasts, project-scope, shipped); "Phase B" + "Phase C" → **Stage 5C** (HTML composer shipped 2026-06-09 per PRD #536; newsletter migration + Mailchimp decommission remain deferred Stage 5C work); "Phase D / 5B" → **Stage 5B** (SMS, gated on A2P 10DLC approval, independent of email work); "Stage 6 (Reporting)" → **Stage 6 (Workflows replacing Salesforce Auto-Emails, undefined roadmap intent)**. The Phase A schema and code described below are accurate to what shipped; the Phase B/C plans below feed into Stage 5C work whenever it's dispatched.
 
 ## Summary
 
-- Stage 5A ships in three phases (A: Composer-as-editor + project sends, B: Unlayer HTML, C: newsletter migration + Mailchimp decommission).
+- Stage 5A shipped the Composer-as-editor + project sends. The Unlayer HTML composer shipped 2026-06-09 as a Stage 5C carve-out per PRD #536. Newsletter migration + Mailchimp decommission remain Stage 5C work, gated on real operator use of HTML broadcasts in production.
 - Provider is **Postmark Basic** (10K tier for Phase A/B, 50K for Phase C). Not SendGrid. Not Marketing Campaigns.
 - Eight deep modules in `packages/domain` driven by Server Actions in `apps/web` and a worker orchestrator in `apps/worker`.
 - Five new tables in `packages/db`; one of them (`campaign_run_projection`) is a UNION view over Postmark runs + existing `mailchimp_campaign_activity_details`.

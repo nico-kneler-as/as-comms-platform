@@ -11,7 +11,7 @@ This document specifies the exact configuration values to pass to `react-email-e
 
 ## 1. Library + mount strategy
 
-**Library:** [`react-email-editor`](https://www.npmjs.com/package/react-email-editor) — **exact pin `1.8.5`** (see §9 for rationale). This is Unlayer's official React wrapper.
+**Library:** [`react-email-editor`](https://www.npmjs.com/package/react-email-editor) — **exact pin `1.8.0`** (see §9 for rationale). This is Unlayer's official React wrapper.
 
 **Self-hosted iframe.** The editor renders inside an iframe that loads its core JS from `editor.unlayer.com` (the JS host, not the cloud editor service). No project ID, no Unlayer account, no design saved to Unlayer's servers — we persist the design tree ourselves via `body_design_json` (Brick A).
 
@@ -460,9 +460,10 @@ Both are honored by `react-email-editor` v1.7+ per Unlayer's changelog.
 
 ### 5.2 `FOOTER_HTML` constant
 
-This is the WYSIWYG preview of what `buildUnsubscribeFooter` ([campaign-send-orchestrator.ts:109-148](../../packages/domain/src/campaign-send-orchestrator.ts)) will inject at send time. The two must stay in sync; ideally engineering imports this string from the domain package so there's one source.
+This is the WYSIWYG preview of what `buildUnsubscribeFooter` ([campaign-send-orchestrator.ts:109-148](../../packages/domain/src/campaign-send-orchestrator.ts)) will inject at send time. The two must stay in sync; ideally engineering imports this string from the domain package so there's one source. The constant is wrapped in HTML comment markers so the worker can remove the in-canvas preview block with `stripLockedFooterBlock(input.bodyHtmlTemplate)` before it appends the authoritative footer.
 
 ```html
+<!-- as-locked-footer-start -->
 <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">
 <div style="color:#64748b;font-size:12px;line-height:1.6;">
   <a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from {{projectName}} emails</a>
@@ -472,11 +473,12 @@ This is the WYSIWYG preview of what `buildUnsubscribeFooter` ([campaign-send-orc
 <div style="color:#64748b;font-size:12px;line-height:1.6;margin-top:8px;">
   Adventure Scientists • 1881 9th St, Suite 201 • Bozeman, MT 59715
 </div>
+<!-- as-locked-footer-end -->
 ```
 
 `target="_blank" rel="noreferrer noopener"` mirrors `buildUnsubscribeFooter`'s anchor attributes verbatim ([campaign-send-orchestrator.ts:130,132-133](../../packages/domain/src/campaign-send-orchestrator.ts)). The address separator is the bullet character `•` (U+2022, space-padded) to match `formatOrgAddress`'s join at [campaign-send-orchestrator.ts:106](../../packages/domain/src/campaign-send-orchestrator.ts) — not `&middot;` (U+00B7) which would render slightly differently.
 
-**Live URLs vs `#`:** the in-editor preview uses `#` because real unsubscribe URLs are per-recipient and not known at compose time. At send time, **the worker always appends `buildUnsubscribeFooter` regardless**, and Brick B/C engineering adds a one-line de-dup pass that detects and removes the locked footer block from the operator's HTML by `data-content-id="footer-html-1"` (the stable id assigned at §4 line `id: "footer-html-1"`). Single rule: append always, strip the in-canvas preview if present. No conditional append logic; one code path; the canvas footer is purely operator-facing.
+**Live URLs vs `#`:** the in-editor preview uses `#` because real unsubscribe URLs are per-recipient and not known at compose time. The worker's `renderBroadcastEmail` calls `stripLockedFooterBlock(input.bodyHtmlTemplate)` before appending the authoritative footer. Single rule: append always; the dedup pass removes the marker-wrapped in-canvas preview if present. No conditional logic; one code path.
 
 **Address line:** the spec shows the Bozeman address as a placeholder. Engineering: pull from `OrgSettingsRecord` at compose time so the preview shows the actual configured address — same source `formatOrgAddress` reads at send time.
 
@@ -569,7 +571,7 @@ This keeps Codex from going off-script on options the spec didn't authorize.
 ## 9. Version pin
 
 ```
-"react-email-editor": "1.8.5"
+"react-email-editor": "1.8.0"
 ```
 
 Exact-pin (no `^`). Unlayer's class names and option keys have drifted between minor versions; we revalidate before bumping.
