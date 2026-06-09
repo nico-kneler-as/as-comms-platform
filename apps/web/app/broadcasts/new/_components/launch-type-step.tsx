@@ -51,7 +51,7 @@ export function LaunchTypeStep({
     <section className="flex h-full flex-col">
       <StepHeader
         title="Choose the launch type"
-        description="Phase A ships the Normal Email path first; the wizard previews the full broadcast model so the next options are visible up front."
+        description="Pick how this broadcast goes out. Normal Email uses the Markdown composer; HTML Email opens the drag-and-drop editor. SMS arrives once carrier approval lands."
       />
 
       <div className="grid gap-3 md:grid-cols-3">
