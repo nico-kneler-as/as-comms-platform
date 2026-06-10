@@ -139,13 +139,12 @@ export function AudienceBuilderStep({
 
   return (
     <section className="flex h-full flex-col">
-      <StepHeader
-        title="Build the audience"
-        description="Live counts update from canonical contacts as you refine the audience mode, filters, and volunteer selection."
-      />
+      <StepHeader title="Build the audience" />
 
       <div className="space-y-4">
-        <AudienceCountPanel countState={countState} loading={countLoading} />
+        {hasPickedMode ? (
+          <AudienceCountPanel countState={countState} loading={countLoading} />
+        ) : null}
 
         {hasPickedMode ? (
           <>
@@ -252,7 +251,7 @@ function InitialFilterSelector({
       <div
         role="radiogroup"
         aria-label="Audience mode"
-        className="grid gap-3 px-4 py-4 lg:grid-cols-2"
+        className="grid gap-3 px-4 py-4 lg:grid-cols-3"
       >
         {modes.map((mode) => {
           const selected = value === mode;

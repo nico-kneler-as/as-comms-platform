@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 interface StepHeaderProps {
   readonly title: string;
-  readonly description: string;
+  readonly description?: string;
   readonly rightSlot?: ReactNode;
 }
 
@@ -23,9 +23,11 @@ export function StepHeader({
         <h2 className="text-balance text-xl font-semibold tracking-tight text-slate-900">
           {title}
         </h2>
-        <p className="mt-2 max-w-2xl text-pretty text-[13px] leading-relaxed text-slate-500">
-          {description}
-        </p>
+        {description ? (
+          <p className="mt-2 max-w-2xl text-pretty text-[13px] leading-relaxed text-slate-500">
+            {description}
+          </p>
+        ) : null}
       </div>
       {rightSlot ? <div className="shrink-0">{rightSlot}</div> : null}
     </header>
