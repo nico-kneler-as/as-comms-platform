@@ -709,7 +709,14 @@ export function NewCampaignWizard({
         ) : null}
 
         <div className="flex-1 overflow-y-auto bg-white px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
-          <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
+          <div
+            className={cn(
+              "flex min-h-full w-full flex-col",
+              currentStep === 3 && launchType === "html_email"
+                ? null
+                : "mx-auto max-w-3xl",
+            )}
+          >
             {currentStep === 0 ? (
               <LaunchTypeStep
                 value={launchType}
