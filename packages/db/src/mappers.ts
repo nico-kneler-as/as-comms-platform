@@ -19,6 +19,7 @@ import {
   projectKnowledgeEntrySchema,
   projectDimensionSchema,
   routingReviewSchema,
+  salesforceReconciliationRunSchema,
   salesforceCommunicationDetailSchema,
   salesforceEventContextSchema,
   simpleTextingMessageDetailSchema,
@@ -44,6 +45,7 @@ import {
   type ProjectKnowledgeEntryRecord,
   type ProjectDimensionRecord,
   type RoutingReviewCase,
+  type SalesforceReconciliationRunRecord,
   type SalesforceCommunicationDetailRecord,
   type SalesforceEventContextRecord,
   type SimpleTextingMessageDetailRecord,
@@ -88,6 +90,7 @@ import type {
   projectDimensions,
   routingReviewQueue,
   salesforceCommunicationDetails,
+  salesforceReconciliationRuns,
   salesforceEventContext,
   simpleTextingMessageDetails,
   smsMessages,
@@ -133,6 +136,30 @@ type SyncStateRow = typeof syncState.$inferSelect;
 type AuditEvidenceRow = typeof auditPolicyEvidence.$inferSelect;
 type UserRow = typeof users.$inferSelect;
 type ProjectAliasRow = typeof projectAliases.$inferSelect;
+type SalesforceReconciliationRunRow =
+  typeof salesforceReconciliationRuns.$inferSelect;
+
+type ContactRowInput = Omit<
+  ContactRow,
+  "salesforceDeletedAt" | "salesforceReconciledAt"
+> &
+  Partial<Pick<ContactRow, "salesforceDeletedAt" | "salesforceReconciledAt">>;
+
+type ContactMembershipRowInput = Omit<
+  ContactMembershipRow,
+  "salesforceDeletedAt" | "salesforceReconciledAt"
+> &
+  Partial<
+    Pick<ContactMembershipRow, "salesforceDeletedAt" | "salesforceReconciledAt">
+  >;
+
+type ProjectDimensionRowInput = Omit<
+  ProjectDimensionRow,
+  "salesforceDeletedAt" | "salesforceReconciledAt"
+> &
+  Partial<
+    Pick<ProjectDimensionRow, "salesforceDeletedAt" | "salesforceReconciledAt">
+  >;
 
 function fromDate(value: Date | null): string | null {
   return value?.toISOString() ?? null;
@@ -360,13 +387,15 @@ export function mapCanonicalEventAudienceToInsert(
   };
 }
 
-export function mapContactRow(row: ContactRow): ContactRecord {
+export function mapContactRow(row: ContactRowInput): ContactRecord {
   return contactSchema.parse({
     id: row.id,
     salesforceContactId: row.salesforceContactId,
     displayName: row.displayName,
     primaryEmail: row.primaryEmail,
     primaryPhone: row.primaryPhone,
+    salesforceDeletedAt: fromDate(row.salesforceDeletedAt ?? null),
+    salesforceReconciledAt: fromDate(row.salesforceReconciledAt ?? null),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   });
@@ -383,6 +412,18 @@ export function mapContactToInsert(
     displayName: parsed.displayName,
     primaryEmail: parsed.primaryEmail,
     primaryPhone: parsed.primaryPhone,
+    salesforceDeletedAt:
+      parsed.salesforceDeletedAt === undefined
+        ? undefined
+        : parsed.salesforceDeletedAt === null
+          ? null
+          : toDate(parsed.salesforceDeletedAt),
+    salesforceReconciledAt:
+      parsed.salesforceReconciledAt === undefined
+        ? undefined
+        : parsed.salesforceReconciledAt === null
+          ? null
+          : toDate(parsed.salesforceReconciledAt),
     createdAt: toDate(parsed.createdAt),
     updatedAt: toDate(parsed.updatedAt),
   };
@@ -419,7 +460,7 @@ export function mapContactIdentityToInsert(
 }
 
 export function mapContactMembershipRow(
-  row: ContactMembershipRow,
+  row: ContactMembershipRowInput,
 ): ContactMembershipRecord {
   return contactMembershipSchema.parse({
     id: row.id,
@@ -430,6 +471,8 @@ export function mapContactMembershipRow(
     role: row.role,
     status: row.status,
     source: row.source,
+    salesforceDeletedAt: fromDate(row.salesforceDeletedAt ?? null),
+    salesforceReconciledAt: fromDate(row.salesforceReconciledAt ?? null),
     createdAt: row.createdAt.toISOString(),
   });
 }
@@ -448,6 +491,18 @@ export function mapContactMembershipToInsert(
     role: parsed.role,
     status: parsed.status,
     source: parsed.source,
+    salesforceDeletedAt:
+      parsed.salesforceDeletedAt === undefined
+        ? undefined
+        : parsed.salesforceDeletedAt === null
+          ? null
+          : toDate(parsed.salesforceDeletedAt),
+    salesforceReconciledAt:
+      parsed.salesforceReconciledAt === undefined
+        ? undefined
+        : parsed.salesforceReconciledAt === null
+          ? null
+          : toDate(parsed.salesforceReconciledAt),
     createdAt: toDate(parsed.createdAt),
   };
 }
@@ -563,7 +618,7 @@ export function mapSmsSenderToInsert(
 }
 
 export function mapProjectDimensionRow(
-  row: ProjectDimensionRow,
+  row: ProjectDimensionRowInput,
 ): ProjectDimensionRecord {
   return projectDimensionSchema.parse({
     projectId: row.projectId,
@@ -581,6 +636,8 @@ export function mapProjectDimensionRow(
     aiOptimizedSynthesizedAt: fromDate(row.aiOptimizedSynthesizedAt),
     aiOptimizedLastCheckedAt: fromDate(row.aiOptimizedLastCheckedAt),
     aiOptimizedInputHash: row.aiOptimizedInputHash,
+    salesforceDeletedAt: fromDate(row.salesforceDeletedAt ?? null),
+    salesforceReconciledAt: fromDate(row.salesforceReconciledAt ?? null),
   });
 }
 
@@ -623,6 +680,18 @@ export function mapProjectDimensionToInsert(
       parsed.aiOptimizedInputHash === undefined
         ? undefined
         : parsed.aiOptimizedInputHash,
+    salesforceDeletedAt:
+      parsed.salesforceDeletedAt === undefined
+        ? undefined
+        : parsed.salesforceDeletedAt === null
+          ? null
+          : toDate(parsed.salesforceDeletedAt),
+    salesforceReconciledAt:
+      parsed.salesforceReconciledAt === undefined
+        ? undefined
+        : parsed.salesforceReconciledAt === null
+          ? null
+          : toDate(parsed.salesforceReconciledAt),
     source: parsed.source,
   };
 }
@@ -1330,5 +1399,48 @@ export function mapProjectAliasToInsert(
     updatedAt: record.updatedAt,
     createdBy: record.createdBy,
     updatedBy: record.updatedBy,
+  };
+}
+
+export function mapSalesforceReconciliationRunRow(
+  row: SalesforceReconciliationRunRow,
+): SalesforceReconciliationRunRecord {
+  return salesforceReconciliationRunSchema.parse({
+    id: row.id,
+    startedAt: row.startedAt.toISOString(),
+    completedAt: fromDate(row.completedAt),
+    mode: row.mode,
+    entityType: row.entityType,
+    scanned: row.scanned,
+    confirmedPresent: row.confirmedPresent,
+    markedDeleted: row.markedDeleted,
+    missingLocallyCount: row.missingLocallyCount,
+    errors: row.errors,
+    abortedReason: row.abortedReason,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  });
+}
+
+export function mapSalesforceReconciliationRunToInsert(
+  record: SalesforceReconciliationRunRecord,
+): typeof salesforceReconciliationRuns.$inferInsert {
+  const parsed = salesforceReconciliationRunSchema.parse(record);
+
+  return {
+    id: parsed.id,
+    startedAt: toDate(parsed.startedAt),
+    completedAt:
+      parsed.completedAt === null ? null : toDate(parsed.completedAt),
+    mode: parsed.mode,
+    entityType: parsed.entityType,
+    scanned: parsed.scanned,
+    confirmedPresent: parsed.confirmedPresent,
+    markedDeleted: parsed.markedDeleted,
+    missingLocallyCount: parsed.missingLocallyCount,
+    errors: parsed.errors,
+    abortedReason: parsed.abortedReason,
+    createdAt: toDate(parsed.createdAt),
+    updatedAt: toDate(parsed.updatedAt),
   };
 }
