@@ -15,6 +15,7 @@ import {
   pollSalesforceLiveJobName,
 } from "../src/orchestration/tasks.js";
 import { reconcileStaleRunningJobName } from "../src/jobs/reconcile-stale-running.js";
+import { reconcileSalesforceStateJobName } from "../src/jobs/reconcile-salesforce-state.js";
 import { reconcileStrandedCampaignRunsJobName } from "../src/jobs/reconcile-stranded-campaign-runs.js";
 import { sweepPendingOutboundsJobName } from "../src/jobs/sweep-pending-outbounds.js";
 import { campaignEventsTailFinalizeJobName } from "../src/jobs/campaign-events-tail-finalize/index.js";
@@ -163,6 +164,7 @@ describe("Stage 1 worker runtime task registration", () => {
         `0 10 * * * ${dedupHistoricalLedgerJobName} ?id=dedup-historical-ledger&max=1`,
         `30 10 * * * ${reconcileCaptureGapsJobName} ?id=capture-gap-reconcile&max=1`,
         "*/15 * * * * reconcile-routing-review-queue ?id=routing-review-queue-reconcile&max=1",
+        `0 6 * * 0 ${reconcileSalesforceStateJobName} ?id=sf-state-reconcile&max=1`,
         "0 11 * * 0 reconcile-superseded-projections ?id=superseded-projections-reconcile&max=1",
       ].join("\n"),
     );

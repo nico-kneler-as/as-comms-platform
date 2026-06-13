@@ -23,6 +23,7 @@ import type {
   Provider,
   RoutingReviewCase,
   RoutingReviewReasonCode,
+  SalesforceReconciliationRunRecord,
   SalesforceCommunicationDetailRecord,
   SalesforceEventContextRecord,
   SimpleTextingMessageDetailRecord,
@@ -604,6 +605,15 @@ export interface SalesforceCommunicationDetailRepository {
   ): Promise<SalesforceCommunicationDetailRecord>;
 }
 
+export interface SalesforceReconciliationRunRepository {
+  /**
+   * Inserts a single run-log row recording the outcome of one entity's
+   * pass of the reconciliation orchestrator. Idempotent on the
+   * caller-provided `id` (the orchestrator generates fresh UUIDs per run).
+   */
+  insert(record: SalesforceReconciliationRunRecord): Promise<void>;
+}
+
 export interface SimpleTextingMessageDetailRepository {
   listBySourceEvidenceIds(
     sourceEvidenceIds: readonly string[],
@@ -959,6 +969,7 @@ export interface Stage1RepositoryBundle {
   readonly messageAttachments: MessageAttachmentRepository;
   readonly salesforceEventContext: SalesforceEventContextRepository;
   readonly salesforceCommunicationDetails: SalesforceCommunicationDetailRepository;
+  readonly salesforceReconciliationRuns: SalesforceReconciliationRunRepository;
   readonly simpleTextingMessageDetails: SimpleTextingMessageDetailRepository;
   readonly mailchimpCampaignActivityDetails: MailchimpCampaignActivityDetailRepository;
   readonly manualNoteDetails: ManualNoteDetailRepository;

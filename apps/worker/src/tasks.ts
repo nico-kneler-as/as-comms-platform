@@ -38,6 +38,11 @@ import {
   type ReconcileStaleRunningTaskDependencies,
 } from "./jobs/reconcile-stale-running.js";
 import {
+  createReconcileSalesforceStateTask,
+  reconcileSalesforceStateJobName,
+  type ReconcileSalesforceStateTaskDependencies,
+} from "./jobs/reconcile-salesforce-state.js";
+import {
   createReconcileSupersededProjectionsTask,
   reconcileSupersededProjectionsJobName,
   type ReconcileSupersededProjectionsTaskDependencies,
@@ -91,6 +96,7 @@ export function createTaskList(
     readonly reconcileRoutingReviewQueue?: ReconcileRoutingReviewQueueTaskDependencies;
     readonly reconcileCaptureGaps?: ReconcileCaptureGapsTaskDependencies;
     readonly reconcileStaleRunning?: ReconcileStaleRunningTaskDependencies;
+    readonly reconcileSalesforceState?: ReconcileSalesforceStateTaskDependencies;
     readonly reconcileSupersededProjections?: ReconcileSupersededProjectionsTaskDependencies;
     readonly reconcileStrandedCampaignRuns?: ReconcileStrandedCampaignRunsTaskDependencies;
     readonly synthesizeProjectKnowledge?: SynthesizeProjectKnowledgeDependencies;
@@ -154,6 +160,14 @@ export function createTaskList(
           [reconcileStaleRunningJobName]: createReconcileStaleRunningTask(
             input.reconcileStaleRunning
           )
+        }),
+    ...(input?.reconcileSalesforceState === undefined
+      ? {}
+      : {
+          [reconcileSalesforceStateJobName]:
+            createReconcileSalesforceStateTask(
+              input.reconcileSalesforceState,
+            ),
         }),
     ...(input?.reconcileSupersededProjections === undefined
       ? {}

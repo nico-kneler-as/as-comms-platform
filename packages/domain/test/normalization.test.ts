@@ -908,6 +908,9 @@ function buildContext(input: {
       upsert: (record: SalesforceCommunicationDetailRecord) =>
         Promise.resolve(record),
     },
+    salesforceReconciliationRuns: {
+      insert: () => Promise.resolve(),
+    },
     simpleTextingMessageDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
       upsert: (record: SimpleTextingMessageDetailRecord) =>

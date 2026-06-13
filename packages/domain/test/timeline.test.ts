@@ -290,6 +290,9 @@ function createRepositoryBundle(input: {
         ),
       upsert: (record) => Promise.resolve(record),
     },
+    salesforceReconciliationRuns: {
+      insert: () => Promise.resolve(),
+    },
     simpleTextingMessageDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record),
