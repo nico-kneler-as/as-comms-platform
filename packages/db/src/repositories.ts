@@ -764,10 +764,9 @@ function mapMailchimpCampaignActivityDetailRowLocal(
   return {
     sourceEvidenceId: row.sourceEvidenceId,
     providerRecordId: row.providerRecordId,
-    activityType:
-      normalizeMailchimpActivityType(
-        row.activityType,
-      ) as MailchimpCampaignActivityDetailRecord["activityType"],
+    activityType: normalizeMailchimpActivityType(
+      row.activityType,
+    ) as MailchimpCampaignActivityDetailRecord["activityType"],
     campaignId: row.campaignId,
     audienceId: row.audienceId,
     memberId: row.memberId,
@@ -815,7 +814,9 @@ function mapMailchimpRecipientRow(
 ): MailchimpRecipientRow {
   const eventAt = row.latestEventAt;
   const isoLatestEventAt =
-    eventAt instanceof Date ? eventAt.toISOString() : new Date(String(eventAt)).toISOString();
+    eventAt instanceof Date
+      ? eventAt.toISOString()
+      : new Date(String(eventAt)).toISOString();
   return {
     memberId: row.memberId,
     email: row.email,
@@ -1993,7 +1994,10 @@ function createStage1RepositoriesInternal(
           .leftJoin(
             canonicalEventAudience,
             and(
-              eq(canonicalEventAudience.canonicalEventId, canonicalEventLedger.id),
+              eq(
+                canonicalEventAudience.canonicalEventId,
+                canonicalEventLedger.id,
+              ),
               eq(canonicalEventAudience.contactId, contactId),
             ),
           )
@@ -2453,6 +2457,58 @@ function createStage1RepositoriesInternal(
           .orderBy(asc(contacts.id));
 
         return rows.map(mapContactRow);
+      },
+
+      async listSalesforceAnchoredIds() {
+        const rows = await db
+          .select({ id: contacts.salesforceContactId })
+          .from(contacts)
+          .where(
+            and(
+              isNotNull(contacts.salesforceContactId),
+              isNull(contacts.salesforceDeletedAt),
+            ),
+          )
+          .orderBy(asc(contacts.salesforceContactId));
+
+        return rows
+          .map((row) => row.id)
+          .filter((id): id is string => id !== null);
+      },
+
+      async markSalesforceDeleted(input) {
+        if (input.salesforceIds.length === 0) {
+          return 0;
+        }
+
+        const result = await db
+          .update(contacts)
+          .set({ salesforceDeletedAt: new Date(input.deletedAt) })
+          .where(
+            and(
+              inArray(contacts.salesforceContactId, [...input.salesforceIds]),
+              isNull(contacts.salesforceDeletedAt),
+            ),
+          )
+          .returning({ id: contacts.id });
+
+        return result.length;
+      },
+
+      async markSalesforceReconciled(input) {
+        if (input.salesforceIds.length === 0) {
+          return 0;
+        }
+
+        const result = await db
+          .update(contacts)
+          .set({ salesforceReconciledAt: new Date(input.reconciledAt) })
+          .where(
+            inArray(contacts.salesforceContactId, [...input.salesforceIds]),
+          )
+          .returning({ id: contacts.id });
+
+        return result.length;
       },
 
       async searchByQuery(input) {
@@ -2938,40 +2994,44 @@ function createStage1RepositoriesInternal(
         }
 
         return {
-          canonicalEventsRepointed:
-            normalizeSqlResultRows<{ readonly id: string }>(
-              canonicalEventsResult as {
-                readonly rows?: readonly { readonly id: string }[];
-              },
-            ).length,
-          timelineRowsRepointed:
-            normalizeSqlResultRows<{ readonly id: string }>(
-              timelineRowsResult as {
-                readonly rows?: readonly { readonly id: string }[];
-              },
-            ).length,
+          canonicalEventsRepointed: normalizeSqlResultRows<{
+            readonly id: string;
+          }>(
+            canonicalEventsResult as {
+              readonly rows?: readonly { readonly id: string }[];
+            },
+          ).length,
+          timelineRowsRepointed: normalizeSqlResultRows<{
+            readonly id: string;
+          }>(
+            timelineRowsResult as {
+              readonly rows?: readonly { readonly id: string }[];
+            },
+          ).length,
           notesRepointed: normalizeSqlResultRows<{ readonly id: string }>(
             noteRowsResult as {
               readonly rows?: readonly { readonly id: string }[];
             },
           ).length,
-          routingRowsRepointed:
-            normalizeSqlResultRows<{ readonly id: string }>(
-              routingRowsResult as {
-                readonly rows?: readonly { readonly id: string }[];
-              },
-            ).length,
-          identityCasesRepointed:
-            normalizeSqlResultRows<{ readonly id: string }>(
-              identityCasesResult as {
-                readonly rows?: readonly { readonly id: string }[];
-              },
-            ).length,
+          routingRowsRepointed: normalizeSqlResultRows<{ readonly id: string }>(
+            routingRowsResult as {
+              readonly rows?: readonly { readonly id: string }[];
+            },
+          ).length,
+          identityCasesRepointed: normalizeSqlResultRows<{
+            readonly id: string;
+          }>(
+            identityCasesResult as {
+              readonly rows?: readonly { readonly id: string }[];
+            },
+          ).length,
           audienceRowsRepointed: normalizeSqlResultRows<{
             readonly canonical_event_id: string;
           }>(
             audienceRowsResult as {
-              readonly rows?: readonly { readonly canonical_event_id: string }[];
+              readonly rows?: readonly {
+                readonly canonical_event_id: string;
+              }[];
             },
           ).length,
           contactDeleted: true,
@@ -3067,6 +3127,63 @@ function createStage1RepositoriesInternal(
           );
 
         return rows.map(mapContactMembershipRow);
+      },
+
+      async listSalesforceAnchoredIds() {
+        const rows = await db
+          .select({ id: contactMemberships.salesforceMembershipId })
+          .from(contactMemberships)
+          .where(
+            and(
+              eq(contactMemberships.source, "salesforce"),
+              isNotNull(contactMemberships.salesforceMembershipId),
+              isNull(contactMemberships.salesforceDeletedAt),
+            ),
+          )
+          .orderBy(asc(contactMemberships.salesforceMembershipId));
+
+        return rows
+          .map((row) => row.id)
+          .filter((id): id is string => id !== null);
+      },
+
+      async markSalesforceDeleted(input) {
+        if (input.salesforceIds.length === 0) {
+          return 0;
+        }
+
+        const result = await db
+          .update(contactMemberships)
+          .set({ salesforceDeletedAt: new Date(input.deletedAt) })
+          .where(
+            and(
+              inArray(contactMemberships.salesforceMembershipId, [
+                ...input.salesforceIds,
+              ]),
+              isNull(contactMemberships.salesforceDeletedAt),
+            ),
+          )
+          .returning({ id: contactMemberships.id });
+
+        return result.length;
+      },
+
+      async markSalesforceReconciled(input) {
+        if (input.salesforceIds.length === 0) {
+          return 0;
+        }
+
+        const result = await db
+          .update(contactMemberships)
+          .set({ salesforceReconciledAt: new Date(input.reconciledAt) })
+          .where(
+            inArray(contactMemberships.salesforceMembershipId, [
+              ...input.salesforceIds,
+            ]),
+          )
+          .returning({ id: contactMemberships.id });
+
+        return result.length;
       },
 
       async upsert(record) {
@@ -3175,6 +3292,60 @@ function createStage1RepositoriesInternal(
           .orderBy(asc(projectDimensions.projectId));
 
         return rows.map(mapProjectDimensionRow);
+      },
+
+      async listSalesforceAnchoredIds() {
+        const rows = await db
+          .select({ id: projectDimensions.projectId })
+          .from(projectDimensions)
+          .where(
+            and(
+              eq(projectDimensions.source, "salesforce"),
+              isNull(projectDimensions.salesforceDeletedAt),
+            ),
+          )
+          .orderBy(asc(projectDimensions.projectId));
+
+        return rows.map((row) => row.id);
+      },
+
+      async markSalesforceDeleted(input) {
+        if (input.salesforceIds.length === 0) {
+          return 0;
+        }
+
+        const result = await db
+          .update(projectDimensions)
+          .set({ salesforceDeletedAt: new Date(input.deletedAt) })
+          .where(
+            and(
+              inArray(projectDimensions.projectId, [...input.salesforceIds]),
+              eq(projectDimensions.source, "salesforce"),
+              isNull(projectDimensions.salesforceDeletedAt),
+            ),
+          )
+          .returning({ id: projectDimensions.projectId });
+
+        return result.length;
+      },
+
+      async markSalesforceReconciled(input) {
+        if (input.salesforceIds.length === 0) {
+          return 0;
+        }
+
+        const result = await db
+          .update(projectDimensions)
+          .set({ salesforceReconciledAt: new Date(input.reconciledAt) })
+          .where(
+            and(
+              inArray(projectDimensions.projectId, [...input.salesforceIds]),
+              eq(projectDimensions.source, "salesforce"),
+            ),
+          )
+          .returning({ id: projectDimensions.projectId });
+
+        return result.length;
       },
 
       async listConnectedProjects(hostProjectId) {
@@ -5722,9 +5893,7 @@ function createStage2RepositoriesInternal(
 
           const priorAlias = existing.projectAlias?.trim() ?? "";
           const priorAliasNormalized = priorAlias.toLowerCase();
-          const nextAliasNormalized = (projectAlias ?? "")
-            .trim()
-            .toLowerCase();
+          const nextAliasNormalized = (projectAlias ?? "").trim().toLowerCase();
           const previousAliases = existing.previousAliases;
           const previousAliasesNormalized = new Set(
             previousAliases.map((alias) => alias.trim().toLowerCase()),
@@ -6358,7 +6527,8 @@ type AudienceSnapshotRow = typeof audienceSnapshots.$inferSelect;
 type ContactConsentRow = typeof contactConsent.$inferSelect;
 type SuppressionListRow = typeof suppressionList.$inferSelect;
 type OrgSettingsRow = typeof orgSettings.$inferSelect;
-type PostmarkWebhookDeadLetterRow = typeof postmarkWebhookDeadLetter.$inferSelect;
+type PostmarkWebhookDeadLetterRow =
+  typeof postmarkWebhookDeadLetter.$inferSelect;
 
 interface CampaignRunProjectionRowDb {
   readonly runId: string;
@@ -6656,9 +6826,7 @@ function mapPostmarkWebhookDeadLetterRow(
 function isTerminalWebhookDeadLetterFailureKind(
   failureKind: WebhookDeadLetterFailureKind,
 ): boolean {
-  return (
-    failureKind === "schema_error" || failureKind === "unknown_event_type"
-  );
+  return failureKind === "schema_error" || failureKind === "unknown_event_type";
 }
 
 function clampWebhookDeadLetterListLimit(limit: number | undefined): number {
