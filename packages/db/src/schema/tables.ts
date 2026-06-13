@@ -210,6 +210,14 @@ export const contacts = pgTable(
     displayName: text("display_name").notNull(),
     primaryEmail: text("primary_email"),
     primaryPhone: text("primary_phone"),
+    salesforceDeletedAt: timestamp("salesforce_deleted_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    salesforceReconciledAt: timestamp("salesforce_reconciled_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", {
       mode: "date",
       withTimezone: true,
@@ -280,6 +288,14 @@ export const contactMemberships = pgTable(
     role: text("role"),
     status: text("status"),
     source: recordSourceEnum("source").notNull(),
+    salesforceDeletedAt: timestamp("salesforce_deleted_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    salesforceReconciledAt: timestamp("salesforce_reconciled_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
     createdAt: createdAtColumn,
     updatedAt: updatedAtColumn,
   },
@@ -356,6 +372,14 @@ export const projectDimensions = pgTable(
     }),
     aiOptimizedInputHash: text("ai_optimized_input_hash"),
     source: recordSourceEnum("source").notNull(),
+    salesforceDeletedAt: timestamp("salesforce_deleted_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    salesforceReconciledAt: timestamp("salesforce_reconciled_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
     createdAt: createdAtColumn,
     updatedAt: updatedAtColumn,
   },
@@ -1632,4 +1656,45 @@ export const integrationHealth = pgTable(
     updatedAt: updatedAtColumn,
   },
   (table) => [index("integration_health_updated_at_idx").on(table.updatedAt)],
+);
+
+export const salesforceReconciliationRuns = pgTable(
+  "salesforce_reconciliation_runs",
+  {
+    id: text("id").primaryKey(),
+    startedAt: timestamp("started_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    completedAt: timestamp("completed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    mode: text("mode").$type<"dry_run" | "enforce">().notNull(),
+    entityType: text("entity_type")
+      .$type<"contact" | "membership" | "project">()
+      .notNull(),
+    scanned: integer("scanned").notNull().default(0),
+    confirmedPresent: integer("confirmed_present").notNull().default(0),
+    markedDeleted: integer("marked_deleted").notNull().default(0),
+    missingLocallyCount: integer("missing_locally_count").notNull().default(0),
+    errors: jsonb("errors").$type<readonly unknown[]>().notNull().default([]),
+    abortedReason: text("aborted_reason"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    check(
+      "salesforce_reconciliation_runs_mode_check",
+      sql`${table.mode} IN ('dry_run', 'enforce')`,
+    ),
+    check(
+      "salesforce_reconciliation_runs_entity_type_check",
+      sql`${table.entityType} IN ('contact', 'membership', 'project')`,
+    ),
+    index("salesforce_reconciliation_runs_entity_started_idx").on(
+      table.entityType,
+      table.startedAt.desc(),
+    ),
+  ],
 );
