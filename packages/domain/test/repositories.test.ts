@@ -76,6 +76,9 @@ describe("defineStage1RepositoryBundle", () => {
         findByPrimaryPhone: () => Promise.resolve(contact),
         listAll: () => Promise.resolve([contact]),
         listByIds: () => Promise.resolve([contact]),
+        listSalesforceAnchoredIds: () => Promise.resolve([]),
+        markSalesforceDeleted: () => Promise.resolve(0),
+        markSalesforceReconciled: () => Promise.resolve(0),
         searchByQuery: () => Promise.resolve([contact]),
         searchInboxUnified: () =>
           Promise.resolve({
@@ -93,6 +96,9 @@ describe("defineStage1RepositoryBundle", () => {
       contactMemberships: {
         listByContactId: () => Promise.resolve([]),
         listByContactIds: () => Promise.resolve([]),
+        listSalesforceAnchoredIds: () => Promise.resolve([]),
+        markSalesforceDeleted: () => Promise.resolve(0),
+        markSalesforceReconciled: () => Promise.resolve(0),
         upsert: (record) => Promise.resolve(record),
       },
       smsMessages: {
@@ -121,6 +127,9 @@ describe("defineStage1RepositoryBundle", () => {
         listActive: () => Promise.resolve([]),
         listAllProjectAliases: () => Promise.resolve([]),
         listByIds: () => Promise.resolve([]),
+        listSalesforceAnchoredIds: () => Promise.resolve([]),
+        markSalesforceDeleted: () => Promise.resolve(0),
+        markSalesforceReconciled: () => Promise.resolve(0),
         listConnectedProjects: () => Promise.resolve([]),
         listAvailableConnectionCandidates: () => Promise.resolve([]),
         findEffectiveAiKnowledge: () => Promise.resolve(null),
@@ -171,7 +180,8 @@ describe("defineStage1RepositoryBundle", () => {
             unsubscribed: 0,
             distinctMembers: 0,
           }),
-        listRecipientsForCampaign: () => Promise.resolve({ rows: [], total: 0 }),
+        listRecipientsForCampaign: () =>
+          Promise.resolve({ rows: [], total: 0 }),
       },
       manualNoteDetails: {
         listBySourceEvidenceIds: () => Promise.resolve([]),
@@ -282,7 +292,7 @@ describe("defineStage1RepositoryBundle", () => {
             total: 0,
             latestUpdatedAt: null,
             latestSortKey: null,
-        }),
+          }),
         upsert: (record) => Promise.resolve(record),
       },
       canonicalEventAudience: {

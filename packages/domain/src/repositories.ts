@@ -306,6 +306,36 @@ export interface ContactRepository {
   findByPrimaryPhone(phoneE164: string): Promise<ContactRecord | null>;
   listAll(): Promise<readonly ContactRecord[]>;
   listByIds(ids: readonly string[]): Promise<readonly ContactRecord[]>;
+  /**
+   * Returns the SF Contact IDs (e.g. `003VK00000mE06CYAS`) for every
+   * SF-anchored contact in our DB that has NOT been tombstoned. Used by
+   * the weekly reconciler to ask Salesforce "are these still there?"
+   *
+   * Excludes:
+   * - Contacts with `salesforce_contact_id IS NULL` (email-only / phone-only)
+   * - Contacts with `salesforce_deleted_at IS NOT NULL` (already tombstoned)
+   */
+  listSalesforceAnchoredIds(): Promise<readonly string[]>;
+  /**
+   * Sets `salesforce_deleted_at = deletedAt` on every row whose
+   * `salesforce_contact_id` is in the input list AND whose
+   * `salesforce_deleted_at IS NULL` (idempotent: re-running won't
+   * overwrite an earlier tombstone timestamp). Returns rows updated.
+   */
+  markSalesforceDeleted(input: {
+    readonly salesforceIds: readonly string[];
+    readonly deletedAt: string;
+  }): Promise<number>;
+  /**
+   * Sets `salesforce_reconciled_at = reconciledAt` on every row whose
+   * `salesforce_contact_id` is in the input list. Does NOT clear
+   * `salesforce_deleted_at` (un-tombstone is out of scope; if needed,
+   * future ops can clear it manually). Returns rows updated.
+   */
+  markSalesforceReconciled(input: {
+    readonly salesforceIds: readonly string[];
+    readonly reconciledAt: string;
+  }): Promise<number>;
   searchByQuery(input: {
     readonly query: string;
     readonly limit: number;
@@ -347,6 +377,15 @@ export interface ContactMembershipRepository {
   listByContactIds(
     contactIds: readonly string[],
   ): Promise<readonly ContactMembershipRecord[]>;
+  listSalesforceAnchoredIds(): Promise<readonly string[]>;
+  markSalesforceDeleted(input: {
+    readonly salesforceIds: readonly string[];
+    readonly deletedAt: string;
+  }): Promise<number>;
+  markSalesforceReconciled(input: {
+    readonly salesforceIds: readonly string[];
+    readonly reconciledAt: string;
+  }): Promise<number>;
   upsert(record: ContactMembershipRecord): Promise<ContactMembershipRecord>;
 }
 
@@ -424,6 +463,15 @@ export interface ProjectDimensionRepository {
   listByIds(
     projectIds: readonly string[],
   ): Promise<readonly ProjectDimensionRecord[]>;
+  listSalesforceAnchoredIds(): Promise<readonly string[]>;
+  markSalesforceDeleted(input: {
+    readonly salesforceIds: readonly string[];
+    readonly deletedAt: string;
+  }): Promise<number>;
+  markSalesforceReconciled(input: {
+    readonly salesforceIds: readonly string[];
+    readonly reconciledAt: string;
+  }): Promise<number>;
   /**
    * Returns active projects whose `connected_to_project_id` points at the
    * given host. Ordered by project name.
