@@ -109,6 +109,7 @@ import {
   mapProjectDimensionToInsert,
   mapRoutingReviewRow,
   mapRoutingReviewToInsert,
+  mapSalesforceReconciliationRunToInsert,
   mapSalesforceEventContextRow,
   mapSalesforceEventContextToInsert,
   mapSmsMessageRow,
@@ -159,6 +160,7 @@ import {
   projectDimensions,
   routingReviewQueue,
   salesforceCommunicationDetails,
+  salesforceReconciliationRuns,
   salesforceEventContext,
   simpleTextingMessageDetails,
   suppressionList,
@@ -3866,6 +3868,14 @@ function createStage1RepositoriesInternal(
             "Expected Salesforce communication detail row to be returned.",
           ),
         );
+      },
+    },
+
+    salesforceReconciliationRuns: {
+      async insert(record) {
+        await db
+          .insert(salesforceReconciliationRuns)
+          .values(mapSalesforceReconciliationRunToInsert(record));
       },
     },
 
