@@ -3104,7 +3104,12 @@ function createStage1RepositoriesInternal(
         const rows = await db
           .select()
           .from(contactMemberships)
-          .where(eq(contactMemberships.contactId, contactId))
+          .where(
+            and(
+              eq(contactMemberships.contactId, contactId),
+              isNull(contactMemberships.salesforceDeletedAt),
+            ),
+          )
           .orderBy(
             asc(contactMemberships.projectId),
             asc(contactMemberships.id),
@@ -3121,7 +3126,12 @@ function createStage1RepositoriesInternal(
         const rows = await db
           .select()
           .from(contactMemberships)
-          .where(inArray(contactMemberships.contactId, [...contactIds]))
+          .where(
+            and(
+              inArray(contactMemberships.contactId, [...contactIds]),
+              isNull(contactMemberships.salesforceDeletedAt),
+            ),
+          )
           .orderBy(
             asc(contactMemberships.contactId),
             asc(contactMemberships.projectId),
@@ -3221,7 +3231,12 @@ function createStage1RepositoriesInternal(
         const [row] = await db
           .select()
           .from(projectDimensions)
-          .where(eq(projectDimensions.projectId, projectId))
+          .where(
+            and(
+              eq(projectDimensions.projectId, projectId),
+              isNull(projectDimensions.salesforceDeletedAt),
+            ),
+          )
           .limit(1);
 
         return row === undefined ? null : mapProjectDimensionRow(row);
@@ -3231,6 +3246,7 @@ function createStage1RepositoriesInternal(
         const rows = await db
           .select()
           .from(projectDimensions)
+          .where(isNull(projectDimensions.salesforceDeletedAt))
           .orderBy(asc(projectDimensions.projectName));
 
         return rows.map(mapProjectDimensionRow);
@@ -3290,7 +3306,12 @@ function createStage1RepositoriesInternal(
         const rows = await db
           .select()
           .from(projectDimensions)
-          .where(inArray(projectDimensions.projectId, [...projectIds]))
+          .where(
+            and(
+              inArray(projectDimensions.projectId, [...projectIds]),
+              isNull(projectDimensions.salesforceDeletedAt),
+            ),
+          )
           .orderBy(asc(projectDimensions.projectId));
 
         return rows.map(mapProjectDimensionRow);

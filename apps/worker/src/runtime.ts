@@ -513,7 +513,12 @@ function parseReconcileMode(
 ): ReconcileSalesforceStateMode {
   const trimmed = value?.trim();
 
-  if (trimmed === undefined || trimmed === "" || trimmed === "dry_run") {
+  // Default is "enforce"; opt out only with RECONCILE_SF_STATE_MODE=dry_run.
+  if (trimmed === undefined || trimmed === "") {
+    return "enforce";
+  }
+
+  if (trimmed === "dry_run") {
     return "dry_run";
   }
 
