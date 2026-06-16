@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { messageAttachmentSchema } from "@as-comms/contracts";
+import {
+  contactMemberships,
+  projectDimensions,
+} from "../src/schema/index.js";
 
 import { createTestStage1Context } from "./helpers.js";
 import {
@@ -2879,7 +2884,7 @@ describe("contactMemberships.listSalesforceAnchoredIds + markSalesforceDeleted +
   });
 
   it("marks salesforce memberships deleted idempotently", async () => {
-    const { repositories } = await createTestStage1Context();
+    const { repositories, db } = await createTestStage1Context();
     const deletedAt = "2026-06-03T12:34:56.000Z";
     await seedMembershipParents(repositories);
 
@@ -2912,20 +2917,21 @@ describe("contactMemberships.listSalesforceAnchoredIds + markSalesforceDeleted +
         deletedAt,
       }),
     ).resolves.toBe(2);
-    await expect(
-      repositories.contactMemberships.listByContactId("contact:membership:001"),
-    ).resolves.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
+    expect(
+      await db
+        .select()
+        .from(contactMemberships)
+        .where(eq(contactMemberships.contactId, "contact:membership:001")),
+    ).toMatchObject([
+      {
           id: "membership:salesforce:001",
-          salesforceDeletedAt: deletedAt,
-        }),
-        expect.objectContaining({
+          salesforceDeletedAt: new Date(deletedAt),
+        },
+        {
           id: "membership:salesforce:002",
-          salesforceDeletedAt: deletedAt,
-        }),
-      ]),
-    );
+          salesforceDeletedAt: new Date(deletedAt),
+        },
+      ]);
 
     await expect(
       repositories.contactMemberships.markSalesforceDeleted({
@@ -3008,6 +3014,42 @@ describe("contactMemberships.listSalesforceAnchoredIds + markSalesforceDeleted +
       }),
     ).resolves.toBe(0);
   });
+
+  it("contactMemberships.listByContactId filters tombstoned rows", async () => {
+    const { repositories } = await createTestStage1Context();
+    await seedMembershipParents(repositories);
+
+    const activeMembership = await repositories.contactMemberships.upsert({
+      id: "membership:active",
+      contactId: "contact:membership:001",
+      projectId: "project:membership:001",
+      expeditionId: null,
+      salesforceMembershipId: "a15ACTIVE001",
+      role: "volunteer",
+      status: "active",
+      source: "salesforce",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+    await repositories.contactMemberships.upsert({
+      id: "membership:tombstoned",
+      contactId: "contact:membership:001",
+      projectId: "project:membership:001",
+      expeditionId: null,
+      salesforceMembershipId: "a15TOMBSTONED001",
+      role: "volunteer",
+      status: "active",
+      source: "salesforce",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+    await repositories.contactMemberships.markSalesforceDeleted({
+      salesforceIds: ["a15TOMBSTONED001"],
+      deletedAt: "2026-06-03T12:34:56.000Z",
+    });
+
+    await expect(
+      repositories.contactMemberships.listByContactId("contact:membership:001"),
+    ).resolves.toEqual([activeMembership]);
+  });
 });
 
 describe("projectDimensions.listSalesforceAnchoredIds + markSalesforceDeleted + markSalesforceReconciled", () => {
@@ -3045,7 +3087,7 @@ describe("projectDimensions.listSalesforceAnchoredIds + markSalesforceDeleted + 
   });
 
   it("marks salesforce projects deleted idempotently", async () => {
-    const { repositories } = await createTestStage1Context();
+    const { repositories, db } = await createTestStage1Context();
     const deletedAt = "2026-06-03T12:34:56.000Z";
 
     await repositories.projectDimensions.upsert({
@@ -3065,16 +3107,28 @@ describe("projectDimensions.listSalesforceAnchoredIds + markSalesforceDeleted + 
         deletedAt,
       }),
     ).resolves.toBe(2);
-    await expect(
-      repositories.projectDimensions.findById("campaign:001A"),
-    ).resolves.toMatchObject({
-      salesforceDeletedAt: deletedAt,
-    });
-    await expect(
-      repositories.projectDimensions.findById("campaign:002B"),
-    ).resolves.toMatchObject({
-      salesforceDeletedAt: deletedAt,
-    });
+    expect(
+      await db
+        .select()
+        .from(projectDimensions)
+        .where(eq(projectDimensions.projectId, "campaign:001A")),
+    ).toMatchObject([
+      {
+        projectId: "campaign:001A",
+        salesforceDeletedAt: new Date(deletedAt),
+      },
+    ]);
+    expect(
+      await db
+        .select()
+        .from(projectDimensions)
+        .where(eq(projectDimensions.projectId, "campaign:002B")),
+    ).toMatchObject([
+      {
+        projectId: "campaign:002B",
+        salesforceDeletedAt: new Date(deletedAt),
+      },
+    ]);
 
     await expect(
       repositories.projectDimensions.markSalesforceDeleted({
@@ -3167,5 +3221,60 @@ describe("projectDimensions.listSalesforceAnchoredIds + markSalesforceDeleted + 
         reconciledAt: secondReconciledAt,
       }),
     ).resolves.toBe(0);
+  });
+
+  it("projectDimensions.listAll filters tombstoned rows", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    const activeSalesforceProject = await repositories.projectDimensions.upsert({
+      projectId: "campaign:active",
+      projectName: "Active Salesforce Project",
+      source: "salesforce",
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "campaign:tombstoned",
+      projectName: "Tombstoned Salesforce Project",
+      source: "salesforce",
+    });
+    const manualProject = await repositories.projectDimensions.upsert({
+      projectId: "manual:project",
+      projectName: "Manual Project",
+      source: "manual",
+    });
+    await repositories.projectDimensions.markSalesforceDeleted({
+      salesforceIds: ["campaign:tombstoned"],
+      deletedAt: "2026-06-03T12:34:56.000Z",
+    });
+
+    await expect(repositories.projectDimensions.listAll()).resolves.toEqual([
+      activeSalesforceProject,
+      manualProject,
+    ]);
+  });
+
+  it("projectDimensions.findById returns null for tombstoned", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await repositories.projectDimensions.upsert({
+      projectId: "campaign:tombstoned",
+      projectName: "Tombstoned Salesforce Project",
+      source: "salesforce",
+    });
+    const activeProject = await repositories.projectDimensions.upsert({
+      projectId: "campaign:active",
+      projectName: "Active Salesforce Project",
+      source: "salesforce",
+    });
+    await repositories.projectDimensions.markSalesforceDeleted({
+      salesforceIds: ["campaign:tombstoned"],
+      deletedAt: "2026-06-03T12:34:56.000Z",
+    });
+
+    await expect(
+      repositories.projectDimensions.findById("campaign:tombstoned"),
+    ).resolves.toBeNull();
+    await expect(
+      repositories.projectDimensions.findById("campaign:active"),
+    ).resolves.toEqual(activeProject);
   });
 });

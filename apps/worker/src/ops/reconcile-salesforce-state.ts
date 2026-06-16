@@ -13,6 +13,20 @@ import {
 
 export type ReconcileSalesforceStateMode = "dry_run" | "enforce";
 
+/**
+ * Hard safety cap on the percentage of rows we will tombstone in a
+ * single reconciliation run. If `markedDeleted / scanned` exceeds
+ * this for any entity type, the orchestrator aborts that entity's
+ * tombstoning and records `aborted_reason = 'delete_cap_exceeded'`.
+ *
+ * 5% of the May 2026 row counts (~8.4k contacts, ~9.6k memberships)
+ * is ~420-480 rows — well above any plausible legitimate single-week
+ * cleanup. If the cap fires, treat it as a likely Salesforce
+ * accident (mass-delete fat-finger, API bug, etc.) and investigate
+ * the run-log row before forcing an override.
+ */
+const DELETE_RATIO_CAP = 0.05;
+
 export interface ReconcileSalesforceStateInput {
   readonly db: Stage1Database;
   readonly repositories: Stage1RepositoryBundle;
@@ -147,22 +161,42 @@ async function reconcileEntity(
     salesforceRows,
     databaseIds,
   });
+  const deleteRatio =
+    databaseIds.length === 0 ? 0 : diff.deletedInSalesforce.length / databaseIds.length;
+  const capExceeded = input.mode === "enforce" && deleteRatio > DELETE_RATIO_CAP;
+  const markedDeleted = capExceeded ? 0 : diff.deletedInSalesforce.length;
   const report: ReconcileSalesforceStateEntityReport = {
     entityType: entity.entityType,
     mode: input.mode,
     scanned: databaseIds.length,
     confirmedPresent: diff.presentInBoth.length,
-    markedDeleted: diff.deletedInSalesforce.length,
+    markedDeleted,
     missingLocallyCount: diff.missingLocally.length,
     errors,
-    abortedReason: null,
+    abortedReason: capExceeded ? "delete_cap_exceeded" : null,
   };
 
   if (input.mode === "enforce") {
-    await entity.repository.markSalesforceDeleted({
-      salesforceIds: diff.deletedInSalesforce,
-      deletedAt: startedAt,
-    });
+    if (capExceeded) {
+      logger.warn(
+        JSON.stringify({
+          event: "salesforce.reconciliation.delete_cap_exceeded",
+          runId,
+          entityType: entity.entityType,
+          scanned: report.scanned,
+          markedDeletedRejected: diff.deletedInSalesforce.length,
+          ratio: deleteRatio,
+          threshold: DELETE_RATIO_CAP,
+          sampleRejectedIds: diff.deletedInSalesforce.slice(0, 5),
+        }),
+      );
+    } else {
+      await entity.repository.markSalesforceDeleted({
+        salesforceIds: diff.deletedInSalesforce,
+        deletedAt: startedAt,
+      });
+    }
+
     await entity.repository.markSalesforceReconciled({
       salesforceIds: diff.presentInBoth,
       reconciledAt: startedAt,
@@ -181,7 +215,7 @@ async function reconcileEntity(
     markedDeleted: report.markedDeleted,
     missingLocallyCount: report.missingLocallyCount,
     errors: report.errors,
-    abortedReason: null,
+    abortedReason: report.abortedReason,
     createdAt: startedAt,
     updatedAt: now().toISOString(),
   });
@@ -197,6 +231,7 @@ async function reconcileEntity(
       markedDeleted: report.markedDeleted,
       missingLocallyCount: report.missingLocallyCount,
       errors: report.errors.length,
+      abortedReason: report.abortedReason,
     }),
   );
 

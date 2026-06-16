@@ -372,9 +372,25 @@ export interface ContactIdentityRepository {
 }
 
 export interface ContactMembershipRepository {
+  /**
+   * Returns active memberships only — rows with
+   * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF
+   * reconciler — PRD #544) are filtered out. If you need to see
+   * tombstoned rows for audit/ops purposes, write a separate query;
+   * do NOT add an `includeTombstoned` parameter to this method without
+   * design review.
+   */
   listByContactId(
     contactId: string,
   ): Promise<readonly ContactMembershipRecord[]>;
+  /**
+   * Returns active memberships only — rows with
+   * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF
+   * reconciler — PRD #544) are filtered out. If you need to see
+   * tombstoned rows for audit/ops purposes, write a separate query;
+   * do NOT add an `includeTombstoned` parameter to this method without
+   * design review.
+   */
   listByContactIds(
     contactIds: readonly string[],
   ): Promise<readonly ContactMembershipRecord[]>;
@@ -457,10 +473,34 @@ export interface EffectiveAiKnowledge {
 }
 
 export interface ProjectDimensionRepository {
+  /**
+   * Returns active projects only — rows with
+   * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF
+   * reconciler — PRD #544) are filtered out. If you need to see
+   * tombstoned rows for audit/ops purposes, write a separate query;
+   * do NOT add an `includeTombstoned` parameter to this method without
+   * design review.
+   */
   findById(projectId: string): Promise<ProjectDimensionRecord | null>;
+  /**
+   * Returns active projects only — rows with
+   * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF
+   * reconciler — PRD #544) are filtered out. If you need to see
+   * tombstoned rows for audit/ops purposes, write a separate query;
+   * do NOT add an `includeTombstoned` parameter to this method without
+   * design review.
+   */
   listAll(): Promise<readonly ProjectDimensionRecord[]>;
   listActive(): Promise<readonly ProjectDimensionRecord[]>;
   listAllProjectAliases(): Promise<readonly string[]>;
+  /**
+   * Returns active projects only — rows with
+   * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF
+   * reconciler — PRD #544) are filtered out. If you need to see
+   * tombstoned rows for audit/ops purposes, write a separate query;
+   * do NOT add an `includeTombstoned` parameter to this method without
+   * design review.
+   */
   listByIds(
     projectIds: readonly string[],
   ): Promise<readonly ProjectDimensionRecord[]>;

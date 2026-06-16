@@ -6,7 +6,7 @@ import {
   projectDimensions,
   salesforceReconciliationRuns,
 } from "@as-comms/db";
-import { asc, isNotNull } from "drizzle-orm";
+import { asc, eq, isNotNull } from "drizzle-orm";
 import type {
   SalesforceApiClient,
   SalesforceCaptureServiceConfig,
@@ -322,11 +322,81 @@ describe("reconcileSalesforceState", () => {
 
     try {
       await seedStandardFixture(context);
+      for (let index = 0; index < 47; index += 1) {
+        const id = index.toString().padStart(3, "0");
+
+        await context.repositories.contacts.upsert({
+          id: `contact:extra:${id}`,
+          salesforceContactId: `003CONTACTEXTRA${id}`,
+          displayName: `Contact Extra ${id}`,
+          primaryEmail: `extra-${id}@example.org`,
+          primaryPhone: null,
+          createdAt: runTimestamp,
+          updatedAt: runTimestamp,
+        });
+        await context.repositories.projectDimensions.upsert({
+          projectId: `701PROJECTEXTRA${id}`,
+          projectName: `Project Extra ${id}`,
+          source: "salesforce",
+        });
+        await context.repositories.contactMemberships.upsert({
+          id: `membership:extra:${id}`,
+          contactId: `contact:extra:${id}`,
+          projectId: `701PROJECTEXTRA${id}`,
+          expeditionId: null,
+          salesforceMembershipId: `a15MEMBERSHIPEXTRA${id}`,
+          role: "volunteer",
+          status: "active",
+          source: "salesforce",
+          createdAt: runTimestamp,
+        });
+      }
+
+      const apiClient: SalesforceApiClient = {
+        queryAll: vi.fn(() => Promise.resolve([])),
+        queryAllIncludingDeleted: vi.fn((soql: string) => {
+          const { objectName, ids } = parseSoql(soql);
+
+          const deletedIdByObject = {
+            Contact: "003CONTACTDELETED",
+            Expedition_Members__c: "a15MEMBERSHIPDELETED",
+            Campaign: "701PROJECTDELETED",
+          } as const;
+          const missingIdByObject = {
+            Contact: "003CONTACTMISSING",
+            Expedition_Members__c: "a15MEMBERSHIPMISSING",
+            Campaign: "701PROJECTMISSING",
+          } as const;
+
+          if (
+            objectName !== "Contact" &&
+            objectName !== "Expedition_Members__c" &&
+            objectName !== "Campaign"
+          ) {
+            throw new Error(`Unexpected object name: ${objectName}`);
+          }
+
+          return Promise.resolve(
+            ids.flatMap((id) => {
+              if (id === missingIdByObject[objectName]) {
+                return [];
+              }
+
+              return [
+                {
+                  Id: id,
+                  IsDeleted: id === deletedIdByObject[objectName],
+                },
+              ];
+            }),
+          );
+        }),
+      };
 
       await reconcileSalesforceState({
         db: context.db,
         repositories: context.repositories,
-        apiClient: buildStandardApiClient(),
+        apiClient,
         mode: "enforce",
         salesforceConfig: buildSalesforceConfig(),
         now: () => new Date(runTimestamp),
@@ -377,28 +447,30 @@ describe("reconcileSalesforceState", () => {
           }),
         ]),
       );
-      await expect(
-        context.repositories.contactMemberships.listByContactId("contact:deleted"),
-      ).resolves.toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: "membership:deleted",
-            salesforceDeletedAt: runTimestamp,
-            salesforceReconciledAt: null,
-          }),
-        ]),
-      );
-      await expect(
-        context.repositories.contactMemberships.listByContactId("contact:missing"),
-      ).resolves.toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: "membership:missing",
-            salesforceDeletedAt: runTimestamp,
-            salesforceReconciledAt: null,
-          }),
-        ]),
-      );
+      expect(
+        await context.db
+          .select()
+          .from(contactMemberships)
+          .where(eq(contactMemberships.id, "membership:deleted")),
+      ).toMatchObject([
+        {
+          id: "membership:deleted",
+          salesforceDeletedAt: new Date(runTimestamp),
+          salesforceReconciledAt: null,
+        },
+      ]);
+      expect(
+        await context.db
+          .select()
+          .from(contactMemberships)
+          .where(eq(contactMemberships.id, "membership:missing")),
+      ).toMatchObject([
+        {
+          id: "membership:missing",
+          salesforceDeletedAt: new Date(runTimestamp),
+          salesforceReconciledAt: null,
+        },
+      ]);
 
       await expect(
         context.repositories.projectDimensions.findById("701PROJECTPRESENT"),
@@ -408,16 +480,34 @@ describe("reconcileSalesforceState", () => {
       });
       await expect(
         context.repositories.projectDimensions.findById("701PROJECTDELETED"),
-      ).resolves.toMatchObject({
-        salesforceDeletedAt: runTimestamp,
-        salesforceReconciledAt: null,
-      });
+      ).resolves.toBeNull();
       await expect(
         context.repositories.projectDimensions.findById("701PROJECTMISSING"),
-      ).resolves.toMatchObject({
-        salesforceDeletedAt: runTimestamp,
-        salesforceReconciledAt: null,
-      });
+      ).resolves.toBeNull();
+      expect(
+        await context.db
+          .select()
+          .from(projectDimensions)
+          .where(eq(projectDimensions.projectId, "701PROJECTDELETED")),
+      ).toMatchObject([
+        {
+          projectId: "701PROJECTDELETED",
+          salesforceDeletedAt: new Date(runTimestamp),
+          salesforceReconciledAt: null,
+        },
+      ]);
+      expect(
+        await context.db
+          .select()
+          .from(projectDimensions)
+          .where(eq(projectDimensions.projectId, "701PROJECTMISSING")),
+      ).toMatchObject([
+        {
+          projectId: "701PROJECTMISSING",
+          salesforceDeletedAt: new Date(runTimestamp),
+          salesforceReconciledAt: null,
+        },
+      ]);
     } finally {
       await context.dispose();
     }
@@ -625,6 +715,142 @@ describe("reconcileSalesforceState", () => {
       ).resolves.toMatchObject({
         salesforceDeletedAt: null,
       });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("enforce: cap exceeded — entity abort, reconciled timestamps still write", async () => {
+    const context = await createTestStage1Context();
+
+    try {
+      for (let index = 0; index < 100; index += 1) {
+        const id = index.toString().padStart(3, "0");
+        await context.repositories.contacts.upsert({
+          id: `contact:cap:${id}`,
+          salesforceContactId: `003CAP${id}`,
+          displayName: `Cap Contact ${id}`,
+          primaryEmail: `cap-${id}@example.org`,
+          primaryPhone: null,
+          createdAt: runTimestamp,
+          updatedAt: runTimestamp,
+        });
+      }
+
+      await context.repositories.projectDimensions.upsert({
+        projectId: "701PROJECTCAP",
+        projectName: "Project Cap",
+        source: "salesforce",
+      });
+      await context.repositories.contactMemberships.upsert({
+        id: "membership:cap",
+        contactId: "contact:cap:000",
+        projectId: "701PROJECTCAP",
+        expeditionId: null,
+        salesforceMembershipId: "a15CAPMEMBERSHIP001",
+        role: "volunteer",
+        status: "active",
+        source: "salesforce",
+        createdAt: runTimestamp,
+      });
+
+      const apiClient: SalesforceApiClient = {
+        queryAll: vi.fn(() => Promise.resolve([])),
+        queryAllIncludingDeleted: vi.fn((soql: string) => {
+          const { objectName, ids } = parseSoql(soql);
+
+          switch (objectName) {
+            case "Contact":
+              return Promise.resolve(
+                ids.flatMap((id, index) => {
+                  if (index < 10) {
+                    return [{ Id: id, IsDeleted: true }];
+                  }
+                  if (index < 90) {
+                    return [{ Id: id, IsDeleted: false }];
+                  }
+
+                  return [];
+                }),
+              );
+            case "Expedition_Members__c":
+              return Promise.resolve([
+                { Id: "a15CAPMEMBERSHIP001", IsDeleted: false },
+              ]);
+            case "Campaign":
+              return Promise.resolve([{ Id: "701PROJECTCAP", IsDeleted: false }]);
+            default:
+              throw new Error(`Unexpected object name: ${objectName}`);
+          }
+        }),
+      };
+
+      await reconcileSalesforceState({
+        db: context.db,
+        repositories: context.repositories,
+        apiClient,
+        mode: "enforce",
+        salesforceConfig: buildSalesforceConfig(),
+        now: () => new Date(runTimestamp),
+        logger: {
+          log: () => undefined,
+          warn: () => undefined,
+        },
+      });
+
+      expect(
+        await context.db
+          .select()
+          .from(contacts)
+          .where(isNotNull(contacts.salesforceDeletedAt)),
+      ).toHaveLength(0);
+      expect(
+        await context.db
+          .select()
+          .from(contacts)
+          .where(isNotNull(contacts.salesforceReconciledAt)),
+      ).toHaveLength(80);
+
+      const runRows = await readRunRows(context);
+      expect(runRows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            entityType: "contact",
+            abortedReason: "delete_cap_exceeded",
+            scanned: 100,
+            confirmedPresent: 80,
+            markedDeleted: 0,
+            missingLocallyCount: 0,
+          }),
+          expect.objectContaining({
+            entityType: "membership",
+            abortedReason: null,
+            scanned: 1,
+            confirmedPresent: 1,
+            markedDeleted: 0,
+          }),
+          expect.objectContaining({
+            entityType: "project",
+            abortedReason: null,
+            scanned: 1,
+            confirmedPresent: 1,
+            markedDeleted: 0,
+          }),
+        ]),
+      );
+
+      expect(
+        await context.db
+          .select()
+          .from(contactMemberships)
+          .where(isNotNull(contactMemberships.salesforceReconciledAt)),
+      ).toHaveLength(1);
+      expect(
+        await context.db
+          .select()
+          .from(projectDimensions)
+          .where(isNotNull(projectDimensions.salesforceReconciledAt)),
+      ).toHaveLength(1);
     } finally {
       await context.dispose();
     }
