@@ -125,18 +125,20 @@ async function seedTimelineFanoutEvent(input: {
     reviewState: "clear",
   });
 
-  const timelineProjection = await input.repositories.timelineProjection.upsert({
-    id: `timeline:${input.eventId}`,
-    contactId: input.anchorContactId,
-    canonicalEventId: input.eventId,
-    occurredAt: input.occurredAt,
-    sortKey: `${input.occurredAt}::${input.eventId}`,
-    eventType: canonicalEvent.eventType,
-    summary: input.summary ?? input.eventId,
-    channel: "email",
-    primaryProvider: "gmail",
-    reviewState: "clear",
-  });
+  const timelineProjection = await input.repositories.timelineProjection.upsert(
+    {
+      id: `timeline:${input.eventId}`,
+      contactId: input.anchorContactId,
+      canonicalEventId: input.eventId,
+      occurredAt: input.occurredAt,
+      sortKey: `${input.occurredAt}::${input.eventId}`,
+      eventType: canonicalEvent.eventType,
+      summary: input.summary ?? input.eventId,
+      channel: "email",
+      primaryProvider: "gmail",
+      reviewState: "clear",
+    },
+  );
 
   return {
     canonicalEvent,
@@ -626,19 +628,22 @@ describe("Stage 1 DB repositories", () => {
       checksum: "checksum-drive-attachment",
     });
 
-    await repositories.messageAttachments.upsertManyForMessage(sourceEvidence.id, [
-      {
-        id: "att:drive:gmail-drive-attachment:drive-file-1",
-        provider: "drive",
-        gmailAttachmentId: null,
-        mimeType: "application/octet-stream",
-        filename: "shared-file.pdf",
-        sizeBytes: 0,
-        storageKey: null,
-        externalUrl: "https://drive.google.com/file/d/drive-file-1/view",
-        isDecoration: false,
-      },
-    ]);
+    await repositories.messageAttachments.upsertManyForMessage(
+      sourceEvidence.id,
+      [
+        {
+          id: "att:drive:gmail-drive-attachment:drive-file-1",
+          provider: "drive",
+          gmailAttachmentId: null,
+          mimeType: "application/octet-stream",
+          filename: "shared-file.pdf",
+          sizeBytes: 0,
+          storageKey: null,
+          externalUrl: "https://drive.google.com/file/d/drive-file-1/view",
+          isDecoration: false,
+        },
+      ],
+    );
 
     await expect(
       repositories.messageAttachments.findById(
@@ -667,30 +672,33 @@ describe("Stage 1 DB repositories", () => {
       checksum: "checksum-mixed-attachments",
     });
 
-    await repositories.messageAttachments.upsertManyForMessage(sourceEvidence.id, [
-      {
-        id: "att:gmail:gmail-mixed-attachments:0/1",
-        provider: "gmail",
-        gmailAttachmentId: "gmail-attachment-1",
-        mimeType: "image/png",
-        filename: "image001.png",
-        sizeBytes: 2048,
-        storageKey: "gmail/ab/att:gmail:gmail-mixed-attachments:0/1",
-        externalUrl: null,
-        isDecoration: true,
-      },
-      {
-        id: "att:drive:gmail-mixed-attachments:drive-file-2",
-        provider: "drive",
-        gmailAttachmentId: null,
-        mimeType: "application/octet-stream",
-        filename: "shared-file.pdf",
-        sizeBytes: 0,
-        storageKey: null,
-        externalUrl: "https://drive.google.com/file/d/drive-file-2/view",
-        isDecoration: false,
-      },
-    ]);
+    await repositories.messageAttachments.upsertManyForMessage(
+      sourceEvidence.id,
+      [
+        {
+          id: "att:gmail:gmail-mixed-attachments:0/1",
+          provider: "gmail",
+          gmailAttachmentId: "gmail-attachment-1",
+          mimeType: "image/png",
+          filename: "image001.png",
+          sizeBytes: 2048,
+          storageKey: "gmail/ab/att:gmail:gmail-mixed-attachments:0/1",
+          externalUrl: null,
+          isDecoration: true,
+        },
+        {
+          id: "att:drive:gmail-mixed-attachments:drive-file-2",
+          provider: "drive",
+          gmailAttachmentId: null,
+          mimeType: "application/octet-stream",
+          filename: "shared-file.pdf",
+          sizeBytes: 0,
+          storageKey: null,
+          externalUrl: "https://drive.google.com/file/d/drive-file-2/view",
+          isDecoration: false,
+        },
+      ],
+    );
 
     await expect(
       repositories.messageAttachments.findByMessageIds([sourceEvidence.id]),
@@ -1246,7 +1254,10 @@ describe("Stage 1 DB repositories", () => {
       source: "salesforce",
     });
 
-    const activatedProject = await settings.projects.setActive("project_1", true);
+    const activatedProject = await settings.projects.setActive(
+      "project_1",
+      true,
+    );
 
     expect(activatedProject).toMatchObject({
       projectId: "project_1",
@@ -2101,13 +2112,15 @@ describe("Stage 1 DB repositories", () => {
       createdAt: "2026-04-05T10:00:00.000Z",
     });
 
-    const pnwRows = await repositories.inboxProjection.listPageOrderedByRecency({
-      filter: "visible",
-      order: "last-inbound",
-      limit: 10,
-      cursor: null,
-      projectId: "project:pnw-bio",
-    });
+    const pnwRows = await repositories.inboxProjection.listPageOrderedByRecency(
+      {
+        filter: "visible",
+        order: "last-inbound",
+        limit: 10,
+        cursor: null,
+        projectId: "project:pnw-bio",
+      },
+    );
     const whitebarkRows =
       await repositories.inboxProjection.listPageOrderedByRecency({
         filter: "visible",
@@ -2408,51 +2421,42 @@ describe("Stage 1 DB repositories", () => {
       lastEventType: "communication.email.inbound",
     });
 
-    const hostARows = await repositories.inboxProjection.listPageOrderedByRecency({
-      filter: "visible",
-      order: "last-inbound",
-      limit: 10,
-      cursor: null,
-      projectId: "project:host-a",
-    });
-    const subBRows = await repositories.inboxProjection.listPageOrderedByRecency(
-      {
+    const hostARows =
+      await repositories.inboxProjection.listPageOrderedByRecency({
+        filter: "visible",
+        order: "last-inbound",
+        limit: 10,
+        cursor: null,
+        projectId: "project:host-a",
+      });
+    const subBRows =
+      await repositories.inboxProjection.listPageOrderedByRecency({
         filter: "visible",
         order: "last-inbound",
         limit: 10,
         cursor: null,
         projectId: "project:sub-b",
-      },
-    );
-    const hostDRows = await repositories.inboxProjection.listPageOrderedByRecency(
-      {
+      });
+    const hostDRows =
+      await repositories.inboxProjection.listPageOrderedByRecency({
         filter: "visible",
         order: "last-inbound",
         limit: 10,
         cursor: null,
         projectId: "project:host-d",
-      },
-    );
+      });
 
     // Filtering by host A returns: direct member, sub-project member, alias-only.
     expect(new Set(hostARows.map((row) => row.contactId))).toEqual(
-      new Set([
-        "contact:in-host-a",
-        "contact:in-sub-b",
-        "contact:alias-only",
-      ]),
+      new Set(["contact:in-host-a", "contact:in-sub-b", "contact:alias-only"]),
     );
     // Filtering by the sub-project's own id is not the operator-facing path —
     // it should match only the contact whose membership is on that exact id
     // (existing case 1) and NOT the host or other host's contacts. The sub
     // does not have a host of its own, so no rollup happens here.
-    expect(subBRows.map((row) => row.contactId)).toEqual([
-      "contact:in-sub-b",
-    ]);
+    expect(subBRows.map((row) => row.contactId)).toEqual(["contact:in-sub-b"]);
     // Cross-host isolation: host D's filter must not include host A's family.
-    expect(hostDRows.map((row) => row.contactId)).toEqual([
-      "contact:in-sub-c",
-    ]);
+    expect(hostDRows.map((row) => row.contactId)).toEqual(["contact:in-sub-c"]);
   });
 
   it("repoints canonical_event_audience rows when merging an email-only contact into an anchored one", async () => {
@@ -2638,5 +2642,530 @@ describe("Stage 1 DB repositories", () => {
 
     // Exactly two rows total — one repointed, one survivor of the collision.
     expect(surviving.rows.length).toBe(2);
+  });
+});
+
+describe("contacts.listSalesforceAnchoredIds + markSalesforceDeleted + markSalesforceReconciled", () => {
+  it("lists only non-tombstoned salesforce-anchored contacts", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await repositories.contacts.upsert({
+      id: "contact:salesforce:001",
+      salesforceContactId: "001A",
+      displayName: "SF Contact A",
+      primaryEmail: "sf-a@example.org",
+      primaryPhone: null,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    });
+    await repositories.contacts.upsert({
+      id: "contact:salesforce:002",
+      salesforceContactId: "002B",
+      displayName: "SF Contact B",
+      primaryEmail: "sf-b@example.org",
+      primaryPhone: null,
+      salesforceDeletedAt: "2026-06-02T00:00:00.000Z",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    });
+    await repositories.contacts.upsert({
+      id: "contact:local:003",
+      salesforceContactId: null,
+      displayName: "Local Contact",
+      primaryEmail: "local@example.org",
+      primaryPhone: null,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    await expect(
+      repositories.contacts.listSalesforceAnchoredIds(),
+    ).resolves.toEqual(["001A"]);
+  });
+
+  it("returns an empty salesforce anchor list for an empty contacts table", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await expect(
+      repositories.contacts.listSalesforceAnchoredIds(),
+    ).resolves.toEqual([]);
+  });
+
+  it("marks salesforce contacts deleted idempotently", async () => {
+    const { repositories } = await createTestStage1Context();
+    const deletedAt = "2026-06-03T12:34:56.000Z";
+
+    await repositories.contacts.upsert({
+      id: "contact:salesforce:001",
+      salesforceContactId: "001A",
+      displayName: "SF Contact A",
+      primaryEmail: "sf-a@example.org",
+      primaryPhone: null,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    });
+    await repositories.contacts.upsert({
+      id: "contact:salesforce:002",
+      salesforceContactId: "002B",
+      displayName: "SF Contact B",
+      primaryEmail: "sf-b@example.org",
+      primaryPhone: null,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    await expect(
+      repositories.contacts.markSalesforceDeleted({
+        salesforceIds: ["001A", "002B"],
+        deletedAt,
+      }),
+    ).resolves.toBe(2);
+    await expect(
+      repositories.contacts.findById("contact:salesforce:001"),
+    ).resolves.toMatchObject({
+      salesforceDeletedAt: deletedAt,
+    });
+    await expect(
+      repositories.contacts.findById("contact:salesforce:002"),
+    ).resolves.toMatchObject({
+      salesforceDeletedAt: deletedAt,
+    });
+
+    await expect(
+      repositories.contacts.markSalesforceDeleted({
+        salesforceIds: ["001A", "002B"],
+        deletedAt,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      repositories.contacts.markSalesforceDeleted({
+        salesforceIds: [],
+        deletedAt,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      repositories.contacts.markSalesforceDeleted({
+        salesforceIds: ["does-not-exist"],
+        deletedAt,
+      }),
+    ).resolves.toBe(0);
+  });
+
+  it("marks salesforce contacts reconciled and refreshes the timestamp on repeat runs", async () => {
+    const { repositories } = await createTestStage1Context();
+    const firstReconciledAt = "2026-06-04T08:00:00.000Z";
+    const secondReconciledAt = "2026-06-04T09:00:00.000Z";
+
+    await repositories.contacts.upsert({
+      id: "contact:salesforce:001",
+      salesforceContactId: "001A",
+      displayName: "SF Contact A",
+      primaryEmail: "sf-a@example.org",
+      primaryPhone: null,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    await expect(
+      repositories.contacts.markSalesforceReconciled({
+        salesforceIds: ["001A"],
+        reconciledAt: firstReconciledAt,
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      repositories.contacts.findById("contact:salesforce:001"),
+    ).resolves.toMatchObject({
+      salesforceDeletedAt: null,
+      salesforceReconciledAt: firstReconciledAt,
+    });
+
+    await expect(
+      repositories.contacts.markSalesforceReconciled({
+        salesforceIds: ["001A"],
+        reconciledAt: secondReconciledAt,
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      repositories.contacts.findById("contact:salesforce:001"),
+    ).resolves.toMatchObject({
+      salesforceDeletedAt: null,
+      salesforceReconciledAt: secondReconciledAt,
+    });
+
+    await expect(
+      repositories.contacts.markSalesforceReconciled({
+        salesforceIds: [],
+        reconciledAt: secondReconciledAt,
+      }),
+    ).resolves.toBe(0);
+  });
+});
+
+describe("contactMemberships.listSalesforceAnchoredIds + markSalesforceDeleted + markSalesforceReconciled", () => {
+  async function seedMembershipParents(
+    repositories: Stage1TestRepositories,
+  ): Promise<void> {
+    await repositories.contacts.upsert({
+      id: "contact:membership:001",
+      salesforceContactId: "003-membership-001",
+      displayName: "Membership Contact",
+      primaryEmail: "membership@example.org",
+      primaryPhone: null,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "project:membership:001",
+      projectName: "Membership Project",
+      source: "salesforce",
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "project:membership:manual",
+      projectName: "Manual Membership Project",
+      source: "manual",
+    });
+  }
+
+  it("lists only non-tombstoned salesforce membership ids", async () => {
+    const { repositories } = await createTestStage1Context();
+    await seedMembershipParents(repositories);
+
+    await repositories.contactMemberships.upsert({
+      id: "membership:salesforce:001",
+      contactId: "contact:membership:001",
+      projectId: "project:membership:001",
+      expeditionId: null,
+      salesforceMembershipId: "a15VK00000AkA3RYAV",
+      role: "volunteer",
+      status: "active",
+      source: "salesforce",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+    await repositories.contactMemberships.upsert({
+      id: "membership:salesforce:002",
+      contactId: "contact:membership:001",
+      projectId: "project:membership:001",
+      expeditionId: null,
+      salesforceMembershipId: "a15VK00000AkA3SYAV",
+      role: "volunteer",
+      status: "active",
+      source: "salesforce",
+      salesforceDeletedAt: "2026-06-02T00:00:00.000Z",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+    await repositories.contactMemberships.upsert({
+      id: "membership:manual:003",
+      contactId: "contact:membership:001",
+      projectId: "project:membership:manual",
+      expeditionId: null,
+      salesforceMembershipId: null,
+      role: "volunteer",
+      status: "active",
+      source: "manual",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    await expect(
+      repositories.contactMemberships.listSalesforceAnchoredIds(),
+    ).resolves.toEqual(["a15VK00000AkA3RYAV"]);
+  });
+
+  it("returns an empty salesforce membership list for an empty table", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await expect(
+      repositories.contactMemberships.listSalesforceAnchoredIds(),
+    ).resolves.toEqual([]);
+  });
+
+  it("marks salesforce memberships deleted idempotently", async () => {
+    const { repositories } = await createTestStage1Context();
+    const deletedAt = "2026-06-03T12:34:56.000Z";
+    await seedMembershipParents(repositories);
+
+    await repositories.contactMemberships.upsert({
+      id: "membership:salesforce:001",
+      contactId: "contact:membership:001",
+      projectId: "project:membership:001",
+      expeditionId: null,
+      salesforceMembershipId: "a15VK00000AkA3RYAV",
+      role: "volunteer",
+      status: "active",
+      source: "salesforce",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+    await repositories.contactMemberships.upsert({
+      id: "membership:salesforce:002",
+      contactId: "contact:membership:001",
+      projectId: "project:membership:001",
+      expeditionId: null,
+      salesforceMembershipId: "a15VK00000AkA3SYAV",
+      role: "volunteer",
+      status: "active",
+      source: "salesforce",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    await expect(
+      repositories.contactMemberships.markSalesforceDeleted({
+        salesforceIds: ["a15VK00000AkA3RYAV", "a15VK00000AkA3SYAV"],
+        deletedAt,
+      }),
+    ).resolves.toBe(2);
+    await expect(
+      repositories.contactMemberships.listByContactId("contact:membership:001"),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "membership:salesforce:001",
+          salesforceDeletedAt: deletedAt,
+        }),
+        expect.objectContaining({
+          id: "membership:salesforce:002",
+          salesforceDeletedAt: deletedAt,
+        }),
+      ]),
+    );
+
+    await expect(
+      repositories.contactMemberships.markSalesforceDeleted({
+        salesforceIds: ["a15VK00000AkA3RYAV", "a15VK00000AkA3SYAV"],
+        deletedAt,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      repositories.contactMemberships.markSalesforceDeleted({
+        salesforceIds: [],
+        deletedAt,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      repositories.contactMemberships.markSalesforceDeleted({
+        salesforceIds: ["does-not-exist"],
+        deletedAt,
+      }),
+    ).resolves.toBe(0);
+  });
+
+  it("marks salesforce memberships reconciled and refreshes the timestamp on repeat runs", async () => {
+    const { repositories } = await createTestStage1Context();
+    const firstReconciledAt = "2026-06-04T08:00:00.000Z";
+    const secondReconciledAt = "2026-06-04T09:00:00.000Z";
+    await seedMembershipParents(repositories);
+
+    await repositories.contactMemberships.upsert({
+      id: "membership:salesforce:001",
+      contactId: "contact:membership:001",
+      projectId: "project:membership:001",
+      expeditionId: null,
+      salesforceMembershipId: "a15VK00000AkA3RYAV",
+      role: "volunteer",
+      status: "active",
+      source: "salesforce",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+
+    await expect(
+      repositories.contactMemberships.markSalesforceReconciled({
+        salesforceIds: ["a15VK00000AkA3RYAV"],
+        reconciledAt: firstReconciledAt,
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      repositories.contactMemberships.listByContactId("contact:membership:001"),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "membership:salesforce:001",
+          salesforceDeletedAt: null,
+          salesforceReconciledAt: firstReconciledAt,
+        }),
+      ]),
+    );
+
+    await expect(
+      repositories.contactMemberships.markSalesforceReconciled({
+        salesforceIds: ["a15VK00000AkA3RYAV"],
+        reconciledAt: secondReconciledAt,
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      repositories.contactMemberships.listByContactId("contact:membership:001"),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "membership:salesforce:001",
+          salesforceDeletedAt: null,
+          salesforceReconciledAt: secondReconciledAt,
+        }),
+      ]),
+    );
+
+    await expect(
+      repositories.contactMemberships.markSalesforceReconciled({
+        salesforceIds: [],
+        reconciledAt: secondReconciledAt,
+      }),
+    ).resolves.toBe(0);
+  });
+});
+
+describe("projectDimensions.listSalesforceAnchoredIds + markSalesforceDeleted + markSalesforceReconciled", () => {
+  it("lists only non-tombstoned salesforce project ids", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await repositories.projectDimensions.upsert({
+      projectId: "campaign:001A",
+      projectName: "Salesforce Campaign A",
+      source: "salesforce",
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "campaign:002B",
+      projectName: "Salesforce Campaign B",
+      source: "salesforce",
+      salesforceDeletedAt: "2026-06-02T00:00:00.000Z",
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "manual-003",
+      projectName: "Manual Project",
+      source: "manual",
+    });
+
+    await expect(
+      repositories.projectDimensions.listSalesforceAnchoredIds(),
+    ).resolves.toEqual(["campaign:001A"]);
+  });
+
+  it("returns an empty salesforce project list for an empty table", async () => {
+    const { repositories } = await createTestStage1Context();
+
+    await expect(
+      repositories.projectDimensions.listSalesforceAnchoredIds(),
+    ).resolves.toEqual([]);
+  });
+
+  it("marks salesforce projects deleted idempotently", async () => {
+    const { repositories } = await createTestStage1Context();
+    const deletedAt = "2026-06-03T12:34:56.000Z";
+
+    await repositories.projectDimensions.upsert({
+      projectId: "campaign:001A",
+      projectName: "Salesforce Campaign A",
+      source: "salesforce",
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "campaign:002B",
+      projectName: "Salesforce Campaign B",
+      source: "salesforce",
+    });
+
+    await expect(
+      repositories.projectDimensions.markSalesforceDeleted({
+        salesforceIds: ["campaign:001A", "campaign:002B"],
+        deletedAt,
+      }),
+    ).resolves.toBe(2);
+    await expect(
+      repositories.projectDimensions.findById("campaign:001A"),
+    ).resolves.toMatchObject({
+      salesforceDeletedAt: deletedAt,
+    });
+    await expect(
+      repositories.projectDimensions.findById("campaign:002B"),
+    ).resolves.toMatchObject({
+      salesforceDeletedAt: deletedAt,
+    });
+
+    await expect(
+      repositories.projectDimensions.markSalesforceDeleted({
+        salesforceIds: ["campaign:001A", "campaign:002B"],
+        deletedAt,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      repositories.projectDimensions.markSalesforceDeleted({
+        salesforceIds: [],
+        deletedAt,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      repositories.projectDimensions.markSalesforceDeleted({
+        salesforceIds: ["does-not-exist"],
+        deletedAt,
+      }),
+    ).resolves.toBe(0);
+  });
+
+  it("does not tombstone manual project rows when the source guard rejects them", async () => {
+    const { repositories } = await createTestStage1Context();
+    const deletedAt = "2026-06-03T12:34:56.000Z";
+
+    await repositories.projectDimensions.upsert({
+      projectId: "shared-id-001",
+      projectName: "Salesforce Campaign A",
+      source: "salesforce",
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "manual-001",
+      projectName: "Manual Project",
+      source: "manual",
+    });
+
+    await expect(
+      repositories.projectDimensions.markSalesforceDeleted({
+        salesforceIds: ["manual-001"],
+        deletedAt,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      repositories.projectDimensions.findById("manual-001"),
+    ).resolves.toMatchObject({
+      salesforceDeletedAt: null,
+    });
+  });
+
+  it("marks salesforce projects reconciled and refreshes the timestamp on repeat runs", async () => {
+    const { repositories } = await createTestStage1Context();
+    const firstReconciledAt = "2026-06-04T08:00:00.000Z";
+    const secondReconciledAt = "2026-06-04T09:00:00.000Z";
+
+    await repositories.projectDimensions.upsert({
+      projectId: "campaign:001A",
+      projectName: "Salesforce Campaign A",
+      source: "salesforce",
+    });
+
+    await expect(
+      repositories.projectDimensions.markSalesforceReconciled({
+        salesforceIds: ["campaign:001A"],
+        reconciledAt: firstReconciledAt,
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      repositories.projectDimensions.findById("campaign:001A"),
+    ).resolves.toMatchObject({
+      salesforceDeletedAt: null,
+      salesforceReconciledAt: firstReconciledAt,
+    });
+
+    await expect(
+      repositories.projectDimensions.markSalesforceReconciled({
+        salesforceIds: ["campaign:001A"],
+        reconciledAt: secondReconciledAt,
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      repositories.projectDimensions.findById("campaign:001A"),
+    ).resolves.toMatchObject({
+      salesforceDeletedAt: null,
+      salesforceReconciledAt: secondReconciledAt,
+    });
+
+    await expect(
+      repositories.projectDimensions.markSalesforceReconciled({
+        salesforceIds: [],
+        reconciledAt: secondReconciledAt,
+      }),
+    ).resolves.toBe(0);
   });
 });

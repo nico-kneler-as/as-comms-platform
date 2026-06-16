@@ -8,6 +8,7 @@ import {
   buildBroadcastUnsubscribeUrls,
   formatBroadcastFromHeader,
   renderBroadcastEmail,
+  stripLockedFooterBlock,
   type BroadcastEmailRenderInput,
 } from "../src/broadcast-email-render.js";
 
@@ -160,5 +161,54 @@ describe("renderBroadcastEmail", () => {
     const { bodyHtml } = renderBroadcastEmail(baseInput);
 
     expect(bodyHtml.match(/\{\{\{ pm:unsubscribe \}\}\}/gu)).toHaveLength(1);
+  });
+
+  it("removes the in-canvas locked footer block before appending the authoritative footer", () => {
+    const result = renderBroadcastEmail({
+      ...baseInput,
+      bodyHtmlTemplate: `<table role="presentation" width="100%"><tr><td><p>Hello {{firstName}},</p><!-- as-locked-footer-start --><hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;"><div style="color:#64748b;font-size:12px;line-height:1.6;"><a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from {{projectName}} emails</a>&middot;<a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from all Adventure Scientists emails</a></div><div style="color:#64748b;font-size:12px;line-height:1.6;margin-top:8px;">Adventure Scientists • 1881 9th St, Suite 201 • Bozeman, MT 59715</div><!-- as-locked-footer-end --></td></tr></table>`,
+    });
+
+    expect(result.bodyHtml).not.toContain("<!-- as-locked-footer-start -->");
+    expect(result.bodyHtml).not.toContain("<!-- as-locked-footer-end -->");
+    expect(result.bodyHtml).not.toContain(
+      'href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from {{projectName}} emails</a>',
+    );
+    expect(result.bodyHtml).toContain("<table role=\"presentation\" width=\"100%\">");
+    expect(result.bodyHtml).toContain(
+      "Unsubscribe from PNW Biodiversity emails",
+    );
+    expect(
+      result.bodyHtml.match(/Unsubscribe from all Adventure Scientists emails/gu),
+    ).toHaveLength(1);
+    expect(result.bodyText).toBe(
+      [
+        "Hello {{firstName}},",
+        "Cheers,\nThe AS Team",
+        "Unsubscribe from PNW Biodiversity emails · Unsubscribe from all Adventure Scientists emails\nUnsubscribe from PNW Biodiversity emails: https://app.example.com/u/abc\nUnsubscribe from all Adventure Scientists emails: https://app.example.com/u/abc/all\n123 Main St • Bozeman, MT 59715",
+      ].join("\n\n"),
+    );
+    expect(result.listUnsubscribeHeaderValue).toBe(
+      "<https://app.example.com/u/abc>",
+    );
+  });
+});
+
+describe("stripLockedFooterBlock", () => {
+  it("removes the locked footer block when both markers are present", () => {
+    expect(
+      stripLockedFooterBlock(
+        '<table><tr><td><p>Hello</p><!-- as-locked-footer-start --><div>Locked footer</div><!-- as-locked-footer-end --><p>World</p></td></tr></table>',
+      ),
+    ).toBe("<table><tr><td><p>Hello</p><p>World</p></td></tr></table>");
+  });
+
+  it("leaves input unchanged when markers are missing or incomplete", () => {
+    expect(stripLockedFooterBlock("<p>Hello</p>")).toBe("<p>Hello</p>");
+    expect(
+      stripLockedFooterBlock(
+        "<p>Hello</p><!-- as-locked-footer-start --><div>Locked footer</div>",
+      ),
+    ).toBe("<p>Hello</p><!-- as-locked-footer-start --><div>Locked footer</div>");
   });
 });

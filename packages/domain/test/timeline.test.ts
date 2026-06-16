@@ -172,6 +172,9 @@ function createRepositoryBundle(input: {
       findByPrimaryPhone: () => Promise.resolve(contact),
       listAll: () => Promise.resolve([contact]),
       listByIds: () => Promise.resolve([contact]),
+      listSalesforceAnchoredIds: () => Promise.resolve([]),
+      markSalesforceDeleted: () => Promise.resolve(0),
+      markSalesforceReconciled: () => Promise.resolve(0),
       searchByQuery: () => Promise.resolve([contact]),
       searchInboxUnified: () =>
         Promise.resolve({
@@ -189,6 +192,9 @@ function createRepositoryBundle(input: {
     contactMemberships: {
       listByContactId: () => Promise.resolve([]),
       listByContactIds: () => Promise.resolve([]),
+      listSalesforceAnchoredIds: () => Promise.resolve([]),
+      markSalesforceDeleted: () => Promise.resolve(0),
+      markSalesforceReconciled: () => Promise.resolve(0),
       upsert: (record) => Promise.resolve(record),
     },
     smsMessages: {
@@ -217,6 +223,9 @@ function createRepositoryBundle(input: {
       listActive: () => Promise.resolve([]),
       listAllProjectAliases: () => Promise.resolve([]),
       listByIds: () => Promise.resolve([]),
+      listSalesforceAnchoredIds: () => Promise.resolve([]),
+      markSalesforceDeleted: () => Promise.resolve(0),
+      markSalesforceReconciled: () => Promise.resolve(0),
       listConnectedProjects: () => Promise.resolve([]),
       listAvailableConnectionCandidates: () => Promise.resolve([]),
       findEffectiveAiKnowledge: () => Promise.resolve(null),
@@ -280,6 +289,9 @@ function createRepositoryBundle(input: {
           ),
         ),
       upsert: (record) => Promise.resolve(record),
+    },
+    salesforceReconciliationRuns: {
+      insert: () => Promise.resolve(),
     },
     simpleTextingMessageDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
@@ -1858,15 +1870,15 @@ describe("Stage 1 timeline presenter", () => {
               : repositories.contacts.findById(contactId),
           ),
         listByIds: (contactIds) =>
-          Promise.all(contactIds.map((contactId) => {
-            if (contactId === audienceContact.id) {
-              return Promise.resolve(audienceContact);
-            }
+          Promise.all(
+            contactIds.map((contactId) => {
+              if (contactId === audienceContact.id) {
+                return Promise.resolve(audienceContact);
+              }
 
-            return repositories.contacts.findById(contactId);
-          })).then((contacts) =>
-            contacts.filter((contact) => contact !== null),
-          ),
+              return repositories.contacts.findById(contactId);
+            }),
+          ).then((contacts) => contacts.filter((contact) => contact !== null)),
       },
       canonicalEvents: {
         ...repositories.canonicalEvents,
@@ -1888,12 +1900,15 @@ describe("Stage 1 timeline presenter", () => {
             : repositories.timelineProjection.listByContactId(contactId),
       },
     });
-    const presenter = createStage1TimelinePresentationService(fanoutRepositories);
+    const presenter =
+      createStage1TimelinePresentationService(fanoutRepositories);
     const warnSpy = vi
       .spyOn(console, "warn")
       .mockImplementation(() => undefined);
 
-    const items = await presenter.listTimelineItemsByContactId(audienceContact.id);
+    const items = await presenter.listTimelineItemsByContactId(
+      audienceContact.id,
+    );
     const page = await presenter.listTimelineItemsPageByContactId(
       audienceContact.id,
       {

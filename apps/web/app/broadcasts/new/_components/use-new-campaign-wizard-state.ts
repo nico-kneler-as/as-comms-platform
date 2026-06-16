@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type {
   AudienceCriteria,
   CampaignKind,
+  ExpeditionMemberStatus,
   LaunchType,
 } from "@as-comms/contracts";
 
@@ -279,6 +280,9 @@ export function useNewCampaignWizardState({
     draft.bodyTextTemplate ?? "",
   );
   const [bodyHtml, setBodyHtml] = useState(draft.bodyHtmlTemplate ?? "");
+  const [bodyDesignJson, setBodyDesignJson] = useState<unknown>(
+    draft.bodyDesignJson ?? null,
+  );
   const [selectedAliasSignature, setSelectedAliasSignature] = useState("");
   const [criteria, setCriteria] = useState<CampaignAudienceCriteria>({
     ...draft.audienceCriteria,
@@ -374,6 +378,10 @@ export function useNewCampaignWizardState({
     () => JSON.stringify({ subject, bodyPlaintext, bodyHtml }),
     [bodyHtml, bodyPlaintext, subject],
   );
+  const bodyDesignJsonFingerprint = useMemo(
+    () => JSON.stringify(bodyDesignJson),
+    [bodyDesignJson],
+  );
   const selectedSenderOption = useMemo<CampaignSenderOption | null>(() => {
     if (fromEmail === null) {
       return null;
@@ -411,11 +419,13 @@ export function useNewCampaignWizardState({
         preheader,
         bodyPlaintext,
         bodyHtml,
+        bodyDesignJson: bodyDesignJsonFingerprint,
         criteria,
         audienceSize: countState.hasAppliedFilters ? countState.count : null,
       }),
     [
       bodyHtml,
+      bodyDesignJsonFingerprint,
       bodyPlaintext,
       countState.count,
       countState.hasAppliedFilters,
@@ -466,6 +476,7 @@ export function useNewCampaignWizardState({
       preheader: draft.preheader ?? "",
       bodyPlaintext: draft.bodyTextTemplate ?? "",
       bodyHtml: draft.bodyHtmlTemplate ?? "",
+      bodyDesignJson: JSON.stringify(draft.bodyDesignJson ?? null),
       criteria: initialCriteria,
       audienceSize: draft.audienceSize,
     });
@@ -612,8 +623,8 @@ export function useNewCampaignWizardState({
         const availableStatuses = bootstrap.statuses.filter(
           (status) => (result.data[status] ?? 0) > 0,
         );
-        const selectedStatuses = current.statuses.filter((status) =>
-          availableStatuses.includes(status),
+        const selectedStatuses = current.statuses.filter(
+          (status: ExpeditionMemberStatus) => availableStatuses.includes(status),
         );
 
         return selectedStatuses.length === current.statuses.length
@@ -884,6 +895,8 @@ export function useNewCampaignWizardState({
     setBodyPlaintext,
     bodyHtml,
     setBodyHtml,
+    bodyDesignJson,
+    setBodyDesignJson,
     selectedAliasSignature,
     criteria,
     setCriteria,

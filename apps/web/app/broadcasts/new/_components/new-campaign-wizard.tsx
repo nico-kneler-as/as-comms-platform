@@ -33,7 +33,7 @@ const STEPS: readonly CampaignWizardStepDefinition[] = [
   {
     id: "launch",
     title: "Launch type",
-    subtitle: "Normal Email is the only active path in Phase A.",
+    subtitle: "Pick Normal Email for Markdown sends or HTML Email for the drag-and-drop composer.",
   },
   {
     id: "setup",
@@ -92,7 +92,7 @@ function readAudienceModesForLaunchType(
   launchType: LaunchType,
 ): readonly AudienceInitialFilter[] {
   return launchType === "html_email"
-    ? ["all_approved", "project_status"]
+    ? ["all_approved", "specific", "project_status"]
     : ["project_status", "specific"];
 }
 
@@ -390,6 +390,8 @@ export function NewCampaignWizard({
     setBodyPlaintext,
     bodyHtml,
     setBodyHtml,
+    bodyDesignJson,
+    setBodyDesignJson,
     selectedAliasSignature,
     criteria,
     setCriteria,
@@ -471,6 +473,7 @@ export function NewCampaignWizard({
           fromEmail,
           replyToEmail,
           subjectTemplate: subject.trim().length === 0 ? null : subject,
+          bodyDesignJson,
           bodyHtmlTemplate: bodyHtml.trim().length === 0 ? null : bodyHtml,
           bodyTextTemplate:
             bodyPlaintext.trim().length === 0 ? null : bodyPlaintext,
@@ -496,6 +499,7 @@ export function NewCampaignWizard({
           preheader: result.data.preheader ?? "",
           bodyPlaintext: result.data.bodyTextTemplate ?? "",
           bodyHtml: result.data.bodyHtmlTemplate ?? "",
+          bodyDesignJson: JSON.stringify(result.data.bodyDesignJson ?? null),
           criteria: {
             ...result.data.audienceCriteria,
             projectId:
@@ -581,7 +585,9 @@ export function NewCampaignWizard({
     updateCriteria((current) => ({
       ...current,
       statuses: current.statuses.includes(status as never)
-        ? current.statuses.filter((value) => value !== status)
+        ? current.statuses.filter(
+            (value: ExpeditionMemberStatus) => value !== status,
+          )
         : [...current.statuses, status],
     }));
   }
@@ -703,7 +709,14 @@ export function NewCampaignWizard({
         ) : null}
 
         <div className="flex-1 overflow-y-auto bg-white px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
-          <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
+          <div
+            className={cn(
+              "flex min-h-full w-full flex-col",
+              currentStep === 3 && launchType === "html_email"
+                ? null
+                : "mx-auto max-w-3xl",
+            )}
+          >
             {currentStep === 0 ? (
               <LaunchTypeStep
                 value={launchType}
@@ -767,15 +780,18 @@ export function NewCampaignWizard({
 
             {currentStep === 3 ? (
               <ComposeStep
+                launchType={launchType}
                 subject={subject}
                 preheader={preheader}
                 bodyPlaintext={bodyPlaintext}
+                savedDesign={bodyDesignJson}
                 selectedAliasSignature={selectedAliasSignature}
                 frozen={frozen}
                 continuePending={savePending}
                 onSubjectChange={setSubject}
                 onPreheaderChange={setPreheader}
                 onBodyChange={(value) => {
+                  setBodyDesignJson(value.bodyDesignJson);
                   setBodyPlaintext(value.bodyPlaintext);
                   setBodyHtml(value.bodyHtml);
                 }}
@@ -790,6 +806,7 @@ export function NewCampaignWizard({
 
             {currentStep === 4 ? (
               <PreviewStep
+                launchType={launchType}
                 subject={subject}
                 preheader={preheader}
                 previewData={composePreview}

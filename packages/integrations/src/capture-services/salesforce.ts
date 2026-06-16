@@ -111,6 +111,16 @@ export interface SalesforceTaskChannelConfig {
 
 export interface SalesforceApiClient {
   queryAll(soql: string): Promise<readonly SalesforceRow[]>;
+  /**
+   * Hits Salesforce's `/services/data/v<api>/queryAll` endpoint, which
+   * unlike `/query` returns rows where `IsDeleted = true` and rows
+   * where `IsArchived = true`. Use this for reconciliation queries
+   * that need to distinguish "still exists" from "soft-deleted" from
+   * "missing entirely." For all other reads, prefer `queryAll` (the
+   * existing method, despite the name, hits `/query` and excludes
+   * deleted rows).
+   */
+  queryAllIncludingDeleted(soql: string): Promise<readonly SalesforceRow[]>;
 }
 
 interface SalesforceAccessTokenCacheEntry {
@@ -700,6 +710,66 @@ export function createSalesforceApiClient(
       const records: SalesforceRow[] = [];
       let nextUrl = new URL(
         `/services/data/v${parsedConfig.apiVersion}/query?q=${encodeURIComponent(soql)}`,
+        token.instanceUrl,
+      ).toString();
+
+      while (nextUrl.length > 0) {
+        const response = await fetchImplementation(nextUrl, {
+          headers: {
+            authorization: `Bearer ${token.accessToken}`,
+            accept: "application/json",
+          },
+          signal: AbortSignal.timeout(parsedConfig.timeoutMs),
+        });
+
+        if (!response.ok) {
+          const errorBodyText = await response.text();
+          const errorBodyPreview = errorBodyText.slice(0, 1000);
+          throw new Error(
+            `Salesforce query failed with status ${String(response.status)}. Body: ${errorBodyPreview}. SOQL: ${soql.slice(0, 500)}`,
+          );
+        }
+
+        const queryPayload: unknown = JSON.parse(await response.text());
+        const queryResponse = salesforceQueryResponseSchema.parse(queryPayload);
+        records.push(...queryResponse.records);
+        if (queryResponse.nextRecordsUrl === undefined) {
+          nextUrl = "";
+          continue;
+        }
+
+        const resolvedNextUrl = new URL(
+          queryResponse.nextRecordsUrl,
+          token.instanceUrl,
+        );
+        if (resolvedNextUrl.origin !== expectedInstanceOrigin) {
+          throw new SalesforcePaginationOriginError({
+            expectedOrigin: expectedInstanceOrigin,
+            resolvedUrl: resolvedNextUrl.toString(),
+            reason: "origin",
+          });
+        }
+
+        if (!resolvedNextUrl.pathname.startsWith("/services/data/")) {
+          throw new SalesforcePaginationOriginError({
+            expectedOrigin: expectedInstanceOrigin,
+            resolvedUrl: resolvedNextUrl.toString(),
+            reason: "path",
+          });
+        }
+
+        nextUrl = resolvedNextUrl.toString();
+      }
+
+      return records;
+    },
+
+    async queryAllIncludingDeleted(soql) {
+      const token = await getAccessToken();
+      const expectedInstanceOrigin = new URL(token.instanceUrl).origin;
+      const records: SalesforceRow[] = [];
+      let nextUrl = new URL(
+        `/services/data/v${parsedConfig.apiVersion}/queryAll?q=${encodeURIComponent(soql)}`,
         token.instanceUrl,
       ).toString();
 

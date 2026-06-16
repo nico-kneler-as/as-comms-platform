@@ -506,7 +506,9 @@ Alias drift outbound message.
           aiAutoSyncSchedule: "never",
           aiOptimizedSynthesizedAt: null,
           aiOptimizedLastCheckedAt: null,
-          aiOptimizedInputHash: null
+          aiOptimizedInputHash: null,
+          salesforceDeletedAt: null,
+          salesforceReconciledAt: null
         }
       ]);
       await expect(

@@ -18,10 +18,13 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
+import type { LaunchType } from "@as-comms/contracts";
+
 import type { ComposePreviewData } from "../../_lib/audience-data-source";
 import { StepHeader, WizardFooter } from "./wizard-shell";
 
 interface PreviewStepProps {
+  readonly launchType: LaunchType;
   readonly subject: string;
   readonly preheader: string;
   readonly previewData: ComposePreviewData | null;
@@ -64,6 +67,7 @@ function PreviewRow({
 }
 
 export function PreviewStep({
+  launchType,
   subject,
   preheader,
   previewData,
@@ -211,21 +215,31 @@ export function PreviewStep({
               </div>
             ) : (
               <article className="rounded-lg border border-slate-200 bg-white p-5">
-                <div
-                  // Note: `prose` from @tailwindcss/typography is not
-                  // installed in this app, so we apply paragraph + link
-                  // styling via arbitrary selectors. The `[&_p]:my-3` rule
-                  // mirrors the ~1em <p> margin Gmail (and browser
-                  // defaults) apply, which Tailwind's Preflight reset
-                  // otherwise zeroes out, collapsing all paragraphs.
-                  className={cn(
-                    "text-sm leading-relaxed text-slate-800",
-                    "[&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
-                    "[&_a]:text-sky-700 [&_a]:underline",
-                    "[&_hr]:border-slate-200",
-                  )}
-                  dangerouslySetInnerHTML={{ __html: sample.html }}
-                />
+                {launchType === "html_email" ? (
+                  <iframe
+                    title="Email body preview"
+                    srcDoc={sample.html}
+                    className="block w-full rounded-md border border-slate-200"
+                    style={{ height: 720, background: "white" }}
+                    sandbox="allow-same-origin"
+                  />
+                ) : (
+                  <div
+                    // Note: `prose` from @tailwindcss/typography is not
+                    // installed in this app, so we apply paragraph + link
+                    // styling via arbitrary selectors. The `[&_p]:my-3` rule
+                    // mirrors the ~1em <p> margin Gmail (and browser
+                    // defaults) apply, which Tailwind's Preflight reset
+                    // otherwise zeroes out, collapsing all paragraphs.
+                    className={cn(
+                      "text-sm leading-relaxed text-slate-800",
+                      "[&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
+                      "[&_a]:text-sky-700 [&_a]:underline",
+                      "[&_hr]:border-slate-200",
+                    )}
+                    dangerouslySetInnerHTML={{ __html: sample.html }}
+                  />
+                )}
               </article>
             )}
           </div>

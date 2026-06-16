@@ -29,8 +29,8 @@ const OPTIONS = [
     description:
       "Drag-and-drop newsletter-quality emails with images and richer layout.",
     Icon: PanelTop,
-    disabled: true,
-    tag: "COMING SOON",
+    disabled: false,
+    tag: null,
   },
   {
     value: "sms",
@@ -51,7 +51,7 @@ export function LaunchTypeStep({
     <section className="flex h-full flex-col">
       <StepHeader
         title="Choose the launch type"
-        description="Phase A ships the Normal Email path first; the wizard previews the full broadcast model so the next options are visible up front."
+        description="Pick how this broadcast goes out. Normal Email uses the Markdown composer; HTML Email opens the drag-and-drop editor. SMS arrives once carrier approval lands."
       />
 
       <div className="grid gap-3 md:grid-cols-3">
@@ -119,8 +119,7 @@ export function LaunchTypeStep({
       </div>
 
       <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] leading-relaxed text-slate-600">
-        Phase A ships Normal Email only. HTML Email arrives once the
-        drag-and-drop builder lands; SMS follows.
+        SMS arrives once carrier approval lands.
       </p>
 
       <WizardFooter primaryLabel="Continue" primaryAction={onContinue} />

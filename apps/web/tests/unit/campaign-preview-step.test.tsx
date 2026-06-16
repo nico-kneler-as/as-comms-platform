@@ -61,6 +61,7 @@ vi.mock("@/components/ui/dialog", () => ({
 import { PreviewStep } from "../../app/broadcasts/new/_components/preview-step";
 
 const baseProps: React.ComponentProps<typeof PreviewStep> = {
+  launchType: "normal_email",
   subject: "Gear pickup for {{firstName}}",
   preheader: "Everything you need for tomorrow.",
   previewData: {
@@ -124,5 +125,24 @@ describe("PreviewStep", () => {
 
     // Popover content portals at runtime; SSR only captures the trigger.
     expect(markup).toMatch(/<button[^>]*>[^<]*Send test[^<]*<\/button>/);
+  });
+
+  it("renders the inline HTML preview for normal_email", () => {
+    const markup = renderToStaticMarkup(
+      <PreviewStep {...baseProps} launchType="normal_email" />,
+    );
+
+    expect(markup).toContain("Hi Sam");
+    expect(markup).not.toContain("<iframe");
+  });
+
+  it("renders an iframe preview for html_email", () => {
+    const markup = renderToStaticMarkup(
+      <PreviewStep {...baseProps} launchType="html_email" />,
+    );
+
+    expect(markup).toContain("<iframe");
+    expect(markup).toContain('title="Email body preview"');
+    expect(markup).toContain('sandbox="allow-same-origin"');
   });
 });

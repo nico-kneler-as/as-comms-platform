@@ -120,6 +120,8 @@ export const contactSchema = z.object({
   displayName: z.string().min(1),
   primaryEmail: z.string().min(1).nullable(),
   primaryPhone: z.string().min(1).nullable(),
+  salesforceDeletedAt: optionalTimestampSchema.optional(),
+  salesforceReconciledAt: optionalTimestampSchema.optional(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
 });
@@ -145,6 +147,8 @@ export const contactMembershipSchema = z.object({
   role: z.string().min(1).nullable(),
   status: z.string().min(1).nullable(),
   source: recordSourceSchema,
+  salesforceDeletedAt: optionalTimestampSchema.optional(),
+  salesforceReconciledAt: optionalTimestampSchema.optional(),
   createdAt: timestampSchema,
 });
 export type ContactMembershipRecord = z.infer<typeof contactMembershipSchema>;
@@ -175,8 +179,29 @@ export const projectDimensionSchema = z.object({
   // changes detected" separately from "content last regenerated at Y".
   aiOptimizedLastCheckedAt: optionalTimestampSchema.optional(),
   aiOptimizedInputHash: nullableStringSchema.optional(),
+  salesforceDeletedAt: optionalTimestampSchema.optional(),
+  salesforceReconciledAt: optionalTimestampSchema.optional(),
 });
 export type ProjectDimensionRecord = z.input<typeof projectDimensionSchema>;
+
+export const salesforceReconciliationRunSchema = z.object({
+  id: idSchema,
+  startedAt: timestampSchema,
+  completedAt: optionalTimestampSchema,
+  mode: z.enum(["dry_run", "enforce"]),
+  entityType: z.enum(["contact", "membership", "project"]),
+  scanned: z.number().int().nonnegative(),
+  confirmedPresent: z.number().int().nonnegative(),
+  markedDeleted: z.number().int().nonnegative(),
+  missingLocallyCount: z.number().int().nonnegative(),
+  errors: z.array(z.unknown()).readonly(),
+  abortedReason: z.string().min(1).nullable(),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+export type SalesforceReconciliationRunRecord = z.infer<
+  typeof salesforceReconciliationRunSchema
+>;
 
 export const aiKnowledgeSourceKindSchema = z.enum([
   "notion",
