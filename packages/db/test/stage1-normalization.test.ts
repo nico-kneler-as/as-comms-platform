@@ -1089,8 +1089,11 @@ describe("Stage 1 normalization service", () => {
 
     expect(outbound.outcome).toBe("applied");
     if (outbound.outcome === "applied") {
+      // Outbound after a "New" bucket flips the bucket to "Opened" — that's
+      // the whole point of this PR. The lastInbound / lastOutbound / lastActivity
+      // pinning invariants this test was originally written for still hold.
       expect(outbound.inboxProjection).toMatchObject({
-        bucket: "New",
+        bucket: "Opened",
         lastInboundAt: "2026-01-01T00:01:00.000Z",
         lastOutboundAt: "2026-01-01T00:05:00.000Z",
         lastActivityAt: "2026-01-01T00:05:00.000Z"
