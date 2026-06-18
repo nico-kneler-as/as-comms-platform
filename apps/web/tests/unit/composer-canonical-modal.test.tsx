@@ -351,13 +351,29 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
           : null,
         showAiDraftAffordances !== false
           ? createElement(
-              "button",
-              {
-                type: "button",
-                disabled: runAiDraftDisabled,
-                title: runAiDraftDisabledReason ?? undefined,
-              },
-              "Draft with AI",
+              React.Fragment,
+              null,
+              createElement(
+                "button",
+                {
+                  type: "button",
+                  disabled: runAiDraftDisabled,
+                  title: runAiDraftDisabledReason ?? undefined,
+                },
+                "Draft with AI",
+              ),
+              createElement(
+                "button",
+                {
+                  type: "button",
+                  disabled: body.trim().length === 0,
+                  title:
+                    body.trim().length === 0
+                      ? "Type a message below to polish it."
+                      : undefined,
+                },
+                "Polish",
+              ),
             )
           : null,
         !showCc
@@ -1007,6 +1023,10 @@ describe("composer canonical modal", () => {
 
     expect(getTextarea("AI directive").value).toBe("");
     expect(getByText("Draft with AI")).not.toBeNull();
+    expect(getByText("Polish")).not.toBeNull();
+    expect(getByText("Polish").getAttribute("title")).toBe(
+      "Type a message below to polish it.",
+    );
 
     await click(getByText("Show Cc"));
     await changeValue(getInput("Cc"), "partner@example.org");

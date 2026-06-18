@@ -32,6 +32,7 @@ function setup(input?: {
   readonly aiDraft?: AiDraftState;
   readonly body?: string;
   readonly smsBody?: string;
+  readonly aiDirective?: string;
   readonly activeTab?: "email" | "sms" | "note";
   readonly composerPaneMode?: "new-draft" | "replying" | "forwarding";
   readonly recipient?: (typeof INITIAL_COMPOSER_DRAFT_STATE)["recipient"];
@@ -50,6 +51,7 @@ function setup(input?: {
       activeTab: input?.activeTab ?? "email",
       body: input?.body ?? "",
       smsBody: input?.smsBody ?? "",
+      aiDirective: input?.aiDirective ?? "",
       recipient:
         input?.recipient ??
         ({
@@ -236,6 +238,49 @@ describe("useAiDraftRun", () => {
       prompt: "Draft with AI",
     });
     expect(startAiTransition).toHaveBeenCalledOnce();
+  });
+
+  it("runPolish dispatches a polish-mode request with operatorBody from state.body", () => {
+    const startAiGeneration = vi.fn();
+    const startAiTransition = vi.fn();
+    const { controls } = setup({
+      body: "thx for reaching out. i can send that shortly.",
+      aiDirective: "more professional",
+      startAiGeneration,
+      startAiTransition,
+    });
+
+    controls.runPolish();
+
+    expect(startAiGeneration).toHaveBeenCalledWith({
+      request: {
+        contactId: "contact-1",
+        projectId: "project-1",
+        intent: "reply",
+        threadCursor: "thread-cursor-1",
+        channel: "email",
+        mode: "polish",
+        operatorBody: "thx for reaching out. i can send that shortly.",
+        operatorPrompt: "more professional",
+      },
+      prompt: "more professional",
+    });
+    expect(startAiTransition).toHaveBeenCalledOnce();
+  });
+
+  it("runPolish is a no-op when state.body is empty", () => {
+    const startAiGeneration = vi.fn();
+    const startAiTransition = vi.fn();
+    const { controls } = setup({
+      body: "   ",
+      startAiGeneration,
+      startAiTransition,
+    });
+
+    controls.runPolish();
+
+    expect(startAiGeneration).not.toHaveBeenCalled();
+    expect(startAiTransition).not.toHaveBeenCalled();
   });
 
   it("editPromptAi resets the aiDraft to idle but does not clear the composer's aiDirective", () => {

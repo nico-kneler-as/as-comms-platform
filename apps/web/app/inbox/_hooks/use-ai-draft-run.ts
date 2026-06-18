@@ -69,19 +69,14 @@ export function useAiDraftRun({
     setComposerErrors([]);
   };
 
-  const runAiDraft = (requestOverride?: {
-    readonly mode: "reprompt";
-    readonly repromptDirection: string;
-  }) => {
+  const buildBaseRequest = () => {
     if (state.activeTab !== "email" && state.activeTab !== "sms") {
-      return;
+      return null;
     }
 
     if (!selectedAliasAiConfigured) {
-      return;
+      return null;
     }
-
-    clearComposerErrors();
 
     const isSms = state.activeTab === "sms";
     const contactId =
@@ -102,10 +97,10 @@ export function useAiDraftRun({
           retryable: false,
         },
       });
-      return;
+      return null;
     }
 
-    const baseRequest = {
+    return {
       contactId,
       projectId: selectedAliasRecord?.projectId ?? null,
       intent:
@@ -114,7 +109,19 @@ export function useAiDraftRun({
           : ("reply" as const),
       threadCursor: replyContext?.threadCursor ?? null,
       channel: isSms ? ("sms" as const) : ("email" as const),
-    } as const;
+    };
+  };
+
+  const runAiDraft = (requestOverride?: {
+    readonly mode: "reprompt";
+    readonly repromptDirection: string;
+  }) => {
+    clearComposerErrors();
+    const baseRequest = buildBaseRequest();
+
+    if (baseRequest === null) {
+      return;
+    }
 
     const request =
       requestOverride?.mode === "reprompt"
@@ -179,6 +186,58 @@ export function useAiDraftRun({
     });
   };
 
+  const runPolish = () => {
+    clearComposerErrors();
+    const baseRequest = buildBaseRequest();
+
+    if (baseRequest === null) {
+      return;
+    }
+
+    const operatorBody =
+      baseRequest.channel === "sms" ? state.smsBody.trim() : state.body.trim();
+
+    if (operatorBody.length === 0) {
+      return;
+    }
+
+    const operatorPrompt = state.aiDirective.trim();
+    const request = {
+      ...baseRequest,
+      mode: "polish" as const,
+      operatorBody,
+      operatorPrompt: operatorPrompt.length > 0 ? operatorPrompt : null,
+    };
+    const prompt =
+      request.operatorPrompt ?? "Polish the current draft";
+
+    startAiGeneration({ request, prompt });
+
+    startAiTransition(async () => {
+      const result = await draftWithAiAction(request);
+
+      if (!result.ok) {
+        setAiError(result.message);
+        dispatch({
+          type: "SET_INLINE_ERROR",
+          error: {
+            message: result.message,
+            retryable: false,
+          },
+        });
+        return;
+      }
+
+      clearComposerErrors();
+      dispatch({ type: "SET_REPROMPT_TEXT", value: "" });
+      markAiDraftReviewable({
+        request,
+        response: result.data,
+        prompt,
+      });
+    });
+  };
+
   const discardAi = () => {
     discardAiDraft();
     dispatch({ type: "SET_AI_DIRECTIVE", value: "" });
@@ -234,6 +293,7 @@ export function useAiDraftRun({
 
   return {
     runAiDraft,
+    runPolish,
     discardAi,
     editPromptAi,
     regenerateAi,

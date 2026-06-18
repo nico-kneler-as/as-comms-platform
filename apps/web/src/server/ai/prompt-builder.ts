@@ -193,6 +193,31 @@ export function buildFillPrompt(
   };
 }
 
+export function buildPolishPrompt(
+  bundle: GroundingBundle,
+  input: Extract<AiDraftRequest, { mode: "polish" }>,
+): BuiltPrompt {
+  return {
+    system: buildSystemPrompt(bundle, input),
+    messages: [
+      {
+        role: "user",
+        content: finalizeUserPrompt([
+          buildContextPayload(bundle),
+          "",
+          "Operator's draft to polish:",
+          input.operatorBody,
+          ...(input.operatorPrompt?.trim().length
+            ? ["", `Polish hint: ${input.operatorPrompt.trim()}`]
+            : []),
+          "",
+          "Polish the draft above. Correct grammar, fix typos, and tighten phrasing while preserving the operator's voice and intent. Do NOT add new facts or claims. Do NOT expand the message length materially. Do NOT change the message's purpose. Return only the polished draft text - no preamble, no commentary, no signature (the composer appends the alias signature on send).",
+        ]),
+      },
+    ],
+  };
+}
+
 export function buildRepromptPrompt(
   bundle: GroundingBundle,
   input: Extract<AiDraftRequest, { mode: "reprompt" }>,
@@ -227,6 +252,8 @@ export function buildPrompt(
       return buildDraftPrompt(bundle, input);
     case "fill":
       return buildFillPrompt(bundle, input);
+    case "polish":
+      return buildPolishPrompt(bundle, input);
     case "reprompt":
       return buildRepromptPrompt(bundle, input);
   }

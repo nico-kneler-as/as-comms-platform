@@ -289,6 +289,11 @@ export function InboxComposerDetailPane({
         : !selectedAliasAiConfigured
           ? "AI is not configured for this project. Set it up in Settings → Integrations."
           : null;
+  const polishDisabled =
+    (state.activeTab === "sms" ? state.smsBody : state.body).trim().length === 0;
+  const polishDisabledReason = polishDisabled
+    ? "Type a message below to polish it."
+    : null;
   const aiWarningMessage = resolveAiWarningMessage(aiDraft);
   const sendAndSaveAvailability = resolveSendAndSaveForAiAvailability({
     selectedAlias: state.selectedAlias,
@@ -343,6 +348,7 @@ export function InboxComposerDetailPane({
   });
   const {
     runAiDraft,
+    runPolish,
     discardAi,
     editPromptAi,
     regenerateAi,
@@ -527,6 +533,8 @@ export function InboxComposerDetailPane({
               isGeneratingAi={isGeneratingAi}
               runAiDraftDisabled={runAiDraftDisabled}
               runAiDraftDisabledReason={runAiDraftDisabledReason}
+              polishDisabled={polishDisabled}
+              polishDisabledReason={polishDisabledReason}
               selectedAliasHasCachedContent={
                 selectedAliasRecord?.hasCachedContent === true
               }
@@ -591,6 +599,7 @@ export function InboxComposerDetailPane({
               onRunAiDraft={() => {
                 runAiDraft();
               }}
+              onRunPolish={runPolish}
               onRepromptTextChange={(value) => {
                 dispatch({ type: "SET_REPROMPT_TEXT", value });
               }}
@@ -629,6 +638,8 @@ export function InboxComposerDetailPane({
               isGeneratingAi={isGeneratingAi}
               runAiDraftDisabled={runAiDraftDisabled}
               runAiDraftDisabledReason={runAiDraftDisabledReason}
+              polishDisabled={polishDisabled}
+              polishDisabledReason={polishDisabledReason}
               selectedAliasHasCachedContent={
                 selectedAliasRecord?.hasCachedContent === true
               }
@@ -691,6 +702,7 @@ export function InboxComposerDetailPane({
               onRunAiDraft={() => {
                 runAiDraft();
               }}
+              onRunPolish={runPolish}
               onRepromptTextChange={(value) => {
                 dispatch({ type: "SET_REPROMPT_TEXT", value });
               }}
