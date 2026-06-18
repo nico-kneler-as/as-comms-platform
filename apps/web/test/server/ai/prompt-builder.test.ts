@@ -82,28 +82,28 @@ describe("prompt builder", () => {
           {
             "content": "Inbound message:
       Can you send the current field kit list?
-      
+
       Recent thread context:
       - 2026-04-23T08:00:00.000Z | outbound email
       Subject: Re: Whitebark kit
       Body: Happy to help with the kit list.
-      
+
       Output ONLY the final reply text. Do not include any preamble, sign-off commentary, or marker text OTHER than the contradiction marker if triggered.",
             "role": "user",
           },
         ],
         "system": "[Tier 1 Voice Instructions]
       Use a warm, direct, field-ready voice.
-      
+
       [Tier 2 Project Context]
       Whitebark volunteers should get the latest field kit guidance.
-      
+
       [Tier 3 Canonical Examples]
       (No approved canonical examples are available.)
-      
+
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
-      
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.",
+
+      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.",
       }
     `);
     expect(prompt.system).toContain(
@@ -129,7 +129,7 @@ describe("prompt builder", () => {
           {
             "content": "Inbound message:
       Can you send the current field kit list?
-      
+
       Recent thread context:
       - 2026-04-23T08:00:00.000Z | outbound email
       Subject: Re: Whitebark kit
@@ -137,25 +137,25 @@ describe("prompt builder", () => {
 
       Operator directive:
       Tell her the revised field kit will ship tomorrow.
-      
+
       Expand the operator's directive into a complete reply in the voice and context above. If the directive contradicts the project context, produce the draft as directed AND emit a clear marker that the operator should reconfirm. Example marker: [NOTE: directive may conflict with project context, please verify X].
-      
+
       Output ONLY the final reply text. Do not include any preamble, sign-off commentary, or marker text OTHER than the contradiction marker if triggered.",
             "role": "user",
           },
         ],
         "system": "[Tier 1 Voice Instructions]
       Use a warm, direct, field-ready voice.
-      
+
       [Tier 2 Project Context]
       Whitebark volunteers should get the latest field kit guidance.
-      
+
       [Tier 3 Canonical Examples]
       (No approved canonical examples are available.)
-      
+
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
-      
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.",
+
+      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.",
       }
     `);
   });
@@ -179,7 +179,7 @@ describe("prompt builder", () => {
           {
             "content": "Inbound message:
       Can you send the current field kit list?
-      
+
       Recent thread context:
       - 2026-04-23T08:00:00.000Z | outbound email
       Subject: Re: Whitebark kit
@@ -187,28 +187,28 @@ describe("prompt builder", () => {
 
       Previous draft:
       Thanks for checking in.
-      
+
       Reprompt direction:
       Make it warmer and add the ship date.
-      
+
       Revise the previous draft in light of the direction. Keep the voice and grounding constraints.
-      
+
       Output ONLY the final reply text. Do not include any preamble, sign-off commentary, or marker text OTHER than the contradiction marker if triggered.",
             "role": "user",
           },
         ],
         "system": "[Tier 1 Voice Instructions]
       Use a warm, direct, field-ready voice.
-      
+
       [Tier 2 Project Context]
       Whitebark volunteers should get the latest field kit guidance.
-      
+
       [Tier 3 Canonical Examples]
       (No approved canonical examples are available.)
-      
+
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
-      
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.",
+
+      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.",
       }
     `);
   });
@@ -237,28 +237,28 @@ describe("prompt builder", () => {
           {
             "content": "Inbound message:
       Can you send the current field kit list?
-      
+
       Recent thread context:
       - 2026-04-23T08:00:00.000Z | outbound email
       Subject: Re: Whitebark kit
       Body: Happy to help with the kit list.
-      
+
       Output ONLY the final reply text. Do not include any preamble, sign-off commentary, or marker text OTHER than the contradiction marker if triggered.",
             "role": "user",
           },
         ],
         "system": "[Tier 1 Voice Instructions]
       (No global voice instructions are available.)
-      
+
       [Tier 2 Project Context]
       (No project-specific context is available.)
-      
+
       [Tier 3 Canonical Examples]
       (No approved canonical examples are available.)
-      
+
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
-      
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.",
+
+      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.",
       }
     `);
   });

@@ -262,12 +262,14 @@ export function reduceComposerDraft(
       return clearErrors({
         ...state,
         recipient: action.recipient,
-        selectedAlias: action.isReplying
-          ? state.selectedAlias
-          : resolveDefaultAlias({
-              recipient: action.recipient,
-              aliases: action.aliases,
-            }),
+        selectedAlias:
+          state.selectedAlias ??
+          (action.isReplying
+            ? null
+            : resolveDefaultAlias({
+                recipient: action.recipient,
+                aliases: action.aliases,
+              })),
       });
     case "SET_CC":
       return clearErrors({ ...state, cc: action.recipients });

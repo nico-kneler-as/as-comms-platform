@@ -57,6 +57,10 @@ export default defineConfig({
     include: [
       "apps/web/app/**/*.test.ts",
       "apps/web/app/**/*.test.tsx",
+      "apps/web/test/**/*.test.ts",
+      "apps/web/test/**/*.test.tsx",
+      "apps/web/tests/**/*.test.ts",
+      "apps/web/tests/**/*.test.tsx",
       "scripts/**/*.test.ts",
       "scripts/**/*.test.tsx",
       "test/**/*.test.ts",
