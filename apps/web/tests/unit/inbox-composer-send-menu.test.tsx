@@ -255,6 +255,7 @@ function iconMock(name: string) {
 
 vi.mock("../../app/inbox/_components/icons", () => ({
   AlertCircleIcon: iconMock("AlertCircle"),
+  ArrowLeftIcon: iconMock("ArrowLeft"),
   BoldIcon: iconMock("Bold"),
   BookOpenIcon: iconMock("BookOpen"),
   ChevronDownIcon: iconMock("ChevronDown"),
@@ -348,6 +349,7 @@ const baseProps: ComposerEmailSurfaceProps = {
   onAiDirectiveChange: vi.fn(),
   onAiEdited: vi.fn(),
   onDiscardAi: vi.fn(),
+  onEditPromptAi: vi.fn(),
   onOpenReprompt: vi.fn(),
   onCancelReprompt: vi.fn(),
   onApproveAi: vi.fn(),
@@ -404,6 +406,7 @@ const baseSmsProps: ComposerSmsSurfaceProps = {
   onAiDirectiveChange: vi.fn(),
   onAiEdited: vi.fn(),
   onDiscardAi: vi.fn(),
+  onEditPromptAi: vi.fn(),
   onOpenReprompt: vi.fn(),
   onCancelReprompt: vi.fn(),
   onApproveAi: vi.fn(),

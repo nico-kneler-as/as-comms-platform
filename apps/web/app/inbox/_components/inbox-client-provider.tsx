@@ -201,6 +201,7 @@ interface InboxClientState {
   readonly markAiDraftEdited: () => void;
   readonly restoreAiDraft: () => void;
   readonly discardAiDraft: () => void;
+  readonly editPromptAiDraft: () => void;
   readonly markAiDraftReprompting: () => void;
   readonly repromptAi: (input: {
     readonly request: AiDraftRequestPayload;
@@ -552,6 +553,10 @@ export function InboxClientProvider({
     setAiDraft(INITIAL_AI_DRAFT);
   }, []);
 
+  const editPromptAiDraft = useCallback(() => {
+    setAiDraft(INITIAL_AI_DRAFT);
+  }, []);
+
   const markAiDraftReprompting = useCallback(() => {
     setAiDraft((previous) => ({
       ...previous,
@@ -645,6 +650,7 @@ export function InboxClientProvider({
       markAiDraftEdited,
       restoreAiDraft,
       discardAiDraft,
+      editPromptAiDraft,
       markAiDraftReprompting,
       repromptAi,
       setAiUnavailable,
@@ -692,6 +698,7 @@ export function InboxClientProvider({
       markAiDraftEdited,
       restoreAiDraft,
       discardAiDraft,
+      editPromptAiDraft,
       markAiDraftReprompting,
       repromptAi,
       setAiUnavailable,

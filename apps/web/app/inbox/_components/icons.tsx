@@ -35,6 +35,7 @@ export {
   CornerUpLeft as CornerUpLeftIcon,
   CornerUpRight as CornerUpRightIcon,
   ArrowRight as ArrowRightIcon,
+  ArrowLeft as ArrowLeftIcon,
   X as XIcon,
   LogOut as LogOutIcon,
   Loader2 as LoaderIcon,

@@ -297,6 +297,7 @@ export function ComposerEmailSurface({
   onAiDirectiveChange,
   onAiEdited,
   onDiscardAi,
+  onEditPromptAi,
   onOpenReprompt,
   onCancelReprompt,
   onApproveAi,
@@ -366,6 +367,7 @@ export function ComposerEmailSurface({
   readonly onAiDirectiveChange: (value: string) => void;
   readonly onAiEdited: () => void;
   readonly onDiscardAi: () => void;
+  readonly onEditPromptAi: () => void;
   readonly onOpenReprompt: () => void;
   readonly onCancelReprompt: () => void;
   readonly onApproveAi: () => void;
@@ -552,6 +554,7 @@ export function ComposerEmailSurface({
                   onDirectiveTextChange={onAiDirectiveChange}
                   onRepromptTextChange={onRepromptTextChange}
                   onRunDraft={onRunAiDraft}
+                  onEditPrompt={onEditPromptAi}
                   onOpenReprompt={onOpenReprompt}
                   onSubmitReprompt={onReprompt}
                   onCancelReprompt={onCancelReprompt}
@@ -760,6 +763,7 @@ export function ComposerSmsSurface({
   onAiDirectiveChange,
   onAiEdited,
   onDiscardAi,
+  onEditPromptAi,
   onOpenReprompt,
   onCancelReprompt,
   onApproveAi,
@@ -797,6 +801,7 @@ export function ComposerSmsSurface({
   readonly onAiDirectiveChange: (value: string) => void;
   readonly onAiEdited: () => void;
   readonly onDiscardAi: () => void;
+  readonly onEditPromptAi: () => void;
   readonly onOpenReprompt: () => void;
   readonly onCancelReprompt: () => void;
   readonly onApproveAi: () => void;
@@ -928,6 +933,7 @@ export function ComposerSmsSurface({
           onDirectiveTextChange={onAiDirectiveChange}
           onRepromptTextChange={onRepromptTextChange}
           onRunDraft={onRunAiDraft}
+          onEditPrompt={onEditPromptAi}
           onOpenReprompt={onOpenReprompt}
           onSubmitReprompt={onReprompt}
           onCancelReprompt={onCancelReprompt}

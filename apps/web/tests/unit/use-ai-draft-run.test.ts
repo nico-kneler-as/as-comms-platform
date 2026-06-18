@@ -42,6 +42,7 @@ function setup(input?: {
 }) {
   const dispatch = vi.fn();
   const approveAiDraft = vi.fn();
+  const editPromptAiDraft = vi.fn();
   const startAiGeneration = input?.startAiGeneration ?? vi.fn();
   const controls = useAiDraftRun({
     state: {
@@ -97,6 +98,7 @@ function setup(input?: {
     markAiDraftReviewable: vi.fn(),
     approveAiDraft,
     discardAiDraft: vi.fn(),
+    editPromptAiDraft,
     markAiDraftReprompting: vi.fn(),
     repromptAi: vi.fn(),
     cancelReprompt: vi.fn(),
@@ -112,6 +114,7 @@ function setup(input?: {
   return {
     dispatch,
     approveAiDraft,
+    editPromptAiDraft,
     startAiGeneration,
     controls,
   };
@@ -233,5 +236,17 @@ describe("useAiDraftRun", () => {
       prompt: "Draft with AI",
     });
     expect(startAiTransition).toHaveBeenCalledOnce();
+  });
+
+  it("editPromptAi resets the aiDraft to idle but does not clear the composer's aiDirective", () => {
+    const { dispatch, editPromptAiDraft, controls } = setup();
+
+    controls.editPromptAi();
+
+    expect(editPromptAiDraft).toHaveBeenCalledOnce();
+    expect(dispatch).not.toHaveBeenCalledWith({
+      type: "SET_AI_DIRECTIVE",
+      value: "",
+    });
   });
 });
