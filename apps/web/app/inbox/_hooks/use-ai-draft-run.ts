@@ -26,6 +26,7 @@ export function useAiDraftRun({
   markAiDraftReviewable,
   approveAiDraft,
   discardAiDraft,
+  editPromptAiDraft,
   markAiDraftReprompting,
   repromptAi,
   cancelReprompt,
@@ -52,6 +53,7 @@ export function useAiDraftRun({
   }) => void;
   readonly approveAiDraft: () => void;
   readonly discardAiDraft: () => void;
+  readonly editPromptAiDraft: () => void;
   readonly markAiDraftReprompting: () => void;
   readonly repromptAi: (input: {
     readonly request: AiDraftRequestPayload;
@@ -183,6 +185,12 @@ export function useAiDraftRun({
     dispatch({ type: "SET_REPROMPT_TEXT", value: "" });
   };
 
+  const editPromptAi = () => {
+    clearComposerErrors();
+    editPromptAiDraft();
+    dispatch({ type: "SET_REPROMPT_TEXT", value: "" });
+  };
+
   const regenerateAi = () => {
     if (state.repromptText.trim().length === 0) {
       return;
@@ -227,6 +235,7 @@ export function useAiDraftRun({
   return {
     runAiDraft,
     discardAi,
+    editPromptAi,
     regenerateAi,
     openReprompt,
     cancelAiReprompt,

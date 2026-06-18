@@ -163,6 +163,7 @@ export function InboxComposerDetailPane({
     approveAiDraft,
     markAiDraftEdited,
     discardAiDraft,
+    editPromptAiDraft,
     markAiDraftReprompting,
     repromptAi,
     cancelReprompt,
@@ -343,6 +344,7 @@ export function InboxComposerDetailPane({
   const {
     runAiDraft,
     discardAi,
+    editPromptAi,
     regenerateAi,
     openReprompt,
     cancelAiReprompt,
@@ -359,6 +361,7 @@ export function InboxComposerDetailPane({
     markAiDraftReviewable,
     approveAiDraft,
     discardAiDraft,
+    editPromptAiDraft,
     markAiDraftReprompting,
     repromptAi,
     cancelReprompt,
@@ -581,6 +584,7 @@ export function InboxComposerDetailPane({
               }}
               onAiEdited={markAiDraftEdited}
               onDiscardAi={discardAi}
+              onEditPromptAi={editPromptAi}
               onOpenReprompt={openReprompt}
               onCancelReprompt={cancelAiReprompt}
               onApproveAi={approveAi}
@@ -680,6 +684,7 @@ export function InboxComposerDetailPane({
               }}
               onAiEdited={markAiDraftEdited}
               onDiscardAi={discardAi}
+              onEditPromptAi={editPromptAi}
               onOpenReprompt={openReprompt}
               onCancelReprompt={cancelAiReprompt}
               onApproveAi={approveAi}

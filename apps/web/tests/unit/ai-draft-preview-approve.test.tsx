@@ -12,6 +12,7 @@ function iconMock(name: string) {
 
 vi.mock("lucide-react", () => ({
   AlertCircle: iconMock("AlertCircle"),
+  ArrowLeft: iconMock("ArrowLeft"),
   BookOpen: iconMock("BookOpen"),
   Check: iconMock("Check"),
   Flag: iconMock("Flag"),
@@ -221,7 +222,7 @@ function getButton(name: string): HTMLButtonElement {
 
 function DraftHarness() {
   const [aiDraft, setAiDraft] = useState(initialAiDraft);
-  const [directiveText, setDirectiveText] = useState("");
+  const [directiveText, setDirectiveText] = useState("Draft a concise follow-up");
   const [repromptText, setRepromptText] = useState("");
   const [body, setBody] = useState("");
 
@@ -289,6 +290,10 @@ function DraftHarness() {
           setRepromptText("");
           setAiDraft(initialAiDraft);
         }}
+        onEditPrompt={() => {
+          setRepromptText("");
+          setAiDraft(initialAiDraft);
+        }}
         onApprove={() => {
           setBody(aiDraft.generatedText);
           setStatus("inserted");
@@ -321,6 +326,27 @@ describe("AI draft preview approval panel", () => {
       "Hi Maya,\n\nThanks for checking in.",
     );
     expect(document.body.textContent).toContain("AI draft");
+  });
+
+  it("returns to the prompt editor with the original intent when edit prompt is clicked", async () => {
+    await mount(createElement(DraftHarness));
+
+    await click(getButton("Finish generation"));
+    expect(document.body.textContent).toContain("Edit prompt");
+    expect(document.querySelector("textarea")?.textContent ?? "").not.toContain(
+      "Draft a concise follow-up",
+    );
+
+    await click(getButton("Edit prompt"));
+
+    const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    if (textarea === null) {
+      throw new Error("Expected prompt textarea.");
+    }
+    expect(textarea.value).toBe("Draft a concise follow-up");
+    expect(document.body.textContent).toContain("Draft with AI");
+    expect(document.body.textContent).not.toContain("Reprompt");
   });
 
   // TODO: re-enable after JSDOM event handler shim is added — Radix DismissableLayer

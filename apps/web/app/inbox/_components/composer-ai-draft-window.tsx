@@ -12,6 +12,7 @@ import { FOCUS_RING, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
 
 import {
+  ArrowLeftIcon,
   CheckIcon,
   LoaderIcon,
   RotateCcwIcon,
@@ -173,6 +174,7 @@ export function ComposerAiDraftWindow({
   onOpenReprompt,
   onSubmitReprompt,
   onCancelReprompt,
+  onEditPrompt,
   onDiscard,
   onApprove,
 }: {
@@ -190,6 +192,7 @@ export function ComposerAiDraftWindow({
   readonly onOpenReprompt: () => void;
   readonly onSubmitReprompt: () => void;
   readonly onCancelReprompt: () => void;
+  readonly onEditPrompt: () => void;
   readonly onDiscard: () => void;
   readonly onApprove: () => void;
 }) {
@@ -331,6 +334,15 @@ export function ComposerAiDraftWindow({
           )}
         >
           <div className="ml-auto flex items-center gap-1">
+            {!isReprompting ? (
+              <AiDraftActionButton
+                onClick={onEditPrompt}
+                disabled={!canUseDraftActions}
+              >
+                <ArrowLeftIcon className="size-3.5" />
+                Edit prompt
+              </AiDraftActionButton>
+            ) : null}
             <AiDraftActionButton
               onClick={isReprompting ? onCancelReprompt : onOpenReprompt}
               disabled={!canUseDraftActions}
