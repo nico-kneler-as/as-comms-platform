@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDraftPrompt, buildFillPrompt, buildRepromptPrompt } from "../../../src/server/ai/prompt-builder";
+import {
+  buildDraftPrompt,
+  buildFillPrompt,
+  buildPolishPrompt,
+  buildRepromptPrompt,
+} from "../../../src/server/ai/prompt-builder";
 import type { GroundingBundle } from "../../../src/server/ai/types";
 
 const baseBundle: GroundingBundle = {
@@ -192,6 +197,69 @@ describe("prompt builder", () => {
       Make it warmer and add the ship date.
 
       Revise the previous draft in light of the direction. Keep the voice and grounding constraints.
+
+      Output ONLY the final reply text. Do not include any preamble, sign-off commentary, or marker text OTHER than the contradiction marker if triggered.",
+            "role": "user",
+          },
+        ],
+        "system": "[Tier 1 Voice Instructions]
+      Use a warm, direct, field-ready voice.
+
+      [Tier 2 Project Context]
+      Whitebark volunteers should get the latest field kit guidance.
+
+      [Tier 3 Canonical Examples]
+      (No approved canonical examples are available.)
+
+      The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
+
+      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.",
+      }
+    `);
+  });
+
+  it("builds the polish prompt with the same system prompt as draft mode", () => {
+    const draftPrompt = buildDraftPrompt(baseBundle, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      intent: "reply",
+      threadCursor: "event:inbound-1",
+      repromptIndex: 0,
+      channel: "email",
+      mode: "draft",
+    });
+
+    const polishPrompt = buildPolishPrompt(baseBundle, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      intent: "reply",
+      threadCursor: "event:inbound-1",
+      repromptIndex: 0,
+      channel: "email",
+      mode: "polish",
+      operatorBody: "thx for reaching out. i can send the list soon.",
+      operatorPrompt: "more professional",
+    });
+
+    expect(polishPrompt.system).toBe(draftPrompt.system);
+    expect(polishPrompt).toMatchInlineSnapshot(`
+      {
+        "messages": [
+          {
+            "content": "Inbound message:
+      Can you send the current field kit list?
+
+      Recent thread context:
+      - 2026-04-23T08:00:00.000Z | outbound email
+      Subject: Re: Whitebark kit
+      Body: Happy to help with the kit list.
+
+      Operator's draft to polish:
+      thx for reaching out. i can send the list soon.
+
+      Polish hint: more professional
+
+      Polish the draft above. Correct grammar, fix typos, and tighten phrasing while preserving the operator's voice and intent. Do NOT add new facts or claims. Do NOT expand the message length materially. Do NOT change the message's purpose. Return only the polished draft text - no preamble, no commentary, no signature (the composer appends the alias signature on send).
 
       Output ONLY the final reply text. Do not include any preamble, sign-off commentary, or marker text OTHER than the contradiction marker if triggered.",
             "role": "user",

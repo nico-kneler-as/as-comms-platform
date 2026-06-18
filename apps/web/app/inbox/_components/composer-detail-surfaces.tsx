@@ -276,6 +276,8 @@ export function ComposerEmailSurface({
   isGeneratingAi,
   runAiDraftDisabled,
   runAiDraftDisabledReason,
+  polishDisabled,
+  polishDisabledReason,
   selectedAliasHasCachedContent,
   selectedAliasProjectName,
   selectedAliasSignature,
@@ -302,6 +304,7 @@ export function ComposerEmailSurface({
   onCancelReprompt,
   onApproveAi,
   onRunAiDraft,
+  onRunPolish,
   onRepromptTextChange,
   onReprompt,
   onAttachmentClick,
@@ -337,6 +340,8 @@ export function ComposerEmailSurface({
   readonly isGeneratingAi: boolean;
   readonly runAiDraftDisabled: boolean;
   readonly runAiDraftDisabledReason: string | null;
+  readonly polishDisabled: boolean;
+  readonly polishDisabledReason: string | null;
   readonly selectedAliasHasCachedContent: boolean;
   readonly selectedAliasProjectName: string | null;
   readonly selectedAliasSignature: string;
@@ -372,6 +377,7 @@ export function ComposerEmailSurface({
   readonly onCancelReprompt: () => void;
   readonly onApproveAi: () => void;
   readonly onRunAiDraft: () => void;
+  readonly onRunPolish: () => void;
   readonly onRepromptTextChange: (value: string) => void;
   readonly onReprompt: () => void;
   readonly onAttachmentClick: () => void;
@@ -551,9 +557,12 @@ export function ComposerEmailSurface({
                   isGeneratingAi={isGeneratingAi}
                   runDraftDisabled={runAiDraftDisabled}
                   runDraftDisabledReason={runAiDraftDisabledReason}
+                  polishDisabled={polishDisabled}
+                  polishDisabledReason={polishDisabledReason}
                   onDirectiveTextChange={onAiDirectiveChange}
                   onRepromptTextChange={onRepromptTextChange}
                   onRunDraft={onRunAiDraft}
+                  onRunPolish={onRunPolish}
                   onEditPrompt={onEditPromptAi}
                   onOpenReprompt={onOpenReprompt}
                   onSubmitReprompt={onReprompt}
@@ -748,6 +757,8 @@ export function ComposerSmsSurface({
   isGeneratingAi,
   runAiDraftDisabled,
   runAiDraftDisabledReason,
+  polishDisabled,
+  polishDisabledReason,
   selectedAliasHasCachedContent,
   selectedAliasProjectName,
   canSendAndSaveForAi,
@@ -768,6 +779,7 @@ export function ComposerSmsSurface({
   onCancelReprompt,
   onApproveAi,
   onRunAiDraft,
+  onRunPolish,
   onRepromptTextChange,
   onReprompt,
   onSend,
@@ -786,6 +798,8 @@ export function ComposerSmsSurface({
   readonly isGeneratingAi: boolean;
   readonly runAiDraftDisabled: boolean;
   readonly runAiDraftDisabledReason: string | null;
+  readonly polishDisabled: boolean;
+  readonly polishDisabledReason: string | null;
   readonly selectedAliasHasCachedContent: boolean;
   readonly selectedAliasProjectName: string | null;
   readonly canSendAndSaveForAi: boolean;
@@ -806,6 +820,7 @@ export function ComposerSmsSurface({
   readonly onCancelReprompt: () => void;
   readonly onApproveAi: () => void;
   readonly onRunAiDraft: () => void;
+  readonly onRunPolish: () => void;
   readonly onRepromptTextChange: (value: string) => void;
   readonly onReprompt: () => void;
   readonly onSend: (sendKind?: ComposerSendKind) => void;
@@ -930,9 +945,12 @@ export function ComposerSmsSurface({
           isGeneratingAi={isGeneratingAi}
           runDraftDisabled={runAiDraftDisabled}
           runDraftDisabledReason={runAiDraftDisabledReason}
+          polishDisabled={polishDisabled}
+          polishDisabledReason={polishDisabledReason}
           onDirectiveTextChange={onAiDirectiveChange}
           onRepromptTextChange={onRepromptTextChange}
           onRunDraft={onRunAiDraft}
+          onRunPolish={onRunPolish}
           onEditPrompt={onEditPromptAi}
           onOpenReprompt={onOpenReprompt}
           onSubmitReprompt={onReprompt}

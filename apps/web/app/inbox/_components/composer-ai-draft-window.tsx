@@ -18,6 +18,7 @@ import {
   RotateCcwIcon,
   RotateCwIcon,
   SparkleIcon,
+  SparklesIcon,
   Trash2Icon,
 } from "./icons";
 import type { AiDraftState } from "./inbox-client-provider";
@@ -110,12 +111,16 @@ function DraftActionTrigger({
   disabledReason,
   isGenerating,
   onRun,
+  icon,
+  label,
   accent = "violet",
 }: {
   readonly disabled: boolean;
   readonly disabledReason: string | null;
   readonly isGenerating: boolean;
   readonly onRun: () => void;
+  readonly icon: ReactNode;
+  readonly label: string;
   readonly accent?: AiDraftAccent;
 }) {
   const accentClasses = AI_DRAFT_ACCENT_CLASSES[accent];
@@ -132,12 +137,12 @@ function DraftActionTrigger({
       {isGenerating ? (
         <>
           <LoaderIcon className="size-3.5 animate-spin" />
-          Drafting...
+          {label === "Polish" ? "Polishing..." : "Drafting..."}
         </>
       ) : (
         <>
-          <SparkleIcon className="size-3.5" />
-          Draft with AI
+          {icon}
+          {label}
         </>
       )}
     </Button>
@@ -168,9 +173,12 @@ export function ComposerAiDraftWindow({
   isGeneratingAi,
   runDraftDisabled,
   runDraftDisabledReason,
+  polishDisabled,
+  polishDisabledReason,
   onDirectiveTextChange,
   onRepromptTextChange,
   onRunDraft,
+  onRunPolish,
   onOpenReprompt,
   onSubmitReprompt,
   onCancelReprompt,
@@ -186,9 +194,12 @@ export function ComposerAiDraftWindow({
   readonly isGeneratingAi: boolean;
   readonly runDraftDisabled: boolean;
   readonly runDraftDisabledReason: string | null;
+  readonly polishDisabled: boolean;
+  readonly polishDisabledReason: string | null;
   readonly onDirectiveTextChange: (value: string) => void;
   readonly onRepromptTextChange: (value: string) => void;
   readonly onRunDraft: () => void;
+  readonly onRunPolish: () => void;
   readonly onOpenReprompt: () => void;
   readonly onSubmitReprompt: () => void;
   readonly onCancelReprompt: () => void;
@@ -233,7 +244,7 @@ export function ComposerAiDraftWindow({
 
       <div className="min-w-0 px-3 pb-2.5 pt-2">
         {showsEmptyState ? (
-          <div className="flex min-w-0 items-start gap-2">
+          <div className="space-y-2">
             <textarea
               autoFocus
               value={directiveText}
@@ -258,13 +269,26 @@ export function ComposerAiDraftWindow({
                 accentClasses.textareaFocus,
               )}
             />
-            <DraftActionTrigger
-              disabled={runDraftDisabled}
-              disabledReason={runDraftDisabledReason}
-              isGenerating={isGeneratingAi}
-              onRun={onRunDraft}
-              accent={accent}
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <DraftActionTrigger
+                disabled={runDraftDisabled}
+                disabledReason={runDraftDisabledReason}
+                isGenerating={isGeneratingAi}
+                onRun={onRunDraft}
+                icon={<SparkleIcon className="size-3.5" />}
+                label="Draft with AI"
+                accent={accent}
+              />
+              <DraftActionTrigger
+                disabled={polishDisabled}
+                disabledReason={polishDisabledReason}
+                isGenerating={isGeneratingAi}
+                onRun={onRunPolish}
+                icon={<SparklesIcon className="size-3.5" />}
+                label="Polish"
+                accent={accent}
+              />
+            </div>
           </div>
         ) : null}
 
