@@ -70,10 +70,10 @@ function renderChannelInstructionBlock(input: {
   }
 
   if (input.intent === "new") {
-    return "You are drafting a brand-new outbound email to a volunteer. The operator is starting a new conversation — do NOT phrase this as a reply, do NOT begin with 'Thanks for reaching out' or any reply-style opener, and do NOT reference any inbound message as if it triggered this. The thread history below is background context only. Use only the information above and the operator's directive (if any). Never invent facts.";
+    return "You are drafting a brand-new outbound email to a volunteer. The operator is starting a new conversation — do NOT phrase this as a reply, do NOT begin with 'Thanks for reaching out' or any reply-style opener, and do NOT reference any inbound message as if it triggered this. The thread history below is background context only. Use only the information above and the operator's directive (if any). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.";
   }
 
-  return "You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.";
+  return "You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.";
 }
 
 function buildSystemPrompt(
