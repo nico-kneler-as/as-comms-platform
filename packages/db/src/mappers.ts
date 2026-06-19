@@ -4,6 +4,9 @@ import {
   auditEvidenceSchema,
   canonicalEventSchema,
   canonicalEventAudienceSchema,
+  composerDraftAttachmentSchema,
+  composerDraftForwardContextSchema,
+  composerDraftUpsertInputSchema,
   contactIdentitySchema,
   contactMembershipSchema,
   contactSchema,
@@ -30,6 +33,10 @@ import {
   type AiKnowledgeEntryRecord,
   type CanonicalEventRecord,
   type CanonicalEventAudienceRecord,
+  type ComposerDraftChannel,
+  type ComposerDraftForwardContext,
+  type ComposerDraftPaneMode as ComposerDraftPaneModeDb,
+  type ComposerDraftRecipientKind,
   type ContactIdentityRecord,
   type ContactMembershipRecord,
   type ContactRecord,
@@ -64,12 +71,14 @@ import type {
   SmsSenderRecord,
   UserRecord,
 } from "@as-comms/domain";
+import { z } from "zod";
 
 import type {
   aiKnowledgeEntries,
   auditPolicyEvidence,
   canonicalEventLedger,
   canonicalEventAudience,
+  composerDrafts,
   consentRecords,
   contactIdentities,
   contactInboxProjection,
@@ -138,6 +147,8 @@ type UserRow = typeof users.$inferSelect;
 type ProjectAliasRow = typeof projectAliases.$inferSelect;
 type SalesforceReconciliationRunRow =
   typeof salesforceReconciliationRuns.$inferSelect;
+type ComposerDraftDbRow = typeof composerDrafts.$inferSelect;
+type ComposerDraftDbRowInsert = typeof composerDrafts.$inferInsert;
 
 type ContactRowInput = Omit<
   ContactRow,
@@ -167,6 +178,162 @@ function fromDate(value: Date | null): string | null {
 
 function toDate(value: string): Date {
   return new Date(value);
+}
+
+function mapComposerDraftPaneModeFromDb(
+  value: ComposerDraftDbRow["paneMode"],
+): ComposerDraftPaneMode {
+  if (value === "new_draft") {
+    return "new-draft";
+  }
+
+  return value;
+}
+
+function mapComposerDraftPaneModeToDb(
+  value: ComposerDraftPaneMode,
+): ComposerDraftPaneModeDb {
+  if (value === "new-draft") {
+    return "new_draft";
+  }
+
+  return value;
+}
+
+function parseEmailAddressArray(
+  value: unknown,
+): readonly string[] {
+  const parsed = z.array(z.string().trim().email()).safeParse(value);
+  return parsed.success ? parsed.data : [];
+}
+
+function parseComposerDraftAttachments(
+  value: unknown,
+): readonly {
+  readonly filename: string;
+  readonly size: number;
+  readonly contentType: string;
+}[] {
+  const parsed = z.array(composerDraftAttachmentSchema).safeParse(value);
+  return parsed.success ? parsed.data : [];
+}
+
+function parseComposerDraftForwardContext(
+  value: unknown,
+): ComposerDraftForwardContext | null {
+  const parsed = composerDraftForwardContextSchema.nullable().safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+export type ComposerDraftRow = Readonly<{
+  id: string;
+  actor_id: string;
+  pane_mode: ComposerDraftDbRow["paneMode"];
+  channel: ComposerDraftChannel;
+  recipient_anchor_kind: ComposerDraftRecipientKind | null;
+  recipient_contact_id: string | null;
+  recipient_email: string | null;
+  recipient_phone: string | null;
+  subject: string;
+  body_plaintext: string;
+  body_html: string;
+  selected_alias: string | null;
+  cc: unknown;
+  bcc: unknown;
+  attachments: unknown;
+  ai_directive: string;
+  reply_context_thread_cursor: string | null;
+  forward_context: unknown;
+  created_at: Date;
+  updated_at: Date;
+}>;
+
+export type ComposerDraftRowInsert = ComposerDraftDbRowInsert;
+
+export type ComposerDraftPaneMode = "new-draft" | "replying" | "forwarding";
+
+export type ComposerDraftInsert = Omit<
+  z.input<typeof composerDraftUpsertInputSchema>,
+  "pane_mode"
+> & {
+  pane_mode: ComposerDraftPaneMode;
+};
+
+export type ComposerDraftRecord = Readonly<{
+  id: string;
+  actorId: string;
+  paneMode: ComposerDraftPaneMode;
+  channel: ComposerDraftChannel;
+  recipientAnchorKind: ComposerDraftRecipientKind | null;
+  recipientContactId: string | null;
+  recipientEmail: string | null;
+  recipientPhone: string | null;
+  subject: string;
+  bodyPlaintext: string;
+  bodyHtml: string;
+  selectedAlias: string | null;
+  cc: readonly string[];
+  bcc: readonly string[];
+  attachments: readonly z.infer<typeof composerDraftAttachmentSchema>[];
+  aiDirective: string;
+  replyContextThreadCursor: string | null;
+  forwardContext: ComposerDraftForwardContext | null;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
+export function mapComposerDraftRow(row: ComposerDraftRow): ComposerDraftRecord {
+  return {
+    id: row.id,
+    actorId: row.actor_id,
+    paneMode: mapComposerDraftPaneModeFromDb(row.pane_mode),
+    channel: row.channel,
+    recipientAnchorKind: row.recipient_anchor_kind,
+    recipientContactId: row.recipient_contact_id,
+    recipientEmail: row.recipient_email,
+    recipientPhone: row.recipient_phone,
+    subject: row.subject,
+    bodyPlaintext: row.body_plaintext,
+    bodyHtml: row.body_html,
+    selectedAlias: row.selected_alias,
+    cc: parseEmailAddressArray(row.cc),
+    bcc: parseEmailAddressArray(row.bcc),
+    attachments: parseComposerDraftAttachments(row.attachments),
+    aiDirective: row.ai_directive,
+    replyContextThreadCursor: row.reply_context_thread_cursor,
+    forwardContext: parseComposerDraftForwardContext(row.forward_context),
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  };
+}
+
+export function mapComposerDraftInsert(
+  record: ComposerDraftInsert,
+): ComposerDraftRowInsert {
+  const parsed = composerDraftUpsertInputSchema.parse({
+    ...record,
+    pane_mode: mapComposerDraftPaneModeToDb(record.pane_mode),
+  });
+
+  return {
+    actorId: parsed.actor_id,
+    paneMode: parsed.pane_mode,
+    channel: parsed.channel,
+    recipientAnchorKind: parsed.recipient_anchor_kind,
+    recipientContactId: parsed.recipient_contact_id,
+    recipientEmail: parsed.recipient_email,
+    recipientPhone: parsed.recipient_phone,
+    subject: parsed.subject,
+    bodyPlaintext: parsed.body_plaintext,
+    bodyHtml: parsed.body_html,
+    selectedAlias: parsed.selected_alias,
+    cc: parsed.cc,
+    bcc: parsed.bcc,
+    attachments: parsed.attachments,
+    aiDirective: parsed.ai_directive,
+    replyContextThreadCursor: parsed.reply_context_thread_cursor,
+    forwardContext: parsed.forward_context ?? undefined,
+  };
 }
 
 export function mapSourceEvidenceRow(
