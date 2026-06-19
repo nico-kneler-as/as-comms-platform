@@ -181,7 +181,8 @@ export function InboxComposerDetailPane({
   const {
     state,
     dispatch,
-    draftKey,
+    draftIdRef,
+    invalidateDraftPersistence,
     isReplying,
     replyContext,
   } = useComposerDraftState({
@@ -378,7 +379,8 @@ export function InboxComposerDetailPane({
   const { submit, submitSms, saveNote, cancel } = useComposerSubmit({
     state,
     dispatch,
-    draftKey,
+    draftIdRef,
+    invalidateDraftPersistence,
     composerAliases,
     isReplying,
     replyContext,

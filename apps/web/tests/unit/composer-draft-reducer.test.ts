@@ -161,6 +161,46 @@ describe("composer draft reducer", () => {
     ]);
   });
 
+  it("hydrates sms drafts into the sms tab", () => {
+    const state = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
+      type: "HYDRATE_FROM_STORED_DRAFT",
+      draft: {
+        subject: "",
+        bodyPlaintext: "SMS draft",
+        bodyHtml: "",
+        selectedAlias: null,
+        cc: [],
+        bcc: [],
+        attachments: [],
+        updatedAt: 1,
+        channel: "sms",
+      },
+    });
+
+    expect(state.activeTab).toBe("sms");
+    expect(state.smsBody).toBe("SMS draft");
+  });
+
+  it("hydrates note drafts into the note tab", () => {
+    const state = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
+      type: "HYDRATE_FROM_STORED_DRAFT",
+      draft: {
+        subject: "",
+        bodyPlaintext: "Note draft",
+        bodyHtml: "",
+        selectedAlias: null,
+        cc: [],
+        bcc: [],
+        attachments: [],
+        updatedAt: 1,
+        channel: "note",
+      },
+    });
+
+    expect(state.activeTab).toBe("note");
+    expect(state.body).toBe("Note draft");
+  });
+
   it("seeds forwarding mode with a subject, quoted body, and editable recipient", () => {
     const state = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
       type: "RESET_TO_PANE_MODE",

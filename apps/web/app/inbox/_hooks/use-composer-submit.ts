@@ -1,8 +1,9 @@
-import type { Dispatch, TransitionStartFunction } from "react";
+import type { Dispatch, RefObject, TransitionStartFunction } from "react";
 import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
 
 import { smsMetrics } from "@as-comms/domain/sms-segments";
 
+import { deleteComposerDraftAction } from "@/src/server/composer/drafts";
 import {
   createNoteAction,
   sendComposerAction,
@@ -18,7 +19,6 @@ import type {
   InboxComposerReplyContext,
   OptimisticOutbound,
 } from "../_lib/view-models";
-import { clearDraft } from "../_lib/composer-draft-storage";
 import {
   getInternalNoteValidationError,
   normalizeInternalNoteBody,
@@ -86,7 +86,8 @@ function toOptimisticAttachment(attachment: AttachmentDraft, index: number) {
 export function useComposerSubmit({
   state,
   dispatch,
-  draftKey,
+  draftIdRef,
+  invalidateDraftPersistence,
   composerAliases,
   isReplying,
   replyContext,
@@ -104,7 +105,8 @@ export function useComposerSubmit({
 }: {
   readonly state: ComposerDraftState;
   readonly dispatch: Dispatch<ComposerDraftAction>;
-  readonly draftKey: string | null;
+  readonly draftIdRef: RefObject<string | null>;
+  readonly invalidateDraftPersistence: () => void;
   readonly composerAliases: readonly InboxComposerAliasOption[];
   readonly isReplying: boolean;
   readonly replyContext: InboxComposerReplyContext | null;
@@ -131,6 +133,20 @@ export function useComposerSubmit({
   readonly startSendTransition: TransitionStartFunction;
   readonly startSaveNoteTransition: TransitionStartFunction;
 }) {
+  const clearPersistedDraft = async () => {
+    const draftId = draftIdRef.current;
+    draftIdRef.current = null;
+
+    if (draftId === null) {
+      return;
+    }
+
+    const result = await deleteComposerDraftAction({ id: draftId });
+    if (!result.ok) {
+      console.error("[composer/drafts] failed to delete persisted draft", result);
+    }
+  };
+
   const setErrors = (input: {
     readonly message: string;
     readonly retryable: boolean;
@@ -264,10 +280,7 @@ export function useComposerSubmit({
     setComposerErrors([]);
     setComposerStatus("sending");
     addOptimisticOutbound(optimisticEntry);
-
-    if (draftKey !== null) {
-      clearDraft(draftKey);
-    }
+    invalidateDraftPersistence();
     closeComposer();
 
     startSendTransition(async () => {
@@ -278,6 +291,7 @@ export function useComposerSubmit({
         });
 
         if (result.ok) {
+          await clearPersistedDraft();
           if (result.data.clientGeneratedId !== null) {
             markOptimisticSettled(result.data.clientGeneratedId);
           }
@@ -414,6 +428,7 @@ export function useComposerSubmit({
     setComposerErrors([]);
     setComposerStatus("sending");
     addOptimisticOutbound(optimisticEntry);
+    invalidateDraftPersistence();
     closeComposer();
 
     startSendTransition(async () => {
@@ -440,6 +455,7 @@ export function useComposerSubmit({
         });
 
         if (result.ok) {
+          await clearPersistedDraft();
           markOptimisticSettled(result.data.clientGeneratedId);
           setComposerStatus("sent-success");
           showToast(`Sent to ${recipientLabel}`, "success");
@@ -503,6 +519,8 @@ export function useComposerSubmit({
       });
 
       if (result.ok) {
+        invalidateDraftPersistence();
+        await clearPersistedDraft();
         setComposerStatus("draft-saved");
         dispatch({ type: "SET_BODY", body: "", bodyHtml: "" });
         closeComposer();
@@ -526,10 +544,8 @@ export function useComposerSubmit({
   };
 
   const cancel = () => {
-    if (draftKey !== null) {
-      clearDraft(draftKey);
-    }
-
+    invalidateDraftPersistence();
+    void clearPersistedDraft();
     closeComposer();
   };
 
