@@ -52,6 +52,7 @@ vi.mock("lucide-react", () => ({
   CornerUpLeft: iconMock("CornerUpLeft"),
   Database: iconMock("Database"),
   Eye: iconMock("Eye"),
+  FilePen: iconMock("FilePen"),
   FileIcon: iconMock("FileIcon"),
   FileText: iconMock("FileText"),
   Flag: iconMock("Flag"),
@@ -779,6 +780,7 @@ function TestApp() {
   return (
     <InboxClientProvider
       composerAliases={composerAliases}
+      initialDrafts={[]}
       currentActorId="user:operator"
     >
       <InboxKeyboardProvider>

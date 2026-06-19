@@ -206,6 +206,7 @@ async function renderHarness(props: {
           InboxClientProvider,
           {
             composerAliases: [],
+            initialDrafts: [],
             currentActorId: "user-1",
             operatorDisplayName: "Operator Name",
             children: createElement(Harness, nextProps),

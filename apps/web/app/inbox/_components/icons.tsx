@@ -69,6 +69,7 @@ export {
   ListOrdered as ListOrderedIcon,
   Upload as UploadIcon,
   FileIcon as FileDocIcon,
+  FilePen as FileEditIcon,
   Eye as EyeIcon,
   MousePointerClick as MousePointerClickIcon,
   Flag as FlagIcon,

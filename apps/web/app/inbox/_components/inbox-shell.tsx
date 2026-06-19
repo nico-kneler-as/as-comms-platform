@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import type {
+  InboxDraftListItemViewModel,
   InboxFilterId,
   InboxListViewModel,
   InboxComposerAliasOption,
@@ -19,6 +20,7 @@ import { InboxWorkspace } from "./inbox-workspace";
 
 interface ShellProps {
   readonly initialList: InboxListViewModel;
+  readonly initialDrafts: readonly InboxDraftListItemViewModel[];
   readonly initialFilterId: InboxFilterId;
   readonly composerAliases: readonly InboxComposerAliasOption[];
   readonly outboundRateUsdPerSegment: number;
@@ -45,6 +47,7 @@ interface ShellProps {
  */
 export function InboxShell({
   initialList,
+  initialDrafts,
   initialFilterId,
   composerAliases,
   outboundRateUsdPerSegment,
@@ -58,6 +61,7 @@ export function InboxShell({
   return (
     <InboxClientProvider
       composerAliases={composerAliases}
+      initialDrafts={initialDrafts}
       currentActorId={currentActorId}
       operatorDisplayName={operator.displayName}
     >

@@ -26,6 +26,7 @@ export type InboxFilterId =
   | "inbox"
   | "unread"
   | "follow-up"
+  | "drafts"
   | "sent"
   | "archived";
 
@@ -33,6 +34,7 @@ export const INBOX_FILTER_IDS: readonly InboxFilterId[] = [
   "inbox",
   "unread",
   "follow-up",
+  "drafts",
   "sent",
   "archived",
 ];
@@ -432,6 +434,31 @@ export interface InboxComposerForwardContext {
   readonly originalBodyPlaintext: string;
   readonly originalBodyHtml: string | null;
   readonly defaultAlias: string | null;
+}
+
+export interface InboxDraftListItemViewModel {
+  readonly id: string;
+  readonly paneMode: "new_draft" | "replying" | "forwarding";
+  readonly channel: "email" | "sms" | "note";
+  readonly recipientContactId: string | null;
+  readonly recipientEmail: string | null;
+  readonly recipientPhone: string | null;
+  readonly recipientDisplayName: string | null;
+  readonly subject: string;
+  readonly bodyPlaintext: string;
+  readonly bodyHtml: string;
+  readonly selectedAlias: string | null;
+  readonly cc: readonly string[];
+  readonly bcc: readonly string[];
+  readonly attachments: readonly {
+    readonly filename: string;
+    readonly size: number;
+    readonly contentType: string;
+  }[];
+  readonly aiDirective: string;
+  readonly replyContext: InboxComposerReplyContext | null;
+  readonly forwardContext: InboxComposerForwardContext | null;
+  readonly updatedAt: string;
 }
 
 export interface InboxDetailTimelinePageViewModel {
