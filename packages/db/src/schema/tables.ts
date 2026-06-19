@@ -2,6 +2,7 @@ import { isNotNull, sql } from "drizzle-orm";
 import type {
   AiKnowledgeSource,
   CanonicalEventProvenance,
+  ComposerDraftForwardContext,
   IntegrationHealthCategory,
   IntegrationHealthStatus,
 } from "@as-comms/contracts";
@@ -39,6 +40,9 @@ import {
   auditResultEnum,
   canonicalEventTypeEnum,
   channelEnum,
+  composerDraftChannelEnum,
+  composerDraftPaneModeEnum,
+  composerDraftRecipientKindEnum,
   contactIdentityKindEnum,
   identityResolutionReasonCodeEnum,
   inboxBucketEnum,
@@ -1100,6 +1104,50 @@ export const users = pgTable("users", {
   createdAt: createdAtColumn,
   updatedAt: updatedAtColumn,
 });
+
+export const composerDrafts = pgTable(
+  "composer_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    paneMode: composerDraftPaneModeEnum("pane_mode").notNull(),
+    channel: composerDraftChannelEnum("channel").notNull(),
+    recipientAnchorKind: composerDraftRecipientKindEnum(
+      "recipient_anchor_kind",
+    ),
+    recipientContactId: text("recipient_contact_id").references(
+      () => contacts.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    recipientEmail: text("recipient_email"),
+    recipientPhone: text("recipient_phone"),
+    subject: text("subject").notNull().default(""),
+    bodyPlaintext: text("body_plaintext").notNull().default(""),
+    bodyHtml: text("body_html").notNull().default(""),
+    selectedAlias: text("selected_alias"),
+    cc: jsonb("cc").$type<unknown>().notNull().default([]),
+    bcc: jsonb("bcc").$type<unknown>().notNull().default([]),
+    attachments: jsonb("attachments").$type<unknown>().notNull().default([]),
+    aiDirective: text("ai_directive").notNull().default(""),
+    replyContextThreadCursor: text("reply_context_thread_cursor"),
+    forwardContext: jsonb("forward_context").$type<ComposerDraftForwardContext>(),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    index("composer_drafts_actor_updated_idx").on(
+      table.actorId,
+      table.updatedAt.desc(),
+    ),
+    index("composer_drafts_actor_recipient_contact_idx")
+      .on(table.actorId, table.recipientContactId)
+      .where(isNotNull(table.recipientContactId)),
+  ],
+);
 
 export const accounts = pgTable(
   "accounts",
