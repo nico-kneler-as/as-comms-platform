@@ -290,10 +290,9 @@ export function InboxComposerDetailPane({
         : !selectedAliasAiConfigured
           ? "AI is not configured for this project. Set it up in Settings → Integrations."
           : null;
-  const polishDisabled =
-    (state.activeTab === "sms" ? state.smsBody : state.body).trim().length === 0;
+  const polishDisabled = state.aiDirective.trim().length === 0;
   const polishDisabledReason = polishDisabled
-    ? "Type a message below to polish it."
+    ? "Type something to polish."
     : null;
   const aiWarningMessage = resolveAiWarningMessage(aiDraft);
   const sendAndSaveAvailability = resolveSendAndSaveForAiAvailability({

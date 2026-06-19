@@ -244,7 +244,7 @@ export function ComposerAiDraftWindow({
 
       <div className="min-w-0 px-3 pb-2.5 pt-2">
         {showsEmptyState ? (
-          <div className="space-y-2">
+          <div className="flex min-w-0 items-start gap-2">
             <textarea
               autoFocus
               value={directiveText}
@@ -269,7 +269,7 @@ export function ComposerAiDraftWindow({
                 accentClasses.textareaFocus,
               )}
             />
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex shrink-0 flex-col gap-1.5">
               <DraftActionTrigger
                 disabled={runDraftDisabled}
                 disabledReason={runDraftDisabledReason}

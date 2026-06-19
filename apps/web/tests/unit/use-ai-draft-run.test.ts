@@ -240,12 +240,12 @@ describe("useAiDraftRun", () => {
     expect(startAiTransition).toHaveBeenCalledOnce();
   });
 
-  it("runPolish dispatches a polish-mode request with operatorBody from state.body", () => {
+  it("runPolish dispatches a polish-mode request with operatorBody from state.aiDirective", () => {
     const startAiGeneration = vi.fn();
     const startAiTransition = vi.fn();
     const { controls } = setup({
-      body: "thx for reaching out. i can send that shortly.",
-      aiDirective: "more professional",
+      body: "existing body should not be used",
+      aiDirective: "thx for reaching out. i can send that shortly.",
       startAiGeneration,
       startAiTransition,
     });
@@ -261,18 +261,19 @@ describe("useAiDraftRun", () => {
         channel: "email",
         mode: "polish",
         operatorBody: "thx for reaching out. i can send that shortly.",
-        operatorPrompt: "more professional",
+        operatorPrompt: null,
       },
-      prompt: "more professional",
+      prompt: "Polish the current draft",
     });
     expect(startAiTransition).toHaveBeenCalledOnce();
   });
 
-  it("runPolish is a no-op when state.body is empty", () => {
+  it("runPolish is a no-op when state.aiDirective is empty", () => {
     const startAiGeneration = vi.fn();
     const startAiTransition = vi.fn();
     const { controls } = setup({
-      body: "   ",
+      body: "body text should be ignored",
+      aiDirective: "   ",
       startAiGeneration,
       startAiTransition,
     });
