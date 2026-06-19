@@ -180,6 +180,42 @@ vi.mock("../../app/inbox/actions", () => ({
   sendSmsAction: vi.fn(),
 }));
 
+vi.mock("@/src/server/composer/drafts", () => ({
+  deleteComposerDraftAction: vi.fn().mockResolvedValue({
+    ok: true,
+    data: { deletedCount: 1 },
+  }),
+  listComposerDraftsAction: vi.fn().mockResolvedValue({
+    ok: true,
+    data: { drafts: [], nextCursor: null },
+  }),
+  upsertComposerDraftAction: vi.fn().mockResolvedValue({
+    ok: true,
+    data: {
+      id: "draft-1",
+      actorId: "user:test",
+      paneMode: "replying",
+      channel: "email",
+      recipientAnchorKind: "contact",
+      recipientContactId: "contact-1",
+      recipientEmail: null,
+      recipientPhone: null,
+      subject: "",
+      bodyPlaintext: "",
+      bodyHtml: "",
+      selectedAlias: null,
+      cc: [],
+      bcc: [],
+      attachments: [],
+      aiDirective: "",
+      replyContextThreadCursor: null,
+      forwardContext: null,
+      createdAt: "2026-06-19T10:00:00.000Z",
+      updatedAt: "2026-06-19T10:00:00.000Z",
+    },
+  }),
+}));
+
 vi.mock("../../app/inbox/_components/composer-shared", async () => {
   const actual = await vi.importActual(
     "../../app/inbox/_components/composer-shared",
