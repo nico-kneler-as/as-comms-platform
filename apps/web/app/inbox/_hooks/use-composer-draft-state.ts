@@ -18,8 +18,14 @@ import {
   type StoredComposerDraft,
 } from "../_lib/composer-draft-storage";
 import { resolveDefaultAlias, type ComposerPaneState } from "../_lib/composer-ui";
-import type { InboxComposerAliasOption } from "../_lib/view-models";
+import type {
+  InboxComposerAliasOption,
+  InboxComposerForwardContext,
+  InboxComposerReplyContext,
+  InboxDraftListItemViewModel,
+} from "../_lib/view-models";
 import { resolveRecipientEmailAddress } from "../_components/composer-shared";
+import { useInboxClient } from "../_components/inbox-client-provider";
 import {
   INITIAL_COMPOSER_DRAFT_STATE,
   reduceComposerDraft,
@@ -188,6 +194,48 @@ function removeDraftFromCache(
   return (drafts ?? []).filter((draft) => draft.id !== draftId);
 }
 
+function toDraftListItemViewModel(input: {
+  readonly draft: ComposerDraftRecord;
+  readonly composerPane: ComposerPaneState;
+  readonly state: ComposerDraftState;
+  readonly replyContext: InboxComposerReplyContext | null;
+  readonly forwardContext: InboxComposerForwardContext | null;
+}): InboxDraftListItemViewModel {
+  const recipientDisplayName =
+    input.state.activeTab === "sms"
+      ? input.state.smsRecipient?.kind === "contact"
+        ? input.state.smsRecipient.displayName
+        : null
+      : input.composerPane.mode === "replying"
+        ? (input.replyContext?.contactDisplayName ?? null)
+        : input.state.recipient?.kind === "contact"
+          ? input.state.recipient.displayName
+          : null;
+
+  return {
+    id: input.draft.id,
+    paneMode:
+      input.draft.paneMode === "new-draft" ? "new_draft" : input.draft.paneMode,
+    channel: input.draft.channel,
+    recipientContactId: input.draft.recipientContactId,
+    recipientEmail: input.draft.recipientEmail,
+    recipientPhone: input.draft.recipientPhone,
+    recipientDisplayName,
+    subject: input.draft.subject,
+    bodyPlaintext: input.draft.bodyPlaintext,
+    bodyHtml: input.draft.bodyHtml,
+    selectedAlias: input.draft.selectedAlias,
+    cc: input.draft.cc,
+    bcc: input.draft.bcc,
+    attachments: input.draft.attachments,
+    aiDirective: input.draft.aiDirective,
+    replyContext: input.composerPane.mode === "replying" ? input.replyContext : null,
+    forwardContext:
+      input.composerPane.mode === "forwarding" ? input.forwardContext : null,
+    updatedAt: input.draft.updatedAt,
+  };
+}
+
 export function useComposerDraftState({
   composerPane,
   composerAliases,
@@ -206,6 +254,12 @@ export function useComposerDraftState({
     reduceComposerDraft,
     INITIAL_COMPOSER_DRAFT_STATE,
   );
+  const {
+    clearPendingExistingDraft,
+    pendingExistingDraft,
+    removeDraft,
+    upsertDraft,
+  } = useInboxClient();
   const [availableDrafts, setAvailableDrafts] = useState<
     readonly ComposerDraftRecord[] | null
   >(null);
@@ -297,6 +351,40 @@ export function useComposerDraftState({
       cancelled = true;
     };
   }, [composerPane]);
+
+  useEffect(() => {
+    if (composerPane.mode === "closed" || pendingExistingDraft === null) {
+      return;
+    }
+
+    draftIdRef.current = pendingExistingDraft.id;
+    dispatch({
+      type: "HYDRATE_FROM_STORED_DRAFT",
+      draft: {
+        id: pendingExistingDraft.id,
+        paneMode:
+          pendingExistingDraft.paneMode === "new_draft"
+            ? "new-draft"
+            : pendingExistingDraft.paneMode,
+        channel: pendingExistingDraft.channel,
+        subject: pendingExistingDraft.subject,
+        bodyPlaintext: pendingExistingDraft.bodyPlaintext,
+        bodyHtml: pendingExistingDraft.bodyHtml,
+        selectedAlias: pendingExistingDraft.selectedAlias,
+        cc: pendingExistingDraft.cc,
+        bcc: pendingExistingDraft.bcc,
+        attachments: pendingExistingDraft.attachments,
+        updatedAt: Date.parse(pendingExistingDraft.updatedAt),
+        aiDirective: pendingExistingDraft.aiDirective,
+        recipientContactId: pendingExistingDraft.recipientContactId,
+        recipientEmail: pendingExistingDraft.recipientEmail,
+        recipientPhone: pendingExistingDraft.recipientPhone,
+        replyContextThreadCursor: pendingExistingDraft.replyContext?.threadCursor ?? null,
+        forwardContext: pendingExistingDraft.forwardContext,
+      },
+    });
+    clearPendingExistingDraft();
+  }, [clearPendingExistingDraft, composerPane.mode, pendingExistingDraft]);
 
   useEffect(() => {
     if (composerPane.mode === "closed" || availableDrafts === null) {
@@ -446,6 +534,7 @@ export function useComposerDraftState({
             setAvailableDrafts((currentDrafts) =>
               removeDraftFromCache(currentDrafts, existingDraftId),
             );
+            removeDraft(existingDraftId);
             return;
           }
 
@@ -475,6 +564,15 @@ export function useComposerDraftState({
         setAvailableDrafts((currentDrafts) =>
           upsertDraftCache(currentDrafts, result.data),
         );
+        upsertDraft(
+          toDraftListItemViewModel({
+            draft: result.data,
+            composerPane,
+            state,
+            replyContext,
+            forwardContext,
+          }),
+        );
       })();
     }, 750);
 
@@ -488,8 +586,10 @@ export function useComposerDraftState({
     baselineSubject,
     composerPane,
     forwardContext,
+    removeDraft,
     replyContext,
     state,
+    upsertDraft,
   ]);
 
   return {

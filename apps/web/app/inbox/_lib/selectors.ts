@@ -3530,7 +3530,9 @@ async function readInboxListCacheData(input: {
   // unrelated inbox or archived rows.
   const primaryFilterForLoader: RepoFilter = isSearchActive
     ? "visible"
-    : input.filterId;
+    : input.filterId === "drafts"
+      ? "inbox"
+      : input.filterId;
   const [
     primaryProjectionPage,
     attentionScanProjectionPage,
@@ -4861,6 +4863,8 @@ function matchesServerFilter(
       return item.isUnread;
     case "follow-up":
       return item.needsFollowUp;
+    case "drafts":
+      return false;
     case "sent":
       return item.lastOutboundAt !== null;
     case "archived":

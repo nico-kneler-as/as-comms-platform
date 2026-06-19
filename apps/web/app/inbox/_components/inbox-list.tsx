@@ -44,6 +44,7 @@ import {
   XIcon,
 } from "./icons";
 import { InboxFilterList } from "./inbox-filter-list";
+import { InboxDraftsList } from "./inbox-drafts-list";
 import { QueueLoadingSkeleton, QueueLoadMoreSkeleton } from "./inbox-loading";
 import { InboxRow } from "./inbox-row";
 import { InboxUnifiedSearchRow } from "./inbox-unified-search-row";
@@ -56,6 +57,7 @@ interface ListColumnProps {
 const STATE_HEADER_LABEL: Partial<Record<InboxFilterId, string>> = {
   unread: "Unread",
   "follow-up": "Pending",
+  drafts: "Drafts",
   sent: "Sent",
   archived: "Archived",
 };
@@ -213,13 +215,14 @@ export function InboxList({
   const urlFilter = searchParams.get("filter");
   const urlProjectId = searchParams.get("projectId");
   const urlProjectIds = searchParams.getAll("projectId");
+  const [activeFilter, setActiveFilter] = useState(initialFilterId);
   const rawSearchQuery = search.query.trim();
   const normalizedQuery = rawSearchQuery;
   const isSearchThresholdMet = rawSearchQuery.length >= 3;
+  const isDraftsFilter = activeFilter === "drafts";
   const isServerSearchActive =
-    isSearchThresholdMet && normalizedQuery.length >= 3;
+    !isDraftsFilter && isSearchThresholdMet && normalizedQuery.length >= 3;
   const serverQuery = isServerSearchActive ? normalizedQuery : null;
-  const [activeFilter, setActiveFilter] = useState(initialFilterId);
   const [selectedProjectId, setSelectedProjectId] = useState(
     urlProjectId ?? initialList.selectedProjectId ?? null,
   );
@@ -497,6 +500,13 @@ export function InboxList({
       return;
     }
 
+    if (isDraftsFilter) {
+      setQueueLoading(false);
+      setQueueError(null);
+      setSearchResult(null);
+      return;
+    }
+
     if (
       activeFilter === "inbox" &&
       selectedProjectId === null
@@ -533,6 +543,7 @@ export function InboxList({
   }, [
     activeFilter,
     initialFilterCountById,
+    isDraftsFilter,
     isServerSearchActive,
     loadFilterPage,
     loadUnifiedSearchPage,
@@ -546,6 +557,12 @@ export function InboxList({
 
     if (isServerSearchActive && serverQuery !== null) {
       void loadUnifiedSearchPage(serverQuery);
+      return;
+    }
+
+    if (latestShellState.activeFilter === "drafts") {
+      setQueueError(null);
+      setSearchResult(null);
       return;
     }
 
@@ -585,6 +602,7 @@ export function InboxList({
   // Pagination only applies to the folder-filtered list — the unified search
   // returns the top 25 per section in v1 with no cursor.
   const canLoadMore =
+    !isDraftsFilter &&
     !isServerSearchActive &&
     currentList.page.hasMore &&
     currentList.page.nextCursor !== null;
@@ -597,7 +615,8 @@ export function InboxList({
   const activeProjects = currentList.activeProjects;
   const hasActiveFilters =
     activeFilter !== "inbox" || selectedProjectId !== null;
-  const shouldShowSearchSummary = search.isActive && isSearchThresholdMet;
+  const shouldShowSearchSummary =
+    !isDraftsFilter && search.isActive && isSearchThresholdMet;
   const unreadCount = currentList.totals.unread;
   const headerTitle = useMemo(
     () =>
@@ -938,6 +957,8 @@ export function InboxList({
               activeContactId={activeContactId}
             />
           )
+        ) : isDraftsFilter ? (
+          <InboxDraftsList />
         ) : displayItems.length === 0 ? (
           <QueueEmptyState
             onSwitchToFollowUp={() => {

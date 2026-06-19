@@ -21,6 +21,7 @@ import type {
 import {
   ArchiveBoxIcon,
   ChevronDownIcon,
+  FileEditIcon,
   FlagIcon,
   InboxIcon,
   MailOpenIcon,
@@ -33,6 +34,7 @@ const FILTER_ICON: Record<InboxFilterId, LucideIcon | null> = {
   "follow-up": FlagIcon,
   sent: SendIcon,
   archived: ArchiveBoxIcon,
+  drafts: FileEditIcon,
 };
 
 interface InboxFilterListProps {
@@ -62,7 +64,7 @@ export const InboxFilterList = forwardRef<HTMLDivElement, InboxFilterListProps>(
   ) {
   const filterById = new Map(filters.map((filter) => [filter.id, filter]));
   const primaryFilters = ["inbox", "unread", "follow-up"] as const;
-  const secondaryFilters = ["archived", "sent"] as const;
+  const secondaryFilters = ["archived", "drafts", "sent"] as const;
   const selectedProject =
     selectedProjectId === null
       ? null
