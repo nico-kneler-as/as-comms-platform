@@ -194,22 +194,19 @@ export function useAiDraftRun({
       return;
     }
 
-    const operatorBody =
-      baseRequest.channel === "sms" ? state.smsBody.trim() : state.body.trim();
+    const operatorBody = state.aiDirective.trim();
 
     if (operatorBody.length === 0) {
       return;
     }
 
-    const operatorPrompt = state.aiDirective.trim();
     const request = {
       ...baseRequest,
       mode: "polish" as const,
       operatorBody,
-      operatorPrompt: operatorPrompt.length > 0 ? operatorPrompt : null,
+      operatorPrompt: null,
     };
-    const prompt =
-      request.operatorPrompt ?? "Polish the current draft";
+    const prompt = "Polish the current draft";
 
     startAiGeneration({ request, prompt });
 

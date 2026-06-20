@@ -403,10 +403,10 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
                 "button",
                 {
                   type: "button",
-                  disabled: body.trim().length === 0,
+                  disabled: aiDirective.trim().length === 0,
                   title:
-                    body.trim().length === 0
-                      ? "Type a message below to polish it."
+                    aiDirective.trim().length === 0
+                      ? "Type something to polish."
                       : undefined,
                 },
                 "Polish",
@@ -1063,7 +1063,7 @@ describe("composer canonical modal", () => {
     expect(getByText("Draft with AI")).not.toBeNull();
     expect(getByText("Polish")).not.toBeNull();
     expect(getByText("Polish").getAttribute("title")).toBe(
-      "Type a message below to polish it.",
+      "Type something to polish.",
     );
 
     await click(getByText("Show Cc"));
