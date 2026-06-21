@@ -8,7 +8,7 @@ import {
   type TransitionStartFunction,
 } from "react";
 
-import { polishTextAction } from "../actions";
+import { polishTextAction } from "@/src/server/composer/polish";
 import { plaintextToComposerHtml } from "../_components/composer-html";
 import type {
   ComposerDraftAction,

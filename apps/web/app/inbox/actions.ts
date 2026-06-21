@@ -31,7 +31,6 @@ import { getAiProviderConfig } from "@/src/server/ai/provider";
 import { readWebEnv } from "@/src/server/env";
 import { setInboxArchived } from "@/src/server/inbox/archive";
 import { setInboxBucket } from "@/src/server/inbox/bucket";
-export { polishTextAction } from "@/src/server/composer/polish";
 
 export type { AiDraftRequestPayload } from "@/src/server/ai";
 import { setInboxNeedsFollowUp } from "@/src/server/inbox/follow-up";

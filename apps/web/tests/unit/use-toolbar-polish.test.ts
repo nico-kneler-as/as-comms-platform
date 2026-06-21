@@ -18,11 +18,11 @@ const { JSDOM } = workerRequire("jsdom") as {
   };
 };
 
-vi.mock("../../app/inbox/actions", () => ({
+vi.mock("../../src/server/composer/polish", () => ({
   polishTextAction: vi.fn(),
 }));
 
-import { polishTextAction } from "../../app/inbox/actions";
+import { polishTextAction } from "../../src/server/composer/polish";
 import {
   useToolbarPolish,
   type PolishPhase,
