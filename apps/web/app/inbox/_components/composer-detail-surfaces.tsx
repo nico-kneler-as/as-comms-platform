@@ -48,7 +48,9 @@ import {
   NoteIcon,
   PaperclipIcon,
   PinIcon,
+  RotateCcwIcon,
   SendIcon,
+  SparklesIcon,
   XIcon,
 } from "./icons";
 import type { AttachmentDraft, InlineComposerError } from "./composer-shared";
@@ -276,8 +278,8 @@ export function ComposerEmailSurface({
   isGeneratingAi,
   runAiDraftDisabled,
   runAiDraftDisabledReason,
-  polishDisabled,
-  polishDisabledReason,
+  polishPhase,
+  isPolishDisabled,
   selectedAliasHasCachedContent,
   selectedAliasProjectName,
   selectedAliasSignature,
@@ -305,6 +307,7 @@ export function ComposerEmailSurface({
   onApproveAi,
   onRunAiDraft,
   onRunPolish,
+  onUndoPolish,
   onRepromptTextChange,
   onReprompt,
   onAttachmentClick,
@@ -340,8 +343,8 @@ export function ComposerEmailSurface({
   readonly isGeneratingAi: boolean;
   readonly runAiDraftDisabled: boolean;
   readonly runAiDraftDisabledReason: string | null;
-  readonly polishDisabled: boolean;
-  readonly polishDisabledReason: string | null;
+  readonly polishPhase: "idle" | "busy" | "done";
+  readonly isPolishDisabled: boolean;
   readonly selectedAliasHasCachedContent: boolean;
   readonly selectedAliasProjectName: string | null;
   readonly selectedAliasSignature: string;
@@ -378,6 +381,7 @@ export function ComposerEmailSurface({
   readonly onApproveAi: () => void;
   readonly onRunAiDraft: () => void;
   readonly onRunPolish: () => void;
+  readonly onUndoPolish: () => void;
   readonly onRepromptTextChange: (value: string) => void;
   readonly onReprompt: () => void;
   readonly onAttachmentClick: () => void;
@@ -532,54 +536,62 @@ export function ComposerEmailSurface({
             ) : null}
           </ComposerField>
 
-          <RichTextComposerEditor
-            bodyPlaintext={body}
-            className="flex flex-col"
-            contentClassName=""
-            errorMessage={bodyError?.message}
-            frameClassName="flex flex-col border-x-0 border-b-0 shadow-none"
-            onChange={(nextBody) => {
-              onBodyChange(nextBody);
-              if (aiDraft.status === "inserted") {
-                onAiEdited();
+          <div className="relative">
+            <RichTextComposerEditor
+              bodyPlaintext={body}
+              className="flex flex-col"
+              contentClassName=""
+              errorMessage={bodyError?.message}
+              frameClassName={cn(
+                "flex flex-col border-x-0 border-b-0 shadow-none transition-opacity duration-300",
+                polishPhase === "busy" ? "opacity-40" : "",
+              )}
+              onChange={(nextBody) => {
+                onBodyChange(nextBody);
+                if (aiDraft.status === "inserted") {
+                  onAiEdited();
+                }
+              }}
+              onClearErrors={onClearErrors}
+              onCommandStateChange={setEditorCommandState}
+              showToolbar={false}
+              topSlot={
+                showAiDraftAffordances ? (
+                  <ComposerAiDraftWindow
+                    tone="email"
+                    aiDraft={aiDraft}
+                    directiveText={aiDirective}
+                    repromptText={repromptText}
+                    isGeneratingAi={isGeneratingAi}
+                    runDraftDisabled={runAiDraftDisabled}
+                    runDraftDisabledReason={runAiDraftDisabledReason}
+                    onDirectiveTextChange={onAiDirectiveChange}
+                    onRepromptTextChange={onRepromptTextChange}
+                    onRunDraft={onRunAiDraft}
+                    onEditPrompt={onEditPromptAi}
+                    onOpenReprompt={onOpenReprompt}
+                    onSubmitReprompt={onReprompt}
+                    onCancelReprompt={onCancelReprompt}
+                    onDiscard={onDiscardAi}
+                    onApprove={onApproveAi}
+                  />
+                ) : undefined
               }
-            }}
-            onClearErrors={onClearErrors}
-            onCommandStateChange={setEditorCommandState}
-            showToolbar={false}
-            topSlot={
-              showAiDraftAffordances ? (
-                <ComposerAiDraftWindow
-                  tone="email"
-                  aiDraft={aiDraft}
-                  directiveText={aiDirective}
-                  repromptText={repromptText}
-                  isGeneratingAi={isGeneratingAi}
-                  runDraftDisabled={runAiDraftDisabled}
-                  runDraftDisabledReason={runAiDraftDisabledReason}
-                  polishDisabled={polishDisabled}
-                  polishDisabledReason={polishDisabledReason}
-                  onDirectiveTextChange={onAiDirectiveChange}
-                  onRepromptTextChange={onRepromptTextChange}
-                  onRunDraft={onRunAiDraft}
-                  onRunPolish={onRunPolish}
-                  onEditPrompt={onEditPromptAi}
-                  onOpenReprompt={onOpenReprompt}
-                  onSubmitReprompt={onReprompt}
-                  onCancelReprompt={onCancelReprompt}
-                  onDiscard={onDiscardAi}
-                  onApprove={onApproveAi}
-                />
-              ) : undefined
-            }
-            bottomSlot={
-              selectedAliasSignature.length > 0 ? (
-                <div className="px-4 pb-3 pt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
-                  {selectedAliasSignature}
-                </div>
-              ) : undefined
-            }
-          />
+              bottomSlot={
+                selectedAliasSignature.length > 0 ? (
+                  <div className="px-4 pb-3 pt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
+                    {selectedAliasSignature}
+                  </div>
+                ) : undefined
+              }
+            />
+            {polishPhase === "busy" ? (
+              <div className="pointer-events-none absolute left-4 top-[13rem] z-10 flex items-center gap-2 text-[12px] font-medium text-violet-600">
+                <LoaderIcon className="h-3.5 w-3.5 animate-spin" />
+                Polishing your message...
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="shrink-0 border-t border-slate-100 bg-slate-50/40">
@@ -587,6 +599,24 @@ export function ComposerEmailSurface({
           {attachmentError ? (
             <div className="px-1 pb-3 text-xs text-rose-700">
               {attachmentError.message}
+            </div>
+          ) : null}
+
+          {polishPhase === "done" ? (
+            <div className="px-4 pt-3">
+              <div className="inline-flex items-center gap-2 rounded-md bg-violet-50 px-2.5 py-1 text-[11.5px] font-medium text-violet-700 ring-1 ring-violet-200">
+                <SparklesIcon className="h-3.5 w-3.5" />
+                Polished
+                <span className="h-3 w-px bg-violet-300" />
+                <button
+                  type="button"
+                  onClick={onUndoPolish}
+                  className="inline-flex items-center gap-1 hover:text-violet-900"
+                >
+                  <RotateCcwIcon className="h-3 w-3" />
+                  Undo
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -617,6 +647,9 @@ export function ComposerEmailSurface({
                 <ComposerToolbar
                   activeCommands={activeCommands}
                   onCommand={onToolbarCommand}
+                  polishPhase={polishPhase}
+                  polishDisabled={isPolishDisabled}
+                  onRunPolish={onRunPolish}
                 />
               </div>
 
@@ -757,8 +790,8 @@ export function ComposerSmsSurface({
   isGeneratingAi,
   runAiDraftDisabled,
   runAiDraftDisabledReason,
-  polishDisabled,
-  polishDisabledReason,
+  polishPhase,
+  isPolishDisabled,
   selectedAliasHasCachedContent,
   selectedAliasProjectName,
   canSendAndSaveForAi,
@@ -780,6 +813,7 @@ export function ComposerSmsSurface({
   onApproveAi,
   onRunAiDraft,
   onRunPolish,
+  onUndoPolish,
   onRepromptTextChange,
   onReprompt,
   onSend,
@@ -798,8 +832,8 @@ export function ComposerSmsSurface({
   readonly isGeneratingAi: boolean;
   readonly runAiDraftDisabled: boolean;
   readonly runAiDraftDisabledReason: string | null;
-  readonly polishDisabled: boolean;
-  readonly polishDisabledReason: string | null;
+  readonly polishPhase: "idle" | "busy" | "done";
+  readonly isPolishDisabled: boolean;
   readonly selectedAliasHasCachedContent: boolean;
   readonly selectedAliasProjectName: string | null;
   readonly canSendAndSaveForAi: boolean;
@@ -821,6 +855,7 @@ export function ComposerSmsSurface({
   readonly onApproveAi: () => void;
   readonly onRunAiDraft: () => void;
   readonly onRunPolish: () => void;
+  readonly onUndoPolish: () => void;
   readonly onRepromptTextChange: (value: string) => void;
   readonly onReprompt: () => void;
   readonly onSend: (sendKind?: ComposerSendKind) => void;
@@ -945,12 +980,9 @@ export function ComposerSmsSurface({
           isGeneratingAi={isGeneratingAi}
           runDraftDisabled={runAiDraftDisabled}
           runDraftDisabledReason={runAiDraftDisabledReason}
-          polishDisabled={polishDisabled}
-          polishDisabledReason={polishDisabledReason}
           onDirectiveTextChange={onAiDirectiveChange}
           onRepromptTextChange={onRepromptTextChange}
           onRunDraft={onRunAiDraft}
-          onRunPolish={onRunPolish}
           onEditPrompt={onEditPromptAi}
           onOpenReprompt={onOpenReprompt}
           onSubmitReprompt={onReprompt}
@@ -970,11 +1002,18 @@ export function ComposerSmsSurface({
             }}
             placeholder="Write an SMS reply"
             className={cn(
-              "h-full min-h-0 w-full resize-none border-0 bg-white px-0 py-3 pb-8 text-sm leading-6 text-slate-900 shadow-none focus:outline-none focus:ring-0",
+              "h-full min-h-0 w-full resize-none border-0 bg-white px-0 py-3 pb-8 text-sm leading-6 text-slate-900 shadow-none transition-opacity duration-300 focus:outline-none focus:ring-0",
+              polishPhase === "busy" ? "opacity-40" : "",
               bodyError ? "text-rose-900" : "",
             )}
             aria-describedby="sms-composer-character-count"
           />
+          {polishPhase === "busy" ? (
+            <div className="pointer-events-none absolute left-0 top-2 z-10 flex items-center gap-2 text-[12px] font-medium text-violet-600">
+              <LoaderIcon className="h-3.5 w-3.5 animate-spin" />
+              Polishing your message...
+            </div>
+          ) : null}
           <div
             id="sms-composer-character-count"
             className={cn(
@@ -992,6 +1031,23 @@ export function ComposerSmsSurface({
       </div>
 
       <div className="border-t border-slate-200 px-4 py-[12.5px]">
+        {polishPhase === "done" ? (
+          <div className="mb-3">
+            <div className="inline-flex items-center gap-2 rounded-md bg-violet-50 px-2.5 py-1 text-[11.5px] font-medium text-violet-700 ring-1 ring-violet-200">
+              <SparklesIcon className="h-3.5 w-3.5" />
+              Polished
+              <span className="h-3 w-px bg-violet-300" />
+              <button
+                type="button"
+                onClick={onUndoPolish}
+                className="inline-flex items-center gap-1 hover:text-violet-900"
+              >
+                <RotateCcwIcon className="h-3 w-3" />
+                Undo
+              </button>
+            </div>
+          </div>
+        ) : null}
         {inlineError ? (
           <InlineErrorBanner
             message={inlineError.message}
@@ -1001,6 +1057,15 @@ export function ComposerSmsSurface({
         ) : null}
 
         <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="shrink-0">
+            <ComposerToolbar
+              activeCommands={EMPTY_ACTIVE_COMMANDS}
+              onCommand={NOOP_COMPOSER_COMMAND}
+              polishPhase={polishPhase}
+              polishDisabled={isPolishDisabled}
+              onRunPolish={onRunPolish}
+            />
+          </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button
               type="button"

@@ -18,7 +18,6 @@ import {
   RotateCcwIcon,
   RotateCwIcon,
   SparkleIcon,
-  SparklesIcon,
   Trash2Icon,
 } from "./icons";
 import type { AiDraftState } from "./inbox-client-provider";
@@ -173,12 +172,9 @@ export function ComposerAiDraftWindow({
   isGeneratingAi,
   runDraftDisabled,
   runDraftDisabledReason,
-  polishDisabled,
-  polishDisabledReason,
   onDirectiveTextChange,
   onRepromptTextChange,
   onRunDraft,
-  onRunPolish,
   onOpenReprompt,
   onSubmitReprompt,
   onCancelReprompt,
@@ -194,12 +190,9 @@ export function ComposerAiDraftWindow({
   readonly isGeneratingAi: boolean;
   readonly runDraftDisabled: boolean;
   readonly runDraftDisabledReason: string | null;
-  readonly polishDisabled: boolean;
-  readonly polishDisabledReason: string | null;
   readonly onDirectiveTextChange: (value: string) => void;
   readonly onRepromptTextChange: (value: string) => void;
   readonly onRunDraft: () => void;
-  readonly onRunPolish: () => void;
   readonly onOpenReprompt: () => void;
   readonly onSubmitReprompt: () => void;
   readonly onCancelReprompt: () => void;
@@ -269,7 +262,7 @@ export function ComposerAiDraftWindow({
                 accentClasses.textareaFocus,
               )}
             />
-            <div className="flex shrink-0 flex-col gap-1.5">
+            <div className="flex shrink-0">
               <DraftActionTrigger
                 disabled={runDraftDisabled}
                 disabledReason={runDraftDisabledReason}
@@ -277,15 +270,6 @@ export function ComposerAiDraftWindow({
                 onRun={onRunDraft}
                 icon={<SparkleIcon className="size-3.5" />}
                 label="Draft with AI"
-                accent={accent}
-              />
-              <DraftActionTrigger
-                disabled={polishDisabled}
-                disabledReason={polishDisabledReason}
-                isGenerating={isGeneratingAi}
-                onRun={onRunPolish}
-                icon={<SparklesIcon className="size-3.5" />}
-                label="Polish"
                 accent={accent}
               />
             </div>

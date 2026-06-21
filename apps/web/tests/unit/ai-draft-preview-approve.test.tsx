@@ -257,14 +257,11 @@ function DraftHarness() {
         isGeneratingAi={aiDraft.status === "generating"}
         runDraftDisabled={aiDraft.status === "generating"}
         runDraftDisabledReason={null}
-        polishDisabled={true}
-        polishDisabledReason={"Type a message below to polish it."}
         onDirectiveTextChange={setDirectiveText}
         onRepromptTextChange={setRepromptText}
         onRunDraft={() => {
           setStatus("generating");
         }}
-        onRunPolish={vi.fn()}
         onOpenReprompt={() => {
           setRepromptText("");
           setStatus("reprompting");
