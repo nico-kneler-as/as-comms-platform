@@ -124,6 +124,15 @@ function buildTierFourGrounding(
   };
 }
 
+export async function loadGeneralVoiceEntry(
+  repositories: Pick<Stage1RepositoryBundle, "aiKnowledge">,
+) {
+  return repositories.aiKnowledge.findByScope({
+    scope: "global",
+    scopeKey: null,
+  });
+}
+
 export async function retrieveGrounding(
   repositories: AiRetrieverRepositories,
   input: Pick<
@@ -135,10 +144,7 @@ export async function retrieveGrounding(
   const [contact, generalTraining, projectContext, canonicalEvents] =
     await Promise.all([
       repositories.contacts.findById(input.contactId),
-      repositories.aiKnowledge.findByScope({
-        scope: "global",
-        scopeKey: null,
-      }),
+      loadGeneralVoiceEntry(repositories),
       input.projectId === null
         ? Promise.resolve(null)
         : // Connected sub-projects (per PR #388) clear their own
