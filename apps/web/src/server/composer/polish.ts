@@ -6,6 +6,8 @@ import { z } from "zod";
 
 import { requireSession } from "@/src/server/auth/session";
 import { getAiProviderConfig } from "@/src/server/ai/provider";
+import { loadGeneralVoiceEntry } from "@/src/server/ai/retriever";
+import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 import type { UiResult } from "@/src/server/ui-result";
 
 const polishTextActionInputSchema = z.object({
@@ -20,6 +22,27 @@ const EMAIL_POLISH_SYSTEM_PROMPT =
 const SMS_POLISH_SYSTEM_PROMPT =
   "You are a text-polishing assistant for SMS. The operator will give you a draft SMS. Polish it: fix grammar and typos, tighten phrasing, and improve clarity while preserving the meaning and the facts. Keep it concise — target ~140 characters and never exceed 320 (two segments). Plain text only — no markdown, no signature, no salutation if the draft doesn't have one. Return only the polished text — no preamble, no commentary, no quotation marks around the output.";
 const SMS_POLISH_MAX_TOKENS = 120;
+
+function buildPolishSystemPrompt(input: {
+  readonly channel: "email" | "sms";
+  readonly generalVoiceContent: string | null;
+}): string {
+  const barePrompt =
+    input.channel === "sms"
+      ? SMS_POLISH_SYSTEM_PROMPT
+      : EMAIL_POLISH_SYSTEM_PROMPT;
+
+  if (input.generalVoiceContent === null || input.generalVoiceContent.trim() === "") {
+    return barePrompt;
+  }
+
+  return [
+    "[Tier 1 Voice Instructions]",
+    input.generalVoiceContent.trim(),
+    "",
+    barePrompt,
+  ].join("\n");
+}
 
 function unauthorizedError(requestId: string): UiResult<never> {
   return {
@@ -81,6 +104,7 @@ export async function polishTextAction(input: {
   }
 
   const provider = getAiProviderConfig();
+  const runtime = await getStage1WebRuntime();
 
   if (provider.invokeModel === null) {
     return {
@@ -93,12 +117,13 @@ export async function polishTextAction(input: {
   }
 
   try {
+    const generalVoiceEntry = await loadGeneralVoiceEntry(runtime.repositories);
     const modelResult = await provider.invokeModel({
       model: provider.model,
-      system:
-        parsedInput.data.channel === "sms"
-          ? SMS_POLISH_SYSTEM_PROMPT
-          : EMAIL_POLISH_SYSTEM_PROMPT,
+      system: buildPolishSystemPrompt({
+        channel: parsedInput.data.channel,
+        generalVoiceContent: generalVoiceEntry?.content ?? null,
+      }),
       messages: [
         {
           role: "user",
