@@ -19,10 +19,10 @@ const { JSDOM } = workerRequire("jsdom") as {
 };
 
 vi.mock("../../app/inbox/actions", () => ({
-  draftWithAiAction: vi.fn(),
+  polishTextAction: vi.fn(),
 }));
 
-import { draftWithAiAction } from "../../app/inbox/actions";
+import { polishTextAction } from "../../app/inbox/actions";
 import {
   useToolbarPolish,
   type PolishPhase,
@@ -117,11 +117,13 @@ function setup(input?: { readonly state?: Partial<ComposerDraftState> }) {
   const controls: {
     phase: PolishPhase;
     disabled: boolean;
+    hidden: boolean;
     runPolish: () => void;
     undo: () => void;
   } = {
     phase: "idle",
     disabled: true,
+    hidden: false,
     runPolish: () => undefined,
     undo: () => undefined,
   };
@@ -130,29 +132,6 @@ function setup(input?: { readonly state?: Partial<ComposerDraftState> }) {
     const hook = useToolbarPolish({
       state: currentState,
       dispatch,
-      selectedAliasRecord: {
-        id: "alias-1",
-        alias: "forest@adventuresci.org",
-        projectId: "project-1",
-        projectName: "Forest",
-        signature: "Best,\nForest Team",
-        isAiReady: true,
-        isAiConfigured: true,
-        hasCachedContent: true,
-      },
-      selectedAliasAiConfigured: true,
-      replyContext: {
-        contactId: "contact-1",
-        contactDisplayName: "Ada Lovelace",
-        contactPrimaryPhone: "+14065550123",
-        subject: "Re: Forest dates",
-        threadCursor: "thread-cursor-1",
-        threadId: "thread-1",
-        inReplyToRfc822: "<message@example.org>",
-        defaultAlias: "forest@adventuresci.org",
-        cc: [],
-      },
-      composerPaneMode: "replying",
       setComposerErrors,
       startAiTransition: (callback) => {
         void callback();
@@ -161,6 +140,7 @@ function setup(input?: { readonly state?: Partial<ComposerDraftState> }) {
 
     controls.phase = hook.phase;
     controls.disabled = hook.isPolishDisabled;
+    controls.hidden = hook.isPolishHidden;
     controls.runPolish = hook.runPolish;
     controls.undo = hook.undo;
     return null;
@@ -179,6 +159,7 @@ function setup(input?: { readonly state?: Partial<ComposerDraftState> }) {
     setComposerErrors,
     getPhase: () => controls.phase,
     getDisabled: () => controls.disabled,
+    getHidden: () => controls.hidden,
     runPolish: async () => {
       act(() => {
         controls.runPolish();
@@ -216,28 +197,22 @@ describe("useToolbarPolish", () => {
 
     await harness.runPolish();
 
-    expect(draftWithAiAction).not.toHaveBeenCalled();
+    expect(polishTextAction).not.toHaveBeenCalled();
     harness.unmount();
   });
 
-  it("dispatches a polish-mode request and applies the polished email body", async () => {
-    vi.mocked(draftWithAiAction).mockResolvedValue({
+  it("calls polishTextAction with the active email body and applies the polished result", async () => {
+    vi.mocked(polishTextAction).mockResolvedValue({
       ok: true,
-      data: { draft: "Polished email body" },
+      data: { polishedText: "Polished email body" },
     } as never);
     const harness = setup();
 
     await harness.runPolish();
 
-    expect(draftWithAiAction).toHaveBeenCalledWith({
-      contactId: "contact-1",
-      projectId: "project-1",
-      intent: "reply",
-      threadCursor: "thread-cursor-1",
+    expect(polishTextAction).toHaveBeenCalledWith({
+      text: "Original email body",
       channel: "email",
-      mode: "polish",
-      operatorBody: "Original email body",
-      operatorPrompt: null,
     });
     expect(harness.dispatch).toHaveBeenCalledWith({
       type: "SET_BODY",
@@ -249,9 +224,9 @@ describe("useToolbarPolish", () => {
   });
 
   it("returns to idle when the operator edits the polished body", async () => {
-    vi.mocked(draftWithAiAction).mockResolvedValue({
+    vi.mocked(polishTextAction).mockResolvedValue({
       ok: true,
-      data: { draft: "Polished email body" },
+      data: { polishedText: "Polished email body" },
     } as never);
     const harness = setup();
 
@@ -263,9 +238,9 @@ describe("useToolbarPolish", () => {
   });
 
   it("undo restores the previous email body", async () => {
-    vi.mocked(draftWithAiAction).mockResolvedValue({
+    vi.mocked(polishTextAction).mockResolvedValue({
       ok: true,
-      data: { draft: "Polished email body" },
+      data: { polishedText: "Polished email body" },
     } as never);
     const harness = setup();
 
@@ -282,7 +257,7 @@ describe("useToolbarPolish", () => {
   });
 
   it("surfaces errors and leaves the body untouched", async () => {
-    vi.mocked(draftWithAiAction).mockResolvedValue({
+    vi.mocked(polishTextAction).mockResolvedValue({
       ok: false,
       message: "Polish failed",
     } as never);
@@ -307,10 +282,10 @@ describe("useToolbarPolish", () => {
     harness.unmount();
   });
 
-  it("uses sms body for polish and undo restores sms body", async () => {
-    vi.mocked(draftWithAiAction).mockResolvedValue({
+  it("uses the sms body for polish and dispatches SET_SMS_BODY", async () => {
+    vi.mocked(polishTextAction).mockResolvedValue({
       ok: true,
-      data: { draft: "Polished sms body" },
+      data: { polishedText: "Polished sms body" },
     } as never);
     const harness = setup({
       state: {
@@ -320,15 +295,9 @@ describe("useToolbarPolish", () => {
 
     await harness.runPolish();
 
-    expect(draftWithAiAction).toHaveBeenCalledWith({
-      contactId: "contact-sms-1",
-      projectId: "project-1",
-      intent: "reply",
-      threadCursor: "thread-cursor-1",
+    expect(polishTextAction).toHaveBeenCalledWith({
+      text: "Original SMS body",
       channel: "sms",
-      mode: "polish",
-      operatorBody: "Original SMS body",
-      operatorPrompt: null,
     });
     expect(harness.dispatch).toHaveBeenCalledWith({
       type: "SET_SMS_BODY",
@@ -341,6 +310,25 @@ describe("useToolbarPolish", () => {
       type: "SET_SMS_BODY",
       body: "Original SMS body",
     });
+    harness.unmount();
+  });
+
+  it("reports polish as hidden and non-callable on the note tab", async () => {
+    vi.mocked(polishTextAction).mockResolvedValue({
+      ok: true,
+      data: { polishedText: "Should not be used" },
+    } as never);
+    const harness = setup({
+      state: {
+        activeTab: "note",
+      },
+    });
+
+    await harness.runPolish();
+
+    expect(harness.getHidden()).toBe(true);
+    expect(harness.getDisabled()).toBe(false);
+    expect(polishTextAction).not.toHaveBeenCalled();
     harness.unmount();
   });
 });

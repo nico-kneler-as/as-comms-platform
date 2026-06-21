@@ -9,7 +9,6 @@ import {
 export const aiDraftRequestModeSchema = z.enum([
   "draft",
   "fill",
-  "polish",
   "reprompt",
 ]);
 export type AiDraftRequestMode = z.infer<typeof aiDraftRequestModeSchema>;
@@ -83,11 +82,6 @@ export const aiDraftRequestSchema = z.discriminatedUnion("mode", [
   aiDraftBaseRequestSchema.extend({
     mode: z.literal("fill"),
     operatorPrompt: z.string().min(1),
-  }),
-  aiDraftBaseRequestSchema.extend({
-    mode: z.literal("polish"),
-    operatorBody: z.string().trim().min(1),
-    operatorPrompt: z.string().nullable().optional().default(null),
   }),
   aiDraftBaseRequestSchema.extend({
     mode: z.literal("reprompt"),

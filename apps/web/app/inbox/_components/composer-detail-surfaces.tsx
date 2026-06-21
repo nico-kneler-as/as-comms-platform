@@ -585,12 +585,6 @@ export function ComposerEmailSurface({
                 ) : undefined
               }
             />
-            {polishPhase === "busy" ? (
-              <div className="pointer-events-none absolute left-4 top-[13rem] z-10 flex items-center gap-2 text-[12px] font-medium text-violet-600">
-                <LoaderIcon className="h-3.5 w-3.5 animate-spin" />
-                Polishing your message...
-              </div>
-            ) : null}
           </div>
         </div>
 
@@ -1008,12 +1002,6 @@ export function ComposerSmsSurface({
             )}
             aria-describedby="sms-composer-character-count"
           />
-          {polishPhase === "busy" ? (
-            <div className="pointer-events-none absolute left-0 top-2 z-10 flex items-center gap-2 text-[12px] font-medium text-violet-600">
-              <LoaderIcon className="h-3.5 w-3.5 animate-spin" />
-              Polishing your message...
-            </div>
-          ) : null}
           <div
             id="sms-composer-character-count"
             className={cn(

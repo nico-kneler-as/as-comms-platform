@@ -379,10 +379,6 @@ export function InboxComposerDetailPane({
   } = useToolbarPolish({
     state,
     dispatch,
-    selectedAliasRecord,
-    selectedAliasAiConfigured,
-    replyContext,
-    composerPaneMode: composerPane.mode,
     setComposerErrors,
     startAiTransition,
   });
