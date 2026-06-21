@@ -186,55 +186,6 @@ export function useAiDraftRun({
     });
   };
 
-  const runPolish = () => {
-    clearComposerErrors();
-    const baseRequest = buildBaseRequest();
-
-    if (baseRequest === null) {
-      return;
-    }
-
-    const operatorBody = state.aiDirective.trim();
-
-    if (operatorBody.length === 0) {
-      return;
-    }
-
-    const request = {
-      ...baseRequest,
-      mode: "polish" as const,
-      operatorBody,
-      operatorPrompt: null,
-    };
-    const prompt = "Polish the current draft";
-
-    startAiGeneration({ request, prompt });
-
-    startAiTransition(async () => {
-      const result = await draftWithAiAction(request);
-
-      if (!result.ok) {
-        setAiError(result.message);
-        dispatch({
-          type: "SET_INLINE_ERROR",
-          error: {
-            message: result.message,
-            retryable: false,
-          },
-        });
-        return;
-      }
-
-      clearComposerErrors();
-      dispatch({ type: "SET_REPROMPT_TEXT", value: "" });
-      markAiDraftReviewable({
-        request,
-        response: result.data,
-        prompt,
-      });
-    });
-  };
-
   const discardAi = () => {
     discardAiDraft();
     dispatch({ type: "SET_AI_DIRECTIVE", value: "" });
@@ -290,7 +241,6 @@ export function useAiDraftRun({
 
   return {
     runAiDraft,
-    runPolish,
     discardAi,
     editPromptAi,
     regenerateAi,

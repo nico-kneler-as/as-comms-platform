@@ -40,6 +40,7 @@ import { useAiDraftRun } from "../_hooks/use-ai-draft-run";
 import { useAttachmentIntake } from "../_hooks/use-attachment-intake";
 import { useComposerDraftState } from "../_hooks/use-composer-draft-state";
 import { useComposerSubmit } from "../_hooks/use-composer-submit";
+import { useToolbarPolish } from "../_hooks/use-toolbar-polish";
 
 export function InboxComposerReplyBar({
   onReply,
@@ -290,10 +291,6 @@ export function InboxComposerDetailPane({
         : !selectedAliasAiConfigured
           ? "AI is not configured for this project. Set it up in Settings → Integrations."
           : null;
-  const polishDisabled = state.aiDirective.trim().length === 0;
-  const polishDisabledReason = polishDisabled
-    ? "Type something to polish."
-    : null;
   const aiWarningMessage = resolveAiWarningMessage(aiDraft);
   const sendAndSaveAvailability = resolveSendAndSaveForAiAvailability({
     selectedAlias: state.selectedAlias,
@@ -348,7 +345,6 @@ export function InboxComposerDetailPane({
   });
   const {
     runAiDraft,
-    runPolish,
     discardAi,
     editPromptAi,
     regenerateAi,
@@ -372,6 +368,21 @@ export function InboxComposerDetailPane({
     repromptAi,
     cancelReprompt,
     setAiError,
+    setComposerErrors,
+    startAiTransition,
+  });
+  const {
+    phase: polishPhase,
+    runPolish,
+    undo: undoPolish,
+    isPolishDisabled,
+  } = useToolbarPolish({
+    state,
+    dispatch,
+    selectedAliasRecord,
+    selectedAliasAiConfigured,
+    replyContext,
+    composerPaneMode: composerPane.mode,
     setComposerErrors,
     startAiTransition,
   });
@@ -534,8 +545,8 @@ export function InboxComposerDetailPane({
               isGeneratingAi={isGeneratingAi}
               runAiDraftDisabled={runAiDraftDisabled}
               runAiDraftDisabledReason={runAiDraftDisabledReason}
-              polishDisabled={polishDisabled}
-              polishDisabledReason={polishDisabledReason}
+              polishPhase={polishPhase}
+              isPolishDisabled={isPolishDisabled}
               selectedAliasHasCachedContent={
                 selectedAliasRecord?.hasCachedContent === true
               }
@@ -601,6 +612,7 @@ export function InboxComposerDetailPane({
                 runAiDraft();
               }}
               onRunPolish={runPolish}
+              onUndoPolish={undoPolish}
               onRepromptTextChange={(value) => {
                 dispatch({ type: "SET_REPROMPT_TEXT", value });
               }}
@@ -639,8 +651,8 @@ export function InboxComposerDetailPane({
               isGeneratingAi={isGeneratingAi}
               runAiDraftDisabled={runAiDraftDisabled}
               runAiDraftDisabledReason={runAiDraftDisabledReason}
-              polishDisabled={polishDisabled}
-              polishDisabledReason={polishDisabledReason}
+              polishPhase={polishPhase}
+              isPolishDisabled={isPolishDisabled}
               selectedAliasHasCachedContent={
                 selectedAliasRecord?.hasCachedContent === true
               }
@@ -704,6 +716,7 @@ export function InboxComposerDetailPane({
                 runAiDraft();
               }}
               onRunPolish={runPolish}
+              onUndoPolish={undoPolish}
               onRepromptTextChange={(value) => {
                 dispatch({ type: "SET_REPROMPT_TEXT", value });
               }}
