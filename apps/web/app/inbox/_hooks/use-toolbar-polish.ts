@@ -8,13 +8,8 @@ import {
   type TransitionStartFunction,
 } from "react";
 
-import { draftWithAiAction } from "../actions";
+import { polishTextAction } from "@/src/server/composer/polish";
 import { plaintextToComposerHtml } from "../_components/composer-html";
-import type { ComposerPaneState } from "../_lib/composer-ui";
-import type {
-  InboxComposerAliasOption,
-  InboxComposerReplyContext,
-} from "../_lib/view-models";
 import type {
   ComposerDraftAction,
   ComposerDraftState,
@@ -25,19 +20,11 @@ export type PolishPhase = "idle" | "busy" | "done";
 export function useToolbarPolish({
   state,
   dispatch,
-  selectedAliasRecord,
-  selectedAliasAiConfigured,
-  replyContext,
-  composerPaneMode,
   setComposerErrors,
   startAiTransition,
 }: {
   readonly state: ComposerDraftState;
   readonly dispatch: Dispatch<ComposerDraftAction>;
-  readonly selectedAliasRecord: InboxComposerAliasOption | null;
-  readonly selectedAliasAiConfigured: boolean;
-  readonly replyContext: InboxComposerReplyContext | null;
-  readonly composerPaneMode: ComposerPaneState["mode"];
   readonly setComposerErrors: (errors: readonly []) => void;
   readonly startAiTransition: TransitionStartFunction;
 }) {
@@ -50,16 +37,10 @@ export function useToolbarPolish({
   const polishedBodyRef = useRef<string | null>(null);
 
   const currentBody = state.activeTab === "sms" ? state.smsBody : state.body;
-  const activeRecipient =
-    state.activeTab === "sms" ? state.smsRecipient : state.recipient;
-  const hasKnownRecipient = activeRecipient?.kind === "contact";
+  const isPolishHidden = state.activeTab === "note";
   const isPolishDisabled =
-    state.activeTab === "note" ||
     currentBody.trim().length === 0 ||
-    phase === "busy" ||
-    !hasKnownRecipient ||
-    selectedAliasRecord === null ||
-    !selectedAliasAiConfigured;
+    phase === "busy";
 
   useEffect(() => {
     if (phase !== "done") {
@@ -81,7 +62,7 @@ export function useToolbarPolish({
   };
 
   const runPolish = () => {
-    if (isPolishDisabled) {
+    if (isPolishHidden || isPolishDisabled) {
       return;
     }
 
@@ -92,36 +73,14 @@ export function useToolbarPolish({
       smsBody: state.smsBody,
     };
     setPhase("busy");
-
     const isSms = state.activeTab === "sms";
-    const contactId =
-      isSms && state.smsRecipient?.kind === "contact"
-        ? state.smsRecipient.contactId
-        : !isSms && state.recipient?.kind === "contact"
-          ? state.recipient.contactId
-          : null;
-
-    if (contactId === null) {
-      setPhase("idle");
-      return;
-    }
-
     const request = {
-      contactId,
-      projectId: selectedAliasRecord.projectId,
-      intent:
-        composerPaneMode === "new-draft"
-          ? ("new" as const)
-          : ("reply" as const),
-      threadCursor: replyContext?.threadCursor ?? null,
+      text: (isSms ? state.smsBody : state.body).trim(),
       channel: isSms ? ("sms" as const) : ("email" as const),
-      mode: "polish" as const,
-      operatorBody: isSms ? state.smsBody : state.body,
-      operatorPrompt: null,
     };
 
     startAiTransition(async () => {
-      const result = await draftWithAiAction(request);
+      const result = await polishTextAction(request);
 
       if (!result.ok) {
         prevBodyRef.current = null;
@@ -137,7 +96,7 @@ export function useToolbarPolish({
         return;
       }
 
-      const polishedText = result.data.draft;
+      const polishedText = result.data.polishedText;
       clearComposerErrors();
 
       if (isSms) {
@@ -177,5 +136,5 @@ export function useToolbarPolish({
     polishedBodyRef.current = null;
   };
 
-  return { phase, runPolish, undo, isPolishDisabled };
+  return { phase, runPolish, undo, isPolishDisabled, isPolishHidden };
 }

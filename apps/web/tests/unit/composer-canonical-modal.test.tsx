@@ -181,6 +181,10 @@ vi.mock("../../app/inbox/actions", () => ({
   sendSmsAction: vi.fn(),
 }));
 
+vi.mock("@/src/server/composer/polish", () => ({
+  polishTextAction: vi.fn(),
+}));
+
 vi.mock("@/src/server/composer/drafts", () => ({
   deleteComposerDraftAction: vi.fn().mockResolvedValue({
     ok: true,
