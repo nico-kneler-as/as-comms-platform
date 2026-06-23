@@ -40,6 +40,7 @@ describe("composer draft reducer", () => {
           contactId: "contact-1",
           contactDisplayName: "Ada Lovelace",
           contactPrimaryPhone: "+14065550123",
+          defaultChannel: "email",
           subject: "Re: Forest dates",
           defaultAlias: "forest@adventuresci.org",
           threadId: "thread-1",
@@ -52,6 +53,7 @@ describe("composer draft reducer", () => {
         contactId: "contact-1",
         contactDisplayName: "Ada Lovelace",
         contactPrimaryPhone: "+14065550123",
+        defaultChannel: "email",
         subject: "Re: Forest dates",
         defaultAlias: "forest@adventuresci.org",
         threadId: "thread-1",
@@ -60,6 +62,7 @@ describe("composer draft reducer", () => {
         cc: ["forest@adventuresci.org", "partner@example.org"],
       },
       forwardContext: null,
+      smsSenders: [],
     });
 
     expect(state).toMatchObject({
@@ -141,6 +144,7 @@ describe("composer draft reducer", () => {
         ],
         updatedAt: 1,
       },
+      smsSenders: [],
     });
 
     expect(state).toMatchObject({
@@ -175,6 +179,7 @@ describe("composer draft reducer", () => {
         updatedAt: 1,
         channel: "sms",
       },
+      smsSenders: [],
     });
 
     expect(state.activeTab).toBe("sms");
@@ -195,6 +200,7 @@ describe("composer draft reducer", () => {
         updatedAt: 1,
         channel: "note",
       },
+      smsSenders: [],
     });
 
     expect(state.activeTab).toBe("note");
@@ -231,6 +237,7 @@ describe("composer draft reducer", () => {
         originalBodyHtml: "<p>Original message body.</p>",
         defaultAlias: "forest@adventuresci.org",
       },
+      smsSenders: [],
     });
 
     expect(state.recipient).toBeNull();
@@ -259,7 +266,7 @@ describe("composer draft reducer", () => {
         inlineError: { message: "Wrong tab", retryable: false },
         fieldErrors: [{ field: "body", message: "Wrong tab" }],
       },
-      { type: "SET_ACTIVE_TAB", tab: "note" },
+      { type: "SET_ACTIVE_TAB", tab: "note", smsSenders: [] },
     );
 
     expect(switched.activeTab).toBe("note");
@@ -300,6 +307,7 @@ describe("composer draft reducer", () => {
           composerPane: closedPane,
           replyContext: null,
           forwardContext: null,
+          smsSenders: [],
         },
       ),
     ).toEqual(INITIAL_COMPOSER_DRAFT_STATE);

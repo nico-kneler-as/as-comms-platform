@@ -416,6 +416,7 @@ export interface InboxComposerReplyContext {
   readonly contactId: string;
   readonly contactDisplayName: string;
   readonly contactPrimaryPhone: string | null;
+  readonly defaultChannel: InboxChannel;
   readonly subject: string;
   readonly threadCursor: string | null;
   readonly threadId: string | null;

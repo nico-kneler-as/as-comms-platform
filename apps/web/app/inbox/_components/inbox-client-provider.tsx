@@ -359,14 +359,14 @@ export function InboxClientProvider({
   const openReplyDraft = useCallback(
     (
       replyContext: InboxComposerReplyContext,
-      initialTab: "email" | "note" = "email",
+      initialTab?: "email" | "sms" | "note",
     ) => {
       setPendingExistingDraft(null);
       setComposerPane((previous) =>
         reduceComposerPane(previous, {
           type: "open-reply",
           replyContext,
-          initialTab,
+          ...(initialTab === undefined ? {} : { initialTab }),
         }),
       );
       setComposerView("modal");
@@ -401,7 +401,12 @@ export function InboxClientProvider({
       setComposerPane({
         mode: "replying",
         replyContext: draft.replyContext,
-        initialTab: draft.channel === "note" ? "note" : "email",
+        initialTab:
+          draft.channel === "note"
+            ? "note"
+            : draft.channel === "sms"
+              ? "sms"
+              : "email",
       });
     } else if (
       draft.paneMode === "forwarding" &&

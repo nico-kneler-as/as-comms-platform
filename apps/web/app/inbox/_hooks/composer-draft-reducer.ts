@@ -4,6 +4,7 @@ import {
   buildForwardSubject,
 } from "../_lib/composer-forward";
 import {
+  resolveDefaultSmsSenderId,
   resolveDefaultAlias,
   type ComposerPaneState,
 } from "../_lib/composer-ui";
@@ -11,6 +12,7 @@ import type {
   InboxComposerAliasOption,
   InboxComposerForwardContext,
   InboxComposerReplyContext,
+  InboxSmsSenderOption,
 } from "../_lib/view-models";
 import type {
   ComposerFieldErrors,
@@ -66,10 +68,12 @@ export type ComposerDraftAction =
       readonly composerPane: ComposerPaneState;
       readonly replyContext: InboxComposerReplyContext | null;
       readonly forwardContext: InboxComposerForwardContext | null;
+      readonly smsSenders: readonly InboxSmsSenderOption[];
     }
   | {
       readonly type: "HYDRATE_FROM_STORED_DRAFT";
       readonly draft: StoredComposerDraft;
+      readonly smsSenders: readonly InboxSmsSenderOption[];
     }
   | {
       readonly type: "SET_RECIPIENT";
@@ -90,7 +94,11 @@ export type ComposerDraftAction =
     }
   | { readonly type: "SET_AI_DIRECTIVE"; readonly value: string }
   | { readonly type: "SET_REPROMPT_TEXT"; readonly value: string }
-  | { readonly type: "SET_ACTIVE_TAB"; readonly tab: "email" | "sms" | "note" }
+  | {
+      readonly type: "SET_ACTIVE_TAB";
+      readonly tab: "email" | "sms" | "note";
+      readonly smsSenders: readonly InboxSmsSenderOption[];
+    }
   | { readonly type: "ADD_ATTACHMENTS"; readonly attachments: readonly AttachmentDraft[] }
   | { readonly type: "REMOVE_ATTACHMENT"; readonly id: string }
   | { readonly type: "MARK_ATTACHMENTS_NEEDING_REUPLOAD" }
@@ -188,6 +196,9 @@ export function reduceComposerDraft(
         forwardContext?.originalBodyHtml === null || forwardContext === null
           ? ""
           : buildForwardBodyHtml(forwardContext);
+      const defaultSmsSenderId = resolveDefaultSmsSenderId({
+        smsSenders: action.smsSenders,
+      });
 
       return {
         ...INITIAL_COMPOSER_DRAFT_STATE,
@@ -205,9 +216,8 @@ export function reduceComposerDraft(
             }
           : {}),
         activeTab:
-          action.composerPane.mode === "replying" &&
-          action.composerPane.initialTab === "note"
-            ? "note"
+          action.composerPane.mode === "replying"
+            ? (action.composerPane.initialTab ?? "email")
             : "email",
         recipient:
           action.composerPane.mode === "forwarding" ? null : replyRecipient,
@@ -227,6 +237,11 @@ export function reduceComposerDraft(
             ? buildForwardBodyPlaintext(forwardContext)
             : "",
         bodyHtml,
+        smsSelectedSenderId:
+          action.composerPane.mode === "replying" &&
+          action.composerPane.initialTab === "sms"
+            ? defaultSmsSenderId
+            : null,
       };
     }
     case "HYDRATE_FROM_STORED_DRAFT": {
@@ -245,6 +260,11 @@ export function reduceComposerDraft(
           ...state,
           activeTab: "sms",
           smsBody: action.draft.bodyPlaintext,
+          smsSelectedSenderId:
+            state.smsSelectedSenderId ??
+            resolveDefaultSmsSenderId({
+              smsSenders: action.smsSenders,
+            }),
           inlineError: null,
           fieldErrors: [],
         };
@@ -331,6 +351,13 @@ export function reduceComposerDraft(
       return {
         ...state,
         activeTab: action.tab,
+        smsSelectedSenderId:
+          action.tab === "sms"
+            ? state.smsSelectedSenderId ??
+              resolveDefaultSmsSenderId({
+                smsSenders: action.smsSenders,
+              })
+            : state.smsSelectedSenderId,
         inlineError: null,
         fieldErrors: [],
       };
