@@ -321,7 +321,6 @@ export function useComposerDraftState({
     // smsSenders intentionally excluded: this effect resets state on
     // composerPane/context changes, not on sender-list churn. The dispatch
     // closure still reads the current smsSenders for default selection.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     composerPane,
     forwardContext,
@@ -393,7 +392,7 @@ export function useComposerDraftState({
       smsSenders,
     });
     clearPendingExistingDraft();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- smsSenders read at dispatch time only
+    // smsSenders read at dispatch time only; not a re-fire trigger.
   }, [
     clearPendingExistingDraft,
     composerPane.mode,
@@ -451,7 +450,7 @@ export function useComposerDraftState({
       draft: storedDraft,
       smsSenders,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- smsSenders read at dispatch time only
+    // smsSenders read at dispatch time only; not a re-fire trigger.
   }, [
     availableDrafts,
     baselineAlias,
