@@ -64,6 +64,13 @@ const polledIntegrationServices = [
   "mailchimp"
 ] as const satisfies readonly IntegrationHealthRecord["id"][];
 const integrationHealthAlertCooldownMs = 60 * 60 * 1000;
+// Debounce window: a service must stay continuously degraded for at least this
+// long before the first alert email fires. At the 5-minute poll cadence this
+// means a transient single-poll blip (e.g. a momentary OAuth token-exchange
+// timeout that recovers on the next poll) never pages — only a sustained
+// outage of ~2+ consecutive failed polls does. Re-alerts after the first one
+// remain governed by integrationHealthAlertCooldownMs.
+const integrationHealthAlertDebounceMs = 10 * 60 * 1000;
 const integrationBackfillMaxWindowMs = 24 * 60 * 60 * 1000;
 const integrationBackfillSupportedService = "gmail";
 
@@ -298,13 +305,27 @@ function shouldSendIntegrationHealthAlert(input: {
     return false;
   }
 
-  if (!isHealthyStatus(input.previous.status)) {
-    return (
-      input.previous.degradedSinceAt !== null &&
-      input.previous.lastAlertSentAt === null
-    );
+  // Debounce: suppress the alert until the service has been continuously
+  // degraded for at least integrationHealthAlertDebounceMs. The degraded streak
+  // starts on the first failed poll — occurredAt when the previous poll was
+  // healthy, otherwise the persisted degradedSinceAt carried forward across
+  // polls. This filters transient blips that recover before the window closes.
+  const degradedSinceMs = isHealthyStatus(input.previous.status)
+    ? input.occurredAt.getTime()
+    : input.previous.degradedSinceAt !== null
+      ? Date.parse(input.previous.degradedSinceAt)
+      : input.occurredAt.getTime();
+
+  if (
+    Number.isFinite(degradedSinceMs) &&
+    input.occurredAt.getTime() - degradedSinceMs <
+      integrationHealthAlertDebounceMs
+  ) {
+    return false;
   }
 
+  // Past the debounce window: alert on the first sustained failure, then
+  // re-alert only after the cooldown has elapsed.
   if (input.previous.lastAlertSentAt === null) {
     return true;
   }
