@@ -180,13 +180,13 @@ function normalizePhoneLookupValue(phone: string): string {
 function normalizedPhoneExpression(column: unknown): SQL<string | null> {
   return sql<string | null>`case
     when ${column} is null then null
-    when ${column} ~ '^\+[1-9][0-9]{7,14}$' then ${column}::text
-    when length(regexp_replace(${column}::text, '\D', '', 'g')) = 10
-      and regexp_replace(${column}::text, '\D', '', 'g') ~ '^[2-9][0-9]{9}$'
-      then '+1' || regexp_replace(${column}::text, '\D', '', 'g')
-    when length(regexp_replace(${column}::text, '\D', '', 'g')) = 11
-      and regexp_replace(${column}::text, '\D', '', 'g') ~ '^1[2-9][0-9]{9}$'
-      then '+' || regexp_replace(${column}::text, '\D', '', 'g')
+    when ${column} ~ '^\\+[1-9][0-9]{7,14}$' then ${column}::text
+    when length(regexp_replace(${column}::text, '\\D', '', 'g')) = 10
+      and regexp_replace(${column}::text, '\\D', '', 'g') ~ '^[2-9][0-9]{9}$'
+      then '+1' || regexp_replace(${column}::text, '\\D', '', 'g')
+    when length(regexp_replace(${column}::text, '\\D', '', 'g')) = 11
+      and regexp_replace(${column}::text, '\\D', '', 'g') ~ '^1[2-9][0-9]{9}$'
+      then '+' || regexp_replace(${column}::text, '\\D', '', 'g')
     else null
   end`;
 }
