@@ -36,7 +36,8 @@ const workspaceRules = {
       "@as-comms/integrations",
       "@as-comms/db",
       "@as-comms/db/test-helpers",
-      "@as-comms/domain"
+      "@as-comms/domain",
+      "@as-comms/domain/phone"
     ])
   },
   "apps/salesforce-capture": {
@@ -62,7 +63,8 @@ const workspaceRules = {
     // — that would be a layer inversion.
     allowedWorkspaceImports: new Set([
       "@as-comms/contracts",
-      "@as-comms/domain"
+      "@as-comms/domain",
+      "@as-comms/domain/phone"
     ])
   },
   "packages/domain": {
@@ -74,7 +76,8 @@ const workspaceRules = {
     // `@as-comms/db/test-helpers` gets a narrow per-file exception below.
     allowedWorkspaceImports: new Set([
       "@as-comms/contracts",
-      "@as-comms/domain"
+      "@as-comms/domain",
+      "@as-comms/domain/phone"
     ])
   },
   "packages/ui": {
