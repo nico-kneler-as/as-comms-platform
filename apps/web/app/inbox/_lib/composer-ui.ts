@@ -4,6 +4,7 @@ import type {
   InboxComposerAliasOption,
   InboxComposerForwardContext,
   InboxComposerReplyContext,
+  InboxSmsSenderOption,
 } from "./view-models";
 
 const emailSchema = z.string().email();
@@ -19,7 +20,7 @@ export type ComposerPaneState =
   | {
       readonly mode: "replying";
       readonly replyContext: InboxComposerReplyContext;
-      readonly initialTab?: "email" | "note";
+      readonly initialTab?: "email" | "sms" | "note";
     }
   | {
       readonly mode: "forwarding";
@@ -36,7 +37,7 @@ export type ComposerPaneAction =
   | {
       readonly type: "open-reply";
       readonly replyContext: InboxComposerReplyContext;
-      readonly initialTab?: "email" | "note";
+      readonly initialTab?: "email" | "sms" | "note";
     }
   | {
       readonly type: "open-forward";
@@ -61,7 +62,11 @@ export function reduceComposerPane(
       return {
         mode: "replying",
         replyContext: action.replyContext,
-        initialTab: action.initialTab ?? "email",
+        initialTab:
+          action.initialTab ??
+          resolveReplyInitialTab({
+            replyContext: action.replyContext,
+          }),
       };
     case "open-forward":
       return {
@@ -74,6 +79,18 @@ export function reduceComposerPane(
         mode: "closed"
       };
   }
+}
+
+export function resolveReplyInitialTab(input: {
+  readonly replyContext: InboxComposerReplyContext;
+}): "email" | "sms" {
+  return input.replyContext.defaultChannel === "sms" ? "sms" : "email";
+}
+
+export function resolveDefaultSmsSenderId(input: {
+  readonly smsSenders: readonly InboxSmsSenderOption[];
+}): string | null {
+  return input.smsSenders[0]?.id ?? null;
 }
 
 function normalizeEmail(value: string): string {

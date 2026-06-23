@@ -23,6 +23,7 @@ import type {
   InboxComposerForwardContext,
   InboxComposerReplyContext,
   InboxDraftListItemViewModel,
+  InboxSmsSenderOption,
 } from "../_lib/view-models";
 import { resolveRecipientEmailAddress } from "../_components/composer-shared";
 import { useInboxClient } from "../_components/inbox-client-provider";
@@ -239,6 +240,7 @@ function toDraftListItemViewModel(input: {
 export function useComposerDraftState({
   composerPane,
   composerAliases,
+  smsSenders,
   setComposerStatus,
   setComposerErrors,
   resetAiDraft,
@@ -246,6 +248,7 @@ export function useComposerDraftState({
   readonly actorId: string;
   readonly composerPane: ComposerPaneState;
   readonly composerAliases: readonly InboxComposerAliasOption[];
+  readonly smsSenders: readonly InboxSmsSenderOption[];
   readonly setComposerStatus: (status: "idle") => void;
   readonly setComposerErrors: (errors: readonly []) => void;
   readonly resetAiDraft: () => void;
@@ -310,10 +313,14 @@ export function useComposerDraftState({
       composerPane,
       replyContext,
       forwardContext,
+      smsSenders,
     });
     setComposerStatus("idle");
     setComposerErrors([]);
     resetAiDraft();
+    // smsSenders intentionally excluded: this effect resets state on
+    // composerPane/context changes, not on sender-list churn. The dispatch
+    // closure still reads the current smsSenders for default selection.
   }, [
     composerPane,
     forwardContext,
@@ -382,9 +389,15 @@ export function useComposerDraftState({
         replyContextThreadCursor: pendingExistingDraft.replyContext?.threadCursor ?? null,
         forwardContext: pendingExistingDraft.forwardContext,
       },
+      smsSenders,
     });
     clearPendingExistingDraft();
-  }, [clearPendingExistingDraft, composerPane.mode, pendingExistingDraft]);
+    // smsSenders read at dispatch time only; not a re-fire trigger.
+  }, [
+    clearPendingExistingDraft,
+    composerPane.mode,
+    pendingExistingDraft,
+  ]);
 
   useEffect(() => {
     if (composerPane.mode === "closed" || availableDrafts === null) {
@@ -435,7 +448,9 @@ export function useComposerDraftState({
     dispatch({
       type: "HYDRATE_FROM_STORED_DRAFT",
       draft: storedDraft,
+      smsSenders,
     });
+    // smsSenders read at dispatch time only; not a re-fire trigger.
   }, [
     availableDrafts,
     baselineAlias,

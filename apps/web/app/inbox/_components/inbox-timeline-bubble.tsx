@@ -256,7 +256,7 @@ function MessageAttachments({
   );
 }
 
-function ReplyFooter({
+export function ReplyFooter({
   entryId,
   onForward,
   onReply,

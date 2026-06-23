@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 
 import {
   isComposerSendDisabled,
+  resolveDefaultSmsSenderId,
   resolveSmsSendAndSaveForAiAvailability,
   resolveSendAndSaveForAiAvailability,
 } from "../_lib/composer-ui";
@@ -137,9 +138,11 @@ function ComposerModeTabs({
   );
 }
 
+const EMPTY_SMS_SENDERS: readonly InboxSmsSenderOption[] = [];
+
 export function InboxComposerDetailPane({
   smsEnabled = false,
-  smsSenders = [],
+  smsSenders = EMPTY_SMS_SENDERS,
 }: {
   readonly outboundRateUsdPerSegment: number;
   readonly smsEnabled?: boolean;
@@ -190,6 +193,7 @@ export function InboxComposerDetailPane({
     actorId: currentActorId,
     composerPane,
     composerAliases,
+    smsSenders,
     setComposerStatus,
     setComposerErrors,
     resetAiDraft,
@@ -203,19 +207,6 @@ export function InboxComposerDetailPane({
 
     autoResizeTextarea(bodyRef.current);
   }, [state.activeTab, state.body]);
-
-  useEffect(() => {
-    if (state.smsSelectedSenderId !== null) {
-      return;
-    }
-
-    const defaultSender = smsSenders[0];
-    if (defaultSender === undefined) {
-      return;
-    }
-
-    dispatch({ type: "SET_SMS_SENDER", senderId: defaultSender.id });
-  }, [dispatch, smsSenders, state.smsSelectedSenderId]);
 
   useEffect(() => {
     if (state.smsRecipient === null || state.smsConsent !== null) {
@@ -405,7 +396,15 @@ export function InboxComposerDetailPane({
   const senderError = composerErrors.find((error) => error.field === "sender");
   const selectedSmsSender =
     smsSenders.find((sender) => sender.id === state.smsSelectedSenderId) ??
-    smsSenders[0] ??
+    (state.activeTab === "sms"
+      ? smsSenders.find(
+          (sender) =>
+            sender.id ===
+            resolveDefaultSmsSenderId({
+              smsSenders,
+            }),
+        ) ?? null
+      : null) ??
     null;
   const smsMetricsValue = smsMetrics(state.smsBody);
   const smsSendDisabledReason =
@@ -483,10 +482,10 @@ export function InboxComposerDetailPane({
             <ComposerModeTabs
               activeTab={state.activeTab}
               onEmail={() => {
-                dispatch({ type: "SET_ACTIVE_TAB", tab: "email" });
+                dispatch({ type: "SET_ACTIVE_TAB", tab: "email", smsSenders });
               }}
               onSms={() => {
-                dispatch({ type: "SET_ACTIVE_TAB", tab: "sms" });
+                dispatch({ type: "SET_ACTIVE_TAB", tab: "sms", smsSenders });
               }}
             />
           )}

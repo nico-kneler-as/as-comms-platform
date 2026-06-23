@@ -70,11 +70,18 @@ export async function getInboxSmsSenders(): Promise<
   readonly InboxSmsSenderOption[]
 > {
   const runtime = await getStage1WebRuntime();
-  const senders = await runtime.settings.smsSenders.listActive();
+  const senders = (await runtime.settings.smsSenders.listActive()) as readonly {
+    readonly id: string;
+    readonly phoneE164: string;
+    readonly displayName: string;
+    readonly createdAt: Date;
+  }[];
 
-  return senders.map((sender) => ({
-    id: sender.id,
-    phoneE164: sender.phoneE164,
-    displayName: sender.displayName,
-  }));
+  return [...senders]
+    .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+    .map((sender) => ({
+      id: sender.id,
+      phoneE164: sender.phoneE164,
+      displayName: sender.displayName,
+    }));
 }

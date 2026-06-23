@@ -6,6 +6,8 @@ import { plaintextToComposerHtml } from "../../app/inbox/_components/composer-ht
 import {
   formatContactRecipientLabel,
   reduceComposerPane,
+  resolveDefaultSmsSenderId,
+  resolveReplyInitialTab,
   resolveTypedEmailRecipient,
   isComposerSendDisabled,
   resolveComposerSendActionFlags,
@@ -19,6 +21,7 @@ const replyContext: InboxComposerReplyContext = {
   contactId: "contact-1",
   contactDisplayName: "Alice Smith",
   contactPrimaryPhone: "+14065550123",
+  defaultChannel: "email",
   subject: "Re: Trip logistics",
   threadCursor: "event-1",
   threadId: "thread-1",
@@ -60,6 +63,37 @@ describe("stage3 composer ui helpers", () => {
       mode: "replying",
       replyContext,
       initialTab: "email",
+    } satisfies ComposerPaneState);
+  });
+
+  it("defaults reply drafts to sms when the latest inbound channel is sms", () => {
+    expect(
+      resolveReplyInitialTab({
+        replyContext: {
+          ...replyContext,
+          defaultChannel: "sms",
+        },
+      }),
+    ).toBe("sms");
+
+    expect(
+      reduceComposerPane(
+        { mode: "closed" },
+        {
+          type: "open-reply",
+          replyContext: {
+            ...replyContext,
+            defaultChannel: "sms",
+          },
+        },
+      ),
+    ).toEqual({
+      mode: "replying",
+      replyContext: {
+        ...replyContext,
+        defaultChannel: "sms",
+      },
+      initialTab: "sms",
     } satisfies ComposerPaneState);
   });
 
@@ -284,6 +318,26 @@ describe("stage3 composer ui helpers", () => {
       enabled: true,
       disabledReason: null,
     });
+  });
+
+  it("resolves the default sms sender id when an active sender exists", () => {
+    expect(
+      resolveDefaultSmsSenderId({
+        smsSenders: [
+          {
+            id: "sender-1",
+            phoneE164: "+14062891988",
+            displayName: "Adventure Scientists",
+          },
+        ],
+      }),
+    ).toBe("sender-1");
+
+    expect(
+      resolveDefaultSmsSenderId({
+        smsSenders: [],
+      }),
+    ).toBeNull();
   });
 
   it("converts AI draft plaintext into safe composer HTML paragraphs and line breaks", () => {

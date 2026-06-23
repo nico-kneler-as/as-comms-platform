@@ -74,6 +74,52 @@ describe("composer draft reducer sms", () => {
     expect(state.smsSelectedSenderId).toBe("sender-1");
   });
 
+  it("preselects the active sender when reply mode opens on sms", () => {
+    const replyContext = {
+      contactId: "contact-1",
+      contactDisplayName: "Maya Lee",
+      contactPrimaryPhone: "+14065550123",
+      defaultChannel: "sms" as const,
+      subject: "",
+      threadCursor: null,
+      threadId: null,
+      inReplyToRfc822: null,
+      defaultAlias: null,
+      cc: [],
+    };
+    const state = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
+      type: "RESET_TO_PANE_MODE",
+      composerPane: {
+        mode: "replying",
+        initialTab: "sms",
+        replyContext,
+      },
+      replyContext,
+      forwardContext: null,
+      smsSenders: [
+        {
+          id: "sender-1",
+          phoneE164: "+14062891988",
+          displayName: "Adventure Scientists",
+        },
+      ],
+    });
+
+    expect(state.activeTab).toBe("sms");
+    expect(state.smsSelectedSenderId).toBe("sender-1");
+  });
+
+  it("keeps the sms sender empty when no active sender exists", () => {
+    const state = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
+      type: "SET_ACTIVE_TAB",
+      tab: "sms",
+      smsSenders: [],
+    });
+
+    expect(state.activeTab).toBe("sms");
+    expect(state.smsSelectedSenderId).toBeNull();
+  });
+
   it("clears errors when switching from email to sms to note", () => {
     const withErrors = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
       type: "SET_ERRORS",
@@ -86,6 +132,7 @@ describe("composer draft reducer sms", () => {
     const sms = reduceComposerDraft(withErrors, {
       type: "SET_ACTIVE_TAB",
       tab: "sms",
+      smsSenders: [],
     });
     const note = reduceComposerDraft(
       {
@@ -99,6 +146,7 @@ describe("composer draft reducer sms", () => {
       {
         type: "SET_ACTIVE_TAB",
         tab: "note",
+        smsSenders: [],
       },
     );
 
