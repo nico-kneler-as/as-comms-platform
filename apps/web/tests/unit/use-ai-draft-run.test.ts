@@ -88,6 +88,7 @@ function setup(input?: {
       contactId: "contact-1",
       contactDisplayName: "Ada Lovelace",
       contactPrimaryPhone: "+14065550123",
+      defaultChannel: "email",
       subject: "Re: Forest dates",
       threadCursor: "thread-cursor-1",
       threadId: "thread-1",

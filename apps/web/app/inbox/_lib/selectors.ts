@@ -3043,18 +3043,26 @@ function buildComposerReplyContext(input: {
   const visibleTimelineItems = hasPostCutoverActivity
     ? filterItemsAtOrAfterPlatformFullCaptureCutover(input.timelineItems)
     : input.timelineItems;
-  const inboundEmails = [...visibleTimelineItems]
-    .reverse()
-    .filter(
-      (item): item is Extract<TimelineItem, { family: "one_to_one_email" }> =>
-        item.family === "one_to_one_email" && item.direction === "inbound",
-    );
-  const latestInboundEmail = inboundEmails[0];
+  const inboundItems = [...visibleTimelineItems].reverse().filter(
+    (
+      item,
+    ): item is Extract<
+      TimelineItem,
+      { family: "one_to_one_email" | "one_to_one_sms" }
+    > =>
+      (item.family === "one_to_one_email" || item.family === "one_to_one_sms") &&
+      item.direction === "inbound",
+  );
+  const latestInboundItem = inboundItems[0];
+  const inboundEmails = inboundItems.filter(
+    (item): item is Extract<TimelineItem, { family: "one_to_one_email" }> =>
+      item.family === "one_to_one_email",
+  );
   const latestQuotableInboundEmail = inboundEmails.find(
     (item) => !PLACEHOLDER_BODY_PREVIEWS.has((item.bodyPreview ?? "").trim()),
   );
 
-  if (latestInboundEmail === undefined) {
+  if (latestInboundItem === undefined) {
     // Fresh-draft path: contacts whose timeline only contains lifecycle or
     // automated-outbound entries get a synthetic context with empty subject
     // and null threading fields. The composer modal renders this as a new
@@ -3063,6 +3071,7 @@ function buildComposerReplyContext(input: {
       contactId: input.contact.id,
       contactDisplayName: input.contact.displayName,
       contactPrimaryPhone: input.contact.primaryPhone,
+      defaultChannel: "email",
       subject: "",
       threadCursor: null,
       threadId: null,
@@ -3076,12 +3085,29 @@ function buildComposerReplyContext(input: {
     contactId: input.contact.id,
     contactDisplayName: input.contact.displayName,
     contactPrimaryPhone: input.contact.primaryPhone,
-    subject: buildReplySubject(latestInboundEmail.subject),
-    threadCursor: latestQuotableInboundEmail?.canonicalEventId ?? null,
-    threadId: latestInboundEmail.threadId ?? null,
-    inReplyToRfc822: latestInboundEmail.rfc822MessageId ?? null,
+    defaultChannel:
+      latestInboundItem.family === "one_to_one_sms" ? "sms" : "email",
+    subject:
+      latestInboundItem.family === "one_to_one_email"
+        ? buildReplySubject(latestInboundItem.subject)
+        : "",
+    threadCursor:
+      latestInboundItem.family === "one_to_one_email"
+        ? latestQuotableInboundEmail?.canonicalEventId ?? null
+        : null,
+    threadId:
+      latestInboundItem.family === "one_to_one_email"
+        ? latestInboundItem.threadId ?? null
+        : null,
+    inReplyToRfc822:
+      latestInboundItem.family === "one_to_one_email"
+        ? latestInboundItem.rfc822MessageId ?? null
+        : null,
     defaultAlias: input.defaultAlias,
-    cc: extractEmailAddresses(latestInboundEmail.ccHeader),
+    cc:
+      latestInboundItem.family === "one_to_one_email"
+        ? extractEmailAddresses(latestInboundItem.ccHeader)
+        : [],
   };
 }
 

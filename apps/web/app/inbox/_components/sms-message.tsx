@@ -5,14 +5,11 @@ import { cn } from "@/lib/utils";
 import type { InboxTimelineEntryViewModel } from "../_lib/view-models";
 import { autolinkText } from "./_autolink";
 import {
+  ReplyFooter,
   SMS_BUBBLE_MAX_W,
   TIMELINE_GRID_COLUMNS,
 } from "./inbox-timeline-bubble";
-import {
-  CornerUpLeftIcon,
-  LoaderIcon,
-  RefreshCwIcon,
-} from "./icons";
+import { LoaderIcon, RefreshCwIcon } from "./icons";
 
 const SMS_OUTBOUND_LINK_CLASS_NAME =
   "font-medium text-sky-800 underline decoration-sky-300 underline-offset-2 hover:text-sky-950 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 [overflow-wrap:anywhere]";
@@ -102,7 +99,7 @@ export function SmsMessage({
 
           <div
             className={cn(
-              "w-full",
+              "group w-full overflow-hidden",
               SMS_BUBBLE_MAX_W,
               "rounded-2xl border px-4 py-3 shadow-sm",
               isOutbound
@@ -137,24 +134,16 @@ export function SmsMessage({
             </div>
           </div>
 
+          <ReplyFooter
+            entryId={entry.id}
+            {...(onReply === undefined ? {} : { onReply })}
+          />
+
           {isOutbound ? (
             <div className="mt-1 px-1 text-[11px] text-slate-500">
               {entry.actorLabel}
             </div>
           ) : null}
-
-          {onReply === undefined ? null : (
-            <button
-              type="button"
-              onClick={() => {
-                onReply(entry.id);
-              }}
-              className="mt-2 inline-flex items-center gap-1 px-1 text-[11px] text-slate-500 hover:text-slate-800"
-            >
-              <CornerUpLeftIcon className="size-3" />
-              Reply
-            </button>
-          )}
         </div>
       </div>
     </li>

@@ -115,6 +115,21 @@ function buildTimelineReplyContext(input: {
   readonly entry: InboxTimelineEntryViewModel;
   readonly defaultAlias: string | null;
 }): InboxComposerReplyContext | null {
+  if (input.entry.channel === "sms") {
+    return {
+      contactId: input.contactId,
+      contactDisplayName: input.contactDisplayName,
+      contactPrimaryPhone: input.contactPrimaryPhone,
+      defaultChannel: "sms",
+      subject: "",
+      threadCursor: null,
+      threadId: null,
+      inReplyToRfc822: null,
+      defaultAlias: input.defaultAlias,
+      cc: [],
+    };
+  }
+
   if (input.entry.channel !== "email") {
     return null;
   }
@@ -123,6 +138,7 @@ function buildTimelineReplyContext(input: {
     contactId: input.contactId,
     contactDisplayName: input.contactDisplayName,
     contactPrimaryPhone: input.contactPrimaryPhone,
+    defaultChannel: "email",
     subject: buildReplySubject(input.entry.subject),
     threadCursor: input.entry.kind === "inbound-email" ? input.entry.id : null,
     threadId: input.entry.threadId,

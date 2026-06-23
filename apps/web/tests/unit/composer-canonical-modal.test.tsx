@@ -551,7 +551,10 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
     ),
 }));
 
-import type { InboxComposerAliasOption } from "../../app/inbox/_lib/view-models";
+import type {
+  InboxComposerAliasOption,
+  InboxComposerReplyContext,
+} from "../../app/inbox/_lib/view-models";
 import {
   InboxClientProvider,
   useInboxClient,
@@ -587,15 +590,17 @@ const composerAliases: readonly InboxComposerAliasOption[] = [
   },
 ];
 
-const replyContext = {
+const replyContext: InboxComposerReplyContext = {
   contactId: "contact:maya",
   contactDisplayName: "Maya Lee",
   contactPrimaryPhone: "+14065550123",
+  defaultChannel: "email",
   subject: "Trip logistics",
   threadCursor: "event:inbound-1",
   threadId: "thread:gmail-1",
   inReplyToRfc822: "message:gmail-1",
   defaultAlias: "whitebark@adventurescientists.org",
+  cc: [],
 };
 
 const forwardContext = {

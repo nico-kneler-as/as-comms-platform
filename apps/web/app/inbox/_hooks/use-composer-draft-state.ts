@@ -23,6 +23,7 @@ import type {
   InboxComposerForwardContext,
   InboxComposerReplyContext,
   InboxDraftListItemViewModel,
+  InboxSmsSenderOption,
 } from "../_lib/view-models";
 import { resolveRecipientEmailAddress } from "../_components/composer-shared";
 import { useInboxClient } from "../_components/inbox-client-provider";
@@ -239,6 +240,7 @@ function toDraftListItemViewModel(input: {
 export function useComposerDraftState({
   composerPane,
   composerAliases,
+  smsSenders,
   setComposerStatus,
   setComposerErrors,
   resetAiDraft,
@@ -246,6 +248,7 @@ export function useComposerDraftState({
   readonly actorId: string;
   readonly composerPane: ComposerPaneState;
   readonly composerAliases: readonly InboxComposerAliasOption[];
+  readonly smsSenders: readonly InboxSmsSenderOption[];
   readonly setComposerStatus: (status: "idle") => void;
   readonly setComposerErrors: (errors: readonly []) => void;
   readonly resetAiDraft: () => void;
@@ -310,6 +313,7 @@ export function useComposerDraftState({
       composerPane,
       replyContext,
       forwardContext,
+      smsSenders,
     });
     setComposerStatus("idle");
     setComposerErrors([]);
@@ -321,6 +325,7 @@ export function useComposerDraftState({
     resetAiDraft,
     setComposerErrors,
     setComposerStatus,
+    smsSenders,
   ]);
 
   useEffect(() => {
@@ -382,9 +387,15 @@ export function useComposerDraftState({
         replyContextThreadCursor: pendingExistingDraft.replyContext?.threadCursor ?? null,
         forwardContext: pendingExistingDraft.forwardContext,
       },
+      smsSenders,
     });
     clearPendingExistingDraft();
-  }, [clearPendingExistingDraft, composerPane.mode, pendingExistingDraft]);
+  }, [
+    clearPendingExistingDraft,
+    composerPane.mode,
+    pendingExistingDraft,
+    smsSenders,
+  ]);
 
   useEffect(() => {
     if (composerPane.mode === "closed" || availableDrafts === null) {
@@ -435,6 +446,7 @@ export function useComposerDraftState({
     dispatch({
       type: "HYDRATE_FROM_STORED_DRAFT",
       draft: storedDraft,
+      smsSenders,
     });
   }, [
     availableDrafts,
@@ -443,6 +455,7 @@ export function useComposerDraftState({
     baselineBodyHtml,
     baselineSubject,
     composerPane,
+    smsSenders,
     state,
   ]);
 
