@@ -138,9 +138,11 @@ function ComposerModeTabs({
   );
 }
 
+const EMPTY_SMS_SENDERS: readonly InboxSmsSenderOption[] = [];
+
 export function InboxComposerDetailPane({
   smsEnabled = false,
-  smsSenders = [],
+  smsSenders = EMPTY_SMS_SENDERS,
 }: {
   readonly outboundRateUsdPerSegment: number;
   readonly smsEnabled?: boolean;
