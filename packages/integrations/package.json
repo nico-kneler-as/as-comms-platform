@@ -23,6 +23,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.61.0",
     "@as-comms/contracts": "workspace:*",
+    "@as-comms/domain": "workspace:*",
     "@notionhq/client": "^4.0.2",
     "libmime": "^5.3.8",
     "mailparser": "^3.9.8",
@@ -31,7 +32,6 @@
   },
   "devDependencies": {
     "@as-comms/db": "workspace:*",
-    "@as-comms/domain": "workspace:*",
     "@types/mailparser": "^3.4.6"
   }
 }

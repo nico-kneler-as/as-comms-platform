@@ -1,5 +1,7 @@
 import type { ContactIdentityRecord, ContactRecord } from "@as-comms/contracts";
 
+import { tryNormalizePhoneE164 } from "./phone.js";
+
 export type ContactInsertRecord = ContactRecord;
 
 export interface ContactResolutionInput {
@@ -97,7 +99,9 @@ export function formatUnknownPhoneDisplayName(phoneE164: string): string {
 export async function resolveContactByPhone(
   input: ContactResolutionInput,
 ): Promise<ContactResolutionResult> {
-  const existing = await input.readContacts.findByPrimaryPhone(input.phoneE164);
+  const normalizedPhoneE164 = tryNormalizePhoneE164(input.phoneE164);
+  const phoneE164 = normalizedPhoneE164 ?? input.phoneE164;
+  const existing = await input.readContacts.findByPrimaryPhone(phoneE164);
 
   if (existing !== null) {
     return {
@@ -112,9 +116,9 @@ export async function resolveContactByPhone(
     const created = await input.writeContacts.upsert({
       id: input.idGenerator(),
       salesforceContactId: null,
-      displayName: formatUnknownPhoneDisplayName(input.phoneE164),
+      displayName: formatUnknownPhoneDisplayName(phoneE164),
       primaryEmail: null,
-      primaryPhone: input.phoneE164,
+      primaryPhone: phoneE164,
       createdAt: nowIso,
       updatedAt: nowIso,
     });
@@ -128,7 +132,7 @@ export async function resolveContactByPhone(
       throw error;
     }
 
-    const raced = await input.readContacts.findByPrimaryPhone(input.phoneE164);
+    const raced = await input.readContacts.findByPrimaryPhone(phoneE164);
 
     if (raced === null) {
       throw error;
@@ -160,10 +164,12 @@ function compareNullableIsoDesc(left: string | null, right: string | null): numb
 export async function resolveContactByPhoneFromIdentities(
   input: PhoneIdentityResolutionInput,
 ): Promise<PhoneIdentityResolutionResult> {
+  const normalizedPhoneE164 = tryNormalizePhoneE164(input.phoneE164);
+  const phoneE164 = normalizedPhoneE164 ?? input.phoneE164;
   const matchingIdentities =
     await input.readContactIdentities.listByNormalizedValue({
       kind: "phone",
-      normalizedValue: input.phoneE164,
+      normalizedValue: phoneE164,
     });
   const candidateContactIds = Array.from(
     new Set(matchingIdentities.map((identity) => identity.contactId)),
@@ -177,9 +183,9 @@ export async function resolveContactByPhoneFromIdentities(
       const created = await input.writeContacts.upsert({
         id: contactId,
         salesforceContactId: null,
-        displayName: formatUnknownPhoneDisplayName(input.phoneE164),
+        displayName: formatUnknownPhoneDisplayName(phoneE164),
         primaryEmail: null,
-        primaryPhone: input.phoneE164,
+        primaryPhone: phoneE164,
         createdAt: nowIso,
         updatedAt: nowIso,
       });
@@ -187,7 +193,7 @@ export async function resolveContactByPhoneFromIdentities(
         id: input.idGenerator(),
         contactId: created.id,
         kind: "phone",
-        normalizedValue: input.phoneE164,
+        normalizedValue: phoneE164,
         isPrimary: true,
         source: "manual",
         verifiedAt: null,
@@ -203,7 +209,7 @@ export async function resolveContactByPhoneFromIdentities(
         throw error;
       }
 
-      const raced = await input.readContacts.findByPrimaryPhone(input.phoneE164);
+      const raced = await input.readContacts.findByPrimaryPhone(phoneE164);
 
       if (raced === null) {
         throw error;
