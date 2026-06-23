@@ -240,7 +240,13 @@ describe("integration health poller task", () => {
     }
   });
 
-  it("sends one degradation alert, applies cooldown, and clears state on recovery", async () => {
+  it("debounces a transient blip, alerts only after the debounce window, applies cooldown, then clears state on recovery", async () => {
+    let currentTimeIso = "2026-04-20T16:00:00.000Z";
+    const gmailHealth = {
+      status: "needs_attention" as "needs_attention" | "healthy",
+      checkedAt: "2026-04-20T16:00:00.000Z",
+      detail: "OAuth token expired." as string | null
+    };
     const fetchImplementation = vi.fn(
       (input: string | URL | Request): Promise<Response> => {
         const url = toRequestUrl(input);
@@ -254,9 +260,12 @@ describe("integration health poller task", () => {
           new Response(
             JSON.stringify({
               service,
-              status: service === "gmail" ? "needs_attention" : "healthy",
-              checkedAt: "2026-04-20T16:00:00.000Z",
-              detail: service === "gmail" ? "OAuth token expired." : null,
+              status: service === "gmail" ? gmailHealth.status : "healthy",
+              checkedAt:
+                service === "gmail"
+                  ? gmailHealth.checkedAt
+                  : "2026-04-20T16:00:00.000Z",
+              detail: service === "gmail" ? gmailHealth.detail : null,
               version: `${service}-sha`
             }),
             {
@@ -309,7 +318,7 @@ describe("integration health poller task", () => {
           persistence: context.persistence,
           fetchImplementation,
           alertSender,
-          now: () => new Date("2026-04-20T16:00:00.000Z"),
+          now: () => new Date(currentTimeIso),
           logger
         }
       });
@@ -319,77 +328,169 @@ describe("integration health poller task", () => {
         throw new Error("Expected integration health poller task to be registered.");
       }
 
-      await task(
-        undefined,
-        { addJob: vi.fn().mockResolvedValue(undefined) } as never,
-      );
-      await task(
-        undefined,
-        { addJob: vi.fn().mockResolvedValue(undefined) } as never,
-      );
+      const helpers = {
+        addJob: vi.fn().mockResolvedValue(undefined)
+      } as never;
 
-      const degradedRecord =
-        await context.settings.integrationHealth.findById("gmail");
+      // Poll 1 — first failed poll. The degraded streak starts now, but the
+      // debounce window suppresses the alert.
+      currentTimeIso = "2026-04-20T16:00:00.000Z";
+      await task(undefined, helpers);
+      let record = await context.settings.integrationHealth.findById("gmail");
+      expect(alertSender.send).not.toHaveBeenCalled();
+      expect(record?.status).toBe("needs_attention");
+      expect(record?.degradedSinceAt).toBe("2026-04-20T16:00:00.000Z");
+      expect(record?.lastAlertSentAt).toBeNull();
 
+      // Poll 2 — still degraded but only 5 min in, inside the 10 min window.
+      currentTimeIso = "2026-04-20T16:05:00.000Z";
+      await task(undefined, helpers);
+      record = await context.settings.integrationHealth.findById("gmail");
+      expect(alertSender.send).not.toHaveBeenCalled();
+      expect(record?.degradedSinceAt).toBe("2026-04-20T16:00:00.000Z");
+      expect(record?.lastAlertSentAt).toBeNull();
+
+      // Poll 3 — the debounce window (10 min) has elapsed, so the first alert
+      // fires. fromStatus is "needs_attention" (not "healthy") because the
+      // healthy→degraded edge is now in the past — the debounce delayed us.
+      currentTimeIso = "2026-04-20T16:10:00.000Z";
+      await task(undefined, helpers);
+      record = await context.settings.integrationHealth.findById("gmail");
       expect(alertSender.send).toHaveBeenCalledTimes(1);
       expect(alertSender.send).toHaveBeenCalledWith(
         expect.objectContaining({
           service: "gmail",
-          fromStatus: "healthy",
-          occurredAt: "2026-04-20T16:00:00.000Z",
+          fromStatus: "needs_attention",
+          occurredAt: "2026-04-20T16:10:00.000Z",
           record: expect.objectContaining({
             status: "needs_attention",
             detail: "OAuth token expired.",
             metadataJson: expect.objectContaining({
-              checkedAt: "2026-04-20T16:00:00.000Z",
               version: "gmail-sha"
             })
           })
         })
       );
-      expect(degradedRecord?.degradedSinceAt).toBe(
-        "2026-04-20T16:00:00.000Z"
-      );
-      expect(degradedRecord?.lastAlertSentAt).toBe(
-        "2026-04-20T16:00:00.000Z"
-      );
+      expect(record?.degradedSinceAt).toBe("2026-04-20T16:00:00.000Z");
+      expect(record?.lastAlertSentAt).toBe("2026-04-20T16:10:00.000Z");
       expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('"event":"integration_health.alert_sent"')
       );
 
-      fetchImplementation.mockImplementation(
-        (input: string | URL | Request): Promise<Response> => {
-          const url = toRequestUrl(input);
-          const service = url.includes("gmail") ? "gmail" : "salesforce";
+      // Poll 4 — still degraded but inside the 1 hour re-alert cooldown.
+      currentTimeIso = "2026-04-20T16:12:00.000Z";
+      await task(undefined, helpers);
+      expect(alertSender.send).toHaveBeenCalledTimes(1);
 
-          return Promise.resolve(
-            new Response(
-              JSON.stringify({
-                service,
-                status: "healthy",
-                checkedAt: "2026-04-20T16:30:00.000Z",
-                detail: null,
-                version: `${service}-sha`
-              }),
-              {
-                status: 200,
-                headers: {
-                  "content-type": "application/json"
-                }
-              }
-            )
-          );
-        }
-      );
-
-      await task(
-        undefined,
-        { addJob: vi.fn().mockResolvedValue(undefined) } as never,
-      );
-
+      // Poll 5 — recovery clears the degraded + alert state without paging.
+      gmailHealth.status = "healthy";
+      gmailHealth.checkedAt = "2026-04-20T16:30:00.000Z";
+      gmailHealth.detail = null;
+      currentTimeIso = "2026-04-20T16:30:00.000Z";
+      await task(undefined, helpers);
       const recoveredRecord =
         await context.settings.integrationHealth.findById("gmail");
 
+      expect(alertSender.send).toHaveBeenCalledTimes(1);
+      expect(recoveredRecord?.status).toBe("healthy");
+      expect(recoveredRecord?.degradedSinceAt).toBeNull();
+      expect(recoveredRecord?.lastAlertSentAt).toBeNull();
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("never alerts when a transient blip recovers within the debounce window", async () => {
+    let currentTimeIso = "2026-04-20T16:00:00.000Z";
+    const gmailHealth = {
+      status: "needs_attention" as "needs_attention" | "healthy",
+      detail: "OAuth token exchange timed out." as string | null
+    };
+    const fetchImplementation = vi.fn(
+      (input: string | URL | Request): Promise<Response> => {
+        const url = toRequestUrl(input);
+        const service = url.includes("gmail")
+          ? "gmail"
+          : url.includes("mailchimp")
+            ? "mailchimp"
+            : "salesforce";
+
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              service,
+              status: service === "gmail" ? gmailHealth.status : "healthy",
+              checkedAt: currentTimeIso,
+              detail: service === "gmail" ? gmailHealth.detail : null,
+              version: `${service}-sha`
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json"
+              }
+            }
+          )
+        );
+      }
+    );
+    const alertSender = { send: vi.fn() };
+    const logger = { error: vi.fn(), warn: vi.fn(), info: vi.fn() };
+    const context = await createTestWorkerContext();
+
+    try {
+      await context.settings.integrationHealth.seedDefaults();
+      const gmailRecord = await context.settings.integrationHealth.findById("gmail");
+      if (gmailRecord === null) {
+        throw new Error("Expected Gmail integration health record to exist.");
+      }
+      await context.settings.integrationHealth.upsert({
+        ...gmailRecord,
+        status: "healthy",
+        updatedAt: "2026-04-20T15:55:00.000Z"
+      });
+
+      const taskList = createTaskList(context.orchestration, {
+        integrationHealth: {
+          integrationHealth: context.settings.integrationHealth,
+          opsAlertState: context.settings.opsAlertState,
+          captureBaseUrls: {
+            gmail: "https://gmail-capture.example.test",
+            salesforce: "https://salesforce-capture.example.test",
+            mailchimp: "https://mailchimp-capture.example.test"
+          },
+          persistence: context.persistence,
+          fetchImplementation,
+          alertSender,
+          now: () => new Date(currentTimeIso),
+          logger
+        }
+      });
+      const task = taskList[pollIntegrationHealthJobName];
+      if (task === undefined) {
+        throw new Error("Expected integration health poller task to be registered.");
+      }
+      const helpers = {
+        addJob: vi.fn().mockResolvedValue(undefined)
+      } as never;
+
+      // Poll 1 — degraded. Debounced, so no alert; degradedSinceAt recorded.
+      currentTimeIso = "2026-04-20T16:00:00.000Z";
+      await task(undefined, helpers);
+      const degradedRecord =
+        await context.settings.integrationHealth.findById("gmail");
+      expect(degradedRecord?.degradedSinceAt).toBe("2026-04-20T16:00:00.000Z");
+      expect(alertSender.send).not.toHaveBeenCalled();
+
+      // Poll 2 — recovered 5 min later, still inside the debounce window, so no
+      // alert is ever sent and the degraded state is cleared.
+      gmailHealth.status = "healthy";
+      gmailHealth.detail = null;
+      currentTimeIso = "2026-04-20T16:05:00.000Z";
+      await task(undefined, helpers);
+      const recoveredRecord =
+        await context.settings.integrationHealth.findById("gmail");
+      expect(alertSender.send).not.toHaveBeenCalled();
       expect(recoveredRecord?.status).toBe("healthy");
       expect(recoveredRecord?.degradedSinceAt).toBeNull();
       expect(recoveredRecord?.lastAlertSentAt).toBeNull();
