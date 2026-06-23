@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
+import { tryNormalizePhoneE164 } from "@as-comms/domain/phone";
 import { z, type ZodType } from "zod";
 
 export interface CaptureServiceHttpRequest {
@@ -127,13 +128,7 @@ export function normalizePhone(
     return null;
   }
 
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  const digits = trimmed.replace(/[^\d+]/gu, "");
-  return digits.length === 0 ? null : digits;
+  return tryNormalizePhoneE164(value);
 }
 
 export function uniqueValues(

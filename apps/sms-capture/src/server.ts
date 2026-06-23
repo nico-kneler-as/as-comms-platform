@@ -18,6 +18,7 @@ import {
   smsMetrics,
   type Stage1RepositoryBundle,
 } from "@as-comms/domain";
+import { normalizePhoneE164 } from "@as-comms/domain/phone";
 import { createTwilioProvider, type TwilioProvider } from "@as-comms/integrations";
 import { z } from "zod";
 
@@ -389,6 +390,8 @@ async function handleInboundWebhook(input: {
   readonly db: Stage1Database | null;
 }): Promise<void> {
   const parsed = input.provider.parseInbound(input.params);
+  const fromE164 = normalizePhoneE164(parsed.fromE164);
+  const toE164 = normalizePhoneE164(parsed.toE164);
 
   try {
     await withRepositories({
@@ -404,11 +407,11 @@ async function handleInboundWebhook(input: {
           return;
         }
 
-        const sender = await repositories.smsSenders.findByPhone(parsed.toE164);
+        const sender = await repositories.smsSenders.findByPhone(toE164);
 
         if (sender === null) {
           console.warn(
-            `Inbound SMS ignored for unknown sender number ${parsed.toE164}`,
+            `Inbound SMS ignored for unknown sender number ${toE164}`,
           );
           return;
         }
@@ -419,7 +422,7 @@ async function handleInboundWebhook(input: {
           createStage1PersistenceService(repositories),
         );
         const resolution = await resolveContactByPhoneFromIdentities({
-          phoneE164: parsed.fromE164,
+          phoneE164: fromE164,
           readContactIdentities: {
             listByNormalizedValue: (identity) =>
               repositories.contactIdentities.listByNormalizedValue(identity),
@@ -452,11 +455,11 @@ async function handleInboundWebhook(input: {
         const payloadRef = `twilio:webhooks/inbound:${parsed.messageSid}`;
         const checksum = sha256Json({
           body: parsed.body,
-          fromE164: parsed.fromE164,
+          fromE164,
           mediaUrls: parsed.mediaUrls,
           messageSid: parsed.messageSid,
           numMediaUrls: parsed.numMediaUrls,
-          toE164: parsed.toE164,
+          toE164,
         });
 
         await repositories.sourceEvidence.append({
@@ -489,8 +492,8 @@ async function handleInboundWebhook(input: {
             messageKind: "one_to_one",
             campaignRef: null,
             threadRef: {
-              crossProviderCollapseKey: parsed.fromE164,
-              providerThreadId: parsed.fromE164,
+              crossProviderCollapseKey: fromE164,
+              providerThreadId: fromE164,
             },
             direction: "inbound",
             notes: null,
@@ -506,7 +509,7 @@ async function handleInboundWebhook(input: {
           twilioMessageSid: parsed.messageSid,
           direction: "inbound",
           contactId: resolution.contact.id,
-          phoneE164: parsed.fromE164,
+          phoneE164: fromE164,
           senderId: sender.id,
           body: parsed.body,
           segments: metrics.segments,
@@ -561,14 +564,14 @@ async function handleInboundWebhook(input: {
         });
 
         const latestConsent = await repositories.consentRecords.findLatestByPhone(
-          parsed.fromE164,
+          fromE164,
         );
 
         if (latestConsent?.status !== "opted_in") {
           await repositories.consentRecords.insert({
             id: randomUUID(),
             contactId: resolution.contact.id,
-            phoneE164: parsed.fromE164,
+            phoneE164: fromE164,
             status: "opted_in",
             source: "inbound_thread",
             sourceDetail: null,
@@ -592,9 +595,9 @@ async function handleInboundWebhook(input: {
               status: "open",
               openedAt: occurredAtIso,
               resolvedAt: null,
-              normalizedIdentityValues: [parsed.fromE164],
+              normalizedIdentityValues: [fromE164],
               anchoredContactId: resolution.contact.id,
-              explanation: `Inbound SMS from ${parsed.fromE164} matched ${resolution.ambiguousCandidateContactIds.length.toString()} contacts; anchored to ${resolution.contact.id} pending operator review.`,
+              explanation: `Inbound SMS from ${fromE164} matched ${resolution.ambiguousCandidateContactIds.length.toString()} contacts; anchored to ${resolution.contact.id} pending operator review.`,
             });
           } catch (error) {
             console.error(
@@ -637,6 +640,7 @@ async function handleOptOutWebhook(input: {
   }
 
   const optOutType = parsed.data.OptOutType.toUpperCase();
+  const fromE164 = normalizePhoneE164(parsed.data.From);
 
   await withRepositories({
     db: input.db,
@@ -657,7 +661,7 @@ async function handleOptOutWebhook(input: {
 
       const now = new Date();
       const resolution = await resolveContactByPhoneFromIdentities({
-        phoneE164: parsed.data.From,
+        phoneE164: fromE164,
         readContactIdentities: {
           listByNormalizedValue: (identity) =>
             repositories.contactIdentities.listByNormalizedValue(identity),
@@ -687,7 +691,7 @@ async function handleOptOutWebhook(input: {
       await repositories.consentRecords.insert({
         id: randomUUID(),
         contactId: resolution.contact.id,
-        phoneE164: parsed.data.From,
+        phoneE164: fromE164,
         status:
           optOutType === "STOP"
             ? "revoked"

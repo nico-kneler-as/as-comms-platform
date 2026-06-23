@@ -50,6 +50,36 @@ describe("contact resolution", () => {
     expect(upsert).not.toHaveBeenCalled();
   });
 
+  it("normalizes loose lookup input before checking for an existing contact", async () => {
+    const existing: ContactInsertRecord = {
+      id: "contact-existing",
+      salesforceContactId: null,
+      displayName: "Existing Contact",
+      primaryEmail: null,
+      primaryPhone: "+17743680124",
+      createdAt: "2026-05-03T12:00:00.000Z",
+      updatedAt: "2026-05-03T12:00:00.000Z",
+    };
+    const findByPrimaryPhone = vi.fn().mockResolvedValue(existing);
+
+    const result = await resolveContactByPhone({
+      phoneE164: "(774) 368-0124",
+      readContacts: {
+        findByPrimaryPhone,
+      },
+      writeContacts: {
+        upsert: vi.fn(),
+      },
+      clock: {
+        now: () => new Date("2026-05-03T12:30:00.000Z"),
+      },
+      idGenerator: () => "unused",
+    });
+
+    expect(findByPrimaryPhone).toHaveBeenCalledWith("+17743680124");
+    expect(result.contact.id).toBe(existing.id);
+  });
+
   it("creates a new phone-only contact when none exists", async () => {
     const upsert = vi
       .fn<(_: ContactInsertRecord) => Promise<ContactInsertRecord>>()
@@ -254,5 +284,51 @@ describe("contact resolution", () => {
       isNewlyCreated: false,
       ambiguousCandidateContactIds: ["contact-a", "contact-b"],
     });
+  });
+
+  it("normalizes loose phone identity input before querying identities", async () => {
+    const existing: ContactInsertRecord = {
+      id: "contact-e164",
+      salesforceContactId: null,
+      displayName: "Contact E164",
+      primaryEmail: null,
+      primaryPhone: "+19163001877",
+      createdAt: "2026-05-03T12:00:00.000Z",
+      updatedAt: "2026-05-03T12:00:00.000Z",
+    };
+    const listByNormalizedValue = vi.fn().mockResolvedValue([
+      { contactId: existing.id },
+    ]);
+
+    const result = await resolveContactByPhoneFromIdentities({
+      phoneE164: "9163001877",
+      readContactIdentities: {
+        listByNormalizedValue,
+      },
+      readContacts: {
+        findById: vi.fn().mockResolvedValue(existing),
+        listByIds: vi.fn(),
+        findByPrimaryPhone: vi.fn(),
+      },
+      readInboxProjection: {
+        findByContactId: vi.fn(),
+      },
+      writeContacts: {
+        upsert: vi.fn(),
+      },
+      writeContactIdentities: {
+        upsert: vi.fn(),
+      },
+      clock: {
+        now: () => new Date("2026-05-05T12:30:00.000Z"),
+      },
+      idGenerator: () => "unused",
+    });
+
+    expect(listByNormalizedValue).toHaveBeenCalledWith({
+      kind: "phone",
+      normalizedValue: "+19163001877",
+    });
+    expect(result.contact.id).toBe(existing.id);
   });
 });

@@ -34,6 +34,7 @@ import {
   defineStage1RepositoryBundle,
   defineStage2RepositoryBundle,
 } from "@as-comms/domain";
+import { tryNormalizePhoneE164 } from "@as-comms/domain/phone";
 import { aiKnowledgeSourcesSchema } from "@as-comms/contracts";
 import {
   audienceCriteriaSchema,
@@ -171,6 +172,24 @@ import {
   syncState,
   users,
 } from "./schema/index.js";
+
+function normalizePhoneLookupValue(phone: string): string {
+  return tryNormalizePhoneE164(phone) ?? phone;
+}
+
+function normalizedPhoneExpression(column: unknown): SQL<string | null> {
+  return sql<string | null>`case
+    when ${column} is null then null
+    when ${column} ~ '^\\+[1-9][0-9]{7,14}$' then ${column}::text
+    when length(regexp_replace(${column}::text, '\\D', '', 'g')) = 10
+      and regexp_replace(${column}::text, '\\D', '', 'g') ~ '^[2-9][0-9]{9}$'
+      then '+1' || regexp_replace(${column}::text, '\\D', '', 'g')
+    when length(regexp_replace(${column}::text, '\\D', '', 'g')) = 11
+      and regexp_replace(${column}::text, '\\D', '', 'g') ~ '^1[2-9][0-9]{9}$'
+      then '+' || regexp_replace(${column}::text, '\\D', '', 'g')
+    else null
+  end`;
+}
 
 export type Stage1Database = PgDatabase<PgQueryResultHKT, DatabaseSchema>;
 
@@ -1072,12 +1091,16 @@ function createSmsRepositorySlices(db: Stage1Database) {
       },
 
       async hasInboundForPhone(phoneE164) {
+        const normalizedPhoneE164 = normalizePhoneLookupValue(phoneE164);
         const [row] = await db
           .select({ id: smsMessages.id })
           .from(smsMessages)
           .where(
             and(
-              eq(smsMessages.phoneE164, phoneE164),
+              eq(
+                normalizedPhoneExpression(smsMessages.phoneE164),
+                normalizedPhoneE164,
+              ),
               eq(smsMessages.direction, "inbound"),
             ),
           )
@@ -1141,10 +1164,16 @@ function createSmsRepositorySlices(db: Stage1Database) {
 
     consentRecords: {
       async findLatestByPhone(phoneE164) {
+        const normalizedPhoneE164 = normalizePhoneLookupValue(phoneE164);
         const [row] = await db
           .select()
           .from(consentRecords)
-          .where(eq(consentRecords.phoneE164, phoneE164))
+          .where(
+            eq(
+              normalizedPhoneExpression(consentRecords.phoneE164),
+              normalizedPhoneE164,
+            ),
+          )
           .orderBy(desc(consentRecords.createdAt), desc(consentRecords.id))
           .limit(1);
 
@@ -1163,7 +1192,10 @@ function createSmsRepositorySlices(db: Stage1Database) {
       },
 
       async insert(record) {
-        const values = mapConsentRecordToInsert(record);
+        const values = mapConsentRecordToInsert({
+          ...record,
+          phoneE164: normalizePhoneLookupValue(record.phoneE164),
+        });
         const [row] = await db
           .insert(consentRecords)
           .values(values)
@@ -1197,10 +1229,11 @@ function createSmsRepositorySlices(db: Stage1Database) {
       },
 
       async findByPhone(phoneE164) {
+        const normalizedPhoneE164 = normalizePhoneLookupValue(phoneE164);
         const [row] = await db
           .select()
           .from(smsSenders)
-          .where(eq(smsSenders.phoneE164, phoneE164))
+          .where(eq(smsSenders.phoneE164, normalizedPhoneE164))
           .limit(1);
 
         return row === undefined ? null : mapSmsSenderRow(row);
@@ -2432,10 +2465,13 @@ function createStage1RepositoriesInternal(
       },
 
       async findByPrimaryPhone(phoneE164) {
+        const normalizedPhoneE164 = normalizePhoneLookupValue(phoneE164);
         const [row] = await db
           .select()
           .from(contacts)
-          .where(eq(contacts.primaryPhone, phoneE164))
+          .where(
+            eq(normalizedPhoneExpression(contacts.primaryPhone), normalizedPhoneE164),
+          )
           .limit(1);
 
         return row === undefined ? null : mapContactRow(row);
@@ -2843,7 +2879,13 @@ function createStage1RepositoriesInternal(
       },
 
       async upsert(record) {
-        const values = mapContactToInsert(record);
+        const values = mapContactToInsert({
+          ...record,
+          primaryPhone:
+            record.primaryPhone === null
+              ? null
+              : normalizePhoneLookupValue(record.primaryPhone),
+        });
         const [row] = await db
           .insert(contacts)
           .values(values)
@@ -3056,13 +3098,22 @@ function createStage1RepositoriesInternal(
       },
 
       async listByNormalizedValue(input) {
+        const normalizedValue =
+          input.kind === "phone"
+            ? normalizePhoneLookupValue(input.normalizedValue)
+            : input.normalizedValue;
         const rows = await db
           .select()
           .from(contactIdentities)
           .where(
             and(
               eq(contactIdentities.kind, input.kind),
-              eq(contactIdentities.normalizedValue, input.normalizedValue),
+              input.kind === "phone"
+                ? eq(
+                    normalizedPhoneExpression(contactIdentities.normalizedValue),
+                    normalizedValue,
+                  )
+                : eq(contactIdentities.normalizedValue, normalizedValue),
             ),
           )
           .orderBy(
@@ -3074,7 +3125,13 @@ function createStage1RepositoriesInternal(
       },
 
       async upsert(record) {
-        const values = mapContactIdentityToInsert(record);
+        const values = mapContactIdentityToInsert({
+          ...record,
+          normalizedValue:
+            record.kind === "phone"
+              ? normalizePhoneLookupValue(record.normalizedValue)
+              : record.normalizedValue,
+        });
         const [row] = await db
           .insert(contactIdentities)
           .values(values)
